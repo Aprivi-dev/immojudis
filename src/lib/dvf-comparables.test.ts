@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   saleQuery: vi.fn(),
 }));
 
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: mocks.usage }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.rpc, from: mocks.from },

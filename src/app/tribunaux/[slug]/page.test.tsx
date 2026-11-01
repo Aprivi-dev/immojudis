@@ -552,7 +552,7 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("propose « Suivre ce tribunal » : une alerte sur ce seul tribunal, par son nom de recherche", async () => {
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     const alert = screen.getByRole("region", { name: "Suivre ce tribunal" });
     expect(alert.textContent).toContain("pour lui seul");
     const href = within(alert)
