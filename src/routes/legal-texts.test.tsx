@@ -199,11 +199,17 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-10-31.1 (traitements complétés) ; les 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-31.1");
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("31 octobre 2026");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-26.1");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0].version).toBe("2026-10-25.1");
+  it("la politique de confidentialité est en version 2026-11-01.1 (demandes aux greffes) ; les 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("1er novembre 2026");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-31.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
+      LEGAL_DOCUMENTS.privacy.effectiveDate,
+    );
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-10-26.1",
+      "2026-10-25.1",
+    ]);
   });
 });
 
@@ -431,6 +437,20 @@ describe("mentions légales : repère « Pépite »", () => {
 });
 
 describe("politique de confidentialité", () => {
+  it("annonce les demandes aux greffes, une fois par vente, avec le plafond quotidien de la configuration", () => {
+    const text = pageText(<PrivacyPage courtRegistryDailyCap={2} />);
+    expect(text).toContain(
+      "Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après validation manuelle de chaque message, écrire à l’adresse de contact du greffe du tribunal concerné",
+    );
+    expect(text).toContain(
+      "Nous envoyons au plus un message par vente et, par tribunal, au plus 2 messages par jour, sans relance.",
+    );
+    expect(pageText(<PrivacyPage courtRegistryDailyCap={1} />)).toContain(
+      "au plus 1 message par jour",
+    );
+    expect(pageText(<PrivacyPage />)).toContain("au plus 3 messages par jour");
+  });
+
   it("décrit le traitement des déblocages : base contractuelle et conservation de 24 mois au plus", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain("Déblocages mensuels de ventes (offre Découverte)");

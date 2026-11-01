@@ -1,10 +1,17 @@
 import "server-only";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
   renderInformationRequestEmail,
 } from "../../emails/information-request";
+import {
+  assertInformationAgentControllerIdentity,
+  assertInformationAgentPreviewFingerprint,
+  buildInformationAgentLegalFooter,
+  informationAgentPortalSecret,
+  informationAgentPreviewFingerprint,
+} from "@/lib/information-agent/message-guards";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -35,7 +42,6 @@ import {
 import {
   formatInformationAgentOriginDate,
   informationAgentControllerIdentity,
-  type InformationAgentAddressOrigin,
   type InformationAgentLegalFooter,
 } from "@/lib/information-agent-compliance";
 import {
@@ -71,6 +77,23 @@ import {
   isAgentFoundRecipient,
   searchInformationAgentAddressForDraft,
 } from "@/lib/information-agent/address-search";
+import { assertCourtRegistryFallbackLimits } from "@/lib/information-agent/court-registry";
+import {
+  COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD,
+  courtRegistryDailyCap,
+  INFORMATION_AGENT_COURT_REGISTRY_FALLBACK,
+} from "@/lib/information-agent/court-registry-fallback";
+import {
+  assertCourtRegistryDraftAllowed,
+  assertCourtRegistryFallbackOriginIntact,
+  COURT_REGISTRY_DRAFT_OPTIONS,
+  courtRegistryDraftMetadata,
+  courtRegistryMessageMetadata,
+  courtRegistryMissionChecks,
+  courtRegistryRecipientOrigin,
+  findCourtRegistryFallbackForDraft,
+  withoutCourtRegistryTrace,
+} from "@/lib/information-agent/court-registry-mission";
 import { recordManualMissionReply } from "@/lib/information-agent/manual-reply";
 import {
   assertInformationAgentSourceAllowed,
@@ -93,6 +116,10 @@ import {
   withSignature,
 } from "@/lib/information-agent/draft-checks";
 
+export {
+  assertInformationAgentControllerIdentity,
+  informationAgentPreviewFingerprint,
+} from "@/lib/information-agent/message-guards";
 // Ré-exports : ces fonctions vivaient dans ce module (et ses tests les importent d'ici).
 export {
   INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
@@ -254,6 +281,8 @@ export type InformationAgentMission = {
   updatedAt: string;
   /** Titre de la vente, renseigné par la liste admin seulement (jamais par l'e-mail ni le dépôt). */
   saleTitle?: string | null;
+  /** `court_registry_fallback` : le destinataire est le greffe du tribunal (aucun avocat trouvé), pas un avocat. */
+  recipientOrigin?: typeof INFORMATION_AGENT_COURT_REGISTRY_FALLBACK | null;
 };
 
 export type InformationAgentFact = {
@@ -295,6 +324,7 @@ export function buildInformationRequestDraft({
   inventory,
   template = DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
   signatureName = null,
+  questionLines,
 }: {
   sale: InformationAgentInventorySale;
   recipientName?: string | null;
@@ -302,6 +332,8 @@ export function buildInformationRequestDraft({
   facts?: FactReliabilityMap;
   inventory?: InformationAgentInventory;
   template?: InformationAgentEmailTemplateContent;
+  /** Questions écrites telles quelles (message à un greffe) : remplacent celles des `questionKeys`. */
+  questionLines?: readonly string[];
   /** Personne qui signe (`INFORMATION_AGENT_SIGNATURE_NAME`) : un nom rassure plus qu'une équipe. */
   signatureName?: string | null;
 }): { subject: string; bodyText: string } {
@@ -365,8 +397,11 @@ export function buildInformationRequestDraft({
         : priceToConfirm
           ? `Mise à prix annoncée, à confirmer : ${startingPrice}`
           : `Mise à prix annoncée : ${startingPrice}`,
-      questions: questionKeys
-        .map((key) => `- ${informationAgentQuestionText(key, questionContext)}`)
+      questions: (
+        questionLines ??
+        questionKeys.map((key) => informationAgentQuestionText(key, questionContext))
+      )
+        .map((line) => `- ${line}`)
         .join("\n"),
     },
   });
@@ -440,7 +475,16 @@ export async function createAdminInformationAgentDraft({
     candidates: foundContact ? [] : contactCandidates,
   });
   const selectedContact = foundContact ?? selectInformationAgentContact(contactCandidates);
-  const recipientEmail = explicitRecipientEmail ?? selectedContact?.email;
+  // Greffe de secours : vente au tribunal sans AUCUN destinataire avocat ou cabinet (court-registry-mission.ts).
+  const courtFallback = await findCourtRegistryFallbackForDraft({
+    sale,
+    explicitRecipientEmail: explicitRecipientEmail ?? null,
+    selectedContact,
+    contactCandidates,
+    candidatesSkippedForOpposition,
+  });
+  const recipientEmail =
+    explicitRecipientEmail ?? selectedContact?.email ?? courtFallback?.candidate.email;
   if (!recipientEmail) {
     throw new Error(
       candidatesSkippedForOpposition > 0 && !contactCandidates.length
@@ -448,11 +492,14 @@ export async function createAdminInformationAgentDraft({
         : missingRecipientMessage(contactCandidates.length, search.noAddressNote),
     );
   }
-  const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
+  const selectedByEmail =
+    courtFallback?.candidate ??
+    contactCandidates.find((candidate) => candidate.email === recipientEmail);
   // A manual address or another source contact must not inherit the lawyer's
-  // name: it can belong to a different professional entirely.
-  const recipientName =
-    input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null;
+  // name: it can belong to a different professional entirely. Un greffe n'a pas de nom de personne.
+  const recipientName = courtFallback
+    ? null
+    : (input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null);
   const recipientIdentityRole = selectedByEmail?.role ?? null;
   const recipientIdentityKeys = informationAgentIdentityKeys({
     role: recipientIdentityRole,
@@ -463,21 +510,24 @@ export async function createAdminInformationAgentDraft({
     saleId: sale.id,
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
+    courtRegistryAddress: Boolean(courtFallback),
   });
   // Refused now rather than at the preview, after the admin has read the whole draft.
   await assertNoSentCaseForRecipient(sale.id, recipientEmail);
   await assertInformationAgentRecipientCooldown({
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
+    courtRegistryFallback: Boolean(courtFallback),
   });
+  if (courtFallback) await assertCourtRegistryDraftAllowed(courtFallback, sale.id);
   const draft = buildInformationRequestDraft({
     sale,
-    recipientName,
-    questionKeys,
     facts,
     inventory,
-    template: emailTemplate.content,
     signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
+    ...(courtFallback
+      ? COURT_REGISTRY_DRAFT_OPTIONS
+      : { recipientName, questionKeys, template: emailTemplate.content }),
   });
 
   const { data, error } = await supabaseAdmin
@@ -494,12 +544,13 @@ export async function createAdminInformationAgentDraft({
       share_requester_email: false,
       subject: draft.subject,
       body_text: draft.bodyText,
-      question_keys: questionKeys,
+      question_keys: courtFallback ? [...COURT_REGISTRY_DRAFT_OPTIONS.questionKeys] : questionKeys,
       missing_information: gaps.map((gap) => gap.key),
       sale_snapshot: saleSnapshot(sale),
       privacy_version: LEGAL_DOCUMENTS.privacy.version,
       metadata: {
         draft_source: "admin_source_first_gap_analysis",
+        ...(courtFallback ? courtRegistryDraftMetadata(courtFallback) : {}),
         // Lieu et rôle de l'identité (jamais l'adresse) : l'envoi recalcule les clés d'identité.
         contact_identity: {
           role: recipientIdentityRole,
@@ -513,9 +564,13 @@ export async function createAdminInformationAgentDraft({
         contact_discovery: {
           method: explicitRecipientEmail
             ? "admin_override"
-            : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
+            : courtFallback
+              ? COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD
+              : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
           selected_email: selectedByEmail?.email ?? explicitRecipientEmail ?? null,
-          candidates: contactCandidates.slice(0, 8).map(contactCandidateSnapshot),
+          candidates: (courtFallback ? [courtFallback.candidate] : contactCandidates)
+            .slice(0, 8)
+            .map(contactCandidateSnapshot),
         },
         initiated_by_admin: auth.userId,
         inventory: informationAgentInventorySnapshot(inventory),
@@ -532,12 +587,13 @@ export async function createAdminInformationAgentDraft({
     p_mission_id: data.id,
   });
   if (subscribeError) throw subscribeError;
-  // L'adresse trouvée n'est enregistrée qu'une fois contrôlée et le brouillon créé.
-  if (foundContact) {
+  // L'adresse trouvée (ou celle du greffe) n'est enregistrée qu'une fois contrôlée et le brouillon créé.
+  const recordedContact = foundContact ?? courtFallback?.candidate ?? null;
+  if (recordedContact) {
     try {
       await persistInformationAgentContactObservations({
         saleId: sale.id,
-        candidates: [foundContact],
+        candidates: [recordedContact],
       });
     } catch {
       // Sans ligne de registre, l'origine de l'adresse est inconnue : le brouillon est annulé.
@@ -564,7 +620,7 @@ export async function createAdminInformationAgentDraft({
     gaps,
     inventory: inventory.items,
     facts: await listFactsForCases(subscribedMission.case_id ? [subscribedMission.case_id] : []),
-    contactCandidates,
+    contactCandidates: courtFallback ? [courtFallback.candidate] : contactCandidates,
   };
 }
 
@@ -683,22 +739,32 @@ async function approveAndSendMission({
   assertInformationAgentHasQuestion(input.bodyText);
   await assertInformationAgentSaleCurrent(mission);
   // Opposition par adresse et par identité (le nom corrigé à l'aperçu compte), avant l'envoi.
-  const identityKeys = missionIdentityKeys(mission, input.recipientName);
+  // Greffe de secours : l'adresse du référentiel est la seule adresse de juridiction admise ; adresse, vente
+  // relue et limites du tribunal sont contrôlées avant tout (court-registry-mission.ts).
+  const { fallback: courtFallback, checks: courtChecks } = courtRegistryMissionChecks({
+    mission,
+    recipientEmail: input.recipientEmail,
+  });
+  for (const check of courtChecks) await check();
+  // Un greffe n'a pas de nom de personne : aucune clé d'identité, même si un nom est saisi.
+  const identityKeys = missionIdentityKeys(mission, courtFallback ? null : input.recipientName);
   await assertInformationAgentContactAllowed({
     saleId: mission.sale_id,
     email: input.recipientEmail,
     identityKeys,
+    courtRegistryAddress: Boolean(courtFallback),
   });
   // Adresse retrouvée par l'agent : sa seule origine est la ligne de registre de l'agent.
   const agentFound = isAgentFoundRecipient(mission, input.recipientEmail);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: input.recipientEmail,
     saleId: mission.sale_id,
-    manualOriginUrl: agentFound ? null : (input.recipientOriginUrl ?? null),
+    manualOriginUrl: agentFound || courtFallback ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   assertAgentFoundOriginIntact(agentFound, addressOrigin);
+  assertCourtRegistryFallbackOriginIntact(Boolean(courtFallback), addressOrigin);
   assertInformationAgentSourceAllowed(addressOrigin);
   assertInformationAgentSearchedAddressAllowed(addressOrigin.origin);
   assertInformationAgentOutboundEnabled();
@@ -713,6 +779,7 @@ async function approveAndSendMission({
     email: input.recipientEmail,
     missionId: mission.id,
     identityKeys,
+    courtRegistryFallback: Boolean(courtFallback),
   });
 
   // An admin may replace a source-derived address while approving the draft.
@@ -742,14 +809,18 @@ async function approveAndSendMission({
       recipient_email: input.recipientEmail,
       recipient_identity_keys: identityKeys,
       recipient_kind: recipientKind,
-      recipient_name: input.recipientName || null,
+      // Jamais de nom de greffier dans un champ structuré.
+      recipient_name: courtFallback ? null : input.recipientName || null,
       reply_to_email: null,
       share_requester_email: false,
       subject: input.subject,
       body_text: input.bodyText,
       failure_reason: null,
       metadata: {
-        ...asObject(mission.metadata),
+        // Destinataire changé par l'administrateur : la mission n'est plus une demande au greffe.
+        ...(courtFallback
+          ? asObject(mission.metadata)
+          : withoutCourtRegistryTrace(mission.metadata)),
         recipient_origin_url: input.recipientOriginUrl ?? null,
         preview_fingerprint: input.previewFingerprint,
       },
@@ -789,6 +860,7 @@ async function approveAndSendMission({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
       identityKeys: edited.recipient_identity_keys,
+      courtRegistryAddress: Boolean(courtFallback),
     });
     // Approval is already recorded: if a concurrent approval for the same recipient is older,
     // this one stands down, so only the earliest request is ever sent within the 30 days.
@@ -798,7 +870,17 @@ async function approveAndSendMission({
       missionId: mission.id,
       identityKeys: edited.recipient_identity_keys,
       approvedAt: approvedMission.approved_at,
+      courtRegistryFallback: Boolean(courtFallback),
     });
+    if (courtFallback) {
+      // Même départage des approbations concurrentes pour les limites du tribunal (par vente et par jour).
+      await assertCourtRegistryFallbackLimits({
+        courtCode: courtFallback.courtCode,
+        saleId: subscribedMission.sale_id,
+        missionId: mission.id,
+        approvedAt: approvedMission.approved_at,
+      });
+    }
     const legalFooter = buildInformationAgentLegalFooter({
       appUrl: config.appUrl,
       email: edited.recipient_email,
@@ -824,6 +906,7 @@ async function approveAndSendMission({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
       identityKeys: edited.recipient_identity_keys,
+      courtRegistryAddress: Boolean(courtFallback),
     });
     assertInformationAgentCanaryRecipient(edited.recipient_email);
     const delivery = await sendResendEmail({
@@ -865,6 +948,8 @@ async function approveAndSendMission({
         approved_by_admin: adminId,
         address_origin_url: legalFooter.addressOriginUrl ?? null,
         address_origin_text: legalFooter.addressOrigin,
+        // Journal : un message au greffe se distingue d'un message à un avocat.
+        ...courtRegistryMessageMetadata(courtFallback),
         email_template_version: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
         email_content_template_id: missionMetadata.email_content_template_id ?? null,
         email_content_template_revision: missionMetadata.email_content_template_revision ?? null,
@@ -988,122 +1073,6 @@ function isIndeterminateSendError(error: unknown): boolean {
   );
 }
 
-/** Refuses to send while the data controller identity (art. 14 GDPR) is not configured. */
-export function assertInformationAgentControllerIdentity(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): void {
-  if (!informationAgentControllerIdentity(env)) {
-    throw new Error(
-      "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME, NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS et NEXT_PUBLIC_LEGAL_CONTACT_EMAIL).",
-    );
-  }
-}
-
-function informationAgentPortalSecret(env: Readonly<Record<string, string | undefined>>) {
-  const secret = env.INFORMATION_AGENT_PORTAL_SECRET?.trim();
-  return secret && Buffer.byteLength(secret, "utf8") >= 32 ? secret : null;
-}
-
-function buildInformationAgentLegalFooter({
-  appUrl,
-  email,
-  addressOrigin,
-  saleReference = null,
-  env = process.env,
-}: {
-  appUrl: string;
-  email: string;
-  addressOrigin: InformationAgentAddressOrigin;
-  saleReference?: string | null;
-  env?: Readonly<Record<string, string | undefined>>;
-}): InformationAgentLegalFooter {
-  const controller = informationAgentControllerIdentity(env);
-  if (!controller) assertInformationAgentControllerIdentity(env);
-  const secret = informationAgentPortalSecret(env);
-  if (!secret) throw new Error("Secret du lien d'opposition non configuré : envoi impossible.");
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
-  return {
-    controllerName: controller!.name,
-    controllerAddress: controller!.address,
-    contactEmail: controller!.contactEmail,
-    saleReference,
-    addressOrigin: addressOrigin.text,
-    addressOriginUrl: addressOrigin.url,
-    automatedSearch: addressOrigin.automated,
-    automatedSearchSource: addressOrigin.searchSource,
-    // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
-    aiProvider: informationAgentAiProvider(env),
-    privacyUrl: new URL("/privacy", appUrl).toString(),
-    optOutUrl: buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret }),
-  };
-}
-
-const PREVIEW_FINGERPRINT_CONTEXT = "immojudis:information-agent:preview:v1";
-
-/**
- * Empreinte HMAC du contenu exact affiché dans l'aperçu (destinataire, objet, texte, origine,
- * version du gabarit) et de l'administrateur qui l'a vu. Seul le serveur peut la produire : un
- * envoi sans aperçu préalable, ou après une modification non prévisualisée, est refusé.
- */
-export function informationAgentPreviewFingerprint(
-  {
-    adminId,
-    missionId,
-    recipientEmail,
-    recipientName,
-    subject,
-    bodyText,
-    recipientOriginUrl,
-  }: {
-    adminId: string;
-    missionId: string;
-    recipientEmail: string;
-    recipientName?: string | null;
-    subject: string;
-    bodyText: string;
-    recipientOriginUrl?: string | null;
-  },
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): string | null {
-  const secret = informationAgentPortalSecret(env);
-  if (!secret) return null;
-  return createHmac("sha256", secret)
-    .update(
-      `${PREVIEW_FINGERPRINT_CONTEXT}:${JSON.stringify({
-        adminId,
-        missionId,
-        recipientEmail: normalizedEmail(recipientEmail) ?? recipientEmail.trim().toLowerCase(),
-        recipientName: recipientName?.trim() || null,
-        subject: subject.trim(),
-        bodyText: bodyText.trim(),
-        recipientOriginUrl: recipientOriginUrl?.trim() || null,
-        emailTemplateVersion: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
-      })}`,
-    )
-    .digest("hex");
-}
-
-function assertInformationAgentPreviewFingerprint({
-  adminId,
-  input,
-}: {
-  adminId: string;
-  input: Extract<InformationAgentAdminActionPayload, { action: "approve_and_send" }>;
-}): void {
-  const expected = informationAgentPreviewFingerprint({ adminId, ...input });
-  if (!expected) {
-    throw new Error("Secret du lien d'opposition non configuré : envoi impossible.");
-  }
-  const received = Buffer.from(input.previewFingerprint ?? "", "hex");
-  const reference = Buffer.from(expected, "hex");
-  if (received.length !== reference.length || !timingSafeEqual(received, reference)) {
-    throw new Error(
-      "Le message a changé depuis l’aperçu, ou aucun aperçu n’a été affiché : affichez l’aperçu de la version finale avant d’envoyer.",
-    );
-  }
-}
-
 export type InformationAgentPreviewResponse = {
   ok: true;
   preview: {
@@ -1116,7 +1085,14 @@ export type InformationAgentPreviewResponse = {
   };
   /** Motifs qui empêcheront l'envoi (opposition, délai de 30 jours, configuration…). */
   blockers: string[];
-  addressOrigin: { text: string; url: string | null; automated: boolean; known: boolean };
+  addressOrigin: {
+    text: string;
+    url: string | null;
+    automated: boolean;
+    known: boolean;
+    /** Adresse d'un greffe (référentiel des tribunaux) : repère « Greffe » dans l'aperçu. */
+    courtRegistry?: boolean;
+  };
   /** À renvoyer avec « Valider et envoyer » ; null si l'envoi est impossible. */
   fingerprint: string | null;
 };
@@ -1150,11 +1126,19 @@ export async function previewAdminInformationAgentMission({
   if (mission.status !== "draft" && mission.status !== "failed") {
     blockers.push("Cette mission n’est plus un brouillon : elle ne peut pas être envoyée.");
   }
+  const { fallback: courtFallback, checks: courtChecks } = courtRegistryMissionChecks({
+    mission,
+    recipientEmail: recipient,
+    env,
+  });
+  for (const check of courtChecks) await collect(check);
+  const identityName = courtFallback ? null : input.recipientName;
   await collect(() =>
     assertInformationAgentContactAllowed({
       saleId: mission.sale_id,
       email: recipient,
-      identityKeys: missionIdentityKeys(mission, input.recipientName),
+      identityKeys: missionIdentityKeys(mission, identityName),
+      courtRegistryAddress: Boolean(courtFallback),
     }),
   );
   await collect(() =>
@@ -1168,18 +1152,22 @@ export async function previewAdminInformationAgentMission({
     assertInformationAgentRecipientCooldown({
       email: recipient,
       missionId: mission.id,
-      identityKeys: missionIdentityKeys(mission, input.recipientName),
+      identityKeys: missionIdentityKeys(mission, identityName),
+      courtRegistryFallback: Boolean(courtFallback),
     }),
   );
   const agentFound = isAgentFoundRecipient(mission, recipient);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: recipient,
     saleId: mission.sale_id,
-    manualOriginUrl: agentFound ? null : (input.recipientOriginUrl ?? null),
+    manualOriginUrl: agentFound || courtFallback ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) blockers.push(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   await collect(() => assertAgentFoundOriginIntact(agentFound, addressOrigin));
+  await collect(() =>
+    assertCourtRegistryFallbackOriginIntact(Boolean(courtFallback), addressOrigin),
+  );
   await collect(() => assertInformationAgentSourceAllowed(addressOrigin));
   await collect(() => assertInformationAgentSearchedAddressAllowed(addressOrigin.origin, env));
   await collect(() => assertInformationAgentOutboundEnabled(env));
@@ -1197,6 +1185,7 @@ export async function previewAdminInformationAgentMission({
     contactEmail: controller?.contactEmail ?? "[Contact à configurer]",
     saleReference: missionSaleReference(mission),
     addressOrigin: addressOrigin.origin.text,
+    courtRegistryDailyCap: addressOrigin.origin.courtRegistry ? courtRegistryDailyCap(env) : null,
     addressOriginUrl: addressOrigin.origin.url,
     automatedSearch: addressOrigin.origin.automated,
     automatedSearchSource: addressOrigin.origin.searchSource,
@@ -1361,6 +1350,7 @@ function missionFromRow(row: MissionRow): InformationAgentMission {
     repliedAt: row.replied_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    recipientOrigin: courtRegistryRecipientOrigin(row.metadata),
   };
 }
 

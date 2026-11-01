@@ -449,7 +449,12 @@ def _record_refusals(connection, refused: list[AuctionSale]) -> None:
     (ou sautée, fiche non relue) reste comptée dans l'inventaire de la source. Les refus après lecture de la fiche
     sont mémorisés (``rejected_listings``) : la fiche n'est pas relue pendant 7 jours.
     """
-    rejected_listings.remember(connection, [sale for sale in refused if not listing_minimum.assess(sale).detail_unread])
+    verdicts = [(sale, listing_minimum.assess(sale)) for sale in refused]
+    # Ni fiche non lue, ni vente au tribunal refusée faute de référentiel lisible : ces refus ne se mémorisent pas.
+    rejected_listings.remember(
+        connection,
+        [sale for sale, verdict in verdicts if not verdict.detail_unread and not verdict.court_registry_unavailable],
+    )
     for run_id, group in listing_minimum.decision_groups(refused).items():
         if not run_id:
             continue
@@ -582,9 +587,12 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
         # Limite connue : une annonce sans voie (Vench, Petites Affiches) dont la vente jumelle (Licitor...) est déjà en
         # base est refusée ici, la requête de verrouillage ne charge pas les ventes du même jour. Le rattachement est fait par
         # le balayage de dédoublonnage (dedupe_streetless.py), qui doit passer AVANT la réparation des annonces vides.
-        if not publication_gate(sale).sufficient:
+        verdict = publication_gate(sale)
+        if not verdict.sufficient:
             refused.append(sale)
             continue
+        if verdict.basis == (listing_minimum.BASIS_COURT_EMAIL,):  # écrite grâce au seul email de son tribunal
+            listing_minimum.count_court_email_fallback(sale)
         ensure_room_bedroom_consistency(sale)
         existing_by_key[sale.id or sale.source_url] = sale
         resolved[sale.source_url] = sale

@@ -46,7 +46,12 @@ from src.extraction_profiles import attach_source_property_features
 from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
 from src.geocode import geocode_sale, locate_sale_by_cadastre
 from src.image_validation import filter_raw_image_url, warm_image_validations
-from src.information_sufficiency import load_contact_blocklist, set_active_blocklist
+from src.information_sufficiency import (
+    load_contact_blocklist,
+    load_court_registry,
+    set_active_blocklist,
+    set_active_court_registry,
+)
 from src.known_document_backfill import (
     KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
     KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
@@ -441,6 +446,8 @@ def _open_run(options: PipelineOptions) -> _PipelineRun:
     listing_minimum.reset_tally()
     if options.upsert:  # e-mails refusés par l'agent d'information : jamais comptés comme contact exploitable
         set_active_blocklist(load_contact_blocklist(settings))
+        # Référentiel des tribunaux : contact de secours d'une vente au tribunal sans email (preuve court_email).
+        set_active_court_registry(load_court_registry(settings))
     return _PipelineRun(options=options, settings=settings, run_id=run_id)
 
 

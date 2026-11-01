@@ -5897,6 +5897,36 @@ export type Database = {
         };
         Relationships: [];
       };
+      court_registry_contacts: {
+        Row: {
+          address: string;
+          city: string;
+          court_code: string;
+          emails: string[];
+          imported_at: string;
+          name: string;
+          source: string;
+        };
+        Insert: {
+          address: string;
+          city: string;
+          court_code: string;
+          emails?: string[];
+          imported_at?: string;
+          name: string;
+          source: string;
+        };
+        Update: {
+          address?: string;
+          city?: string;
+          court_code?: string;
+          emails?: string[];
+          imported_at?: string;
+          name?: string;
+          source?: string;
+        };
+        Relationships: [];
+      };
       data_refresh_requests: {
         Row: {
           completed_at: string | null;

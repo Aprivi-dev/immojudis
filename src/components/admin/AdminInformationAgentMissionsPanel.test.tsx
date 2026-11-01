@@ -336,6 +336,31 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
+  it("marks a request addressed to a court registry (no lawyer) with a « Greffe » note", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValue(
+      previewResponse({
+        addressOrigin: {
+          text: "Adresse de contact publique de votre juridiction, issue du référentiel des tribunaux tenu par Immojudis ; l’annonce ne donne aucune adresse d’avocat.",
+          url: null,
+          automated: false,
+          courtRegistry: true,
+          known: true,
+        },
+      }),
+    );
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+
+    const note = screen.getByRole("note");
+    expect(note.textContent).toContain("Greffe");
+    expect(note.textContent).toContain("adressée au greffe du tribunal");
+    expect(note.textContent).not.toContain("Adresse retrouvée automatiquement");
+  });
+
   it("shows no automatic-search note for an address taken from the listing", async () => {
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
@@ -931,7 +956,13 @@ function previewResponse(
   overrides: Partial<{
     blockers: string[];
     fingerprint: string | null;
-    addressOrigin: { text: string; url: string | null; automated: boolean; known: boolean };
+    addressOrigin: {
+      text: string;
+      url: string | null;
+      automated: boolean;
+      known: boolean;
+      courtRegistry?: boolean;
+    };
   }> = {},
 ) {
   return {

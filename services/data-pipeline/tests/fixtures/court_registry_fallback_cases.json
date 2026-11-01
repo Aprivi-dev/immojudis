@@ -1,0 +1,226 @@
+{
+  "_comment": "Cas partagés entre le sélecteur TypeScript du greffe de secours (isCourtRegistryFallbackSale et courtRegistryFallbackEmails, src/lib/information-agent/court-registry-fallback.ts) et son miroir Python (is_court_sale et court_registry_fallback_emails, src/information_sufficiency.py). Exécutés par vitest (src/lib/information-agent-court-registry-parity.test.ts) ET par pytest (tests/test_information_sufficiency.py). Les adresses sont fictives. Si la règle évolue, mettre à jour ces cas ET les deux sélecteurs.",
+  "registry": {
+    "agen": ["accueil.exemple-agen@justice.fr"],
+    "bordeaux": ["Accueil.Exemple-Bordeaux@Justice.FR"],
+    "justice_tj_1_216": ["accueil.exemple-cayenne@justice.fr", "bav.exemple-cayenne@justice.fr"],
+    "justice_tj_9_7677": [],
+    "justice_tj_1_999": ["tribunal.exemple@avocat-conseil.fr"]
+  },
+  "cases": [
+    {
+      "name": "confirmed court sale gets the email of its court",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "agen"
+      },
+      "court_sale": true,
+      "expected": ["accueil.exemple-agen@justice.fr"]
+    },
+    {
+      "name": "cross checked court sale gets it too",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "cross_checked",
+        "source_name": "vench",
+        "tribunal_code": "agen"
+      },
+      "court_sale": true,
+      "expected": ["accueil.exemple-agen@justice.fr"]
+    },
+    {
+      "name": "the address of the registry is normalised",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "bordeaux"
+      },
+      "court_sale": true,
+      "expected": ["accueil.exemple-bordeaux@justice.fr"]
+    },
+    {
+      "name": "a court only deduced from the address is not a confirmed court sale",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "pending",
+        "source_name": "licitor",
+        "tribunal_code": "agen"
+      },
+      "court_sale": false,
+      "expected": []
+    },
+    {
+      "name": "a conflicting venue is not a court sale",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "conflict",
+        "source_name": "licitor",
+        "tribunal_code": "agen"
+      },
+      "court_sale": false,
+      "expected": []
+    },
+    {
+      "name": "a notarial sale never gets the court",
+      "sale": {
+        "sale_venue_type": "notary",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "agen"
+      },
+      "court_sale": false,
+      "expected": []
+    },
+    {
+      "name": "a state sale never gets the court",
+      "sale": {
+        "sale_venue_type": "state",
+        "sale_verification_status": "verified",
+        "source_name": "cessions_etat",
+        "tribunal_code": "agen"
+      },
+      "court_sale": false,
+      "expected": []
+    },
+    {
+      "name": "the notaires source never gets the court, whatever the venue says",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "notaires",
+        "tribunal_code": "agen"
+      },
+      "court_sale": false,
+      "expected": []
+    },
+    {
+      "name": "the state source never gets the court, whatever the venue says",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "cessions_etat",
+        "tribunal_code": "agen"
+      },
+      "court_sale": false,
+      "expected": []
+    },
+    {
+      "name": "AGRASC never gets the court, as primary source too",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "primary_source": "agrasc",
+        "tribunal_code": "agen"
+      },
+      "court_sale": false,
+      "expected": []
+    },
+    {
+      "name": "an inconsistent court gets nothing",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "agen",
+        "quality_flags": ["tribunal_inconsistent"]
+      },
+      "court_sale": false,
+      "expected": []
+    },
+    {
+      "name": "other quality flags do not matter",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "agen",
+        "quality_flags": ["tribunal_competence_unverified"]
+      },
+      "court_sale": true,
+      "expected": ["accueil.exemple-agen@justice.fr"]
+    },
+    {
+      "name": "no court code gets nothing",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": null
+      },
+      "court_sale": true,
+      "expected": []
+    },
+    {
+      "name": "a court missing from the registry gets nothing",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "pau"
+      },
+      "court_sale": true,
+      "expected": []
+    },
+    {
+      "name": "a court without an address gets nothing",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "justice_tj_9_7677"
+      },
+      "court_sale": true,
+      "expected": []
+    },
+    {
+      "name": "both addresses of Cayenne are candidates",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "justice_tj_1_216"
+      },
+      "court_sale": true,
+      "expected": ["accueil.exemple-cayenne@justice.fr", "bav.exemple-cayenne@justice.fr"]
+    },
+    {
+      "name": "an address refused by the registry of refusals is dropped",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "agen"
+      },
+      "blocked": ["accueil.exemple-agen@justice.fr"],
+      "court_sale": true,
+      "expected": []
+    },
+    {
+      "name": "only the refused address of Cayenne is dropped",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "justice_tj_1_216"
+      },
+      "blocked": ["bav.exemple-cayenne@justice.fr"],
+      "court_sale": true,
+      "expected": ["accueil.exemple-cayenne@justice.fr"]
+    },
+    {
+      "name": "the court exclusion is lifted only for the registry, not the other exclusions",
+      "sale": {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "source_name": "licitor",
+        "tribunal_code": "justice_tj_1_999"
+      },
+      "court_sale": true,
+      "expected": []
+    }
+  ]
+}

@@ -19,6 +19,12 @@ export type InformationAgentLegalFooter = {
   saleReference?: string | null;
   /** Where the recipient's address came from (art. 14(2)(f)): type, link and date. */
   addressOrigin: string;
+  /**
+   * Message à un greffe (greffe de secours) : plafond quotidien par tribunal réellement appliqué
+   * (`INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP`). Sa présence choisit la variante « greffe » du pied
+   * (fréquence, catégories de données) ; les professionnels gardent le pied à 30 jours.
+   */
+  courtRegistryDailyCap?: number | null;
   /** Public page where the address was found (listing, directory or firm page). */
   addressOriginUrl?: string | null;
   /** Adresse retrouvée par l'outil de recherche automatisé : le pied le dit. */
@@ -58,7 +64,9 @@ export function informationAgentControllerIdentity(
  * - `other_listing` : une autre annonce du même professionnel ;
  * - `firm_website` : le site du cabinet ou de l'étude ;
  * - `official_directory` : un annuaire officiel, désigné par son nom ;
- * - `admin_entry` : saisie d'un administrateur, d'après une page publique.
+ * - `admin_entry` : saisie d'un administrateur, d'après une page publique ;
+ * - `court_registry_fallback` : adresse du greffe de la juridiction, reprise du référentiel des
+ *   tribunaux d'Immojudis, quand l'annonce ne donne aucune adresse d'avocat ou de cabinet.
  */
 export const INFORMATION_AGENT_ADDRESS_SOURCE_KINDS = [
   "sale_listing",
@@ -66,6 +74,7 @@ export const INFORMATION_AGENT_ADDRESS_SOURCE_KINDS = [
   "firm_website",
   "official_directory",
   "admin_entry",
+  "court_registry_fallback",
 ] as const;
 
 export type InformationAgentAddressSourceKind =
@@ -108,6 +117,8 @@ export type InformationAgentAddressOrigin = {
   automated: boolean;
   /** Type de source quand l'adresse a été retrouvée par l'outil (absent sinon). */
   searchSource?: InformationAgentAddressSourceKind;
+  /** Vrai pour l'adresse d'un greffe (référentiel des tribunaux) : variante « greffe » du pied et repère « Greffe ». */
+  courtRegistry?: boolean;
 };
 
 /** Date de relevé au format JJ/MM/AAAA, à l'heure de Paris ; null si la date est absente. */
@@ -172,7 +183,12 @@ function originForKind({
   const link = url ? ` (${url})` : "";
   const consulted = (feminine: boolean) =>
     observedOn ? `, ${feminine ? "consultée" : "consulté"} le ${observedOn}` : "";
-  const automated = observedBy === "agent" && kind !== "sale_listing" && kind !== "admin_entry";
+  // Le greffe est repris du référentiel des tribunaux : ni page consultée, ni recherche automatique.
+  const automated =
+    observedBy === "agent" &&
+    kind !== "sale_listing" &&
+    kind !== "admin_entry" &&
+    kind !== "court_registry_fallback";
 
   switch (kind) {
     case "sale_listing":
@@ -212,6 +228,15 @@ function originForKind({
         url,
         automated,
       };
+    case "court_registry_fallback": {
+      const court = sourceName?.trim();
+      return {
+        text: `Adresse de contact publique de votre juridiction${court ? ` (${court})` : ""}, issue du référentiel des tribunaux tenu par Immojudis${observedOn ? `, relevée le ${observedOn}` : ""} ; l’annonce ne donne aucune adresse d’avocat.`,
+        url: null,
+        automated,
+        courtRegistry: true,
+      };
+    }
     case "admin_entry":
       return {
         text: `Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique${
@@ -247,16 +272,24 @@ export function informationAgentLegalFooterSections(
 ): InformationAgentFooterSection[] {
   const sale = footer.saleReference?.trim();
   const controller = `${footer.controllerName}, ${footer.controllerAddress} — ${footer.contactEmail}`;
+  const court = typeof footer.courtRegistryDailyCap === "number";
+  const purpose = court
+    ? informationAgentCourtRegistryPurposeStatement(footer.courtRegistryDailyCap as number)
+    : INFORMATION_AGENT_PURPOSE_STATEMENT;
   const sections: InformationAgentFooterSection[] = [
     {
       label: "Pourquoi ce message ?",
       text: `Immojudis vous écrit à titre professionnel pour vérifier des informations sur ${
         sale ? `la vente ${sale}` : "cette vente"
-      }. ${INFORMATION_AGENT_NO_OFFER_STATEMENT} ${INFORMATION_AGENT_PURPOSE_STATEMENT} Responsable de traitement : ${controller}.`,
+      }. ${INFORMATION_AGENT_NO_OFFER_STATEMENT} ${purpose} Responsable de traitement : ${controller}.`,
     },
     {
       label: "Vos données :",
-      text: `${INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT} Origine : ${footer.addressOrigin}`,
+      text: `${
+        court
+          ? INFORMATION_AGENT_COURT_REGISTRY_DATA_CATEGORIES_STATEMENT
+          : INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT
+      } Origine : ${footer.addressOrigin}`,
     },
   ];
   if (footer.automatedSearch) {
@@ -300,6 +333,19 @@ export const INFORMATION_AGENT_NO_OFFER_STATEMENT =
  */
 export const INFORMATION_AGENT_PURPOSE_STATEMENT =
   "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance.";
+
+/**
+ * Finalité et fréquence d'un message à un greffe (greffe de secours) : une fois par vente et, pour un même
+ * tribunal, au plus `dailyCap` messages par jour (valeur réellement appliquée, jamais écrite en dur). Le
+ * délai de 30 jours par adresse ne s'applique pas à ces messages ; les professionnels gardent le leur.
+ */
+export function informationAgentCourtRegistryPurposeStatement(dailyCap: number): string {
+  return `Base : intérêt légitime à obtenir des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous écrivons au plus une fois par vente et, pour un même tribunal, au plus ${dailyCap} message${dailyCap > 1 ? "s" : ""} par jour, sans relance.`;
+}
+
+/** Catégories de données d'un message à un greffe : adresse de service, puis la personne qui répond. */
+export const INFORMATION_AGENT_COURT_REGISTRY_DATA_CATEGORIES_STATEMENT =
+  "l’adresse de contact de votre greffe et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.";
 
 /** Catégories de données (art. 14(1)(d) RGPD). */
 export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =
