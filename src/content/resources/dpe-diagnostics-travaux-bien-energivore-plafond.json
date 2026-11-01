@@ -1,0 +1,183 @@
+{
+  "slug": "dpe-diagnostics-travaux-bien-energivore-plafond",
+  "publishedAt": "2026-10-31",
+  "title": "DPE, diagnostics et travaux : ce qu’un bien énergivore change à votre plafond",
+  "seoTitle": "DPE et travaux : ce qui change votre plafond",
+  "category": "Méthode",
+  "description": "Où trouver le DPE d’un bien vendu aux enchères, le calendrier des interdictions de location et la façon d’intégrer les travaux énergétiques à votre enchère plafond.",
+  "seoDescription": "DPE d’un bien aux enchères : où le lire, calendrier des interdictions de location (G, F, E) et effet des travaux énergétiques sur votre enchère plafond.",
+  "directAnswer": "Un mauvais DPE (diagnostic de performance énergétique) ne vous interdit ni d’acheter, ni d’habiter, ni de revendre, mais il peut vous interdire de louer sans travaux : les logements classés G ne peuvent plus être loués depuis 2025, les F le seront à partir de 2028 et les E à partir de 2034 (baux signés, renouvelés ou reconduits). Le coût des travaux et le temps de vacance réduisent d’autant votre enchère plafond, à quelques frais proportionnels au prix près. Lisez donc le DPE dans le dossier de la vente avant de fixer votre limite.",
+  "intro": [
+    "Dans une vente aux enchères, vous achetez le bien en l’état. Si son DPE est mauvais, les travaux de rénovation énergétique sont à votre charge, et ils peuvent conditionner l’usage que vous en ferez, surtout si vous voulez le louer. Cet article indique où trouver le diagnostic, ce que dit le calendrier des interdictions de location, et comment intégrer les travaux à votre enchère plafond, c’est-à-dire la limite que vous vous interdisez de dépasser.",
+    "Le DPE (diagnostic de performance énergétique) classe un logement de A (très performant) à G (très peu performant). Les dates et seuils cités ont été relus le 31 octobre 2026 sur service-public.gouv.fr et Légifrance. Ils ont déjà évolué plusieurs fois : vérifiez la version en vigueur à la date de votre bail ou de votre achat. Cet article ne donne pas de conseil personnalisé."
+  ],
+  "takeaways": [
+    "Le DPE fait partie du dossier de diagnostic technique, annexé au cahier des conditions de vente en cas de vente publique (art. L. 271-4 du Code de la construction et de l’habitation).",
+    "Le calendrier d’interdiction ne concerne que la location : G depuis 2025, F à partir de 2028, E à partir de 2034, pour les baux signés, renouvelés ou reconduits.",
+    "Les travaux et la durée du chantier réduisent votre enchère plafond ; chiffrez-les avec des devis, pas avec un pourcentage de valeur.",
+    "En copropriété, les travaux des parties communes se décident en assemblée générale : vous ne les maîtrisez pas.",
+    "Un DPE se lit avec sa date : il est valable 10 ans et sa méthode de calcul doit évoluer au 1er janvier 2027."
+  ],
+  "sections": [
+    {
+      "id": "lire-le-dpe",
+      "title": "Où lire le DPE d’un bien vendu aux enchères",
+      "paragraphs": [
+        "En cas de vente publique, le dossier de diagnostic technique est annexé au cahier des conditions de vente, le document qui décrit le bien et fixe les règles de la vente (art. L. 271-4 du Code de la construction et de l’habitation). Il réunit les diagnostics exigés pour le bien : DPE, amiante, plomb, électricité, gaz, état des risques, selon le cas. Cherchez la page du DPE dans les pièces de la vente, avec la date de réalisation et l’étiquette énergie.",
+        "Un DPE est valable 10 ans. Selon Service-Public, les DPE réalisés entre le 1er janvier 2018 et le 30 juin 2021 ne sont plus valables depuis le 1er janvier 2025 : un diagnostic ancien dans le dossier doit vous alerter. Pour une maison ou un immeuble de plusieurs logements classés E, F ou G appartenant à un même propriétaire, un audit énergétique, une étude des travaux nécessaires pour gagner des classes, est aussi exigé lors d’une vente. Demandez à votre avocat s’il figure au dossier de votre vente et ce qu’il en est en vente forcée.",
+        "Service-Public annonce une évolution de la méthode de calcul du DPE au 1er janvier 2027 (arrêtés du 11 juin 2026 et du 19 août 2026), notamment pour les logements chauffés à l’électricité, dont l’étiquette peut s’améliorer. Une étiquette lue aujourd’hui n’est donc pas définitive : relisez-la si vous envisagez de louer plus tard."
+      ],
+      "links": [
+        {
+          "label": "Lire le cahier et préparer la visite",
+          "href": "/ressources/lire-cahier-conditions-vente-preparer-visite"
+        }
+      ]
+    },
+    {
+      "id": "calendrier",
+      "title": "Le calendrier des interdictions de location",
+      "paragraphs": [
+        "Un logement doit être décent pour être loué, et la décence comprend un niveau minimal de performance énergétique. Le tableau reprend le calendrier de Service-Public pour la France métropolitaine. Il s’applique aux baux signés, renouvelés ou reconduits tacitement pendant la période, pour un logement loué comme résidence principale."
+      ],
+      "table": {
+        "headers": [
+          "Bail signé, renouvelé ou reconduit",
+          "Exigence de performance",
+          "Logements concernés"
+        ],
+        "rows": [
+          [
+            "En 2023 et 2024",
+            "Consommation inférieure à 450 kWh d’énergie finale par m² et par an",
+            "Les logements qui dépassent ce seuil ne peuvent plus être loués"
+          ],
+          ["De 2025 à 2027", "Classe A à F", "Les logements classés G ne peuvent plus être loués"],
+          ["De 2028 à 2033", "Classe A à E", "Les logements classés F ne peuvent plus être loués"],
+          ["À partir de 2034", "Classe A à D", "Les logements classés E ne peuvent plus être loués"]
+        ]
+      },
+      "bullets": [
+        "Outre-mer (Guadeloupe, Guyane, Martinique, La Réunion, Mayotte) : classes A à E pour les baux signés, renouvelés ou reconduits à partir de 2028.",
+        "Pour les logements classés F ou G, la révision du loyer en cours de bail et la majoration exceptionnelle sont interdites depuis le 24 août 2022 en métropole (Service-Public).",
+        "Si le logement ne respecte pas le niveau exigé, le locataire peut mettre le propriétaire en demeure par lettre recommandée. Après deux mois sans réponse ou en cas de désaccord, il peut saisir le juge des contentieux de la protection, qui peut fixer les travaux et leur délai, réduire le loyer ou suspendre son paiement.",
+        "Le calendrier concerne la location. Il n’interdit pas d’acheter un bien classé F ou G, de l’habiter ou de le revendre."
+      ]
+    },
+    {
+      "id": "impact-plafond",
+      "title": "Ce que cela change à votre enchère plafond",
+      "paragraphs": [
+        "Le raisonnement est celui du coût complet : à partir de la valeur de marché, vous retirez votre marge de sécurité, puis les frais de la vente, les travaux et le portage (les coûts supportés tant que le bien ne rapporte rien). Un bien énergivore ajoute trois lignes à ce calcul, qu’il faut chiffrer séparément.",
+        "Les travaux d’abord. Demandez un audit énergétique et des devis à des professionnels, ou rapprochez-vous de France Rénov’, le service public de la rénovation énergétique. Immojudis ne chiffre pas la rénovation énergétique d’un bien précis, et un pourcentage de la valeur ne remplace pas un devis. Ensuite la durée du chantier : pendant les travaux, le bien ne rapporte rien et vous supportez les intérêts, la taxe foncière et les charges. Enfin les aides : leurs conditions changent souvent, et elles ne doivent entrer dans votre budget que si elles sont confirmées par écrit avant l’audience.",
+        "L’effet est simple à lire. Si le devis de travaux augmente de 30 000 € (exemple fictif), votre enchère plafond baisse d’un peu moins de 30 000 € : le montant des frais proportionnels au prix diminue avec lui. L’article « Frais d’une vente aux enchères judiciaire » donne l’ordre de grandeur de ces frais. Le simulateur Immojudis permet d’ajuster le poste « Travaux » et de voir le plafond bouger."
+      ],
+      "callout": {
+        "title": "Un plafond conditionnel si le DPE est incertain",
+        "text": "Si le diagnostic est absent, ancien ou contradictoire, calculez deux plafonds : l’un avec les travaux nécessaires pour sortir de la classe interdite, l’autre sans. Confrontez-les à votre projet (habiter, louer, revendre) avant l’audience, pas dans la salle."
+      },
+      "links": [
+        {
+          "label": "Fixer son enchère plafond",
+          "href": "/ressources/prix-plafond-encheres-immobilieres"
+        },
+        {
+          "label": "Simuler les frais",
+          "href": "/simulateur-frais-encheres"
+        }
+      ]
+    },
+    {
+      "id": "selon-le-projet",
+      "title": "Selon votre projet : habiter, louer, revendre",
+      "paragraphs": ["Le même DPE n’a pas le même poids selon l’usage que vous prévoyez."],
+      "table": {
+        "headers": ["Projet", "Ce que le DPE change", "Question à poser"],
+        "rows": [
+          [
+            "Habiter",
+            "Aucune interdiction. Le DPE renseigne sur la consommation d’énergie et le confort, donc sur le budget de travaux et de chauffage.",
+            "Quels travaux vais-je faire, dans quel ordre, avec quelles aides confirmées ?"
+          ],
+          [
+            "Louer",
+            "Le calendrier s’applique à chaque bail signé, renouvelé ou reconduit. Un bien classé G ne peut plus être loué depuis 2025 sans travaux, un bien classé F ne le pourra plus en 2028.",
+            "À quelle date signerai-je le bail, et les travaux seront-ils terminés ?"
+          ],
+          [
+            "Revendre",
+            "Le DPE doit figurer au dossier de vente remis à l’acquéreur, et un audit énergétique peut être exigé pour une maison ou un immeuble classé E, F ou G.",
+            "Le diagnostic sera-t-il encore valable à la revente ?"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "copropriete",
+      "title": "En copropriété : les travaux ne vous appartiennent pas seuls",
+      "paragraphs": [
+        "Si le bien est un lot de copropriété, les travaux de chauffage collectif, d’isolation de façade ou de toiture se décident en assemblée générale des copropriétaires, et la quote-part de chaque lot est répartie selon ses tantièmes. Vous ne maîtrisez ni le calendrier, ni le montant, et vous ne pouvez pas les imposer à la copropriété.",
+        "Pour un bail signé en 2023 ou 2024, Service-Public indique que le juge ne peut pas imposer le seuil de consommation si le propriétaire démontre que la copropriété n’a pas voté ou réalisé les travaux nécessaires dans les parties communes. Cette limite ne vise pas les baux conclus à partir de 2025. Dans tous les cas, lisez les procès-verbaux d’assemblée générale et demandez les travaux votés ou envisagés."
+      ],
+      "links": [
+        {
+          "label": "Charges et assemblées de copropriété",
+          "href": "/ressources/copropriete-encheres-charges-assemblees"
+        }
+      ]
+    },
+    {
+      "id": "checklist",
+      "title": "Votre liste de contrôle",
+      "paragraphs": [],
+      "bullets": [
+        "Trouver le DPE dans le dossier de diagnostic technique du cahier des conditions de vente, avec sa date et son étiquette.",
+        "Vérifier qu’un DPE ancien (réalisé avant le 1er juillet 2021) n’est pas périmé.",
+        "Savoir si un audit énergétique figure au dossier.",
+        "Situer le projet (habiter, louer, revendre) sur le calendrier des interdictions de location.",
+        "Obtenir des devis de travaux plutôt qu’un pourcentage, et ne compter les aides que si elles sont confirmées.",
+        "Calculer le plafond avec et sans travaux si le diagnostic est incertain."
+      ]
+    }
+  ],
+  "faq": [
+    {
+      "question": "Peut-on acheter aux enchères un bien classé F ou G ?",
+      "answer": "Oui : le calendrier d’interdiction ne concerne que la location. Un logement classé G ne peut plus être loué depuis 2025 sans travaux, un logement classé F ne pourra plus l’être à partir de 2028 (baux signés, renouvelés ou reconduits). Il reste possible de l’acheter, de l’habiter ou de le revendre."
+    },
+    {
+      "question": "Où trouver le DPE d’un bien vendu aux enchères ?",
+      "answer": "Dans le dossier de diagnostic technique annexé au cahier des conditions de vente en cas de vente publique (art. L. 271-4 du Code de la construction et de l’habitation). Vérifiez la date du diagnostic : il est valable 10 ans."
+    },
+    {
+      "question": "Les travaux de rénovation énergétique se déduisent-ils de l’enchère plafond ?",
+      "answer": "Ils se retranchent du budget que vous pouvez consacrer au bien, avec la durée du chantier et les frais de la vente. Chiffrez-les avec des devis et ne comptez les aides que si elles sont confirmées par écrit."
+    }
+  ],
+  "sources": [
+    {
+      "label": "Service-Public — Diagnostic de performance énergétique (DPE) : validité, vente, audit énergétique, évolutions du 1er janvier 2027",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16096"
+    },
+    {
+      "label": "Service-Public — Logement décent : calendrier des seuils de performance énergétique des baux (page vérifiée le 21 mars 2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2042"
+    },
+    {
+      "label": "Service-Public — Gel des loyers des logements classés F et G (révision et majoration exceptionnelle)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F1311"
+    },
+    {
+      "label": "Légifrance — Code de la construction et de l’habitation, article L. 271-4 (dossier de diagnostic technique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049398848"
+    },
+    {
+      "label": "France Rénov’ — Le service public de la rénovation énergétique",
+      "url": "https://france-renov.gouv.fr/"
+    },
+    {
+      "label": "Immojudis — Simulateur de frais d’enchères",
+      "url": "/simulateur-frais-encheres"
+    }
+  ]
+}

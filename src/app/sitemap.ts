@@ -55,6 +55,7 @@ const PUBLIC_ROUTES = [
   ["/legal", "2026-10-26"],
   ["/conditions-generales", "2026-10-26"],
   ["/privacy", "2026-10-21"],
+  ["/accessibilite", "2026-10-31"],
 ] as const;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

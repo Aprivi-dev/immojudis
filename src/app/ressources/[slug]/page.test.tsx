@@ -15,6 +15,7 @@ vi.mock("@/lib/resource-articles", async () => {
   };
 });
 
+import { getResourceArticle } from "@/lib/resource-articles";
 import Page, { generateMetadata } from "./page";
 
 const SLUG = "frais-vente-encheres-judiciaire";
@@ -125,5 +126,73 @@ describe("article page", () => {
     });
     expect(graph[1]["@type"]).toBe("BreadcrumbList");
     expect(graph[1].itemListElement).toHaveLength(3);
+  });
+  it("affiche la réponse directe en tête, puis une FAQ visible reprise à l'identique dans le FAQPage", async () => {
+    const html = renderToStaticMarkup(await Page({ params }));
+    const article = getResourceArticle(SLUG)!;
+    expect(html).toContain("La réponse en bref");
+    expect(html.indexOf("La réponse en bref")).toBeLessThan(html.indexOf("L’essentiel à retenir"));
+    expect(html).toContain('<a href="#questions-frequentes">Questions fréquentes</a>');
+
+    const faqPage = structuredData(html)["@graph"].find(
+      (node: { "@type": string }) => node["@type"] === "FAQPage",
+    );
+    expect(faqPage.mainEntity).toHaveLength(article.faq!.length);
+    const visible = html.replaceAll("&#x27;", "’").replaceAll("&quot;", '"');
+    for (const [index, item] of article.faq!.entries()) {
+      const node = faqPage.mainEntity[index];
+      expect(node["@type"]).toBe("Question");
+      expect(node.name).toBe(item.question);
+      expect(node.acceptedAnswer).toEqual({ "@type": "Answer", text: item.answer });
+      // Chaque question et chaque réponse du balisage figure telle quelle dans le texte visible.
+      expect(visible).toContain(`<h3>${item.question}</h3>`);
+      expect(visible).toContain(`<p>${item.answer}</p>`);
+    }
+  });
+
+  it("n'ajoute ni FAQ ni FAQPage à un article qui n'en a pas", async () => {
+    mocks.override = { faq: undefined, directAnswer: undefined };
+    const html = renderToStaticMarkup(await Page({ params }));
+    expect(html).not.toContain("Questions fréquentes");
+    expect(html).not.toContain("La réponse en bref");
+    const types = structuredData(html)["@graph"].map((node: { "@type": string }) => node["@type"]);
+    expect(types).toEqual(["BlogPosting", "BreadcrumbList"]);
+  });
+
+  it("affiche le lien vers le simulateur sous l'exemple chiffré", async () => {
+    const html = renderToStaticMarkup(await Page({ params }));
+    expect(html).toContain('href="/simulateur-frais-encheres"');
+  });
+
+  it("n'annonce aucun auteur nommé : la rédaction Immojudis", async () => {
+    const html = renderToStaticMarkup(await Page({ params }));
+    expect(html).toContain("Par la rédaction Immojudis");
+    expect(structuredData(html)["@graph"][0].author).toMatchObject({
+      "@type": "Organization",
+      name: "Immojudis",
+    });
+  });
+  it("rend le glossaire en liste de définitions avec lien vers l'article détaillé et source", async () => {
+    const glossary = Promise.resolve({ slug: "glossaire-encheres-immobilieres" });
+    const html = renderToStaticMarkup(await Page({ params: glossary }));
+    expect(html).toContain("<dl");
+    expect(html).toContain("<dt>Adjudication</dt>");
+    expect(html).toContain("Pour approfondir");
+    expect(html).toContain("Source : ");
+    expect(html).toContain('href="/ressources/jour-audience-encheres-role-avocat"');
+    expect(html).not.toContain("Questions fréquentes");
+  });
+
+  it("rend les trois nouveaux articles sans erreur, avec FAQPage pour la fiscalité et le DPE", async () => {
+    for (const slug of [
+      "fiscalite-achat-encheres-occuper-louer-revendre",
+      "dpe-diagnostics-travaux-bien-energivore-plafond",
+    ]) {
+      const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ slug }) }));
+      const types = structuredData(html)["@graph"].map(
+        (node: { "@type": string }) => node["@type"],
+      );
+      expect(types, slug).toEqual(["BlogPosting", "BreadcrumbList", "FAQPage"]);
+    }
   });
 });

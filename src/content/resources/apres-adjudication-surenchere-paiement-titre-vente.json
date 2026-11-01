@@ -1,7 +1,7 @@
 {
   "slug": "apres-adjudication-surenchere-paiement-titre-vente",
   "publishedAt": "2026-10-13",
-  "updatedAt": "2026-10-23",
+  "updatedAt": "2026-10-31",
   "title": "Après l’adjudication : surenchère, paiement, consignation et titre de vente",
   "seoTitle": "Après l’adjudication : surenchère et paiement",
   "category": "Les fondamentaux",
@@ -182,6 +182,29 @@
     {
       "label": "Légifrance — Code des procédures civiles d’exécution, articles L. 411-1, L. 412-1 et L. 412-6 (expulsion)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028808273"
+    }
+  ],
+  "directAnswer": "Après une adjudication au tribunal, toute personne peut surenchérir d’au moins un dixième du prix principal pendant dix jours : l’achat n’est définitif qu’à l’issue de ce délai (art. R. 322-50 et R. 322-51 du Code des procédures civiles d’exécution). L’adjudicataire doit ensuite payer le prix et les frais dans les deux mois de l’adjudication définitive, faute de quoi le bien est remis en vente. Ces règles valent pour la saisie immobilière ; pour une vente notariale ou domaniale, le cahier des charges fait foi.",
+  "faq": [
+    {
+      "question": "Qu’est-ce qu’une surenchère du dixième ?",
+      "answer": "C’est une offre supérieure d’au moins un dixième du prix principal, faite après l’adjudication par un acte d’avocat déposé au greffe du juge de l’exécution, avec une caution bancaire irrévocable ou un chèque de banque du dixième du prix principal (art. R. 322-50 et R. 322-51). Elle ne peut pas être rétractée."
+    },
+    {
+      "question": "Quand le délai de dix jours se termine-t-il ?",
+      "answer": "Les dix jours se comptent à partir du lendemain de l’adjudication, week-ends et jours fériés compris (art. 641 du Code de procédure civile). S’ils expirent un samedi, un dimanche ou un jour férié, le délai est prorogé au premier jour ouvrable suivant (art. 642)."
+    },
+    {
+      "question": "De combien de temps dispose-t-on pour payer après l’adjudication ?",
+      "answer": "De deux mois à compter de l’adjudication définitive pour verser ou consigner le prix et justifier du paiement des frais taxés et des droits de mutation. Passé ce délai, le prix porte intérêts au taux légal et le bien peut être remis en vente (art. R. 322-56 et R. 322-58)."
+    },
+    {
+      "question": "Que se passe-t-il si l’adjudicataire ne paie pas ?",
+      "answer": "La vente est résolue de plein droit. L’adjudicataire défaillant doit la différence entre son enchère et le prix de la revente si celui-ci est moindre, et sa garantie est acquise aux créanciers (art. L. 322-12 et R. 322-41)."
+    },
+    {
+      "question": "Existe-t-il une surenchère après une vente chez le notaire ?",
+      "answer": "Pas par la loi pour une vente notariale volontaire, sauf la surenchère des créanciers inscrits lorsque l’acquéreur purge les hypothèques (art. 2464 et 2465 du Code civil). Une surenchère de 10 % en 10 jours ne peut venir que du cahier des charges : lisez-le avant d’enchérir."
     }
   ]
 }
