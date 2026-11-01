@@ -69,6 +69,15 @@ const processingRows = [
       "Consentement et date de retrait : tant que le compte existe ; journal d’envoi : 180 jours après sa création, puis suppression à la purge hebdomadaire (au plus 187 jours environ), selon la matrice de conservation",
   },
   {
+    purpose: "Journal des emails envoyés par Immojudis",
+    data: "Pour chaque email envoyé par Immojudis (alertes, rappels, messages liés au compte, au paiement, à une demande de droits ou à une mise en relation, échanges avec des professionnels) : date d’envoi, adresse du destinataire, objet, type de message, lien avec votre compte le cas échéant et état de la remise indiqué par notre prestataire d’envoi (envoyé, remis, différé, rebond, plainte, échec). Le contenu du message n’est pas conservé dans ce journal.",
+    basis:
+      "Intérêt légitime : contrôler la bonne remise des messages, répondre à vos questions sur un email reçu ou non reçu, détecter les abus et prouver l’envoi. Vous pouvez vous opposer pour des raisons tenant à votre situation en écrivant à",
+    basisEndsWithContact: true,
+    retention:
+      "90 jours après l’envoi (suppression à la purge hebdomadaire, soit 97 jours au plus) ; suppression avec le compte. Notre prestataire d’envoi conserve de son côté le contenu des messages et ses propres journaux 30 jours.",
+  },
+  {
     purpose: "Ventes passées suivies",
     data: "Résumé d’une vente suivie dont l’audience est passée : titre, commune (avec département et code postal), tribunal, type de bien, mise à prix, date d’audience, nom de l’avocat tel qu’il est publié, résultat connu, et votre statut et votre enchère plafond enregistrés",
     basis:
@@ -250,7 +259,12 @@ export function PrivacyPage({
                     <tr key={row.purpose} className="border-b border-white/10 align-top">
                       <td className="px-2 py-3 font-semibold text-foreground">{row.purpose}</td>
                       <td className="px-2 py-3">{row.data}</td>
-                      <td className="px-2 py-3">{row.basis}</td>
+                      <td className="px-2 py-3">
+                        {row.basis}
+                        {"basisEndsWithContact" in row ? (
+                          <> {legalValue(publisher.contactEmail)}.</>
+                        ) : null}
+                      </td>
                       <td className="px-2 py-3">{row.retention}</td>
                     </tr>
                   ))}
@@ -301,6 +315,10 @@ export function PrivacyPage({
               légitime. Conservation : 12 mois si nous vous avions écrit, 21 jours sinon. Droits et
               opposition : {legalValue(publisher.contactEmail)}.
             </p>
+            <p className="mt-3">
+              L’adresse à laquelle nous écrivons et l’objet du message figurent aussi dans le
+              journal des emails (90 jours).
+            </p>
           </PrivacySection>
 
           <PrivacySection title="Personnes citées dans une annonce">
@@ -341,6 +359,14 @@ export function PrivacyPage({
               administrateur. Dans ce dernier cas, seules les informations nécessaires à
               l’enrichissement du dossier et au suivi de la réponse sont transmises. Les
               prestataires agissent dans la limite de leurs missions contractuelles.
+            </p>
+            <p className="mt-3">
+              Resend envoie et reçoit nos courriels. Il conserve le contenu des messages et les
+              journaux de remise 30 jours, aux États-Unis, sous le cadre des clauses contractuelles
+              types et du cadre de protection des données UE–États-Unis. Seuls les administrateurs
+              habilités d’Immojudis consultent le journal et, pour résoudre un problème de remise ou
+              répondre à une demande, le contenu d’un message encore conservé par le prestataire.
+              Ces consultations sont tracées pendant 6 mois, sans le contenu ni l’adresse.
             </p>
             <p className="mt-3">
               Les coordonnées géographiques d’une vente (et non celles d’une personne) sont aussi
@@ -456,10 +482,11 @@ export function PrivacyPage({
           <PrivacySection title="Effacement du compte et exceptions">
             <p>
               La suppression du compte entraîne la suppression en cascade des favoris, alertes,
-              rapports, notes et principaux espaces personnels. Les données strictement nécessaires
-              à une obligation comptable, à la preuve d’un contrat, au traitement d’une demande ou à
-              la défense d’un droit sont isolées et conservées jusqu’à l’expiration de leur durée,
-              puis purgées automatiquement.
+              rapports, notes, journal des emails liés à votre compte et principaux espaces
+              personnels. Les données strictement nécessaires à une obligation comptable, à la
+              preuve d’un contrat, au traitement d’une demande ou à la défense d’un droit sont
+              isolées et conservées jusqu’à l’expiration de leur durée, puis purgées
+              automatiquement.
             </p>
           </PrivacySection>
         </div>

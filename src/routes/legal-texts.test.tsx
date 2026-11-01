@@ -199,14 +199,15 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-01.2 (messages sans dossier ouvert) ; les 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.2");
+  it("la politique de confidentialité est en version 2026-11-01.3 (journal des emails) ; les 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.3");
     expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("1er novembre 2026");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.2");
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-01.1",
       "2026-10-31.1",
       "2026-10-26.1",
       "2026-10-25.1",
@@ -457,6 +458,29 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "Si vous écrivez à l’adresse de réponse d’Immojudis sans qu’un dossier soit ouvert, nous conservons votre adresse, votre nom, l’objet, la date et un extrait de votre message, pour le lire et vous répondre ou enregistrer votre demande. Base : intérêt légitime. Conservation : 12 mois si nous vous avions écrit, 21 jours sinon. Droits et opposition : ",
     );
+  });
+
+  it("décrit le journal des emails : intérêt légitime, 90 jours (97 au plus), prestataire à 30 jours, consultations tracées", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Journal des emails envoyés par Immojudis");
+    expect(text).toContain("Le contenu du message n’est pas conservé dans ce journal.");
+    expect(text).toContain(
+      "Intérêt légitime : contrôler la bonne remise des messages, répondre à vos questions sur un email reçu ou non reçu, détecter les abus et prouver l’envoi.",
+    );
+    expect(text).toContain(
+      "90 jours après l’envoi (suppression à la purge hebdomadaire, soit 97 jours au plus)",
+    );
+    expect(text).toContain(
+      "Notre prestataire d’envoi conserve de son côté le contenu des messages et ses propres journaux 30 jours.",
+    );
+    expect(text).toContain(
+      "Resend envoie et reçoit nos courriels. Il conserve le contenu des messages et les journaux de remise 30 jours, aux États-Unis",
+    );
+    expect(text).toContain(
+      "Ces consultations sont tracées pendant 6 mois, sans le contenu ni l’adresse.",
+    );
+    expect(text).toContain("figurent aussi dans le journal des emails (90 jours).");
+    expect(text).toContain("journal des emails liés à votre compte");
   });
 
   it("décrit le traitement des déblocages : base contractuelle et conservation de 24 mois au plus", () => {
@@ -710,7 +734,12 @@ describe("politique de confidentialité", () => {
     expect(text).toContain(
       "Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à contact@immojudis.example ; aucun compte n’est nécessaire.",
     );
-    expect(text).not.toContain("clauses contractuelles types");
+    // Seul le paragraphe sur Resend (avis juridique du 01/11/2026) cite les clauses contractuelles types ;
+    // aucun autre prestataire n'est présenté comme couvert par un mécanisme que nous n'avons pas vérifié.
+    expect(text.split("clauses contractuelles types")).toHaveLength(2);
+    expect(text).toContain(
+      "journaux de remise 30 jours, aux États-Unis, sous le cadre des clauses contractuelles types",
+    );
     expect(text).not.toContain("décision d’adéquation");
   });
 
