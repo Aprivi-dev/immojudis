@@ -1,7 +1,7 @@
 {
   "slug": "ventes-notariales-domaniales-differences-tribunal",
   "publishedAt": "2026-10-13",
-  "updatedAt": "2026-10-28",
+  "updatedAt": "2026-10-31",
   "title": "Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal",
   "seoTitle": "Ventes notariales et domaniales : différences",
   "category": "Les fondamentaux",
@@ -298,6 +298,25 @@
     {
       "label": "Immojudis — Comment repérons-nous les pépites ? (critères du repère « Pépite », dont la mention « prix de réserve inconnu »)",
       "url": "/methode-pepites"
+    }
+  ],
+  "directAnswer": "Trois organisateurs, trois régimes : le tribunal (saisie immobilière, soumise au Code des procédures civiles d’exécution, avec un avocat obligatoire), le notaire (vente à la bougie avec adjudication, ou vente interactive par offres et avant-contrat) et l’État (vente domaniale). La garantie de 10 % de la mise à prix, la surenchère du dixième et le délai de paiement sont imposés par la loi au tribunal ; ailleurs, le cahier des conditions de vente ou des charges fait foi.",
+  "faq": [
+    {
+      "question": "Faut-il un avocat pour enchérir chez le notaire ou dans une vente de l’État ?",
+      "answer": "L’avocat est obligatoire en saisie immobilière au tribunal (art. R. 322-40 du Code des procédures civiles d’exécution). Nous n’avons pas relevé cette obligation pour les ventes notariales volontaires ni domaniales dans les textes consultés ; dans une licitation reçue par un notaire, les enchères peuvent être faites sans avocat (art. 1278 du Code de procédure civile). Le cahier fait foi."
+    },
+    {
+      "question": "La garantie de 10 % s’applique-t-elle partout ?",
+      "answer": "Non. Le chèque de banque ou la caution de 10 % de la mise à prix, minimum 3 000 €, est imposé par le Code en saisie immobilière (art. R. 322-41). Ailleurs, le cahier la fixe : pour la vente à la bougie, Notaires de France cite un chèque de consignation de 20 % de la mise à prix."
+    },
+    {
+      "question": "Quelle différence entre une vente à la bougie et une vente interactive ?",
+      "answer": "La vente à la bougie est une vraie vente aux enchères en salle : le notaire prononce l’adjudication. La vente interactive en ligne fonctionne par offres pendant une durée limitée, puis l’acheteur retenu signe un avant-contrat, sans adjudication."
+    },
+    {
+      "question": "Une condition suspensive de prêt est-elle possible ?",
+      "answer": "Aucune n’est prévue dans la procédure de saisie au tribunal, ni, selon Notaires de France, dans une vente à la bougie. Dans une vente interactive, l’avant-contrat peut en comporter : lisez-le avant de signer."
     }
   ]
 }

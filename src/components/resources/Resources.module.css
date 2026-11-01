@@ -513,6 +513,66 @@
   font-weight: 600;
 }
 
+.directAnswer {
+  margin-bottom: 28px;
+  padding: 22px 26px;
+  border-left: 3px solid var(--gold);
+  background: var(--secondary);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.directAnswer strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.faq h3 {
+  margin-top: 26px;
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.sectionLinks {
+  margin-top: 18px;
+  font-size: 14px;
+}
+
+.sectionLinks a,
+.glossaryList a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.glossaryList {
+  margin-block: 18px;
+}
+
+.glossaryList dt {
+  margin-top: 18px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.glossaryList dd {
+  margin: 4px 0 0;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.glossaryMeta {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
 .tableWrapper {
   overflow-x: auto;
   margin-block: 24px;
