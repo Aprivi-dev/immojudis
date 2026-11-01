@@ -1,5 +1,6 @@
 -- 20261110120300 (n° 3 et purge du n° 2) : quatre purges ajoutées à public.run_data_retention, chacune isolée.
---   * captures HTML Licitor : 90 jours après la dernière observation ;
+--   * captures HTML Licitor : 90 jours après le dernier téléchargement, sauf si une tâche en attente d'une campagne en
+--     cours (non terminée, active depuis moins de 90 jours) attend encore l'URL de la capture ;
 --   * motifs libres d'une prolongation d'essai et d'une attribution manuelle d'accès : 24 mois après la fin de la
 --     prolongation ou de l'accès (à défaut de fin, après la décision) ;
 --   * cache des analyses LLM : 180 jours.
@@ -84,7 +85,26 @@ values
   ('https://example.test/832/seen-again', repeat('b', 64), 'detail', '2026-05-01T00:00:00Z', '2026-09-03T00:00:00Z',
    '\x1f8b'::bytea),
   ('https://example.test/832/recent', repeat('c', 64), 'index', '2026-11-20T00:00:00Z', '2026-11-20T00:00:00Z',
-   '\x1f8b'::bytea);
+   '\x1f8b'::bytea),
+  -- Plus téléchargées depuis plus de 90 jours au 2026-12-01, mais pas avant le 2026-09-01 (cf. première assertion).
+  ('https://example.test/832/awaited', repeat('d', 64), 'detail', '2026-05-01T00:00:00Z', '2026-08-15T00:00:00Z',
+   '\x1f8b'::bytea),
+  ('https://example.test/832/task-done', repeat('e', 64), 'detail', '2026-05-01T00:00:00Z', '2026-08-15T00:00:00Z',
+   '\x1f8b'::bytea),
+  ('https://example.test/832/abandoned-run', repeat('f', 64), 'detail', '2026-05-01T00:00:00Z',
+   '2026-08-15T00:00:00Z', '\x1f8b'::bytea);
+
+-- Campagnes : r1 en cours (active depuis le 15/11), r2 en pause et abandonnée (dernière activité le 20/08, plus de
+-- 90 jours avant la purge).
+insert into licitor_ingestion.runs (id, mode, status, max_requests, updated_at)
+values
+  ('832-run-active', 'backfill', 'running', 100, '2026-11-15T00:00:00Z'),
+  ('832-run-abandoned', 'backfill', 'paused', 100, '2026-08-20T00:00:00Z');
+insert into licitor_ingestion.tasks (run_id, task_key, kind, url, status)
+values
+  ('832-run-active', 'awaited', 'detail', 'https://example.test/832/awaited', 'pending'),
+  ('832-run-active', 'task-done', 'detail', 'https://example.test/832/task-done', 'done'),
+  ('832-run-abandoned', 'abandoned', 'detail', 'https://example.test/832/abandoned-run', 'pending');
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -137,14 +157,14 @@ select is(
 
 select is(
   (public.run_data_retention('2026-12-01T00:00:00Z'::timestamptz) ->> 'licitor_captures')::integer,
-  1,
-  'the retention report counts the capture last seen more than 90 days ago'
+  3,
+  'the retention report counts the captures not downloaded for more than 90 days that no live campaign still awaits'
 );
 
 select is(
   (select array_agg(url order by url) from licitor_ingestion.captures where url like 'https://example.test/832/%'),
-  array['https://example.test/832/recent', 'https://example.test/832/seen-again'],
-  'a capture seen again within 90 days and a recent one are kept'
+  array['https://example.test/832/awaited', 'https://example.test/832/recent', 'https://example.test/832/seen-again'],
+  'a capture downloaded again within 90 days, a recent one and one awaited by a pending task of a live campaign are kept'
 );
 
 select is(

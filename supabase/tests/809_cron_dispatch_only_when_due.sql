@@ -2,7 +2,7 @@
 -- Les dates sont placées loin dans le futur pour ne pas dépendre des passages réels de la base de test.
 begin;
 
-select plan(14);
+select plan(15);
 
 create temporary table c809_now as select timestamptz '2036-01-01 12:00:00+00' as now;
 
@@ -89,7 +89,7 @@ select ok(
 );
 
 -- 20261110120100 : un passage échoué ne compte pas comme un passage fait. Après un échec, la tâche est relancée
--- au tick suivant de pg_cron au lieu d'attendre la fin de sa fenêtre.
+-- au tick suivant de pg_cron au lieu d'attendre la fin de sa fenêtre, mais pas avant 5 minutes après la fin de l'échec.
 insert into public.operational_job_runs (job_name, status, error_message, started_at, finished_at)
 values
   ('zz-c809-failed', 'failed', 'boom', (select now from c809_now) - interval '5 minutes',
@@ -120,8 +120,18 @@ values ('sale-flood-risk', 'failed', 'Géorisques indisponible', (select now fro
   (select now from c809_now) - interval '4 minutes');
 
 select ok(
+  not app_private.cron_dispatch_due('sale-flood-risk', (select now from c809_now)),
+  'the route is not called again within 5 minutes of the end of a failed pass'
+);
+
+update public.operational_job_runs
+set started_at = (select now from c809_now) - interval '7 minutes',
+    finished_at = (select now from c809_now) - interval '6 minutes'
+where job_name = 'sale-flood-risk' and status = 'failed';
+
+select ok(
   app_private.cron_dispatch_due('sale-flood-risk', (select now from c809_now)),
-  'the flood risk check is due again at the next tick after a failed pass (not after 110 minutes)'
+  'the flood risk check is due again at the next tick once 5 minutes have passed after a failed pass (not after 110 minutes)'
 );
 
 select * from finish();

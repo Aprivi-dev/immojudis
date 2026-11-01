@@ -30,8 +30,8 @@ select ok(
 
 select is(
   app_private.cross_source_duplicate_thresholds(),
-  '{"warning_groups": 30, "critical_groups": 150}'::jsonb,
-  'the default thresholds are 30 groups (warning) and 150 groups (critical)'
+  '{"warning_groups": 100, "critical_groups": 200}'::jsonb,
+  'the default thresholds are 100 groups (warning) and 200 groups (critical)'
 );
 
 select ok(
@@ -106,7 +106,7 @@ select is(
   'the same source twice, a sale that is not visible, another price, another day or a lone sale are not groups'
 );
 
--- L'alerte : seuils par défaut (aucun groupe parasite, deux groupes d'essai < 30) --------------------------------
+-- L'alerte : seuils par défaut (aucun groupe parasite, deux groupes d'essai < 100) --------------------------------
 
 delete from public.operational_alerts;
 
@@ -115,7 +115,7 @@ select public.evaluate_operational_health('2026-11-10T10:00:00Z'::timestamptz);
 select is(
   (select count(*)::integer from public.operational_alerts where alert_key = 'catalogue.duplicates.cross_source'),
   0,
-  'under the default threshold of 30 groups, no alert is opened'
+  'under the default threshold of 100 groups, no alert is opened'
 );
 
 -- Seuils abaissés pour l'essai : avertissement à 2 groupes, critique à 4 --------------------------------------------
@@ -165,6 +165,9 @@ select ok(
 );
 
 -- Fusion : retour sous le seuil -> inactive, puis fermée deux heures plus tard ------------------------------------
+-- Le déclencheur require_outcome_bridge_before_auction_sale_delete exige le pont vers l'Outcome Graph avant toute
+-- suppression d'une vente (même méthode que 753 et 754) : le jeu d'essai (17 ventes) tient dans un lot de 25.
+do $bridge$ begin perform public.bridge_auction_sales_to_outcome_graph_batch('c832ffff-ffff-4fff-8fff-ffffffffffff'::uuid, 25); end $bridge$;
 
 delete from public.auction_sales
 where id in (

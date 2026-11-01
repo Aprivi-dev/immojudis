@@ -46,7 +46,12 @@ set local lock_timeout = '5s';
 --
 -- RETOUR ARRIÈRE, sans perte : `select app_private.set_catalogue_raw_columns_hidden(false);` (rend les trois
 -- colonnes à authenticated et restaure l'ancienne définition de la vue, sauvegardée dans
--- app_private.catalogue_view_backups). Toute migration ultérieure qui réécrit v_auction_sales_app doit garder
+-- app_private.catalogue_view_backups). Si la vue a gagné une colonne depuis le masquage, l'ancienne définition ne peut
+-- plus être restaurée (create or replace view ne retire pas de colonne) : la fonction garde alors la définition
+-- courante, prédicat de garde compris, remet security_invoker = true, retire security_barrier et répond `visible (the
+-- view kept ...)`. Le prédicat redondant peut ensuite être retiré par une migration qui réécrit la vue avec
+-- `security_invoker = true` (l'invariant du script check-security-invariants.mjs ne s'applique qu'à une vue gardée).
+-- Toute migration ultérieure qui réécrit v_auction_sales_app doit garder
 -- `security_invoker = false, security_barrier = true` et le prédicat de garde ; le script
 -- check-security-invariants.mjs le vérifie.
 create or replace function app_private.set_catalogue_raw_columns_hidden(p_hidden boolean)
@@ -123,9 +128,21 @@ begin
     if stored_definition is null then
       raise exception 'no stored definition for v_auction_sales_app; restore it manually';
     end if;
-    execute 'create or replace view public.v_auction_sales_app '
-      || 'with (security_invoker = true) as '
-      || rtrim(stored_definition, E';\n ');
+    -- La vue peut avoir gagné une colonne (ou changé un type) depuis le masquage : create or replace view refuse alors
+    -- de revenir à l'ancienne définition (42P16, « cannot drop columns from view »). Dans ce cas on garde la définition
+    -- courante, prédicat de garde compris, et on ne change que les options : security_invoker = true, sans
+    -- security_barrier. Le prédicat reste dans le WHERE ; il double la politique de lecture, qui s'applique de nouveau
+    -- à l'appelant, sans rien ouvrir de plus. Pour retirer le prédicat, réécrire la vue à la main à partir de sa
+    -- définition courante.
+    begin
+      execute 'create or replace view public.v_auction_sales_app '
+        || 'with (security_invoker = true) as '
+        || rtrim(stored_definition, E';\n ');
+    exception when invalid_table_definition then
+      alter view public.v_auction_sales_app set (security_invoker = true);
+      alter view public.v_auction_sales_app reset (security_barrier);
+      return 'visible (the view kept its current definition and its guard predicate: it changed since the masking)';
+    end;
   end if;
   return 'visible';
 end;

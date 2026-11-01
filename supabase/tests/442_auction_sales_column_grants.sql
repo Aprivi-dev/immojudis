@@ -1,6 +1,6 @@
 begin;
 
-select plan(15);
+select plan(17);
 
 select ok(
   not has_table_privilege('authenticated', 'public.auction_sales', 'select'),
@@ -138,6 +138,32 @@ select ok(
     where view_row.oid = 'public.v_auction_sales_app'::regclass
   ),
   'after the second hide the columns are closed and the view is guarded again'
+);
+
+-- The view gained a column since the hide: the saved definition no longer fits (create or replace view cannot drop a
+-- column). Simulated with a saved definition that has fewer columns than the view.
+update app_private.catalogue_view_backups
+set definition = 'select 1 as id'
+where view_name = 'v_auction_sales_app';
+
+select is(
+  app_private.set_catalogue_raw_columns_hidden(false),
+  'visible (the view kept its current definition and its guard predicate: it changed since the masking)',
+  'the revert does not fail when the saved definition no longer fits the view'
+);
+
+select ok(
+  has_column_privilege('authenticated', 'public.auction_sales', 'raw_payload', 'select')
+  and has_column_privilege('authenticated', 'public.auction_sales', 'lawyer_contact', 'select')
+  and has_column_privilege('authenticated', 'public.auction_sales', 'observations', 'select')
+  and (
+    select view_row.reloptions @> array['security_invoker=true']
+      and not coalesce(view_row.reloptions @> array['security_barrier=true'], false)
+    from pg_class view_row
+    where view_row.oid = 'public.v_auction_sales_app'::regclass
+  )
+  and pg_get_viewdef('public.v_auction_sales_app'::regclass) ~ 'has_analysis_access\(\)',
+  'that revert opens the columns and makes the current view an invoker view again, guard predicate kept'
 );
 
 select * from finish();
