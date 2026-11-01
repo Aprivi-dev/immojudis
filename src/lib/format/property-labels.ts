@@ -1,11 +1,22 @@
+import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/occupancy-status";
+
+/**
+ * Libellé français de `occupancy_status` (contrainte SQL : vacant, occupied, rented, owner_occupied,
+ * squatted, unknown), qui suit les mêmes règles que l'écart au marché et le plafond
+ * (`isVacantOccupancyStatus`, `isOccupiedOccupancyStatus`) : « inoccupé » est un bien libre, un bien
+ * squatté est « occupé sans droit ni titre », un bien loué est « loué ».
+ */
 export function occupancyLabel(status: string | null | undefined): string {
   if (!status) return "Non renseigné";
-  const s = status.toLowerCase();
+  const s = status.trim().toLocaleLowerCase("fr-FR");
   if (s === "unknown" || s === "inconnu") return "À confirmer";
-  if (s.includes("libre") || s === "vacant" || s === "free") return "Libre";
-  if (s === "owner_occupied") return "Occupé par le propriétaire";
-  if (s.includes("occup")) return "Occupé";
-  if (s.includes("loué") || s.includes("loue") || s.includes("rented")) return "Loué";
+  if (isVacantOccupancyStatus(s) || s === "free") return "Libre";
+  if (isOccupiedOccupancyStatus(s)) {
+    if (/squat/.test(s)) return "Occupé sans droit ni titre";
+    if (s === "rented" || s === "tenant_occupied" || /lou[eé]/.test(s)) return "Loué";
+    if (s === "owner_occupied" || /propri[eé]taire/.test(s)) return "Occupé par le propriétaire";
+    return "Occupé";
+  }
   return status;
 }
 

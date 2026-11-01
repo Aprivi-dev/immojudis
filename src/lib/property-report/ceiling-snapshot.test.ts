@@ -25,6 +25,36 @@ describe("buildCeilingSnapshot", () => {
     expect(snapshot.refreshWorksBudget).not.toBe(77_000);
   });
 
+  it("flags a missing property tax, and only then", () => {
+    const manual = { manualPricePerM2: 3_000 };
+    const without = buildCeilingSnapshot(sale, null, manual, DEFAULT_OPEN_FEE_REGIMES);
+    const entered = buildCeilingSnapshot(
+      sale,
+      null,
+      { ...manual, annualPropertyTax: 1_200 },
+      DEFAULT_OPEN_FEE_REGIMES,
+    );
+
+    expect(without.available).toBe(true);
+    expect(without.propertyTaxMissing).toBe(true);
+    expect(entered.propertyTaxMissing).toBe(false);
+  });
+
+  it("evaluates no bid at 0 € when the starting price is missing", () => {
+    const withoutPrice = { ...sale, starting_price_eur: null };
+    const snapshot = buildCeilingSnapshot(
+      withoutPrice,
+      null,
+      { manualPricePerM2: 3_000 },
+      DEFAULT_OPEN_FEE_REGIMES,
+    );
+
+    // Pas de marge « au prix de départ » : elle vaudrait le budget entier d'une enchère à 0 €.
+    expect(snapshot.marginTotal).toBeNull();
+    expect(snapshot.marginPerM2).toBeNull();
+    expect(snapshot.acquisition.price).toBe(0);
+  });
+
   it("derives no amount from the plan of a sale without a fee regime, whatever the choices", () => {
     const stateSale = {
       ...sale,
