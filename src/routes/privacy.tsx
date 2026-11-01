@@ -294,6 +294,13 @@ export function PrivacyPage({
               légitime. Conservation : 12 mois sans réponse, 24 mois après le dernier échange.
               Opposition : lien dans chaque message ou {legalValue(publisher.contactEmail)}.
             </p>
+            <p className="mt-3">
+              Si vous écrivez à l’adresse de réponse d’Immojudis sans qu’un dossier soit ouvert,
+              nous conservons votre adresse, votre nom, l’objet, la date et un extrait de votre
+              message, pour le lire et vous répondre ou enregistrer votre demande. Base : intérêt
+              légitime. Conservation : 12 mois si nous vous avions écrit, 21 jours sinon. Droits et
+              opposition : {legalValue(publisher.contactEmail)}.
+            </p>
           </PrivacySection>
 
           <PrivacySection title="Personnes citées dans une annonce">

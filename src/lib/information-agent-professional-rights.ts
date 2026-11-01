@@ -129,11 +129,13 @@ export type ProfessionalDataExport = {
   extractedFacts: Array<Record<string, unknown>>;
   fileAnalyses: Array<Record<string, unknown>>;
   contacts: Array<Record<string, unknown>>;
+  /** Messages reçus de cette adresse sans dossier ouvert (sans le jeton ni l'adresse de réponse). */
+  unroutedMessages: Array<Record<string, unknown>>;
 };
 
 /**
- * Copie des données détenues pour une adresse : dossiers, demandes, messages échangés, pièces
- * déposées (métadonnées, pas le contenu), informations extraites et fiche du registre. N'inclut ni
+ * Copie des données détenues pour une adresse : dossiers, demandes, messages échangés, messages reçus
+ * sans dossier ouvert, pièces déposées (métadonnées, pas le contenu), informations extraites et fiche du registre. N'inclut ni
  * l'identité ni l'adresse des personnes qui ont fait la demande à Immojudis.
  */
 export async function collectProfessionalData(rawEmail: string): Promise<ProfessionalDataExport> {
@@ -222,6 +224,15 @@ export async function collectProfessionalData(rawEmail: string): Promise<Profess
       .range(from, to),
   );
 
+  const unroutedMessages = await fetchAll((from, to) =>
+    supabaseAdmin
+      .from("information_agent_unrouted_messages")
+      .select("id,sender,subject,received_at,excerpt,reason,attachment_count,status,created_at")
+      .eq("sender_email", email)
+      .order("id")
+      .range(from, to),
+  );
+
   return {
     generatedAt: new Date().toISOString(),
     email,
@@ -232,6 +243,7 @@ export async function collectProfessionalData(rawEmail: string): Promise<Profess
     extractedFacts,
     fileAnalyses,
     contacts,
+    unroutedMessages,
   };
 }
 
@@ -245,7 +257,7 @@ export type ProfessionalErasureReport = {
  * Efface les données d'un professionnel : fichiers reçus mis en file de suppression Storage (les
  * documents déjà publiés après validation humaine ne sont pas retirés ici), dossiers
  * partagés et demandes dont il est le destinataire (messages, pièces, informations extraites et files
- * d'analyse en cascade), fiches du registre propres à une vente. L'adresse est ensuite inscrite à la liste d'opposition (elle seule reste,
+ * d'analyse en cascade), messages reçus de lui sans dossier ouvert, fiches du registre propres à une vente. L'adresse est ensuite inscrite à la liste d'opposition (elle seule reste,
  * normalisée) : sans cela, la prochaine collecte de l'annonce la recréerait et l'agent pourrait de
  * nouveau la solliciter. Idempotent : relancé après un échec partiel, il reprend où il s'est arrêté.
  */
@@ -319,6 +331,18 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     );
   }
   deletedRows["information_agent_contacts"] = contactCount ?? 0;
+
+  // 2 ter. Messages reçus de cette adresse sans dossier ouvert (aucune pièce n'y est conservée).
+  const { count: unroutedCount, error: unroutedError } = await supabaseAdmin
+    .from("information_agent_unrouted_messages")
+    .delete({ count: "exact" })
+    .eq("sender_email", email);
+  if (unroutedError) {
+    throw new Error(
+      `Effacement impossible dans information_agent_unrouted_messages : ${unroutedError.message}`,
+    );
+  }
+  deletedRows["information_agent_unrouted_messages"] = unroutedCount ?? 0;
 
   // 3. Dossiers (messages, pièces, informations extraites, tâches d'analyse en cascade), puis demandes.
   deletedRows["information_agent_cases"] = await deleteByIds("information_agent_cases", caseIds);

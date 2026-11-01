@@ -88,6 +88,32 @@ avant que la personne ait été contactée. Mesures prévues, à faire valider :
 - **Question ouverte** : l’obligation d’information de l’art. 14 pour les adresses relevées mais
   jamais utilisées pour un envoi n’est pas tranchée : **à faire valider par un avocat**.
 
+## 2 ter. Messages reçus sans dossier ouvert (conservation pour un administrateur)
+
+Une personne écrit à l’adresse de réponse sans qu’un dossier soit ouvert (dossier clos ou supprimé avec sa
+vente, jeton absent ou inconnu). Le message est conservé (adresse, nom, objet, date, extrait de 1 000
+caractères au plus, motif) pour qu’un administrateur le lise ; rien n’est extrait, rien n’est répondu
+automatiquement (aucun accusé de réception). Mise en balance courte :
+
+1. **Intérêt poursuivi.** Ne pas perdre la réponse d’un professionnel contacté et honorer une opposition
+   éventuelle.
+2. **Nécessité.** Sans conservation, un message arrivé après la clôture du dossier est perdu et personne ne le
+   lit. Alternative écartée : ne garder qu’un compteur, ce qui ne permet ni de lire le message ni de relier une
+   opposition à son auteur.
+3. **Attentes raisonnables.** La personne écrit elle-même à une adresse d’Immojudis, le plus souvent en réponse
+   à un de nos messages ; elle s’attend à être lue.
+4. **Garanties.** Table réservée à `service_role` (RLS), lue par les seuls administrateurs ; extrait borné à
+   1 000 caractères, effacé 90 jours après le passage à « traité » ; aucune pièce jointe conservée ; contenu
+   non lu chez le fournisseur pour un expéditeur inconnu (seuls expéditeur, objet et date sont gardés) ;
+   aucune extraction de faits, aucune réponse ni accusé de réception automatiques ; opposition d’un expéditeur
+   authentifié enregistrée à la réception ; accès et effacement avec les autres données du professionnel ;
+   information des personnes dans la politique de confidentialité (version `2026-11-01.2`).
+5. **Durées.** 12 mois si l’expéditeur nous était connu, 21 jours sinon. Les 12 mois s’appliquent parce
+   qu’aucun échange suivi n’existe : le pied des demandes annonce 24 mois après le dernier échange, mais
+   seulement quand un dossier existe.
+
+**À confirmer par `juridique-rgpd`**, avec les durées.
+
 ## 3. Compatibilité de finalité du réemploi d’une adresse (art. 6.4 RGPD)
 
 Cas principal : l’adresse d’un professionnel, relevée dans l’annonce ou un annuaire pour publier la
@@ -169,6 +195,8 @@ couverte par le registre et le pied du message.
 7. Secret professionnel du destinataire et libellé des questions autorisées.
 8. Obligation d’information de l’art. 14 pour les adresses relevées en lot et jamais utilisées (section 2 bis).
 9. Durée de conservation des captures HTML du collecteur d’historique Licitor (aucune purge codée).
+10. Messages reçus sans dossier ouvert (section 2 ter) : mise en balance et durées (12 mois, 21 jours, extrait
+    effacé 90 jours après le traitement).
 
 ## 6. Sources
 
