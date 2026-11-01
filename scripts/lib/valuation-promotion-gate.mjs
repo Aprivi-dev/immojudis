@@ -2,7 +2,7 @@
  * Porte d'activation des modèles de valorisation, côté publication.
  *
  * `scripts/publish-valuation-models.mjs` ne doit JAMAIS activer un modèle que la porte de
- * `services/data-pipeline/src/valuation_training.py` (`decide_activation`) n'a pas validé. Avant
+ * `services/data-pipeline/src/valuation_activation_gate.py` (`decide_activation`) n'a pas validé. Avant
  * ce garde-fou, le script ne regardait que les métriques absolues du lot et activait tout ce qui
  * se trouvait dans `deployment/valuation-models/`, même un brouillon refusé par la porte.
  *
@@ -13,7 +13,7 @@
  *   - l'intervalle bootstrap apparié de l'écart d'erreur médian avec le repère naïf, et avec le
  *     modèle actif quand il existe, est entièrement sous zéro ;
  *   - la couverture de l'intervalle servi atteint le plancher de promotion.
- * Les nombres ci-dessous sont les mêmes que dans `valuation_training.py` : un test Python
+ * Les nombres ci-dessous sont les mêmes que dans `valuation_activation_gate.py` : un test Python
  * (`test_the_javascript_publication_gate_uses_the_same_numbers`) échoue s'ils divergent.
  */
 export const MIN_ACTIVATION_TEST_ROWS = 300;
