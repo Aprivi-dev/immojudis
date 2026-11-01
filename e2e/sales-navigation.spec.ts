@@ -10,10 +10,16 @@ import { mapPreviewRows, type PreviewSearchRow } from "@/lib/search/preview-sear
 const KNOWN_SALE = "11111111-1111-4111-8111-111111111111";
 const TOTAL = 60;
 const PAGE_SIZE = 24;
+/**
+ * Rang de la vente connue : la 11e annonce de la page 2. Depuis le lot 5a, le premier écran d'un
+ * mobile montre déjà la première annonce sans défiler ; la vente doit donc être plus bas pour que
+ * le test vérifie vraiment la restauration du défilement.
+ */
+const KNOWN_SALE_INDEX = PAGE_SIZE + 10;
 
 function previewRow(index: number): PreviewSearchRow {
   const id =
-    index === PAGE_SIZE
+    index === KNOWN_SALE_INDEX
       ? KNOWN_SALE
       : `78000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
   return {
