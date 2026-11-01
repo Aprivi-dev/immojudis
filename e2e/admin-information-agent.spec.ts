@@ -482,6 +482,14 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       });
       return;
     }
+    // Messages reçus sans dossier ouvert : liste vide, ces parcours ne les utilisent pas.
+    if (path === "/api/admin/information-agent/unrouted" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        json: { messages: [], offset: 0, limit: 50, total: 0, hasMore: false },
+      });
+      return;
+    }
     if (path === "/api/admin/information-agent" && method === "PATCH") {
       state.reviewFacts = [];
       await route.fulfill({ status: 200, json: { ok: true, result: { status: "accepted" } } });
