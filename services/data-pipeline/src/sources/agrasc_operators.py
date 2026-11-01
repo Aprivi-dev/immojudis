@@ -413,6 +413,9 @@ def _seller_product_url(item: Any) -> tuple[str, str | None]:
     url = parsed._replace(query="", fragment="").geturl() if parsed else ""
     if item.get("sellerName") != AGORA_IMMO_SELLER_NAME:
         return url, "other_seller"
+    if item.get("showOnSite") is False:
+        # Explicitement masqué sur le site : moins publier plutôt que deviner. Absent ou vrai : sans effet.
+        return url, "hidden_on_site"
     if not url or classify_agrasc_operator_url(url) != "agorastore_product" \
             or not is_allowed_origin_url(url, (AGORA_ORIGIN,)):
         return url, "not_agorastore_product_url"
