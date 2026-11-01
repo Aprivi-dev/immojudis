@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import ImageOff from "lucide-react/dist/esm/icons/image-off.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
+import { precisionMayBeBuilding } from "@/components/building-view";
+import { PropertyIllustration, illustrationKind } from "@/components/PropertyIllustration";
 import type { AuctionSale } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -32,11 +33,12 @@ type SaleVisualProps = {
    */
   mapFramingWidth?: number;
   /**
-   * Sans position fiable d'un bâtiment, carte du secteur Mapbox (par défaut). La liste des ventes la remplace par
-   * une case neutre (décision du 24/10/2026) : la grande carte montre déjà le secteur.
+   * Sans position fiable d'un bâtiment, carte du secteur Mapbox (par défaut). La liste des ventes ne l'affiche pas
+   * (décision du 24/10/2026) : la grande carte montre déjà le secteur ; sans photo, elle montre l'illustration
+   * du type de bien.
    */
   sectorMap?: boolean;
-  /** Lieu écrit dans la case neutre (ville), quand aucun visuel n'est disponible. */
+  /** Lieu écrit sous l'illustration (ville), quand aucun visuel n'est disponible. */
   placeLabel?: string | null;
   /**
    * La position désigne-t-elle un bâtiment de façon fiable (`hasReliableBuildingPosition`) ? Absent :
@@ -47,12 +49,6 @@ type SaleVisualProps = {
 };
 
 type PositionCheck = (sale: AuctionSale) => boolean;
-
-/** Vrai si la précision laisse espérer un bâtiment : sinon inutile de charger la vérification complète. */
-function precisionMayBeBuilding(precision: AuctionSale["location_precision"]): boolean {
-  const value = typeof precision === "string" ? precision.trim().toLowerCase() : "";
-  return value === "address" || value === "parcel";
-}
 
 type VisualCandidate = {
   kind: "map" | "photo" | "satellite";
@@ -242,27 +238,41 @@ export function SaleVisual({
   }, [candidateChecksSize, candidateUrl, markUrlReady, rejectUrl]);
 
   if (!candidate) {
-    // Case neutre (docs/design/fondations.md) : fond beige, icône or, et la ville quand elle est connue.
+    if (locked) {
+      // Visuel réservé : fond beige et cadenas (docs/design/fondations.md).
+      return (
+        <div
+          className={cn(
+            "relative flex h-full w-full items-center justify-center overflow-hidden bg-surface-tint",
+            className,
+          )}
+        >
+          <div className="relative px-4 text-center text-ink-soft">
+            <LockKeyhole className="mx-auto h-7 w-7 text-gold-text" aria-hidden />
+            <span className="mt-2 block text-caption">Visuel réservé</span>
+          </div>
+        </div>
+      );
+    }
+    // Sans photo ni vue fiable : l'illustration du type de bien, signalée « Illustration » (pastille
+    // visible, nom accessible) pour ne jamais passer pour une photo du bien (docs/design/fondations.md).
     return (
       <div
+        data-testid="sale-visual-illustration"
         className={cn(
-          "relative flex h-full w-full items-center justify-center overflow-hidden bg-surface-tint",
+          "relative flex h-full w-full flex-col items-center justify-center gap-1 overflow-hidden bg-surface-tint px-4 py-3",
           className,
         )}
       >
-        <div className="relative px-4 text-center text-ink-soft">
-          {locked ? (
-            <LockKeyhole className="mx-auto h-7 w-7 text-gold-text" aria-hidden />
-          ) : (
-            <ImageOff className="mx-auto h-7 w-7 text-gold-text" aria-hidden />
-          )}
-          <span className="mt-2 block text-caption">
-            {locked ? "Visuel réservé" : "Aucun visuel fiable"}
-          </span>
-          {!locked && placeLabel ? (
-            <span className="mt-0.5 block text-sm font-semibold text-brand-navy">{placeLabel}</span>
-          ) : null}
+        <span className="pointer-events-none absolute left-2 top-2 whitespace-nowrap rounded-md bg-white/95 px-2 py-0.5 text-caption font-medium text-brand-navy">
+          Illustration
+        </span>
+        <div className="flex min-h-0 flex-1 justify-center">
+          <PropertyIllustration kind={illustrationKind(sale.property_type)} />
         </div>
+        {placeLabel ? (
+          <span className="block text-sm font-semibold text-brand-navy">{placeLabel}</span>
+        ) : null}
       </div>
     );
   }

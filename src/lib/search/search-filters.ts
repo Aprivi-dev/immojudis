@@ -39,11 +39,11 @@ export const STATUS_OPTIONS = [{ label: "À venir", value: "upcoming" }] as cons
  * celle que l'annonce laisse ouverte, pas tout ce qui reste à contrôler (`POINTS_TO_VERIFY_NOTE`).
  */
 export const BELOW_RANGE_FILTER_LABEL = "Mise à prix sous la fourchette des ventes comparables";
-export const BELOW_RANGE_FILTER_HINT =
-  "Ne couvre que les ventes dont l’estimation est assez fiable, et jamais un bien occupé. Une vente absente de cette liste n’est pas forcément au-dessus de la fourchette.";
+/** Ces deux filtres ne sont pas des critères d'alerte (voir `hasUnalertableSearchFilters`) : on le dit. */
+export const FILTER_NOT_IN_ALERT_NOTE = "Ce filtre n’est pas inclus dans l’alerte.";
+export const BELOW_RANGE_FILTER_HINT = `Ne couvre que les ventes dont l’estimation est assez fiable, et jamais un bien occupé. Une vente absente de cette liste n’est pas forcément au-dessus de la fourchette. ${FILTER_NOT_IN_ALERT_NOTE}`;
 export const NO_POINTS_TO_VERIFY_FILTER_LABEL = "Sans point à vérifier";
-export const NO_POINTS_TO_VERIFY_FILTER_HINT =
-  "Annonces qui ne laissent aucun point ouvert (surface, occupation, date, type de vente). Cela ne garantit pas qu’il n’y a rien à vérifier.";
+export const NO_POINTS_TO_VERIFY_FILTER_HINT = `Annonces qui ne laissent aucun point ouvert (surface, occupation, date, type de vente). Cela ne garantit pas qu’il n’y a rien à vérifier. ${FILTER_NOT_IN_ALERT_NOTE}`;
 
 export const SORT_OPTIONS: Array<{ label: string; value: SearchSortKey }> = [
   { label: "Mieux renseignées d’abord", value: "relevance" },

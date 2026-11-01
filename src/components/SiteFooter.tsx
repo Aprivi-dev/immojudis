@@ -4,7 +4,6 @@ import Link from "next/link";
 import { BrandMark } from "@/components/BrandMark";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { publicLegalPublisher } from "@/lib/legal-documents";
-import { linkPrefetch } from "@/lib/navigation";
 
 const MAIN_LINKS = [
   { href: "/sales", label: "Ventes" },
@@ -53,6 +52,7 @@ export function SiteFooter() {
           <div>
             <Link
               href="/"
+              prefetch={false}
               className="inline-flex items-center gap-2 font-display text-xl font-semibold text-foreground"
             >
               <span aria-hidden className="inline-flex">
@@ -70,7 +70,7 @@ export function SiteFooter() {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    prefetch={linkPrefetch(link.href)}
+                    prefetch={false}
                     className="hover:text-foreground hover:underline"
                   >
                     {link.label}
@@ -85,7 +85,11 @@ export function SiteFooter() {
           <ul className="flex flex-wrap gap-x-5 gap-y-2">
             {TRANSPARENCY_LINKS.map((link) => (
               <li key={link.href}>
-                <Link href={link.href} className="hover:text-foreground hover:underline">
+                <Link
+                  href={link.href}
+                  prefetch={false}
+                  className="hover:text-foreground hover:underline"
+                >
                   {link.label}
                 </Link>
               </li>
@@ -102,7 +106,7 @@ export function SiteFooter() {
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    prefetch={linkPrefetch(link.href)}
+                    prefetch={false}
                     className="hover:text-foreground hover:underline"
                   >
                     {link.label}

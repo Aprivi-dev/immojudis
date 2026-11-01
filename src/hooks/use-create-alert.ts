@@ -27,6 +27,9 @@ import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import type { SalesSearchParams } from "@/lib/search/search-url-state";
 import { userMessage } from "@/lib/user-messages";
 
+/** Page où l'on retrouve ses alertes. */
+const ALERTS_PATH = "/alertes";
+
 export type CreateAlertOptions = {
   frequency?: "daily" | "weekly";
   /** Case « email récapitulatif » cochée : le consentement est donné à la création de l'alerte. */
@@ -208,22 +211,24 @@ export function useCreateAlert({
             watched_zone_id: watchedZoneResponse?.zone.id ?? null,
           },
         });
-        const saved = watchedZoneResponse
-          ? "Zone surveillée et alerte créées"
-          : "Recherche enregistrée";
+        const saved = watchedZoneResponse ? "Zone surveillée et alerte créées" : "Alerte créée";
+        // « Voir mes alertes » : la personne retrouve ce qu'elle vient de créer, sans chercher la page.
+        const seeAlerts = {
+          action: { label: "Voir mes alertes", onClick: () => router.push(ALERTS_PATH) },
+        };
         let emailConsent = emailRecapEnabled;
         if (options.emailRecap && !emailRecapEnabled) {
           // Le consentement est explicite (case non pré-cochée) et horodaté côté serveur.
           if (await enableAlertEmailRecap(queryClient, user.id)) {
             emailConsent = true;
-            toast.success(`${saved}. Email récapitulatif activé.`);
+            toast.success(`${saved}. Email récapitulatif activé.`, seeAlerts);
           } else {
             toast.error(
               `${saved}, mais l'email récapitulatif n'a pas pu être activé. Réessayez depuis la cloche des notifications.`,
             );
           }
         } else {
-          toast.success(saved);
+          toast.success(saved, seeAlerts);
         }
         if (hasUnalertableSearchFilters(search)) {
           toast.message(

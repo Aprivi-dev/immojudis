@@ -220,10 +220,11 @@ describe("/sales : la carte du bureau ne démarre qu'au premier geste", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(screen.queryByTestId("map-panel")).toBeNull();
 
-      fireEvent[gesture](window);
+      // Le geste doit se faire dans la zone de la carte (défiler la liste ne la démarre pas).
+      fireEvent[gesture](screen.getByTestId("map-preview"));
       // 2 s : le geste ne coûte que quelques ms au calme, mais la machine peut être très chargée (CI,
       // autres chantiers) ; 500 ms échouait par intermittence sans rien révéler du comportement.
-      expect(await screen.findByTestId("map-panel", undefined, { timeout: 2_000 })).toBeTruthy();
+      expect(await screen.findByTestId("map-panel", undefined, { timeout: 20_000 })).toBeTruthy();
       expect(screen.queryByTestId("map-preview")).toBeNull();
     },
   );
@@ -249,22 +250,17 @@ describe("/sales : la carte du bureau ne démarre qu'au premier geste", () => {
     expect(screen.getByText("Carte affichée")).toBeTruthy();
   });
 
-  it("démarre la carte après 300 ms de survol continu, pas avant", async () => {
-    renderSales("/sales");
-    fireEvent.pointerEnter(screen.getByTestId("map-preview"));
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(screen.queryByTestId("map-panel")).toBeNull();
-    expect(await screen.findByTestId("map-panel", undefined, { timeout: 1000 })).toBeTruthy();
-  });
-
-  it("ne démarre pas la carte quand la souris ne fait que traverser sa zone", async () => {
+  it("ne démarre pas la carte au survol, même prolongé, ni à un geste hors de sa zone", async () => {
     renderSales("/sales");
     const preview = screen.getByTestId("map-preview");
     fireEvent.pointerEnter(preview);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    fireEvent.pointerLeave(preview);
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    fireEvent.mouseOver(preview);
+    fireEvent.wheel(window);
+    fireEvent.wheel(screen.getAllByRole("article")[0]);
+    fireEvent.pointerDown(screen.getAllByRole("article")[0]);
+    await new Promise((resolve) => setTimeout(resolve, 800));
     expect(screen.queryByTestId("map-panel")).toBeNull();
+    expect(screen.getByTestId("map-preview")).toBeTruthy();
   });
 
   it("n'ajoute ni carte, ni aperçu, ni cadre de carte sur mobile", async () => {

@@ -5,6 +5,23 @@ import { SiteFooter, showsSiteFooter } from "./SiteFooter";
 
 const pathname = vi.hoisted(() => ({ current: "/sales" }));
 vi.mock("next/navigation", () => ({ usePathname: () => pathname.current }));
+// Lien réduit à une ancre qui expose `prefetch` : le vrai `<Link>` ne l'écrit pas dans le HTML.
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    prefetch,
+    children,
+    ...rest
+  }: {
+    href: string;
+    prefetch?: boolean;
+    children: React.ReactNode;
+  }) => (
+    <a href={href} data-prefetch={String(prefetch)} {...rest}>
+      {children}
+    </a>
+  ),
+}));
 
 beforeEach(() => {
   pathname.current = "/sales";
@@ -70,6 +87,15 @@ it("reprend le pictogramme du favicon (le temple) et l'accroche unique", () => {
   expect(container.textContent).toContain("Les enchères immobilières, en toute clarté.");
   expect(container.querySelector("svg path.stroke-gold")).not.toBeNull();
   expect(container.querySelector(".lucide")).toBeNull();
+});
+
+it("ne précharge aucun de ses liens : présents sur chaque page, ils lanceraient une dizaine d'appels serveur par visite", () => {
+  const { container } = render(<SiteFooter />);
+  const links = [...container.querySelectorAll("footer a")];
+  expect(links.length).toBeGreaterThan(15);
+  for (const link of links) {
+    expect(link.getAttribute("data-prefetch"), link.getAttribute("href") ?? "").toBe("false");
+  }
 });
 
 it("stays out of the admin console", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import "mapbox-gl/dist/mapbox-gl.css";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import type mapboxgl from "mapbox-gl";
 import type {
@@ -15,6 +15,8 @@ import type {
   SymbolLayerSpecification,
 } from "mapbox-gl";
 import Check from "lucide-react/dist/esm/icons/check.js";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import ChevronUp from "lucide-react/dist/esm/icons/chevron-up.js";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import LocateFixed from "lucide-react/dist/esm/icons/locate-fixed.js";
 import MapIcon from "lucide-react/dist/esm/icons/map.js";
@@ -73,6 +75,7 @@ import { PepiteIcon } from "@/components/PepiteBadge";
 import { PEPITE_LABEL } from "@/lib/pepite-copy";
 import { FLOOD_EXPOSED_SHORT } from "@/lib/pepite-flood-copy";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
+import { MapFallback } from "./MapFallback";
 
 // Chargé à la demande par l'effet de création de la carte (import dynamique).
 let mapboxRuntime: typeof mapboxgl | null = null;
@@ -111,6 +114,11 @@ const EMPTY_BOUNDARY: Pick<GeographicBoundary, "type" | "features"> = {
 
 export type MapPanelProps = {
   locationCenter?: { lat: number; lng: number; zoom?: number } | null;
+  /**
+   * Zone de la recherche (`viewport` de l'adresse) : au premier chargement la carte s'y cadre, sans
+   * animation, au lieu de la France. Lue une seule fois, au démarrage de la carte.
+   */
+  initialViewport?: ViewportBounds | null;
   geographicLabel?: string;
   totalCount?: number;
   /** Points localisables de la recherche avant le plafond d'affichage (voir `sales`). */
@@ -142,6 +150,11 @@ export type MapPanelProps = {
 export type MapViewportChange = {
   bounds: ViewportBounds;
   zoom: number;
+  /**
+   * Vrai tant que la carte n'a pas fini son cadrage de départ (et pour ce cadrage lui-même) : ce
+   * n'est pas un déplacement de la personne, l'adresse de la recherche ne doit pas être réécrite.
+   */
+  initial?: boolean;
 };
 
 type MapboxMap = mapboxgl.Map;
@@ -240,6 +253,7 @@ function saleForMapReview(
 
 export function MapPanel({
   locationCenter,
+  initialViewport = null,
   geographicLabel,
   totalCount,
   mappablePointsTotal,
@@ -283,8 +297,19 @@ export function MapPanel({
   const hasUserInteractedRef = useRef(false);
   const mapGestureRef = useRef(false);
   const boundaryLabelRef = useRef<string | null>(null);
+  const initialViewportRef = useRef(initialViewport);
+  const geographicLabelRef = useRef(geographicLabel);
+  // Cadrage de départ terminé : jusque-là, les positions émises ne sont pas des déplacements.
+  const framingDoneRef = useRef(false);
+  // Libellé de la recherche au moment où la zone de l'adresse a été restaurée : tant qu'il ne change
+  // pas, ni le centre du lieu ni son contour ne recadrent la carte (la zone de l'adresse l'emporte).
+  const restoredForLabelRef = useRef<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+  // Chaque « Réessayer » relance le démarrage de la carte (téléchargement de Mapbox compris).
+  const [attempt, setAttempt] = useState(0);
+  const [legendOpen, setLegendOpen] = useState(false);
+  const legendId = useId();
   const [boundary, setBoundary] = useState<GeographicBoundary | null>(null);
   const [boundaryLoading, setBoundaryLoading] = useState(false);
   const [viewportDirty, setViewportDirty] = useState(false);
@@ -327,6 +352,10 @@ export function MapPanel({
   function markUserInteracted() {
     hasUserInteractedRef.current = true;
   }
+
+  useEffect(() => {
+    geographicLabelRef.current = geographicLabel;
+  }, [geographicLabel]);
 
   useEffect(() => {
     onHoverRef.current = onHover;
@@ -399,15 +428,29 @@ export function MapPanel({
     if (!containerRef.current || !accessToken) return;
     let cancelled = false;
     let cleanup: (() => void) | undefined;
+    framingDoneRef.current = false;
+    restoredForLabelRef.current = null;
+    // Le délai court dès le démarrage de l'effet, téléchargement de Mapbox compris : un réseau qui
+    // ne répond pas laisse un message et « Réessayer », pas une roue qui tourne sans fin.
+    const loadTimeout = window.setTimeout(() => {
+      setMapError("Le chargement de la carte prend trop de temps.");
+    }, 12_000);
     // Mapbox (plusieurs centaines de Ko) ne se charge que lorsque la carte s'affiche.
-    void import("mapbox-gl").then((module) => {
-      if (cancelled || !containerRef.current) return;
-      mapboxRuntime = module.default;
-      disableMapboxTelemetry(module.default);
-      cleanup = startMap(module.default);
-    });
+    import("mapbox-gl")
+      .then((module) => {
+        if (cancelled || !containerRef.current) return;
+        mapboxRuntime = module.default;
+        disableMapboxTelemetry(module.default);
+        cleanup = startMap(module.default);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        window.clearTimeout(loadTimeout);
+        setMapError("Le téléchargement de la carte a échoué. Vérifiez votre connexion.");
+      });
     return () => {
       cancelled = true;
+      window.clearTimeout(loadTimeout);
       cleanup?.();
     };
 
@@ -442,14 +485,12 @@ export function MapPanel({
       }
 
       mapRef.current = map;
-      const loadTimeout = window.setTimeout(() => {
-        setMapError("Le chargement de la carte prend trop de temps.");
-      }, 12_000);
 
       const emitViewport = () => {
         onViewportChangeRef.current({
           bounds: boundsFromMap(map),
           zoom: Number(map.getZoom().toFixed(2)),
+          initial: !framingDoneRef.current,
         });
       };
 
@@ -467,8 +508,19 @@ export function MapPanel({
         setMapError(null);
         addSalesLayers(map, featureCollection);
         addBoundaryLayers(map, boundary);
-        if (!hasUserInteractedRef.current) centerMapOnFrance(map, false, containerRef.current);
+        if (!hasUserInteractedRef.current) {
+          const viewport = initialViewportRef.current;
+          if (viewport) {
+            // Zone de l'adresse (lien partagé, rechargement, « Retour ») : la carte s'y cadre tout de suite.
+            fitViewportOnMap(map, viewport);
+            restoredForLabelRef.current = geographicLabelRef.current?.trim() ?? "";
+          } else {
+            centerMapOnFrance(map, false, containerRef.current);
+          }
+        }
+        // Le cadrage de départ (et les positions émises jusque-là) n'est pas un déplacement de la personne.
         emitViewport();
+        framingDoneRef.current = true;
         setMapReady(true);
       });
       map.on("moveend", () => {
@@ -580,7 +632,6 @@ export function MapPanel({
       observer.observe(containerRef.current!);
 
       return () => {
-        window.clearTimeout(loadTimeout);
         observer.disconnect();
         canvas.removeEventListener("pointerdown", handleDirectMapInteraction);
         canvas.removeEventListener("wheel", handleDirectMapInteraction);
@@ -595,7 +646,12 @@ export function MapPanel({
     }
     // Mapbox owns the imperative instance; data and callbacks are updated through refs/effects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, mapStyle]);
+  }, [accessToken, mapStyle, attempt]);
+
+  function retryMap() {
+    setMapError(null);
+    setAttempt((value) => value + 1);
+  }
 
   useEffect(() => {
     const map = mapRef.current;
@@ -700,6 +756,10 @@ export function MapPanel({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
+    if (restoredForLabelRef.current !== null) {
+      if ((geographicLabelRef.current?.trim() ?? "") === restoredForLabelRef.current) return;
+      restoredForLabelRef.current = null;
+    }
     if (locationCenter && isInMetropolitanFrance(locationCenter.lat, locationCenter.lng))
       map.easeTo({
         center: [locationCenter.lng, locationCenter.lat],
@@ -712,6 +772,10 @@ export function MapPanel({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !boundary || !geographicLabel?.trim()) return;
+    if (restoredForLabelRef.current !== null) {
+      if (geographicLabel.trim() === restoredForLabelRef.current) return;
+      restoredForLabelRef.current = null;
+    }
     const boundaryKey = `${geographicLabel.trim()}:${boundary.label}:${boundary.level}`;
     if (boundaryLabelRef.current === boundaryKey) return;
     boundaryLabelRef.current = boundaryKey;
@@ -776,6 +840,7 @@ export function MapPanel({
         <MapFallback
           message="La carte n’a pas pu charger. Les annonces restent accessibles dans la liste."
           onShowList={onShowList}
+          onRetry={retryMap}
         />
       ) : null}
 
@@ -906,22 +971,55 @@ export function MapPanel({
             ? ` Parmi elles, ${pepiteExposedCount} ${pepiteExposedCount > 1 ? "sont" : "est"} dans le périmètre d’un plan de prévention des risques d’inondation : zonage à vérifier.`
             : ""}
         </span>
-        <ul className="mt-1.5 space-y-1" aria-label="Légende de la carte">
+        {/* Mobile : la légende se replie derrière un bouton de 44 px, fermée par défaut (elle prenait
+            une centaine de pixels de la carte). Dès `sm`, elle reste affichée, sans bouton. */}
+        <button
+          type="button"
+          aria-expanded={legendOpen}
+          aria-controls={legendId}
+          onClick={() => setLegendOpen((open) => !open)}
+          className="mt-1 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-line-soft bg-white px-3 text-xs font-bold text-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:hidden"
+        >
+          Légende
+          {legendOpen ? (
+            <ChevronUp className="size-4" aria-hidden="true" />
+          ) : (
+            <ChevronDown className="size-4" aria-hidden="true" />
+          )}
+        </button>
+        <ul
+          id={legendId}
+          className={`mt-1.5 space-y-1 ${legendOpen ? "block" : "hidden sm:block"}`}
+          aria-label="Légende de la carte"
+        >
           <li className="flex items-center gap-2">
             <span
               aria-hidden="true"
               className="inline-block size-4 shrink-0 rounded-full border-2 border-white shadow-[0_0_0_1px_var(--line)]"
               style={{ backgroundColor: MAP_PALETTE.navy }}
             />
-            Une vente (mise à prix)
+            Vente · mise à prix en euros
           </li>
           <li className="flex items-center gap-2">
             <span
               aria-hidden="true"
-              className="inline-block size-4 shrink-0 rounded-full border-2 border-white shadow-[0_0_0_1px_var(--line)]"
-              style={{ backgroundColor: MAP_PALETTE.gold }}
+              className="inline-block size-4 shrink-0 rounded-full border-2 bg-white"
+              style={{ borderColor: MAP_PALETTE.navy }}
             />
             Plusieurs ventes, zoomez
+          </li>
+          <li className="flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="inline-grid size-4 shrink-0 place-items-center rounded-full border-[1.5px] border-dashed"
+              style={{ borderColor: MAP_PALETTE.navy }}
+            >
+              <span
+                className="block size-2 rounded-full"
+                style={{ backgroundColor: MAP_PALETTE.navy }}
+              />
+            </span>
+            Position approximative (centre de commune)
           </li>
           {pepiteCount > 0 ? (
             <li className="flex items-center gap-2 font-semibold text-gold-text">
@@ -993,12 +1091,13 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     source: SALES_SOURCE_ID,
     filter: ["has", "point_count"],
     paint: {
-      // Or : un groupe de ventes se distingue d'une vente isolée (pastille marine avec son prix).
-      "circle-color": MAP_PALETTE.gold,
+      // Disque blanc liseré marine : un groupe de ventes se distingue d'une vente isolée (disque marine
+      // avec son prix). L'or est réservé aux pépites.
+      "circle-color": MAP_PALETTE.white,
       "circle-radius": CLUSTER_RADIUS,
-      "circle-stroke-color": MAP_PALETTE.white,
+      "circle-stroke-color": MAP_PALETTE.navy,
       "circle-stroke-width": 3,
-      "circle-opacity": 0.96,
+      "circle-opacity": 1,
     },
   };
 
@@ -1152,6 +1251,17 @@ function centerMapOnFrance(map: MapboxMap, animate: boolean, container: HTMLDivE
     duration: animate ? 480 : 0,
     padding: isMobileMap(container) ? 18 : 28,
   });
+}
+
+/** Cadre la carte sur la zone de l'adresse, sans animation (la personne retrouve sa recherche telle quelle). */
+function fitViewportOnMap(map: MapboxMap, viewport: ViewportBounds) {
+  map.fitBounds(
+    [
+      [viewport.west, viewport.south],
+      [viewport.east, viewport.north],
+    ],
+    { duration: 0, padding: 0 },
+  );
 }
 
 function fitSalesOnMap(
@@ -1354,25 +1464,6 @@ function defaultMapZoomForViewport(node: HTMLDivElement) {
 
 function isMobileMap(node: HTMLDivElement | null) {
   return node != null && node.clientWidth > 0 && node.clientWidth < 640;
-}
-
-function MapFallback({ message, onShowList }: { message: string; onShowList?: () => void }) {
-  return (
-    <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-surface-tint/80 px-6 text-center">
-      <div className="pointer-events-auto max-w-sm rounded-md border border-line bg-white p-5 shadow-lg">
-        <MapPin className="mx-auto h-8 w-8 text-brand-navy" />
-        <h2 className="mt-3 text-base font-bold text-brand-navy">Carte indisponible</h2>
-        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{message}</p>
-        <a
-          href="#sales-results"
-          onClick={onShowList}
-          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
-        >
-          Voir la liste
-        </a>
-      </div>
-    </div>
-  );
 }
 
 function MapIconButton({
