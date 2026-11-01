@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 import certifi
+import httpx
 from bs4 import Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
@@ -15,10 +16,15 @@ from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_sett
 from src.normalize import clean_text, extract_department, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.agrasc_operators import enrich_agrasc_operator
-from src.sources.agrasc_urls import classify_agrasc_operator_url
+from src.sources.agrasc_operators import (
+    AGORA_SELLER_CHANNEL,
+    discover_agora_seller_products,
+    enrich_agrasc_operator,
+)
+from src.sources.agrasc_urls import AGORA_IMMO_SELLER_URL, classify_agrasc_operator_url
 from src.sources.common import (
     PoliteHttpClient,
+    RobotsAccessRefusedError,
     ScrapeResult,
     extract_surface,
     normalize_surface_number,
@@ -83,6 +89,10 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
         except Exception as exc:
             LOGGER.error("AGRASC list fetch failed: %s", exc)
             errors.append(f"{page_url}: {exc}")
+            if pages.fetched == 0 and _catalogue_unavailable(exc):
+                # Page 0 en panne (5xx ou réseau, réessais épuisés) : agrasc.gouv.fr ne prouve rien. Les ventes
+                # restent découvrables par la page vendeur d'Agorastore, sans jamais certifier l'inventaire.
+                return _agorastore_seller_fallback(settings, client, errors, operator_clients)
             break
         # The archive page contains separate paginated views for general
         # auctions and real estate.  They share the ``page`` query parameter,
@@ -141,6 +151,86 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
         {**getattr(client, "coverage_metrics", lambda: {})(),
          **pagination_metrics,
          **catalogue_metrics,
+         "operator_details": {status: sum(s.get("operator_detail_status") == status for s in raw_sales)
+                              for status in ("complete", "partial", "failed", "unsupported")}},
+    )
+
+
+def _catalogue_unavailable(exc: Exception) -> bool:
+    """Panne du catalogue AGRASC (5xx ou erreur réseau) ; ni refus d'accès, ni 4xx, ni chaîne TLS invalide."""
+    if isinstance(exc, RobotsAccessRefusedError) or "CERTIFICATE_VERIFY_FAILED" in str(exc):
+        return False
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(exc, httpx.TransportError)
+
+
+def _agorastore_seller_fallback(
+    settings: dict, client: PoliteHttpClient, errors: list[str], operator_clients: dict[str, PoliteHttpClient],
+) -> ScrapeResult:
+    """Repli de découverte par la page vendeur Agorastore quand le catalogue AGRASC est en panne.
+
+    L'erreur d'origine reste dans ``errors`` (le run reste en échec) et la couverture est explicitement non
+    certifiée : ce canal ne prouve jamais l'inventaire AGRASC, donc ni ``last_publication_complete_at`` ni
+    retrait par absence. Les ventes trouvées passent par l'enrichissement habituel de la fiche ``.aspx``.
+    """
+    from src.source_checkpoint import restore_detail
+
+    raw_sales: list[dict[str, Any]] = CheckpointSales()
+    excluded: list[dict[str, str]] = []
+    fallback: dict[str, Any] = {
+        "discovery_channel": AGORA_SELLER_CHANNEL,
+        "discovery_url": AGORA_IMMO_SELLER_URL,
+        "trigger_error": errors[0][:500],
+        "discovery_complete": False,
+    }
+    try:
+        discovery = discover_agora_seller_products(operator_clients, settings)
+    except Exception as exc:
+        LOGGER.error("AGRASC fallback discovery failed: %s", exc)
+        errors.append(f"agorastore seller discovery {AGORA_IMMO_SELLER_URL}: {exc}")
+        discovery = None
+    if discovery is not None:
+        fallback.update({
+            "discovery_complete": discovery.complete,
+            "advertised_total": discovery.advertised_total,
+            "products_read": discovery.products_read,
+            "incomplete_reasons": discovery.reasons,
+            "ignored_products": discovery.ignored,
+        })
+        if not discovery.complete:
+            errors.append(
+                f"agorastore seller discovery incomplete ({', '.join(discovery.reasons)}): "
+                f"countTotal={discovery.advertised_total}, {discovery.products_read} product(s) read"
+            )
+        for sale in discovery.products:
+            # Même filtre que le catalogue AGRASC : seuls les départements configurés sont enrichis et émis.
+            if sale.get("department") in TARGET_DEPARTMENTS:
+                if not restore_detail(sale):
+                    enrich_agrasc_operator(sale, operator_clients, settings, errors)
+                raw_sales.append(sale)
+            else:
+                excluded.append({"url": str(sale["source_url"]), "reason": "department_filter"})
+    fallback["excluded_urls"] = excluded
+    validated_sales = validate_raw_sales("agrasc", unique_dicts(raw_sales, "source_url"), errors)
+    return ScrapeResult(
+        validated_sales,
+        errors,
+        {**client.coverage_metrics(),
+         # Jamais certifié : ni inventaire adressable, ni inventaire public (voir autonomous_runner.finish_source).
+         "coverage_complete": False,
+         "scoped_inventory_complete": False,
+         "inventory_scope": "agorastore_seller_fallback",
+         "discovery_channel": AGORA_SELLER_CHANNEL,
+         "fallback": fallback,
+         "certificate": {
+             "public_discovery_certified": False,
+             "addressable_public_inventory_certified": False,
+             "all_discovered_announcements_emitted": False,
+             "database_completeness_certified": False,
+             "scope": "Agorastore seller page fallback; AGRASC catalogue unavailable, inventory not certified.",
+             "partitions": [],
+         },
          "operator_details": {status: sum(s.get("operator_detail_status") == status for s in raw_sales)
                               for status in ("complete", "partial", "failed", "unsupported")}},
     )

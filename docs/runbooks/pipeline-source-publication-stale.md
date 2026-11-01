@@ -22,6 +22,10 @@ from auction_source_state where source_name = '<source>';`
      d'erreurs, d'échecs de liste et de fiche (`detail_failures_sample`) et les raisons du certificat. Une seule
      fiche détail en erreur à chaque run suffit à garder `coverage_complete` faux et le run en échec
      (`CollectionIncompleteError`) : c'est la cause à chercher en premier.
+     Agrasc : `coverage->>'discovery_channel' = 'agorastore_seller'` signifie que agrasc.gouv.fr est en panne et que les
+     ventes viennent du repli par la page vendeur Agorastore (`coverage->'fallback'->>'trigger_error'` donne l'erreur
+     d'origine). Ce repli ne certifie jamais l'inventaire : l'inventaire reste incomplet, sans retrait par absence,
+     jusqu'au retour du catalogue AGRASC.
    - `publication_pending` : `decisions` dit lesquelles. `publication_failed` et `normalization_failed`
      persistent d'un run à l'autre (`publication_stuck_items` : 5 fiches avec la raison) ; `discovered`,
      `normalized` et `admitted` se résorbent quand un run va jusqu'au bout. Exception corrigée le 28/10/2026 : une
