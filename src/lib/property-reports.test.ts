@@ -605,6 +605,8 @@ describe("property report sharing", () => {
         department: "33",
         investment_score: 78,
         score_confidence: 0.84,
+        // La décote n'est donnée que pour un bien libre (voir market-gap-parity.test.ts).
+        occupancy_status: "vacant",
       },
       surfaceM2: 80,
       marketEstimate: {
@@ -651,6 +653,7 @@ describe("property report sharing", () => {
         scopeNote: null,
         reserveNotice: null,
         estimatedFees: [],
+        propertyTaxMissing: false,
         maxBid: 130_000,
         maxBidWithoutWorks: 160_000,
         maxBidWithRefreshWorks: 130_000,

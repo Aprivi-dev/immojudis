@@ -6,6 +6,7 @@ import {
   preliminaryFeesFromSale,
 } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
+import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/market-gap-band";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { RentReference } from "@/lib/rent-reference";
 import { DEFAULTS } from "@/lib/profitability";
@@ -54,8 +55,46 @@ describe("occupationCaseForStatus", () => {
     ["squatted", "squat"],
     [null, "inconnu"],
     ["unknown", "inconnu"],
+    // « inoccupé » est un bien libre : il ne doit pas porter de coût de libération.
+    ["inoccupé", "libre"],
+    ["Inoccupé", "libre"],
+    ["libre", "libre"],
+    ["free", "libre"],
+    ["loué", "loue"],
+    ["Occupé par le propriétaire", "occupe"],
+    ["inconnu", "inconnu"],
+    ["", "inconnu"],
+    ["en cours de vérification", "inconnu"],
   ])("maps %s to %s", (status, expected) => {
     expect(occupationCaseForStatus(status)).toBe(expected);
+  });
+
+  it("reads every status of the SQL constraint the way the market gap and the label do", () => {
+    // Contrainte `occupancy_status` : vacant, occupied, rented, owner_occupied, squatted, unknown.
+    const expected = {
+      vacant: ["libre", false, true],
+      occupied: ["occupe", true, false],
+      rented: ["loue", true, false],
+      owner_occupied: ["occupe", true, false],
+      squatted: ["squat", true, false],
+      unknown: ["inconnu", false, false],
+    } as const;
+    for (const [status, [ceilingCase, occupied, vacant]] of Object.entries(expected)) {
+      expect(occupationCaseForStatus(status), status).toBe(ceilingCase);
+      expect(isOccupiedOccupancyStatus(status), status).toBe(occupied);
+      expect(isVacantOccupancyStatus(status), status).toBe(vacant);
+    }
+  });
+
+  it("gives an « inoccupé » property the same ceiling as a « vacant » one", () => {
+    const withStatus = (occupancy_status: string) =>
+      computeCeilingPlan(
+        buildCeilingHypotheses({ ...sale, occupancy_status } as unknown as AuctionSale, estimate),
+      ).maxBid;
+
+    // Avant : « inoccupé » comptait comme occupé et retirait ~11 000 € au plafond.
+    expect(withStatus("inoccupé")).toBe(withStatus("vacant"));
+    expect(withStatus("occupied")).toBeLessThan(withStatus("vacant"));
   });
 });
 
@@ -142,23 +181,32 @@ describe("buildCeilingHypotheses", () => {
     expect(typed.rent.reference).toBeUndefined();
   });
 
-  it("keeps the default property tax on the historical department base, whatever ANIL rent is shown", () => {
-    const historical = Math.round(Math.round(84 * 13) * 12 * 0.08); // department 34: 13 EUR/m2
+  it("invents no property tax: without an amount typed the field is left to fill in, whatever the rent", () => {
     for (const reference of [null, anilReference(15), anilReference(40), anilReference(4)]) {
-      const hypotheses = buildCeilingHypotheses(sale, estimate, {}, null, reference);
-      expect(hypotheses.carrying.annualPropertyTax).toBe(historical);
+      const { carrying } = buildCeilingHypotheses(sale, estimate, {}, null, reference);
+      expect(carrying.annualPropertyTax).toBe(0);
+      expect(carrying.annualPropertyTaxSource).toBe("absente");
     }
-    // Without any department rent, the base is the surface, as before.
+  });
+
+  it("invents no property tax for a department outside the rent table either", () => {
     const uncovered = { ...sale, department: "23" } as unknown as AuctionSale;
-    expect(
-      buildCeilingHypotheses(uncovered, estimate, {}, null, anilReference(30)).carrying
-        .annualPropertyTax,
-    ).toBe(84 * 12);
-    // What the user types still wins.
+    for (const reference of [null, anilReference(30)]) {
+      const { carrying } = buildCeilingHypotheses(uncovered, estimate, {}, null, reference);
+      // Before: the surface times 12 EUR (84 x 12 = 1 008 EUR), an amount nobody had given.
+      expect(carrying.annualPropertyTax).toBe(0);
+      expect(carrying.annualPropertyTaxSource).toBe("absente");
+    }
+  });
+
+  it("keeps what the user types, even 0, and says it was typed", () => {
     expect(
       buildCeilingHypotheses(sale, estimate, { annualPropertyTax: 700 }, null, anilReference(15))
-        .carrying.annualPropertyTax,
-    ).toBe(700);
+        .carrying,
+    ).toMatchObject({ annualPropertyTax: 700, annualPropertyTaxSource: "saisie" });
+    expect(buildCeilingHypotheses(sale, estimate, { annualPropertyTax: 0 }).carrying).toMatchObject(
+      { annualPropertyTax: 0, annualPropertyTaxSource: "saisie" },
+    );
   });
 
   it("gives the « habiter » ceiling with or without an ANIL rent, and the « louer » one only the rent", () => {

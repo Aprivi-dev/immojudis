@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Json } from "@/integrations/supabase/types";
+import { createTextPdf } from "../simple-pdf";
 import { buildPlanEntitlements } from "./entitlements";
 import { REPORT_PDF_HEADINGS, reportToPdfLines } from "./pdf";
 import { reportWording } from "./report-wording";
+import { reportPdfIdentity } from "./serialization";
 import {
   buildReportRentalScenario,
   computeReportRentalScenario,
@@ -366,5 +368,148 @@ describe("property report rental PDF", () => {
       ),
     ).toBe(true);
     expect(lines.some((line) => line.includes("Assurance propriétaire: 0"))).toBe(true);
+  });
+});
+
+describe("titre, métadonnées et nom de fichier du PDF", () => {
+  const withTitle = (title: string): SavedReportRow => ({
+    ...reportWithRentalScenario(),
+    id: "12345678-aaaa-bbbb-cccc-1234567890ab",
+    title,
+  });
+
+  it("expurge le nom d'un particulier du titre et du nom de fichier", () => {
+    const { title, filename } = reportPdfIdentity(withTitle("Maison occupée par Pierre Martin"));
+
+    expect(title).toBe("Maison occupée par un occupant");
+    expect(filename).toBe("maison-occupee-par-un-occupant-12345678.pdf");
+    expect(filename).not.toMatch(/martin|pierre/i);
+  });
+
+  it("n'écrit le nom ni sur les pages ni dans /Info /Title", () => {
+    const { title } = reportPdfIdentity(withTitle("Maison occupée par Pierre Martin"));
+    const bytes = createTextPdf({ title, lines: ["Bien", "Titre: Maison"] });
+    const raw = Buffer.from(bytes).toString("latin1");
+    // /Info /Title est écrit en UTF-16BE hexadécimal : on compare aussi sous cette forme.
+    const hex = (text: string) =>
+      Array.from(text, (char) => char.charCodeAt(0).toString(16).padStart(4, "0"))
+        .join("")
+        .toUpperCase();
+
+    expect(raw).not.toContain("Martin");
+    expect(raw.toUpperCase()).not.toContain(hex("Martin"));
+    expect(raw.toUpperCase()).toContain(hex("un occupant"));
+  });
+
+  it("garde un titre sans nom de personne tel quel", () => {
+    const { title, filename } = reportPdfIdentity(withTitle("Appartement Bordeaux 33"));
+    expect(title).toBe("Appartement Bordeaux 33");
+    expect(filename).toBe("appartement-bordeaux-33-12345678.pdf");
+  });
+});
+
+describe("mention de la taxe foncière non comptée", () => {
+  const lines = (ceiling: Record<string, unknown>) =>
+    reportToPdfLines(
+      { ...reportWithRentalScenario(), ceiling_snapshot: ceiling as Json },
+      buildPlanEntitlements("analyse"),
+    );
+
+  it("l'écrit sous le plafond quand la taxe foncière n'est pas renseignée", () => {
+    const out = lines({ available: true, maxBid: 120_000, propertyTaxMissing: true });
+    const ceilingIndex = out.findIndex((line) => line.startsWith("Enchère plafond (simulation):"));
+    expect(ceilingIndex).toBeGreaterThan(-1);
+    expect(out.slice(ceilingIndex + 1, ceilingIndex + 3)).toContain("Taxe foncière non comptée");
+  });
+
+  it("ne l'écrit pas quand la taxe est renseignée, absente du rapport enregistré ou le plafond indisponible", () => {
+    for (const ceiling of [
+      { available: true, maxBid: 120_000, propertyTaxMissing: false },
+      { available: true, maxBid: 120_000 },
+      { available: false, reason: "Aucune enchère rentable", propertyTaxMissing: true },
+    ]) {
+      expect(lines(ceiling)).not.toContain("Taxe foncière non comptée");
+    }
+  });
+});
+
+describe("rapport au snapshot clairsemé", () => {
+  const sparse = (): SavedReportRow => ({
+    ...reportWithRentalScenario(),
+    report_snapshot: {
+      generatedAt: "2026-10-02T10:00:00.000Z",
+      sale: { title: "Maison test" },
+      analysis: {
+        valuationAudit: {},
+        audienceReadinessAnalysis: {},
+        opportunity: { score: null, apparentDiscountPct: null },
+      },
+    } as Json,
+    ceiling_snapshot: {
+      available: true,
+      personalSimulation: { version: 2, choices: {} },
+      steps: [
+        { key: "sans-montant", label: "Étape sans montant", kind: "minus" },
+        { key: "montant-nul", label: "Étape à montant nul", amount: null, kind: "add" },
+        { key: "reel", label: "Étape réelle", amount: 12_000, kind: "add" },
+      ],
+      personalRentalScenario: {
+        inputs: { vacancyRatePct: 5 },
+        result: { monthlyCashFlow: null },
+      },
+    } as Json,
+  });
+  const text = () => reportToPdfLines(sparse(), buildPlanEntitlements("analyse")).join("\n");
+
+  it("n'écrit ni null, ni undefined, ni NaN, ni « - 0 € »", () => {
+    expect(text()).not.toMatch(/\bnull\b|undefined|NaN|- 0\s€/);
+  });
+
+  it("écrit « non renseigné » au lieu d'un score, d'une progression ou d'un montant inventés", () => {
+    const out = text();
+    expect(out).toContain("Score audit: non renseigné");
+    expect(out).toContain("Progression: non renseigné");
+    expect(out).toContain("Points prioritaires ouverts: non renseigné");
+    expect(out).toContain("Loyer hors charges: non renseigné");
+    expect(out).toContain("Taxe foncière: non renseigné");
+    expect(out).not.toMatch(/0\/100|\b0 point|Prix non communiqué \/ /);
+  });
+
+  it("n'écrit ni la marge de sécurité ni l'étape du plafond sans donnée", () => {
+    const out = text();
+    expect(out).not.toContain("Marge de sécurité");
+    expect(out).not.toContain("Étape sans montant");
+    expect(out).not.toContain("Étape à montant nul");
+    expect(out).toContain("Étape réelle : + 12");
+  });
+
+  it("garde un zéro réel : un score d'audit et un nombre de points à 0 sont des mesures", () => {
+    const report = sparse();
+    report.report_snapshot = {
+      sale: { title: "Maison test" },
+      analysis: {
+        valuationAudit: { score: 0 },
+        audienceReadinessAnalysis: { highPriorityOpenCount: 0, progressPct: 0 },
+      },
+    } as Json;
+    const out = reportToPdfLines(report, buildPlanEntitlements("analyse")).join("\n");
+    expect(out).toContain("Score audit: 0/100");
+    expect(out).toContain("Points prioritaires ouverts: 0");
+    expect(out).toContain("Progression: 0 %");
+  });
+
+  it("dit pourquoi la décote manque au lieu d'un tiret", () => {
+    const report = sparse();
+    report.report_snapshot = {
+      sale: { title: "Maison test" },
+      analysis: {
+        opportunity: {
+          apparentDiscountPct: null,
+          apparentDiscountNote: "Bien occupé : l’écart n’est pas indiqué.",
+        },
+      },
+    } as Json;
+    const lines = reportToPdfLines(report, buildPlanEntitlements("analyse"));
+    expect(lines).toContain("Décote apparente: Bien occupé : l’écart n’est pas indiqué.");
   });
 });

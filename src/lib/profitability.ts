@@ -10,6 +10,9 @@ import {
   type RentReferenceSource,
 } from "@/lib/rent-reference";
 
+/** Raison d'un rendement indisponible faute de prix d'acquisition. */
+export const RENTABILITY_PRICE_MISSING = "Prix manquant";
+
 // ─── Barème des émoluments de l'avocat poursuivant ───────────────────────
 // Article A444-191 du Code de commerce, qui renvoie au barème proportionnel
 // dégressif de l'article A444-102 (tableau 5, modifié par l'arrêté du
@@ -263,7 +266,8 @@ export type RentabilityScoreFactor = {
 
 export type RentabilityScoreInputs = AcquisitionCostOptions & {
   surface: number | null;
-  price: number;
+  /** Prix d'acquisition ; `null` ou 0 : prix inconnu, le rendement est « indisponible » (jamais 0 €). */
+  price: number | null;
   /**
    * Coût d'acquisition déjà calculé avec les frais du régime de la vente (barème des émoluments,
    * frais d'organisation, honoraires de négociation, publicité : `computeAcquisitionCosts` avec les
@@ -342,7 +346,7 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
   const surface = Math.max(0, inputs.surface || 0);
   const acquisition =
     inputs.acquisition ??
-    computeAcquisitionCosts({ price: inputs.price, ...costOptionsOf(inputs) });
+    computeAcquisitionCosts({ price: inputs.price ?? 0, ...costOptionsOf(inputs) });
   const assumptions = rentabilityAssumptions(inputs);
   const manualRent = cleanPositive(inputs.monthlyRent);
   const reference = resolveRentReference(inputs.rentReference, inputs.department);
@@ -355,6 +359,11 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
 
   if (surface <= 0) {
     return unavailableRentabilityResult("Surface manquante", acquisition.totalCost, assumptions);
+  }
+  // Sans prix, le coût d'acquisition se réduit aux frais fixes (6 500 € : frais préalables et avocat) :
+  // un rendement calculé dessus dépasserait 100 %. Le prix manquant se dit, il ne se remplace pas par 0.
+  if (!(inputs.price != null && Number.isFinite(inputs.price) && inputs.price > 0)) {
+    return unavailableRentabilityResult(RENTABILITY_PRICE_MISSING, 0, assumptions);
   }
   if (acquisition.totalCost <= 0 || !monthlyRent) {
     return unavailableRentabilityResult(

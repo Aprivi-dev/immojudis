@@ -75,6 +75,20 @@ describe("CeilingPlanner titre", () => {
   });
 });
 
+describe("CeilingPlanner taxe foncière", () => {
+  it("dit près du plafond que la taxe foncière n'est pas comptée quand elle n'est pas renseignée", () => {
+    renderPlanner();
+    expect(screen.getByTestId("property-tax-missing").textContent).toBe(
+      "Taxe foncière non comptée",
+    );
+  });
+
+  it("n'en dit rien une fois la taxe foncière saisie", () => {
+    renderPlanner({ choices: { annualPropertyTax: 1_200 } });
+    expect(screen.queryByTestId("property-tax-missing")).toBeNull();
+  });
+});
+
 describe("CeilingPlanner textes du régime de frais", () => {
   it("garde les textes du tribunal sans régime, et avec le régime tribunal", () => {
     for (const regime of [undefined, TRIBUNAL_FEE_REGIME]) {

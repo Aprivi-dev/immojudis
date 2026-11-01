@@ -112,6 +112,42 @@ function makeWatchedZone(overrides: Partial<UserWatchedZone> = {}): UserWatchedZ
   };
 }
 
+describe("alert price per m² criterion", () => {
+  const alert = makeAlert({
+    city: null,
+    department: null,
+    property_type: null,
+    max_price_eur: null,
+    min_surface_m2: null,
+    occupancy_status: null,
+    min_investment_score: null,
+    min_yield_pct: null,
+    min_market_discount_pct: null,
+    dpe_classes: [],
+    require_house_with_land: false,
+    max_price_per_m2: 6_000,
+  });
+  const studio = makeSale({
+    property_type: "studio",
+    title: "Studio",
+    starting_price_eur: 100_000,
+    app_surface_m2: null,
+    habitable_surface_m2: null,
+    carrez_surface_m2: null,
+    rooms_count: null,
+  });
+
+  it("ne rapproche pas un studio sans surface publiée : 20 m² présumés ne font pas un prix au m²", () => {
+    // 100 000 € / 20 m² = 5 000 €/m², sous le plafond de 6 000 €/m².
+    expect(alertMatchesSale(alert, studio).matches).toBe(false);
+  });
+
+  it("rapproche un studio dont la surface est publiée", () => {
+    const measured = makeSale({ ...studio, app_surface_m2: 25, app_surface_kind: "habitable" });
+    expect(alertMatchesSale(alert, measured).matches).toBe(true);
+  });
+});
+
 describe("alert yield criterion", () => {
   const sale = makeSale({
     department: "23",
