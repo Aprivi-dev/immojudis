@@ -124,7 +124,10 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // Session /equipe du 31/10/2026 (14 lots, PR #356 à #369, mesurés ensemble sur une branche d'intégration) : total
 // mesuré 6 478 982 pour 6 368 367 sur main (+110 615, surtout /favoris +21 314 et /sales +11 147). Décision du
 // fondateur (01/11/2026) : relèvement à 6 500 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_500_000;
+// Module Emails, lots 1-2 (01/11/2026) : total mesuré 6 505 065 pour 6 496 348 sur main (+8 717, la page
+// /admin/emails seule : onglets, aperçus, adresses). Décision du propriétaire (01/11/2026) : relèvement à
+// 6 510 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_510_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -301,6 +304,14 @@ const routeBudgets = [
     routeKey: "/admin/agent-ia/page",
     entryKey: "[project]/src/app/admin/agent-ia/page",
     maxBytes: 485_000,
+  },
+  {
+    name: "admin-emails",
+    manifest: ".next/server/app/admin/emails/page_client-reference-manifest.js",
+    routeKey: "/admin/emails/page",
+    entryKey: "[project]/src/app/admin/emails/page",
+    // 438 622 octets mesurés le 01/11/2026 (module Emails, lots 1 et 2) + 10 %.
+    maxBytes: 483_000,
   },
   {
     name: "admin-publications",
