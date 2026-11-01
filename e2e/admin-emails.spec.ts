@@ -87,10 +87,79 @@ test.describe("admin emails", () => {
     await expect(page.getByText("RESEND_API_KEY")).toBeVisible();
 
     await page.getByRole("tab", { name: "Historique" }).click();
-    await expect(page.getByText(/bientôt disponible/)).toBeVisible();
+    await expect(page.getByText("Vos alertes du jour")).toBeVisible();
     await expect(page).toHaveURL(/onglet=historique/);
   });
+
+  test("shows the history, opens a sent email in an isolated frame and a received one as text", async ({
+    page,
+  }) => {
+    await prepareAdminEmails(page);
+    await page.goto("/admin/emails?onglet=historique");
+
+    await expect(page.getByText("Vos alertes du jour")).toBeVisible();
+    await expect(page.getByText("Remis", { exact: true })).toBeVisible();
+
+    await page.getByText("Vos alertes du jour").click();
+    const frame = page.locator("iframe[title='Contenu de l’email']");
+    await expect(frame).toHaveAttribute("sandbox", "");
+    await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
+    await expect(
+      page.frameLocator("iframe[title='Contenu de l’email']").getByRole("heading"),
+    ).toHaveText("Bonjour");
+    // Aucun lien d'action actif dans le cadre : le jeton est masqué et le lien est inerte.
+    await expect(
+      page.frameLocator("iframe[title='Contenu de l’email']").locator("a[href]"),
+    ).toHaveCount(0);
+    expect(await page.evaluate(() => "__historiqueExecute" in window)).toBe(false);
+
+    await page.getByRole("button", { name: "Reçus" }).click();
+    await page.getByText("Re: vente du 12 janvier").click();
+    await expect(page.getByText("Texte reçu en clair, sans lien cliquable.")).toBeVisible();
+    await expect(page.locator("iframe[title='Contenu de l’email']")).toHaveCount(0);
+    await expect(page.getByText("pv-descriptif.pdf (240 Ko)")).toBeVisible();
+  });
 });
+
+const sentHistory = {
+  rows: [
+    {
+      id: "log:00000000-0000-4000-8000-000000000001",
+      at: "02/11/2026 09:12",
+      who: "alice@example.test",
+      subject: "Vos alertes du jour",
+      tag: "Alerte de recherche",
+      status: { text: "Remis", tone: "ok" },
+    },
+  ],
+  next: null,
+};
+const receivedHistory = {
+  rows: [
+    {
+      id: "case:00000000-0000-4000-8000-000000000002",
+      at: "02/11/2026 08:40",
+      who: "maitre@cabinet.example",
+      subject: "Re: vente du 12 janvier",
+      tag: "Réponse à l’agent · 1 pièce(s)",
+    },
+  ],
+  next: null,
+};
+const sentMessage = {
+  title: "Vos alertes du jour",
+  lines: ["À : alice@example.test", "Envoyé le 02/11/2026 09:12 · Alerte de recherche · Remis"],
+  kind: "html",
+  body: `<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><h1>Bonjour</h1><script>window.parent.__historiqueExecute = true</script><a data-inert-href="[lien d’action masqué]">Se désinscrire</a>`,
+  attachments: [],
+};
+const receivedMessage = {
+  title: "Re: vente du 12 janvier",
+  lines: ["De : maitre@cabinet.example", "Reçu le 02/11/2026 08:40"],
+  kind: "text",
+  body: "Texte reçu en clair, sans lien cliquable.",
+  attachments: ["pv-descriptif.pdf (240 Ko)"],
+};
 
 async function prepareAdminEmails(page: Page) {
   const session = createSession();
@@ -138,6 +207,17 @@ async function prepareAdminEmails(page: Page) {
   await page.route("**/api/admin/emails/addresses**", (route) =>
     route.fulfill({ json: addresses }),
   );
+  await page.route("**/api/admin/emails/history**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/history")) {
+      return route.fulfill({
+        json: url.searchParams.get("box") === "received" ? receivedHistory : sentHistory,
+      });
+    }
+    return route.fulfill({
+      json: decodeURIComponent(url.pathname).includes("case:") ? receivedMessage : sentMessage,
+    });
+  });
 }
 
 function createSession() {

@@ -3,11 +3,8 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { PublicApiError } from "@/lib/api-errors";
-import {
-  resolveEmailAlertDeliveryConfig,
-  sendResendEmail,
-  type ResendEmailMessage,
-} from "@/lib/email-alerts";
+import { resolveEmailAlertDeliveryConfig, type ResendEmailMessage } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { asRecord, escapeHtml } from "@/lib/guards";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
@@ -313,12 +310,15 @@ export async function sendOfferOpeningTest({
     }),
     internal: true,
   });
-  await sendResendEmail({
+  await sendTrackedEmail({
     apiKey: config.apiKey,
     message,
     idempotencyKey: `immojudis-offer-opening-test-${auth.userId}-${now.getTime()}`,
     fetchImpl,
     category: "opening",
+    templateKey: "offer_opening",
+    mode: "test",
+    userId: auth.userId,
   });
   console.info(JSON.stringify({ scope: "admin.offer-opening-notifier", action: "test" }));
   return { sentTo: email };
@@ -436,7 +436,7 @@ export async function sendOfferOpeningBatch({
         counts.skipped += 1;
         return;
       }
-      await sendResendEmail({
+      await sendTrackedEmail({
         apiKey: config.apiKey,
         message: buildOfferOpeningMessage({
           recipientEmail: email,
@@ -452,6 +452,8 @@ export async function sendOfferOpeningBatch({
         idempotencyKey: `immojudis-offer-opening-${userId}`,
         fetchImpl,
         category: "opening",
+        templateKey: "offer_opening",
+        userId,
       });
       counts.sent += 1;
     } catch (failure) {

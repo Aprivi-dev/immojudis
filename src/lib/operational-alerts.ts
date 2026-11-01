@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { sendResendEmail } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { serverEnv } from "@/lib/env";
 import {
   emailBreakable,
@@ -279,7 +279,7 @@ async function sendOperationalAlertEmail(
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
     for (const to of config.to) {
-      await sendResendEmail({
+      await sendTrackedEmail({
         apiKey: config.apiKey,
         // Resend ignores a repeated key for 24 hours: a retried notification does not send the email twice.
         idempotencyKey:
@@ -290,6 +290,7 @@ async function sendOperationalAlertEmail(
         fetchImpl: (input, init) => fetchImpl(input, { ...init, signal: controller.signal }),
         message: buildOperationalAlertEmail(alert, environment, { from: config.from, to }),
         category: "operations",
+        templateKey: "operations_incident",
       });
     }
   } finally {

@@ -7,6 +7,7 @@ Copie exacte du code source des versions précédentes des pages juridiques, ext
 | Conditions générales | `2026-10-25.1` | `45b05a29108fc2c9b7637d92f9b5e8169971f6d4170ed09cfe3af9f7ae1de39c` | du 25 octobre 2026 au 1er décembre 2026 pour les comptes existants |
 | Mentions légales | `2026-07-29.1` | `c55e7cffefcf3ebc6e0807e3a234f8d155603e32344cd6ffc0f2478533538df9` | du 29 juillet au 26 octobre 2026 |
 | Mentions légales | `2026-10-26.1` | `d781161fc310eed0195caeccc50e5ef8df4d7dd986f419134baceaf8738a3b46` | le 26 octobre 2026, jusqu'à la version `2026-10-26.2` (paragraphe « Données publiques réutilisées ») |
+| Politique de confidentialité | `2026-11-01.2` | `5ae544af26146742c9be3bc585baa596397425c098addf38914c2b6da42c2e6b` | le 1er novembre 2026, jusqu'à la version `2026-11-01.3` (journal des emails envoyés) |
 | Politique de confidentialité | `2026-11-01.1` | `45fa8eb7d62a3a19333a88516fdcfff4e1678a288f4eab7b9b3d07773c5d18b9` | le 1er novembre 2026, jusqu'à la version `2026-11-01.2` (messages écrits à l'adresse de réponse sans dossier ouvert) |
 | Politique de confidentialité | `2026-10-31.1` | `bed0e6a032d3131b0041641d810eeda53a2a27b27b080e3f6a5b10c9b29891d5` | le 31 octobre 2026, jusqu'à la version `2026-11-01.1` (demandes aux greffes) |
 | Politique de confidentialité | `2026-10-26.1` | `e3860fd8c06ffad5896fb6821d0abb4dd61a6d18bd9eb62afa1d25955fb532bb` | le 26 octobre 2026, jusqu'à la version `2026-10-31.1` (événements par compte, clics des emails, retours sur les signaux, instantanés d'estimation) |

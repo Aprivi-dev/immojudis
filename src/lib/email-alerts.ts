@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { serverEnv } from "@/lib/env";
 import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { canCreateEmailAlertNotification } from "@/lib/notification-preferences";
 import { setOfferOpeningNotification } from "@/lib/offer-opening-notification";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
@@ -794,12 +795,14 @@ async function deliverEmailAlertDigest({
     .slice(0, 24);
 
   try {
-    const sendResult = await sendResendEmail({
+    const sendResult = await sendTrackedEmail({
       apiKey: config.apiKey,
       message,
       idempotencyKey: `immojudis-alert-digest-${userId}-${digestKey}`,
       fetchImpl,
       category: "alert",
+      templateKey: "alert",
+      userId,
     });
     for (const notification of sendable) {
       await markEmailNotificationSent({

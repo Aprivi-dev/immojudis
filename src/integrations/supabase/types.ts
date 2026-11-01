@@ -112,6 +112,33 @@ export type Database = {
           },
         ];
       };
+      admin_email_access_log: {
+        Row: {
+          admin_user_id: string;
+          id: string;
+          occurred_at: string;
+          row_count: number | null;
+          scope: string;
+          target_id: string | null;
+        };
+        Insert: {
+          admin_user_id: string;
+          id?: string;
+          occurred_at?: string;
+          row_count?: number | null;
+          scope: string;
+          target_id?: string | null;
+        };
+        Update: {
+          admin_user_id?: string;
+          id?: string;
+          occurred_at?: string;
+          row_count?: number | null;
+          scope?: string;
+          target_id?: string | null;
+        };
+        Relationships: [];
+      };
       adjudication_price_statistics_build_reviews: {
         Row: {
           build_id: string;
@@ -6408,6 +6435,60 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      email_send_log: {
+        Row: {
+          bounce_type: string | null;
+          category: string;
+          created_at: string;
+          error_code: string | null;
+          from_address: string;
+          id: string;
+          last_event_at: string | null;
+          mode: string;
+          resend_email_id: string | null;
+          status: string;
+          subject: string;
+          template_key: string;
+          template_revision_id: string | null;
+          to_address: string;
+          user_id: string | null;
+        };
+        Insert: {
+          bounce_type?: string | null;
+          category?: string;
+          created_at?: string;
+          error_code?: string | null;
+          from_address?: string;
+          id?: string;
+          last_event_at?: string | null;
+          mode?: string;
+          resend_email_id?: string | null;
+          status?: string;
+          subject?: string;
+          template_key?: string;
+          template_revision_id?: string | null;
+          to_address?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          bounce_type?: string | null;
+          category?: string;
+          created_at?: string;
+          error_code?: string | null;
+          from_address?: string;
+          id?: string;
+          last_event_at?: string | null;
+          mode?: string;
+          resend_email_id?: string | null;
+          status?: string;
+          subject?: string;
+          template_key?: string;
+          template_revision_id?: string | null;
+          to_address?: string;
+          user_id?: string | null;
+        };
+        Relationships: [];
       };
       evidence_reviews: {
         Row: {
@@ -14490,6 +14571,22 @@ export type Database = {
         Args: { p_now?: string };
         Returns: number;
       };
+      admin_email_received_list: {
+        Args: {
+          p_address?: string;
+          p_before_at?: string;
+          p_before_id?: string;
+          p_limit?: number;
+        };
+        Returns: {
+          address: string;
+          attachment_count: number;
+          created_at: string;
+          id: string;
+          source: string;
+          subject: string;
+        }[];
+      };
       admin_lawyer_monthly_statement: {
         Args: { p_month: string };
         Returns: {
@@ -15720,6 +15817,33 @@ export type Database = {
           p_status?: number;
         };
         Returns: Json;
+      };
+      record_email_delivery_event: {
+        Args: {
+          p_bounce_type?: string;
+          p_error_code?: string;
+          p_event: string;
+          p_from?: string;
+          p_occurred_at?: string;
+          p_resend_email_id: string;
+          p_subject?: string;
+          p_to?: string;
+        };
+        Returns: string;
+      };
+      record_email_send: {
+        Args: {
+          p_category: string;
+          p_from: string;
+          p_mode: string;
+          p_resend_email_id: string;
+          p_subject: string;
+          p_template_key: string;
+          p_template_revision_id?: string;
+          p_to: string;
+          p_user_id?: string;
+        };
+        Returns: string;
       };
       record_sale_signal_feedback: {
         Args: {

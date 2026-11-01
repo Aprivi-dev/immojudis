@@ -131,11 +131,18 @@ export type ProfessionalDataExport = {
   contacts: Array<Record<string, unknown>>;
   /** Messages reçus de cette adresse sans dossier ouvert (sans le jeton ni l'adresse de réponse). */
   unroutedMessages: Array<Record<string, unknown>>;
+  /** Journal des emails envoyés à cette adresse (90 jours) : date, objet, type de message, état de la remise. */
+  emailLog: Array<Record<string, unknown>>;
 };
+
+/** « La table n'existe pas » : migration du journal des envois pas encore appliquée, donc rien à lire ni à effacer. */
+function isMissingTable(error: { code?: string } | null): boolean {
+  return error?.code === "PGRST205" || error?.code === "42P01";
+}
 
 /**
  * Copie des données détenues pour une adresse : dossiers, demandes, messages échangés, messages reçus
- * sans dossier ouvert, pièces déposées (métadonnées, pas le contenu), informations extraites et fiche du registre. N'inclut ni
+ * sans dossier ouvert, journal des emails envoyés à cette adresse, pièces déposées (métadonnées, pas le contenu), informations extraites et fiche du registre. N'inclut ni
  * l'identité ni l'adresse des personnes qui ont fait la demande à Immojudis.
  */
 export async function collectProfessionalData(rawEmail: string): Promise<ProfessionalDataExport> {
@@ -233,6 +240,23 @@ export async function collectProfessionalData(rawEmail: string): Promise<Profess
       .range(from, to),
   );
 
+  // Journal des emails envoyés à cette adresse (`to_address`, minuscules). Sans corps : seules les métadonnées.
+  const emailLog: Array<Record<string, unknown>> = [];
+  for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .from("email_send_log")
+      .select("id,template_key,category,mode,subject,status,bounce_type,created_at,last_event_at")
+      .eq("to_address", email)
+      .order("id")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) {
+      if (isMissingTable(error)) break;
+      throw new Error(error.message || "Lecture impossible.");
+    }
+    emailLog.push(...(data ?? []));
+    if ((data?.length ?? 0) < PAGE_SIZE) break;
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     email,
@@ -244,6 +268,7 @@ export async function collectProfessionalData(rawEmail: string): Promise<Profess
     fileAnalyses,
     contacts,
     unroutedMessages,
+    emailLog,
   };
 }
 
@@ -257,7 +282,8 @@ export type ProfessionalErasureReport = {
  * Efface les données d'un professionnel : fichiers reçus mis en file de suppression Storage (les
  * documents déjà publiés après validation humaine ne sont pas retirés ici), dossiers
  * partagés et demandes dont il est le destinataire (messages, pièces, informations extraites et files
- * d'analyse en cascade), messages reçus de lui sans dossier ouvert, fiches du registre propres à une vente. L'adresse est ensuite inscrite à la liste d'opposition (elle seule reste,
+ * d'analyse en cascade), messages reçus de lui sans dossier ouvert, lignes du journal des emails qui lui
+ * ont été envoyés, fiches du registre propres à une vente. L'adresse est ensuite inscrite à la liste d'opposition (elle seule reste,
  * normalisée) : sans cela, la prochaine collecte de l'annonce la recréerait et l'agent pourrait de
  * nouveau la solliciter. Idempotent : relancé après un échec partiel, il reprend où il s'est arrêté.
  */
@@ -343,6 +369,16 @@ export async function eraseProfessionalData(rawEmail: string): Promise<Professio
     );
   }
   deletedRows["information_agent_unrouted_messages"] = unroutedCount ?? 0;
+
+  // 2 quater. Journal des emails envoyés à cette adresse (aucun corps n'y est conservé).
+  const { count: emailLogCount, error: emailLogError } = await supabaseAdmin
+    .from("email_send_log")
+    .delete({ count: "exact" })
+    .eq("to_address", email);
+  if (emailLogError && !isMissingTable(emailLogError)) {
+    throw new Error(`Effacement impossible dans email_send_log : ${emailLogError.message}`);
+  }
+  deletedRows["email_send_log"] = emailLogError ? 0 : (emailLogCount ?? 0);
 
   // 3. Dossiers (messages, pièces, informations extraites, tâches d'analyse en cascade), puis demandes.
   deletedRows["information_agent_cases"] = await deleteByIds("information_agent_cases", caseIds);

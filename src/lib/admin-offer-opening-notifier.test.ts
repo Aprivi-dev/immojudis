@@ -42,11 +42,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     auth: { admin: { getUserById: mocks.getUserById } },
   },
 }));
-// Le vrai module envoie par fetch : on garde sa construction de message et ses réglages.
-vi.mock("@/lib/email-alerts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/email-alerts")>()),
-  sendResendEmail: mocks.send,
-}));
+// L'envoi suivi (Resend + journal des envois) est remplacé ; le vrai module garde sa construction de message.
+vi.mock("@/lib/send-tracked-email", () => ({ sendTrackedEmail: mocks.send }));
 
 import {
   OFFER_OPENING_BATCH_SIZE,
@@ -289,6 +286,11 @@ describe("envoi d'essai", () => {
     expect(mocks.send).toHaveBeenCalledTimes(1);
     expect(mocks.send.mock.calls[0][0].message.to).toBe("admin@immojudis.test");
     expect(mocks.send.mock.calls[0][0].message.subject).toContain("[Test]");
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({
+      templateKey: "offer_opening",
+      mode: "test",
+      userId: idOf(999),
+    });
     // Aucune écriture : un essai ne marque personne comme prévenu.
     expect(mocks.from).not.toHaveBeenCalled();
   });
@@ -390,6 +392,10 @@ describe("envoi d'un lot", () => {
     });
     await sendOfferOpeningBatch({ authToken: "t", now: NOW, env });
     expect(mocks.send.mock.calls[0][0].idempotencyKey).toBe(`immojudis-offer-opening-${idOf(2)}`);
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({
+      templateKey: "offer_opening",
+      userId: idOf(2),
+    });
   });
 
   it("n'essaie qu'une fois par passage une demande que la file rend deux fois", async () => {

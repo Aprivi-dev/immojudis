@@ -1,10 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  resolveTransactionalEmailConfig,
-  sendResendEmail,
-  type ResendEmailMessage,
-} from "@/lib/email-alerts";
+import { resolveTransactionalEmailConfig, type ResendEmailMessage } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { emailButton, emailLayout, emailLink, emailParagraph } from "@/lib/email-layout";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
@@ -127,9 +124,11 @@ export async function sendPaymentFailedNotice({
     if (error) throw error;
     const recipient = data.user?.email?.trim();
     if (!recipient) return "skipped";
-    await sendResendEmail({
+    await sendTrackedEmail({
       apiKey: config.apiKey,
       idempotencyKey: `immojudis-payment-failed-${invoiceId}`,
+      templateKey: "payment_failed",
+      userId,
       fetchImpl: fetch,
       message: buildPaymentFailedMessage({
         from: config.from,
@@ -223,9 +222,11 @@ export async function sendTrialEndingNotice({
     if (error) throw error;
     const recipient = data.user?.email?.trim();
     if (!recipient) return "skipped";
-    await sendResendEmail({
+    await sendTrackedEmail({
       apiKey: config.apiKey,
       idempotencyKey: `immojudis-trial-ending-${subscriptionId}`,
+      templateKey: "trial_ending",
+      userId,
       fetchImpl: fetch,
       message: buildTrialEndingMessage({
         from: config.from,
@@ -335,9 +336,11 @@ export async function sendCancellationConfirmationNotice({
     if (error) throw error;
     const recipient = data.user?.email?.trim();
     if (!recipient) return "skipped";
-    await sendResendEmail({
+    await sendTrackedEmail({
       apiKey: config.apiKey,
       idempotencyKey: `immojudis-cancellation-confirmation-${subscriptionId}-${requestedAt}`,
+      templateKey: "cancellation",
+      userId,
       fetchImpl: fetch,
       message: buildCancellationConfirmationMessage({
         from: config.from,

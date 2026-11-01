@@ -1,6 +1,7 @@
 import "server-only";
 import { errorDetailForLog } from "@/lib/api-errors";
-import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
+import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { weeklyDigestMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { recentSaleChanges, type SaleChangeTopic } from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
@@ -526,12 +527,15 @@ export async function runWeeklyDigest({
         env,
       });
       stage = "send_failed";
-      const result = await sendResendEmail({
+      const result = await sendTrackedEmail({
         apiKey,
         message,
         idempotencyKey: `immojudis-weekly-digest-${userId}-${weekKey}`,
         fetchImpl,
         category: "weekly",
+        templateKey: "weekly_digest",
+        mode: sendMode,
+        userId,
       });
       stage = "journal_failed";
       await store.markSent(id, { messageId: result.id, at: new Date() });
