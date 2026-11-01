@@ -91,6 +91,7 @@ function comparisonSet(overrides: Partial<SaleAnalysisSet> = {}): SaleAnalysisSe
     summary: {
       itemCount: 1,
       totalStartingPriceEur: 100_000,
+      pricedItemCount: 1,
       totalUserMaxBidEur: 120_000,
       averageInvestmentScore: 82,
       earliestSaleDate: "2026-10-15T09:00:00.000Z",
@@ -152,7 +153,7 @@ describe("ComparisonsPage", () => {
             ...item,
             sale: item.sale ? { ...item.sale, startingPriceEur: 0 } : item.sale,
           })),
-          summary: { ...base.summary, totalStartingPriceEur: 0 },
+          summary: { ...base.summary, totalStartingPriceEur: null, pricedItemCount: 0 },
         }),
       ],
       limit: 1,
@@ -161,6 +162,29 @@ describe("ComparisonsPage", () => {
 
     expect(await screen.findByText(/Mise à prix : Prix non communiqué/)).toBeTruthy();
     expect(screen.queryByText(/Mise à prix : 0/)).toBeNull();
+    expect(screen.queryByText(/Total partiel/)).toBeNull();
+  });
+
+  it("flags a starting-price total that covers only some of the properties", async () => {
+    const base = comparisonSet();
+    renderPage({
+      sets: [
+        comparisonSet({
+          summary: { ...base.summary, itemCount: 3, pricedItemCount: 2 },
+        }),
+      ],
+      limit: 1,
+      itemLimit: 3,
+    });
+
+    expect(await screen.findByText("Total partiel : 2 biens sur 3")).toBeTruthy();
+  });
+
+  it("shows no partial note when every property has a starting price", async () => {
+    renderPage({ sets: [comparisonSet()], limit: 1, itemLimit: 3 });
+
+    await screen.findByText("Mises à prix");
+    expect(screen.queryByText(/Total partiel/)).toBeNull();
   });
 
   it("explains how to start when there are no saved comparisons", async () => {
