@@ -101,6 +101,7 @@ describe("DeferredGoogleAnalytics : pages exclues de la mesure", () => {
   it("couvre les pages sensibles prévues", () => {
     expect([...ANALYTICS_EXCLUDED_PATHS].sort()).toEqual([
       "/admin",
+      "/auth",
       "/compte",
       "/contribuer",
       "/login",
