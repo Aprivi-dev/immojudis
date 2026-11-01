@@ -86,9 +86,16 @@ test.describe("« Retour » sur /sales", () => {
     // Les liens du HTML n'ont pas de ?from= : l'origine s'ajoute quand on approche le lien.
     expect(await saleLink.getAttribute("href")).toBe(`/sales/${KNOWN_SALE}`);
 
-    await saleLink.scrollIntoViewIfNeeded();
+    // Défilement explicite de la fenêtre jusqu'à la position réelle de l'annonce : WebKit ne semble pas
+    // défiler de façon fiable avec scrollIntoViewIfNeeded() (non vérifié : WebKit absent en local).
+    await saleLink.evaluate((link) => {
+      window.scrollTo({
+        top: link.getBoundingClientRect().top + window.scrollY - 80,
+        behavior: "instant",
+      });
+    });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
     const scrolledTo = await page.evaluate(() => window.scrollY);
-    expect(scrolledTo).toBeGreaterThan(0);
 
     await saleLink.click();
     await expect(page).toHaveURL(new RegExp(`/sales/${KNOWN_SALE}`));
