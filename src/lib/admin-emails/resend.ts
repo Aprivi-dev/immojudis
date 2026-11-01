@@ -149,3 +149,49 @@ export async function fetchResendWebhooks(
     })),
   };
 }
+
+/** Un email envoyé, tel que Resend le conserve (30 jours). */
+export type ResendSentEmail = {
+  html: string | null;
+  text: string | null;
+  /** Dernier évènement connu du fournisseur (`delivered`, `bounced`, `delivery_delayed`…). */
+  lastEvent: string;
+};
+
+/**
+ * Lit un email envoyé chez Resend (`GET /emails/{id}`), à la demande de l'administrateur. `expired` : le
+ * fournisseur ne le conserve plus (404). Aucun envoi, une seule requête de lecture ; l'erreur d'origine
+ * n'est jamais renvoyée.
+ */
+export async function fetchResendEmail(
+  apiKey: string | null,
+  emailId: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<ResendResult<ResendSentEmail> | { ok: false; failure: "expired" }> {
+  if (!apiKey) return { ok: false, failure: "not_configured" };
+  try {
+    const response = await fetchImpl(`${RESEND_API}/emails/${encodeURIComponent(emailId)}`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (response.status === 404) return { ok: false, failure: "expired" };
+    if (response.status === 429) return { ok: false, failure: "rate_limited" };
+    if (response.status === 401) return { ok: false, failure: "invalid_key" };
+    if (response.status === 403) return { ok: false, failure: "missing_permission" };
+    if (!response.ok) return { ok: false, failure: "unavailable" };
+    const body: unknown = await response.json();
+    if (!isRecord(body)) return { ok: false, failure: "unavailable" };
+    return {
+      ok: true,
+      data: {
+        html: typeof body.html === "string" ? body.html : null,
+        text: typeof body.text === "string" ? body.text : null,
+        lastEvent: text(body.last_event),
+      },
+    };
+  } catch {
+    return { ok: false, failure: "unavailable" };
+  }
+}

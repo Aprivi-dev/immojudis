@@ -17,6 +17,9 @@ vi.mock("@/components/admin/emails/AdminEmailDesignsTab", () => ({
 vi.mock("@/components/admin/emails/AdminEmailListTab", () => ({
   AdminEmailListTab: ({ queryKey }: { queryKey: string }) => <div>liste : {queryKey}</div>,
 }));
+vi.mock("@/components/admin/emails/EmailHistoryPanel", () => ({
+  EmailHistoryPanel: () => <div>onglet de l'historique</div>,
+}));
 vi.mock("@/lib/client-api/admin-emails", () => ({
   fetchAdminEmailAddresses: vi.fn(),
   fetchAdminEmailTemplates: vi.fn(),
@@ -76,9 +79,10 @@ describe("AdminEmailsPage", () => {
     );
   });
 
-  it("annonce l'historique comme bientôt disponible", () => {
+  it("ouvre l'historique des envois à la place de l'ancien « bientôt disponible »", () => {
     window.history.replaceState(null, "", "/admin/emails?onglet=historique");
     render(<AdminEmailsPage />);
-    expect(screen.getByText(/bientôt disponible/)).toBeTruthy();
+    expect(screen.getByText("onglet de l'historique")).toBeTruthy();
+    expect(screen.queryByText(/bientôt disponible/)).toBeNull();
   });
 });
