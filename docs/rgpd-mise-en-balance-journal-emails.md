@@ -50,8 +50,11 @@ responsable de traitement.
    - Contenu d’un message lu à la demande chez le prestataire (30 jours), **sans lien d’action** : les URL à
      jeton (confirmation d’adresse, lien magique, réinitialisation, désinscription signée, opposition et dépôt
      de l’agent, partage de rapport) sont remplacées par « [lien d’action masqué] » côté serveur ; les liens
-     restants sont inertes, le cadre est isolé (`sandbox=""`, aucune requête). Un email reçu s’affiche en
-     texte seul, jamais en HTML.
+     restants n’existent pas : le HTML est analysé puis reconstruit à partir d’une liste blanche de balises et
+     d’attributs (aucun `href`, `src`, `action`, `ping` ni gestionnaire d’évènement), le cadre est isolé
+     (`sandbox=""`, aucune requête). Un email reçu s’affiche en texte seul, jamais en HTML. Le contenu d’un
+     email qui ne vient pas d’Immojudis (ligne `unknown`, par exemple un email d’authentification) n’est jamais lu.
+   - Une recherche par adresse passe par un `POST` : l’adresse ne figure jamais dans une URL.
    - Ni ouvertures ni clics : les évènements `email.opened` et `email.clicked` ne sont ni abonnés ni lus.
 6. **Risques résiduels.** Adresse conservée alors que la personne a retiré son consentement à un
    traitement (le journal est distinct des consentements ; il garde la preuve de l’envoi) ; adresses

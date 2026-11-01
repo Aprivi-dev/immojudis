@@ -189,18 +189,21 @@ export async function processInformationAgentInboundWebhook({
   } catch {
     throw new InvalidInformationAgentWebhookSignatureError();
   }
-  // Évènements de livraison (remis, différé, échec, rebond, plainte) : d'abord au journal des envois, qui ne
-  // décide de rien ; une panne du journal remonte APRÈS le traitement des rebonds, pour que le fournisseur rejoue.
-  const logFailure =
-    event.type === "email.received" ? null : await captureFailure(() => recordDelivery(event));
+  // Évènements de livraison (remis, différé, échec, rebond, plainte) : le journal des envois, qui ne décide de
+  // rien, passe APRÈS le traitement des rebonds et plaintes (3 s au plus). Sa panne remonte (500) une fois le
+  // registre de contacts à jour, pour que le fournisseur rejoue l'évènement.
+  const logDelivery = async () => {
+    const logFailure = await captureFailure(() => recordDelivery(event));
+    if (logFailure) throw logFailure.error;
+  };
   // Rebonds et plaintes des emails de l'agent : écrits sur le registre de contacts, qui coupe l'envoi.
   if (event.type === "email.bounced" || event.type === "email.complained") {
     const processed = await processDeliveryEvent(event, env);
-    if (logFailure) throw logFailure.error;
+    await logDelivery();
     return processed;
   }
   if (event.type !== "email.received") {
-    if (logFailure) throw logFailure.error;
+    await logDelivery();
     return { accepted: true, ignored: true };
   }
 

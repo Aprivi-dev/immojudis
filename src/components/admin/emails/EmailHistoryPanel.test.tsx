@@ -59,9 +59,12 @@ describe("EmailHistoryPanel", () => {
     renderPanel();
     expect(await screen.findByText("Objet premier")).toBeTruthy();
     expect(screen.getByText("Remis")).toBeTruthy();
-    const params = mocks.history.mock.calls[0][0] as URLSearchParams;
-    expect(params.get("box")).toBe("sent");
-    expect(params.get("refresh")).toBeNull();
+    expect(mocks.history.mock.calls[0][0]).toEqual({
+      box: "sent",
+      address: "",
+      cursor: "",
+      refresh: false,
+    });
   });
 
   it("charge la page suivante avec le curseur du serveur", async () => {
@@ -71,7 +74,7 @@ describe("EmailHistoryPanel", () => {
     renderPanel();
     fireEvent.click(await screen.findByRole("button", { name: "Plus anciens" }));
     expect(await screen.findByText("Objet second")).toBeTruthy();
-    expect((mocks.history.mock.calls[1][0] as URLSearchParams).get("cursor")).toBe("curseur-1");
+    expect(mocks.history.mock.calls[1][0]).toMatchObject({ cursor: "curseur-1" });
   });
 
   it("cherche par adresse puis bascule sur les reçus", async () => {
@@ -82,19 +85,11 @@ describe("EmailHistoryPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Rechercher" }));
     await waitFor(() =>
-      expect(
-        mocks.history.mock.calls.some(
-          (call) => (call[0] as URLSearchParams).get("address") === "premier@",
-        ),
-      ).toBe(true),
+      expect(mocks.history.mock.calls.some((call) => call[0].address === "premier@")).toBe(true),
     );
     fireEvent.click(screen.getByRole("button", { name: "Reçus" }));
     await waitFor(() =>
-      expect(
-        mocks.history.mock.calls.some(
-          (call) => (call[0] as URLSearchParams).get("box") === "received",
-        ),
-      ).toBe(true),
+      expect(mocks.history.mock.calls.some((call) => call[0].box === "received")).toBe(true),
     );
     expect(screen.queryByRole("button", { name: "Actualiser" })).toBeNull();
   });
@@ -104,7 +99,7 @@ describe("EmailHistoryPanel", () => {
     await screen.findByText("Objet premier");
     fireEvent.click(screen.getByRole("button", { name: "Actualiser" }));
     await waitFor(() => expect(mocks.history).toHaveBeenCalledTimes(2));
-    expect((mocks.history.mock.calls[1][0] as URLSearchParams).get("refresh")).toBe("1");
+    expect(mocks.history.mock.calls[1][0]).toMatchObject({ refresh: true, cursor: "" });
   });
 
   it("ouvre un message dans un cadre isolé : sandbox vide, sans référent, sans script", async () => {

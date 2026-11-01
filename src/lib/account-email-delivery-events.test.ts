@@ -256,7 +256,7 @@ describe("processAccountEmailDeliveryWebhook", () => {
     },
   );
 
-  it("écrit un rebond au journal AVANT de retirer les consentements", async () => {
+  it("retire les consentements AVANT d'écrire le rebond au journal", async () => {
     const order: string[] = [];
     const recordDelivery = vi.fn(async () => void order.push("journal"));
     revoke.mockImplementation(async () => void order.push("consentements"));
@@ -267,7 +267,56 @@ describe("processAccountEmailDeliveryWebhook", () => {
       revoke,
       recordDelivery,
     });
-    expect(order).toEqual(["journal", "consentements"]);
+    expect(order).toEqual(["consentements", "journal"]);
+  });
+
+  it("n'attend pas plus de 3 s un journal qui ne répond jamais : retrait fait, puis 500 pour rejouer", async () => {
+    vi.useFakeTimers();
+    try {
+      const recordDelivery = vi.fn(() => new Promise<void>(() => undefined));
+      const outcome = processAccountEmailDeliveryWebhook({
+        request: signedRequest(complaint()),
+        env,
+        findAccount,
+        revoke,
+        recordDelivery,
+      }).then(
+        () => "résolu",
+        (error: Error) => error.message,
+      );
+      await vi.advanceTimersByTimeAsync(2_900);
+      // Le retrait est déjà fait pendant que le journal attend.
+      expect(revoke).toHaveBeenCalledWith("user-1");
+      await vi.advanceTimersByTimeAsync(200);
+      expect(await outcome).toContain("délai dépassé");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejoué par le fournisseur après une panne du journal, retire à nouveau sans autre effet", async () => {
+    const recordDelivery = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("journal indisponible"))
+      .mockResolvedValueOnce(undefined);
+    await expect(
+      processAccountEmailDeliveryWebhook({
+        request: signedRequest(complaint()),
+        env,
+        findAccount,
+        revoke,
+        recordDelivery,
+      }),
+    ).rejects.toThrow("journal indisponible");
+    const replay = await processAccountEmailDeliveryWebhook({
+      request: signedRequest(complaint()),
+      env,
+      findAccount,
+      revoke,
+      recordDelivery,
+    });
+    expect(replay).toMatchObject({ accepted: true, kind: "complaint", revokedAccounts: 1 });
+    expect(revoke.mock.calls).toEqual([["user-1"], ["user-1"]]);
   });
 
   it("retire les consentements même si le journal est en panne, puis fait rejouer l'évènement", async () => {

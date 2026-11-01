@@ -390,6 +390,7 @@ function webhook(
   additionalHeaders: HeadersInit = {},
   deferProcessing = false,
   envOverrides: Partial<Omit<NodeJS.ProcessEnv, "NODE_ENV">> = {},
+  recordDelivery?: (event: { type: string; data?: unknown }) => Promise<void>,
 ): Promise<Awaited<ReturnType<typeof processInformationAgentInboundWebhook>>> {
   const request = new Request("https://example.test/api/webhooks/resend/information-agent", {
     method: "POST",
@@ -412,6 +413,7 @@ function webhook(
     },
     fetchImpl: fetchImpl as typeof fetch,
     deferProcessing,
+    ...(recordDelivery ? { recordDelivery } : {}),
   });
 }
 
@@ -500,6 +502,59 @@ describe("information-agent offline inbound scenarios", () => {
       { onConflict: "scope_sale_id,normalized_email" },
     );
     expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("writes the contact registry BEFORE the send log, and a log failure comes back as an error to replay", async () => {
+    const order: string[] = [];
+    const upsert = vi.fn(async () => (order.push("registre"), { error: null }));
+    mocks.from.mockReturnValue({ upsert });
+    const bounce = {
+      type: "email.bounced",
+      created_at: "2026-10-23T10:00:00.000Z",
+      data: {
+        from: "Assistant Immojudis <agent@immojudis.test>",
+        to: ["Contact@Example.test"],
+        bounce: { type: "Permanent", subType: "General", message: "no such mailbox" },
+      },
+    };
+    mocks.verify.mockReturnValue(bounce);
+    const recordDelivery = vi.fn(async () => {
+      order.push("journal");
+      throw new Error("journal indisponible");
+    });
+
+    await expect(
+      webhook(
+        vi.fn(),
+        "signed",
+        {},
+        false,
+        {
+          INFORMATION_AGENT_EMAIL_FROM: "Assistant Immojudis <agent@immojudis.test>",
+        },
+        recordDelivery,
+      ),
+    ).rejects.toThrow("journal indisponible");
+    expect(order).toEqual(["registre", "journal"]);
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "contact@example.test", bounce_status: "permanent" }),
+      { onConflict: "scope_sale_id,normalized_email" },
+    );
+  });
+
+  it("accepts delivered, delayed and failed events without touching the contact registry", async () => {
+    for (const type of ["email.delivered", "email.delivery_delayed", "email.failed"]) {
+      mocks.verify.mockReturnValueOnce({
+        type,
+        created_at: "2026-10-23T10:00:00.000Z",
+        data: { email_id: "re_FACTICE_1", from: "x@example.test", to: ["a@example.test"] },
+      });
+      const recordDelivery = vi.fn().mockResolvedValue(undefined);
+      const result = await webhook(vi.fn(), "signed", {}, false, {}, recordDelivery);
+      expect(result).toEqual({ accepted: true, ignored: true });
+      expect(recordDelivery).toHaveBeenCalledWith(expect.objectContaining({ type }));
+    }
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it("does not write a bounce when the signature is invalid", async () => {

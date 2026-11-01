@@ -26,10 +26,10 @@ import { captureFailure, recordEmailDeliveryEvent } from "@/lib/email-delivery-l
  * - Emails de l'agent d'information (`INFORMATION_AGENT_EMAIL_FROM`) : ignorés ici, l'autre webhook
  *   les traite (registre de contacts, pas comptes).
  *
- * - Tous les évènements de livraison (remis, différé, échec, rebond, plainte) sont d'abord écrits au
- *   journal des envois (`email_send_log`), AVANT la logique ci-dessus, qui ne le lit jamais. Une panne du
- *   journal ne retarde pas les retraits de consentement : elle remonte après eux, le fournisseur rejoue
- *   l'évènement.
+ * - Tous les évènements de livraison (remis, différé, échec, rebond, plainte) sont ensuite écrits au
+ *   journal des envois (`email_send_log`), APRÈS la logique ci-dessus, qui ne le lit jamais. Une panne ou
+ *   une lenteur du journal (3 s au plus) ne retarde pas les retraits de consentement : elle remonte après
+ *   eux (500), le fournisseur rejoue l'évènement.
  *
  * Les journaux ne portent aucune adresse.
  */
@@ -171,13 +171,16 @@ export async function processAccountEmailDeliveryWebhook({
     throw new InvalidAccountEmailWebhookSignatureError();
   }
 
-  const logFailure = await captureFailure(() => recordDelivery(event));
+  // Le journal passe APRÈS la logique de consentement : une panne ou une lenteur du journal ne la retarde jamais.
+  // Son échec remonte quand même (500) pour que le fournisseur rejoue l'évènement, les retraits étant idempotents.
+  const finish = async (result: AccountEmailWebhookResult) => {
+    const logFailure = await captureFailure(() => recordDelivery(event));
+    if (logFailure) throw logFailure.error;
+    return result;
+  };
 
   const action = accountEmailActionOf(event, informationAgentSenderAddress(env));
-  if (!action) {
-    if (logFailure) throw logFailure.error;
-    return { accepted: true, ignored: true };
-  }
+  if (!action) return finish({ accepted: true, ignored: true });
 
   const accounts = new Set<string>();
   for (const email of action.emails) {
@@ -195,6 +198,5 @@ export async function processAccountEmailDeliveryWebhook({
       revokedAccounts: accounts.size,
     }),
   );
-  if (logFailure) throw logFailure.error;
-  return { accepted: true, kind: action.kind, revokedAccounts: accounts.size };
+  return finish({ accepted: true, kind: action.kind, revokedAccounts: accounts.size });
 }
