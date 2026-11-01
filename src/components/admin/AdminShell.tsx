@@ -9,6 +9,7 @@ import Database from "lucide-react/dist/esm/icons/database.js";
 import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
 import Gauge from "lucide-react/dist/esm/icons/gauge.js";
 import LayoutDashboard from "lucide-react/dist/esm/icons/layout-dashboard.js";
+import Mail from "lucide-react/dist/esm/icons/mail.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
@@ -25,6 +26,7 @@ export type AdminSection =
   | "overview"
   | "operations"
   | "agent"
+  | "emails"
   | "quality"
   | "publications"
   | "clients"
@@ -43,6 +45,7 @@ const ADMIN_NAV_ITEMS: Array<{
   { section: "overview", href: "/admin", label: "Vue d’ensemble", icon: LayoutDashboard },
   { section: "operations", href: "/admin/operations", label: "Opérations", icon: Database },
   { section: "agent", href: "/admin/agent-ia", label: "Agent IA", icon: Bot },
+  { section: "emails", href: "/admin/emails", label: "Emails", icon: Mail },
   { section: "quality", href: "/admin/quality", label: "Qualité des données", icon: BarChart3 },
   { section: "publications", href: "/admin/publications", label: "Publications", icon: FileCheck2 },
   { section: "signups", href: "/admin/inscriptions", label: "Inscriptions", icon: UserPlus },
