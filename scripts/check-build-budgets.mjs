@@ -121,7 +121,10 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // barre d'action mobile et onglet Quartier chargé à la demande. Total mesuré 6 367 909 pour 6 327 709 sur
 // main ; la fiche elle-même ne charge que 667 octets de plus. Décision du fondateur (29/10/2026) :
 // relèvement à 6 375 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_375_000;
+// Session /equipe du 31/10/2026 (14 lots, PR #356 à #369, mesurés ensemble sur une branche d'intégration) : total
+// mesuré 6 478 982 pour 6 368 367 sur main (+110 615, surtout /favoris +21 314 et /sales +11 147). Décision du
+// fondateur (01/11/2026) : relèvement à 6 500 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_500_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -141,6 +144,11 @@ const LINE_LIMIT_EXCEPTIONS = {
   // overwritten at the next generation. Temporary until the generator output is split per
   // schema area or the file is excluded from the repository budget by a dedicated decision.
   "src/integrations/supabase/types.ts": LINE_LIMIT_EXCEPTIONS_UNTIL,
+  // Décision du fondateur du 01/11/2026 (session /equipe du 31/10) : la fiche vente (1 536 lignes) et la carte
+  // de /sales (1 520 lignes) dépassent la limite une fois les 14 lots fusionnés. Exception temporaire, à
+  // découper avant l'échéance (sous-composants de la fiche, gestion des couches de la carte).
+  "src/components/SimplifiedSaleDetailView.tsx": LINE_LIMIT_EXCEPTIONS_UNTIL,
+  "src/components/search/MapPanel.tsx": LINE_LIMIT_EXCEPTIONS_UNTIL,
 };
 
 const businessModules = [
@@ -192,7 +200,8 @@ const routeBudgets = [
     // Décision du fondateur du 26/10/2026 (lot B2, repère « Pépite ») : relevé de 10 000 octets, à 680 000
     // (669 267 avant le lot).
     // Décision du fondateur du 28/10/2026 (session /equipe du 27/10) : 687 798 mesurés, relevé à 690 000.
-    maxBytes: 690_000,
+    // Décision du fondateur du 01/11/2026 (session /equipe du 31/10, 14 lots) : 709 349 mesurés, relevé à 715 000.
+    maxBytes: 715_000,
   },
   {
     name: "alerts",
@@ -214,7 +223,8 @@ const routeBudgets = [
     routeKey: "/sales/page",
     entryKey: "[project]/src/app/sales/page",
     // zod 4 puis zod/mini : 522 993 octets (24/10/2026), plafond d'origine rétabli.
-    maxBytes: 560_000,
+    // Décision du fondateur du 01/11/2026 (session /equipe du 31/10, 14 lots) : 560 401 mesurés, relevé à 565 000.
+    maxBytes: 565_000,
   },
   {
     name: "sale-detail",
@@ -225,7 +235,8 @@ const routeBudgets = [
     // Décision du fondateur du 26/10/2026 (lot B2, repère « Pépite ») : relevé de 10 000 octets, à 380 000
     // (368 970 avant le lot).
     // Décision du fondateur du 28/10/2026 (session /equipe du 27/10) : 383 916 mesurés, relevé à 385 000.
-    maxBytes: 385_000,
+    // Décision du fondateur du 01/11/2026 (session /equipe du 31/10, 14 lots) : 385 542 mesurés, relevé à 390 000.
+    maxBytes: 390_000,
   },
   {
     name: "tribunals",
