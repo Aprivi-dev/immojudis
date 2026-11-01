@@ -192,6 +192,35 @@ describe("shared report footer and dead link", () => {
     expect(html).toContain('href="/annonce-exemple"');
   });
 
+  it("says an expired link expired, and a link closed by the end of the owner's offer as such", async () => {
+    const render = async (error: SharedReportUnavailableError) => {
+      mocks.report.mockRejectedValue(error);
+      return renderToStaticMarkup(
+        await SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+      );
+    };
+    const expired = await render(new SharedReportUnavailableError("expired"));
+    expect(expired).toContain("Ce lien a expiré");
+    expect(expired).not.toContain("a pris fin");
+
+    const ended = await render(new SharedReportUnavailableError("owner_plan_ended"));
+    expect(ended).toContain("l’offre de la personne qui vous l’a transmis a pris fin");
+    expect(ended).toContain("n’est pas supprimé");
+    expect(ended).not.toContain("Ce lien a expiré");
+  });
+
+  it("offers the recipient a free account with its own sign-up reason, on the report and on a closed link", async () => {
+    mocks.report.mockRejectedValue(new SharedReportUnavailableError("expired"));
+    const closed = renderToStaticMarkup(
+      await SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+    );
+    const open = await markupOf();
+    for (const html of [closed, open].map((markup) => markup.replace(/\s/g, ""))) {
+      expect(html).toContain("Créermoncomptegratuit");
+      expect(html).toContain('href="/login?mode=investor&amp;reason=rapport"');
+    }
+  });
+
   it("still answers a 404 for an unknown link", async () => {
     mocks.report.mockRejectedValue(new Error("Rapport partagé introuvable ou expiré."));
     await expect(

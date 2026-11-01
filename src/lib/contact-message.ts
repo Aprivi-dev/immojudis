@@ -25,9 +25,21 @@ export type ContactFieldErrors = Partial<Record<keyof ContactFields, string>>;
 export type ContactState = {
   status: "idle" | "sent" | "error";
   message?: string;
+  /**
+   * `failed` : le message n'est pas parti pour une raison qui n'est pas la faute de la personne
+   * (service non configuré, envoi refusé, limiteur indisponible). Le formulaire affiche alors
+   * l'adresse de secours. Absent pour une erreur de saisie ou la limite de débit.
+   */
+  delivery?: "failed";
   fieldErrors?: ContactFieldErrors;
   values?: Partial<Record<keyof ContactFields, string>>;
 };
+
+/**
+ * Délai de réponse annoncé sur la page et dans l'accusé d'envoi. Une seule constante : à confirmer
+ * par le propriétaire, puis à tenir (c'est un engagement pris envers les visiteurs).
+ */
+export const CONTACT_RESPONSE_DELAY = "sous 5 jours ouvrés";
 
 export const CONTACT_LIMITS = { name: 100, email: 254, message: 4000, minMessage: 10 } as const;
 
@@ -138,19 +150,66 @@ export type ContactEmail = {
   replyTo: string;
   subject: string;
   text: string;
+  /** Étiquettes Resend (`category`, et `topic` pour les demandes de droits et les signalements). */
+  tags: { name: string; value: string }[];
 };
+
+/**
+ * Préfixe d'objet des deux sujets qui demandent un traitement à part : une demande sur les données
+ * personnelles (`[DROITS]`, délai légal d'un mois) et un signalement d'erreur sur une fiche
+ * (`[DONNEES]`). Sert aussi d'étiquette Resend (`topic`, en minuscules ASCII).
+ */
+const CONTACT_TRIAGE: Partial<Record<ContactSubject, { prefix: string; topic: string }>> = {
+  donnees: { prefix: "[DROITS]", topic: "droits" },
+  erreur: { prefix: "[DONNEES]", topic: "donnees" },
+};
+
+/** Étiquettes Resend d'un message : sa catégorie, et le tri `droits` ou `donnees` quand il y a lieu. */
+export function contactEmailTags(subject: ContactSubject): { name: string; value: string }[] {
+  const topic = CONTACT_TRIAGE[subject]?.topic;
+  return [
+    { name: "category", value: "contact" },
+    ...(topic ? [{ name: "topic", value: topic }] : []),
+  ];
+}
+
+const PREFILLED_SALE_LINE =
+  /^Vente concernée : ([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\s*$/im;
+const PREFILLED_TOPIC_LINE = /^Rubrique : (.+?)\s*$/im;
+
+/**
+ * En-tête normalisé en tête du texte (`Vente : <uuid> | Rubrique : <rubrique>`), repris des lignes
+ * du message prérempli par « Signaler une erreur sur cette fiche ». Seules les valeurs reconnues
+ * sont reprises (un UUID, une rubrique de `CONTACT_REPORT_TOPICS`) : rien de saisi librement
+ * n'entre dans l'en-tête. `null` quand le message ne désigne aucune vente.
+ */
+export function contactReportHeader(message: string): string | null {
+  const saleId = PREFILLED_SALE_LINE.exec(message)?.[1];
+  if (!saleId) return null;
+  const topicLabel = PREFILLED_TOPIC_LINE.exec(message)?.[1] ?? "";
+  const topic = (Object.values(CONTACT_REPORT_TOPICS) as string[]).includes(topicLabel)
+    ? topicLabel
+    : "non précisée";
+  return `Vente : ${saleId.toLowerCase()} | Rubrique : ${topic}`;
+}
 
 export function buildContactEmail(
   data: ContactFields,
   { to, from }: { to: string; from: string },
 ): ContactEmail {
   const subject = CONTACT_SUBJECTS.find((candidate) => candidate.value === data.subject)!;
+  const prefix = CONTACT_TRIAGE[data.subject]?.prefix;
+  const header = contactReportHeader(data.message);
   return {
     from,
     to,
     replyTo: data.email,
-    subject: singleLine(`[Contact Immojudis] ${subject.label} — ${data.name}`),
+    subject: singleLine(
+      `${prefix ? `${prefix} ` : ""}[Contact Immojudis] ${subject.label} — ${data.name}`,
+    ),
+    tags: contactEmailTags(data.subject),
     text: [
+      ...(header ? [header, ""] : []),
       `Nom : ${data.name}`,
       `Email : ${data.email}`,
       `Sujet : ${subject.label}`,
@@ -176,7 +235,7 @@ export type ContactDeps = {
 
 const SENT: ContactState = {
   status: "sent",
-  message: "Merci, votre message a bien été envoyé. Nous vous répondrons par email.",
+  message: `Merci, votre message a bien été envoyé. Nous vous répondrons par email, ${CONTACT_RESPONSE_DELAY}.`,
 };
 
 export async function deliverContact(
@@ -209,6 +268,7 @@ export async function deliverContact(
       status: "error",
       message:
         "Le formulaire n’est pas disponible pour le moment. Réessayez plus tard ou utilisez l’adresse de contact indiquée sur cette page.",
+      delivery: "failed",
       values,
     };
   }
@@ -226,7 +286,7 @@ export async function deliverContact(
     // Limiteur indisponible : le message n'est pas envoyé (un formulaire sans plafond serait ouvert aux
     // abus), la personne est prévenue et le journal garde la cause.
     log(contactFailureLine("limiter_unavailable", error));
-    return { status: "error", message: SEND_FAILED_MESSAGE, values };
+    return { status: "error", message: SEND_FAILED_MESSAGE, delivery: "failed", values };
   }
 
   try {
@@ -236,7 +296,7 @@ export async function deliverContact(
     if (error) throw error;
   } catch (error) {
     log(contactFailureLine("send_failed", error));
-    return { status: "error", message: SEND_FAILED_MESSAGE, values };
+    return { status: "error", message: SEND_FAILED_MESSAGE, delivery: "failed", values };
   }
   return SENT;
 }

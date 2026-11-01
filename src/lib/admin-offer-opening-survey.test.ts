@@ -9,7 +9,9 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import {
+  getAdminOfferOpeningInterviewees,
   getAdminOfferOpeningSurvey,
+  parseOfferOpeningInterviewees,
   parseOfferOpeningSurvey,
   unavailableOfferOpeningSurvey,
 } from "./admin-offer-opening-survey";
@@ -85,5 +87,82 @@ describe("getAdminOfferOpeningSurvey", () => {
   it("lève sur une autre erreur de la base", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
     await expect(getAdminOfferOpeningSurvey("token")).rejects.toMatchObject({ code: "XX000" });
+  });
+});
+
+describe("liste des personnes ayant accepté un entretien", () => {
+  const list = {
+    total: 2,
+    interviewees: [
+      {
+        consented_at: "2026-11-07T09:00:00Z",
+        profile: "marchand_de_biens",
+        email: "m@example.test",
+      },
+      { consented_at: "2026-11-05T09:00:00Z", profile: null, email: "a@example.test" },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    mocks.requireAuth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
+    mocks.rpc.mockResolvedValue({ data: list, error: null });
+  });
+
+  it("ne garde que la date, le profil et l'email de chaque personne", () => {
+    const parsed = parseOfferOpeningInterviewees({
+      total: 1,
+      interviewees: [{ ...list.interviewees[0], user_id: "secret", survey_price_cheap_eur: 9 }],
+    });
+    expect(parsed).toEqual({
+      total: 1,
+      interviewees: [
+        {
+          consentedAt: "2026-11-07T09:00:00Z",
+          profile: "marchand_de_biens",
+          email: "m@example.test",
+        },
+      ],
+    });
+    expect(JSON.stringify(parsed)).not.toContain("secret");
+  });
+
+  it("refuse une réponse qui n'est pas celle de la fonction", () => {
+    expect(() => parseOfferOpeningInterviewees({ interviewees: "non" })).toThrow();
+  });
+
+  it("lit la liste pour un administrateur et journalise la consultation sans adresse", async () => {
+    const result = await getAdminOfferOpeningInterviewees("token");
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_offer_opening_interviewees", { p_limit: 200 });
+    expect(result.interviewees).toHaveLength(2);
+    const logged = String(vi.mocked(console.info).mock.calls[0]?.[0]);
+    expect(JSON.parse(logged)).toEqual({
+      scope: "admin.offer-opening-interviewees",
+      userId: "admin-1",
+      rows: 2,
+    });
+    expect(logged).not.toContain("@");
+  });
+
+  it("refuse un compte qui n'est pas administrateur, sans rien lire", async () => {
+    mocks.requireAuth.mockResolvedValue({ isAdmin: false });
+    await expect(getAdminOfferOpeningInterviewees("token")).rejects.toThrow(/Forbidden/);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("rend une liste vide et un total inconnu quand la fonction n'existe pas encore", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "42883", message: "absent" } });
+    expect(await getAdminOfferOpeningInterviewees("token")).toEqual({
+      total: null,
+      interviewees: [],
+    });
+  });
+
+  it("lève sur une autre erreur de la base", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
+    await expect(getAdminOfferOpeningInterviewees("token")).rejects.toMatchObject({
+      code: "XX000",
+    });
   });
 });

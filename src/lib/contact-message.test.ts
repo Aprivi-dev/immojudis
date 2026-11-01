@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { LAWYER_CONTACT_HREF } from "./lawyer-placement-label";
 import {
   buildContactEmail,
+  CONTACT_RESPONSE_DELAY,
   contactFailureLine,
   contactPrefill,
+  contactReportHeader,
   contactReportPath,
   deliverContact,
   validateContact,
@@ -64,6 +66,44 @@ describe("buildContactEmail", () => {
     expect(email.subject).toContain("Question sur une annonce");
     expect(email.text).toContain("Pouvez-vous confirmer");
   });
+
+  const build = (input: Record<string, string>) => {
+    const parsed = validateContact({ ...valid, ...input });
+    if (!parsed.ok) throw new Error("Message de test invalide.");
+    return buildContactEmail(parsed.data, { to: "contact@immojudis.test", from: "a@b.test" });
+  };
+
+  it("préfixe l'objet [DROITS] pour les données personnelles et [DONNEES] pour une erreur signalée", () => {
+    expect(build({ subject: "donnees" }).subject).toMatch(/^\[DROITS\] \[Contact Immojudis\] /);
+    expect(build({ subject: "erreur" }).subject).toMatch(/^\[DONNEES\] \[Contact Immojudis\] /);
+    expect(build({ subject: "annonce" }).subject).toMatch(/^\[Contact Immojudis\] /);
+  });
+
+  it("étiquette l'envoi Resend : catégorie, et tri droits ou donnees", () => {
+    expect(build({ subject: "donnees" }).tags).toEqual([
+      { name: "category", value: "contact" },
+      { name: "topic", value: "droits" },
+    ]);
+    expect(build({ subject: "erreur" }).tags).toEqual([
+      { name: "category", value: "contact" },
+      { name: "topic", value: "donnees" },
+    ]);
+    expect(build({ subject: "autre" }).tags).toEqual([{ name: "category", value: "contact" }]);
+  });
+
+  it("met en tête l'en-tête normalisé d'un signalement, sans rien reprendre de libre", () => {
+    const saleId = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const prefilled = contactPrefill(
+      new URLSearchParams({ sujet: "erreur", vente: saleId, rubrique: "prix" }),
+    );
+    const email = build({ subject: "erreur", message: `${prefilled.message}Le prix est faux.` });
+    expect(email.text.split("\n")[0]).toBe(`Vente : ${saleId} | Rubrique : Mise à prix`);
+    expect(contactReportHeader(`Vente concernée : ${saleId}\nRubrique : Inventée\n\nTexte`)).toBe(
+      `Vente : ${saleId} | Rubrique : non précisée`,
+    );
+    expect(contactReportHeader("Vente concernée : pas-un-uuid\n\nTexte long enough")).toBeNull();
+    expect(build({ subject: "annonce" }).text.startsWith("Nom : ")).toBe(true);
+  });
 });
 
 describe("deliverContact", () => {
@@ -78,11 +118,30 @@ describe("deliverContact", () => {
     const d = deps();
     const state = await deliverContact(valid, "ip-1", d);
     expect(state.status).toBe("sent");
+    expect(state.message).toContain(CONTACT_RESPONSE_DELAY);
     expect(d.send).toHaveBeenCalledTimes(1);
     expect(d.send.mock.calls[0][0]).toMatchObject({
       to: "contact@immojudis.test",
       replyTo: "claire@example.fr",
     });
+  });
+
+  it("marque les échecs d'envoi pour afficher l'adresse de secours, pas les erreurs de saisie", async () => {
+    const failing = { ...deps(), log: vi.fn(), send: vi.fn().mockRejectedValue(new Error("boom")) };
+    expect((await deliverContact(valid, "ip-1", failing)).delivery).toBe("failed");
+    const unconfigured = { limiter: limiterAllowing(), to: null, from: null };
+    expect((await deliverContact(valid, "ip-1", unconfigured)).delivery).toBe("failed");
+    const broken = {
+      ...deps(),
+      log: vi.fn(),
+      limiter: { consume: vi.fn().mockRejectedValue(new Error("base indisponible")) },
+    };
+    expect((await deliverContact(valid, "ip-1", broken)).delivery).toBe("failed");
+    expect(
+      (await deliverContact({ ...valid, email: "x" }, "ip-1", deps())).delivery,
+    ).toBeUndefined();
+    const limited = { ...deps(), limiter: limiterAllowing(0) };
+    expect((await deliverContact(valid, "ip-1", limited)).delivery).toBeUndefined();
   });
 
   it("n'envoie rien quand le piège à robots est rempli", async () => {

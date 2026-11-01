@@ -126,3 +126,76 @@ export async function getAdminOfferOpeningSurvey(
   }
   return parseOfferOpeningSurvey(data);
 }
+
+/**
+ * Une personne qui a accepté un entretien (case non cochée par défaut, horodatée à son clic) : la date
+ * de son accord, le profil qu'elle a déclaré et l'adresse de son compte, pour la contacter. Rien d'autre :
+ * ni ses repères de prix, ni l'identifiant du compte.
+ */
+export type OfferOpeningInterviewee = {
+  consentedAt: string;
+  profile: string | null;
+  email: string;
+};
+
+export type OfferOpeningInterviewees = {
+  /** Personnes qui ont accepté un entretien et n'ont rien retiré (peut dépasser la liste rendue). */
+  total: number | null;
+  interviewees: OfferOpeningInterviewee[];
+};
+
+const intervieweesSchema = z.object({
+  total: z.number().int().nonnegative(),
+  interviewees: z.array(
+    z.object({
+      consented_at: z.string(),
+      profile: z.string().nullish(),
+      email: z.string().min(3),
+    }),
+  ),
+});
+
+/** Lit la réponse JSON de `admin_offer_opening_interviewees`. */
+export function parseOfferOpeningInterviewees(raw: unknown): OfferOpeningInterviewees {
+  const list = intervieweesSchema.parse(raw);
+  return {
+    total: list.total,
+    interviewees: list.interviewees.map((entry) => ({
+      consentedAt: entry.consented_at,
+      profile: entry.profile ?? null,
+      email: entry.email,
+    })),
+  };
+}
+
+/**
+ * Liste des personnes qui ont accepté un entretien (n° 92), lue par `admin_offer_opening_interviewees`
+ * (migration 20261110180100). Lecture seule, administrateur seulement : jeton vérifié, rôle administrateur
+ * et double authentification (`auth.isAdmin`) AVANT toute lecture ; la base refuse tout autre rôle que le
+ * service. La consultation est journalisée sans contenu (qui a lu, combien de lignes), jamais une adresse.
+ * Fonction de base absente (migration pas encore appliquée) : liste vide et total inconnu.
+ */
+export async function getAdminOfferOpeningInterviewees(
+  authToken: string,
+  limit = 200,
+): Promise<OfferOpeningInterviewees> {
+  const auth = await requireSupabaseAuthContext(authToken);
+  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+
+  const { data, error } = await supabaseAdmin.rpc("admin_offer_opening_interviewees", {
+    p_limit: limit,
+  });
+  if (error) {
+    if (isMissingFunction(error)) return { total: null, interviewees: [] };
+    throw error;
+  }
+  const list = parseOfferOpeningInterviewees(data);
+  console.info(
+    JSON.stringify({
+      scope: "admin.offer-opening-interviewees",
+      userId: auth.userId,
+      rows: list.interviewees.length,
+    }),
+  );
+  return list;
+}

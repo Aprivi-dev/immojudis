@@ -4,11 +4,13 @@ import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middlew
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
- * Plafonds d'enchère calculés, lus pour la page admin « Pilotage » par `admin_pilotage_bid_ceilings`
- * (migration 20261101160000) : sur 7 et 30 jours, les comptes ayant calculé au moins un plafond, les
- * ventes concernées et le nombre d'occurrences. Cet indicateur remplace « 3 déblocages » pendant l'offre
- * de lancement, où aucun déblocage n'est consommé (tous les comptes ont l'accès Analyse) : il mesure
- * l'usage de la fonction payante, offre ou non. Nombres exacts, aucun nom, aucune vente nommée.
+ * Estimations servies (événement `bid_ceiling_calculated`, nom gardé pour les données déjà écrites), lues
+ * pour la page admin « Pilotage » par `admin_pilotage_bid_ceilings` (migration 20261101160000) : sur 7 et
+ * 30 jours, les comptes à qui l'estimation de marché d'une fiche a été servie, les ventes concernées et le
+ * nombre d'occurrences. L'estimation part à l'ouverture de la fiche, avant tout calcul : ce n'est pas un
+ * plafond calculé (voir `ceiling_viewed`, `product-events.ts`). Cet indicateur remplace « 3 déblocages »
+ * pendant l'offre de lancement, où aucun déblocage n'est consommé (tous les comptes ont l'accès Analyse) :
+ * il mesure l'usage de la fonction payante, offre ou non. Nombres exacts, aucun nom, aucune vente nommée.
  *
  * Même protection que le reste du pilotage : jeton de session vérifié, rôle administrateur, lecture avec
  * le client de service. Une mesure impossible (migration pas encore appliquée, panne) vaut `null` et
@@ -18,7 +20,7 @@ export type BidCeilingCount = number | null;
 
 export type BidCeilingWindow = {
   days: 7 | 30;
-  /** Comptes distincts ayant calculé au moins un plafond. */
+  /** Comptes distincts à qui une estimation a été servie. */
   accounts: BidCeilingCount;
   /** Ventes distinctes concernées. */
   sales: BidCeilingCount;

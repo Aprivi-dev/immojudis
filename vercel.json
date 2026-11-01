@@ -49,6 +49,14 @@
       "schedule": "30 11 * * *"
     },
     {
+      "path": "/api/cron/trial-end-email",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron/trial-end-email",
+      "schedule": "30 14 * * *"
+    },
+    {
       "path": "/api/cron/data-retention",
       "schedule": "15 4 * * 0"
     },

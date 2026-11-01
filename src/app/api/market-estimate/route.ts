@@ -68,8 +68,9 @@ export async function POST(request: Request) {
           actionable: response.estimate.actionable === true,
         },
       });
-      // Mesure par compte : la valeur de référence du plafond d'enchère est servie pour cette vente
-      // (le calcul du plafond lui-même se fait dans le navigateur, à partir de cette valeur).
+      // Mesure par compte : « estimation servie » (événement `bid_ceiling_calculated`, nom gardé pour
+      // les données). La valeur de référence du plafond est servie pour cette vente ; le calcul du
+      // plafond se fait dans le navigateur, mesuré à part (`ceiling_viewed`).
       await recordAccountProductEvent(auth.userId, { type: "bid_ceiling_calculated", saleId });
     }
     const status = response.estimate

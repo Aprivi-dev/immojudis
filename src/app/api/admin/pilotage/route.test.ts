@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   feedback: vi.fn(),
   ceilings: vi.fn(),
   survey: vi.fn(),
+  activation: vi.fn(),
 }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
@@ -26,6 +27,11 @@ vi.mock("@/lib/admin-bid-ceilings", async (importOriginal) => ({
   getAdminBidCeilings: mocks.ceilings,
 }));
 
+vi.mock("@/lib/admin-activation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/admin-activation")>()),
+  getAdminActivation: mocks.activation,
+}));
+
 vi.mock("@/lib/admin-offer-opening-survey", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/admin-offer-opening-survey")>()),
   getAdminOfferOpeningSurvey: mocks.survey,
@@ -36,6 +42,7 @@ vi.mock("@/lib/admin-sale-signal-feedback", async (importOriginal) => ({
   getAdminSaleSignalFeedback: mocks.feedback,
 }));
 
+import { unavailableActivation } from "@/lib/admin-activation";
 import { unavailableBidCeilings } from "@/lib/admin-bid-ceilings";
 import { unavailableOfferOpeningSurvey } from "@/lib/admin-offer-opening-survey";
 import { unavailableSaleSignalFeedback } from "@/lib/admin-sale-signal-feedback";
@@ -48,6 +55,7 @@ describe("GET /api/admin/pilotage", () => {
     vi.resetAllMocks();
     mocks.ceilings.mockResolvedValue(unavailableBidCeilings());
     mocks.survey.mockResolvedValue(unavailableOfferOpeningSurvey());
+    mocks.activation.mockResolvedValue(unavailableActivation());
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
@@ -88,6 +96,7 @@ describe("GET /api/admin/pilotage", () => {
       signalFeedback,
       bidCeilings,
       offerOpeningSurvey: unavailableOfferOpeningSurvey(),
+      activation: unavailableActivation(),
     });
     expect(mocks.ceilings).toHaveBeenCalledWith("admin-token", expect.any(Date));
     expect(mocks.get).toHaveBeenCalledWith("admin-token", expect.any(Date));
@@ -139,6 +148,22 @@ describe("GET /api/admin/pilotage", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.offerOpeningSurvey).toEqual(unavailableOfferOpeningSurvey());
+    expect(JSON.stringify(body)).not.toContain("failed");
+  });
+
+  it("garde le pilotage quand l'activation est illisible : « non mesuré »", async () => {
+    mocks.get.mockResolvedValue(unavailablePilotage());
+    mocks.accuracy.mockResolvedValue(unavailableSaleReminderAccuracy(new Date()));
+    mocks.feedback.mockResolvedValue(unavailableSaleSignalFeedback());
+    mocks.activation.mockRejectedValue(new Error("function admin_pilotage_activation failed"));
+
+    const response = await GET(
+      new Request(url, { headers: { authorization: "Bearer admin-token" } }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.activation).toEqual(unavailableActivation());
     expect(JSON.stringify(body)).not.toContain("failed");
   });
 

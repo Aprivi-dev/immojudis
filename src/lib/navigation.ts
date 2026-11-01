@@ -90,6 +90,7 @@ export function accountLinksFor(hasAnalysisAccess: boolean | undefined): SiteLin
  * `mes-favoris` et `mes-alertes` : une page de l'espace personnel demandée sans être connecté
  * (à la différence de `favori` et `alerte`, qui suivent un clic sur un cœur ou une cloche).
  * `exemple` : l'inscription proposée à la fin de l'annonce exemple (`/annonce-exemple`).
+ * `rapport` : l'inscription proposée au destinataire d'un rapport partagé (`/reports/shared/<jeton>`).
  * `simulateur` : l'inscription proposée sous le simulateur de frais (`/simulateur-frais-encheres`).
  */
 export const LOGIN_REASONS = [
@@ -102,6 +103,7 @@ export const LOGIN_REASONS = [
   "mes-favoris",
   "mes-alertes",
   "exemple",
+  "rapport",
   "simulateur",
 ] as const;
 export type LoginReason = (typeof LOGIN_REASONS)[number];

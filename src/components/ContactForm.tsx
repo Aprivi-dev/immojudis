@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { sendContactMessage } from "@/app/contact/actions";
 import {
   CONTACT_LIMITS,
+  CONTACT_RESPONSE_DELAY,
   CONTACT_SUBJECTS,
   type ContactFieldErrors,
   type ContactState,
@@ -47,6 +48,24 @@ export function ContactForm({
           className="rounded-md border border-danger/30 bg-danger-tint p-3 text-sm text-danger"
         >
           {state.message}
+          {state.delivery === "failed" ? (
+            <span className="mt-2 block">
+              {contactEmail ? (
+                <>
+                  Vous pouvez aussi nous écrire directement à{" "}
+                  <a
+                    href={`mailto:${contactEmail}`}
+                    className="font-semibold text-gold-text underline"
+                  >
+                    {contactEmail}
+                  </a>
+                  .
+                </>
+              ) : (
+                "Votre message est resté dans le formulaire : conservez-le et réessayez un peu plus tard."
+              )}
+            </span>
+          ) : null}
         </p>
       ) : null}
 
@@ -132,11 +151,16 @@ export function ContactForm({
         </label>
       </div>
 
+      <p id="contact-response-delay" className="text-sm text-ink-strong">
+        Nous répondons par email, {CONTACT_RESPONSE_DELAY}.
+      </p>
+
       <p id="contact-privacy-notice" className="text-xs leading-relaxed text-ink-soft">
         {controller} utilise votre nom, votre email et votre message pour répondre à votre demande
-        (intérêt légitime à répondre aux messages reçus). Ils sont conservés 12 mois après le
-        dernier échange, puis supprimés ; en cas de litige ou de réclamation, le temps de la
-        procédure puis, en archive à accès restreint, 5 ans au plus. Voir la{" "}
+        (intérêt légitime à répondre aux messages reçus). Ils sont conservés dans la boîte de
+        réception de l’éditeur, 12 mois après le dernier échange, puis supprimés ; en cas de litige
+        ou de réclamation, le temps de la procédure puis, en archive à accès restreint, 5 ans au
+        plus. Voir la{" "}
         <Link href="/privacy" className="font-semibold text-gold-text underline">
           politique de confidentialité
         </Link>{" "}

@@ -36,6 +36,7 @@ import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPa
 import { EstimatedFeesBadge } from "@/components/ceiling/EstimatedFeesBadge";
 import { onRadioGroupKeyDown } from "@/components/ceiling/radio-group-keys";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
+import { useCeilingViewEvent } from "@/components/sale-detail/use-ceiling-view-event";
 
 type ChoicesUpdate = (change: (choices: CeilingUserChoices) => CeilingUserChoices) => void;
 
@@ -62,6 +63,7 @@ export function CeilingPlanner({
   dpeClass?: string | null;
 }) {
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
+  useCeilingViewEvent(plan.available);
   const hypothesesPanelId = useId();
   const confidence = ceilingConfidence(hypotheses);
   // Textes du régime de frais de la vente (ceux du tribunal sans régime).

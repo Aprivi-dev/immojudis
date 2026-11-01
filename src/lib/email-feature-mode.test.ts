@@ -3,6 +3,7 @@ import {
   alertNotificationsMode,
   saleResultsMode,
   saleResultsOfferedTo,
+  trialEndEmailMode,
   weeklyDigestMode,
   weeklyDigestOfferedTo,
 } from "./email-feature-mode";
@@ -31,6 +32,28 @@ describe("weeklyDigestMode et saleResultsMode", () => {
     for (const value of ["true", "1", "oui", "enabled", "onn", "internal-only"]) {
       expect(weeklyDigestMode({ WEEKLY_DIGEST_MODE: value }), value).toBe("off");
       expect(saleResultsMode({ SALE_RESULTS_MODE: value }), value).toBe("off");
+    }
+  });
+});
+
+describe("trialEndEmailMode", () => {
+  it("vaut off par défaut, et ne s'ouvre pas avec la variable d'un autre email", () => {
+    expect(trialEndEmailMode({})).toBe("off");
+    expect(trialEndEmailMode({ TRIAL_END_EMAIL_MODE: "" })).toBe("off");
+    expect(
+      trialEndEmailMode({
+        WEEKLY_DIGEST_MODE: "on",
+        SALE_RESULTS_MODE: "on",
+        SALE_REMINDERS_MODE: "on",
+      }),
+    ).toBe("off");
+  });
+
+  it("reconnaît internal et on, et ferme l'envoi sur toute valeur inconnue", () => {
+    expect(trialEndEmailMode({ TRIAL_END_EMAIL_MODE: " Internal " })).toBe("internal");
+    expect(trialEndEmailMode({ TRIAL_END_EMAIL_MODE: "ON" })).toBe("on");
+    for (const value of ["true", "1", "oui", "onn", "internal-only"]) {
+      expect(trialEndEmailMode({ TRIAL_END_EMAIL_MODE: value }), value).toBe("off");
     }
   });
 });

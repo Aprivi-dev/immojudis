@@ -11,12 +11,14 @@ const mocks = vi.hoisted(() => {
       this.status = status;
     }
   }
-  return { unlock: vi.fn(), checkoutOpen: vi.fn(), SaleUnlockQuotaReachedError };
+  return { unlock: vi.fn(), checkoutOpen: vi.fn(), track: vi.fn(), SaleUnlockQuotaReachedError };
 });
 vi.mock("@/lib/client-api", () => ({
   unlockSaleRequest: mocks.unlock,
   SaleUnlockQuotaReachedError: mocks.SaleUnlockQuotaReachedError,
 }));
+
+vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
@@ -50,6 +52,7 @@ const result: SaleUnlockResult = {
 
 beforeEach(() => {
   mocks.unlock.mockReset();
+  mocks.track.mockReset();
   mocks.checkoutOpen.mockReset();
   mocks.checkoutOpen.mockReturnValue(true);
 });
@@ -143,6 +146,7 @@ describe("SaleUnlockPanel", () => {
       ),
     ).toBeTruthy();
     expect(mocks.unlock).not.toHaveBeenCalled();
+    expect(mocks.track).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Annuler" }));
     expect(screen.queryByText(/définitif/)).toBeNull();
@@ -167,6 +171,8 @@ describe("SaleUnlockPanel", () => {
     await waitFor(() => expect(onUnlocked).toHaveBeenCalledWith(result));
     expect(mocks.unlock).toHaveBeenCalledTimes(1);
     expect(mocks.unlock).toHaveBeenCalledWith(saleId);
+    // La confirmation est mesurée une fois, sans identifiant de vente ni de compte.
+    expect(mocks.track.mock.calls).toEqual([["sale_unlock_confirmed"]]);
   });
 
   it("does not let a second click go through while the first is running", async () => {
