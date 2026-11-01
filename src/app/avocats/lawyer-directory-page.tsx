@@ -28,7 +28,7 @@ import {
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { validateDirectorySearch, type DirectorySearch } from "@/lib/lawyer-directory-search";
 import type { LawyerUpcomingSales } from "@/lib/lawyer-prosecuted-sales";
-import { lawyerReportPath } from "@/lib/contact-message";
+import { isSaleId, lawyerReportPath } from "@/lib/contact-message";
 import { hasStandingAnalysisAccess } from "@/lib/plans";
 import { formatStartingPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
@@ -216,9 +216,13 @@ function DirectoryLayout({
                   Vous poursuivez une vente ?
                 </h2>
                 <p className="mt-1 text-sm leading-relaxed text-brand-navy/70">
-                  Pour signaler une erreur ou demander une correction sur la fiche de cette vente,
-                  écrivez-nous depuis le formulaire de contact, avec le sujet « Je suis l’avocat
-                  poursuivant de cette vente ». Précisez ce qui est inexact ou manquant.
+                  {isSaleId(search.saleId)
+                    ? "Pour nous signaler une erreur sur la fiche de cette vente, si vous la poursuivez, écrivez-nous"
+                    : "Pour nous signaler une erreur sur la fiche d’une vente que vous poursuivez, écrivez-nous"}{" "}
+                  depuis le formulaire de contact, avec le sujet « Je suis l’avocat poursuivant
+                  d’une vente ». Précisez ce qui est inexact ou manquant. Nous examinons chaque
+                  signalement ; la qualité indiquée n’est pas vérifiée automatiquement. Immojudis
+                  n’est pas partie à la procédure et ne donne pas de conseil juridique.
                 </p>
                 <Link
                   href={lawyerReportPath(search.saleId)}

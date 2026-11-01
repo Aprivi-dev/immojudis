@@ -328,10 +328,16 @@ describe("signalement depuis une fiche", () => {
       { to: "contact@immojudis.test", from: "a@b.test" },
     );
     expect(email.subject).toMatch(
-      /^\[DONNEES\] \[Contact Immojudis\] Je suis l’avocat poursuivant/,
+      /^\[DONNEES\] \(qualité déclarée\) \[Contact Immojudis\] Je suis l’avocat poursuivant d’une vente/,
     );
     expect(email.text.split("\n")[0]).toBe(`Vente : ${SALE} | Rubrique : Fiche de la vente`);
     expect(email.tags).toContainEqual({ name: "topic", value: "donnees" });
+  });
+
+  it("n'ajoute la vente au lien de l'avocat poursuivant que si l'identifiant a la forme d'un UUID", () => {
+    expect(lawyerReportPath("pas-un-uuid&sujet=autre")).toBe("/contact?sujet=avocat-poursuivant");
+    expect(lawyerReportPath("")).toBe("/contact?sujet=avocat-poursuivant");
+    expect(lawyerReportPath(SALE)).toContain(`vente=${SALE}`);
   });
 
   it("ignore tout ce qui n'est pas dans les listes ou n'a pas la forme d'un identifiant", () => {

@@ -157,10 +157,10 @@ export function ContactForm({
 
       <p id="contact-privacy-notice" className="text-xs leading-relaxed text-ink-soft">
         {controller} utilise votre nom, votre email et votre message pour répondre à votre demande
-        (intérêt légitime à répondre aux messages reçus). Ils sont conservés dans la boîte de
-        réception de l’éditeur, 12 mois après le dernier échange, puis supprimés ; en cas de litige
-        ou de réclamation, le temps de la procédure puis, en archive à accès restreint, 5 ans au
-        plus. Voir la{" "}
+        et, le cas échéant, corriger la fiche concernée (intérêt légitime à répondre aux messages
+        reçus). Ils sont conservés dans la boîte de réception de l’éditeur, 12 mois après le dernier
+        échange, puis supprimés ; en cas de litige ou de réclamation, le temps de la procédure puis,
+        en archive à accès restreint, 5 ans au plus. Voir la{" "}
         <Link href="/privacy" className="font-semibold text-gold-text underline">
           politique de confidentialité
         </Link>{" "}
