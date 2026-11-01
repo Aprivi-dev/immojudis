@@ -98,6 +98,15 @@ it("ne précharge aucun de ses liens : présents sur chaque page, ils lanceraien
   }
 });
 
+it("donne à chaque lien du pied de page une cible tactile d'au moins 44 px", () => {
+  render(<SiteFooter />);
+  const links = within(screen.getByRole("contentinfo")).getAllByRole("link");
+  expect(links.length).toBeGreaterThan(15);
+  for (const link of links) {
+    expect(link.className, link.textContent ?? "").toContain("min-h-11");
+  }
+});
+
 it("stays out of the admin console", () => {
   expect(showsSiteFooter("/admin")).toBe(false);
   expect(showsSiteFooter("/admin/operations")).toBe(false);

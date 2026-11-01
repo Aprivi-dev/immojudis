@@ -227,7 +227,7 @@ export function GeographicSearch({
         event.preventDefault();
         apply();
       }}
-      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft sm:basis-auto sm:flex-1"
+      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-field-border bg-white focus-within:outline-2 focus-within:outline-gold-soft sm:basis-auto sm:flex-1"
     >
       <SearchIcon className="ml-3 h-5 w-5 shrink-0" />
       <input

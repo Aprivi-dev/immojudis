@@ -42,6 +42,17 @@ describe("gallery keyboard and touch", () => {
     opener.remove();
   });
 
+  it("annonce « Photo n sur N : description » à chaque changement de photo", () => {
+    render(<PhotoCarouselDialog images={images} initialIndex={0} onClose={() => {}} />);
+    const status = screen.getByRole("status");
+    expect(status.className).toContain("sr-only");
+    expect(status.textContent).toBe("Photo 1 sur 2 : Salon");
+    fireEvent.click(screen.getByRole("button", { name: "Photo suivante" }));
+    expect(screen.getByRole("status").textContent).toBe("Photo 2 sur 2 : Cuisine");
+    fireEvent.click(screen.getByRole("button", { name: "Afficher la photo 1" }));
+    expect(screen.getByRole("status").textContent).toBe("Photo 1 sur 2 : Salon");
+  });
+
   it("changes photo on horizontal swipes but ignores vertical and short gestures", () => {
     render(<PhotoCarouselDialog images={images} initialIndex={0} onClose={() => {}} />);
     const swipe = (x: number, y: number) => {

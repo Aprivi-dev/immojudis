@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   fetchFactReliabilities: vi.fn(),
   fetchUrbanism: vi.fn(),
   fetchValuePreview: vi.fn(),
+  unlockSale: vi.fn(),
   forecast: vi.fn(),
   pepite: vi.fn(),
   authUser: null as { id: string } | null,
@@ -60,6 +61,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleFactReliabilities: mocks.fetchFactReliabilities,
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
   fetchValuePreview: mocks.fetchValuePreview,
+  unlockSaleRequest: mocks.unlockSale,
 }));
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,
@@ -1296,6 +1298,30 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
     expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Débloquer cette vente" })).toBeTruthy();
+  });
+
+  it("opens the calculation tab once the unlock succeeded, and keeps the confirmation", async () => {
+    const saleId = EXAMPLE_SALE_RECORDS.bordeaux.sale.id;
+    mocks.unlockSale.mockResolvedValue(unlockStatus({ unlocked: true, used: 2, remaining: 1 }));
+    window.history.replaceState(null, "", "/");
+    renderFree(unlockStatus());
+    expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected"),
+      ).toBe("true"),
+    );
+    expect(mocks.unlockSale).toHaveBeenCalledWith(saleId);
+    expect(window.location.hash).toBe("#calculation");
+    // The confirmation of the unlock stays on the page.
+    expect(
+      screen.getAllByRole("status").some((node) => node.textContent === "Vente débloquée."),
+    ).toBe(true);
+    window.history.replaceState(null, "", "/");
   });
 
   const notarialSale = (conditions: Record<string, unknown> | null) =>

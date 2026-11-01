@@ -87,7 +87,7 @@ export function HomeOffers({
           <article className={styles.plan} data-reveal="">
             <div className={styles.planHead}>
               <h3>Découverte</h3>
-              <p className={styles.planPrice}>0 €</p>
+              <p className={styles.planPrice}>0&nbsp;€</p>
             </div>
             <Features items={discoveryFeatures(unlockHighlights)} />
             <p className={styles.planFinePrint}>Gratuit, sans limite de durée.</p>

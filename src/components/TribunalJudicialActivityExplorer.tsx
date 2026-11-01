@@ -169,7 +169,7 @@ export function TribunalJudicialActivityExplorer({
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                     placeholder="Marseille, Paris, Lyon…"
-                    className="h-11 border-brand-navy/15 bg-white pl-10"
+                    className="h-11 border-field-border bg-white pl-10"
                   />
                 </span>
               </label>
@@ -476,7 +476,7 @@ function TribunalProfile({
           <select
             value={tribunal.court.code}
             onChange={(event) => onCourtChange(event.target.value)}
-            className="mt-2 h-11 w-full rounded-md border border-brand-navy/15 bg-white px-3 text-sm font-semibold"
+            className="mt-2 h-11 w-full rounded-md border border-field-border bg-white px-3 text-sm font-semibold"
           >
             {tribunals.map((item) => (
               <option key={item.court.code} value={item.court.code}>
@@ -500,7 +500,7 @@ function TribunalProfile({
           <select
             value={selectedPropertyType}
             onChange={(event) => onPropertyTypeChange(event.target.value)}
-            className="h-11 w-full rounded-md border border-brand-navy/15 bg-surface-muted px-3 text-sm font-semibold"
+            className="h-11 w-full rounded-md border border-field-border bg-surface-muted px-3 text-sm font-semibold"
           >
             <option value="">Tous types de biens</option>
             {tribunal.activity.propertyTypeBenchmarks.map((benchmark) => (

@@ -3,6 +3,7 @@
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
@@ -449,7 +450,7 @@ export function SalePublicPreview({
         <>
           <p className={styles.signupText}>
             {/* Une photo est déjà visible : le compte ouvre « les autres », pas « les photos ». */}
-            Créez votre compte gratuit pour voir l’adresse,{" "}
+            Créez votre compte gratuit pour voir l’adresse, l’occupation,{" "}
             {photo?.url ? "les autres photos" : "les photos"} et la fourchette de valeur de cette
             vente.
           </p>
@@ -462,9 +463,14 @@ export function SalePublicPreview({
       )}
     </div>
   );
+  // La date (et le tribunal) d'abord, puis l'inscription : le bouton se lit sans défiler après la
+  // date d'audience ; le type de vente et les conditions pour enchérir suivent.
+  const hasHearingFacts = Boolean(hearingDate || notary || tribunal);
+  const hearingFactsList = hasHearingFacts ? (
+    <dl className={styles.saleFacts}>{hearingFacts}</dl>
+  ) : null;
   const saleFacts = (
     <dl className={styles.saleFacts}>
-      {hearingFacts}
       <div className={styles.saleFact}>
         <dt>{state ? "Mode de cession" : "Type de vente"}</dt>
         <dd>{state ? "À consulter dans le dossier" : saleVenueLabel(procedure.venueType)}</dd>
@@ -553,8 +559,9 @@ export function SalePublicPreview({
           <aside className={styles.summary} aria-label="Synthèse de la vente">
             <div className={styles.summaryCard}>
               {priceBlock}
-              {saleFacts}
+              {hearingFactsList}
               {signupBlock}
+              {saleFacts}
             </div>
             <div className={styles.verification}>
               <ShieldCheck aria-hidden />
@@ -651,6 +658,12 @@ export function SalePublicPreview({
                   </div>
                 ))}
               </dl>
+              {verifyingAccount ? null : (
+                <Link href={accountLink} className={`${styles.primary} ${styles.teaserCta}`}>
+                  Créer mon compte gratuit
+                  <ArrowRight className="h-4 w-4" aria-hidden />
+                </Link>
+              )}
             </section>
 
             {/* « Mon dossier » (statut, enchère plafond) : ce que le compte gratuit ajoute, sans le
@@ -665,63 +678,77 @@ export function SalePublicPreview({
               </span>
             </p>
 
-            <section className={styles.card} aria-labelledby="public-procedure-title">
-              <h2 id="public-procedure-title" className={styles.cardTitle}>
-                Cette vente en clair
-              </h2>
-              <p className={styles.procedureText}>{withAdjudicationTerm(venueCopy.explanation)}</p>
-              <ol className={styles.tiers} aria-label="Ce que vous voyez, selon votre accès">
-                <li className={styles.tier}>
-                  <h3 className={styles.tierTitle}>
-                    <Eye aria-hidden />
-                    Visible maintenant
-                  </h3>
-                  <p>
-                    {state
-                      ? "Le bien et ses équipements, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
-                      : "Le bien et ses équipements, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
-                  </p>
-                </li>
-                <li className={`${styles.tier} ${styles.tierFree}`}>
-                  <h3 className={styles.tierTitle}>
-                    <LockKeyholeOpen aria-hidden />
-                    Découverte · gratuit
-                  </h3>
-                  <p>
-                    Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                    fourchette de valeur estimée, Street View, météo et risques de la commune. Et{" "}
-                    {MONTHLY_SALE_UNLOCKS} déblocages par mois, chacun ouvrant, pour une vente :{" "}
-                    {unlockedItemsText({
-                      ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
-                      statistics:
-                        procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
-                    })}
-                    .
-                  </p>
-                </li>
-                <li className={`${styles.tier} ${styles.tierAnalysis}`}>
-                  <h3 className={styles.tierTitle}>
-                    <ChartNoAxesCombined aria-hidden />
-                    Offre Analyse
-                  </h3>
-                  <p>
-                    {ceilingTerms
-                      ? procedure.venueType === "tribunal"
-                        ? `Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre ${ceilingTerms.ceilingTerm}.`
-                        : `Pièces du dossier, ventes comparables, travaux et calcul de votre ${ceilingTerms.ceilingTerm}.`
-                      : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
-                  </p>
-                </li>
-              </ol>
-              <p className={styles.catalogueNote}>
-                <strong>Un seul catalogue, plusieurs procédures</strong>
-                Immojudis référence les ventes immobilières au tribunal, chez le notaire et les
-                ventes domaniales. Les règles affichées s’adaptent au type de chaque vente.
-              </p>
-              <Link href={returnTo} className={styles.secondary}>
-                Continuer ma recherche
-              </Link>
-            </section>
+            {/* Repliée : le détail est redondant avec la synthèse et l'analyse ci-dessus. Les mises en
+                garde « indicatif » (écart au marché, simulations) sont ailleurs, jamais repliées. */}
+            <details className={styles.fold}>
+              <summary className={styles.foldSummary}>
+                {/* Dans un <summary> : des <span> (contenu de phrase), ni <div> ni titre <h2>. */}
+                <span>
+                  <span className={styles.cardTitle}>Cette vente en clair</span>
+                  <span className={styles.foldHint}>
+                    Le déroulement de la vente et ce que chaque accès ouvre
+                  </span>
+                </span>
+                <ChevronDown className={styles.foldIcon} aria-hidden />
+              </summary>
+              <div className={styles.foldBody}>
+                <p className={styles.procedureText}>
+                  {withAdjudicationTerm(venueCopy.explanation)}
+                </p>
+                <ol className={styles.tiers} aria-label="Ce que vous voyez, selon votre accès">
+                  <li className={styles.tier}>
+                    <h3 className={styles.tierTitle}>
+                      <Eye aria-hidden />
+                      Visible maintenant
+                    </h3>
+                    <p>
+                      {state
+                        ? "Le bien et ses équipements, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
+                        : "Le bien et ses équipements, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
+                    </p>
+                  </li>
+                  <li className={`${styles.tier} ${styles.tierFree}`}>
+                    <h3 className={styles.tierTitle}>
+                      <LockKeyholeOpen aria-hidden />
+                      Découverte · gratuit
+                    </h3>
+                    <p>
+                      Adresse, photos, description, occupation, dates de visite et contact du
+                      dossier, fourchette de valeur estimée, Street View, météo et risques de la
+                      commune. Et {MONTHLY_SALE_UNLOCKS} déblocages par mois, chacun ouvrant, pour
+                      une vente :{" "}
+                      {unlockedItemsText({
+                        ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
+                        statistics:
+                          procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
+                      })}
+                      .
+                    </p>
+                  </li>
+                  <li className={`${styles.tier} ${styles.tierAnalysis}`}>
+                    <h3 className={styles.tierTitle}>
+                      <ChartNoAxesCombined aria-hidden />
+                      Offre Analyse
+                    </h3>
+                    <p>
+                      {ceilingTerms
+                        ? procedure.venueType === "tribunal"
+                          ? `Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre ${ceilingTerms.ceilingTerm}.`
+                          : `Pièces du dossier, ventes comparables, travaux et calcul de votre ${ceilingTerms.ceilingTerm}.`
+                        : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
+                    </p>
+                  </li>
+                </ol>
+                <p className={styles.catalogueNote}>
+                  <strong>Un seul catalogue, plusieurs procédures</strong>
+                  Immojudis référence les ventes immobilières au tribunal, chez le notaire et les
+                  ventes domaniales. Les règles affichées s’adaptent au type de chaque vente.
+                </p>
+              </div>
+            </details>
+            <Link href={returnTo} className={styles.secondary}>
+              Continuer ma recherche
+            </Link>
 
             {preview.department && !verifyingAccount ? (
               <div data-testid="public-sector-alert">

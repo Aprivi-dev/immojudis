@@ -12,7 +12,6 @@ import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import UserRound from "lucide-react/dist/esm/icons/user-round.js";
 import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
@@ -42,6 +41,12 @@ import { postAuthDestination } from "@/lib/onboarding";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
+import { nonBreakingUnits } from "@/lib/non-breaking-units";
+import {
+  SIGNUP_NAME_MAX_LENGTH,
+  signupRefusalMessage,
+  validateSignupName,
+} from "@/lib/signup-name";
 import { ACCOUNT_EXISTS_MESSAGE, userMessage } from "@/lib/user-messages";
 
 type LoginSearch = {
@@ -66,6 +71,12 @@ type LoginMode = LoginPageMode;
 
 const PASSWORD_RULE_ID = "login-password-rule";
 const FORM_ERROR_ID = "login-form-error";
+const FIELD_IDS = {
+  first_name: "login-first-name",
+  last_name: "login-last-name",
+  organization: "login-organization",
+} as const;
+type InvalidField = keyof typeof FIELD_IDS;
 
 /** Délai avant de pouvoir demander un nouvel email de confirmation. */
 const RESEND_COOLDOWN_SECONDS = 30;
@@ -160,8 +171,9 @@ const modeCopy: Record<
   investor: {
     eyebrow: "Compte Découverte",
     title: "Explorer gratuitement",
-    description:
-      "Créez votre compte pour consulter les fiches et préparer votre première recherche, sans carte bancaire.",
+    // Le titre dit déjà « gratuitement » et la ligne qui suit (téléphone) « sans carte bancaire » : un
+    // seul chapô, sans doublon (voir le rendu).
+    description: "Compte Découverte : consultez les fiches et préparez votre première recherche.",
     submit: "Créer mon compte gratuit",
   },
   professional: {
@@ -190,12 +202,15 @@ export function LoginPage() {
   const mode: LoginMode = requestedMode ?? "login";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [professionalRole, setProfessionalRole] = useState<ProfessionalRole>("lawyer");
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  /** Champ que l'erreur du formulaire désigne (prénom, nom, organisation). */
+  const [invalidField, setInvalidField] = useState<InvalidField | null>(null);
   /**
    * Titre du panneau affiché (formulaire ou « confirmez votre adresse ») : quand l'un remplace
    * l'autre, le focus y va. Sinon il reste sur un bouton disparu et un lecteur d'écran ne sait pas
@@ -319,6 +334,12 @@ export function LoginPage() {
     panelTitleRef.current?.focus();
   }, [pendingEmail]);
 
+  /** Le champ désigné est modifié : son erreur n'a plus lieu d'être affichée. */
+  function clearFieldError() {
+    setInvalidField(null);
+    setFormError(null);
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!isSupabaseConfigured) {
@@ -326,12 +347,26 @@ export function LoginPage() {
       return;
     }
 
+    // Une erreur de saisie se dit sur le champ (alerte du formulaire reliée au champ), pas par une
+    // notification qui disparaît.
+    function rejectField(field: InvalidField, message: string) {
+      setInvalidField(field);
+      setFormError(message);
+      document.getElementById(FIELD_IDS[field])?.focus();
+    }
+
+    const signupName = isSignup ? validateSignupName(firstName, lastName) : null;
+    if (signupName && !signupName.ok) {
+      rejectField(signupName.field, signupName.message);
+      return;
+    }
     if (mode === "professional" && organizationName.trim().length < 2) {
-      toast.error("Renseignez votre cabinet, étude, office ou tribunal.");
+      rejectField("organization", "Renseignez votre cabinet, étude, office ou tribunal.");
       return;
     }
 
     setFormError(null);
+    setInvalidField(null);
     setBusy(true);
     try {
       if (mode === "login") {
@@ -348,7 +383,9 @@ export function LoginPage() {
           emailRedirectTo: signupRedirectTo(),
           data: {
             account_type: accountType,
-            full_name: fullName.trim() || null,
+            full_name: signupName?.ok ? signupName.name.fullName : null,
+            first_name: signupName?.ok ? signupName.name.firstName : null,
+            last_name: signupName?.ok ? signupName.name.lastName : null,
             organization_name: accountType === "b2b" ? organizationName.trim() : null,
             professional_role: accountType === "b2b" ? professionalRole : null,
             onboarding_version:
@@ -380,10 +417,9 @@ export function LoginPage() {
           : "Compte Découverte créé. Vous pouvez poursuivre.",
       );
     } catch (err: unknown) {
-      const message = userMessage(
-        err,
-        "Impossible de continuer. Vérifiez vos informations puis réessayez.",
-      );
+      const message =
+        (isSignup ? signupRefusalMessage(err) : null) ??
+        userMessage(err, "Impossible de continuer. Vérifiez vos informations puis réessayez.");
       // Une seule annonce : l'alerte du formulaire (reliée aux champs), pas l'alerte et un toast.
       setFormError(message);
     } finally {
@@ -392,7 +428,10 @@ export function LoginPage() {
   }
 
   return (
-    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+    <main
+      id="contenu"
+      className="liquid-page min-h-screen px-4 py-6 text-foreground sm:px-6 sm:py-10"
+    >
       <div className="mx-auto grid min-h-[calc(100svh-8rem)] max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,29rem)]">
         <section className="glass-shell relative hidden min-h-[38rem] overflow-hidden rounded-lg p-8 lg:block">
           <div className="cinematic-grid absolute inset-0 opacity-35" />
@@ -417,7 +456,7 @@ export function LoginPage() {
                   Découverte ouvre gratuitement le catalogue, avec {MONTHLY_UNLOCKS_TEXT} (
                   {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes, avec les
                   comparables, les alertes quotidiennes et les exports (tarif prévu :{" "}
-                  {resolveAnalysisOfferLabel()}, pas encore souscriptible).
+                  {nonBreakingUnits(resolveAnalysisOfferLabel())}, pas encore souscriptible).
                 </>
               )}{" "}
               Les professionnels déposent et suivent leurs annonces dans leur espace.
@@ -446,7 +485,7 @@ export function LoginPage() {
           </div>
         </section>
 
-        <section className="glass-shell rounded-lg p-6 sm:p-8">
+        <section className="glass-shell rounded-lg p-5 sm:p-8">
           {pendingEmail ? (
             <div>
               <div className="flex items-center gap-3 text-xs font-semibold text-gold-text">
@@ -526,7 +565,7 @@ export function LoginPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-3 gap-2 rounded-lg border border-line bg-surface-tint p-1">
+              <div className="grid grid-cols-[1fr_1fr_1.3fr] gap-1 rounded-lg border border-line bg-surface-tint p-1">
                 <ModeButton active={mode === "login"} onClick={() => switchMode("login")}>
                   Se connecter
                 </ModeButton>
@@ -536,6 +575,7 @@ export function LoginPage() {
                 <ModeButton
                   active={mode === "professional"}
                   onClick={() => switchMode("professional")}
+                  noWrap
                 >
                   Professionnel
                 </ModeButton>
@@ -552,42 +592,40 @@ export function LoginPage() {
                 </p>
               ) : null}
 
-              <div className="mt-6 flex items-center gap-3 text-xs font-semibold text-gold-text">
-                {mode === "professional" ? (
-                  <BriefcaseBusiness className="h-4 w-4" />
-                ) : mode === "investor" ? (
-                  <UserRound className="h-4 w-4" />
-                ) : (
-                  <LockKeyhole className="h-4 w-4" />
-                )}
-                {copy.eyebrow}
-              </div>
+              {mode === "investor" ? null : (
+                // L'inscription fusionne ce repère dans son chapô (« Compte Découverte : … ») : un
+                // bouton de moins sous la ligne de flottaison sur un téléphone de 740 px.
+                <div className="mt-6 flex items-center gap-3 text-xs font-semibold text-gold-text">
+                  {mode === "professional" ? (
+                    <BriefcaseBusiness className="h-4 w-4" />
+                  ) : (
+                    <LockKeyhole className="h-4 w-4" />
+                  )}
+                  {copy.eyebrow}
+                </div>
+              )}
               <h1
                 ref={panelTitleRef}
                 tabIndex={-1}
-                className="mt-4 font-display text-3xl text-foreground outline-none"
+                className={`${mode === "investor" ? "mt-5" : "mt-4"} font-display text-3xl text-foreground outline-none`}
               >
                 {copy.title}
               </h1>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {copy.description}
+                {mode === "investor" && !launchOffer ? (
+                  // Sur téléphone, la ligne qui suit le dit déjà.
+                  <span className="hidden lg:inline"> Sans carte bancaire.</span>
+                ) : null}
               </p>
               {mode === "investor" ? (
                 // The explanation column is hidden below the lg breakpoint: say the promise here.
                 <div
                   data-testid="login-free-promise"
-                  className="mt-2 text-sm leading-relaxed text-foreground lg:hidden"
+                  className="mt-1 text-sm leading-relaxed text-foreground lg:hidden"
                 >
                   {launchOffer ? (
-                    <>
-                      <p className="font-medium">{LAUNCH_OFFER_SIGNUP_LINE}</p>
-                      <details className="mt-1">
-                        <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-gold-text underline underline-offset-4">
-                          Conditions de l’essai gratuit
-                        </summary>
-                        <p className="pb-2 text-muted-foreground">{LAUNCH_OFFER_DURATION_TEXT}</p>
-                      </details>
-                    </>
+                    <p className="font-medium">{LAUNCH_OFFER_SIGNUP_LINE}</p>
                   ) : (
                     <p className="font-medium">
                       {`Gratuit : ${MONTHLY_UNLOCKS_TEXT} (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
@@ -611,21 +649,49 @@ export function LoginPage() {
                 </div>
               ) : null}
 
-              <form onSubmit={submit} className="mt-6 space-y-3">
+              <form onSubmit={submit} className="mt-5 space-y-3">
                 {isSignup ? (
-                  <label className="grid gap-2">
-                    <span className="text-[13px] font-semibold text-muted-foreground">
-                      Nom complet
-                    </span>
-                    <input
-                      type="text"
-                      autoComplete="name"
-                      placeholder="Prénom Nom"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="form-input"
-                    />
-                  </label>
+                  // Côte à côte dès que la largeur le permet : un champ de moins en hauteur.
+                  <div className="grid gap-3 min-[360px]:grid-cols-2">
+                    <label className="grid gap-2">
+                      <span className="text-[13px] font-semibold text-muted-foreground">
+                        Prénom
+                      </span>
+                      <input
+                        id={FIELD_IDS.first_name}
+                        type="text"
+                        required
+                        autoComplete="given-name"
+                        maxLength={SIGNUP_NAME_MAX_LENGTH}
+                        aria-invalid={invalidField === "first_name" ? true : undefined}
+                        aria-describedby={invalidField === "first_name" ? FORM_ERROR_ID : undefined}
+                        value={firstName}
+                        onChange={(e) => {
+                          setFirstName(e.target.value);
+                          if (invalidField === "first_name") clearFieldError();
+                        }}
+                        className="form-input"
+                      />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-[13px] font-semibold text-muted-foreground">Nom</span>
+                      <input
+                        id={FIELD_IDS.last_name}
+                        type="text"
+                        required
+                        autoComplete="family-name"
+                        maxLength={SIGNUP_NAME_MAX_LENGTH}
+                        aria-invalid={invalidField === "last_name" ? true : undefined}
+                        aria-describedby={invalidField === "last_name" ? FORM_ERROR_ID : undefined}
+                        value={lastName}
+                        onChange={(e) => {
+                          setLastName(e.target.value);
+                          if (invalidField === "last_name") clearFieldError();
+                        }}
+                        className="form-input"
+                      />
+                    </label>
+                  </div>
                 ) : null}
 
                 {mode === "professional" ? (
@@ -655,12 +721,20 @@ export function LoginPage() {
                       <div className="relative">
                         <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
                         <input
+                          id={FIELD_IDS.organization}
                           type="text"
                           required
                           autoComplete="organization"
                           placeholder="Cabinet, étude, office, tribunal..."
+                          aria-invalid={invalidField === "organization" ? true : undefined}
+                          aria-describedby={
+                            invalidField === "organization" ? FORM_ERROR_ID : undefined
+                          }
                           value={organizationName}
-                          onChange={(e) => setOrganizationName(e.target.value)}
+                          onChange={(e) => {
+                            setOrganizationName(e.target.value);
+                            if (invalidField === "organization") clearFieldError();
+                          }}
                           className="form-input pl-10"
                         />
                       </div>
@@ -680,8 +754,8 @@ export function LoginPage() {
                       type="email"
                       autoComplete="email"
                       required
-                      aria-invalid={formError ? true : undefined}
-                      aria-describedby={formError ? FORM_ERROR_ID : undefined}
+                      aria-invalid={formError && !invalidField ? true : undefined}
+                      aria-describedby={formError && !invalidField ? FORM_ERROR_ID : undefined}
                       placeholder="vous@exemple.fr"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -702,9 +776,12 @@ export function LoginPage() {
                         required
                         minLength={isSignup ? 12 : 6}
                         placeholder={isSignup ? "12 caractères minimum" : "Votre mot de passe"}
-                        aria-invalid={formError ? true : undefined}
+                        aria-invalid={formError && !invalidField ? true : undefined}
                         aria-describedby={
-                          [isSignup ? PASSWORD_RULE_ID : null, formError ? FORM_ERROR_ID : null]
+                          [
+                            isSignup ? PASSWORD_RULE_ID : null,
+                            formError && !invalidField ? FORM_ERROR_ID : null,
+                          ]
                             .filter(Boolean)
                             .join(" ") || undefined
                         }
@@ -778,6 +855,30 @@ export function LoginPage() {
                     .
                   </p>
                 ) : null}
+                {isSignup ? (
+                  <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                    Votre prénom et votre nom servent à personnaliser votre compte et nos échanges
+                    avec vous.
+                  </p>
+                ) : null}
+                {mode === "investor" && launchOffer ? (
+                  <>
+                    <p
+                      data-testid="login-after-trial"
+                      className="text-center text-xs leading-relaxed text-muted-foreground"
+                    >
+                      {afterTrialLine()}
+                    </p>
+                    <details data-testid="login-trial-conditions" className="text-sm lg:hidden">
+                      <summary className="flex min-h-11 cursor-pointer items-center justify-center font-semibold text-gold-text underline underline-offset-4">
+                        Conditions de l’essai gratuit
+                      </summary>
+                      <p className="pb-2 leading-relaxed text-muted-foreground">
+                        {LAUNCH_OFFER_DURATION_TEXT}
+                      </p>
+                    </details>
+                  </>
+                ) : null}
               </form>
             </>
           )}
@@ -791,6 +892,16 @@ export function LoginPage() {
       </div>
     </main>
   );
+}
+
+/** Ce qui reste du compte à la fin de l'essai : les droits de Découverte, chiffrés d'après les plans. */
+function afterTrialLine(): string {
+  const { watchedZones, favoriteSales } = PLAN_LIMITS.decouverte;
+  const kept = [MONTHLY_UNLOCKS_TEXT];
+  if (watchedZones != null) kept.push(watchedZones === 1 ? "1 alerte" : `${watchedZones} alertes`);
+  if (favoriteSales != null) kept.push(`${favoriteSales} favoris`);
+  const list = kept.length > 1 ? `${kept.slice(0, -1).join(", ")} et ${kept.at(-1)}` : kept[0];
+  return `Après les ${ANALYSIS_TRIAL_DAYS} jours, votre compte reste gratuit en Découverte : ${list}.`;
 }
 
 /** Une inscription « réussie » sans identité créée correspond à une adresse déjà inscrite. */
@@ -823,17 +934,22 @@ function ModeButton({
   active,
   children,
   onClick,
+  noWrap = false,
 }: {
   active: boolean;
   children: ReactNode;
   onClick: () => void;
+  /** Le libellé tient sur une ligne : sa colonne est plus large (« Professionnel »). */
+  noWrap?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-11 rounded-md px-3 py-2 text-sm font-semibold transition ${
+      className={`min-h-11 rounded-md px-2 py-2 text-[13px] font-semibold leading-tight transition sm:px-3 sm:text-sm ${
+        noWrap ? "whitespace-nowrap" : ""
+      } ${
         active
           ? "bg-gold text-brand-navy shadow-[0_12px_28px_rgb(242_196_135_/_18%)]"
           : "text-muted-foreground hover:bg-card hover:text-foreground"

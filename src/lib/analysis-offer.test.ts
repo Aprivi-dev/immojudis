@@ -11,6 +11,7 @@ import {
   DEFAULT_ANALYSIS_OFFER_LABEL,
   analysisOfferLabelAmountsCents,
   analysisOfferLabelMatchesPrice,
+  analysisOfferLabelStatesTax,
   offersPageDescription,
   OFFERS_DESCRIPTION_MAX_LENGTH,
   resolveAnalysisOfferLabel,
@@ -82,7 +83,17 @@ describe("approved Analyse offer", () => {
   it("falls back to the approved public label when no override is set", () => {
     expect(resolveAnalysisOfferLabel(null)).toBe("59 € TTC / mois");
     expect(resolveAnalysisOfferLabel("  ")).toBe("59 € TTC / mois");
-    expect(resolveAnalysisOfferLabel("59 € / mois")).toBe("59 € / mois");
+    expect(resolveAnalysisOfferLabel("59,00 € TTC par mois")).toBe("59,00 € TTC par mois");
+  });
+
+  it("refuse un libellé sans « TTC » : le libellé approuvé s'affiche à la place", () => {
+    expect(resolveAnalysisOfferLabel("59 € / mois")).toBe(DEFAULT_ANALYSIS_OFFER_LABEL);
+    expect(resolveAnalysisOfferLabel("59 € HT / mois")).toBe(DEFAULT_ANALYSIS_OFFER_LABEL);
+    expect(analysisOfferLabelStatesTax("59 € TTC / mois")).toBe(true);
+    expect(analysisOfferLabelStatesTax("59\u00a0€ ttc / mois")).toBe(true);
+    expect(analysisOfferLabelStatesTax("59 € / mois")).toBe(false);
+    expect(analysisOfferLabelStatesTax("59 € ATTCH / mois")).toBe(false);
+    expect(DEFAULT_ANALYSIS_OFFER_LABEL).toContain("TTC");
   });
 });
 

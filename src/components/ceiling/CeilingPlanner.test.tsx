@@ -663,6 +663,19 @@ describe("CeilingPlanner accessibilité", () => {
     expect(calls.at(-1)?.customMarginPct).toBeNull();
   });
 
+  it("place « Modifier les hypothèses » juste sous le résultat, avant le simulateur", () => {
+    renderWithChoices();
+    const toggle = screen.getByRole("button", { name: "Modifier les hypothèses" });
+    const profiles = screen.getByRole("radiogroup", { name: "Niveau de prudence" });
+    const simulator = screen.getByLabelText(/Montant de l’enchère simulée/);
+    expect(
+      profiles.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      toggle.compareDocumentPosition(simulator) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("relie le bouton des hypothèses à son panneau", () => {
     renderWithChoices();
     const toggle = screen.getByRole("button", { name: "Modifier les hypothèses" });
