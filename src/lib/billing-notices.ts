@@ -6,6 +6,7 @@ import {
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { emailButton, emailLayout, emailLink, emailParagraph } from "@/lib/email-layout";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
 
 const dateFormat = new Intl.DateTimeFormat("fr-FR", {
@@ -21,6 +22,26 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+/** Formule de politesse des trois messages (même texte qu'avant, seulement mise en forme). */
+const SIGNATURE = emailParagraph("Cordialement,<br />L’équipe Immojudis", { marginBottom: 0 });
+
+/**
+ * Enveloppe commune des avis de facturation : le texte des messages ne change pas ; seul le cadre
+ * (logo, carte, mode sombre) vient du modèle unique. Pas de pied : pas de désinscription pour un
+ * message contractuel, seulement la ligne de marque hors carte.
+ */
+function billingEmail({
+  title,
+  preheader,
+  content,
+}: {
+  title: string;
+  preheader: string;
+  content: string[];
+}): string {
+  return emailLayout({ title, preheader, content: content.join(""), footer: {} });
 }
 
 export function buildPaymentFailedMessage({
@@ -47,6 +68,7 @@ export function buildPaymentFailedMessage({
   const grace = `Votre accès Analyse reste ouvert ${PAST_DUE_GRACE_DAYS} jours à compter de la fin de la période payée pour vous permettre de mettre à jour votre moyen de paiement ; la mensualité reste due. Passé ce délai sans paiement, l’accès est suspendu. Votre compte Découverte et vos données restent accessibles.`;
   const cancel =
     "Si vous ne souhaitez pas poursuivre, vous pouvez résilier à tout moment depuis la page « Mon compte », bouton « Résilier mon abonnement ».";
+  const subject = "Votre paiement Immojudis n'a pas abouti";
   const lines = [
     "Bonjour,",
     "",
@@ -66,9 +88,22 @@ export function buildPaymentFailedMessage({
   return {
     from,
     to,
-    subject: "Votre paiement Immojudis n'a pas abouti",
+    subject,
     text: lines.join("\n"),
-    html: `<p>Bonjour,</p><p>Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti. ${escapeHtml(amount)}</p><p>${escapeHtml(retry)} ${escapeHtml(grace)}</p><p><a href="${escapeHtml(accountUrl)}">Mettre à jour mon moyen de paiement</a></p><p>${escapeHtml(cancel)}</p><p>Cordialement,<br />L’équipe Immojudis</p>`,
+    html: billingEmail({
+      title: subject,
+      preheader: "Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti.",
+      content: [
+        emailParagraph("Bonjour,"),
+        emailParagraph(
+          `Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti. ${escapeHtml(amount)}`,
+        ),
+        emailParagraph(`${escapeHtml(retry)} ${escapeHtml(grace)}`),
+        emailButton(accountUrl, "Mettre à jour mon moyen de paiement"),
+        emailParagraph(escapeHtml(cancel)),
+        SIGNATURE,
+      ],
+    }),
   };
 }
 
@@ -134,6 +169,7 @@ export function buildTrialEndingMessage({
   const rightsUrl = `${appUrl}/mes-droits`;
   const withdrawal =
     "Vous disposez en principe d’un droit de rétractation de 14 jours à compter de votre souscription (voir « Mes droits »).";
+  const subject = `Votre essai Immojudis Analyse se termine le ${endDate}`;
   const lines = [
     "Bonjour,",
     "",
@@ -152,9 +188,21 @@ export function buildTrialEndingMessage({
     from,
     to,
     // The date, not a fixed « dans 3 jours » : the event may arrive earlier or later.
-    subject: `Votre essai Immojudis Analyse se termine le ${endDate}`,
+    subject,
     text: lines.join("\n"),
-    html: `<p>Bonjour,</p><p>Votre essai gratuit d'Immojudis Analyse se termine le ${escapeHtml(endDate)}. ${escapeHtml(firstPayment)}</p><p>${escapeHtml(cancel)} <a href="${escapeHtml(accountUrl)}">Mon compte</a></p><p>${escapeHtml(withdrawal)} <a href="${escapeHtml(rightsUrl)}">Mes droits</a></p><p>Cordialement,<br />L’équipe Immojudis</p>`,
+    html: billingEmail({
+      title: subject,
+      preheader: `Votre essai gratuit d'Immojudis Analyse se termine le ${endDate}.`,
+      content: [
+        emailParagraph("Bonjour,"),
+        emailParagraph(
+          `Votre essai gratuit d'Immojudis Analyse se termine le ${escapeHtml(endDate)}. ${escapeHtml(firstPayment)}`,
+        ),
+        emailParagraph(`${escapeHtml(cancel)} ${emailLink(accountUrl, "Mon compte")}`),
+        emailParagraph(`${escapeHtml(withdrawal)} ${emailLink(rightsUrl, "Mes droits")}`),
+        SIGNATURE,
+      ],
+    }),
   };
 }
 
@@ -226,6 +274,7 @@ export function buildCancellationConfirmationMessage({
       ? `Votre contrat prend fin le ${endDate}, à la fin de la période en cours : votre accès Analyse reste ouvert jusqu’à cette date, puis l’abonnement n’est pas renouvelé.${trialing ? " Votre essai gratuit n’étant pas terminé, aucun montant ne sera prélevé." : ""}`
       : `Votre contrat a pris fin le ${endDate} : votre accès Analyse est terminé et l’abonnement n’est pas renouvelé.`;
   const remains = "Votre compte Découverte et vos données restent accessibles.";
+  const subject = "Confirmation de votre résiliation";
   const lines = [
     "Bonjour,",
     "",
@@ -241,9 +290,19 @@ export function buildCancellationConfirmationMessage({
   return {
     from,
     to,
-    subject: "Confirmation de votre résiliation",
+    subject,
     text: lines.join("\n"),
-    html: `<p>Bonjour,</p><p>${escapeHtml(receipt)}</p><p>${escapeHtml(effect)}</p><p>${escapeHtml(remains)} <a href="${escapeHtml(accountUrl)}">Mon compte</a></p><p>Cordialement,<br />L’équipe Immojudis</p>`,
+    html: billingEmail({
+      title: subject,
+      preheader: receipt,
+      content: [
+        emailParagraph("Bonjour,"),
+        emailParagraph(escapeHtml(receipt)),
+        emailParagraph(escapeHtml(effect)),
+        emailParagraph(`${escapeHtml(remains)} ${emailLink(accountUrl, "Mon compte")}`),
+        SIGNATURE,
+      ],
+    }),
   };
 }
 

@@ -2,6 +2,13 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { sendResendEmail } from "@/lib/email-alerts";
 import { serverEnv } from "@/lib/env";
+import {
+  emailBreakable,
+  emailKeyValueRows,
+  emailLayout,
+  emailParagraph,
+  emailPreformatted,
+} from "@/lib/email-layout";
 import { escapeHtml } from "@/lib/guards";
 
 export type OperationalAlertNotification = {
@@ -210,6 +217,7 @@ export function buildOperationalAlertEmail(
 ) {
   const label = EVENT_LABELS[alert.event_type];
   const details = JSON.stringify(alert.details, null, 2).slice(0, 4_000);
+  const subject = `[Immojudis] ${label} · ${alert.severity} · ${alert.alert_key}`.slice(0, 200);
   const lines = [
     `${label} (${alert.severity}) : ${alert.alert_key}`,
     "",
@@ -227,9 +235,36 @@ export function buildOperationalAlertEmail(
   return {
     from,
     to,
-    subject: `[Immojudis] ${label} · ${alert.severity} · ${alert.alert_key}`.slice(0, 200),
+    subject,
     text: lines.join("\n"),
-    html: `<p><strong>${escapeHtml(label)}</strong> (${escapeHtml(alert.severity)}) : <code>${escapeHtml(alert.alert_key)}</code></p><ul><li>Catégorie : ${escapeHtml(alert.category)}</li><li>Environnement : ${escapeHtml(environment)}</li><li>Première occurrence : ${escapeHtml(alert.first_seen_at)}</li><li>Dernière occurrence : ${escapeHtml(alert.last_seen_at)}</li>${alert.resolved_at ? `<li>Résolution : ${escapeHtml(alert.resolved_at)}</li>` : ""}</ul><p>Diagnostic :</p><pre>${escapeHtml(details)}</pre><p>Cet email double l'alerte du workflow GitHub « Immojudis Operational Alert ».</p>`,
+    // Email interne : le cadre commun sans pied (rien à se désinscrire d'une alerte d'exploitation).
+    html: emailLayout({
+      title: subject,
+      preheader: `Catégorie ${alert.category} · environnement ${environment} · dernière occurrence ${alert.last_seen_at}`,
+      content: [
+        emailParagraph(
+          `<strong>${escapeHtml(label)}</strong> (${escapeHtml(alert.severity)}) : ${emailBreakable(alert.alert_key)}`,
+        ),
+        emailKeyValueRows([
+          ["Catégorie", alert.category],
+          ["Environnement", environment],
+          ["Première occurrence", alert.first_seen_at],
+          ["Dernière occurrence", alert.last_seen_at],
+          ...(alert.resolved_at ? ([["Résolution", alert.resolved_at]] as const) : []),
+        ]),
+        emailParagraph("Diagnostic :", { marginBottom: 8 }),
+        emailPreformatted(details),
+        emailParagraph(
+          "Cet email double l'alerte du workflow GitHub « Immojudis Operational Alert ».",
+          {
+            tone: "muted",
+            size: "caption",
+            marginBottom: 0,
+          },
+        ),
+      ].join(""),
+      footer: null,
+    }),
   };
 }
 

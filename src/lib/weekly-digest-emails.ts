@@ -1,11 +1,18 @@
 import "server-only";
-import { escapeAttribute, type ResendEmailMessage } from "@/lib/email-alerts";
+import type { ResendEmailMessage } from "@/lib/email-alerts";
 import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
 import { SALE_REMINDER_DISCLAIMER } from "@/lib/sale-reminder-emails";
-import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
+import {
+  emailButton,
+  emailHeading,
+  emailLayout,
+  emailLink,
+  emailParagraph,
+  emailSaleCard,
+} from "@/lib/email-layout";
 
 /**
  * Email du récapitulatif hebdomadaire « Ma semaine » : un seul email par semaine, au jour choisi par
@@ -129,6 +136,7 @@ export function buildWeeklyDigestMessage({
   const changes = withUrls(content.changes, false);
   const newSales = withUrls(content.newSales.items, false);
 
+  const subject = weeklyDigestSubject(content, internal);
   const textLines: string[] = ["Bonjour,", "", "Voici votre semaine sur Immojudis."];
   if (audiences.length) {
     textLines.push("", "Vos audiences des 14 prochains jours", "");
@@ -189,9 +197,10 @@ export function buildWeeklyDigestMessage({
   return {
     from,
     to: recipientEmail,
-    subject: weeklyDigestSubject(content, internal),
+    subject,
     text: textLines.join("\n"),
     html: buildWeeklyDigestHtml({
+      title: subject,
       audiences,
       audiencesMore: content.audiencesMore,
       changes,
@@ -211,31 +220,34 @@ export function buildWeeklyDigestMessage({
 
 type LinkedItem = WeeklyDigestSaleItem & { url: string; calendarUrl: string | null };
 
-const BUTTON = `display:inline-block;background:${EMAIL_COLORS.navy};color:${EMAIL_COLORS.white};text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;`;
-const LINK = `display:inline-block;color:${EMAIL_COLORS.navy};text-decoration:underline;padding:10px 6px;font-weight:700;`;
-
 function itemHtml(item: LinkedItem): string {
-  return `<div style="margin:0 0 14px;padding:0 0 12px;border-bottom:1px solid ${EMAIL_COLORS.lineWarm};">
-          ${item.label ? `<p style="margin:0 0 4px;color:${EMAIL_COLORS.goldText};font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">${escapeHtml(item.label)}</p>` : ""}
-          <h3 style="margin:0 0 4px;font-size:16px;line-height:1.3;color:${EMAIL_COLORS.navy};">${escapeHtml(item.title)}</h3>
-          ${item.location ? `<p style="margin:0 0 6px;color:${EMAIL_COLORS.inkSoft};">${escapeHtml(item.location)}</p>` : ""}
-          ${item.detail ? `<p style="margin:0 0 8px;font-weight:700;color:${EMAIL_COLORS.navy};">${escapeHtml(item.detail)}</p>` : ""}
-          <a href="${escapeAttribute(item.url)}" style="${BUTTON}">Voir l'annonce</a>
-          ${item.calendarUrl ? ` <a href="${escapeAttribute(item.calendarUrl)}" style="${LINK}">Ajouter à mon agenda</a>` : ""}
-        </div>`;
+  return emailSaleCard({
+    eyebrow: item.label,
+    title: item.title,
+    location: item.location,
+    facts: item.detail ? [{ value: item.detail }] : [],
+    action: { href: item.url, text: "Voir l’annonce" },
+    secondaryLink: item.calendarUrl
+      ? { href: item.calendarUrl, text: "Ajouter à mon agenda" }
+      : null,
+  });
 }
 
 function sectionHtml(title: string, body: string): string {
-  return `<h2 style="margin:22px 0 10px;font-size:18px;line-height:1.3;color:${EMAIL_COLORS.navy};">${escapeHtml(title)}</h2>${body}`;
+  return `${emailHeading(title, 2, { marginTop: 24, marginBottom: 4 })}${body}`;
 }
 
 function moreHtml(count: number, href: string): string {
   return count > 0
-    ? `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};font-size:13px;">… et ${escapeHtml(plural(count, "autre", "autres"))} : <a href="${escapeAttribute(href)}" style="color:${EMAIL_COLORS.navy};">Mes favoris</a></p>`
+    ? emailParagraph(
+        `… et ${escapeHtml(plural(count, "autre", "autres"))} : ${emailLink(href, "Mes favoris")}`,
+        { size: "fact", marginBottom: 12 },
+      )
     : "";
 }
 
 function buildWeeklyDigestHtml({
+  title,
   audiences,
   audiencesMore,
   changes,
@@ -248,6 +260,8 @@ function buildWeeklyDigestHtml({
   unsubscribeUrl,
   settingsUrl,
 }: {
+  /** L'objet du message, repris dans `<title>`. */
+  title: string;
   audiences: LinkedItem[];
   audiencesMore: number;
   changes: LinkedItem[];
@@ -267,7 +281,11 @@ function buildWeeklyDigestHtml({
         "Vos audiences des 14 prochains jours",
         audiences.map(itemHtml).join("") +
           moreHtml(audiencesMore, favoritesUrl) +
-          `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};font-size:13px;">${escapeHtml(SALE_CALENDAR_DISCLAIMER)}</p>`,
+          emailParagraph(escapeHtml(SALE_CALENDAR_DISCLAIMER), {
+            tone: "muted",
+            size: "caption",
+            marginBottom: 12,
+          }),
       ),
     );
   }
@@ -284,10 +302,12 @@ function buildWeeklyDigestHtml({
     sections.push(
       sectionHtml(
         `Nouvelles ventes dans ${plural1 ? "vos départements" : "votre département"} (${newSalesMeta.departments.join(", ")})`,
-        `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};">${escapeHtml(plural(newSalesMeta.total, "vente", "ventes"))} en 7 jours.</p>` +
+        emailParagraph(`${escapeHtml(plural(newSalesMeta.total, "vente", "ventes"))} en 7 jours.`, {
+          marginBottom: 4,
+        }) +
           newSales.map(itemHtml).join("") +
           (newSalesMeta.total > newSales.length
-            ? `<p style="margin:0 0 12px;"><a href="${escapeAttribute(alertsUrl)}" style="color:${EMAIL_COLORS.navy};">Gérer mes alertes</a></p>`
+            ? emailParagraph(emailLink(alertsUrl, "Gérer mes alertes"), { marginBottom: 12 })
             : ""),
       ),
     );
@@ -296,28 +316,39 @@ function buildWeeklyDigestHtml({
     sections.push(
       sectionHtml(
         "Les nouvelles ventes de votre département",
-        `<p style="margin:0 0 12px;color:${EMAIL_COLORS.inkStrong};">Créez une alerte pour être prévenu des nouvelles ventes de votre département.</p><a href="${escapeAttribute(alertsUrl)}" style="${BUTTON}">Créer une alerte</a>`,
+        emailParagraph(
+          "Créez une alerte pour être prévenu des nouvelles ventes de votre département.",
+        ) + emailButton(alertsUrl, "Créer une alerte", { variant: "secondary" }),
       ),
     );
   }
 
-  return `<!doctype html>
-<html lang="fr">
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
-    <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
-      ${emailBrandHeaderHtml()}
-      <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
-        <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
-        <p style="margin:0;color:${EMAIL_COLORS.inkStrong};">Voici votre semaine sur Immojudis.</p>
-        ${sections.join("\n        ")}
-        <p style="margin:18px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(SALE_REMINDER_DISCLAIMER)}</p>
-      </div>
-      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">
-        Vous recevez ce message parce que vous avez activé le récapitulatif hebdomadaire « Ma semaine ».<br />
-        <a href="${escapeAttribute(settingsUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Gérer mes notifications</a> ·
-        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Se désinscrire du récapitulatif</a>
-      </p>
-    </div>
-  </body>
-</html>`;
+  const covered = [
+    audiences.length ? "vos audiences" : null,
+    changes.length ? "les changements sur vos ventes suivies" : null,
+    newSales.length ? "les nouvelles ventes" : null,
+  ].filter((part): part is string => part !== null);
+
+  return emailLayout({
+    title,
+    preheader: `Voici votre semaine sur Immojudis : ${covered.join(", ") || "vos ventes"}.`,
+    content: [
+      emailParagraph("Bonjour,", { marginBottom: 8 }),
+      emailParagraph("Voici votre semaine sur Immojudis.", { marginBottom: 0 }),
+      sections.join(""),
+      emailParagraph(escapeHtml(SALE_REMINDER_DISCLAIMER), {
+        tone: "muted",
+        size: "caption",
+        marginBottom: 0,
+      }),
+    ].join(""),
+    footer: {
+      reason:
+        "Vous recevez ce message parce que vous avez activé le récapitulatif hebdomadaire « Ma semaine ».",
+      links: [
+        { text: "Gérer mes notifications", href: settingsUrl },
+        { text: "Se désinscrire du récapitulatif", href: unsubscribeUrl },
+      ],
+    },
+  });
 }

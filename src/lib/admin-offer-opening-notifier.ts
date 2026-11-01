@@ -4,7 +4,6 @@ import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middlew
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { PublicApiError } from "@/lib/api-errors";
 import {
-  escapeAttribute,
   resolveEmailAlertDeliveryConfig,
   sendResendEmail,
   type ResendEmailMessage,
@@ -12,7 +11,7 @@ import {
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { asRecord, escapeHtml } from "@/lib/guards";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
-import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
+import { emailButton, emailLayout, emailParagraph } from "@/lib/email-layout";
 
 /**
  * Envoi de l'email d'ouverture à la liste d'attente (`offer_opening_notifications`), depuis
@@ -152,24 +151,21 @@ export function buildOfferOpeningMessage({
     "",
     `Vous ne souhaitez plus être prévenu(e) ? Retirer ma demande : ${unsubscribeUrl}`,
   ].join("\n");
-  const html = `<!doctype html>
-<html lang="fr">
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
-    <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
-      ${emailBrandHeaderHtml()}
-      <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
-        <p style="margin:0 0 12px;font-size:16px;">Bonjour,</p>
-        <p style="margin:0 0 14px;color:${EMAIL_COLORS.inkStrong};line-height:1.55;">${escapeHtml(INTRO)}</p>
-        <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};line-height:1.55;">${escapeHtml(OFFERS_LINE)}</p>
-        <p style="margin:0 0 18px;"><a href="${escapeAttribute(offersUrl)}" style="display:inline-block;background:${EMAIL_COLORS.navy};color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir les offres</a></p>
-        <p style="margin:0;color:${EMAIL_COLORS.inkStrong};line-height:1.55;">${escapeHtml(NO_COMMITMENT)}</p>
-      </div>
-      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;">
-        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Retirer ma demande d’être prévenu(e)</a>
-      </p>
-    </div>
-  </body>
-</html>`;
+  // La phrase d'ouverture dit déjà pourquoi le message arrive : le pied ne porte que le lien de retrait.
+  const html = emailLayout({
+    title: subject,
+    preheader: INTRO.split(". ")[0] + ".",
+    content: [
+      emailParagraph("Bonjour,", { marginBottom: 12 }),
+      emailParagraph(escapeHtml(INTRO)),
+      emailParagraph(escapeHtml(OFFERS_LINE)),
+      emailButton(offersUrl, "Voir les offres", { marginBottom: 20 }),
+      emailParagraph(escapeHtml(NO_COMMITMENT), { marginBottom: 0 }),
+    ].join(""),
+    footer: {
+      links: [{ text: "Retirer ma demande d’être prévenu(e)", href: unsubscribeUrl }],
+    },
+  });
   return {
     from,
     to: recipientEmail,
