@@ -324,4 +324,77 @@ dans le scratchpad de la session, hors dépôt. Aucun débordement horizontal à
 
 ## 8. Exécution
 
-_À compléter après validation._
+Validation du propriétaire : « Je valide tous les points et oui nom prénom obligatoires » (31/10/2026). Exécution du 31/10 au 01/11/2026 par `developpeur` (code) et `redacteur-contenu` (contenus), répartie en 14 lots. Chaque lot est sur sa propre branche avec une PR brouillon, a été relu par `code-reviewer` (et par `juridique-rgpd` pour les contenus et les textes juridiques), puis corrigé. Rien n'a été écrit en base de production : les migrations ne sont que des fichiers, à appliquer par le circuit habituel.
+
+### 8.1 PR produites
+
+| PR   | Lot                                            | Numéros                                      | État CI au 01/11                    |
+| ---- | ---------------------------------------------- | -------------------------------------------- | ----------------------------------- |
+| #370 | Budgets JS (décision du 01/11)                 | —                                            | vert, **à fusionner en premier**    |
+| #361 | 1 · base de données et supervision             | 1, 3, 12, 36, 39                             | vert                                |
+| #358 | 2a · lecture par LLM, données personnelles     | 2, 13-15, 75, 76                             | vert                                |
+| #362 | 2b · pipeline, surfaces, géocodage, tribunaux  | 11, 30-33, 35, 43, 44                        | vert                                |
+| #363 | 3a · routes API, alertes, sécurité web         | 6-8, 10, 37, 38, 49, 69, 71-73, 99, 101      | vert                                |
+| #356 | 3b · paiements, droits, contrat d'API          | 42, 45-48, 74, 97                            | vert                                |
+| #364 | 4a · rapports PDF, calculs dérivés             | 4, 16-18, 28, 29, 77, 100                    | vert                                |
+| #365 | 4b · statistiques, modèles, droits de mutation | 19-26                                        | vert                                |
+| #366 | 5a · recherche /sales et carte                 | 34, 52, 53, 57-61, 63, 102, 106, 107         | budgets (#370), Playwright en cours |
+| #367 | 5b · fiche vente, inscription, accessibilité   | 34, 50, 51, 56, 62, 64, 66-68, 103, 104, 110 | budgets (#370), Playwright en cours |
+| #357 | 5c · simulateur, offres, départements, guide   | 54, 81, 88, 89, 105, 108, 109                | budgets (#370)                      |
+| #368 | 6 · mesure, activation, emails, contact        | 85-87, 90-92, 97                             | budgets (#370)                      |
+| #359 | 7 · SEO technique, documentation, CI           | 9, 40, 41, 79, 80, 84                        | vert                                |
+| #360 | 8 · contenus éditoriaux et juridiques          | 5, 26, 27, 65, 78, 82, 83, 96                | vert                                |
+| #369 | 9 · profil d'investisseur, bilan, visites      | 93-95                                        | budgets (#370)                      |
+
+Le n° 98 (stratégie) n'appelle pas de code. Les actions P1 à P12 restent au propriétaire (section 3).
+
+### 8.2 Vérifications
+
+- Chaque lot a passé `npx tsc --noEmit`, le lint et les tests ciblés, puis la CI GitHub complète (typage, lint, tests unitaires et invariants de sécurité, pgTAP, pipeline Python, build et budgets, Playwright sur 3 navigateurs, contrôle des secrets).
+- Les 14 lots ont aussi été fusionnés ensemble sur une branche d'intégration locale. Résultats : `tsc` propre, lint propre, `npm test` (11 790 tests) vert, `test:security-invariants` vert, build vert, budgets verts avec le script de #370.
+- Relectures : aucun constat Critique. Les constats Importants ont été corrigés dans chaque PR (par exemple : surfaces justes retirées à tort, file d'emails bloquée en mode interne, version du moteur de plafond, période DVF affichée, prénom et nom imposés côté base, reprise de l'email de fin d'essai).
+
+### 8.3 Ordre de fusion et conflits connus
+
+1. **#370** (budgets) en premier : le contrôle « build et budgets » des lots lit le script de `main`.
+2. Les lots ensuite, de préférence dans l'ordre 1, 2a, 2b, 3a, 3b, 4a, 4b, 5a, 5b, 5c, 6, 7, 8, 9. Conflits relevés sur la branche d'intégration, à résoudre ainsi :
+   - `src/lib/api-keys.ts` (3a/3b) : garder `PublicApiError` et `apiAccessAllowed` (import `entitlements.server`).
+   - `docs/operations/planification.md` (1/3b/6) : tableau du lot 1, avec les lignes `billing-reconciliation` et `trial-end-email`.
+   - `SiteFooter.tsx` et son test (5a/5b) : `prefetch={false}` et `min-h-11`.
+   - `login-page.tsx`, `navigation.ts` (5c/6) : réunir les motifs `rapport` et `simulateur`. Garder aussi les deux imports de `SaleUnlockPanel.tsx` et les deux modes d'`email-feature-mode.ts`.
+   - `frais-vente-encheres-judiciaire.json` (8/4b) : structure du lot 8. Chiffres du simulateur : 11 collectivités à 5,81 %, Mayotte comprise (« taux à faire confirmer par l'avocat »), Indre 5,09 %, autres départements 6,32 % ; exception primo-accédants non appliquée par le simulateur.
+   - Tests à ajuster après fusion : `login-page.test.tsx` (texte 5c et remplissage du nom 5b), `dvf-comparables.test.ts` (mock `entitlements.server`), `tribunaux/[slug]/page.test.tsx` (slug canonique).
+
+### 8.4 Migrations, dans l'ordre d'application
+
+`20261110110000_signup_requires_first_and_last_name` · `20261110120000_hide_catalogue_raw_columns` · `20261110120100_cron_dispatch_failed_runs_and_stale_thresholds` · `20261110120200_cron_stale_sale_results_weekly_digest` · `20261110120300_data_retention_isolated_purges` · `20261110120400_cross_source_duplicates_health` · `20261110130000_property_report_share_view_atomic` · `20261110130100_user_id_for_email` · `20261110140000_subscription_access_requires_period_end` · `20261110140100_billing_reconciliation_alert` · `20261110160000_snapshot_final_price` · `20261110160100_user_investor_profiles` · `20261110180000_admin_pilotage_activation` · `20261110180100_admin_offer_opening_interviewees` · `20261110180200_trial_end_notice_queue`.
+
+Contrôle en production fait (lecture seule) : aucun abonnement Analyse actif ou en essai sans fin de période, donc 20261110140000 ne coupe aucun accès.
+
+### 8.5 Configuration à poser (Vercel et GitHub)
+
+- `RESEND_ACCOUNT_WEBHOOK_SECRET` : secret du second webhook Resend (`/api/webhooks/resend/account-emails`, rebonds et plaintes), à créer dans Resend.
+- `PIPELINE_CALLBACK_SECRET` : sur Vercel et en secret GitHub. Tant qu'il est absent, `CRON_SECRET` reste accepté, avec un avertissement.
+- `ALERT_NOTIFICATIONS_MODE` (absente = `on`) et `TRIAL_END_EMAIL_MODE` (défaut `off`) : à laisser à `off` jusqu'à relecture du texte et du registre des traitements.
+- `NEXT_PUBLIC_ANALYSIS_OFFER_LABEL` : le libellé doit contenir « TTC ».
+- Nouveaux crons dans `vercel.json` : `/api/cron/billing-reconciliation` et `/api/cron/trial-end-email`, ce dernier à deux horaires, avec rattrapage.
+
+### 8.6 Points d'attention et décisions ouvertes
+
+- **Inscription :** prénom et nom obligatoires côté base pour tout compte email. Une invitation ou une création depuis le tableau de bord Supabase doit fournir `first_name` et `last_name` dans `user_metadata`.
+- **Budgets JS :** relevés de 110 Ko au total (décision du 01/11). `SimplifiedSaleDetailView.tsx` et `MapPanel.tsx` sont sous exception jusqu'au 31/12/2026 et doivent être découpés avant. Les premières pistes pour regagner de la marge sont /favoris (+21 Ko) et /sales (+11 Ko).
+- **Plafond de l'exemple de l'accueil :** 136 000 € au lieu de 135 000 €, car la taxe foncière n'est plus comptée par défaut. La mention « Taxe foncière non comptée » est sur la fiche et le PDF, mais pas sur le rapport partagé ni sur l'exemple de l'accueil.
+- **À confirmer :**
+  - le barème DMTO de la Guadeloupe (971) et de Mayotte (976) ;
+  - `ADMIN_MFA_REQUIRED` en production : sans aal2, la liste des personnes ayant accepté un entretien n'exige pas de double authentification ;
+  - le suivi des clics dans les emails par compte (consentement, agrégat ou intérêt légitime avec opposition).
+- **Choix faits en cours d'exécution, à valider :**
+  - en mode `internal`, les notifications dans l'application restent actives pour tous les comptes ;
+  - les captures Licitor attendues par une campagne active ne sont pas purgées ;
+  - l'événement `ceiling_viewed` est dédoublonné une fois par chargement de page ;
+  - les seuils d'alerte des doublons inter-sources passent à 100 et 200, tant que la fusion n'est pas activée.
+- **Tests Playwright WebKit instables :** taille de la photo de la fiche et « mot de passe oublié » sont passés au second essai sur #364. Ils sont à surveiller.
+- **Non fait volontairement :**
+  - lot 7, point 3 de la relecture : nom du tribunal dans le lien, faute de marge JS ;
+  - le `continue-on-error` de `ci.yml` (vérification des types, qui demande `npm run db:types` avec Docker).
+- La branche du lot 3a a été réécrite (push forcé autorisé par le propriétaire) pour retirer un jeton de test à forte entropie qui bloquait le contrôle des secrets de toutes les PR.
