@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from html import unescape
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -20,6 +22,9 @@ from src.sources.agrasc_extraction import (
 )
 from src.sources.agrasc_urls import (
     AGORA_IMMO_ORIGINS,
+    AGORA_IMMO_SELLER_NAME,
+    AGORA_IMMO_SELLER_SLUG,
+    AGORA_IMMO_SELLER_URL,
     AGORA_MARKETPLACE_ORIGIN,
     TROCADERO_ORIGIN,
     classify_agrasc_operator_url,
@@ -29,6 +34,8 @@ from src.sources.notaires import API_URL, BASE_URL, parse_notaires_detail_json
 
 IMMO_ORIGIN = "https://www.immo-interactif.fr"
 AGORA_ORIGIN = "https://www.agorastore-immo.fr"
+AGORA_SELLER_CHANNEL = "agorastore_seller"
+SELLER_PROPS_PREFIX = "React.createElement(SearchPageApp,"
 
 
 def enrich_agrasc_operator(
@@ -309,6 +316,162 @@ def _attach_agora_structure(
                                             "address": clean_text(geolocation.get("formattedAddress"))}
     if features:
         detail["source_property_features"] = features
+
+
+@dataclass
+class AgoraSellerDiscovery:
+    """Produits AGRASC lus sur la page vendeur d'Agorastore, et ce qui rend cette lecture incomplète."""
+
+    products: list[dict[str, Any]] = field(default_factory=list)
+    products_read: int = 0
+    advertised_total: int | None = None
+    offset: int | None = None
+    ignored: list[dict[str, str]] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
+
+    @property
+    def complete(self) -> bool:
+        return not self.reasons
+
+
+def discover_agora_seller_products(
+    clients: dict[str, PoliteHttpClient], settings: dict, *, now: datetime | None = None,
+) -> AgoraSellerDiscovery:
+    """Lit la page vendeur AGRASC d'Agorastore (URL nue, robots.txt et cadence via ``PoliteHttpClient``).
+
+    Aucun paramètre n'est ajouté à l'URL : le robots.txt d'Agorastore interdit ``sort=``, ``r=``, etc., et
+    aucune pagination n'est devinée. Lève si la page ne peut pas être lue ou ne contient pas les props attendues.
+    """
+    if urlsplit(AGORA_IMMO_SELLER_URL).query:
+        raise ValueError("seller catalogue URL must stay bare")
+    if AGORA_ORIGIN not in clients:
+        clients[AGORA_ORIGIN] = PoliteHttpClient(
+            base_url=AGORA_ORIGIN, user_agent=str(settings["user_agent"]),
+            delay_seconds=float(settings["request_delay_seconds"]),
+            timeout_seconds=float(settings["request_timeout_seconds"]),
+            accept="text/html,*/*",
+        )
+    return parse_agora_seller_listing(clients[AGORA_ORIGIN].get(AGORA_IMMO_SELLER_URL), now=now)
+
+
+def parse_agora_seller_listing(html: str, *, now: datetime | None = None) -> AgoraSellerDiscovery:
+    """Décode les props React de la page vendeur (``SearchPageApp``) en JSON, sans exécuter de JavaScript.
+
+    Ne garde que les produits vendus par AGRASC dont l'URL est une fiche Agorastore. Le prix courant de la liste
+    (``sale.currentPrice``) n'est jamais lu : la mise à prix vient de la fiche. ``countTotal`` différent du
+    nombre de produits lus rend la couverture incomplète (``reasons``), sans jamais deviner de pagination.
+    """
+    now = now or datetime.now(UTC)
+    for script in parse_html(html, "html.parser").find_all("script"):
+        text = script.get_text()
+        if SELLER_PROPS_PREFIX not in text:
+            continue
+        props, _ = json.JSONDecoder().raw_decode(text.split(SELLER_PROPS_PREFIX, 1)[1].lstrip())
+        model = props["searchPageModel"]
+        seller = model.get("sellerInfo")
+        if not isinstance(seller, dict) or seller.get("url") != AGORA_IMMO_SELLER_SLUG:
+            raise ValueError("operator seller mismatch")
+        results = model["searchResults"]
+        items = results.get("products")
+        if not isinstance(items, list):
+            raise ValueError("seller catalogue without product list")
+        total, offset = results.get("countTotal"), results.get("from")
+        discovery = AgoraSellerDiscovery(
+            products_read=len(items),
+            advertised_total=total if type(total) is int and total >= 0 else None,
+            offset=offset if type(offset) is int else None,
+        )
+        if discovery.advertised_total is None:
+            discovery.reasons.append("advertised_total_missing")
+        elif discovery.advertised_total != len(items):
+            discovery.reasons.append("advertised_total_mismatch")
+        if discovery.offset != 0:
+            discovery.reasons.append("page_offset_not_zero")
+        seen: set[str] = set()
+        for item in items:
+            url, reason = _seller_product_url(item)
+            if reason is None and url in seen:
+                reason = "duplicate_product"
+            if reason is not None:
+                discovery.ignored.append({
+                    "product_id": str(item.get("productId")) if isinstance(item, dict) else "",
+                    "url": url, "reason": reason,
+                })
+                continue
+            seen.add(url)
+            discovery.products.append(_seller_listing_sale(item, url, now))
+        return discovery
+    raise ValueError("seller catalogue props not found")
+
+
+def _seller_product_url(item: Any) -> tuple[str, str | None]:
+    """URL absolue de la fiche d'un produit de la page vendeur, ou la raison de l'ignorer."""
+    if not isinstance(item, dict):
+        return "", "invalid_product"
+    path = item.get("productPageUrl")
+    parsed = urlsplit(urljoin(f"{AGORA_ORIGIN}/", path)) if isinstance(path, str) and path else None
+    url = parsed._replace(query="", fragment="").geturl() if parsed else ""
+    if item.get("sellerName") != AGORA_IMMO_SELLER_NAME:
+        return url, "other_seller"
+    if not url or classify_agrasc_operator_url(url) != "agorastore_product" \
+            or not is_allowed_origin_url(url, (AGORA_ORIGIN,)):
+        return url, "not_agorastore_product_url"
+    marker = re.search(r"-(\d+)\.aspx$", urlsplit(url).path)
+    if not marker or type(item.get("productId")) is not int or str(item["productId"]) != marker.group(1):
+        return url, "product_identity_mismatch"
+    return url, None
+
+
+def _seller_listing_sale(item: dict[str, Any], url: str, now: datetime) -> dict[str, Any]:
+    """Ligne de découverte d'un produit : jamais de prix (``currentPrice`` est le prix courant, pas la mise à prix)."""
+    name = clean_text(item.get("productName")) or ""
+    location = re.search(r"\((\d{2,3}|2[AB])\)\s*$", name)
+    by_url = re.search(r"-(\d{2,3}|2[AB])-\d+\.aspx$", urlsplit(url).path, re.I)
+    department = location.group(1) if location else by_url.group(1).upper() if by_url else None
+    head = name[: location.start()].rstrip() if location else ""
+    city = clean_text(head.rsplit(" - ", 1)[-1]) if " - " in head else None
+    surface = _operator_surface_value(name)
+    sale = item.get("sale") if isinstance(item.get("sale"), dict) else {}
+    end_date = _aware_datetime(sale.get("endDate"))
+    # Seule une vente non démarrée et encore ouverte est « upcoming » ; tout le reste reste inconnu.
+    upcoming = type(sale.get("saleStatus")) is int and sale["saleStatus"] == 0 \
+        and end_date is not None and end_date > now
+    images = [
+        value for value in (item.get("productImageMediumSizeUrl"), item.get("productImageSmallSizeUrl"))
+        if isinstance(value, str) and is_allowed_origin_url(value, ("https://cdn.agorastore.fr",))
+    ][:1]
+    blocks = {
+        "titre": name, "ville": city, "departement": department, "surface": surface,
+        "date_vente": sale.get("endDate") if end_date is not None else None,
+        "discovery_channel": AGORA_SELLER_CHANNEL, "discovery_url": AGORA_IMMO_SELLER_URL,
+    }
+    return {
+        "source_name": "agrasc",
+        "source_url": url,
+        "external_id": str(item["productId"]),
+        "department": department,
+        "city": city,
+        "property_type": name,
+        "title": name,
+        "surface_m2": surface,
+        "sale_date": sale.get("endDate") if end_date is not None else None,
+        "status": "upcoming" if upcoming else "unknown",
+        "documents": [],
+        "raw_text": name,
+        "raw_image_url": images[0] if images else None,
+        "source_images": images,
+        "source_blocks": {key: value for key, value in blocks.items() if value},
+    }
+
+
+def _aware_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def parse_trocadero_operator_detail(html: str, source_url: str) -> dict[str, Any]:
