@@ -10,10 +10,16 @@ import { mapPreviewRows, type PreviewSearchRow } from "@/lib/search/preview-sear
 const KNOWN_SALE = "11111111-1111-4111-8111-111111111111";
 const TOTAL = 60;
 const PAGE_SIZE = 24;
+/**
+ * Rang de la vente connue : la 11e annonce de la page 2. Depuis le lot 5a, le premier écran d'un
+ * mobile montre déjà la première annonce sans défiler ; la vente doit donc être plus bas pour que
+ * le test vérifie vraiment la restauration du défilement.
+ */
+const KNOWN_SALE_INDEX = PAGE_SIZE + 10;
 
 function previewRow(index: number): PreviewSearchRow {
   const id =
-    index === PAGE_SIZE
+    index === KNOWN_SALE_INDEX
       ? KNOWN_SALE
       : `78000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`;
   return {
@@ -80,9 +86,16 @@ test.describe("« Retour » sur /sales", () => {
     // Les liens du HTML n'ont pas de ?from= : l'origine s'ajoute quand on approche le lien.
     expect(await saleLink.getAttribute("href")).toBe(`/sales/${KNOWN_SALE}`);
 
-    await saleLink.scrollIntoViewIfNeeded();
+    // Défilement explicite de la fenêtre jusqu'à la position réelle de l'annonce : WebKit ne semble pas
+    // défiler de façon fiable avec scrollIntoViewIfNeeded() (non vérifié : WebKit absent en local).
+    await saleLink.evaluate((link) => {
+      window.scrollTo({
+        top: link.getBoundingClientRect().top + window.scrollY - 80,
+        behavior: "instant",
+      });
+    });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
     const scrolledTo = await page.evaluate(() => window.scrollY);
-    expect(scrolledTo).toBeGreaterThan(0);
 
     await saleLink.click();
     await expect(page).toHaveURL(new RegExp(`/sales/${KNOWN_SALE}`));
