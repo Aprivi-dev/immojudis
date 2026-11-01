@@ -60,7 +60,8 @@ Depuis la migration `20261110100713` (30/10/2026), le tick de `pg_cron` ne chang
 chaque tâche (`app_private.cron_dispatch_due`) ne fait l'appel HTTP à Vercel que s'il y a du travail ou si un
 passage de contrôle est dû. « Dû » se lit dans `public.operational_job_runs` : un passage **réussi ou en cours**
 (`app_private.cron_job_started_since`) compte, un passage **échoué** non (migration `20261110120100`) : après un
-échec, la tâche est relancée au tick suivant, sans attendre la fin de la fenêtre.
+échec, la tâche est relancée au premier tick qui suit un délai minimal de 5 minutes après la fin du passage échoué
+(`app_private.cron_job_failed_since`), sans attendre la fin de la fenêtre.
 
 | Tâche                       | Tick `pg_cron` | Garde   | Cadence réelle (sans travail en file) | Durée max d'un passage | Seuil `cron.stale` |
 | --------------------------- | -------------- | ------- | ------------------------------------- | ---------------------- | ------------------ |

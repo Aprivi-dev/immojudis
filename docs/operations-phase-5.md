@@ -40,7 +40,7 @@ maintient des alertes dédupliquées dans `public.operational_alerts`.
 | `flood_risk.write_blocked`          | écritures d'inondation bloquées par le verrou de publication (`writeBusy` sur 3 passes) ou reliquat qui ne baisse pas sur 6 passes                                                                             |
 | `pepites.evaluation.stale`          | mode des pépites autre que « on » depuis plus d'une heure, ou dernière évaluation de plus de 6 h ; critique à 24 h                                                                                             |
 | `reference.anil_rents.stale`        | édition ANIL de décembre non chargée au 15 janvier (millésime de l'année précédente) ; critique 60 jours plus tard                                                                                             |
-| `catalogue.duplicates.cross_source` | groupes de ventes visibles de même jour, même mise à prix et même ville venant d'au moins deux sources : avertissement à 30 groupes, critique à 150 (`docs/runbooks/doublons-inter-sources.md`)                |
+| `catalogue.duplicates.cross_source` | groupes de ventes visibles de même jour, même mise à prix et même ville venant d'au moins deux sources : avertissement à 100 groupes, critique à 200 (`docs/runbooks/doublons-inter-sources.md`)               |
 
 `cron.stale` attend les tâches quotidiennes de Vercel toutes les 27 h (`docs/operations/planification.md`).
 L'observateur du pipeline ajoute `pipeline.scheduler.disabled`, `pipeline.inventory.stale`,

@@ -7,7 +7,7 @@ set local lock_timeout = '5s';
 -- bloque pas les autres), jamais exécutées jusqu'ici faute de code :
 --
 --   partie               table                                  durée      repère de date
---   licitor_captures     licitor_ingestion.captures             90 jours   last_seen_at (dernière observation)
+--   licitor_captures     licitor_ingestion.captures             90 jours   last_seen_at (dernier téléchargement)
 --   trial_extension_notes app_private.trial_extension_notes     24 mois    fin de la prolongation (ends_at)
 --   manual_grant_notes   app_private.manual_grant_notes         24 mois    fin de l'accès (current_period_end),
 --                                                                           à défaut date de la décision
@@ -18,17 +18,31 @@ set local lock_timeout = '5s';
 -- app_private.*_retention() : pour la changer, une migration qui redéfinit cette seule fonction suffit.
 --
 -- Choix de repère de date (à confirmer) :
---   * captures : last_seen_at, pas first_seen_at. Une capture est relue par la campagne en cours (cache de pages) et sa
---     date d'observation est mise à jour à chaque relecture ; une capture que la campagne vient de reprendre ne doit pas
---     disparaître sous elle. Une page plus observée depuis 90 jours n'est plus utile (la collecte relit les annonces
---     des 90 derniers jours) et contient des adresses masquées sous forme réversible (data-cfemail). Effet d'une
---     suppression : la page est simplement retéléchargée et re-analysée à la prochaine campagne qui la concerne
---     (announcements.current_capture_hash n'est qu'une empreinte, sans clé étrangère). Le collecteur existe depuis le
---     28/08/2026 : aucune capture n'atteint 90 jours avant fin novembre, la première purge ne supprime donc presque rien ;
+--   * captures : last_seen_at, c'est-à-dire la dernière fois que la page a été TÉLÉCHARGÉE depuis la source (le
+--     pipeline la met à jour quand un nouveau téléchargement donne le même contenu, pas quand une campagne relit la
+--     capture en cache : services/data-pipeline/src/sources/licitor_cloud_store.py, capture() et latest_capture() ;
+--     licitor_cloud.py, process_index() et process_detail()). Ne pas la faire avancer à chaque lecture du cache : elle
+--     sert aussi de date d'observation des lots extraits (captured_at) et de test de fraîcheur d'un rafraîchissement.
+--     Une capture que la campagne n'a pas retéléchargée depuis 90 jours peut donc encore être relue par une campagne en
+--     cours (reprise d'un index ou d'un détail déjà téléchargé) : la purge épargne les captures dont l'URL est celle
+--     d'une tâche en attente d'une campagne non terminée et active depuis moins de 90 jours (tâches pending/working
+--     d'une campagne ready, running ou paused). Une campagne abandonnée depuis plus de 90 jours ne protège plus rien.
+--     Pour une page qu'aucune campagne en cours n'attend, une page non téléchargée depuis 90 jours n'est plus utile (la
+--     collecte relit les annonces des 90 derniers jours) et contient des adresses masquées sous forme réversible
+--     (data-cfemail). Effet d'une suppression : la page est simplement retéléchargée et re-analysée à la prochaine
+--     campagne qui la concerne (announcements.current_capture_hash n'est qu'une empreinte, sans clé étrangère). Le
+--     collecteur existe depuis le 28/08/2026 : aucune capture n'atteint 90 jours avant fin novembre, la première
+--     purge ne supprime donc presque rien ;
 --   * notes : la ligne entière est supprimée (la note est libre et le reste de la ligne ne sert qu'à la rattacher). Un
 --     accès sans date de fin (current_period_end nul) garde sa note 24 mois après la décision, pas indéfiniment ;
 --   * cache LLM : le résultat validé d'une extraction (sans le prompt) est recalculable ; 180 jours bornent sa durée
---     sans changer les coûts de façon sensible.
+--     sans changer les coûts de façon sensible. Repère created_at : l'écriture (src/llm_cache.py, save_cached_result)
+--     fusionne sans toucher created_at et la lecture ne l'écrit pas, donc la date est celle de la première
+--     extraction. Aucune condition « vente encore active » n'est possible : la clé (cache_key, stage) est l'empreinte
+--     SHA-256 du contenu source et le stade d'analyse, la table ne référence aucune vente. Une vente encore active
+--     après 180 jours (cas rare : une annonce court quelques semaines à quelques mois) coûte au pire une extraction de
+--     plus à sa prochaine analyse, jamais une donnée perdue ; c'est le coût accepté (à confirmer par juridique-rgpd
+--     avec la durée).
 --
 -- Ce que cette migration ne fait pas : filtrer les noms avant l'envoi à Replicate et avant l'écriture dans
 -- llm_analysis_cache (code du pipeline, autre lot).
@@ -78,7 +92,7 @@ grant execute on function app_private.admin_grant_note_retention() to service_ro
 grant execute on function app_private.llm_analysis_cache_retention() to service_role;
 
 comment on function app_private.licitor_capture_retention() is
-  'Durée de conservation d''une capture HTML du collecteur d''historique Licitor, comptée depuis sa dernière observation : 90 jours (à confirmer par juridique-rgpd).';
+  'Durée de conservation d''une capture HTML du collecteur d''historique Licitor, comptée depuis son dernier téléchargement (last_seen_at, non mis à jour par une relecture du cache), sauf si une tâche en attente d''une campagne en cours l''attend encore : 90 jours (à confirmer par juridique-rgpd).';
 comment on function app_private.admin_grant_note_retention() is
   'Durée de conservation du motif libre d''une prolongation d''essai ou d''une attribution manuelle d''accès, comptée depuis la fin de la prolongation ou de l''accès (à défaut, la date de la décision) : 24 mois (à confirmer par juridique-rgpd).';
 comment on function app_private.llm_analysis_cache_retention() is
@@ -96,8 +110,17 @@ as $$
 declare
   v_deleted integer := 0;
 begin
-  delete from licitor_ingestion.captures
-  where last_seen_at < p_now - app_private.licitor_capture_retention();
+  -- Les captures dont l'URL attend encore une tâche d'une campagne en cours ne sont pas purgées (voir l'en-tête).
+  delete from licitor_ingestion.captures c
+  where c.last_seen_at < p_now - app_private.licitor_capture_retention()
+    and not exists (
+      select 1
+      from licitor_ingestion.runs r
+      join licitor_ingestion.tasks t on t.run_id = r.id and t.status in ('pending', 'working')
+      where r.status in ('ready', 'running', 'paused')
+        and r.updated_at >= p_now - app_private.licitor_capture_retention()
+        and t.url = c.url
+    );
   get diagnostics v_deleted = row_count;
   return pg_catalog.jsonb_build_object('licitor_captures', v_deleted);
 end;

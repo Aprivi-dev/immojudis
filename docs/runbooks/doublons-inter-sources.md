@@ -6,10 +6,10 @@ d'au moins deux sources différentes (`source_name`). C'est le signe que la fusi
 les annonces (variable `DEDUPE_RECONCILE_ENABLED` coupée ou repassée à `false`, nouvelle source mal rapprochée,
 clé de rapprochement cassée). Le 31/10/2026, avant l'activation de la fusion, il y avait 72 groupes (152 lignes).
 
-Seuils (`app_private.cross_source_duplicate_thresholds()`) : avertissement à partir de **30 groupes**, critique à
-partir de **150**. Ce sont des signaux, pas des verdicts : deux lots distincts de même prix, même jour et même
-ville vendus par deux sources forment un groupe sans être un doublon. **Les seuils sont à recaler** sur la
-première mesure faite après l'activation de la fusion (changer la fonction par une migration).
+Seuils (`app_private.cross_source_duplicate_thresholds()`) : avertissement à partir de **100 groupes**, critique à
+partir de **200** (72 groupes le 31/10/2026 : des seuils plus bas ouvriraient l'alerte dès l'application). Ce sont des signaux, pas des verdicts : deux lots distincts de même prix, même jour et même
+ville vendus par deux sources forment un groupe sans être un doublon. **Les seuils sont à abaisser** sur la
+première mesure faite après l'activation de la fusion, décision du propriétaire (changer la fonction par une migration).
 
 ## Diagnostic
 

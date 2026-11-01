@@ -19,7 +19,13 @@ set local lock_timeout = '5s';
 -- donc une marge ; il est à recaler sur la première mesure après l'activation de la fusion.
 --
 --   Alerte catalogue.duplicates.cross_source, catégorie `import` :
---     avertissement à partir de 30 groupes, critique à partir de 150 groupes (le double de l'état du 31/10 avant fusion).
+--     avertissement à partir de 100 groupes, critique à partir de 200 groupes.
+--     Pourquoi 100 et 200 : le 31/10/2026, avant l'activation de la fusion, il y avait 72 groupes. Des seuils plus bas
+--     (30 et 150) ouvraient l'alerte dès l'application de la migration, sur un état connu et voulu. 100 laisse une marge
+--     au-dessus de ces 72 groupes tant que la fusion est coupée (DEDUPE_RECONCILE_ENABLED=false) ; 200 signale une
+--     dérive nette. Activer la fusion est une décision du propriétaire (P9 : dedupe-candidates, relecture des paires,
+--     variable) : une fois la fusion activée et le nombre de groupes mesuré, abaisser les seuils par une migration de
+--     cette seule fonction (voir le runbook docs/runbooks/doublons-inter-sources.md).
 --   Les seuils sont dans app_private.cross_source_duplicate_thresholds() : une migration d'une fonction pour les changer.
 --   Se ferme d'elle-même deux heures après le retour sous le seuil (app_private.sync_operational_alert).
 --   Runbook : docs/runbooks/doublons-inter-sources.md (requête de liste des groupes, causes, que faire).
@@ -39,14 +45,14 @@ parallel safe
 security invoker
 set search_path = ''
 as $$
-  select pg_catalog.jsonb_build_object('warning_groups', 30, 'critical_groups', 150);
+  select pg_catalog.jsonb_build_object('warning_groups', 100, 'critical_groups', 200);
 $$;
 
 revoke all on function app_private.cross_source_duplicate_thresholds() from public, anon, authenticated;
 grant execute on function app_private.cross_source_duplicate_thresholds() to service_role;
 
 comment on function app_private.cross_source_duplicate_thresholds() is
-  'Seuils de l''alerte catalogue.duplicates.cross_source, en nombre de groupes de doublons inter-sources visibles : avertissement 30, critique 150. À recaler après l''activation de la fusion.';
+  'Seuils de l''alerte catalogue.duplicates.cross_source, en nombre de groupes de doublons inter-sources visibles : avertissement 100, critique 200 (72 groupes le 31/10/2026, fusion coupée). À abaisser après l''activation de la fusion, décision du propriétaire.';
 
 create or replace function app_private.cross_source_duplicate_groups()
 returns table (
