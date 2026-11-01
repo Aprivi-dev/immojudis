@@ -9,15 +9,14 @@ import {
   throwIfAdminDeadlineExceeded,
 } from "@/lib/admin-route-deadline";
 import { serverEnv } from "@/lib/env";
+import { EXPECTED_DISPLAY_QUALITY_VERSION, EXPECTED_LLM_PROMPT_VERSION } from "@/lib/llm-versions";
 
 const SCROLL_SOURCES = [
   "all",
   "avoventes",
   "licitor",
-  "vench",
   "info_encheres",
   "encheres_publiques",
-  "petites_affiches",
   "cessions_etat",
   "agrasc",
   "encheres_immobilieres",
@@ -42,7 +41,6 @@ const startScrollSchema = z
   });
 const AUTOMATIC_LLM_ENRICHMENT = true;
 const LLM_BACKFILL_SOURCE = "llm-description-backfill";
-const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -324,7 +322,7 @@ export function buildAiDescriptionDashboardStats(
       displayDescription &&
       displayDescription.length >= 80 &&
       promptVersion === expectedPromptVersion &&
-      row.llm_display_quality_version === "display_quality_20261012_v4" &&
+      row.llm_display_quality_version === EXPECTED_DISPLAY_QUALITY_VERSION &&
       ["accepted", "fallback"].includes(String(row.llm_display_status))
     ) {
       ready += 1;
