@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AccountLaunchOfferEnd } from "@/components/AccountLaunchOfferEnd";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { BillingActions } from "@/components/BillingActions";
+import { InvestorProfileForm } from "@/components/InvestorProfileForm";
 import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { SaleResultsToggle } from "@/components/SaleResultsToggle";
 import { WeeklyDigestToggle } from "@/components/WeeklyDigestToggle";
@@ -143,6 +144,26 @@ export function AccountPage() {
             <WeeklyDigestToggle userId={user.id} className={TOGGLE_CLASS} />
           </>
         ) : null}
+      </section>
+
+      <section
+        className="mt-6 rounded-xl border border-border bg-card p-5"
+        aria-labelledby="acc-investor"
+      >
+        <h2 id="acc-investor" className="text-lg font-semibold text-foreground">
+          Mon profil d’investisseur
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Facultatif. Ces hypothèses préremplissent le calcul de l’enchère plafond de chaque vente ;
+          vous les modifiez ensuite vente par vente. Ce sont des simulations : elles ne garantissent
+          aucun prix d’adjudication.
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Donnée financière personnelle : elle n’est visible que de vous, jamais envoyée par email
+          ni partagée. Elle est effacée avec votre compte, ou dès que vous cliquez sur « Effacer mon
+          profil ».
+        </p>
+        {user ? <InvestorProfileForm userId={user.id} /> : null}
       </section>
 
       <section

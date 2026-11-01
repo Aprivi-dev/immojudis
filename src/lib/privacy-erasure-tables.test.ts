@@ -167,6 +167,11 @@ describe("ERASURE_TABLES face au schéma", () => {
     expect(ERASURE_TABLES).toContainEqual(["launch_offer_end_notice_optouts", "user_id"]);
   });
 
+  it("efface les données financières personnelles du compte : profil d'investisseur et bilan après adjudication", () => {
+    expect(ERASURE_TABLES).toContainEqual(["user_investor_profiles", "user_id"]);
+    expect(ERASURE_TABLES).toContainEqual(["user_followed_sale_snapshots", "user_id"]);
+  });
+
   it("n'efface pas les traces que la loi oblige à garder", () => {
     for (const table of RETAINED_TABLES) {
       expect(erased.has(table)).toBe(false);

@@ -23,6 +23,7 @@ import {
 } from "@/lib/favorite-planning";
 import type { FavoriteSale } from "@/lib/favorites";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
+import { listingVisits } from "@/lib/sale-listing";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { seoLongDate } from "@/lib/seo";
@@ -147,6 +148,7 @@ function PlanningRow({ entry }: { entry: PlanningEntry }) {
     .filter(Boolean)
     .join(" ");
   const date = seoLongDate(sale.sale_date);
+  const visits = listingVisits(sale);
   return (
     <Card as="article" className="!py-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -178,6 +180,14 @@ function PlanningRow({ entry }: { entry: PlanningEntry }) {
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {visits.length > 0 ? (
+            <p className="mt-1 text-sm text-ink-soft" data-testid="planning-visits">
+              <span className="font-semibold text-brand-navy">
+                {visits.length > 1 ? "Visites annoncées" : "Visite annoncée"} :
+              </span>{" "}
+              {visits.join(" ; ")}
+            </p>
+          ) : null}
           <FavoriteDossierLine favorite={favorite} />
         </div>
         {saleIsTribunalVenue(sale) ? <SaleCalendarButton saleId={favorite.saleId} /> : null}
@@ -239,8 +249,8 @@ function FollowedCalendarExport({
         {pending ? "Préparation…" : "Exporter toutes mes audiences (.ics)"}
       </Button>
       <p className="mt-1 text-xs text-ink-soft">
-        Un seul fichier pour votre agenda. Date issue de l’annonce, à vérifier ; le fichier ne se
-        met pas à jour si la date change.
+        Un seul fichier pour votre agenda, avec les créneaux de visite datés de l’annonce. Dates
+        issues de l’annonce, à vérifier ; le fichier ne se met pas à jour si une date change.
         {truncated
           ? ` Seules les ${PLANNING_CALENDAR_MAX_SALES} prochaines audiences sont exportées.`
           : ""}

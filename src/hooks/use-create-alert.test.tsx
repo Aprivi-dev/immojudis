@@ -296,6 +296,19 @@ describe("useCreateAlert", () => {
     }
   });
 
+  it("enregistre le tribunal d'une page tribunal dans les critères avancés (critère public)", async () => {
+    const hook = setup();
+    const outcome = await create(hook, { tribunal: "TJ Bobigny" });
+    expect(outcome.status).toBe("created");
+    expect(mocks.createAlert).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        department: null,
+        advanced_criteria: expect.objectContaining({ tribunal: "TJ Bobigny" }),
+      }),
+    );
+  });
+
   it("refuse toujours à un compte gratuit un texte libre, même avec un département explicite", async () => {
     const hook = setup();
     const outcome = await create(hook, { query: "26", department: "33" });

@@ -16,6 +16,7 @@ vi.mock("@/lib/favorites", () => ({ assertSaleFavoritesAvailable: mocks.assertFa
 import {
   deleteFollowedSaleSnapshot,
   listFollowedSaleSnapshots,
+  updateFollowedSaleSnapshot,
 } from "@/lib/followed-sale-snapshots";
 
 function row(overrides: Partial<FollowedSaleSnapshotRow> = {}): FollowedSaleSnapshotRow {
@@ -30,6 +31,7 @@ function row(overrides: Partial<FollowedSaleSnapshotRow> = {}): FollowedSaleSnap
     property_type: "house",
     tribunal_name: "Tribunal judiciaire de Bordeaux",
     sale_venue_type: "tribunal",
+    sale_legal_framework: "judicial_seizure",
     starting_price_eur: 100_000,
     sale_date: "2026-10-14T12:00:00.000Z",
     lawyer_name: "Me Dupont",
@@ -40,6 +42,7 @@ function row(overrides: Partial<FollowedSaleSnapshotRow> = {}): FollowedSaleSnap
     adjudication_price_withheld: false,
     personal_status: null,
     bid_ceiling_eur: null,
+    final_price_eur: null,
     ...overrides,
   };
 }
@@ -47,7 +50,7 @@ function row(overrides: Partial<FollowedSaleSnapshotRow> = {}): FollowedSaleSnap
 function auth(): SupabaseAuthContext {
   // Un constructeur de requête qui enregistre ses appels et se résout comme une promesse.
   const builder: Record<string, unknown> = {};
-  for (const name of ["select", "delete", "eq", "gt", "order", "limit"]) {
+  for (const name of ["select", "delete", "update", "eq", "gt", "order", "limit"]) {
     builder[name] = (...args: unknown[]) => {
       mocks.calls.push([name, args]);
       return builder;
@@ -208,5 +211,92 @@ describe("deleteFollowedSaleSnapshot", () => {
       ok: true,
       removed: false,
     });
+  });
+});
+
+describe("toFollowedSaleSnapshot : bilan après adjudication", () => {
+  it("rend le prix final noté, le type et le cadre de la vente", () => {
+    const snapshot = toFollowedSaleSnapshot(
+      row({ personal_status: "won", final_price_eur: 172_500 }),
+    );
+    expect(snapshot.finalPriceEur).toBe(172_500);
+    expect(snapshot.saleVenueType).toBe("tribunal");
+    expect(snapshot.saleLegalFramework).toBe("judicial_seizure");
+  });
+
+  it("garde un prix final absent comme absent (jamais 0 ni une valeur déduite)", () => {
+    expect(toFollowedSaleSnapshot(row()).finalPriceEur).toBeNull();
+    expect(toFollowedSaleSnapshot(row({ final_price_eur: 0 })).finalPriceEur).toBeNull();
+  });
+});
+
+describe("updateFollowedSaleSnapshot", () => {
+  it("note le statut et le prix final sur l'instantané du compte seulement, en lisant les mêmes colonnes", async () => {
+    mocks.result = { data: row({ personal_status: "won", final_price_eur: 172_500 }), error: null };
+    const response = await updateFollowedSaleSnapshot({
+      auth: auth(),
+      input: { id: "snap-1", personalStatus: "won", finalPriceEur: 172_500 },
+      now: new Date("2026-10-16T09:00:00.000Z"),
+    });
+
+    expect(response.snapshot.finalPriceEur).toBe(172_500);
+    expect(response.snapshot.personalStatus).toBe("won");
+    expect(mocks.calls).toContainEqual([
+      "update",
+      [{ personal_status: "won", final_price_eur: 172_500 }],
+    ]);
+    expect(mocks.calls).toContainEqual(["eq", ["user_id", "user-1"]]);
+    expect(mocks.calls).toContainEqual(["eq", ["id", "snap-1"]]);
+    expect(mocks.assertFavorites).toHaveBeenCalled();
+  });
+
+  it("refuse un prix final quand le statut n'est ni remporté ni non remporté", async () => {
+    await expect(
+      updateFollowedSaleSnapshot({
+        auth: auth(),
+        input: { id: "snap-1", personalStatus: "watching", finalPriceEur: 100_000 },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(mocks.calls.some(([name]) => name === "update")).toBe(false);
+  });
+
+  it("relit le statut enregistré quand la demande ne le donne pas", async () => {
+    mocks.result = { data: { personal_status: "lost" }, error: null };
+    await updateFollowedSaleSnapshot({
+      auth: auth(),
+      input: { id: "snap-1", finalPriceEur: 100_000 },
+    });
+    expect(mocks.calls).toContainEqual(["select", ["personal_status"]]);
+    expect(mocks.calls).toContainEqual(["update", [{ final_price_eur: 100_000 }]]);
+  });
+
+  it("refuse un prix final pour une vente sans statut enregistré", async () => {
+    mocks.result = { data: { personal_status: null }, error: null };
+    await expect(
+      updateFollowedSaleSnapshot({
+        auth: auth(),
+        input: { id: "snap-1", finalPriceEur: 100_000 },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("efface le prix final avec null sans relire le statut", async () => {
+    mocks.result = { data: row(), error: null };
+    await updateFollowedSaleSnapshot({
+      auth: auth(),
+      input: { id: "snap-1", finalPriceEur: null },
+    });
+    expect(mocks.calls).toContainEqual(["update", [{ final_price_eur: null }]]);
+    expect(mocks.calls).not.toContainEqual(["select", ["personal_status"]]);
+  });
+
+  it("répond 404 quand l'instantané n'existe pas, est échu ou n'est pas au compte", async () => {
+    mocks.result = { data: null, error: null };
+    await expect(
+      updateFollowedSaleSnapshot({
+        auth: auth(),
+        input: { id: "snap-1", personalStatus: "won" },
+      }),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

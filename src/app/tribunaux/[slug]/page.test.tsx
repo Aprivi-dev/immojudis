@@ -540,7 +540,7 @@ describe("page d'un tribunal : contenu", () => {
     render(await Page(params("tribunal-judiciaire-bobigny")));
     const alert = screen.getByRole("region", { name: "Être prévenu des nouvelles ventes" });
     expect(alert.textContent).toContain("ventes référencées en Seine-Saint-Denis");
-    expect(alert.textContent).toContain("pas un tribunal");
+    expect(alert.textContent).toContain("tous tribunaux confondus");
     // Visiteur sans compte : la connexion, qui renvoie vers la création de l'alerte du département.
     const href = within(alert)
       .getByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" })
@@ -549,6 +549,18 @@ describe("page d'un tribunal : contenu", () => {
     expect(screen.getByRole("link", { name: "Avocats" }).getAttribute("href")).toBe(
       "/avocats?department=93",
     );
+  });
+
+  it("propose « Suivre ce tribunal » : une alerte sur ce seul tribunal, par son nom de recherche", async () => {
+    render(await Page(params("justice-tj-1-93")));
+    const alert = screen.getByRole("region", { name: "Suivre ce tribunal" });
+    expect(alert.textContent).toContain("pour lui seul");
+    const href = within(alert)
+      .getByRole("link", { name: "Suivre ce tribunal" })
+      .getAttribute("href");
+    const target = decodeURIComponent(href ?? "");
+    expect(target).toContain("tribunal=TJ+Bobigny");
+    expect(target).not.toContain("department=");
   });
 
   it("accorde la préposition du département : « En Gironde », « Dans le Nord », « À Paris »", async () => {

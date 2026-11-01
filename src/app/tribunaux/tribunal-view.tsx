@@ -287,10 +287,19 @@ export function TribunalView({
           ) : null}
         </Card>
 
+        {hasReadableTribunalName(tribunal) ? (
+          <SectorAlertCta
+            criteria={{ tribunal: tribunal.searchName }}
+            title="Suivre ce tribunal"
+            label="Suivre ce tribunal"
+            intro={`Vous êtes prévenu des nouvelles ventes référencées pour ce tribunal (${longName}), et pour lui seul.`}
+          />
+        ) : null}
+
         {department && where ? (
           <SectorAlertCta
             criteria={{ department: department.code }}
-            intro={`Les alertes suivent un département, pas un tribunal : celle-ci porte sur les nouvelles ventes référencées ${where}, tous tribunaux confondus.`}
+            intro={`Pour suivre tous les tribunaux à la fois : cette alerte porte sur les nouvelles ventes référencées ${where}, tous tribunaux confondus.`}
           />
         ) : null}
 
