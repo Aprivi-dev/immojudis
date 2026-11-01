@@ -90,7 +90,10 @@ export type SaleAnalysisItem = Omit<AnalysisItemRow, "decision_status" | "sale_i
 
 export type SaleAnalysisSummary = {
   itemCount: number;
+  /** Somme des mises à prix connues ; `null` si aucune n'est communiquée. Partielle si `pricedItemCount < itemCount`. */
   totalStartingPriceEur: number | null;
+  /** Nombre de biens dont la mise à prix est communiquée (supérieure à 0). */
+  pricedItemCount: number;
   totalUserMaxBidEur: number | null;
   averageInvestmentScore: number | null;
   earliestSaleDate: string | null;
@@ -405,7 +408,7 @@ export function buildSaleAnalysisSummary(items: SaleAnalysisItem[]): SaleAnalysi
   const saleItems = items.filter((item) => item.sale);
   const startingPrices = saleItems
     .map((item) => item.sale?.startingPriceEur)
-    .filter((value): value is number => value != null && Number.isFinite(value));
+    .filter((value): value is number => value != null && Number.isFinite(value) && value > 0);
   const userMaxBids = items
     .map((item) => item.user_max_bid_eur)
     .filter((value): value is number => value != null && Number.isFinite(value));
@@ -425,6 +428,7 @@ export function buildSaleAnalysisSummary(items: SaleAnalysisItem[]): SaleAnalysi
   return {
     itemCount: items.length,
     totalStartingPriceEur: sumOrNull(startingPrices),
+    pricedItemCount: startingPrices.length,
     totalUserMaxBidEur: sumOrNull(userMaxBids),
     averageInvestmentScore: averageOrNull(scores),
     earliestSaleDate: saleDates[0] ?? null,

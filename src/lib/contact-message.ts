@@ -11,6 +11,7 @@ export const CONTACT_SUBJECTS = [
   { value: "erreur", label: "Signaler une erreur ou une information manquante" },
   { value: "professionnel", label: "Espace professionnel" },
   { value: "avocat", label: "Avocat : présenter mon cabinet" },
+  { value: "avocat-poursuivant", label: "Je suis l’avocat poursuivant d’une vente" },
   { value: "autre", label: "Autre demande" },
 ] as const;
 
@@ -78,6 +79,24 @@ const SALE_ID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 /** Adresse du formulaire de contact prérempli pour signaler une erreur sur une fiche. */
 export function contactReportPath(saleId: string, topic: ContactReportTopic = "fiche"): string {
   const query = new URLSearchParams({ sujet: "erreur", vente: saleId, rubrique: topic });
+  return `/contact?${query.toString()}`;
+}
+
+/** Vrai si la valeur a la forme d'un identifiant de vente (UUID). */
+export function isSaleId(value: string | null | undefined): value is string {
+  return typeof value === "string" && SALE_ID.test(value);
+}
+
+/**
+ * Adresse du formulaire de contact pour l'avocat poursuivant d'une vente : sujet réservé
+ * présélectionné, et la vente reprise dans le message si l'identifiant a la forme d'un UUID.
+ */
+export function lawyerReportPath(saleId?: string): string {
+  const query = new URLSearchParams({ sujet: "avocat-poursuivant" });
+  if (isSaleId(saleId)) {
+    query.set("vente", saleId);
+    query.set("rubrique", "fiche");
+  }
   return `/contact?${query.toString()}`;
 }
 
@@ -156,12 +175,14 @@ export type ContactEmail = {
 
 /**
  * Préfixe d'objet des deux sujets qui demandent un traitement à part : une demande sur les données
- * personnelles (`[DROITS]`, délai légal d'un mois) et un signalement d'erreur sur une fiche
- * (`[DONNEES]`). Sert aussi d'étiquette Resend (`topic`, en minuscules ASCII).
+ * personnelles (`[DROITS]`, délai légal d'un mois) et un signalement d'erreur sur une fiche,
+ * y compris celui d'un avocat poursuivant (`[DONNEES]`). Sert aussi d'étiquette Resend (`topic`, en minuscules ASCII).
  */
 const CONTACT_TRIAGE: Partial<Record<ContactSubject, { prefix: string; topic: string }>> = {
   donnees: { prefix: "[DROITS]", topic: "droits" },
   erreur: { prefix: "[DONNEES]", topic: "donnees" },
+  // La qualité d'avocat poursuivant est déclarée par la personne, jamais vérifiée : l'objet le dit.
+  "avocat-poursuivant": { prefix: "[DONNEES] (qualité déclarée)", topic: "donnees" },
 };
 
 /** Étiquettes Resend d'un message : sa catégorie, et le tri `droits` ou `donnees` quand il y a lieu. */
