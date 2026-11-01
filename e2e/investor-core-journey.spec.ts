@@ -25,11 +25,14 @@ const session = {
 
 test("inscription → recherche → rapport → paiement → partage", async ({ page }) => {
   const journey: string[] = [];
+  let signupData: Record<string, unknown> | null = null;
 
   await page.route("https://ci.supabase.co/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/auth/v1/signup") {
       journey.push("registration");
+      signupData =
+        (route.request().postDataJSON() as { data?: Record<string, unknown> }).data ?? null;
       await route.fulfill({ status: 200, json: session });
       return;
     }
@@ -125,10 +128,13 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
     await page.getByRole("button", { name: "Créer un compte", exact: true }).click();
     await expect(page).toHaveURL(/mode=investor/);
   }).toPass();
+  await page.getByLabel("Prénom", { exact: true }).fill("Camille");
+  await page.getByLabel("Nom", { exact: true }).fill("Durand");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Mot de passe", { exact: true }).fill("password-e2e");
   await page.getByRole("button", { name: "Créer mon compte gratuit" }).click();
   await expect(page).toHaveURL(/\/bienvenue/);
+  expect(signupData).toMatchObject({ first_name: "Camille", last_name: "Durand" });
   await page.getByLabel("Ville, département ou région").fill("Bordeaux");
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
   await page.getByLabel("Mise à prix maximale (€)").fill("150000");
