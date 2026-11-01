@@ -80,7 +80,7 @@ select ok(
 );
 -- La liste des tâches attendues de cron.stale et les autres alertes n'ont pas bougé.
 select ok(
-  position('(''sale-flood-risk'', interval ''3 hours'')' in pg_get_functiondef(
+  position('(''sale-flood-risk'', interval ''5 hours'')' in pg_get_functiondef(
     'app_private.evaluate_operational_health(timestamptz)'::regprocedure
   )) > 0
   and position('(''sale-pepites'', interval ''3 hours'')' in pg_get_functiondef(
