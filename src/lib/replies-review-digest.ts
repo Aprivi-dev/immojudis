@@ -1,7 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { errorDetailForLog } from "@/lib/api-errors";
-import { sendResendEmail, type ResendEmailMessage } from "@/lib/email-alerts";
+import type { ResendEmailMessage } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
   emailButton,
   emailHeading,
@@ -252,13 +253,14 @@ export async function runRepliesReviewDigest({
   const day = parisDateKey(now);
   for (const to of config.to) {
     try {
-      await sendResendEmail({
+      await sendTrackedEmail({
         apiKey: config.apiKey,
         message: buildRepliesReviewDigestMessage(content, { from: config.from, to, panelUrl }),
         // Resend ignore une clé répétée pendant 24 heures : un passage rejoué le même jour n'écrit pas deux fois.
         idempotencyKey: `replies-review-digest-${day}-${to}`.slice(0, 256),
         fetchImpl,
         category: "operations",
+        templateKey: "replies_review_digest",
       });
       summary.sent += 1;
     } catch (error) {

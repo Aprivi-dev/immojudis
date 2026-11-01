@@ -1922,6 +1922,100 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Journal central des emails (module « Emails », lots 3 et 4, 01/11/2026) : deux tables réservées à
+// service_role (RLS activée, aucune politique, aucun droit pour public, anon ni authenticated), des fonctions
+// SECURITY DEFINER à search_path vide jamais exécutables par les rôles du navigateur, et un journal qui ne
+// porte aucun corps de message. Le contrôle générique ci-dessus couvre déjà toute table créée après le
+// 03/11/2026 ; celui-ci nomme ces deux tables et leurs fonctions pour qu'un changement de migration ne les
+// ouvre pas en silence.
+{
+  const stripSql = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const emailMigrations = [...migrationSources]
+    .filter(([name]) => name >= "20261110210000")
+    .map(([name, source]) => [name, stripSql(source)]);
+  const emailSql = emailMigrations.map(([, sql]) => sql).join("\n");
+  for (const table of ["email_send_log", "admin_email_access_log"]) {
+    if (
+      !new RegExp(
+        `alter\\s+table\\s+public\\.${table}\\s+enable\\s+row\\s+level\\s+security`,
+        "i",
+      ).test(emailSql)
+    ) {
+      failures.push(`public.${table} does not enable row level security`);
+    }
+    if (
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+table\\s+public\\.${table}\\s+from\\s+public,\\s*anon,\\s*authenticated`,
+        "i",
+      ).test(emailSql)
+    ) {
+      failures.push(`public.${table} is not closed to public, anon and authenticated`);
+    }
+    if (new RegExp(`create\\s+policy[^;]*\\b${table}\\b`, "i").test(emailSql)) {
+      failures.push(`public.${table} is opened by a policy (service_role only)`);
+    }
+  }
+  for (const fn of [
+    "public.record_email_send",
+    "public.record_email_delivery_event",
+    "public.admin_email_received_list",
+  ]) {
+    const definition = new RegExp(
+      `create\\s+or\\s+replace\\s+function\\s+${fn.replace(".", "\\.")}\\([\\s\\S]*?\\$\\$;`,
+      "i",
+    ).exec(emailSql)?.[0];
+    if (
+      !definition ||
+      !/security\s+definer/i.test(definition) ||
+      !/set\s+search_path\s*=\s*''/i.test(definition)
+    ) {
+      failures.push(`${fn} is not a SECURITY DEFINER function with an empty search_path`);
+    }
+    if (
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+function\\s+${fn.replace(".", "\\.")}\\([^)]*\\)\\s+from\\s+public,\\s*anon,\\s*authenticated`,
+        "i",
+      ).test(emailSql)
+    ) {
+      failures.push(`${fn} is executable by public, anon or authenticated`);
+    }
+    if (
+      new RegExp(
+        `grant\\s+execute\\s+on\\s+function\\s+${fn.replace(".", "\\.")}\\([^)]*\\)\\s+to\\s+[^;]*\\b(?:public|anon|authenticated)\\b`,
+        "i",
+      ).test(emailSql)
+    ) {
+      failures.push(`${fn} is granted to a browser role`);
+    }
+  }
+  // Aucun corps de message au journal des envois.
+  const logTable =
+    /create\s+table\s+if\s+not\s+exists\s+public\.email_send_log\s*\(([\s\S]*?)\n\);/i.exec(
+      emailSql,
+    )?.[1];
+  if (!logTable) {
+    failures.push("public.email_send_log is not created by a migration");
+  } else if (
+    /\b(?:body|html|text_body|body_text|content|message)\b\s+(?:text|jsonb|varchar)/i.test(logTable)
+  ) {
+    failures.push("public.email_send_log stores a message body (the log keeps metadata only)");
+  }
+  // run_data_retention appelle les deux purges du lot, dans sa dernière définition.
+  const lastRetention = [...migrationSources]
+    .filter(([, source]) =>
+      /create\s+or\s+replace\s+function\s+public\.run_data_retention\(/i.test(source),
+    )
+    .map(([name]) => name)
+    .sort()
+    .at(-1);
+  const retentionSource = stripSql(migrationSources.get(lastRetention) ?? "");
+  for (const purge of ["purge_email_send_log", "purge_admin_email_access_log"]) {
+    if (!retentionSource.includes(purge)) {
+      failures.push(`${lastRetention} (latest run_data_retention) does not call ${purge}`);
+    }
+  }
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -1970,6 +2064,7 @@ console.log(
       "admin-routes-read-token-and-call-an-admin-guard",
       "admin-signups-asserts-admin-first",
       "signup-trial-end-ignores-user-metadata",
+      "email-send-log-service-role-only-and-no-body",
     ],
   }),
 );

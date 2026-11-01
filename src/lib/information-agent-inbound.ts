@@ -56,6 +56,7 @@ import {
   settleInformationAgentInboundJob,
 } from "@/lib/information-agent-inbound/job-queue";
 import { processDeliveryEvent } from "@/lib/information-agent-inbound/delivery-events";
+import { captureFailure, recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
 import {
   storeUnroutedInboundMessage,
   type UnroutedInboundReason,
@@ -155,10 +156,13 @@ export async function processInformationAgentInboundWebhook({
   env = process.env,
   fetchImpl = fetch,
   deferProcessing = false,
+  recordDelivery = recordEmailDeliveryEvent,
 }: {
   request: Request;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
+  /** Journal des envois (`email_send_log`) : écrit les évènements de livraison, avant le registre de contacts. */
+  recordDelivery?: (event: { type: string; created_at?: string; data?: unknown }) => Promise<void>;
   /** Persist the verified receipt and let the cron worker process attachments. */
   deferProcessing?: boolean;
 }): Promise<InformationAgentInboundResult> {
@@ -185,11 +189,23 @@ export async function processInformationAgentInboundWebhook({
   } catch {
     throw new InvalidInformationAgentWebhookSignatureError();
   }
+  // Évènements de livraison (remis, différé, échec, rebond, plainte) : le journal des envois, qui ne décide de
+  // rien, passe APRÈS le traitement des rebonds et plaintes (3 s au plus). Sa panne remonte (500) une fois le
+  // registre de contacts à jour, pour que le fournisseur rejoue l'évènement.
+  const logDelivery = async () => {
+    const logFailure = await captureFailure(() => recordDelivery(event));
+    if (logFailure) throw logFailure.error;
+  };
   // Rebonds et plaintes des emails de l'agent : écrits sur le registre de contacts, qui coupe l'envoi.
   if (event.type === "email.bounced" || event.type === "email.complained") {
-    return processDeliveryEvent(event, env);
+    const processed = await processDeliveryEvent(event, env);
+    await logDelivery();
+    return processed;
   }
-  if (event.type !== "email.received") return { accepted: true, ignored: true };
+  if (event.type !== "email.received") {
+    await logDelivery();
+    return { accepted: true, ignored: true };
+  }
 
   return ingestReceivedEmail({
     event,

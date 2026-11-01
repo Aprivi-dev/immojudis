@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchResendDomains, fetchResendWebhooks } from "./resend";
+import { fetchResendDomains, fetchResendEmail, fetchResendWebhooks } from "./resend";
 
 const KEY = "re_FACTICE_FACTICE";
 
@@ -155,5 +155,55 @@ describe("fetchResendWebhooks", () => {
       ok: false,
       failure: "missing_permission",
     });
+  });
+});
+
+describe("fetchResendEmail", () => {
+  it("ne contacte pas Resend sans clé", async () => {
+    const fetchImpl = vi.fn();
+    expect(await fetchResendEmail(null, "re_1", fetchImpl)).toEqual({
+      ok: false,
+      failure: "not_configured",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("lit un email par un seul GET et ne recopie que le contenu et le dernier évènement", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      json({
+        id: "re_1",
+        html: "<p>Salut</p>",
+        text: "Salut",
+        last_event: "delivered",
+        bcc: ["x"],
+      }),
+    );
+    const result = await fetchResendEmail(KEY, "re/1", fetchImpl as unknown as typeof fetch);
+    expect(result).toEqual({
+      ok: true,
+      data: { html: "<p>Salut</p>", text: "Salut", lastEvent: "delivered" },
+    });
+    expect(String(fetchImpl.mock.calls[0][0])).toBe("https://api.resend.com/emails/re%2F1");
+    expect(fetchImpl.mock.calls[0][1]?.method).toBe("GET");
+  });
+
+  it("distingue un contenu expiré (404) des autres échecs", async () => {
+    const expired = vi.fn(async () => json({ name: "not_found" }, 404));
+    expect(await fetchResendEmail(KEY, "re_1", expired as unknown as typeof fetch)).toEqual({
+      ok: false,
+      failure: "expired",
+    });
+    for (const [status, failure] of [
+      [401, "invalid_key"],
+      [403, "missing_permission"],
+      [429, "rate_limited"],
+      [500, "unavailable"],
+    ] as const) {
+      const fetchImpl = vi.fn(async () => json({}, status));
+      expect(await fetchResendEmail(KEY, "re_1", fetchImpl as unknown as typeof fetch)).toEqual({
+        ok: false,
+        failure,
+      });
+    }
   });
 });

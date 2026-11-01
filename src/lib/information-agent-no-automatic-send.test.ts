@@ -48,20 +48,20 @@ function functionBody(source: string, declaration: string): string {
 describe("agent d'information : aucun envoi automatique", () => {
   it("n'appelle le fournisseur d'e-mails qu'à un seul endroit : l'envoi validé par un admin", () => {
     const agentFiles = sourceFiles.filter((file) => /information-agent/.test(file));
-    const callers = agentFiles.filter((file) => /\bsendResendEmail\s*\(/.test(read(file)));
+    const callers = agentFiles.filter((file) => /\bsendTrackedEmail\s*\(/.test(read(file)));
     expect(callers).toEqual([path.join("src", "lib", "information-agent.ts")]);
 
     const agent = read("src/lib/information-agent.ts");
-    expect(agent.match(/\bsendResendEmail\s*\(/g)).toHaveLength(1);
+    expect(agent.match(/\bsendTrackedEmail\s*\(/g)).toHaveLength(1);
     const sendPath = functionBody(agent, "async function approveAndSendMission(");
-    expect(sendPath).toMatch(/\bsendResendEmail\s*\(/);
+    expect(sendPath).toMatch(/\bsendTrackedEmail\s*\(/);
     // L'envoi exige l'empreinte de l'aperçu, puis revérifie l'opposition juste avant l'appel.
     expect(sendPath.indexOf("assertInformationAgentPreviewFingerprint")).toBeGreaterThan(-1);
     expect(sendPath.indexOf("assertInformationAgentPreviewFingerprint")).toBeLessThan(
-      sendPath.indexOf("sendResendEmail("),
+      sendPath.indexOf("sendTrackedEmail("),
     );
     expect(sendPath.lastIndexOf("assertInformationAgentContactAllowed")).toBeLessThan(
-      sendPath.indexOf("sendResendEmail("),
+      sendPath.indexOf("sendTrackedEmail("),
     );
   });
 
@@ -116,7 +116,7 @@ describe("agent d'information : aucun envoi automatique", () => {
     for (const file of automated) {
       const source = read(file);
       expect(source, file).not.toMatch(/from "@\/lib\/information-agent"/);
-      expect(source, file).not.toMatch(/\bsendResendEmail\b/);
+      expect(source, file).not.toMatch(/\b(?:sendResendEmail|sendTrackedEmail)\b/);
       expect(source, file).not.toMatch(/\bapproveAndSendMission\b|approve_and_send/);
       expect(source, file).not.toMatch(
         /\.emails\.send\s*\(|\.batch\.send\s*\(|api\.resend\.com\/emails/,

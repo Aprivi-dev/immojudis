@@ -186,6 +186,11 @@ function seed() {
       { id: "u1", sender_email: "maitre_dupont@cabinet.example", subject: "Re: vente" },
       { id: "u2", sender_email: "autre@cabinet.example", subject: "Re: autre vente" },
     ],
+    email_send_log: [
+      { id: "l1", to_address: "maitre_dupont@cabinet.example", template_key: "agent_request" },
+      { id: "l2", to_address: "maitre_dupont@cabinet.example", template_key: "agent_request" },
+      { id: "l3", to_address: "autre@cabinet.example", template_key: "agent_request" },
+    ],
     data_subject_requests: [],
   };
   state.log = [];
@@ -244,6 +249,8 @@ describe("collectProfessionalData", () => {
     expect(data.contacts.map((row) => row.id)).toEqual(["c1", "c2", "c3"]);
     // Les messages reçus sans dossier ouvert de cette adresse, pas ceux d'une autre.
     expect(data.unroutedMessages.map((row) => row.id)).toEqual(["u1"]);
+    // Le journal des emails envoyés à cette adresse, pas ceux d'une autre.
+    expect(data.emailLog.map((row) => row.id)).toEqual(["l1", "l2"]);
   });
 });
 
@@ -255,6 +262,7 @@ describe("eraseProfessionalData", () => {
       deletedRows: {
         information_agent_contacts: 1,
         information_agent_unrouted_messages: 1,
+        email_send_log: 2,
         information_agent_cases: 1,
         information_agent_missions: 1,
       },
@@ -271,6 +279,7 @@ describe("eraseProfessionalData", () => {
       "upsert:information_agent_contacts",
       "delete:information_agent_contacts:1",
       "delete:information_agent_unrouted_messages:1",
+      "delete:email_send_log:2",
       "delete:information_agent_cases:1",
       "delete:information_agent_missions:1",
     ]);
@@ -304,6 +313,8 @@ describe("eraseProfessionalData", () => {
     expect((state.tables.information_agent_unrouted_messages ?? []).map((row) => row.id)).toEqual([
       "u2",
     ]);
+    // Les lignes du journal des emails envoyés à un autre professionnel restent.
+    expect((state.tables.email_send_log ?? []).map((row) => row.id)).toEqual(["l3"]);
     // Les données d'un autre professionnel et la demande au nom approchant restent.
     expect((state.tables.information_agent_cases ?? []).map((row) => row.id)).toEqual([
       OTHER_CASE_ID,
@@ -326,6 +337,7 @@ describe("eraseProfessionalData", () => {
     expect(second.deletedRows).toEqual({
       information_agent_contacts: 0,
       information_agent_unrouted_messages: 0,
+      email_send_log: 0,
       information_agent_cases: 0,
       information_agent_missions: 0,
     });

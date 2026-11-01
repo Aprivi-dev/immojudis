@@ -4,9 +4,9 @@ import { errorDetailForLog } from "@/lib/api-errors";
 import {
   readUserEmail,
   resolveEmailAlertDeliveryConfig,
-  sendResendEmail,
   type EmailAlertDeliveryConfig,
 } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { trialEndEmailMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { parisDateKey } from "@/lib/sale-countdown";
 import { buildTrialEndMessage } from "@/lib/trial-end-email";
@@ -206,7 +206,7 @@ export async function runTrialEndNotices({
         now,
       });
       try {
-        const result = await sendResendEmail({
+        const result = await sendTrackedEmail({
           apiKey: config.apiKey,
           message,
           // Préfixe `trial-end-` : le préavis global de fin de l'offre garde sa propre clé, sans quoi
@@ -214,6 +214,9 @@ export async function runTrialEndNotices({
           idempotencyKey: `trial-end-immojudis-launch-offer-end-${recipient.userId}-${recipient.endsOn}`,
           fetchImpl,
           category: "launch_offer_end",
+          templateKey: "trial_end",
+          mode: mode === "internal" ? "internal" : "on",
+          userId: recipient.userId,
         });
         await markNotice(
           recipient,

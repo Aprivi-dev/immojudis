@@ -20,7 +20,7 @@ import { adminPageQueryShape } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import { loadAdminInformationAgentSale } from "@/lib/admin-information-agent-sale";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
-import { sendResendEmail } from "@/lib/email-alerts";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
   getFactReliabilitiesFromClaims,
   getKeyFactReliabilities,
@@ -909,11 +909,13 @@ async function approveAndSendMission({
       courtRegistryAddress: Boolean(courtFallback),
     });
     assertInformationAgentCanaryRecipient(edited.recipient_email);
-    const delivery = await sendResendEmail({
+    const delivery = await sendTrackedEmail({
       apiKey: config.apiKey,
       idempotencyKey: informationAgentIdempotencyKey(approval.case_id),
       fetchImpl,
       category: "agent",
+      templateKey: courtFallback ? "agent_court_registry" : "agent_request",
+      mode: "manual",
       message: {
         from: config.from,
         to: edited.recipient_email,

@@ -141,10 +141,30 @@ describe("erasure execution (P4-10)", () => {
       "user_sale_unlocks",
       "launch_offer_end_notices",
       "launch_offer_end_notice_optouts",
+      "email_send_log",
     ]) {
       expect(tables).toContain(table);
     }
-    expect(state.deletes.every((entry) => entry.value === USER_ID)).toBe(true);
+    // Chaque suppression vise le compte, sauf celle du journal des emails par adresse (minuscules).
+    const byAddress = state.deletes.filter((entry) => entry.column === "to_address");
+    expect(byAddress).toEqual([
+      { table: "email_send_log", column: "to_address", value: "client@example.test" },
+    ]);
+    expect(
+      state.deletes
+        .filter((entry) => entry.column !== "to_address")
+        .every((entry) => entry.value === USER_ID),
+    ).toBe(true);
+    expect(state.deletes.filter((entry) => entry.table === "email_send_log")).toContainEqual({
+      table: "email_send_log",
+      column: "user_id",
+      value: USER_ID,
+    });
+    // L'adresse est effacée AVANT la suppression du compte, dont elle dépend.
+    expect(state.order.lastIndexOf("delete:email_send_log")).toBeLessThan(
+      state.order.indexOf("auth-user"),
+    );
+    expect(report.deletedRows["email_send_log.to_address"]).toBe(1);
     expect(state.updates[0]).toMatchObject({
       status: "completed",
       resolution_code: "erasure_executed",
@@ -157,6 +177,7 @@ describe("erasure execution (P4-10)", () => {
     const missing = { code: "PGRST205", message: "Could not find the table in the schema cache" };
 
     it.each([
+      "email_send_log",
       "sale_signal_feedback",
       "weekly_digest_dispatches",
       "sale_result_dispatches",
