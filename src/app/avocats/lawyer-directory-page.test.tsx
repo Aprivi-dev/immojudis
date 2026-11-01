@@ -120,6 +120,38 @@ describe("annuaire des avocats", () => {
     expect(entry.textContent).toContain("Publicité · Sponsorisé");
   });
 
+  it("indique à l'avocat poursuivant comment faire corriger une fiche, vers le contact prérempli", () => {
+    mocks.fetchLawyerDirectory.mockReturnValue(new Promise(() => {}));
+    mocks.query = "bar=Bordeaux&saleId=11111111-1111-4111-8111-111111111111";
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LawyerDirectoryPage />
+      </QueryClientProvider>,
+    );
+    const entry = screen.getByRole("complementary", { name: "Vous poursuivez une vente ?" });
+    const link = within(entry).getByRole("link", { name: "Signaler une erreur sur une fiche" });
+    expect(link.getAttribute("href")).toBe(
+      "/contact?sujet=avocat-poursuivant&vente=11111111-1111-4111-8111-111111111111&rubrique=fiche",
+    );
+    expect(entry.textContent).toContain("Je suis l’avocat poursuivant de cette vente");
+    expect(entry.textContent).not.toMatch(/délai|jours|automatique|vérifi/i);
+    expect(link.className).toContain("min-h-11");
+  });
+
+  it("garde le lien de l'avocat poursuivant sans vente quand aucune annonce n'est sélectionnée", () => {
+    mocks.fetchLawyerDirectory.mockReturnValue(new Promise(() => {}));
+    mocks.query = "bar=Bordeaux";
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LawyerDirectoryPage />
+      </QueryClientProvider>,
+    );
+    const entry = screen.getByRole("complementary", { name: "Vous poursuivez une vente ?" });
+    expect(within(entry).getByRole("link").getAttribute("href")).toBe(
+      "/contact?sujet=avocat-poursuivant",
+    );
+  });
+
   it("affiche « Publicité · Sponsorisé » sur les profils sponsorisés seulement", async () => {
     renderDirectory([
       profile({

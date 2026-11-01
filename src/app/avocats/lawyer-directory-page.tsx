@@ -28,6 +28,7 @@ import {
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { validateDirectorySearch, type DirectorySearch } from "@/lib/lawyer-directory-search";
 import type { LawyerUpcomingSales } from "@/lib/lawyer-prosecuted-sales";
+import { lawyerReportPath } from "@/lib/contact-message";
 import { hasStandingAnalysisAccess } from "@/lib/plans";
 import { formatStartingPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
@@ -205,6 +206,25 @@ function DirectoryLayout({
                   className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gold/45 bg-white px-4 text-sm font-semibold text-gold-text transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:w-auto"
                 >
                   Présenter mon cabinet
+                </Link>
+              </aside>
+              <aside
+                aria-labelledby="lawyer-prosecuting-title"
+                className="min-w-0 rounded-lg border border-brand-navy/12 bg-white p-4"
+              >
+                <h2 id="lawyer-prosecuting-title" className="text-sm font-semibold text-brand-navy">
+                  Vous poursuivez une vente ?
+                </h2>
+                <p className="mt-1 text-sm leading-relaxed text-brand-navy/70">
+                  Pour signaler une erreur ou demander une correction sur la fiche de cette vente,
+                  écrivez-nous depuis le formulaire de contact, avec le sujet « Je suis l’avocat
+                  poursuivant de cette vente ». Précisez ce qui est inexact ou manquant.
+                </p>
+                <Link
+                  href={lawyerReportPath(search.saleId)}
+                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-brand-navy/16 bg-white px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:w-auto"
+                >
+                  Signaler une erreur sur une fiche
                 </Link>
               </aside>
             </div>

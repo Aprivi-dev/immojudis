@@ -241,7 +241,11 @@ function ComparisonCard({
       </header>
 
       <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        <Metric label="Mises à prix" value={formatStartingPrice(summary.totalStartingPriceEur)} />
+        <Metric
+          label="Mises à prix"
+          value={formatStartingPrice(summary.totalStartingPriceEur)}
+          note={partialTotalNote(summary)}
+        />
         <Metric label="Plafonds saisis" value={formatPrice(summary.totalUserMaxBidEur)} />
         <Metric
           label="Score moyen"
@@ -362,13 +366,23 @@ function ComparisonItem({ item }: { item: SaleAnalysisItem }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+/** Un total de mises à prix qui n'additionne pas tous les biens le dit : il ne passe pas pour complet. */
+function partialTotalNote(summary: SaleAnalysisSet["summary"]): string | null {
+  if (summary.totalStartingPriceEur == null || summary.pricedItemCount >= summary.itemCount) {
+    return null;
+  }
+  const priced = summary.pricedItemCount;
+  return `Total partiel : ${priced} bien${priced > 1 ? "s" : ""} sur ${summary.itemCount}`;
+}
+
+function Metric({ label, value, note }: { label: string; value: string; note?: string | null }) {
   return (
     <div className="rounded-lg border border-border/70 bg-white/50 px-3 py-2">
       <dt className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </dt>
       <dd className="mt-1 font-semibold tabular-nums text-foreground">{value}</dd>
+      {note ? <dd className="mt-0.5 text-xs text-muted-foreground">{note}</dd> : null}
     </div>
   );
 }
