@@ -199,11 +199,17 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-10-31.1 (traitements complétés) ; les 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-31.1");
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("31 octobre 2026");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-26.1");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0].version).toBe("2026-10-25.1");
+  it("la politique de confidentialité est en version 2026-11-01.1 (demandes aux greffes) ; les 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-01.1");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe("1er novembre 2026");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-31.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
+      LEGAL_DOCUMENTS.privacy.effectiveDate,
+    );
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-10-26.1",
+      "2026-10-25.1",
+    ]);
   });
 });
 

@@ -47,6 +47,18 @@ export const FLOOD_LEGAL_EFFECTIVE_DATE = "26 octobre 2026";
  */
 export const PRIVACY_COMPLETION_EFFECTIVE_DATE = "31 octobre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-01.1 : ajoute les demandes aux greffes (contact de secours d'une vente
+ * au tribunal sans adresse d'avocat : au plus un message par vente et, par tribunal, au plus un plafond
+ * quotidien configuré, base de l'intérêt légitime, opposition). La version 2026-10-31.1, en production depuis le
+ * 01/11/2026 au matin, est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée
+ * avec l'acceptation d'une inscription ou d'un achat, aucun contrôle n'impose de la ré-accepter. En vigueur
+ * à la mise en ligne, sans préavis (information sur un traitement nouveau qui ne touche que des
+ * destinataires institutionnels). Date à décaler à la date réelle de mise en ligne si elle diffère (elle
+ * n'entre pas dans l'empreinte du texte).
+ */
+export const PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE = "1er novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -61,9 +73,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-10-31.1",
+    version: "2026-11-01.1",
     sha256: "45fa8eb7d62a3a19333a88516fdcfff4e1678a288f4eab7b9b3d07773c5d18b9",
-    effectiveDate: PRIVACY_COMPLETION_EFFECTIVE_DATE,
+    effectiveDate: PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;
