@@ -96,7 +96,7 @@ function parseCursor(raw: string | null): { at: string; id: string } | null {
 function parseAddress(raw: string | null): string | null {
   const value = (raw ?? "").trim().toLowerCase();
   if (!value) return null;
-  if (value.length < 3 || value.length > 200 || /[\s"'<>(),;]/.test(value)) {
+  if (value.length < 3 || value.length > 200 || /[\s"'<>(),;*]/.test(value)) {
     throw new EmailHistoryInputError("Adresse de recherche invalide.");
   }
   return value;
@@ -159,6 +159,7 @@ async function refreshStatuses(rows: SentRow[], now: Date, fetchImpl: typeof fet
     .filter(
       (row) =>
         row.resend_email_id &&
+        row.template_key !== "unknown" &&
         (row.status === "sent" || row.status === "delayed") &&
         now.getTime() - Date.parse(row.created_at) < REFRESH_MAX_AGE_MS,
     )
@@ -291,7 +292,7 @@ export async function readEmailMessage({
   if (source === "case") {
     const { data, error } = await supabaseAdmin
       .from("information_agent_messages")
-      .select("id,from_email,to_email,subject,body_text,attachments,created_at")
+      .select("id,from_email,subject,body_text,attachments,created_at")
       .eq("id", rowId)
       .eq("direction", "inbound")
       .maybeSingle();
@@ -343,6 +344,12 @@ export async function readEmailMessage({
   ];
   const base = { title: row.subject || "(sans objet)", lines, attachments: [] as string[] };
 
+  // Ligne sans gabarit : email venu d'un autre outil du même compte Resend (par exemple le SMTP de Supabase Auth,
+  // dont les messages portent des codes à usage unique). Son contenu n'est jamais lu chez Resend.
+  if (row.template_key === "unknown") {
+    return { ...base, kind: "note", body: "Email non émis par Immojudis : contenu non affiché." };
+  }
+
   // Envois de l'agent d'information : le texte est celui du dossier (information_agent_messages).
   if (row.category === "agent" && row.resend_email_id) {
     const { data: message, error: messageError } = await supabaseAdmin
@@ -367,8 +374,9 @@ export async function readEmailMessage({
   }
   const content = await fetchResendEmail(readResendApiKey(), row.resend_email_id, fetchImpl);
   if (!content.ok) return { ...base, kind: "note", body: FAILURES[content.failure] };
-  if (content.data.html) {
-    return { ...base, kind: "html", body: toInertEmailDocument(content.data.html) };
-  }
-  return { ...base, kind: "text", body: plain(content.data.text) };
+  // HTML reconstruit à partir d'une liste blanche ; s'il est impossible ou vide, la version texte, masquée.
+  const document = content.data.html ? toInertEmailDocument(content.data.html) : null;
+  if (document) return { ...base, kind: "html", body: document };
+  if (content.data.text) return { ...base, kind: "text", body: plain(content.data.text) };
+  return { ...base, kind: "note", body: "Contenu non affichable." };
 }

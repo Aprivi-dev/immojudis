@@ -164,6 +164,7 @@ describe("listEmailHistory : envoyés", () => {
     ["curseur", { cursor: "pas un curseur", address: null }],
     ["adresse", { cursor: null, address: "a b" }],
     ["adresse trop courte", { cursor: null, address: "a" }],
+    ["adresse avec joker *", { cursor: null, address: "al*" }],
   ])("refuse une entrée invalide : %s", async (_name, input) => {
     await expect(
       listEmailHistory({ adminUserId: ADMIN, box: "sent", ...input }),
@@ -206,6 +207,24 @@ describe("listEmailHistory : envoyés", () => {
       data: { email_id: "re_FACTICE_1" },
     });
     expect(list.note).toBeUndefined();
+  });
+
+  it("« Actualiser » ne lit jamais chez Resend un email non émis par Immojudis", async () => {
+    state.results.email_send_log = {
+      data: [sentRow(1, { template_key: "unknown" })],
+      error: null,
+    };
+    const fetchImpl = vi.fn();
+    await listEmailHistory({
+      adminUserId: ADMIN,
+      box: "sent",
+      cursor: null,
+      address: null,
+      refresh: true,
+      now: NOW,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("« Actualiser » ignore les ouvertures et les clics", async () => {
@@ -315,7 +334,7 @@ describe("readEmailMessage", () => {
     });
     expect(message?.kind).toBe("html");
     expect(message?.body).toContain("Bonjour");
-    expect(message?.body).toContain(MASKED_LINK);
+    expect(message?.body).not.toContain("unsubscribe");
     expect(message?.body).not.toContain("token=abc");
     expect(message?.body).not.toMatch(/\shref\s*=/);
     expect(state.inserts[0].row).toEqual({
@@ -403,6 +422,64 @@ describe("readEmailMessage", () => {
       body: "Bonjour, une question.",
       attachments: ["1 pièce(s), noms non conservés"],
     });
+  });
+
+  it("n'affiche jamais le contenu d'un email non émis par Immojudis, et ne le lit pas chez Resend", async () => {
+    state.results.email_send_log = {
+      data: { ...logRow, template_key: "unknown", category: "unknown" },
+      error: null,
+    };
+    const fetchImpl = vi.fn();
+    const message = await readEmailMessage({
+      adminUserId: ADMIN,
+      id: `log:${ID}`,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(message).toMatchObject({
+      kind: "note",
+      body: "Email non émis par Immojudis : contenu non affiché.",
+    });
+    // La consultation reste tracée.
+    expect(state.inserts).toHaveLength(1);
+  });
+
+  it("affiche la version texte, masquée, quand le HTML ne laisse rien à afficher", async () => {
+    state.results.email_send_log = { data: logRow, error: null };
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(200, {
+        html: "<script>alert(1)</script>",
+        text: "Bonjour https://immojudis.test/api/email/click?token=FACTICE",
+        last_event: "delivered",
+      }),
+    );
+    const message = await readEmailMessage({
+      adminUserId: ADMIN,
+      id: `log:${ID}`,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(message?.kind).toBe("text");
+    expect(message?.body).toContain(MASKED_LINK);
+    expect(message?.body).not.toContain("FACTICE");
+  });
+
+  it("ne lit pas to_email (il porte le jeton de réponse) d'un email reçu", async () => {
+    state.results.information_agent_messages = {
+      data: {
+        id: ID,
+        from_email: "maitre@cabinet.example",
+        subject: "Re: vente",
+        body_text: "Bonjour",
+        attachments: [],
+        created_at: "2026-11-01T10:00:00+00:00",
+      },
+      error: null,
+    };
+    await readEmailMessage({ adminUserId: ADMIN, id: `case:${ID}` });
+    const select = state.calls
+      .find((entry) => entry.table === "information_agent_messages")
+      ?.calls.find(([method]) => method === "select");
+    expect(String(select?.[1][0])).not.toContain("to_email");
   });
 
   it("répond null pour un message inconnu, sans tracer de consultation", async () => {
