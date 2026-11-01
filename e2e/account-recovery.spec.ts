@@ -43,11 +43,16 @@ test("lien de réinitialisation expiré : un seul message et le chemin pour en r
 });
 
 test.describe("inscription avec confirmation par email", () => {
+  let signupData: Record<string, unknown> | null = null;
+
   test.beforeEach(async ({ page }) => {
+    signupData = null;
     // Confirmation activée : Supabase renvoie l'utilisateur sans session.
     await page.route("https://ci.supabase.co/**", async (route) => {
       const url = new URL(route.request().url());
       if (url.pathname === "/auth/v1/signup") {
+        signupData =
+          (route.request().postDataJSON() as { data?: Record<string, unknown> }).data ?? null;
         await route.fulfill({
           status: 200,
           json: {
@@ -86,6 +91,8 @@ test.describe("inscription avec confirmation par email", () => {
       page.getByRole("button", { name: "Créer un compte", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
 
+    await page.getByLabel("Prénom", { exact: true }).fill("Camille");
+    await page.getByLabel("Nom", { exact: true }).fill("Durand");
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Mot de passe", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Créer mon compte gratuit" }).click();
@@ -95,6 +102,7 @@ test.describe("inscription avec confirmation par email", () => {
       `Un email de confirmation a été envoyé à ${email}, cliquez sur le lien pour continuer.`,
     );
     await expect(page.getByLabel("Mot de passe", { exact: true })).toHaveCount(0);
+    expect(signupData).toMatchObject({ first_name: "Camille", last_name: "Durand" });
 
     await expect(page.getByRole("button", { name: /Renvoyer l'email \(\d+ s\)/ })).toBeDisabled();
     await page.clock.fastForward(30_000);
