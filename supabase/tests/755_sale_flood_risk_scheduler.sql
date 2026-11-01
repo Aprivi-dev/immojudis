@@ -64,10 +64,10 @@ select ok(
 );
 
 select ok(
-  position('(''sale-flood-risk'', interval ''3 hours'')' in pg_get_functiondef(
+  position('(''sale-flood-risk'', interval ''5 hours'')' in pg_get_functiondef(
     'app_private.evaluate_operational_health(timestamptz)'::regprocedure
   )) > 0,
-  'the freshness alert (cron.stale) expects a successful run every three hours'
+  'the freshness alert (cron.stale) expects a successful run every five hours (two missed two-hour passes plus the duration of one, 20261110120100)'
 );
 
 select is(
