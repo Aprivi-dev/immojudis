@@ -318,7 +318,7 @@ export function informationAgentLegalFooterLines(footer: InformationAgentLegalFo
   return [
     ...informationAgentLegalFooterSections(footer).map(({ label, text }) => `${label} ${text}`),
     `Politique de confidentialité et vos droits : ${footer.privacyUrl}`,
-    `Ne plus être contacté (un clic) : ${footer.optOutUrl}`,
+    `Ne plus être contacté : ${footer.optOutUrl}`,
   ];
 }
 

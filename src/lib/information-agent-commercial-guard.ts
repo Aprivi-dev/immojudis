@@ -8,7 +8,8 @@
  * - la « mise en avant », le partenariat, la mise en relation, la clientèle, la gratuité ;
  * - les prix et tarifs d'Immojudis ;
  * - tout lien, sauf le site d'Immojudis sur ses pages utiles au destinataire (politique de
- *   confidentialité, dépôt privé, opposition), la plainte CNIL et la page source de l'adresse ;
+ *   confidentialité, dépôt privé, opposition), son logo (image), la plainte CNIL et la page source de
+ *   l'adresse ;
  *   les liens sont contrôlés sur le texte entier, y compris dans les textes repris de l'annonce, et
  *   un nom de domaine écrit sans « http » (`exemple.fr/offres`) est traité comme un lien ;
  * - les formules qui invitent à déposer ses ventes (« déposez vos prochaines ventes »).
@@ -77,6 +78,13 @@ const ALLOWED_APP_PATHS: RegExp[] = [
   /^\/contribuer\/[^/]+\/?$/,
   /^\/api\/information-agent\/opt-out\/?$/,
 ];
+
+/**
+ * Logos de la charte des emails (`public/brand/email/`, `email-layout.ts`) : des images chargées par le
+ * message, pas des liens. Admis seulement sur le site d'Immojudis lui-même, quelle que soit l'origine
+ * de l'environnement (un aperçu de préproduction charge le logo de production).
+ */
+const BRAND_LOGO_URL = /^immojudis\.com\/brand\/email\/immojudis-logo-email(?:-dark)?-v\d+\.png$/;
 
 /** Hôtes tiers admis (sans « www. ») : la plainte CNIL. */
 const ALLOWED_EXTERNAL_HOSTS = new Set(["cnil.fr"]);
@@ -225,10 +233,17 @@ function linkMentions(
       host === appHost &&
       ALLOWED_APP_PATHS.some((pattern) => pattern.test(url.pathname));
     const isAllowedExternal = ALLOWED_EXTERNAL_HOSTS.has(host);
+    const isBrandLogo = !bare && !url.search && BRAND_LOGO_URL.test(`${host}${url.pathname}`);
     // Nommer le site (« sur immojudis.com », « sur Licitor ») sans page précise n'est pas un lien.
     const isBareHostName =
       bare && url.pathname === "/" && !url.search && (host === appHost || allowedHosts.has(host));
-    if (!isAllowedSource && !isAllowedApp && !isAllowedExternal && !isBareHostName) {
+    if (
+      !isAllowedSource &&
+      !isAllowedApp &&
+      !isAllowedExternal &&
+      !isBareHostName &&
+      !isBrandLogo
+    ) {
       found.push({ rule: "link", excerpt: candidate });
     }
   }
