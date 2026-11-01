@@ -419,9 +419,13 @@ Le modèle est refusé si le jeu de test contient moins de 50 ventes, si
 l'erreur absolue médiane dépasse 30 %, si la MAPE dépasse 40 %, si la couverture
 P10-P90 est inférieure à 72 % ou si la largeur moyenne de l'intervalle dépasse
 110 %. `--force` contourne ces seuils absolus pour les essais contrôlés, pas
-pour les runs planifiés. L'activation exige en plus une erreur absolue médiane
-strictement meilleure que celle du modèle actif (évalué sur les mêmes ventes) et
-que celle de la référence naïve la plus forte, et au moins 70 % des ventes de
+pour les runs planifiés. L'activation exige en plus au moins 300 ventes de test
+chronologiques (en dessous, le modèle reste un brouillon), une erreur absolue
+médiane strictement meilleure que celle du modèle actif (évalué sur les mêmes
+ventes, avec ses propres variables de marché local lues dans l'export de son
+artefact) et que celle de la référence naïve la plus forte, un intervalle
+bootstrap apparié à 95 % de chacun de ces écarts entièrement sous zéro
+(`error_gap` du rapport), et au moins 70 % des ventes de
 validation (les plus récentes, jamais vues par l'apprentissage ni par la
 calibration) dans l'intervalle tel que l'application le sert : les quantiles
 P10 et P90 bruts décalés des corrections exportées dans l'artefact, comme le fait
@@ -448,6 +452,11 @@ déclenché manuellement. Il entraîne chaque segment séparément sur au plus
 bundle JSON et le rapport de comparaison pendant 30 jours pour audit. Il publie
 des brouillons par défaut (`activate: false`) ; une activation exige la
 confirmation explicite de la cible `production`.
+
+`scripts/publish-valuation-models.mjs` n'active un bundle que si son rapport
+(`<segment>-<version>.report.json`, à garder à côté du bundle) déclare la porte
+franchie et que ses chiffres la respectent (`scripts/lib/valuation-promotion-gate.mjs`).
+Retour à la version précédente : `docs/runbooks/modeles-valorisation-retour-arriere.md`.
 
 ## Enrichissement cadastre
 

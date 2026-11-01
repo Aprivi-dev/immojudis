@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { HideForLaunchOfferAccount, LaunchOfferNote } from "@/components/LaunchOfferNote";
 import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
+import type { ShareInterval } from "@/lib/adjudication-barometer";
 import type { PublicAdjudicationPrices } from "@/lib/public-adjudication-prices";
 import { PUBLIC_ADJUDICATION_MIN_SAMPLE } from "@/lib/public-adjudication-prices";
 
@@ -40,6 +41,13 @@ function instant(value: string): string {
 
 const multiple = (value: number) => `× ${ratio.format(value)}`;
 
+/** « intervalle à 95 % : de 63 % à 76 % » : l'incertitude de Wilson de la part affichée à côté. */
+function intervalText(interval: ShareInterval | null): string | null {
+  return interval
+    ? `intervalle à 95 % : de ${percent.format(interval.low)} à ${percent.format(interval.high)}`
+    : null;
+}
+
 /** Message sobre quand les chiffres ne peuvent pas être servis : aucun chiffre, aucune promesse. */
 export function PricesUnavailable() {
   return (
@@ -70,8 +78,8 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
       description={
         <>
           Combien se vendent réellement les biens aux enchères, par rapport à leur mise à prix ? Des
-          chiffres nationaux calculés sur les prix d’adjudication publiés, avec leur période, leur
-          effectif et leur méthode.{" "}
+          chiffres nationaux calculés sur les prix adjugés publiés (hors frais, avant surenchère),
+          avec leur période, leur effectif et leur méthode.{" "}
           <a href="#methode" className="font-semibold underline">
             Voir la méthode
           </a>
@@ -88,14 +96,17 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
           <dl className="mt-4 grid gap-4 sm:grid-cols-3">
             <div>
               <dt className="text-sm text-ink-soft">
-                Prix final médian, rapporté à la mise à prix
+                Prix adjugé publié (hors frais, avant surenchère), médian, rapporté à la mise à prix
               </dt>
               <dd className="mt-1 font-display text-3xl font-semibold" data-testid="median-ratio">
                 {multiple(data.medianRatio)}
               </dd>
               <dd className="mt-1 text-sm text-ink-soft">
-                Pour la moitié des biens, le prix final est inférieur à ce multiple de la mise à
-                prix.
+                Pour la moitié des biens, le prix adjugé publié est inférieur à ce multiple de la
+                mise à prix.
+                {data.ratioMiddle50
+                  ? ` La moitié centrale des ventes se situe entre ${multiple(data.ratioMiddle50.p25)} et ${multiple(data.ratioMiddle50.p75)}.`
+                  : ""}
               </dd>
             </div>
             <div>
@@ -104,7 +115,11 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
                 {percent.format(data.aboveStartingRate)}
               </dd>
               <dd className="mt-1 text-sm text-ink-soft">
-                Part des prix publiés strictement supérieurs à la mise à prix.
+                Part des prix publiés strictement supérieurs à la mise à prix
+                {intervalText(data.aboveStartingInterval)
+                  ? ` (${intervalText(data.aboveStartingInterval)})`
+                  : ""}
+                .
               </dd>
             </div>
             <div>
@@ -113,23 +128,33 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
                 {percent.format(data.atLeastDoubleRate)}
               </dd>
               <dd className="mt-1 text-sm text-ink-soft">
-                Part des prix publiés égaux ou supérieurs à deux fois la mise à prix.
+                Part des prix publiés égaux ou supérieurs à deux fois la mise à prix
+                {intervalText(data.atLeastDoubleInterval)
+                  ? ` (${intervalText(data.atLeastDoubleInterval)})`
+                  : ""}
+                .
               </dd>
             </div>
           </dl>
           <p className="mt-4 text-sm text-ink-soft">
-            Mise à prix médiane : {euro.format(data.medianStartingPriceEur)} ; prix final médian :{" "}
-            {euro.format(data.medianHammerPriceEur)}. Ces deux médianes portent sur les mêmes ventes
-            mais ne se divisent pas pour retrouver le multiple médian : celui-ci est la médiane des
-            rapports calculés vente par vente.
+            Mise à prix médiane : {euro.format(data.medianStartingPriceEur)} ; prix adjugé publié
+            médian : {euro.format(data.medianHammerPriceEur)}. Ces deux médianes portent sur les
+            mêmes ventes mais ne se divisent pas pour retrouver le multiple médian : celui-ci est la
+            médiane des rapports calculés vente par vente. Le multiple reflète la mise à prix
+            choisie : une mise à prix basse donne mécaniquement un multiple élevé.
+          </p>
+          <p className="mt-3 text-sm text-ink-soft">
+            Périmètre : lots adjugés dont le prix est publié. Les lots non adjugés, retirés ou sans
+            prix publié ne sont pas comptés.
           </p>
           <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-soft">
             <Badge tone="neutral">Expérimental</Badge>
             <span>
               Ventes du {day(data.periodStart)} au {day(data.periodEnd)} ·{" "}
-              {integer.format(data.sampleSize)} prix publiés · {integer.format(data.tribunalCount)}{" "}
-              tribunaux ayant au moins {PUBLIC_ADJUDICATION_MIN_SAMPLE} prix · calcul du{" "}
-              {instant(data.builtAt)}, revu le {instant(data.reviewedAt)}
+              {integer.format(data.sampleSize)} prix adjugés publiés ·{" "}
+              {integer.format(data.tribunalCount)} tribunaux ayant au moins{" "}
+              {PUBLIC_ADJUDICATION_MIN_SAMPLE} prix · calcul du {instant(data.builtAt)}, revu le{" "}
+              {instant(data.reviewedAt)}
             </span>
           </p>
         </Card>
@@ -146,7 +171,7 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
             <div className="mt-4 overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">
-                  Prix final rapporté à la mise à prix, par type de bien
+                  Prix adjugé publié rapporté à la mise à prix, par type de bien
                 </caption>
                 <thead>
                   <tr className="border-b border-line text-ink-soft">
@@ -159,8 +184,11 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
                     <th scope="col" className="py-2 pr-4 font-semibold">
                       Multiple médian
                     </th>
+                    <th scope="col" className="py-2 pr-4 font-semibold">
+                      Moitié centrale des multiples
+                    </th>
                     <th scope="col" className="py-2 font-semibold">
-                      Au-dessus de la mise
+                      Au-dessus de la mise (intervalle à 95 %)
                     </th>
                   </tr>
                 </thead>
@@ -174,7 +202,18 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
                       <td className="py-2 pr-4">
                         {item.medianRatio === null ? "n. d." : multiple(item.medianRatio)}
                       </td>
-                      <td className="py-2">{percent.format(item.aboveStartingRate)}</td>
+                      <td className="py-2 pr-4">
+                        {multiple(item.ratioMiddle50.p25)} à {multiple(item.ratioMiddle50.p75)}
+                      </td>
+                      <td className="py-2">
+                        {percent.format(item.aboveStartingRate)}
+                        {item.aboveStartingInterval ? (
+                          <span className="block text-xs text-ink-soft">
+                            de {percent.format(item.aboveStartingInterval.low)} à{" "}
+                            {percent.format(item.aboveStartingInterval.high)}
+                          </span>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -186,16 +225,25 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
         {data.bands.length > 0 ? (
           <Card as="section" aria-labelledby="prix-tranches">
             <h2 id="prix-tranches" className="font-display text-2xl font-semibold">
-              Où se situe le prix final
+              Où se situe le prix adjugé publié
             </h2>
             <p className="mt-2 text-sm text-ink-soft">
-              Répartition des prix publiés selon leur rapport à la mise à prix.
+              Répartition des prix adjugés publiés selon leur rapport à la mise à prix, avec
+              l’intervalle de confiance à 95 % de chaque part.
             </p>
             <ul className="mt-4 grid gap-2 text-sm">
               {data.bands.map((band) => (
                 <li key={band.label} className="flex items-center justify-between gap-4">
                   <span>{band.label}</span>
-                  <span className="font-semibold">{percent.format(band.share)}</span>
+                  <span className="text-right">
+                    <span className="font-semibold">{percent.format(band.share)}</span>
+                    {band.interval ? (
+                      <span className="block text-xs text-ink-soft">
+                        de {percent.format(band.interval.low)} à{" "}
+                        {percent.format(band.interval.high)}
+                      </span>
+                    ) : null}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -227,14 +275,18 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
           </h2>
           <div className="mt-3 space-y-3 text-ink-soft">
             <p>
-              {data.sourceLabel}. Seules les ventes judiciaires rattachées à un tribunal, avec une
-              date valide, une mise à prix et un prix publié, sont retenues ; les doublons sont
-              écartés. Les prix s’entendent hors frais.
+              {data.sourceLabel}. Périmètre : les lots adjugés dont le prix est publié. Seules les
+              ventes judiciaires rattachées à un tribunal, avec une date valide, une mise à prix et
+              un prix publié, sont retenues ; les doublons sont écartés. Les lots non adjugés,
+              retirés ou sans prix publié ne sont pas comptés. Le prix est le prix adjugé publié,
+              hors frais et avant une éventuelle surenchère : il peut ne pas être le prix définitif.
             </p>
             <p>
-              Le multiple est le prix final divisé par la mise à prix de la même vente ; le multiple
-              médian est la médiane de ces rapports. Les parts utilisent l’effectif indiqué comme
-              dénominateur.
+              Le multiple est le prix adjugé publié divisé par la mise à prix de la même vente ; le
+              multiple médian est la médiane de ces rapports, et la moitié centrale est l’intervalle
+              entre le premier et le troisième quartile. Le multiple reflète la mise à prix choisie.
+              Les parts utilisent l’effectif indiqué comme dénominateur, et leur incertitude est
+              donnée par l’intervalle de confiance de Wilson à 95 %.
             </p>
             <p>
               Aucun chiffre n’est publié sous {PUBLIC_ADJUDICATION_MIN_SAMPLE} prix, ni pour un type

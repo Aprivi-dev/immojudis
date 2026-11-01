@@ -4,8 +4,32 @@ import { formatDate, formatPrice, formatPricePerM2, formatSurface } from "@/lib/
 const fmt = (value: number) => formatPrice(Math.round(value || 0));
 const ppm2 = (value: number | null | undefined) => formatPricePerM2(value);
 
+/**
+ * La période de tout l'échantillon de ventes DVF retenu (`samplePeriod`, calculée côté serveur),
+ * sinon la profondeur d'historique demandée (`yearsBack`). Les ventes listées (`recentTransactions`)
+ * ne sont que les meilleurs comparables : elles ne donnent pas la période de l'échantillon.
+ */
+export function dvfPeriodLabel(estimate: DvfMarketEstimate): string {
+  const period = estimate.samplePeriod;
+  if (
+    period &&
+    Number.isFinite(Date.parse(period.from)) &&
+    Number.isFinite(Date.parse(period.to))
+  ) {
+    const first = formatDate(period.from);
+    const last = formatDate(period.to);
+    return first === last ? `le ${first}` : `du ${first} au ${last}`;
+  }
+  return `sur les ${estimate.yearsBack} dernières années`;
+}
+
 export function MarketPriceDistribution({ estimate }: { estimate: DvfMarketEstimate }) {
-  const hasRange = Boolean(estimate.medianPricePerM2 || estimate.medianUnitPriceEur);
+  // Les quartiles suffisent à montrer la zone observée ; la médiane manquante est alors dite telle quelle.
+  const hasRange = Boolean(
+    estimate.medianPricePerM2 ||
+    estimate.medianUnitPriceEur ||
+    (estimate.p25PricePerM2 && estimate.p75PricePerM2),
+  );
   return (
     <div className="mt-7 rounded-lg border border-slate-200 bg-white p-5 sm:p-6">
       {hasRange ? <PriceRange estimate={estimate} /> : null}
@@ -36,34 +60,48 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
   const max = estimate.maxPricePerM2 ?? estimate.p75PricePerM2 ?? 0;
   const p25 = estimate.p25PricePerM2 ?? min;
   const p75 = estimate.p75PricePerM2 ?? max;
-  const median = estimate.medianPricePerM2 ?? Math.round((p25 + p75) / 2);
+  // Pas de médiane fabriquée : le milieu de p25 et p75 n'est pas une médiane.
+  const median = estimate.medianPricePerM2 ?? null;
   const span = Math.max(1, max - min);
   const pos = (v: number) => `${Math.min(100, Math.max(0, ((v - min) / span) * 100))}%`;
 
   return (
     <div className="mt-4">
-      <div className="flex items-baseline justify-between text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+      <div className="flex items-baseline justify-between gap-3 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
         <span>
           {estimate.surfaceBasis === "land" ? "Prix foncier au m² observé" : "Prix au m² observé"}
         </span>
         <span className="tabular-nums">
-          médiane <strong className="text-foreground">{ppm2(median)}</strong>
+          {median != null ? (
+            <>
+              médiane <strong className="text-foreground">{ppm2(median)}</strong>
+            </>
+          ) : (
+            "médiane non disponible"
+          )}
         </span>
       </div>
+      <p className="mt-1 text-[11px] normal-case tracking-normal text-muted-foreground">
+        {estimate.sampleSize} vente{estimate.sampleSize > 1 ? "s" : ""} comparable
+        {estimate.sampleSize > 1 ? "s" : ""} (une par parcelle) · {estimate.source} ·{" "}
+        {dvfPeriodLabel(estimate)}
+      </p>
       <div className="relative mt-5 h-2 rounded-full bg-muted">
-        {/* Zone interquartile p25–p75 */}
+        {/* Zone interquartile p25–p75 : une couleur unie, qui ne dit rien de bon ou de mauvais. */}
         <div
-          className="absolute inset-y-0 rounded-full bg-gradient-to-r from-[var(--signal-opportunity)] to-[var(--signal-watch)]"
+          className="absolute inset-y-0 rounded-full bg-foreground/35"
           style={{ left: pos(p25), right: `calc(100% - ${pos(p75)})` }}
           aria-hidden
         />
-        {/* Médiane */}
-        <span
-          className="absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
-          style={{ left: pos(median) }}
-          title={`Médiane ${ppm2(median)}`}
-          aria-hidden
-        />
+        {/* Médiane, seulement quand elle est connue */}
+        {median != null ? (
+          <span
+            className="absolute top-1/2 h-4 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
+            style={{ left: pos(median) }}
+            title={`Médiane ${ppm2(median)}`}
+            aria-hidden
+          />
+        ) : null}
       </div>
       <div className="mt-2 flex justify-between text-[11px] tabular-nums text-muted-foreground">
         <span>min {ppm2(min)}</span>

@@ -5,6 +5,11 @@ import {
   computeEmolumentsHT,
   computeRentabilityScore,
   estimateWorksBudget,
+  DMTO_DEFAULT_RATE,
+  DMTO_RATE_REDUCED_DEPARTMENT,
+  DMTO_RATE_UNCHANGED_DEPARTMENT,
+  DMTO_TABLE_DATE,
+  DMTO_TEMPORARY_INCREASE_END,
   registrationRateForDepartment,
   WORKS_SCENARIOS,
 } from "./profitability";
@@ -44,6 +49,44 @@ describe("registrationRateForDepartment", () => {
     expect(registrationRateForDepartment("33")).toBeCloseTo(0.0632, 4);
     expect(registrationRateForDepartment(null)).toBeCloseTo(0.0632, 4);
     expect(registrationRateForDepartment("36")).toBeCloseTo(0.0509, 4);
+  });
+
+  it("applique 5,81 % aux onze départements restés à 4,50 % de part départementale (Mayotte comprise)", () => {
+    for (const code of ["05", "06", "07", "16", "26", "48", "60", "65", "71", "971", "976"]) {
+      expect(registrationRateForDepartment(code), code).toBe(0.0581);
+    }
+    // Les noms et les codes voisins ne basculent pas par erreur.
+    expect(registrationRateForDepartment("Alpes-Maritimes")).toBe(0.0581);
+    for (const code of ["01", "04", "13", "33", "69", "75", "972", "973", "974", "2A"]) {
+      expect(registrationRateForDepartment(code), code).toBe(0.0632);
+    }
+  });
+
+  it("applique 5,09 % à l'Indre seule (3,80 + 1,20 + 2,37 % de 3,80)", () => {
+    expect(registrationRateForDepartment("36")).toBe(0.0509);
+    expect(registrationRateForDepartment("976")).toBe(0.0581);
+    // Les trois taux se déduisent de la part départementale : 5,00 %, 4,50 % et 3,80 %.
+    const global = (departmental: number) => departmental + 1.2 + departmental * 0.0237;
+    expect(global(5) / 100).toBeCloseTo(DMTO_DEFAULT_RATE, 4);
+    expect(global(4.5) / 100).toBeCloseTo(DMTO_RATE_UNCHANGED_DEPARTMENT, 4);
+    expect(global(3.8) / 100).toBeCloseTo(DMTO_RATE_REDUCED_DEPARTMENT, 4);
+  });
+
+  it("se répercute sur le coût d'acquisition d'un bien de ces départements", () => {
+    expect(
+      computeAcquisitionCosts({ price: 100_000, department: "06" }).registrationDuties,
+    ).toBeCloseTo(5_810, 2);
+    expect(
+      computeAcquisitionCosts({ price: 100_000, department: "36" }).registrationDuties,
+    ).toBeCloseTo(5_090, 2);
+    expect(
+      computeAcquisitionCosts({ price: 100_000, department: "33" }).registrationDuties,
+    ).toBeCloseTo(6_320, 2);
+  });
+
+  it("date le tableau et la fin de la hausse temporaire à 5 %", () => {
+    expect(DMTO_TABLE_DATE).toBe("01/06/2026");
+    expect(DMTO_TEMPORARY_INCREASE_END).toBe("31/03/2028");
   });
 });
 

@@ -103,6 +103,21 @@ describe("/prix-encheres-immobilieres", () => {
       expect(document.getElementById("methode")).not.toBeNull();
     });
 
+    it("nomme le prix adjugé publié, énonce le périmètre et montre l'incertitude de chaque part (n° 20)", async () => {
+      render(await Page());
+      const page = plain(document.body.textContent);
+      expect(page).toContain("Prix adjugé publié (hors frais, avant surenchère)");
+      expect(page).not.toMatch(/prix final/i);
+      expect(page).toContain("Périmètre : lots adjugés dont le prix est publié");
+      expect(page).toContain("Le multiple reflète la mise à prix choisie");
+      // Fourchette interquartile des multiples, et intervalle de Wilson des parts nationales.
+      expect(page).toContain("La moitié centrale des ventes se situe entre × 1,00 et × 1,80");
+      expect(plain(screen.getByTestId("above-rate").parentElement?.textContent ?? "")).toContain(
+        "intervalle à 95 % : de 63 % à 76 %",
+      );
+      expect(page).toContain("Moitié centrale des multiples");
+    });
+
     it("masque les types de biens sous le seuil et garde les autres", async () => {
       render(await Page());
       const table = screen.getByRole("table");

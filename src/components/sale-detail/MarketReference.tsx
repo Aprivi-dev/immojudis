@@ -91,7 +91,7 @@ export function MarketReference({
         </div>
       ) : null}
       <p className={styles.marketRange}>
-        Valeur estimée du bien : <strong>{range}</strong>
+        Fourchette indicative de la valeur du bien : <strong>{range}</strong>
       </p>
       <p className={styles.muted}>
         {showScale
