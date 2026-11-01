@@ -7,6 +7,11 @@ import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
 
 import { predictLightGbmQuantiles } from "../src/lib/lightgbm-inference.ts";
+import {
+  assertPromotionGate,
+  isReportFile,
+  reportFileName,
+} from "./lib/valuation-promotion-gate.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const artifactsDir = join(root, "deployment", "valuation-models");
@@ -18,9 +23,11 @@ if (!force && process.env.VERCEL_ENV !== "production") {
   process.exit(0);
 }
 
+// Les rapports de la porte d'activation (`*.report.json`) ne sont pas des lots à publier : ils
+// accompagnent chaque lot et sont exigés ci-dessous.
 const files = existsSync(artifactsDir)
   ? readdirSync(artifactsDir)
-      .filter((file) => file.endsWith(".json"))
+      .filter((file) => file.endsWith(".json") && !isReportFile(file))
       .sort()
   : [];
 if (!files.length) {
@@ -29,7 +36,12 @@ if (!files.length) {
 }
 
 const bundles = files.map((file) => readBundle(join(artifactsDir, file)));
-for (const bundle of bundles) validatePromotion(bundle);
+for (const [index, bundle] of bundles.entries()) {
+  validatePromotion(bundle);
+  // Même porte que l'entraînement (`decide_activation`) : sans rapport qui la déclare franchie,
+  // un lot n'est jamais activé (n° 22). Pour revenir à une version retirée : docs/runbooks/modeles-valorisation-retour-arriere.md.
+  assertPromotionGate(bundle, readReport(join(artifactsDir, reportFileName(files[index]))));
+}
 console.log(
   `[valuation-models] Validated ${bundles.map((bundle) => `${bundle.segment}/${bundle.version}`).join(", ")}.`,
 );
@@ -191,6 +203,15 @@ function readBundle(path) {
   const parsed = JSON.parse(readFileSync(path, "utf8"));
   if (!parsed || typeof parsed !== "object") throw new Error(`Invalid model bundle: ${path}`);
   return parsed;
+}
+
+function readReport(path) {
+  if (!existsSync(path)) {
+    throw new Error(
+      `[valuation-models] Missing activation-gate report ${path}: a model is only activated with the report written by its training.`,
+    );
+  }
+  return readBundle(path);
 }
 
 function validatePromotion(bundle) {

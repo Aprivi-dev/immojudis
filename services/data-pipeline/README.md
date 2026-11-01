@@ -1,10 +1,10 @@
 # Immojudis Data Pipeline
 
-Configuration de production mise à jour le 10 septembre 2026 : voir [le suivi et la reprise des collectes](../../docs/pipeline-reliability.md).
+Dernière revue de ce document : 31/10/2026 (sources actives, Petites Affiches, Licitor). Le reste du texte date de la configuration de production du 10 septembre 2026, complétée au fil des changements ; en cas de doute, le code et `supabase/migrations/` font foi. Voir aussi [le suivi et la reprise des collectes](../../docs/pipeline-reliability.md).
 
 Socle technique minimal pour collecter, normaliser, dédupliquer, exporter et insérer dans Supabase des annonces de ventes aux enchères immobilières judiciaires en France.
 
-La source prioritaire est Avoventes. Licitor est disponible comme source optionnelle de benchmark/croisement, pas comme source primaire de vérité.
+La source prioritaire est Avoventes. Licitor est collecté normalement (source de croisement, affichée au catalogue), mais n'est pas la source primaire de vérité. **Petites Affiches a été retirée du catalogue le 30/10/2026** (voir plus bas).
 
 ## Périmètre
 
@@ -12,11 +12,11 @@ La source prioritaire est Avoventes. Licitor est disponible comme source optionn
 - Tribunaux : normalisation explicite quand la source les fournit ; inférence locale conservée quand elle est connue.
 - Sources prévues :
   - `src/sources/avoventes.py` : scraper Avoventes.
-  - `src/sources/licitor.py` : scraper Licitor optionnel pour benchmark de couverture.
+  - `src/sources/licitor.py` : scraper Licitor, collecté normalement (source de croisement) ; sert aussi au benchmark de couverture.
   - `src/sources/info_encheres.py` : scraper Info Enchères avec fiches détail et PDF publics.
   - `src/sources/vench.py` : scraper Vench pour couverture/listings publics, sans contourner les contenus abonnés.
   - `src/sources/encheres_publiques.py` : scraper Enchères-Publiques.com via les pages SEO publiques.
-  - `src/sources/petites_affiches.py` : scraper Petites Affiches via le formulaire public par département.
+  - `src/sources/petites_affiches.py` : scraper Petites Affiches, **retiré du catalogue le 30/10/2026** (décision du propriétaire : même catalogue que Vench et fiches illisibles depuis le changement de présentation du site). Le code est conservé, la collecte est arrêtée par l'interrupteur de retrait (migration `20261110093117_withdraw_petites_affiches_source.sql`, réversible) ; ne pas la relancer sans lever ce retrait.
   - `src/sources/cessions_etat.py` : scraper Cessions immobilières de l'Etat via les cartes HTML publiques.
   - `src/sources/agrasc.py` : scraper AGRASC via les cartes immobilières publiques.
   - `src/sources/encheres_immobilieres.py` : scraper Enchères Immobilières via les données Next publiques.
@@ -109,6 +109,42 @@ SUPABASE_DB_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.po
 Quand `SUPABASE_DB_URL` est présent, l'upsert principal des ventes passe par
 Postgres direct, puis les tables dérivées (`auction_risks`, documents, score
 factors, surfaces, etc.) sont synchronisées via l'API REST service-role.
+
+#### Chiffrement de la connexion Postgres
+
+La connexion directe est chiffrée : si l'URL ne porte pas de `sslmode`, le
+pipeline ajoute `sslmode=require` (`src/storage/connection_guards.py`,
+`postgres_ssl_options`). Sans cela, libpq retombe sur `prefer` et accepte un
+serveur non chiffré.
+
+- Une URL qui porte son propre `sslmode` (`?sslmode=verify-full`), ou la variable
+  d'environnement libpq `PGSSLMODE`, garde la main : rien n'est ajouté.
+- `POSTGRES_SSL` (même nom que pour les scripts de migration) choisit le mode :
+  non définie ou `require` (défaut), `verify-ca`, `verify-full`, ou `disable`.
+  Toute autre valeur est refusée.
+- Exception pour le Postgres local de la CI : une base locale (`localhost`,
+  `127.0.0.1`, `::1`, socket Unix) n'est pas forcée en `require`, car le service
+  Postgres de la CI n'a pas de TLS. `POSTGRES_SSL=disable` désactive le
+  chiffrement explicitement, **uniquement** pour une base locale ; sur un autre
+  hôte (par exemple un service Docker nommé `postgres`), le pipeline refuse de se
+  connecter plutôt que d'envoyer des données en clair.
+- La même règle s'applique à l'audit (`src.storage.audit_database`) et au
+  rafraîchissement de l'historique Licitor.
+
+#### Contrat entre le pipeline et le schéma migré
+
+`tests/test_schema_contract.py` (marqueur `schema_contract`) vérifie que chaque
+colonne écrite par le pipeline (`src/storage/column_sets.py` et constructeurs de
+ligne) existe dans la base rejouée depuis zéro, avec un type compatible. Il
+n'est pas lancé par `pytest` seul : le job « Supabase migrations + pgTAP » de la CI
+l'exécute sur la base Supabase locale.
+
+```bash
+SCHEMA_CONTRACT_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+  python -m pytest -m schema_contract tests/test_schema_contract.py
+```
+
+Le test ne lit que `information_schema` et refuse une base qui n'est pas locale.
 
 Le pipeline conserve `auction_sales` comme table de compatibilité historique,
 mais alimente aussi le modèle produit normalisé demandé pour l'offre Pro :
@@ -207,7 +243,7 @@ En CI, les backfills IA sont volontairement bornés par petits lots et les
 prédictions Replicate démarrent avec `REPLICATE_WAIT_SECONDS=1` pour éviter
 d'ajouter le temps de génération à l'intervalle minimal entre deux requêtes.
 
-Activer Licitor uniquement pour un benchmark :
+Réglages de la collecte Licitor (la source est collectée normalement ; ces variables bornent le benchmark de couverture) :
 
 ```bash
 ENABLE_LICITOR_BENCHMARK=true
@@ -225,7 +261,8 @@ ENABLE_ENCHERES_PUBLIQUES_BENCHMARK=true
 ENCHERES_PUBLIQUES_MAX_PAGES=10
 # Optionnel. Vide = page nationale /ventes/immobilier.
 ENCHERES_PUBLIQUES_PLACES=
-ENABLE_PETITES_AFFICHES_BENCHMARK=true
+# Petites Affiches est retirée du catalogue depuis le 30/10/2026 : ne pas l'activer (voir plus haut).
+ENABLE_PETITES_AFFICHES_BENCHMARK=false
 ENABLE_CESSIONS_ETAT_BENCHMARK=true
 CESSIONS_ETAT_MAX_PAGES=3
 ENABLE_AGRASC_BENCHMARK=true
@@ -383,9 +420,13 @@ Le modèle est refusé si le jeu de test contient moins de 50 ventes, si
 l'erreur absolue médiane dépasse 30 %, si la MAPE dépasse 40 %, si la couverture
 P10-P90 est inférieure à 72 % ou si la largeur moyenne de l'intervalle dépasse
 110 %. `--force` contourne ces seuils absolus pour les essais contrôlés, pas
-pour les runs planifiés. L'activation exige en plus une erreur absolue médiane
-strictement meilleure que celle du modèle actif (évalué sur les mêmes ventes) et
-que celle de la référence naïve la plus forte, et au moins 70 % des ventes de
+pour les runs planifiés. L'activation exige en plus au moins 300 ventes de test
+chronologiques (en dessous, le modèle reste un brouillon), une erreur absolue
+médiane strictement meilleure que celle du modèle actif (évalué sur les mêmes
+ventes, avec ses propres variables de marché local lues dans l'export de son
+artefact) et que celle de la référence naïve la plus forte, un intervalle
+bootstrap apparié à 95 % de chacun de ces écarts entièrement sous zéro
+(`error_gap` du rapport), et au moins 70 % des ventes de
 validation (les plus récentes, jamais vues par l'apprentissage ni par la
 calibration) dans l'intervalle tel que l'application le sert : les quantiles
 P10 et P90 bruts décalés des corrections exportées dans l'artefact, comme le fait
@@ -412,6 +453,11 @@ déclenché manuellement. Il entraîne chaque segment séparément sur au plus
 bundle JSON et le rapport de comparaison pendant 30 jours pour audit. Il publie
 des brouillons par défaut (`activate: false`) ; une activation exige la
 confirmation explicite de la cible `production`.
+
+`scripts/publish-valuation-models.mjs` n'active un bundle que si son rapport
+(`<segment>-<version>.report.json`, à garder à côté du bundle) déclare la porte
+franchie et que ses chiffres la respectent (`scripts/lib/valuation-promotion-gate.mjs`).
+Retour à la version précédente : `docs/runbooks/modeles-valorisation-retour-arriere.md`.
 
 ## Enrichissement cadastre
 
@@ -775,9 +821,10 @@ Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiab
 > (jamais publiés) mais aucune adresse n'est décodée ni écrite au registre de l'agent. En production : variable de
 > dépôt GitHub `LICITOR_DECODE_PROTECTED_EMAILS` (absente = désactivé). Procédure complète : `docs/runbooks/information-agent.md`.
 
-> **Licitor est collecté et affiché normalement.** Aucune source n'est retirée du catalogue à ce jour. Le dépôt
-> garde toutefois un **interrupteur de retrait** pour un usage futur (par exemple si une source devait être
-> retirée pour un motif juridique).
+> **Licitor est collecté et affiché normalement.** Une seule source est retirée du catalogue à ce jour :
+> Petites Affiches (30/10/2026, migration `20261110093117_withdraw_petites_affiches_source.sql`). Le dépôt
+> garde l'**interrupteur de retrait** pour d'autres usages (par exemple si une source devait être retirée pour
+> un motif juridique).
 >
 > **Un seul interrupteur**, en base : `auction_source_state.catalogue_withdrawn`, posé et levé par la fonction
 > `public.set_catalogue_source_withdrawal` (service_role, une transaction, rien n'est supprimé).

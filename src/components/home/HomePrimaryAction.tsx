@@ -6,6 +6,7 @@ import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
+import { trackProductEvent } from "@/lib/product-events";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { ArrowRight, ShieldCheck } from "./HomeIcons";
 import styles from "./HomePage.module.css";
@@ -33,7 +34,12 @@ export function HomePrimaryAction({ browseLink = false }: { browseLink?: boolean
     );
   }
   const signUp = (
-    <Link href={loginPathWithRedirect(undefined)} prefetch={false} className={styles.button}>
+    <Link
+      href={loginPathWithRedirect(undefined)}
+      prefetch={false}
+      className={styles.button}
+      onClick={() => trackProductEvent("home_cta_clicked", { target: "signup" })}
+    >
       Créer mon compte gratuit <ArrowRight aria-hidden size={20} />
     </Link>
   );
@@ -42,7 +48,12 @@ export function HomePrimaryAction({ browseLink = false }: { browseLink?: boolean
       {browseLink ? (
         <div className={styles.ctaRow}>
           {signUp}
-          <Link href="/sales" prefetch={false} className={styles.quietLink}>
+          <Link
+            href="/sales"
+            prefetch={false}
+            className={styles.quietLink}
+            onClick={() => trackProductEvent("home_cta_clicked", { target: "browse" })}
+          >
             Explorer les ventes sans compte <ArrowRight aria-hidden size={16} />
           </Link>
         </div>
@@ -62,7 +73,12 @@ export function HomeBrowseWithoutAccount({ className }: { className?: string }) 
   const { user } = useAuth();
   if (user) return null;
   return (
-    <Link href="/sales" prefetch={false} className={className}>
+    <Link
+      href="/sales"
+      prefetch={false}
+      className={className}
+      onClick={() => trackProductEvent("home_cta_clicked", { target: "browse" })}
+    >
       Ou explorez les ventes sans compte
     </Link>
   );

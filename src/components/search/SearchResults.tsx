@@ -7,6 +7,7 @@ import { Fragment, memo, type ComponentProps, useEffect, useMemo, useRef, useSta
 import { Badge } from "@/components/ui/primitives";
 import { getDisplaySurface } from "@/lib/surface";
 import { SaleVisual } from "@/components/SaleVisual";
+import { mayShowBuildingView } from "@/components/building-view";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { isPhotoMirrorUrl, photoMirrorForCard } from "@/lib/photo-mirror";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
@@ -95,6 +96,20 @@ const LIST_MAP_THUMBNAIL = { width: 320, height: 240, framingWidth: 512 } as con
  * et une seconde image prioritaire (33 Ko) ralentit celle de l'élément principal (LCP).
  */
 export const EAGER_IMAGE_COUNT = 1;
+
+/**
+ * Cadre du visuel d'une carte : 4/3, ou 5/2 quand la vente n'a ni photo ni vue aérienne possible et
+ * ne montrera que l'illustration de son type de bien (un dessin n'a pas besoin de 273 px de haut :
+ * 14 cartes sur 24 n'ont pas de photo). Décidé sur les seules données de la vente, avant tout
+ * chargement : la hauteur ne change donc pas quand l'image arrive ou échoue.
+ */
+export function listingMediaFrameClass(
+  sale: Pick<AuctionSale, "media"> &
+    Partial<Pick<AuctionSale, "latitude" | "longitude" | "location_precision">>,
+): string {
+  const illustrationOnly = propertyImages(sale.media).length === 0 && !mayShowBuildingView(sale);
+  return illustrationOnly ? "aspect-[5/2]" : "aspect-[4/3]";
+}
 
 /**
  * Rang de la carte dont l'image est prioritaire (chargée tout de suite, `fetchPriority="high"`) :
@@ -485,7 +500,10 @@ export const ListingCard = memo(function ListingCard({
         })}
         className="absolute inset-0 z-10 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       />
-      <div className="relative aspect-[4/3] overflow-hidden bg-surface-tint">
+      <div
+        className={`relative ${listingMediaFrameClass(sale)} overflow-hidden bg-surface-tint`}
+        data-testid={`sale-media-frame-${sale.id}`}
+      >
         <ListingImage
           sale={sale}
           locked={false}
@@ -611,7 +629,9 @@ export const ListingCard = memo(function ListingCard({
         </p>
         {/* Deux pastilles au plus (docs/design/fondations.md) : l'échéance et les points à vérifier.
             Le type de vente est dans la ligne de date ; la qualité de l'annonce est sur la fiche. */}
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+        {/* Hauteur d'une pastille (20 px) réservée : le compte à rebours ne s'écrit qu'après l'hydratation
+            (il lit l'heure du navigateur), et sa pastille faisait descendre tout ce qui suit (CLS). */}
+        <div className="mt-2 flex min-h-5 flex-wrap items-center gap-1.5 text-xs">
           <SaleCountdown
             sale={sale}
             precisionUnknown={locked}

@@ -1,9 +1,16 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ from: vi.fn(), getSale: vi.fn(), getReport: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  from: vi.fn(),
+  rpc: vi.fn(),
+  getSale: vi.fn(),
+  getReport: vi.fn(),
+}));
 
-vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from: mocks.from } }));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: mocks.from, rpc: mocks.rpc },
+}));
 vi.mock("./property-report/repository", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./property-report/repository")>()),
   getSale: mocks.getSale,
@@ -125,6 +132,49 @@ describe("shared property report tokens", () => {
 
     expect(reports.eq).toHaveBeenCalledWith("share_token_hash", hashShareToken(TOKEN));
     expect(reports.eq).not.toHaveBeenCalledWith("share_token", expect.anything());
+  });
+
+  describe("view counter", () => {
+    function installOpenShare(reports = table({ data: sharedRow({ share_view_count: 4 }) })) {
+      installTables({
+        saved_property_reports: reports,
+        user_profiles: table({ data: { account_tier: "free", user_role: "user" } }),
+        user_subscriptions: table({ data: ACTIVE_SUBSCRIPTION }),
+      });
+      return reports;
+    }
+
+    it("increments through the atomic function and returns the value it gives back", async () => {
+      const reports = installOpenShare();
+      mocks.rpc.mockResolvedValue({ data: 5, error: null });
+
+      const report = await getSharedPropertyReport({ token: TOKEN });
+
+      expect(mocks.rpc).toHaveBeenCalledWith("increment_property_report_share_view", {
+        p_report_id: "report-1",
+      });
+      expect(reports.update).not.toHaveBeenCalled();
+      expect(report.viewCount).toBe(5);
+    });
+
+    it("still serves the report when the counter fails", async () => {
+      installOpenShare();
+      mocks.rpc.mockResolvedValue({ data: null, error: { message: "function does not exist" } });
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const report = await getSharedPropertyReport({ token: TOKEN });
+
+      expect(report.viewCount).toBe(4);
+      expect(warn).toHaveBeenCalledOnce();
+    });
+
+    it("does not count when the caller only checks the link", async () => {
+      installOpenShare();
+
+      await getSharedPropertyReport({ token: TOKEN, countView: false });
+
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    });
   });
 
   it("cuts the link when the owner's subscription is no longer active", async () => {

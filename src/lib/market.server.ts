@@ -33,6 +33,7 @@ import {
 import { analyzeAtRadius } from "@/lib/market-server/radius-analysis";
 import { shouldWidenRadius } from "@/lib/market-server/radius-widening";
 import { buildParkingEstimate, isParkingProperty } from "@/lib/market-server/parking";
+import { salesSamplePeriod } from "@/lib/market-server/sample-period";
 
 export { officialDvfCommuneCode } from "@/lib/market-server/sources";
 
@@ -242,8 +243,8 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
       median = hybrid.p50PricePerM2;
       p10 = hybrid.p10PricePerM2;
       p90 = hybrid.p90PricePerM2;
+      // Pas de `coverageTarget` : la couverture du mélange modèle + comparables n'est pas mesurée (n° 21).
       predictionInterval = {
-        coverageTarget: hybrid.coverageTarget,
         method: `hybrid_${hybrid.calibrationMethod}`,
         p10PricePerM2: p10,
         p50PricePerM2: median,
@@ -306,6 +307,7 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
     areaKind,
     commune: commune?.nom ?? null,
     sampleSize: engineResult?.sampleSize ?? 0,
+    samplePeriod: salesSamplePeriod((engineResult?.comparables ?? []).map((item) => item.date)),
     effectiveSampleSize: engineResult?.effectiveSampleSize ?? 0,
     parcelSampleSize: analysis.candidates.length,
     totalNearbySampleSize: analysis.totalNearby,

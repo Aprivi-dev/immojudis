@@ -8134,6 +8134,7 @@ export type Database = {
           created_at: string;
           ends_on: string;
           error: string | null;
+          kind: string;
           message_id: string | null;
           sent_at: string | null;
           status: string;
@@ -8145,6 +8146,7 @@ export type Database = {
           created_at?: string;
           ends_on: string;
           error?: string | null;
+          kind?: string;
           message_id?: string | null;
           sent_at?: string | null;
           status?: string;
@@ -8156,6 +8158,7 @@ export type Database = {
           created_at?: string;
           ends_on?: string;
           error?: string | null;
+          kind?: string;
           message_id?: string | null;
           sent_at?: string | null;
           status?: string;
@@ -11733,6 +11736,7 @@ export type Database = {
           city: string | null;
           department: string | null;
           expires_at: string;
+          final_price_eur: number | null;
           id: string;
           lawyer_name: string | null;
           personal_status: string | null;
@@ -11758,6 +11762,7 @@ export type Database = {
           city?: string | null;
           department?: string | null;
           expires_at: string;
+          final_price_eur?: number | null;
           id?: string;
           lawyer_name?: string | null;
           personal_status?: string | null;
@@ -11783,6 +11788,7 @@ export type Database = {
           city?: string | null;
           department?: string | null;
           expires_at?: string;
+          final_price_eur?: number | null;
           id?: string;
           lawyer_name?: string | null;
           personal_status?: string | null;
@@ -11798,6 +11804,36 @@ export type Database = {
           title?: string | null;
           tribunal_name?: string | null;
           user_id?: string;
+        };
+        Relationships: [];
+      };
+      user_investor_profiles: {
+        Row: {
+          created_at: string;
+          down_payment_eur: number | null;
+          strategy: string | null;
+          target_margin_pct: number | null;
+          updated_at: string;
+          user_id: string;
+          works_per_m2_eur: number | null;
+        };
+        Insert: {
+          created_at?: string;
+          down_payment_eur?: number | null;
+          strategy?: string | null;
+          target_margin_pct?: number | null;
+          updated_at?: string;
+          user_id: string;
+          works_per_m2_eur?: number | null;
+        };
+        Update: {
+          created_at?: string;
+          down_payment_eur?: number | null;
+          strategy?: string | null;
+          target_margin_pct?: number | null;
+          updated_at?: string;
+          user_id?: string;
+          works_per_m2_eur?: number | null;
         };
         Relationships: [];
       };
@@ -14383,9 +14419,12 @@ export type Database = {
         Returns: Json;
       };
       admin_pepite_independence_sales: { Args: never; Returns: Json };
+      admin_offer_opening_interviewees: { Args: { p_limit?: number }; Returns: Json };
       admin_offer_opening_survey_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_pilotage_activation: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_bid_ceilings: { Args: { p_now?: string }; Returns: Json };
       admin_pilotage_summary: { Args: { p_now?: string }; Returns: Json };
+      admin_pilotage_unlock_threshold: { Args: { p_now?: string }; Returns: Json };
       admin_sale_signal_feedback_by_sale: {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
@@ -14813,6 +14852,10 @@ export type Database = {
       };
       claim_trial_card: {
         Args: { p_fingerprint_hash: string; p_user_id: string };
+        Returns: boolean;
+      };
+      claim_trial_end_notice: {
+        Args: { p_ends_on: string; p_now?: string; p_user_id: string };
         Returns: boolean;
       };
       claim_weekly_digest: {
@@ -15253,6 +15296,7 @@ export type Database = {
         Returns: Json;
       };
       get_launch_offer_status: { Args: never; Returns: boolean };
+      get_trial_end_notice_queue: { Args: { p_limit?: number; p_now?: string }; Returns: Json };
       get_merged_sale_target: { Args: { p_sale_id: string }; Returns: string };
       get_offer_opening_queue: {
         Args: { p_limit?: number; p_now?: string };
@@ -15419,6 +15463,8 @@ export type Database = {
         }[];
       };
       has_analysis_access: { Args: never; Returns: boolean };
+      increment_property_report_share_view: { Args: { p_report_id: string }; Returns: number };
+      user_id_for_email: { Args: { p_email: string }; Returns: string | null };
       is_admin: { Args: never; Returns: boolean };
       list_public_pepite_flood_exposed_ids: { Args: never; Returns: string[] };
       list_public_pepite_sale_ids: { Args: never; Returns: string[] };
@@ -16737,6 +16783,10 @@ export type Database = {
       suspend_sale_pepites: {
         Args: { p_mode?: string; p_user_id?: string };
         Returns: string;
+      };
+      sync_billing_reconciliation_alert: {
+        Args: { p_active: boolean; p_details?: Json };
+        Returns: undefined;
       };
       sync_sale_communes: {
         Args: never;

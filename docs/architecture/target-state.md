@@ -1,6 +1,6 @@
 # Outcome Graph — architecture cible
 
-_Architecture normative issue de `CODEX_OUTCOME_GRAPH_SPEC_V2.md`. Ce document décrit la destination; il ne certifie pas que chaque composant est déjà livré. Voir [`IMPLEMENTATION_STATUS.md`](../archive/IMPLEMENTATION_STATUS.md) pour l’écart réel._
+> **Document cible, pas l’état d’aujourd’hui.** Il décrit la destination d’Outcome Graph (rédigé en juillet 2026, d’après une spécification qui n’est plus dans le dépôt) et ne certifie pas que chaque composant est déjà livré. Dernière relecture : 31/10/2026 (en-tête seulement). L’écart réel avec la cible est suivi dans [`IMPLEMENTATION_STATUS.md`](../archive/IMPLEMENTATION_STATUS.md) (archive du 17/08/2026) ; l’état actuel, dans [`current-state.md`](current-state.md) (instantané du 30/07/2026) et [`supabase/migrations/`](../../supabase/migrations/).
 
 ## Objectif d’architecture
 

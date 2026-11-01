@@ -4,7 +4,6 @@ import Link from "next/link";
 import { BrandMark } from "@/components/BrandMark";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { publicLegalPublisher } from "@/lib/legal-documents";
-import { linkPrefetch } from "@/lib/navigation";
 
 const MAIN_LINKS = [
   { href: "/sales", label: "Ventes" },
@@ -34,6 +33,7 @@ const LEGAL_LINKS = [
   { href: "/privacy#cookies", label: "Gérer les cookies" },
   { href: "/classement-des-annonces", label: "Classement des annonces" },
   { href: "/mes-droits", label: "Mes droits" },
+  { href: "/accessibilite", label: "Accessibilité : non évalué" },
 ] as const;
 
 /** Console pages bring their own shell and must not show the public footer. */
@@ -53,7 +53,8 @@ export function SiteFooter() {
           <div>
             <Link
               href="/"
-              className="inline-flex items-center gap-2 font-display text-xl font-semibold text-foreground"
+              prefetch={false}
+              className="inline-flex min-h-11 items-center gap-2 font-display text-xl font-semibold text-foreground"
             >
               <span aria-hidden className="inline-flex">
                 <BrandMark className="size-7" />
@@ -65,13 +66,13 @@ export function SiteFooter() {
             <p className="mt-1">Les enchères immobilières, en toute clarté.</p>
           </div>
           <nav aria-label="Navigation pied de page">
-            <ul className="flex flex-wrap gap-x-5 gap-y-2">
+            <ul className="flex flex-wrap gap-x-5">
               {MAIN_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    prefetch={linkPrefetch(link.href)}
-                    className="hover:text-foreground hover:underline"
+                    prefetch={false}
+                    className="inline-flex min-h-11 items-center hover:text-foreground hover:underline"
                   >
                     {link.label}
                   </Link>
@@ -82,10 +83,14 @@ export function SiteFooter() {
         </div>
         <nav aria-label="Transparence" className="border-t border-border pt-5">
           <p className="mb-2 font-semibold text-foreground">Transparence</p>
-          <ul className="flex flex-wrap gap-x-5 gap-y-2">
+          <ul className="flex flex-wrap gap-x-5">
             {TRANSPARENCY_LINKS.map((link) => (
               <li key={link.href}>
-                <Link href={link.href} className="hover:text-foreground hover:underline">
+                <Link
+                  href={link.href}
+                  prefetch={false}
+                  className="inline-flex min-h-11 items-center hover:text-foreground hover:underline"
+                >
                   {link.label}
                 </Link>
               </li>
@@ -97,13 +102,13 @@ export function SiteFooter() {
             © {new Date().getFullYear()} {entityName}
           </span>
           <nav aria-label="Informations légales">
-            <ul className="flex flex-wrap gap-x-5 gap-y-2">
+            <ul className="flex flex-wrap gap-x-5">
               {LEGAL_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    prefetch={linkPrefetch(link.href)}
-                    className="hover:text-foreground hover:underline"
+                    prefetch={false}
+                    className="inline-flex min-h-11 items-center hover:text-foreground hover:underline"
                   >
                     {link.label}
                   </Link>

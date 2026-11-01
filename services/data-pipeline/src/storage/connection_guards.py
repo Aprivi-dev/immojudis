@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import socket
 import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 try:
     import psycopg
@@ -32,6 +34,58 @@ POSTGRES_KEEPALIVE_OPTIONS: dict[str, int] = {
     "keepalives_count": 3,
     "tcp_user_timeout": 60_000,
 }
+
+
+# Chiffrement de la connexion directe au Postgres (n° 44). Une URL sans ``sslmode`` partait en clair si le serveur
+# acceptait aussi le non chiffré (le défaut de libpq est ``prefer``). Elle est désormais en ``sslmode=require``.
+#   * une URL qui porte son propre ``sslmode`` (ou ``PGSSLMODE`` dans l'environnement) garde la main ;
+#   * ``POSTGRES_SSL`` choisit le mode : ``require`` (défaut), ``verify-ca``, ``verify-full`` ou ``disable`` ;
+#   * ``disable`` n'est admis que pour une base locale (localhost, 127.0.0.1, ::1, socket Unix) : le Postgres de la CI ;
+#   * une base locale n'est pas forcée en ``require`` (le service Postgres de la CI n'a pas de TLS).
+POSTGRES_SSL_ENV = "POSTGRES_SSL"
+POSTGRES_SSL_MODES = frozenset({"require", "verify-ca", "verify-full", "disable"})
+_LOCAL_DATABASE_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_DSN_SSLMODE = re.compile(r"(?:^|\s)sslmode\s*=", re.IGNORECASE)
+_DSN_HOST = re.compile(r"(?:^|\s)host\s*=\s*(?:'([^']*)'|(\S+))", re.IGNORECASE)
+
+
+def _database_host_and_sslmode(db_url: str) -> tuple[str, bool]:
+    """Hôte désigné par l'URL (ou le DSN) et présence d'un ``sslmode`` explicite."""
+    text = str(db_url or "").strip()
+    if re.match(r"^postgres(?:ql)?://", text, re.IGNORECASE):
+        parts = urlsplit(text)
+        query = parse_qs(parts.query)
+        host = (query.get("host") or [parts.hostname or ""])[0]
+        return host.lower(), "sslmode" in {key.lower() for key in query}
+    match = _DSN_HOST.search(text)
+    host = (match.group(1) or match.group(2) or "") if match else ""
+    return host.lower(), _DSN_SSLMODE.search(text) is not None
+
+
+def _is_local_database_host(host: str) -> bool:
+    return not host or host in _LOCAL_DATABASE_HOSTS or host.endswith(".localhost") or host.startswith("/")
+
+
+def postgres_ssl_options(db_url: str) -> dict[str, str]:
+    """Paramètres de connexion à ajouter pour chiffrer la connexion (``{}`` quand rien n'est à imposer).
+
+    Lève ``ValueError`` pour un ``POSTGRES_SSL`` inconnu ou pour ``disable`` sur une base qui n'est pas locale.
+    """
+    host, has_sslmode = _database_host_and_sslmode(db_url)
+    configured = os.getenv(POSTGRES_SSL_ENV, "").strip().lower()
+    if configured and configured not in POSTGRES_SSL_MODES:
+        raise ValueError(f"{POSTGRES_SSL_ENV} must be unset, require, verify-ca, verify-full or disable.")
+    if has_sslmode:
+        return {}
+    if configured == "disable":
+        if not _is_local_database_host(host):
+            raise ValueError(f"{POSTGRES_SSL_ENV}=disable is allowed only for a local database connection.")
+        return {"sslmode": "disable"}
+    if configured:
+        return {"sslmode": configured}
+    if os.getenv("PGSSLMODE", "").strip() or _is_local_database_host(host):
+        return {}
+    return {"sslmode": "require"}
 
 
 class DatabaseCallTimeout(TimeoutError):

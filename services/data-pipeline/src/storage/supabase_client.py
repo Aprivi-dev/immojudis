@@ -73,6 +73,7 @@ from src.storage.connection_guards import (
     POSTGRES_KEEPALIVE_OPTIONS,
     DatabaseCallTimeout,  # noqa: F401 - re-exported: tests and callers read it here
     _client_deadline,
+    postgres_ssl_options,
     retry_on_disconnect,
 )
 from src.storage.duplicate_sweep import (
@@ -3710,6 +3711,7 @@ def _postgres_connect(
         raise RuntimeError("psycopg is required for direct Postgres writes")
     delays = POSTGRES_CONNECT_RETRY_DELAYS if retry_delays is None else retry_delays
     options = _statement_timeout_options(db_url, statement_timeout_ms)
+    ssl_options = postgres_ssl_options(db_url)
     for attempt, delay in enumerate((0.0, *delays), start=1):
         if delay:
             time.sleep(delay)
@@ -3718,6 +3720,7 @@ def _postgres_connect(
                 "connect_timeout": connect_timeout,
                 "prepare_threshold": None,
                 **POSTGRES_KEEPALIVE_OPTIONS,
+                **ssl_options,
             }
             if options:
                 connect_kwargs["options"] = options
@@ -3734,6 +3737,7 @@ def _postgres_connect(
                     connect_timeout=connect_timeout,
                     prepare_threshold=None,
                     **POSTGRES_KEEPALIVE_OPTIONS,
+                    **ssl_options,
                 )
                 try:
                     connection.execute(f"set statement_timeout = {max(0, int(statement_timeout_ms or 0))}")

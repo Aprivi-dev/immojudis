@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord, stringValue } from "@/lib/guards";
+import type { AdminActivation } from "@/lib/admin-activation";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type { SaleSignalFeedbackSummary } from "@/lib/admin-sale-signal-feedback";
@@ -111,6 +112,8 @@ export type AdminPilotageResponse = AdminPilotage & {
   bidCeilings?: BidCeilingSummary;
   /** Réponses du questionnaire de la liste d'attente : profils, repères de prix, entretiens acceptés. */
   offerOpeningSurvey?: OfferOpeningSurveySummary;
+  /** Activation indépendante du quota, et part des comptes Découverte à 3 déblocages (n° 86 et 97). */
+  activation?: AdminActivation;
 };
 
 const count = z.number().int().nonnegative().nullish();

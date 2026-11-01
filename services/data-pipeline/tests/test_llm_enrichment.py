@@ -1,4 +1,5 @@
 import json
+import re
 from decimal import Decimal
 
 import pytest
@@ -33,6 +34,25 @@ from src.enrichment.prompts import (
 from src.enrichment.surface_reasoning import reason_about_surfaces
 from src.normalize import normalize_sale
 from src.pdf_enrichment import sale_storage_id
+
+_EVIDENCE_PATTERNS = {
+    "property_type": r"maison",
+    "surface_m2": r"91,4",
+    "rooms_count": r"pi[eè]ces?",
+    "bedrooms_count": r"chambres?",
+    "occupancy_status": r"loué|locati|bail",
+}
+
+
+def quoted_evidence(user_prompt: str) -> dict[str, dict[str, str | None]]:
+    """What a faithful model returns: for each field, the sentence of the text that supports it."""
+    evidence: dict[str, dict[str, str | None]] = {}
+    block = re.search(r"<<<UNTRUSTED_SOURCE_DATA:\w+>>>(.*?)<<<END_UNTRUSTED_SOURCE_DATA", user_prompt, re.S)
+    data = block.group(1) if block else ""
+    for field, pattern in _EVIDENCE_PATTERNS.items():
+        found = re.search(rf"[^.\n]*(?:{pattern})[^.\n]*", data, re.I)
+        evidence[field] = {"quote": found.group(0).strip() if found else None}
+    return evidence
 
 
 class FakeReplicateClient:
@@ -72,6 +92,7 @@ class FakeReplicateClient:
                 "display_description": 0.9,
                 "summary": 0.7,
             },
+            "evidence": quoted_evidence(user_prompt),
         }
 
 
@@ -414,41 +435,65 @@ def test_replicate_client_accepts_plain_text_for_display_description_mode(monkey
     payload = client.generate_json("MODE SYNTHESE STRICTE. Réponds en JSON.", "Texte fourni")
 
     assert calls == 1
+    # No confidence is invented for a recovered text.
     assert payload == {
         "display_description": (
             "Maison de ville comprenant plusieurs niveaux, jardin et garage, avec travaux "
             "à prévoir selon les informations disponibles dans l'annonce."
         ),
-        "confidence": {"display_description": 0.58},
     }
 
 
-def test_replicate_client_accepts_jsonish_display_description(monkeypatch) -> None:
+def _display_fallback_payload(monkeypatch, output: str):
     client = ReplicateClient(
         api_token="replicate-token-test",
         model="moonshotai/kimi-k2.5",
         min_interval_seconds=0,
     )
-
     monkeypatch.setattr(client, "_create_prediction", lambda prompt, system_prompt=None: {"id": "prediction-test"})
-    monkeypatch.setattr(
-        client,
-        "_wait_for_output",
-        lambda prediction: (
-            r'{\"display_description\": \"Ce terrain à bâtir de 716 m² est situé en centre-ville '
-            r'de Paimpol, rue de Goas Plat. Le bien est clos de murs'
-        ),
-    )
+    monkeypatch.setattr(client, "_wait_for_output", lambda prediction: output)
+    return client.generate_json("MODE SYNTHESE STRICTE. Réponds en JSON.", "Texte fourni")
 
-    payload = client.generate_json("MODE SYNTHESE STRICTE. Réponds en JSON.", "Texte fourni")
+
+COMPLETE_JSONISH_DISPLAY = (
+    '{"display_description": "Ce terrain à bâtir de 716 m² est situé en centre-ville '
+    'de Paimpol, rue de Goas Plat. Le bien est clos de murs.", "confidence": {"display_'
+)
+
+
+def test_replicate_client_accepts_complete_jsonish_display_description_without_inventing_confidence(
+    monkeypatch,
+) -> None:
+    payload = _display_fallback_payload(monkeypatch, COMPLETE_JSONISH_DISPLAY)
 
     assert payload == {
         "display_description": (
             "Ce terrain à bâtir de 716 m² est situé en centre-ville de Paimpol, "
-            "rue de Goas Plat. Le bien est clos de murs"
+            "rue de Goas Plat. Le bien est clos de murs."
         ),
-        "confidence": {"display_description": 0.58},
     }
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        # Truncated: the string is never closed.
+        r'{\"display_description\": \"Ce terrain à bâtir de 716 m² est situé en centre-ville '
+        r"de Paimpol, rue de Goas Plat. Le bien est clos de murs",
+        # Closed string but cut in the middle of a sentence, then the object is cut too.
+        '{"display_description": "Ce terrain à bâtir de 716 m² est situé en centre-ville de Paimpol et", '
+        '"confidence": {"display_',
+        # Preamble before a plain text.
+        "Voici la synthèse demandée : ce terrain à bâtir de 716 m² est situé en centre-ville de Paimpol.",
+        # Plain text without a final punctuation (cut by the output limit).
+        "Ce terrain à bâtir de 716 m² est situé en centre-ville de Paimpol, rue de Goas Plat, et le bien",
+    ],
+)
+def test_replicate_client_refuses_truncated_or_introduced_display_description(monkeypatch, output: str) -> None:
+    payload = _display_fallback_payload(monkeypatch, output)
+
+    # No text and no invented confidence: the deterministic fallback takes over.
+    assert payload == {"display_description": None}
 
 
 def test_replicate_client_repairs_schema_safe_output_without_retry(monkeypatch) -> None:
@@ -860,7 +905,7 @@ def test_enrich_sale_with_llm_uses_cached_pdf_text_and_preserves_reliable_fields
     monkeypatch.setenv("LLM_ENABLED", "true")
     monkeypatch.setenv("LLM_PDF_MAX_CHARS", "5000")
     (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
-        json.dumps([{"label": "PV", "text": "Surface 91,4 m2. Bien loué. Amiante."}]),
+        json.dumps([{"label": "PV", "text": "Surface 91,4 m2. Bien loué. Amiante. 4 pièces dont 3 chambres."}]),
         encoding="utf-8",
     )
 
@@ -1098,7 +1143,7 @@ def test_enrich_sale_with_llm_builds_fallback_display_description(tmp_path, monk
     monkeypatch.setenv("LLM_ENABLED", "true")
     monkeypatch.setenv("LLM_PROMPT_VERSION", "auction_llm_v5_test")
     (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
-        json.dumps([{"label": "PV", "text": "Maison de 91,4 m2 avec trois chambres. Bien loué."}]),
+        json.dumps([{"label": "PV", "text": "Maison de 91,4 m2 avec trois chambres. 4 pièces. Bien loué."}]),
         encoding="utf-8",
     )
 

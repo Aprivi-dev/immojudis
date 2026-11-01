@@ -34,7 +34,7 @@ vi.mock("@/lib/search/analysis-offer-open", () => ({ isAnalysisOfferOpen: mocks.
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
 import { peekPendingAlert, clearPendingAlert } from "@/lib/pending-alert";
-import { useCreateAlert } from "./use-create-alert";
+import { alertSurfaceFromPath, useCreateAlert } from "./use-create-alert";
 
 function freePlan() {
   return {
@@ -172,11 +172,33 @@ describe("useCreateAlert", () => {
     );
     // Le consentement à l'email n'est jamais donné sans demande explicite.
     expect(mocks.updatePreferences).not.toHaveBeenCalled();
-    expect(mocks.toast.success).toHaveBeenCalledWith("Zone surveillée et alerte créées");
+    expect(mocks.toast.success).toHaveBeenCalledWith("Zone surveillée et alerte créées", {
+      action: { label: "Voir mes alertes", onClick: expect.any(Function) },
+    });
     expect(mocks.track).toHaveBeenCalledWith("alert_created", {
       email_consent: false,
       pepite_only: false,
+      surface: "search",
     });
+  });
+
+  it("annonce « Alerte créée » avec l'action « Voir mes alertes », qui ouvre la page des alertes", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        hasAnalysisAccess: false,
+        features: { smartAlerts: "limited", watchedZones: "locked" },
+      },
+    });
+    const hook = setup();
+    await create(hook, { department: "33" });
+    expect(mocks.createZone).not.toHaveBeenCalled();
+    expect(mocks.toast.success).toHaveBeenCalledWith("Alerte créée", {
+      action: { label: "Voir mes alertes", onClick: expect.any(Function) },
+    });
+    expect(mocks.toast.success).not.toHaveBeenCalledWith("Recherche enregistrée");
+    const [, options] = mocks.toast.success.mock.calls[0];
+    options.action.onClick();
+    expect(mocks.push).toHaveBeenCalledWith("/alertes");
   });
 
   it("n'active l'email récapitulatif que si la case a été cochée", async () => {
@@ -189,10 +211,12 @@ describe("useCreateAlert", () => {
     });
     expect(mocks.toast.success).toHaveBeenCalledWith(
       "Zone surveillée et alerte créées. Email récapitulatif activé.",
+      { action: { label: "Voir mes alertes", onClick: expect.any(Function) } },
     );
     expect(mocks.track).toHaveBeenCalledWith("alert_created", {
       email_consent: true,
       pepite_only: false,
+      surface: "search",
     });
   });
 
@@ -270,6 +294,19 @@ describe("useCreateAlert", () => {
         }),
       );
     }
+  });
+
+  it("enregistre le tribunal d'une page tribunal dans les critères avancés (critère public)", async () => {
+    const hook = setup();
+    const outcome = await create(hook, { tribunal: "TJ Bobigny" });
+    expect(outcome.status).toBe("created");
+    expect(mocks.createAlert).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        department: null,
+        advanced_criteria: expect.objectContaining({ tribunal: "TJ Bobigny" }),
+      }),
+    );
   });
 
   it("refuse toujours à un compte gratuit un texte libre, même avec un département explicite", async () => {
@@ -446,5 +483,17 @@ describe("useCreateAlert : « Seulement les pépites »", () => {
     });
     expect(peekPendingAlert()?.search).toMatchObject({ pepite: true });
     expect(mocks.push).toHaveBeenCalledWith(expect.stringContaining("/login"));
+  });
+});
+
+describe("alertSurfaceFromPath", () => {
+  it("ramène l'adresse de la page à une origine de la liste fermée", () => {
+    expect(alertSurfaceFromPath("/ventes-encheres-immobilieres/gironde")).toBe("department");
+    expect(alertSurfaceFromPath("/tribunaux/bordeaux")).toBe("tribunal");
+    expect(alertSurfaceFromPath("/audiences-a-venir")).toBe("hearings");
+    expect(alertSurfaceFromPath("/sales/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d")).toBe("sale");
+    expect(alertSurfaceFromPath("/sales")).toBe("search");
+    expect(alertSurfaceFromPath("/alertes/creer")).toBe("search");
+    expect(alertSurfaceFromPath("/")).toBe("search");
   });
 });

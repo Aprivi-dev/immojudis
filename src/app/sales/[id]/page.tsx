@@ -153,7 +153,9 @@ export default async function Page({ params }: PageProps) {
         />
       ) : null}
       <SaleDetailPage
-        id={id}
+        // Minuscules, comme l'adresse canonique : les appels de la fiche et la comparaison avec les
+        // favoris ou les ventes débloquées sont sensibles à la casse (adresse saisie en majuscules).
+        id={id.toLowerCase()}
         initialData={{ sale: null, preview: sale }}
         adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
         openFeeRegimes={openFeeRegimesFromEnv()}

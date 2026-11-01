@@ -59,6 +59,46 @@ describe("POST /api/alerts/matches", () => {
     expect((await call()).status).toBe(200);
   });
 
+  describe("corps de la requête", () => {
+    const withBody = (body?: string) =>
+      POST(new Request("https://example.test/api/alerts/matches", { method: "POST", body }));
+
+    it("répond 400 pour un corps JSON null, mal formé ou de mauvais type, sans rien évaluer", async () => {
+      for (const body of [
+        "null",
+        "{pas du json",
+        "[]",
+        '"texte"',
+        '{"persist":"oui"}',
+        '{"saleLimit":-3}',
+      ]) {
+        const response = await withBody(body);
+        expect(response.status, body).toBe(400);
+        expect(await response.json()).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
+      }
+      expect(mocks.evaluate).not.toHaveBeenCalled();
+    });
+
+    it("garde les valeurs par défaut quand le corps est absent ou vide", async () => {
+      mocks.evaluate.mockResolvedValue(evaluation());
+      expect((await withBody()).status).toBe(200);
+      expect((await withBody("   ")).status).toBe(200);
+      expect((await withBody("{}")).status).toBe(200);
+      expect(mocks.evaluate).toHaveBeenCalledTimes(3);
+      expect(mocks.evaluate).toHaveBeenLastCalledWith(
+        expect.objectContaining({ saleLimit: undefined, persist: true }),
+      );
+    });
+
+    it("transmet saleLimit et persist valides", async () => {
+      mocks.evaluate.mockResolvedValue(evaluation());
+      await withBody(JSON.stringify({ saleLimit: 500, persist: false }));
+      expect(mocks.evaluate).toHaveBeenCalledWith(
+        expect.objectContaining({ saleLimit: 500, persist: false }),
+      );
+    });
+  });
+
   it("répond 503 quand toutes les alertes échouent, sans le message brut", async () => {
     mocks.evaluate.mockResolvedValue(
       evaluation({

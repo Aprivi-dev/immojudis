@@ -52,6 +52,7 @@ export const favoriteDossier = (userId: Id, saleId: string) =>
 export const accountStart = (userId: Id) => ["favorites", userId, "start"] as const;
 /** Ventes suivies dont l'audience est passée (instantanés gardés 6 mois au plus). */
 export const followedSaleSnapshots = (userId: Id) => ["followed-sale-snapshots", userId] as const;
+export const investorProfile = (userId: Id) => ["investor-profile", userId] as const;
 export const searchFavoriteStatus = (userId: Id, saleIds: readonly string[]) =>
   ["search-favorite-status", userId, saleIds] as const;
 /** Prefix of {@link queryKeys.searchFavoriteStatus} for every id list of a user. */

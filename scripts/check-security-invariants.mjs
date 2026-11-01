@@ -527,12 +527,63 @@ if (
 // raw_payload / observations / lawyer_contact feed v_auction_sales_app (security_invoker) and the
 // fiche displays the lawyer line: revoking them from `authenticated` without turning that view into
 // a definer view (stage 2 of 20261010003000) breaks the whole catalogue for connected users.
+// Stage 2 was applied by 20261110120000 (compte-rendu du 31/10/2026, n° 1): the three columns are no
+// longer readable by `authenticated` and v_auction_sales_app is a guarded definer view. Three rules keep it
+// that way:
+//   1. a migration that revokes them also makes the view a definer view with a security barrier, guarded by
+//      the predicate of the read policy (is_admin / has_analysis_access / readiness / quarantine) and by the
+//      rows-for-everything clause of the roles that bypass row security (service_role reads this view server-side);
+//   2. the stage is actually executed: a migration other than the one that created the function calls
+//      `set_catalogue_raw_columns_hidden(true)`;
+//   3. no later migration gives the columns back or turns the view back into an invoker view (the revert
+//      branch of the function itself, inside the migrations up to the applying one, is the only way back).
+const rawColumnHidingMigration = "20261110120000_hide_catalogue_raw_columns.sql";
+const rawColumnRevoke =
+  /revoke\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+from\s+[^;]*\bauthenticated\b/i;
+const rawColumnRegrant =
+  /grant\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+to\s+[^;]*\bauthenticated\b/i;
+const appViewAsInvoker =
+  /create\s+(?:or\s+replace\s+)?view\s+public\.v_auction_sales_app\b[^;]*security_invoker\s*=\s*true/i;
 for (const [name, migration] of migrationSources) {
-  const rawColumnRevoke =
-    /revoke\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+from\s+[^;]*\bauthenticated\b/i;
-  if (rawColumnRevoke.test(migration) && !/security_invoker\s*=\s*false/i.test(migration)) {
+  const sql = migration.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  if (rawColumnRevoke.test(sql)) {
+    // The dormant function of 20261010003000 read the quarantine in raw_payload; the guard text of the
+    // applying migration reads the materialized column.
+    const guardedByReadPolicy =
+      /security_barrier\s*=\s*true/i.test(sql) &&
+      /is_admin\(\)/i.test(sql) &&
+      /has_analysis_access\(\)/i.test(sql) &&
+      /catalogue_readiness_allows_premium\(/i.test(sql) &&
+      (name < rawColumnHidingMigration ||
+        (/catalogue_quarantined/i.test(sql) && /rolbypassrls/i.test(sql)));
+    if (!/security_invoker\s*=\s*false/i.test(sql) || !guardedByReadPolicy) {
+      failures.push(
+        `${name} revokes raw_payload/observations/lawyer_contact from authenticated without making v_auction_sales_app a definer view guarded by the read policy predicate`,
+      );
+    }
+  }
+  if (name > rawColumnHidingMigration) {
+    if (rawColumnRegrant.test(sql)) {
+      failures.push(
+        `${name} grants raw_payload/observations/lawyer_contact back to authenticated after ${rawColumnHidingMigration}`,
+      );
+    }
+    if (appViewAsInvoker.test(sql)) {
+      failures.push(
+        `${name} redefines v_auction_sales_app as an invoker view after ${rawColumnHidingMigration} (the raw columns are no longer readable by authenticated)`,
+      );
+    }
+  }
+}
+{
+  const hidingSource = (migrationSources.get(rawColumnHidingMigration) ?? "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/--[^\n]*/g, "");
+  if (
+    !/select\s+app_private\.set_catalogue_raw_columns_hidden\(\s*true\s*\)\s*;/i.test(hidingSource)
+  ) {
     failures.push(
-      `${name} revokes raw_payload/observations/lawyer_contact from authenticated without making v_auction_sales_app a definer view`,
+      `${rawColumnHidingMigration} must execute app_private.set_catalogue_raw_columns_hidden(true) (raw columns still readable by authenticated)`,
     );
   }
 }
@@ -1719,6 +1770,7 @@ function functionSignature(schema, name, argumentText) {
 //    aucun droit pour anon, authenticated ni public (accès par le rôle de service seulement) ;
 // 2. toute route `src/app/api/cron/*/route.ts` s'authentifie (`runMonitoredCron(` ou
 //    `cronRequestAuthorized(`) ;
+// 2 bis. toute route `src/app/api/admin/**/route.ts` lit le jeton et appelle un garde administrateur ;
 // 3. `admin-signups.ts` appelle `assertAdminAuth` avant toute lecture ;
 // 4. `app_private.signup_trial_ends_at` ne lit jamais `user_metadata` (modifiable par la personne).
 {
@@ -1775,6 +1827,55 @@ function functionSignature(schema, name, argumentText) {
       failures.push(
         `src/app/api/cron/${entry.name}/route.ts does not authenticate: call runMonitoredCron( or cronRequestAuthorized(`,
       );
+    }
+  }
+
+  // 2 bis. toute route `src/app/api/admin/**/route.ts` lit le jeton (`bearerTokenFromRequest(`) ET appelle
+  //    un garde administrateur : un `requireAdmin(`, `assertAdmin…(` ou `!auth.isAdmin` dans la route
+  //    elle-même ou dans un module `@/lib/...` qu'elle importe. Une nouvelle route sans garde échoue ici.
+  //    Contrôle statique : il ne prouve pas que le garde passe avant toute lecture (voir les tests de
+  //    routes et `token-before-body.test.ts`), il empêche d'en oublier un.
+  {
+    const adminGuard =
+      /\b(?:requireAdmin|assertAdmin\w*|requireAdminContext)\(|!\s*[\w.]+\.isAdmin\b/;
+    const adminRoutes = [];
+    const walkAdmin = async (directory) => {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const entryUrl = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
+        if (entry.isDirectory()) await walkAdmin(entryUrl);
+        else if (entry.name === "route.ts") adminRoutes.push(entryUrl);
+      }
+    };
+    await walkAdmin(new URL("../src/app/api/admin/", import.meta.url));
+    if (adminRoutes.length === 0) failures.push("src/app/api/admin has no route to check");
+    for (const routeUrl of adminRoutes) {
+      const routePath = routeUrl.pathname.slice(
+        routeUrl.pathname.indexOf("/src/app/api/admin/") + 1,
+      );
+      const source = await readFile(routeUrl, "utf8");
+      if (!/\bbearerTokenFromRequest\(/.test(source)) {
+        failures.push(`${routePath} does not read the bearer token (bearerTokenFromRequest)`);
+        continue;
+      }
+      let guarded = adminGuard.test(source);
+      for (const imported of guarded ? [] : source.matchAll(/from\s+"@\/lib\/([^"]+)"/g)) {
+        for (const candidate of [`${imported[1]}.ts`, `${imported[1]}/index.ts`]) {
+          try {
+            const library = await readFile(
+              new URL(`../src/lib/${candidate}`, import.meta.url),
+              "utf8",
+            );
+            if (adminGuard.test(library)) guarded = true;
+          } catch {
+            // Module introuvable à cet emplacement : l'autre candidat ou l'import suivant.
+          }
+        }
+      }
+      if (!guarded) {
+        failures.push(
+          `${routePath} calls no administrator guard: use requireAdmin( / assertAdmin…( / !auth.isAdmin in the route or in a @/lib module it imports`,
+        );
+      }
     }
   }
 
@@ -1864,6 +1965,7 @@ console.log(
       "private-reference-tables-only-in-server-module",
       "new-public-tables-rls-and-no-client-grants",
       "cron-routes-authenticated",
+      "admin-routes-read-token-and-call-an-admin-guard",
       "admin-signups-asserts-admin-first",
       "signup-trial-end-ignores-user-metadata",
     ],

@@ -20,9 +20,9 @@ import {
   type RentLookupSession,
 } from "@/lib/rent-reference.server";
 import { cleanDateForListing } from "@/lib/listing-data-cleanup";
-import { featureIncluded } from "@/lib/plans";
+import { apiAccessAllowed, featureIncluded } from "@/lib/plans";
 import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSales } from "@/lib/queries";
 import { RateLimitError } from "@/lib/api-errors";
 import {
@@ -288,8 +288,8 @@ export async function exportSalesApiFeed({
   request: Request;
 }): Promise<SalesApiFeed> {
   const plan = await resolvePlanEntitlements(auth);
-  if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("API ventes réservée à l’offre Analyse.");
+  if (!apiAccessAllowed(auth, plan.plan)) {
+    throw new Error("API ventes réservée à l’administration.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,
@@ -524,16 +524,18 @@ function saleToApiFeedItem(
 ): SalesApiFeedItem {
   const rentReference = isRentApplicable(sale) ? (rents?.(sale) ?? null) : null;
   const surface = getSaleSurface(sale);
-  const ppm = pricePerM2(sale.starting_price_eur, surface.value);
+  const ppm = pricePerM2(sale.starting_price_eur, surface.value, surface.kind);
   const dpe = extractDpe(sale).class;
   const grossYieldPct = estimateSaleGrossYieldPct(sale, surface.value, rentReference);
+  // Sans mise à prix, aucun prix n'est envoyé (ni 0 : le coût se réduirait aux frais fixes).
+  const startingPrice = (sale.starting_price_eur ?? 0) > 0 ? sale.starting_price_eur : null;
   const rentability = computeRentabilityScore({
     surface: surface.value,
-    price: Math.max(0, sale.starting_price_eur ?? 0),
+    price: startingPrice,
     // Frais du régime de la vente (comme le rendement brut et le rapport), non ceux du tribunal.
     acquisition: computeAcquisitionCosts({
       ...saleYieldFeeOptions(sale),
-      price: Math.max(0, sale.starting_price_eur ?? 0),
+      price: startingPrice ?? 0,
       department: isRentApplicable(sale) ? sale.department : null,
     }),
     // Un bien qui n'est pas un logement n'a aucun loyer de référence : « indisponible ».
@@ -771,8 +773,9 @@ function cleanString(value: unknown): string | null {
 }
 
 function saleToCsvRow(sale: AuctionSale, origin?: string | null): Array<string | number | null> {
-  const surface = getSaleSurface(sale).value;
-  const ppm = pricePerM2(sale.starting_price_eur, surface);
+  const saleSurface = getSaleSurface(sale);
+  const surface = saleSurface.value;
+  const ppm = pricePerM2(sale.starting_price_eur, surface, saleSurface.kind);
   const dpe = extractDpe(sale).class;
 
   return [

@@ -58,9 +58,10 @@ describe("SalePublicPreview", () => {
         requestedHash="#proofs"
       />,
     );
-    // Un seul bouton de compte sur la page, dans la synthèse (maquette validée du 24/10/2026).
+    // Deux boutons de compte, même destination : dans la synthèse (maquette du 24/10/2026), puis
+    // sous les lignes verrouillées de l'analyse.
     const links = screen.getAllByRole("link", { name: /Créer mon compte gratuit/ });
-    expect(links).toHaveLength(1);
+    expect(links).toHaveLength(2);
     for (const link of links) {
       const params = new URL(link.getAttribute("href")!, "https://example.test").searchParams;
       expect(params.get("redirect")).toBe("/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs");
@@ -356,7 +357,7 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByText("Avec le compte gratuit, vous voyez aussi")).toBeNull();
     expect(container.textContent).not.toContain("Le compte Découverte est gratuit");
     expect(
-      container.textContent?.match(/voir l’adresse, les photos et la fourchette/g),
+      container.textContent?.match(/voir l’adresse, l’occupation, les photos et la fourchette/g),
     ).toHaveLength(1);
     expect(container.textContent?.match(/Découverte · gratuit/g)).toHaveLength(1);
     // Rien de ce que le compte révèle n'est annoncé en chiffres.
@@ -375,11 +376,56 @@ describe("SalePublicPreview", () => {
       renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 59_000 });
       const block = screen.getByTestId("public-signup");
       expect(block.textContent).toContain(
-        "Créez votre compte gratuit pour voir l’adresse, les photos et la fourchette de valeur de cette vente.",
+        "Créez votre compte gratuit pour voir l’adresse, l’occupation, les photos et la fourchette de valeur de cette vente.",
       );
       expect(block.textContent).toContain(FREE_ACCESS_LINE);
       expect(within(block).getByRole("link", { name: /Créer mon compte gratuit/ })).toBeTruthy();
       followsPrice(block);
+    });
+
+    it("se place juste sous la date d'audience, avant le type de vente et les conditions pour enchérir", () => {
+      renderPreview({
+        sale_venue_type: "tribunal",
+        starting_price_eur: 59_000,
+        sale_date: "2026-10-20T09:00:00+02:00",
+      });
+      const signup = screen.getByTestId("public-signup");
+      const date = screen.getByText("Date de l’audience");
+      const venue = screen.getByText("Type de vente");
+      expect(date.compareDocumentPosition(signup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(signup.compareDocumentPosition(venue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(signup.parentElement).toBe(venue.closest("dl")?.parentElement);
+    });
+
+    it("ajoute un second bouton sous les lignes verrouillées, vers la même destination", () => {
+      renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 59_000 });
+      const teaser = screen
+        .getByRole("heading", { name: "L’analyse de cette vente" })
+        .closest("section")!;
+      const own = within(teaser).getByRole("link", { name: /Créer mon compte gratuit/ });
+      const summary = within(screen.getByTestId("public-signup")).getByRole("link", {
+        name: /Créer mon compte gratuit/,
+      });
+      expect(own.getAttribute("href")).toBe(summary.getAttribute("href"));
+      // Après les lignes verrouillées, pas avant.
+      const rows = teaser.querySelector("dl")!;
+      expect(rows.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("replie « Cette vente en clair » et garde l'explication dans la page", () => {
+      renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 59_000 });
+      // Le titre est dans le <summary> (cliquable), en <span> : ni <h2> ni <div> dans un <summary>.
+      const title = screen.getByText("Cette vente en clair");
+      const fold = title.closest("details") as HTMLDetailsElement;
+      expect(fold.open).toBe(false);
+      const summary = fold.querySelector("summary")!;
+      expect(summary.contains(title)).toBe(true);
+      expect(title.tagName).toBe("SPAN");
+      expect(summary.querySelector("h1, h2, h3, h4, h5, h6, div, p")).toBeNull();
+      expect(within(fold).getByText(/Visible maintenant/)).toBeTruthy();
+      // « Continuer ma recherche » reste hors du repli.
+      const next = screen.getByRole("link", { name: "Continuer ma recherche" });
+      expect(fold.contains(next)).toBe(false);
     });
 
     it("suit le prix aussi pour une vente notariale", () => {
@@ -393,12 +439,12 @@ describe("SalePublicPreview", () => {
         media: [{ type: "image", url: "https://www.licitor.com/photo.jpg" }],
       } as Partial<AuctionSale>);
       const text = screen.getByTestId("public-signup").textContent ?? "";
-      expect(text).toContain("voir l’adresse, les autres photos et la fourchette");
-      expect(text).not.toContain("voir l’adresse, les photos");
+      expect(text).toContain("voir l’adresse, l’occupation, les autres photos et la fourchette");
+      expect(text).not.toContain("les photos et la fourchette");
       withPhoto.unmount();
       renderPreview({ sale_venue_type: "tribunal" });
       expect(screen.getByTestId("public-signup").textContent).toContain(
-        "voir l’adresse, les photos et la fourchette",
+        "voir l’adresse, l’occupation, les photos et la fourchette",
       );
     });
 

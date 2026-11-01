@@ -62,6 +62,7 @@ const SERVER_KEYS = [
   "POSTGRES_URL_NON_POOLING",
   "POSTGRES_URL",
   "CRON_SECRET",
+  "PIPELINE_CALLBACK_SECRET",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "REPLICATE_API_TOKEN",
@@ -71,7 +72,9 @@ const SERVER_KEYS = [
   "RESEND_FROM_EMAIL",
   "SALE_REMINDERS_MODE",
   "WEEKLY_DIGEST_MODE",
+  "TRIAL_END_EMAIL_MODE",
   "SALE_RESULTS_MODE",
+  "ALERT_NOTIFICATIONS_MODE",
   "PEPITE_RULE_V2_ENABLED",
   "SALE_FLOOD_RISK_BATCH_LIMIT",
   "SALE_FLOOD_RISK_RUNNER",
@@ -187,6 +190,8 @@ export function serverEnv(source?: EnvSource) {
       databaseUrl: firstFilled(env.SUPABASE_DB_URL, env.POSTGRES_URL_NON_POOLING, env.POSTGRES_URL),
     },
     cronSecret: env.CRON_SECRET,
+    /** Secret dédié aux rappels du pipeline (`/api/pipeline/revalidate-sale`) ; absent : repli sur `cronSecret`. */
+    pipelineCallbackSecret: env.PIPELINE_CALLBACK_SECRET,
     stripe: {
       secretKey: env.STRIPE_SECRET_KEY,
       webhookSecret: env.STRIPE_WEBHOOK_SECRET,
@@ -207,9 +212,17 @@ export function serverEnv(source?: EnvSource) {
       /** Valeur brute de `WEEKLY_DIGEST_MODE` ; `weeklyDigestMode()` la ramène à off, internal ou on. */
       mode: env.WEEKLY_DIGEST_MODE,
     },
+    trialEndEmail: {
+      /** Valeur brute de `TRIAL_END_EMAIL_MODE` ; `trialEndEmailMode()` la ramène à off, internal ou on. */
+      mode: env.TRIAL_END_EMAIL_MODE,
+    },
     saleResults: {
       /** Valeur brute de `SALE_RESULTS_MODE` ; `saleResultsMode()` la ramène à off, internal ou on. */
       mode: env.SALE_RESULTS_MODE,
+    },
+    alertNotifications: {
+      /** Valeur brute de `ALERT_NOTIFICATIONS_MODE` ; `alertNotificationsMode()` la ramène à off, internal ou on. */
+      mode: env.ALERT_NOTIFICATIONS_MODE,
     },
     pepiteRule: {
       /** Valeur brute de `PEPITE_RULE_V2_ENABLED` ; `pepiteV2EnabledFromEnv()` la ramène à vrai ou faux. */

@@ -18,4 +18,4 @@ export const GUIDE_LAST_UPDATED = "2026-10-28";
  * cette valeur s'en écarte de plus d'une minute. À mettre à jour avec `GUIDE_LAST_UPDATED` quand
  * le contenu du guide change sur le fond.
  */
-export const GUIDE_READING_MINUTES = 26;
+export const GUIDE_READING_MINUTES = 27;

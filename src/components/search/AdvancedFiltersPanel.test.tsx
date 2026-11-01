@@ -21,6 +21,29 @@ function renderDrawer(overrides: Partial<Parameters<typeof MobileFilterDrawer>[0
   );
 }
 
+describe("fourchette de surface", () => {
+  it("dit que le minimum dépasse le maximum, et marque les deux champs", () => {
+    renderDrawer({ draft: { ...emptySearchDraft(), minSqft: "120", maxSqft: "60" } });
+
+    const alert = screen.getByRole("alert", { name: "" });
+    expect(alert.textContent).toBe("La surface minimum dépasse le maximum");
+    for (const field of [
+      screen.getByLabelText("Surface minimum"),
+      screen.getByLabelText("Surface maximum"),
+    ]) {
+      expect(field.getAttribute("aria-invalid")).toBe("true");
+      expect(field.getAttribute("aria-describedby")).toBe(alert.id);
+    }
+  });
+
+  it("se tait quand la fourchette est cohérente", () => {
+    renderDrawer({ draft: { ...emptySearchDraft(), minSqft: "60", maxSqft: "120" } });
+
+    expect(screen.queryByText("La surface minimum dépasse le maximum")).toBeNull();
+    expect(screen.getByLabelText("Surface minimum").getAttribute("aria-invalid")).toBeNull();
+  });
+});
+
 describe("filtre « rendement minimal »", () => {
   it("est étiqueté « à la mise à prix » et dit qu'il suit un repère départemental, sans mention de l'ANIL à côté", () => {
     renderDrawer();

@@ -10,7 +10,6 @@ import { redactPersonalData, redactPersonalText } from "@/lib/personal-data-filt
 import {
   isPlanPeriodActive,
   normalizePlanCode,
-  pastDueGraceEnd,
   PLAN_LIMITS,
   featureIncluded,
   isSaleUnlockFeature,
@@ -18,13 +17,12 @@ import {
   type FeatureKey,
   type PlanBilling,
   type PlanCode,
-  type PlanStatus,
-  isTrialExtensionRow,
 } from "@/lib/plans";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
-import { hasActiveSignupTrial, readSignupTrial } from "@/lib/launch-offer.server";
+import { hasActiveSignupTrial } from "@/lib/launch-offer.server";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
@@ -74,9 +72,9 @@ import {
   normalizeSourceTrace,
   normalizeStringList,
   pdfWatermarkForPlan,
+  reportPdfIdentity,
   saleLocation,
   shareIsExpired,
-  slugify,
 } from "./property-report/serialization";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
@@ -173,20 +171,6 @@ export type PlanEntitlements = {
     audienceTracking: FeatureAccess;
     workspaceCollaboration: FeatureAccess;
   };
-};
-
-const ADMIN_PLAN_LIMITS: PlanEntitlements["limits"] = {
-  propertyReportsPerMonth: null,
-  pdfExportsPerMonth: null,
-  savedReports: null,
-  reportEditing: "full",
-  favoriteSales: null,
-  monthlyUnlocks: null,
-  watchedZones: null,
-  saleAnalysisSets: null,
-  saleAnalysisItems: null,
-  apiKeys: null,
-  workspaceCollaborators: null,
 };
 
 export type SavedPropertyReport = SavedReportRow & {
@@ -538,8 +522,9 @@ export async function exportPropertyReportPdf({
   const report = await getReport(auth.supabase, auth.userId, reportId);
   assertReportSourceCurrent(report.report_snapshot, await getSale(auth.supabase, report.sale_id));
   const lines = reportToPdfLines(report, plan, openFeeRegimesFromEnv());
+  const { title, filename } = reportPdfIdentity(report);
   const bytes = createTextPdf({
-    title: report.title,
+    title,
     lines,
     headings: REPORT_PDF_HEADINGS,
     // Le régime vient du plafond enregistré : un rapport notarial par offres ne parle pas d'enchère.
@@ -551,7 +536,7 @@ export async function exportPropertyReportPdf({
 
   return {
     bytes,
-    filename: `${slugify(report.title)}-${report.id.slice(0, 8)}.pdf`,
+    filename,
     contentType: "application/pdf",
   };
 }
@@ -656,19 +641,32 @@ export async function getSharedPropertyReport({
   if (error) throw error;
   if (!data) throw new Error("Rapport partagé introuvable ou expiré.");
   // Lien connu mais fermé (échéance, fin de l'essai du propriétaire) : la page l'explique.
-  if (shareIsExpired(data.share_expires_at)) throw new SharedReportUnavailableError();
+  if (shareIsExpired(data.share_expires_at)) throw new SharedReportUnavailableError("expired");
   // A link stops working as soon as its owner no longer has an active Analyse plan.
-  if (!(await shareOwnerKeepsSavedReports(data.user_id))) throw new SharedReportUnavailableError();
+  if (!(await shareOwnerKeepsSavedReports(data.user_id))) {
+    throw new SharedReportUnavailableError("owner_plan_ended");
+  }
 
   assertReportSourceCurrent(data.report_snapshot, await getSale(supabaseAdmin, data.sale_id));
 
   if (countView) {
-    const nextViewCount = data.share_view_count + 1;
-    const { error: updateError } = await supabaseAdmin
-      .from("saved_property_reports")
-      .update({ share_view_count: nextViewCount })
-      .eq("id", data.id);
-    if (!updateError) data.share_view_count = nextViewCount;
+    // Incrément atomique en base : deux visiteurs simultanés comptent deux vues. Un échec du
+    // compteur ne doit pas empêcher d'afficher le rapport.
+    const { data: nextViewCount, error: countError } = await supabaseAdmin.rpc(
+      "increment_property_report_share_view",
+      { p_report_id: data.id },
+    );
+    if (countError) {
+      console.warn(
+        JSON.stringify({
+          scope: "property-reports.share",
+          event: "view_count_failed",
+          message: String(countError.message ?? "").slice(0, 200),
+        }),
+      );
+    } else if (typeof nextViewCount === "number") {
+      data.share_view_count = nextViewCount;
+    }
   }
 
   return buildPublicSharedPropertyReport(data, openFeeRegimesFromEnv());
@@ -810,89 +808,6 @@ export function buildPublicSharedPropertyReport(
     limitations: normalizeStringList(traceability.limitations),
     disclaimer: stringOrNumberValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
   };
-}
-
-export async function resolvePlanEntitlements(
-  auth: SupabaseAuthContext,
-): Promise<PlanEntitlements> {
-  if (auth.isAdmin) {
-    return buildPlanEntitlements("analyse", null, ADMIN_PLAN_LIMITS);
-  }
-  if (auth.accountTier === "premium") {
-    return buildPlanEntitlements("analyse", null);
-  }
-
-  const { data, error } = await auth.supabase
-    .from("user_subscriptions")
-    .select(
-      "plan_code,status,current_period_end,stripe_customer_id,stripe_subscription_id,metadata",
-    )
-    .eq("user_id", auth.userId)
-    .maybeSingle();
-
-  if (error) throw error;
-  const planActive = Boolean(data && isPlanPeriodActive(data.status, data.current_period_end));
-  const plan = data && planActive ? normalizePlanCode(data.plan_code) : "decouverte";
-  // Prolongation d'essai par l'administrateur (ligne sans abonnement Stripe) : c'est un essai, pas un
-  // abonnement. Même règle que `app_private.is_admin_trial_extension` (migration 20261108130000).
-  const extension = isTrialExtensionRow(data);
-  if (data && extension && planActive && plan === "analyse") {
-    return buildPlanEntitlements(
-      "analyse",
-      data.current_period_end,
-      PLAN_LIMITS.analyse,
-      // Pas de portail ni de résiliation : un éventuel client Stripe (checkout abandonné) n'est pas
-      // un abonnement à gérer.
-      { status: data.status as PlanStatus, hasStripeCustomer: false, graceEndsAt: null },
-      { launchOffer: true, trialEndsAt: data.current_period_end, trialExtension: true },
-    );
-  }
-  const extensionEndedAt = data && extension && !planActive ? data.current_period_end : null;
-  const billing: PlanBilling = {
-    status: (data?.status as PlanStatus | undefined) ?? null,
-    hasStripeCustomer: Boolean(data?.stripe_customer_id),
-    graceEndsAt: data?.status === "past_due" ? pastDueGraceEnd(data.current_period_end) : null,
-  };
-  // Essai gratuit de 7 jours à l'inscription : pendant son essai, un compte gratuit qui a un
-  // profil reçoit l’offre Analyse, avec ses quotas (rapports, PDF, actualisations). L'état vient de
-  // la base, comme pour les fonctions SQL d'accès (`app_private.has_active_analysis_access`) ; rien
-  // n'est écrit sur le compte, la fin de l'essai ramène donc le plan Découverte sans nettoyage.
-  if (plan === "decouverte" && auth.hasProfile !== false) {
-    // Essai lu dans la base (`app_private.signup_trial_ends_at`) : email confirmé, non jetable, plus
-    // ancien compte confirmé de son adresse canonique, 7 jours après la confirmation. La lecture
-    // applique aussi l'interrupteur : couper l'essai ne ferme que les nouveaux essais.
-    const trial = await readSignupTrial(auth.userId);
-    if (trial.active) {
-      return buildPlanEntitlements(
-        "analyse",
-        data?.current_period_end ?? null,
-        PLAN_LIMITS.analyse,
-        billing,
-        { launchOffer: true, trialEndsAt: trial.endsAt },
-      );
-    }
-    // Fin de l'essai : la plus tardive de la fin naturelle et de la fin d'une prolongation échue.
-    const endedAt = latestIso(trial.endsAt, extensionEndedAt);
-    if (endedAt || trial.denied) {
-      return buildPlanEntitlements(
-        plan,
-        data?.current_period_end ?? null,
-        PLAN_LIMITS[plan],
-        billing,
-        { trialEndedAt: endedAt, trialDenied: !endedAt && trial.denied === true },
-      );
-    }
-  }
-  return buildPlanEntitlements(plan, data?.current_period_end ?? null, PLAN_LIMITS[plan], billing);
-}
-
-function latestIso(...values: Array<string | null | undefined>): string | null {
-  let latest: string | null = null;
-  for (const value of values) {
-    if (!value || !Number.isFinite(Date.parse(value))) continue;
-    if (latest === null || Date.parse(value) > Date.parse(latest)) latest = value;
-  }
-  return latest;
 }
 
 /** The door that opens a right for a sale: the offer itself, or the unlock of this very sale. */

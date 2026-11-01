@@ -127,7 +127,9 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "sales.statistics": "included",
     "sales.favorites": "included",
     "sales.csvExport": "included",
-    "sales.apiAccess": "included",
+    // Retiré de l'offre Analyse (n° 97) : aucun écran ne présente les clés d'API. L'infrastructure
+    // reste pour l'administration (`apiAccessAllowed`).
+    "sales.apiAccess": "locked",
     "sales.multiPropertyAnalysis": "included",
     "alerts.advanced": "included",
     "alerts.realtimeChanges": "included",
@@ -165,7 +167,9 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "lawyers.directory": "included",
     "lawyers.referrals": "included",
     "workspace.audienceTracking": "included",
-    "workspace.collaboration": "included",
+    // Retiré de l'offre Analyse (n° 97) : aucun écran n'invite de collaborateur. L'administrateur
+    // garde la fonction (`sale-workspace-collaboration.ts`).
+    "workspace.collaboration": "locked",
   },
 };
 
@@ -193,8 +197,11 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     watchedZones: 25,
     saleAnalysisSets: 20,
     saleAnalysisItems: 12,
-    apiKeys: 2,
-    workspaceCollaborators: 25,
+    // Plus de clés d'API ni de collaborateurs dans l'offre (n° 97). Les plafonds de la base
+    // (2 clés actives, 25 collaborateurs par dossier : `app_private.enforce_finite_resource_quota`)
+    // restent ceux de l'administration.
+    apiKeys: 0,
+    workspaceCollaborators: 0,
   },
 };
 
@@ -222,6 +229,26 @@ export type SaleUnlockFeature = (typeof SALE_UNLOCK_FEATURES)[number];
 
 export function isSaleUnlockFeature(feature: FeatureKey): feature is SaleUnlockFeature {
   return (SALE_UNLOCK_FEATURES as readonly FeatureKey[]).includes(feature);
+}
+
+/**
+ * Les clés d'API et le flux `/api/sales/feed` sont réservés à l'administration (n° 97).
+ * - Contexte de session : `isAdmin` est exigé (il impose aal2) ; le seul rôle `admin` du profil ne suffit pas.
+ * - Contexte de clé d'API (`claims.api_key_id`) : une clé ne porte jamais `isAdmin`, le rôle du titulaire
+ *   (`userRole`) est donc lu.
+ * Le droit `sales.apiAccess` de la matrice ouvrirait l'accès à un plan qui l'inclurait.
+ */
+export function apiAccessAllowed(
+  auth: { isAdmin?: boolean; userRole?: string; claims?: object },
+  plan: PlanCode,
+): boolean {
+  const apiKeyContext =
+    typeof (auth.claims as { api_key_id?: unknown } | undefined)?.api_key_id === "string";
+  return (
+    auth.isAdmin === true ||
+    (apiKeyContext && auth.userRole === "admin") ||
+    featureIncluded(plan, "sales.apiAccess")
+  );
 }
 
 export function normalizePlanCode(value: unknown): PlanCode {
@@ -319,7 +346,10 @@ export function isPlanPeriodActive(
     return graceEnd !== null && new Date(graceEnd).getTime() > now.getTime();
   }
   if (!isActivePlanStatus(status)) return false;
-  if (currentPeriodEnd == null || currentPeriodEnd === "") return true;
+  // Un statut d'accès sans fin de période n'ouvre rien (n° 47) : un abonnement réel porte toujours la
+  // fin de sa période, une attribution manuelle doit en choisir une. Même règle que
+  // `app_private.subscription_grants_access`.
+  if (currentPeriodEnd == null || currentPeriodEnd === "") return false;
   if (typeof currentPeriodEnd !== "string") return false;
 
   const periodEnd = new Date(currentPeriodEnd).getTime();

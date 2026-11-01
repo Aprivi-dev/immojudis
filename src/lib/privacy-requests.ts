@@ -262,6 +262,7 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
   ["user_alert_notifications", "user_id"],
   ["user_favorites", "user_id"],
   ["user_followed_sale_snapshots", "user_id"],
+  ["user_investor_profiles", "user_id"],
   ["account_product_events", "user_id"],
   ["sale_signal_feedback", "user_id"],
   ["sale_reminder_dispatches", "user_id"],

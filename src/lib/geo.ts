@@ -2,6 +2,7 @@ import { getMapboxAccessToken } from "@/lib/mapbox";
 import { computeAcquisitionCosts, type AcquisitionCostOptions } from "@/lib/profitability";
 import { defaultRentPerM2, isRentApplicable, type RentReference } from "@/lib/rent-reference";
 import { saleYieldFeeOptions } from "@/lib/sale-yield-fees";
+import type { SaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
 export type GeoPoint = { lat: number; lng: number; label?: string };
@@ -192,10 +193,18 @@ export function estimateSaleGrossYieldRange(
   return { centralPct, lowPct: at(rent?.lowPerM2), highPct: at(rent?.highPerM2) };
 }
 
+/**
+ * Prix au m², ou `null` sans prix ni surface. `kind` : la nature de la surface (`getSaleSurface(sale).kind`).
+ * Une surface « estimated » (20 m² présumés d'un studio ou d'un T1 sans surface publiée) n'est pas une
+ * mesure : le prix au m² qui en sortirait serait inventé (filtre, CSV, API, alertes), il est refusé.
+ * Sans `kind`, la surface est prise telle quelle.
+ */
 export function pricePerM2(
   price: number | null | undefined,
   surface: number | null | undefined,
+  kind?: SaleSurface["kind"] | null,
 ): number | null {
+  if (kind === "estimated") return null;
   if (!price || !surface || surface <= 0) return null;
   return price / surface;
 }

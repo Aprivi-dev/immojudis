@@ -1,0 +1,453 @@
+{
+  "slug": "glossaire-encheres-immobilieres",
+  "publishedAt": "2026-10-31",
+  "title": "Glossaire des enchères immobilières",
+  "category": "Les fondamentaux",
+  "description": "60 termes expliqués en une phrase : adjudication, mise à prix, surenchère, garantie, émoluments, cahier des conditions de vente. Chaque terme renvoie vers un article détaillé et sa source.",
+  "seoDescription": "Glossaire des enchères immobilières : 60 termes définis en une phrase (adjudication, surenchère, mise à prix…), avec l’article détaillé et la source.",
+  "intro": [
+    "Les ventes aux enchères immobilières ont leur vocabulaire : adjudication, mise à prix, surenchère, émoluments, séquestre. Ce glossaire définit chaque terme en une phrase, indique le texte officiel qui le fonde et renvoie vers l’article qui le détaille.",
+    "Les définitions décrivent surtout la saisie immobilière au tribunal. Une vente chez le notaire ou de l’État suit d’autres règles : le cahier des charges de chaque vente fait foi. Ces définitions sont des repères, pas un conseil juridique personnalisé."
+  ],
+  "takeaways": [
+    "60 termes, classés par moment de la procédure : avant l’audience, le jour même, après l’adjudication, les frais et impôts, le bien, les autres ventes.",
+    "Chaque définition tient en une phrase et cite sa source : un article du Code des procédures civiles d’exécution (CPCE), un autre code ou une fiche de service-public.fr.",
+    "Un terme que votre avocat emploie et qui n’y figure pas : demandez-lui de l’expliquer avant l’audience."
+  ],
+  "sections": [
+    {
+      "id": "procedure",
+      "title": "La procédure et ses acteurs",
+      "paragraphs": [
+        "Les mots de la saisie, de la licitation et de la liquidation, avant le jour de l’audience."
+      ],
+      "glossary": [
+        {
+          "term": "Saisie immobilière",
+          "definition": "Procédure par laquelle un créancier fait vendre le bien immobilier de son débiteur pour être payé.",
+          "href": "/ressources/saisie-immobiliere-etapes-vente-forcee-acheteur",
+          "source": "Code des procédures civiles d’exécution (CPCE), art. L. 311-2"
+        },
+        {
+          "term": "Créancier poursuivant",
+          "definition": "Créancier muni d’un titre exécutoire qui engage la saisie du bien de son débiteur.",
+          "href": "/ressources/saisie-immobiliere-etapes-vente-forcee-acheteur",
+          "source": "CPCE, art. L. 311-2"
+        },
+        {
+          "term": "Débiteur saisi",
+          "definition": "Personne dont le bien est vendu pour payer ses dettes, qui ne peut pas enchérir.",
+          "href": "/ressources/saisie-immobiliere-etapes-vente-forcee-acheteur",
+          "source": "CPCE, art. R. 322-39"
+        },
+        {
+          "term": "Commandement de payer valant saisie",
+          "definition": "Acte d’un commissaire de justice qui lance la saisie et rend le bien indisponible si la dette n’est pas payée.",
+          "href": "/ressources/saisie-immobiliere-etapes-vente-forcee-acheteur",
+          "source": "CPCE, art. R. 321-1 et L. 321-2"
+        },
+        {
+          "term": "Juge de l’exécution",
+          "definition": "Juge du tribunal judiciaire qui conduit la saisie immobilière, tient l’audience d’orientation puis celle d’adjudication.",
+          "href": "/ressources/saisie-immobiliere-etapes-vente-forcee-acheteur",
+          "source": "Service-Public, fiche « Saisie immobilière »"
+        },
+        {
+          "term": "Audience d’orientation",
+          "definition": "Première audience, où le juge vérifie la saisie, statue sur les contestations et décide d’une vente amiable ou d’une vente forcée.",
+          "href": "/ressources/saisie-immobiliere-etapes-vente-forcee-acheteur",
+          "source": "CPCE, art. R. 322-15"
+        },
+        {
+          "term": "Avocat poursuivant",
+          "definition": "Avocat qui conduit la procédure pour le compte du créancier poursuivant.",
+          "href": "/ressources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
+          "source": "Service-Public, fiche « Saisie immobilière »"
+        },
+        {
+          "term": "Cahier des conditions de vente",
+          "definition": "Document qui décrit le bien, fixe la mise à prix et règle les conditions de la vente.",
+          "href": "/ressources/lire-cahier-conditions-vente-preparer-visite",
+          "source": "CPCE, art. R. 322-10"
+        },
+        {
+          "term": "Procès-verbal de description",
+          "definition": "Constat du commissaire de justice qui décrit le bien, sa surface et ses occupants, annexé au cahier.",
+          "href": "/ressources/saisie-immobiliere-etapes-vente-forcee-acheteur",
+          "source": "CPCE, art. R. 322-1 et R. 322-2"
+        },
+        {
+          "term": "Mise à prix",
+          "definition": "Prix de départ des enchères, fixé par le créancier poursuivant, qui n’est pas une estimation de la valeur du bien.",
+          "href": "/ressources/mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres",
+          "source": "CPCE, art. R. 322-10 et L. 322-6"
+        },
+        {
+          "term": "DVF (demandes de valeurs foncières)",
+          "definition": "Base publique des prix auxquels les biens immobiliers ont été vendus, qui sert de repère pour estimer un bien.",
+          "href": "/ressources/mise-a-prix-valeur-de-marche-dvf-lire-ecart-encheres",
+          "source": "data.gouv.fr, base DVF de la direction générale des Finances publiques"
+        },
+        {
+          "term": "Licitation",
+          "definition": "Vente aux enchères d’un bien qui appartient à plusieurs personnes, afin de partager le prix entre elles.",
+          "href": "/ressources/licitation-vente-bien-indivis-encheres-acheteur",
+          "source": "Code de procédure civile, art. 1377"
+        },
+        {
+          "term": "Indivision",
+          "definition": "Situation d’un bien qui appartient à plusieurs personnes sans qu’il soit partagé, dont nul ne peut être contraint de rester.",
+          "href": "/ressources/licitation-vente-bien-indivis-encheres-acheteur",
+          "source": "Code civil, art. 815"
+        },
+        {
+          "term": "Liquidation judiciaire",
+          "definition": "Procédure qui met fin à l’activité d’une entreprise et vend ses biens, dont ses immeubles, pour payer ses créanciers.",
+          "href": "/ressources/liquidation-judiciaire-vente-immeuble-entreprise-encheres",
+          "source": "Code de commerce, art. L. 640-1"
+        }
+      ]
+    },
+    {
+      "id": "audience",
+      "title": "Le jour de l’audience",
+      "paragraphs": [
+        "Les termes que vous entendrez dans la salle ou que votre avocat vous demandera."
+      ],
+      "glossary": [
+        {
+          "term": "Audience d’adjudication",
+          "definition": "Séance publique où le juge reçoit les enchères portées par les avocats.",
+          "href": "/ressources/jour-audience-encheres-role-avocat",
+          "source": "CPCE, art. L. 322-5"
+        },
+        {
+          "term": "Adjudication",
+          "definition": "Attribution du bien au dernier enchérisseur à l’audience, qui emporte vente forcée.",
+          "href": "/ressources/jour-audience-encheres-role-avocat",
+          "source": "CPCE, art. L. 322-5 et L. 322-10"
+        },
+        {
+          "term": "Adjudicataire",
+          "definition": "Personne qui remporte la vente et devient propriétaire du bien, sous réserve d’une éventuelle surenchère.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "CPCE, art. L. 322-10"
+        },
+        {
+          "term": "Mandat",
+          "definition": "Pouvoir que vous donnez à l’avocat d’enchérir en votre nom, qu’il exerce pour un seul mandant à la fois.",
+          "href": "/ressources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
+          "source": "CPCE, art. R. 322-40"
+        },
+        {
+          "term": "Garantie pour enchérir",
+          "definition": "Chèque de banque ou caution bancaire irrévocable remis à l’avocat avant les enchères : 10 % de la mise à prix, avec un minimum de 3 000 €.",
+          "href": "/ressources/garantie-10-pourcent-cheque-banque-caution-encheres",
+          "source": "CPCE, art. R. 322-41"
+        },
+        {
+          "term": "Caution bancaire irrévocable",
+          "definition": "Engagement écrit d’une banque de payer la garantie à la place de l’enchérisseur, que celui-ci ne peut pas retirer.",
+          "href": "/ressources/garantie-10-pourcent-cheque-banque-caution-encheres",
+          "source": "CPCE, art. R. 322-41"
+        },
+        {
+          "term": "Déclaration de command",
+          "definition": "Désignation, après l’adjudication, d’un acquéreur autre que l’enchérisseur, qui n’est pas permise en saisie immobilière.",
+          "href": "/ressources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
+          "source": "CPCE, art. L. 322-8"
+        },
+        {
+          "term": "Enchère plafond",
+          "definition": "Montant maximal que vous vous interdisez de dépasser, calculé à partir du marché, des frais, des travaux et des risques.",
+          "href": "/ressources/prix-plafond-encheres-immobilieres",
+          "source": "Méthode Immojudis, article « Fixer son enchère plafond »"
+        },
+        {
+          "term": "Portage",
+          "definition": "Coûts supportés tant que le bien ne sert pas ou ne rapporte rien : intérêts d’emprunt, taxe foncière, charges, assurance.",
+          "href": "/ressources/prix-plafond-encheres-immobilieres",
+          "source": "Méthode Immojudis, article « Fixer son enchère plafond »"
+        },
+        {
+          "term": "Droit de préemption",
+          "definition": "Droit pour la commune d’acheter un bien en priorité, qui s’exerce ici par substitution à l’adjudicataire au prix de la dernière enchère.",
+          "href": "/ressources/droit-de-preemption-encheres-commune-acheteur",
+          "source": "Code de l’urbanisme, art. L. 213-1"
+        }
+      ]
+    },
+    {
+      "id": "apres",
+      "title": "Après l’adjudication",
+      "paragraphs": ["Les délais, les paiements et les suites d’une adjudication."],
+      "glossary": [
+        {
+          "term": "Surenchère",
+          "definition": "Offre supérieure d’au moins un dixième du prix principal, déposée dans les dix jours de l’adjudication, qui provoque une nouvelle audience.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "CPCE, art. R. 322-50 et R. 322-51"
+        },
+        {
+          "term": "Jugement d’adjudication",
+          "definition": "Décision qui constate la vente et vaut titre d’expulsion contre le débiteur saisi.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "CPCE, art. R. 322-59 et L. 322-13"
+        },
+        {
+          "term": "Consignation du prix",
+          "definition": "Dépôt du prix sur un compte séquestre ou à la Caisse des dépôts et consignations, dans les deux mois de l’adjudication définitive.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "CPCE, art. L. 322-9 et R. 322-56"
+        },
+        {
+          "term": "Séquestre",
+          "definition": "Tiers désigné par le cahier des conditions de vente pour détenir les fonds avant leur répartition entre les créanciers.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "CPCE, art. R. 322-10"
+        },
+        {
+          "term": "Titre de vente",
+          "definition": "Document qui prouve la propriété de l’adjudicataire : l’expédition du cahier des conditions de vente suivie du jugement d’adjudication.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "CPCE, art. R. 322-61"
+        },
+        {
+          "term": "Purge des hypothèques",
+          "definition": "Effacement, par le paiement du prix et des frais, des sûretés publiées du chef du débiteur, notamment des hypothèques.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "CPCE, art. L. 322-14"
+        },
+        {
+          "term": "Hypothèque",
+          "definition": "Garantie qu’un créancier prend sur un immeuble pour être payé en priorité en cas de vente.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "Code civil, art. 2393"
+        },
+        {
+          "term": "Réitération des enchères",
+          "definition": "Remise en vente du bien lorsque l’adjudicataire ne paie pas dans les délais ; il peut devoir la différence de prix.",
+          "href": "/ressources/apres-adjudication-surenchere-paiement-titre-vente",
+          "source": "CPCE, art. R. 322-66 et L. 322-12"
+        },
+        {
+          "term": "Titre d’expulsion",
+          "definition": "Titre qui permet de faire quitter les lieux à un occupant ; le jugement d’adjudication en tient lieu contre le saisi et les occupants sans droit opposable.",
+          "href": "/ressources/acheter-bien-occupe-encheres",
+          "source": "CPCE, art. L. 322-13 et R. 322-64"
+        },
+        {
+          "term": "Titre opposable",
+          "definition": "Droit, comme un bail en cours, que l’acheteur doit respecter.",
+          "href": "/ressources/acheter-bien-occupe-encheres",
+          "source": "CPCE, art. L. 322-10"
+        },
+        {
+          "term": "Trêve hivernale",
+          "definition": "Période, du 1er novembre au 31 mars, pendant laquelle l’expulsion d’un logement est en principe suspendue.",
+          "href": "/ressources/acheter-bien-occupe-encheres",
+          "source": "CPCE, art. L. 412-6"
+        }
+      ]
+    },
+    {
+      "id": "frais-et-impots",
+      "title": "Frais et impôts",
+      "paragraphs": ["Ce qui s’ajoute au prix et ce qui se paie après l’achat."],
+      "glossary": [
+        {
+          "term": "Frais taxés",
+          "definition": "Frais de poursuite dont le juge a fixé le montant, annoncés avant les enchères et payés par l’adjudicataire en plus du prix.",
+          "href": "/ressources/frais-vente-encheres-judiciaire",
+          "source": "CPCE, art. R. 322-42 et R. 322-58"
+        },
+        {
+          "term": "Émoluments",
+          "definition": "Rémunération des avocats fixée par un barème réglementaire et proportionnelle au prix d’adjudication.",
+          "href": "/ressources/frais-vente-encheres-judiciaire",
+          "source": "Code de commerce, art. A. 444-191 et A. 444-102"
+        },
+        {
+          "term": "Honoraires",
+          "definition": "Rémunération de l’avocat librement convenue avec lui, distincte des émoluments tarifés.",
+          "href": "/ressources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
+          "source": "Service-Public, fiche « Comment un avocat est-il rémunéré ? »"
+        },
+        {
+          "term": "Débours",
+          "definition": "Sommes qu’un professionnel avance pour votre compte et vous refacture au réel.",
+          "href": "/ressources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
+          "source": "Service-Public, fiche « Comment un avocat est-il rémunéré ? »"
+        },
+        {
+          "term": "Droits de mutation",
+          "definition": "Impôt dû à l’achat d’un bien immobilier, calculé sur le prix, qui s’ajoute au prix d’adjudication.",
+          "href": "/ressources/frais-vente-encheres-judiciaire",
+          "source": "Code général des impôts, art. 683 et 1594 D"
+        },
+        {
+          "term": "Plus-value immobilière",
+          "definition": "Différence entre le prix de revente et le prix d’acquisition d’un bien, imposée pour les particuliers.",
+          "href": "/ressources/fiscalite-achat-encheres-occuper-louer-revendre",
+          "source": "Code général des impôts, art. 150 U"
+        },
+        {
+          "term": "Revenus fonciers",
+          "definition": "Loyers tirés d’un logement loué nu, imposés selon le régime micro-foncier ou le régime réel.",
+          "href": "/ressources/fiscalite-achat-encheres-occuper-louer-revendre",
+          "source": "Code général des impôts, art. 14"
+        },
+        {
+          "term": "Marchand de biens",
+          "definition": "Personne qui achète de façon habituelle des immeubles pour les revendre, et relève des bénéfices industriels et commerciaux.",
+          "href": "/ressources/fiscalite-achat-encheres-occuper-louer-revendre",
+          "source": "Code général des impôts, art. 35"
+        }
+      ]
+    },
+    {
+      "id": "le-bien",
+      "title": "Le bien : diagnostics, urbanisme, copropriété",
+      "paragraphs": ["Les documents et notions qui décrivent le bien lui-même."],
+      "glossary": [
+        {
+          "term": "Dossier de diagnostic technique",
+          "definition": "Ensemble des diagnostics (énergie, amiante, plomb, risques…) annexé au cahier en cas de vente publique.",
+          "href": "/ressources/lire-cahier-conditions-vente-preparer-visite",
+          "source": "Code de la construction et de l’habitation, art. L. 271-4"
+        },
+        {
+          "term": "DPE (diagnostic de performance énergétique)",
+          "definition": "Étiquette de A à G qui mesure la consommation d’énergie d’un logement, valable 10 ans.",
+          "href": "/ressources/dpe-diagnostics-travaux-bien-energivore-plafond",
+          "source": "Service-Public, fiche « Diagnostic de performance énergétique »"
+        },
+        {
+          "term": "Audit énergétique",
+          "definition": "Étude des travaux qui feraient gagner des classes énergétiques à un logement, exigée à la vente d’une maison ou d’un immeuble classé E, F ou G.",
+          "href": "/ressources/dpe-diagnostics-travaux-bien-energivore-plafond",
+          "source": "Service-Public, fiche « Diagnostic de performance énergétique »"
+        },
+        {
+          "term": "État des risques",
+          "definition": "Document qui informe sur les risques naturels, miniers, technologiques et sismiques de la zone du bien.",
+          "href": "/ressources/risques-georisques-avant-encherir",
+          "source": "Code de l’environnement, art. L. 125-5"
+        },
+        {
+          "term": "PLU (plan local d’urbanisme)",
+          "definition": "Document communal qui fixe, sur un plan et dans un règlement, ce qui peut être construit ou transformé.",
+          "href": "/ressources/lire-plu-bien-vendu-encheres",
+          "source": "Code de l’urbanisme, art. L. 151-2"
+        },
+        {
+          "term": "Certificat d’urbanisme",
+          "definition": "Document de la mairie qui indique les règles applicables à un terrain et les fige pendant 18 mois.",
+          "href": "/ressources/lire-plu-bien-vendu-encheres",
+          "source": "Code de l’urbanisme, art. L. 410-1"
+        },
+        {
+          "term": "Servitude",
+          "definition": "Charge imposée à un immeuble pour l’usage ou l’utilité d’un autre immeuble ou de la collectivité.",
+          "href": "/ressources/lire-plu-bien-vendu-encheres",
+          "source": "Code civil, art. 637"
+        },
+        {
+          "term": "Cadastre",
+          "definition": "Registre public qui décrit les parcelles, avec leurs références, sans prouver à lui seul la propriété.",
+          "href": "/ressources/adresse-parcelle-cadastre-encheres",
+          "source": "cadastre.gouv.fr"
+        },
+        {
+          "term": "Copropriété",
+          "definition": "Immeuble dont les lots appartiennent à plusieurs propriétaires, qui se partagent les parties communes.",
+          "href": "/ressources/copropriete-encheres-charges-assemblees",
+          "source": "Loi n° 65-557 du 10 juillet 1965, art. 1"
+        },
+        {
+          "term": "Syndic",
+          "definition": "Professionnel ou bénévole qui gère la copropriété, appelle les charges et applique les décisions de l’assemblée.",
+          "href": "/ressources/copropriete-encheres-charges-assemblees",
+          "source": "Loi n° 65-557 du 10 juillet 1965, art. 17"
+        },
+        {
+          "term": "Tantièmes",
+          "definition": "Part de parties communes attachée à chaque lot, qui sert notamment à répartir les charges.",
+          "href": "/ressources/copropriete-encheres-charges-assemblees",
+          "source": "Loi n° 65-557 du 10 juillet 1965, art. 5"
+        }
+      ]
+    },
+    {
+      "id": "autres-ventes",
+      "title": "Autres ventes et repères d’Immojudis",
+      "paragraphs": [
+        "Les ventes chez le notaire ou de l’État, et les repères propres à Immojudis."
+      ],
+      "glossary": [
+        {
+          "term": "Vente à la bougie",
+          "definition": "Vente notariale aux enchères en salle, où l’adjudication est prononcée quand deux feux successifs s’éteignent sans nouvelle enchère.",
+          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal",
+          "source": "Notaires de France, « Les ventes aux enchères immobilières notariales »"
+        },
+        {
+          "term": "Vente interactive",
+          "definition": "Vente notariale en ligne par offres, suivie d’un avant-contrat avec l’acheteur retenu, sans adjudication.",
+          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal",
+          "source": "Notaires de France, « Les ventes aux enchères immobilières notariales »"
+        },
+        {
+          "term": "Offre plafond",
+          "definition": "Montant d’offre maximal à ne pas dépasser dans une vente interactive, calculé comme une enchère plafond.",
+          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal",
+          "source": "Méthode Immojudis, article « Fixer son enchère plafond »"
+        },
+        {
+          "term": "Condition suspensive",
+          "definition": "Clause d’un avant-contrat qui subordonne la vente à un événement, comme l’obtention d’un prêt ; elle n’existe pas en vente forcée.",
+          "href": "/ressources/financer-achat-encheres-pret-delais",
+          "source": "Code civil, art. 1304"
+        },
+        {
+          "term": "Vente domaniale",
+          "definition": "Vente d’un immeuble du domaine privé de l’État, par adjudication publique ou à l’amiable avec mise en concurrence.",
+          "href": "/ressources/ventes-notariales-domaniales-differences-tribunal",
+          "source": "Code général de la propriété des personnes publiques, art. L. 3211-1 et R. 3211-2"
+        },
+        {
+          "term": "Repère « Pépite »",
+          "definition": "Repère automatique d’Immojudis attribué à partir de critères publics, qui ne constitue ni un conseil ni une garantie.",
+          "href": "/methode-pepites",
+          "source": "Immojudis, page « Comment repérons-nous les pépites ? »"
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, livre III, titre II : saisie immobilière (articles L. 311-1 et suivants, R. 321-1 et suivants)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939111"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, enchères et garantie (articles R. 322-40 et R. 322-41)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939147"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    },
+    {
+      "label": "Service-Public — Comment un avocat est-il rémunéré ?",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F15018"
+    },
+    {
+      "label": "Notaires de France — Les ventes aux enchères immobilières notariales",
+      "url": "https://www.notaires.fr/fr/immobilier-fiscalite/vente-rapide/les-ventes-aux-encheres-immobilieres-notariales"
+    },
+    {
+      "label": "Immojudis — Guide des ventes immobilières judiciaires : lexique",
+      "url": "/ventes-immobilieres-judiciaires#lexique"
+    }
+  ]
+}

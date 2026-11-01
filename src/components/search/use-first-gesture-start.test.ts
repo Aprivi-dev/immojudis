@@ -224,6 +224,72 @@ describe("useFirstGestureStart", () => {
     });
   });
 
+  describe("limité à la zone de la carte (zoneId)", () => {
+    function zone() {
+      const element = document.createElement("div");
+      element.id = "zone-carte";
+      const inside = document.createElement("div");
+      element.append(inside);
+      const outside = document.createElement("div");
+      document.body.append(element, outside);
+      return { inside, outside };
+    }
+
+    afterEach(() => {
+      document.body.innerHTML = "";
+    });
+
+    it.each(["wheel", "pointerdown", "touchstart"])(
+      "ne démarre pas pour un %s hors de la zone (page, liste, filtres)",
+      (eventName) => {
+        const scheduler = installScheduler({ idle: true });
+        const onStart = vi.fn();
+        renderHook(() => useFirstGestureStart({ enabled: true, onStart, zoneId: "zone-carte" }));
+        const { outside } = zone();
+        act(() => {
+          outside.dispatchEvent(new Event(eventName, { bubbles: true }));
+          window.dispatchEvent(new Event(eventName));
+          document.body.dispatchEvent(new Event(eventName, { bubbles: true }));
+        });
+        expect(scheduler.pending()).toEqual({ frames: 0, idles: 0 });
+        scheduler.runFrames();
+        scheduler.runIdles();
+        expect(onStart).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(["wheel", "pointerdown", "touchstart"])(
+      "démarre au premier %s dans la zone, une seule fois",
+      (eventName) => {
+        const scheduler = installScheduler({ idle: true });
+        const onStart = vi.fn();
+        renderHook(() => useFirstGestureStart({ enabled: true, onStart, zoneId: "zone-carte" }));
+        const { inside, outside } = zone();
+        act(() => {
+          outside.dispatchEvent(new Event("wheel", { bubbles: true }));
+          inside.dispatchEvent(new Event(eventName, { bubbles: true }));
+          inside.dispatchEvent(new Event("wheel", { bubbles: true }));
+        });
+        scheduler.runFrames();
+        scheduler.runIdles();
+        expect(onStart).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("n'a pas de zone à l'écran : rien ne démarre", () => {
+      const scheduler = installScheduler({ idle: true });
+      const onStart = vi.fn();
+      renderHook(() => useFirstGestureStart({ enabled: true, onStart, zoneId: "zone-carte" }));
+      act(() => {
+        window.dispatchEvent(new Event("wheel"));
+        document.body.dispatchEvent(new Event("wheel", { bubbles: true }));
+      });
+      scheduler.runFrames();
+      scheduler.runIdles();
+      expect(onStart).not.toHaveBeenCalled();
+    });
+  });
+
   describe("bouton « Afficher la carte »", () => {
     function button() {
       const element = document.createElement("button");

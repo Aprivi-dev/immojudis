@@ -41,6 +41,14 @@ export const RESOURCE_TOPICS: Readonly<Record<string, readonly ResourceTopic[]>>
   "lire-plu-bien-vendu-encheres": ["terrain", "documents", "analyse"],
   "risques-georisques-avant-encherir": ["terrain", "analyse", "documents"],
   "adresse-parcelle-cadastre-encheres": ["terrain", "documents", "analyse"],
+  "fiscalite-achat-encheres-occuper-louer-revendre": ["investissement", "budget", "apres-vente"],
+  "glossaire-encheres-immobilieres": ["procedure", "documents", "audience"],
+  "dpe-diagnostics-travaux-bien-energivore-plafond": [
+    "documents",
+    "analyse",
+    "budget",
+    "investissement",
+  ],
 };
 
 const TOPIC_WEIGHT = 3;

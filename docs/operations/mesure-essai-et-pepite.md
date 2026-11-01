@@ -62,6 +62,26 @@ calculés ») compte les fiches ouvertes par un compte Analyse, essai compris : 
 plafond travaillé. Le travail délibéré se lit dans les plafonds enregistrés (colonne « Plafonds »
 de la vue Inscriptions).
 
+## Indicateurs ajoutés au Pilotage (lot 6, migration `20261110180000`)
+
+- **Estimations servies** (ex-« plafonds calculés ») : l'événement `bid_ceiling_calculated` part à
+  l'ouverture d'une fiche, avant tout calcul. Il compte des fiches ouvertes en détail, pas des plafonds
+  travaillés. Le plafond réellement calculé et affiché est l'événement d'audience `ceiling_viewed`
+  (Vercel Analytics, agrégé, sans identifiant), à lire dans Vercel et non dans le Pilotage.
+- **Activation des nouveaux comptes**, définie sans le quota de déblocages (qui vaut 0 pendant
+  l'essai) : parmi les comptes créés sur 7 ou 30 jours, ceux qui ont ouvert une fiche en détail
+  (`sale_unlocked`, `bid_ceiling_calculated` ou `pepite_detail_served`), posé un favori ou créé une
+  alerte. La part affichée a pour dénominateur les comptes à adresse confirmée.
+- **Comptes Découverte à 3 déblocages** (n° 97, « mesurer avant de toucher au prix ») : pour le mois de
+  Paris en cours et le précédent, les comptes Découverte (adresse confirmée, sans accès Analyse ni essai
+  en cours), ceux qui ont débloqué au moins une vente et ceux qui en ont débloqué trois. Pendant l'essai,
+  personne ne consomme de déblocage : le chiffre ne devient lisible qu'après les premières fins d'essai.
+  Le nombre de comptes Découverte est celui d'aujourd'hui pour les deux mois.
+- **Événements d'audience** (Vercel Analytics) : `home_cta_clicked` (`target` : `signup` ou `browse`),
+  `sale_unlock_confirmed`, `ceiling_viewed`, `shared_report_viewed` et la propriété `surface` de
+  `alert_created` (`department`, `tribunal`, `hearings`, `sale`, `search`). Depuis `/alertes/creer` et
+  l'accueil du compte, l'origine n'est plus connue : `search`.
+
 ## Requête A : cohorte de l'essai, par semaine de confirmation
 
 Adaptée de la requête d'`analyste-indicateurs` : cohortes par semaine, plafond enregistré, détail

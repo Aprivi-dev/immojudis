@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import dynamic from "next/dynamic";
+import { DepartmentAlertProposal } from "@/components/DepartmentAlertProposalLazy";
 import { MapboxPreconnect } from "@/components/MapboxPreconnect";
 import Link from "next/link";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
@@ -92,7 +93,7 @@ export function ExampleSalePage({
           Analyse n'est pas encore souscriptible). */}
       <section
         aria-labelledby="example-next-title"
-        className="mx-auto max-w-5xl px-4 pb-14 sm:px-6"
+        className="mx-auto max-w-5xl px-4 pb-6 sm:px-6"
         data-testid="example-next-steps"
       >
         <Card className="grid gap-3">
@@ -123,6 +124,8 @@ export function ExampleSalePage({
           </div>
         </Card>
       </section>
+      {/* Pour un vrai département : l'exemple est fictif, l'alerte porte sur le catalogue réel. */}
+      <DepartmentAlertProposal className="mx-auto max-w-5xl px-4 pb-14 sm:px-6" />
     </>
   );
 }

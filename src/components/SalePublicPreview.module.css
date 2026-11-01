@@ -306,6 +306,11 @@
   padding: 18px 20px 20px;
 }
 
+/* Sous la date, avant les autres conditions de la vente : un filet le sépare de la suite. */
+.signup:not(:last-child) {
+  border-bottom: 1px solid var(--line-soft);
+}
+
 .signupText {
   color: var(--ink-strong);
   font-size: 14px;
@@ -501,6 +506,77 @@
 }
 
 /* ── Cette vente en clair ─────────────────────────────────────────────── */
+
+/* Repliée par défaut : un titre, une ligne d'aide et un chevron, sur toute la largeur. */
+.fold {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  padding: 8px 20px;
+}
+
+.foldSummary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.foldSummary::-webkit-details-marker {
+  display: none;
+}
+
+.foldSummary:focus-visible {
+  outline: 3px solid var(--gold-text);
+  outline-offset: 4px;
+}
+
+/* Le titre est un <span> dans le <summary> : il reste un bloc, comme l'était le <h2>. */
+.foldSummary .cardTitle {
+  display: block;
+}
+
+.foldHint {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.foldIcon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--gold-text);
+  transition: transform 160ms ease;
+}
+
+.fold[open] .foldIcon {
+  transform: rotate(180deg);
+}
+
+.foldBody {
+  display: grid;
+  gap: 14px;
+  padding: 6px 0 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .foldIcon {
+    transition: none;
+  }
+}
+
+/* Bouton d'inscription sous les lignes verrouillées de l'analyse. */
+.teaserCta {
+  justify-self: start;
+}
 
 .procedureText {
   color: var(--ink-strong);

@@ -4,7 +4,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getPlanUsageSummary } from "@/lib/usage";
 
 const PRIVATE_AUTH_HEADERS = {

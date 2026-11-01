@@ -13,7 +13,8 @@ export const DESKTOP_MAP_ZONE_ID = "sales-map";
  * lecteur d'écran ne dirait rien. Le cadre (`tabIndex={-1}`, hors de l'ordre de tabulation) reçoit
  * donc le focus dès que la carte prend la place de l'aperçu, et la région `aria-live` (présente
  * dès le début, vide, pour que l'annonce soit lue) dit « Carte affichée ». Les autres démarrages
- * (appui, molette, survol) ne déplacent pas le focus : la personne est ailleurs, avec sa souris.
+ * (appui, molette sur le cadre) ne déplacent pas le focus. Le survol seul ne démarre rien : chaque
+ * chargement de carte est facturé.
  */
 export function DesktopMapZone({
   started,

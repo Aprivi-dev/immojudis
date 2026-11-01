@@ -222,7 +222,14 @@ export function CeilingHypothesesPanel({
         <NumberField
           label="Taxe foncière"
           suffix="€/an"
-          value={h.carrying.annualPropertyTax}
+          value={
+            h.carrying.annualPropertyTaxSource === "absente" ? null : h.carrying.annualPropertyTax
+          }
+          hint={
+            h.carrying.annualPropertyTaxSource === "absente"
+              ? "À renseigner. Immojudis ne l’estime pas : tant que vous ne la saisissez pas, elle n’est pas comptée dans le plafond."
+              : undefined
+          }
           onChange={(value) => set("annualPropertyTax", value)}
         />
         <NumberField

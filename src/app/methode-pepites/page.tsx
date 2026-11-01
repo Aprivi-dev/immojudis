@@ -52,7 +52,7 @@ const GUARDRAILS = [
   `L’estimation de valeur du bien est jugée exploitable et fiable (fiabilité forte ou correcte), s’appuie sur au moins ${PEPITE_RULE_PARAMS.minValueComparables} ventes comparables, repose sur une surface connue et ne présente pas d’écart aberrant avec la mise à prix : une mise à prix inférieure à ${PEPITE_RULE_PARAMS.extremeStartingPriceBelowPct} % ou supérieure à ${PEPITE_RULE_PARAMS.extremeStartingPriceAbovePct} % de la valeur estimée signale le plus souvent une erreur de données, et la vente est alors écartée. Quand la mise à prix est inférieure à ${PEPITE_RULE_PARAMS.lowStartingPricePct} % de la valeur estimée, un tel écart se confond souvent avec une erreur de valeur : seule une fiabilité forte est alors admise. L’estimation suit la méthode décrite sur la page « Comment est calculé l’écart avec le marché ». Un terrain seul et un bien mixte n’ont pas de repère.`,
   "L’occupation du bien est connue. Un bien libre comme un bien occupé est admis, car le coût de libération est intégré à l’enchère plafond estimée. Une occupation inconnue ou un squat excluent le repère.",
   "Aucun signal bloquant n’est présent : valeurs d’estimation qui se contredisent, information essentielle mise en doute par la relecture automatique de l’annonce, conflit entre les sources de la vente, annonce probablement en double, risque non qualifié, état dégradé connu des données.",
-  "Au tribunal, les ventes comparables passées sont assez fiables pour mesurer les chances de l’emporter (fiabilité au moins moyenne). Sinon, le premier test ne peut pas être évalué et il n’y a pas de repère.",
+  "Au tribunal, les ventes comparables passées sont assez fiables pour mesurer la part adjugée sous l’enchère plafond estimée (fiabilité au moins moyenne). Sinon, le premier test ne peut pas être évalué et il n’y a pas de repère.",
 ] as const;
 
 const NOT_MEASURED = [
@@ -232,9 +232,9 @@ function PageContent() {
           </p>
           <h3 className="font-semibold text-foreground">Les ventes comparables</h3>
           <p>
-            Les chances de l’emporter se mesurent sur les ventes passées des{" "}
-            {PEPITE_RULE_PARAMS.historyYears} dernières années, au même tribunal, dans une tranche
-            de mise à prix voisine et pour le même type de bien. Il faut au moins{" "}
+            La part des ventes adjugées sous l’enchère plafond estimée se mesure sur les ventes
+            passées des {PEPITE_RULE_PARAMS.historyYears} dernières années, au même tribunal, dans
+            une tranche de mise à prix voisine et pour le même type de bien. Il faut au moins{" "}
             {PEPITE_RULE_PARAMS.minNationalSales} ventes comparables en France, tribunaux confondus.
             À partir de {PEPITE_RULE_PARAMS.minCourtSales} ventes comparables au tribunal, la part
             des ventes adjugées sous l’enchère plafond estimée combine celle du tribunal et la part
@@ -246,6 +246,14 @@ function PageContent() {
             ventes, sur celles de toute la France en dessous.
           </p>
           <h3 className="font-semibold text-foreground">Le premier critère, en détail</h3>
+          <p>
+            Ce que ce chiffre mesure : la part des ventes comparables adjugées au tribunal sous
+            l’enchère plafond estimée, hors lots non adjugés. Seules les ventes qui ont trouvé un
+            adjudicataire sont comptées ; les lots restés sans enchère ou retirés n’y figurent pas.
+            Ce n’est donc pas une probabilité de remporter une vente : il ne mesure ni la
+            concurrence le jour de la vente, ni votre propre enchère, et il se calcule sur un nombre
+            limité de ventes passées, d’où les effectifs minimaux ci-dessus.
+          </p>
           <p>
             Quand l’enchère plafond estimée dépasse de beaucoup la mise à prix, on ne sait plus
             répartir les prix d’adjudication : la part des ventes adjugées en dessous n’est connue

@@ -31,6 +31,12 @@ export type AccountProductEvent =
        */
       quota: "unlocks" | "favorites" | "daily" | "daily_account" | "daily_shared";
     }
+  /**
+   * « Estimation servie » : la valeur de référence du plafond est servie pour une vente, à l'ouverture
+   * de la fiche, avant tout calcul. Le nom est gardé pour les lignes déjà écrites (90 jours) et la
+   * contrainte de la base ; le plafond réellement calculé et affiché est l'événement d'audience
+   * `ceiling_viewed` (`product-events.ts`).
+   */
   | { type: "bid_ceiling_calculated"; saleId: string }
   | { type: "pepite_detail_served"; saleId: string }
   | { type: "calendar_exported"; saleId: string }

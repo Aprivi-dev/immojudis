@@ -138,6 +138,10 @@ export function PhotoCarouselDialog({
       tabIndex={-1}
       className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-night text-white outline-none"
     >
+      {/* Annonce la photo affichée à chaque changement (flèches, vignettes, balayage). */}
+      <p role="status" className="sr-only">
+        Photo {index + 1} sur {count} : {current.alt}
+      </p>
       <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 pt-[env(safe-area-inset-top)] sm:min-h-16 sm:px-5">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">

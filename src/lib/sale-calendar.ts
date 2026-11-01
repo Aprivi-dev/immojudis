@@ -1,6 +1,8 @@
-import { buildIcsCalendar, buildIcsCalendarMany, type IcsEvent } from "@/lib/ical";
+import { buildIcsCalendar, buildIcsCalendarMany, formatIcsUtc, type IcsEvent } from "@/lib/ical";
 import { parisDateKey } from "@/lib/sale-countdown";
+import { DEADLINES_CONFIRM_NOTICE, type SaleDeadline } from "@/lib/sale-deadlines";
 import { saleHearingTime, saleReference, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
+import type { VisitSlot } from "@/lib/visit-slots";
 
 /**
  * Row returned by `get_public_sale_calendar_event`: the few public facts the « Ajouter à mon
@@ -136,6 +138,76 @@ function saleCalendarEvent(
   };
 }
 
+/**
+ * Durée par défaut d'une visite : 1 h. L'annonce donne le début du créneau, rarement la fin ; la
+ * durée est indicative et le fichier le dit.
+ */
+export const SALE_VISIT_DEFAULT_DURATION_HOURS = 1;
+
+export const SALE_VISIT_DISCLAIMER =
+  "Créneau de visite issu de l’annonce, à confirmer auprès de l’avocat poursuivant.";
+
+/** Créneaux de visite par vente (identifiant en minuscules). */
+export type SaleVisitSlots = ReadonlyMap<string, readonly VisitSlot[]>;
+
+/** Rappel de la veille d'une visite : à l'heure du créneau, ou à 9 h pour un créneau sur la journée. */
+const VISIT_REMINDER_TIMED = { trigger: "-P1D", when: "demain" } as const;
+const VISIT_REMINDER_ALL_DAY = { trigger: "-PT15H", when: "demain" } as const;
+
+/**
+ * Les événements de visite d'une vente : un par créneau daté de l'annonce, à venir.
+ *
+ * - Seulement pour une vente dont l'audience est exportable (`exportable`) : une vente reportée,
+ *   retirée ou contradictoire n'écrit aucune visite non plus.
+ * - Un créneau passé n'est pas écrit. Un créneau sans heure devient un événement sur la journée.
+ * - Aucune adresse ni aucun lieu : l'annonce dit où se présenter (le lien de la fiche est dans la
+ *   description). Le texte brut de l'annonce n'est pas repris non plus.
+ */
+export function saleVisitEvents(
+  row: SaleCalendarRow,
+  slots: readonly VisitSlot[],
+  { origin, now = new Date() }: { origin: string; now?: Date },
+): IcsEvent[] {
+  if (!row.exportable) return [];
+  const saleId = row.id.toLowerCase();
+  const url = `${origin}/sales/${encodeURIComponent(saleId)}`;
+  const city = row.city?.replace(/\s+/g, " ").trim();
+  const summary = `Visite – ${seoPropertyLabel(row.property_type)}${city ? ` à ${city}` : ""}`;
+  const lastModified = validDate(row.updated_at);
+  const today = parisDateKey(now);
+  const events: IcsEvent[] = [];
+  for (const slot of slots) {
+    const timed = slot.kind === "instant";
+    if (timed ? slot.at.getTime() < now.getTime() : slot.isoDay < today) continue;
+    const key = timed ? formatIcsUtc(slot.at) : slot.isoDay.replaceAll("-", "");
+    const reminder = timed ? VISIT_REMINDER_TIMED : VISIT_REMINDER_ALL_DAY;
+    events.push({
+      uid: `visit-${key}-${saleId}@${new URL(origin).hostname}`,
+      stamp: now,
+      lastModified,
+      sequence: saleCalendarSequence(lastModified),
+      start: slot,
+      end: timed
+        ? new Date(slot.at.getTime() + SALE_VISIT_DEFAULT_DURATION_HOURS * 3_600_000)
+        : null,
+      summary,
+      description: [
+        SALE_VISIT_DISCLAIMER,
+        `Lieu et conditions de la visite : voir la fiche de la vente, ${url}`,
+        timed
+          ? `Durée indicative : ${SALE_VISIT_DEFAULT_DURATION_HOURS} h (l’annonce ne publie pas l’heure de fin).`
+          : null,
+      ]
+        .filter((line) => line !== null)
+        .join("\n"),
+      url,
+      status: "TENTATIVE",
+      alarms: [{ trigger: reminder.trigger, description: `${summary} (${reminder.when})` }],
+    });
+  }
+  return events;
+}
+
 /** The calendar file of one hearing, or `null` when the row must not be exported. */
 export function buildSaleCalendarFile(
   row: SaleCalendarRow,
@@ -160,7 +232,11 @@ const FOLLOWED_CALENDAR_FILENAME = "immojudis-audiences-suivies.ics";
  */
 export function buildSalesCalendarFile(
   rows: readonly SaleCalendarRow[],
-  { origin, now = new Date() }: { origin: string; now?: Date },
+  {
+    origin,
+    now = new Date(),
+    visitSlots,
+  }: { origin: string; now?: Date; visitSlots?: SaleVisitSlots },
 ): (SaleCalendarFile & { exportedIds: string[] }) | null {
   const entries = rows
     .map((row) => ({ row, event: saleCalendarEvent(row, { origin, now }) }))
@@ -173,12 +249,57 @@ export function buildSalesCalendarFile(
   entries.sort(
     (a, b) => startOf(a.event) - startOf(b.event) || a.event.uid.localeCompare(b.event.uid),
   );
+  // Les visites des ventes exportées, avec leurs audiences, toutes dans l'ordre des dates.
+  const events = entries.flatMap(({ row, event }) => [
+    event,
+    ...saleVisitEvents(row, visitSlots?.get(row.id.toLowerCase()) ?? [], { origin, now }),
+  ]);
+  events.sort((a, b) => startOf(a) - startOf(b) || a.uid.localeCompare(b.uid));
   return {
     filename: FOLLOWED_CALENDAR_FILENAME,
-    body: buildIcsCalendarMany(
-      entries.map((entry) => entry.event),
-      PROD_ID,
-    ),
+    body: buildIcsCalendarMany(events, PROD_ID),
     exportedIds: entries.map((entry) => entry.row.id.toLowerCase()),
+  };
+}
+
+/**
+ * Le fichier `.ics` de l'échéancier indicatif d'une vente remportée (fin du délai de surenchère,
+ * paiement du prix). Deux événements sur la journée, « à confirmer avec votre avocat », sans rappel
+ * (une alarme donnerait à une date indicative l'allure d'une échéance ferme), sans prix, sans
+ * adresse ni lien (la fiche de la vente n'est plus au catalogue). `null` sans échéance.
+ */
+export function buildSaleDeadlinesCalendarFile(
+  {
+    saleId,
+    deadlines,
+    propertyType,
+    city,
+  }: {
+    saleId: string;
+    deadlines: readonly SaleDeadline[] | null;
+    propertyType: string | null | undefined;
+    city: string | null | undefined;
+  },
+  { origin, now = new Date() }: { origin: string; now?: Date },
+): SaleCalendarFile | null {
+  if (!deadlines?.length) return null;
+  const cleanCity = city?.replace(/\s+/g, " ").trim();
+  const property = `${seoPropertyLabel(propertyType)}${cleanCity ? ` à ${cleanCity}` : ""}`;
+  const id = saleId.toLowerCase();
+  const events: IcsEvent[] = deadlines.map((deadline) => ({
+    uid: `deadline-${deadline.key}-${id}@${new URL(origin).hostname}`,
+    stamp: now,
+    start: { kind: "day", isoDay: deadline.isoDay },
+    summary: `${deadline.label} – ${property}`,
+    description: [
+      `${deadline.source}`,
+      deadline.caveat,
+      `Date indicative calculée à partir de l’audience connue d’Immojudis. ${DEADLINES_CONFIRM_NOTICE}`,
+    ].join("\n"),
+    status: "TENTATIVE",
+  }));
+  return {
+    filename: `immojudis-echeancier-${saleReference(id)}.ics`,
+    body: buildIcsCalendarMany(events, "-//Immojudis//Échéancier indicatif//FR"),
   };
 }

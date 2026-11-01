@@ -3,6 +3,7 @@
 // devenu `.check(z.refine(...))`), avec bien moins de code envoyé au navigateur.
 import { z } from "zod/mini";
 import { publishedDay } from "@/lib/listing-evidence";
+import { wilsonInterval95 } from "@/lib/stats";
 import {
   TRIBUNAL_STATISTICS_MEDIAN_MIN_SAMPLE,
   TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE,
@@ -36,8 +37,6 @@ export const TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE = 20;
 export const TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE = TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE;
 /** Le taux de surenchère n'est publié que si au moins la moitié des annonces ont une réponse connue. */
 export const TRIBUNAL_LISTING_STATISTICS_MIN_OVERBID_COVERAGE = 0.5;
-/** Quantile de la loi normale pour l'intervalle de Wilson à 95 %. */
-const WILSON_Z_95 = 1.959964;
 
 const isoDateTimeSchema = z.string().check(z.iso.datetime({ offset: true }));
 // Entier positif ou nul ; entier strictement positif ; part entre 0 et 1 ; libellé non vide.
@@ -887,17 +886,8 @@ export function wilsonInterval(
 ): { low: number; high: number } | null {
   if (!Number.isInteger(total) || total <= 0 || !Number.isInteger(successes)) return null;
   if (successes < 0 || successes > total) return null;
-  const proportion = successes / total;
-  const z2 = WILSON_Z_95 * WILSON_Z_95;
-  const denominator = 1 + z2 / total;
-  const centre = (proportion + z2 / (2 * total)) / denominator;
-  const margin =
-    (WILSON_Z_95 * Math.sqrt((proportion * (1 - proportion)) / total + z2 / (4 * total * total))) /
-    denominator;
-  return {
-    low: round(Math.max(0, centre - margin), 6),
-    high: round(Math.min(1, centre + margin), 6),
-  };
+  const interval = wilsonInterval95(successes / total, total);
+  return interval && { low: round(interval.low, 6), high: round(interval.high, 6) };
 }
 
 /** Bornes de Wilson d'une part, sous les noms des champs de réponse. */

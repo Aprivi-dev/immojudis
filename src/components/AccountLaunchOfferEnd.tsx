@@ -14,7 +14,8 @@ import {
  * celles de `launch-offer-end-lists.ts`.
  * Affiché dans /compte seulement pendant l'essai (compte sans abonnement réel). `endsAt` : la fin de
  * l'essai du compte (`plan.trialEndsAt`), ou, si l'administrateur l'a prolongé (`extended`), la fin de
- * la prolongation. Aucun email n'annonce cette fin : ce message est le seul.
+ * la prolongation. Un seul email annonce aussi cette fin, à J+5, quand `TRIAL_END_EMAIL_MODE` est ouvert
+ * (`trial-end-email.ts`, mêmes listes) ; il n'y a pas d'autre rappel.
  */
 export function AccountLaunchOfferEnd({
   endsAt,

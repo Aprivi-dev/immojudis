@@ -73,3 +73,18 @@ def test_the_playwright_image_matches_the_installed_playwright() -> None:
     image = re.search(r"mcr\.microsoft\.com/playwright:v([\d.]+)-", _jobs()["e2e"])
     assert image is not None
     assert image.group(1) == version
+
+
+def test_the_database_job_runs_the_pipeline_schema_contract_against_the_migrated_schema() -> None:
+    # n° 43 : les colonnes écrites par le pipeline sont vérifiées contre la base locale rejouée depuis zéro.
+    database = _jobs()["database"]
+    contract = database.split("Check the columns written by the data pipeline", 1)[1]
+
+    assert 'SCHEMA_CONTRACT_REQUIRED: "1"' in contract.split("run:", 1)[0]
+    assert 'SCHEMA_CONTRACT_DB_URL="$SUPABASE_DB_URL"' in contract
+    assert "-m schema_contract" in contract
+    # Le contrat vient après le rejeu des migrations et l'export de l'environnement local.
+    replay = database.index("Replay migrations from zero")
+    export = database.index("Export local Supabase integration environment")
+    check = database.index("Check the columns written by the data pipeline")
+    assert replay < export < check < database.index("Stop local Supabase")

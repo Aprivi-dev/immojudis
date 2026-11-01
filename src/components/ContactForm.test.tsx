@@ -23,7 +23,7 @@ describe("ContactForm", () => {
     const notice = screen.getByText(/pour répondre à votre demande/);
     expect(notice.textContent).toContain("Immojudis");
     expect(notice.textContent).toContain(
-      "conservés 12 mois après le dernier échange, puis supprimés ; en cas de litige ou de réclamation, le temps de la procédure puis, en archive à accès restreint, 5 ans au plus",
+      "conservés dans la boîte de réception de l’éditeur, 12 mois après le dernier échange, puis supprimés ; en cas de litige ou de réclamation, le temps de la procédure puis, en archive à accès restreint, 5 ans au plus",
     );
     expect(
       screen.getByRole("link", { name: "politique de confidentialité" }).getAttribute("href"),
@@ -76,5 +76,33 @@ describe("ContactForm", () => {
     render(<ContactForm action={action} />);
     fireEvent.submit(screen.getByRole("form", { name: "Formulaire de contact" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Message envoyé"));
+  });
+
+  it("annonce le délai de réponse", () => {
+    render(<ContactForm action={vi.fn()} />);
+    expect(screen.getByText(/Nous répondons par email, sous 5 jours ouvrés\./)).toBeTruthy();
+  });
+
+  it("affiche toujours une issue quand l'envoi échoue : l'adresse de secours, ou de quoi réessayer", async () => {
+    const failed = vi.fn(
+      async (): Promise<ContactState> => ({
+        status: "error",
+        message: "Votre message n’a pas pu être envoyé.",
+        delivery: "failed",
+      }),
+    );
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "contact@immojudis.example");
+    const first = render(<ContactForm action={failed} />);
+    fireEvent.submit(screen.getByRole("form", { name: "Formulaire de contact" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("contact@immojudis.example");
+    expect(alert.querySelector("a")?.getAttribute("href")).toBe("mailto:contact@immojudis.example");
+    first.unmount();
+
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "");
+    render(<ContactForm action={failed} />);
+    fireEvent.submit(screen.getByRole("form", { name: "Formulaire de contact" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("réessayez un peu plus tard");
+    vi.unstubAllEnvs();
   });
 });

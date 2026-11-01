@@ -15,23 +15,39 @@ import {
 import type { FeeRegime } from "@/lib/fee-regime-definitions";
 import { readNotarySaleConditions } from "@/lib/notary-sale-conditions";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
+import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/occupancy-status";
 import type { WorksBreakdownItem } from "@/lib/works-breakdown";
 import {
   DEFAULT_PRELIMINARY_FEES,
   DEFAULTS,
   registrationRateForDepartment,
 } from "@/lib/profitability";
-import {
-  isRentApplicable,
-  rentReference as departmentRentReference,
-  resolveRentReference,
-  type RentReference,
-} from "@/lib/rent-reference";
+import { isRentApplicable, resolveRentReference, type RentReference } from "@/lib/rent-reference";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
 // Frais préalables retenus quand l'annonce ne les donne pas : valeur unique de `profitability.ts`.
 export { DEFAULT_PRELIMINARY_FEES };
+/*
+ * Statut des valeurs par défaut du plafond (état au 31/10/2026).
+ *
+ * AUCUNE des constantes ci-dessous ne vient d'une source publique ou d'une mesure : ce sont des
+ * hypothèses de travail d'Immojudis, des ordres de grandeur choisis par l'équipe. Elles ne valent
+ * ni barème, ni moyenne constatée. Chacune est affichée comme hypothèse modifiable dans le panneau
+ * des hypothèses ; la changer ici déplace tous les plafonds (voir `CEILING_ENGINE_VERSION`).
+ * Pour en faire une valeur sourcée, citer la source (nom, date de lecture) à côté de la constante.
+ *
+ * - DEFAULT_RELEASE_COST : hypothèse, non sourcée (aucun devis ni statistique de commissaires de justice).
+ * - DEFAULT_RELEASE_MONTHS : hypothèse, non sourcée ; la durée réelle d'une libération dépend du dossier.
+ * - DEFAULT_RENTED_DISCOUNT_PCT : hypothèse, non sourcée ; citée telle quelle sur /methode-pepites.
+ * - DEFAULT_CONDO_CHARGES_PER_M2, DEFAULT_MONTHLY_INSURANCE : hypothèses, non sourcées.
+ * - DEFAULT_FINANCING_RATE_PCT, DEFAULT_RESALE_MONTHS, DEFAULT_SELLING_COSTS_PCT : hypothèses
+ *   modifiables, non sourcées.
+ * - DEFAULT_VACANCY_PCT, DEFAULT_NON_RECOVERABLE_PCT : hypothèses de rendement, non sourcées.
+ * - Taxe foncière : plus de valeur par défaut. Elle dépendait de la table de loyers départementaux de
+ *   `rent-reference.ts` (sans source) ; sans montant saisi elle vaut 0 et le champ est « à renseigner »
+ *   (`carrying.annualPropertyTaxSource`).
+ */
 /** Commissaire de justice, serrurier, garde-meubles : ordre de grandeur d'une libération. */
 export const DEFAULT_RELEASE_COST = 3_000;
 export const DEFAULT_RELEASE_MONTHS = 12;
@@ -84,12 +100,18 @@ export type CeilingUserChoices = {
   sellingCostsPct?: number | null;
 };
 
+/**
+ * Cas d'occupation du plafond pour un `occupancy_status`. Mêmes règles que l'écart au marché
+ * (`isVacantOccupancyStatus`, `isOccupiedOccupancyStatus`) : « inoccupé » est un bien libre (aucun
+ * coût de libération), pas un bien occupé. Une valeur qu'aucune règle ne reconnaît est « inconnu ».
+ */
 export function occupationCaseForStatus(status: string | null | undefined): OccupationCase {
-  const value = (status ?? "").trim().toLowerCase();
+  const value = (status ?? "").trim().toLocaleLowerCase("fr-FR");
   if (!value || value === "unknown" || value === "inconnu") return "inconnu";
-  if (value === "vacant" || value === "free" || value.includes("libre")) return "libre";
-  if (value === "rented" || value === "tenant_occupied" || value.includes("lou")) return "loue";
-  if (value === "squatted" || value.includes("squat")) return "squat";
+  if (isVacantOccupancyStatus(value) || value === "free") return "libre";
+  if (!isOccupiedOccupancyStatus(value)) return "inconnu";
+  if (/squat/.test(value)) return "squat";
+  if (value === "rented" || value === "tenant_occupied" || /lou[eé]/.test(value)) return "loue";
   return "occupe";
 }
 
@@ -121,11 +143,6 @@ export function buildCeilingHypotheses(
     referenceRent && recoverableCharges
       ? Math.max(0, referenceRent - recoverableCharges) || null
       : referenceRent;
-  // Base historique de la taxe foncière par défaut : le loyer départemental (ou la surface). Elle ne suit
-  // PAS la référence ANIL : l'affichage du loyer ne doit pas déplacer le plafond du projet « habiter ».
-  const departmentRent = surface
-    ? Math.round(surface * (departmentRentReference(sale.department)?.rentPerM2 ?? 0))
-    : 0;
   const notarial = regime?.kind === "notarial";
   // Les frais préalables sont une notion du tribunal : une vente notariale n'en a pas.
   const preliminary = notarial ? null : preliminaryFeesFromSale(sale);
@@ -172,13 +189,11 @@ export function buildCeilingHypotheses(
       monthlyCharges:
         choices.monthlyCharges ??
         (apartment && surface ? Math.round(surface * DEFAULT_CONDO_CHARGES_PER_M2) : 0),
-      annualPropertyTax:
-        choices.annualPropertyTax ??
-        (departmentRent
-          ? Math.round(departmentRent * 12 * 0.08)
-          : surface
-            ? Math.round(surface * 12)
-            : 0),
+      // La taxe foncière n'est jamais devinée : sans montant saisi, elle vaut 0 et le champ est
+      // « à renseigner » (`annualPropertyTaxSource: "absente"`). L'ancienne valeur par défaut
+      // (8 % du loyer départemental, ou 12 € par m² hors table) reposait sur des loyers sans source.
+      annualPropertyTax: choices.annualPropertyTax ?? 0,
+      annualPropertyTaxSource: choices.annualPropertyTax != null ? "saisie" : "absente",
       monthlyInsurance: DEFAULT_MONTHLY_INSURANCE,
       financingRatePct: choices.financingRatePct ?? DEFAULT_FINANCING_RATE_PCT,
       resaleMonths: DEFAULT_RESALE_MONTHS,

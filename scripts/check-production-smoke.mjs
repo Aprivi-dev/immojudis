@@ -26,11 +26,11 @@ const HEALTH_SMOKE_MAX_AGE_MINUTES = 60;
 const HEALTH_MAX_CHECKED_AT_AGE_SECONDS = 120;
 const HEALTH_COLLECTION_FAIL_HOURS = 72;
 
-// Court pages (src/app/tribunaux/[slug]/page.tsx). Addresses are the court code lower-cased
-// (`justice_tj_1_93`, the Bobigny court, gives `justice-tj-1-93`); the old address is the court name.
+// Court pages (src/app/tribunaux/[slug]/page.tsx). Addresses are readable and built from the court name
+// (`tribunal-judiciaire-bobigny`); the old addresses are the court code and the bare court name.
 const TRIBUNAL_PREFIX = "/tribunaux/";
-const TRIBUNAL_CODE_PREFIX = `${TRIBUNAL_PREFIX}justice-tj-`;
-const DEFAULT_TRIBUNAL_PATH = `${TRIBUNAL_PREFIX}justice-tj-1-93`;
+const TRIBUNAL_CODE_PREFIX = `${TRIBUNAL_PREFIX}tribunal-`;
+const DEFAULT_TRIBUNAL_PATH = `${TRIBUNAL_PREFIX}tribunal-judiciaire-bobigny`;
 const LEGACY_TRIBUNAL_PATH = `${TRIBUNAL_PREFIX}bobigny`;
 const UNKNOWN_TRIBUNAL_PATH = `${TRIBUNAL_PREFIX}tribunal-inexistant-test-de-fumee`;
 // Pages of courts listed in the pages sitemap (those with at least three upcoming sales).
@@ -351,7 +351,7 @@ async function runHealthCheck({ origin, fetchImpl, now = () => Date.now() }) {
 
 /**
  * Court pages: a known court answers 200, and its old name-based address answers one single 308 to
- * the code-based address (which then answers 200 at once, no second hop). The 404 of an unknown
+ * the readable address (which then answers 200 at once, no second hop). The 404 of an unknown
  * court is part of `checks`.
  */
 async function runTribunalChecks({ origin, fetchImpl, tribunalPath }) {

@@ -19,7 +19,7 @@ import {
   NO_POINTS_TO_VERIFY_FILTER_LABEL,
   STATUS_OPTIONS,
 } from "@/lib/search/search-filters";
-import { type SearchDraft, toggleValue } from "./search-page-state";
+import { type SearchDraft, surfaceRangeError, toggleValue } from "./search-page-state";
 import { SaleTypeFilter } from "./SaleTypeFilter";
 import { DateRangeFields } from "./DateRangeFields";
 import { BedsBathsFilter, InlineTextFilter, PriceFilter } from "./SearchHeader";
@@ -108,6 +108,8 @@ export function MobileFilterDrawer({
   onClose: () => void;
   onReset: () => void;
 }) {
+  const surfaceError = surfaceRangeError(draft);
+  const surfaceErrorId = useId();
   return (
     <aside className="relative ml-auto flex h-full w-full max-w-3xl flex-col overflow-hidden bg-white shadow-2xl sm:rounded-md">
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-brand-navy/10 px-4">
@@ -223,6 +225,8 @@ export function MobileFilterDrawer({
               <Input
                 inputMode="numeric"
                 value={draft.minSqft}
+                aria-invalid={surfaceError ? true : undefined}
+                aria-describedby={surfaceError ? surfaceErrorId : undefined}
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, minSqft: event.target.value }))
                 }
@@ -234,6 +238,8 @@ export function MobileFilterDrawer({
               <Input
                 inputMode="numeric"
                 value={draft.maxSqft}
+                aria-invalid={surfaceError ? true : undefined}
+                aria-describedby={surfaceError ? surfaceErrorId : undefined}
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, maxSqft: event.target.value }))
                 }
@@ -241,6 +247,12 @@ export function MobileFilterDrawer({
                 className="h-10 bg-white"
               />
             </FilterField>
+            {/* Minimum au-dessus du maximum : la recherche ne trouverait rien, on le dit (comme le prix). */}
+            {surfaceError ? (
+              <p id={surfaceErrorId} role="alert" className="text-sm font-semibold text-danger">
+                {surfaceError}
+              </p>
+            ) : null}
             <FilterField label={preview ? "Prix/m² max · avec un compte" : "Prix/m² max"}>
               <Input
                 inputMode="numeric"

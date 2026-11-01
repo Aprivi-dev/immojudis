@@ -195,13 +195,16 @@ function venuePhrase(type: SaleVenueType): string {
   }[type];
 }
 
-/** Very short form for titles, where every character counts. */
+/**
+ * Short form for titles, where every character counts. Each one carries the word « vente » or
+ * « enchères », the words people type: « vente au tribunal », « enchères notaire ».
+ */
 function venueTitleToken(type: SaleVenueType): string {
   return {
-    tribunal: "tribunal",
-    notary: "notaire",
-    state: "État",
-    online: "en ligne",
+    tribunal: "vente au tribunal",
+    notary: "enchères notaire",
+    state: "vente par l’État",
+    online: "enchères en ligne",
     unknown: "enchères",
   }[type];
 }
@@ -302,11 +305,13 @@ export function saleReference(id: string): string {
 export function saleSeoTitle(sale: SaleFacts | null | undefined): string {
   if (!sale) return GENERIC_SALE_SEO_TITLE;
   const token = venueTitleToken(venueType(sale));
+  const bare = propertyLine(sale, { surface: false, department: false });
   const candidates = [
     `${propertyLine(sale)} – ${token}`,
     `${propertyLine(sale, { surface: false })} – ${token}`,
-    `${propertyLine(sale, { surface: false, department: false })} – ${token}`,
-    propertyLine(sale, { surface: false, department: false }),
+    `${bare} – ${token}`,
+    // The title always keeps a search word: the shortest one when the long token does not fit.
+    `${bare} – enchères`,
     `${seoPropertyLabel(sale.property_type)} aux enchères`,
   ];
   const fitting = candidates.find((candidate) => candidate.length <= SALE_TITLE_MAX_LENGTH);

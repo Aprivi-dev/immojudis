@@ -2,7 +2,7 @@ import "server-only";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
-import { cronRequestAuthorized } from "@/lib/cron-auth";
+import { pipelineCallbackAuthorized } from "@/lib/cron-auth";
 import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
 import { publicSaleCacheTag } from "@/lib/public-sale.server";
 import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
@@ -34,8 +34,9 @@ const bodySchema = z.union([
 /**
  * Cache invalidation called by the data pipeline once it has changed a sale (P6-06).
  *
- * `POST /api/pipeline/revalidate-sale` with `Authorization: Bearer $CRON_SECRET` (the secret
- * that already protects the Vercel Cron routes) and a JSON body `{ "saleId": "<uuid>" }`
+ * `POST /api/pipeline/revalidate-sale` with `Authorization: Bearer $PIPELINE_CALLBACK_SECRET`
+ * (while that variable is unset, `CRON_SECRET` is still accepted: see `pipelineCallbackAuthorized`)
+ * and a JSON body `{ "saleId": "<uuid>" }`
  * or `{ "saleIds": ["<uuid>", ...] }` (at most 100). For every sale it expires the
  * `sale-<id>` data-cache tag and the cached page `/sales/<id>`: the next visitor triggers
  * a fresh read instead of waiting for the 5-minute revalidation.
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
   const requestId = resolveRequestId(request.headers.get("x-request-id"));
   const headers = { "cache-control": "no-store", "x-request-id": requestId };
 
-  if (!cronRequestAuthorized(request)) {
+  if (!pipelineCallbackAuthorized(request)) {
     return NextResponse.json(
       { ok: false, error: "Unauthorized", code: "AUTH_REQUIRED", requestId },
       { status: 401, headers },

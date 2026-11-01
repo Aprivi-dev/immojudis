@@ -145,4 +145,38 @@ describe("neighborhood analysis", () => {
     });
     expect(analysis.limitations[0]).toContain("pas encore recoupé");
   });
+
+  it("does not read the pipeline's own risk notes back as neighborhood signals", () => {
+    const sale = {
+      ...EXAMPLE_SALE,
+      latitude: null,
+      longitude: null,
+      address: null,
+      postal_code: null,
+      city: null,
+      department: null,
+      tribunal: null,
+      tribunal_name: null,
+      description: null,
+      source_description: null,
+      llm_display_description: null,
+      about_description: null,
+      investment_summary: null,
+      risk_notes: "Quartier calme, commerces et écoles à proximité, proche du métro.",
+      source_blocks: null,
+      source_blocks_by_source: null,
+      score_factors: [],
+      documents_rich: [],
+      risks: [],
+    };
+    const analysis = buildNeighborhoodAnalysis({
+      sale,
+      marketEstimate: null,
+      nearbyServices: buildNearbyServicesAnalysis(sale),
+      streetFacade: buildStreetFacadeAnalysis(sale),
+      environmentalContext: null,
+    });
+
+    expect(analysis).toMatchObject({ available: false, status: "missing", dimensions: [] });
+  });
 });

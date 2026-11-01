@@ -1,3 +1,4 @@
+import { isOccupiedOccupancyStatus, isVacantOccupancyStatus } from "@/lib/occupancy-status";
 import {
   MARKET_JACKKNIFE_MIN_COMPARABLES,
   MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
@@ -8,6 +9,9 @@ import {
   MARKET_GAP_MIN_DISCOUNT_PCT,
   marketDiscountPct,
 } from "@/lib/market-gap";
+
+// Les prédicats d'occupation vivent dans `occupancy-status.ts` ; ils restent exportés d'ici.
+export { isOccupiedOccupancyStatus, isVacantOccupancyStatus };
 
 /**
  * Écart au marché en trois bandes, pour la fiche publique (sans compte). Aucun chiffre : ni
@@ -149,38 +153,6 @@ export function passesPublicMarketGapGate(input: MarketGapGateInput): boolean {
     (p90 - p10) / p50 <= MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT / 100 &&
     (radiusM as number) <= marketGapBandMaxRadiusM(input.segment, input.areaKind)
   );
-}
-
-/**
- * Vrai pour un bien occupé, loué, occupé par son propriétaire ou squatté. Miroir de
- * `app_private.is_occupied_occupancy_status` et de `normalizeOccupationStatus`
- * (`tribunal-listing-statistics.ts`, dont le test vérifie l'accord) : « libre » et « inconnu »
- * donnent faux.
- */
-export function isOccupiedOccupancyStatus(value: string | null | undefined): boolean {
-  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
-  if (!normalized || normalized === "unknown") return false;
-  if (normalized === "vacant" || /inoccup|libre/.test(normalized)) return false;
-  if (normalized === "rented" || normalized === "tenant_occupied" || /lou[eé]/.test(normalized)) {
-    return true;
-  }
-  return (
-    normalized === "occupied" ||
-    normalized === "owner_occupied" ||
-    normalized === "squatted" ||
-    /occup|proprietaire|propriétaire|squat/.test(normalized)
-  );
-}
-
-/**
- * Vrai pour un bien libre, vacant ou inoccupé ; faux pour un bien occupé et pour une occupation
- * inconnue. Miroir de `app_private.is_vacant_occupancy_status` (migration 20261101190000) : seul un
- * bien libre reçoit une bande d'écart au marché.
- */
-export function isVacantOccupancyStatus(value: string | null | undefined): boolean {
-  const normalized = value?.trim().toLocaleLowerCase("fr-FR");
-  if (!normalized) return false;
-  return normalized === "vacant" || /inoccup|libre/.test(normalized);
 }
 
 /**

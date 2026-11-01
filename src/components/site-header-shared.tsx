@@ -17,7 +17,7 @@ export function isActive(pathname: string | null, href: string): boolean {
 export const SITE_HEADER_PILL_SHELL_CLASSES =
   "pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center px-4 pt-[calc(1.5rem+env(safe-area-inset-top,0px))]";
 export const SITE_HEADER_PILL_CLASSES =
-  "pointer-events-auto flex w-max max-w-full min-w-0 items-center gap-4 rounded-full border border-border bg-white/75 py-2 pl-4 pr-2 text-foreground shadow-[0_8px_32px_-16px_rgb(19_34_56/0.25)] backdrop-blur-lg backdrop-saturate-150 lg:gap-6";
+  "pointer-events-auto flex w-max max-w-full min-w-0 items-center gap-4 rounded-full border border-border bg-white/75 py-1.5 pl-4 pr-1.5 text-foreground shadow-[0_8px_32px_-16px_rgb(19_34_56/0.25)] backdrop-blur-lg backdrop-saturate-150 lg:gap-6";
 /**
  * Espace laissé dans la page sous la pilule : 24 px au-dessus, 58 px de pilule, 14 px de marge.
  * Quand la page suit avec son élément main, l'espace passe dans cet élément (règle
@@ -27,7 +27,7 @@ export const SITE_HEADER_PILL_CLASSES =
 export const SITE_HEADER_PILL_SPACER_CLASSES = "site-pill-spacer h-24";
 
 export const buttonBase =
-  "inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-full px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft active:scale-[0.98]";
+  "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full px-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft active:scale-[0.98]";
 export const lightGhost =
   "border border-border bg-white text-foreground hover:border-gold hover:bg-gold/10";
 /** Action principale de la barre : fond marine, marine adouci au survol. */

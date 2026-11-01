@@ -9,6 +9,8 @@ const alerts = vi.hoisted(() => ({
   create: vi.fn(),
   saving: false,
   analysis: false as boolean | undefined,
+  // Les droits du compte, tels que /api/feature-entitlements les rend (`undefined` : pas encore lus).
+  plan: undefined as Record<string, unknown> | undefined,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
@@ -17,11 +19,13 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { id: "user-1" } })
 vi.mock("@/hooks/use-has-analysis-access", () => ({
   useHasAnalysisAccess: () => alerts.analysis,
 }));
+vi.mock("@/hooks/use-access-plan", () => ({ useAccessPlan: () => alerts.plan }));
 vi.mock("@/hooks/use-create-alert", () => ({
   useCreateAlert: () => ({ createAlertFromSearch: alerts.create, saving: alerts.saving }),
 }));
 beforeEach(() => {
   alerts.analysis = false;
+  alerts.plan = { plan: "decouverte", hasAnalysisAccess: false };
   alerts.saving = false;
   alerts.create.mockResolvedValue({ status: "created", emailConsent: true });
 });
@@ -90,6 +94,75 @@ describe("investor welcome flow", () => {
       "Avec 3 déblocages par mois, vous ouvrez le détail d’une vente (enchère plafond ou offre plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
     );
     expect(text).not.toContain("nécessitent un accès Analyse");
+  });
+
+  function lastStepText() {
+    render(<InvestorOnboarding />);
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    return document.body.textContent ?? "";
+  }
+
+  it("ne dit « votre compte ouvre les outils de l’offre Analyse » que si l’essai de ce compte est en cours", () => {
+    const inFuture = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    alerts.plan = {
+      plan: "analyse",
+      hasAnalysisAccess: true,
+      launchOffer: true,
+      trialEndsAt: inFuture,
+    };
+    const text = lastStepText();
+    expect(text).toContain("Votre essai gratuit de 7 jours court jusqu’au ");
+    expect(text).toContain(
+      "votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez 3 déblocages par mois.",
+    );
+  });
+
+  it("n’annonce pas les outils Analyse à un compte sans essai, avec un essai terminé ou refusé", () => {
+    for (const plan of [
+      { plan: "decouverte", hasAnalysisAccess: false },
+      { plan: "decouverte", hasAnalysisAccess: false, trialEndedAt: "2026-10-01T10:00:00Z" },
+      { plan: "decouverte", hasAnalysisAccess: false, trialDenied: true },
+    ]) {
+      alerts.plan = plan;
+      const text = lastStepText();
+      expect(text).not.toContain("votre compte ouvre les outils");
+      expect(text).toContain("Avec 3 déblocages par mois, vous ouvrez le détail d’une vente");
+      cleanup();
+    }
+  });
+
+  it("dit l’essai terminé et le refus d’essai avec leur texte exact", () => {
+    alerts.plan = {
+      plan: "decouverte",
+      hasAnalysisAccess: false,
+      trialEndedAt: "2026-10-01T10:00:00Z",
+    };
+    expect(lastStepText()).toContain("Votre essai gratuit s’est terminé le 1er octobre 2026");
+    cleanup();
+
+    alerts.plan = { plan: "decouverte", hasAnalysisAccess: false, trialDenied: true };
+    expect(lastStepText()).toContain("L’essai gratuit n’a pas été accordé à ce compte");
+  });
+
+  it("n’annonce rien sur l’accès tant que les droits du compte ne sont pas lus", () => {
+    alerts.plan = undefined;
+    const text = lastStepText();
+    expect(text).not.toContain("votre compte ouvre");
+    expect(text).not.toContain("Avec 3 déblocages par mois");
+    expect(text).not.toContain("Votre essai gratuit");
+  });
+
+  it("termine l’étape 3 par une action guidée vers une vente du département", () => {
+    render(<InvestorOnboarding />);
+    fireEvent.change(screen.getByLabelText("Ville, département ou région"), {
+      target: { value: "33" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    expect(screen.getByTestId("onboarding-next-action").textContent).toBe(
+      "Pour finir : ouvrez une vente de votre département et voyez le plafond (contenu selon la vente).",
+    );
   });
 
   it("announces what the server read of the fee regime switch", () => {

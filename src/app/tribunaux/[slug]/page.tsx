@@ -12,6 +12,7 @@ import {
   TRIBUNAL_PAGES_PATH,
   emptyTribunalActivity,
   hasReadableTribunalName,
+  ambiguousTribunalCodes,
   isTribunalPageIndexable,
   knownTribunalFromSlug,
   legacyTribunalRedirectPath,
@@ -19,8 +20,8 @@ import {
   normalizeTribunalSlug,
   tribunalPageDescription,
   tribunalPageFromSlug,
-  tribunalPagePath,
   tribunalPages,
+  tribunalSlug,
   type TribunalPage,
   tribunalActivityWithoutDuplicates,
   tribunalPageTitle,
@@ -43,19 +44,30 @@ export async function generateStaticParams() {
 }
 
 type Resolved =
-  | { kind: "active"; items: PublicTribunalActivity[]; page: TribunalPage }
+  | {
+      kind: "active";
+      items: PublicTribunalActivity[];
+      page: TribunalPage;
+      ambiguous: ReadonlySet<string>;
+    }
   /** Tribunal connu du référentiel qui n'a aucune vente à venir : page servie, hors index. */
-  | { kind: "empty"; items: PublicTribunalActivity[]; page: TribunalPage }
-  /** Ancienne adresse (nom du tribunal) : redirection permanente vers l'adresse par code. */
+  | {
+      kind: "empty";
+      items: PublicTribunalActivity[];
+      page: TribunalPage;
+      ambiguous: ReadonlySet<string>;
+    }
+  /** Ancienne adresse (par code ou par nom) : redirection permanente vers l'adresse lisible. */
   | { kind: "redirect"; path: string }
   | { kind: "unknown" };
 
 /**
- * Le tribunal de l'adresse. L'adresse vient du code du tribunal : elle ne change pas quand ses
- * ventes à venir apparaissent ou disparaissent. D'abord les tribunaux qui ont des ventes (activité
- * publique), puis le référentiel complet (page « aucune vente à venir »), puis les anciennes
- * adresses par nom (redirection). Lève une erreur si la base est indisponible : jamais de 404
- * déduit d'une panne, la réponse n'est alors pas mise en cache.
+ * Le tribunal de l'adresse. L'adresse lisible vient du nom du tribunal (« tribunal-judiciaire-
+ * grasse ») ; celle par code ne sert plus qu'aux tribunaux sans nom lisible ou au nom partagé par un
+ * autre. D'abord les tribunaux qui ont des ventes (activité publique), puis le référentiel complet
+ * (page « aucune vente à venir »), puis les anciennes adresses, par code ou par nom (redirection).
+ * Lève une erreur si la base est indisponible : jamais de 404 déduit d'une panne, la réponse n'est
+ * alors pas mise en cache.
  */
 async function resolvePage(slug: string): Promise<Resolved> {
   const resolved = await resolveExactSlug(slug);
@@ -74,22 +86,34 @@ async function resolvePage(slug: string): Promise<Resolved> {
 async function resolveExactSlug(slug: string): Promise<Resolved> {
   const activity = await loadPublicTribunalActivity();
   if (activity.status === "error") throw new Error("Activité publique des tribunaux indisponible.");
-  const page = tribunalPageFromSlug(activity.items, slug);
-  if (page) return { kind: "active", items: activity.items, page };
-
   const directory = await tryLoadPublicTribunalDirectory();
+  // Sans le référentiel complet, on ne sait pas si un nom est partagé par un autre tribunal : ni page
+  // servie, ni redirection définitive (308) vers une adresse lisible peut-être ambiguë. La réponse
+  // n'est pas mise en cache et une version déjà produite reste servie.
   if (directory.status === "error") throw new Error("Référentiel des tribunaux indisponible.");
-  const known = knownTribunalFromSlug(directory.items, slug);
+  const entries = directory.items;
+  // Deux tribunaux de même nom n'ont pas d'adresse lisible : le référentiel complet le révèle.
+  const ambiguous = ambiguousTribunalCodes([...activity.items, ...entries]);
+  const page = tribunalPageFromSlug(activity.items, slug, ambiguous);
+  if (page) return { kind: "active", items: activity.items, page, ambiguous };
+
+  const known = knownTribunalFromSlug(entries, slug, ambiguous);
   if (known) {
     const emptyActivity = emptyTribunalActivity(known);
     return {
       kind: "empty",
       items: activity.items,
-      page: { activity: emptyActivity, slug, path: tribunalPagePath(known.code) },
+      page: {
+        activity: emptyActivity,
+        slug,
+        path: `${TRIBUNAL_PAGES_PATH}/${tribunalSlug(known, ambiguous)}`,
+      },
+      ambiguous,
     };
   }
-  const path = legacyTribunalRedirectPath(activity.items, directory.items, slug);
-  return path ? { kind: "redirect", path } : { kind: "unknown" };
+  const path = legacyTribunalRedirectPath(activity.items, entries, slug);
+  if (path) return { kind: "redirect", path };
+  return { kind: "unknown" };
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -124,7 +148,7 @@ export default async function Page({ params }: PageProps) {
   if (resolved.kind === "unknown") notFound();
   // Avant toute écriture de la réponse : un vrai 308, pas une redirection côté client.
   if (resolved.kind === "redirect") permanentRedirect(resolved.path);
-  const { items, page } = resolved;
+  const { items, page, ambiguous } = resolved;
 
   // Un tribunal sans vente à venir n'a rien à lire : la page le dit, sans interroger la base.
   const sales =
@@ -133,7 +157,7 @@ export default async function Page({ params }: PageProps) {
       : ({ status: "ok", sales: [], received: 0 } as const);
   const department = departmentFromCode(page.activity.department);
   const siblings = department
-    ? tribunalPages(items).filter(
+    ? tribunalPages(items, ambiguous).filter(
         (other) =>
           other.activity.code !== page.activity.code &&
           departmentFromCode(other.activity.department)?.code === department.code,
@@ -175,6 +199,7 @@ export default async function Page({ params }: PageProps) {
         department={department}
         siblings={siblings}
         generatedAt={now}
+        pagePath={page.path}
       />
     </>
   );

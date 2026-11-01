@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   pepiteRpc: vi.fn(),
   pepitePublished: vi.fn(),
   pepiteRead: vi.fn(),
+  sharedReport: vi.fn(),
+  sharedComparison: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -37,6 +39,10 @@ vi.mock("@/lib/property-reports", () => ({
   assertFeatureEntitlement: mocks.entitlement,
   assertFeatureEntitlementVia: mocks.entitlement,
   featureIncludedForSale: async () => true,
+  getSharedPropertyReport: mocks.sharedReport,
+}));
+vi.mock("@/lib/sale-analysis-sets", () => ({
+  getSharedSaleComparison: mocks.sharedComparison,
 }));
 vi.mock("@/lib/sale-market-estimates", () => ({
   refreshSaleValuationOnDemand: mocks.refreshValuation,
@@ -100,6 +106,8 @@ import { POST as environmentPost } from "./environment-context/route";
 import { GET as featuredGet } from "./lawyers/featured/route";
 import { GET as boundaryGet } from "./geographic-boundary/route";
 import { GET as offerGet } from "./billing/offer/route";
+import { GET as reportShareGet } from "./property-reports/share/[token]/route";
+import { GET as comparisonShareGet } from "./sale-analysis-sets/share/[token]/route";
 import { GET as pepiteGet } from "./sales/[id]/pepite/route";
 import { GET as pepiteIdsGet } from "./catalogue/pepites/route";
 import { GET as v1OutcomeGraph } from "./v1/sales/[id]/outcome-graph/route";
@@ -203,6 +211,33 @@ describe("P4-02 rate limits on costly and public routes", () => {
       ["lawyers.featured", 60],
       ["geographic-boundary", 60],
       ["billing.offer", 60],
+    ]);
+  });
+
+  it("limits the public share links (report and comparison) per IP before reading anything", async () => {
+    mocks.enforceIp.mockRejectedValue(new RateLimitError(undefined, 7));
+    const params = { params: Promise.resolve({ token: "abcDEF123_-abcDEF123_-abcDEF123" }) };
+
+    const report = await reportShareGet(
+      new Request("https://example.test/api/property-reports/share/t"),
+      params,
+    );
+    const comparison = await comparisonShareGet(
+      new Request("https://example.test/api/sale-analysis-sets/share/t"),
+      params,
+    );
+
+    for (const response of [report, comparison]) {
+      expect(response.status).toBe(429);
+      expect(response.headers.get("retry-after")).toBe("7");
+    }
+    expect(mocks.sharedReport).not.toHaveBeenCalled();
+    expect(mocks.sharedComparison).not.toHaveBeenCalled();
+    expect(
+      mocks.enforceIp.mock.calls.map(([options]) => [options.bucketKey, options.limit]),
+    ).toEqual([
+      ["property-reports.share", 60],
+      ["sale-analysis-sets.share", 60],
     ]);
   });
 

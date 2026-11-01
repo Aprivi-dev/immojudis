@@ -84,6 +84,11 @@ describe("publicAlertCriteria", () => {
     expect(publicAlertCriteria({ department: "33", pepite: "peut-être" }).pepite).toBeUndefined();
   });
 
+  it("garde le tribunal d'une page tribunal, borné en longueur", () => {
+    expect(publicAlertCriteria({ tribunal: "TJ Bobigny" })).toEqual({ tribunal: "TJ Bobigny" });
+    expect(publicAlertCriteria({ tribunal: "x".repeat(81) }).tribunal).toBeUndefined();
+  });
+
   it("n'accepte qu'un seul type de bien", () => {
     expect(publicAlertCriteria({ department: "33", homeTypes: "house,apartment" }).homeTypes).toBe(
       undefined,

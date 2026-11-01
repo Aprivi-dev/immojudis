@@ -6,6 +6,11 @@ requires-python = ">=3.12,<3.13"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "schema_contract: colonnes écrites par le pipeline contre le schéma migré (SCHEMA_CONTRACT_DB_URL, job « Supabase migrations + pgTAP »)",
+]
+# Le contrat de schéma ne tourne que dans le job de migrations : `pytest -m schema_contract` l'y sélectionne.
+addopts = "-m 'not schema_contract'"
 
 [tool.ruff]
 line-length = 120

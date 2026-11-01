@@ -30,7 +30,9 @@ from unnest(array[
   'sale-pepites',
   'sale-flood-risk',
   'cnb-lawyer-directory',
-  'sale-reminders'
+  'sale-reminders',
+  'sale-results',
+  'weekly-digest'
 ]) as job_name;
 
 insert into public.dvf_import_batches (

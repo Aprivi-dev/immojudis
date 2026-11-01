@@ -24,7 +24,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: serverFrom, rpc: serverRpc },
 }));
 
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   resolvePlanEntitlements: vi.fn(async () => ({
     plan: "analyse",
     label: "Analyse",

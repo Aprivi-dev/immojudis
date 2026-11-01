@@ -90,6 +90,8 @@ export function accountLinksFor(hasAnalysisAccess: boolean | undefined): SiteLin
  * `mes-favoris` et `mes-alertes` : une page de l'espace personnel demandée sans être connecté
  * (à la différence de `favori` et `alerte`, qui suivent un clic sur un cœur ou une cloche).
  * `exemple` : l'inscription proposée à la fin de l'annonce exemple (`/annonce-exemple`).
+ * `rapport` : l'inscription proposée au destinataire d'un rapport partagé (`/reports/shared/<jeton>`).
+ * `simulateur` : l'inscription proposée sous le simulateur de frais (`/simulateur-frais-encheres`).
  */
 export const LOGIN_REASONS = [
   "alerte",
@@ -101,6 +103,8 @@ export const LOGIN_REASONS = [
   "mes-favoris",
   "mes-alertes",
   "exemple",
+  "rapport",
+  "simulateur",
 ] as const;
 export type LoginReason = (typeof LOGIN_REASONS)[number];
 
@@ -140,7 +144,7 @@ const RETURN_BASE = "http://immojudis.local";
 
 /**
  * Pages privées ou de liste, sans paramètre, d'où l'on ouvre une fiche et où « Retour » ramène.
- * La page du tribunal (`/tribunaux/<code>`) est reconnue à part (voir `TRIBUNAL_RETURN_PATH`).
+ * La page du tribunal (`/tribunaux/<adresse>`) est reconnue à part (voir `TRIBUNAL_RETURN_PATH`).
  */
 const FIXED_RETURN_PATHS: ReadonlySet<string> = new Set([
   "/favoris",
@@ -149,7 +153,7 @@ const FIXED_RETURN_PATHS: ReadonlySet<string> = new Set([
   "/audiences-a-venir",
 ]);
 
-/** Code du tribunal en adresse : minuscules, chiffres et tirets (voir `tribunalCodeSlug`). */
+/** Adresse du tribunal : minuscules, chiffres et tirets (voir `tribunalSlug`). */
 const TRIBUNAL_RETURN_PATH = /^\/tribunaux\/[a-z0-9][a-z0-9-]*$/;
 
 /**

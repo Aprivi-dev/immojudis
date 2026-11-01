@@ -35,11 +35,19 @@ export const ANALYSIS_SUBSCRIPTION_BILLING_MODEL = "subscription_recurring" as c
 
 export const DEFAULT_ANALYSIS_OFFER_LABEL = "59 € TTC / mois";
 
+/**
+ * Le prix s'adresse à des consommateurs : le libellé public dit « TTC ». Un libellé configuré sans
+ * ce sigle (« 59 € / mois ») est refusé au profit du libellé approuvé.
+ */
+export function analysisOfferLabelStatesTax(label: string): boolean {
+  return /(?<![\p{L}\p{N}])TTC(?![\p{L}\p{N}])/iu.test(label);
+}
+
 export function resolveAnalysisOfferLabel(
   value: string | undefined | null = process.env.NEXT_PUBLIC_ANALYSIS_OFFER_LABEL,
 ): string {
   const label = value?.trim();
-  return label || DEFAULT_ANALYSIS_OFFER_LABEL;
+  return label && analysisOfferLabelStatesTax(label) ? label : DEFAULT_ANALYSIS_OFFER_LABEL;
 }
 
 /** A search engine shows about 160 characters of a meta description. */

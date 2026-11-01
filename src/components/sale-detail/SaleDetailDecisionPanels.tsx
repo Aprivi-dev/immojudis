@@ -243,7 +243,7 @@ export function DiscoveryDecisionPanel({
           <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
         </div>
         <div>
-          <dt>Valeur estimée</dt>
+          <dt>Valeur estimée (fourchette indicative)</dt>
           <dd className={value ? undefined : panelStyles.textValue}>
             {value ? (
               `${formatPrice(value.lowEur)} – ${formatPrice(value.highEur)}`

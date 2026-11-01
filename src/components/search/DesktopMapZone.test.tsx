@@ -17,7 +17,7 @@ function Harness({ onStarted }: { onStarted?: () => void }) {
     setStarted(true);
     onStarted?.();
   }, [onStarted]);
-  useFirstGestureStart({ enabled: !started, onStart: start });
+  useFirstGestureStart({ enabled: !started, onStart: start, zoneId: DESKTOP_MAP_ZONE_ID });
   return (
     <>
       <button type="button">Avant la carte</button>
@@ -102,12 +102,12 @@ describe("DesktopMapZone au clavier", () => {
     expect(onStarted).toHaveBeenCalledTimes(1);
   });
 
-  it("un autre geste démarre la carte sans lui prendre le focus ni l'annoncer", () => {
+  it("un geste sur la zone démarre la carte sans lui prendre le focus ni l'annoncer", () => {
     vi.useFakeTimers();
     render(<Harness />);
     const before = screen.getByRole("button", { name: "Avant la carte" });
     act(() => before.focus());
-    fireEvent.wheel(window);
+    fireEvent.wheel(screen.getByTestId("map-preview"));
     act(() => {
       vi.advanceTimersByTime(1_000);
     });
@@ -115,6 +115,23 @@ describe("DesktopMapZone au clavier", () => {
     expect(screen.getByTestId("map-panel")).toBeTruthy();
     expect(document.activeElement).toBe(before);
     expect(screen.getByRole("status").textContent).toBe("");
+  });
+
+  it("le défilement ou un clic ailleurs dans la page, comme le survol de la zone, ne démarrent pas la carte", () => {
+    vi.useFakeTimers();
+    render(<Harness />);
+    const before = screen.getByRole("button", { name: "Avant la carte" });
+    fireEvent.wheel(window);
+    fireEvent.wheel(before);
+    fireEvent.pointerDown(before);
+    fireEvent.pointerEnter(screen.getByTestId("map-preview"), { pointerType: "mouse" });
+    fireEvent.mouseOver(screen.getByTestId("map-preview"));
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(screen.queryByTestId("map-panel")).toBeNull();
+    expect(screen.getByTestId("map-preview")).toBeTruthy();
   });
 
   it("porte l'identifiant visé par le lien d'évitement « Aller à la carte »", () => {

@@ -16,6 +16,29 @@ import {
 import type { ViewportBounds } from "./search-url-state";
 import type { AuctionSale } from "@/lib/types";
 
+describe("filtre « prix au m² maximal »", () => {
+  const studio = {
+    id: "studio",
+    property_type: "studio",
+    title: "Studio",
+    starting_price_eur: 100_000,
+    app_surface_m2: null,
+    source_blocks: null,
+  } as unknown as AuctionSale;
+
+  it("écarte un studio sans surface publiée : son prix au m² (20 m² présumés) serait inventé", () => {
+    // 100 000 € / 20 m² = 5 000 €/m² : sous le plafond de 6 000 €/m², il passerait sans cette règle.
+    expect(applyClientSearchFilters([studio], { maxPricePerM2: 6_000 }, null)).toEqual([]);
+  });
+
+  it("garde un studio dont la surface est publiée", () => {
+    const measured = { ...studio, app_surface_m2: 25 } as AuctionSale;
+    expect(applyClientSearchFilters([measured], { maxPricePerM2: 6_000 }, null)).toEqual([
+      measured,
+    ]);
+  });
+});
+
 describe("filtre « rendement minimal »", () => {
   const sale = {
     id: "sale-yield",

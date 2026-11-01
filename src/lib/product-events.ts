@@ -30,6 +30,10 @@ export const PRODUCT_EVENT_NAMES = [
   "home_example_used",
   "pepite_block_viewed",
   "pepite_filter_used",
+  "sale_unlock_confirmed",
+  "home_cta_clicked",
+  "ceiling_viewed",
+  "shared_report_viewed",
 ] as const;
 
 export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
@@ -41,10 +45,26 @@ export type ProductEventName = (typeof PRODUCT_EVENT_NAMES)[number];
 export const SIGNUP_ENTRIES = [...LOGIN_REASONS, "direct"] as const;
 export type SignupEntry = (typeof SIGNUP_ENTRIES)[number];
 
+/**
+ * D'où vient une alerte créée : la page de département, la page d'un tribunal, la liste des
+ * audiences à venir, une fiche de vente, ou la recherche (catalogue, accueil du compte, tout le
+ * reste). Valeurs fermées : jamais l'adresse de la page.
+ */
+export const ALERT_SURFACES = ["department", "tribunal", "hearings", "sale", "search"] as const;
+export type AlertSurface = (typeof ALERT_SURFACES)[number];
+
+/** Le bouton ou le lien cliqué en haut de l'accueil : créer un compte, ou explorer sans compte. */
+export const HOME_CTA_TARGETS = ["signup", "browse"] as const;
+export type HomeCtaTarget = (typeof HOME_CTA_TARGETS)[number];
+
+/** État de la page d'un rapport partagé quand son destinataire l'ouvre. */
+export const SHARED_REPORT_STATES = ["open", "unavailable"] as const;
+export type SharedReportState = (typeof SHARED_REPORT_STATES)[number];
+
 export type ProductEventProperties = {
   signup_submitted: { entry: SignupEntry };
   signup_confirmed: undefined;
-  alert_created: { email_consent: boolean; pepite_only?: boolean };
+  alert_created: { email_consent: boolean; pepite_only?: boolean; surface?: AlertSurface };
   favorite_added: undefined;
   sample_report_viewed: undefined;
   offers_viewed: undefined;
@@ -56,25 +76,33 @@ export type ProductEventProperties = {
   /** `locked` : noms des critères seuls (visiteur, compte Découverte) ; `detail` : détail ouvert. */
   pepite_block_viewed: { access: "locked" | "detail" };
   pepite_filter_used: undefined;
+  /** Le déblocage d'une vente est confirmé (second clic du panneau), avant la réponse du serveur. */
+  sale_unlock_confirmed: undefined;
+  home_cta_clicked: { target: HomeCtaTarget };
+  /** L'enchère plafond d'une vente est calculée et affichée (pas seulement l'estimation servie). */
+  ceiling_viewed: undefined;
+  /** Un rapport partagé est ouvert par son destinataire : `open` (lisible) ou `unavailable` (lien fermé). */
+  shared_report_viewed: { state: SharedReportState };
 };
 
-type PropertySpec = { kind: "boolean" } | { kind: "enum"; values: readonly string[] };
+/** Domaine d'une propriété : un booléen, ou la liste fermée de ses valeurs. */
+type PropertySpec = "boolean" | readonly string[];
 
-/** Propriétés admises par événement, avec leur domaine de valeurs. */
-const PROPERTY_SPECS: { [N in ProductEventName]: Record<string, PropertySpec> } = {
-  signup_submitted: { entry: { kind: "enum", values: SIGNUP_ENTRIES } },
-  signup_confirmed: {},
-  alert_created: { email_consent: { kind: "boolean" }, pepite_only: { kind: "boolean" } },
-  favorite_added: {},
-  sample_report_viewed: {},
-  offers_viewed: {},
-  checkout_started: {},
-  checkout_returned: { status: { kind: "enum", values: ["success", "cancelled"] } },
-  opening_notification_requested: {},
-  fees_simulator_used: {},
-  home_example_used: {},
-  pepite_block_viewed: { access: { kind: "enum", values: ["locked", "detail"] } },
-  pepite_filter_used: {},
+/**
+ * Propriétés admises par événement, avec leur domaine de valeurs. Un événement sans propriété n'y
+ * figure pas (le code client reste léger) : `sanitizeProductEventProperties` n'en transmet aucune.
+ */
+const PROPERTY_SPECS: { [N in ProductEventName]?: Record<string, PropertySpec> } = {
+  signup_submitted: { entry: SIGNUP_ENTRIES },
+  alert_created: {
+    email_consent: "boolean",
+    pepite_only: "boolean",
+    surface: ALERT_SURFACES,
+  },
+  checkout_returned: { status: ["success", "cancelled"] },
+  pepite_block_viewed: { access: ["locked", "detail"] },
+  home_cta_clicked: { target: HOME_CTA_TARGETS },
+  shared_report_viewed: { state: SHARED_REPORT_STATES },
 };
 
 type TrackArguments<N extends ProductEventName> = ProductEventProperties[N] extends undefined
@@ -109,9 +137,12 @@ export function sanitizeProductEventProperties(
   const clean: Record<string, string | boolean> = {};
   for (const [key, spec] of Object.entries(specs)) {
     const value = (properties as Record<string, unknown>)[key];
-    if (spec.kind === "boolean" && typeof value === "boolean") clean[key] = value;
-    if (spec.kind === "enum" && typeof value === "string" && spec.values.includes(value)) {
-      clean[key] = value;
+    if (
+      spec === "boolean"
+        ? typeof value === "boolean"
+        : typeof value === "string" && spec.includes(value)
+    ) {
+      clean[key] = value as string | boolean;
     }
   }
   return Object.keys(clean).length ? clean : undefined;

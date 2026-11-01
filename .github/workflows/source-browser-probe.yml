@@ -11,6 +11,10 @@ on:
           - encheres_publiques
 permissions:
   contents: read
+# One probe at a time per source: two simultaneous visits would double the load on the third-party site.
+concurrency:
+  group: source-browser-probe-${{ inputs.source }}
+  cancel-in-progress: false
 jobs:
   probe:
     runs-on: ubuntu-24.04

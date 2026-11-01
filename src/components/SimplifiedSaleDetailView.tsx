@@ -18,6 +18,7 @@ import {
   SaleUnlockOfferProvider,
   UnlockCallToAction,
 } from "@/components/sale-detail/UnlockCallToAction";
+import { useInvestorProfile } from "@/hooks/use-investor-profile";
 import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
@@ -82,6 +83,7 @@ import { ceilingConfidence, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
+import { investorProfileFinancingDraft, investorProfileToChoices } from "@/lib/investor-profile";
 import { getSaleSurface } from "@/lib/surface";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
@@ -378,10 +380,26 @@ function SaleDetailWorkspace({
   const [financingResult, setFinancingResult] = useState<FinancingResult | null>(null);
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
   const { user, loading: authLoading } = useAuth();
+  // Profil d'investisseur du compte (n° 93) : les hypothèses de départ du plafond de chaque vente,
+  // que le visiteur modifie ensuite vente par vente.
+  const investor = useInvestorProfile(user?.id);
+  const profileChoices = useMemo(() => {
+    // Une surface estimée (20 m² d'un studio sans surface publiée) ne sert jamais à chiffrer les
+    // travaux du profil : on ne multiplie pas par une surface inventée.
+    const surface = getSaleSurface(sale);
+    return investorProfileToChoices(investor.profile, {
+      surfaceM2: surface.estimated ? null : surface.value,
+    });
+  }, [investor.profile, sale]);
+  const profileFinancingDraft = useMemo(
+    () => investorProfileFinancingDraft(investor.profile),
+    [investor.profile],
+  );
   const ceilingChoices = useCeilingChoices(
     user?.id ?? "guest-demo",
     sale.id,
     defaultCeilingChoices,
+    profileChoices,
   );
   // The sale rows are open (Analyse, or a sale this account unlocked). Everything below that
   // only Analyse has stays on `access === "analysis"`.
@@ -793,6 +811,13 @@ function SaleDetailWorkspace({
     document.getElementById("annonce-sections")?.scrollIntoView?.({ block: "start" });
   };
 
+  // L'adresse garde l'ancre : la fiche débloquée, montée à la place de la fiche gratuite, la relit.
+  const showCalculation = () => {
+    window.history.pushState(null, "", "#calculation");
+    setActiveTab("estimation");
+    setAnchorVisit((current) => current + 1);
+  };
+
   const handleSectionLink = (event: ReactMouseEvent<HTMLElement>) => {
     const origin = event.target;
     if (!(origin instanceof Element)) return;
@@ -902,7 +927,11 @@ function SaleDetailWorkspace({
                 pepite: pepite != null,
               }}
               announce={justUnlocked}
-              onUnlocked={(result) => onSaleUnlocked?.(result)}
+              onUnlocked={(result) => {
+                onSaleUnlocked?.(result);
+                // Le plafond est ce que le déblocage ouvre : on y va, la confirmation reste en haut.
+                if (ceilingTerms) showCalculation();
+              }}
             />
           ) : null}
           {!publicDemo && user ? (
@@ -1329,16 +1358,22 @@ function SaleDetailWorkspace({
             {activeTab === "financement" ? (
               <>
                 <div id="financing" className="scroll-mt-2">
-                  <FinancingSimulator
-                    sale={displaySale}
-                    aiReviewProjections={resolvedAiReviewProjections}
-                    aiReviewStatus={aiReviewStatus}
-                    projectPriceOverride={projectCosts?.totalCost ?? null}
-                    initialDraft={financingDraft}
-                    onDraftChange={setFinancingDraft}
-                    onResultChange={setFinancingResult}
-                    initialInsuranceRate={0.3}
-                  />
+                  {/* Le simulateur ne lit `initialDraft` qu'au montage : on attend le compte et son
+                      profil pour que l'apport du profil le préremplisse. */}
+                  {authLoading || investor.loading ? (
+                    <p className="p-6 text-sm text-muted-foreground">Chargement du financement…</p>
+                  ) : (
+                    <FinancingSimulator
+                      sale={displaySale}
+                      aiReviewProjections={resolvedAiReviewProjections}
+                      aiReviewStatus={aiReviewStatus}
+                      projectPriceOverride={projectCosts?.totalCost ?? null}
+                      initialDraft={financingDraft ?? profileFinancingDraft}
+                      onDraftChange={setFinancingDraft}
+                      onResultChange={setFinancingResult}
+                      initialInsuranceRate={0.3}
+                    />
+                  )}
                   <ListingRental
                     saleId={sale.id}
                     acquisitionCost={
@@ -1489,6 +1524,7 @@ function SaleDetailWorkspace({
                 : "Mise à prix"
           }
           price={startingPrice}
+          ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}
           action={
             activeTab === "estimation" && heroAction.href === "#calculation" ? null : heroAction
           }

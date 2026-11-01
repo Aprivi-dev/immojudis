@@ -75,6 +75,20 @@ describe("CeilingPlanner titre", () => {
   });
 });
 
+describe("CeilingPlanner taxe foncière", () => {
+  it("dit près du plafond que la taxe foncière n'est pas comptée quand elle n'est pas renseignée", () => {
+    renderPlanner();
+    expect(screen.getByTestId("property-tax-missing").textContent).toBe(
+      "Taxe foncière non comptée",
+    );
+  });
+
+  it("n'en dit rien une fois la taxe foncière saisie", () => {
+    renderPlanner({ choices: { annualPropertyTax: 1_200 } });
+    expect(screen.queryByTestId("property-tax-missing")).toBeNull();
+  });
+});
+
 describe("CeilingPlanner textes du régime de frais", () => {
   it("garde les textes du tribunal sans régime, et avec le régime tribunal", () => {
     for (const regime of [undefined, TRIBUNAL_FEE_REGIME]) {
@@ -647,6 +661,19 @@ describe("CeilingPlanner accessibilité", () => {
     fireEvent.keyDown(profiles[profiles.length - 1], { key: "ArrowRight" });
     expect(document.activeElement).toBe(profiles[0]);
     expect(calls.at(-1)?.customMarginPct).toBeNull();
+  });
+
+  it("place « Modifier les hypothèses » juste sous le résultat, avant le simulateur", () => {
+    renderWithChoices();
+    const toggle = screen.getByRole("button", { name: "Modifier les hypothèses" });
+    const profiles = screen.getByRole("radiogroup", { name: "Niveau de prudence" });
+    const simulator = screen.getByLabelText(/Montant de l’enchère simulée/);
+    expect(
+      profiles.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      toggle.compareDocumentPosition(simulator) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("relie le bouton des hypothèses à son panneau", () => {
