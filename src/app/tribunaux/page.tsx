@@ -5,6 +5,7 @@ import { TribunalJudicialActivityExplorer } from "@/components/TribunalJudicialA
 import { TribunalSectorAlert } from "@/components/TribunalSectorAlert";
 import { pageMetadata } from "@/lib/page-metadata";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
+import { loadAmbiguousTribunalCodes } from "@/lib/tribunal-ambiguity.server";
 
 /**
  * The adjudication prices (Licitor results) are announced only once the statistics are open.
@@ -45,6 +46,7 @@ export default async function Page() {
   const activity = await loadPublicTribunalActivity();
   const publicActivity = activity.status === "ok" ? activity.items : [];
   const adjudication = adjudicationStatisticsEnabled();
+  const ambiguousCodes = await loadAmbiguousTribunalCodes(publicActivity);
   return (
     <>
       <BreadcrumbJsonLd trail={[{ name: "Tribunaux", path: "/tribunaux" }]} />
@@ -54,6 +56,7 @@ export default async function Page() {
           <>
             <PublicTribunalActivitySection
               items={publicActivity}
+              ambiguousCodes={ambiguousCodes}
               adjudicationStatisticsEnabled={adjudication}
             />
             <TribunalSectorAlert />

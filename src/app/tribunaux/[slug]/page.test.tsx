@@ -156,15 +156,61 @@ describe("page d'un tribunal : génération", () => {
     expect(mocks.sales).not.toHaveBeenCalled();
   });
 
+  it("redirige en 308 l'ancienne adresse par code vers l'adresse lisible, sans la servir", async () => {
+    await expect(Page(params("justice-tj-1-93"))).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-bobigny;308;",
+    });
+    // Un tribunal sans vente à venir, et un référentiel en panne pour un tribunal qui a des ventes.
+    await expect(Page(params("justice-tj-1-09"))).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-foix;308;",
+    });
+    // Référentiel en panne : ni redirection définitive ni page vers une adresse peut-être ambiguë.
+    mocks.directory.mockResolvedValue({ status: "error" });
+    await expect(Page(params("justice-tj-1-113"))).rejects.toThrow("indisponible");
+    mocks.directory.mockResolvedValue({ status: "ok", items: directoryOf(FOIX) });
+    // L'ancienne adresse n'entre pas dans l'index : seule l'adresse lisible est le canonical.
+    const metadata = await generateMetadata(params("justice-tj-1-93"));
+    expect(metadata.robots).toEqual({ index: false, follow: false });
+    expect(metadata.alternates).toBeUndefined();
+    expect(mocks.sales).not.toHaveBeenCalled();
+  });
+
+  it("garde l'adresse par code d'un tribunal dont le nom est partagé avec un autre", async () => {
+    const homonym = {
+      code: "justice_tj_1_97",
+      name: "Bobigny",
+      searchName: "Tribunal judiciaire de Bobigny",
+      city: null,
+      department: "974",
+    };
+    mocks.directory.mockResolvedValue({ status: "ok", items: directoryOf(homonym) });
+    // Aucun des deux n'a d'adresse lisible : le nom ne désigne pas une page.
+    await expect(Page(params("tribunal-judiciaire-bobigny"))).rejects.toMatchObject({
+      digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
+    const metadata = await generateMetadata(params("justice-tj-1-93"));
+    expect(metadata.alternates?.canonical).toBe("/tribunaux/justice-tj-1-93");
+    const other = await generateMetadata(params("justice-tj-1-97"));
+    expect(other.alternates?.canonical).toBe("/tribunaux/justice-tj-1-97");
+    render(await Page(params("justice-tj-1-93")));
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Bobigny");
+  });
+
   it("redirige en 308 les adresses mal écrites : majuscules, soulignés, nom du tribunal", async () => {
-    for (const slug of ["JUSTICE-TJ-1-93", "justice_tj_1_93", "Justice_TJ_1_93", "Bobigny"]) {
+    for (const slug of [
+      "JUSTICE-TJ-1-93",
+      "justice_tj_1_93",
+      "Justice_TJ_1_93",
+      "Bobigny",
+      "Tribunal-Judiciaire-Bobigny",
+    ]) {
       await expect(Page(params(slug)), slug).rejects.toMatchObject({
-        digest: "NEXT_REDIRECT;replace;/tribunaux/justice-tj-1-93;308;",
+        digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-bobigny;308;",
       });
     }
     // Un tribunal connu du référentiel sans vente à venir se redirige aussi.
     await expect(Page(params("JUSTICE_TJ_1_09"))).rejects.toMatchObject({
-      digest: "NEXT_REDIRECT;replace;/tribunaux/justice-tj-1-09;308;",
+      digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-foix;308;",
     });
     // Une adresse mal écrite est hors de l'index, comme toute adresse redirigée.
     const metadata = await generateMetadata(params("justice_tj_1_93"));
@@ -182,12 +228,12 @@ describe("page d'un tribunal : génération", () => {
     });
   });
 
-  it("redirige définitivement (308) l'ancienne adresse par nom vers l'adresse par code", async () => {
+  it("redirige définitivement (308) l'ancienne adresse par nom vers l'adresse lisible", async () => {
     await expect(Page(params("bobigny"))).rejects.toMatchObject({
-      digest: "NEXT_REDIRECT;replace;/tribunaux/justice-tj-1-93;308;",
+      digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-bobigny;308;",
     });
     await expect(Page(params("le-puy-en-velay"))).rejects.toMatchObject({
-      digest: "NEXT_REDIRECT;replace;/tribunaux/justice-tj-1-113;308;",
+      digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-le-puy-en-velay;308;",
     });
     expect(mocks.sales).not.toHaveBeenCalled();
     // Une adresse redirigée n'entre pas dans l'index.
@@ -198,18 +244,18 @@ describe("page d'un tribunal : génération", () => {
   it("redirige aussi l'ancienne adresse d'un tribunal qui n'a plus de vente", async () => {
     mocks.directory.mockResolvedValue({ status: "ok", items: directoryOf(FOIX) });
     await expect(Page(params("foix"))).rejects.toMatchObject({
-      digest: "NEXT_REDIRECT;replace;/tribunaux/justice-tj-1-09;308;",
+      digest: "NEXT_REDIRECT;replace;/tribunaux/tribunal-judiciaire-foix;308;",
     });
   });
 
   it("sert la page d'un tribunal connu sans vente à venir : message, noindex, aucune lecture de ventes", async () => {
-    const metadata = await generateMetadata(params("justice-tj-1-09"));
+    const metadata = await generateMetadata(params("tribunal-judiciaire-foix"));
     expect(metadata.robots).toEqual({ index: false, follow: true });
-    expect(metadata.alternates?.canonical).toBe("/tribunaux/justice-tj-1-09");
+    expect(metadata.alternates?.canonical).toBe("/tribunaux/tribunal-judiciaire-foix");
     expect(String(metadata.description)).toBe(
       "Aucune vente judiciaire à venir au tribunal judiciaire de Foix pour le moment.",
     );
-    render(await Page(params("justice-tj-1-09")));
+    render(await Page(params("tribunal-judiciaire-foix")));
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Ventes judiciaires à venir au tribunal judiciaire de Foix",
     );
@@ -226,9 +272,11 @@ describe("page d'un tribunal : génération", () => {
     });
     mocks.directory.mockResolvedValue({ status: "error" });
     await expect(Page(params("justice-tj-9-99"))).rejects.toThrow("indisponible");
-    // Un tribunal qui a des ventes n'a pas besoin du référentiel.
-    const { container } = render(await Page(params("justice-tj-1-93")));
-    expect(container.querySelector("h1")?.textContent).toContain("Bobigny");
+    // Même un tribunal qui a des ventes : sans référentiel, son adresse lisible peut être ambiguë.
+    await expect(Page(params("tribunal-judiciaire-bobigny"))).rejects.toThrow("indisponible");
+    await expect(generateMetadata(params("tribunal-judiciaire-bobigny"))).rejects.toThrow(
+      "indisponible",
+    );
   });
 
   it("garde un tribunal inconnu hors de l'index sans lire ses ventes", async () => {
@@ -239,8 +287,10 @@ describe("page d'un tribunal : génération", () => {
 
   it("laisse remonter une panne de l'activité : pas de page vide mise en cache", async () => {
     mocks.activity.mockResolvedValue({ status: "error" });
-    await expect(generateMetadata(params("justice-tj-1-93"))).rejects.toThrow("indisponible");
-    await expect(Page(params("justice-tj-1-93"))).rejects.toThrow("indisponible");
+    await expect(generateMetadata(params("tribunal-judiciaire-bobigny"))).rejects.toThrow(
+      "indisponible",
+    );
+    await expect(Page(params("tribunal-judiciaire-bobigny"))).rejects.toThrow("indisponible");
   });
 });
 
@@ -281,12 +331,12 @@ describe("page d'un tribunal : nom manquant au référentiel", () => {
 
 describe("page d'un tribunal : indexation", () => {
   it("est indexable à partir de 3 ventes à venir, avec canonical et Open Graph", async () => {
-    const metadata = await generateMetadata(params("justice-tj-1-93"));
+    const metadata = await generateMetadata(params("tribunal-judiciaire-bobigny"));
     expect(metadata.robots).toBeUndefined();
     expect(metadata.title).toBe("Ventes aux enchères au tribunal de Bobigny");
-    expect(metadata.alternates?.canonical).toBe("/tribunaux/justice-tj-1-93");
+    expect(metadata.alternates?.canonical).toBe("/tribunaux/tribunal-judiciaire-bobigny");
     expect(metadata.openGraph).toMatchObject({
-      url: "/tribunaux/justice-tj-1-93",
+      url: "/tribunaux/tribunal-judiciaire-bobigny",
       siteName: "Immojudis",
     });
     expect(String(metadata.description)).toContain(
@@ -296,20 +346,20 @@ describe("page d'un tribunal : indexation", () => {
   });
 
   it("passe en noindex, follow sous le seuil de 3 ventes, et reste servie", async () => {
-    const metadata = await generateMetadata(params("justice-tj-1-60"));
+    const metadata = await generateMetadata(params("tribunal-judiciaire-beauvais"));
     expect(metadata.robots).toEqual({ index: false, follow: true });
-    expect(metadata.alternates?.canonical).toBe("/tribunaux/justice-tj-1-60");
-    const { container } = render(await Page(params("justice-tj-1-60")));
+    expect(metadata.alternates?.canonical).toBe("/tribunaux/tribunal-judiciaire-beauvais");
+    const { container } = render(await Page(params("tribunal-judiciaire-beauvais")));
     expect(container.querySelector("h1")?.textContent).toContain("tribunal judiciaire de Beauvais");
   });
 
   it("donne une adresse propre au tribunal du nom doublé « TJ Tribunal judiciaire du … »", async () => {
-    const metadata = await generateMetadata(params("justice-tj-1-113"));
-    expect(metadata.alternates?.canonical).toBe("/tribunaux/justice-tj-1-113");
+    const metadata = await generateMetadata(params("tribunal-judiciaire-le-puy-en-velay"));
+    expect(metadata.alternates?.canonical).toBe("/tribunaux/tribunal-judiciaire-le-puy-en-velay");
     expect(metadata.title).toBe("Ventes aux enchères au tribunal du Puy-en-Velay");
     expect(String(metadata.description)).toContain("au tribunal judiciaire du Puy-en-Velay");
     expect(String(metadata.description)).not.toContain("TJ");
-    render(await Page(params("justice-tj-1-113")));
+    render(await Page(params("tribunal-judiciaire-le-puy-en-velay")));
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Ventes judiciaires à venir au tribunal judiciaire du Puy-en-Velay",
     );
@@ -323,7 +373,7 @@ describe("page d'un tribunal : indexation", () => {
         sale("a", { saleDate: "2026-12-01T10:00:00Z" }),
       ],
     });
-    const metadata = await generateMetadata(params("justice-tj-1-93"));
+    const metadata = await generateMetadata(params("tribunal-judiciaire-bobigny"));
     expect(String(metadata.description)).toContain("1 décembre 2026");
     expect(String(metadata.description)).not.toContain("20 octobre 2026");
   });
@@ -331,7 +381,7 @@ describe("page d'un tribunal : indexation", () => {
 
 describe("page d'un tribunal : contenu", () => {
   it("montre les chiffres du catalogue et la liste des ventes avec leur fiche", async () => {
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
 
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
       "Ventes judiciaires à venir au tribunal judiciaire de Bobigny",
@@ -349,7 +399,7 @@ describe("page d'un tribunal : contenu", () => {
       status: "ok",
       items: [{ ...BOBIGNY, upcomingCount: 3 }],
     });
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
 
     const list = screen.getByRole("region", { name: "Les ventes à venir" });
     const link = within(list).getAllByRole("link")[0]!;
@@ -363,7 +413,7 @@ describe("page d'un tribunal : contenu", () => {
       status: "ok",
       items: [{ ...BOBIGNY, upcomingCount: 3 }],
     });
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
 
     const list = screen.getByRole("region", { name: "Les ventes à venir" });
     expect(
@@ -378,7 +428,7 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("annonce « Les N prochaines ventes » quand la liste est plus courte que le total", async () => {
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     const list = screen.getByRole("region", { name: "Les 3 prochaines ventes" });
     expect(
       within(list).getByRole("link", { name: "la recherche du tribunal" }).getAttribute("href"),
@@ -389,9 +439,9 @@ describe("page d'un tribunal : contenu", () => {
     // 5 lignes reçues, 3 ventes après dédoublonnage ; l'activité publique en compte 5.
     mocks.activity.mockResolvedValue({ status: "ok", items: [{ ...BOBIGNY, upcomingCount: 5 }] });
     mockSales({ status: "ok", sales: [sale("a"), sale("b"), sale("c")], received: 5 });
-    const metadata = await generateMetadata(params("justice-tj-1-93"));
+    const metadata = await generateMetadata(params("tribunal-judiciaire-bobigny"));
     expect(String(metadata.description)).toContain("3 ventes judiciaires à venir");
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
     expect(figures.textContent).toContain("Ventes à venir3");
     expect(figures.textContent).not.toContain("deux sources");
@@ -406,7 +456,7 @@ describe("page d'un tribunal : contenu", () => {
       sales: Array.from({ length: 19 }, (_, index) => sale(`s${index}`)),
       received: 30,
     });
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
     expect(figures.textContent).toContain("Ventes à venir30");
     expect(figures.textContent).toContain(
@@ -423,7 +473,7 @@ describe("page d'un tribunal : contenu", () => {
         sale("a", { saleDate: "2026-12-01T10:00:00Z" }),
       ],
     });
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
     expect(figures.textContent).toContain("1 décembre 2026");
     expect(figures.textContent).not.toContain("20 octobre 2026");
@@ -437,7 +487,7 @@ describe("page d'un tribunal : contenu", () => {
       status: "ok",
       sales: [sale("r1", { status: "postponed" }), sale("r2", { status: "postponed" })],
     });
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     const figures = screen.getByRole("region", { name: "Dans le catalogue Immojudis" });
     expect(figures.textContent).toContain("Prochaine audienceNon connue");
   });
@@ -447,7 +497,7 @@ describe("page d'un tribunal : contenu", () => {
       status: "ok",
       sales: [sale("u", { status: "unknown" }), sale("a")],
     });
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     const list = screen.getByRole("region", { name: "Les 2 prochaines ventes" });
     const items = within(list).getAllByRole("listitem");
     expect(items[0].textContent).toContain("Statut à confirmer");
@@ -456,7 +506,7 @@ describe("page d'un tribunal : contenu", () => {
 
   it("garde la page, ses chiffres et un renvoi vers la recherche quand la liste est indisponible", async () => {
     mockSales({ status: "error" });
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
 
     expect(
       screen.getByRole("region", { name: "Dans le catalogue Immojudis" }).textContent,
@@ -471,7 +521,7 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("ajoute le bloc « Pour comprendre » avec le guide, deux articles et les autres tribunaux du département", async () => {
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
 
     const block = screen.getByRole("region", { name: "Pour comprendre" });
     const hrefs = within(block)
@@ -481,13 +531,13 @@ describe("page d'un tribunal : contenu", () => {
     expect(hrefs.filter((href) => href?.startsWith("/ressources/"))).toHaveLength(2);
     // Seine-Saint-Denis : la page du département et l'autre tribunal du 93, pas ceux d'ailleurs.
     expect(hrefs).toContain("/ventes-encheres-immobilieres/seine-saint-denis");
-    expect(hrefs).toContain("/tribunaux/justice-tj-1-92");
-    expect(hrefs).not.toContain("/tribunaux/justice-tj-1-60");
-    expect(hrefs).not.toContain("/tribunaux/justice-tj-1-93");
+    expect(hrefs).toContain("/tribunaux/tribunal-judiciaire-nanterre");
+    expect(hrefs).not.toContain("/tribunaux/tribunal-judiciaire-beauvais");
+    expect(hrefs).not.toContain("/tribunaux/tribunal-judiciaire-bobigny");
   });
 
   it("propose l'alerte du département du tribunal et un lien vers l'annuaire des avocats", async () => {
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     const alert = screen.getByRole("region", { name: "Être prévenu des nouvelles ventes" });
     expect(alert.textContent).toContain("ventes référencées en Seine-Saint-Denis");
     expect(alert.textContent).toContain("pas un tribunal");
@@ -502,6 +552,7 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("accorde la préposition du département : « En Gironde », « Dans le Nord », « À Paris »", async () => {
+    mocks.directory.mockResolvedValue({ status: "ok", items: [] });
     mocks.activity.mockResolvedValue({
       status: "ok",
       items: [
@@ -511,9 +562,9 @@ describe("page d'un tribunal : contenu", () => {
       ],
     });
     for (const [slug, heading, intro] of [
-      ["justice-tj-1-93", "En Gironde", "ventes référencées en Gironde"],
-      ["justice-tj-1-59", "Dans le Nord", "ventes référencées dans le Nord"],
-      ["justice-tj-1-75", "À Paris", "ventes référencées à Paris"],
+      ["tribunal-judiciaire-bobigny", "En Gironde", "ventes référencées en Gironde"],
+      ["tribunal-judiciaire-nanterre", "Dans le Nord", "ventes référencées dans le Nord"],
+      ["tribunal-judiciaire-le-puy-en-velay", "À Paris", "ventes référencées à Paris"],
     ] as const) {
       cleanup();
       render(await Page(params(slug)));
@@ -528,7 +579,7 @@ describe("page d'un tribunal : contenu", () => {
 
   it("ne dit pas « aucune vente » quand les chiffres en comptent et que la liste est vide", async () => {
     mockSales({ status: "ok", sales: [] });
-    render(await Page(params("justice-tj-1-93")));
+    render(await Page(params("tribunal-judiciaire-bobigny")));
     expect(
       screen.getByRole("region", { name: "Dans le catalogue Immojudis" }).textContent,
     ).toContain("Ventes à venir12");
@@ -539,7 +590,7 @@ describe("page d'un tribunal : contenu", () => {
   });
 
   it("garde un texte d'introduction générique, sans conseil", async () => {
-    const { container } = render(await Page(params("justice-tj-1-93")));
+    const { container } = render(await Page(params("tribunal-judiciaire-bobigny")));
     const intro = container.querySelector("header")?.textContent ?? "";
     expect(intro).toContain("catalogue public");
     expect(intro).toContain("ne constituent pas un conseil juridique");
@@ -550,7 +601,7 @@ describe("page d'un tribunal : contenu", () => {
 
 describe("page d'un tribunal : données structurées", () => {
   it("émet un fil d'Ariane et la liste des ventes en adresses absolues", async () => {
-    const { container } = render(await Page(params("justice-tj-1-93")));
+    const { container } = render(await Page(params("tribunal-judiciaire-bobigny")));
     const blocks = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (script) => JSON.parse(script.textContent ?? "{}"),
     );
@@ -561,7 +612,7 @@ describe("page d'un tribunal : données structurées", () => {
       "Bobigny",
     ]);
     expect(breadcrumb.itemListElement.at(-1).item).toBe(
-      "https://immojudis.com/tribunaux/justice-tj-1-93",
+      "https://immojudis.com/tribunaux/tribunal-judiciaire-bobigny",
     );
     const itemList = blocks.find((block) => block["@type"] === "ItemList");
     expect(itemList.itemListElement.map((item: { url: string }) => item.url)).toEqual([
@@ -573,7 +624,7 @@ describe("page d'un tribunal : données structurées", () => {
 
   it("n'émet pas de liste vide quand les ventes ne sont pas lues", async () => {
     mockSales({ status: "error" });
-    const { container } = render(await Page(params("justice-tj-1-93")));
+    const { container } = render(await Page(params("tribunal-judiciaire-bobigny")));
     const types = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (script) => JSON.parse(script.textContent ?? "{}")["@type"],
     );

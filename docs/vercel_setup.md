@@ -243,20 +243,33 @@ sont jamais utilisés pour cet envoi.
 
 ## 3. Setup Supabase
 
-Dans le SQL editor de ton projet Supabase, exécuter :
+Le schéma de la base (vues `public.v_auction_sales_app_preview` et `public.v_auction_sales_app`, tables
+`public.user_favorites` et `public.user_alerts`, RLS, droits, index et fonctions) vient **uniquement** de
+[`supabase/migrations/`](../supabase/migrations/), rejouées dans l'ordre. L'ancien script
+`sql/vercel_app_setup.sql` est obsolète (il ne reflète plus la base) : **ne pas l'exécuter**, ni dans le
+SQL editor ni ailleurs.
 
+### Base locale (développement et tests)
+
+Prérequis : **Docker** démarré. Depuis la racine du dépôt :
+
+```bash
+npx supabase@2.110.0 start
+npx supabase@2.110.0 db reset --local --no-seed
 ```
-sql/vercel_app_setup.sql
-```
 
-Ce script :
+`start` lance Postgres, l'API et Auth en local ; `db reset --local --no-seed` rejoue toutes les migrations
+depuis zéro (même commande que la CI). `npx supabase@2.110.0 status` affiche l'URL de l'API, les clés et
+l'URL Postgres à mettre dans `.env.local`. Toujours `--local` : ne jamais lancer `db reset` sans lui ni avec
+`--linked`, qui viserait la production. Ensuite : `npm run check:schema-drift`, et `npm run db:types` si le
+schéma a changé. `npx supabase@2.110.0 stop` arrête la base.
 
-- crée `public.v_auction_sales_app_preview` pour l'aperçu public limité ;
-- crée `public.v_auction_sales_app` pour les détails réservés aux comptes connectés ;
-- crée les tables `public.user_favorites` et `public.user_alerts` ;
-- active RLS + policies (chaque user ne voit que ses favoris/alertes) ;
-- limite la lecture anonyme à `id` + `starting_price_eur` sur les annonces éligibles ;
-- crée les index nécessaires.
+### Base distante (production)
+
+Un projet Supabase hébergé reçoit son schéma **uniquement** par le workflow GitHub **« Apply Supabase
+Migrations »** (Actions, depuis `main`, `confirm_target` = `production`), une fois la CI verte : voir la
+section « Workflow `Apply Supabase Migrations` : ordre de publication et diagnostic » plus haut. Ne pas appliquer de migration à la main
+(`npm run db:migrate`, `npm run release:prepare`, SQL editor) depuis un poste de développement.
 
 ### Configuration Auth (Supabase Dashboard → Authentication → URL configuration)
 

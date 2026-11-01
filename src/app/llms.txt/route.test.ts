@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -11,6 +11,7 @@ import {
   LLMS_TXT_REGROUP_ABOVE_CHARS,
   llmsTxtPages,
 } from "@/lib/llms-txt";
+import nextConfig from "../../../next.config";
 import { config, proxy } from "../../proxy";
 import robots from "../robots";
 import { GET, dynamic } from "./route";
@@ -149,6 +150,39 @@ describe("contenu du fichier", () => {
         ).toBe(true);
       }
     }
+  });
+
+  it("ne pointe vers aucune page redirigée par next.config.ts, comme le sitemap", async () => {
+    const redirects = await nextConfig.redirects!();
+    expect(redirects.length).toBeGreaterThan(0);
+    for (const { source } of redirects) {
+      const pattern = new RegExp(
+        `^${source.replace(/:[A-Za-z]+\*/g, ".*").replace(/:[A-Za-z]+/g, "[^/]+")}$`,
+      );
+      expect(
+        llmsTxtPages().filter((page) => pattern.test(page.path)),
+        `llms.txt liste une source de redirection (${source})`,
+      ).toEqual([]);
+    }
+  });
+
+  it("ne pointe vers aucune page en noindex, sauf /tribunaux, dont c'est un repli connu", () => {
+    // `/tribunaux` passe en noindex quand aucun tribunal n'a de vente à venir (voir llms-txt.ts) :
+    // c'est la seule exception, et elle est conditionnelle.
+    const conditionalNoindex = new Set(["/tribunaux"]);
+    const noindex = /index:\s*false|NOT_INDEXED|THIN_PAGE/;
+    const sourceOf = (pagePath: string) => {
+      const segments = pagePath.startsWith("/ressources/")
+        ? ["ressources", "[slug]"]
+        : pagePath.split("/").filter(Boolean);
+      return readFileSync(path.join(APP, ...segments, "page.tsx"), "utf8");
+    };
+    const flagged = llmsTxtPages()
+      .filter((page) => noindex.test(sourceOf(page.path)))
+      .map((page) => page.path);
+    expect(flagged).toEqual([...conditionalNoindex]);
+    // L'exception reste bien conditionnelle : la page `/tribunaux` peut aussi être indexée.
+    expect(sourceOf("/tribunaux")).toMatch(/index:\s*true/);
   });
 
   it("n'a pas de doublon et tient en moins de 10 000 caractères", () => {

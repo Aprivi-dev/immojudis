@@ -316,7 +316,7 @@ export function DepartmentView({
                 {tribunals.map((tribunal) => (
                   <li key={tribunal.code}>
                     <Link
-                      href={tribunalPagePath(tribunal.code)}
+                      href={tribunalPagePath(tribunal.code, tribunal)}
                       className="font-semibold text-gold-text underline"
                     >
                       {tribunal.name}

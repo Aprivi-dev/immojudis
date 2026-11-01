@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   loadTribunalActivity: vi.fn(),
   loadDepartments: vi.fn(),
   loadHearings: vi.fn(),
+  loadDirectory: vi.fn(),
 }));
 
 vi.mock("@/lib/department-pages.server", () => ({
@@ -13,6 +14,9 @@ vi.mock("@/lib/department-pages.server", () => ({
 }));
 vi.mock("@/lib/public-tribunal-activity.server", () => ({
   loadPublicTribunalActivity: mocks.loadTribunalActivity,
+}));
+vi.mock("@/lib/public-tribunal-directory.server", () => ({
+  tryLoadPublicTribunalDirectory: mocks.loadDirectory,
 }));
 vi.mock("@/lib/upcoming-hearings.server", () => ({
   tryLoadUpcomingHearings: mocks.loadHearings,
@@ -77,6 +81,7 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
         court("TJ Brest", 2, "justice_tj_1_29"),
       ],
     });
+    mocks.loadDirectory.mockResolvedValue({ status: "error" });
     mocks.loadHearings.mockResolvedValue(soon(3));
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
@@ -87,9 +92,41 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
 
   it("liste les tribunaux d'au moins trois ventes, pas les autres", async () => {
     const list = await urls();
-    expect(list).toContain("https://immojudis.com/tribunaux/justice-tj-1-93");
-    expect(list).toContain("https://immojudis.com/tribunaux/justice-tj-1-114");
-    expect(list).not.toContain("https://immojudis.com/tribunaux/justice-tj-1-29");
+    expect(list).toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-bobigny");
+    expect(list).toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-nantes");
+    expect(list).not.toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-brest");
+  });
+
+  it("n'a qu'une adresse par tribunal : l'adresse lisible, jamais celle par code", async () => {
+    const list = (await urls()).filter((url) => url.includes("/tribunaux/"));
+    expect(list).toEqual([
+      "https://immojudis.com/tribunaux/tribunal-judiciaire-bobigny",
+      "https://immojudis.com/tribunaux/tribunal-judiciaire-nantes",
+    ]);
+    expect(list.some((url) => url.includes("justice-tj"))).toBe(false);
+  });
+
+  it("n'écrit pas l'adresse lisible d'un nom que deux tribunaux se partagent", async () => {
+    mocks.loadTribunalActivity.mockResolvedValue({
+      status: "ok",
+      items: [
+        court("TJ Saint-Pierre", 5, "justice_tj_1_97"),
+        court("TJ Nantes", 3, "justice_tj_1_114"),
+      ],
+    });
+    // Le second « Saint-Pierre » n'a aucune vente à venir : seul le référentiel le connaît.
+    mocks.loadDirectory.mockResolvedValue({
+      status: "ok",
+      items: [
+        { code: "justice_tj_1_97", name: "Saint-Pierre", searchName: "TJ Saint-Pierre" },
+        { code: "justice_tj_1_50", name: "Saint-Pierre", searchName: "TJ Saint-Pierre" },
+      ],
+    });
+    const list = (await urls()).filter((url) => url.includes("/tribunaux/"));
+    expect(list).toEqual([
+      "https://immojudis.com/tribunaux/justice-tj-1-97",
+      "https://immojudis.com/tribunaux/tribunal-judiciaire-nantes",
+    ]);
   });
 
   it("liste la page des audiences à partir de trois audiences", async () => {
@@ -127,7 +164,7 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
 
   it("ne donne aucune date de modification à ces pages", async () => {
     const entries = await sitemap();
-    for (const path of ["/tribunaux/justice-tj-1-93", "/audiences-a-venir"]) {
+    for (const path of ["/tribunaux/tribunal-judiciaire-bobigny", "/audiences-a-venir"]) {
       const entry = entries.find((item) => item.url === `https://immojudis.com${path}`);
       expect(entry, path).toBeDefined();
       expect(entry).not.toHaveProperty("lastModified");
