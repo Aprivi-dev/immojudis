@@ -2,7 +2,9 @@ import { authHeaders, readJson } from "@/lib/client-api-core";
 import type { FavoriteDossierInput, FavoriteDossierResponse } from "@/lib/favorite-dossier-shared";
 import type {
   FollowedSaleSnapshotDeleteResponse,
+  FollowedSaleSnapshotResponse,
   FollowedSaleSnapshotsResponse,
+  FollowedSaleSnapshotUpdate,
 } from "@/lib/followed-sale-snapshots-shared";
 import type {
   FavoriteSaleDeleteResponse,
@@ -92,6 +94,22 @@ export async function deleteFollowedSaleSnapshot(args: {
   return readJson<FollowedSaleSnapshotDeleteResponse>(response);
 }
 
+/** Bilan après adjudication : le statut et le prix final noté sur un instantané. */
+export async function updateFollowedSaleSnapshot(args: {
+  data: FollowedSaleSnapshotUpdate;
+}): Promise<FollowedSaleSnapshotResponse> {
+  const response = await fetch("/api/favorites/snapshots", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify(args.data),
+  });
+
+  return readJson<FollowedSaleSnapshotResponse>(response);
+}
+
 type FollowedCalendarDownload = {
   blob: Blob;
   filename: string;
@@ -128,4 +146,24 @@ export async function downloadFollowedCalendar(args: {
     exported: Number(response.headers.get("x-exported-count")) || 0,
     skipped: Number(response.headers.get("x-skipped-count")) || 0,
   };
+}
+
+/** L'échéancier indicatif (surenchère, paiement du prix) d'une vente passée remportée, en `.ics`. */
+export async function downloadSnapshotDeadlines(args: {
+  snapshotId: string;
+}): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch("/api/favorites/calendar", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify({ deadlinesSnapshotId: args.snapshotId }),
+  });
+  if (!response.ok) {
+    await readJson<unknown>(response);
+  }
+  const header = response.headers.get("content-disposition") ?? "";
+  const filename = /filename="([^"\\/]+\.ics)"/i.exec(header)?.[1] ?? "immojudis-echeancier.ics";
+  return { blob: await response.blob(), filename };
 }

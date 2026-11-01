@@ -119,6 +119,21 @@ describe("alertSalesPath", () => {
   });
 });
 
+describe("critère « Tribunal »", () => {
+  it("se lit dans les critères avancés, en texte", () => {
+    expect(
+      alertCriteriaSummary({ ...base, advanced_criteria: { tribunal: "TJ Bobigny" } }),
+    ).toEqual(["Tribunal : TJ Bobigny"]);
+    expect(alertCriteriaSummary({ ...base, advanced_criteria: { tribunal: 12 } })).toEqual([]);
+  });
+
+  it("revient dans la recherche du catalogue (filtre « tribunal »)", () => {
+    expect(alertSalesPath({ ...base, advanced_criteria: { tribunal: "TJ Bobigny" } })).toBe(
+      "/sales?tribunal=TJ+Bobigny",
+    );
+  });
+});
+
 describe("critère « Pépites seulement »", () => {
   it("se lit dans les critères avancés, en texte", () => {
     expect(

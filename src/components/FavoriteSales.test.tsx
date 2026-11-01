@@ -704,6 +704,21 @@ describe("FavoriteSales : « Mon planning »", () => {
     expect(await screen.findByText("Aucun changement détecté")).toBeTruthy();
   });
 
+  it("montre les créneaux de visite annoncés sur la ligne du planning, et rien sans créneau", async () => {
+    mocks.checkoutOpen.mockReturnValue(true);
+    serve([
+      favorite("avec", { sale_date: inDays(10), visit_dates: ["2026-12-02 à 14:00"] }),
+      favorite("sans", { sale_date: inDays(20), visit_dates: [], source_blocks: null }),
+    ]);
+    renderPage();
+    await openPlanning();
+
+    const visits = screen.getAllByTestId("planning-visits");
+    expect(visits).toHaveLength(1);
+    expect(visits[0]?.textContent).toContain("Visite annoncée :");
+    expect(visits[0]?.textContent).toContain("14:00");
+  });
+
   it("exporte toutes les audiences suivies en un fichier, dans l'ordre des dates", async () => {
     mocks.checkoutOpen.mockReturnValue(true);
     serve([
