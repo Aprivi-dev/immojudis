@@ -74,7 +74,13 @@ const HEALTHY: ResendFixture = {
   webhooks: [
     {
       endpoint: "https://immojudis.com/api/webhooks/resend/account-emails",
-      events: ["email.bounced", "email.complained"],
+      events: [
+        "email.bounced",
+        "email.complained",
+        "email.delivered",
+        "email.delivery_delayed",
+        "email.failed",
+      ],
     },
     {
       endpoint: "https://immojudis.com/api/webhooks/resend/information-agent",

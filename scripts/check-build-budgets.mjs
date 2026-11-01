@@ -127,7 +127,10 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // Module Emails, lots 1-2 (01/11/2026) : total mesuré 6 505 065 pour 6 496 348 sur main (+8 717, la page
 // /admin/emails seule : onglets, aperçus, adresses). Décision du propriétaire (01/11/2026) : relèvement à
 // 6 510 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_510_000;
+// Module Emails, lots 3-4 (journal des envois et onglet Historique) : total mesuré 6 512 009 pour 6 505 106 sur
+// main (+6 903, la page /admin/emails seule : historique, aperçu d'un message). Lots 3-4 du module Emails,
+// décision du propriétaire du 01/11/2026 : relèvement à 6 515 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_515_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -310,8 +313,9 @@ const routeBudgets = [
     manifest: ".next/server/app/admin/emails/page_client-reference-manifest.js",
     routeKey: "/admin/emails/page",
     entryKey: "[project]/src/app/admin/emails/page",
-    // 438 622 octets mesurés le 01/11/2026 (module Emails, lots 1 et 2) + 10 %.
-    maxBytes: 483_000,
+    // 438 622 octets mesurés le 01/11/2026 (module Emails, lots 1 et 2), puis 443 334 avec les lots 3-4
+    // (journal des envois et onglet Historique ; décision du propriétaire du 01/11/2026) + 10 %.
+    maxBytes: 488_000,
   },
   {
     name: "admin-publications",
