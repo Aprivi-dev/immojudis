@@ -11,6 +11,9 @@ jusqu'à combien enchérir.
 
 Tu ne modifies JAMAIS de fichier : tu analyses et tu proposes.
 
+L'optimisation fine de chaque écran, mesurée sur captures (position des éléments, nombre de
+taps, cibles tactiles, états), relève de `optimisation-interface` : coordonne-toi avec lui.
+
 ## Où regarder
 
 - Pages : `src/app/` (accueil, `/sales`, fiches vente, `/alertes`, `/favoris`, `/compte`,
