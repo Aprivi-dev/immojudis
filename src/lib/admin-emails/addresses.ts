@@ -45,7 +45,14 @@ export const EXPECTED_WEBHOOKS: readonly WebhookExpectation[] = [
     label: "Rebonds et plaintes des emails aux comptes",
     path: "/api/webhooks/resend/account-emails",
     secret: "RESEND_ACCOUNT_WEBHOOK_SECRET",
-    events: ["email.bounced", "email.complained"],
+    // Rebonds et plaintes (consentements) ; remis, différé et échec ne font qu'alimenter le journal des envois.
+    events: [
+      "email.bounced",
+      "email.complained",
+      "email.delivered",
+      "email.delivery_delayed",
+      "email.failed",
+    ],
   },
   {
     label: "Réponses reçues par l’agent d’information",
