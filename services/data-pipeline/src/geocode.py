@@ -10,13 +10,21 @@ import httpx
 
 from src.cadastre_references import PROVIDER as CADASTRE_PROVIDER
 from src.cadastre_references import resolve_sale_cadastre
-from src.commune_insee import record_sale_commune
+from src.commune_insee import commune_codes, record_sale_commune, sale_arrondissement_code
 from src.config import load_settings
 from src.department_bounds import coordinates_in_department
-from src.geocode_query import build_geocode_query, clean_address_for_geocoding, geocode_postcode, has_street_or_place
+from src.geocode_query import (
+    build_geocode_query,
+    clean_address_for_geocoding,
+    geocode_postcode,
+    has_street_or_place,
+    is_filterable_postcode,
+    municipality_postcode,
+)
 from src.models import AuctionSale
 from src.municipality_location import PROVIDER as MUNICIPALITY_PROVIDER
 from src.municipality_location import (
+    commune_name_for_postal_code,
     find_commune,
     is_municipality_point,
     locate_sale_by_municipality,
@@ -25,6 +33,7 @@ from src.municipality_location import (
 )
 from src.normalize import clean_text, extract_department, strip_accents
 from src.position_quality import (
+    GEOCODE_COMMUNE_MISMATCH,
     GEOCODE_OUTSIDE_DEPARTMENT,
     IMPLAUSIBLE_COORDINATES,
     POSITION_FLAGS,
@@ -36,6 +45,7 @@ from src.position_quality import (
     street_name_tokens,
     street_names_match,
 )
+from src.reference_data.names import commune_lookup_name
 from src.source_coordinates import (
     ban_attempt_view,
     is_source_coordinates_evidence,
@@ -49,6 +59,18 @@ NEGATIVE_GEOCODE_CACHE_TTL = timedelta(days=14)
 ADDRESS_MIN_SCORE = 0.6
 ADDRESS_RESULT_TYPES = frozenset({"housenumber", "street"})
 RATE_LIMIT_BACKOFF_SECONDS = (1, 2, 4)
+# Communes déléguées (ou associées) que la BAN ne connaît pas comme commune : nom de recherche -> commune actuelle.
+# Annecy-le-Vieux, Cran-Gevrier, Meythet, Pringy et Seynod sont des communes déléguées d'Annecy depuis 2017. Au-delà
+# de cette liste, le code postal qui désigne une seule commune de ``reference_communes`` sert de repli.
+DELEGATED_COMMUNE_ALIASES = {
+    "annecy le vieux": "Annecy",
+    "cran gevrier": "Annecy",
+    "meythet": "Annecy",
+    "pringy": "Annecy",
+    "seynod": "Annecy",
+}
+# Paris, Lyon et Marseille : la BAN renvoie la ville puis ses arrondissements (limit=3 suffit à les atteindre).
+ARRONDISSEMENT_SEARCH_LIMIT = 3
 GEO_PRECISION_BY_TYPE = {
     "housenumber": "address",
     "street": "street",
@@ -102,7 +124,7 @@ def restore_accepted_geocode(sale: AuctionSale) -> bool:
     department = sale.department or extract_department(sale.postal_code)
     if not (Decimal(-90) <= latitude <= Decimal(90) and Decimal(-180) <= longitude <= Decimal(180)):
         return False
-    if department and not _coordinates_in_department(latitude, longitude, department):
+    if not _coordinates_in_department(latitude, longitude, department or ""):
         return False
     sale.latitude = latitude
     sale.longitude = longitude
@@ -166,13 +188,7 @@ def _geocode_sale(sale: AuctionSale) -> AuctionSale:
         if result is None and sale.city and (sale.latitude is None or sale.longitude is None):
             # The address failed: a commune centroid is better than no point at all,
             # as long as the sale keeps saying it is approximate.
-            result = geocode_address(
-                query=sale.city,
-                api_url=api_url,
-                min_score=min_score,
-                postcode=sale.postal_code,
-                result_type="municipality",
-            )
+            result = _geocode_commune_fallback(sale, api_url=api_url, min_score=min_score)
             if result is not None and not _result_matches_department(result, sale):
                 _reject_outside_department(sale, query=query, result=result)
                 return sale
@@ -194,8 +210,12 @@ def _geocode_sale(sale: AuctionSale) -> AuctionSale:
 def _accept_result(sale: AuctionSale, *, query: str, result: GeocodeResult) -> bool:
     """Pose le point d'un résultat BAN déjà jugé acceptable (score, rue) ; refuse un point hors du département."""
     department = sale.department or extract_department(sale.postal_code) or extract_department(result.postcode)
-    if department and not _coordinates_in_department(result.latitude, result.longitude, department):
+    # La boîte de la France entière s'applique même sans département : (0, 0) ou des coordonnées inversées.
+    if not _coordinates_in_department(result.latitude, result.longitude, department or ""):
         _reject_outside_department(sale, query=query, result=result)
+        return False
+    if _result_commune_mismatch(sale, result):
+        _reject_commune_mismatch(sale, query=query, result=result)
         return False
 
     sale.latitude = result.latitude
@@ -347,6 +367,81 @@ def _result_street_matches(sale: AuctionSale, result: GeocodeResult) -> bool:
     return street_names_match(wanted, found, result.score)
 
 
+def _geocode_commune_fallback(sale: AuctionSale, *, api_url: str, min_score: float) -> GeocodeResult | None:
+    """Centre de la commune (ou de l'arrondissement) de la vente quand l'adresse n'a rien donné.
+
+    * Paris, Lyon, Marseille : la BAN renvoie la ville entière en premier ; avec ``limit=3``, le résultat dont le
+      code commune est celui de l'arrondissement (751xx, 132xx, 693xx) ou, à défaut, dont le code postal est celui
+      de la vente est préféré au centre de la ville.
+    * commune déléguée absente de la BAN (« Annecy-le-Vieux ») : on cherche la commune actuelle ; à défaut d'alias,
+      le code postal qui ne désigne qu'une seule commune de ``reference_communes`` donne son nom.
+    * aucun filtre ``postcode`` pour un Cedex ou un code générique (fini par 000).
+    """
+    postcode = municipality_postcode(sale)
+    lookup = commune_lookup_name(sale.city)
+    query = str(sale.city)
+    arrondissement = sale_arrondissement_code(sale)
+    big_city = lookup in {"paris", "lyon", "marseille"}
+    if big_city:
+        query = lookup.title()
+    elif lookup in DELEGATED_COMMUNE_ALIASES:
+        query = DELEGATED_COMMUNE_ALIASES[lookup]
+    search: dict[str, object] = {}
+    if big_city:
+        search = {
+            "limit": ARRONDISSEMENT_SEARCH_LIMIT,
+            "wanted_citycode": arrondissement,
+            "wanted_postcode": sale.postal_code,
+        }
+    result = geocode_address(
+        query=query,
+        api_url=api_url,
+        min_score=min_score,
+        postcode=postcode,
+        result_type="municipality",
+        **search,
+    )
+    if result is not None or big_city or lookup in DELEGATED_COMMUNE_ALIASES or not is_filterable_postcode(postcode):
+        return result
+    name = commune_name_for_postal_code(postcode)
+    if not name or name == lookup:
+        return None
+    return geocode_address(
+        query=name, api_url=api_url, min_score=min_score, postcode=postcode, result_type="municipality"
+    )
+
+
+def _result_commune_mismatch(sale: AuctionSale, result: GeocodeResult) -> bool:
+    """Le code commune du résultat BAN n'est pas celui de la commune de la vente (quand celle-ci est certaine).
+
+    Les arrondissements de Paris, Lyon et Marseille comptent pour leur commune. Sans commune certaine
+    (``reference_communes`` absente, ville ambiguë) ou sans code dans le résultat, rien n'est refusé.
+    """
+    found = commune_codes(result.citycode)
+    if found is None:
+        return False
+    try:
+        declared = find_commune(sale.city, sale.postal_code, sale.department)
+    except Exception as exc:  # noqa: BLE001 - une table de référence illisible ne bloque pas le géocodage
+        LOGGER.warning("Commune check skipped for %s: %s", sale.source_url, type(exc).__name__)
+        return False
+    expected = commune_codes(declared.get("code_insee")) if declared else None
+    return expected is not None and expected[0] != found[0]
+
+
+def _reject_commune_mismatch(sale: AuctionSale, *, query: str, result: GeocodeResult) -> None:
+    LOGGER.warning("Ignoring BAN result in another commune for %s: %s", sale.source_url, result.citycode)
+    reset_source_promotion(sale)
+    add_position_flag(sale.quality_flags, GEOCODE_COMMUNE_MISMATCH)
+    _store_geocode_evidence(
+        sale,
+        query=query,
+        result=result,
+        accepted=False,
+        rejection_reason="commune_mismatch",
+    )
+
+
 def _reject_outside_department(sale: AuctionSale, *, query: str, result: GeocodeResult) -> None:
     LOGGER.warning("Ignoring BAN result outside department for %s", sale.source_url)
     # Le drapeau pose un doute sur la position : la précision d'un point de la source ne tient plus.
@@ -386,9 +481,26 @@ def geocode_address(
     min_score: float = 0.45,
     postcode: str | None = None,
     result_type: str | None = None,
+    limit: int = 1,
+    wanted_citycode: str | None = None,
+    wanted_postcode: str | None = None,
 ) -> GeocodeResult | None:
-    features = _fetch_features(api_url, query=query, postcode=postcode, result_type=result_type, limit=1)
-    return _result_from_feature(features[0], min_score) if features else None
+    """Meilleur résultat de la BAN ; avec ``limit`` > 1, celui du code commune (puis du code postal) voulu d'abord."""
+    features = _fetch_features(api_url, query=query, postcode=postcode, result_type=result_type, limit=limit)
+    if not features:
+        return None
+    return _result_from_feature(_preferred_feature(features, wanted_citycode, wanted_postcode), min_score)
+
+
+def _preferred_feature(features: list[dict], wanted_citycode: str | None, wanted_postcode: str | None) -> dict:
+    """L'entité dont le code commune est ``wanted_citycode``, sinon le code postal ``wanted_postcode``, sinon la 1re."""
+    for wanted, key in ((wanted_citycode, "citycode"), (wanted_postcode, "postcode")):
+        if not wanted:
+            continue
+        for feature in features:
+            if clean_text((feature.get("properties") or {}).get(key)) == wanted:
+                return feature
+    return features[0]
 
 
 def search_municipalities(
@@ -557,9 +669,9 @@ def _municipality_result_has_richer_query(sale: AuctionSale, evidence: object) -
 
 def _coordinates_match_department(sale: AuctionSale) -> bool:
     department = sale.department or extract_department(sale.postal_code)
-    if not department or sale.latitude is None or sale.longitude is None:
+    if sale.latitude is None or sale.longitude is None:
         return True
-    return _coordinates_in_department(sale.latitude, sale.longitude, department)
+    return _coordinates_in_department(sale.latitude, sale.longitude, department or "")
 
 
 def _coordinates_in_department(latitude: Decimal, longitude: Decimal, department: str) -> bool:

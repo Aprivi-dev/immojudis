@@ -34,7 +34,7 @@ from typing import Any
 from src.models import AuctionSale
 from src.municipality_location import PROVIDER as MUNICIPALITY_PROVIDER
 from src.municipality_location import find_commune
-from src.reference_data.names import arrondissement_number, department_from_insee
+from src.reference_data.names import arrondissement_number, commune_lookup_name, department_from_insee
 
 LOGGER = logging.getLogger(__name__)
 
@@ -89,6 +89,19 @@ def _arrondissement_from_city(commune: str, city: object) -> str | None:
     if number is None or not 1 <= number <= limit:
         return None
     return f"{prefix}{number:02d}" if len(prefix) == 3 else f"{prefix}{number}"
+
+
+# Villes à arrondissements municipaux : nom de recherche -> code de la commune parente.
+ARRONDISSEMENT_CITIES = {"paris": "75056", "marseille": "13055", "lyon": "69123"}
+
+
+def sale_arrondissement_code(sale: AuctionSale) -> str | None:
+    """Code INSEE de l'arrondissement d'une vente à Paris, Lyon ou Marseille (751xx, 132xx, 693xx), sinon ``None``.
+
+    Déduit du code postal (75008, 13016, 69003), à défaut du nombre écrit dans la ville (« Paris 8ème »).
+    """
+    parent = ARRONDISSEMENT_CITIES.get(commune_lookup_name(sale.city))
+    return _arrondissement(parent, sale) if parent else None
 
 
 def _arrondissement(commune: str, sale: AuctionSale) -> str | None:

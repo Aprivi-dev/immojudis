@@ -181,6 +181,7 @@ class SurfaceReasoningResult(BaseModel):
     selected_derivation_id: str | None = None
     contradictions: list[dict[str, Any]] = Field(default_factory=list)
     rejected_measurements: list[dict[str, Any]] = Field(default_factory=list)
+    rejected_candidates: list[dict[str, Any]] = Field(default_factory=list)
 
     @property
     def selected(self) -> SurfaceDerivation | None:
@@ -239,6 +240,34 @@ _EXPLICIT_SURFACE_PATTERNS: tuple[tuple[SurfaceKind, re.Pattern[str]], ...] = (
         ),
     ),
 )
+
+# Surface « créée » par un permis de construire ou une déclaration préalable : surface d'un projet, jamais
+# celle du bien mis en vente (Mougins : surface créée prise pour la surface habitable).
+_CREATED_SURFACE_RE = re.compile(
+    r"\b(?:surfaces?|superficies?)\s+(?:de\s+plancher\s+|taxable\s+|hors\s+[œo]euvre\s+(?:nette\s+|brute\s+)?)?"
+    r"(?:cr[ée]{1,2}e?s?|à\s+cr[ée]er|projet[ée]e?s?|autoris[ée]e?s?|à\s+construire)\b"
+    r"|\b(?:sdp|shon|shob)\s+(?:cr[ée]{1,2}e?s?|à\s+cr[ée]er|projet[ée]e?s?)\b"
+    r"|\bcr[ée]ation\s+(?:de|d['’])"
+    r"|\bcr[ée]{1,2}e?s?\s+(?:par|selon|suivant|aux\s+termes\s+d[ue])\s+(?:le\s+|un\s+|l['’])?(?:permis|d[ée]claration\s+pr[ée]alable)",
+    re.I,
+)
+# Bâtiment qui n'est pas le bien principal : dépendance, maison de gardien, annexe, garage, pool house…
+_SECONDARY_BUILDING_RE = re.compile(
+    r"\b(?:d[ée]pendances?|annexes?|gardien(?:ne|nage)?s?|loge|pool[- ]?house|garages?|abris?|remises?"
+    r"|cabanons?|appentis|(?:second|autre)s?\s+b[âa]timents?|b[âa]timents?\s+(?:secondaires?|annexes?))\b",
+    re.I,
+)
+_MAIN_BUILDING_RE = re.compile(r"\bprincipa(?:l|le|les|ux)\b", re.I)
+_EXCLUDED_BUILDING_RE = re.compile(
+    r"\b(?:hors|sans|hormis|except[ée]|non\s+compris(?:e|es|s)?|à\s+l['’]exclusion)\s+"
+    r"(?:(?:d[eu]s?|les?|la|l['’]|des|y)\s*)*\w+",
+    re.I,
+)
+_PHRASE_SEPARATOR_RE = re.compile(
+    r"[,()\[\]]|\b(?:avec|et|ainsi\s+que|plus|outre|comprenant|dont|y\s+compris|incluant)\b", re.I
+)
+_SENTENCE_END_RE = re.compile(r"[;\n]|\.(?=\s)")
+MULTIPLE_BUILDINGS_CONTRADICTION = "multiple_building_surfaces_unresolved"
 
 _SPACE_KEYWORDS: tuple[tuple[str, SurfaceCategory], ...] = (
     (r"salle\s+d['’]eau", "sanitary"),
@@ -434,8 +463,14 @@ def reason_about_surfaces(
         valid_candidates = []
         for candidate in asset.explicit_surfaces:
             candidate = _prepare_candidate(candidate, asset.asset_id)
-            if _candidate_is_supported(candidate, context_normalized):
-                valid_candidates.append(candidate)
+            if not _candidate_is_supported(candidate, context_normalized):
+                continue
+            if exclusion := _candidate_exclusion_reason(candidate):
+                result.rejected_candidates.append(
+                    {"candidate": candidate.model_dump(mode="json"), "reason": exclusion}
+                )
+                continue
+            valid_candidates.append(candidate)
         valid_candidates = _drop_implausible_dwelling_candidates(
             valid_candidates, property_type=property_type or asset.property_type, result=result
         )
@@ -518,8 +553,14 @@ def apply_surface_reasoning_to_sale(
 ) -> SurfaceReasoningResult:
     result = reason_about_surfaces(assets, context=context, property_type=sale.property_type)
     sale.raw_payload["surface_analysis"] = result.model_dump(mode="json")
+    if any(item.get("kind") == MULTIPLE_BUILDINGS_CONTRADICTION for item in result.contradictions):
+        # Plusieurs bâtiments sans bâtiment principal identifié : aucune des surfaces n'est celle du bien.
+        _add_quality_flag(sale, "surface_contradiction")
     selected = result.selected
     if selected is None or selected.validation_status not in {"verified", "partial"}:
+        return result
+    if selected.kind in {"annex", "unknown"}:
+        # Une annexe ou une surface sans nature n'est jamais la surface du bien.
         return result
 
     explicit_candidate = next(
@@ -548,6 +589,14 @@ def apply_surface_reasoning_to_sale(
     sale.surface_source = source
     sale.surface_confidence = Decimal(str(selected.confidence)).quantize(Decimal("0.01"))
     sale.surface_evidence = _surface_evidence_text(selected, result)
+    # Ces deux marqueurs décrivent la surface retenue ici : une nouvelle sélection remplace les anciens.
+    sale.quality_flags = [
+        flag
+        for flag in sale.quality_flags
+        if flag not in {"surface_contradiction", "surface_unit_or_consistency_warning"}
+    ]
+    if any(item.get("kind") == MULTIPLE_BUILDINGS_CONTRADICTION for item in result.contradictions):
+        _add_quality_flag(sale, "surface_contradiction")
     if selected.kind.startswith("calculated_"):
         _add_quality_flag(sale, "surface_calculated_from_rooms")
     if selected.warnings:
@@ -585,11 +634,22 @@ def _derive_asset_surface(
         reverse=True,
     )
     best_explicit = explicit[0] if explicit else None
+    rival_buildings = _unresolved_rival_buildings(explicit)
+    if best_explicit is not None and rival_buildings:
+        contradictions.append(
+            {
+                "asset_id": asset.asset_id,
+                "kind": MULTIPLE_BUILDINGS_CONTRADICTION,
+                "values_m2": sorted({str(item.value_m2) for item in [best_explicit, *rival_buildings]}),
+            }
+        )
 
     if best_explicit is not None:
         warnings: list[str] = []
         confidence = best_explicit.confidence
         difference: Decimal | None = None
+        if rival_buildings:
+            warnings.append("several_buildings_without_identified_main_building")
         if room_sum > 0 and len(included) >= 2:
             difference = abs(best_explicit.value_m2 - room_sum)
             tolerance = max(SURFACE_TOLERANCE_ABSOLUTE_M2, best_explicit.value_m2 * SURFACE_TOLERANCE_RELATIVE)
@@ -609,7 +669,7 @@ def _derive_asset_surface(
                 )
                 warnings.append("room_sum_does_not_match_explicit_total")
         status: Literal["verified", "partial", "contradicted", "rejected"] = (
-            "contradicted" if contradictions and best_explicit.kind == "unknown" else "verified"
+            "contradicted" if rival_buildings or (contradictions and best_explicit.kind == "unknown") else "verified"
         )
         derivations.append(
             SurfaceDerivation(
@@ -783,6 +843,86 @@ def _candidate_is_supported(candidate: SurfaceCandidate, context_normalized: str
     return True
 
 
+def _candidate_exclusion_reason(candidate: SurfaceCandidate) -> str | None:
+    """Raison d'écarter une surface qui n'est pas celle du bien principal, sinon ``None``.
+
+    - surface « créée » par un permis ou une déclaration préalable : surface d'un projet ;
+    - dépendance, maison de gardien, annexe : un bâtiment secondaire n'est pas le bien (Lussac, Cannes).
+    """
+    if candidate.kind not in _DWELLING_SURFACE_KINDS:
+        return None
+    quote = (candidate.evidence.quote or "").replace("\u00a0", " ")
+    span = _value_span_in_quote(quote, candidate.value_m2)
+    if span is None:
+        return None
+    lead = _sentence_lead(quote, span[0])
+    trail = _SENTENCE_END_RE.split(quote[span[1] : span[1] + 70])[0]
+    if _CREATED_SURFACE_RE.search(lead + " " + trail):
+        return "created_surface_of_a_permit"
+    if _SECONDARY_BUILDING_RE.search(_building_phrase(lead)):
+        return "secondary_building_surface"
+    return None
+
+
+def _is_main_building(candidate: SurfaceCandidate) -> bool:
+    quote = (candidate.evidence.quote or "").replace("\u00a0", " ")
+    span = _value_span_in_quote(quote, candidate.value_m2)
+    if span is None:
+        return False
+    return bool(_MAIN_BUILDING_RE.search(_building_phrase(_sentence_lead(quote, span[0]))))
+
+
+def _unresolved_rival_buildings(explicit: list[SurfaceCandidate]) -> list[SurfaceCandidate]:
+    """Surfaces concurrentes de bâtiments quand aucun n'est désigné comme principal ni comme total.
+
+    Seul le motif « bâtiment + surface » (``explicit_built``) est concerné : une Carrez, une surface
+    habitable ou un total explicite se suffisent à eux-mêmes.
+    """
+    built = [item for item in explicit if item.kind == "explicit_built"]
+    if len(built) < 2 or explicit[0].kind != "explicit_built":
+        return []
+    if any(item.scope == "sale" or _is_main_building(item) for item in built):
+        return []
+    top = explicit[0]
+    return [item for item in built if item.value_m2 != top.value_m2]
+
+
+def _value_variants(value: Decimal) -> set[str]:
+    plain = format(value, "f")
+    compact = plain.rstrip("0").rstrip(".") if "." in plain else plain
+    return {
+        str(value),
+        str(value.normalize()),
+        plain,
+        compact,
+        str(value).replace(".", ","),
+        str(value.normalize()).replace(".", ","),
+        plain.replace(".", ","),
+        compact.replace(".", ","),
+    }
+
+
+def _value_span_in_quote(quote: str, value: Decimal) -> tuple[int, int] | None:
+    spans = [
+        (match.start(), match.end())
+        for variant in _value_variants(value)
+        for match in re.finditer(rf"(?<![0-9]){re.escape(variant)}(?![0-9])", quote)
+    ]
+    return min(spans) if spans else None
+
+
+def _sentence_lead(quote: str, value_start: int) -> str:
+    """Texte de la phrase qui précède la valeur (au plus 90 caractères)."""
+    return _SENTENCE_END_RE.split(quote[max(0, value_start - 90) : value_start])[-1]
+
+
+def _building_phrase(lead: str) -> str:
+    """Groupe nominal qui qualifie directement la valeur : après la dernière virgule ou conjonction."""
+    lead = _EXCLUDED_BUILDING_RE.sub(" ", lead)
+    separators = list(_PHRASE_SEPARATOR_RE.finditer(lead))
+    return lead[separators[-1].end() :] if separators else lead
+
+
 def _prepare_measurement(measurement: SurfaceMeasurement, asset_id: str) -> SurfaceMeasurement:
     if measurement.asset_id != asset_id:
         measurement = measurement.model_copy(update={"asset_id": asset_id})
@@ -840,7 +980,7 @@ def _measurement_is_included(measurement: SurfaceMeasurement) -> bool:
     return measurement.category in {"habitable", "circulation", "sanitary", "service"}
 
 
-def _candidate_rank(candidate: SurfaceCandidate, *, property_type: str | None) -> tuple[int, bool, float]:
+def _candidate_rank(candidate: SurfaceCandidate, *, property_type: str | None) -> tuple[int, bool, bool, float]:
     rank = {
         "explicit_carrez": 100 if property_type == "apartment" else 85,
         "explicit_habitable": 100 if property_type == "house" else 92,
@@ -855,7 +995,8 @@ def _candidate_rank(candidate: SurfaceCandidate, *, property_type: str | None) -
     # For the same surface kind, an explicitly stated total outranks the
     # first component listed (e.g. an apartment sold with a separate studio).
     # Never infer this priority from the largest value or surrounding quote.
-    return rank, candidate.scope == "sale", candidate.confidence
+    # A building named « principal » outranks the others of the same kind.
+    return rank, candidate.scope == "sale", _is_main_building(candidate), candidate.confidence
 
 
 def _dedupe_measurements(measurements: list[SurfaceMeasurement]) -> list[SurfaceMeasurement]:
@@ -923,20 +1064,8 @@ def _quote(text: str, start: int, end: int, *, radius: int) -> str:
 
 
 def _quote_contains_value(quote: str, value: Decimal) -> bool:
-    plain = format(value, "f")
-    compact = plain.rstrip("0").rstrip(".") if "." in plain else plain
-    variants = {
-        str(value),
-        str(value.normalize()),
-        plain,
-        compact,
-        str(value).replace(".", ","),
-        str(value.normalize()).replace(".", ","),
-        plain.replace(".", ","),
-        compact.replace(".", ","),
-    }
     normalized_quote = quote.replace("\u00a0", " ")
-    return any(variant in normalized_quote for variant in variants)
+    return any(variant in normalized_quote for variant in _value_variants(value))
 
 
 def _normalized_for_evidence(value: str) -> str:

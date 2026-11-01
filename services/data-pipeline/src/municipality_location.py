@@ -117,6 +117,18 @@ def find_commune(city: object, postal_code: object, department: object) -> dict[
     return matches[0] if len(matches) == 1 else None
 
 
+def commune_name_for_postal_code(postal_code: object) -> str | None:
+    """Nom normalisé de la seule commune qui porte ce code postal, sinon ``None`` (aucune supposition).
+
+    Sert au repli d'une commune déléguée absente de la BAN (« Annecy-le-Vieux », 74940 : Annecy).
+    """
+    postal = str(postal_code or "").strip()
+    if re.fullmatch(r"\d{5}", postal) is None:
+        return None
+    communes = {row["code_insee"]: row["name_normalized"] for row in _index().by_postal_code.get(postal, [])}
+    return next(iter(communes.values())) if len(communes) == 1 else None
+
+
 def is_municipality_point(sale: AuctionSale) -> bool:
     """Le point de la vente est un centre de commune (``geo_precision = municipality``), pas une adresse."""
     return (
