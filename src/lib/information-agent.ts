@@ -71,6 +71,22 @@ import {
   isAgentFoundRecipient,
   searchInformationAgentAddressForDraft,
 } from "@/lib/information-agent/address-search";
+import {
+  assertCourtRegistryFallbackAddress,
+  assertCourtRegistryFallbackLimits,
+  courtRegistryFallbackMetadata,
+  courtRegistryFallbackOfMission,
+  findCourtRegistryFallback,
+  type CourtRegistryFallback,
+} from "@/lib/information-agent/court-registry";
+import {
+  COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD,
+  INFORMATION_AGENT_COURT_REGISTRY_FALLBACK,
+} from "@/lib/information-agent/court-registry-fallback";
+import {
+  COURT_REGISTRY_EMAIL_TEMPLATE,
+  COURT_REGISTRY_QUESTION,
+} from "@/lib/information-agent/court-registry-template";
 import { recordManualMissionReply } from "@/lib/information-agent/manual-reply";
 import {
   assertInformationAgentSourceAllowed,
@@ -160,6 +176,12 @@ const QUESTION_KEYS = Object.keys(INFORMATION_AGENT_QUESTIONS) as [
   InformationAgentQuestionKey,
   ...InformationAgentQuestionKey[],
 ];
+
+/**
+ * Clé de question enregistrée avec un message à un greffe (le message porte sa propre question, voir
+ * `court-registry-template.ts`) : « pièces du dossier », la plus proche de la demande.
+ */
+const COURT_REGISTRY_QUESTION_KEYS: readonly InformationAgentQuestionKey[] = ["documents"];
 
 export const informationAgentCreateSchema = z.object({
   saleId: z.string().guid(),
@@ -254,6 +276,8 @@ export type InformationAgentMission = {
   updatedAt: string;
   /** Titre de la vente, renseigné par la liste admin seulement (jamais par l'e-mail ni le dépôt). */
   saleTitle?: string | null;
+  /** `court_registry_fallback` : le destinataire est le greffe du tribunal (aucun avocat trouvé), pas un avocat. */
+  recipientOrigin?: typeof INFORMATION_AGENT_COURT_REGISTRY_FALLBACK | null;
 };
 
 export type InformationAgentFact = {
@@ -295,6 +319,7 @@ export function buildInformationRequestDraft({
   inventory,
   template = DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
   signatureName = null,
+  questionLines,
 }: {
   sale: InformationAgentInventorySale;
   recipientName?: string | null;
@@ -302,6 +327,8 @@ export function buildInformationRequestDraft({
   facts?: FactReliabilityMap;
   inventory?: InformationAgentInventory;
   template?: InformationAgentEmailTemplateContent;
+  /** Questions écrites telles quelles (message à un greffe) : remplacent celles des `questionKeys`. */
+  questionLines?: readonly string[];
   /** Personne qui signe (`INFORMATION_AGENT_SIGNATURE_NAME`) : un nom rassure plus qu'une équipe. */
   signatureName?: string | null;
 }): { subject: string; bodyText: string } {
@@ -365,8 +392,11 @@ export function buildInformationRequestDraft({
         : priceToConfirm
           ? `Mise à prix annoncée, à confirmer : ${startingPrice}`
           : `Mise à prix annoncée : ${startingPrice}`,
-      questions: questionKeys
-        .map((key) => `- ${informationAgentQuestionText(key, questionContext)}`)
+      questions: (
+        questionLines ??
+        questionKeys.map((key) => informationAgentQuestionText(key, questionContext))
+      )
+        .map((line) => `- ${line}`)
         .join("\n"),
     },
   });
@@ -440,7 +470,18 @@ export async function createAdminInformationAgentDraft({
     candidates: foundContact ? [] : contactCandidates,
   });
   const selectedContact = foundContact ?? selectInformationAgentContact(contactCandidates);
-  const recipientEmail = explicitRecipientEmail ?? selectedContact?.email;
+  // Greffe de secours : seulement quand la vente au tribunal n'a AUCUN destinataire avocat ou cabinet
+  // (ni dans l'annonce, ni au registre, ni retrouvé), qu'aucune adresse n'est saisie et qu'aucun
+  // professionnel n'est opposé. Une adresse hésitante ou ambiguë reste à l'administrateur.
+  const courtFallback: CourtRegistryFallback | null =
+    !explicitRecipientEmail &&
+    !selectedContact &&
+    !contactCandidates.length &&
+    candidatesSkippedForOpposition === 0
+      ? await findCourtRegistryFallback(sale)
+      : null;
+  const recipientEmail =
+    explicitRecipientEmail ?? selectedContact?.email ?? courtFallback?.candidate.email;
   if (!recipientEmail) {
     throw new Error(
       candidatesSkippedForOpposition > 0 && !contactCandidates.length
@@ -448,11 +489,14 @@ export async function createAdminInformationAgentDraft({
         : missingRecipientMessage(contactCandidates.length, search.noAddressNote),
     );
   }
-  const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
+  const selectedByEmail =
+    courtFallback?.candidate ??
+    contactCandidates.find((candidate) => candidate.email === recipientEmail);
   // A manual address or another source contact must not inherit the lawyer's
-  // name: it can belong to a different professional entirely.
-  const recipientName =
-    input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null;
+  // name: it can belong to a different professional entirely. Un greffe n'a pas de nom de personne.
+  const recipientName = courtFallback
+    ? null
+    : (input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null);
   const recipientIdentityRole = selectedByEmail?.role ?? null;
   const recipientIdentityKeys = informationAgentIdentityKeys({
     role: recipientIdentityRole,
@@ -463,6 +507,7 @@ export async function createAdminInformationAgentDraft({
     saleId: sale.id,
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
+    courtRegistryAddress: Boolean(courtFallback),
   });
   // Refused now rather than at the preview, after the admin has read the whole draft.
   await assertNoSentCaseForRecipient(sale.id, recipientEmail);
@@ -470,15 +515,32 @@ export async function createAdminInformationAgentDraft({
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
   });
-  const draft = buildInformationRequestDraft({
-    sale,
-    recipientName,
-    questionKeys,
-    facts,
-    inventory,
-    template: emailTemplate.content,
-    signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
-  });
+  if (courtFallback) {
+    await assertCourtRegistryFallbackLimits({
+      courtCode: courtFallback.court.code,
+      saleId: sale.id,
+    });
+  }
+  const draft = courtFallback
+    ? buildInformationRequestDraft({
+        sale,
+        recipientName: null,
+        questionKeys: COURT_REGISTRY_QUESTION_KEYS,
+        questionLines: [COURT_REGISTRY_QUESTION],
+        facts,
+        inventory,
+        template: COURT_REGISTRY_EMAIL_TEMPLATE,
+        signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
+      })
+    : buildInformationRequestDraft({
+        sale,
+        recipientName,
+        questionKeys,
+        facts,
+        inventory,
+        template: emailTemplate.content,
+        signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
+      });
 
   const { data, error } = await supabaseAdmin
     .from("information_agent_missions")
@@ -494,12 +556,15 @@ export async function createAdminInformationAgentDraft({
       share_requester_email: false,
       subject: draft.subject,
       body_text: draft.bodyText,
-      question_keys: questionKeys,
+      question_keys: courtFallback ? [...COURT_REGISTRY_QUESTION_KEYS] : questionKeys,
       missing_information: gaps.map((gap) => gap.key),
       sale_snapshot: saleSnapshot(sale),
       privacy_version: LEGAL_DOCUMENTS.privacy.version,
       metadata: {
-        draft_source: "admin_source_first_gap_analysis",
+        draft_source: courtFallback
+          ? "admin_court_registry_fallback"
+          : "admin_source_first_gap_analysis",
+        ...(courtFallback ? courtRegistryFallbackMetadata(courtFallback.court) : {}),
         // Lieu et rôle de l'identité (jamais l'adresse) : l'envoi recalcule les clés d'identité.
         contact_identity: {
           role: recipientIdentityRole,
@@ -513,9 +578,13 @@ export async function createAdminInformationAgentDraft({
         contact_discovery: {
           method: explicitRecipientEmail
             ? "admin_override"
-            : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
+            : courtFallback
+              ? COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD
+              : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
           selected_email: selectedByEmail?.email ?? explicitRecipientEmail ?? null,
-          candidates: contactCandidates.slice(0, 8).map(contactCandidateSnapshot),
+          candidates: (courtFallback ? [courtFallback.candidate] : contactCandidates)
+            .slice(0, 8)
+            .map(contactCandidateSnapshot),
         },
         initiated_by_admin: auth.userId,
         inventory: informationAgentInventorySnapshot(inventory),
@@ -532,12 +601,13 @@ export async function createAdminInformationAgentDraft({
     p_mission_id: data.id,
   });
   if (subscribeError) throw subscribeError;
-  // L'adresse trouvée n'est enregistrée qu'une fois contrôlée et le brouillon créé.
-  if (foundContact) {
+  // L'adresse trouvée (ou celle du greffe) n'est enregistrée qu'une fois contrôlée et le brouillon créé.
+  const recordedContact = foundContact ?? courtFallback?.candidate ?? null;
+  if (recordedContact) {
     try {
       await persistInformationAgentContactObservations({
         saleId: sale.id,
-        candidates: [foundContact],
+        candidates: [recordedContact],
       });
     } catch {
       // Sans ligne de registre, l'origine de l'adresse est inconnue : le brouillon est annulé.
@@ -564,7 +634,7 @@ export async function createAdminInformationAgentDraft({
     gaps,
     inventory: inventory.items,
     facts: await listFactsForCases(subscribedMission.case_id ? [subscribedMission.case_id] : []),
-    contactCandidates,
+    contactCandidates: courtFallback ? [courtFallback.candidate] : contactCandidates,
   };
 }
 
@@ -684,21 +754,28 @@ async function approveAndSendMission({
   await assertInformationAgentSaleCurrent(mission);
   // Opposition par adresse et par identité (le nom corrigé à l'aperçu compte), avant l'envoi.
   const identityKeys = missionIdentityKeys(mission, input.recipientName);
+  // Greffe de secours : l'adresse du référentiel est la seule adresse de juridiction admise.
+  const courtFallback = courtRegistryFallbackOfMission(mission, input.recipientEmail);
+  if (courtFallback) {
+    await assertCourtRegistryFallbackAddress(courtFallback.courtCode, input.recipientEmail);
+  }
   await assertInformationAgentContactAllowed({
     saleId: mission.sale_id,
     email: input.recipientEmail,
     identityKeys,
+    courtRegistryAddress: Boolean(courtFallback),
   });
   // Adresse retrouvée par l'agent : sa seule origine est la ligne de registre de l'agent.
   const agentFound = isAgentFoundRecipient(mission, input.recipientEmail);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: input.recipientEmail,
     saleId: mission.sale_id,
-    manualOriginUrl: agentFound ? null : (input.recipientOriginUrl ?? null),
+    manualOriginUrl: agentFound || courtFallback ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   assertAgentFoundOriginIntact(agentFound, addressOrigin);
+  assertCourtRegistryFallbackOriginIntact(Boolean(courtFallback), addressOrigin);
   assertInformationAgentSourceAllowed(addressOrigin);
   assertInformationAgentSearchedAddressAllowed(addressOrigin.origin);
   assertInformationAgentOutboundEnabled();
@@ -714,6 +791,13 @@ async function approveAndSendMission({
     missionId: mission.id,
     identityKeys,
   });
+  if (courtFallback) {
+    await assertCourtRegistryFallbackLimits({
+      courtCode: courtFallback.courtCode,
+      saleId: mission.sale_id,
+      missionId: mission.id,
+    });
+  }
 
   // An admin may replace a source-derived address while approving the draft.
   // Preserve the provenance only when the normalized address is unchanged;
@@ -749,7 +833,10 @@ async function approveAndSendMission({
       body_text: input.bodyText,
       failure_reason: null,
       metadata: {
-        ...asObject(mission.metadata),
+        // Destinataire changé par l'administrateur : la mission n'est plus une demande au greffe.
+        ...(courtFallback
+          ? asObject(mission.metadata)
+          : withoutCourtRegistryTrace(mission.metadata)),
         recipient_origin_url: input.recipientOriginUrl ?? null,
         preview_fingerprint: input.previewFingerprint,
       },
@@ -789,6 +876,7 @@ async function approveAndSendMission({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
       identityKeys: edited.recipient_identity_keys,
+      courtRegistryAddress: Boolean(courtFallback),
     });
     // Approval is already recorded: if a concurrent approval for the same recipient is older,
     // this one stands down, so only the earliest request is ever sent within the 30 days.
@@ -799,6 +887,15 @@ async function approveAndSendMission({
       identityKeys: edited.recipient_identity_keys,
       approvedAt: approvedMission.approved_at,
     });
+    if (courtFallback) {
+      // Même départage des approbations concurrentes pour les limites du tribunal (par vente et par jour).
+      await assertCourtRegistryFallbackLimits({
+        courtCode: courtFallback.courtCode,
+        saleId: subscribedMission.sale_id,
+        missionId: mission.id,
+        approvedAt: approvedMission.approved_at,
+      });
+    }
     const legalFooter = buildInformationAgentLegalFooter({
       appUrl: config.appUrl,
       email: edited.recipient_email,
@@ -824,6 +921,7 @@ async function approveAndSendMission({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
       identityKeys: edited.recipient_identity_keys,
+      courtRegistryAddress: Boolean(courtFallback),
     });
     assertInformationAgentCanaryRecipient(edited.recipient_email);
     const delivery = await sendResendEmail({
@@ -865,6 +963,14 @@ async function approveAndSendMission({
         approved_by_admin: adminId,
         address_origin_url: legalFooter.addressOriginUrl ?? null,
         address_origin_text: legalFooter.addressOrigin,
+        // Journal : un message au greffe se distingue d'un message à un avocat.
+        ...(courtFallback
+          ? {
+              address_origin: INFORMATION_AGENT_COURT_REGISTRY_FALLBACK,
+              court_code: courtFallback.courtCode,
+              court_name: courtFallback.courtName,
+            }
+          : {}),
         email_template_version: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
         email_content_template_id: missionMetadata.email_content_template_id ?? null,
         email_content_template_revision: missionMetadata.email_content_template_revision ?? null,
@@ -1150,11 +1256,16 @@ export async function previewAdminInformationAgentMission({
   if (mission.status !== "draft" && mission.status !== "failed") {
     blockers.push("Cette mission n’est plus un brouillon : elle ne peut pas être envoyée.");
   }
+  const courtFallback = courtRegistryFallbackOfMission(mission, recipient);
+  if (courtFallback) {
+    await collect(() => assertCourtRegistryFallbackAddress(courtFallback.courtCode, recipient));
+  }
   await collect(() =>
     assertInformationAgentContactAllowed({
       saleId: mission.sale_id,
       email: recipient,
       identityKeys: missionIdentityKeys(mission, input.recipientName),
+      courtRegistryAddress: Boolean(courtFallback),
     }),
   );
   await collect(() =>
@@ -1171,15 +1282,28 @@ export async function previewAdminInformationAgentMission({
       identityKeys: missionIdentityKeys(mission, input.recipientName),
     }),
   );
+  if (courtFallback) {
+    await collect(() =>
+      assertCourtRegistryFallbackLimits({
+        courtCode: courtFallback.courtCode,
+        saleId: mission.sale_id,
+        missionId: mission.id,
+        env,
+      }),
+    );
+  }
   const agentFound = isAgentFoundRecipient(mission, recipient);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: recipient,
     saleId: mission.sale_id,
-    manualOriginUrl: agentFound ? null : (input.recipientOriginUrl ?? null),
+    manualOriginUrl: agentFound || courtFallback ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) blockers.push(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   await collect(() => assertAgentFoundOriginIntact(agentFound, addressOrigin));
+  await collect(() =>
+    assertCourtRegistryFallbackOriginIntact(Boolean(courtFallback), addressOrigin),
+  );
   await collect(() => assertInformationAgentSourceAllowed(addressOrigin));
   await collect(() => assertInformationAgentSearchedAddressAllowed(addressOrigin.origin, env));
   await collect(() => assertInformationAgentOutboundEnabled(env));
@@ -1239,6 +1363,29 @@ export async function previewAdminInformationAgentMission({
     addressOrigin: { ...addressOrigin.origin, known: addressOrigin.known },
     fingerprint: informationAgentPreviewFingerprint({ adminId: auth.userId, ...input }, env),
   };
+}
+
+export const COURT_REGISTRY_ORIGIN_MISSING_MESSAGE =
+  "L’adresse du greffe n’a plus de ligne de registre issue du référentiel des tribunaux : l’origine saisie à la main n’est pas admise, annulez ce brouillon et relancez la préparation.";
+
+/**
+ * Une adresse de greffe exige sa ligne de registre (`court_registry_fallback`) : sans elle, ni URL
+ * saisie à la main ni saisie d'administrateur ne la « blanchissent » (libellé d'origine et exclusion
+ * des adresses de juridiction contournés).
+ */
+function assertCourtRegistryFallbackOriginIntact(
+  courtFallback: boolean,
+  origin: { kind: string | null },
+): void {
+  if (courtFallback && origin.kind !== INFORMATION_AGENT_COURT_REGISTRY_FALLBACK) {
+    throw new Error(COURT_REGISTRY_ORIGIN_MISSING_MESSAGE);
+  }
+}
+
+/** Métadonnées d'une mission sans la trace d'une demande au greffe (destinataire changé à la main). */
+function withoutCourtRegistryTrace(metadata: Json): Record<string, Json | undefined> {
+  const { court_registry_fallback: _court, address_origin: _origin, ...rest } = asObject(metadata);
+  return rest;
 }
 
 /** Prestataire d'IA du pied ; une configuration inconnue devient un motif de blocage de l'aperçu. */
@@ -1361,6 +1508,10 @@ function missionFromRow(row: MissionRow): InformationAgentMission {
     repliedAt: row.replied_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    recipientOrigin:
+      asObject(row.metadata).address_origin === INFORMATION_AGENT_COURT_REGISTRY_FALLBACK
+        ? INFORMATION_AGENT_COURT_REGISTRY_FALLBACK
+        : null,
   };
 }
 
