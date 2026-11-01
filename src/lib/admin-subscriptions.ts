@@ -29,18 +29,35 @@ const optionalDateTimeSchema = z
   })
   .transform((value) => (value ? new Date(value).toISOString() : null));
 
-export const adminSubscriptionGrantInputSchema = z.object({
-  target: z.string().trim().min(3).max(320),
-  planCode: z.enum(["decouverte", "analyse"]).default("analyse"),
-  status: planStatusSchema.default("active"),
-  currentPeriodEnd: optionalDateTimeSchema,
-  note: z
-    .string()
-    .trim()
-    .max(500)
-    .optional()
-    .transform((value) => (value ? value : null)),
-});
+export const adminSubscriptionGrantInputSchema = z
+  .object({
+    target: z.string().trim().min(3).max(320),
+    planCode: z.enum(["decouverte", "analyse"]).default("analyse"),
+    status: planStatusSchema.default("active"),
+    currentPeriodEnd: optionalDateTimeSchema,
+    note: z
+      .string()
+      .trim()
+      .max(500)
+      .optional()
+      .transform((value) => (value ? value : null)),
+  })
+  .superRefine((value, context) => {
+    // Depuis le n° 47, un abonnement Analyse « trialing » ou « active » sans fin de période n'ouvre aucun
+    // accès (`app_private.subscription_grants_access`) : la date de fin est donc obligatoire.
+    if (
+      value.planCode === "analyse" &&
+      (value.status === "trialing" || value.status === "active") &&
+      !value.currentPeriodEnd
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["currentPeriodEnd"],
+        message:
+          "Une fin de période est obligatoire pour un accès Analyse actif ou en essai : sans elle, l'accès ne s'ouvre pas.",
+      });
+    }
+  });
 
 export type AdminSubscriptionGrantInput = z.input<typeof adminSubscriptionGrantInputSchema>;
 export type AdminSubscriptionGrantPayload = z.output<typeof adminSubscriptionGrantInputSchema>;

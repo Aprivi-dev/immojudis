@@ -18,10 +18,10 @@ insert into auth.users (
    'authenticated', 'authenticated', 'refresh-b@example.test', '', now(), now(), now(),
    '{}'::jsonb, '{}'::jsonb);
 
-insert into public.user_subscriptions (user_id, plan_code, status)
+insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
 values
-  ('c5060000-0000-4000-8000-000000000001', 'analyse', 'active'),
-  ('c5060000-0000-4000-8000-000000000002', 'analyse', 'active');
+  ('c5060000-0000-4000-8000-000000000001', 'analyse', 'active', now() + interval '30 days'),
+  ('c5060000-0000-4000-8000-000000000002', 'analyse', 'active', now() + interval '30 days');
 
 insert into public.auction_sales (id, source_name, source_url, title)
 values (

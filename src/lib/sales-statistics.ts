@@ -5,7 +5,7 @@ import type { RentLookup } from "@/lib/rent-reference";
 import { RENT_ATTRIBUTION } from "@/lib/rent-source-notice";
 import { createRentLookupSession, rentBasisOf, type RentBasis } from "@/lib/rent-reference.server";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSales } from "@/lib/queries";
 import {
   applyClientSearchFilters,

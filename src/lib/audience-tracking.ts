@@ -1,7 +1,7 @@
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
 import { featureAccess, featureIncluded, type FeatureAccess, type PlanCode } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/sale-views";
 import { saleRows } from "@/lib/sale-rows";
 import {

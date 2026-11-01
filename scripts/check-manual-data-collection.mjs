@@ -34,6 +34,8 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/sale-flood-risk",
   "/api/cron/sale-retention",
   "/api/cron/operational-health",
+  // Rapprochement Stripe / droits en base, en lecture seule : ne collecte aucune donnée de vente.
+  "/api/cron/billing-reconciliation",
 ]);
 const allowedDatabaseCronJobs = new Set([
   "immojudis-operational-health",

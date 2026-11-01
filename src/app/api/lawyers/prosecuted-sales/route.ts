@@ -9,7 +9,7 @@ import {
   parseLawyerIdsParam,
 } from "@/lib/lawyer-prosecuted-sales.server";
 import { hasStandingAnalysisAccess } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 

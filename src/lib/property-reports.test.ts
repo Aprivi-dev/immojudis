@@ -3,8 +3,8 @@ import {
   buildOpportunityAnalysis,
   buildPropertyReportShare,
   buildPublicSharedPropertyReport,
-  resolvePlanEntitlements,
 } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { Json } from "@/integrations/supabase/types";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
@@ -765,6 +765,8 @@ describe("property report sharing", () => {
     expect(plan.hasAnalysisAccess).toBe(true);
     expect(plan.features.realtimeAlertChanges).toBe("included");
     expect(plan.features.workspaceCollaboration).toBe("included");
+    // L'administrateur garde les clés d'API et la collaboration retirées de l'offre (n° 97).
+    expect(plan.features.salesApiAccess).toBe("included");
     expect(plan.features.outcomeGraph).toBe("included");
     expect(plan.limits.workspaceCollaborators).toBeNull();
     expect(plan.limits.watchedZones).toBeNull();
@@ -789,9 +791,12 @@ describe("property report sharing", () => {
 
     expect(plan.plan).toBe("analyse");
     expect(plan.features.outcomeGraph).toBe("included");
-    expect(plan.limits.apiKeys).toBe(2);
+    // Les clés d'API et les collaborateurs ont quitté l'offre Analyse (n° 97).
+    expect(plan.limits.apiKeys).toBe(0);
+    expect(plan.features.salesApiAccess).toBe("locked");
+    expect(plan.features.workspaceCollaboration).toBe("locked");
     expect(plan.limits.watchedZones).toBe(25);
-    expect(plan.limits.workspaceCollaborators).toBe(25);
+    expect(plan.limits.workspaceCollaborators).toBe(0);
   });
 });
 

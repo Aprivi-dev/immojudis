@@ -8,7 +8,7 @@ import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { canCreateEmailAlertNotification } from "@/lib/notification-preferences";
 import { setOfferOpeningNotification } from "@/lib/offer-opening-notification";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { systemAuthForUser } from "@/lib/system-auth";

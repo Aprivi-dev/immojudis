@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { isLawyerEligibleForSale } from "@/lib/lawyer-bar";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { cleanSaleTitle } from "@/lib/sale-title";

@@ -54,7 +54,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
   };
   return { supabaseAdmin: client };
 });
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: async () => db.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: async () => db.plan }));
 vi.mock("@/lib/system-auth", () => ({
   systemAuthForUser: async (userId: string) => ({ userId, supabase: {}, claims: {} }),
 }));

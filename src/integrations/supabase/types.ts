@@ -16740,6 +16740,10 @@ export type Database = {
         Args: { p_mode?: string; p_user_id?: string };
         Returns: string;
       };
+      sync_billing_reconciliation_alert: {
+        Args: { p_active: boolean; p_details?: Json };
+        Returns: undefined;
+      };
       sync_sale_communes: {
         Args: never;
         Returns: { n_changed: number; n_with_code: number; n_written: number }[];
