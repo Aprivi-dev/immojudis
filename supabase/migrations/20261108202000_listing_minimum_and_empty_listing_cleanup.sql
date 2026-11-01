@@ -219,10 +219,6 @@ as $function$
 $function$;
 
 -- 3. La règle sur une ligne de vente -------------------------------------------------------------------------
--- ATTENTION : la preuve `court_email` du pipeline (email du tribunal d'une vente au tribunal sans email d'avocat) n'est
--- PAS lue ici. Elle est ajoutée par l'enveloppe de la migration 20261110190100, qui renomme cette fonction en
--- sale_has_listing_minimum_without_court_email et la rappelle depuis une nouvelle sale_has_listing_minimum. Pour lire la
--- règle complète, lire cette migration-là, pas seulement celle-ci.
 create or replace function app_private.sale_has_listing_minimum(p_sale public.auction_sales)
 returns boolean
 language sql
