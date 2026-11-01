@@ -1,0 +1,145 @@
+name: Apply Supabase Auth Config
+
+# Applique à la production les gabarits d'emails d'authentification du dépôt (objets, contenus et,
+# si demandé, expéditeur) par l'API de gestion de Supabase. Lancement manuel, depuis main seulement :
+# `plan` (par défaut) affiche le diff sans rien écrire ; `apply` écrit, après avoir gardé la
+# configuration actuelle dans un artefact de retour arrière. Voir docs/runbooks/emails-authentification.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "plan = diff seulement, rien n'est écrit (défaut) ; apply = écrit en production"
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
+      confirm_target:
+        description: "Type production to apply (required for mode apply, ignored by plan)"
+        required: false
+        type: string
+        default: ""
+      variant:
+        description: "principal = Immojudis link (/auth/confirmer) ; retour-arriere = Supabase default link"
+        required: true
+        type: choice
+        options:
+          - principal
+          - retour-arriere
+        default: principal
+      sender_email:
+        description: "Optional sender address, must end with @immojudis.com (empty = SMTP untouched)"
+        required: false
+        type: string
+        default: ""
+      sender_name:
+        description: "Optional sender display name (empty = SMTP untouched)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-supabase-auth-config
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate the dispatch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # No secret and no environment, only the checks that must stop the run before anything is read.
+    steps:
+      - name: Check workflow event, ref, and confirmation
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          WORKFLOW_EVENT: ${{ github.event_name }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$WORKFLOW_EVENT" != "workflow_dispatch" ]; then
+            echo "This workflow only accepts an explicit workflow_dispatch event." >&2
+            exit 1
+          fi
+          if [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
+            echo "The auth configuration must be dispatched from refs/heads/main (got $WORKFLOW_REF)." >&2
+            exit 1
+          fi
+          if [ "$MODE" != "plan" ] && [ "$MODE" != "apply" ]; then
+            echo "mode must be plan or apply (got $MODE)." >&2
+            exit 1
+          fi
+          if [ "$MODE" = "apply" ] && [ "$CONFIRM_TARGET" != "production" ]; then
+            echo "mode apply requires confirm_target to be exactly: production" >&2
+            exit 1
+          fi
+
+  configure:
+    name: Plan or apply the auth configuration
+    needs: validate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: Production
+    timeout-minutes: 10
+    # Secrets are not part of the job environment: only the step that calls the management API
+    # receives SUPABASE_ACCESS_TOKEN.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: Verify checked-out revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "$actual_sha" != "$EXPECTED_SHA" ]; then
+            echo "Checked-out revision $actual_sha does not match workflow SHA $EXPECTED_SHA." >&2
+            exit 1
+          fi
+
+      # The script has no dependency (Node built-ins and fetch only), so there is no npm install.
+      # It fails with a clear message when the secret is absent, and it never prints the token or any
+      # SMTP/provider secret.
+      - name: Plan or apply the auth configuration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MODE: ${{ inputs.mode }}
+          VARIANT: ${{ inputs.variant }}
+          SENDER_EMAIL: ${{ inputs.sender_email }}
+          SENDER_NAME: ${{ inputs.sender_name }}
+        run: |
+          set -euo pipefail
+          args=("--variant=$VARIANT" "--backup-file=$RUNNER_TEMP/immojudis-supabase-auth-config-backup.json")
+          if [ -n "$SENDER_EMAIL" ]; then
+            args+=("--sender-email=$SENDER_EMAIL")
+          fi
+          if [ -n "$SENDER_NAME" ]; then
+            args+=("--sender-name=$SENDER_NAME")
+          fi
+          if [ "$MODE" = "apply" ]; then
+            args+=("--apply")
+          fi
+          node scripts/apply-supabase-auth-config.mjs "${args[@]}"
+
+      # Kept even when the write fails half-way: the backup is written before the first PATCH.
+      - name: Upload the rollback backup
+        if: always() && inputs.mode == 'apply'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: immojudis-supabase-auth-config-backup-${{ github.run_id }}
+          path: ${{ runner.temp }}/immojudis-supabase-auth-config-backup.json
+          if-no-files-found: warn
+          retention-days: 90

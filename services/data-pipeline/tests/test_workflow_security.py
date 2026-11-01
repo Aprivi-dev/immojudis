@@ -432,6 +432,50 @@ def test_apply_migrations_stays_manual_and_requires_green_ci_on_the_commit() -> 
     assert [step.name for step in jobs["validate"].steps][-1] == "Require every CI check of the commit to be green"
 
 
+def test_apply_auth_config_is_manual_main_only_plan_by_default_and_gives_the_token_to_one_step() -> None:
+    text = (WORKFLOWS / "apply-supabase-auth-config.yml").read_text(encoding="utf-8")
+    on_block = text.split("\npermissions:", 1)[0]
+    jobs = {job.name: job for job in parse_jobs(text)}
+
+    # Déclenchement manuel seul, jamais automatique.
+    assert re.search(r"^on:\n  workflow_dispatch:\n", on_block, re.M)
+    for trigger in ("push:", "schedule:", "pull_request", "workflow_run", "workflow_call"):
+        assert trigger not in on_block, trigger
+    # Entrées : `plan` par défaut, `apply` seulement avec la confirmation exacte, variante et expéditeur.
+    assert re.search(r"^      mode:\n(?:        .*\n)*?        options:\n          - plan\n          - apply\n        default: plan$", text, re.M)
+    assert re.search(r"^      variant:\n(?:        .*\n)*?        options:\n          - principal\n          - retour-arriere\n        default: principal$", text, re.M)
+    assert re.search(r"^      confirm_target:\n(?:        .*\n)*?        default: \"\"$", text, re.M)
+    assert re.search(r"^      sender_email:\n(?:        .*\n)*?        required: false$", text, re.M)
+    assert re.search(r"^      sender_name:\n(?:        .*\n)*?        required: false$", text, re.M)
+    # Une seule exécution à la fois, jamais annulée en cours d'écriture.
+    assert re.search(r"^concurrency:\n  group: immojudis-supabase-auth-config\n  cancel-in-progress: false$", text, re.M)
+    assert set(jobs) == {"validate", "configure"}
+    # La validation (événement, branche main, confirmation) n'a ni secret ni environnement.
+    validate = text.split("  validate:\n", 1)[1].split("\n  configure:\n", 1)[0]
+    assert "environment:" not in validate and not SECRET.search(validate)
+    assert 'refs/heads/main' in validate
+    assert '[ "$MODE" = "apply" ] && [ "$CONFIRM_TARGET" != "production" ]' in validate
+    assert "${{" not in validate.split("run:", 1)[1]
+    # L'écriture ne part que de main, après la validation, dans l'environnement Production.
+    configure = text.split("\n  configure:\n", 1)[1]
+    assert re.search(r"^    needs: validate$", configure, re.M)
+    assert re.search(r"^    environment: Production$", configure, re.M)
+    _assert_main_only_without_persisted_credentials(text)
+    # Le jeton Supabase ne part que vers l'étape qui appelle l'API de gestion ; les entrées passent par env.
+    assert [job.name for job in jobs.values() if SECRET.search(job.env)] == []
+    receiving = [step for step in jobs["configure"].steps if SECRET.search(step.env)]
+    assert [step.name for step in receiving] == ["Plan or apply the auth configuration"]
+    assert "SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}" in receiving[0].env
+    assert "${{" not in receiving[0].run
+    assert "node scripts/apply-supabase-auth-config.mjs" in receiving[0].run
+    assert "db:migrate" not in text and "npm ci" not in text
+    # Chaque action est épinglée par SHA de commit ; la sauvegarde est téléversée en mode apply seulement.
+    assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs["configure"].steps if step.uses)
+    upload = next(step for step in jobs["configure"].steps if step.name == "Upload the rollback backup")
+    assert re.search(r"^        if: always\(\) && inputs\.mode == 'apply'$", upload.text, re.M)
+    assert "immojudis-supabase-auth-config-backup" in upload.text
+
+
 def test_pending_migrations_check_runs_on_migration_pushes_and_daily_and_stays_read_only() -> None:
     text = (WORKFLOWS / "check-pending-supabase-migrations.yml").read_text(encoding="utf-8")
     on_block = text.split("\npermissions:", 1)[0]
