@@ -133,8 +133,9 @@ describe("annuaire des avocats", () => {
     expect(link.getAttribute("href")).toBe(
       "/contact?sujet=avocat-poursuivant&vente=11111111-1111-4111-8111-111111111111&rubrique=fiche",
     );
-    expect(entry.textContent).toContain("Je suis l’avocat poursuivant de cette vente");
-    expect(entry.textContent).not.toMatch(/délai|jours|automatique|vérifi/i);
+    expect(entry.textContent).toContain("la fiche de cette vente");
+    expect(entry.textContent).toContain("Je suis l’avocat poursuivant d’une vente");
+    expect(entry.textContent).toContain("n’est pas vérifiée automatiquement");
     expect(link.className).toContain("min-h-11");
   });
 
@@ -150,6 +151,8 @@ describe("annuaire des avocats", () => {
     expect(within(entry).getByRole("link").getAttribute("href")).toBe(
       "/contact?sujet=avocat-poursuivant",
     );
+    expect(entry.textContent).toContain("la fiche d’une vente que vous poursuivez");
+    expect(entry.textContent).not.toContain("cette vente");
   });
 
   it("affiche « Publicité · Sponsorisé » sur les profils sponsorisés seulement", async () => {
