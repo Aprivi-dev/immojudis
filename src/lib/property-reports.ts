@@ -641,9 +641,11 @@ export async function getSharedPropertyReport({
   if (error) throw error;
   if (!data) throw new Error("Rapport partagé introuvable ou expiré.");
   // Lien connu mais fermé (échéance, fin de l'essai du propriétaire) : la page l'explique.
-  if (shareIsExpired(data.share_expires_at)) throw new SharedReportUnavailableError();
+  if (shareIsExpired(data.share_expires_at)) throw new SharedReportUnavailableError("expired");
   // A link stops working as soon as its owner no longer has an active Analyse plan.
-  if (!(await shareOwnerKeepsSavedReports(data.user_id))) throw new SharedReportUnavailableError();
+  if (!(await shareOwnerKeepsSavedReports(data.user_id))) {
+    throw new SharedReportUnavailableError("owner_plan_ended");
+  }
 
   assertReportSourceCurrent(data.report_snapshot, await getSale(supabaseAdmin, data.sale_id));
 

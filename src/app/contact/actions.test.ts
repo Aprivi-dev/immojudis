@@ -56,6 +56,14 @@ describe("sendContactMessage : limiteur partagé du dépôt", () => {
       ...CONTACT_RATE_LIMITS.global,
     });
     expect(mocks.send).toHaveBeenCalledTimes(1);
+    // Un signalement d'erreur est étiqueté et préfixé pour être trié dans la boîte de réception.
+    expect(mocks.send.mock.calls[0][0]).toMatchObject({
+      subject: expect.stringMatching(/^\[DONNEES\] \[Contact Immojudis\]/),
+      tags: [
+        { name: "category", value: "contact" },
+        { name: "topic", value: "donnees" },
+      ],
+    });
   });
 
   it("refuse avec un message en français quand la limite est atteinte", async () => {

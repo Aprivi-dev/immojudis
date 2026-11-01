@@ -51,6 +51,17 @@ export function alertNotificationsMode(env: Env = process.env): EmailFeatureMode
   return value === "internal" || value === "on" ? value : "off";
 }
 
+/**
+ * Mode de l'email de fin d'essai à J+5 (`TRIAL_END_EMAIL_MODE`), mêmes valeurs que les autres : `off`
+ * (défaut) n'envoie rien ; `internal` envoie un exemple, objet « [Test interne] », aux seuls
+ * administrateurs (jamais à un compte réel) ; `on` écrit aux comptes dont l'essai se termine dans deux
+ * jours. Il n'y a pas de case de consentement : c'est un message sur le compte, avec lien de
+ * désinscription en un clic (liste d'exclusion `launch_offer_end_notice_optouts`).
+ */
+export function trialEndEmailMode(env: Env = process.env): EmailFeatureMode {
+  return parseMode(serverEnv(env as EnvSource).trialEndEmail.mode);
+}
+
 function offeredTo(mode: EmailFeatureMode, isAdmin: boolean): boolean {
   return mode === "on" || (mode === "internal" && isAdmin);
 }

@@ -594,19 +594,31 @@ export function notificationKindForFrequency(
   return "daily_digest";
 }
 
+/** Heure d'envoi des récapitulatifs d'alertes (UTC) : le passage `alert-notifications` de 07:30 les trouve échus. */
+const ALERT_DIGEST_HOUR_UTC = 7;
+
+/**
+ * Moment où une notification d'alerte devient échue : 07:00 UTC. Une correspondance détectée avant
+ * 07:00 UTC (passage `smart-alerts` de 06:15, dont l'heure réelle est celle passée par
+ * `alert-matches.ts`) est programmée le jour même, donc envoyée à 07:30 ; une détectée après
+ * (rattrapage de 08:15) l'est le lendemain. Avant, tout partait le lendemain : une vente détectée à
+ * 06:15 n'était annoncée que 25 heures plus tard. Le récapitulatif hebdomadaire suit la même règle
+ * sur le lundi.
+ */
 export function scheduledForFrequency(
   frequency: UserAlert["alert_frequency"],
   now = new Date(),
 ): string {
   const scheduled = new Date(now);
+  const beforeDigestHour = scheduled.getUTCHours() < ALERT_DIGEST_HOUR_UTC;
   if (frequency === "weekly") {
     const day = scheduled.getUTCDay();
-    const daysUntilMonday = (8 - day) % 7 || 7;
+    const daysUntilMonday = beforeDigestHour && day === 1 ? 0 : (8 - day) % 7 || 7;
     scheduled.setUTCDate(scheduled.getUTCDate() + daysUntilMonday);
-  } else {
+  } else if (!beforeDigestHour) {
     scheduled.setUTCDate(scheduled.getUTCDate() + 1);
   }
-  scheduled.setUTCHours(7, 0, 0, 0);
+  scheduled.setUTCHours(ALERT_DIGEST_HOUR_UTC, 0, 0, 0);
   return scheduled.toISOString();
 }
 

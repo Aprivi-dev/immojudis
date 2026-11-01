@@ -5,6 +5,7 @@ import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import { ContactForm } from "@/components/ContactForm";
 import { ContactPrefilledForm } from "@/components/ContactPrefilledForm";
 import { Card, PageShell } from "@/components/ui/primitives";
+import { CONTACT_RESPONSE_DELAY } from "@/lib/contact-message";
 import { publicLegalPublisher } from "@/lib/legal-documents";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { pageMetadata } from "@/lib/page-metadata";
@@ -31,7 +32,7 @@ function PageContent() {
     <PageShell
       eyebrow="Contact"
       title="Une question sur une vente, un accès ou vos données ?"
-      description="Écrivez-nous : nous répondons par email. Si votre question concerne une annonce, indiquez son adresse ou son identifiant pour accélérer la réponse."
+      description={`Écrivez-nous : nous répondons par email, ${CONTACT_RESPONSE_DELAY}. Si votre question concerne une annonce, indiquez son adresse ou son identifiant pour accélérer la réponse.`}
       width="wide"
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
