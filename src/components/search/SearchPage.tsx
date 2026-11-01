@@ -863,7 +863,11 @@ export function SearchPage({
   // jamais la démonter. Masquée par `visibility: hidden` (et non `display: none`) : sa taille est
   // celle de la fenêtre, donc aucun redimensionnement ni changement de zone ne se déclenche.
   const [mobileMapStarted, setMobileMapStarted] = useState(false);
-  if (mobileMapOpen && !isDesktop && !mobileMapStarted) setMobileMapStarted(true);
+  // `isDesktop` vaut `false` jusqu'au montage : sans ce garde-fou, une adresse `?map=true` ouverte
+  // sur ordinateur démarrerait d'abord la carte du mobile (second chargement Mapbox facturé).
+  const [viewportKnown, setViewportKnown] = useState(false);
+  useEffect(() => setViewportKnown(true), []);
+  if (mobileMapOpen && !isDesktop && viewportKnown && !mobileMapStarted) setMobileMapStarted(true);
   const keepMobileMapMounted = mobileMapStarted && !isDesktop;
   const [mobileMapHost] = useState<HTMLDivElement | null>(() => {
     if (typeof document === "undefined") return null;
