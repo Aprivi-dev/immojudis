@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,6 +21,7 @@ const state = vi.hoisted(() => ({
   fetchSearchCount: vi.fn(),
   fetchSearchMapResults: vi.fn(),
   mapProps: null as null | Record<string, unknown>,
+  mapMounts: 0,
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
@@ -33,6 +35,9 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("./MapPanel", () => ({
   MapPanel: (props: Record<string, unknown>) => {
     state.mapProps = props;
+    useEffect(() => {
+      state.mapMounts += 1;
+    }, []);
     return <div data-testid="map-panel" />;
   },
 }));
@@ -89,6 +94,7 @@ function renderPage(search: SalesSearchParams) {
 beforeEach(() => {
   state.desktop = true;
   state.mapProps = null;
+  state.mapMounts = 0;
   state.fetchAccessPlan.mockReset().mockResolvedValue({
     plan: {
       plan: "analyse",
@@ -152,8 +158,12 @@ describe("/sales sur ordinateur : la carte ne démarre que sur un geste dans sa 
 
   it("démarre d'emblée quand l'adresse arrive avec ?map=true (demande explicite)", async () => {
     renderPage({ map: true });
-    expect(await screen.findByTestId("map-panel")).toBeTruthy();
+    // Le module de la carte se charge à la demande : au premier chargement à froid (CI), il peut
+    // dépasser le délai par défaut de 1 s.
+    expect(await screen.findByTestId("map-panel", {}, { timeout: 5_000 })).toBeTruthy();
     expect(screen.queryByTestId("map-preview")).toBeNull();
+    // Une seule carte : la carte du mobile ne démarre pas avant que l'écran large soit connu.
+    expect(state.mapMounts).toBe(1);
     await waitFor(() => expect(state.fetchSearchMapResults).toHaveBeenCalled());
   });
 
