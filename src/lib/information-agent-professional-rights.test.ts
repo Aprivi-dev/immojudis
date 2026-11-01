@@ -182,6 +182,10 @@ function seed() {
         opposition_status: "none",
       },
     ],
+    information_agent_unrouted_messages: [
+      { id: "u1", sender_email: "maitre_dupont@cabinet.example", subject: "Re: vente" },
+      { id: "u2", sender_email: "autre@cabinet.example", subject: "Re: autre vente" },
+    ],
     data_subject_requests: [],
   };
   state.log = [];
@@ -238,6 +242,8 @@ describe("collectProfessionalData", () => {
     expect(data.files).toHaveLength(1);
     // Ligne globale et fiches par vente de cette adresse, pas celle d'une autre.
     expect(data.contacts.map((row) => row.id)).toEqual(["c1", "c2", "c3"]);
+    // Les messages reçus sans dossier ouvert de cette adresse, pas ceux d'une autre.
+    expect(data.unroutedMessages.map((row) => row.id)).toEqual(["u1"]);
   });
 });
 
@@ -248,6 +254,7 @@ describe("eraseProfessionalData", () => {
     expect(report).toEqual({
       deletedRows: {
         information_agent_contacts: 1,
+        information_agent_unrouted_messages: 1,
         information_agent_cases: 1,
         information_agent_missions: 1,
       },
@@ -263,6 +270,7 @@ describe("eraseProfessionalData", () => {
       "upsert:sale_retention_storage_queue",
       "upsert:information_agent_contacts",
       "delete:information_agent_contacts:1",
+      "delete:information_agent_unrouted_messages:1",
       "delete:information_agent_cases:1",
       "delete:information_agent_missions:1",
     ]);
@@ -292,6 +300,10 @@ describe("eraseProfessionalData", () => {
       "c3",
       "c4",
     ]);
+    // Le message sans dossier ouvert d'un autre professionnel reste.
+    expect((state.tables.information_agent_unrouted_messages ?? []).map((row) => row.id)).toEqual([
+      "u2",
+    ]);
     // Les données d'un autre professionnel et la demande au nom approchant restent.
     expect((state.tables.information_agent_cases ?? []).map((row) => row.id)).toEqual([
       OTHER_CASE_ID,
@@ -313,6 +325,7 @@ describe("eraseProfessionalData", () => {
     const second = await eraseProfessionalData(EMAIL);
     expect(second.deletedRows).toEqual({
       information_agent_contacts: 0,
+      information_agent_unrouted_messages: 0,
       information_agent_cases: 0,
       information_agent_missions: 0,
     });
