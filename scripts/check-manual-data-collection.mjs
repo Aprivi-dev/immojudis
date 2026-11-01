@@ -38,6 +38,8 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/operational-health",
   // Rapprochement Stripe / droits en base, en lecture seule : ne collecte aucune donnée de vente.
   "/api/cron/billing-reconciliation",
+  // Résumé quotidien des réponses à relire (REPLIES_REVIEW_DIGEST_MODE=off par défaut) : lit deux compteurs en base, ne collecte aucune donnée.
+  "/api/cron/replies-review-digest",
 ]);
 const allowedDatabaseCronJobs = new Set([
   "immojudis-operational-health",
