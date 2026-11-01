@@ -5,7 +5,7 @@
  * (`…supabase.co/auth/v1/verify`, que les passerelles anti-hameçonnage ouvrent et qui consomme alors
  * le jeton) mais vers une page d'Immojudis qui ne vérifie qu'AU CLIC sur un bouton :
  *
- *   {{ .SiteURL }}/auth/confirmer?token_hash={{ .TokenHash }}&type=signup&redirect_to={{ .RedirectTo }}
+ *   https://immojudis.com/auth/confirmer?token_hash={{ .TokenHash }}&type=signup&redirect_to={{ .RedirectTo }}
  *
  * `redirect_to` est le DERNIER paramètre : `{{ .RedirectTo }}` n'est pas garanti encodé (il peut porter
  * lui-même un `?` ou un `&`), tout ce qui suit `redirect_to=` lui appartient. Module pur, sans

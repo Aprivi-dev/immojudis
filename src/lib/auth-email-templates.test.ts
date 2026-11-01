@@ -33,7 +33,6 @@ if (update) {
 
 const VARIANTS = Object.keys(DIRECTORIES) as AuthEmailLinkVariant[];
 const ALLOWED_VARIABLES = new Set([
-  "{{ .SiteURL }}",
   "{{ .TokenHash }}",
   "{{ .RedirectTo }}",
   "{{ .ConfirmationURL }}",
@@ -211,16 +210,31 @@ describe("gabarits des emails d'authentification Supabase", () => {
   describe("liens", () => {
     it("la variante principale renvoie vers /auth/confirmer avec le jeton, le type et l'adresse de retour en dernier", () => {
       expect(authEmailLink("token-hash", "signup")).toBe(
-        "{{ .SiteURL }}/auth/confirmer?token_hash={{ .TokenHash }}&type=signup&redirect_to={{ .RedirectTo }}",
+        "https://immojudis.com/auth/confirmer?token_hash={{ .TokenHash }}&type=signup&redirect_to={{ .RedirectTo }}",
       );
       for (const definition of AUTH_EMAIL_TEMPLATES.filter((entry) => entry.button)) {
         const html = buildAuthEmailTemplate(definition, "token-hash");
-        const href = `{{ .SiteURL }}/auth/confirmer?token_hash={{ .TokenHash }}&amp;type=${definition.button!.type}&amp;redirect_to={{ .RedirectTo }}`;
+        const href = `https://immojudis.com/auth/confirmer?token_hash={{ .TokenHash }}&amp;type=${definition.button!.type}&amp;redirect_to={{ .RedirectTo }}`;
         expect(html, definition.id).toContain(`href="${href}"`);
         expect(html).not.toContain("ConfirmationURL");
         expect(html).not.toContain("/auth/v1/verify");
         // Lien de repli affiché en clair : le même, coupé n'importe où.
         expect(html).toContain(`>${href}</span>`);
+      }
+    });
+
+    it("aucun gabarit n'emploie {{ .SiteURL }} ni ne produit « //auth » (SiteURL porte une barre finale)", () => {
+      for (const variant of VARIANTS) {
+        for (const definition of AUTH_EMAIL_TEMPLATES) {
+          for (const html of [
+            buildAuthEmailTemplate(definition, variant),
+            readFileSync(file(variant, definition.file), "utf8"),
+          ]) {
+            expect(html, `${variant}/${definition.id}`).not.toContain("//auth");
+            expect(html, `${variant}/${definition.id}`).not.toContain("{{ .SiteURL }}");
+            expect(html, `${variant}/${definition.id}`).not.toContain("SiteURL");
+          }
+        }
       }
     });
 
@@ -231,7 +245,6 @@ describe("gabarits des emails d'authentification Supabase", () => {
       ]) {
         for (const definition of AUTH_EMAIL_TEMPLATES.filter((entry) => entry.button)) {
           const url = authEmailLink("token-hash", definition.button!.type)
-            .replace("{{ .SiteURL }}", "https://immojudis.com")
             .replace("{{ .TokenHash }}", "9f2c3d4e5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f")
             .replace("{{ .RedirectTo }}", redirectTo);
           const parsed = parseAuthLink(new URL(url).search);
