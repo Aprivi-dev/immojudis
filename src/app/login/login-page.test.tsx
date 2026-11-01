@@ -479,6 +479,21 @@ describe("login page", () => {
     );
   });
 
+  it("explique le détour depuis le simulateur de frais, sans promettre l'essai quand il est fermé", () => {
+    mocks.search = { mode: "investor", reason: "simulateur" };
+    const { unmount } = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit, sans carte bancaire, pour appliquer ce calcul de frais à une vente réelle.",
+    );
+    unmount();
+
+    mocks.search = { reason: "simulateur" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour appliquer ce calcul de frais à une vente réelle.",
+    );
+  });
+
   it("l'export n'est promis au compte gratuit que si c'est vrai : exact dans les deux états", () => {
     mocks.search = { mode: "investor", reason: "export" };
     const { unmount } = render(<LoginPage />);

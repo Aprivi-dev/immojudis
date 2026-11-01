@@ -28,9 +28,23 @@ describe("page /simulateur-frais-encheres", () => {
     );
     // Le dernier appel est l'inscription (compte gratuit), plus la page des offres.
     expect(html).toMatch(
-      /href="\/login\?redirect=%2Fsales&amp;mode=investor"[^>]*>\s*Créer mon compte gratuit/,
+      /href="\/login\?redirect=%2Fsales&amp;mode=investor&amp;reason=simulateur"[^>]*>\s*Créer mon compte gratuit/,
     );
     expect(html).not.toContain("Voir les offres");
+  });
+
+  it("replie l'introduction derrière « Ce qui est inclus » et garde le texte complet", () => {
+    const html = renderToString(<Page />).replaceAll("<!-- -->", "");
+    expect(html).toMatch(/<details[^>]*>\s*<summary[^>]*>Ce qui est inclus<\/summary>/);
+    expect(html).toContain("les émoluments proportionnels de vente");
+    expect(html).toContain("les droits de mutation");
+  });
+
+  it("propose d'être prévenu des ventes de son département, chargé à la demande", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/app/simulateur-frais-encheres/page.tsx", "utf8");
+    expect(source).toContain('from "@/components/DepartmentAlertProposalLazy"');
+    expect(source).toContain("<DepartmentAlertProposal");
   });
 
   it("dit ce que le compte gratuit et Analyse ouvrent, sans réserver l'enchère plafond à Analyse", () => {

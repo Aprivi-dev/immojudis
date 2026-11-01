@@ -332,17 +332,68 @@ describe("page d'un département : contenu", () => {
     expect(within(tribunals).getByRole("link", { name: /tous les tribunaux/ })).toBeTruthy();
   });
 
-  it("limite la liste et renvoie vers la recherche pour le reste", async () => {
+  it("montre les 5 prochaines ventes juste après les chiffres, le reste plus bas, et renvoie vers la recherche", async () => {
     const many = Array.from({ length: 45 }, (_, index) =>
       sale(`s-${String(index).padStart(2, "0")}`),
     );
     mocks.catalogue.mockResolvedValue(aggregateDepartments(many, NOW));
     render(await Page(params("gironde")));
-    const list = screen.getByRole("region", { name: "Les 30 prochaines ventes" });
-    expect(within(list).getAllByRole("listitem")).toHaveLength(30);
+    const next = screen.getByRole("region", { name: "Les 5 prochaines ventes" });
+    expect(within(next).getAllByRole("listitem")).toHaveLength(5);
+    const later = screen.getByRole("region", { name: "Les 25 ventes suivantes" });
+    expect(within(later).getAllByRole("listitem")).toHaveLength(25);
     expect(
-      within(list).getByRole("link", { name: "la recherche du département" }).getAttribute("href"),
+      within(later).getByRole("link", { name: "la recherche du département" }).getAttribute("href"),
     ).toBe("/sales?department=33");
+  });
+
+  it("ordonne la page : fil d'Ariane, titre, chiffres, 5 ventes, « Voir les N ventes », alerte, répartition", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    const { container } = render(await Page(params("gironde")));
+    const position = (node: Element) => Array.from(container.querySelectorAll("*")).indexOf(node);
+    const ordered = [
+      screen.getByRole("navigation", { name: "Fil d’Ariane" }),
+      screen.getByRole("heading", { level: 1 }),
+      screen.getByRole("region", { name: "Les chiffres du département" }),
+      screen.getByRole("region", { name: "Les ventes à venir" }),
+      screen.getByRole("link", { name: /Voir les 3 ventes en Gironde/ }),
+      screen.getByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" }),
+      screen.getByRole("region", { name: "Répartition par type de bien" }),
+    ].map(position);
+    expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
+    expect(new Set(ordered).size).toBe(ordered.length);
+  });
+
+  it("génère « Communes les plus présentes » à partir des ventes, avec un lien vers la recherche", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const block = screen.getByRole("region", { name: "Communes les plus présentes" });
+    expect(
+      within(block)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Bordeaux2 ventes", "Mérignac1 vente"]);
+    expect(within(block).getByRole("link", { name: "Mérignac" }).getAttribute("href")).toBe(
+      "/sales?department=33&city=M%C3%A9rignac",
+    );
+    expect(block.textContent).toContain("Les nombres sont indicatifs");
+    // Des données, pas une affirmation juridique.
+    expect(block.textContent).not.toMatch(/doit|obligatoire|garanti/i);
+  });
+
+  it("n'affiche pas ce bloc quand une seule commune est concernée", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments([sale("a"), sale("b")], NOW));
+    render(await Page(params("gironde")));
+    expect(screen.queryByRole("region", { name: "Communes les plus présentes" })).toBeNull();
+  });
+
+  it("met les trois chiffres sur une seule ligne", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du département" });
+    const list = figures.querySelector("dl")!;
+    expect(list.className).toContain("grid-cols-3");
+    expect(list.children).toHaveLength(3);
   });
 
   it("garde un texte d'introduction générique, sans conseil", async () => {

@@ -3,6 +3,11 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
+import {
+  DEPARTMENT_PAGES_PATH,
+  departmentFromCode,
+  type DepartmentRef,
+} from "@/lib/department-pages";
 import { jsonLdString } from "@/lib/json-ld";
 import { GUIDE_LAST_UPDATED, GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 import { getResourceArticle } from "@/lib/resource-articles";
@@ -238,6 +243,26 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
   },
 ];
 
+/**
+ * Les définitions de « Définitions en bref » : des entrées du lexique ci-dessus, reprises mot pour
+ * mot (le texte est lu dans `LEXIQUE`, jamais recopié) avec un lien vers leur ancre.
+ */
+const BRIEF_DEFINITION_TERMS = [
+  "Adjudication",
+  "Mise à prix",
+  "Surenchère",
+  "Cahier des conditions de vente",
+  "Enchère plafond",
+] as const;
+
+/** Une sélection de départements très présents dans les ventes : les liens du maillage du guide. */
+const GUIDE_DEPARTMENT_CODES = ["75", "69", "33", "13", "59", "31"] as const;
+
+const GUIDE_DEPARTMENTS: DepartmentRef[] = GUIDE_DEPARTMENT_CODES.flatMap((code) => {
+  const department = departmentFromCode(code);
+  return department ? [department] : [];
+});
+
 const INSTITUTIONAL_LINKS: Array<{ href: string; label: string }> = [
   {
     href: "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987",
@@ -440,6 +465,46 @@ export function ResourcesPage() {
           </div>
         </header>
 
+        <GuideActions id="actions-debut" />
+
+        {/* ── Définitions en bref ──────────────────────────────────────── */}
+        <section
+          aria-labelledby="definitions-en-bref"
+          className="liquid-panel mt-6 rounded-lg p-5 sm:p-6"
+        >
+          <h2 id="definitions-en-bref" className="font-display text-xl text-foreground">
+            Définitions en bref
+          </h2>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+            {BRIEF_DEFINITION_TERMS.map((term) => {
+              const entry = LEXIQUE.find((item) => item.term === term);
+              if (!entry) return null;
+              return (
+                <div key={term}>
+                  <dt className="text-sm font-semibold text-foreground">
+                    <a
+                      href={`#${lexiqueAnchor(term)}`}
+                      className="underline-offset-4 hover:text-gold-text hover:underline"
+                    >
+                      {entry.term}
+                    </a>
+                  </dt>
+                  <dd className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                    {entry.def}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Extraits du{" "}
+            <a href="#lexique" className="text-gold-text underline underline-offset-4">
+              lexique
+            </a>{" "}
+            ci-dessous, qui reprend tous les termes.
+          </p>
+        </section>
+
         {/* ── Frise de la procédure ────────────────────────────────────── */}
         <section
           aria-labelledby="frise-procedure"
@@ -554,6 +619,7 @@ export function ResourcesPage() {
               .
             </P>
             <P>La suite de ce guide détaille les ventes judiciaires à la barre du tribunal.</P>
+            <TerritoryLinks lead="Pour voir les ventes référencées, quel que soit leur organisateur, par territoire :" />
           </Section>
 
           <Section id="definition" title="Qu'est-ce qu'une vente immobilière judiciaire ?">
@@ -633,6 +699,7 @@ export function ResourcesPage() {
               L'enjeu est simple : ne pas enchérir parce que la mise à prix semble basse, mais parce
               que le dossier a été lu, compris et chiffré.
             </Callout>
+            <GuideActions id="actions-immojudis" />
           </Section>
 
           <Section id="recherche" title="Comment trouver une vente immobilière judiciaire ?">
@@ -656,6 +723,7 @@ export function ResourcesPage() {
               L'objectif est de permettre une veille efficace sur les ventes judiciaires à venir,
               sans perdre de temps à consulter manuellement des sources dispersées.
             </P>
+            <TerritoryLinks lead="Pour parcourir les ventes à venir par territoire :" />
           </Section>
 
           <Section id="deroulement" title="Comment se déroule une vente immobilière judiciaire ?">
@@ -1192,6 +1260,74 @@ export function ResourcesPage() {
         </section>
       </article>
     </main>
+  );
+}
+
+/**
+ * Deux gestes à portée de la lecture : voir une vente déjà analysée (l'annonce exemple, fictive) ou
+ * explorer le catalogue. Placé après l'en-tête et après la section sur Immojudis.
+ */
+function GuideActions({ id }: { id: string }) {
+  return (
+    <div
+      id={id}
+      data-guide-actions
+      className="mt-6 flex flex-col gap-3 sm:flex-row"
+      role="group"
+      aria-label="Passer à la pratique"
+    >
+      <Link
+        href="/annonce-exemple"
+        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-gold px-5 text-sm font-semibold text-brand-navy transition-colors hover:bg-gold-light"
+      >
+        Voir une vente analysée
+        <ArrowRight className="h-4 w-4" aria-hidden />
+      </Link>
+      <Link
+        href="/sales"
+        className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-5 text-sm font-semibold text-brand-navy transition-colors hover:border-brand-navy"
+      >
+        Explorer les ventes
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * Liens du maillage vers le hub des départements, les tribunaux et une sélection de départements.
+ * Ce sont des renvois vers des pages de données, sans règle ni conseil.
+ */
+function TerritoryLinks({ lead }: { lead: string }) {
+  return (
+    <P>
+      {lead}{" "}
+      <Link
+        href={DEPARTMENT_PAGES_PATH}
+        className="text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
+      >
+        ventes par département
+      </Link>{" "}
+      ou{" "}
+      <Link
+        href="/tribunaux"
+        className="text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
+      >
+        tribunaux et leur activité
+      </Link>
+      . Par exemple :{" "}
+      {GUIDE_DEPARTMENTS.map((department, index) => (
+        <span key={department.code}>
+          {index > 0 ? ", " : null}
+          <Link
+            href={department.path}
+            className="text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
+          >
+            {department.name}
+          </Link>
+        </span>
+      ))}
+      .
+    </P>
   );
 }
 

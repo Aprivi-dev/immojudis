@@ -11,6 +11,7 @@ import {
   departmentSearchPath,
   identicalSaleRanks,
   type DepartmentRef,
+  type DepartmentSale,
   type DepartmentStats,
 } from "@/lib/department-pages";
 import { neighboringDepartmentCodes } from "@/lib/department-neighbors";
@@ -24,8 +25,65 @@ import { hasReadableTribunalName, tribunalPagePath } from "@/lib/tribunal-pages"
 
 const count = new Intl.NumberFormat("fr-FR");
 
+/** Les ventes montrées tout de suite après les chiffres ; les suivantes viennent plus bas. */
+const NEXT_SALES_SHOWN = 5;
+
 function saleWord(total: number): string {
   return total > 1 ? "ventes" : "vente";
+}
+
+function SalesList({
+  sales,
+  identicalSales,
+  now,
+}: {
+  sales: readonly DepartmentSale[];
+  identicalSales: ReturnType<typeof identicalSaleRanks>;
+  now: Date;
+}) {
+  return (
+    <ul className="mt-3 divide-y divide-line">
+      {sales.map((sale) => {
+        const identical = identicalSales.get(sale.id);
+        const dateText = departmentSaleDateText(
+          sale,
+          { date: seoLongDate(sale.saleDate), time: saleHearingTime(sale.saleDate) },
+          now,
+        );
+        const surface = seoSurface(sale.surfaceM2);
+        return (
+          <li key={sale.id} className="py-3">
+            <Link
+              href={`/sales/${sale.id.toLowerCase()}`}
+              className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
+            >
+              <span className="min-w-0">
+                <span className="font-semibold underline-offset-4 hover:underline">
+                  {sale.city || "Commune à confirmer"}
+                </span>
+                <span className="block text-sm text-ink-soft">
+                  {[
+                    propertyTypeLabel(sale.propertyType),
+                    surface,
+                    dateText,
+                    identical
+                      ? `annonce ${identical.rank} sur ${identical.of} de même description`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </span>
+              <span className="text-sm tabular-nums">
+                <span className="text-ink-soft">{departmentPriceLabel(sale)} </span>
+                <span className="font-semibold">{formatStartingPrice(sale.startingPriceEur)}</span>
+              </span>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 /**
@@ -49,6 +107,9 @@ export function DepartmentView({
   const total = stats?.upcomingCount ?? 0;
   const now = new Date();
   const identicalSales = identicalSaleRanks(stats?.sales ?? []);
+  const nextSales = (stats?.sales ?? []).slice(0, NEXT_SALES_SHOWN);
+  const laterSales = (stats?.sales ?? []).slice(NEXT_SALES_SHOWN);
+  const cities = stats?.cities ?? [];
   const nextDate = seoLongDate(stats?.nextSaleDate);
   const updated = seoLongDate(generatedAt);
   const searchHref = departmentSearchPath(department);
@@ -67,6 +128,25 @@ export function DepartmentView({
 
   return (
     <PageShell
+      breadcrumb={
+        <nav aria-label="Fil d’Ariane" className="mb-4 text-sm text-ink-soft">
+          <ol className="flex flex-wrap items-center gap-x-2">
+            <li>
+              <Link href="/" className="hover:underline">
+                Accueil
+              </Link>
+            </li>
+            <li aria-hidden>/</li>
+            <li>
+              <Link href={DEPARTMENT_PAGES_PATH} className="hover:underline">
+                Ventes par département
+              </Link>
+            </li>
+            <li aria-hidden>/</li>
+            <li aria-current="page">{department.name}</li>
+          </ol>
+        </nav>
+      }
       eyebrow="Ventes aux enchères par département"
       title={`Ventes aux enchères immobilières : ${department.name} (${department.code})`}
       description={
@@ -79,60 +159,45 @@ export function DepartmentView({
         </>
       }
     >
-      <nav aria-label="Fil d’Ariane" className="mb-6 text-sm text-ink-soft">
-        <ol className="flex flex-wrap items-center gap-x-2">
-          <li>
-            <Link href="/" className="hover:underline">
-              Accueil
-            </Link>
-          </li>
-          <li aria-hidden>/</li>
-          <li>
-            <Link href={DEPARTMENT_PAGES_PATH} className="hover:underline">
-              Ventes par département
-            </Link>
-          </li>
-          <li aria-hidden>/</li>
-          <li aria-current="page">{department.name}</li>
-        </ol>
-      </nav>
-
       <div className="grid gap-5">
         <Card as="section" aria-labelledby="chiffres">
           <h2 id="chiffres" className="font-display text-2xl font-semibold">
             Les chiffres du département
           </h2>
           {total > 0 ? (
-            <dl className="mt-4 grid gap-4 sm:grid-cols-3">
-              <div>
-                <dt className="text-sm text-ink-soft">Ventes à venir</dt>
-                <dd className="mt-1 text-2xl font-semibold tabular-nums">{count.format(total)}</dd>
-              </div>
-              <div>
-                <dt className="text-sm text-ink-soft">
-                  {departmentNextDateLabel(stats?.nextSaleVenueType ?? null)}
-                </dt>
-                <dd className="mt-1 text-lg font-semibold">{nextDate ?? "Date à confirmer"}</dd>
-              </div>
-              <div>
-                <dt className="text-sm text-ink-soft">Mise à prix médiane (ventes au tribunal)</dt>
-                <dd className="mt-1 text-lg font-semibold tabular-nums">
-                  {stats?.medianStartingPriceEur != null
-                    ? formatStartingPrice(stats.medianStartingPriceEur)
-                    : "Non communiquée"}
-                </dd>
-                {stats?.medianStartingPriceEur != null ? (
-                  <dd className="mt-1 text-xs text-ink-soft">
-                    sur {count.format(stats.medianSampleSize)} {saleWord(stats.medianSampleSize)} au
-                    tribunal ; les autres ventes ne sont pas comptées
+            <>
+              <dl className="mt-4 grid grid-cols-3 gap-3 sm:gap-4">
+                <div>
+                  <dt className="text-xs text-ink-soft sm:text-sm">Ventes à venir</dt>
+                  <dd className="mt-1 text-xl font-semibold tabular-nums sm:text-2xl">
+                    {count.format(total)}
                   </dd>
-                ) : (
-                  <dd className="mt-1 text-xs text-ink-soft">
-                    aucune vente au tribunal chiffrée dans ce département
+                </div>
+                <div>
+                  <dt className="text-xs text-ink-soft sm:text-sm">
+                    {departmentNextDateLabel(stats?.nextSaleVenueType ?? null)}
+                  </dt>
+                  <dd className="mt-1 text-base font-semibold sm:text-lg">
+                    {nextDate ?? "Date à confirmer"}
                   </dd>
-                )}
-              </div>
-            </dl>
+                </div>
+                <div>
+                  <dt className="text-xs text-ink-soft sm:text-sm">
+                    Mise à prix médiane (ventes au tribunal)
+                  </dt>
+                  <dd className="mt-1 text-base font-semibold tabular-nums sm:text-lg">
+                    {stats?.medianStartingPriceEur != null
+                      ? formatStartingPrice(stats.medianStartingPriceEur)
+                      : "Non communiquée"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-xs text-ink-soft">
+                {stats?.medianStartingPriceEur != null
+                  ? `Mise à prix médiane calculée sur ${count.format(stats.medianSampleSize)} ${saleWord(stats.medianSampleSize)} au tribunal ; les autres ventes ne sont pas comptées.`
+                  : "Mise à prix médiane : aucune vente au tribunal chiffrée dans ce département."}
+              </p>
+            </>
           ) : (
             <p className="mt-3 text-ink-soft">
               Aucune vente à venir n’est référencée dans ce département pour le moment. Le catalogue
@@ -144,13 +209,25 @@ export function DepartmentView({
               Avec si peu de ventes, la mise à prix médiane n’est qu’un repère très approximatif.
             </p>
           ) : null}
-          <div className="mt-5">
-            <Link href={searchHref} className={buttonClasses({ variant: "primary", size: "md" })}>
-              Voir {total > 0 ? `les ${count.format(total)} ${saleWord(total)} ` : "la recherche "}
-              {where}
-            </Link>
-          </div>
         </Card>
+
+        {nextSales.length > 0 ? (
+          <Card as="section" aria-labelledby="ventes">
+            <h2 id="ventes" className="font-display text-2xl font-semibold">
+              {stats && stats.upcomingCount > nextSales.length
+                ? `Les ${count.format(nextSales.length)} prochaines ventes`
+                : "Les ventes à venir"}
+            </h2>
+            <SalesList sales={nextSales} identicalSales={identicalSales} now={now} />
+          </Card>
+        ) : null}
+
+        <div>
+          <Link href={searchHref} className={buttonClasses({ variant: "primary", size: "md" })}>
+            Voir {total > 0 ? `les ${count.format(total)} ${saleWord(total)} ` : "la recherche "}
+            {where}
+          </Link>
+        </div>
 
         <SectorAlertCta
           criteria={{ department: department.code }}
@@ -175,57 +252,46 @@ export function DepartmentView({
           </Card>
         ) : null}
 
-        {stats && stats.sales.length > 0 ? (
-          <Card as="section" aria-labelledby="ventes">
-            <h2 id="ventes" className="font-display text-2xl font-semibold">
-              {stats.sales.length < stats.upcomingCount
-                ? `Les ${count.format(stats.sales.length)} prochaines ventes`
-                : "Les ventes à venir"}
+        {cities.length > 1 ? (
+          <Card as="section" aria-labelledby="communes">
+            <h2 id="communes" className="font-display text-2xl font-semibold">
+              Communes les plus présentes
             </h2>
-            <ul className="mt-3 divide-y divide-line">
-              {stats.sales.map((sale) => {
-                const identical = identicalSales.get(sale.id);
-                const dateText = departmentSaleDateText(
-                  sale,
-                  { date: seoLongDate(sale.saleDate), time: saleHearingTime(sale.saleDate) },
-                  now,
-                );
-                const surface = seoSurface(sale.surfaceM2);
-                return (
-                  <li key={sale.id} className="py-3">
-                    <Link
-                      href={`/sales/${sale.id.toLowerCase()}`}
-                      className="grid gap-1 sm:grid-cols-[1fr_auto] sm:items-baseline sm:gap-4"
-                    >
-                      <span className="min-w-0">
-                        <span className="font-semibold underline-offset-4 hover:underline">
-                          {sale.city || "Commune à confirmer"}
-                        </span>
-                        <span className="block text-sm text-ink-soft">
-                          {[
-                            propertyTypeLabel(sale.propertyType),
-                            surface,
-                            dateText,
-                            identical
-                              ? `annonce ${identical.rank} sur ${identical.of} de même description`
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </span>
-                      <span className="text-sm tabular-nums">
-                        <span className="text-ink-soft">{departmentPriceLabel(sale)} </span>
-                        <span className="font-semibold">
-                          {formatStartingPrice(sale.startingPriceEur)}
-                        </span>
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
+            <p className="mt-2 text-sm text-ink-soft">
+              Les communes qui comptent le plus de ventes à venir référencées {where}. Les nombres
+              sont indicatifs : la recherche d’une commune peut afficher d’autres ventes dont le nom
+              lui ressemble.
+            </p>
+            <ul className="mt-3 grid gap-1 sm:grid-cols-2">
+              {cities.map((entry) => (
+                <li key={entry.city} className="flex justify-between gap-3">
+                  <Link
+                    href={pathWithSearch("/sales", {
+                      department: department.code,
+                      city: entry.city,
+                    })}
+                    className="font-semibold text-gold-text underline"
+                  >
+                    {entry.city}
+                  </Link>
+                  <span className="tabular-nums text-ink-soft">
+                    {count.format(entry.count)} {saleWord(entry.count)}
+                  </span>
+                </li>
+              ))}
             </ul>
-            {stats.sales.length < stats.upcomingCount ? (
+          </Card>
+        ) : null}
+
+        {laterSales.length > 0 ? (
+          <Card as="section" aria-labelledby="autres-ventes">
+            <h2 id="autres-ventes" className="font-display text-2xl font-semibold">
+              {stats && stats.sales.length < stats.upcomingCount
+                ? `Les ${count.format(laterSales.length)} ventes suivantes`
+                : "Les autres ventes à venir"}
+            </h2>
+            <SalesList sales={laterSales} identicalSales={identicalSales} now={now} />
+            {stats && stats.sales.length < stats.upcomingCount ? (
               <p className="mt-4 text-sm text-ink-soft">
                 Les autres ventes sont dans{" "}
                 <Link href={searchHref} className="font-semibold text-gold-text underline">

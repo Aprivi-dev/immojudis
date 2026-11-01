@@ -80,6 +80,23 @@ describe("ExampleSalePage", () => {
     expect(screen.getByTestId("example-detail").contains(cta)).toBe(true);
   });
 
+  it("propose aussi d'être prévenu des ventes de son département, case non cochée", async () => {
+    mocks.auth = { user: null, loading: false };
+    render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "Être prévenu des ventes de mon département" },
+        { timeout: 10_000 },
+      ),
+    ).toBeTruthy();
+    expect(document.body.textContent).toContain("L’email récapitulatif est facultatif");
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    // Le bloc de fin garde ses deux liens : la proposition d'alerte est à part.
+    const block = screen.getByTestId("example-next-steps");
+    expect(block.textContent).not.toContain("Être prévenu");
+  });
+
   it("ne propose plus de créer un compte à une personne connectée", () => {
     mocks.auth = { user: { id: "user-1" }, loading: false };
     render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
