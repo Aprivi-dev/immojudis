@@ -256,7 +256,15 @@ describe("contenu de l'email", () => {
     });
 
     expect(built.html).not.toContain("<script>");
-    expect(built.html).not.toContain("<img");
+    // Seules les images du logo du cadre commun subsistent ; l'objet hostile reste du texte.
+    const images = built.html.match(/<img\b[^>]*>/g) ?? [];
+    expect(images.length).toBeGreaterThan(0);
+    for (const image of images) {
+      expect(image).toMatch(/src="https:\/\/immojudis\.com\/brand\/email\/immojudis-logo-email/);
+      expect(image).not.toContain("onerror");
+    }
+    expect(built.html).not.toContain("<img src=x");
+    expect(built.html).toContain("&lt;img src=x onerror=alert(1)&gt;");
     expect(built.html).toContain("&lt;script&gt;");
   });
 

@@ -1,8 +1,14 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { errorDetailForLog } from "@/lib/api-errors";
-import { escapeAttribute, sendResendEmail, type ResendEmailMessage } from "@/lib/email-alerts";
-import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
+import { sendResendEmail, type ResendEmailMessage } from "@/lib/email-alerts";
+import {
+  emailButton,
+  emailHeading,
+  emailLayout,
+  emailParagraph,
+  emailPreheaderFrom,
+} from "@/lib/email-layout";
 import { serverEnv, type EnvSource } from "@/lib/env";
 import { escapeHtml } from "@/lib/guards";
 import {
@@ -168,36 +174,37 @@ export function buildRepliesReviewDigestMessage(
   ].join("\n");
 
   const lists = blocks
-    .map(
-      ({
-        title,
-        section: block,
-      }) => `<h2 style="margin:18px 0 8px;font-size:17px;line-height:1.4;color:${EMAIL_COLORS.navy};">${escapeHtml(title)} (${block.total})</h2>
-        <ul style="margin:0;padding:0 0 0 18px;color:${EMAIL_COLORS.inkStrong};line-height:1.5;">${block.entries
-          .map(
-            (entry) =>
-              `<li style="margin:0 0 6px;"><strong>${escapeHtml(entry.sender)}</strong> · ${escapeHtml(entry.subject)}</li>`,
-          )
-          .join(
-            "",
-          )}${remainder(block) ? `<li style="margin:0 0 6px;">… et ${remainder(block)} de plus</li>` : ""}</ul>`,
-    )
+    .map(({ title, section: block }) => {
+      const items = block.entries
+        .map(
+          (entry) =>
+            `<li style="margin:0 0 6px;"><strong>${escapeHtml(entry.sender)}</strong> · ${escapeHtml(entry.subject)}</li>`,
+        )
+        .join("");
+      const more = remainder(block)
+        ? `<li style="margin:0 0 6px;">… et ${remainder(block)} de plus</li>`
+        : "";
+      return `${emailHeading(`${title} (${block.total})`, 2, { marginTop: 18 })}<ul class="ej-body" style="margin:0 0 16px;padding:0 0 0 18px;">${items}${more}</ul>`;
+    })
     .join("");
 
-  const html = `<!doctype html>
-<html lang="fr">
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
-    <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
-      ${emailBrandHeaderHtml()}
-      <div style="background:${EMAIL_COLORS.white};border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
-        <h1 style="margin:0 0 6px;font-size:22px;line-height:1.4;color:${EMAIL_COLORS.navy};">${escapeHtml(repliesReviewDigestSubject(total))}</h1>
-        ${lists}
-        <p style="margin:20px 0 0;"><a href="${escapeAttribute(panelUrl)}" style="display:inline-block;background:${EMAIL_COLORS.navy};color:${EMAIL_COLORS.white};text-decoration:none;border-radius:8px;padding:12px 18px;font-weight:700;">Ouvrir le panneau de l’agent</a></p>
-        <p style="margin:18px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:13px;line-height:1.5;">Le corps des messages n’est pas repris ici. Aucune réponse n’a été envoyée.</p>
-      </div>
-    </div>
-  </body>
-</html>`;
+  // Email interne : le cadre commun sans pied (comme les alertes d'exploitation).
+  const html = emailLayout({
+    title: subject,
+    preheader: emailPreheaderFrom(
+      blocks.map(({ title, section: block }) => `${title} : ${block.total}`).join(" · "),
+    ),
+    content: [
+      emailHeading(repliesReviewDigestSubject(total)),
+      lists,
+      emailButton(panelUrl, "Ouvrir le panneau de l’agent"),
+      emailParagraph(
+        "Le corps des messages n’est pas repris ici. Aucune réponse n’a été envoyée.",
+        { tone: "muted", size: "caption", marginBottom: 0 },
+      ),
+    ].join(""),
+    footer: null,
+  });
 
   // Aucune réponse attendue : `replyTo: null` plutôt que l'adresse de contact du site.
   return { from, to, replyTo: null, subject, html, text };
