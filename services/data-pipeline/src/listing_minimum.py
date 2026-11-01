@@ -1,10 +1,10 @@
 """Minimum d'une annonce pour entrer en base (règle du propriétaire, 28/10/2026).
 
-Une annonce qui n'a NI adresse de voie ou de lieu-dit, NI email de contact, NI pièce, NI autre source
-n'apporte rien : elle n'est pas écrite. Les fonctions de ce module sont pures (aucun réseau, aucune base) ;
+Une annonce qui n'a NI adresse de voie ou de lieu-dit, NI email de contact (ni, pour une vente au tribunal, l'email de
+son tribunal), NI pièce, NI autre source n'apporte rien : elle n'est pas écrite. Les fonctions de ce module sont pures (aucun réseau, aucune base) ;
 ``assess`` lit une vente normalisée, après l'extraction de sa page de détail.
 
-Cinq preuves, une seule suffit (``ListingMinimum.basis``) :
+Six preuves, une seule suffit (``ListingMinimum.basis``) :
 
 * ``street`` : une voie ou un lieu-dit dans ``address``. La voie est celle du géocodage
   (``position_quality.street_name_tokens(..., require_street_type=True)``), le lieu-dit celui de
@@ -15,6 +15,23 @@ Cinq preuves, une seule suffit (``ListingMinimum.basis``) :
   ou un téléphone seul ne suffit pas. Même lecture et mêmes exclusions que l'agent
   (``information_sufficiency.extract_emails`` et ``excluded_contact_reason`` : juridiction, RPVA, Ordre, CARPA,
   adresses techniques ne comptent pas) ;
+* ``court_email`` : contact de SECOURS d'une vente au tribunal (saisie immobilière ou autre vente judiciaire, jamais
+  notaires, cessions de l'État ni AGRASC) qui n'a aucun email de contact exploitable (preuve ``email`` absente) : l'email de
+  SON tribunal dans le référentiel ``court_registry_contacts`` (chargé une fois par passage, comme le registre de refus ;
+  ``information_sufficiency.court_registry_fallback_emails``). Le tribunal doit être reconnu (code de juridiction du
+  référentiel) et la vente confirmée par l'annonce (``sale_verification_status`` verified ou cross_checked, sans
+  ``tribunal_inconsistent``) ; une vente sans tribunal reconnu, ou dont le tribunal n'a pas d'email, ne change pas. Les
+  exclusions des emails LUS dans une annonce ne bougent pas : une adresse ``@justice.fr`` lue dans une annonce reste
+  exclue (preuve ``email``), seule l'adresse du référentiel sert de secours. Une adresse du référentiel refusée par le
+  registre (opposition, rebond permanent) ne compte pas. L'agent d'information écrit alors au greffe, avec un message
+  adapté (``src/lib/information-agent/court-registry.ts``). Preuve distincte d'``email`` (choix) : ``email`` désigne
+  l'avocat, le cabinet, le notaire ou l'étude, les interlocuteurs de l'agent ; le greffe ne connaît pas la vente et
+  oriente vers l'avocat poursuivant. Deux noms laissent le journal, le résumé du passage (``court_email_fallback``) et
+  les rapports distinguer les annonces écrites grâce au greffe, et ne mélangent pas les deux contacts. La règle SQL
+  (``app_private.sale_has_listing_minimum``, migration ``20261110190100``) connaît la même preuve : la réparation des
+  annonces vides ne supprime pas ces ventes. Limite connue : le pipeline ne voit que l'opposition par ADRESSE (registre de
+  refus) ; l'agent, qui voit aussi l'opposition par identité du professionnel, n'écrit pas au greffe d'une vente dont l'avocat
+  s'est opposé. L'annonce est alors écrite, sans qu'aucun brouillon au greffe ne soit possible.
 * ``cadastre`` : une ou plusieurs parcelles lisibles (``cadastre_location`` de la fiche ou de
   ``source_property_features``, sous les trois formes que les sources écrivent ; référence cadastrale publiée dans un
   bloc source, comme celles de ``cessions_etat`` et des notaires ; adresse qui EST une référence cadastrale) : la
@@ -47,6 +64,10 @@ verrouiller les ventes du même jour, ce que la requête de ``resolve_publicatio
 refusée, puis rattachée par le balayage de dédoublonnage quand les deux lignes sont en base. Ce balayage (rapport
 ``candidates``, puis application) passe AVANT la réparation des annonces vides.
 
+Une vente au tribunal sans email refusée parce que le référentiel des tribunaux n'a pas pu être lu
+(``CourtRegistry.unavailable``) n'est pas mémorisée dans le cache des refus (``rejected_listings``), comme une page non lue :
+elle est réexaminée au passage suivant.
+
 Une annonce dont la page de détail n'a pas pu être lue (échec réseau) n'est pas jugée : elle n'est pas écrite
 non plus (``detail_unread``) et se relit au passage suivant. Elle est comptée à part.
 
@@ -68,9 +89,13 @@ from urllib.parse import urlsplit
 
 from src.information_sufficiency import (
     ContactBlocklist,
+    CourtRegistry,
     active_blocklist,
+    active_court_registry,
+    court_registry_fallback_emails,
     excluded_contact_reason,
     extract_emails,
+    is_court_sale,
 )
 from src.information_sufficiency import _string_leaves as string_leaves
 from src.listing_location import _is_named_place_before_commune as is_named_place_before_commune
@@ -93,6 +118,7 @@ EXAMPLES_PER_SOURCE = 5
 
 BASIS_STREET = "street"
 BASIS_EMAIL = "email"
+BASIS_COURT_EMAIL = "court_email"
 BASIS_CADASTRE = "cadastre"
 BASIS_DOCUMENTS = "documents"
 BASIS_OTHER_SOURCE = "other_source"
@@ -106,6 +132,8 @@ class ListingMinimum:
 
     basis: tuple[str, ...] = ()
     detail_unread: bool = False
+    #: Vente au tribunal sans email refusée parce que le référentiel des tribunaux n'a pas pu être lu : à ne pas mémoriser.
+    court_registry_unavailable: bool = False
 
     @property
     def ok(self) -> bool:
@@ -242,24 +270,52 @@ def detail_unread(sale: AuctionSale) -> bool:
     return bool(payload.get("_detail_fetch_failed")) or payload.get("source_detail_status") == "failed"
 
 
-def assess(sale: AuctionSale, blocklist: ContactBlocklist | None = None) -> ListingMinimum:
+def has_court_email(
+    sale: AuctionSale,
+    blocklist: ContactBlocklist | None = None,
+    court_registry: CourtRegistry | None = None,
+) -> bool:
+    """Vente au tribunal reconnue dont le tribunal a un email dans le référentiel (contact de secours)."""
+    registry = active_court_registry() if court_registry is None else court_registry
+    refused = active_blocklist() if blocklist is None else blocklist
+    return bool(court_registry_fallback_emails(sale, registry, refused))
+
+
+def assess(
+    sale: AuctionSale,
+    blocklist: ContactBlocklist | None = None,
+    court_registry: CourtRegistry | None = None,
+) -> ListingMinimum:
     """Les preuves que la vente porte déjà ; vide : elle n'a pas le minimum."""
+    has_email = has_contact_email(sale, blocklist)
+    registry = active_court_registry() if court_registry is None else court_registry
     basis = tuple(
         name
         for name, found in (
             (BASIS_STREET, has_street_or_lieu_dit(sale.address, sale.city)),
-            (BASIS_EMAIL, has_contact_email(sale, blocklist)),
+            (BASIS_EMAIL, has_email),
+            # Secours : seulement quand l'annonce ne donne aucun email exploitable.
+            (BASIS_COURT_EMAIL, not has_email and has_court_email(sale, blocklist, registry)),
             (BASIS_CADASTRE, has_cadastral_reference(sale)),
             (BASIS_DOCUMENTS, has_documents(sale)),
             (BASIS_OTHER_SOURCE, has_other_source(sale)),
         )
         if found
     )
-    return ListingMinimum(basis=basis, detail_unread=not basis and detail_unread(sale))
+    return ListingMinimum(
+        basis=basis,
+        detail_unread=not basis and detail_unread(sale),
+        # Refus d'une vente au tribunal qu'un référentiel illisible n'a pas pu sauver : à réexaminer, pas à mémoriser.
+        court_registry_unavailable=not basis and registry.unavailable and is_court_sale(sale),
+    )
 
 
-def has_listing_minimum(sale: AuctionSale, blocklist: ContactBlocklist | None = None) -> bool:
-    return assess(sale, blocklist).ok
+def has_listing_minimum(
+    sale: AuctionSale,
+    blocklist: ContactBlocklist | None = None,
+    court_registry: CourtRegistry | None = None,
+) -> bool:
+    return assess(sale, blocklist, court_registry).ok
 
 
 # --------------------------------------------------------------------------
@@ -293,6 +349,8 @@ class _Tally:
             reasons = (REASON, REASON_DETAIL_UNREAD, REASON_SKIPPED)
             self._counts: dict[str, Counter[str]] = {reason: Counter() for reason in reasons}
             self._examples: dict[str, dict[str, list[str]]] = {reason: {} for reason in reasons}
+            self._court_email_seen: set[str] = set()
+            self._court_email: Counter[str] = Counter()
 
     def add(self, source: str, url: str, reason: str) -> bool:
         """Compte l'annonce ; vrai si elle est nouvelle pour ce passage ET garde une place parmi les exemples."""
@@ -307,6 +365,14 @@ class _Tally:
             examples.append(url)
             return True
 
+    def add_court_email(self, source: str, url: str) -> None:
+        """Compte une annonce écrite grâce au seul email de son tribunal (une fois par URL et par passage)."""
+        with self._lock:
+            if url in self._court_email_seen:
+                return
+            self._court_email_seen.add(url)
+            self._court_email[source] += 1
+
     def summary(self) -> dict[str, Any]:
         with self._lock:
             rejected, unread = self._counts[REASON], self._counts[REASON_DETAIL_UNREAD]
@@ -317,6 +383,11 @@ class _Tally:
                 "examples": {source: list(urls) for source, urls in sorted(self._examples[REASON].items())},
                 "detail_unread_not_written": dict(sorted(unread.items())),
                 "skipped_recently_rejected": dict(sorted(skipped.items())),
+                # Annonces acceptées uniquement grâce à l'email du tribunal (preuve court_email, sans autre preuve).
+                "court_email_fallback": {
+                    "total": sum(self._court_email.values()),
+                    "by_source": dict(sorted(self._court_email.items())),
+                },
             }
 
 
@@ -335,6 +406,11 @@ def summary() -> dict[str, Any]:
 
 def _source_of(sale: AuctionSale) -> str:
     return str(sale.primary_source or sale.source_name or "unknown")
+
+
+def count_court_email_fallback(sale: AuctionSale) -> None:
+    """Compte une vente écrite grâce à la seule preuve ``court_email`` (compteur du résumé du passage)."""
+    TALLY.add_court_email(_source_of(sale), str(sale.source_url))
 
 
 def refuse(sales: Iterable[AuctionSale]) -> list[AuctionSale]:

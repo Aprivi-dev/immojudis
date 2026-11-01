@@ -9,9 +9,14 @@ import pytest
 from src.information_sufficiency import (
     _EXTRACT_EMAIL_RE,
     NO_BLOCKLIST,
+    NO_COURT_REGISTRY,
     ContactBlocklist,
     build_blocklist,
+    build_court_registry,
     contact_emails,
+    court_registry_fallback_emails,
+    is_court_sale,
+    load_court_registry,
     publication_gate,
     sufficient_information,
     summarize_verdicts,
@@ -21,6 +26,10 @@ from src.models import AuctionSale
 
 FIXTURES = Path(__file__).parent / "fixtures" / "information_agent_contact_cases.json"
 PARITY_CASES = json.loads(FIXTURES.read_text(encoding="utf-8"))["cases"]
+COURT_FIXTURES = json.loads(
+    (Path(__file__).parent / "fixtures" / "court_registry_fallback_cases.json").read_text(encoding="utf-8")
+)
+COURT_CASES = COURT_FIXTURES["cases"]
 
 
 def make_sale(**fields) -> AuctionSale:
@@ -181,3 +190,93 @@ def test_summary_counts_reasons_and_sources_without_personal_data():
         "by_source": {"licitor": 1, "vench": 1},
     }
     assert NO_BLOCKLIST.blocks("x@y.test", None) is False
+
+
+# ------------------------------------------------------------------ contact de secours : l'email du tribunal
+COURT_REGISTRY = build_court_registry(
+    {"court_code": code, "emails": emails} for code, emails in COURT_FIXTURES["registry"].items()
+)
+
+
+@pytest.mark.parametrize("case", COURT_CASES, ids=[case["name"] for case in COURT_CASES])
+def test_python_mirror_matches_the_typescript_court_fallback_cases(case):
+    sale = make_sale(**case["sale"])
+    blocklist = ContactBlocklist(global_emails=frozenset(case.get("blocked", [])))
+    assert is_court_sale(sale) is case["court_sale"]
+    assert list(court_registry_fallback_emails(sale, COURT_REGISTRY, blocklist)) == case["expected"]
+
+
+def test_the_court_registry_keeps_only_valid_addresses_of_courts_that_have_some():
+    registry = build_court_registry(
+        [
+            {"court_code": "agen", "emails": ["Accueil@Justice.fr", "pas une adresse", "accueil@justice.fr"]},
+            {"court_code": "pau", "emails": []},
+            {"court_code": "dax", "emails": None},
+            {"court_code": "", "emails": ["x@justice.fr"]},
+        ]
+    )
+    assert dict(registry.emails_by_court) == {"agen": ("accueil@justice.fr",)}
+    assert registry.emails("agen") == ("accueil@justice.fr",) and registry.emails(None) == ()
+
+
+def test_an_empty_registry_gives_no_fallback():
+    sale = make_sale(sale_venue_type="tribunal", sale_verification_status="verified", tribunal_code="agen")
+    assert is_court_sale(sale)
+    assert court_registry_fallback_emails(sale, NO_COURT_REGISTRY) == ()
+
+
+def test_the_court_fallback_never_makes_a_court_address_a_contact_of_the_listing():
+    # L'exclusion « juridiction » des adresses LUES dans une annonce reste en vigueur.
+    sale = make_sale(
+        sale_venue_type="tribunal",
+        sale_verification_status="verified",
+        tribunal_code="agen",
+        lawyer_contact="greffe.exemple@justice.fr",
+    )
+    assert contact_emails(sale) == set()
+    assert not sufficient_information(sale).sufficient
+    assert sufficient_information(sale, court_registry=COURT_REGISTRY).basis == ("court_email",)
+
+
+class _Response:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self.rows
+
+
+def test_the_court_registry_is_read_once_from_the_rest_api(monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs["params"]["select"]))
+        return _Response([{"court_code": "agen", "emails": ["accueil@justice.fr"]}])
+
+    monkeypatch.setattr("httpx.get", fake_get)
+    settings = {"supabase_url": "https://project.example.test/", "supabase_service_role_key": "cle-exemple"}
+    registry = load_court_registry(settings)
+    assert registry.emails("agen") == ("accueil@justice.fr",)
+    assert calls == [("https://project.example.test/rest/v1/court_registry_contacts", "court_code,emails")]
+
+
+def test_an_unavailable_court_registry_is_empty_and_never_raises(monkeypatch):
+    def failing_get(url, **kwargs):
+        raise OSError("network down")
+
+    monkeypatch.setattr("httpx.get", failing_get)
+    settings = {"supabase_url": "https://project.example.test", "supabase_service_role_key": "cle-exemple"}
+    unavailable = load_court_registry(settings)
+    assert unavailable.unavailable and unavailable.emails("agen") == ()
+    # Sans identifiants il n'y a pas de base à lire : ni lecture tentée, ni échec à signaler.
+    assert load_court_registry({}) is NO_COURT_REGISTRY and not NO_COURT_REGISTRY.unavailable
+
+
+def test_a_malformed_court_registry_response_is_unavailable_too(monkeypatch):
+    monkeypatch.setattr("httpx.get", lambda url, **kwargs: _Response({"message": "erreur"}))
+    settings = {"supabase_url": "https://project.example.test", "supabase_service_role_key": "cle-exemple"}
+    assert load_court_registry(settings).unavailable
+

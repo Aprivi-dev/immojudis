@@ -7,6 +7,14 @@ import pytest
 
 from src import listing_minimum
 from src.autonomous_runner import PENDING_PUBLICATION_DECISIONS, STUCK_PUBLICATION_DECISIONS
+from src.information_sufficiency import (
+    COURT_FALLBACK_EXCLUDED_SOURCES,
+    UNAVAILABLE_COURT_REGISTRY,
+    ContactBlocklist,
+    build_court_registry,
+    set_active_blocklist,
+    set_active_court_registry,
+)
 from src.listing_minimum import assess, has_contact_email, has_listing_minimum, has_street_or_lieu_dit
 from src.models import AuctionSale
 from src.position_quality import _ABBREVIATIONS, _LEADING_STREET_TYPES
@@ -32,8 +40,12 @@ def isolated(monkeypatch):
     monkeypatch.setenv("IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE", "on")
     monkeypatch.setattr("src.publication_identity.load_reviewed_aliases", lambda _connection: registry_from_rows([]))
     listing_minimum.reset_tally()
+    set_active_blocklist(ContactBlocklist())
+    set_active_court_registry(build_court_registry([]))
     yield
     listing_minimum.reset_tally()
+    set_active_blocklist(ContactBlocklist())
+    set_active_court_registry(build_court_registry([]))
 
 
 # ---------------------------------------------------------------------------------------- la règle
@@ -312,6 +324,162 @@ def test_publish_batch_forgets_refused_listings_and_does_not_publish_them() -> N
     assert run_list == [kept]  # pas enrichie, pas republiée en fin de passage
 
 
+# ------------------------------------------------------- contact de secours : l'email du tribunal (court_email)
+AGEN_EMAIL = "accueil.exemple-agen@justice.fr"
+
+
+def court_sale(url: str = VENCH, **fields) -> AuctionSale:
+    values = {
+        "sale_venue_type": "tribunal",
+        "sale_verification_status": "verified",
+        "tribunal_code": "agen",
+        "tribunal": "TJ Agen",
+    } | fields
+    return sale(url, **values)
+
+
+def with_registry(**emails_by_court: list[str]) -> None:
+    set_active_court_registry(
+        build_court_registry({"court_code": code, "emails": emails} for code, emails in emails_by_court.items())
+    )
+
+
+def test_a_court_sale_without_an_email_gets_the_email_of_its_court() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    verdict = assess(court_sale())
+    assert verdict.ok and verdict.basis == ("court_email",) and verdict.reason is None
+
+
+def test_without_the_registry_the_court_sale_is_refused_as_before() -> None:
+    verdict = assess(court_sale())
+    assert not verdict.ok and verdict.reason == listing_minimum.REASON
+
+
+def test_a_court_sale_with_its_own_email_keeps_the_email_proof_only() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    verdict = assess(court_sale(lawyer_contact="contact@cabinet-modele.example"))
+    assert verdict.basis == ("email",)
+
+
+def test_the_court_proof_comes_with_the_other_proofs_when_there_is_no_email() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    verdict = assess(court_sale(address="12 rue des Lilas 40440 Ondres"))
+    assert verdict.basis == ("street", "court_email")
+
+
+def test_a_court_address_read_in_the_listing_stays_excluded_and_only_the_registry_saves_the_sale() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    read_in_listing = court_sale(lawyer_contact="greffe.autre@justice.fr")
+    assert not has_contact_email(read_in_listing)
+    assert assess(read_in_listing).basis == ("court_email",)
+    with_registry(pau=["accueil.exemple-pau@justice.fr"])  # son tribunal n'a pas d'adresse : l'adresse lue ne sert pas
+    assert not assess(read_in_listing).ok
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"tribunal_code": None},
+        {"tribunal_code": "pau"},
+        {"sale_verification_status": "pending"},
+        {"sale_venue_type": "notary"},
+        {"sale_venue_type": "state"},
+        {"source_name": "notaires"},
+        {"source_name": "cessions_etat"},
+        {"source_name": "agrasc"},
+        {"primary_source": "agrasc"},
+        {"quality_flags": ["tribunal_inconsistent"]},
+    ],
+)
+def test_a_sale_without_a_recognised_court_sale_is_unchanged(fields) -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    assert not assess(court_sale(**fields)).ok
+
+
+def test_a_refused_address_of_the_registry_does_not_count() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    set_active_blocklist(ContactBlocklist(global_emails=frozenset({AGEN_EMAIL})))
+    assert not assess(court_sale()).ok
+    set_active_blocklist(ContactBlocklist(by_sale={"sale-1": frozenset({AGEN_EMAIL})}))
+    assert not assess(court_sale(id="sale-1")).ok
+    assert assess(court_sale(id="sale-2")).ok
+
+
+def test_an_opposed_lawyer_address_falls_back_to_the_court() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    set_active_blocklist(ContactBlocklist(global_emails=frozenset({"contact@cabinet-modele.example"})))
+    assert assess(court_sale(lawyer_contact="contact@cabinet-modele.example")).basis == ("court_email",)
+
+
+def test_the_registry_given_to_assess_wins_over_the_pass_registry() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    assert not assess(court_sale(), court_registry=build_court_registry([])).ok
+
+
+def test_a_new_court_sale_is_written_thanks_to_its_court_and_counted_once() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    court, empty = court_sale(), sale("https://www.vench.fr/vente-3-une-maison-ondres.html")
+    for _ in range(2):
+        with listing_minimum.collecting() as refused:
+            resolved = resolve_publication_identities(_Connection(), [court, empty])
+        assert resolved == [court] and refused == [empty]
+    summary = listing_minimum.summary()
+    assert summary["court_email_fallback"] == {"total": 1, "by_source": {"vench": 1}}
+    assert summary["total"] == 1
+
+
+def test_a_court_sale_with_another_proof_is_not_counted_as_a_court_fallback() -> None:
+    with_registry(agen=[AGEN_EMAIL])
+    resolve_publication_identities(_Connection(), [court_sale(address="12 rue des Lilas 40440 Ondres")])
+    assert listing_minimum.summary()["court_email_fallback"] == {"total": 0, "by_source": {}}
+
+
+def test_a_court_sale_refused_because_the_registry_was_unreadable_is_not_remembered(monkeypatch) -> None:
+    remembered: list[list[str]] = []
+    monkeypatch.setattr(
+        "src.publication_identity.rejected_listings.remember",
+        lambda connection, sales: remembered.append([item.source_url for item in sales]),
+    )
+    set_active_court_registry(UNAVAILABLE_COURT_REGISTRY)
+    court, plain = court_sale(), sale("https://www.vench.fr/vente-9-une-maison-ondres.html")
+    notary = court_sale("https://www.vench.fr/vente-8-une-maison-ondres.html", sale_venue_type="notary")
+    assert assess(court).court_registry_unavailable and not assess(court).ok
+    assert not assess(plain).court_registry_unavailable and not assess(notary).court_registry_unavailable
+    with listing_minimum.collecting() as refused:
+        resolve_publication_identities(_Connection(), [court, plain, notary])
+    assert len(refused) == 3
+    # La vente au tribunal sera réexaminée ; les autres refus restent mémorisés comme avant.
+    assert remembered == [[plain.source_url, notary.source_url]]
+
+
+def test_a_court_sale_refused_with_a_readable_registry_is_remembered(monkeypatch) -> None:
+    remembered: list[list[str]] = []
+    monkeypatch.setattr(
+        "src.publication_identity.rejected_listings.remember",
+        lambda connection, sales: remembered.append([item.source_url for item in sales]),
+    )
+    with_registry(pau=["accueil.exemple-pau@justice.fr"])  # lisible, mais sans l'adresse de son tribunal
+    court = court_sale()
+    assert not assess(court).court_registry_unavailable
+    resolve_publication_identities(_Connection(), [court])
+    assert remembered == [[court.source_url]]
+
+
+def test_a_listing_already_in_the_database_is_never_refused_even_if_the_registry_is_empty() -> None:
+    existing = stored(VENCH, lawyer_contact="contact@cabinet-modele.example")
+    with listing_minimum.collecting() as refused:
+        resolved = resolve_publication_identities(_Connection([existing]), [court_sale()])
+    assert [row.source_url for row in resolved] == [VENCH] and refused == []
+
+
+def test_the_sql_rule_knows_the_court_email_proof() -> None:
+    text = SUPPORT_MIGRATION.read_text(encoding="utf-8")
+    for guard in ("'tribunal'", "'verified', 'cross_checked'", "tribunal_inconsistent"):
+        assert guard in text
+    for source in COURT_FALLBACK_EXCLUDED_SOURCES:
+        assert f"'{source}'" in text
+
+
 # ------------------------------------------------------------------------- santé des sources
 def test_the_decision_given_to_a_refusal_never_blocks_publication_or_counts_as_a_failure() -> None:
     assert "excluded" not in PENDING_PUBLICATION_DECISIONS
@@ -327,6 +495,9 @@ def test_a_source_whose_listings_are_all_refused_is_not_reported_broken() -> Non
 MIGRATION = (
     Path(__file__).resolve().parents[3]
     / "supabase/migrations/20261108202000_listing_minimum_and_empty_listing_cleanup.sql"
+)
+SUPPORT_MIGRATION = (
+    Path(__file__).resolve().parents[3] / "supabase/migrations/20261110190100_court_registry_fallback_support.sql"
 )
 
 
@@ -362,3 +533,12 @@ def test_the_sql_rule_reads_the_three_cadastre_location_forms() -> None:
     for path in ("$.candidates[*].parcels[*]", "$.parcels[*]", "$.references[*]"):
         assert path in text
     assert tuple(listing_minimum._FLAT_PARCEL_KEYS) == ("parcels", "references")
+
+
+def test_a_migration_resets_the_rejected_cache_for_court_sales_but_keeps_the_sources_that_have_none() -> None:
+    text = (
+        SUPPORT_MIGRATION.parent / "20261110190200_rejected_listings_reset_for_court_sales.sql"
+    ).read_text(encoding="utf-8")
+    assert "delete from app_private.rejected_listings" in text
+    for source in COURT_FALLBACK_EXCLUDED_SOURCES:
+        assert f"'{source}'" in text

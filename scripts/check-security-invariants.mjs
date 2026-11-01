@@ -1742,10 +1742,12 @@ function functionSignature(schema, name, argumentText) {
 
 // Cartes de référence privées (loyers de l'ANIL, zonage tendu) : seul le module serveur de lecture
 // (`rent-reference.server.ts`) nomme les tables, avec les types générés ; les tests ne comptent pas.
+// Les adresses des greffes (`court_registry_contacts`) ne sont lues que par `information-agent/court-registry.ts`.
 {
-  const referenceTables = /\b(?:anil_rents|commune_housing_tension)\b/;
+  const referenceTables = /\b(?:anil_rents|commune_housing_tension|court_registry_contacts)\b/;
   const allowed = new Set([
     "src/lib/rent-reference.server.ts",
+    "src/lib/information-agent/court-registry.ts",
     "src/integrations/supabase/types.ts",
   ]);
   const stripComments = (text) =>
@@ -1759,7 +1761,7 @@ function functionSignature(schema, name, argumentText) {
     const source = await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
     if (referenceTables.test(stripComments(source))) {
       failures.push(
-        `${relativePath} names a private reference table (anil_rents, commune_housing_tension): only rent-reference.server.ts may`,
+        `${relativePath} names a private reference table (anil_rents, commune_housing_tension, court_registry_contacts): only rent-reference.server.ts and information-agent/court-registry.ts may`,
       );
     }
   }

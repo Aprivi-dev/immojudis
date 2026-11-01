@@ -93,8 +93,11 @@ export async function resolveInformationAgentAddressOrigin({
         matchRule: matchRuleOf(row.metadata),
       });
       // Un annuaire, un site ou une autre annonce sans lien exact ne prouvent rien.
+      // L'adresse d'un greffe n'a pas de page publique : elle est connue par le nom du tribunal.
       const known =
-        kind === "sale_listing" ? Boolean(row.source_name || row.source_url) : Boolean(origin.url);
+        kind === "sale_listing" || kind === "court_registry_fallback"
+          ? Boolean(row.source_name || row.source_url)
+          : Boolean(origin.url);
       if (known) return { origin, known, kind };
     }
     if (row && kind === "admin_entry") {
