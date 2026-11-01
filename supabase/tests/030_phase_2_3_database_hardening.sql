@@ -71,8 +71,8 @@ insert into auth.users (
   '{}'::jsonb
 );
 
-insert into public.user_subscriptions (user_id, plan_code, status)
-values ('70000000-0000-0000-0000-000000000001', 'analyse', 'active');
+insert into public.user_subscriptions (user_id, plan_code, status, current_period_end)
+values ('70000000-0000-0000-0000-000000000001', 'analyse', 'active', now() + interval '30 days');
 
 set local role service_role;
 

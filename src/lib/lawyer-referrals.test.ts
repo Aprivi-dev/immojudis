@@ -6,7 +6,7 @@ import {
   listLawyerReferralRequests,
   previewLawyerReferralRecipient,
 } from "@/lib/lawyer-referrals";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 const { serverFrom, dailyLimits } = vi.hoisted(() => ({
@@ -20,7 +20,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 vi.mock("@/lib/rate-limit", () => ({ enforceDailyOperationLimits: dailyLimits }));
 
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   resolvePlanEntitlements: vi.fn(),
 }));
 

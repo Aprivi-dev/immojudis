@@ -5,8 +5,8 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { PublicApiError } from "@/lib/api-errors";
-import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { apiAccessAllowed } from "@/lib/plans";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 
 type ApiKeyRow = Database["public"]["Tables"]["user_api_keys"]["Row"];
@@ -112,8 +112,8 @@ export async function listUserApiKeys({
   auth: SupabaseAuthContext;
 }): Promise<ApiKeyListResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("Clés API réservées à l’offre Analyse.");
+  if (!apiAccessAllowed(auth, plan.plan)) {
+    throw new Error("Clés API réservées à l’administration.");
   }
   const { data, error } = await supabaseAdmin
     .from("user_api_keys")
@@ -140,8 +140,8 @@ export async function createUserApiKey({
   request: Request;
 }): Promise<ApiKeyCreateResponse> {
   const plan = await resolvePlanEntitlements(auth);
-  if (!featureIncluded(plan.plan, "sales.apiAccess")) {
-    throw new Error("Clés API réservées à l’offre Analyse.");
+  if (!apiAccessAllowed(auth, plan.plan)) {
+    throw new Error("Clés API réservées à l’administration.");
   }
 
   await assertApiKeyLimit(auth, plan.limits.apiKeys);

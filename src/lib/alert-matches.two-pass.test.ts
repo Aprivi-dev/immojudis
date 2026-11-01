@@ -117,8 +117,10 @@ vi.mock("@/lib/system-auth", () => ({
     isAdmin: false,
   }),
 }));
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   resolvePlanEntitlements: async () => ({ plan: "analyse", hasAnalysisAccess: true }),
+}));
+vi.mock("@/lib/property-reports", () => ({
   assertFeatureEntitlement: async () => undefined,
 }));
 vi.mock("@/lib/queries", () => ({

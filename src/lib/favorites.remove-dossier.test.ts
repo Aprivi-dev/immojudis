@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ plan: vi.fn(), deleted: vi.fn(), usage: vi.fn() }));
 vi.mock("@/lib/account-product-events.server", () => ({ recordAccountProductEvent: vi.fn() }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: mocks.usage }));
 
 import { removeFavoriteSale } from "./favorites";

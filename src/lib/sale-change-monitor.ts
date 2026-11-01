@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { isLaunchOfferActive } from "@/lib/launch-offer.server";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/sale-views";
 import { saleRows } from "@/lib/sale-rows";
 import {

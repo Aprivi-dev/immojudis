@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ estimate: vi.fn() }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: {} }));
 vi.mock("@/lib/system-auth", () => ({ systemAuthForUser: vi.fn() }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: vi.fn() }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: vi.fn() }));
 vi.mock("@/lib/queries", () => ({
   getSalesForAlertEvaluation: vi.fn(),
   getSaleAlertDetails: vi.fn(),

@@ -30,7 +30,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     },
   },
 }));
-vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: mocks.plan }));
+vi.mock("@/lib/entitlements.server", () => ({ resolvePlanEntitlements: mocks.plan }));
 vi.mock("@/lib/rate-limit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/rate-limit")>()),
   enforceUserRateLimit: mocks.userLimit,
@@ -51,6 +51,13 @@ import { SALES_API_FEED_DAILY_ROWS, SALES_CSV_EXPORT_DAILY_ROWS } from "@/lib/ra
 
 const request = new Request("https://immojudis.com/api/sales/export");
 const auth = { userId: "user-1", claims: {}, supabase: {} } as unknown as SupabaseAuthContext;
+// Le flux API est réservé à l'administration (n° 97) : une clé n'a pas `isAdmin`, le rôle du titulaire compte.
+const adminAuth = {
+  userId: "user-1",
+  claims: { api_key_id: "key-1" },
+  supabase: {},
+  userRole: "admin",
+} as unknown as SupabaseAuthContext;
 const search = validateSalesSearch({});
 const analyse = { plan: "analyse" };
 
@@ -84,6 +91,15 @@ describe("plafonds journaliers de l'export CSV et du flux API", () => {
     expect(mocks.getSales).not.toHaveBeenCalled();
   });
 
+  it("refuse le flux API à un compte Analyse qui n'est pas administrateur (n° 97), sans rien lire", async () => {
+    mocks.plan.mockResolvedValue(analyse);
+    await expect(exportSalesApiFeed({ auth, search, request })).rejects.toThrow(
+      "API ventes réservée à l’administration",
+    );
+    expect(mocks.daily).not.toHaveBeenCalled();
+    expect(mocks.getSales).not.toHaveBeenCalled();
+  });
+
   it("applique le plafond du CSV après le droit, avec la part de l'offre de lancement", async () => {
     await exportSalesCsv({ auth, search, request });
     expect(mocks.daily).toHaveBeenLastCalledWith({
@@ -101,7 +117,7 @@ describe("plafonds journaliers de l'export CSV et du flux API", () => {
 
   it("applique le plafond du flux après le droit, avec la part de l'offre de lancement", async () => {
     mocks.plan.mockResolvedValue({ ...analyse, launchOffer: true });
-    await exportSalesApiFeed({ auth, search, request });
+    await exportSalesApiFeed({ auth: adminAuth, search, request });
     expect(mocks.daily).toHaveBeenCalledWith({
       request,
       userId: "user-1",
@@ -115,7 +131,7 @@ describe("plafonds journaliers de l'export CSV et du flux API", () => {
       new RateLimitError(undefined, 3600, "Limite quotidienne atteinte, réessayez demain."),
     );
     await expect(exportSalesCsv({ auth, search, request })).rejects.toBeInstanceOf(RateLimitError);
-    await expect(exportSalesApiFeed({ auth, search, request })).rejects.toBeInstanceOf(
+    await expect(exportSalesApiFeed({ auth: adminAuth, search, request })).rejects.toBeInstanceOf(
       RateLimitError,
     );
     expect(mocks.getSales).not.toHaveBeenCalled();
@@ -150,7 +166,7 @@ describe("plafonds journaliers de l'export CSV et du flux API", () => {
 
   it("borne aussi le flux API, par un plafond de lignes distinct de celui du CSV", async () => {
     alreadyExported(SALES_API_FEED_DAILY_ROWS - 40);
-    const result = await exportSalesApiFeed({ auth, search, request });
+    const result = await exportSalesApiFeed({ auth: adminAuth, search, request });
     expect(result.meta.rowCount).toBe(40);
     expect(result.meta.limit).toBe(40);
     // Sans loyer ANIL lu (base de service non configurée ici), les rendements sont départementaux.
@@ -162,7 +178,7 @@ describe("plafonds journaliers de l'export CSV et du flux API", () => {
     expect(result.meta.changes.join(" ")).toMatch(/frais du type de vente/);
 
     alreadyExported(SALES_API_FEED_DAILY_ROWS);
-    await expect(exportSalesApiFeed({ auth, search, request })).rejects.toBeInstanceOf(
+    await expect(exportSalesApiFeed({ auth: adminAuth, search, request })).rejects.toBeInstanceOf(
       RateLimitError,
     );
   });

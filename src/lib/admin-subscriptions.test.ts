@@ -40,6 +40,33 @@ describe("admin subscriptions", () => {
     ).toThrow("La fin de période doit être une date valide");
   });
 
+  it("exige une fin de période pour un accès Analyse actif ou en essai (n° 47)", () => {
+    for (const status of ["active", "trialing"] as const) {
+      expect(() =>
+        adminSubscriptionGrantInputSchema.parse({
+          target: "investisseur@example.test",
+          planCode: "analyse",
+          status,
+        }),
+      ).toThrow("Une fin de période est obligatoire");
+    }
+    // Sans accès à ouvrir, la date reste facultative.
+    expect(() =>
+      adminSubscriptionGrantInputSchema.parse({
+        target: "investisseur@example.test",
+        planCode: "analyse",
+        status: "cancelled",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      adminSubscriptionGrantInputSchema.parse({
+        target: "investisseur@example.test",
+        planCode: "decouverte",
+        status: "active",
+      }),
+    ).not.toThrow();
+  });
+
   it("normalizes manual grant input and preserves existing Stripe identifiers", () => {
     const input = adminSubscriptionGrantInputSchema.parse({
       target: "investisseur@example.test",
@@ -86,6 +113,7 @@ describe("admin subscriptions", () => {
       target: "investisseur@example.test",
       planCode: "analyse",
       status: "active",
+      currentPeriodEnd: "2026-12-01T00:00:00.000Z",
       note: "Deuxième accès",
     });
     const payload = manualSubscriptionPayload({
@@ -156,6 +184,7 @@ describe("admin subscriptions", () => {
         input: adminSubscriptionGrantInputSchema.parse({
           target: USER_ID,
           planCode: "analyse",
+          currentPeriodEnd: "2026-12-01T00:00:00.000Z",
           note,
         }),
       });

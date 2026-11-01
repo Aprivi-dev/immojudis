@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { UserWatchedZone } from "@/lib/types";
 import { WATCHED_ZONE_KINDS } from "@/lib/watched-zones-shared";
 

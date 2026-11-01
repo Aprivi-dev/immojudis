@@ -430,6 +430,18 @@ async function resolveConfiguredAnalysisPrice(
   ) {
     throw new Error("Le Price Stripe Analyse doit être actif et récurrent à 59 € / mois en EUR.");
   }
+  // TVA (n° 45) : le tarif de 59 € est affiché TTC. Un Price « exclusive » ou sans comportement fiscal
+  // (« unspecified ») ferait ajouter la taxe au-dessus de 59 € (ou facturer sans taxe), en
+  // contradiction avec le prix annoncé : le checkout est refusé tant que le Price n'est pas « inclusive ».
+  // DÉCISION ENCORE OUVERTE (dépend du régime de TVA de la société) : choisir entre Stripe Tax
+  // (`automatic_tax: { enabled: true }` dans `buildAnalysisCheckoutSessionParams`, taux calculé par
+  // Stripe) et un taux fixe (`default_tax_rates`). Rien n'est choisi ici ; cette exigence vaut dans
+  // les deux cas, le prix affiché restant TTC.
+  if (price.tax_behavior !== "inclusive") {
+    throw new Error(
+      "Le Price Stripe Analyse doit avoir un comportement fiscal « inclusive » (prix de 59 € TTC).",
+    );
+  }
   return price;
 }
 
@@ -611,12 +623,27 @@ export function stripeRefundRequiresAccessRevocation(
   return Boolean(amount && amount > 0 && amountRefunded != null && amountRefunded >= amount);
 }
 
+/**
+ * Un litige clos en faveur du commerçant, ou qui n'a jamais abouti : `won`, mais aussi
+ * `warning_closed` (demande d'information close sans contestation) et `prevented` (litige évité).
+ * L'accès est rendu ; `lost` l'enlève, tout autre statut (ouvert, en examen) le suspend.
+ */
+export function stripeDisputeIsCleared(status: Stripe.Dispute.Status | string): boolean {
+  return status === "won" || status === "warning_closed" || status === "prevented";
+}
+
+/**
+ * Statut d'accès d'une ligne SANS abonnement Stripe (ancien paiement unique) : seule la date de fin
+ * en base peut dire si l'accès rendu court encore. Une ligne qui porte un abonnement Stripe ne passe
+ * pas par ici : à la clôture du litige, l'abonnement est relu chez Stripe et synchronisé
+ * (`syncStripeSubscription`), au lieu de déduire « active » d'une date.
+ */
 export function stripeDisputeStatusToPlanStatus(
   status: Stripe.Dispute.Status | string,
   currentPeriodEnd: string | null,
   now = new Date(),
 ): StripeReconciledPlanStatus {
-  if (status === "won") {
+  if (stripeDisputeIsCleared(status)) {
     return currentPeriodEnd && Date.parse(currentPeriodEnd) > now.getTime() ? "active" : "expired";
   }
   if (status === "lost") return "cancelled";
@@ -626,7 +653,7 @@ export function stripeDisputeStatusToPlanStatus(
 export function stripeDisputeStatusToPaymentState(
   status: Stripe.Dispute.Status | string,
 ): Exclude<StripePaymentLifecycleState, "refunded"> {
-  if (status === "won") return "cleared";
+  if (stripeDisputeIsCleared(status)) return "cleared";
   if (status === "lost") return "dispute_lost";
   return "disputed";
 }
@@ -803,39 +830,11 @@ async function handleCheckoutCompleted(
     return synced;
   }
 
-  const customerId = stripeObjectId(session.customer);
-  const { error } = await supabaseAdmin.from("user_subscriptions").upsert(
-    {
-      user_id: userId,
-      plan_code: resolveStripePlanCode({
-        metadataPlanCode: session.metadata?.plan_code,
-        priceId: null,
-      }),
-      status: "active",
-      stripe_customer_id: customerId,
-      stripe_subscription_id: stripeObjectId(session.subscription),
-      metadata: asJson({
-        checkout_session_id: session.id,
-        checkout_completed_at: new Date().toISOString(),
-      }),
-    },
-    { onConflict: "user_id" },
-  );
-
-  if (error) throw error;
-  await releaseCheckoutReservation(session);
-  const acceptanceId = session.metadata?.commercial_acceptance_id;
-  if (acceptanceId) {
-    await sendCommercialConfirmation({
-      acceptanceId,
-      checkoutSessionId: session.id,
-      userId,
-      paidAt: new Date(event.created * 1000).toISOString(),
-    }).catch((confirmationError) => {
-      console.error("[billing] durable confirmation failed", confirmationError);
-    });
-  }
-  return true;
+  // Session d'abonnement sans objet abonnement lisible (n° 47) : on n'écrit jamais « active » sur la
+  // seule foi de la session, sans les gardes de `syncStripeSubscription` (Price de l'offre, fin de
+  // période, litige ouvert, ordre des événements). L'accès vient des événements `customer.subscription.*`
+  // et du rapprochement ; la session reste « ignorée » dans le journal.
+  return false;
 }
 
 async function handleCheckoutExpired(session: Stripe.Checkout.Session): Promise<boolean> {
@@ -918,11 +917,19 @@ async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event)
 
   const { data, error } = await supabaseAdmin
     .from("user_subscriptions")
-    .select("current_period_end")
+    .select("current_period_end,stripe_subscription_id,stripe_event_created")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
-  const status = stripeDisputeStatusToPlanStatus(dispute.status, data?.current_period_end ?? null);
+  // Litige clos en faveur du compte (n° 46) et abonnement Stripe connu : l'état d'accès vient de
+  // l'abonnement relu chez Stripe, pas d'une date en base. Entre l'enregistrement du litige et la
+  // relecture, l'accès reste suspendu (échec fermé : si Stripe ne répond pas, le webhook est rejoué).
+  const subscriptionId = stripeDisputeIsCleared(dispute.status)
+    ? (data?.stripe_subscription_id ?? null)
+    : null;
+  const status: StripeReconciledPlanStatus = subscriptionId
+    ? "paused"
+    : stripeDisputeStatusToPlanStatus(dispute.status, data?.current_period_end ?? null);
   const recorded = await recordStripePaymentState({
     userId,
     paymentIntentId,
@@ -932,6 +939,37 @@ async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event)
     revokeImmediately: status === "cancelled",
   });
   if (recorded && status === "cancelled") await cancelStripeSubscriptionForUser(userId);
+  if (recorded && subscriptionId) {
+    let current: Stripe.Subscription | null = null;
+    try {
+      current = await getStripe().subscriptions.retrieve(subscriptionId);
+    } catch (retrieveError) {
+      if (!isStripeMissingOrCancelled(retrieveError)) throw retrieveError;
+    }
+    if (!current) {
+      // Abonnement introuvable chez Stripe (404) : rien à relire. On ne laisse pas « paused » à vie ;
+      // on applique la règle des lignes sans abonnement (date de fin en base). Même événement, donc
+      // l'enregistrement est rejoué sans effet de bord sur l'état du paiement.
+      await recordStripePaymentState({
+        userId,
+        paymentIntentId,
+        state: stripeDisputeStatusToPaymentState(dispute.status),
+        status: stripeDisputeStatusToPlanStatus(dispute.status, data?.current_period_end ?? null),
+        event,
+        revokeImmediately: false,
+      });
+    }
+    if (current) {
+      // Le litige n'est plus « ouvert » (état « cleared » enregistré ci-dessus). La relecture vient
+      // d'être faite : on la date du plus récent de l'événement et du dernier état appliqué, pour
+      // qu'un événement d'abonnement livré dans le désordre ne la fasse pas écarter comme périmée.
+      await syncStripeSubscription(
+        current,
+        userId,
+        Math.max(event.created, data?.stripe_event_created ?? 0),
+      );
+    }
+  }
   return recorded;
 }
 
@@ -1109,13 +1147,33 @@ export function analysisSubscriptionPriceIds(
     .filter((value): value is string => Boolean(value));
 }
 
-/** True when the price belongs to the Analyse offer (or none is configured yet). */
+/**
+ * True when the price belongs to the Analyse offer. Fermé par défaut (n° 47) : sans Price configuré,
+ * ou pour un abonnement dont le Price est absent, rien n'est reconnu et aucun accès n'est ouvert.
+ */
 export function isAnalysisSubscriptionPrice(
   priceId: string | null | undefined,
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): boolean {
-  const accepted = analysisSubscriptionPriceIds(env);
-  return accepted.length === 0 || !priceId || accepted.includes(priceId);
+  return Boolean(priceId) && analysisSubscriptionPriceIds(env).includes(priceId as string);
+}
+
+/**
+ * Le Price d'un abonnement ouvre-t-il l'offre Analyse ? Il doit figurer dans la configuration, et le
+ * Price COURANT (`STRIPE_ANALYSIS_PRICE_ID`) doit valoir 59 € (5 900 centimes) : un Price courant
+ * mal créé n'ouvre pas l'accès. Les anciens Price (`STRIPE_ANALYSIS_LEGACY_PRICE_IDS`) restent
+ * acceptés quel que soit leur montant : l'exploitant les a déclarés pour des abonnés qui paient
+ * encore un ancien tarif.
+ */
+export function isRecognisedAnalysisPrice(
+  price: { id?: string | null; unit_amount?: number | null } | null | undefined,
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): boolean {
+  if (!price || !isAnalysisSubscriptionPrice(price.id, env)) return false;
+  if (price.id === env.STRIPE_ANALYSIS_PRICE_ID?.trim()) {
+    return price.unit_amount === ANALYSIS_RECURRING_PRICE_CENTS;
+  }
+  return true;
 }
 
 async function userHasOpenPaymentDispute(userId: string): Promise<boolean> {
@@ -1167,7 +1225,7 @@ async function syncStripeSubscription(
     });
     status = "paused";
   }
-  const plan: PlanCode = isAnalysisSubscriptionPrice(price?.id)
+  const plan: PlanCode = isRecognisedAnalysisPrice(price)
     ? resolveStripePlanCode({
         metadataPlanCode: current.metadata?.plan_code,
         priceId: price?.id ?? null,
@@ -1177,6 +1235,7 @@ async function syncStripeSubscription(
     console.warn("[billing] subscription with an unrecognised price ignored", {
       subscription: current.id,
       price: price?.id ?? null,
+      amount: price?.unit_amount ?? null,
     });
   }
   const { data, error } = await supabaseAdmin.rpc("apply_stripe_subscription_state", {

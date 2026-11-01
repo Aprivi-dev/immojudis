@@ -12,7 +12,7 @@ import {
   type StructuredDpeDiagnostic,
 } from "@/lib/dpe";
 import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { SaleDocumentRich } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { SelectedRow } from "@/lib/supabase-select";
