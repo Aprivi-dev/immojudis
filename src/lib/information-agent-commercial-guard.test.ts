@@ -114,6 +114,49 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
     }
   });
 
+  it("admet le logo de la charte (une image), sur la production comme en préproduction, et rien d'autre du site", () => {
+    const logo = (name: string) => `<img src="https://immojudis.com/brand/email/${name}">`;
+    for (const appOrigin of ["https://immojudis.com", "https://staging.immojudis.test"]) {
+      for (const name of ["immojudis-logo-email-v1.png", "immojudis-logo-email-dark-v1.png"]) {
+        expect(findInformationAgentCommercialMentions(logo(name), { appOrigin })).toEqual([]);
+      }
+    }
+    // Un autre fichier, une autre extension, un paramètre ou un autre hôte restent des liens refusés.
+    for (const refused of [
+      "https://immojudis.com/brand/email/promo.png",
+      "https://immojudis.com/brand/email/immojudis-logo-email-v1.png?utm_source=x",
+      "https://immojudis.com/brand/immojudis-mark-transparent.png",
+      "https://autre.example/brand/email/immojudis-logo-email-v1.png",
+      "https://immojudis.com/offres",
+    ]) {
+      const rules = findInformationAgentCommercialMentions(`<a href="${refused}">x</a>`, {
+        appOrigin: "https://immojudis.com",
+      }).map((mention) => mention.rule);
+      expect(rules.length, refused).toBeGreaterThan(0);
+      expect(new Set(rules), refused).toEqual(new Set(["link"]));
+    }
+  });
+
+  it("le courrier rendu passe la garde même sans origine de site (préproduction) : style, logo et préheader compris", async () => {
+    const { bodyText, subject } = renderInformationAgentEmailContent({
+      template: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+      values,
+    });
+    const email = await renderInformationRequestEmail({
+      subject,
+      bodyText,
+      replyTo: "enquete+jeton@reponses.immojudis.example",
+      caseReference: "IJ-ABC123",
+      contributionUrl: "https://staging.immojudis.test/contribuer/jeton-prive",
+    });
+    expect(
+      findInformationAgentCommercialMentions(email.html, {
+        appOrigin: "https://staging.immojudis.test",
+        ignore: ["Appartement T3 à Bordeaux"],
+      }),
+    ).toEqual([]);
+  });
+
   it.each([
     ["offer", "Découvrez nos offres pour les professionnels."],
     ["offer", "Notre offre Analyse est disponible."],
