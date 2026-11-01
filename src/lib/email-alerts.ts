@@ -14,7 +14,14 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 import { systemAuthForUser } from "@/lib/system-auth";
 import { asRecord, escapeHtml, numberValue, stringValue } from "@/lib/guards";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
-import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
+import { EMAIL_COLORS, EMAIL_FONT_STACK } from "@/lib/email-brand";
+import {
+  emailEyebrow,
+  emailLayout,
+  emailLink,
+  emailParagraph,
+  emailSaleCard,
+} from "@/lib/email-layout";
 import {
   PEPITE_EXPLANATION,
   PEPITE_LABEL,
@@ -474,7 +481,7 @@ function digestItemFromNotification(notification: NotificationRow): DigestItem {
     discountLine:
       marketDiscountPct == null
         ? null
-        : `Mise à prix inférieure d’environ ${Math.round(marketDiscountPct)} % à la référence DVF (indicatif : hors frais, travaux et occupation).`,
+        : `Mise à prix inférieure d’environ ${Math.round(marketDiscountPct)}\u00a0% à la référence DVF (indicatif : hors frais, travaux et occupation).`,
     hearingDate: formatHearingDate(stringValue(sale.saleDate)),
     startingPrice: formatStartingPrice(numberValue(sale.startingPriceEur)),
   };
@@ -1130,76 +1137,92 @@ function buildAlertDigestHtml({
   rentNotice: string | null;
   intro: string;
 }): string {
+  const noteStyle = `margin:0 0 8px;font-family:${EMAIL_FONT_STACK};font-size:15px;line-height:22px;color:${EMAIL_COLORS.inkStrong};`;
   const sections = groups
     .map((group) => {
-      const items = group.items
+      const cards = group.items
         .map((item) => {
           const reasons = item.reasons
-            .map((reason) => `<li style="margin: 0 0 4px;">${escapeHtml(reason)}</li>`)
+            .map(
+              (reason) => `<li class="ej-body" style="margin:0 0 4px;">${escapeHtml(reason)}</li>`,
+            )
             .join("");
-          return `<div style="margin:0 0 18px;padding:0 0 16px;border-bottom:1px solid ${EMAIL_COLORS.lineWarm};">
-          <h2 style="margin:0 0 4px;font-size:18px;line-height:1.3;color:${EMAIL_COLORS.navy};">${escapeHtml(item.title)}</h2>
-          ${item.location ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.inkSoft};">${escapeHtml(item.location)}</p>` : ""}
-          ${saleFactsLine(item) ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.navy};">${escapeHtml(saleFactsLine(item) ?? "")}</p>` : ""}
-          ${item.discountLine ? `<p style="margin:0 0 8px;font-weight:700;color:${EMAIL_COLORS.navy};">${escapeHtml(item.discountLine)}</p>` : ""}
-          ${item.pepite ? `<p style="margin:0 0 8px;color:${EMAIL_COLORS.navy};"><strong>${escapeHtml(PEPITE_LABEL)}</strong> : ${escapeHtml(PEPITE_EMAIL_LINE)} <a href="${escapeAttribute(methodUrl)}" style="color:${EMAIL_COLORS.goldText};">${escapeHtml(PEPITE_METHOD_LINK_LABEL)}</a></p>` : ""}
-          ${reasons ? `<ul style="margin:0 0 12px;padding-left:18px;color:${EMAIL_COLORS.inkStrong};">${reasons}</ul>` : ""}
-          <a href="${escapeAttribute(item.url)}" style="display:inline-block;background:${EMAIL_COLORS.navy};color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir l'annonce</a>
-        </div>`;
+          const notes = [
+            item.discountLine
+              ? emailParagraph(escapeHtml(item.discountLine), {
+                  size: "fact",
+                  weight: 700,
+                  tone: "navy",
+                  marginBottom: 8,
+                })
+              : "",
+            item.pepite
+              ? emailParagraph(
+                  `<strong>${escapeHtml(PEPITE_LABEL)}</strong> : ${escapeHtml(PEPITE_EMAIL_LINE)} ${emailLink(methodUrl, escapeHtml(PEPITE_METHOD_LINK_LABEL))}`,
+                  { size: "fact", tone: "navy", marginBottom: 8 },
+                )
+              : "",
+            reasons
+              ? `<ul class="ej-body" style="${noteStyle}margin-bottom:12px;padding-left:18px;">${reasons}</ul>`
+              : "",
+          ].join("");
+          return emailSaleCard({
+            title: item.title,
+            location: item.location,
+            facts: [
+              ...(item.hearingDate ? [{ label: "Audience", value: item.hearingDate }] : []),
+              ...(item.startingPrice ? [{ label: "Mise à prix", value: item.startingPrice }] : []),
+            ],
+            notesHtml: notes,
+            action: { href: item.url, text: "Voir l’annonce" },
+          });
         })
         .join("");
-      return `<p style="margin:0 0 12px;color:${EMAIL_COLORS.goldText};font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">${escapeHtml(group.alertName)}</p>
-      ${items}
-      ${
+      return `${emailEyebrow(group.alertName, { marginBottom: 4 })}${cards}${
         group.deactivateUrl
-          ? `<p style="margin:0 0 22px;font-size:12px;"><a href="${escapeAttribute(group.deactivateUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Désactiver cette alerte</a></p>`
+          ? emailParagraph(emailLink(group.deactivateUrl, "Désactiver cette alerte"), {
+              size: "caption",
+              marginBottom: 20,
+            })
           : ""
       }`;
     })
     .join("");
 
-  return `<!doctype html>
-<html lang="fr">
-  <head>
-    <meta charset="utf-8">
-    <title>${escapeHtml(title)}</title>
-  </head>
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
-    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preheader)}</div>
-    <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
-      ${emailBrandHeaderHtml()}
-      <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
-        <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
-        <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};">${escapeHtml(intro)}</p>
-        ${sections}
-        ${
-          hiddenCount > 0
-            ? `<p style="margin:0 0 16px;"><a href="${escapeAttribute(hiddenLink.url)}" style="color:${EMAIL_COLORS.navy};font-weight:700;">${escapeHtml(hiddenLink.label)}</a></p>`
-            : ""
-        }
-        <p style="margin:12px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(disclaimer)}</p>
-        ${
-          rentNotice
-            ? `<p style="margin:8px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(rentNotice)} <a href="${escapeAttribute(RENT_SOURCE_URL)}" style="color:${EMAIL_COLORS.inkSoft};">Source : data.gouv.fr</a></p>`
-            : ""
-        }
-      </div>
-      <p style="margin:14px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">${escapeHtml(receptionReason)}</p>
-      <p style="margin:8px 0 0;text-align:center;color:${EMAIL_COLORS.inkSoft};font-size:12px;">
-        <a href="${escapeAttribute(alertsUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Gérer mes alertes</a> ·
-        <a href="${escapeAttribute(unsubscribeUrl)}" style="color:${EMAIL_COLORS.inkSoft};">Se désinscrire des alertes email</a>
-      </p>
-    </div>
-  </body>
-</html>`;
+  const content = [
+    emailParagraph("Bonjour,", { marginBottom: 8 }),
+    emailParagraph(escapeHtml(intro), { marginBottom: 20 }),
+    sections,
+    hiddenCount > 0
+      ? emailParagraph(emailLink(hiddenLink.url, escapeHtml(hiddenLink.label)), {
+          marginBottom: 16,
+        })
+      : "",
+    emailParagraph(escapeHtml(disclaimer), { tone: "muted", size: "caption", marginBottom: 8 }),
+    rentNotice
+      ? emailParagraph(
+          `${escapeHtml(rentNotice)} ${emailLink(RENT_SOURCE_URL, "Source : data.gouv.fr")}`,
+          { tone: "muted", size: "caption", marginBottom: 0 },
+        )
+      : "",
+  ].join("");
+
+  return emailLayout({
+    title,
+    preheader,
+    content,
+    footer: {
+      reason: receptionReason,
+      links: [
+        { text: "Gérer mes alertes", href: alertsUrl },
+        { text: "Se désinscrire des alertes email", href: unsubscribeUrl },
+      ],
+    },
+  });
 }
 
 function arrayOfStrings(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
-}
-
-export function escapeAttribute(value: string): string {
-  return escapeHtml(value).replace(/`/g, "&#96;");
 }

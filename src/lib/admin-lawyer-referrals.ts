@@ -10,7 +10,14 @@ import {
 } from "@/lib/email-alerts";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { escapeHtml } from "@/lib/guards";
-import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
+import {
+  emailButton,
+  emailEyebrow,
+  emailHeading,
+  emailKeyValueRows,
+  emailLayout,
+  emailParagraph,
+} from "@/lib/email-layout";
 
 type LawyerReferralMatchingStatus = "unmatched" | "matched" | "manual_review";
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
@@ -614,6 +621,7 @@ export function buildLawyerReferralEmailMessage({
     subject,
     text: textLines.join("\n"),
     html: buildLawyerReferralEmailHtml({
+      subject,
       lawyerName: lawyer.display_name,
       title,
       location,
@@ -671,6 +679,7 @@ function referralRequestToSummary(
 }
 
 function buildLawyerReferralEmailHtml({
+  subject,
   lawyerName,
   title,
   location,
@@ -683,6 +692,8 @@ function buildLawyerReferralEmailHtml({
   message,
   adminNotes,
 }: {
+  /** L'objet du message, repris dans `<title>`. */
+  subject: string;
   lawyerName: string;
   title: string;
   location: string;
@@ -695,41 +706,42 @@ function buildLawyerReferralEmailHtml({
   message: string | null;
   adminNotes: string | null;
 }): string {
-  const rows = [
-    ["Demandeur", requesterEmail],
-    ["Téléphone", phone],
-    ["Contact préféré", preferredContactMethod],
-    ["Enchère plafond", maxBid],
-    ["Financement prêt", financingReady == null ? null : financingReady ? "Oui" : "Non"],
-  ]
-    .filter(([, value]) => value)
-    .map(
-      ([label, value]) =>
-        `<tr><td style="padding:8px 0;color:${EMAIL_COLORS.inkSoft};">${escapeHtml(label ?? "")}</td><td style="padding:8px 0;color:${EMAIL_COLORS.navy};font-weight:700;">${escapeHtml(value ?? "")}</td></tr>`,
-    )
-    .join("");
+  const rows: Array<readonly [string, string]> = [];
+  const addRow = (label: string, value: string | null) => {
+    if (value) rows.push([label, value]);
+  };
+  addRow("Demandeur", requesterEmail);
+  addRow("Téléphone", phone);
+  addRow("Contact préféré", preferredContactMethod);
+  addRow("Enchère plafond", maxBid);
+  addRow("Financement prêt", financingReady == null ? null : financingReady ? "Oui" : "Non");
 
-  return `<!doctype html>
-<html>
-  <body style="margin:0;background:${EMAIL_COLORS.surface};color:${EMAIL_COLORS.navy};font-family:${EMAIL_FONT_STACK};">
-    <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
-      ${emailBrandHeaderHtml()}
-      <div style="background:#fff;border:1px solid ${EMAIL_COLORS.lineWarm};border-radius:10px;padding:24px;">
-        <p style="margin:0 0 10px;color:${EMAIL_COLORS.goldText};font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Mise en relation Immojudis</p>
-        <h1 style="margin:0 0 8px;font-size:22px;line-height:1.25;color:${EMAIL_COLORS.navy};">${escapeHtml(title)}</h1>
-        ${location ? `<p style="margin:0 0 18px;color:${EMAIL_COLORS.inkSoft};">${escapeHtml(location)}</p>` : ""}
-        <p style="margin:0 0 18px;color:${EMAIL_COLORS.inkStrong};line-height:1.55;">Bonjour ${escapeHtml(lawyerName)}, une demande de mise en relation vous a été assignée depuis Immojudis.</p>
-        ${rows ? `<table style="width:100%;border-collapse:collapse;margin:0 0 18px;">${rows}</table>` : ""}
-        ${message ? `<p style="margin:0 0 14px;color:${EMAIL_COLORS.inkStrong};line-height:1.55;"><strong>Message utilisateur</strong><br>${escapeHtml(message)}</p>` : ""}
-        ${adminNotes ? `<p style="margin:0 0 14px;color:${EMAIL_COLORS.inkStrong};line-height:1.55;"><strong>Note Immojudis</strong><br>${escapeHtml(adminNotes)}</p>` : ""}
-        <a href="${escapeAttribute(saleUrl)}" style="display:inline-block;background:${EMAIL_COLORS.navy};color:#fff;text-decoration:none;border-radius:8px;padding:12px 16px;font-weight:700;">Voir l'annonce</a>
-        <p style="margin:22px 0 0;color:${EMAIL_COLORS.inkSoft};font-size:12px;line-height:1.5;">
-          Les éléments transmis sont indicatifs et doivent être vérifiés par le cabinet avant toute prise en charge.
-        </p>
-      </div>
-    </div>
-  </body>
-</html>`;
+  // Enveloppe commune seulement : le texte, l'objet et l'ordre des blocs sont ceux d'avant.
+  return emailLayout({
+    title: subject,
+    preheader: `Une demande de mise en relation vous a été assignée depuis Immojudis : ${title}`,
+    content: [
+      emailEyebrow("Mise en relation Immojudis"),
+      emailHeading(title, 1, { marginBottom: 4 }),
+      location ? emailParagraph(escapeHtml(location), { tone: "muted", marginBottom: 16 }) : "",
+      emailParagraph(
+        `Bonjour ${escapeHtml(lawyerName)}, une demande de mise en relation vous a été assignée depuis Immojudis.`,
+      ),
+      rows.length ? emailKeyValueRows(rows) : "",
+      message
+        ? emailParagraph(`<strong>Message utilisateur</strong><br>${escapeHtml(message)}`)
+        : "",
+      adminNotes
+        ? emailParagraph(`<strong>Note Immojudis</strong><br>${escapeHtml(adminNotes)}`)
+        : "",
+      emailButton(saleUrl, "Voir l’annonce", { marginBottom: 20 }),
+      emailParagraph(
+        "Les éléments transmis sont indicatifs et doivent être vérifiés par le cabinet avant toute prise en charge.",
+        { tone: "muted", size: "caption", marginBottom: 0 },
+      ),
+    ].join(""),
+    footer: {},
+  });
 }
 
 function normalizeEmailDelivery(value: unknown): AdminLawyerReferralEmailDelivery | null {
@@ -790,8 +802,4 @@ function jsonObject(value: unknown): Record<string, unknown> {
 
 function asJson(value: unknown): Json {
   return JSON.parse(JSON.stringify(value ?? null)) as Json;
-}
-
-function escapeAttribute(value: string): string {
-  return escapeHtml(value).replace(/`/g, "&#96;");
 }
