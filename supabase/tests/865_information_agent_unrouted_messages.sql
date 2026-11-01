@@ -4,11 +4,13 @@
 --   * contraintes (motif connu, état cohérent avec la date de traitement, extrait borné, une ligne par message
 --     du fournisseur) ;
 --   * purge isolée, seizième partie de public.run_data_retention : 12 mois si l'expéditeur était connu, 21 jours
---     sinon, repère created_at, quel que soit l'état « à traiter » ou « traité ».
+--     sinon, repère created_at, quel que soit l'état « à traiter » ou « traité » ;
+--   * (20261110200100) l'extrait d'un message « traité » est effacé 90 jours après handled_at ; l'expéditeur, l'objet, la
+--     date et le motif restent jusqu'à la fin de la durée du message ; un message « à traiter » garde son extrait.
 -- Les durées sont celles de la migration, à confirmer par juridique-rgpd.
 begin;
 
-select plan(23);
+select plan(25);
 
 -- Structure et droits -------------------------------------------------------------------------------------------
 
@@ -97,22 +99,31 @@ where user_id = 'c8650000-0000-4000-8000-000000000002';
 -- Jeu d'essai de la purge (instant de la purge : 2026-12-01). 12 mois avant : 2025-12-01 ; 21 jours avant :
 -- 2026-11-10. Les deux bornes exactes sont conservées (comparaison stricte).
 insert into public.information_agent_unrouted_messages
-  (provider_email_id, sender, sender_email, subject, received_at, reason, sender_known, status, handled_at, created_at)
+  (provider_email_id, sender, sender_email, subject, received_at, excerpt, reason, sender_known, status, handled_at,
+   created_at)
 values
-  ('865-known-old', 'Me A <a@example.test>', 'a@example.test', 'Re: A', '2025-11-30T23:59:59Z', 'case_not_open', true,
-   'pending', null, '2025-11-30T23:59:59Z'),
-  ('865-known-edge', 'Me B <b@example.test>', 'b@example.test', 'Re: B', '2025-12-01T00:00:00Z', 'case_not_open', true,
-   'pending', null, '2025-12-01T00:00:00Z'),
-  ('865-known-recent', 'Me C <c@example.test>', 'c@example.test', 'Re: C', '2026-06-01T00:00:00Z', 'unknown_case', true,
-   'handled', '2026-06-02T00:00:00Z', '2026-06-01T00:00:00Z'),
-  ('865-unknown-old', 'd@example.test', 'd@example.test', 'Re: D', '2026-11-09T23:59:59Z', 'no_token', false,
+  ('865-known-old', 'Me A <a@example.test>', 'a@example.test', 'Re: A', '2025-11-30T23:59:59Z', 'Texte A',
+   'case_not_open', true, 'pending', null, '2025-11-30T23:59:59Z'),
+  ('865-known-edge', 'Me B <b@example.test>', 'b@example.test', 'Re: B', '2025-12-01T00:00:00Z', 'Texte B',
+   'case_not_open', true, 'pending', null, '2025-12-01T00:00:00Z'),
+  ('865-known-recent', 'Me C <c@example.test>', 'c@example.test', 'Re: C', '2026-06-01T00:00:00Z', 'Texte C',
+   'unknown_case', true, 'handled', '2026-06-02T00:00:00Z', '2026-06-01T00:00:00Z'),
+  ('865-unknown-old', 'd@example.test', 'd@example.test', 'Re: D', '2026-11-09T23:59:59Z', null, 'no_token', false,
    'pending', null, '2026-11-09T23:59:59Z'),
-  ('865-unknown-edge', 'e@example.test', 'e@example.test', 'Re: E', '2026-11-10T00:00:00Z', 'no_token', false,
+  ('865-unknown-edge', 'e@example.test', 'e@example.test', 'Re: E', '2026-11-10T00:00:00Z', null, 'no_token', false,
    'pending', null, '2026-11-10T00:00:00Z'),
-  ('865-unknown-recent', 'f@example.test', 'f@example.test', 'Re: F', '2026-11-25T00:00:00Z', 'no_token', false,
+  ('865-unknown-recent', 'f@example.test', 'f@example.test', 'Re: F', '2026-11-25T00:00:00Z', null, 'no_token', false,
    'pending', null, '2026-11-25T00:00:00Z'),
-  ('865-unknown-handled-old', 'g@example.test', 'g@example.test', 'Re: G', '2026-10-01T00:00:00Z', 'unknown_case', false,
-   'handled', '2026-10-02T00:00:00Z', '2026-10-01T00:00:00Z');
+  ('865-unknown-handled-old', 'g@example.test', 'g@example.test', 'Re: G', '2026-10-01T00:00:00Z', 'Texte G',
+   'unknown_case', false, 'handled', '2026-10-02T00:00:00Z', '2026-10-01T00:00:00Z'),
+  -- Extraits : traité depuis plus de 90 jours (effacé), traité il y a exactement 90 jours (gardé, comparaison
+  -- stricte), jamais traité (gardé, même ancien).
+  ('865-excerpt-old', 'h@example.test', 'h@example.test', 'Re: H', '2026-08-30T00:00:00Z', 'Texte H', 'case_not_open',
+   true, 'handled', '2026-09-01T23:59:59Z', '2026-08-30T00:00:00Z'),
+  ('865-excerpt-edge', 'i@example.test', 'i@example.test', 'Re: I', '2026-08-30T00:00:00Z', 'Texte I', 'case_not_open',
+   true, 'handled', '2026-09-02T00:00:00Z', '2026-08-30T00:00:00Z'),
+  ('865-excerpt-pending-old', 'j@example.test', 'j@example.test', 'Re: J', '2026-08-01T00:00:00Z', 'Texte J',
+   'case_not_open', true, 'pending', null, '2026-08-01T00:00:00Z');
 
 set local role anon;
 select throws_ok(
@@ -164,8 +175,9 @@ select ok(
 
 select ok(
   app_private.information_agent_unrouted_known_retention() = interval '12 months'
-  and app_private.information_agent_unrouted_unknown_retention() = interval '21 days',
-  'the durations are 12 months (known sender) and 21 days (unknown sender), each in its own function'
+  and app_private.information_agent_unrouted_unknown_retention() = interval '21 days'
+  and app_private.information_agent_unrouted_excerpt_retention() = interval '90 days',
+  'the durations are 12 months (known sender), 21 days (unknown sender) and 90 days (excerpt of a handled message), each in its own function'
 );
 
 select ok(
@@ -213,8 +225,30 @@ select is(
 select is(
   (select array_agg(provider_email_id order by provider_email_id)
    from public.information_agent_unrouted_messages where provider_email_id like '865-%'),
-  array['865-known-edge', '865-known-recent', '865-unknown-edge', '865-unknown-recent'],
+  array[
+    '865-excerpt-edge', '865-excerpt-old', '865-excerpt-pending-old', '865-known-edge', '865-known-recent',
+    '865-unknown-edge', '865-unknown-recent'
+  ],
   'the exact boundaries and the recent messages are kept, handled or not'
+);
+
+select is(
+  (select array_agg(provider_email_id order by provider_email_id)
+   from public.information_agent_unrouted_messages
+   where provider_email_id like '865-%' and excerpt is not null),
+  array['865-excerpt-edge', '865-excerpt-pending-old', '865-known-edge'],
+  'the excerpt of a message handled more than 90 days ago is erased; a pending message and a recent handling keep theirs'
+);
+
+select ok(
+  exists (
+    select 1 from public.information_agent_unrouted_messages
+    where provider_email_id = '865-known-recent' and excerpt is null and status = 'handled'
+      and sender = 'Me C <c@example.test>' and sender_email = 'c@example.test'
+      and subject = 'Re: C' and reason = 'unknown_case'
+      and received_at = '2026-06-01T00:00:00Z'
+  ),
+  'erasing the excerpt keeps the sender, subject, date and reason until the end of the message duration'
 );
 
 select is(
@@ -223,11 +257,10 @@ select is(
   'a healthy run reports no purge error'
 );
 
-select is(
-  (public.run_data_retention('2026-12-01T00:00:00Z'::timestamptz)
-    ->> 'information_agent_unrouted_messages')::integer,
-  0,
-  'a second run finds nothing more to purge (idempotent)'
+select ok(
+  (public.run_data_retention('2026-12-01T00:00:00Z'::timestamptz) ->> 'information_agent_unrouted_messages')::integer = 0
+  and (public.run_data_retention('2026-12-01T00:00:00Z'::timestamptz) ->> 'information_agent_unrouted_excerpts')::integer = 0,
+  'a second run finds nothing more to delete or erase (idempotent)'
 );
 
 select * from finish();
