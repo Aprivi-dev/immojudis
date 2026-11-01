@@ -121,11 +121,35 @@ describe("sale analysis sets", () => {
     expect(summary).toEqual({
       itemCount: 2,
       totalStartingPriceEur: 180_000,
+      pricedItemCount: 2,
       totalUserMaxBidEur: 210_000,
       averageInvestmentScore: 75,
       earliestSaleDate: "2026-07-20T09:00:00.000Z",
       cities: ["Bordeaux", "Nantes"],
     });
+  });
+
+  it("counts the priced items, so a partial starting-price total is not taken for a full one", () => {
+    const base = makeItem();
+    const withPrice = (id: string, startingPriceEur: number | null) =>
+      makeItem({
+        id,
+        sale: base.sale ? { ...base.sale, startingPriceEur } : base.sale,
+      });
+
+    const partial = buildSaleAnalysisSummary([
+      withPrice("a", 100_000),
+      withPrice("b", null),
+      withPrice("c", 0),
+      makeItem({ id: "d", sale: null }),
+    ]);
+    expect(partial.itemCount).toBe(4);
+    expect(partial.pricedItemCount).toBe(1);
+    expect(partial.totalStartingPriceEur).toBe(100_000);
+
+    const none = buildSaleAnalysisSummary([withPrice("a", null), withPrice("b", 0)]);
+    expect(none.pricedItemCount).toBe(0);
+    expect(none.totalStartingPriceEur).toBeNull();
   });
 
   it("keeps the occupation in the canonical comparison snapshot", async () => {

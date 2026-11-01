@@ -8,6 +8,7 @@ import {
   contactReportHeader,
   contactReportPath,
   deliverContact,
+  lawyerReportPath,
   validateContact,
 } from "./contact-message";
 
@@ -306,6 +307,37 @@ describe("signalement depuis une fiche", () => {
     const prefill = contactPrefill(new URLSearchParams(LAWYER_CONTACT_HREF.split("?")[1]));
     expect(prefill).toEqual({ subject: "avocat" });
     expect(validateContact({ ...valid, subject: "avocat" }).ok).toBe(true);
+  });
+
+  it("préremplit le sujet réservé à l'avocat poursuivant, avec ou sans la vente, et le trie comme une erreur", () => {
+    expect(lawyerReportPath()).toBe("/contact?sujet=avocat-poursuivant");
+    expect(contactPrefill(new URLSearchParams(lawyerReportPath().split("?")[1]))).toEqual({
+      subject: "avocat-poursuivant",
+    });
+    const withSale = contactPrefill(new URLSearchParams(lawyerReportPath(SALE).split("?")[1]));
+    expect(withSale.subject).toBe("avocat-poursuivant");
+    expect(withSale.message).toContain(`Vente concernée : ${SALE}`);
+    expect(validateContact({ ...valid, subject: "avocat-poursuivant" }).ok).toBe(true);
+    const email = buildContactEmail(
+      {
+        name: "Test",
+        email: "a@b.test",
+        subject: "avocat-poursuivant",
+        message: `${withSale.message}La mise à prix est inexacte.`,
+      },
+      { to: "contact@immojudis.test", from: "a@b.test" },
+    );
+    expect(email.subject).toMatch(
+      /^\[DONNEES\] \(qualité déclarée\) \[Contact Immojudis\] Je suis l’avocat poursuivant d’une vente/,
+    );
+    expect(email.text.split("\n")[0]).toBe(`Vente : ${SALE} | Rubrique : Fiche de la vente`);
+    expect(email.tags).toContainEqual({ name: "topic", value: "donnees" });
+  });
+
+  it("n'ajoute la vente au lien de l'avocat poursuivant que si l'identifiant a la forme d'un UUID", () => {
+    expect(lawyerReportPath("pas-un-uuid&sujet=autre")).toBe("/contact?sujet=avocat-poursuivant");
+    expect(lawyerReportPath("")).toBe("/contact?sujet=avocat-poursuivant");
+    expect(lawyerReportPath(SALE)).toContain(`vente=${SALE}`);
   });
 
   it("ignore tout ce qui n'est pas dans les listes ou n'a pas la forme d'un identifiant", () => {
