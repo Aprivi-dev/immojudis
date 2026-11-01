@@ -961,15 +961,30 @@ sinon une recherche textuelle d'adresse.
 
 Une annonce n'est écrite dans `auction_sales` que si elle a **une voie ou un lieu-dit** dans son adresse, **ou une adresse
 email de contact** (avocat, cabinet, notaire ou étude : l'agent d'information ne travaille que par email, un nom ou un
-téléphone seul ne compte pas), **ou une ou plusieurs parcelles cadastrales lisibles**, **ou au moins une pièce**, **ou un rattachement à une autre source**. La règle est écrite
+téléphone seul ne compte pas), **ou, pour une vente au tribunal sans email de contact, l'email de son tribunal** (voir
+ci-dessous), **ou une ou plusieurs parcelles cadastrales lisibles**, **ou au moins une pièce**, **ou un rattachement à une autre source**. La règle est écrite
 une seule fois, dans `src/listing_minimum.py` (`src/information_sufficiency.py` n'en est que l'accès : interrupteur
 d'urgence, registre de refus de l'agent). Elle s'applique à l'écriture, après la lecture de la fiche de détail, dans
 `publication_identity.resolve_publication_identities` : c'est là qu'on sait si l'annonce se rattache à une ligne
 existante. Une annonce déjà en base n'est jamais refusée ni supprimée par cette règle (un email retiré de la fiche ne la
 fait pas disparaître).
 
+**Contact de secours : l'email du tribunal (preuve `court_email`).** Pour une vente au tribunal (saisie immobilière ou autre
+vente judiciaire, confirmée par l'annonce : `sale_venue_type = tribunal` et `sale_verification_status` `verified` ou
+`cross_checked`, sans `tribunal_inconsistent` ; jamais notaires, cessions de l'État ni AGRASC) qui n'a aucun email de
+contact exploitable, l'email de SON tribunal dans `court_registry_contacts` (fichier du propriétaire du 01/11/2026,
+`docs/reference/tribunaux-judiciaires-emails-2026-11-01.md`) fait preuve : l'annonce n'est plus écartée faute d'email.
+Le référentiel est chargé une fois par passage (`information_sufficiency.load_court_registry`, comme le registre de refus ;
+sans lui, ou en cas d'erreur, la règle d'avant s'applique). Une vente sans tribunal reconnu, ou dont le tribunal n'a pas
+d'email, ne change pas ; une adresse `@justice.fr` lue dans une annonce reste exclue (seule celle du référentiel sert de
+secours) ; une adresse du référentiel refusée par le registre (opposition, rebond permanent) ne compte pas. La règle SQL
+(`app_private.sale_has_listing_minimum`, migration `20261110190100`) garde aussi ces ventes. Le résumé du passage compte
+les annonces écrites grâce à ce seul secours (`court_email_fallback`). L'agent d'information peut alors écrire au greffe,
+dans ce seul cas (`docs/runbooks/information-agent.md`, « Greffe de secours »).
+
 Le run compte les refus dans son résumé (`rejected_insufficient_listing` : total, par source, quelques URL d'exemple,
-et `detail_unread_not_written` pour les fiches non lues). L'annonce refusée reste comptée dans l'inventaire de sa
+`detail_unread_not_written` pour les fiches non lues, et `court_email_fallback` pour les annonces écrites grâce à l'email
+de leur tribunal). L'annonce refusée reste comptée dans l'inventaire de sa
 source (décision `excluded` dans `auction_collection_items`) : la santé de la source, le ratio de fraîcheur et l'alerte
 de baisse d'inventaire ne bougent pas. **Cache de refus** (`src/rejected_listings.py`, table `app_private.rejected_listings`, migration `20261108202200`) : une
 annonce refusée après lecture de sa fiche est mémorisée ; absente de la base, refusée depuis moins de 7 jours et dont la
@@ -980,7 +995,9 @@ relue. Conservation 30 jours (purge au chargement du cache). Actif pour un passa
 
 - `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off` coupe la règle (défaut : active).
 - Le miroir Python du résolveur de contacts (`src/information_sufficiency.py`) est gardé identique au résolveur
-  TypeScript par `tests/fixtures/information_agent_contact_cases.json`, exécuté par pytest et par vitest.
+  TypeScript par `tests/fixtures/information_agent_contact_cases.json`, exécuté par pytest et par vitest. Il en va de même
+  du contact de secours du tribunal (`is_court_sale`, `court_registry_fallback_emails`) avec
+  `tests/fixtures/court_registry_fallback_cases.json`.
 - Existant : `supabase/repairs/20261108202100_delete_empty_listings.sql` (comptage par défaut, jamais une vente qui a une
   trace utilisateur, un prix d'adjudication ou une issue connue) après la migration `20261108202000_…`. **À lancer APRÈS le
   balayage de dédoublonnage** (`python -m src.dedupe_candidates`, rapport relu, puis `python -m src.dedupe_apply`) : une

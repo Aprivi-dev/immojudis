@@ -181,7 +181,7 @@ def drop_insufficient_sales(
 ) -> int:
     """Rapport (par défaut) ou suppression (``execute``) ; renvoie un code de sortie."""
     from src.config import load_settings
-    from src.information_sufficiency import load_contact_blocklist
+    from src.information_sufficiency import load_contact_blocklist, load_court_registry, set_active_court_registry
     from src.recompute_scoring import _fetch_sales, _load_env_fallbacks, _sale_from_storage_row
     from src.storage.supabase_client import connect
 
@@ -198,6 +198,7 @@ def drop_insufficient_sales(
         LOGGER.error("No stored sales matched the requested scope")
         return 1
     blocklist = load_contact_blocklist(settings)
+    set_active_court_registry(load_court_registry(settings))  # la règle d'écriture, avec l'email du tribunal
     candidates, stats = evaluate_rows(rows, _sale_from_storage_row, blocklist)
     links = fetch_links(settings, [c.sale_id for c in candidates]) if candidates else {}
     report = build_report(candidates, stats, links)
