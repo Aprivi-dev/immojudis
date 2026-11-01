@@ -173,6 +173,8 @@ describeLocal("information-agent local integration", () => {
       email: userEmail,
       password: "local-integration-password-123!",
       email_confirm: true,
+      // Le déclencheur d'inscription (20261110110000) exige un prénom et un nom pour tout compte email.
+      user_metadata: { first_name: "Test", last_name: "Integration" },
     });
     if (userError || !createdUser.user) throw userError ?? new Error("Local user was not created.");
     userId = createdUser.user.id;
