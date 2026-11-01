@@ -222,6 +222,25 @@ def test_a_product_without_a_listing_identity_is_ignored(product_page_url, reaso
     assert [item["reason"] for item in discovery.ignored] == [reason]
 
 
+@pytest.mark.parametrize(("show_on_site", "kept"), [(False, False), (True, True), ("absent", True), (None, True)])
+def test_a_product_explicitly_hidden_on_the_site_is_ignored(show_on_site, kept) -> None:
+    def mutate(results, _model) -> None:
+        if show_on_site == "absent":
+            results["products"][1].pop("showOnSite", None)
+        else:
+            results["products"][1]["showOnSite"] = show_on_site
+        results["products"][1]["hidePrice"] = True  # hidePrice ne change rien : la mise à prix vient de la fiche
+
+    discovery = parse_agora_seller_listing(_seller_html(mutate), now=FIXTURE_NOW)
+
+    assert ("429755" in [sale["external_id"] for sale in discovery.products]) is kept
+    if kept:
+        assert discovery.ignored == []
+    else:
+        assert [(item["product_id"], item["reason"]) for item in discovery.ignored] == [("429755", "hidden_on_site")]
+        assert discovery.complete  # 5 produits lus pour countTotal=5 : la page reste complète
+
+
 def test_a_duplicated_product_is_read_once() -> None:
     def mutate(results, _model) -> None:
         results["products"].append(copy.deepcopy(results["products"][0]))
