@@ -125,7 +125,7 @@ describe("email alerts", () => {
     }
     expect(message.text).toContain("ni une promesse de gain");
     expect(message.text).toContain(
-      "Mise à prix inférieure d’environ 32 % à la référence DVF (indicatif : hors frais, travaux et occupation)",
+      "Mise à prix inférieure d’environ 32\u00a0% à la référence DVF (indicatif : hors frais, travaux et occupation)",
     );
     expect(message.text).not.toContain("Décote estimée");
     expect(message.html).toContain("Se désinscrire des alertes email");
@@ -353,8 +353,8 @@ describe("email alerts", () => {
     expect(message.html).toContain(`<title>${message.subject}</title>`);
     // Le pré-en-tête est masqué dans le message et reprend l'audience et la mise à prix.
     expect(message.html).toMatch(/display:none[^>]*>Audience : 12 novembre 2026 · Mise à prix/);
-    // En-tête de marque et plus de Georgia.
-    expect(message.html).toContain("Immojudis</span>");
+    // En-tête de marque (logo PNG cliquable, texte de repli) et plus de Georgia.
+    expect(message.html).toContain('alt="Immojudis"');
     expect(message.html).not.toContain("Georgia");
     expect(message.html).toContain("Manrope");
   });

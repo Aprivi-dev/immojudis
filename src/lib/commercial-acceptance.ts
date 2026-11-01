@@ -17,6 +17,13 @@ import {
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
 import { escapeHtml, numberValue, stringValue } from "@/lib/guards";
+import {
+  emailBreakable,
+  emailHeading,
+  emailLayout,
+  emailLink,
+  emailParagraph,
+} from "@/lib/email-layout";
 
 export const checkoutConsentSchema = z.object({
   termsAccepted: z.literal(true),
@@ -230,10 +237,11 @@ export async function sendCommercialConfirmation({
     rightsUrl,
     orderedOn: paidAt,
   });
+  const subject = isRecurringOffer
+    ? "Confirmation de votre abonnement Immojudis Analyse"
+    : "Confirmation de votre commande Immojudis Analyse";
   const text = [
-    isRecurringOffer
-      ? "Confirmation de votre abonnement Immojudis Analyse"
-      : "Confirmation de votre commande Immojudis Analyse",
+    subject,
     "",
     `Offre : ${offerLabel}`,
     offerDescription,
@@ -260,11 +268,36 @@ export async function sendCommercialConfirmation({
       message: {
         from: config.from,
         to: recipient,
-        subject: isRecurringOffer
-          ? "Confirmation de votre abonnement Immojudis Analyse"
-          : "Confirmation de votre commande Immojudis Analyse",
+        subject,
         text,
-        html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${escapeHtml(accepted.termsVersion)} · Confidentialité version ${escapeHtml(accepted.privacyVersion)}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(withdrawalLines.join("\n"))}</pre><p>Empreinte SHA-256 des conditions acceptées : ${escapeHtml(accepted.termsSha256)}</p>`,
+        html: emailLayout({
+          title: subject,
+          preheader: `Offre : ${offerLabel}`,
+          // Même contenu qu'avant, seulement mis en forme : aucun texte ni aucune date ne change.
+          content: [
+            emailHeading(
+              `${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}`,
+            ),
+            emailParagraph(
+              `<strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription).replace(/\n/g, "<br>")}`,
+            ),
+            emailParagraph(
+              `Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${emailBreakable(checkoutSessionId)}`,
+            ),
+            emailParagraph(
+              `Conditions version ${escapeHtml(accepted.termsVersion)} · Confidentialité version ${escapeHtml(accepted.privacyVersion)}`,
+            ),
+            emailParagraph(
+              `${emailLink(termsUrl, "Conditions générales")} · ${emailLink(privacyUrl, "Confidentialité")} · ${emailLink(rightsUrl, "Mes droits et rétractation")}`,
+            ),
+            emailParagraph(escapeHtml(withdrawalLines.join("\n")).replace(/\n/g, "<br>")),
+            emailParagraph(
+              `Empreinte SHA-256 des conditions acceptées : ${emailBreakable(accepted.termsSha256)}`,
+              { marginBottom: 0 },
+            ),
+          ].join(""),
+          footer: {},
+        }),
       },
       category: "acceptance",
     });

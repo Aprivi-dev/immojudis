@@ -4,6 +4,7 @@ import {
   EMAIL_BRAND_NAME,
   EMAIL_COLORS,
   EMAIL_COLOR_TOKENS,
+  EMAIL_DARK_COLORS,
   EMAIL_FONT_STACK,
   emailBrandHeaderHtml,
 } from "./email-brand";
@@ -29,7 +30,9 @@ describe("palette des emails", () => {
   });
 
   it("écrit en Manrope puis en sans empattement, jamais en Georgia", () => {
-    expect(EMAIL_FONT_STACK).toBe("Manrope, Arial, Helvetica, sans-serif");
+    expect(EMAIL_FONT_STACK).toBe("Manrope, 'Helvetica Neue', Helvetica, Arial, sans-serif");
+    // Apostrophes simples : la pile se glisse dans des attributs style="…".
+    expect(EMAIL_FONT_STACK).not.toContain('"');
     expect(EMAIL_FONT_STACK).not.toMatch(/georgia|serif'|times/i);
   });
 
@@ -38,6 +41,23 @@ describe("palette des emails", () => {
     expect(header).toContain(`border-top:6px solid ${EMAIL_COLORS.gold}`);
     expect(header).toContain(`>${EMAIL_BRAND_NAME}</span>`);
     expect(header).not.toMatch(/IMMOJUDIS|text-transform/);
+  });
+
+  it("reprend le fond de page du site (#fbf9f5) et le filet de carte, pas l'ancien #fffaf2", () => {
+    expect(EMAIL_COLORS.background).toBe("#fbf9f5");
+    expect(EMAIL_COLORS.line).toBe("#d8cfc1");
+  });
+
+  it("fixe la palette du mode sombre validée", () => {
+    expect(EMAIL_DARK_COLORS).toEqual({
+      page: "#07111f",
+      card: "#132238",
+      text: "#f5efe4",
+      muted: "#bdb4a4",
+      line: "#263c58",
+      link: "#e8c98e",
+      button: "#e8c98e",
+    });
   });
 
   it("garde un texte doré lisible (au moins 4,5:1 sur blanc)", () => {

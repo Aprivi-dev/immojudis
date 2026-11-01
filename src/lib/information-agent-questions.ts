@@ -17,7 +17,7 @@ export const INFORMATION_AGENT_QUESTIONS = {
   sale_date: {
     label: "Date de vente",
     question:
-      "Pouvez-vous confirmer la date, l'heure et le lieu de la vente de ce lot, ainsi que tout report ou changement annoncé ?",
+      "Pouvez-vous confirmer la date, l’heure et le lieu de la vente de ce lot, ainsi que tout report ou changement annoncé ?",
   },
   starting_price_eur: {
     label: "Mise à prix",
@@ -37,7 +37,7 @@ export const INFORMATION_AGENT_QUESTIONS = {
   visit: {
     label: "Visites",
     question:
-      "Quelles sont les prochaines dates de visite, les modalités d'inscription et le contact à utiliser pour confirmer sa venue ?",
+      "Quelles sont les prochaines dates de visite, les modalités d’inscription et le contact à utiliser pour confirmer sa venue ?",
   },
   occupancy: {
     label: "Occupation",
@@ -52,7 +52,7 @@ export const INFORMATION_AGENT_QUESTIONS = {
   diagnostics: {
     label: "Diagnostics",
     question:
-      "Les diagnostics techniques, notamment le DPE, sont-ils disponibles dans une version à jour ? Merci d'indiquer leur date et les classes connues.",
+      "Les diagnostics techniques, notamment le DPE, sont-ils disponibles dans une version à jour ? Merci d’indiquer leur date et les classes connues.",
   },
   composition: {
     label: "Composition",
@@ -62,7 +62,7 @@ export const INFORMATION_AGENT_QUESTIONS = {
   sale_terms: {
     label: "Modalités de vente",
     question:
-      "Pouvez-vous confirmer les modalités d'enchère, le montant et la forme de la garantie à remettre avant d'enchérir (en saisie immobilière : 10 % de la mise à prix, 3 000 € au minimum, par chèque de banque ou caution bancaire), les frais annoncés et les délais applicables, dont celui de paiement du prix ?",
+      "Pouvez-vous confirmer les modalités d’enchère, le montant et la forme de la garantie à remettre avant d’enchérir (en saisie immobilière : 10 % de la mise à prix, 3 000 € au minimum, par chèque de banque ou caution bancaire), les frais annoncés et les délais applicables, dont celui de paiement du prix ?",
   },
   cadastre: {
     label: "Références cadastrales",
@@ -222,7 +222,7 @@ export function informationAgentQuestionText(
   }
   if (key === "sale_date" && context) {
     if (context.judicial) {
-      return `Pouvez-vous confirmer la date et l'heure de l'audience d'adjudication${
+      return `Pouvez-vous confirmer la date et l’heure de l’audience d’adjudication${
         context.venueMissing ? ", ainsi que le tribunal où elle se tient," : ""
       } et nous signaler tout report annoncé ?`;
     }

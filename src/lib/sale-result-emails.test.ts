@@ -182,7 +182,7 @@ describe("email de l'alerte de résultat", () => {
     const read = readEmailClickToken(new URL(url!).searchParams.get("token"), { now, env });
     expect(read?.claims).toMatchObject({ userId, kind: "result", target: "sale" });
     expect(emailClickPath(read!.claims)).toBe("/sales/a1b2c3d4-0000-4000-8000-000000000001");
-    expect(message.text).toContain("Voir l'annonce : ");
+    expect(message.text).toContain("Voir l’annonce : ");
   });
 
   it("garde un lien direct pour un identifiant de vente qui n'est pas un UUID", () => {
