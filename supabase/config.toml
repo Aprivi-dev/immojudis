@@ -21,6 +21,36 @@ enable_signup = true
 enable_confirmations = true
 double_confirm_changes = true
 
+# Emails d'authentification en français, au modèle unique des emails d'Immojudis. Les fichiers de
+# supabase/templates/ sont générés par src/lib/auth-email-templates.ts (le test
+# auth-email-templates.test.ts les vérifie). CE FICHIER N'EST PAS APPLIQUÉ À LA PRODUCTION et il ne
+# faut jamais lancer `supabase config push` : le propriétaire colle chaque gabarit et son objet dans
+# Supabase > Authentication > Emails (docs/runbooks/emails-authentification.md, qui donne aussi les
+# variantes de retour arrière avec {{ .ConfirmationURL }}).
+[auth.email.template.confirmation]
+subject = "Confirmez votre adresse email pour accéder à Immojudis"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Réinitialisation de votre mot de passe Immojudis"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.email_change]
+subject = "Confirmez votre nouvelle adresse email Immojudis"
+content_path = "./supabase/templates/email_change.html"
+
+[auth.email.template.invite]
+subject = "Invitation à rejoindre Immojudis"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.magic_link]
+subject = "Votre lien de connexion Immojudis"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.reauthentication]
+subject = "Votre code de confirmation Immojudis"
+content_path = "./supabase/templates/reauthentication.html"
+
 # TOTP second factor for the administrator account (P0-02, enrolment at /admin/securite).
 [auth.mfa.totp]
 enroll_enabled = true
