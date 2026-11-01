@@ -53,7 +53,7 @@ export function SiteFooter() {
             <Link
               href="/"
               prefetch={false}
-              className="inline-flex items-center gap-2 font-display text-xl font-semibold text-foreground"
+              className="inline-flex min-h-11 items-center gap-2 font-display text-xl font-semibold text-foreground"
             >
               <span aria-hidden className="inline-flex">
                 <BrandMark className="size-7" />
@@ -65,13 +65,13 @@ export function SiteFooter() {
             <p className="mt-1">Les enchères immobilières, en toute clarté.</p>
           </div>
           <nav aria-label="Navigation pied de page">
-            <ul className="flex flex-wrap gap-x-5 gap-y-2">
+            <ul className="flex flex-wrap gap-x-5">
               {MAIN_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
                     prefetch={false}
-                    className="hover:text-foreground hover:underline"
+                    className="inline-flex min-h-11 items-center hover:text-foreground hover:underline"
                   >
                     {link.label}
                   </Link>
@@ -82,13 +82,13 @@ export function SiteFooter() {
         </div>
         <nav aria-label="Transparence" className="border-t border-border pt-5">
           <p className="mb-2 font-semibold text-foreground">Transparence</p>
-          <ul className="flex flex-wrap gap-x-5 gap-y-2">
+          <ul className="flex flex-wrap gap-x-5">
             {TRANSPARENCY_LINKS.map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}
                   prefetch={false}
-                  className="hover:text-foreground hover:underline"
+                  className="inline-flex min-h-11 items-center hover:text-foreground hover:underline"
                 >
                   {link.label}
                 </Link>
@@ -101,13 +101,13 @@ export function SiteFooter() {
             © {new Date().getFullYear()} {entityName}
           </span>
           <nav aria-label="Informations légales">
-            <ul className="flex flex-wrap gap-x-5 gap-y-2">
+            <ul className="flex flex-wrap gap-x-5">
               {LEGAL_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
                     prefetch={false}
-                    className="hover:text-foreground hover:underline"
+                    className="inline-flex min-h-11 items-center hover:text-foreground hover:underline"
                   >
                     {link.label}
                   </Link>

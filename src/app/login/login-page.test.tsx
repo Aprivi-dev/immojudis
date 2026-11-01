@@ -38,6 +38,11 @@ import {
 } from "@/lib/launch-offer";
 import { LoginPage } from "./login-page";
 
+function fillName(first = "Claire", last = "Martin") {
+  fireEvent.change(screen.getByLabelText("Prénom"), { target: { value: first } });
+  fireEvent.change(screen.getByLabelText("Nom"), { target: { value: last } });
+}
+
 beforeEach(() => {
   mocks.search = {};
   mocks.launch = { active: false, pending: false };
@@ -87,6 +92,7 @@ describe("login page", () => {
     fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
       target: { value: "un-mot-de-passe-solide" },
     });
+    fillName();
     fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
     await waitFor(() => expect(mocks.signUp).toHaveBeenCalledTimes(1));
     const options = mocks.signUp.mock.calls[0][0].options.data;
@@ -110,10 +116,133 @@ describe("login page", () => {
     fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
       target: { value: "un-mot-de-passe-solide" },
     });
+    fillName();
     fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
     await waitFor(() => expect(mocks.signUp).toHaveBeenCalledTimes(1));
     await screen.findByText(/Un compte existe déjà avec cette adresse/);
     expect(mocks.track).not.toHaveBeenCalled();
+  });
+
+  function fillCredentials() {
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "nouvel.utilisateur@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+  }
+
+  it("demande un prénom et un nom, tous deux obligatoires, et les enregistre", async () => {
+    mocks.search = { mode: "investor" };
+    mocks.signUp.mockResolvedValue({ error: null });
+    render(<LoginPage />);
+    const first = screen.getByLabelText("Prénom") as HTMLInputElement;
+    const last = screen.getByLabelText("Nom") as HTMLInputElement;
+    expect(first.required).toBe(true);
+    expect(last.required).toBe(true);
+    fillCredentials();
+    fillName("  Claire ", " Martin  ");
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    await waitFor(() => expect(mocks.signUp).toHaveBeenCalledTimes(1));
+    const data = mocks.signUp.mock.calls[0][0].options.data;
+    expect(data.full_name).toBe("Claire Martin");
+    expect(data.first_name).toBe("Claire");
+    expect(data.last_name).toBe("Martin");
+  });
+
+  it("refuse une inscription sans prénom ou sans nom, et le dit sur le champ", async () => {
+    mocks.search = { mode: "investor" };
+    render(<LoginPage />);
+    fillCredentials();
+    const first = screen.getByLabelText("Prénom");
+    const last = screen.getByLabelText("Nom");
+
+    fillName("   ", "Martin");
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    let alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Renseignez votre prénom.");
+    expect(first.getAttribute("aria-invalid")).toBe("true");
+    expect(first.getAttribute("aria-describedby")).toBe(alert.id);
+    expect(document.activeElement).toBe(first);
+
+    // Un champ vide est déjà arrêté par la validation du navigateur (`required`) ; seul un nom fait
+    // d'espaces arrive jusqu'au contrôle du formulaire.
+    fillName("Claire", "  ");
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    await waitFor(() => expect(last.getAttribute("aria-invalid")).toBe("true"));
+    alert = screen.getByRole("alert");
+    expect(alert.textContent).toBe("Renseignez votre nom.");
+    expect(first.getAttribute("aria-invalid")).toBeNull();
+    expect(mocks.signUp).not.toHaveBeenCalled();
+  });
+
+  it("signale l'organisation manquante sur le champ, sans notification", async () => {
+    mocks.search = { mode: "professional" };
+    render(<LoginPage />);
+    fillCredentials();
+    fillName();
+    const organization = screen.getByPlaceholderText("Cabinet, étude, office, tribunal...");
+    fireEvent.change(organization, { target: { value: " A " } });
+    fireEvent.click(screen.getByRole("button", { name: "Demander mon accès pro" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Renseignez votre cabinet, étude, office ou tribunal.");
+    expect(organization.getAttribute("aria-invalid")).toBe("true");
+    expect(organization.getAttribute("aria-describedby")).toBe(alert.id);
+    expect(mocks.toastError).not.toHaveBeenCalled();
+    expect(mocks.signUp).not.toHaveBeenCalled();
+  });
+
+  it("garde le libellé « Professionnel » sur une ligne, dans une colonne plus large", () => {
+    render(<LoginPage />);
+    const professional = screen.getByRole("button", { name: "Professionnel" });
+    expect(professional.className).toContain("whitespace-nowrap");
+    expect(professional.className).toContain("px-2");
+    expect(professional.parentElement?.className).toContain("grid-cols-[1fr_1fr_1.3fr]");
+  });
+
+  it("dit une seule fois « sans carte bancaire » et fusionne le repère dans le chapô", () => {
+    mocks.search = { mode: "investor" };
+    render(<LoginPage />);
+    expect(screen.queryByText("Compte Découverte")).toBeNull();
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.textContent).toBe("Explorer gratuitement");
+    const description = heading.nextElementSibling as HTMLElement;
+    expect(description.textContent).toContain("Compte Découverte : consultez les fiches");
+    const promise = screen.getByTestId("login-free-promise");
+    const formText = document.querySelector("main")?.textContent ?? "";
+    // Mobile (promesse) et bureau (chapô) : un seul des deux est lu à une largeur donnée.
+    expect(promise.className).toContain("lg:hidden");
+    expect(description.querySelector("span")?.className).toContain("hidden lg:inline");
+    expect(formText).toContain("sans carte bancaire");
+  });
+
+  it("dit ce qui reste après les 7 jours d'essai : 3 déblocages, 1 alerte, 10 favoris", () => {
+    mocks.search = { mode: "investor" };
+    mocks.launch = { active: true, pending: false };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-after-trial").textContent).toBe(
+      "Après les 7 jours, votre compte reste gratuit en Découverte : 3 déblocages par mois, 1 alerte et 10 favoris.",
+    );
+  });
+
+  it("n'ajoute pas de ligne sur l'après-essai quand l'essai est fermé", () => {
+    mocks.search = { mode: "investor" };
+    render(<LoginPage />);
+    expect(screen.queryByTestId("login-after-trial")).toBeNull();
+    expect(screen.queryByTestId("login-trial-conditions")).toBeNull();
+  });
+
+  it("informe de l'usage du prénom et du nom à l'inscription seulement", () => {
+    mocks.search = { mode: "investor" };
+    const signup = render(<LoginPage />);
+    expect(signup.container.textContent).toContain(
+      "Votre prénom et votre nom servent à personnaliser votre compte",
+    );
+    signup.unmount();
+    mocks.search = {};
+    const login = render(<LoginPage />);
+    expect(login.container.textContent).not.toContain("Votre prénom et votre nom");
+    expect(screen.queryByLabelText("Prénom")).toBeNull();
   });
 
   it("sends the reason of the detour as the origin of a new sign-up", async () => {
@@ -126,6 +255,7 @@ describe("login page", () => {
     fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
       target: { value: "un-mot-de-passe-solide" },
     });
+    fillName();
     fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
     await waitFor(() => expect(mocks.track).toHaveBeenCalledTimes(1));
     expect(mocks.track).toHaveBeenCalledWith("signup_submitted", { entry: "exemple" });
@@ -180,6 +310,7 @@ describe("login page", () => {
     fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
       target: { value: "123456789012" },
     });
+    fillName();
     fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
     const alert = await screen.findByRole("alert");
     const description = screen
@@ -189,10 +320,51 @@ describe("login page", () => {
     expect(description).toContain(alert.id);
   });
 
+  it("affiche le refus de la base quand l'inscription est rejetée faute de prénom ou de nom", async () => {
+    mocks.search = { mode: "investor" };
+    const refusal = Object.assign(new Error("Database error saving new user"), {
+      status: 500,
+      code: "unexpected_failure",
+    });
+    mocks.signUp.mockResolvedValue({ data: null, error: refusal });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "a@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fillName();
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Vérifiez votre prénom et votre nom");
+    expect(alert.textContent).not.toContain("Database error");
+  });
+
+  it("affiche tel quel le message détaillé du déclencheur quand l'API le renvoie", async () => {
+    mocks.search = { mode: "investor" };
+    const detailed = "Le prénom et le nom sont obligatoires pour créer un compte.";
+    mocks.signUp.mockResolvedValue({
+      data: null,
+      error: Object.assign(new Error(detailed), { status: 500 }),
+    });
+    render(<LoginPage />);
+    fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+      target: { value: "a@example.test" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+      target: { value: "un-mot-de-passe-solide" },
+    });
+    fillName();
+    fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+    expect((await screen.findByRole("alert")).textContent).toContain(detailed);
+  });
+
   it("propose l'autocomplétion du nom et de l'organisation à l'inscription", () => {
     mocks.search = { mode: "professional" };
     render(<LoginPage />);
-    expect(screen.getByPlaceholderText("Prénom Nom").getAttribute("autocomplete")).toBe("name");
+    expect(screen.getByLabelText("Prénom").getAttribute("autocomplete")).toBe("given-name");
+    expect(screen.getByLabelText("Nom").getAttribute("autocomplete")).toBe("family-name");
     expect(
       screen
         .getByPlaceholderText("Cabinet, étude, office, tribunal...")
@@ -364,7 +536,7 @@ describe("login page", () => {
       "Inscription gratuite : 7 jours d’accès à l’offre Analyse, sans carte bancaire ni prélèvement ensuite.",
     );
     expect(promise.querySelector("p")?.textContent).toBe(LAUNCH_OFFER_SIGNUP_LINE);
-    const conditions = promise.querySelector("details");
+    const conditions = screen.getByTestId("login-trial-conditions") as HTMLDetailsElement;
     expect(conditions?.open).toBe(false);
     expect(conditions?.querySelector("summary")?.textContent).toBe("Conditions de l’essai gratuit");
     expect(conditions?.textContent).toContain(LAUNCH_OFFER_DURATION_TEXT);
@@ -411,7 +583,7 @@ describe("login page", () => {
     mocks.search = { mode: "investor" };
     const closed = render(<LoginPage />);
     expect(closed.container.textContent).toContain(
-      "tarif prévu : 59 € TTC / mois, pas encore souscriptible",
+      "tarif prévu : 59\u00a0€\u00a0TTC / mois, pas encore souscriptible",
     );
     expect(closed.container.textContent).not.toContain("sur abonnement résiliable");
     closed.unmount();
@@ -422,7 +594,7 @@ describe("login page", () => {
       "À l’inscription, l’offre Analyse est offerte pendant 7 jours",
     );
     // Pendant l'essai à l'inscription, la page d'inscription ne met pas le tarif en avant.
-    expect(active.container.textContent).not.toContain("59 €");
+    expect(active.container.textContent).not.toMatch(/59[ \u00a0]€/);
     expect(active.container.textContent).not.toContain("sur abonnement résiliable");
   });
 
@@ -480,6 +652,7 @@ describe("login page", () => {
       fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
         target: { value: "un-mot-de-passe-solide" },
       });
+      fillName();
       fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
       return screen.findByRole("status");
     }
@@ -612,6 +785,7 @@ describe("login page", () => {
       fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
         target: { value: "un-mot-de-passe-solide" },
       });
+      fillName();
       fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
       await waitFor(() => expect(mocks.signUp).toHaveBeenCalled());
       expect(screen.queryByRole("status")).toBeNull();

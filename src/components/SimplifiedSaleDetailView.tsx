@@ -793,6 +793,13 @@ function SaleDetailWorkspace({
     document.getElementById("annonce-sections")?.scrollIntoView?.({ block: "start" });
   };
 
+  // L'adresse garde l'ancre : la fiche débloquée, montée à la place de la fiche gratuite, la relit.
+  const showCalculation = () => {
+    window.history.pushState(null, "", "#calculation");
+    setActiveTab("estimation");
+    setAnchorVisit((current) => current + 1);
+  };
+
   const handleSectionLink = (event: ReactMouseEvent<HTMLElement>) => {
     const origin = event.target;
     if (!(origin instanceof Element)) return;
@@ -902,7 +909,11 @@ function SaleDetailWorkspace({
                 pepite: pepite != null,
               }}
               announce={justUnlocked}
-              onUnlocked={(result) => onSaleUnlocked?.(result)}
+              onUnlocked={(result) => {
+                onSaleUnlocked?.(result);
+                // Le plafond est ce que le déblocage ouvre : on y va, la confirmation reste en haut.
+                if (ceilingTerms) showCalculation();
+              }}
             />
           ) : null}
           {!publicDemo && user ? (
@@ -1489,6 +1500,7 @@ function SaleDetailWorkspace({
                 : "Mise à prix"
           }
           price={startingPrice}
+          ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}
           action={
             activeTab === "estimation" && heroAction.href === "#calculation" ? null : heroAction
           }

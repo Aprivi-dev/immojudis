@@ -27,6 +27,7 @@ import {
   scenarioExplanation,
   WORKS_LABEL,
 } from "./example-verdict-text";
+import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import { useCountTo } from "./use-count-to";
 import { useDemoLoop } from "./use-demo-loop";
 import styles from "./HomePage.module.css";
@@ -140,7 +141,9 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
     },
     {
       title: `${formatNumber(data.comparables)} ventes à moins de ${formatNumber(data.radiusM)} m`,
-      detail: `Médiane ${formatNumber(data.medianPricePerM2)} €/m², ${formatNumber(data.yearsBack)} ans de DVF`,
+      detail: nonBreakingUnits(
+        `Médiane ${formatNumber(data.medianPricePerM2)} €/m², ${formatNumber(data.yearsBack)} ans de DVF`,
+      ),
     },
     ...(data.sameBuilding
       ? [
@@ -151,8 +154,10 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
         ]
       : []),
     {
-      title: `Mise à prix ${formatNumber(data.startingGapPct)} % sous le marché`,
-      detail: `${formatNumber(data.startingPricePerM2)} €/m² contre ${formatNumber(data.medianPricePerM2)} €/m²`,
+      title: nonBreakingUnits(`Mise à prix ${formatNumber(data.startingGapPct)} % sous le marché`),
+      detail: nonBreakingUnits(
+        `${formatNumber(data.startingPricePerM2)} €/m² contre ${formatNumber(data.medianPricePerM2)} €/m²`,
+      ),
     },
     {
       title: "Occupation à confirmer",
@@ -282,7 +287,7 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
               </span>
             </div>
             <p className={styles.gaugeAxis} aria-hidden>
-              <span>0 €</span>
+              <span>0&nbsp;€</span>
               <span>Fourchette d’estimation</span>
             </p>
             {scenario ? <p className={styles.tryWhy}>{scenarioExplanation(scenario)}</p> : null}

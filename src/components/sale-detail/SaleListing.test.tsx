@@ -473,6 +473,29 @@ describe("readable listing sections", () => {
     expect(screen.getByText("Carte")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Explorer le quartier" })).toBeTruthy();
     expect(screen.getByText(/Localisation indicative/)).toBeTruthy();
+    // Position à l'adresse et sans signalement : rien de plus à dire.
+    expect(screen.queryByTestId("location-position-note")).toBeNull();
+  });
+  it("dit « Centre de la commune » quand la position n'est que celle de la commune", () => {
+    render(<ListingLocation sale={item({ location_precision: "municipality" })} />);
+    expect(screen.getByTestId("location-position-note").textContent).toBe("Centre de la commune");
+  });
+  it("dit « Position à vérifier » quand la position n'a pas pu être recoupée avec la source", () => {
+    render(<ListingLocation sale={item({ quality_flags: ["unverified_source_coordinates"] })} />);
+    expect(screen.getByTestId("location-position-note").textContent).toBe("Position à vérifier");
+  });
+  it("cumule les deux mentions, et n'en ajoute pas sans coordonnées", () => {
+    const flagged = item({
+      location_precision: "municipality",
+      quality_flags: ["unverified_source_coordinates"],
+    });
+    const view = render(<ListingLocation sale={flagged} />);
+    expect(screen.getByTestId("location-position-note").textContent).toBe(
+      "Centre de la commune · Position à vérifier",
+    );
+    view.unmount();
+    render(<ListingLocation sale={{ ...flagged, latitude: NaN }} />);
+    expect(screen.queryByTestId("location-position-note")).toBeNull();
   });
 });
 
@@ -561,7 +584,7 @@ describe("SaleDetailHeading", () => {
   it("gives the same short title and line as the public page", () => {
     render(<SaleDetailHeading sale={item()} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Appartement de 68 m² à Bordeaux",
+      "Appartement de 68\u00a0m² à Bordeaux",
     );
     expect(
       screen.getByText(/^Vente au tribunal · Gironde \(33\) · audience le 15 octobre 2026/),
@@ -571,7 +594,7 @@ describe("SaleDetailHeading", () => {
   it("marque le titre de l'annonce exemple comme fictif, jamais celui d'une vente réelle", () => {
     const { unmount } = render(<SaleDetailHeading sale={item()} publicDemo />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Appartement de 68 m² à Bordeaux (exemple fictif)",
+      "Appartement de 68\u00a0m² à Bordeaux (exemple fictif)",
     );
     unmount();
     render(<SaleDetailHeading sale={item()} />);
@@ -594,7 +617,7 @@ describe("SaleDetailHeading", () => {
         aiReviewProjections={[blocked("property.city"), blocked("sale.sale_date")]}
       />,
     );
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appartement de 68 m²");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appartement de 68\u00a0m²");
     const line = screen.getByText(/^Vente au tribunal ·/).textContent ?? "";
     expect(line).not.toContain("octobre");
     expect(line).toContain("localisation à confirmer");
