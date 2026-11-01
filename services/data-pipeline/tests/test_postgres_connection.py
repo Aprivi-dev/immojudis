@@ -221,6 +221,7 @@ def test_public_connect_keeps_the_private_connection_behaviour(fake_psycopg) -> 
         "connect_timeout": 3,
         "prepare_threshold": None,
         **supabase_client.POSTGRES_KEEPALIVE_OPTIONS,
+        "sslmode": "require",
         "options": "-c statement_timeout=0",
     }
 

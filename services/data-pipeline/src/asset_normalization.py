@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
+from src.app_surface_withholding import withhold_ambiguous_app_surface
 from src.models import AuctionSale
 from src.normalize import (
     SURFACE_VALUE_PATTERN,
@@ -226,6 +227,7 @@ def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
     text = _sale_text(sale)
     if not text:
         _fill_quality_flags(sale)
+        withhold_ambiguous_app_surface(sale)
         _score_sale(sale, [])
         sale.title = build_display_title(sale)
         return sale
@@ -238,6 +240,7 @@ def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
     _clear_scoped_feature_false_positives(sale, text)
     risks = extract_risks(sale)
     _fill_quality_flags(sale)
+    withhold_ambiguous_app_surface(sale)
     _score_sale(sale, risks)
     _write_asset_payload(sale, risks)
     sale.title = build_display_title(sale)

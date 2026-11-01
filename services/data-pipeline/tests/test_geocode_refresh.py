@@ -81,7 +81,8 @@ def test_a_commune_result_found_before_the_street_is_geocoded_again(ban) -> None
     geocode_sale(sale)
 
     assert [call["query"] for call in calls] == [NIMES_ADDRESS]
-    assert calls[0]["postcode"] == "30000"
+    # 30000 est un code postal générique (fini par 000) : pas de filtre ``postcode``.
+    assert calls[0]["postcode"] is None
     assert (sale.latitude, sale.longitude) == (Decimal("43.836109"), Decimal("4.361307"))
     assert sale.raw_payload["geo_precision"] == "address"
     assert sale.raw_payload["geocode"]["query"] == NIMES_ADDRESS
