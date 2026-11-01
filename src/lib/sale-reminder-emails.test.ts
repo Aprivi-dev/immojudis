@@ -86,7 +86,7 @@ describe("email des rappels d'audience", () => {
     expect(message.text).toContain("Audience : mardi 10 novembre 2026 à 14 h 00");
     expect(message.text).toContain("à vérifier auprès de l’avocat poursuivant");
     expect(message.html).toContain("à vérifier auprès de l’avocat poursuivant");
-    expect(message.html).toContain("Voir l'annonce");
+    expect(message.html).toContain("Voir l’annonce");
     expect(message.html).toContain("Ajouter à mon agenda");
     // Les deux liens passent par la redirection de suivi signée (point 65) : ils mènent à la fiche et
     // au fichier de la vente, dont l'identifiant est en minuscules comme l'adresse canonique.

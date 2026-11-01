@@ -27,7 +27,7 @@ const values = {
 describe("information agent email content template", () => {
   it("la question sur les modalités distingue la garantie pour enchérir du paiement du prix (art. R. 322-41)", () => {
     const question = INFORMATION_AGENT_QUESTIONS.sale_terms.question;
-    expect(question).toContain("la garantie à remettre avant d'enchérir");
+    expect(question).toContain("la garantie à remettre avant d’enchérir");
     expect(question).toContain("10 % de la mise à prix, 3 000 € au minimum");
     expect(question).toContain("chèque de banque ou caution bancaire");
     expect(question).toContain("dont celui de paiement du prix");
