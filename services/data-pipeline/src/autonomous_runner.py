@@ -600,12 +600,14 @@ PDF_PHOTOS_BUDGET_SECONDS = 6 * 60
 def _run_pdf_photos(env: dict[str, str]) -> int:
     """Bounded « photos des pièces jointes » pass after the enrichment queue (src.pdf_photos).
 
-    Three sales per tick at most (nearest sale dates first): their cahier des charges or procès-verbal is read in a
+    25 sales per tick at most (nearest sale dates first); the 180 s budget is the real bound. On 02/11/2026 three sales
+    (six court-sale specifications, scanned text without photos) took 10 s of the 180: at three per tick the 9 photos of
+    a tender read months ahead would have waited days. Each document is read in a
     process without secrets and the photos of the property it holds (maps, logos and diagrams left out) are added to
     the sale's gallery. 180 s of work, so the slowest document still ends well inside the 6-minute timeout. Optional
     like the document reading: its exit code is reported in the run summary and never changes the run status.
     """
-    command = [sys.executable, '-m', 'src.pdf_photos', '--max-sales', '3', '--budget-seconds', '180']
+    command = [sys.executable, '-m', 'src.pdf_photos', '--max-sales', '25', '--budget-seconds', '180']
     try:
         result = subprocess.run(command, env=env, timeout=PDF_PHOTOS_BUDGET_SECONDS, check=False)
         return int(result.returncode)
