@@ -4,9 +4,15 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 // Configuration d'envoi de l'agent et garde-fous d'environnement (interrupteur, canari). Extraits
 // de `information-agent.ts` sans changement de comportement.
 
+/** Motifs d'environnement que la simulation du pilote tolère (elle n'envoie jamais). */
+export const INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE =
+  "Envoi de l’agent désactivé pendant la phase de validation.";
+export const INFORMATION_AGENT_CANARY_ONLY_MESSAGE =
+  "Envoi limité à l'adresse de test du fournisseur pendant l'essai canari.";
+
 export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {
   if (env.INFORMATION_AGENT_OUTBOUND_ENABLED !== "true") {
-    throw new Error("Envoi de l’agent désactivé pendant la phase de validation.");
+    throw new Error(INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE);
   }
 }
 
@@ -17,7 +23,7 @@ export function assertInformationAgentCanaryRecipient(
 ): void {
   if (env.INFORMATION_AGENT_OUTBOUND_CANARY_ONLY === "false") return;
   if (email.trim().toLowerCase() !== "delivered@resend.dev") {
-    throw new Error("Envoi limité à l'adresse de test du fournisseur pendant l'essai canari.");
+    throw new Error(INFORMATION_AGENT_CANARY_ONLY_MESSAGE);
   }
 }
 

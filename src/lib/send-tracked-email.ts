@@ -16,12 +16,12 @@ import { GENERIC_LOG_SUBJECTS, type SentTemplateKey } from "@/lib/email-template
  * - Aucun corps n'est enregistré. L'objet est remplacé par un objet générique pour les gabarits
  *   personnalisés avec des données de tiers (`GENERIC_LOG_SUBJECTS`).
  */
-export type TrackedEmailMode = "on" | "internal" | "test" | "manual";
+export type TrackedEmailMode = "on" | "internal" | "test" | "manual" | "autopilot";
 
 export type SendTrackedEmailInput = Parameters<typeof sendResendEmail>[0] & {
   /** Clé du gabarit dans le registre (`src/lib/email-templates`). */
   templateKey: SentTemplateKey;
-  /** `on` (défaut) : envoi normal ; `internal` : adresse interne ; `test` : essai ; `manual` : déclenché à la main. */
+  /** `on` (défaut) : envoi normal ; `internal` : adresse interne ; `test` : essai ; `manual` : déclenché à la main ; `autopilot` : envoi du pilote automatique de l'agent. */
   mode?: TrackedEmailMode;
   /** Compte destinataire, quand le destinataire en a un. La ligne est effacée avec lui. */
   userId?: string | null;
