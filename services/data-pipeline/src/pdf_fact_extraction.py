@@ -31,6 +31,7 @@ from src.normalize import (
     source_sale_timezone,
     strip_accents,
 )
+from src.pdf_address import apply_pdf_address
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
     _canonical_document_type,
@@ -236,6 +237,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             sale.visit_dates = list(visit_dates["visit_dates"])
             sale.raw_payload["pdf_visit_dates_extraction"] = visit_dates
             _pdf_record_fact_projection(sale, ["visit_dates"], candidate=visit_dates, payload_keys=("pdf_visit_dates_extraction",))
+    apply_pdf_address(sale, pdf_texts)
     # The per-document extractor also handles plain string inputs. Do not fall
     # back to the sale-wide concatenation: class/value pairs from different
     # PDFs or pages are not one DPE record.

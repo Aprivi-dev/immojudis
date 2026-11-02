@@ -537,6 +537,29 @@ def count_absent_inventories(db, run_id: str, source: str) -> None:
 
 
 DOCUMENT_READING_BUDGET_SECONDS = 5 * 60
+DOCUMENT_BACKLOG_BUDGET_SECONDS = 10 * 60
+
+
+def _run_document_backlog(env: dict[str, str]) -> int:
+    """Bounded catch-up of unread attachments after the enrichment queue (src.document_backlog).
+
+    A PDF job is created only when a sale is republished, and one that exhausted its retries is never
+    queued again: until 02/11/2026 only a manual run read those attachments (Cessions de l'État: 37 of
+    51 live sales unread). Six sales per tick, each retried at most once a day; the AI reading that
+    follows this step reads the texts, so the drain does not run its own. Optional like the reading:
+    its exit code is reported in the run summary and never changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.document_backlog', '--max-sales', '6', '--budget-minutes', '8']
+    try:
+        result = subprocess.run(
+            command,
+            env={**env, 'DOCUMENT_READING_ENABLED': 'false'},
+            timeout=DOCUMENT_BACKLOG_BUDGET_SECONDS,
+            check=False,
+        )
+        return int(result.returncode)
+    except Exception:
+        return 1
 
 
 def _run_document_reading(env: dict[str, str]) -> int:
@@ -679,6 +702,7 @@ def execute(run_id: str) -> int:
             'see the "WATCHDOG" line and the stage journal in the job log'
         )
     worker_code = code
+    backlog_code = _run_document_backlog(env) if source == 'enrichment-queue' and worker_code == 0 else None
     reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
     # Like the document reading: a failed worker leaves the catalogue in an unknown state, the positions wait for the next tick.
     positions_code = _run_address_positions(env) if source == 'enrichment-queue' and worker_code == 0 else None
@@ -699,6 +723,8 @@ def execute(run_id: str) -> int:
                    "worker_exit_code": SOURCE_WARNING_EXIT_CODE if source_warning else worker_code}
         if source_warning:
             summary["source_warning"] = True
+        if backlog_code is not None:
+            summary["document_backlog_exit_code"] = backlog_code
         if reading_code is not None:
             summary["document_reading_exit_code"] = reading_code
         if positions_code is not None:

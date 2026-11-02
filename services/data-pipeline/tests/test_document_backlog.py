@@ -36,10 +36,15 @@ def test_limits_are_validated_and_clamped() -> None:
 
 def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
     sql = " ".join(backlog.CANDIDATES_SQL.split())
-    # Sales with documents never tried first, then the soonest sale.
+    # Sales with documents never tried first, then the soonest sale; an undated sale (State tender whose
+    # deadline is only in its documents) counts as ending within a week instead of coming last.
     assert "order by (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0)," in sql
-    assert "(s.sale_date is null), s.sale_date" in sql
+    assert "coalesce(s.sale_date, now() + interval '7 days')," in sql
+    assert "(s.sale_date is null), s.sale_date" not in sql
     assert "(s.sale_date is null or s.sale_date >= now())" in sql
+    # Run after every enrichment tick: a sale tried within a day waits, so a failing document is not
+    # downloaded again each time.
+    assert "a.job_type = 'pdf' and a.updated_at >= now() - interval '1 day'" in sql
     # A document read except for a few pages ("partial") is settled.
     assert "not in ('extracted', 'empty', 'partial')" in sql
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
