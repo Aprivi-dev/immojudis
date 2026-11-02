@@ -1,9 +1,19 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { resolveTransactionalEmailConfig, type ResendEmailMessage } from "@/lib/email-alerts";
+import {
+  resolveNoReplyEmailConfig,
+  resolveTransactionalEmailConfig,
+  type ResendEmailMessage,
+} from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
-import { emailButton, emailLayout, emailLink, emailParagraph } from "@/lib/email-layout";
+import {
+  emailButton,
+  emailLayout,
+  emailLink,
+  emailNoReplyText,
+  emailParagraph,
+} from "@/lib/email-layout";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
 
 const dateFormat = new Intl.DateTimeFormat("fr-FR", {
@@ -33,12 +43,20 @@ function billingEmail({
   title,
   preheader,
   content,
+  noReply = false,
 }: {
   title: string;
   preheader: string;
   content: string[];
+  /** Message automatique : ajoute la mention « ne pas répondre » au pied. */
+  noReply?: boolean;
 }): string {
-  return emailLayout({ title, preheader, content: content.join(""), footer: {} });
+  return emailLayout({
+    title,
+    preheader,
+    content: content.join(""),
+    footer: noReply ? { noReply: true } : {},
+  });
 }
 
 export function buildPaymentFailedMessage({
@@ -182,14 +200,19 @@ export function buildTrialEndingMessage({
     "",
     "Cordialement,",
     "L’équipe Immojudis",
+    "",
+    emailNoReplyText(),
   ];
   return {
     from,
     to,
+    // Message automatique : aucune adresse de réponse.
+    replyTo: null,
     // The date, not a fixed « dans 3 jours » : the event may arrive earlier or later.
     subject,
     text: lines.join("\n"),
     html: billingEmail({
+      noReply: true,
       title: subject,
       preheader: `Votre essai gratuit d'Immojudis Analyse se termine le ${endDate}.`,
       content: [
@@ -215,7 +238,8 @@ export async function sendTrialEndingNotice({
   subscriptionId: string;
   trialEnd: number;
 }): Promise<"sent" | "skipped" | "failed"> {
-  const config = resolveTransactionalEmailConfig();
+  // Message automatique « ne pas répondre » ; sans NOREPLY_EMAIL_FROM, l'expéditeur de la facturation, comme avant.
+  const config = resolveNoReplyEmailConfig(process.env, resolveTransactionalEmailConfig());
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) return "skipped";
   try {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);

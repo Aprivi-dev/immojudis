@@ -5,6 +5,7 @@ import { addressDomain, buildAddressRows } from "./senders";
 
 const EMPTY: EmailAddressEnv = {
   ALERT_EMAIL_FROM: undefined,
+  NOREPLY_EMAIL_FROM: undefined,
   RESEND_FROM_EMAIL: undefined,
   TRANSACTIONAL_EMAIL_FROM: undefined,
   INFORMATION_AGENT_EMAIL_FROM: undefined,
@@ -65,6 +66,24 @@ describe("expéditeurs effectifs", () => {
     });
   });
 
+  it("replie l'expéditeur « ne pas répondre » sur celui des alertes tant que la variable n'est pas posée", () => {
+    const fallback = rows({ ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.com>" });
+    expect(fallback.NOREPLY_EMAIL_FROM).toMatchObject({
+      value: "Immojudis <alertes@immojudis.com>",
+      origin: "fallback",
+      fallbackFrom: "ALERT_EMAIL_FROM",
+    });
+    const configured = rows({
+      ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.com>",
+      NOREPLY_EMAIL_FROM: "Immojudis <ne-pas-repondre@immojudis.com>",
+    });
+    expect(configured.NOREPLY_EMAIL_FROM).toMatchObject({
+      value: "Immojudis <ne-pas-repondre@immojudis.com>",
+      origin: "configured",
+      domain: "immojudis.com",
+    });
+  });
+
   it("ne replie ni l'agent ni le formulaire de contact sur l'expéditeur des alertes", () => {
     const result = rows({ ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.com>" });
     expect(result.INFORMATION_AGENT_EMAIL_FROM.value).toBeNull();
@@ -94,10 +113,25 @@ describe("expéditeurs effectifs", () => {
 
   it("dit quels gabarits utilisent chaque expéditeur", () => {
     const result = rows({});
-    expect(result.ALERT_EMAIL_FROM.usedBy).toContain("Alerte de recherche");
-    expect(result.TRANSACTIONAL_EMAIL_FROM.usedBy).toEqual(
-      expect.arrayContaining(["Paiement échoué", "Confirmation de commande"]),
+    // Emails automatiques : expéditeur « ne pas répondre » ; messages avec réponse : expéditeur transactionnel.
+    expect(result.NOREPLY_EMAIL_FROM.usedBy).toEqual(
+      expect.arrayContaining([
+        "Alerte de recherche",
+        "Fin de l’essai de l’abonnement",
+        "Ouverture de l’offre Analyse",
+      ]),
     );
+    expect(result.NOREPLY_EMAIL_FROM.usedBy).not.toContain("Paiement échoué");
+    expect(result.ALERT_EMAIL_FROM.usedBy).not.toContain("Alerte de recherche");
+    expect(result.TRANSACTIONAL_EMAIL_FROM.usedBy).toEqual(
+      expect.arrayContaining([
+        "Paiement échoué",
+        "Confirmation de commande",
+        "Mise en relation avec un avocat",
+      ]),
+    );
+    // Seuls les messages de l'expéditeur transactionnel portent l'adresse de réponse.
+    expect(result.EMAIL_REPLY_TO.usedBy).toEqual(result.TRANSACTIONAL_EMAIL_FROM.usedBy);
     expect(result.INFORMATION_AGENT_EMAIL_FROM.usedBy).toHaveLength(2);
     expect(result.CONTACT_EMAIL_FROM.usedBy).toEqual(["Message du formulaire de contact"]);
   });

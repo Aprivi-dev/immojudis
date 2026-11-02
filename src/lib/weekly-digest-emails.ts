@@ -10,6 +10,7 @@ import {
   emailHeading,
   emailLayout,
   emailLink,
+  emailNoReplyText,
   emailParagraph,
   emailSaleCard,
 } from "@/lib/email-layout";
@@ -192,11 +193,15 @@ export function buildWeeklyDigestMessage({
     "Vous recevez ce message parce que vous avez activé le récapitulatif hebdomadaire « Ma semaine » dans votre compte.",
     `Se désinscrire du récapitulatif : ${unsubscribeUrl}`,
     `Gérer mes notifications : ${settingsUrl}`,
+    "",
+    emailNoReplyText(),
   );
 
   return {
     from,
     to: recipientEmail,
+    // Message automatique : aucune adresse de réponse.
+    replyTo: null,
     subject,
     text: textLines.join("\n"),
     html: buildWeeklyDigestHtml({
@@ -343,6 +348,7 @@ function buildWeeklyDigestHtml({
       }),
     ].join(""),
     footer: {
+      noReply: true,
       reason:
         "Vous recevez ce message parce que vous avez activé le récapitulatif hebdomadaire « Ma semaine ».",
       links: [

@@ -1,6 +1,7 @@
 import "server-only";
 import { renderTrialEndEmail } from "../../emails/trial-end";
 import type { ResendEmailMessage } from "@/lib/email-alerts";
+import { emailNoReplyText } from "@/lib/email-layout";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import {
   LAUNCH_OFFER_END_NEEDS_ANALYSIS,
@@ -112,11 +113,15 @@ export async function buildTrialEndMessage({
     "Vous recevez ce message parce que votre compte Immojudis est en essai gratuit. Une seule fois, pour cet essai.",
     `Mon compte : ${settingsUrl}`,
     `Ne plus recevoir ce message : ${unsubscribeUrl}`,
+    "",
+    emailNoReplyText(),
   ].join("\n");
 
   return {
     from,
     to: recipientEmail,
+    // Message automatique : aucune adresse de réponse.
+    replyTo: null,
     subject: trialEndSubject(endsAt, internal),
     html,
     text,

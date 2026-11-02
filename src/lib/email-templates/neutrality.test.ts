@@ -15,16 +15,24 @@ import { EMAIL_TEMPLATES } from "./registry";
  * registre inchangé. Si un texte change volontairement (par exemple au lot 5), mettre ces empreintes à jour
  * dans le commit qui le change, avec sa justification : ce test n'est pas un instantané à régénérer sans
  * lire la différence.
+ *
+ * Mise à jour explicite du 02/11/2026 (emails « ne pas répondre ») : les empreintes de alert, sale_reminder,
+ * weekly_digest, sale_result, trial_end, offer_opening et trial_ending ont changé, et SEULEMENT celles-là.
+ * Comparées à `origin/main`, ces sept rendus ne diffèrent que par l'ajout de la phrase du pied (« Message
+ * automatique, merci de ne pas y répondre. Pour nous écrire : contact@immojudis.com », HTML et texte) et
+ * l'espace de 8 px sous le paragraphe qui la précède ; trial_ending reçoit en plus la cellule de pied qui
+ * la porte. Les empreintes des huit autres gabarits (paiement échoué, résiliation, mise en relation, incident,
+ * relecture des réponses, agent d'information) sont celles d'avant.
  */
 const BASELINE: Record<string, string> = {
-  alert: "02103b2ae97b91cb2f51e3fa221b48b801e3b38580f60ff1b6df5a8626c1390e",
-  sale_reminder: "cdde2479b1813978a5d436e4a8da749f72420f7a2302f7c766c662aeead721eb",
-  weekly_digest: "828f96b9afa722c97a70c326c118d6cb00e75cf5b34c1cbce7cca6c6ad18cb9e",
-  sale_result: "f5337ec7611d4312f1de783fb44150d79e36089bbf0f7162d01df1d70fdbc2cb",
-  trial_end: "4b5ff99fdf25c086426121af4720eff62d5454d7b531847311cb8238cb863cd7",
-  offer_opening: "c1757d393e2253858c0d63134fad610e55c0e76ff4e5ca06224f436ada305f50",
+  alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
+  sale_reminder: "89b4e771c33a8e3ba65dd0013af35fd14e355bcf0626bbd58ad5b14cf867a4ce",
+  weekly_digest: "da2f3c451922e5683f5c531a57099c45b57c16becd516aa0b6defd7d3961e19e",
+  sale_result: "7c64c7e5a5b08e1b888fefc460c6759d69c12c695d60bfba30f5d585e1d96d3f",
+  trial_end: "e7f7fb729ad19574aad28e648a91bcdf5d5cbac4f872c73b770f5bb95c67b012",
+  offer_opening: "33f6b0d764b9bb7b9e611de5250b6ac1cff11fd47139ace9da41154322d17f47",
   payment_failed: "a7cf5adb71220d3a7e3125032c3f5b22a82cbb7d713b29bb11b52c13352c4a40",
-  trial_ending: "100b48368cae51488f5aceb88548f7aeabc6f1e06a8f6561f5d01a7674f30da3",
+  trial_ending: "40d19feefa61fd75b6075103ed2ff7229ddf5a73988c9f8495ad619ff3fc9f13",
   cancellation: "2eb50b198be9349501148ada5fcaa716f796b516f3c1b001ec9d636d14220bb2",
   lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",

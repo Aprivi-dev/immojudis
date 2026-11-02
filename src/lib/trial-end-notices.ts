@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { errorDetailForLog } from "@/lib/api-errors";
 import {
   readUserEmail,
-  resolveEmailAlertDeliveryConfig,
+  resolveNoReplyEmailConfig,
   type EmailAlertDeliveryConfig,
 } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
@@ -152,7 +152,7 @@ export async function runTrialEndNotices({
   mode = trialEndEmailMode(),
   now = new Date(),
   fetchImpl = fetch,
-  config = resolveEmailAlertDeliveryConfig(),
+  config = resolveNoReplyEmailConfig(),
   budgetMs = TRIAL_END_BUDGET_MS,
 }: {
   mode?: EmailFeatureMode;
