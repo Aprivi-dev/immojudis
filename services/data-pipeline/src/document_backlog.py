@@ -8,7 +8,8 @@ job is created only when a sale is republished: in practice most attachments
 were never read. This runner only does document work:
 
 * it selects actionable sales whose attachments are not read yet, upcoming
-  sales first (soonest sale date), then sales with useful pending documents
+  sales first (soonest sale date; an undated sale counts as ending within a
+  week), then sales with useful pending documents
   (conditions of sale, descriptive report, diagnostics, cadastre/urbanism);
 * it (re)queues the sale's current PDF job generation, including a completed,
   cancelled or retry-exhausted one (the manual run is the explicit retry);
@@ -128,8 +129,11 @@ select s.source_url, s.source_name, s.sale_date,
        )
  -- Documents never tried come first: a sale whose only unread documents
  -- already failed (and will likely fail again) must not starve them.
+ -- A sale without a date ranks as if it ended within a week: for a State tender (Cessions de
+ -- l'État) the offer deadline is only in the conditions of sale, so ranking it last left its
+ -- attachments unread for weeks (02/11/2026: 36 of 41 such sales).
  order by (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0),
-          (s.sale_date is null), s.sale_date, coalesce(p.useful_pending, 0) desc, s.source_url
+          coalesce(s.sale_date, now() + interval '7 days'), coalesce(p.useful_pending, 0) desc, s.source_url
  limit %s
 """
 
