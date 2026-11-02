@@ -146,7 +146,7 @@ export async function assertInformationAgentAddressDeliverable(
   if (issue) throw new Error(INFORMATION_AGENT_ADDRESS_HYGIENE_MESSAGES[issue]);
   const status = await checkMailDomain(mailDomainOf(email), { resolver: deps.resolver });
   if (status === "no_mail") throw new Error(INFORMATION_AGENT_NO_MAIL_DOMAIN_MESSAGE);
-  let bounces = 0;
+  let bounces: number;
   try {
     bounces = await (deps.countTemporaryBounces ?? countRecentTemporaryBounces)(email);
   } catch {
