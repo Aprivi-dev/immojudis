@@ -376,6 +376,8 @@ export async function runInformationAgentAutopilot(
     const safety = evaluateAutopilotSafety(stats);
     summary.warnings = safety.warnings;
     for (const code of KNOWN_WARNINGS) await deps.warning(code, safety.warnings.includes(code));
+    // Le pilote tourne : l'alerte critique d'un arrêt automatique précédent (réactivé à la main) se referme.
+    await deps.warning("auto_stop", false);
     if (safety.stop) {
       await deps.autoStop(safety.stop.code, { examined: stats.autopilotTotal });
       return finish("stopped", safety.stop.code);

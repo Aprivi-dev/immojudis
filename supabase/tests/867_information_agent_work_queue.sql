@@ -179,12 +179,12 @@ select throws_ok(
   $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
   '55000', null, 'a test case that was never sent is not a proof'
 );
-update public.information_agent_cases set sent_at = now() - interval '2 hours', normalized_recipient_email = 'roundtrip-test@gmail.com' where id = '86700000-2000-4000-8000-0000000000c1';
+update public.information_agent_cases set sent_at = now() - interval '2 hours', recipient_email = 'roundtrip-test@gmail.com', normalized_recipient_email = 'roundtrip-test@gmail.com' where id = '86700000-2000-4000-8000-0000000000c1';
 select throws_ok(
   $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
   '55000', null, 'a consumer mail domain is not an internal domain'
 );
-update public.information_agent_cases set normalized_recipient_email = 'roundtrip-test@immojudis.com' where id = '86700000-2000-4000-8000-0000000000c1';
+update public.information_agent_cases set recipient_email = 'roundtrip-test@immojudis.com', normalized_recipient_email = 'roundtrip-test@immojudis.com' where id = '86700000-2000-4000-8000-0000000000c1';
 
 -- La date et l'auteur sont lus dans une instruction distincte : une sous-requête de la même instruction ne voit pas
 -- l'écriture de la fonction (instantané de l'instruction).

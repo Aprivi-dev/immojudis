@@ -26,8 +26,8 @@ select ok(
 );
 select is(
   (select array_agg(name order by name) from public.cron_lease),
-  array['sale-pepites']::text[],
-  'the lease table holds one row per scheduled job (sale-pepites for now)'
+  array['information-agent-autopilot', 'sale-pepites']::text[],
+  'the lease table holds one row per scheduled job (sale-pepites and the information-agent autopilot)'
 );
 select ok(
   not has_function_privilege('anon', 'public.claim_cron_lease(text, integer)', 'EXECUTE')
