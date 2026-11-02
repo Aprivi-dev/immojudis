@@ -1,5 +1,5 @@
 import "server-only";
-import { resolve4, resolve6, resolveMx } from "node:dns/promises";
+import { Resolver } from "node:dns/promises";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   INFORMATION_AGENT_ADDRESS_HYGIENE_MESSAGES,
@@ -30,20 +30,31 @@ export type MailDomainResolver = {
 };
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** Une panne DNS (« unknown ») est retenue 60 s : un domaine muet ne coûte pas un délai à chaque appel. */
+const UNKNOWN_TTL_MS = 60 * 1000;
 const CACHE_MAX_ENTRIES = 1000;
+/** Budget total pour MX, A et AAAA d'un domaine : le domaine vient d'une annonce, donc d'une source non fiable. */
+const TOTAL_BUDGET_MS = 4_000;
 const TEMPORARY_BOUNCE_LIMIT = 2;
 const TEMPORARY_BOUNCE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-const cache = new Map<string, { status: Exclude<MailDomainStatus, "unknown">; at: number }>();
+const cache = new Map<string, { status: MailDomainStatus; at: number }>();
+/** Résolutions en cours par domaine : des appels simultanés partagent une seule résolution. */
+const inFlight = new Map<string, Promise<MailDomainStatus>>();
 
 export const INFORMATION_AGENT_NO_MAIL_DOMAIN_MESSAGE =
   "Le domaine de cette adresse ne reçoit pas de courrier (domaine inexistant ou sans serveur de messagerie).";
 export const INFORMATION_AGENT_TEMPORARY_BOUNCES_MESSAGE =
   "Deux rebonds passagers en 30 jours pour cette adresse : elle n’est plus sollicitée.";
 
+// Un serveur DNS muet ne doit pas bloquer la préparation ni l'envoi : 2 s par requête, un seul essai.
+const dnsResolver = new Resolver({ timeout: 2_000, tries: 1 });
 const defaultResolver: MailDomainResolver = {
-  resolveMx,
+  resolveMx: (domain) => dnsResolver.resolveMx(domain),
   resolveAddress: async (domain) => {
-    const [v4, v6] = await Promise.allSettled([resolve4(domain), resolve6(domain)]);
+    const [v4, v6] = await Promise.allSettled([
+      dnsResolver.resolve4(domain),
+      dnsResolver.resolve6(domain),
+    ]);
     const found = [
       ...(v4.status === "fulfilled" ? v4.value : []),
       ...(v6.status === "fulfilled" ? v6.value : []),
@@ -59,20 +70,10 @@ function errorCode(error: unknown): string {
   return String((error as { code?: unknown } | null)?.code ?? "");
 }
 
-export async function checkMailDomain(
-  domain: string,
-  deps: { resolver?: MailDomainResolver; now?: number } = {},
+async function resolveMailDomain(
+  key: string,
+  resolver: MailDomainResolver,
 ): Promise<MailDomainStatus> {
-  const key = domain.trim().toLowerCase().replace(/\.$/, "");
-  const now = deps.now ?? Date.now();
-  const cached = cache.get(key);
-  if (cached && now - cached.at < CACHE_TTL_MS) return cached.status;
-  const resolver = deps.resolver ?? defaultResolver;
-  const remember = (status: Exclude<MailDomainStatus, "unknown">) => {
-    if (cache.size >= CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
-    cache.set(key, { status, at: now });
-    return status;
-  };
   try {
     const records = await resolver.resolveMx(key);
     // « Null MX » : un seul enregistrement dont l'hôte est vide ou « . ».
@@ -80,31 +81,69 @@ export async function checkMailDomain(
       records.length > 0 &&
       records.every((record) => !record.exchange || record.exchange === ".")
     ) {
-      return remember("no_mail");
+      return "no_mail";
     }
-    if (records.length > 0) return remember("ok");
+    if (records.length > 0) return "ok";
   } catch (error) {
     // NXDOMAIN : le domaine n'existe pas. NODATA : pas de MX, on tente l'adresse A/AAAA (MX implicite).
-    if (errorCode(error) === "ENOTFOUND") return remember("no_mail");
+    if (errorCode(error) === "ENOTFOUND") return "no_mail";
     if (errorCode(error) !== "ENODATA") return "unknown";
   }
   try {
     const addresses = await resolver.resolveAddress(key);
-    return addresses.length > 0 ? remember("ok") : remember("no_mail");
+    return addresses.length > 0 ? "ok" : "no_mail";
   } catch (error) {
     const code = errorCode(error);
-    return code === "ENOTFOUND" || code === "ENODATA" ? remember("no_mail") : "unknown";
+    return code === "ENOTFOUND" || code === "ENODATA" ? "no_mail" : "unknown";
   }
+}
+
+export async function checkMailDomain(
+  domain: string,
+  deps: { resolver?: MailDomainResolver; now?: number; budgetMs?: number } = {},
+): Promise<MailDomainStatus> {
+  const key = domain.trim().toLowerCase().replace(/\.$/, "");
+  const now = deps.now ?? Date.now();
+  const cached = cache.get(key);
+  if (cached && now - cached.at < (cached.status === "unknown" ? UNKNOWN_TTL_MS : CACHE_TTL_MS)) {
+    return cached.status;
+  }
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+
+  const budgetMs = deps.budgetMs ?? TOTAL_BUDGET_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const resolution = Promise.race([
+    resolveMailDomain(key, deps.resolver ?? defaultResolver),
+    new Promise<MailDomainStatus>((resolve) => {
+      timer = setTimeout(() => resolve("unknown"), budgetMs);
+    }),
+  ])
+    .catch((): MailDomainStatus => "unknown")
+    .then((status) => {
+      if (cache.size >= CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
+      cache.set(key, { status, at: now });
+      return status;
+    })
+    .finally(() => {
+      clearTimeout(timer);
+      inFlight.delete(key);
+    });
+  inFlight.set(key, resolution);
+  return resolution;
 }
 
 /** Vide le cache (tests). */
 export function clearMailDomainCache(): void {
   cache.clear();
+  inFlight.clear();
 }
 
 export function informationAgentAddressCheckEnabled(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
+  // En production le contrôle ne se coupe pas : l'interrupteur ne sert qu'aux essais automatisés.
+  if (env.VERCEL_ENV === "production") return true;
   return env.INFORMATION_AGENT_ADDRESS_CHECK !== "off";
 }
 
@@ -146,7 +185,7 @@ export async function assertInformationAgentAddressDeliverable(
   if (issue) throw new Error(INFORMATION_AGENT_ADDRESS_HYGIENE_MESSAGES[issue]);
   const status = await checkMailDomain(mailDomainOf(email), { resolver: deps.resolver });
   if (status === "no_mail") throw new Error(INFORMATION_AGENT_NO_MAIL_DOMAIN_MESSAGE);
-  let bounces = 0;
+  let bounces: number;
   try {
     bounces = await (deps.countTemporaryBounces ?? countRecentTemporaryBounces)(email);
   } catch {

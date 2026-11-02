@@ -213,7 +213,13 @@ select is(
     'blocked_cron_maximum_age_minutes', 20,
     'unverified_sends', 0,
     'oldest_unverified_send_at', null,
-    'maximum_age_minutes', 30
+    'maximum_age_minutes', 30,
+    -- Clés ajoutées par 20261110220000 (taux de rebond, plainte, messages sans dossier) : valeurs neutres.
+    'recent_sent', 0,
+    'recent_permanent_bounces', 0,
+    'recent_bounce_percent', 0,
+    'recent_complaints', 0,
+    'unrouted_pending_over_24h', 0
   ),
   'a healthy agent reports nothing'
 );

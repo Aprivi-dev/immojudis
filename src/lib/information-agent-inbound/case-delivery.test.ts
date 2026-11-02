@@ -63,6 +63,45 @@ describe("état de remise du dossier et de la mission", () => {
     ]);
   });
 
+  it("ne rétrograde jamais un rebond définitif ou une plainte déjà posés", async () => {
+    db.rows = {
+      information_agent_cases: [
+        {
+          id: "case-1",
+          metadata: { delivery: { status: "bounced", at: "2026-11-01T00:00:00.000Z" } },
+        },
+      ],
+      information_agent_missions: [
+        {
+          id: "mission-1",
+          metadata: { delivery: { status: "complained", at: "2026-11-01T00:00:00.000Z" } },
+        },
+      ],
+    };
+
+    // Évènement passager en retard : ni le dossier (rebondi) ni la mission (plainte) ne changent.
+    await markInformationAgentCaseDelivery({
+      emailId: "email-9",
+      status: "bounced_temporary",
+      at: "2026-11-02T00:00:00.000Z",
+    });
+    // Un rebond définitif ne remplace pas une plainte.
+    await markInformationAgentCaseDelivery({
+      emailId: "email-9",
+      status: "bounced",
+      at: "2026-11-02T00:00:00.000Z",
+    });
+    expect(db.updates).toEqual([]);
+
+    // Un état plus grave remplace un état moins grave.
+    await markInformationAgentCaseDelivery({
+      emailId: "email-9",
+      status: "complained",
+      at: "2026-11-03T00:00:00.000Z",
+    });
+    expect(db.updates.map((update) => update.table)).toEqual(["information_agent_cases"]);
+  });
+
   it("ne fait rien sans identifiant de message", async () => {
     expect(
       await markInformationAgentCaseDelivery({ emailId: " ", status: "bounced", at: "x" }),

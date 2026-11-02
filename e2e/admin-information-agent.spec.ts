@@ -56,10 +56,21 @@ test.describe("admin information agent", () => {
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toContainText(
       "compte professionnel",
     );
+    // « Préparer » rend le brouillon ET l'aperçu exact dans la même réponse : rien à demander de plus.
     const initialDrafts = state.events.filter(
-      (event) => event.path === "/api/admin/information-agent/missions" && event.method === "POST",
+      (event) =>
+        event.path === "/api/admin/information-agent/missions/prepare" && event.method === "POST",
     );
     expect(initialDrafts.map((event) => event.payload)).toEqual([{ saleId: SALE_ID }]);
+    await expect(
+      page.frameLocator('iframe[title="Aperçu de l’e-mail envoyé"]').getByText("Aperçu exact"),
+    ).toBeVisible();
+    expect(
+      state.events.some((event) => event.path === "/api/admin/information-agent/missions/preview"),
+    ).toBe(false);
+    // L'aperçu affiché ne suffit pas : la relecture doit être confirmée avant tout envoi.
+    await expect(page.getByRole("button", { name: "Valider et envoyer" })).toBeDisabled();
+    await expect(page.getByRole("checkbox", { name: /J’ai relu le message exact/ })).toBeEnabled();
     expect(state.events.some((event) => event.method === "PATCH")).toBe(false);
     await expect(page.getByRole("button", { name: "Actualiser la source" })).toBeVisible();
 
@@ -81,6 +92,10 @@ test.describe("admin information agent", () => {
       page.frameLocator('iframe[title="Aperçu de l’e-mail envoyé"]').getByText("Aperçu exact"),
     ).toBeVisible();
     expect(state.events.some((event) => event.method === "PATCH")).toBe(false);
+    // Aperçu à jour, mais aucune relecture confirmée : l'envoi reste impossible.
+    await expect(page.getByRole("button", { name: "Valider et envoyer" })).toBeDisabled();
+    await page.getByRole("checkbox", { name: /J’ai relu le message exact/ }).check();
+    await expect(page.getByRole("button", { name: "Valider et envoyer" })).toBeEnabled();
     page.on("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Valider et envoyer" }).click();
     await expect(page.getByText("Envoyée", { exact: true })).toBeVisible();
@@ -92,7 +107,8 @@ test.describe("admin information agent", () => {
     );
     expect(refreshRequest?.payload).toEqual({ saleId: SALE_ID, force: true });
     const createRequest = state.events.find(
-      (event) => event.path === "/api/admin/information-agent/missions" && event.method === "POST",
+      (event) =>
+        event.path === "/api/admin/information-agent/missions/prepare" && event.method === "POST",
     );
     expect(createRequest?.payload).toEqual({ saleId: SALE_ID });
     const approvalRequest = state.events.find(
@@ -412,13 +428,26 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       });
       return;
     }
-    if (path === "/api/admin/information-agent/missions" && method === "POST") {
+    // « Préparer » : brouillon (créé ou régénéré) et aperçu exact dans la même réponse.
+    if (path === "/api/admin/information-agent/missions/prepare" && method === "POST") {
       state.mission = missionFixture("draft");
       state.mission.recipientEmail =
         (payload as { recipientEmail?: string }).recipientEmail ?? "contact@example.test";
       await route.fulfill({
         status: 200,
-        json: { ok: true, mission: state.mission, gaps: [], facts: [], contactCandidates: [] },
+        json: {
+          ok: true,
+          mission: state.mission,
+          gaps: [],
+          facts: [],
+          contactCandidates: [],
+          preview: previewFixture(
+            String(state.mission.recipientEmail),
+            String(state.mission.subject),
+          ),
+          previewError: null,
+          reused: false,
+        },
       });
       return;
     }
@@ -426,26 +455,16 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       const input = payload as { recipientEmail: string; subject: string };
       await route.fulfill({
         status: 200,
-        json: {
-          ok: true,
-          preview: {
-            from: "agent@example.test",
-            to: input.recipientEmail,
-            replyTo: "enquete+jeton-attribue-a-l-envoi@reponses.example.test",
-            subject: input.subject,
-            html: "<p>Aperçu exact</p>",
-            text: "Aperçu exact",
-          },
-          blockers: [],
-          addressOrigin: {
-            text: "Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique (https://annuaire.example.test/reviewed-contact), le 14/10/2026.",
-            url: "https://annuaire.example.test/reviewed-contact",
-            automated: false,
-            known: true,
-          },
-          fingerprint: "e".repeat(64),
-        },
+        json: previewFixture(input.recipientEmail, input.subject),
       });
+      return;
+    }
+    // Suivi des envois et aller-retour de réception : indicateurs déjà mis en forme par le serveur.
+    if (
+      path === "/api/admin/information-agent/operations" &&
+      (method === "GET" || method === "POST")
+    ) {
+      await route.fulfill({ status: 200, json: operationsFixture() });
       return;
     }
     if (path === "/api/admin/information-agent/missions" && method === "PATCH") {
@@ -571,6 +590,45 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
   return state;
 }
 
+function previewFixture(recipientEmail: string, subject: string) {
+  return {
+    ok: true,
+    preview: {
+      from: "agent@example.test",
+      to: recipientEmail,
+      replyTo: "enquete+jeton-attribue-a-l-envoi@reponses.example.test",
+      subject,
+      html: "<p>Aperçu exact</p>",
+      text: "Aperçu exact",
+    },
+    blockers: [],
+    addressOrigin: {
+      text: "Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique (https://annuaire.example.test/reviewed-contact), le 14/10/2026.",
+      url: "https://annuaire.example.test/reviewed-contact",
+      automated: false,
+      known: true,
+    },
+    fingerprint: "e".repeat(64),
+  };
+}
+
+function operationsFixture() {
+  return {
+    windowLabel: "30 derniers jours",
+    sent: 0,
+    rows: [
+      { key: "sent", label: "Envoyés", value: "0", tone: "plain" },
+      {
+        key: "none",
+        label: "Remis, rebonds, plaintes, réponses",
+        value: "aucun envoi sur la période",
+        tone: "plain",
+      },
+    ],
+    roundtrip: { verifiedAt: null, label: "Jamais vérifié.", stale: true },
+  };
+}
+
 function catalogueReadinessFixture(longListTotal: number | null = null, offset = 0) {
   return {
     policy: {
@@ -584,6 +642,8 @@ function catalogueReadinessFixture(longListTotal: number | null = null, offset =
     activeSales: 1,
     pendingEvaluations: 0,
     canEnableEnforcement: true,
+    classCounts: { A: longListTotal ?? 1, B: 0, C: 0, D: 0 },
+    impossibleItems: [],
     queueTotal: longListTotal ?? 1,
     queueOffset: offset,
     queueLimit: 50,
@@ -596,6 +656,7 @@ function catalogueReadinessFixture(longListTotal: number | null = null, offset =
       sourceName: "source-e2e",
       lawyerName: "Cabinet E2E",
       lawyerContact: "Cabinet E2E <contact@example.test>",
+      contactClass: "A",
       scoreConfidence: 0.91,
       readinessScore: 62,
       readinessStatus: "needs_enrichment",
