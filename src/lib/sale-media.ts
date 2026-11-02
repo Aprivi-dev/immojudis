@@ -1,8 +1,11 @@
 import type { AuctionSale, SaleMedia } from "./types";
 import { isWithdrawnSourceUrl } from "./withdrawn-sources";
 
+// « default » n'écarte qu'un nom de fichier (default.png, default-avatar.jpg) : le dossier des fichiers d'un site
+// Drupal est /sites/default/files/, et toutes les photos des Cessions de l'État y sont (02/11/2026 : 47 ventes
+// sur 47 sans aucune photo affichée).
 const STRONG_NON_PROPERTY_IMAGE_PATTERN =
-  /(^|[/_.-])(avatar|banner|banniere|brand|default|favicon|icon|icone|logo|logos|newsletter|prochainesventes|journaux_vae|departements|placeholder|profile|sprite|user)([/_.-]|$)/i;
+  /(^|[/_.-])(avatar|banner|banniere|brand|favicon|icon|icone|logo|logos|newsletter|prochainesventes|journaux_vae|departements|placeholder|profile|sprite|user)([/_.-]|$)|(^|[/_.-])default([_.-][^/?#]*)?([?#].*)?$/i;
 const NON_IMAGE_EXTENSION_PATTERN = /\.(pdf|docx?|svg)([?#].*)?$/i;
 const POSITIVE_PROPERTY_IMAGE_PATTERN =
   /(^|[/_.-])(annonce|bien|gallery|galerie|hd|house|image|immobilier|large|media|original|photo|property|upload)([/_.-]|$)/i;

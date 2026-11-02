@@ -53,6 +53,22 @@ describe("sale media selection", () => {
     expect(isLikelyPropertyImageUrl("https://example.test/photos/maison.webp")).toBe(true);
   });
 
+  it("keeps photos stored in a Drupal /sites/default/files/ folder, not a default image", () => {
+    // Every photo of Cessions de l'État lives there (02/11/2026: none of 47 sales showed a photo).
+    expect(
+      isLikelyPropertyImageUrl(
+        "https://cessions.immobilier-etat.gouv.fr/sites/default/files/1_Photos_du_bien_et_de_lenvironnement_250330002.png",
+      ),
+    ).toBe(true);
+    expect(isLikelyPropertyImageUrl("https://example.test/img/default.png")).toBe(false);
+    expect(isLikelyPropertyImageUrl("https://example.test/img/default_photo.jpg?w=800")).toBe(
+      false,
+    );
+    expect(isLikelyPropertyImageUrl("https://example.test/sites/default/files/logo.png")).toBe(
+      false,
+    );
+  });
+
   it("ranks original property photos ahead of thumbnails while keeping stable order", () => {
     const media = [
       { type: "image" as const, url: "https://example.test/thumb/sale-small.jpg" },
