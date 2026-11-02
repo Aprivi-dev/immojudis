@@ -323,6 +323,35 @@ def test_unchanged_source_preserves_later_documentary_qualification(monkeypatch)
     assert revised.raw_payload['source_checks'][existing.source_url]['checked_at'] >= first['source_checks'][existing.source_url]['checked_at']
 
 
+def test_unchanged_detail_still_brings_its_fuller_gallery(monkeypatch):
+    """Immo-Interactif, 02/11/2026 : la carte n'a qu'une photo, la fiche en a 13 ; la relecture doit les garder."""
+    from copy import deepcopy
+
+    from src import main
+    from src.freshness import record_source_checks
+    from src.normalize import normalize_sale
+
+    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    card_photo = 'https://media.immobilier.notaires.fr/inotr/media/1/83061/2092712/b5acb2f_VGA.jpg'
+    gallery = [f'https://media.immobilier.notaires.fr/inotr/media/1/83061/2092712/p{n}_QXGA.jpg' for n in range(13)]
+    raw = {'source_name': 'notaires', 'source_url': 'https://www.immo-interactif.fr/encheres-en-ligne/x/2092712',
+           'raw_text': 'Local 120 m²', 'starting_price_eur': 90000, 'source_detail_status': 'complete',
+           'raw_image_url': card_photo, 'source_images': [card_photo]}
+    first = deepcopy(raw)
+    record_source_checks([first], {})
+    existing = normalize_sale(first)
+
+    reread = {**deepcopy(raw), 'raw_image_url': gallery[0], 'source_images': gallery}
+    revised = source_detail.prepare_source_revision(existing, reread)
+
+    assert revised.raw_payload['source_images'] == gallery
+    assert revised.raw_payload['raw_image_url'] == gallery[0]
+
+    # A shorter re-read never shrinks the stored gallery.
+    again = source_detail.prepare_source_revision(revised, {**deepcopy(raw)})
+    assert again.raw_payload['source_images'] == gallery
+
+
 @pytest.mark.parametrize('change,expected', [({'status':'withdrawn'},'withdrawn'), ({'habitable_surface_m2':70},70)])
 def test_structured_source_change_is_not_mistaken_for_unchanged_text(monkeypatch, change, expected):
     from copy import deepcopy
