@@ -223,6 +223,15 @@ def test_retry_backoff_is_12_then_24_then_72_hours_and_stops_at_the_fourth_failu
     assert "reading.attempt_count < 4" in reading.CANDIDATES_SQL
 
 
+def test_candidates_leave_out_sales_whose_sources_are_all_withdrawn() -> None:
+    # A hidden sale (every source withdrawn from the catalogue) must not cost a model call.
+    sql = " ".join(reading.CANDIDATES_SQL.split())
+    assert (
+        "and not app_private.sale_is_fully_withdrawn( sale.source_name, sale.observations,"
+        " (select app_private.catalogue_withdrawn_sources()) )"
+    ) in sql
+
+
 def test_failed_reading_is_retried_when_due_and_counts_the_attempt(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
     row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 1, True)
