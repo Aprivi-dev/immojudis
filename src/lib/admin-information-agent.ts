@@ -19,12 +19,14 @@ import {
   informationAgentListQuerySchema,
   informationAgentPreviewSchema,
   listAdminInformationAgentMissions,
+  prepareAdminInformationAgentDraft,
   previewAdminInformationAgentMission,
   runAdminInformationAgentAction,
   type InformationAgentAdminActionPayload,
   type InformationAgentAdminListResponse,
   type InformationAgentAdminMissionPage,
   type InformationAgentAdminResponse,
+  type InformationAgentPrepareResponse,
   type InformationAgentPreviewInput,
   type InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
@@ -60,6 +62,18 @@ export async function createAdminInformationAgentMissionForToken({
 }): Promise<InformationAgentAdminResponse> {
   const auth = await requireAdmin(authToken);
   return createAdminInformationAgentDraft({ auth, input });
+}
+
+/** Brouillon (créé ou retrouvé) et aperçu exact dans la même réponse. N'envoie rien. */
+export async function prepareAdminInformationAgentMissionForToken({
+  authToken,
+  input,
+}: {
+  authToken: string;
+  input: z.output<typeof adminInformationAgentCreateSchema>;
+}): Promise<InformationAgentPrepareResponse> {
+  const auth = await requireAdmin(authToken);
+  return prepareAdminInformationAgentDraft({ auth, input });
 }
 
 export async function runAdminInformationAgentMissionActionForToken({

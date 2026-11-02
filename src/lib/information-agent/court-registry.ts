@@ -14,6 +14,7 @@ import {
   type InformationAgentContactCandidate,
 } from "@/lib/information-agent/contacts";
 import { formatInformationAgentOriginDate } from "@/lib/information-agent-compliance";
+import { startOfParisDay } from "@/lib/information-agent/paris-time";
 
 /**
  * Greffe de secours (lecture du référentiel `court_registry_contacts`, limites d'envoi). Seul module
@@ -155,34 +156,6 @@ export async function assertCourtRegistryFallbackAddress(
 const BLOCKING_MISSION_STATUSES = ["approved", "sending", "sent", "replied", "completed"] as const;
 
 /**
- * Début du jour (heure de Paris) qui contient `now`. Le plafond quotidien suit le jour calendaire
- * français, pas une fenêtre glissante de 24 heures.
- */
-export function startOfParisDay(now: Date): Date {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
-  const part = (type: string) => Number(parts.find((item) => item.type === type)?.value);
-  const localAsUtc = Date.UTC(
-    part("year"),
-    part("month") - 1,
-    part("day"),
-    part("hour"),
-    part("minute"),
-    part("second"),
-  );
-  const offsetMs = localAsUtc - Math.floor(now.getTime() / 1000) * 1000;
-  return new Date(Date.UTC(part("year"), part("month") - 1, part("day")) - offsetMs);
-}
-
-/**
  * Deux limites propres aux greffes, en plus du délai de 30 jours par adresse :
  *  - au plus une sollicitation par tribunal et par vente (même si le tribunal a plusieurs adresses) ;
  *  - au plus `INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP` sollicitations par tribunal et par jour
@@ -245,3 +218,5 @@ export async function assertCourtRegistryFallbackLimits({
     );
   }
 }
+
+export { startOfParisDay };

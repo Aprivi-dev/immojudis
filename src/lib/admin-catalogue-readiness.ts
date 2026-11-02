@@ -6,9 +6,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminPageQueryShape } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE } from "@/lib/admin-pagination";
 import type { Json } from "@/integrations/supabase/types";
-import { loadAdminInformationAgentEmailAvailability } from "@/lib/admin-information-agent-sale";
-import { isInformationAgentAddressSearchEnabled } from "@/lib/information-agent/address-search";
-import { INFORMATION_AGENT_NO_EMAIL_MESSAGE } from "@/lib/information-agent/email-address";
+import {
+  classifyInformationAgentSaleContacts,
+  type InformationAgentSaleContactClass,
+} from "@/lib/admin-information-agent-sale";
 
 const ACTIVE_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
 
@@ -32,6 +33,11 @@ export type CatalogueReadinessQueueItem = {
    * null quand il le peut. Absent d'une réponse d'une version plus ancienne : traité comme null.
    */
   informationAgentBlockedReason?: string | null;
+  /**
+   * Classe de contact vérifiée par le résolveur de l'agent : A (avocat, adresse sûre), B (à confirmer),
+   * C (greffe du tribunal), D (contact impossible). Absente d'une réponse d'une version plus ancienne.
+   */
+  contactClass?: InformationAgentSaleContactClass;
   scoreConfidence: number | null;
   readinessScore: number | null;
   readinessStatus: CatalogueReadinessStatus;
@@ -57,11 +63,59 @@ export type CatalogueReadinessOverview = {
   activeSales: number;
   pendingEvaluations: number;
   canEnableEnforcement: boolean;
+  /** Dossiers à reprendre pour lesquels l'agent a un contact (classes A, B et C), toutes pages. */
   queueTotal: number;
   queueOffset: number;
   queueLimit: number;
   items: CatalogueReadinessQueueItem[];
+  /** Nombre de dossiers par classe de contact (approximation SQL, la page est revérifiée). */
+  classCounts?: Record<InformationAgentSaleContactClass, number>;
+  /** Premiers dossiers « contact impossible » (bloc replié), avec le motif. */
+  impossibleItems?: CatalogueReadinessQueueItem[];
 };
+
+type QueueRpcResult = {
+  counts: Record<InformationAgentSaleContactClass, number>;
+  total: number;
+  items: Array<{ id: string; class: InformationAgentSaleContactClass }>;
+  impossible: string[];
+};
+
+const QUEUE_ROW_COLUMNS =
+  "id,title,city,department,sale_date,source_name,premium_readiness_score,premium_readiness_status,premium_readiness_policy_version,premium_readiness_factors,premium_readiness_blockers,premium_readiness_missing_fields,premium_readiness_evaluated_at,premium_readiness_override,premium_readiness_override_reason,premium_readiness_override_expires_at";
+
+function parseQueueResult(value: Json): QueueRpcResult {
+  const record = jsonObject(value);
+  const counts = jsonObject((record.counts ?? {}) as Json);
+  const count = (key: string) => (typeof counts[key] === "number" ? (counts[key] as number) : 0);
+  const items = Array.isArray(record.items) ? record.items : [];
+  return {
+    counts: { A: count("A"), B: count("B"), C: count("C"), D: count("D") },
+    total: typeof record.total === "number" ? record.total : 0,
+    items: items.flatMap((item) => {
+      const entry = jsonObject((item ?? {}) as Json);
+      return typeof entry.id === "string"
+        ? [{ id: entry.id, class: entry.class as InformationAgentSaleContactClass }]
+        : [];
+    }),
+    impossible: Array.isArray(record.impossible)
+      ? record.impossible.filter((id): id is string => typeof id === "string")
+      : [],
+  };
+}
+
+/** Pourquoi l'agent ne peut pas écrire : ce que l'annonce donne à la place d'une adresse. */
+export function impossibleContactReason(
+  contact?: { lawyer_name: string | null; lawyer_contact: string | null } | null,
+): string {
+  if (/\d(?:[\s.\-]?\d){7,}/.test(contact?.lawyer_contact ?? "")) {
+    return "Téléphone seul : aucune adresse email dans l’annonce.";
+  }
+  if (contact?.lawyer_name?.trim() || contact?.lawyer_contact?.trim()) {
+    return "Nom seul : ni adresse email ni téléphone dans l’annonce.";
+  }
+  return "Aucune coordonnée dans l’annonce.";
+}
 
 export const adminCatalogueReadinessQuerySchema = z.object(adminPageQueryShape);
 
@@ -94,47 +148,50 @@ export async function getAdminCatalogueReadinessOverview(
   const limit = Math.max(1, Math.min(ADMIN_PAGE_MAX_LIMIT, options.limit ?? ADMIN_PAGE_SIZE));
   const [
     { data: policy, error: policyError },
-    { data: sales, error: salesError, count: queueTotal },
+    { data: queueData, error: queueError },
     activeCount,
     ...statusCounts
   ] = await Promise.all([
     supabaseAdmin.from("catalogue_readiness_policy").select("*").eq("singleton", true).single(),
-    supabaseAdmin
-      .from("auction_sales")
-      .select(
-        "id,title,city,department,sale_date,source_name,premium_readiness_score,premium_readiness_status,premium_readiness_policy_version,premium_readiness_factors,premium_readiness_blockers,premium_readiness_missing_fields,premium_readiness_evaluated_at,premium_readiness_override,premium_readiness_override_reason,premium_readiness_override_expires_at",
-        { count: "exact" },
-      )
-      .in("status", ACTIVE_SALE_STATUSES)
-      .or("premium_readiness_status.neq.premium_ready,premium_readiness_override.eq.hold")
-      .order("premium_readiness_score", { ascending: false, nullsFirst: false })
-      .order("sale_date", { ascending: true, nullsFirst: false })
-      .range(offset, offset + limit - 1),
+    // File filtrée AVANT la pagination : vente en cours, date non passée, pas déjà sollicitée, classes A, B, C.
+    supabaseAdmin.rpc("admin_information_agent_queue", { p_limit: limit, p_offset: offset }),
     countActiveSales(),
     ...(["unassessed", "internal_only", "needs_enrichment", "premium_ready"] as const).map(
       (status) => countActiveSales(status),
     ),
   ]);
   if (policyError) throw policyError;
-  if (salesError) throw salesError;
+  if (queueError) throw queueError;
+  const queue = parseQueueResult(queueData);
 
-  const saleIds = (sales ?? []).map((sale) => sale.id);
-  const [contacts, emailAvailability] = await Promise.all([
-    loadSaleContactDetails(saleIds),
-    loadAdminInformationAgentEmailAvailability(saleIds),
+  const pageIds = queue.items.map((item) => item.id);
+  const rowIds = [...new Set([...pageIds, ...queue.impossible])];
+  // Le SQL est un filtre sûr ; la vérification exacte (même résolveur que le brouillon, greffe compris)
+  // ne tourne que sur la page affichée.
+  const [rows, contacts, exactClasses] = await Promise.all([
+    loadQueueRows(rowIds),
+    loadSaleContactDetails(rowIds),
+    classifyInformationAgentSaleContacts(pageIds),
   ]);
-  // La recherche automatique d'adresse (coupée par défaut) peut retrouver un email pour une vente
-  // qui n'en publie pas : tant qu'elle est active, aucune vente n'est écartée d'avance.
-  const addressSearchEnabled = isInformationAgentAddressSearchEnabled();
-  const items = (sales ?? []).map((sale) =>
-    toQueueItem(
-      sale,
-      contacts.get(sale.id),
-      emailAvailability.get(sale.id) === true || addressSearchEnabled
-        ? null
-        : INFORMATION_AGENT_NO_EMAIL_MESSAGE,
-    ),
-  );
+  const toItem = (id: string, contactClass: InformationAgentSaleContactClass) => {
+    const row = rows.get(id);
+    if (!row) return [];
+    return [
+      toQueueItem(
+        row,
+        contacts.get(id),
+        contactClass === "D" ? impossibleContactReason(contacts.get(id)) : null,
+        contactClass,
+      ),
+    ];
+  };
+  const items: CatalogueReadinessQueueItem[] = [];
+  const impossibleItems: CatalogueReadinessQueueItem[] = [];
+  for (const { id } of queue.items) {
+    const exact = exactClasses.get(id) ?? "D";
+    (exact === "D" ? impossibleItems : items).push(...toItem(id, exact));
+  }
+  for (const id of queue.impossible) impossibleItems.push(...toItem(id, "D"));
   const pendingEvaluations = await countPendingEvaluations(policy.policy_version);
   const counts: Record<CatalogueReadinessStatus, number> = {
     unassessed: statusCounts[0],
@@ -155,10 +212,12 @@ export async function getAdminCatalogueReadinessOverview(
     activeSales: activeCount,
     pendingEvaluations,
     canEnableEnforcement: pendingEvaluations === 0,
-    queueTotal: queueTotal ?? 0,
+    queueTotal: queue.total,
     queueOffset: offset,
     queueLimit: limit,
     items,
+    classCounts: queue.counts,
+    impossibleItems,
   };
 }
 
@@ -183,6 +242,21 @@ async function countPendingEvaluations(policyVersion: string): Promise<number> {
     );
   if (error) throw error;
   return count ?? 0;
+}
+
+type QueueRow = Parameters<typeof toQueueItem>[0];
+
+async function loadQueueRows(ids: string[]): Promise<Map<string, QueueRow>> {
+  const result = new Map<string, QueueRow>();
+  for (let index = 0; index < ids.length; index += 200) {
+    const { data, error } = await supabaseAdmin
+      .from("auction_sales")
+      .select(QUEUE_ROW_COLUMNS)
+      .in("id", ids.slice(index, index + 200));
+    if (error) throw error;
+    for (const row of data ?? []) result.set(row.id, row);
+  }
+  return result;
 }
 
 type SaleContactDetails = {
@@ -269,6 +343,7 @@ function toQueueItem(
   },
   contact?: SaleContactDetails,
   informationAgentBlockedReason: string | null = null,
+  contactClass?: InformationAgentSaleContactClass,
 ): CatalogueReadinessQueueItem {
   return {
     id: row.id,
@@ -280,6 +355,7 @@ function toQueueItem(
     lawyerName: contact?.lawyer_name ?? null,
     lawyerContact: contact?.lawyer_contact ?? null,
     informationAgentBlockedReason,
+    contactClass,
     scoreConfidence: contact?.score_confidence ?? null,
     readinessScore: row.premium_readiness_score,
     readinessStatus: normalizeStatus(row.premium_readiness_status),

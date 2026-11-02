@@ -25,6 +25,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import {
+  mergeTemporaryBounces,
   bounceStatusOf,
   deliveryActionOf,
   informationAgentSenderAddress,
@@ -222,5 +223,60 @@ describe("processDeliveryEvent", () => {
     const line = String(warn.mock.calls[0]?.[0]);
     expect(JSON.parse(line)).toMatchObject({ event: "bounce_permanent", recipients: 1 });
     expect(line).not.toMatch(/@|example\.test/);
+  });
+});
+
+describe("processDeliveryEvent : état de remise du dossier", () => {
+  it("marque le dossier d'un rebond définitif comme rebondi (la vente redevient éligible)", async () => {
+    const mark = vi.fn(async () => 1);
+    await processDeliveryEvent(bounced("Permanent"), ENV, mark);
+    expect(mark).toHaveBeenCalledWith({
+      emailId: "email-1",
+      status: "bounced",
+      at: "2026-10-23T10:00:00.000Z",
+    });
+  });
+
+  it("note un rebond passager sans le compter comme rebond du dossier", async () => {
+    const mark = vi.fn(async () => 1);
+    await processDeliveryEvent(bounced("Transient"), ENV, mark);
+    expect(mark).toHaveBeenCalledWith(expect.objectContaining({ status: "bounced_temporary" }));
+  });
+
+  it("note une plainte, et ignore les messages d'un autre expéditeur", async () => {
+    const mark = vi.fn(async () => 1);
+    await processDeliveryEvent(complained(), ENV, mark);
+    expect(mark).toHaveBeenCalledWith(expect.objectContaining({ status: "complained" }));
+    mark.mockClear();
+    await processDeliveryEvent(bounced("Permanent", { from: "alertes@immojudis.com" }), ENV, mark);
+    expect(mark).not.toHaveBeenCalled();
+  });
+});
+
+describe("rebonds passagers : deux en 30 jours", () => {
+  it("garde les dates de moins de 30 jours et ajoute la nouvelle, sans doublon", () => {
+    expect(mergeTemporaryBounces(undefined, "2026-11-02T10:00:00.000Z")).toEqual([
+      "2026-11-02T10:00:00.000Z",
+    ]);
+    expect(
+      mergeTemporaryBounces(
+        ["2026-09-01T10:00:00.000Z", "2026-10-20T10:00:00.000Z", "2026-11-02T10:00:00.000Z"],
+        "2026-11-02T10:00:00.000Z",
+      ),
+    ).toEqual(["2026-10-20T10:00:00.000Z", "2026-11-02T10:00:00.000Z"]);
+    expect(mergeTemporaryBounces("pas une liste", "2026-11-02T10:00:00.000Z")).toHaveLength(1);
+  });
+
+  it("écrit la liste des rebonds passagers dans le registre (global), jamais dans le journal des envois", async () => {
+    db.existing = {
+      bounce_status: "none",
+      metadata: { temporary_bounces: ["2026-10-25T10:00:00.000Z"] },
+    } as never;
+    await processDeliveryEvent(bounced("Transient"), ENV);
+    expect(db.upserts[0].row).toMatchObject({
+      bounce_status: "temporary",
+      metadata: { temporary_bounces: ["2026-10-23T10:00:00.000Z", "2026-10-25T10:00:00.000Z"] },
+    });
+    expect(db.upserts.every((entry) => entry.table === "information_agent_contacts")).toBe(true);
   });
 });

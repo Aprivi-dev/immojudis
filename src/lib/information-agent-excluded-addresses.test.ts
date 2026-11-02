@@ -34,6 +34,18 @@ describe("adresses jamais sollicitées par l'agent", () => {
     ["dpo@cabinet.test", "technical"],
     ["dpo.cabinet@cabinet.test", "technical"],
     ["rgpd@cabinet.test", "technical"],
+    ["abuse@cabinet.test", "technical"],
+    ["postmaster@cabinet.test", "technical"],
+    ["hostmaster@cabinet.test", "technical"],
+    ["webmaster@cabinet.test", "technical"],
+    ["root@cabinet.test", "technical"],
+    ["mailer-daemon@cabinet.test", "technical"],
+    ["spam@cabinet.test", "technical"],
+    ["privacy@cabinet.test", "technical"],
+    ["security@cabinet.test", "technical"],
+    ["newsletter@cabinet.test", "technical"],
+    ["unsubscribe@cabinet.test", "technical"],
+    ["Abuse.Cabinet@Cabinet.TEST", "technical"],
   ])("%s est exclue (%s)", (email, reason) => {
     expect(informationAgentExcludedAddressReason(email)).toBe(reason);
     expect(isInformationAgentExcludedAddress(email)).toBe(true);
@@ -46,6 +58,9 @@ describe("adresses jamais sollicitées par l'agent", () => {
     "ordrefacile@cabinet.test",
     "sandpoint@cabinet.test",
     "reply.exemple@cabinet.test",
+    "rootier@cabinet.test",
+    "securite@cabinet.test",
+    "spamont@cabinet.test",
     "dpontier@cabinet.test",
     "contact@justicefr.test",
     "contact@cabinet-barreau.fr",

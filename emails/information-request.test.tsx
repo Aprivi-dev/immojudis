@@ -180,6 +180,32 @@ describe("renderInformationRequestEmail", () => {
     expect(message.html).toContain("Réclamation auprès de la CNIL");
   });
 
+  it("répète le lien « Ne plus être contacté » sous la signature, sans toucher aux autres textes", async () => {
+    const signedBody = `${bodyText}\n\nCordialement,\nL'équipe Immojudis`;
+    const input = {
+      subject: "Maison à Bordeaux — précisions sur la vente",
+      bodyText: signedBody,
+      replyTo: "enquete+1234@reponses.immojudis.com",
+      caseReference: "IJ-8F31A290",
+      appUrl: "https://immojudis.com",
+    };
+    const withFooter = await renderInformationRequestEmail({ ...input, legalFooter });
+    // HTML : le lien figure sous la signature ET dans le pied (deux occurrences, même adresse).
+    expect(withFooter.html.match(/>Ne plus être contacté</g)).toHaveLength(2);
+    expect(withFooter.html.indexOf("Cordialement")).toBeLessThan(
+      withFooter.html.indexOf(">Ne plus être contacté<"),
+    );
+    // Texte : une ligne après la signature, avant le séparateur du pied.
+    const signature = withFooter.text.indexOf("L'équipe Immojudis");
+    const line = withFooter.text.indexOf(`Ne plus être contacté : ${legalFooter.optOutUrl}`);
+    expect(line).toBeGreaterThan(signature);
+    expect(line).toBeLessThan(withFooter.text.indexOf("Référence de suivi"));
+    // Sans pied juridique (aperçu incomplet), aucune ligne d'opposition n'est inventée.
+    const bare = await renderInformationRequestEmail(input);
+    expect(bare.text).not.toContain("Ne plus être contacté");
+    expect(bare.html).not.toContain("Ne plus être contacté");
+  });
+
   it("annonce la recherche automatique seulement quand l'agent a retrouvé l'adresse", async () => {
     const message = await renderInformationRequestEmail({
       subject: "Maison à Bordeaux",

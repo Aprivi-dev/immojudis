@@ -1,6 +1,7 @@
 import "server-only";
 import type { EmailBouncedEvent, EmailComplainedEvent } from "resend";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Json } from "@/integrations/supabase/types";
 import { recordInboundContactOptOut } from "@/lib/information-agent-inbound/case-updates";
 import { normalizeEmail } from "@/lib/information-agent-inbound/text";
 import type { InformationAgentInboundResult } from "@/lib/information-agent-inbound/types";
@@ -66,34 +67,71 @@ export function deliveryActionOf(
   };
 }
 
+/** Fenêtre et plafond des rebonds passagers : deux en 30 jours rendent l'adresse inutilisable. */
+export const TEMPORARY_BOUNCE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Dates des rebonds passagers à garder après un nouveau rebond (celles de moins de 30 jours, plus la nouvelle,
+ * sans doublon). Pur. Elles vivent dans le registre des contacts (`metadata.temporary_bounces`), pas dans le
+ * journal des envois : une décision ne dépend jamais de ce journal.
+ */
+export function mergeTemporaryBounces(existing: unknown, bouncedAt: string): string[] {
+  const now = Date.parse(bouncedAt);
+  const kept = (Array.isArray(existing) ? existing : []).filter(
+    (value): value is string =>
+      typeof value === "string" && now - Date.parse(value) < TEMPORARY_BOUNCE_WINDOW_MS,
+  );
+  return [...new Set([...kept, bouncedAt])].sort().slice(-10);
+}
+
 /** Écrit le rebond sur l'adresse (portée globale). Un `permanent` n'est jamais rétrogradé. */
 export async function recordInboundContactBounce(
   email: string,
   status: "permanent" | "temporary",
   bouncedAt: string,
 ): Promise<void> {
+  let metadata: Record<string, unknown> | undefined;
   if (status === "temporary") {
     const { data, error } = await supabaseAdmin
       .from("information_agent_contacts")
-      .select("bounce_status")
+      .select("bounce_status,metadata")
       .is("scope_sale_id", null)
       .eq("normalized_email", email)
       .maybeSingle();
     if (error) throw error;
     if (data?.bounce_status === "permanent") return;
+    const previous =
+      data?.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
+        ? (data.metadata as Record<string, unknown>)
+        : {};
+    metadata = {
+      ...previous,
+      temporary_bounces: mergeTemporaryBounces(previous.temporary_bounces, bouncedAt),
+    };
   }
-  const { error } = await supabaseAdmin
-    .from("information_agent_contacts")
-    .upsert(
-      { sale_id: null, scope_sale_id: null, email, bounce_status: status, bounced_at: bouncedAt },
-      { onConflict: "scope_sale_id,normalized_email" },
-    );
+  const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
+    {
+      sale_id: null,
+      scope_sale_id: null,
+      email,
+      bounce_status: status,
+      bounced_at: bouncedAt,
+      ...(metadata ? { metadata: metadata as Json } : {}),
+    },
+    { onConflict: "scope_sale_id,normalized_email" },
+  );
   if (error) throw error;
 }
 
 export async function processDeliveryEvent(
   event: DeliveryEvent,
   env: Readonly<Record<string, string | undefined>>,
+  /** Marque le dossier et la mission du message (état de remise) ; absent : registre de contacts seulement. */
+  markDelivery?: (input: {
+    emailId: string | null;
+    status: "bounced" | "bounced_temporary" | "complained";
+    at: string;
+  }) => Promise<unknown>,
 ): Promise<InformationAgentInboundResult> {
   const action = deliveryActionOf(event, informationAgentSenderAddress(env));
   if (!action) return { accepted: true, ignored: true };
@@ -102,6 +140,16 @@ export async function processDeliveryEvent(
     if (action.kind === "bounce") await recordInboundContactBounce(email, action.status, action.at);
     else await recordInboundContactOptOut(email, action.at);
   }
+  await markDelivery?.({
+    emailId: event.data.email_id ?? null,
+    status:
+      action.kind === "complaint"
+        ? "complained"
+        : action.status === "permanent"
+          ? "bounced"
+          : "bounced_temporary",
+    at: action.at,
+  });
   console.warn(
     JSON.stringify({
       scope: "information-agent-delivery",

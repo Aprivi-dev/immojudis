@@ -137,7 +137,10 @@ _BAR_OR_CARPA_DOMAIN_RE = re.compile(
     r"^(?:www\.)?(?:(?:ordre|barreau|batonnat|batonnier|carpa)(?:[.-]|$)|ordredesavocats)"
 )
 _BAR_OR_CARPA_LOCAL_RE = re.compile(r"^(?:ordre|barreau|batonnat|batonnier|carpa)(?:[._+-]|$)")
-_TECHNICAL_LOCAL_RE = re.compile(r"^(?:no[._-]?reply|do[._-]?not[._-]?reply|dpo|rgpd)(?:[._+-]|$)")
+_TECHNICAL_LOCAL_RE = re.compile(
+    r"^(?:no[._-]?reply|do[._-]?not[._-]?reply|dpo|rgpd|abuse|postmaster|hostmaster|webmaster|root"
+    r"|mailer-daemon|spam|privacy|security|newsletter|unsubscribe)(?:[._+-]|$)"
+)
 
 
 def excluded_contact_reason(email: str) -> str | None:
@@ -146,7 +149,9 @@ def excluded_contact_reason(email: str) -> str | None:
     Miroir de ``informationAgentExcludedAddressReason``
     (``src/lib/information-agent/excluded-addresses.ts``) : juridictions (``court``),
     messagerie RPVA ``@avocat-conseil.fr`` (``rpva``), Ordre, barreau et CARPA
-    (``bar_or_carpa``), adresses ``noreply``, ``dpo`` et ``rgpd`` (``technical``).
+    (``bar_or_carpa``), adresses techniques ``noreply``, ``dpo``, ``rgpd``, ``abuse``, ``postmaster``,
+    ``hostmaster``, ``webmaster``, ``root``, ``mailer-daemon``, ``spam``, ``privacy``, ``security``,
+    ``newsletter`` et ``unsubscribe`` (``technical``).
     """
     normalized = email.strip().lower()
     local, separator, domain = normalized.rpartition("@")
