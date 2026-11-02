@@ -53,13 +53,13 @@ select ok(
 select has_function(
   'public',
   'approve_information_agent_mission_admin',
-  array['uuid', 'uuid', 'text'],
+  array['uuid', 'uuid', 'text', 'integer'],
   'admins have a transactional mission approval path without a customer quota'
 );
 select ok(
   has_function_privilege(
     'service_role',
-    'public.approve_information_agent_mission_admin(uuid,uuid,text)',
+    'public.approve_information_agent_mission_admin(uuid,uuid,text,integer)',
     'EXECUTE'
   ),
   'trusted server code can approve an admin mission'
@@ -67,7 +67,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'authenticated',
-    'public.approve_information_agent_mission_admin(uuid,uuid,text)',
+    'public.approve_information_agent_mission_admin(uuid,uuid,text,integer)',
     'EXECUTE'
   ),
   'browser clients cannot approve admin missions directly'

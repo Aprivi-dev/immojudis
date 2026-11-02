@@ -19,12 +19,13 @@ import type {
   AdminSourceRefreshRequestInput,
   AdminSourceRefreshResponse,
 } from "@/lib/admin-source-refresh";
+import type { InformationAgentOperationsView } from "@/lib/information-agent/operations-view";
 import type {
   InformationAgentAdminActionPayload,
   InformationAgentAdminListResponse,
   InformationAgentAdminMissionPage,
-  InformationAgentAdminResponse,
   InformationAgentCreateInput,
+  InformationAgentPrepareResponse,
   InformationAgentPreviewInput,
   InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
@@ -119,15 +120,16 @@ export async function fetchAdminInformationAgentMissions(args?: {
   return readJson<InformationAgentAdminMissionPage>(response);
 }
 
+/** Prépare un brouillon (créé ou retrouvé) et rend son aperçu exact dans la même réponse. N'envoie rien. */
 export async function createAdminInformationAgentMission(
   data: InformationAgentCreateInput,
-): Promise<InformationAgentAdminResponse> {
-  const response = await fetch("/api/admin/information-agent/missions", {
+): Promise<InformationAgentPrepareResponse> {
+  const response = await fetch("/api/admin/information-agent/missions/prepare", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify(data),
   });
-  return readJson<InformationAgentAdminResponse>(response);
+  return readJson<InformationAgentPrepareResponse>(response);
 }
 
 export async function runAdminInformationAgentMissionAction(
@@ -332,4 +334,23 @@ export async function publishAdminInformationAgentEmailTemplateDraft(
     body: JSON.stringify({ action: "publish", draftId, publicationConfirmed: true }),
   });
   return readJson<InformationAgentEmailTemplateWorkspace>(response);
+}
+
+/** Indicateurs d'exploitation de l'agent (30 jours) et état de l'aller-retour de réception, déjà mis en forme. */
+export async function fetchAdminInformationAgentOperations(): Promise<InformationAgentOperationsView> {
+  const response = await fetch("/api/admin/information-agent/operations", {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<InformationAgentOperationsView>(response);
+}
+
+/** « J'ai vérifié l'aller-retour réel » : enregistre la date de la vérification. */
+export async function attestAdminInformationAgentRoundtripClient(): Promise<InformationAgentOperationsView> {
+  const response = await fetch("/api/admin/information-agent/operations", {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  return readJson<InformationAgentOperationsView>(response);
 }

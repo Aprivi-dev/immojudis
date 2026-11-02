@@ -67,6 +67,8 @@ export function buildInformationRequestParts(props: InformationRequestEmailProps
     if (contributionUrl && index === depositIndex) body.push(depositHtml(contributionUrl));
   });
   if (contributionUrl && blocks.length === 0) body.push(depositHtml(contributionUrl));
+  // Une ligne sous la signature : le destinataire n'a pas à descendre jusqu'au pied pour s'opposer.
+  if (legalFooter?.optOutUrl) body.push(optOutLineHtml(legalFooter.optOutUrl));
 
   const legalHtml = legalFooter ? legalFooterHtml(legalFooter) : { panels: "", links: [] };
   const html = emailLayout({
@@ -110,6 +112,14 @@ const NOTICE_LINES = [
 const POLICY_LABEL = "Politique de confidentialité et vos droits";
 const CNIL_LABEL = "Réclamation auprès de la CNIL";
 const OPT_OUT_LABEL = "Ne plus être contacté";
+
+function optOutLineHtml(optOutUrl: string): string {
+  return emailParagraph(emailLink(optOutUrl, e(OPT_OUT_LABEL)), {
+    tone: "muted",
+    size: "caption",
+    marginBottom: 0,
+  });
+}
 
 /**
  * Le message à un greffe n'a pas de phrase d'origine en ouverture : « Pourquoi vous ? » n'y est pas
@@ -272,6 +282,7 @@ function textVersion({
   if (contributionUrl && blocks.length === 0) {
     out.push(depositIntro(contributionUrl), `${DEPOSIT_LABEL} : ${contributionUrl}`, DEPOSIT_NOTE);
   }
+  if (legalFooter?.optOutUrl) out.push(`${OPT_OUT_LABEL} : ${legalFooter.optOutUrl}`);
   out.push("—", `Référence de suivi : ${caseReference}\nAdresse de réponse : ${replyTo}`);
   if (legalFooter) {
     out.push(

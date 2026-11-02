@@ -6,8 +6,13 @@ import type { InformationAgentInventorySignals } from "@/lib/information-agent-i
 import {
   discoverInformationAgentContacts,
   INFORMATION_AGENT_PIPELINE_CHANNEL,
+  selectInformationAgentContact,
   type InformationAgentRegistryContact,
 } from "@/lib/information-agent/contacts";
+import { informationAgentAddressHygieneIssue } from "@/lib/information-agent/address-hygiene";
+import { informationAgentAddressCheckEnabled } from "@/lib/information-agent/address-deliverability";
+import { findCourtRegistryFallback } from "@/lib/information-agent/court-registry";
+import { isCourtRegistryFallbackSale } from "@/lib/information-agent/court-registry-fallback";
 
 /**
  * The admin information workflow is allowed to inspect a sale that is kept out
@@ -202,21 +207,30 @@ const EMAIL_AVAILABILITY_SELECT = [
   "observations",
   "source_blocks:raw_payload->source_blocks",
   "source_description:raw_payload->>source_description",
+  "sale_venue_type",
+  "sale_verification_status",
+  "tribunal_code",
+  "quality_flags",
 ].join(",");
 const EMAIL_AVAILABILITY_CHUNK = 50;
 
 /**
- * Pour chaque vente, vrai si l'agent connaît au moins une adresse email valide à qui écrire : le
- * même résolveur que la préparation du brouillon (`discoverInformationAgentContacts`, exclusions et
- * registre interne compris). Un numéro de téléphone, un nom ou un champ vide ne comptent pas. Une
- * vente introuvable vaut faux ; une erreur de lecture des ventes est propagée. Quand le REGISTRE
- * est illisible, une vente sans email dans l'annonce vaut vrai (inconnu) : le bouton n'est pas grisé
- * à tort, et la création du brouillon refuse de toute façon s'il n'y a pas d'adresse.
+ * Classe de contact d'une vente, vérifiée avec le même résolveur que la préparation du brouillon :
+ *   A  un destinataire non ambigu (confiance au moins moyenne, écart de 12 points sur le suivant) ;
+ *   B  une ou plusieurs adresses, mais aucune que l'agent choisit seul (à confirmer par l'administrateur) ;
+ *   C  aucune adresse d'avocat, mais le greffe du tribunal en a une (référentiel des tribunaux) ;
+ *   D  contact impossible : téléphone, nom ou rien.
+ * Une adresse mal formée (hygiène : longueur, artefact, domaine réservé) n'est pas un contact. Une vente
+ * introuvable est absente du résultat. Une erreur de lecture des ventes est propagée. Quand le REGISTRE
+ * est illisible, une vente sans email dans l'annonce vaut B (inconnu) : elle n'est pas écartée à tort, et
+ * la création du brouillon refuse de toute façon s'il n'y a pas d'adresse.
  */
-export async function loadAdminInformationAgentEmailAvailability(
+export type InformationAgentSaleContactClass = "A" | "B" | "C" | "D";
+
+export async function classifyInformationAgentSaleContacts(
   saleIds: readonly string[],
-): Promise<Map<string, boolean>> {
-  const result = new Map<string, boolean>();
+): Promise<Map<string, InformationAgentSaleContactClass>> {
+  const result = new Map<string, InformationAgentSaleContactClass>();
   const ids = [...new Set(saleIds)];
   for (let index = 0; index < ids.length; index += EMAIL_AVAILABILITY_CHUNK) {
     const chunk = ids.slice(index, index + EMAIL_AVAILABILITY_CHUNK);
@@ -225,28 +239,57 @@ export async function loadAdminInformationAgentEmailAvailability(
       loadRegistryContactsBySale(chunk),
     ]);
     if (salesResponse.error) throw salesResponse.error;
-    for (const value of salesResponse.data ?? []) {
-      const row = asSaleRow(value);
-      const id = nullableString(row?.id);
-      if (!row || !id) continue;
-      const sale = {
-        ...toInformationAgentSale(
-          {
-            ...row,
-            raw_payload: {
-              source_blocks: row.source_blocks ?? null,
-              source_description: row.source_description ?? null,
+    const classified = await Promise.all(
+      (salesResponse.data ?? []).map(async (value) => {
+        const row = asSaleRow(value);
+        const id = nullableString(row?.id);
+        if (!row || !id) return null;
+        const sale = {
+          ...toInformationAgentSale(
+            {
+              ...row,
+              raw_payload: {
+                source_blocks: row.source_blocks ?? null,
+                source_description: row.source_description ?? null,
+              },
             },
-          },
-          [],
-          null,
-        ),
-        registry_contacts: registry.contacts.get(id) ?? [],
-      };
-      result.set(id, discoverInformationAgentContacts(sale).length > 0 || !registry.readable);
-    }
+            [],
+            null,
+          ),
+          registry_contacts: registry.contacts.get(id) ?? [],
+        };
+        const checkAddresses = informationAgentAddressCheckEnabled();
+        const candidates = discoverInformationAgentContacts(sale).filter(
+          (candidate) => !checkAddresses || !informationAgentAddressHygieneIssue(candidate.email),
+        );
+        if (candidates.length) {
+          const cls: InformationAgentSaleContactClass = selectInformationAgentContact(candidates)
+            ? "A"
+            : "B";
+          return [id, cls] as const;
+        }
+        if (!registry.readable) return [id, "B"] as const;
+        if (isCourtRegistryFallbackSale(sale) && (await findCourtRegistryFallback(sale))) {
+          return [id, "C"] as const;
+        }
+        return [id, "D"] as const;
+      }),
+    );
+    for (const entry of classified) if (entry) result.set(entry[0], entry[1]);
   }
-  for (const id of ids) if (!result.has(id)) result.set(id, false);
+  return result;
+}
+
+/**
+ * Pour chaque vente, vrai si l'agent peut préparer un message : une adresse d'avocat ou de cabinet (classe A
+ * ou B) ou le greffe du tribunal (classe C). Une vente introuvable vaut faux.
+ */
+export async function loadAdminInformationAgentEmailAvailability(
+  saleIds: readonly string[],
+): Promise<Map<string, boolean>> {
+  const classes = await classifyInformationAgentSaleContacts(saleIds);
+  const result = new Map<string, boolean>();
+  for (const id of new Set(saleIds)) result.set(id, (classes.get(id) ?? "D") !== "D");
   return result;
 }
 

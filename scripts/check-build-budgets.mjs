@@ -130,7 +130,12 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // Module Emails, lots 3-4 (journal des envois et onglet Historique) : total mesuré 6 512 009 pour 6 505 106 sur
 // main (+6 903, la page /admin/emails seule : historique, aperçu d'un message). Lots 3-4 du module Emails,
 // décision du propriétaire du 01/11/2026 : relèvement à 6 515 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_515_000;
+// Refonte de l'agent d'information, lot 1 (02/11/2026) : total mesuré 6 516 296 pour 6 512 322 sur main (+3 974 :
+// file de travail à classes et bloc « Contact impossible », case de relecture, panneau des indicateurs ; l'aperçu
+// de l'e-mail est extrait en composant, le rendu des indicateurs est fait côté serveur). Le propriétaire a autorisé,
+// pour l'ensemble de la refonte (lots 1 et 2), un relèvement de 10 000 octets au plus : plafond à 6 518 000 pour
+// ce lot, le total des deux lots ne dépassera pas 6 525 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_518_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
