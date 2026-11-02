@@ -9,7 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from src import autonomous_runner, main, source_withdrawal
-from src.config import load_settings
+from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
+from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.sources import licitor_history_refresh
 
 # Les vraies fonctions : l'autouse de conftest remplace `withdrawn_sources` pendant chaque test.
@@ -283,6 +284,20 @@ def test_queue_defers_the_enrichment_of_a_fully_withdrawn_sale(monkeypatch) -> N
     source_withdrawal.require_sale_not_withdrawn(
         SimpleNamespace(source_name="licitor", observations=[{"source_name": "vench"}]), "postgresql://test"
     )
-    # Le report d'un accès non autorisé garde son délai et son message d'origine.
+    # Le report d'un accès non autorisé garde son message d'origine et attend lui aussi un jour : sans
+    # autorisation, la tâche reviendrait à chaque tick (report par défaut de 30 min) sans rien faire.
     other = source_withdrawal.deferral_for(RuntimeError("EP"))
-    assert "Encheres Publiques" in str(other) and other.next_attempt_at - datetime.now(UTC) < timedelta(hours=1)
+    assert "Encheres Publiques" in str(other)
+    assert timedelta(hours=23) < other.next_attempt_at - datetime.now(UTC) <= timedelta(hours=24)
+
+
+def test_queue_defers_an_unauthorized_encheres_publiques_sale_for_a_day() -> None:
+    # 02/11/2026 : 9 des 84 prises de la file générale étaient des ventes Encheres Publiques sans autorisation,
+    # rendues 30 min plus tard et reprises au tick suivant. Le refus de la garde réelle attend désormais un jour.
+    with pytest.raises(EncheresPubliquesAccessNotAuthorized) as refused:
+        require_encheres_publiques_sale_access(
+            source_name="encheres_publiques", source_url=None, documents=[], settings={}
+        )
+    deferral = source_withdrawal.deferral_for(refused.value)
+    assert str(deferral) == "Encheres Publiques access authorization required before general enrichment"
+    assert deferral.next_attempt_at - datetime.now(UTC) > timedelta(hours=23)

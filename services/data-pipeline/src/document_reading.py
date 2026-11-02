@@ -475,6 +475,11 @@ select sale.id, sale.source_url, latest.result, reading.input_fingerprint,
   left join public.auction_document_readings reading on reading.sale_id = sale.id
  where sale.status in ('upcoming', 'unknown', 'postponed')
    and (sale.sale_date is null or sale.sale_date >= now())
+   -- Vente masquée parce que toutes ses sources sont retirées du catalogue : pas d'appel au modèle pour elle
+   -- (même règle et même interrupteur que la base, voir src/source_withdrawal.py).
+   and not app_private.sale_is_fully_withdrawn(
+     sale.source_name, sale.observations, (select app_private.catalogue_withdrawn_sources())
+   )
    and (
      reading.sale_id is null
      or reading.prompt_version <> %s

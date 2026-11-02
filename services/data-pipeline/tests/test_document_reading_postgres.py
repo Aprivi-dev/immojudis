@@ -1,6 +1,7 @@
 """Candidate selection and storage of document readings against a real PostgreSQL."""
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -16,7 +17,15 @@ def migration(name: str) -> str:
     return (ROOT / "supabase/migrations" / name).read_text(encoding="utf-8").removeprefix("begin;").removesuffix("commit;\n")
 
 
+def withdrawal_rule() -> str:
+    """L'interrupteur et la règle « vente entièrement retirée » de la vraie migration (sections 2 et 3)."""
+    text = migration("20261021110000_licitor_source_withdrawal.sql")
+    start = text.index("create or replace function app_private.catalogue_withdrawn_sources()")
+    return text[start:text.index("-- 4. Écriture")]
+
+
 def setup(db) -> None:
+    db.execute("create schema if not exists app_private")
     for role in ("anon", "authenticated", "service_role"):
         db.execute(
             f"do $$ begin if not exists(select from pg_roles where rolname='{role}') "
@@ -24,8 +33,14 @@ def setup(db) -> None:
         )
     db.execute(
         """create table auction_sales(id uuid primary key default gen_random_uuid(), source_url text unique,
+        source_name text not null default 'licitor', observations jsonb default '[]',
         status text default 'upcoming', sale_date timestamptz)"""
     )
+    db.execute(
+        """create table auction_source_state(source_name text primary key,
+        catalogue_withdrawn boolean not null default false)"""
+    )
+    db.execute(withdrawal_rule())
     db.execute(
         """create table auction_extractions(source_url text, provider text, result jsonb,
         updated_at timestamptz default now())"""
@@ -35,9 +50,12 @@ def setup(db) -> None:
 
 
 def add_sale(db, url: str, *, status: str | None, attempts: int = 0, generated_hours_ago: float = 0,
-             version: str = reading.DOCUMENT_READING_VERSION) -> None:
+             version: str = reading.DOCUMENT_READING_VERSION, source: str = "licitor",
+             observations: list[str] | None = None) -> None:
+    sources = observations or [source]
     sale_id = db.execute(
-        "insert into auction_sales(source_url) values (%s) returning id", (url,)
+        "insert into auction_sales(source_url, source_name, observations) values (%s, %s, %s::jsonb) returning id",
+        (url, source, json.dumps([{"source_name": name} for name in sources])),
     ).fetchone()[0]
     db.execute(
         "insert into auction_extractions(source_url, provider, result, updated_at) "
@@ -86,6 +104,29 @@ def test_failed_readings_come_back_only_when_their_backoff_has_elapsed():
             assert found["third-due"] == ("failed", 3, True)
             assert found["legacy-failed"] == ("failed", 0, True)
             assert found["old-version"] == ("completed", 0, False)
+        finally:
+            db.rollback()
+
+
+def test_sales_whose_sources_are_all_withdrawn_are_not_read():
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+    with _postgres_connect(url) as db:
+        try:
+            setup(db)
+            db.execute(
+                "insert into auction_source_state(source_name, catalogue_withdrawn) "
+                "values ('vench', true), ('licitor', false)"
+            )
+            add_sale(db, "withdrawn", status=None, source="vench")
+            add_sale(db, "merged", status=None, source="vench", observations=["vench", "licitor"])
+            add_sale(db, "active", status=None, source="licitor")
+
+            assert set(candidates(db)) == {"merged", "active"}
+
+            db.execute("update auction_source_state set catalogue_withdrawn = false where source_name = 'vench'")
+            assert set(candidates(db)) == {"withdrawn", "merged", "active"}
         finally:
             db.rollback()
 

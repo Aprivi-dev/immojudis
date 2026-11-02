@@ -47,6 +47,12 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
     assert "a.job_type = 'pdf' and a.updated_at >= now() - interval '1 day'" in sql
     # A document read except for a few pages ("partial") is settled.
     assert "not in ('extracted', 'empty', 'partial')" in sql
+    # A sale whose every source is withdrawn from the catalogue (Vench, Petites Affiches) is hidden and its queue
+    # jobs wait a day: it must not take a slot of the selection. Same rule and switch as the database.
+    assert (
+        "and not app_private.sale_is_fully_withdrawn( s.source_name, s.observations,"
+        " (select app_private.catalogue_withdrawn_sources()) )"
+    ) in sql
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
     assert "j.job_type = 'pdf'" in claim and "for update of j, s skip locked" in claim
     ensure = " ".join(backlog.ENSURE_JOB_SQL.split())
