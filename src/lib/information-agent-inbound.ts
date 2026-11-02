@@ -1,4 +1,5 @@
 import "server-only";
+import { markInformationAgentCaseDelivery } from "@/lib/information-agent-inbound/case-delivery";
 import { Resend, type EmailReceivedEvent } from "resend";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { enforceGlobalRateLimit } from "@/lib/rate-limit";
@@ -198,7 +199,7 @@ export async function processInformationAgentInboundWebhook({
   };
   // Rebonds et plaintes des emails de l'agent : écrits sur le registre de contacts, qui coupe l'envoi.
   if (event.type === "email.bounced" || event.type === "email.complained") {
-    const processed = await processDeliveryEvent(event, env);
+    const processed = await processDeliveryEvent(event, env, markInformationAgentCaseDelivery);
     await logDelivery();
     return processed;
   }

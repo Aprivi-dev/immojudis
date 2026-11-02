@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ from: vi.fn() }));
+const mocks = vi.hoisted(() => ({ from: vi.fn(), courtFallback: vi.fn() }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.from },
 }));
+vi.mock("@/lib/information-agent/court-registry", () => ({
+  findCourtRegistryFallback: mocks.courtFallback,
+}));
 
 import {
+  classifyInformationAgentSaleContacts,
   loadAdminInformationAgentEmailAvailability,
   loadAdminInformationAgentSale,
   requireAdminInformationAgentSaleAccess,
@@ -575,5 +579,116 @@ describe("loadAdminInformationAgentEmailAvailability", () => {
     await expect(loadAdminInformationAgentEmailAvailability([saleId])).rejects.toMatchObject({
       code: "XX000",
     });
+  });
+});
+
+describe("classifyInformationAgentSaleContacts : classes A, B, C et D", () => {
+  const classA = "a1111111-1111-4111-8111-111111111111";
+  const classB = "b2222222-2222-4222-8222-222222222222";
+  const classC = "c3333333-3333-4333-8333-333333333333";
+  const classCNoAddress = "c4444444-4444-4444-8444-444444444444";
+  const classD = "d5555555-5555-4555-8555-555555555555";
+  const notCourt = "e6666666-6666-4666-8666-666666666666";
+
+  function row(id: string, extra: Record<string, unknown>) {
+    return {
+      id,
+      lawyer_name: null,
+      lawyer_contact: null,
+      description: null,
+      source_name: "licitor",
+      source_url: "https://example.test/annonce",
+      source_urls: null,
+      observations: [],
+      source_blocks: null,
+      source_description: null,
+      ...extra,
+    };
+  }
+
+  function setup(sales: unknown[], registryError: unknown = null) {
+    const salesQuery = { select: vi.fn(), in: vi.fn() };
+    salesQuery.select.mockReturnValue(salesQuery);
+    salesQuery.in.mockResolvedValue({ data: sales, error: null });
+    const contacts = {
+      select: vi.fn(),
+      in: vi.fn(),
+      eq: vi.fn(),
+      neq: vi.fn(),
+      order: vi.fn(),
+      limit: vi.fn(),
+    };
+    for (const name of ["select", "in", "eq", "neq", "order"] as const) {
+      contacts[name].mockReturnValue(contacts);
+    }
+    contacts.limit.mockResolvedValue({ data: [], error: registryError });
+    mocks.from.mockImplementation((table: string) =>
+      table === "auction_sales" ? salesQuery : contacts,
+    );
+  }
+
+  const court = { sale_venue_type: "tribunal", sale_verification_status: "verified" };
+
+  beforeEach(() => {
+    mocks.courtFallback.mockReset();
+    mocks.courtFallback.mockImplementation(async (sale: { tribunal_code?: string }) =>
+      sale.tribunal_code === "T-OK" ? { court: { code: "T-OK" } } : null,
+    );
+  });
+
+  it("répartit les ventes en A (avocat), B (à confirmer), C (greffe) et D (impossible)", async () => {
+    setup([
+      row(classA, { lawyer_contact: "Me Dupont dupont@cabinet-dupont.test" }),
+      row(classB, {
+        lawyer_contact: "Contact : premier@cabinet-un.test ou second@cabinet-deux.test",
+        source_blocks: { contact_avocat: "premier@cabinet-un.test ou second@cabinet-deux.test" },
+      }),
+      row(classC, { ...court, tribunal_code: "T-OK", lawyer_contact: "05 56 00 00 01" }),
+      row(classCNoAddress, { ...court, tribunal_code: "T-KO" }),
+      row(classD, { lawyer_contact: "05 56 00 00 01" }),
+      row(notCourt, { sale_venue_type: "notaire", tribunal_code: "T-OK" }),
+    ]);
+
+    const classes = await classifyInformationAgentSaleContacts([
+      classA,
+      classB,
+      classC,
+      classCNoAddress,
+      classD,
+      notCourt,
+    ]);
+
+    expect(classes.get(classA)).toBe("A");
+    expect(classes.get(classB)).toBe("B");
+    expect(classes.get(classC)).toBe("C");
+    expect(classes.get(classCNoAddress)).toBe("D");
+    expect(classes.get(classD)).toBe("D");
+    expect(classes.get(notCourt)).toBe("D");
+  });
+
+  it("ne cherche le greffe que pour une vente sans aucune adresse d'avocat", async () => {
+    setup([row(classA, { ...court, tribunal_code: "T-OK", lawyer_contact: "me@cabinet-a.test" })]);
+    expect((await classifyInformationAgentSaleContacts([classA])).get(classA)).toBe("A");
+    expect(mocks.courtFallback).not.toHaveBeenCalled();
+  });
+
+  it("la file ne dépend plus de la recherche automatique d'adresse", async () => {
+    vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", "true");
+    setup([row(classD, { lawyer_contact: "05 56 00 00 01" })]);
+    expect((await classifyInformationAgentSaleContacts([classD])).get(classD)).toBe("D");
+    vi.unstubAllEnvs();
+  });
+
+  it("une adresse mal formée n'est pas un contact quand le contrôle d'adresses est actif", async () => {
+    vi.stubEnv("INFORMATION_AGENT_ADDRESS_CHECK", "on");
+    setup([row(classA, { lawyer_contact: "dupont@cabinet.test" })]);
+    expect((await classifyInformationAgentSaleContacts([classA])).get(classA)).toBe("D");
+    vi.unstubAllEnvs();
+  });
+
+  it("registre illisible : une vente sans email reste B (inconnu), jamais écartée à tort", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    setup([row(classD, { lawyer_contact: "05 56 00 00 01" })], { code: "42501" });
+    expect((await classifyInformationAgentSaleContacts([classD])).get(classD)).toBe("B");
   });
 });

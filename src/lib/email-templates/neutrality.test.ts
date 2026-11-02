@@ -23,6 +23,13 @@ import { EMAIL_TEMPLATES } from "./registry";
  * l'espace de 8 px sous le paragraphe qui la précède ; trial_ending reçoit en plus la cellule de pied qui
  * la porte. Les empreintes des huit autres gabarits (paiement échoué, résiliation, mise en relation, incident,
  * relecture des réponses, agent d'information) sont celles d'avant.
+ *
+ * Mise à jour explicite du 02/11/2026 (agent d'information, lot 1, ajout autorisé par le propriétaire) : les
+ * empreintes de agent_request et agent_court_registry ont changé, et SEULEMENT celles-là. Les deux rendus ne
+ * diffèrent de ceux d'avant que par UNE ligne sous la signature : le lien « Ne plus être contacté » (même
+ * libellé et même adresse que celui du pied), en HTML (paragraphe discret) et en texte (« Ne plus être
+ * contacté : <lien> »). Aucun autre texte ne change (vérifié par emails/information-request.test.tsx, qui garde
+ * les textes juridiques mot pour mot).
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
@@ -37,8 +44,8 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
   replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
-  agent_request: "0202c25c06bad99946a5fe07e04f3d0116b7d3b1b260a19c52236bb2369eb638",
-  agent_court_registry: "a2dbd330e438cf93bd3a5c5dd85233b49c4351c7e381fc0fb79e035df8c8a20d",
+  agent_request: "cb2ab85a91f403b7d4733dab28dfdbecf91cc785003ca7fd4e2e8895d029d7ba",
+  agent_court_registry: "7d736d062cd27e551d153d1cfd913de9b98281658327fad48c627c5ae5ab3bb5",
 };
 
 async function fingerprints(key: string): Promise<string[]> {

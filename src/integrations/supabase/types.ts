@@ -7705,6 +7705,27 @@ export type Database = {
           },
         ];
       };
+      information_agent_operations: {
+        Row: {
+          inbound_roundtrip_verified_at: string | null;
+          inbound_roundtrip_verified_by: string | null;
+          singleton: boolean;
+          updated_at: string;
+        };
+        Insert: {
+          inbound_roundtrip_verified_at?: string | null;
+          inbound_roundtrip_verified_by?: string | null;
+          singleton?: boolean;
+          updated_at?: string;
+        };
+        Update: {
+          inbound_roundtrip_verified_at?: string | null;
+          inbound_roundtrip_verified_by?: string | null;
+          singleton?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       information_agent_portal_upload_reservations: {
         Row: {
           case_id: string;
@@ -14587,6 +14608,10 @@ export type Database = {
           subject: string;
         }[];
       };
+      admin_information_agent_queue: {
+        Args: { p_class?: string; p_limit?: number; p_offset?: number };
+        Returns: Json;
+      };
       admin_lawyer_monthly_statement: {
         Args: { p_month: string };
         Returns: {
@@ -14672,6 +14697,7 @@ export type Database = {
       approve_information_agent_mission_admin: {
         Args: {
           p_admin_id: string;
+          p_daily_cap?: number;
           p_message_sha256: string;
           p_mission_id: string;
         };
@@ -14697,6 +14723,10 @@ export type Database = {
           should_send: boolean;
           usage_count: number;
         }[];
+      };
+      attest_information_agent_roundtrip: {
+        Args: { p_admin_id: string };
+        Returns: string;
       };
       attach_analyse_checkout_customer: {
         Args: {
@@ -15647,6 +15677,10 @@ export type Database = {
         }[];
       };
       has_analysis_access: { Args: never; Returns: boolean };
+      information_agent_indicators: {
+        Args: { p_now?: string; p_since?: string };
+        Returns: Json;
+      };
       increment_property_report_share_view: { Args: { p_report_id: string }; Returns: number };
       user_id_for_email: { Args: { p_email: string }; Returns: string | null };
       is_admin: { Args: never; Returns: boolean };

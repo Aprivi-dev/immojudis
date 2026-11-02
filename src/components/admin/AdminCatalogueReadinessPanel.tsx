@@ -24,6 +24,8 @@ import type {
 
 const QUERY_KEY = ["admin-catalogue-readiness"] as const;
 
+const CONTACT_CLASS_LABELS = { A: "Avocat", B: "À confirmer", C: "Greffe", D: "" } as const;
+
 export type InformationRequestSelection = {
   saleId: string;
   title: string;
@@ -152,9 +154,15 @@ export function AdminCatalogueReadinessPanel({
         <div className="border-b px-5 py-4">
           <h2 className="font-semibold">File d’enrichissement</h2>
           <p className="mt-1 text-sm text-brand-navy/60">
-            {overview.queueTotal} dossier{overview.queueTotal > 1 ? "s" : ""} à reprendre, classés
-            par proximité avec le seuil.
+            {overview.queueTotal} dossier{overview.queueTotal > 1 ? "s" : ""} à reprendre avec un
+            contact : avocats, puis greffes, puis adresses à confirmer.
           </p>
+          {overview.classCounts ? (
+            <p className="mt-1 text-xs text-brand-navy/55">
+              Avocat {overview.classCounts.A} · Greffe {overview.classCounts.C} · À confirmer{" "}
+              {overview.classCounts.B}
+            </p>
+          ) : null}
         </div>
         {overview.items.length ? (
           <div className="divide-y">
@@ -181,6 +189,28 @@ export function AdminCatalogueReadinessPanel({
           onOffsetChange={setPageOffset}
         />
       </section>
+      {overview.impossibleItems?.length ? (
+        <details className="overflow-hidden rounded-xl border bg-white">
+          <summary className="cursor-pointer px-5 py-4 font-semibold">
+            Contact impossible ({overview.classCounts?.D ?? overview.impossibleItems.length})
+          </summary>
+          <p className="border-t px-5 py-3 text-sm text-brand-navy/60">
+            L’annonce ne donne aucune adresse email. Si vous en trouvez une sur une page publique,
+            saisissez-la : elle est alors citée au destinataire.
+          </p>
+          <div className="divide-y border-t">
+            {overview.impossibleItems.map((item) => (
+              <QueueLine
+                key={item.id}
+                item={item}
+                pending={action.isPending}
+                run={action.mutate}
+                onPrepareInformationRequest={onPrepareInformationRequest}
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -204,6 +234,7 @@ function QueueLine({
   const [reason, setReason] = useState("");
   const title = item.title || [item.city, item.department].filter(Boolean).join(" — ") || item.id;
   const blockedReason = item.informationAgentBlockedReason ?? null;
+  const impossible = item.contactClass === "D";
   return (
     <article className="p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -213,6 +244,11 @@ function QueueLine({
             <span className="font-mono text-xs text-brand-navy/50">
               {item.readinessScore == null ? "Non scorée" : `${item.readinessScore}/100`}
             </span>
+            {item.contactClass && item.contactClass !== "D" ? (
+              <span className="rounded-full border px-2 py-0.5 text-xs">
+                {CONTACT_CLASS_LABELS[item.contactClass]}
+              </span>
+            ) : null}
             {item.override ? (
               <span className="rounded-full border px-2 py-0.5 text-[11px]">
                 Dérogation : {item.override === "publish" ? "publier" : "retenir"}
@@ -246,7 +282,7 @@ function QueueLine({
             <button
               type="button"
               className="admin-button-primary inline-flex items-center gap-2"
-              disabled={Boolean(blockedReason)}
+              disabled={Boolean(blockedReason) && !impossible}
               aria-describedby={blockedReason ? `information-agent-blocked-${item.id}` : undefined}
               onClick={() =>
                 onPrepareInformationRequest({
@@ -258,7 +294,9 @@ function QueueLine({
               }
             >
               <MailPlus className="size-3.5" />
-              Ouvrir le message
+              {impossible
+                ? "Saisir une adresse trouvée sur une page publique"
+                : "Ouvrir le message"}
             </button>
           ) : null}
           <Link

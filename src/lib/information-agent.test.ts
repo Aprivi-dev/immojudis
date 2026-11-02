@@ -358,6 +358,11 @@ describe("supervised information agent", () => {
           // The shared case was already sent by another mission: say so instead of « updated ».
           await expect(operation).rejects.toThrow("Aucun email n’est parti");
           expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
+          // Le plafond de validations par administrateur et par jour est appliqué dans la fonction d'approbation.
+          expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
+            "approve_information_agent_mission_admin",
+            expect.objectContaining({ p_daily_cap: 30 }),
+          );
           return;
         } else if (scenario === "timeout") {
           // Resend n'a pas répondu à temps : l'email est peut-être parti. Ni « sent », ni un échec
