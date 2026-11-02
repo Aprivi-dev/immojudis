@@ -136,6 +136,7 @@ describe("rapport de l'onglet Adresses", () => {
     const serialized = JSON.stringify(report);
     expect(serialized).not.toContain("SENTINELLE");
     expect(report.addresses.map((row) => row.variable)).toEqual([
+      "NOREPLY_EMAIL_FROM",
       "ALERT_EMAIL_FROM",
       "TRANSACTIONAL_EMAIL_FROM",
       "INFORMATION_AGENT_EMAIL_FROM",

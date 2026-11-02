@@ -108,7 +108,7 @@ describe("paramètres de lecture", () => {
     expect(section.items.length).toBeGreaterThan(10);
     expect(section.items[0]).toMatchObject({
       title: "Alerte de recherche",
-      code: "alert · ALERT_EMAIL_FROM",
+      code: "alert · NOREPLY_EMAIL_FROM",
       badges: [{ text: "Textes éditables (bientôt)" }, { text: "Catégorie : alert" }],
     });
     expect(JSON.stringify(body)).not.toContain("sample");

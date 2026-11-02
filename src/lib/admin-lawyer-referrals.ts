@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { resolveEmailAlertDeliveryConfig, type ResendEmailMessage } from "@/lib/email-alerts";
+import { resolveTransactionalEmailConfig, type ResendEmailMessage } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { escapeHtml } from "@/lib/guards";
@@ -479,7 +479,7 @@ async function dispatchReferencedLawyerEmailIfNeeded({
     };
   }
 
-  const config = resolveEmailAlertDeliveryConfig(env);
+  const config = resolveTransactionalEmailConfig(env);
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) {
     return {
       status: "skipped",

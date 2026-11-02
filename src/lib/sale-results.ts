@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { errorDetailForLog } from "@/lib/api-errors";
-import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { saleResultsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import {
@@ -369,7 +369,7 @@ export async function runSaleResults({
   if (mode === "off") return { ...summary, skipped: "off" };
   const sendMode: "internal" | "on" = mode;
 
-  const config = resolveEmailAlertDeliveryConfig(env);
+  const config = resolveNoReplyEmailConfig(env);
   const ready = Boolean(config.configured && config.apiKey && config.from && config.appUrl);
   summary.configured = ready;
   if (!ready) summary.missingConfig = config.missing;

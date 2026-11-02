@@ -192,6 +192,6 @@ export function buildAuthEmailTemplate(
     title: definition.subject,
     preheader: definition.preheader,
     content: content.join(""),
-    footer: { reason: BRAND_FOOTER },
+    footer: { reason: BRAND_FOOTER, noReply: true },
   })}\n`;
 }
