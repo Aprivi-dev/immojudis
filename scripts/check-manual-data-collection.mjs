@@ -46,6 +46,8 @@ const allowedDatabaseCronJobs = new Set([
   "immojudis-operational-history-retention",
   "immojudis-sale-retention",
   "immojudis-information-agent-inbound",
+  // Pilote automatique de l'agent (lot 2) : envoi, pas collecte ; désactivé par défaut, appel HTTP seulement si le mode n'est pas « off ».
+  "immojudis-information-agent-autopilot",
   "immojudis-listing-completeness",
   "immojudis-sale-pepites",
   "immojudis-sale-flood-risk",

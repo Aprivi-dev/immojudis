@@ -58,6 +58,9 @@ insert into public.user_profiles (user_id, email, user_role) values
   ('86800000-0000-4000-8000-0000000000a2', 'autopilot-user@example.test', 'user')
 on conflict (user_id) do update set user_role = excluded.user_role;
 
+insert into public.auction_sales (id, source_name, source_url, status, tribunal_code)
+values ('86800000-1000-4000-8000-000000000001', 'autopilot-pgtap', 'https://example.test/868', 'upcoming', 'T868');
+
 -- Un compte qui n'est pas administrateur ---------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"86800000-0000-4000-8000-0000000000a2","role":"authenticated","aal":"aal2"}', true);
 
@@ -115,9 +118,33 @@ select throws_ok(
   $$select public.set_information_agent_autopilot_mode('live', 'Passage en réel autorisé')$$,
   '55000', null, 'the real mode is refused without a recent round trip verification'
 );
-select ok(
-  public.attest_information_agent_roundtrip('86800000-0000-4000-8000-0000000000a1') is not null
-  and (select mode from public.set_information_agent_autopilot_mode('live', 'Passage en réel autorisé')) = 'live',
+-- Preuve de l'aller-retour : réponse de test reçue et routée vers un dossier de l'administrateur (adresse de son domaine).
+insert into public.information_agent_cases (
+  id, sale_id, created_by, status, recipient_email, normalized_recipient_email, subject, body_text, question_keys, missing_information
+) values (
+  '86800000-3000-4000-8000-0000000000c1', '86800000-1000-4000-8000-000000000001', '86800000-0000-4000-8000-0000000000a1', 'sent', 'roundtrip-test@example.test', 'roundtrip-test@example.test', 'Message de test', 'Message de test de plus de vingt caractères.',
+  array['documents'], array['documents']
+);
+insert into public.information_agent_missions (
+  id, user_id, sale_id, case_id, status, recipient_email, subject, body_text, question_keys, missing_information, privacy_version
+) values (
+  '86800000-3000-4000-8000-0000000000c2', '86800000-0000-4000-8000-0000000000a1', '86800000-1000-4000-8000-000000000001', '86800000-3000-4000-8000-0000000000c1', 'sent', 'roundtrip-test@example.test', 'Message de test', 'Message de test de plus de vingt caractères.',
+  array['documents'], array['documents'], 'roundtrip-pgtap'
+);
+insert into public.information_agent_messages (
+  id, mission_id, case_id, user_id, direction, message_kind, delivery_status, subject, body_text, received_at
+) values (
+  '86800000-3000-4000-8000-0000000000c3', '86800000-3000-4000-8000-0000000000c2', '86800000-3000-4000-8000-0000000000c1', '86800000-0000-4000-8000-0000000000a1', 'inbound', 'reply', 'received', 'Re: Message de test', 'Réponse de test.', now() - interval '1 hour'
+);
+
+do $$
+begin
+  perform public.attest_information_agent_roundtrip('86800000-0000-4000-8000-0000000000a1');
+end;
+$$;
+select is(
+  (select mode from public.set_information_agent_autopilot_mode('live', 'Passage en réel autorisé')),
+  'live',
   'with the AIPD and the round trip attested, an administrator can switch to the real mode'
 );
 
@@ -199,8 +226,6 @@ select ok(
 );
 
 -- Filet SQL ------------------------------------------------------------------------------------------------------------------
-insert into public.auction_sales (id, source_name, source_url, status, tribunal_code)
-values ('86800000-1000-4000-8000-000000000001', 'autopilot-pgtap', 'https://example.test/868', 'upcoming', 'T868');
 insert into public.information_agent_missions (
   id, user_id, sale_id, status, recipient_email, subject, body_text, question_keys, missing_information, privacy_version, metadata
 ) values

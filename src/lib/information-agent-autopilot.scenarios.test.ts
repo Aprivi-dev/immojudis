@@ -691,6 +691,30 @@ describe("cas juridiques du cahier des charges", () => {
     ).toEqual({ ok: true });
   });
 
+  it("J-mauvais-destinataire : une réponse « ce n'est pas moi » à un envoi du pilote l'arrête et exclut l'identité", async () => {
+    const { applyWrongRecipient } = await import("@/lib/information-agent-inbound/wrong-recipient");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    mocks.db.rows = [
+      {
+        recipient_identity_keys: ["lawyer|bordeaux|dupont jean"],
+        metadata: { trigger: "autopilot" },
+      },
+    ];
+
+    const result = await applyWrongRecipient({ caseId: "case-1", source: "reply" });
+
+    expect(result).toEqual({ stopped: true, excludedIdentities: 1 });
+    const names = vi.mocked(supabaseAdmin.rpc).mock.calls.map((call) => String(call[0]));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "record_information_agent_autopilot_exclusions",
+        "record_information_agent_autopilot_auto_stop",
+      ]),
+    );
+    // L'identité exclue n'est plus jamais candidate : elle repasse en validation manuelle.
+    expect(verdict({ identityExcluded: true })).toEqual({ ok: false, code: "identity_excluded" });
+  });
+
   it("J-90 jours : pause de 90 jours après une réponse", () => {
     expect(verdict({ lastReplyAt: "2026-09-20T10:00:00Z" })).toEqual({
       ok: false,

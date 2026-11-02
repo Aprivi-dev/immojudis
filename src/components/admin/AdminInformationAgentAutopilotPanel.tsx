@@ -9,6 +9,7 @@ import {
 } from "@/lib/client-api";
 
 const QUERY_KEY = ["admin-information-agent-autopilot"] as const;
+const BTN = "admin-button-secondary";
 const MODES = [
   ["off", "Éteint"],
   ["simulation", "Simulation"],
@@ -79,7 +80,7 @@ export function AdminInformationAgentAutopilotPanel() {
               <button
                 key={mode}
                 type="button"
-                className="admin-button-secondary"
+                className={BTN}
                 disabled={!ready || view.mode === mode}
                 onClick={() => run.mutate({ action: "set_mode", mode, reason })}
               >
@@ -119,30 +120,27 @@ export function AdminInformationAgentAutopilotPanel() {
           </details>
           <details>
             <summary className="cursor-pointer font-medium">Réglages</summary>
-            <div className="mt-2 flex flex-wrap items-end gap-2">
-              <label className="text-xs">
-                Plafond par jour
-                <input
-                  value={cap}
-                  onChange={(event) => setCap(event.target.value)}
-                  inputMode="numeric"
-                  placeholder={String(view.settings.capTotalOverride ?? "phase")}
-                  className="mt-1 block w-24 rounded-lg border bg-white px-2 py-1"
-                />
-              </label>
-              <label className="text-xs">
-                Article 14 : jours
-                <input
-                  value={days}
-                  onChange={(event) => setDays(event.target.value)}
-                  inputMode="numeric"
-                  placeholder={String(view.settings.art14MaxAgeDays)}
-                  className="mt-1 block w-24 rounded-lg border bg-white px-2 py-1"
-                />
-              </label>
+            <div className="mt-2 flex flex-wrap items-end gap-2 text-xs">
+              {(
+                [
+                  ["Plafond par jour", cap, setCap, view.settings.capTotalOverride ?? "phase"],
+                  ["Article 14 : jours", days, setDays, view.settings.art14MaxAgeDays],
+                  ["Version de l’AIPD", aipd, setAipd, view.settings.aipdLabel],
+                ] as const
+              ).map(([label, value, set, hint]) => (
+                <label key={label}>
+                  {label}
+                  <input
+                    value={value}
+                    onChange={(event) => set(event.target.value)}
+                    placeholder={String(hint)}
+                    className="mt-1 block w-28 rounded-lg border bg-white px-2 py-1"
+                  />
+                </label>
+              ))}
               <button
                 type="button"
-                className="admin-button-secondary"
+                className={BTN}
                 disabled={!ready || (!cap && !days)}
                 onClick={() =>
                   run.mutate({
@@ -159,50 +157,30 @@ export function AdminInformationAgentAutopilotPanel() {
               </button>
               <button
                 type="button"
-                className="admin-button-secondary"
-                disabled={!ready}
-                onClick={() =>
-                  run.mutate({
-                    action: "update_settings",
-                    reason,
-                    changes: { allowLicitorDecoded: !view.settings.allowLicitorDecoded },
-                  })
-                }
-              >
-                Adresses Licitor décodées :{" "}
-                {view.settings.allowLicitorDecoded ? "autorisées" : "exclues"}
-              </button>
-              <button
-                type="button"
-                className="admin-button-secondary"
-                disabled={!ready}
-                onClick={() =>
-                  run.mutate({
-                    action: "update_settings",
-                    reason,
-                    changes: { art14RuleEnabled: !view.settings.art14RuleEnabled },
-                  })
-                }
-              >
-                Règle de l’article 14 : {view.settings.art14RuleEnabled ? "active" : "coupée"}
-              </button>
-            </div>
-            <div className="mt-2 flex flex-wrap items-end gap-2">
-              <p className="text-xs">AIPD : {view.settings.aipdLabel}</p>
-              <input
-                aria-label="Version de l’AIPD"
-                value={aipd}
-                onChange={(event) => setAipd(event.target.value)}
-                className="w-32 rounded-lg border bg-white px-2 py-1 text-xs"
-              />
-              <button
-                type="button"
-                className="admin-button-secondary"
+                className={BTN}
                 disabled={!ready || !aipd.trim()}
                 onClick={() => run.mutate({ action: "attest_aipd", version: aipd.trim(), reason })}
               >
                 Attester l’AIPD
               </button>
+              {(
+                [
+                  ["Licitor décodées", "allowLicitorDecoded", view.settings.allowLicitorDecoded],
+                  ["Article 14", "art14RuleEnabled", view.settings.art14RuleEnabled],
+                ] as const
+              ).map(([label, key, on]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={BTN}
+                  disabled={!ready}
+                  onClick={() =>
+                    run.mutate({ action: "update_settings", reason, changes: { [key]: !on } })
+                  }
+                >
+                  {label} : {on ? "oui" : "non"}
+                </button>
+              ))}
             </div>
           </details>
           <div>

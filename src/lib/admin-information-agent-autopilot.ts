@@ -102,7 +102,10 @@ async function loadPreparedDrafts(): Promise<string[]> {
 
 export async function getAdminAutopilotView(
   authToken: string,
-  { env = process.env, now = new Date() }: { env?: NodeJS.ProcessEnv; now?: Date } = {},
+  {
+    env = process.env,
+    now = new Date(),
+  }: { env?: Readonly<Record<string, string | undefined>>; now?: Date } = {},
 ): Promise<AutopilotView> {
   await requireAdmin(authToken);
   const [{ settings, stats, report }, events, prepared] = await Promise.all([
@@ -120,7 +123,7 @@ export async function runAdminAutopilotAction({
 }: {
   authToken: string;
   input: AdminAutopilotAction;
-  env?: NodeJS.ProcessEnv;
+  env?: Readonly<Record<string, string | undefined>>;
 }): Promise<AutopilotView> {
   const auth = await requireAdmin(authToken);
   if (input.action === "set_mode") {
