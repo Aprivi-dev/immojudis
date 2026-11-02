@@ -1,0 +1,466 @@
+import "server-only";
+import { createHash } from "node:crypto";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Json } from "@/integrations/supabase/types";
+import {
+  INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
+  renderInformationRequestEmail,
+} from "../../../emails/information-request";
+import { sendTrackedEmail } from "@/lib/send-tracked-email";
+import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
+import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
+import {
+  assertAgentFoundOriginIntact,
+  assertInformationAgentSearchedAddressAllowed,
+  isAgentFoundRecipient,
+} from "@/lib/information-agent/address-search";
+import {
+  assertInformationAgentSourceAllowed,
+  INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
+  resolveInformationAgentAddressOrigin,
+} from "@/lib/information-agent/address-origin";
+import {
+  assertInformationAgentCanaryRecipient,
+  assertInformationAgentOutboundEnabled,
+  informationAgentCaseReference,
+  resolveInformationAgentEmailConfig,
+} from "@/lib/information-agent/config";
+import {
+  assertInformationAgentContactAllowed,
+  recordInformationAgentAdminAddressEntry,
+  normalizedEmail,
+} from "@/lib/information-agent/contacts";
+import { assertCourtRegistryFallbackLimits } from "@/lib/information-agent/court-registry";
+import {
+  assertCourtRegistryFallbackOriginIntact,
+  courtRegistryMessageMetadata,
+  courtRegistryMissionChecks,
+  withoutCourtRegistryTrace,
+} from "@/lib/information-agent/court-registry-mission";
+import {
+  assertInformationAgentHasQuestion,
+  assertInformationAgentSaleCurrent,
+  saleSourceTexts,
+} from "@/lib/information-agent/draft-checks";
+import {
+  assertInformationAgentControllerIdentity,
+  assertInformationAgentPreviewFingerprint,
+  buildInformationAgentLegalFooter,
+} from "@/lib/information-agent/message-guards";
+import {
+  missionIdentityKeys,
+  missionSaleReference,
+} from "@/lib/information-agent/mission-identity";
+import {
+  asObject,
+  loadOwnedMission,
+  updateCaseOrThrow,
+  updateMissionOrThrow,
+  type MissionRow,
+} from "@/lib/information-agent/mission-store";
+import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
+import {
+  UNVERIFIED_SEND_OUTCOME,
+  type InformationAgentAdminActionPayload,
+} from "@/lib/information-agent/schemas";
+
+// Envoi validé d'une mission : l'unique chemin d'envoi de l'agent (`approveAndSendMission`).
+// Extrait de `information-agent.ts` sans changement de comportement ; le verrou
+// `information-agent-no-automatic-send.test.ts` lit ce fichier.
+
+export async function approveAndSendMission({
+  adminId,
+  input,
+  fetchImpl,
+}: {
+  adminId: string;
+  input: Extract<InformationAgentAdminActionPayload, { action: "approve_and_send" }>;
+  fetchImpl: typeof fetch;
+}) {
+  const mission = await loadOwnedMission(adminId, input.missionId);
+  if (mission.status !== "draft" && mission.status !== "failed") {
+    throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
+  }
+  assertUnverifiedSendWithinIdempotencyWindow(mission);
+  // Envoi strictement manuel : l'administrateur a affiché l'aperçu de ce contenu exact.
+  assertInformationAgentPreviewFingerprint({ adminId, input });
+  // Aucune mention commerciale : le message reste purement informatif.
+  assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`, {
+    ignore: saleSourceTexts(mission),
+  });
+  assertInformationAgentHasQuestion(input.bodyText);
+  await assertInformationAgentSaleCurrent(mission);
+  // Opposition par adresse et par identité (le nom corrigé à l'aperçu compte), avant l'envoi.
+  // Greffe de secours : l'adresse du référentiel est la seule adresse de juridiction admise ; adresse, vente
+  // relue et limites du tribunal sont contrôlées avant tout (court-registry-mission.ts).
+  const { fallback: courtFallback, checks: courtChecks } = courtRegistryMissionChecks({
+    mission,
+    recipientEmail: input.recipientEmail,
+  });
+  for (const check of courtChecks) await check();
+  // Un greffe n'a pas de nom de personne : aucune clé d'identité, même si un nom est saisi.
+  const identityKeys = missionIdentityKeys(mission, courtFallback ? null : input.recipientName);
+  await assertInformationAgentContactAllowed({
+    saleId: mission.sale_id,
+    email: input.recipientEmail,
+    identityKeys,
+    courtRegistryAddress: Boolean(courtFallback),
+  });
+  // Adresse retrouvée par l'agent : sa seule origine est la ligne de registre de l'agent.
+  const agentFound = isAgentFoundRecipient(mission, input.recipientEmail);
+  const addressOrigin = await resolveInformationAgentAddressOrigin({
+    email: input.recipientEmail,
+    saleId: mission.sale_id,
+    manualOriginUrl: agentFound || courtFallback ? null : (input.recipientOriginUrl ?? null),
+    fallbackObservedAt: mission.created_at,
+  });
+  if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  assertAgentFoundOriginIntact(agentFound, addressOrigin);
+  assertCourtRegistryFallbackOriginIntact(Boolean(courtFallback), addressOrigin);
+  assertInformationAgentSourceAllowed(addressOrigin);
+  assertInformationAgentSearchedAddressAllowed(addressOrigin.origin);
+  assertInformationAgentOutboundEnabled();
+  assertInformationAgentCanaryRecipient(input.recipientEmail);
+  // Validate delivery prerequisites before approval reserves the case for sending.
+  // Otherwise a configuration error can leave an approved case with no delivery attempt.
+  const config = resolveInformationAgentEmailConfig();
+
+  // GDPR art. 14 prerequisites: a named controller, and at most one email per recipient per 30 days.
+  assertInformationAgentControllerIdentity();
+  await assertInformationAgentRecipientCooldown({
+    email: input.recipientEmail,
+    missionId: mission.id,
+    identityKeys,
+    courtRegistryFallback: Boolean(courtFallback),
+  });
+
+  // An admin may replace a source-derived address while approving the draft.
+  // Preserve the provenance only when the normalized address is unchanged;
+  // otherwise the canonical case must record an explicit manual recipient.
+  const recipientKind =
+    normalizedEmail(input.recipientEmail) === normalizedEmail(mission.recipient_email)
+      ? mission.recipient_kind
+      : "manual_professional";
+
+  // Adresse saisie par un administrateur : source typée, date de relevé et auteur au registre.
+  if (addressOrigin.kind === "admin_entry" && mission.sale_id) {
+    await recordInformationAgentAdminAddressEntry({
+      saleId: mission.sale_id,
+      email: input.recipientEmail,
+      name: input.recipientName || mission.recipient_name,
+      url: addressOrigin.origin.url,
+      observedAt: mission.created_at,
+      adminId,
+      identityKeys,
+    });
+  }
+
+  const { data: edited, error: editError } = await supabaseAdmin
+    .from("information_agent_missions")
+    .update({
+      recipient_email: input.recipientEmail,
+      recipient_identity_keys: identityKeys,
+      recipient_kind: recipientKind,
+      // Jamais de nom de greffier dans un champ structuré.
+      recipient_name: courtFallback ? null : input.recipientName || null,
+      reply_to_email: null,
+      share_requester_email: false,
+      subject: input.subject,
+      body_text: input.bodyText,
+      failure_reason: null,
+      metadata: {
+        // Destinataire changé par l'administrateur : la mission n'est plus une demande au greffe.
+        ...(courtFallback
+          ? asObject(mission.metadata)
+          : withoutCourtRegistryTrace(mission.metadata)),
+        recipient_origin_url: input.recipientOriginUrl ?? null,
+        preview_fingerprint: input.previewFingerprint,
+      },
+    })
+    .eq("id", mission.id)
+    .eq("user_id", mission.user_id)
+    .in("status", ["draft", "failed"])
+    .select("*")
+    .single();
+  if (editError) throw editError;
+
+  const { error: subscribeError } = await supabaseAdmin.rpc("subscribe_information_agent_mission", {
+    p_user_id: mission.user_id,
+    p_mission_id: mission.id,
+  });
+  if (subscribeError) throw subscribeError;
+  const subscribedMission = await loadOwnedMission(adminId, mission.id);
+  const contributionUrl = informationAgentContributionUrl(subscribedMission);
+  const messageHash = approvalFingerprint(subscribedMission);
+  const approval = await approveInformationAgentMissionForAdmin(subscribedMission, messageHash);
+  if (!approval) throw new Error("Approbation de l'enquête impossible.");
+  if (!approval.should_send) {
+    // The shared case already left the draft stage (another mission sent it): saying « updated »
+    // would let the admin believe this email went out.
+    throw new Error(
+      "Aucun email n’est parti : cette demande est rattachée à un dossier déjà envoyé à cette adresse pour cette vente.",
+    );
+  }
+
+  const replyTo = `enquete+${approval.inbound_token}@${config.inboundDomain}`;
+  const sendingAt = new Date().toISOString();
+  // Set once Resend has accepted the message: from then on the mission is never downgraded.
+  let delivered: { id: string | null; sentAt: string } | null = null;
+
+  try {
+    await assertInformationAgentContactAllowed({
+      saleId: subscribedMission.sale_id,
+      email: edited.recipient_email,
+      identityKeys: edited.recipient_identity_keys,
+      courtRegistryAddress: Boolean(courtFallback),
+    });
+    // Approval is already recorded: if a concurrent approval for the same recipient is older,
+    // this one stands down, so only the earliest request is ever sent within the 30 days.
+    const approvedMission = await loadOwnedMission(adminId, mission.id);
+    await assertInformationAgentRecipientCooldown({
+      email: edited.recipient_email,
+      missionId: mission.id,
+      identityKeys: edited.recipient_identity_keys,
+      approvedAt: approvedMission.approved_at,
+      courtRegistryFallback: Boolean(courtFallback),
+    });
+    if (courtFallback) {
+      // Même départage des approbations concurrentes pour les limites du tribunal (par vente et par jour).
+      await assertCourtRegistryFallbackLimits({
+        courtCode: courtFallback.courtCode,
+        saleId: subscribedMission.sale_id,
+        missionId: mission.id,
+        approvedAt: approvedMission.approved_at,
+      });
+    }
+    const legalFooter = buildInformationAgentLegalFooter({
+      appUrl: config.appUrl,
+      email: edited.recipient_email,
+      addressOrigin: addressOrigin.origin,
+      saleReference: missionSaleReference(subscribedMission),
+    });
+    const renderedEmail = await renderInformationRequestEmail({
+      subject: edited.subject,
+      bodyText: edited.body_text,
+      replyTo,
+      caseReference: informationAgentCaseReference(approval.case_id),
+      appUrl: config.appUrl,
+      contributionUrl,
+      legalFooter,
+    });
+    assertNoInformationAgentCommercialMention(`${renderedEmail.html}\n${renderedEmail.text}`, {
+      appOrigin: config.appUrl,
+      allowedUrls: [legalFooter.addressOriginUrl],
+      // La référence de la vente vient de l'annonce : elle ne peut pas faire échouer l'envoi.
+      ignore: [legalFooter.saleReference, ...saleSourceTexts(mission)],
+    });
+    await assertInformationAgentContactAllowed({
+      saleId: subscribedMission.sale_id,
+      email: edited.recipient_email,
+      identityKeys: edited.recipient_identity_keys,
+      courtRegistryAddress: Boolean(courtFallback),
+    });
+    assertInformationAgentCanaryRecipient(edited.recipient_email);
+    const delivery = await sendTrackedEmail({
+      apiKey: config.apiKey,
+      idempotencyKey: informationAgentIdempotencyKey(approval.case_id),
+      fetchImpl,
+      category: "agent",
+      templateKey: courtFallback ? "agent_court_registry" : "agent_request",
+      mode: "manual",
+      message: {
+        from: config.from,
+        to: edited.recipient_email,
+        replyTo,
+        subject: edited.subject,
+        text: renderedEmail.text,
+        html: renderedEmail.html,
+        // RFC 8058 : l'opposition en un clic est proposée par la messagerie du destinataire.
+        unsubscribeUrl: legalFooter.optOutUrl,
+        oneClickUnsubscribe: true,
+      },
+    });
+    const sentAt = new Date().toISOString();
+    delivered = { id: delivery.id, sentAt };
+    const missionMetadata = asObject(edited.metadata);
+    const { error: messageError } = await supabaseAdmin.from("information_agent_messages").insert({
+      mission_id: mission.id,
+      case_id: approval.case_id,
+      user_id: mission.user_id,
+      direction: "outbound",
+      message_kind: "initial",
+      delivery_status: "sent",
+      from_email: config.from,
+      to_email: edited.recipient_email,
+      subject: edited.subject,
+      body_text: edited.body_text,
+      provider_message_id: delivery.id,
+      sent_at: sentAt,
+      metadata: {
+        approval_sha256: messageHash,
+        preview_fingerprint: input.previewFingerprint,
+        approved_by_admin: adminId,
+        address_origin_url: legalFooter.addressOriginUrl ?? null,
+        address_origin_text: legalFooter.addressOrigin,
+        // Journal : un message au greffe se distingue d'un message à un avocat.
+        ...courtRegistryMessageMetadata(courtFallback),
+        email_template_version: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
+        email_content_template_id: missionMetadata.email_content_template_id ?? null,
+        email_content_template_revision: missionMetadata.email_content_template_revision ?? null,
+      },
+    });
+    if (messageError) throw messageError;
+    await updateMissionOrThrow(mission.id, mission.user_id, {
+      status: "sent",
+      reply_to_email: replyTo,
+      sent_at: sentAt,
+      provider_message_id: delivery.id,
+      failure_reason: null,
+      // L'envoi est confirmé : plus rien à vérifier.
+      metadata: omitUnverifiedSendOutcome(asObject(edited.metadata)),
+    });
+    await updateCaseOrThrow(approval.case_id, {
+      status: "sent",
+      sent_at: sentAt,
+      provider_message_id: delivery.id,
+      failure_reason: null,
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.slice(0, 1000) : "Envoi impossible.";
+    if (delivered) {
+      // The email is out. Marking the mission failed would free the 30-day cooldown and invite a
+      // manual retry that sends a second email: keep it sent and say what is incomplete.
+      const note = `Message accepté par Resend (${delivered.id ?? "identifiant non communiqué"}), enregistrement incomplet : ${detail}`;
+      await Promise.allSettled([
+        updateMissionOrThrow(mission.id, mission.user_id, {
+          status: "sent",
+          reply_to_email: replyTo,
+          sent_at: delivered.sentAt,
+          provider_message_id: delivered.id,
+          failure_reason: note,
+        }),
+        updateCaseOrThrow(approval.case_id, {
+          status: "sent",
+          sent_at: delivered.sentAt,
+          provider_message_id: delivered.id,
+          failure_reason: note,
+        }),
+      ]);
+      throw new Error(`${note}. Ne renvoyez pas ce message.`, { cause: error });
+    }
+    // Resend n'a pas répondu à temps (ou la connexion est tombée) : l'email a peut-être été
+    // accepté. Ce n'est pas un échec établi. La demande est marquée « à vérifier » : le délai de
+    // 30 jours reste tenu (assertInformationAgentRecipientCooldown), la vérification est
+    // demandée, et un renvoi dans les 24 heures réutilise la clé d'idempotence (pas de doublon).
+    const unverified = isIndeterminateSendError(error);
+    const reason = unverified
+      ? `Envoi à vérifier : Resend n’a pas répondu à temps, l’email est peut-être parti. Vérifiez dans Resend (clé d’idempotence ${informationAgentIdempotencyKey(approval.case_id)}, valable 24 h) avant tout renvoi.`
+      : detail;
+    await updateMissionOrThrow(mission.id, mission.user_id, {
+      status: "failed",
+      failure_reason: reason,
+      metadata: {
+        ...asObject(edited.metadata),
+        last_send_attempt_at: sendingAt,
+        ...(unverified ? { send_outcome: UNVERIFIED_SEND_OUTCOME } : {}),
+      },
+    });
+    await updateCaseOrThrow(approval.case_id, {
+      status: "failed",
+      failure_reason: reason,
+    });
+    throw unverified ? new Error(reason, { cause: error }) : error;
+  }
+}
+
+/** Clé d'idempotence de l'envoi d'un dossier : un renvoi sous 24 h retrouve le premier envoi chez Resend. */
+function informationAgentIdempotencyKey(caseId: string): string {
+  return `immojudis-information-agent-case-${caseId}`;
+}
+
+const IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function omitUnverifiedSendOutcome(metadata: Record<string, Json | undefined>): Json {
+  const { send_outcome: _outcome, ...rest } = metadata;
+  return rest as Json;
+}
+
+/**
+ * Un renvoi après un envoi « à vérifier » n'est sûr que pendant la fenêtre d'idempotence de Resend
+ * (24 h) : au-delà, si l'email était parti, il partirait une seconde fois. L'administrateur
+ * vérifie d'abord dans Resend, puis lève le drapeau (voir le runbook de l'agent).
+ */
+export function assertUnverifiedSendWithinIdempotencyWindow(
+  mission: Pick<MissionRow, "metadata">,
+  now = Date.now(),
+): void {
+  const metadata = asObject(mission.metadata);
+  if (metadata.send_outcome !== UNVERIFIED_SEND_OUTCOME) return;
+  const attemptedAt = Date.parse(String(metadata.last_send_attempt_at ?? ""));
+  if (Number.isFinite(attemptedAt) && now - attemptedAt <= IDEMPOTENCY_WINDOW_MS) return;
+  throw new Error(
+    "Le résultat du dernier envoi n’a jamais été confirmé et la fenêtre de 24 h de la clé d’idempotence est dépassée : un renvoi pourrait créer un doublon. Vérifiez dans Resend (docs/runbooks/information-agent.md, « Envoi à vérifier »).",
+  );
+}
+
+/**
+ * Erreur dont on ne peut pas dire si l'email est parti : délai dépassé (`AbortSignal.timeout`) ou
+ * connexion coupée après l'envoi de la requête. Une réponse d'erreur de Resend, elle, est un refus.
+ */
+function isIndeterminateSendError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError" || error.name === "AbortError") return true;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const causeCode = String((error.cause as { code?: unknown } | undefined)?.code ?? "");
+  return (
+    /^(?:ECONNRESET|ETIMEDOUT|EPIPE|UND_ERR_(?:SOCKET|BODY_TIMEOUT|HEADERS_TIMEOUT|CONNECT_TIMEOUT))$/.test(
+      code,
+    ) ||
+    /^(?:ECONNRESET|ETIMEDOUT|EPIPE|UND_ERR_(?:SOCKET|BODY_TIMEOUT|HEADERS_TIMEOUT|CONNECT_TIMEOUT))$/.test(
+      causeCode,
+    ) ||
+    /\b(?:timed? out|timeout|aborted|socket hang up|other side closed|terminated)\b/i.test(
+      error.message,
+    )
+  );
+}
+
+type InformationAgentApproval = {
+  case_id: string;
+  should_send: boolean;
+  inbound_token: string;
+};
+
+/**
+ * Approves an admin mission without calling the user quota RPC. The existing
+ * case/subscriber model is retained so inbound Resend replies continue to be
+ * routed and reviewed exactly as before.
+ */
+async function approveInformationAgentMissionForAdmin(
+  mission: MissionRow,
+  messageHash: string,
+): Promise<InformationAgentApproval> {
+  const { data, error } = await supabaseAdmin.rpc("approve_information_agent_mission_admin", {
+    p_admin_id: mission.user_id,
+    p_mission_id: mission.id,
+    p_message_sha256: messageHash,
+  });
+  if (error) throw new Error(error.message || "Approbation admin impossible.");
+  const approval = data?.[0];
+  if (!approval) throw new Error("Approbation admin impossible.");
+  return approval;
+}
+
+function approvalFingerprint(mission: MissionRow): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        recipientEmail: mission.recipient_email,
+        replyToEmail: mission.reply_to_email,
+        subject: mission.subject,
+        bodyText: mission.body_text,
+        emailTemplateVersion: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
+      }),
+    )
+    .digest("hex");
+}
