@@ -28,6 +28,7 @@ const settings = (overrides: Partial<AutopilotSettings> = {}): AutopilotSettings
   actingAdminId: "admin-1",
   capTotalOverride: null,
   allowLicitorDecoded: false,
+  liveAllowed: true,
   art14RuleEnabled: true,
   art14MaxAgeDays: 30,
   aipdAttestedAt: null,
@@ -244,7 +245,7 @@ describe("candidat du pilote", () => {
     hasUnpublishedGap: true,
     humanDraftExists: false,
     identityExcluded: false,
-    contactFirstRecordedAt: null,
+    contactFirstRecordedAt: "2026-10-20T10:00:00Z",
     alreadyInformed: false,
     lastReplyAt: null,
     silentSendsInSixMonths: 0,
@@ -260,6 +261,11 @@ describe("candidat du pilote", () => {
   it.each([
     ["greffe de secours", { sourceKind: "court_registry_fallback" }, "court_registry_refused"],
     ["adresse retrouvée par recherche", { sourceKind: "agent_search" }, "source_not_sale_listing"],
+    [
+      "origine de l'adresse absente (aucune valeur par défaut)",
+      { sourceKind: null },
+      "source_not_sale_listing",
+    ],
     ["saisie d'administrateur", { sourceKind: "admin_entry" }, "source_not_sale_listing"],
     ["annuaire officiel", { sourceKind: "official_directory" }, "source_not_sale_listing"],
     ["notaire", { recipientRole: "notary" }, "role_not_lawyer"],
@@ -329,9 +335,18 @@ describe("candidat du pilote", () => {
   });
 
   describe("délai d'information de l'article 14", () => {
-    it("accepte une adresse jamais enregistrée (le relevé a lieu maintenant) ou relevée il y a moins de 30 jours", () => {
-      expect(verdict({ contactFirstRecordedAt: null })).toEqual({ ok: true });
+    it("accepte une adresse enregistrée il y a moins de 30 jours", () => {
       expect(verdict({ contactFirstRecordedAt: "2026-10-20T10:00:00Z" })).toEqual({ ok: true });
+      expect(verdict({ contactFirstRecordedAt: "2026-11-02T10:00:00Z" })).toEqual({ ok: true });
+    });
+    it("refuse quand la date du premier enregistrement est absente (règle invérifiable)", () => {
+      expect(verdict({ contactFirstRecordedAt: null })).toEqual({
+        ok: false,
+        code: "art14_unknown",
+      });
+      expect(verdict({ contactFirstRecordedAt: null, alreadyInformed: true })).toEqual({
+        ok: true,
+      });
     });
     it("refuse une adresse enregistrée depuis plus de 30 jours et jamais informée", () => {
       expect(verdict({ contactFirstRecordedAt: "2026-09-01T10:00:00Z" })).toEqual({

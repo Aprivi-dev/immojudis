@@ -6570,6 +6570,12 @@ export type Database = {
         };
         Relationships: [];
       };
+      information_agent_internal_domains: {
+        Row: { added_at: string; domain: string };
+        Insert: { added_at?: string; domain: string };
+        Update: { added_at?: string; domain?: string };
+        Relationships: [];
+      };
       information_agent_autopilot_events: {
         Row: {
           action: string | null;
@@ -6626,6 +6632,7 @@ export type Database = {
           auto_stop_reason: string | null;
           auto_stopped_at: string | null;
           cap_total_override: number | null;
+          live_allowed: boolean;
           mode: string;
           paused_until: string | null;
           simulation_started_at: string | null;
@@ -6643,6 +6650,7 @@ export type Database = {
           auto_stop_reason?: string | null;
           auto_stopped_at?: string | null;
           cap_total_override?: number | null;
+          live_allowed?: boolean;
           mode?: string;
           paused_until?: string | null;
           simulation_started_at?: string | null;
@@ -6660,6 +6668,7 @@ export type Database = {
           auto_stop_reason?: string | null;
           auto_stopped_at?: string | null;
           cap_total_override?: number | null;
+          live_allowed?: boolean;
           mode?: string;
           paused_until?: string | null;
           simulation_started_at?: string | null;
@@ -15793,6 +15802,10 @@ export type Database = {
       record_information_agent_autopilot_exclusions: {
         Args: { p_identity_keys: string[]; p_reason?: string };
         Returns: number;
+      };
+      set_information_agent_internal_domain: {
+        Args: { p_domain: string; p_enabled: boolean; p_reason: string };
+        Returns: undefined;
       };
       set_information_agent_autopilot_mode: {
         Args: { p_mode: string; p_reason: string };

@@ -8,8 +8,14 @@ export const maxDuration = 300;
  * mode n'est pas « off »). Seule exception nommée du verrou `information-agent-no-automatic-send.test.ts`.
  */
 export async function GET(request: Request) {
-  return runMonitoredCron(request, "information-agent-autopilot", async () => {
-    const summary = await runInformationAgentAutopilot();
-    return { ...summary };
-  });
+  // Jamais de rejeu automatique d'un passage qui peut avoir envoyé : le passage suivant (10 minutes) reprend.
+  return runMonitoredCron(
+    request,
+    "information-agent-autopilot",
+    async () => {
+      const summary = await runInformationAgentAutopilot();
+      return { ...summary };
+    },
+    { retryDelaysMs: [] },
+  );
 }

@@ -224,11 +224,15 @@ describe("agent d'information : aucun envoi automatique", () => {
       /\b(?:sendResendEmail|sendTrackedEmail|approveAndSendMission|approve_and_send)\b/,
     );
 
-    // Seul le pilote fabrique un déclencheur « autopilot » (les types et le brouillon ne font que le lire).
+    // Le déclencheur est opaque : il ne se fabrique que par `issueAutopilotTrigger` (défini dans schemas.ts), importé
+    // par le seul module du pilote ; send.ts et draft.ts refusent tout déclencheur non émis ainsi.
     const makers = sourceFiles.filter((file) => /kind:\s*"autopilot"/.test(read(file)));
-    expect(makers.sort()).toEqual([AUTOPILOT_EXECUTOR, SCHEMAS_MODULE].sort());
-    expect(read(SCHEMAS_MODULE)).toMatch(
-      /type InformationAgentSendTrigger = \{\s*kind: "autopilot"/,
+    expect(makers).toEqual([SCHEMAS_MODULE]);
+    const issuers = sourceFiles.filter((file) => /\bissueAutopilotTrigger\b/.test(read(file)));
+    expect(issuers.sort()).toEqual([AUTOPILOT_EXECUTOR, SCHEMAS_MODULE].sort());
+    expect(read(SEND_MODULE)).toMatch(/assertIssuedAutopilotTrigger\(trigger\)/);
+    expect(read(path.join("src", "lib", "information-agent", "draft.ts"))).toMatch(
+      /assertIssuedAutopilotTrigger\(trigger\)/,
     );
 
     // Le module du pilote n'appelle jamais le fournisseur lui-même : un seul chemin d'envoi.
@@ -244,6 +248,22 @@ describe("agent d'information : aucun envoi automatique", () => {
       /from "@\/lib\/information-agent-autopilot"/.test(read(file)),
     );
     expect(importers).toEqual([AUTOPILOT_ROUTE]);
+  });
+
+  it("l'envoi du pilote revérifie ses règles avant l'approbation et juste avant le fournisseur, sans le plafond des administrateurs", () => {
+    const send = read(SEND_MODULE);
+    const guards = [...send.matchAll(/if \(trigger\) await autopilotGuard\(\);/g)].map(
+      (m) => m.index ?? -1,
+    );
+    expect(guards).toHaveLength(2);
+    expect(guards[0]).toBeLessThan(
+      send.search(/approveInformationAgentMissionForAdmin\(\s*subscribedMission/),
+    );
+    expect(guards[1]).toBeGreaterThan(send.indexOf("const renderedEmail"));
+    expect(guards[1]).toBeLessThan(send.indexOf("sendTrackedEmail("));
+    // C5 : le pilote a ses propres plafonds, ni le contrôle TypeScript ni la RPC ne lui imposent celui des administrateurs.
+    expect(send).toContain("if (!trigger) await assertAdminDailyApprovalCap(adminId);");
+    expect(send).toContain("trigger ? undefined : adminDailyApprovalCap()");
   });
 
   it("le filet SQL refuse un envoi du pilote hors du mode réel", () => {
@@ -265,7 +285,9 @@ describe("agent d'information : aucun envoi automatique", () => {
 
     for (const workflow of walk(".github/workflows", [".yml", ".yaml"])) {
       const content = read(workflow);
-      expect(content, workflow).not.toMatch(/information-agent\/missions|approve_and_send/);
+      expect(content, workflow).not.toMatch(
+        /information-agent\/missions|approve_and_send|information-agent-autopilot/,
+      );
       expect(content, workflow).not.toMatch(/send-information-agent-provider-canary/);
       if (/information-agent/.test(workflow)) {
         expect(content, workflow).not.toMatch(/RESEND|SMTP/i);

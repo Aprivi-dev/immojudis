@@ -18,8 +18,11 @@ import {
   mailDomainOf,
 } from "@/lib/information-agent/address-hygiene";
 import {
+  loadAutopilotHistoryFacts,
+  loadAutopilotRegistryFacts,
+} from "@/lib/information-agent/autopilot-facts";
+import {
   evaluateAutopilotCandidate,
-  type AutopilotCandidateFacts,
   type AutopilotSettings,
 } from "@/lib/information-agent/autopilot-rules";
 import { loadExcludedIdentityKeys } from "@/lib/information-agent/autopilot-settings";
@@ -28,6 +31,7 @@ import {
   discoverInformationAgentContacts,
   INFORMATION_AGENT_PIPELINE_CHANNEL,
   normalizedEmail,
+  persistInformationAgentContactObservations,
   selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
 import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
@@ -54,66 +58,7 @@ export type AutopilotCandidateSearch = {
   examined: number;
 };
 
-const DAY_MS = 86_400_000;
 const SALE_BATCH = 100;
-
-type RegistryRow = { created_at: string; scope_sale_id: string | null };
-
-async function loadRegistryFacts(email: string): Promise<{ firstRecordedAt: string | null }> {
-  const { data, error } = await supabaseAdmin
-    .from("information_agent_contacts")
-    .select("created_at,scope_sale_id")
-    .eq("normalized_email", email)
-    .order("created_at", { ascending: true })
-    .limit(1);
-  if (error) throw error;
-  const row = (data ?? [])[0] as RegistryRow | undefined;
-  return { firstRecordedAt: row?.created_at ?? null };
-}
-
-/** Envois et réponses précédents à cette adresse ou à cette identité (dossiers et missions). */
-async function loadHistoryFacts(
-  email: string,
-  identityKeys: readonly string[],
-  now: Date,
-): Promise<
-  Pick<
-    AutopilotCandidateFacts,
-    "alreadyInformed" | "lastReplyAt" | "silentSendsInSixMonths" | "lastSendAt"
-  >
-> {
-  const [cases, missions] = await Promise.all([
-    supabaseAdmin
-      .from("information_agent_cases")
-      .select("sent_at,replied_at")
-      .eq("normalized_recipient_email", email)
-      .not("sent_at", "is", null)
-      .limit(50),
-    identityKeys.length
-      ? supabaseAdmin
-          .from("information_agent_missions")
-          .select("sent_at,replied_at")
-          .overlaps("recipient_identity_keys", [...identityKeys])
-          .not("sent_at", "is", null)
-          .limit(50)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-  if (cases.error) throw cases.error;
-  if (missions.error) throw missions.error;
-  const rows = [...(cases.data ?? []), ...(missions.data ?? [])];
-  const sixMonthsAgo = now.getTime() - 183 * DAY_MS;
-  const sentAt = rows.map((row) => Date.parse(row.sent_at ?? "")).filter(Number.isFinite);
-  const replies = rows.map((row) => Date.parse(row.replied_at ?? "")).filter(Number.isFinite);
-  const iso = (time: number) => new Date(time).toISOString();
-  return {
-    alreadyInformed: rows.length > 0,
-    lastReplyAt: replies.length ? iso(Math.max(...replies)) : null,
-    silentSendsInSixMonths: rows.filter(
-      (row) => !row.replied_at && Date.parse(row.sent_at ?? "") >= sixMonthsAgo,
-    ).length,
-    lastSendAt: sentAt.length ? iso(Math.max(...sentAt)) : null,
-  };
-}
 
 /** Brouillon d'un administrateur (ou échec à reprendre) sur cette vente : le pilote ne le touche jamais. */
 async function humanDraftExists(saleId: string): Promise<boolean> {
@@ -198,9 +143,12 @@ export async function findAutopilotCandidates({
       skip("opposed");
       continue;
     }
+    // Relevé de l'adresse lue dans l'annonce : enregistré maintenant (comme à la création d'un brouillon), pour que
+    // la date de relevé et celle du premier enregistrement (art. 14) viennent du contact, jamais de la vente.
+    await persistInformationAgentContactObservations({ saleId, candidates: [selected] });
     const [registry, history, excluded, humanDraft, claimRead] = await Promise.all([
-      loadRegistryFacts(email),
-      loadHistoryFacts(email, identityKeys, now),
+      loadAutopilotRegistryFacts(email, saleId),
+      loadAutopilotHistoryFacts(email, identityKeys, now),
       loadExcludedIdentityKeys(identityKeys),
       humanDraftExists(saleId),
       readSaleFactClaims(saleId),
@@ -209,23 +157,18 @@ export async function findAutopilotCandidates({
     const gaps = detectInformationGaps(sale, facts, buildInformationAgentInventory(sale, facts));
     const hygiene = checkAddresses ? informationAgentAddressHygieneIssue(email) : null;
     const mailDomain = checkAddresses ? await checkMailDomain(mailDomainOf(email)) : "ok";
-    const fromRegistry = (sale.registry_contacts ?? []).some(
-      (contact) => normalizedEmail(contact.email) === email,
-    );
     const verdict = evaluateAutopilotCandidate(
       {
-        // Toute adresse découverte vient de l'annonce de la vente ; une autre origine est refusée par la règle.
-        sourceKind: selected.source?.kind ?? "sale_listing",
+        // Origine réelle de l'adresse : absente ou autre que l'annonce, refus (aucune valeur par défaut).
+        sourceKind: candidateSourceKind(selected, registry.originKinds),
         recipientRole: selected.role,
         selectedUnambiguously: true,
         identityComplete: identityKeys.length > 0,
         addressHygieneIssue: hygiene,
         consumerDomain: isConsumerMailAddress(email),
-        observationChannel: fromRegistry ? INFORMATION_AGENT_PIPELINE_CHANNEL : null,
-        // Adresse lue dans l'annonce : relevée avec la dernière actualisation de la vente.
-        addressObservedAt:
-          selected.source?.observedAt ??
-          (typeof sale.updated_at === "string" ? sale.updated_at : null),
+        observationChannel: registry.licitorDecoded ? INFORMATION_AGENT_PIPELINE_CHANNEL : null,
+        // Date de relevé du contact au registre : jamais un repli sur la date de la vente.
+        addressObservedAt: registry.observedAt,
         mailDomain,
         saleDate: sale.sale_date ?? null,
         hasUnpublishedGap: gaps.length > 0,
@@ -250,4 +193,29 @@ export async function findAutopilotCandidates({
     });
   }
   return result;
+}
+
+/**
+ * Origine de l'adresse retenue : `sale_listing` seulement si toutes ses provenances sont l'annonce (champ, bloc ou
+ * texte de la vente, ou ligne du registre `sale_listing`) et si aucune autre origine n'est enregistrée pour cette
+ * adresse et cette vente. Sinon l'origine réelle ; aucune provenance : `null` (refus).
+ */
+export function candidateSourceKind(
+  candidate: {
+    source?: { kind: string };
+    provenance: ReadonlyArray<{ kind: string }>;
+  },
+  registryKinds: readonly string[],
+): string | null {
+  if (registryKinds.some((kind) => kind !== "sale_listing")) {
+    return registryKinds.find((kind) => kind !== "sale_listing") ?? null;
+  }
+  if (candidate.source && candidate.source.kind !== "sale_listing") return candidate.source.kind;
+  const kinds = candidate.provenance.map((item) => item.kind);
+  if (!kinds.length) return null;
+  const listing = new Set(["sale_field", "source_block", "source_text"]);
+  if (kinds.every((kind) => listing.has(kind) || candidate.source?.kind === "sale_listing")) {
+    return "sale_listing";
+  }
+  return kinds.find((kind) => !listing.has(kind)) ?? null;
 }

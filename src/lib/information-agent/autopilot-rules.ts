@@ -17,6 +17,8 @@ export type AutopilotSettings = {
   actingAdminId: string | null;
   capTotalOverride: number | null;
   allowLicitorDecoded: boolean;
+  /** Verrou du lot 3 : faux tant qu'une migration du lot 3 ne l'a pas levé. Le mode réel est alors impossible. */
+  liveAllowed: boolean;
   art14RuleEnabled: boolean;
   art14MaxAgeDays: number;
   aipdAttestedAt: string | null;
@@ -269,8 +271,8 @@ const DAY_MS = 86_400_000;
 
 /** Ce que le pilote sait d'un candidat avant de préparer son brouillon. */
 export type AutopilotCandidateFacts = {
-  /** `court_registry_fallback` ou autre origine que l'annonce : refusé. */
-  sourceKind: string;
+  /** `sale_listing` seulement ; `court_registry_fallback`, autre origine ou origine absente (null) : refusé. */
+  sourceKind: string | null;
   recipientRole: string;
   /** Le contact est choisi seul par le résolveur (confiance au moins moyenne, écart de 12 points). */
   selectedUnambiguously: boolean;
@@ -286,7 +288,7 @@ export type AutopilotCandidateFacts = {
   hasUnpublishedGap: boolean;
   humanDraftExists: boolean;
   identityExcluded: boolean;
-  /** Première fois que l'agent a enregistré l'adresse (`created_at` du contact), nul si jamais enregistrée. */
+  /** Première fois que l'agent a enregistré l'adresse (`created_at` du contact au registre) ; nul : refus (art. 14). */
   contactFirstRecordedAt: string | null;
   alreadyInformed: boolean;
   lastReplyAt: string | null;
@@ -326,13 +328,12 @@ export function evaluateAutopilotCandidate(
   if (!facts.hasUnpublishedGap) return no("no_unpublished_gap");
   if (facts.humanDraftExists) return no("admin_draft_exists");
   if (facts.identityExcluded) return no("identity_excluded");
-  if (
-    settings.art14RuleEnabled &&
-    facts.contactFirstRecordedAt &&
-    !facts.alreadyInformed &&
-    daysSince(facts.contactFirstRecordedAt) > settings.art14MaxAgeDays
-  ) {
-    return no("art14_window_expired");
+  if (settings.art14RuleEnabled && !facts.alreadyInformed) {
+    // Sans date de premier relevé, la règle ne peut pas être vérifiée : refus.
+    if (!facts.contactFirstRecordedAt) return no("art14_unknown");
+    if (daysSince(facts.contactFirstRecordedAt) > settings.art14MaxAgeDays) {
+      return no("art14_window_expired");
+    }
   }
   if (facts.lastReplyAt && daysSince(facts.lastReplyAt) < AUTOPILOT_REPLY_PAUSE_DAYS) {
     return no("reply_pause");
@@ -402,3 +403,32 @@ export function evaluateAutopilotSafety(stats: AutopilotStats): AutopilotSafetyV
 }
 
 export { isWithinAutopilotSendWindow };
+
+/**
+ * Règles revérifiées JUSTE AVANT l'envoi (l'état a pu changer depuis la sélection) : mêmes règles que la sélection
+ * pour tout ce qui dépend de l'origine de l'adresse, du rôle, du domaine, des exclusions, de l'article 14 et des
+ * pauses. Les faits propres à la sélection (ambiguïté, lacune, brouillon d'administrateur, date de la vente,
+ * résolution DNS) sont contrôlés ailleurs à l'envoi (aperçu, vente à jour, délivrabilité) : ils sont donnés ici
+ * comme satisfaits, jamais omis. Même fonction pour la sélection et l'envoi : une seule définition des pauses.
+ */
+export function evaluateAutopilotSendTime(
+  facts: Omit<
+    AutopilotCandidateFacts,
+    "selectedUnambiguously" | "hasUnpublishedGap" | "humanDraftExists" | "mailDomain" | "saleDate"
+  >,
+  settings: Pick<AutopilotSettings, "allowLicitorDecoded" | "art14RuleEnabled" | "art14MaxAgeDays">,
+  now: Date,
+): AutopilotCandidateVerdict {
+  return evaluateAutopilotCandidate(
+    {
+      ...facts,
+      selectedUnambiguously: true,
+      hasUnpublishedGap: true,
+      humanDraftExists: false,
+      mailDomain: "ok",
+      saleDate: new Date(now.getTime() + 365 * DAY_MS).toISOString(),
+    },
+    settings,
+    now,
+  );
+}

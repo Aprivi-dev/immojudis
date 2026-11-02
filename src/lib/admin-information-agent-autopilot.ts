@@ -23,11 +23,19 @@ import { asObject } from "@/lib/information-agent/mission-store";
  * l'administrateur ; le passage en mode réel exige en plus le contrôle de préparation (TypeScript) et la base
  * le revérifie (AIPD, aller-retour).
  */
+/** Motif d'un changement : 8 caractères au moins, jamais d'adresse (le journal n'en contient pas). */
+const changeReason = z
+  .string()
+  .trim()
+  .min(8)
+  .max(500)
+  .refine((value) => !value.includes("@"), "Le motif ne doit contenir aucune adresse email.");
+
 export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("set_mode"),
     mode: z.enum(["off", "simulation", "live"]),
-    reason: z.string().trim().min(8).max(500),
+    reason: changeReason,
   }),
   z.object({
     action: z.literal("update_settings"),
@@ -41,16 +49,28 @@ export const adminAutopilotActionSchema = z.discriminatedUnion("action", [
       })
       .strict()
       .refine((value) => Object.keys(value).length > 0, "Aucun réglage à modifier."),
-    reason: z.string().trim().min(8).max(500),
+    reason: changeReason,
   }),
   z.object({ action: z.literal("emergency_stop"), reason: z.string().trim().max(500).optional() }),
   z.object({
     action: z.literal("attest_aipd"),
     version: z.string().trim().min(1).max(40),
-    reason: z.string().trim().min(8).max(500),
+    reason: changeReason,
   }),
 ]);
 export type AdminAutopilotAction = z.output<typeof adminAutopilotActionSchema>;
+
+/**
+ * Erreur d'une RPC du pilote : seuls les refus métier voulus par les fonctions (droit, paramètre, état) sont montrés ;
+ * toute autre erreur de la base devient un message générique (le détail reste dans le journal serveur).
+ */
+function rpcFailure(error: { code?: string; message?: string }): Error {
+  if (error.code === "42501" || error.code === "22023" || error.code === "55000") {
+    return new Error(error.message ?? "Action refusée.");
+  }
+  console.error(JSON.stringify({ scope: "admin.autopilot", code: error.code ?? null }));
+  return new Error("Action impossible.");
+}
 
 async function requireAdmin(authToken: string) {
   const auth = await requireSupabaseAuthContext(authToken);
@@ -140,7 +160,7 @@ export async function runAdminAutopilotAction({
       p_mode: input.mode,
       p_reason: input.reason,
     });
-    if (error) throw error;
+    if (error) throw rpcFailure(error);
   } else if (input.action === "update_settings") {
     const {
       capTotalOverride,
@@ -160,19 +180,19 @@ export async function runAdminAutopilotAction({
       p_changes: changes,
       p_reason: input.reason,
     });
-    if (error) throw error;
+    if (error) throw rpcFailure(error);
   } else if (input.action === "emergency_stop") {
     // Toujours permis : aucune condition, motif facultatif.
     const { error } = await auth.supabase.rpc("stop_information_agent_autopilot", {
       p_reason: input.reason,
     });
-    if (error) throw error;
+    if (error) throw rpcFailure(error);
   } else {
     const { error } = await auth.supabase.rpc("attest_information_agent_aipd", {
       p_version: input.version,
       p_reason: input.reason,
     });
-    if (error) throw error;
+    if (error) throw rpcFailure(error);
   }
   return getAdminAutopilotView(authToken, { env });
 }

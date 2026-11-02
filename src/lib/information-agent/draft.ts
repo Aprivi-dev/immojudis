@@ -75,6 +75,7 @@ import type {
   InformationAgentAdminResponse,
   InformationAgentSendTrigger,
 } from "@/lib/information-agent/schemas";
+import { assertIssuedAutopilotTrigger } from "@/lib/information-agent/schemas";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import type { AuctionSale } from "@/lib/types";
@@ -194,6 +195,7 @@ export async function createAdminInformationAgentDraft({
   trigger?: InformationAgentSendTrigger;
 }): Promise<InformationAgentAdminResponse> {
   requireInformationAgentAdmin(auth);
+  assertIssuedAutopilotTrigger(trigger);
 
   const [sale, emailTemplate] = await Promise.all([
     loadAdminInformationAgentSale({ auth, saleId: input.saleId }),

@@ -6,7 +6,7 @@
 --   * compteurs, purge de conservation (5 ans, 24 mois), mode d'envoi « autopilot », planification pg_cron.
 begin;
 
-select plan(38);
+select plan(49);
 
 -- Structure et droits -------------------------------------------------------------------------------------------
 select has_table('public', 'information_agent_autopilot_settings', 'the settings table exists');
@@ -39,10 +39,10 @@ select ok(
 
 -- Valeurs par défaut ------------------------------------------------------------------------------------------------
 select ok(
-  (select mode = 'off' and not allow_licitor_decoded and art14_rule_enabled and art14_max_age_days = 30
+  (select mode = 'off' and not allow_licitor_decoded and not live_allowed and art14_rule_enabled and art14_max_age_days = 30
      and aipd_attested_at is null and acting_admin_id is null
    from public.information_agent_autopilot_settings),
-  'the autopilot is off by default, Licitor addresses are excluded and the article 14 rule is on (30 days)'
+  'the autopilot is off by default, cannot go live (lot 3 lock), Licitor addresses are excluded and the article 14 rule is on (30 days)'
 );
 
 select throws_ok(
@@ -86,6 +86,13 @@ select throws_ok(
 );
 select throws_ok(
   $$select public.set_information_agent_autopilot_mode('live', 'Passage en réel autorisé')$$,
+  '55000', 'Mode réel non autorisé : les textes juridiques du lot 3 ne sont pas publiés.',
+  'the real mode is refused by a direct RPC call while the lot 3 lock (live_allowed) is false'
+);
+-- Le verrou du lot 3 ne se lève que par migration : ici, le test le lève pour vérifier les autres conditions.
+update public.information_agent_autopilot_settings set live_allowed = true;
+select throws_ok(
+  $$select public.set_information_agent_autopilot_mode('live', 'Passage en réel autorisé')$$,
   '55000', null, 'the real mode is refused without an AIPD attestation'
 );
 
@@ -120,21 +127,22 @@ select throws_ok(
 );
 -- Preuve de l'aller-retour : réponse de test reçue et routée vers un dossier de l'administrateur (adresse de son domaine).
 insert into public.information_agent_cases (
-  id, sale_id, created_by, status, recipient_email, normalized_recipient_email, subject, body_text, question_keys, missing_information
+  id, sale_id, created_by, status, recipient_email, normalized_recipient_email, subject, body_text, question_keys, missing_information, sent_at
 ) values (
-  '86800000-3000-4000-8000-0000000000c1', '86800000-1000-4000-8000-000000000001', '86800000-0000-4000-8000-0000000000a1', 'sent', 'roundtrip-test@example.test', 'roundtrip-test@example.test', 'Message de test', 'Message de test de plus de vingt caractères.',
-  array['documents'], array['documents']
+  '86800000-3000-4000-8000-0000000000c1', '86800000-1000-4000-8000-000000000001', '86800000-0000-4000-8000-0000000000a1', 'sent', 'roundtrip-test@immojudis.com', 'roundtrip-test@immojudis.com', 'Message de test', 'Message de test de plus de vingt caractères.',
+  array['documents'], array['documents'], now() - interval '2 hours'
 );
 insert into public.information_agent_missions (
   id, user_id, sale_id, case_id, status, recipient_email, subject, body_text, question_keys, missing_information, privacy_version
 ) values (
-  '86800000-3000-4000-8000-0000000000c2', '86800000-0000-4000-8000-0000000000a1', '86800000-1000-4000-8000-000000000001', '86800000-3000-4000-8000-0000000000c1', 'sent', 'roundtrip-test@example.test', 'Message de test', 'Message de test de plus de vingt caractères.',
+  '86800000-3000-4000-8000-0000000000c2', '86800000-0000-4000-8000-0000000000a1', '86800000-1000-4000-8000-000000000001', '86800000-3000-4000-8000-0000000000c1', 'sent', 'roundtrip-test@immojudis.com', 'Message de test', 'Message de test de plus de vingt caractères.',
   array['documents'], array['documents'], 'roundtrip-pgtap'
 );
 insert into public.information_agent_messages (
-  id, mission_id, case_id, user_id, direction, message_kind, delivery_status, subject, body_text, received_at
+  id, mission_id, case_id, user_id, direction, message_kind, delivery_status, subject, body_text, received_at, provider_message_id, metadata
 ) values (
-  '86800000-3000-4000-8000-0000000000c3', '86800000-3000-4000-8000-0000000000c2', '86800000-3000-4000-8000-0000000000c1', '86800000-0000-4000-8000-0000000000a1', 'inbound', 'reply', 'received', 'Re: Message de test', 'Réponse de test.', now() - interval '1 hour'
+  '86800000-3000-4000-8000-0000000000c3', '86800000-3000-4000-8000-0000000000c2', '86800000-3000-4000-8000-0000000000c1', '86800000-0000-4000-8000-0000000000a1', 'inbound', 'reply', 'received', 'Re: Message de test', 'Réponse de test.', now() - interval '1 hour',
+  'roundtrip-provider-868', '{"imported_manually": false, "sender_authentication": {"status": "pass"}, "sender_matches_recipient": true}'::jsonb
 );
 
 do $$
@@ -182,6 +190,23 @@ select ok(
   'the emergency stop is journalled'
 );
 
+-- Un motif contenant « @ » ne doit jamais empêcher l'arrêt d'urgence.
+do $$
+begin
+  perform public.set_information_agent_autopilot_mode('simulation', 'Reprise pour le test du motif');
+end;
+$$;
+select is(
+  (select mode from public.stop_information_agent_autopilot('contact avocat@cabinet.example injoignable')),
+  'off',
+  'the emergency stop works even when the reason contains an @'
+);
+select ok(
+  exists (select 1 from public.information_agent_autopilot_events
+          where kind = 'emergency_stop' and reason like '%(at)%' and reason not like '%@%'),
+  'the reason is journalled with the @ neutralised'
+);
+
 -- Journal en ajout seul -------------------------------------------------------------------------------------------------
 select throws_ok(
   $$update public.information_agent_autopilot_events set reason = 'modifié'$$,
@@ -192,8 +217,30 @@ select throws_ok(
   '55000', null, 'the journal cannot be deleted from'
 );
 select throws_ok(
+  $$insert into public.information_agent_autopilot_events (kind, details) values ('skip', '{"contact": "avocat@cabinet.example"}')$$,
+  '23514', null, 'a direct insert of an address in the journal is refused by the constraint'
+);
+select lives_ok(
   $$select public.record_information_agent_autopilot_event('skip', null, '{"contact": "avocat@cabinet.example"}')$$,
-  '23514', null, 'an address in the journal is refused'
+  'the service RPC neutralises an address instead of failing'
+);
+select ok(
+  exists (select 1 from public.information_agent_autopilot_events where kind = 'skip' and details::text like '%(at)%')
+  and not exists (select 1 from public.information_agent_autopilot_events where details::text like '%@%'),
+  'the journal never holds an address'
+);
+
+-- Le journal, les attestations et les réglages ne s'écrivent que par les RPC : même service_role ne les modifie pas.
+set local role service_role;
+select throws_ok($$delete from public.information_agent_autopilot_events$$, '42501', null, 'service_role cannot delete journal rows');
+select throws_ok($$update public.information_agent_autopilot_settings set mode = 'live'$$, '42501', null, 'service_role cannot write the settings directly');
+select throws_ok($$delete from public.information_agent_roundtrip_attestations$$, '42501', null, 'service_role cannot delete attestations');
+reset role;
+select throws_ok($$truncate public.information_agent_autopilot_events$$, '55000', null, 'the journal cannot be truncated');
+select ok(
+  (public.purge_information_agent_autopilot(now() + interval '20 years') ->> 'information_agent_autopilot_events')::integer = 0
+  and exists (select 1 from public.information_agent_autopilot_events),
+  'the purge date cannot be pushed into the future to wipe recent journal rows'
 );
 
 -- Arrêt automatique et réactivation manuelle ---------------------------------------------------------------------------
@@ -243,6 +290,17 @@ select throws_ok(
 select lives_ok(
   $$update public.information_agent_missions set status = 'sending', approved_at = now() where id = '86800000-3000-4000-8000-000000000002'$$,
   'a manual send is not affected by the autopilot mode'
+);
+insert into public.information_agent_missions (
+  id, user_id, sale_id, status, recipient_email, subject, body_text, question_keys, missing_information, privacy_version, metadata
+) values (
+  '86800000-3000-4000-8000-000000000004', '86800000-0000-4000-8000-0000000000a1', '86800000-1000-4000-8000-000000000001', 'draft',
+  'valide-a-la-main@cabinet-pilote.example', 'Objet de test', 'Corps de test de plus de vingt caractères.', array['documents'],
+  array['documents'], '868-pgtap', '{"trigger": "manual"}'::jsonb
+);
+select lives_ok(
+  $$update public.information_agent_missions set status = 'sending', approved_at = now() where id = '86800000-3000-4000-8000-000000000004'$$,
+  'a draft of the autopilot approved by hand (trigger rewritten to manual) passes the SQL net outside the real mode'
 );
 update public.information_agent_autopilot_settings set mode = 'live';
 select lives_ok(

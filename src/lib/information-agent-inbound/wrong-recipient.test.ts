@@ -2,14 +2,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   missions: [] as Array<{ recipient_identity_keys: string[] | null; metadata: unknown }>,
+  alreadyApplied: false,
   rpcs: [] as Array<{ name: string; args: Record<string, unknown> }>,
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
-    from: () => ({
+    from: (table: string) => ({
       select: () => ({
-        eq: () => ({ limit: async () => ({ data: db.missions, error: null }) }),
+        eq: () => ({
+          // Missions du dossier : `.eq("case_id").limit()` ; journal : `.eq("kind").eq("details->>caseId").limit()`.
+          limit: async () => ({ data: db.missions, error: null }),
+          eq: () => ({
+            limit: async () => ({
+              data:
+                table === "information_agent_autopilot_events" && db.alreadyApplied
+                  ? [{ id: "e" }]
+                  : [],
+              error: null,
+            }),
+          }),
+        }),
       }),
     }),
     rpc: async (name: string, args: Record<string, unknown>) => {
@@ -23,6 +36,7 @@ import { detectWrongRecipientSignal } from "./reply-intent";
 import { applyWrongRecipient } from "./wrong-recipient";
 
 beforeEach(() => {
+  db.alreadyApplied = false;
   db.missions = [];
   db.rpcs = [];
 });
@@ -100,6 +114,36 @@ describe("applyWrongRecipient", () => {
     expect(db.rpcs.map((call) => call.name)).not.toContain(
       "record_information_agent_autopilot_auto_stop",
     );
+  });
+
+  it("est idempotent : un rejeu du webhook ou un second clic n'écrit rien de plus", async () => {
+    db.alreadyApplied = true;
+    db.missions = [
+      {
+        recipient_identity_keys: ["lawyer|bordeaux|dupont jean"],
+        metadata: { trigger: "autopilot" },
+      },
+    ];
+
+    const result = await applyWrongRecipient({ caseId: "case-1", source: "reply" });
+
+    expect(result).toEqual({ stopped: false, excludedIdentities: 0, alreadyApplied: true });
+    expect(db.rpcs).toEqual([]);
+  });
+
+  it("le bouton de l'administrateur journalise l'auteur et le motif, sans adresse", async () => {
+    db.missions = [{ recipient_identity_keys: ["lawyer|paris|martin anne"], metadata: {} }];
+
+    await applyWrongRecipient({
+      caseId: "case-4",
+      source: "admin",
+      actorId: "admin-1",
+      reason: "Réponse de avocat@cabinet.test : pas le bon dossier",
+    });
+
+    const event = db.rpcs.find((call) => call.name === "record_information_agent_autopilot_event");
+    expect(event?.args.p_details).toMatchObject({ actorId: "admin-1", source: "admin" });
+    expect(JSON.stringify(event?.args)).not.toContain("@");
   });
 
   it("sans clé d'identité : journalisé, aucune exclusion inventée", async () => {

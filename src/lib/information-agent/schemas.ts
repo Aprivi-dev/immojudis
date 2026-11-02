@@ -159,10 +159,34 @@ export type InformationAgentAdminMissionPage = InformationAgentAdminListResponse
 /**
  * Déclencheur interne d'un envoi : le pilote automatique (`information-agent-autopilot.ts`). Hors du schéma zod :
  * jamais lu d'une requête HTTP. Absent : envoi manuel d'un administrateur.
+ *
+ * Valeur opaque : elle ne se fabrique que par `issueAutopilotTrigger`, importé par le seul module du pilote (le
+ * verrou `information-agent-no-automatic-send.test.ts` le vérifie), et `send.ts` / `draft.ts` refusent tout
+ * déclencheur qui n'a pas été émis ainsi. Un objet `{ kind: "autopilot" }` écrit ailleurs est donc inopérant.
  */
 export type InformationAgentSendTrigger = {
-  kind: "autopilot";
-  runId: string;
+  readonly kind: "autopilot";
+  readonly runId: string;
   /** Résultat des contrôles du pilote, repris dans la trace de l'envoi (codes et nombres, jamais d'adresse). */
-  checks?: Record<string, string | number | boolean | null>;
+  readonly checks?: Readonly<Record<string, string | number | boolean | null>>;
 };
+
+const issuedTriggers = new WeakSet<object>();
+
+export function issueAutopilotTrigger(
+  runId: string,
+  checks?: Record<string, string | number | boolean | null>,
+): InformationAgentSendTrigger {
+  const trigger = Object.freeze({ kind: "autopilot" as const, runId, checks });
+  issuedTriggers.add(trigger);
+  return trigger;
+}
+
+/** Refuse un déclencheur qui n'a pas été émis par `issueAutopilotTrigger`. */
+export function assertIssuedAutopilotTrigger(
+  trigger: InformationAgentSendTrigger | undefined,
+): void {
+  if (trigger && !issuedTriggers.has(trigger)) {
+    throw new Error("Déclencheur d'envoi automatique non reconnu.");
+  }
+}
