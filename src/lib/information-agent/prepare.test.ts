@@ -136,15 +136,37 @@ describe("prepareAdminInformationAgentDraft : brouillon et aperçu en une répon
     expect(response.reused).toBe(false);
   });
 
-  it("rend le brouillon même si l'aperçu échoue, et dit pourquoi", async () => {
+  it("rend le brouillon même si l'aperçu échoue, et dit pourquoi (message métier)", async () => {
     editableDrafts([]);
-    mocks.preview.mockRejectedValue(new Error("Aperçu impossible"));
+    mocks.preview.mockRejectedValue(new Error("Le contact est explicitement opposé."));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     const response = await prepareAdminInformationAgentDraft({ auth, input: { saleId } });
 
     expect(response.mission.id).toBe("new-mission");
     expect(response.preview).toBeNull();
-    expect(response.previewError).toBe("Aperçu impossible");
+    expect(response.previewError).toBe("Le contact est explicitement opposé.");
+  });
+
+  it("une erreur de contrainte unique donne le message générique, journalisé sans adresse", async () => {
+    editableDrafts([]);
+    mocks.preview.mockRejectedValue(
+      new Error(
+        'duplicate key value violates unique constraint "x_key" Key (recipient_email)=(secret@cabinet.test) already exists.',
+      ),
+    );
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const response = await prepareAdminInformationAgentDraft({ auth, input: { saleId } });
+
+    expect(response.previewError).toBe("Aperçu indisponible.");
+    expect(response.previewError).not.toContain("duplicate");
+    const logged = [...error.mock.calls, ...warn.mock.calls].map((call) => String(call[0]));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain('"scope":"admin.api"');
+    expect(logged[0]).toContain("duplicate key value");
+    expect(logged[0]).not.toContain("secret@cabinet.test");
   });
 
   it("refuse un compte qui n'est pas administrateur avant toute lecture", async () => {

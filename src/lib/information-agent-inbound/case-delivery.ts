@@ -16,6 +16,9 @@ import type { Json } from "@/integrations/supabase/types";
  */
 export type CaseDeliveryStatus = "bounced" | "bounced_temporary" | "complained";
 
+/** Un état plus grave n'est jamais remplacé par un moins grave. */
+const DELIVERY_RANK: Record<string, number> = { bounced_temporary: 1, bounced: 2, complained: 3 };
+
 const TABLES = ["information_agent_cases", "information_agent_missions"] as const;
 
 export async function markInformationAgentCaseDelivery({
@@ -42,6 +45,15 @@ export async function markInformationAgentCaseDelivery({
         row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
           ? row.metadata
           : {};
+      // Un état déjà posé ne recule jamais (rebond définitif ou plainte, puis évènement passager en retard).
+      const delivery = metadata.delivery;
+      const current =
+        delivery && typeof delivery === "object" && !Array.isArray(delivery)
+          ? (delivery as { status?: unknown }).status
+          : null;
+      if (typeof current === "string" && (DELIVERY_RANK[current] ?? 0) >= DELIVERY_RANK[status]) {
+        continue;
+      }
       const { error: updateError } = await supabaseAdmin
         .from(table)
         .update({ metadata: { ...metadata, delivery: { status, at } } as Json })
