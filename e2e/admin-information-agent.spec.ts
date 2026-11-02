@@ -125,6 +125,24 @@ test.describe("admin information agent", () => {
     expect(state.unexpectedRequests).toEqual([]);
   });
 
+  test("shows the autopilot off by default and offers an emergency stop only when it runs", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+
+    await page.goto("/admin/agent-ia");
+    await expect(page.getByRole("heading", { name: "Pilote automatique" })).toBeVisible();
+    await expect(page.getByText("Éteint", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
+    // Changer de mode exige un motif : rien ne part sans.
+    await expect(page.getByRole("button", { name: "Réel", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Simulation", exact: true })).toBeDisabled();
+    expect(
+      state.events.some((event) => event.method === "POST" && event.path.endsWith("/autopilot")),
+    ).toBe(false);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
   test("keeps evidence and fact review guarded until rights and current values are checked", async ({
     page,
   }) => {
@@ -459,6 +477,14 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       });
       return;
     }
+    // Pilote automatique (désactivé par défaut) : état déjà mis en forme par le serveur.
+    if (
+      path === "/api/admin/information-agent/autopilot" &&
+      (method === "GET" || method === "POST")
+    ) {
+      await route.fulfill({ status: 200, json: autopilotFixture() });
+      return;
+    }
     // Suivi des envois et aller-retour de réception : indicateurs déjà mis en forme par le serveur.
     if (
       path === "/api/admin/information-agent/operations" &&
@@ -609,6 +635,29 @@ function previewFixture(recipientEmail: string, subject: string) {
       known: true,
     },
     fingerprint: "e".repeat(64),
+  };
+}
+
+function autopilotFixture() {
+  return {
+    mode: "off",
+    modeLabel: "Éteint",
+    notice: null,
+    counters: [{ label: "Envois aujourd’hui (manuels inclus)", value: "0 sur 5" }],
+    settings: {
+      actingAdminId: null,
+      capTotalOverride: null,
+      allowLicitorDecoded: false,
+      art14RuleEnabled: true,
+      art14MaxAgeDays: 30,
+      aipdLabel: "Non attestée",
+    },
+    readiness: {
+      ready: false,
+      checks: [{ label: "AIPD attestée", ok: false, detail: "Aucune attestation d’AIPD." }],
+    },
+    ready: { count: 0, items: [] },
+    events: [],
   };
 }
 
