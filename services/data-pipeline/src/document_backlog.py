@@ -7,7 +7,8 @@ details, display descriptions (rate-limited LLM calls) and PDF jobs, and a PDF
 job is created only when a sale is republished: in practice most attachments
 were never read. This runner only does document work:
 
-* it selects actionable sales whose attachments are not read yet, upcoming
+* it selects actionable sales whose attachments are not read yet and were
+  not tried within a day (it also runs after each enrichment tick), upcoming
   sales first (soonest sale date; an undated sale counts as ending within a
   week), then sales with useful pending documents
   (conditions of sale, descriptive report, diagnostics, cadastre/urbanism);
@@ -126,6 +127,14 @@ select s.source_url, s.source_name, s.sale_date,
           where a.source_url = s.source_url
             and a.status = 'running'
             and coalesce(a.locked_at, a.updated_at) >= now() - interval '30 minutes'
+       )
+   -- Tried within a day: wait. The drain runs after every enrichment tick (about 27 a day), so a document
+   -- that keeps failing must not be downloaded again each time.
+   and not exists (
+         select 1 from public.auction_enrichment_jobs a
+          where a.source_url = s.source_url
+            and a.job_type = 'pdf'
+            and a.updated_at >= now() - interval '1 day'
        )
  -- Documents never tried come first: a sale whose only unread documents
  -- already failed (and will likely fail again) must not starve them.

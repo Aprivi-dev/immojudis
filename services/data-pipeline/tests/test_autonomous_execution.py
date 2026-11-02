@@ -90,15 +90,22 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert updates[0][2].obj["completion_status"] == "partial_success"
     assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_BUDGET_SECONDS"] == "1200"
     assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_MAX_JOBS"] == "180"
-    # After the queue: the document reading, the batch positions, then one tick of the Licitor history collector.
+    # After the queue: the attachment catch-up, the document reading, the batch positions, then one tick of
+    # the Licitor history collector.
     assert [call[0][2] for call in subprocess_calls[1:]] == [
+        "src.document_backlog",
         "src.document_reading",
         "src.address_positions",
         "src.sources.licitor_history_refresh",
     ]
-    assert subprocess_calls[2][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
-    assert subprocess_calls[2][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS
-    assert subprocess_calls[3][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
+    assert subprocess_calls[1][0][3:] == ["--max-sales", "6", "--budget-minutes", "8"]
+    assert subprocess_calls[1][1]["timeout"] == autonomous_runner.DOCUMENT_BACKLOG_BUDGET_SECONDS
+    # The reading step that follows reads the texts: the catch-up does not run its own.
+    assert subprocess_calls[1][1]["env"]["DOCUMENT_READING_ENABLED"] == "false"
+    assert subprocess_calls[3][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
+    assert subprocess_calls[3][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS
+    assert subprocess_calls[4][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
+    assert updates[0][2].obj["document_backlog_exit_code"] == 0
     assert updates[0][2].obj["address_positions_exit_code"] == 0
     assert updates[0][2].obj["licitor_history_exit_code"] == 0
     if exhausted:
@@ -149,6 +156,7 @@ def test_systemic_worker_failure_keeps_nonzero_code_with_exhausted_signal(monkey
     assert autonomous_runner.execute(run_id) == 7
     # A failed worker: neither the document reading nor the address positions run (they wait for the next tick).
     modules = [command[2] for command in commands if len(command) > 2]
+    assert "src.document_backlog" not in modules
     assert "src.document_reading" not in modules and "src.address_positions" not in modules
     assert "address_positions_exit_code" not in updates[0][2].obj
     assert updates[0][0] == "failed"
@@ -296,6 +304,15 @@ def test_licitor_history_snapshot_only_failure_does_not_raise(monkeypatch) -> No
     monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
 
     assert autonomous_runner._run_licitor_history_refresh({}) == 1
+
+
+def test_document_backlog_failure_is_reported_and_never_raises(monkeypatch) -> None:
+    def run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
+
+    assert autonomous_runner._run_document_backlog({}) == 1
 
 
 def test_address_positions_failure_is_reported_and_never_raises(monkeypatch) -> None:

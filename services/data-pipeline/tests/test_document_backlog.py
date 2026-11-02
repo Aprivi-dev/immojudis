@@ -42,6 +42,9 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
     assert "coalesce(s.sale_date, now() + interval '7 days')," in sql
     assert "(s.sale_date is null), s.sale_date" not in sql
     assert "(s.sale_date is null or s.sale_date >= now())" in sql
+    # Run after every enrichment tick: a sale tried within a day waits, so a failing document is not
+    # downloaded again each time.
+    assert "a.job_type = 'pdf' and a.updated_at >= now() - interval '1 day'" in sql
     # A document read except for a few pages ("partial") is settled.
     assert "not in ('extracted', 'empty', 'partial')" in sql
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
