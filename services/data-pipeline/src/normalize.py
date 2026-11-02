@@ -711,7 +711,9 @@ def normalize_occupancy_status(value: object | None) -> str | None:
 
 def has_rented_occupancy_signal(text: str) -> bool:
     text = strip_accents(text).lower()
-    if re.search(r"\b(?:locataire|rented|leased|tenant|loyer)\b", text):
+    # « tenant compte des critères » is French, not the English label « tenant » (02/11/2026: a bid-scoring
+    # table of a State sale read as « rented », which hid the « cédé libre » of the same document).
+    if re.search(r"\b(?:locataire|rented|leased|loyer)\b|\btenant\b(?!\s+(?:compte|et\b|lieu|a\b|au\b|aux\b|de\b|du\b|des\b|sur\b|dans\b|en\b))", text):
         return True
     if re.search(r"\bloue(?:e|s|es)?\b", text):
         return True
