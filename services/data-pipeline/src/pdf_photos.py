@@ -5,7 +5,7 @@
 La page d'une vente montre souvent une seule photo quand son cahier des charges ou son procès-verbal en contient
 une dizaine (Cessions de l'État, 66 rue Lafaurie de Monbadon à Bordeaux : une photo sur la page, neuf dans le
 cahier des charges). Ce passage borné les retrouve et les ajoute à la galerie de la vente, après les photos de
-la source (migrations ``20261111020013_sale_document_photos.sql`` et ``20261111020117_sale_document_photos_gallery.sql``).
+la source (migrations ``20261111030013_sale_document_photos.sql`` et ``20261111030117_sale_document_photos_gallery.sql``).
 Il ne lit ``auction_sales`` et ``auction_documents`` qu'en lecture ; il écrit dans le bucket ``sale-photos``
 (préfixe ``documents/{sale_id}/``), ``public.sale_document_photos`` et ``public.sale_document_photo_scans``.
 

@@ -125,7 +125,7 @@ describe("photos copiées", () => {
   });
 
   it("garde les photos des pièces jointes (bucket sale-photos), après celles de la source", () => {
-    // Forme rendue par app_private.sale_document_photo_media (migration 20261111020117).
+    // Forme rendue par app_private.sale_document_photo_media (migration 20261111030117).
     const path = "documents/f91d4624-09d6-4d25-b676-811ea30f6df9/0123456789abcdef";
     const documentPhoto = {
       type: "image" as const,

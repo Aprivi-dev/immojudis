@@ -1,4 +1,4 @@
--- Photos des pièces jointes (20261111020013_sale_document_photos.sql, 20261111020117_sale_document_photos_gallery.sql) :
+-- Photos des pièces jointes (20261111030013_sale_document_photos.sql, 20261111030117_sale_document_photos_gallery.sql) :
 -- tables fermées aux rôles du navigateur, fichiers mis en file de purge à la suppression, galerie, et requête de
 -- sélection du pipeline (CANDIDATES_SQL de services/data-pipeline/src/pdf_photos.py, ses « %s » remplacés par
 -- $1 à $9 ; tests/test_pdf_photos.py compare le texte et les paramètres).
