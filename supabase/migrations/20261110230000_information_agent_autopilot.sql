@@ -500,6 +500,15 @@ begin
   if p_code is null or p_code !~ '^[a-z0-9_]{1,60}$' then
     raise exception using errcode = '22023', message = 'Code d''avertissement invalide.';
   end if;
+  -- « auto_stop » : l'alerte critique de l'arrêt automatique. Le pilote la referme à chaque passage tant qu'il tourne
+  -- (la fermeture est différée de deux heures par app_private.sync_operational_alert, comme les autres alertes).
+  if p_code = 'auto_stop' then
+    perform app_private.sync_operational_alert(
+      'information_agent.autopilot.auto_stop', 'cron', 'critical',
+      coalesce(p_details, '{}'::jsonb), coalesce(p_active, false), pg_catalog.statement_timestamp()
+    );
+    return;
+  end if;
   perform app_private.sync_operational_alert(
     'information_agent.autopilot.warning.' || p_code, 'cron', 'warning',
     coalesce(p_details, '{}'::jsonb), coalesce(p_active, false), pg_catalog.statement_timestamp()

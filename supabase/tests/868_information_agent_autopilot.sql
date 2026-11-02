@@ -6,7 +6,7 @@
 --   * compteurs, purge de conservation (5 ans, 24 mois), mode d'envoi « autopilot », planification pg_cron.
 begin;
 
-select plan(49);
+select plan(51);
 
 -- Structure et droits -------------------------------------------------------------------------------------------
 select has_table('public', 'information_agent_autopilot_settings', 'the settings table exists');
@@ -58,6 +58,8 @@ insert into public.user_profiles (user_id, email, user_role) values
   ('86800000-0000-4000-8000-0000000000a2', 'autopilot-user@example.test', 'user')
 on conflict (user_id) do update set user_role = excluded.user_role;
 
+insert into public.tribunals (code, canonical_name, department, city)
+values ('T868', 'Tribunal de test 868', '33', 'Bordeaux');
 insert into public.auction_sales (id, source_name, source_url, status, tribunal_code)
 values ('86800000-1000-4000-8000-000000000001', 'autopilot-pgtap', 'https://example.test/868', 'upcoming', 'T868');
 
@@ -167,12 +169,16 @@ select throws_ok(
 );
 select ok(
   (select art14_max_age_days = 60 and cap_total_override = 5
-   from public.update_information_agent_autopilot_settings('{"art14_max_age_days": 60, "cap_total_override": 5}', 'Réglages de départ'))
-  and exists (
+   from public.update_information_agent_autopilot_settings('{"art14_max_age_days": 60, "cap_total_override": 5}', 'Réglages de départ')),
+  'settings change with a reason (values applied)'
+);
+-- Le journal est lu dans une instruction distincte : l'écriture de la fonction n'est pas visible dans son instruction.
+select ok(
+  exists (
     select 1 from public.information_agent_autopilot_events
     where kind = 'settings_changed' and before_values ->> 'art14_max_age_days' = '30' and after_values ->> 'art14_max_age_days' = '60'
   ),
-  'settings change with a reason and before/after values in the journal'
+  'the settings change is journalled with its before/after values'
 );
 select throws_ok(
   $$select public.update_information_agent_autopilot_settings('{"cap_total_override": 100}', 'Plafond trop haut')$$,
@@ -268,8 +274,8 @@ end;
 $$;
 select ok(
   (select auto_stopped_at is null and auto_stop_reason is null and mode = 'simulation' from public.information_agent_autopilot_settings)
-  and not exists (select 1 from public.operational_alerts where alert_key = 'information_agent.autopilot.auto_stop' and status = 'open'),
-  'only a manual, journalled reactivation lifts an automatic stop and closes the alert'
+  and exists (select 1 from public.operational_alerts where alert_key = 'information_agent.autopilot.auto_stop' and inactive_since is not null),
+  'only a manual, journalled reactivation lifts an automatic stop and starts closing the alert (closing is deferred like every alert)'
 );
 
 -- Filet SQL ------------------------------------------------------------------------------------------------------------------
@@ -335,11 +341,14 @@ select is(
 insert into public.information_agent_autopilot_events (at, kind, details) values ('2020-01-01T00:00:00Z', 'run', '{}');
 update public.information_agent_autopilot_exclusions set created_at = now() - interval '25 months';
 select ok(
-  (public.purge_information_agent_autopilot() ->> 'information_agent_autopilot_events')::integer >= 1
-  and (public.purge_information_agent_autopilot() ->> 'information_agent_autopilot_exclusions')::integer = 0
-  and not exists (select 1 from public.information_agent_autopilot_events where at < now() - interval '5 years')
-  and not exists (select 1 from public.information_agent_autopilot_exclusions),
-  'the dedicated purge removes journal rows older than 5 years and exclusions older than 24 months, and is idempotent'
+  (public.purge_information_agent_autopilot() ->> 'information_agent_autopilot_events')::integer >= 1,
+  'the dedicated purge removes journal rows older than 5 years'
+);
+select ok(
+  not exists (select 1 from public.information_agent_autopilot_events where at < now() - interval '5 years')
+  and not exists (select 1 from public.information_agent_autopilot_exclusions)
+  and (public.purge_information_agent_autopilot() ->> 'information_agent_autopilot_exclusions')::integer = 0,
+  'the exclusions older than 24 months are gone too, and a second purge finds nothing (idempotent)'
 );
 
 -- Planification ------------------------------------------------------------------------------------------------------------------
