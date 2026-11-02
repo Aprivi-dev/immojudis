@@ -126,10 +126,18 @@ select throws_ok(
   '42501', null, 'a non-admin account cannot attest the round trip'
 );
 
+-- La date et l'auteur sont lus dans une instruction distincte : une sous-requête de la même instruction ne voit pas
+-- l'écriture de la fonction (instantané de l'instruction).
+do $$
+begin
+  perform public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1');
+end;
+$$;
+
 select ok(
-  public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1') is not null
-  and (select inbound_roundtrip_verified_by from public.information_agent_operations)
-    = '86700000-0000-4000-8000-0000000000a1',
+  (select inbound_roundtrip_verified_by = '86700000-0000-4000-8000-0000000000a1'
+     and inbound_roundtrip_verified_at is not null
+   from public.information_agent_operations where singleton),
   'an administrator attests the round trip: the date and the author are stored'
 );
 
