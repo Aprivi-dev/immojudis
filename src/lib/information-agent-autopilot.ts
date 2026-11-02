@@ -42,6 +42,7 @@ import {
   INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE,
 } from "@/lib/information-agent/config";
 import { asObject, cancelMission } from "@/lib/information-agent/mission-store";
+import { issueAutopilotTrigger } from "@/lib/information-agent/schemas";
 
 /**
  * Pilote automatique de l'agent d'information : UN passage (appelé par `pg_cron` toutes les 10 minutes, via la
@@ -164,6 +165,16 @@ function isRateLimited(error: unknown): boolean {
   return /\(429\)|\b429\b|rate.?limit|too many requests/i.test(message);
 }
 
+/** Message accepté par le fournisseur mais enregistrement incomplet : il est parti, ce n'est pas une erreur d'envoi. */
+function isAcceptedButIncomplete(error: unknown): boolean {
+  return error instanceof Error && /Message accepté par Resend/.test(error.message);
+}
+
+/** Refus du plafond de validations d'un administrateur : une limite, pas une erreur du fournisseur. */
+function isApprovalCapRefusal(error: unknown): boolean {
+  return error instanceof Error && /Plafond de \d+ validations/.test(error.message);
+}
+
 function isUnverified(error: unknown): boolean {
   return error instanceof Error && /Envoi à vérifier/.test(error.message);
 }
@@ -246,7 +257,7 @@ export function defaultAutopilotDeps(
           bodyText: draft.bodyText,
         },
         fetchImpl,
-        trigger: { kind: "autopilot", runId, checks },
+        trigger: issueAutopilotTrigger(runId, checks),
       });
     },
     record: recordAutopilotEvent,
@@ -298,7 +309,7 @@ export async function prepareAutopilotDraft(
   const created = await createAdminInformationAgentDraft({
     auth: actingAuth(adminId),
     input: { saleId: candidate.saleId },
-    trigger: { kind: "autopilot", runId },
+    trigger: issueAutopilotTrigger(runId),
   });
   const mission = created.mission;
   if (
@@ -480,13 +491,22 @@ export async function runInformationAgentAutopilot(
           await deps.autoStop("unverified_send", { saleId: candidate.saleId });
           return finish("stopped", "unverified_send");
         }
-        const rateLimited = isRateLimited(error);
-        await deps.record("send_error", runId, {
-          status: rateLimited ? 429 : 500,
-          saleId: candidate.saleId,
-        });
-        skip(rateLimited ? "rate_limited" : "send_error");
-        break;
+        if (!isAcceptedButIncomplete(error)) {
+          // Ni un plafond (limite, pas une erreur d'API), ni un 429 ne comptent comme erreurs consécutives.
+          if (isApprovalCapRefusal(error)) {
+            skip("approval_cap");
+            await deps.record("skip", runId, { code: "approval_cap", saleId: candidate.saleId });
+            break;
+          }
+          const rateLimited = isRateLimited(error);
+          await deps.record("send_error", runId, {
+            status: rateLimited ? 429 : 500,
+            saleId: candidate.saleId,
+          });
+          skip(rateLimited ? "rate_limited" : "send_error");
+          break;
+        }
+        // Accepté par le fournisseur, enregistrement incomplet : le message est parti, il compte comme envoyé.
       }
       // Le message est parti : une panne du journal ne le remet pas en cause (résumé partiel, voir plus bas).
       summary.sent += 1;

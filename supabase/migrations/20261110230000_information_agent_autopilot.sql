@@ -45,6 +45,9 @@ create table if not exists public.information_agent_autopilot_settings (
   -- Article 14 RGPD : première adresse relevée il y a moins de N jours, ou personne déjà informée.
   art14_rule_enabled boolean not null default true,
   art14_max_age_days integer not null default 30 check (art14_max_age_days between 1 and 365),
+  -- Verrou du lot 3 : seule une migration du lot 3 (textes juridiques publiés) le passe à vrai. Tant qu'il vaut faux,
+  -- aucun appel de RPC ne peut mettre le pilote en mode réel.
+  live_allowed boolean not null default false,
   aipd_attested_at timestamptz,
   aipd_version text check (aipd_version is null or char_length(aipd_version) between 1 and 40),
   simulation_started_at timestamptz,
@@ -62,7 +65,8 @@ insert into public.information_agent_autopilot_settings (singleton) values (true
 
 alter table public.information_agent_autopilot_settings enable row level security;
 revoke all on table public.information_agent_autopilot_settings from public, anon, authenticated;
-grant select, update on table public.information_agent_autopilot_settings to service_role;
+-- Lecture seule : les RPC (security definer) sont les seules à écrire les réglages.
+grant select on table public.information_agent_autopilot_settings to service_role;
 -- Aucune politique : RLS sans politique refuse tout rôle soumis aux politiques ; service_role les contourne.
 
 -- 2. Journal en ajout seul -------------------------------------------------------------------------------------
@@ -110,7 +114,8 @@ create index if not exists information_agent_autopilot_events_kind_idx
 
 alter table public.information_agent_autopilot_events enable row level security;
 revoke all on table public.information_agent_autopilot_events from public, anon, authenticated;
-grant select, insert, delete on table public.information_agent_autopilot_events to service_role;
+-- Pas de delete : seule la purge de conservation (security definer, bornée) supprime.
+grant select, insert on table public.information_agent_autopilot_events to service_role;
 
 -- Ajout seul : ni modification ni suppression, sauf la purge de conservation (drapeau local à la transaction).
 create or replace function app_private.information_agent_autopilot_events_append_only()
@@ -133,6 +138,11 @@ drop trigger if exists information_agent_autopilot_events_append_only on public.
 create trigger information_agent_autopilot_events_append_only
   before update or delete on public.information_agent_autopilot_events
   for each row execute function app_private.information_agent_autopilot_events_append_only();
+
+drop trigger if exists information_agent_autopilot_events_no_truncate on public.information_agent_autopilot_events;
+create trigger information_agent_autopilot_events_no_truncate
+  before truncate on public.information_agent_autopilot_events
+  for each statement execute function app_private.information_agent_autopilot_events_append_only();
 
 -- 3. Identités exclues du pilote -----------------------------------------------------------------------------------
 create table if not exists public.information_agent_autopilot_exclusions (
@@ -164,8 +174,15 @@ language sql
 security definer
 set search_path = ''
 as $$
+  -- Le journal ne reçoit jamais d'adresse : tout « @ » est neutralisé ici, pour qu'un motif saisi à la main ne fasse
+  -- jamais échouer (ni l'arrêt d'urgence, ni un autre changement) sur la contrainte du journal.
   insert into public.information_agent_autopilot_events (kind, actor, action, before_values, after_values, reason, run_id, details)
-  values (p_kind, p_actor, p_action, p_before, p_after, nullif(pg_catalog.btrim(p_reason), ''), p_run_id, coalesce(p_details, '{}'::jsonb));
+  values (
+    p_kind, p_actor, pg_catalog.replace(p_action, '@', '(at)'), p_before, p_after,
+    nullif(pg_catalog.left(pg_catalog.replace(pg_catalog.btrim(p_reason), '@', '(at)'), 500), ''),
+    p_run_id,
+    pg_catalog.replace(coalesce(p_details, '{}'::jsonb)::text, '@', '(at)')::jsonb
+  );
 $$;
 
 revoke all on function app_private.autopilot_log_event(text, uuid, text, jsonb, jsonb, text, uuid, jsonb)
@@ -195,6 +212,9 @@ begin
   select * into v_before from public.information_agent_autopilot_settings where singleton for update;
 
   if p_mode = 'live' then
+    if not v_before.live_allowed then
+      raise exception using errcode = '55000', message = 'Mode réel non autorisé : les textes juridiques du lot 3 ne sont pas publiés.';
+    end if;
     if v_before.aipd_attested_at is null then
       raise exception using errcode = '55000', message = 'Attestation d''AIPD manquante : le mode réel est refusé.';
     end if;
@@ -604,6 +624,8 @@ declare
   v_events integer;
   v_exclusions integer;
 begin
+  -- La date de référence ne peut pas être dans le futur : un appel ne peut pas purger tout le journal d'un coup.
+  p_now := least(coalesce(p_now, pg_catalog.statement_timestamp()), pg_catalog.statement_timestamp());
   perform pg_catalog.set_config('app.autopilot_purge', 'on', true);
   delete from public.information_agent_autopilot_events where at < p_now - interval '5 years';
   get diagnostics v_events = row_count;
@@ -634,7 +656,7 @@ comment on table public.information_agent_roundtrip_attestations is
 
 alter table public.information_agent_roundtrip_attestations enable row level security;
 revoke all on table public.information_agent_roundtrip_attestations from public, anon, authenticated;
-grant select, insert, delete on table public.information_agent_roundtrip_attestations to service_role;
+grant select, insert on table public.information_agent_roundtrip_attestations to service_role;
 
 create or replace function app_private.information_agent_roundtrip_attestations_append_only()
 returns trigger
@@ -657,6 +679,60 @@ create trigger information_agent_roundtrip_attestations_append_only
   before update or delete on public.information_agent_roundtrip_attestations
   for each row execute function app_private.information_agent_roundtrip_attestations_append_only();
 
+drop trigger if exists information_agent_roundtrip_attestations_no_truncate on public.information_agent_roundtrip_attestations;
+create trigger information_agent_roundtrip_attestations_no_truncate
+  before truncate on public.information_agent_roundtrip_attestations
+  for each statement execute function app_private.information_agent_roundtrip_attestations_append_only();
+
+-- Domaines internes (liste blanche) : seule une adresse de l'un de ces domaines peut servir de dossier d'essai pour
+-- l'aller-retour. Alimentée par une RPC administrateur journalisée ; immojudis.com par défaut.
+create table if not exists public.information_agent_internal_domains (
+  domain text primary key check (domain ~ '^[a-z0-9.-]{3,100}$' and domain !~ '@'),
+  added_at timestamptz not null default now()
+);
+
+comment on table public.information_agent_internal_domains is
+  'Domaines internes admis pour le dossier d''essai de l''aller-retour de réception (liste blanche, modifiée par set_information_agent_internal_domain).';
+
+alter table public.information_agent_internal_domains enable row level security;
+revoke all on table public.information_agent_internal_domains from public, anon, authenticated;
+grant select on table public.information_agent_internal_domains to service_role;
+
+insert into public.information_agent_internal_domains (domain) values ('immojudis.com') on conflict (domain) do nothing;
+
+create or replace function public.set_information_agent_internal_domain(p_domain text, p_enabled boolean, p_reason text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_domain text := pg_catalog.lower(pg_catalog.btrim(coalesce(p_domain, '')));
+begin
+  if not public.is_admin() then
+    raise exception using errcode = '42501', message = 'Admin access required.';
+  end if;
+  if v_domain !~ '^[a-z0-9.-]{3,100}$' or v_domain in ('gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 'icloud.com', 'orange.fr', 'free.fr', 'wanadoo.fr', 'sfr.fr', 'laposte.net') then
+    raise exception using errcode = '22023', message = 'Domaine interne invalide.';
+  end if;
+  if p_reason is null or pg_catalog.char_length(pg_catalog.btrim(p_reason)) < 8 then
+    raise exception using errcode = '22023', message = 'Motif obligatoire (8 caractères au moins).';
+  end if;
+  if coalesce(p_enabled, true) then
+    insert into public.information_agent_internal_domains (domain) values (v_domain) on conflict (domain) do nothing;
+  else
+    delete from public.information_agent_internal_domains where domain = v_domain;
+  end if;
+  perform app_private.autopilot_log_event(
+    'settings_changed', (select auth.uid()), 'internal_domain',
+    null, pg_catalog.jsonb_build_object('domain', v_domain, 'enabled', coalesce(p_enabled, true)), p_reason, null, '{}'::jsonb
+  );
+end;
+$$;
+
+revoke all on function public.set_information_agent_internal_domain(text, boolean, text) from public, anon, authenticated;
+grant execute on function public.set_information_agent_internal_domain(text, boolean, text) to authenticated, service_role;
+
 create or replace function public.attest_information_agent_roundtrip(p_admin_id uuid)
 returns timestamptz
 language plpgsql
@@ -676,17 +752,23 @@ begin
     raise exception using errcode = '42501', message = 'Admin access required.';
   end if;
 
-  -- Preuve : une réponse reçue ET routée vers un dossier de cet administrateur, dont le destinataire est une adresse
-  -- interne (domaine de son propre compte), dans les 24 dernières heures.
+  -- Preuve : une réponse REÇUE par le circuit réel (jamais importée à la main), d'un expéditeur authentifié et qui
+  -- correspond au destinataire, routée vers un dossier ENVOYÉ de cet administrateur dont le destinataire est une
+  -- adresse d'un domaine interne (liste blanche), dans les 24 dernières heures.
   select message.id, message.case_id into v_message, v_case
   from public.information_agent_messages message
   join public.information_agent_cases test_case on test_case.id = message.case_id
   where message.direction = 'inbound'
     and coalesce(message.received_at, message.created_at) >= v_at - interval '24 hours'
+    and coalesce((message.metadata ->> 'imported_manually')::boolean, false) is not true
+    and message.metadata -> 'sender_authentication' ->> 'status' = 'pass'
+    and (message.metadata ->> 'sender_matches_recipient')::boolean is true
+    and message.provider_message_id is not null
     and test_case.created_by = p_admin_id
-    and pg_catalog.split_part(test_case.normalized_recipient_email, '@', 2)
-      = pg_catalog.split_part(pg_catalog.lower(coalesce(v_email, '')), '@', 2)
-    and pg_catalog.split_part(pg_catalog.lower(coalesce(v_email, '')), '@', 2) <> ''
+    and test_case.sent_at is not null
+    and pg_catalog.split_part(test_case.normalized_recipient_email, '@', 2) in (
+      select internal.domain from public.information_agent_internal_domains internal
+    )
   order by coalesce(message.received_at, message.created_at) desc
   limit 1;
   if v_message is null then
@@ -706,8 +788,11 @@ begin
 end;
 $$;
 
+revoke all on function public.attest_information_agent_roundtrip(uuid) from public, anon, authenticated;
+grant execute on function public.attest_information_agent_roundtrip(uuid) to service_role;
+
 comment on function public.attest_information_agent_roundtrip(uuid) is
-  'Enregistre qu''un administrateur a vérifié l''aller-retour réel d''une réponse. Exige une réponse de test reçue et routée dans les 24 dernières heures ; inscrit l''attestation dans l''historique en ajout seul. Réservée à service_role.';
+  'Enregistre qu''un administrateur a vérifié l''aller-retour réel d''une réponse. Exige une réponse de test reçue par le circuit réel (expéditeur authentifié, jamais importée à la main), routée vers un dossier envoyé d''un domaine interne (liste blanche), dans les 24 dernières heures ; inscrit l''attestation dans l''historique en ajout seul. Réservée à service_role.';
 
 -- 9. Filet SQL : reprise EN ENTIER de app_private.guard_information_agent_mission_contact (20261108203000) ----------
 -- Seul ajout : une mission marquée trigger = 'autopilot' ne passe pas en « sending » si le pilote n'est pas en

@@ -46,6 +46,7 @@ select is(
     'set_auction_sale_readiness_override(uuid,text,text,timestamp with time zone)',
     'set_catalogue_readiness_enforcement(boolean)',
     'set_information_agent_autopilot_mode(text,text)',
+    'set_information_agent_internal_domain(text,boolean,text)',
     'set_launch_offer(boolean)',
     'stop_information_agent_autopilot(text)',
     'unlock_sale(uuid)',

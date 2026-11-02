@@ -266,10 +266,17 @@ export function informationAgentFactSource(message: FactSourceMessage): Informat
   };
 }
 
-export const adminInformationAgentMessageActionSchema = z.object({
-  action: z.enum(["record_opposition", "mark_handled", "wrong_recipient"]),
-  messageId: z.string().guid(),
-});
+export const adminInformationAgentMessageActionSchema = z
+  .object({
+    action: z.enum(["record_opposition", "mark_handled", "wrong_recipient"]),
+    messageId: z.string().guid(),
+    /** Motif, obligatoire pour « Mauvais destinataire » (journalisé avec l'auteur). */
+    reason: z.string().trim().min(8).max(500).optional(),
+  })
+  .refine((value) => value.action !== "wrong_recipient" || Boolean(value.reason), {
+    message: "Motif obligatoire (8 caractères au moins).",
+    path: ["reason"],
+  });
 
 export type AdminInformationAgentMessageAction = z.output<
   typeof adminInformationAgentMessageActionSchema
@@ -305,7 +312,12 @@ export async function runAdminInformationAgentMessageAction({
   const opposedEmails: string[] = [];
   if (input.action === "wrong_recipient") {
     if (!message.case_id) throw new Error("Cette réponse n'est rattachée à aucun dossier.");
-    await applyWrongRecipient({ caseId: message.case_id, source: "admin" });
+    await applyWrongRecipient({
+      caseId: message.case_id,
+      source: "admin",
+      actorId: auth.userId,
+      reason: input.reason,
+    });
   }
   if (input.action === "record_opposition") {
     let recipient: string | null = null;

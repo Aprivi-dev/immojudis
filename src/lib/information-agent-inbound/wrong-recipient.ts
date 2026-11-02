@@ -5,8 +5,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * Réponse « ce n'est pas moi » (mauvais destinataire), reconnue par la lecture des réponses ou déclarée par un
  * administrateur (bouton « Mauvais destinataire »). Même effet dans les deux cas :
  *
- * - l'identité du destinataire est exclue du pilote automatique pour de bon (`information_agent_autopilot_exclusions`) :
- *   elle ne repasse qu'en validation manuelle ;
+ * - l'identité du destinataire est exclue du pilote automatique pendant 24 mois
+ *   (`information_agent_autopilot_exclusions`, purgée au-delà) : elle ne repasse qu'en validation manuelle ;
  * - si le message venait du pilote (mission marquée `trigger = autopilot`), le pilote est arrêté
  *   (`record_information_agent_autopilot_auto_stop`, motif `wrong_recipient`, alerte critique) : une erreur de
  *   destinataire d'un envoi automatique est le signe que la sélection est à revoir ;
@@ -17,10 +17,26 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 export async function applyWrongRecipient({
   caseId,
   source,
+  actorId,
+  reason,
 }: {
   caseId: string;
   source: "reply" | "admin";
-}): Promise<{ stopped: boolean; excludedIdentities: number }> {
+  /** Administrateur auteur (bouton « Mauvais destinataire »), journalisé avec son motif. */
+  actorId?: string;
+  reason?: string;
+}): Promise<{ stopped: boolean; excludedIdentities: number; alreadyApplied?: boolean }> {
+  // Idempotent : un webhook rejoué, ou un second clic, ne duplique ni l'évènement ni l'arrêt.
+  const existing = await supabaseAdmin
+    .from("information_agent_autopilot_events")
+    .select("id")
+    .eq("kind", "wrong_recipient")
+    .eq("details->>caseId", caseId)
+    .limit(1);
+  if (existing.error) throw existing.error;
+  if ((existing.data ?? []).length > 0) {
+    return { stopped: false, excludedIdentities: 0, alreadyApplied: true };
+  }
   const { data, error } = await supabaseAdmin
     .from("information_agent_missions")
     .select("recipient_identity_keys,metadata")
@@ -50,7 +66,14 @@ export async function applyWrongRecipient({
     "record_information_agent_autopilot_event",
     {
       p_kind: "wrong_recipient",
-      p_details: { caseId, source, fromAutopilot, identities: keys.length },
+      p_details: {
+        caseId,
+        source,
+        fromAutopilot,
+        identities: keys.length,
+        ...(actorId ? { actorId } : {}),
+        ...(reason ? { reason: reason.replaceAll("@", "(at)").slice(0, 200) } : {}),
+      },
     },
   );
   if (eventError) throw eventError;

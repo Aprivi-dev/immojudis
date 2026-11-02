@@ -111,17 +111,32 @@ export const INFORMATION_AGENT_CONSUMER_MAIL_BRANDS: readonly string[] = [
   "bbox",
 ];
 
-const CONSUMER_BRANDS = new Set(INFORMATION_AGENT_CONSUMER_MAIL_BRANDS);
+const CONSUMER_BRANDS = new Set([
+  ...INFORMATION_AGENT_CONSUMER_MAIL_BRANDS,
+  "ymail",
+  "numericable",
+  "club-internet",
+]);
+/** Domaines grand public qui ne se reconnaissent pas à leur premier libellé. */
+const CONSUMER_EXACT_DOMAINS = ["pm.me", "hey.com", "mac.com"] as const;
 
+/**
+ * Une adresse est grand public si son domaine (ou l'un de ses sous-domaines : `mail.gmail.com`, `smtp.orange.fr`)
+ * est un domaine de messagerie personnelle : `gmail.com`, `yahoo.co.uk`, `pm.me`…
+ */
 export function isConsumerMailAddress(email: string): boolean {
   const domain = email.trim().toLowerCase().split("@").pop() ?? "";
+  if (CONSUMER_EXACT_DOMAINS.some((exact) => domain === exact || domain.endsWith(`.${exact}`))) {
+    return true;
+  }
   const labels = domain.split(".").filter(Boolean);
-  if (labels.length === 2) return CONSUMER_BRANDS.has(labels[0]);
-  return (
-    labels.length === 3 &&
-    (labels[1] === "co" || labels[1] === "com") &&
-    CONSUMER_BRANDS.has(labels[0])
-  );
+  return labels.some((label, index) => {
+    if (!CONSUMER_BRANDS.has(label)) return false;
+    const rest = labels.length - index;
+    return (
+      rest === 2 || (rest === 3 && (labels[index + 1] === "co" || labels[index + 1] === "com"))
+    );
+  });
 }
 
 export function mailDomainOf(email: string): string {

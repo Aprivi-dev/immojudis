@@ -98,6 +98,23 @@ describe("schéma des actions du pilote", () => {
     ).toBe(false);
   });
 
+  it.each(["set_mode", "attest_aipd", "update_settings"])(
+    "%s : un motif contenant une adresse (« @ ») est refusé",
+    (action) => {
+      const base: Record<string, unknown> = {
+        action,
+        reason: "Motif avec avocat@cabinet.test",
+        ...(action === "set_mode" ? { mode: "simulation" } : {}),
+        ...(action === "attest_aipd" ? { version: "v1" } : {}),
+        ...(action === "update_settings" ? { changes: { art14MaxAgeDays: 45 } } : {}),
+      };
+      expect(adminAutopilotActionSchema.safeParse(base).success).toBe(false);
+      expect(
+        adminAutopilotActionSchema.safeParse({ ...base, reason: "Motif sans adresse" }).success,
+      ).toBe(true);
+    },
+  );
+
   it("l'arrêt d'urgence n'exige aucun motif", () => {
     expect(adminAutopilotActionSchema.safeParse({ action: "emergency_stop" }).success).toBe(true);
   });
@@ -197,8 +214,29 @@ describe("panneau du pilote (serveur)", () => {
     });
   });
 
-  it("remonte l'erreur de la base (le mode réel est aussi refusé par la fonction SQL)", async () => {
-    mocks.rpc.mockResolvedValue({ data: null, error: { message: "Attestation d'AIPD manquante" } });
+  it("une erreur interne de la base (contrainte) donne un message générique, jamais le texte brut", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: "23514",
+        message: 'violates check constraint "no_address_check" Failing row (avocat@cabinet.test)',
+      },
+    });
+    const failure = runAdminAutopilotAction({
+      authToken: "token",
+      input: { action: "emergency_stop", reason: "Arrêt demandé" },
+      env: {},
+    });
+    await expect(failure).rejects.toThrow("Action impossible.");
+    await expect(failure).rejects.not.toThrow(/avocat@|constraint/);
+  });
+
+  it("remonte le refus métier de la base (le mode réel est aussi refusé par la fonction SQL)", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { code: "55000", message: "Attestation d'AIPD manquante" },
+    });
     await expect(
       runAdminAutopilotAction({
         authToken: "token",

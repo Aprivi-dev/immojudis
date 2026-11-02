@@ -326,9 +326,16 @@ export function AdminInformationAgentReviewPanel() {
                     type="button"
                     className="admin-button-secondary"
                     disabled={messageAction.isPending}
-                    onClick={() =>
-                      messageAction.mutate({ action: "wrong_recipient", messageId: message.id })
-                    }
+                    onClick={() => {
+                      const reason = window.prompt("Motif (8 caractères au moins) :")?.trim();
+                      if (reason && reason.length >= 8) {
+                        messageAction.mutate({
+                          action: "wrong_recipient",
+                          messageId: message.id,
+                          reason,
+                        });
+                      }
+                    }}
                   >
                     Mauvais destinataire
                   </button>

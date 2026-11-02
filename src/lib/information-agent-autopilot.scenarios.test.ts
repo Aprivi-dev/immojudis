@@ -19,11 +19,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
-    from: () => {
+    from: (table: string) => {
       const query: Record<string, unknown> = {};
       for (const name of ["select", "eq", "in", "limit", "update"]) query[name] = () => query;
       query.then = (resolve: (value: unknown) => unknown) =>
-        Promise.resolve({ data: mocks.db.rows, error: null }).then(resolve);
+        Promise.resolve({
+          data: table === "information_agent_autopilot_events" ? [] : mocks.db.rows,
+          error: null,
+        }).then(resolve);
       return query;
     },
     rpc: vi.fn(async () => ({ data: null, error: null })),
@@ -71,6 +74,7 @@ import {
   INFORMATION_AGENT_OUTBOUND_DISABLED_MESSAGE,
 } from "@/lib/information-agent/config";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { isConsumerMailAddress } from "@/lib/information-agent/address-hygiene";
 
 const MONDAY_10H = new Date("2026-11-03T09:30:00Z"); // mardi 10 h 30 à Paris, plage d'envoi
 const NIGHT = new Date("2026-11-03T02:00:00Z");
@@ -80,6 +84,7 @@ const settings = (overrides: Partial<AutopilotSettings> = {}): AutopilotSettings
   actingAdminId: "admin-1",
   capTotalOverride: null,
   allowLicitorDecoded: false,
+  liveAllowed: true,
   art14RuleEnabled: true,
   art14MaxAgeDays: 30,
   aipdAttestedAt: "2026-11-01T00:00:00Z",
@@ -491,6 +496,33 @@ describe("matrice du pilote : S01 à S32", () => {
     expect(three.calls.sends).toBe(0);
   });
 
+  it("S21b plafond de validations d'un administrateur : une limite, jamais comptée comme erreur d'API", async () => {
+    const { deps, calls } = harness({
+      send: async () => {
+        throw new Error(
+          "Plafond de 30 validations par jour atteint : les envois reprennent demain.",
+        );
+      },
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary.skipped).toEqual({ approval_cap: 1 });
+    expect(calls.records.map((record) => record.kind)).not.toContain("send_error");
+    expect(calls.autoStops).toEqual([]);
+  });
+
+  it("S21c envoi accepté par le fournisseur mais mal enregistré : compté comme envoyé, jamais comme erreur", async () => {
+    const { deps, calls } = harness({
+      send: async () => {
+        throw new Error(
+          "Message accepté par Resend (id), enregistrement incomplet : base. Ne renvoyez pas ce message.",
+        );
+      },
+    });
+    const summary = await runInformationAgentAutopilot(deps);
+    expect(summary).toMatchObject({ status: "ran", sent: 1 });
+    expect(calls.records.map((record) => record.kind)).toEqual(["sent", "run"]);
+  });
+
   it("S22 délai dépassé (envoi à vérifier) : arrêt immédiat, aucune reprise", async () => {
     const { deps, calls } = harness({
       send: async () => {
@@ -667,15 +699,39 @@ describe("cas juridiques du cahier des charges", () => {
     },
   );
 
-  it.each(["gmail.com", "outlook.fr", "orange.fr", "free.fr", "yahoo.fr", "proton.me"])(
-    "J-grand public : le pilote refuse %s",
-    (domain) => {
-      expect(verdict({ consumerDomain: domain.length > 0 })).toEqual({
-        ok: false,
-        code: "consumer_domain",
-      });
-    },
-  );
+  it.each([
+    "gmail.com",
+    "outlook.fr",
+    "orange.fr",
+    "free.fr",
+    "yahoo.fr",
+    "proton.me",
+    "smtp.orange.fr",
+    "mail.gmail.com",
+    "ymail.com",
+    "mac.com",
+    "pm.me",
+    "hey.com",
+    "numericable.fr",
+    "club-internet.fr",
+  ])("J-grand public : %s est une messagerie grand public, refusée par le pilote", (domain) => {
+    expect(isConsumerMailAddress(`me@${domain}`)).toBe(true);
+    expect(verdict({ consumerDomain: isConsumerMailAddress(`me@${domain}`) })).toEqual({
+      ok: false,
+      code: "consumer_domain",
+    });
+  });
+
+  it("J-grand public : un cabinet n'est pas une messagerie grand public", () => {
+    for (const domain of [
+      "cabinet-dupont.fr",
+      "avocats-orange.fr",
+      "free-avocats.fr",
+      "heymans-avocats.com",
+    ]) {
+      expect(isConsumerMailAddress(`me@${domain}`)).toBe(false);
+    }
+  });
 
   it("J-Licitor : adresse décodée refusée sans réglage, acceptée avec", () => {
     expect(verdict({ observationChannel: "licitor_cloudflare_decoded" })).toEqual({
@@ -762,6 +818,7 @@ describe("cas juridiques du cahier des charges", () => {
       ["manual_sends", { stats: stats({ manualRealSends: 40, manualComplaints: 1 }) }],
       ["simulation", { settings: settings({ simulationStartedAt: "2026-10-30T00:00:00Z" }) }],
       ["simulation", { stats: stats({ manualRealSends: 40, anomaliesSinceSimulation: 1 }) }],
+      ["live_allowed", { settings: settings({ liveAllowed: false }) }],
       ["aipd", { settings: settings({ aipdAttestedAt: null, aipdVersion: null }) }],
       ["roundtrip", { roundtripVerifiedAt: "2026-09-01T00:00:00Z" }],
       ["roundtrip", { roundtripVerifiedAt: null }],
@@ -790,7 +847,7 @@ const okFacts: AutopilotCandidateFacts = {
   hasUnpublishedGap: true,
   humanDraftExists: false,
   identityExcluded: false,
-  contactFirstRecordedAt: null,
+  contactFirstRecordedAt: "2026-10-20T10:00:00Z",
   alreadyInformed: false,
   lastReplyAt: null,
   silentSendsInSixMonths: 0,

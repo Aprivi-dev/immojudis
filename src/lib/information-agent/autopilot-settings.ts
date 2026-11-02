@@ -26,6 +26,7 @@ export async function loadAutopilotSettings(): Promise<AutopilotSettings> {
     actingAdminId: data?.acting_admin_id ?? null,
     capTotalOverride: data?.cap_total_override ?? null,
     allowLicitorDecoded: data?.allow_licitor_decoded ?? false,
+    liveAllowed: data?.live_allowed ?? false,
     art14RuleEnabled: data?.art14_rule_enabled ?? true,
     art14MaxAgeDays: data?.art14_max_age_days ?? 30,
     aipdAttestedAt: data?.aipd_attested_at ?? null,
@@ -45,6 +46,42 @@ export async function loadAutopilotStats(now = new Date()): Promise<AutopilotSta
   return parseAutopilotStats(data);
 }
 
+/** Clés admises dans le journal (liste blanche) : codes, nombres et identifiants de vente, jamais autre chose. */
+const EVENT_DETAIL_KEYS = new Set([
+  "code",
+  "mode",
+  "failed",
+  "saleId",
+  "missionId",
+  "caseId",
+  "status",
+  "blockers",
+  "source",
+  "fromAutopilot",
+  "identities",
+  "actorId",
+  "reason",
+  "examined",
+  "prepared",
+  "would_send",
+  "sent",
+]);
+
+/** Filtre `details` : liste blanche de clés, « @ » neutralisé dans toute chaîne (aucune adresse dans une erreur de contrainte). */
+export function sanitizeAutopilotEventDetails(
+  details: Record<string, string | number | boolean | null | string[]>,
+): Record<string, string | number | boolean | null | string[]> {
+  const clean = (value: string) => value.replaceAll("@", "(at)").slice(0, 200);
+  return Object.fromEntries(
+    Object.entries(details)
+      .filter(([key]) => EVENT_DETAIL_KEYS.has(key) || key.startsWith("skip_"))
+      .map(([key, value]) => [
+        key,
+        typeof value === "string" ? clean(value) : Array.isArray(value) ? value.map(clean) : value,
+      ]),
+  );
+}
+
 export async function recordAutopilotEvent(
   kind: "run" | "skip" | "would_send" | "sent" | "send_error" | "wrong_recipient",
   runId: string | null,
@@ -53,7 +90,7 @@ export async function recordAutopilotEvent(
   const { error } = await supabaseAdmin.rpc("record_information_agent_autopilot_event", {
     p_kind: kind,
     p_run_id: runId ?? undefined,
-    p_details: details,
+    p_details: sanitizeAutopilotEventDetails(details),
   });
   if (error) throw error;
 }

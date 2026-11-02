@@ -162,6 +162,17 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
 
   checks.push(
     check(
+      "live_allowed",
+      "Mode réel autorisé par la migration du lot 3",
+      settings.liveAllowed,
+      settings.liveAllowed
+        ? "Verrou levé."
+        : "Verrou du lot 3 en place : seule une migration du lot 3 (textes juridiques publiés) le lève.",
+    ),
+  );
+
+  checks.push(
+    check(
       "aipd",
       "AIPD attestée",
       Boolean(settings.aipdAttestedAt && settings.aipdVersion),
@@ -265,6 +276,11 @@ export async function loadRoundtripVerifiedAt(): Promise<string | null> {
   return data?.inbound_roundtrip_verified_at ?? null;
 }
 
+/**
+ * Le compte est-il toujours un administrateur actif ? Rôle `admin` au profil ET compte ni supprimé ni suspendu
+ * (`banned_until`). Une lecture impossible vaut « non » : le pilote s'arrête plutôt que d'agir sous une
+ * identité dont l'état est inconnu.
+ */
 export async function isActiveAdmin(userId: string | null): Promise<boolean> {
   if (!userId) return false;
   const { data, error } = await supabaseAdmin
@@ -273,7 +289,13 @@ export async function isActiveAdmin(userId: string | null): Promise<boolean> {
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
-  return data?.user_role === "admin";
+  if (data?.user_role !== "admin") return false;
+  const account = await supabaseAdmin.auth.admin.getUserById(userId);
+  const user = account.data?.user;
+  if (account.error || !user) return false;
+  const bannedUntil = (user as { banned_until?: string | null }).banned_until;
+  const deletedAt = (user as { deleted_at?: string | null }).deleted_at;
+  return !deletedAt && !(bannedUntil && Date.parse(bannedUntil) > Date.now());
 }
 
 export function currentPrivacyVersion(): string {
