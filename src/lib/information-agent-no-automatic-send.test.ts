@@ -34,6 +34,11 @@ function walk(relative: string, extensions: readonly string[]): string[] {
   });
 }
 
+/** Découpage de `information-agent.ts` (lot 0) : l'envoi vit dans `send.ts`, le routeur dans la façade. */
+const FACADE = path.join("src", "lib", "information-agent.ts");
+const SEND_MODULE = path.join("src", "lib", "information-agent", "send.ts");
+const SCHEMAS_MODULE = path.join("src", "lib", "information-agent", "schemas.ts");
+
 const isTest = (file: string) => /\.(?:test|spec)\.[cm]?[jt]sx?$|\.scenarios\.test\./.test(file);
 const sourceFiles = walk("src", [".ts", ".tsx"]).filter((file) => !isTest(file));
 
@@ -49,11 +54,11 @@ describe("agent d'information : aucun envoi automatique", () => {
   it("n'appelle le fournisseur d'e-mails qu'à un seul endroit : l'envoi validé par un admin", () => {
     const agentFiles = sourceFiles.filter((file) => /information-agent/.test(file));
     const callers = agentFiles.filter((file) => /\bsendTrackedEmail\s*\(/.test(read(file)));
-    expect(callers).toEqual([path.join("src", "lib", "information-agent.ts")]);
+    expect(callers).toEqual([SEND_MODULE]);
 
-    const agent = read("src/lib/information-agent.ts");
+    const agent = read(SEND_MODULE);
     expect(agent.match(/\bsendTrackedEmail\s*\(/g)).toHaveLength(1);
-    const sendPath = functionBody(agent, "async function approveAndSendMission(");
+    const sendPath = functionBody(agent, "export async function approveAndSendMission(");
     expect(sendPath).toMatch(/\bsendTrackedEmail\s*\(/);
     // L'envoi exige l'empreinte de l'aperçu, puis revérifie l'opposition juste avant l'appel.
     expect(sendPath.indexOf("assertInformationAgentPreviewFingerprint")).toBeGreaterThan(-1);
@@ -66,10 +71,16 @@ describe("agent d'information : aucun envoi automatique", () => {
   });
 
   it("ne déclenche l'envoi que depuis l'action admin « approve_and_send »", () => {
-    const agent = read("src/lib/information-agent.ts");
-    const calls = agent.match(/\bapproveAndSendMission\s*\(/g) ?? [];
-    // Déclaration + un seul appel, dans le routeur des actions administrateur.
-    expect(calls).toHaveLength(2);
+    const agent = read(FACADE);
+    const send = read(SEND_MODULE);
+    // Déclaration (send.ts) + un seul appel, dans le routeur des actions administrateur (façade).
+    expect(send.match(/\bapproveAndSendMission\s*\(/g)).toHaveLength(1);
+    expect(agent.match(/\bapproveAndSendMission\s*\(/g)).toHaveLength(1);
+    const otherCallers = sourceFiles.filter(
+      (file) =>
+        file !== FACADE && file !== SEND_MODULE && /\bapproveAndSendMission\b/.test(read(file)),
+    );
+    expect(otherCallers).toEqual([]);
     const router = functionBody(agent, "export async function runAdminInformationAgentAction(");
     expect(router).toMatch(
       /input\.action === "approve_and_send"\)\s*\{\s*await approveAndSendMission\(/,
@@ -80,10 +91,7 @@ describe("agent d'information : aucun envoi automatique", () => {
       /\brunAdminInformationAgentAction\b/.test(read(file)),
     );
     expect(routerUsers.sort()).toEqual(
-      [
-        path.join("src", "lib", "admin-information-agent.ts"),
-        path.join("src", "lib", "information-agent.ts"),
-      ].sort(),
+      [path.join("src", "lib", "admin-information-agent.ts"), FACADE].sort(),
     );
     const tokenUsers = sourceFiles.filter((file) =>
       /\brunAdminInformationAgentMissionActionForToken\b/.test(read(file)),
@@ -99,8 +107,9 @@ describe("agent d'information : aucun envoi automatique", () => {
     expect(route).toMatch(
       /async function handlePATCH[\s\S]*runAdminInformationAgentMissionActionForToken/,
     );
-    expect(agent).toMatch(/approvalConfirmed: z\.literal\(true\)/);
-    expect(agent).toMatch(/previewFingerprint: z\.string\(\)\.regex/);
+    const schemas = read(SCHEMAS_MODULE);
+    expect(schemas).toMatch(/approvalConfirmed: z\.literal\(true\)/);
+    expect(schemas).toMatch(/previewFingerprint: z\.string\(\)\.regex/);
   });
 
   it("garde les crons, webhooks et le traitement des réponses sans aucun chemin d'envoi", () => {
@@ -116,6 +125,9 @@ describe("agent d'information : aucun envoi automatique", () => {
     for (const file of automated) {
       const source = read(file);
       expect(source, file).not.toMatch(/from "@\/lib\/information-agent"/);
+      expect(source, file).not.toMatch(
+        /from "@\/lib\/information-agent\/(?:send|draft|preview|schemas|mission-store|config)"/,
+      );
       expect(source, file).not.toMatch(/\b(?:sendResendEmail|sendTrackedEmail)\b/);
       expect(source, file).not.toMatch(/\bapproveAndSendMission\b|approve_and_send/);
       expect(source, file).not.toMatch(

@@ -218,6 +218,7 @@ describe("chaque émetteur lit l'expéditeur de sa catégorie", () => {
   it("les emails inchangés ne passent ni par NOREPLY_EMAIL_FROM ni par l'expéditeur transactionnel", () => {
     for (const file of [
       "src/lib/information-agent.ts",
+      "src/lib/information-agent/send.ts",
       "src/lib/operational-alerts.ts",
       "src/lib/replies-review-digest.ts",
     ]) {
