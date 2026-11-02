@@ -64,6 +64,7 @@ import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent
 import {
   UNVERIFIED_SEND_OUTCOME,
   type InformationAgentAdminActionPayload,
+  type InformationAgentSendTrigger,
 } from "@/lib/information-agent/schemas";
 
 // Envoi validé d'une mission : l'unique chemin d'envoi de l'agent (`approveAndSendMission`).
@@ -74,10 +75,12 @@ export async function approveAndSendMission({
   adminId,
   input,
   fetchImpl,
+  trigger,
 }: {
   adminId: string;
   input: Extract<InformationAgentAdminActionPayload, { action: "approve_and_send" }>;
   fetchImpl: typeof fetch;
+  trigger?: InformationAgentSendTrigger;
 }) {
   const mission = await loadOwnedMission(adminId, input.missionId);
   if (mission.status !== "draft" && mission.status !== "failed") {
@@ -181,6 +184,8 @@ export async function approveAndSendMission({
           : withoutCourtRegistryTrace(mission.metadata)),
         recipient_origin_url: input.recipientOriginUrl ?? null,
         preview_fingerprint: input.previewFingerprint,
+        // Le filet SQL lit ce marquage : un envoi du pilote est refusé en base hors du mode réel.
+        ...(trigger ? { trigger: trigger.kind, autopilot_run_id: trigger.runId } : {}),
       },
     })
     .eq("id", mission.id)
@@ -273,7 +278,7 @@ export async function approveAndSendMission({
       fetchImpl,
       category: "agent",
       templateKey: courtFallback ? "agent_court_registry" : "agent_request",
-      mode: "manual",
+      mode: trigger ? "autopilot" : "manual",
       message: {
         from: config.from,
         to: edited.recipient_email,
@@ -306,6 +311,16 @@ export async function approveAndSendMission({
         approval_sha256: messageHash,
         preview_fingerprint: input.previewFingerprint,
         approved_by_admin: adminId,
+        // Traçabilité d'un envoi automatique : mode, passage, empreinte du texte rendu (pied compris), contrôles.
+        ...(trigger
+          ? {
+              send_mode: "autopilot",
+              autopilot_run_id: trigger.runId,
+              rendered_text_sha256: createHash("sha256").update(renderedEmail.text).digest("hex"),
+              address_origin_kind: addressOrigin.kind,
+              autopilot_checks: trigger.checks ?? {},
+            }
+          : { send_mode: "manual" }),
         address_origin_url: legalFooter.addressOriginUrl ?? null,
         address_origin_text: legalFooter.addressOrigin,
         // Journal : un message au greffe se distingue d'un message à un avocat.

@@ -6570,6 +6570,105 @@ export type Database = {
         };
         Relationships: [];
       };
+      information_agent_autopilot_events: {
+        Row: {
+          action: string | null;
+          actor: string | null;
+          after_values: Json | null;
+          at: string;
+          before_values: Json | null;
+          details: Json;
+          id: string;
+          kind: string;
+          reason: string | null;
+          run_id: string | null;
+        };
+        Insert: {
+          action?: string | null;
+          actor?: string | null;
+          after_values?: Json | null;
+          at?: string;
+          before_values?: Json | null;
+          details?: Json;
+          id?: string;
+          kind: string;
+          reason?: string | null;
+          run_id?: string | null;
+        };
+        Update: {
+          action?: string | null;
+          actor?: string | null;
+          after_values?: Json | null;
+          at?: string;
+          before_values?: Json | null;
+          details?: Json;
+          id?: string;
+          kind?: string;
+          reason?: string | null;
+          run_id?: string | null;
+        };
+        Relationships: [];
+      };
+      information_agent_autopilot_exclusions: {
+        Row: { created_at: string; identity_key: string; reason: string };
+        Insert: { created_at?: string; identity_key: string; reason: string };
+        Update: { created_at?: string; identity_key?: string; reason?: string };
+        Relationships: [];
+      };
+      information_agent_autopilot_settings: {
+        Row: {
+          acting_admin_id: string | null;
+          aipd_attested_at: string | null;
+          aipd_version: string | null;
+          allow_licitor_decoded: boolean;
+          art14_max_age_days: number;
+          art14_rule_enabled: boolean;
+          auto_stop_reason: string | null;
+          auto_stopped_at: string | null;
+          cap_total_override: number | null;
+          mode: string;
+          paused_until: string | null;
+          simulation_started_at: string | null;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          acting_admin_id?: string | null;
+          aipd_attested_at?: string | null;
+          aipd_version?: string | null;
+          allow_licitor_decoded?: boolean;
+          art14_max_age_days?: number;
+          art14_rule_enabled?: boolean;
+          auto_stop_reason?: string | null;
+          auto_stopped_at?: string | null;
+          cap_total_override?: number | null;
+          mode?: string;
+          paused_until?: string | null;
+          simulation_started_at?: string | null;
+          singleton?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          acting_admin_id?: string | null;
+          aipd_attested_at?: string | null;
+          aipd_version?: string | null;
+          allow_licitor_decoded?: boolean;
+          art14_max_age_days?: number;
+          art14_rule_enabled?: boolean;
+          auto_stop_reason?: string | null;
+          auto_stopped_at?: string | null;
+          cap_total_override?: number | null;
+          mode?: string;
+          paused_until?: string | null;
+          simulation_started_at?: string | null;
+          singleton?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       information_agent_case_subscribers: {
         Row: {
           case_id: string;
@@ -15676,6 +15775,40 @@ export type Database = {
         }[];
       };
       has_analysis_access: { Args: never; Returns: boolean };
+      attest_information_agent_aipd: {
+        Args: { p_reason: string; p_version: string };
+        Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
+      };
+      information_agent_autopilot_stats: { Args: { p_now?: string }; Returns: Json };
+      purge_information_agent_autopilot: { Args: { p_now?: string }; Returns: Json };
+      record_information_agent_autopilot_auto_stop: {
+        Args: { p_details?: Json; p_pause_hours?: number; p_reason: string };
+        Returns: undefined;
+      };
+      record_information_agent_autopilot_event: {
+        Args: { p_details?: Json; p_kind: string; p_run_id?: string };
+        Returns: undefined;
+      };
+      record_information_agent_autopilot_exclusions: {
+        Args: { p_identity_keys: string[]; p_reason?: string };
+        Returns: number;
+      };
+      set_information_agent_autopilot_mode: {
+        Args: { p_mode: string; p_reason: string };
+        Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
+      };
+      stop_information_agent_autopilot: {
+        Args: { p_reason?: string };
+        Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
+      };
+      sync_information_agent_autopilot_warning: {
+        Args: { p_active: boolean; p_code: string; p_details?: Json };
+        Returns: undefined;
+      };
+      update_information_agent_autopilot_settings: {
+        Args: { p_changes: Json; p_reason: string };
+        Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
+      };
       information_agent_indicators: {
         Args: { p_now?: string; p_since?: string };
         Returns: Json;

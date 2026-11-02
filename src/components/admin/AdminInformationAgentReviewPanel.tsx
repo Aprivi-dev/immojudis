@@ -67,7 +67,9 @@ export function AdminInformationAgentReviewPanel() {
       toast.success(
         input.action === "record_opposition"
           ? `Opposition enregistrée (${response.opposedEmails.join(", ")}) : plus aucune sollicitation.`
-          : "Réponse marquée comme traitée.",
+          : input.action === "wrong_recipient"
+            ? "Mauvais destinataire noté : traitement manuel seulement pour ce professionnel."
+            : "Réponse marquée comme traitée.",
       );
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
@@ -319,6 +321,16 @@ export function AdminInformationAgentReviewPanel() {
                     onClick={() => recordOpposition(message.id)}
                   >
                     Enregistrer une opposition
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-button-secondary"
+                    disabled={messageAction.isPending}
+                    onClick={() =>
+                      messageAction.mutate({ action: "wrong_recipient", messageId: message.id })
+                    }
+                  >
+                    Mauvais destinataire
                   </button>
                 </div>
               </article>
@@ -747,6 +759,9 @@ const PROCESSING_REASON_LABELS: Record<string, string> = {
   sender_authentication_failed: "authentification de l’expéditeur échouée",
   sender_authentication_unverified: "authentification de l’expéditeur non vérifiée",
   auto_reply: "réponse automatique (absence ou accusé de réception) : ignorée",
+  wrong_recipient:
+    "mauvais destinataire signalé : exclu du pilote automatique, validation manuelle seulement",
+  possible_wrong_recipient: "possible mauvais destinataire : à lire avant tout nouvel envoi",
   possible_opposition:
     "possible demande de ne plus être contacté : à lire avant toute relance, aucune opposition enregistrée",
   unidentified_lot_review: "vente à plusieurs lots : lot non identifié dans la réponse",

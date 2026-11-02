@@ -152,3 +152,35 @@ export function collectInboundTokens(
   }
   return [...tokens];
 }
+
+/**
+ * « Ce n'est pas moi » : le destinataire dit qu'il n'est pas la bonne personne (pas l'avocat poursuivant de ce
+ * dossier, erreur de destinataire). Détection prudente par mots-clés :
+ * - `strong` : formules sans ambiguïté. Pour un envoi du pilote, arrêt automatique de celui-ci ; l'identité ne
+ *   repasse qu'en validation manuelle.
+ * - `possible` : vocabulaire voisin (pas concerné, autre cabinet, confrère). Aucun arrêt : le doute envoie la
+ *   réponse en relecture humaine (`possible_wrong_recipient`).
+ * L'historique cité est retiré avant l'analyse : un ancien message transféré ne déclenche rien.
+ */
+export type WrongRecipientSignal = "strong" | "possible";
+
+const STRONG_WRONG_RECIPIENT_PATTERNS: RegExp[] = [
+  /\bce\s+n['’]est\s+pas\s+moi\b/iu,
+  /\berreur\s+de\s+destinataire\b|\bmauvais\s+destinataire\b|\bmauvaise\s+adresse\b/iu,
+  /\bje\s+ne\s+suis\s+pas\s+(?:l['’]|le\s+|la\s+|votre\s+)?(?:avocat(?:e)?\s+(?:poursuivant(?:e)?|de\s+(?:ce|cette)\s+(?:dossier|vente|affaire))|bon\s+interlocuteur|bonne\s+personne|bon\s+destinataire|destinataire\s+(?:de\s+ce|concern))/iu,
+  /\bje\s+ne\s+suis\s+pas\s+concern[ée]e?\s+par\s+(?:ce|cette)\s+(?:dossier|vente|affaire)\b/iu,
+  /\bvous\s+(?:vous\s+(?:[êe]tes\s+tromp[ée]e?s?|trompez)|avez\s+fait\s+erreur)\b[^.!?\n]{0,40}\b(?:destinataire|adresse|personne)\b/iu,
+  /\bi\s+am\s+not\s+the\s+(?:right\s+person|lawyer\s+(?:for|of)\s+this)\b|\bwrong\s+(?:recipient|person|address)\b/iu,
+].map(unicodeWordBoundaries);
+
+const POSSIBLE_WRONG_RECIPIENT_PATTERNS: RegExp[] = [
+  /\bpas\s+concern[ée]e?\b|\bne\s+(?:traite|traitons)\s+pas\s+ce\b|\bautre\s+cabinet\b|\bconfr[èe]re\b|\bn['’]est\s+pas\s+(?:mon|notre)\s+dossier\b|\bne\s+me\s+concerne\s+pas\b/iu,
+].map(unicodeWordBoundaries);
+
+export function detectWrongRecipientSignal(bodyText: string): WrongRecipientSignal | null {
+  const text = replyBodyForOptOut(bodyText);
+  if (!text) return null;
+  if (STRONG_WRONG_RECIPIENT_PATTERNS.some((pattern) => pattern.test(text))) return "strong";
+  if (POSSIBLE_WRONG_RECIPIENT_PATTERNS.some((pattern) => pattern.test(text))) return "possible";
+  return null;
+}

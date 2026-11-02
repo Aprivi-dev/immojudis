@@ -12,6 +12,7 @@ import {
   normalizedEmail,
   recordInformationAgentContactOpposition,
 } from "@/lib/information-agent/contacts";
+import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
 import {
   createAdminInformationAgentDraft,
   informationAgentAdminActionSchema,
@@ -266,7 +267,7 @@ export function informationAgentFactSource(message: FactSourceMessage): Informat
 }
 
 export const adminInformationAgentMessageActionSchema = z.object({
-  action: z.enum(["record_opposition", "mark_handled"]),
+  action: z.enum(["record_opposition", "mark_handled", "wrong_recipient"]),
   messageId: z.string().guid(),
 });
 
@@ -280,6 +281,9 @@ export type AdminInformationAgentMessageAction = z.output<
  *   l'expéditeur s'il est différent, pour une demande d'arrêt que la lecture automatique n'a pas
  *   reconnue (téléphone, formulation inhabituelle…). Les clés d'identité sont rattachées en base.
  * - `mark_handled` : la réponse a été traitée et sort de la file de revue.
+ * - `wrong_recipient` : « Mauvais destinataire ». Même effet que la détection automatique d'un « ce n'est pas
+ *   moi » : l'identité est exclue du pilote (validation manuelle seulement) et, si le message venait du pilote,
+ *   le pilote est arrêté (motif `wrong_recipient`).
  */
 export async function runAdminInformationAgentMessageAction({
   authToken,
@@ -299,6 +303,10 @@ export async function runAdminInformationAgentMessageAction({
   if (!message) throw new Error("Réponse introuvable.");
 
   const opposedEmails: string[] = [];
+  if (input.action === "wrong_recipient") {
+    if (!message.case_id) throw new Error("Cette réponse n'est rattachée à aucun dossier.");
+    await applyWrongRecipient({ caseId: message.case_id, source: "admin" });
+  }
   if (input.action === "record_opposition") {
     let recipient: string | null = null;
     if (message.case_id) {

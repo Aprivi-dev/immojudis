@@ -19,6 +19,8 @@ import type {
   AdminSourceRefreshRequestInput,
   AdminSourceRefreshResponse,
 } from "@/lib/admin-source-refresh";
+import type { AdminAutopilotAction } from "@/lib/admin-information-agent-autopilot";
+import type { AutopilotView } from "@/lib/information-agent/autopilot-view";
 import type { InformationAgentOperationsView } from "@/lib/information-agent/operations-view";
 import type {
   InformationAgentAdminActionPayload,
@@ -353,4 +355,26 @@ export async function attestAdminInformationAgentRoundtripClient(): Promise<Info
     headers: await authHeaders(),
   });
   return readJson<InformationAgentOperationsView>(response);
+}
+
+/** État du pilote automatique, déjà mis en forme par le serveur. */
+export async function fetchAdminInformationAgentAutopilot(): Promise<AutopilotView> {
+  const response = await fetch("/api/admin/information-agent/autopilot", {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<AutopilotView>(response);
+}
+
+/** Mode, réglages, arrêt d'urgence ou attestation d'AIPD (motif obligatoire, sauf l'arrêt d'urgence). */
+export async function runAdminInformationAgentAutopilotActionClient(
+  data: AdminAutopilotAction,
+): Promise<AutopilotView> {
+  const response = await fetch("/api/admin/information-agent/autopilot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<AutopilotView>(response);
 }

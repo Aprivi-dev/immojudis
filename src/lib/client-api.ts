@@ -9,6 +9,8 @@ export { fetchApiKeys, createApiKey, revokeApiKey } from "@/lib/client-api/api-k
 export {
   fetchAdminInformationAgentEmailTemplate,
   fetchAdminInformationAgentOperations,
+  fetchAdminInformationAgentAutopilot,
+  runAdminInformationAgentAutopilotActionClient,
   attestAdminInformationAgentRoundtripClient,
   fetchAdminCatalogueReadiness,
   runAdminCatalogueReadinessActionClient,

@@ -15,6 +15,7 @@ import type {
   InformationAgentAdminActionPayload,
   InformationAgentAdminListResponse,
   InformationAgentAdminMissionPage,
+  InformationAgentSendTrigger,
 } from "@/lib/information-agent/schemas";
 
 // Façade de l'agent d'information. La logique vit dans `information-agent/` :
@@ -92,6 +93,7 @@ export type {
   InformationAgentFact,
   InformationAgentMission,
   InformationAgentPreviewInput,
+  InformationAgentSendTrigger,
 } from "@/lib/information-agent/schemas";
 export {
   assertInformationAgentCanaryRecipient,
@@ -185,15 +187,18 @@ export async function runAdminInformationAgentAction({
   auth,
   input,
   fetchImpl = fetch,
+  trigger,
 }: {
   auth: SupabaseAuthContext;
   input: InformationAgentAdminActionPayload;
   fetchImpl?: typeof fetch;
+  /** Interne : le pilote automatique (`information-agent-autopilot.ts`) ; absent pour un administrateur. */
+  trigger?: InformationAgentSendTrigger;
 }): Promise<InformationAgentAdminListResponse> {
   requireInformationAgentAdmin(auth);
 
   if (input.action === "approve_and_send") {
-    await approveAndSendMission({ adminId: auth.userId, input, fetchImpl });
+    await approveAndSendMission({ adminId: auth.userId, input, fetchImpl, trigger });
   } else if (input.action === "record_reply") {
     const replyMission = await loadOwnedMission(auth.userId, input.missionId);
     await recordManualMissionReply({ mission: replyMission, input });
