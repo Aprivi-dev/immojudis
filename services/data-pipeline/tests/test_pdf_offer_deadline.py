@@ -109,3 +109,35 @@ def test_known_sale_date_is_never_replaced_by_an_offer_deadline() -> None:
 
     assert sale.sale_date == known
     assert "pdf_offer_deadline_extraction" in sale.raw_payload
+
+
+def _deadlines(text: str) -> list[str]:
+    return [str(item["offer_deadline"]) for item in offer_deadline_candidates(text)]
+
+
+def test_state_tender_wordings_of_the_offer_deadline_are_read() -> None:
+    # Real Cessions de l'État wordings left undated before 02/11/2026.
+    assert _deadlines(
+        "Date limite de réception des offres et de transmission des documents visés au II. ci-dessus "
+        "13 novembre 2026 à midi (heure locale de Paris)"
+    ) == ["2026-11-13T00:00:00+00:00"]
+    assert _deadlines("Date limite de réception du dossier d’offre 02/12/2026 2.5.2 – Mise en œuvre") == [
+        "2026-12-02T00:00:00+00:00"
+    ]
+    # A table cell split by the PDF text layer.
+    assert _deadlines("Date limite de réception du dossier 10/12/2026 à 16h00 d'offre Date de sélection") == [
+        "2026-12-10T15:00:00+00:00"
+    ]
+    assert _deadlines("LA DATE LIMITE D’ENVOI DES CANDIDATURES EST FIXÉE AU : MARDI 1 ER DECEMBRE 2026 INCLUS") == [
+        "2026-12-01T00:00:00+00:00"
+    ]
+    assert _deadlines("• Date limite de dépôt des dossiers : 19 mai 2026 à 12h00 • Début des enchères") == [
+        "2026-05-19T10:00:00+00:00"
+    ]
+
+
+def test_other_deadlines_of_a_tender_are_not_the_offer_deadline() -> None:
+    assert _deadlines("Date limite de l'envoi des questions 30 octobre 2026 à midi") == []
+    assert _deadlines("Date limite pour poser des questions 03/12/2026") == []
+    assert _deadlines("Date limite de réception du dossier de diagnostic technique 12/12/2026") == []
+    assert _deadlines("4 – Date limite de réception des demandes d’agrément.......14 5 – Date") == []
