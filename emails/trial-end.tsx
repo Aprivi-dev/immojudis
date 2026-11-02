@@ -111,6 +111,7 @@ export function buildTrialEndEmailHtml({
     preheader: trialEndEmailPreview(endsOnLabel),
     content,
     footer: {
+      noReply: true,
       reason: `Vous recevez ce message parce que votre compte ${EMAIL_BRAND_NAME} est en essai gratuit. Une seule fois, pour cet essai.`,
       links: [
         { text: "Mon compte", href: settingsUrl },

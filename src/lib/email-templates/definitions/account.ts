@@ -17,7 +17,7 @@ import type { EmailTemplateDefinition } from "../types";
 /**
  * Emails envoyés aux comptes au nom des alertes : alertes de recherche, rappels d'audience,
  * récapitulatif hebdomadaire, résultats de vente, fin de l'essai, ouverture de l'offre Analyse.
- * Expéditeur : `ALERT_EMAIL_FROM`.
+ * Expéditeur : `NOREPLY_EMAIL_FROM` (« ne pas répondre », aucun Reply-To ; repli sur `ALERT_EMAIL_FROM`).
  */
 
 const common = {
@@ -55,7 +55,7 @@ const alert: EmailTemplateDefinition = {
   description:
     "Une alerte du compte trouve une ou plusieurs ventes (regroupées dans un seul email).",
   category: "alert",
-  sender: "ALERT_EMAIL_FROM",
+  sender: "NOREPLY_EMAIL_FROM",
   level: "editable",
   async sample() {
     const { buildAlertDigestMessage } = await import("@/lib/email-alerts");
@@ -113,7 +113,7 @@ const saleReminder: EmailTemplateDefinition = {
   label: "Rappel d’audience",
   description: "Audience dans 7 jours ou demain, date modifiée, vente retirée ou reportée.",
   category: "reminder",
-  sender: "ALERT_EMAIL_FROM",
+  sender: "NOREPLY_EMAIL_FROM",
   level: "editable",
   async sample() {
     const { buildSaleReminderMessage } = await import("@/lib/sale-reminder-emails");
@@ -173,7 +173,7 @@ const weeklyDigest: EmailTemplateDefinition = {
   label: "Récapitulatif hebdomadaire",
   description: "Chaque semaine : audiences à venir, changements, nouvelles ventes des alertes.",
   category: "weekly",
-  sender: "ALERT_EMAIL_FROM",
+  sender: "NOREPLY_EMAIL_FROM",
   level: "editable",
   async sample() {
     const { buildWeeklyDigestMessage } = await import("@/lib/weekly-digest-emails");
@@ -215,7 +215,7 @@ const saleResult: EmailTemplateDefinition = {
   label: "Résultat d’une vente suivie",
   description: "Une vente suivie a eu lieu, a été retirée ou est remise en vente (jamais de prix).",
   category: "result",
-  sender: "ALERT_EMAIL_FROM",
+  sender: "NOREPLY_EMAIL_FROM",
   level: "editable",
   async sample() {
     const { buildSaleResultMessage } = await import("@/lib/sale-result-emails");
@@ -260,7 +260,7 @@ const trialEnd: EmailTemplateDefinition = {
   label: "Fin de l’accès offert",
   description: "Prévient le compte que l’offre de lancement se termine bientôt.",
   category: "launch_offer_end",
-  sender: "ALERT_EMAIL_FROM",
+  sender: "NOREPLY_EMAIL_FROM",
   level: "editable",
   async sample() {
     const { buildTrialEndMessage } = await import("@/lib/trial-end-email");
@@ -282,7 +282,7 @@ const offerOpening: EmailTemplateDefinition = {
   label: "Ouverture de l’offre Analyse",
   description: "Envoyé une seule fois aux personnes qui ont demandé à être prévenues.",
   category: "opening",
-  sender: "ALERT_EMAIL_FROM",
+  sender: "NOREPLY_EMAIL_FROM",
   level: "editable",
   async sample() {
     const { buildOfferOpeningMessage, offerOpeningUnsubscribeUrl } =

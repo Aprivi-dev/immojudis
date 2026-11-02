@@ -3,12 +3,12 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { PublicApiError } from "@/lib/api-errors";
-import { resolveEmailAlertDeliveryConfig, type ResendEmailMessage } from "@/lib/email-alerts";
+import { resolveNoReplyEmailConfig, type ResendEmailMessage } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { asRecord, escapeHtml } from "@/lib/guards";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
-import { emailButton, emailLayout, emailParagraph } from "@/lib/email-layout";
+import { emailButton, emailLayout, emailNoReplyText, emailParagraph } from "@/lib/email-layout";
 
 /**
  * Envoi de l'email d'ouverture à la liste d'attente (`offer_opening_notifications`), depuis
@@ -147,6 +147,8 @@ export function buildOfferOpeningMessage({
     NO_COMMITMENT,
     "",
     `Vous ne souhaitez plus être prévenu(e) ? Retirer ma demande : ${unsubscribeUrl}`,
+    "",
+    emailNoReplyText(),
   ].join("\n");
   // La phrase d'ouverture dit déjà pourquoi le message arrive : le pied ne porte que le lien de retrait.
   const html = emailLayout({
@@ -161,11 +163,14 @@ export function buildOfferOpeningMessage({
     ].join(""),
     footer: {
       links: [{ text: "Retirer ma demande d’être prévenu(e)", href: unsubscribeUrl }],
+      noReply: true,
     },
   });
   return {
     from,
     to: recipientEmail,
+    // Message automatique : aucune adresse de réponse.
+    replyTo: null,
     subject,
     text,
     html,
@@ -239,7 +244,7 @@ export async function getOfferOpeningAudience({
   env?: Pick<NodeJS.ProcessEnv, string>;
 }): Promise<OfferOpeningAudience> {
   await requireAdmin(authToken);
-  const config = resolveEmailAlertDeliveryConfig(env);
+  const config = resolveNoReplyEmailConfig(env);
   const [queue, alreadyNotified] = await Promise.all([readQueue(1), countRequests(true)]);
   // Sans la fonction (migration pas encore appliquée), l'ancien décompte : toutes les demandes actives.
   const recipients = queue ? queue.total : await countRequests(false);
@@ -261,7 +266,7 @@ export async function getOfferOpeningAudience({
 }
 
 function requireDeliveryConfig(env: Pick<NodeJS.ProcessEnv, string>) {
-  const config = resolveEmailAlertDeliveryConfig(env);
+  const config = resolveNoReplyEmailConfig(env);
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) {
     throw new PublicApiError(
       "L’envoi d’emails n’est pas configuré sur ce serveur : aucun message n’est parti.",

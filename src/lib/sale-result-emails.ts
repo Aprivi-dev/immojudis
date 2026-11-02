@@ -6,7 +6,7 @@ import { formatDate } from "@/lib/format";
 import { escapeHtml } from "@/lib/guards";
 import { SALE_REMINDER_DISCLAIMER } from "@/lib/sale-reminder-emails";
 import type { SurenchereWindow } from "@/lib/surenchere-window";
-import { emailLayout, emailParagraph, emailSaleCard } from "@/lib/email-layout";
+import { emailLayout, emailNoReplyText, emailParagraph, emailSaleCard } from "@/lib/email-layout";
 
 /**
  * Email de l'alerte de résultat ou de remise en vente d'une vente suivie : « la vente que vous suivez
@@ -185,11 +185,15 @@ export function buildSaleResultMessage({
     "Vous recevez ce message parce que vous avez activé les alertes de résultat de vos ventes suivies dans votre compte.",
     `Se désinscrire des alertes de résultat : ${unsubscribeUrl}`,
     `Gérer mes notifications : ${settingsUrl}`,
+    "",
+    emailNoReplyText(),
   );
 
   return {
     from,
     to: recipientEmail,
+    // Message automatique : aucune adresse de réponse.
+    replyTo: null,
     subject,
     text: textLines.join("\n"),
     html: buildSaleResultHtml({
@@ -257,6 +261,7 @@ function buildSaleResultHtml({
       }),
     ].join(""),
     footer: {
+      noReply: true,
       reason:
         "Vous recevez ce message parce que vous avez activé les alertes de résultat de vos ventes suivies.",
       links: [

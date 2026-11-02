@@ -100,6 +100,7 @@ const SERVER_KEYS = [
   "CEILING_FEE_REGIMES_OPEN",
   "ALERT_RENT_BASIS_SWITCH_AT",
   "TRANSACTIONAL_EMAIL_FROM",
+  "NOREPLY_EMAIL_FROM",
 ] as const;
 
 /**
@@ -204,6 +205,8 @@ export function serverEnv(source?: EnvSource) {
       from: firstFilled(env.ALERT_EMAIL_FROM, env.RESEND_FROM_EMAIL),
       /** Expéditeur des messages liés au contrat (facturation, acceptation) ; absent : `from`. */
       transactionalFrom: env.TRANSACTIONAL_EMAIL_FROM,
+      /** Expéditeur « ne pas répondre » des emails automatiques (alertes, rappels…) ; absent : l'expéditeur actuel. */
+      noReplyFrom: env.NOREPLY_EMAIL_FROM,
     },
     saleReminders: {
       /** Valeur brute de `SALE_REMINDERS_MODE` ; `saleRemindersMode()` la ramène à off, internal ou on. */

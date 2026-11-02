@@ -1,6 +1,6 @@
 import "server-only";
 import { errorDetailForLog } from "@/lib/api-errors";
-import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { weeklyDigestMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { recentSaleChanges, type SaleChangeTopic } from "@/lib/sale-change-display";
@@ -440,7 +440,7 @@ export async function runWeeklyDigest({
   const pending = dueToday.filter(({ userId, weekKey }) => !settled.has(`${userId}|${weekKey}`));
   summary.due = pending.length;
 
-  const config = resolveEmailAlertDeliveryConfig(env);
+  const config = resolveNoReplyEmailConfig(env);
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) {
     summary.missingConfig = config.missing;
     return summary;

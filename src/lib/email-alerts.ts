@@ -20,6 +20,7 @@ import {
   emailEyebrow,
   emailLayout,
   emailLink,
+  emailNoReplyText,
   emailParagraph,
   emailSaleCard,
 } from "@/lib/email-layout";
@@ -146,6 +147,24 @@ export function resolveTransactionalEmailConfig(
   return { ...config, from: transactionalFrom, missing, configured: missing.length === 0 };
 }
 
+/**
+ * Configuration d'envoi des emails automatiques « ne pas répondre » (alertes, récapitulatif, rappels, résultats,
+ * fin d'essai, ouverture de l'offre, rappel de fin d'essai payant) : l'expéditeur est `NOREPLY_EMAIL_FROM`
+ * (par exemple `Immojudis <ne-pas-repondre@immojudis.com>`). Absent, l'expéditeur actuel est conservé (`fallback` :
+ * celui des alertes, ou celui de la facturation pour le rappel de fin d'essai payant) : le site fonctionne avant
+ * que la variable soit posée. Ces messages n'ont aucun Reply-To (`replyTo: null`) dans tous les cas.
+ */
+export function resolveNoReplyEmailConfig(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+  fallback: EmailAlertDeliveryConfig = resolveEmailAlertDeliveryConfig(env),
+): EmailAlertDeliveryConfig {
+  const noReplyFrom = serverEnv(env).email.noReplyFrom?.trim();
+  if (!noReplyFrom) return fallback;
+  // L'expéditeur des alertes n'est plus requis pour ces messages.
+  const missing = fallback.missing.filter((name) => name !== "ALERT_EMAIL_FROM");
+  return { ...fallback, from: noReplyFrom, missing, configured: missing.length === 0 };
+}
+
 const MAX_DIGEST_ITEMS = 10;
 
 type DigestItem = {
@@ -208,7 +227,7 @@ export async function dispatchQueuedEmailAlertNotifications({
   env?: Pick<NodeJS.ProcessEnv, string>;
   fetchImpl?: typeof fetch;
 }): Promise<EmailAlertDispatchSummary> {
-  const config = resolveEmailAlertDeliveryConfig(env);
+  const config = resolveNoReplyEmailConfig(env);
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) {
     return {
       configured: false,
@@ -623,11 +642,15 @@ export function buildAlertDigestMessage({
     receptionReason,
     `Se désinscrire de tous les emails d'alerte : ${unsubscribeUrl}`,
     `Gérer mes alertes : ${alertsUrl}`,
+    "",
+    emailNoReplyText(),
   );
 
   return {
     from,
     to: recipientEmail,
+    // Message automatique : aucune adresse de réponse.
+    replyTo: null,
     subject,
     text: textLines.join("\n"),
     html: buildAlertDigestHtml({
@@ -1215,6 +1238,7 @@ function buildAlertDigestHtml({
     preheader,
     content,
     footer: {
+      noReply: true,
       reason: receptionReason,
       links: [
         { text: "Gérer mes alertes", href: alertsUrl },
