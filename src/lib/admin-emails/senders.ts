@@ -1,5 +1,6 @@
 import {
   resolveEmailAlertDeliveryConfig,
+  resolveNoReplyEmailConfig,
   resolveReplyTo,
   resolveTransactionalEmailConfig,
 } from "@/lib/email-alerts";
@@ -46,6 +47,7 @@ export function buildAddressRows(
 
   const alertFrom = resolveEmailAlertDeliveryConfig(env).from;
   const transactionalFrom = resolveTransactionalEmailConfig(env).from;
+  const noReplyFrom = resolveNoReplyEmailConfig(env).from;
   const replyTo = resolveReplyTo(env);
   const contactTo = filled(env.CONTACT_EMAIL_TO) ?? filled(env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL);
   const inboundDomain = filled(env.INFORMATION_AGENT_INBOUND_DOMAIN)?.toLowerCase() ?? null;
@@ -72,17 +74,29 @@ export function buildAddressRows(
   });
 
   return [
-    row("ALERT_EMAIL_FROM", "Expéditeur des alertes et des messages aux comptes", alertFrom, {
+    row(
+      "NOREPLY_EMAIL_FROM",
+      "Expéditeur « ne pas répondre » des emails automatiques",
+      noReplyFrom,
+      {
+        fallbackFrom: filled(env.NOREPLY_EMAIL_FROM) ? undefined : "ALERT_EMAIL_FROM",
+        consequence: "Aucun email automatique aux comptes ne part.",
+        domain: addressDomain(noReplyFrom),
+        usedBy: bySender("NOREPLY_EMAIL_FROM"),
+      },
+    ),
+    row("ALERT_EMAIL_FROM", "Expéditeur de repli et des messages d’exploitation", alertFrom, {
       fallbackFrom: filled(env.ALERT_EMAIL_FROM)
         ? undefined
         : "RESEND_FROM_EMAIL (ancienne variable)",
-      consequence: "Aucun email aux comptes ne part.",
+      consequence:
+        "Aucun email d’exploitation ne part, et aucun email automatique sans NOREPLY_EMAIL_FROM.",
       domain: addressDomain(alertFrom),
       usedBy: bySender("ALERT_EMAIL_FROM"),
     }),
     row(
       "TRANSACTIONAL_EMAIL_FROM",
-      "Expéditeur de la facturation et des commandes",
+      "Expéditeur des messages avec réponse possible (facturation, commandes, mise en relation)",
       transactionalFrom,
       {
         fallbackFrom: filled(env.TRANSACTIONAL_EMAIL_FROM) ? undefined : "ALERT_EMAIL_FROM",
@@ -111,13 +125,14 @@ export function buildAddressRows(
         usedBy: bySender("CONTACT_EMAIL_FROM"),
       },
     ),
-    row("EMAIL_REPLY_TO", "Adresse de réponse des emails aux comptes", replyTo, {
+    row("EMAIL_REPLY_TO", "Adresse de réponse des emails avec réponse possible", replyTo, {
       fallbackFrom:
         replyTo && replyTo !== filled(env.EMAIL_REPLY_TO)
           ? "NEXT_PUBLIC_LEGAL_CONTACT_EMAIL"
           : undefined,
       consequence: "Une réponse part vers l’expéditeur technique, qu’aucune personne ne lit.",
-      usedBy: [...bySender("ALERT_EMAIL_FROM"), ...bySender("TRANSACTIONAL_EMAIL_FROM")],
+      // Les emails « ne pas répondre » n'ont aucun Reply-To : seuls les messages de l'expéditeur transactionnel le portent.
+      usedBy: bySender("TRANSACTIONAL_EMAIL_FROM"),
     }),
     row(
       "NEXT_PUBLIC_LEGAL_CONTACT_EMAIL",

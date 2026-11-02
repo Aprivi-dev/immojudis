@@ -40,7 +40,7 @@ const trialEnding: EmailTemplateDefinition = {
   label: "Fin de l’essai de l’abonnement",
   description: "L’essai gratuit de l’abonnement Analyse va devenir payant.",
   category: "billing",
-  sender: "TRANSACTIONAL_EMAIL_FROM",
+  sender: "NOREPLY_EMAIL_FROM",
   level: "editable",
   async sample() {
     const { buildTrialEndingMessage } = await import("@/lib/billing-notices");

@@ -8,6 +8,7 @@ import "server-only";
  */
 export const EMAIL_ADDRESS_VARIABLES = [
   "ALERT_EMAIL_FROM",
+  "NOREPLY_EMAIL_FROM",
   "RESEND_FROM_EMAIL",
   "TRANSACTIONAL_EMAIL_FROM",
   "INFORMATION_AGENT_EMAIL_FROM",
@@ -33,6 +34,7 @@ export type EmailSecretVariable = (typeof EMAIL_SECRET_VARIABLES)[number];
 export function readEmailAddressEnv(): EmailAddressEnv {
   return {
     ALERT_EMAIL_FROM: process.env.ALERT_EMAIL_FROM,
+    NOREPLY_EMAIL_FROM: process.env.NOREPLY_EMAIL_FROM,
     RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
     TRANSACTIONAL_EMAIL_FROM: process.env.TRANSACTIONAL_EMAIL_FROM,
     INFORMATION_AGENT_EMAIL_FROM: process.env.INFORMATION_AGENT_EMAIL_FROM,

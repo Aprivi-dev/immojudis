@@ -220,7 +220,21 @@ export type EmailFooter = {
   extraHtml?: string;
   /** Liens du pied, séparés par « · ». */
   links?: ReadonlyArray<{ text: string; href: string }>;
+  /**
+   * Message automatique « ne pas répondre » : ajoute en dernier du pied la mention
+   * « Message automatique, merci de ne pas y répondre. Pour nous écrire : contact@… » (lien `mailto:`).
+   * La version texte du message reprend la même phrase par `emailNoReplyText()`.
+   */
+  noReply?: boolean;
 };
+
+/** Mention des emails automatiques, sans l'adresse : une seule source pour le HTML et le texte. */
+const NO_REPLY_SENTENCE = "Message automatique, merci de ne pas y répondre. Pour nous écrire :";
+
+/** La mention « ne pas répondre » en texte brut, à ajouter en dernière ligne de la version texte. */
+export function emailNoReplyText(): string {
+  return `${NO_REPLY_SENTENCE} ${EMAIL_CONTACT_ADDRESS}`;
+}
 
 /** Texte d'aperçu (préheader) : au plus 100 caractères, coupé à un mot. */
 export function emailPreheaderFrom(text: string, max = 100): string {
@@ -297,16 +311,20 @@ export function emailLayout(options: {
       ?.map((link) => emailLink(link.href, esc(link.text)))
       .join(` <span class="ej-muted" style="color:${C.inkSoft};">·</span> `) ?? "";
   const footerRow =
-    footer && (footer.reason || footer.extraHtml || links)
+    footer && (footer.reason || footer.extraHtml || links || footer.noReply)
       ? `<tr><td class="ej-pad ej-rule" style="padding:20px 28px 24px;border-top:1px solid ${C.lineWarm};font-family:${FONT};word-break:break-word;overflow-wrap:anywhere;">${
           footer.reason
             ? emailParagraph(esc(footer.reason), {
                 tone: "muted",
                 size: "caption",
-                marginBottom: links || footer.extraHtml ? 8 : 0,
+                marginBottom: links || footer.extraHtml || footer.noReply ? 8 : 0,
               })
             : ""
-        }${footer.extraHtml ?? ""}${links ? `<p class="ej-muted" style="margin:0;${typeStyle("caption", "muted")}">${links}</p>` : ""}</td></tr>`
+        }${footer.extraHtml ?? ""}${links ? `<p class="ej-muted" style="margin:0${footer.noReply ? " 0 8px" : ""};${typeStyle("caption", "muted")}">${links}</p>` : ""}${
+          footer.noReply
+            ? `<p class="ej-muted" style="margin:0;${typeStyle("caption", "muted")}">${esc(NO_REPLY_SENTENCE)} ${emailLink(`mailto:${EMAIL_CONTACT_ADDRESS}`, esc(EMAIL_CONTACT_ADDRESS))}</p>`
+            : ""
+        }</td></tr>`
       : "";
   const brandText = siteLinks
     ? `${EMAIL_BRAND_NAME} · <a href="${EMAIL_SITE_URL}" class="ej-muted" style="color:${C.inkSoft};text-decoration:underline;">immojudis.com</a> · <a href="mailto:${EMAIL_CONTACT_ADDRESS}" class="ej-muted" style="color:${C.inkSoft};text-decoration:underline;">${EMAIL_CONTACT_ADDRESS}</a>`

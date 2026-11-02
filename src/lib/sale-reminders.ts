@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { errorDetailForLog } from "@/lib/api-errors";
-import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
   describeSaleChange,
@@ -501,7 +501,7 @@ export async function runSaleReminders({
   const summary = emptySummary(mode);
   if (mode === "off") return { ...summary, skipped: "off" };
 
-  const config = resolveEmailAlertDeliveryConfig(env);
+  const config = resolveNoReplyEmailConfig(env);
   if (!config.configured || !config.apiKey || !config.from || !config.appUrl) {
     return { ...summary, skipped: "not_configured" };
   }

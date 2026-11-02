@@ -51,8 +51,11 @@ tant que ces parcours n'existent pas.
    en réception), puis redéployer. L'agent reste de toute façon désactivé
    (`INFORMATION_AGENT_OUTBOUND_ENABLED=false`).
 3. **Expéditeur de Supabase** : Authentication > Emails > SMTP Settings : nom « Immojudis », adresse
-   `compte@immojudis.com` (domaine `immojudis.com` déjà vérifié dans Resend ; aucune boîte à créer pour
-   envoyer). Laisser hôte, port et identifiants Resend tels quels.
+   `ne-pas-repondre@immojudis.com` (domaine `immojudis.com` déjà vérifié dans Resend ; aucune boîte à créer
+   pour envoyer : c'est la même adresse « ne pas répondre » que `NOREPLY_EMAIL_FROM`, celle des alertes,
+   rappels et autres emails automatiques). Les gabarits portent la phrase « Message automatique, merci de ne
+   pas y répondre. Pour nous écrire : contact@immojudis.com ». Laisser hôte, port et identifiants Resend tels
+   quels.
 4. **Gabarits, première étape (lien de Supabase)** : relever d’abord les gabarits actuels (retour arrière complet), puis coller dans Authentication > Emails > Templates, pour chacun
    des trois (puis des trois autres si souhaité), l'objet du tableau ci-dessus et le contenu du fichier de
    `docs/runbooks/emails-authentification/retour-arriere/`. Tester avec une vraie inscription (adresse de
@@ -98,7 +101,7 @@ autre branche est refusée).
 | `mode`           | `plan` (par défaut : affiche le diff, n'écrit rien) ou `apply` (écrit en production)                 |
 | `confirm_target` | `production`, obligatoire pour `apply`, ignoré par `plan`                                            |
 | `variant`        | `principal` (lien `/auth/confirmer`, par défaut) ou `retour-arriere` (lien `{{ .ConfirmationURL }}`) |
-| `sender_email`   | facultatif, en `@immojudis.com` (par exemple `compte@immojudis.com`) ; vide = SMTP non modifié       |
+| `sender_email`   | facultatif, en `@immojudis.com` (`ne-pas-repondre@immojudis.com`) ; vide = SMTP non modifié          |
 | `sender_name`    | facultatif (par exemple `Immojudis`) ; vide = SMTP non modifié                                       |
 
 **Toujours lancer d'abord en `plan`** : le journal de l'étape « Plan or apply the auth configuration » montre,
@@ -113,7 +116,7 @@ jeton ni aucun mot de passe. Il applique les **six** gabarits d'un coup, y compr
 `reauthentication` (voir « Ce qui reste à relire »).
 
 Correspondance avec l'ordre de bascule : étapes 3 et 4 = un lancement `variant=retour-arriere` avec
-`sender_email=compte@immojudis.com` et `sender_name=Immojudis`, puis les tests de l'étape 4 ; étape 5 = un
+`sender_email=ne-pas-repondre@immojudis.com` et `sender_name=Immojudis`, puis les tests de l'étape 4 ; étape 5 = un
 lancement `variant=principal`, puis les tests de l'étape 5. Chaque lancement est précédé de son `plan`.
 
 Limite connue : le script n'a été éprouvé qu'avec une API simulée. Si Supabase refuse de modifier seulement
@@ -139,11 +142,13 @@ sans `sender_email` ni `sender_name`.
 
 ## Expéditeur conseillé
 
-« Immojudis <compte@immojudis.com> » : le nom d'affichage est « Immojudis » (jamais « ImmoJudis »), l'adresse
-est distincte de `alertes@` (alertes, rappels, récapitulatif) et de `enquete@reponses.immojudis.com`
-(agent d'information). Un rebond ou une plainte sur un message d'authentification ne se mélange donc ni avec
-les alertes ni avec l'agent. Les rebonds de ces emails arrivent au webhook des emails de compte
-(`/api/webhooks/resend/account-emails`, `docs/runbooks/rebonds-plaintes-emails.md`).
+« Immojudis <ne-pas-repondre@immojudis.com> » : le nom d'affichage est « Immojudis » (jamais « ImmoJudis »),
+l'adresse est celle de tous les emails automatiques aux comptes (`NOREPLY_EMAIL_FROM` : alertes, récapitulatif,
+rappels, résultats, fin d'essai, ouverture de l'offre) et distincte de `enquete@reponses.immojudis.com` (agent
+d'information) et de `contact@immojudis.com` (messages qui acceptent une réponse : facturation, commandes, mise
+en relation). Les emails « ne pas répondre » n'ont aucun Reply-To. Un rebond ou une plainte sur un message
+d'authentification ne se mélange donc pas avec l'agent. Les rebonds de ces emails arrivent au webhook des
+emails de compte (`/api/webhooks/resend/account-emails`, `docs/runbooks/rebonds-plaintes-emails.md`).
 
 À faire côté DNS par le propriétaire, hors dépôt : un enregistrement DMARC sur `immojudis.com` (constat du
 01/11/2026 : aucun DMARC, aucun SPF à la racine pour les messages envoyés depuis Google Workspace).
@@ -192,8 +197,11 @@ les alertes ni avec l'agent. Les rebonds de ces emails arrivent au webhook des e
 2. Le texte d'origine de Supabase (anglais) n'est pas conservé dans le dépôt : le relever dans le tableau de
    bord AVANT l'étape 4 de la bascule si l'on veut pouvoir le restaurer à l'identique (le mode `apply` du workflow le garde dans son artefact de sauvegarde). Les gabarits de
    `retour-arriere/` suffisent à rétablir un parcours qui fonctionne.
-3. L'expéditeur se rétablit dans SMTP Settings (`assistant@immojudis.com`) ; ne le faire qu'avec l'étape 2 de la
-   bascule annulée en même temps (voir plus haut).
+3. L'expéditeur se rétablit dans SMTP Settings à sa valeur d'avant la bascule : « Immojudis
+   <contact@immojudis.com> » au 02/11/2026 (la valeur exacte est `smtp_admin_email` dans l'artefact de sauvegarde du
+   run `apply`, ou `sender_email=contact@immojudis.com` pour le workflow). Les gabarits de `retour-arriere/`
+   portent aussi la phrase « Message automatique, merci de ne pas y répondre. Pour nous écrire : contact@… »
+   (même générateur) : elle reste exacte depuis `contact@`, qui reçoit les réponses. Ne le faire qu'avec l'étape 2 de la bascule annulée en même temps (voir plus haut).
 4. Le code peut rester déployé : la page `/auth/confirmer` ne fait rien sans lien valide.
 
 ## Ce qui reste à relire

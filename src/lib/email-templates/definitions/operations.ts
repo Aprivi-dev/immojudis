@@ -17,7 +17,7 @@ const lawyerReferral: EmailTemplateDefinition = {
   label: "Mise en relation avec un avocat",
   description: "Envoyé à l’avocat référencé quand un compte demande à être mis en relation.",
   category: "lawyer",
-  sender: "ALERT_EMAIL_FROM",
+  sender: "TRANSACTIONAL_EMAIL_FROM",
   level: "readonly",
   async sample() {
     const { buildLawyerReferralEmailMessage } = await import("@/lib/admin-lawyer-referrals");

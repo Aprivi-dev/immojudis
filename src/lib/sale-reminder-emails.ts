@@ -4,7 +4,7 @@ import { emailClickUrl, isEmailClickSaleId } from "@/lib/email-click-token";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 import { SALE_CALENDAR_DISCLAIMER } from "@/lib/sale-calendar";
-import { emailLayout, emailParagraph, emailSaleCard } from "@/lib/email-layout";
+import { emailLayout, emailNoReplyText, emailParagraph, emailSaleCard } from "@/lib/email-layout";
 
 /**
  * Email des rappels d'audience (J-7, J-1) et des avertissements graves (date modifiée, vente
@@ -112,11 +112,15 @@ export function buildSaleReminderMessage({
     "Vous recevez ce message parce que vous avez activé les rappels d'audience dans votre compte.",
     `Se désinscrire des rappels : ${unsubscribeUrl}`,
     `Gérer mes notifications : ${settingsUrl}`,
+    "",
+    emailNoReplyText(),
   );
 
   return {
     from,
     to: recipientEmail,
+    // Message automatique : aucune adresse de réponse.
+    replyTo: null,
     subject,
     text: textLines.join("\n"),
     html: buildSaleReminderHtml({
@@ -191,6 +195,7 @@ function buildSaleReminderHtml({
       }),
     ].join(""),
     footer: {
+      noReply: true,
       reason: "Vous recevez ce message parce que vous avez activé les rappels d’audience.",
       links: [
         { text: "Gérer mes notifications", href: settingsUrl },

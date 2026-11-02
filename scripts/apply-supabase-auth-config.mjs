@@ -11,6 +11,10 @@
 // - Par défaut le script SIMULE : il lit la configuration actuelle (GET), affiche le diff et s'arrête.
 //   Il n'écrit (PATCH) qu'avec --apply, après avoir enregistré la configuration actuelle filtrée dans
 //   --backup-file (pour le retour arrière).
+// - Les emails d'authentification partent de l'adresse « ne pas répondre » (--sender-email=
+//   ne-pas-repondre@immojudis.com --sender-name=Immojudis), comme les autres emails automatiques
+//   (NOREPLY_EMAIL_FROM) ; leurs gabarits portent la mention « Message automatique, merci de ne pas
+//   y répondre ».
 // - Il ne modifie que les objets, les contenus, et, si --sender-email / --sender-name sont fournis,
 //   smtp_admin_email / smtp_sender_name. Il ne touche jamais à smtp_host, smtp_user, smtp_pass ni
 //   smtp_port, et n'affiche ni n'enregistre aucun secret (jeton d'accès, mot de passe SMTP, clés).
@@ -21,7 +25,7 @@
 //
 // Usage :
 //   SUPABASE_ACCESS_TOKEN=… node scripts/apply-supabase-auth-config.mjs [--variant=retour-arriere]
-//     [--sender-email=compte@immojudis.com] [--sender-name=Immojudis]
+//     [--sender-email=ne-pas-repondre@immojudis.com] [--sender-name=Immojudis]
 //     [--backup-file=chemin.json] [--apply]
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
