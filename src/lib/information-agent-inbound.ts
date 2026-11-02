@@ -81,7 +81,11 @@ export {
 export { extractInformationAgentFacts } from "@/lib/information-agent-inbound/fact-extraction";
 export type { ExtractedInformationAgentFact } from "@/lib/information-agent-inbound/fact-extraction";
 
-import { detectPossibleInformationAgentContactOptOut } from "@/lib/information-agent-inbound/reply-intent";
+import {
+  detectPossibleInformationAgentContactOptOut,
+  detectWrongRecipientSignal,
+} from "@/lib/information-agent-inbound/reply-intent";
+import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
 import { isAutomaticReply, replyMentionsLot } from "@/lib/information-agent-inbound/reply-signals";
 
 export {
@@ -478,7 +482,9 @@ async function ingestReceivedEmail({
     inboundReviewReason({
       senderMatches,
       senderAuthentication,
-    }) ?? (detectPossibleInformationAgentContactOptOut(bodyText) ? "possible_opposition" : null);
+    }) ??
+    (detectPossibleInformationAgentContactOptOut(bodyText) ? "possible_opposition" : null) ??
+    wrongRecipientReviewReason(bodyText, senderAuthentication.status === "pass");
   const contactOptOut = Boolean(
     senderEmail &&
     senderMatches &&
@@ -548,6 +554,9 @@ async function ingestReceivedEmail({
     // provider's authentication result is safe for automatic extraction.
     if (reviewReason) {
       await ensureInboundJobLease(assertJobLease);
+      if (reviewReason === "wrong_recipient") {
+        await applyWrongRecipient({ caseId: sharedCase.id, source: "reply" });
+      }
       const caseUpdated = await updateOpenInformationAgentCase(
         sharedCase.id,
         {
@@ -693,6 +702,9 @@ async function ingestReceivedEmail({
   // provider's authentication result is safe for automatic extraction.
   if (reviewReason) {
     await ensureInboundJobLease(assertJobLease);
+    if (reviewReason === "wrong_recipient") {
+      await applyWrongRecipient({ caseId: sharedCase.id, source: "reply" });
+    }
     const caseUpdated = await updateOpenInformationAgentCase(
       sharedCase.id,
       {
@@ -1199,4 +1211,20 @@ async function readBoundedWebhookBody(request: Request): Promise<string> {
     offset += chunk.byteLength;
   }
   return new TextDecoder().decode(body);
+}
+
+/**
+ * Motif de relecture « mauvais destinataire ». Une formule sans ambiguïté d'un expéditeur authentifié donne
+ * `wrong_recipient` (exclusion de l'identité du pilote, arrêt du pilote si le message venait de lui) ; tout le
+ * reste (vocabulaire voisin, expéditeur non authentifié) est envoyé en relecture humaine, sans arrêt.
+ */
+function wrongRecipientReviewReason(
+  bodyText: string,
+  senderAuthenticated: boolean,
+): "wrong_recipient" | "possible_wrong_recipient" | null {
+  const signal = detectWrongRecipientSignal(bodyText);
+  if (!signal) return null;
+  return signal === "strong" && senderAuthenticated
+    ? "wrong_recipient"
+    : "possible_wrong_recipient";
 }

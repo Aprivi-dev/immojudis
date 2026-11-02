@@ -24,6 +24,7 @@ import {
   assertAdminDailyApprovalCap,
 } from "@/lib/information-agent/approval-cap";
 import { assertInformationAgentAddressDeliverable } from "@/lib/information-agent/address-deliverability";
+import { assertAutopilotSendAllowed } from "@/lib/information-agent/autopilot-send-guard";
 import {
   assertInformationAgentCanaryRecipient,
   assertInformationAgentOutboundEnabled,
@@ -65,8 +66,10 @@ import {
 } from "@/lib/information-agent/mission-store";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import {
+  assertIssuedAutopilotTrigger,
   UNVERIFIED_SEND_OUTCOME,
   type InformationAgentAdminActionPayload,
+  type InformationAgentSendTrigger,
 } from "@/lib/information-agent/schemas";
 
 // Envoi validé d'une mission : l'unique chemin d'envoi de l'agent (`approveAndSendMission`).
@@ -77,11 +80,14 @@ export async function approveAndSendMission({
   adminId,
   input,
   fetchImpl,
+  trigger,
 }: {
   adminId: string;
   input: Extract<InformationAgentAdminActionPayload, { action: "approve_and_send" }>;
   fetchImpl: typeof fetch;
+  trigger?: InformationAgentSendTrigger;
 }) {
+  assertIssuedAutopilotTrigger(trigger);
   const mission = await loadOwnedMission(adminId, input.missionId);
   if (mission.status !== "draft" && mission.status !== "failed") {
     throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
@@ -126,6 +132,17 @@ export async function approveAndSendMission({
   assertInformationAgentSearchedAddressAllowed(addressOrigin.origin);
   assertInformationAgentOutboundEnabled();
   assertInformationAgentCanaryRecipient(input.recipientEmail);
+  // Envoi du pilote : les règles du pilote sont revérifiées ici (l'état a pu changer depuis la sélection).
+  const autopilotGuard = () =>
+    assertAutopilotSendAllowed({
+      saleId: mission.sale_id ?? "",
+      email: input.recipientEmail,
+      identityKeys,
+      recipientKind: mission.recipient_kind,
+      addressOriginKind: addressOrigin.kind,
+      courtFallback: Boolean(courtFallback),
+    });
+  if (trigger) await autopilotGuard();
   // Hygiène, domaine qui reçoit du courrier, rebonds passagers récents (address-deliverability.ts).
   await assertInformationAgentAddressDeliverable(input.recipientEmail);
   // Validate delivery prerequisites before approval reserves the case for sending.
@@ -134,8 +151,9 @@ export async function approveAndSendMission({
 
   // GDPR art. 14 prerequisites: a named controller, and at most one email per recipient per 30 days.
   assertInformationAgentControllerIdentity();
-  // Plafond de validations par administrateur et par jour (pas d'envoi à la chaîne sans relecture).
-  await assertAdminDailyApprovalCap(adminId);
+  // Plafond de validations par administrateur et par jour (pas d'envoi à la chaîne sans relecture). Le pilote a ses
+  // propres plafonds (phase, jour, heure, cabinet, tribunal) : il n'est pas soumis à celui des administrateurs.
+  if (!trigger) await assertAdminDailyApprovalCap(adminId);
   await assertInformationAgentRecipientCooldown({
     email: input.recipientEmail,
     missionId: mission.id,
@@ -179,9 +197,10 @@ export async function approveAndSendMission({
       failure_reason: null,
       metadata: {
         // Destinataire changé par l'administrateur : la mission n'est plus une demande au greffe.
-        ...(courtFallback
-          ? asObject(mission.metadata)
-          : withoutCourtRegistryTrace(mission.metadata)),
+        ...markTrigger(
+          asObject(courtFallback ? mission.metadata : withoutCourtRegistryTrace(mission.metadata)),
+          trigger,
+        ),
         recipient_origin_url: input.recipientOriginUrl ?? null,
         preview_fingerprint: input.previewFingerprint,
       },
@@ -201,7 +220,11 @@ export async function approveAndSendMission({
   const subscribedMission = await loadOwnedMission(adminId, mission.id);
   const contributionUrl = informationAgentContributionUrl(subscribedMission);
   const messageHash = approvalFingerprint(subscribedMission);
-  const approval = await approveInformationAgentMissionForAdmin(subscribedMission, messageHash);
+  const approval = await approveInformationAgentMissionForAdmin(
+    subscribedMission,
+    messageHash,
+    trigger ? undefined : adminDailyApprovalCap(),
+  );
   if (!approval) throw new Error("Approbation de l'enquête impossible.");
   if (!approval.should_send) {
     // The shared case already left the draft stage (another mission sent it): saying « updated »
@@ -269,6 +292,8 @@ export async function approveAndSendMission({
       identityKeys: edited.recipient_identity_keys,
       courtRegistryAddress: Boolean(courtFallback),
     });
+    // Juste avant l'appel au fournisseur : règles du pilote revérifiées une dernière fois.
+    if (trigger) await autopilotGuard();
     assertInformationAgentCanaryRecipient(edited.recipient_email);
     const delivery = await sendTrackedEmail({
       apiKey: config.apiKey,
@@ -276,7 +301,7 @@ export async function approveAndSendMission({
       fetchImpl,
       category: "agent",
       templateKey: courtFallback ? "agent_court_registry" : "agent_request",
-      mode: "manual",
+      mode: trigger ? "autopilot" : "manual",
       message: {
         from: config.from,
         to: edited.recipient_email,
@@ -309,6 +334,16 @@ export async function approveAndSendMission({
         approval_sha256: messageHash,
         preview_fingerprint: input.previewFingerprint,
         approved_by_admin: adminId,
+        // Traçabilité d'un envoi automatique : mode, passage, empreinte du texte rendu (pied compris), contrôles.
+        ...(trigger
+          ? {
+              send_mode: "autopilot",
+              autopilot_run_id: trigger.runId,
+              rendered_text_sha256: createHash("sha256").update(renderedEmail.text).digest("hex"),
+              address_origin_kind: addressOrigin.kind,
+              autopilot_checks: trigger.checks ?? {},
+            }
+          : { send_mode: "manual" }),
         address_origin_url: legalFooter.addressOriginUrl ?? null,
         address_origin_text: legalFooter.addressOrigin,
         // Journal : un message au greffe se distingue d'un message à un avocat.
@@ -448,13 +483,14 @@ type InformationAgentApproval = {
 async function approveInformationAgentMissionForAdmin(
   mission: MissionRow,
   messageHash: string,
+  dailyCap: number | undefined,
 ): Promise<InformationAgentApproval> {
   const { data, error } = await supabaseAdmin.rpc("approve_information_agent_mission_admin", {
     p_admin_id: mission.user_id,
     p_mission_id: mission.id,
     p_message_sha256: messageHash,
     // Plafond de validations par administrateur et par jour, appliqué dans la fonction (atomique).
-    p_daily_cap: adminDailyApprovalCap(),
+    p_daily_cap: dailyCap,
   });
   if (error) throw new Error(error.message || "Approbation admin impossible.");
   const approval = data?.[0];
@@ -474,4 +510,20 @@ function approvalFingerprint(mission: MissionRow): string {
       }),
     )
     .digest("hex");
+}
+
+/**
+ * Marque d'un envoi dans les métadonnées de la mission. Le filet SQL lit `trigger` : un brouillon préparé par le
+ * pilote puis validé À LA MAIN par un administrateur est réécrit `trigger = "manual"` (et perd `autopilot_run_id`
+ * et `autopilot_simulated`) : il n'est ni refusé hors du mode réel, ni compté comme un envoi du pilote (mauvais
+ * destinataire). Seul un envoi du pilote porte `trigger = "autopilot"`.
+ */
+export function markTrigger(
+  metadata: Record<string, Json | undefined>,
+  trigger: InformationAgentSendTrigger | undefined,
+): Record<string, Json | undefined> {
+  const { autopilot_run_id: _run, autopilot_simulated: _simulated, ...unmarked } = metadata;
+  return trigger
+    ? { ...metadata, trigger: trigger.kind, autopilot_run_id: trigger.runId }
+    : { ...unmarked, trigger: "manual" };
 }

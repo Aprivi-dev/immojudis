@@ -144,9 +144,17 @@ describe("operational cron errors", () => {
   });
 
   /** `run_data_retention` répond `retention` ; la purge du journal du préavis répond `noticePurge`. */
-  function retentionRpc(retention: unknown, noticePurge: unknown = { data: 0, error: null }) {
+  function retentionRpc(
+    retention: unknown,
+    noticePurge: unknown = { data: 0, error: null },
+    autopilotPurge: unknown = { data: null, error: { code: "42883", message: "absente" } },
+  ) {
     mocks.rpc.mockImplementation(async (name: string) =>
-      name === "purge_launch_offer_end_notices" ? noticePurge : { data: retention, error: null },
+      name === "purge_launch_offer_end_notices"
+        ? noticePurge
+        : name === "purge_information_agent_autopilot"
+          ? autopilotPurge
+          : { data: retention, error: null },
     );
   }
 
@@ -160,6 +168,34 @@ describe("operational cron errors", () => {
       p_now: "2026-10-15T10:00:00.000Z",
     });
     expect(mocks.rpc).toHaveBeenCalledWith("purge_launch_offer_end_notices");
+  });
+
+  it("purges the autopilot journal through its dedicated function, run_data_retention untouched", async () => {
+    retentionRpc(
+      { user_sale_unlocks: 2 },
+      { data: 0, error: null },
+      {
+        data: { information_agent_autopilot_events: 3, information_agent_autopilot_exclusions: 1 },
+        error: null,
+      },
+    );
+
+    await expect(runDataRetention()).resolves.toEqual({
+      deleted: {
+        user_sale_unlocks: 2,
+        launch_offer_end_notices: 0,
+        information_agent_autopilot_events: 3,
+        information_agent_autopilot_exclusions: 1,
+      },
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith("purge_information_agent_autopilot");
+
+    retentionRpc(
+      {},
+      { data: 0, error: null },
+      { data: null, error: { code: "XX000", message: "boom" } },
+    );
+    await expect(runDataRetention()).rejects.toThrow("purge_information_agent_autopilot");
   });
 
   it("fails the data retention job when an isolated purge failed", async () => {

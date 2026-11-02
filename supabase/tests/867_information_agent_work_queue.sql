@@ -5,7 +5,7 @@
 --   * les indicateurs comptent les envois de la catégorie « agent » ; trois alertes de santé s'ajoutent.
 begin;
 
-select plan(21);
+select plan(30);
 
 select has_function('public', 'admin_information_agent_queue', array['integer', 'integer', 'text'], 'the queue function exists');
 select has_function('public', 'attest_information_agent_roundtrip', array['uuid'], 'the attestation function exists');
@@ -126,6 +126,66 @@ select throws_ok(
   '42501', null, 'a non-admin account cannot attest the round trip'
 );
 
+-- Sans réponse de test reçue et routée dans les 24 dernières heures, l'attestation est refusée (ce n'est plus un clic).
+select throws_ok(
+  $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
+  '55000', null, 'the round trip cannot be attested without a received and routed test reply'
+);
+
+-- Réponse de test : dossier de l'administrateur vers une adresse de son propre domaine, réponse reçue il y a une heure.
+insert into public.information_agent_cases (
+  id, sale_id, created_by, status, recipient_email, normalized_recipient_email, subject, body_text, question_keys, missing_information, sent_at
+) values (
+  '86700000-2000-4000-8000-0000000000c1', '86700000-1000-4000-8000-00000000000a', '86700000-0000-4000-8000-0000000000a1', 'sent', 'roundtrip-test@immojudis.com', 'roundtrip-test@immojudis.com', 'Message de test', 'Message de test de plus de vingt caractères.',
+  array['documents'], array['documents'], now() - interval '2 hours'
+);
+insert into public.information_agent_missions (
+  id, user_id, sale_id, case_id, status, recipient_email, subject, body_text, question_keys, missing_information, privacy_version
+) values (
+  '86700000-2000-4000-8000-0000000000c2', '86700000-0000-4000-8000-0000000000a1', '86700000-1000-4000-8000-00000000000a', '86700000-2000-4000-8000-0000000000c1', 'sent', 'roundtrip-test@immojudis.com', 'Message de test', 'Message de test de plus de vingt caractères.',
+  array['documents'], array['documents'], 'roundtrip-pgtap'
+);
+insert into public.information_agent_messages (
+  id, mission_id, case_id, user_id, direction, message_kind, delivery_status, subject, body_text, received_at, provider_message_id, metadata
+) values (
+  '86700000-2000-4000-8000-0000000000c3', '86700000-2000-4000-8000-0000000000c2', '86700000-2000-4000-8000-0000000000c1', '86700000-0000-4000-8000-0000000000a1', 'inbound', 'reply', 'received', 'Re: Message de test', 'Réponse de test.', now() - interval '1 hour',
+  'roundtrip-provider-867', '{"imported_manually": false, "sender_authentication": {"status": "pass"}, "sender_matches_recipient": true}'::jsonb
+);
+
+-- Les preuves falsifiables sont refusées : une seule condition défaillante suffit.
+update public.information_agent_messages set metadata = metadata || '{"imported_manually": true}' where id = '86700000-2000-4000-8000-0000000000c3';
+select throws_ok(
+  $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
+  '55000', null, 'a reply imported by hand is not a proof'
+);
+update public.information_agent_messages set metadata = '{"imported_manually": false, "sender_authentication": {"status": "fail"}, "sender_matches_recipient": true}' where id = '86700000-2000-4000-8000-0000000000c3';
+select throws_ok(
+  $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
+  '55000', null, 'a reply whose sender authentication did not pass is not a proof'
+);
+update public.information_agent_messages set metadata = '{"imported_manually": false, "sender_authentication": {"status": "pass"}, "sender_matches_recipient": false}' where id = '86700000-2000-4000-8000-0000000000c3';
+select throws_ok(
+  $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
+  '55000', null, 'a reply whose sender differs from the recipient is not a proof'
+);
+update public.information_agent_messages set metadata = '{"imported_manually": false, "sender_authentication": {"status": "pass"}, "sender_matches_recipient": true}', provider_message_id = null where id = '86700000-2000-4000-8000-0000000000c3';
+select throws_ok(
+  $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
+  '55000', null, 'a reply without a provider message id is not a proof'
+);
+update public.information_agent_messages set provider_message_id = 'roundtrip-provider-867' where id = '86700000-2000-4000-8000-0000000000c3';
+update public.information_agent_cases set sent_at = null where id = '86700000-2000-4000-8000-0000000000c1';
+select throws_ok(
+  $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
+  '55000', null, 'a test case that was never sent is not a proof'
+);
+update public.information_agent_cases set sent_at = now() - interval '2 hours', recipient_email = 'roundtrip-test@gmail.com', normalized_recipient_email = 'roundtrip-test@gmail.com' where id = '86700000-2000-4000-8000-0000000000c1';
+select throws_ok(
+  $$select public.attest_information_agent_roundtrip('86700000-0000-4000-8000-0000000000a1')$$,
+  '55000', null, 'a consumer mail domain is not an internal domain'
+);
+update public.information_agent_cases set recipient_email = 'roundtrip-test@immojudis.com', normalized_recipient_email = 'roundtrip-test@immojudis.com' where id = '86700000-2000-4000-8000-0000000000c1';
+
 -- La date et l'auteur sont lus dans une instruction distincte : une sous-requête de la même instruction ne voit pas
 -- l'écriture de la fonction (instantané de l'instruction).
 do $$
@@ -139,6 +199,17 @@ select ok(
      and inbound_roundtrip_verified_at is not null
    from public.information_agent_operations where singleton),
   'an administrator attests the round trip: the date and the author are stored'
+);
+
+select ok(
+  (select count(*) = 1 and bool_and(admin_id = '86700000-0000-4000-8000-0000000000a1' and message_id is not null)
+   from public.information_agent_roundtrip_attestations),
+  'the attestation is added to the append-only history (who, when, which test reply)'
+);
+
+select throws_ok(
+  $$delete from public.information_agent_roundtrip_attestations$$,
+  '55000', null, 'the attestation history cannot be deleted from'
 );
 
 -- Indicateurs et santé ---------------------------------------------------------------------------------------------

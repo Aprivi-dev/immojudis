@@ -73,7 +73,9 @@ import {
 import type {
   informationAgentCreateSchema,
   InformationAgentAdminResponse,
+  InformationAgentSendTrigger,
 } from "@/lib/information-agent/schemas";
+import { assertIssuedAutopilotTrigger } from "@/lib/information-agent/schemas";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import type { AuctionSale } from "@/lib/types";
@@ -185,11 +187,15 @@ export function buildInformationRequestDraft({
 export async function createAdminInformationAgentDraft({
   auth,
   input,
+  trigger,
 }: {
   auth: SupabaseAuthContext;
   input: z.output<typeof informationAgentCreateSchema>;
+  /** Pilote automatique : jamais de recherche réseau ni de greffe, mission marquée `trigger = autopilot`. */
+  trigger?: InformationAgentSendTrigger;
 }): Promise<InformationAgentAdminResponse> {
   requireInformationAgentAdmin(auth);
+  assertIssuedAutopilotTrigger(trigger);
 
   const [sale, emailTemplate] = await Promise.all([
     loadAdminInformationAgentSale({ auth, saleId: input.saleId }),
@@ -231,7 +237,7 @@ export async function createAdminInformationAgentDraft({
     sale,
     identityPlace,
     siteOrigin: informationAgentAppOrigin(),
-    skip: Boolean(explicitRecipientEmail) || discovered.length > 0,
+    skip: Boolean(explicitRecipientEmail) || discovered.length > 0 || Boolean(trigger),
   });
   const foundContact = search.candidate;
   const contactCandidates = foundContact ? [foundContact] : listingCandidates;
@@ -248,6 +254,11 @@ export async function createAdminInformationAgentDraft({
     contactCandidates,
     candidatesSkippedForOpposition,
   });
+  if (trigger && (courtFallback || foundContact)) {
+    throw new Error(
+      "Le pilote automatique n'écrit ni à un greffe ni à une adresse retrouvée par recherche.",
+    );
+  }
   const recipientEmail =
     explicitRecipientEmail ?? selectedContact?.email ?? courtFallback?.candidate.email;
   if (!recipientEmail) {
@@ -338,6 +349,7 @@ export async function createAdminInformationAgentDraft({
             .map(contactCandidateSnapshot),
         },
         initiated_by_admin: auth.userId,
+        ...(trigger ? { trigger: trigger.kind, autopilot_run_id: trigger.runId } : {}),
         inventory: informationAgentInventorySnapshot(inventory),
         email_content_template_id: emailTemplate.id,
         email_content_template_revision: emailTemplate.revision,

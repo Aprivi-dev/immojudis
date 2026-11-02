@@ -10,7 +10,7 @@ import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
  */
 
 /** Nom des baux existants (une ligne chacun dans `cron_lease`). */
-export type CronLeaseName = "sale-pepites";
+export type CronLeaseName = "sale-pepites" | "information-agent-autopilot";
 
 export type CronLease =
   | { kind: "held"; token: string }
