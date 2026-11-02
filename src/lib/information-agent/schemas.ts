@@ -155,3 +155,14 @@ export type InformationAgentAdminListResponse = {
 
 /** Liste paginée des missions (50 par page) : offset / limit demandés, total toutes pages. */
 export type InformationAgentAdminMissionPage = InformationAgentAdminListResponse & AdminPageMeta;
+
+/**
+ * Déclencheur interne d'un envoi : le pilote automatique (`information-agent-autopilot.ts`). Hors du schéma zod :
+ * jamais lu d'une requête HTTP. Absent : envoi manuel d'un administrateur.
+ */
+export type InformationAgentSendTrigger = {
+  kind: "autopilot";
+  runId: string;
+  /** Résultat des contrôles du pilote, repris dans la trace de l'envoi (codes et nombres, jamais d'adresse). */
+  checks?: Record<string, string | number | boolean | null>;
+};
