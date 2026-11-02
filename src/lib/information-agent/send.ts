@@ -19,7 +19,10 @@ import {
   INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
   resolveInformationAgentAddressOrigin,
 } from "@/lib/information-agent/address-origin";
-import { assertAdminDailyApprovalCap } from "@/lib/information-agent/approval-cap";
+import {
+  adminDailyApprovalCap,
+  assertAdminDailyApprovalCap,
+} from "@/lib/information-agent/approval-cap";
 import { assertInformationAgentAddressDeliverable } from "@/lib/information-agent/address-deliverability";
 import {
   assertInformationAgentCanaryRecipient,
@@ -465,6 +468,8 @@ async function approveInformationAgentMissionForAdmin(
     p_admin_id: mission.user_id,
     p_mission_id: mission.id,
     p_message_sha256: messageHash,
+    // Plafond de validations par administrateur et par jour, appliqué dans la fonction (atomique).
+    p_daily_cap: adminDailyApprovalCap(),
   });
   if (error) throw new Error(error.message || "Approbation admin impossible.");
   const approval = data?.[0];
