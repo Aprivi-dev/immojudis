@@ -156,6 +156,7 @@ def prepare_source_revision(existing, raw: dict):
         # stored (excluded from the model dump): only the re-read detail carries
         # the decoded addresses, and the registry refresh needs them.
         result.internal_contacts = list(incoming.internal_contacts)
+        _adopt_fuller_gallery(result, incoming)
     else:
         result = merge_revision(existing, incoming)
         # The registry follows the freshly read detail, whichever merge branch ran.
@@ -170,6 +171,22 @@ def prepare_source_revision(existing, raw: dict):
         if 'occupation_conflict' in result.quality_flags and result.occupancy_status == 'vacant':
             result.occupancy_status = 'unknown'
     return result
+
+
+def _adopt_fuller_gallery(result, incoming) -> None:
+    """Photos are not in the fact fingerprint, so an otherwise unchanged re-read keeps the stored row.
+
+    Immo-Interactif (Notaires) sales were stored with the list card's single photo while their detail
+    lists up to 13 (02/11/2026): the detail job re-read them every few hours and dropped the gallery, and
+    its fresh check kept the collection from reading the detail itself. A fuller gallery now replaces the
+    stored one, with its own first image so the principal photo is not shown twice in two sizes.
+    """
+    images = incoming.raw_payload.get('source_images')
+    stored = result.raw_payload.get('source_images')
+    if not isinstance(images, list) or len(images) <= (len(stored) if isinstance(stored, list) else 0):
+        return
+    result.raw_payload['source_images'] = list(images)
+    result.raw_payload['raw_image_url'] = incoming.raw_payload.get('raw_image_url') or images[0]
 
 
 def publish_source_revision(sale, job: dict, settings: dict) -> bool:
