@@ -100,3 +100,29 @@ def _backfill_document_price_from_known(
         sale["document_facts_version"] = known_facts_version
         copied += 1
     return copied
+
+
+def _backfill_document_sale_date_from_known(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> int:
+    """Keep the date read in the attachments when the source page gives none.
+
+    Cessions de l'État pages carry no date: the offer deadline is only in the conditions of sale. A complete
+    re-read of the page set ``sale_date`` back to null while its PDF trace stayed, so the next PDF pass took the
+    empty value for a manual correction and never wrote the date again (Saint-Alexandre, 02/11/2026).
+    """
+    if not is_missing_raw_value(sale.get("sale_date")):
+        return 0
+    known_payload = known.get("raw_payload")
+    if not isinstance(known_payload, dict) or not isinstance(known_payload.get("pdf_sale_date_extraction"), dict):
+        return 0
+    provenance = known_payload.get("pdf_fact_provenance")
+    trace = provenance.get("sale_date") if isinstance(provenance, dict) else None
+    if not isinstance(trace, dict) or trace.get("source") != "pdf":
+        return 0
+    value = known.get("sale_date") or trace.get("value")
+    if is_missing_raw_value(value):
+        return 0
+    sale["sale_date"] = value
+    return 1

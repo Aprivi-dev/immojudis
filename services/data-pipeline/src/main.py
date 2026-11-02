@@ -57,6 +57,7 @@ from src.known_document_backfill import (
     KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
     KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
     _backfill_document_price_from_known,
+    _backfill_document_sale_date_from_known,
     _backfill_document_surface_fields_from_known,
 )
 from src.known_document_backfill import is_missing_raw_value as _is_missing_raw_value
@@ -1614,6 +1615,7 @@ def _preserve_known_enrichment_payloads(
         )
         preserved += _backfill_document_surface_fields_from_known(sale, known)
         preserved += _backfill_document_price_from_known(sale, known)
+        preserved += _backfill_document_sale_date_from_known(sale, known)
     return preserved
 
 

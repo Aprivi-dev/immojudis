@@ -936,7 +936,26 @@ def _pdf_scalar_candidate(
 
 def _pdf_is_rooms_false_positive(text: str, start: int, end: int) -> bool:
     context = text[max(0, start - 50) : min(len(text), end + 50)]
-    return bool(re.search(r"\barticle\b|\bpage\b|\blot\s+n", context, re.I))
+    # « 14 Pièces ou locaux visités » : rubrique numérotée du formulaire de repérage amiante.
+    return bool(re.search(r"\barticle\b|\bpage\b|\blot\s+n|pi[eè]ces?\s+ou\s+locaux|locaux\s+(?:non\s+)?visit", context, re.I))
+
+
+_PDF_TYPOLOGY = re.compile(r"\b(?:type\s+)?[TF]\s*([1-9])\b", re.I)
+_PDF_DWELLING_BEFORE = re.compile(
+    r"\b(?:appartement|maison|pavillon|logement|villa|duplex|habitation|type)\b[^.\n:;]{0,25}$", re.I
+)
+
+
+def _pdf_typology_is_dwelling(text: str, match: re.Match[str]) -> bool:
+    """A « T3 » / « F4 » of a document is a dwelling type only next to a dwelling word.
+
+    Diagnostics and planning documents are full of such codes: « Fenêtre (F1) », « servitude T5 »,
+    « PD1 + T1 », « plan F2 du patrimoine ». Read as rooms they put 1, 2, 7 or 18 rooms on a sale
+    (02/11/2026: most of the 44 room counts taken from attachments).
+    """
+    if match.group(0).lower().startswith("type"):
+        return True
+    return bool(_PDF_DWELLING_BEFORE.search(text[max(0, match.start() - 40) : match.start()]))
 
 
 def _extract_rooms_count_candidates(text: str, *, chunk: dict[str, object] | None = None) -> list[dict[str, object]]:
@@ -955,13 +974,15 @@ def _extract_rooms_count_candidates(text: str, *, chunk: dict[str, object] | Non
     patterns = (
         rf"\bnombre\s+de\s+pi[eè]ces?\s*(?:principales?)?\s*:?\s*{_PDF_COUNT_TOKEN}\b",
         rf"\b{_PDF_COUNT_TOKEN}\s*pi[eè]ces?\s*(?:principales?)?\b",
-        r"\b(?:type\s+)?[TF]\s*([1-9])\b",
+        _PDF_TYPOLOGY.pattern,
     )
     for pattern in patterns:
         for match in re.finditer(pattern, text, re.I):
             token = match.group(1)
             value = _pdf_count_token(token)
             if value is None or _pdf_is_rooms_false_positive(text, match.start(1), match.end(1)):
+                continue
+            if pattern == _PDF_TYPOLOGY.pattern and not _pdf_typology_is_dwelling(text, match):
                 continue
             candidates.append(
                 _pdf_scalar_candidate(

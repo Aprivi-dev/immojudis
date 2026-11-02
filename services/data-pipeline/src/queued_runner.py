@@ -39,6 +39,7 @@ from src.main import (
     run_pipeline,
 )
 from src.pdf_enrichment import (
+    DOCUMENT_FACTS_VERSION,
     PDF_FINALIZATION_MARGIN_SECONDS,
     PdfDeadlineExceeded,
     PdfExtractionDeferred,
@@ -472,8 +473,7 @@ def _pdf_checkpoint_failure_message(error: object) -> str:
 
 def _pdf_evidence_is_terminal_for_facts(sale: object) -> bool:
     """Return whether the current PDF pass has no extractable fact evidence.
-    ``documents_are_current`` deliberately treats an all-terminal result as
-    fresh so the worker does not redownload the same blocked/empty/skipped
+    ``documents_are_current`` deliberately treats an all-terminal result as fresh so the worker does not redownload the same blocked/empty/skipped
     URLs forever.  That freshness signal must not be mistaken for a usable
     fact context: an explicit fact job still needs to be cancelled for
     review when every listed document is excluded and no document was
@@ -705,7 +705,8 @@ def run_enrichment_queue_batch(
         try:
             if sale.documents:
                 restore_persisted_pdf_progress_for_sale(sale)
-            if "pdf" in job_types and sale.documents and not documents_are_current(sale):
+            # Facts read under older rules are read again, as a collection does (``_needs_structured_heavy_enrichment``).
+            if "pdf" in job_types and sale.documents and (not documents_are_current(sale) or sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION):
                 pdf_stage_error = True
                 pdf_stats = enrich_sale_from_pdfs(sale)
                 analysis = sale.raw_payload.get("document_analysis") or {}
@@ -776,8 +777,7 @@ def run_enrichment_queue_batch(
                 # worker has populated the document cache.  When the PDF job
                 # is in this claim it is handled above; otherwise return the
                 # fact/display claim to the queue without spending its retry.
-                # This avoids turning an ordinary worker ordering race into a
-                # growing retry-exhausted backlog.
+                # This avoids turning a worker ordering race into a growing retry-exhausted backlog.
                 terminal_pdf_evidence = facts_needed and _pdf_evidence_is_terminal_for_facts(sale)
                 missing_pdf_prerequisite = (
                     facts_needed

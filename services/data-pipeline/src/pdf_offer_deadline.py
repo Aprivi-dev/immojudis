@@ -16,13 +16,24 @@ from src.normalize import clean_text, parse_french_datetime
 from src.pdf_document_types import _canonical_document_type
 
 _E = "[eéèêEÉÈÊ]"
+# A full stop ends the phrase, except after a roman numeral (a section reference): « Date limite de
+# réception des offres et de transmission des documents visés au II. ci-dessus 13 novembre 2026 » (02/11/2026,
+# Hôtel de Nevers) stopped at « II. » before its date.
+_PHRASE = r"(?:\b[IVX]{1,4}\.|[^.;\n]){0,140}"
+_SUBJECT = (
+    r"(?:des\s+(?:offres|plis|candidatures|propositions)"
+    r"|du\s+dossier\s+(?:d['’]\s*offres?|de\s+candidature)|de\s+l['’]\s*offre"
+    r"|des\s+dossiers(?:\s+d['’]\s*offres?|\s+de\s+candidature)?"
+    # A table cell: « Date limite de réception du dossier 10/12/2026 à 16h00 d'offre » (Bougival).
+    r"|du\s+dossier(?=\s*:?\s*\d))"
+)
 OFFER_DEADLINE_PATTERNS = (
     re.compile(
         rf"date\s+limite\s+(?:de\s+|d['’]\s*)?(?:la\s+)?(?:remise|d{_E}p[oô]t|r{_E}ception|envoi|pr{_E}sentation)"
-        rf"\s+des\s+(?:offres|plis|candidatures|propositions)[^.;\n]{{0,140}}",
+        rf"\s+{_SUBJECT}{_PHRASE}",
         re.I,
     ),
-    re.compile(r"date\s+limite\s+des\s+(?:offres|plis|candidatures|propositions)[^.;\n]{0,140}", re.I),
+    re.compile(rf"date\s+limite\s+{_SUBJECT}{_PHRASE}", re.I),
     re.compile(
         rf"\b(?:les\s+)?(?:offres|plis|propositions)(?:\s+d['’]\s*achat)?\s+(?:devront|doivent)\s+(?:{_E}tre\s+)?"
         rf"(?:remises?|d{_E}pos{_E}{_E}?s?|parvenir|re[çc]u{_E}?s?|adress{_E}{_E}?s?|transmises?|envoy{_E}{_E}?s?)"
@@ -31,7 +42,7 @@ OFFER_DEADLINE_PATTERNS = (
     ),
 )
 _DATE_SIGNAL = re.compile(
-    r"\b\d{1,2}(?:er)?\s+(?:janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre)"
+    r"\b\d{1,2}(?:\s*er)?\s+(?:janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[eé]cembre)"
     r"\s+\d{4}\b|\b\d{1,2}[/.-]\d{1,2}[/.-]\d{4}\b",
     re.I,
 )
@@ -47,7 +58,8 @@ OFFER_PROCEDURE_SOURCES = frozenset({"cessions_etat", "agrasc", "notaires"})
 
 
 def _parse_deadline(phrase: str, *, local_timezone: str) -> datetime | None:
-    text = re.sub(r"\b(\d{1,2})er\b", r"\1", phrase)
+    # « 1er décembre », and « 1 ER DECEMBRE » in a capitalised notice (Saint-Junien).
+    text = re.sub(r"\b(\d{1,2})\s*er\b", r"\1", phrase, flags=re.I)
     parsed = parse_french_datetime(text, local_timezone=local_timezone)
     if parsed is not None:
         return parsed

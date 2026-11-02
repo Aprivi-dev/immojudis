@@ -63,6 +63,30 @@ def test_queued_display_revision_is_rekeyed_without_cancelling_the_old_row():
     )
 
 
+def test_queued_fact_revision_is_rekeyed_too_so_it_keeps_its_age():
+    # 02/11/2026: each republication created a new fact job and cancelled the old one; the new row, with no
+    # age, never reached the head of the queue (172 fact jobs never claimed, 3 completed in a day).
+    calls = []
+
+    class Connection:
+        def execute(self, query, params=None):
+            calls.append((query, params))
+            return SimpleNamespace(fetchall=lambda: [])
+
+    jobs = [
+        {"source_url": "https://example.test/sale-1", "job_type": "fact_extraction",
+         "input_hash": "pipeline_v2:new", "priority": 25},
+        {"source_url": "https://example.test/sale-1", "job_type": "pdf", "input_hash": "pdf:new", "priority": 30},
+    ]
+
+    storage._coalesce_queued_display_revisions(Connection(), jobs)
+
+    query, params = next((query, params) for query, params in calls if query.startswith("with incoming"))
+    # The re-keyed row keeps its creation time (its age in the claim order); the PDF job is never re-keyed.
+    assert "created_at=" not in query.split("update public.auction_enrichment_jobs queued", 1)[1]
+    assert params == ("https://example.test/sale-1", "fact_extraction", "pipeline_v2:new", 25)
+
+
 def test_queued_display_revision_race_rolls_back_to_savepoint():
     statements = []
 

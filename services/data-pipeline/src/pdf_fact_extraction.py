@@ -183,11 +183,14 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     if sale.rooms_count is None:
         room_aggregate = _aggregate_pdf_count_candidates(rooms_candidates, text=scope_text, field="rooms")
         if not rooms_ambiguous:
-            selected_rooms = room_aggregate or next(
+            # Only a located candidate counts: the sale-wide first match had no provenance and read « F1 »
+            # (window) or « T5 » (easement) codes of diagnostics as room counts.
+            agreed = {item.get("value") for item in rooms_candidates}
+            selected_rooms = room_aggregate or (rooms_candidates[0] if len(agreed) == 1 else next(
                 (item for item in rooms_candidates if item.get("value") == _extract_rooms_count(combined)),
                 None,
-            )
-            sale.rooms_count = int(selected_rooms["value"]) if selected_rooms else _extract_rooms_count(combined)
+            ))
+            sale.rooms_count = int(selected_rooms["value"]) if selected_rooms else None
             if sale.rooms_count is not None:
                 _pdf_record_candidate_projection(sale, "rooms_count", selected_rooms, fallback_evidence=combined[:300])
     if sale.bedrooms_count is None:
@@ -1408,6 +1411,8 @@ def _extract_occupancy_status(text: str) -> str | None:
         r"(?:a|ont)\s+ete\s+(?:constate(?:e|es)?\s+)?libre(?:s)?|"
         r"constate(?:e|es)?\s+libre(?:s)?)\b(?!\s+de\s+droit)|"
         r"\binoccupe(?:e?s?|s?)\b|"
+        r"\b(?:est|sera|seront|sont)\s+cede(?:e?s?)?\s+libre(?:s)?\b|"
+        r"\bvide\s+de\s+toute\s+occupation\b|"
         r"\bvacant(?:e?s?)?\b",
         lowered,
     ):

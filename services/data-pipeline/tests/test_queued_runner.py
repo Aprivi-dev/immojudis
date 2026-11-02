@@ -2774,3 +2774,40 @@ def test_failed_pdf_job_records_document_path_without_query_token(monkeypatch) -
     assert "reasons=empty_page_not_proven_blank,ocr_failed" in message
     assert "token=secret" not in message
     assert "private PDF text" not in message
+
+
+@pytest.mark.parametrize(("facts_version", "reads"), [(None, True), (pdf_enrichment.DOCUMENT_FACTS_VERSION, False)])
+def test_a_pdf_job_reads_again_documents_whose_facts_used_older_rules(monkeypatch, facts_version, reads) -> None:
+    """Fresh documents are read again when their facts came from older rules (offer deadlines, 02/11/2026)."""
+    from src.config import EncheresPubliquesAccessNotAuthorized
+
+    sale = normalize_sale(
+        {
+            "source_name": "cessions_etat",
+            "source_url": "https://cessions.example.test/biens/hotel",
+            "documents": [{"label": "Cahier des charges", "url": "https://documents.example.test/ccv.pdf"}],
+        }
+    )
+    if facts_version:
+        sale.raw_payload["document_facts_version"] = facts_version
+    job = {"id": "job-pdf", "source_url": sale.source_url, "job_type": "pdf", "attempt_count": 1}
+    read: list[str] = []
+    stop = EncheresPubliquesAccessNotAuthorized("stop after the PDF stage")
+
+    def _enrich(current, *_args, **_kwargs):
+        read.append(current.source_url)
+        raise stop
+
+    monkeypatch.setattr(queued_runner, "claim_auction_enrichment_jobs_family_from_supabase", lambda *, family, limit: [job])
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "restore_persisted_pdf_progress_for_sale", lambda _: None)
+    monkeypatch.setattr(queued_runner, "documents_are_current", lambda _: True)
+    monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", _enrich)
+    monkeypatch.setattr(queued_runner, "defer_budget_jobs", lambda claimed, exc: None)
+    monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", lambda job_id, **kwargs: None)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda *args, **kwargs: None)
+
+    queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY)
+
+    assert read == ([sale.source_url] if reads else [])
