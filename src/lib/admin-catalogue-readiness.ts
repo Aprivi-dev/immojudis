@@ -108,7 +108,7 @@ function parseQueueResult(value: Json): QueueRpcResult {
 export function impossibleContactReason(
   contact?: { lawyer_name: string | null; lawyer_contact: string | null } | null,
 ): string {
-  if (/\d(?:[\s.\-]?\d){7,}/.test(contact?.lawyer_contact ?? "")) {
+  if (/\d(?:[\s.-]?\d){7,}/.test(contact?.lawyer_contact ?? "")) {
     return "Téléphone seul : aucune adresse email dans l’annonce.";
   }
   if (contact?.lawyer_name?.trim() || contact?.lawyer_contact?.trim()) {
