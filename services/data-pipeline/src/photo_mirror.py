@@ -499,9 +499,17 @@ class PhotoDownloader:
                 self._sleep(wait)
         raise AssertionError("unreachable")  # pragma: no cover
 
+    def request_options(self) -> tuple[str, int, Callable[[bytes], None], float]:
+        """En-tête ``Accept``, plafond de lecture, contrôle des premiers octets et délai d'une requête.
+
+        Une sous-classe les change pour un autre type de fichier (pièces jointes PDF de ``src/pdf_photos.py``).
+        """
+        return ACCEPT_HEADER, MAX_DOWNLOAD_BYTES, _check_prefix, REQUEST_TIMEOUT_SECONDS
+
     def _follow(self, url: str) -> bytes:
         current = url
-        headers = {"User-Agent": self._user_agent, "Accept": ACCEPT_HEADER}
+        accept, max_bytes, check_prefix, timeout = self.request_options()
+        headers = {"User-Agent": self._user_agent, "Accept": accept}
         for redirects in range(MAX_REDIRECTS + 1):
             self.precheck(current)
             try:
@@ -514,9 +522,9 @@ class PhotoDownloader:
             hop = self._get(
                 current,
                 headers=headers,
-                deadline=self._clock() + REQUEST_TIMEOUT_SECONDS,
-                max_bytes=MAX_DOWNLOAD_BYTES,
-                check_prefix=_check_prefix,
+                deadline=self._clock() + timeout,
+                max_bytes=max_bytes,
+                check_prefix=check_prefix,
             )
             status = hop.status
             if status == 200:
