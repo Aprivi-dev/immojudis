@@ -14697,6 +14697,7 @@ export type Database = {
       approve_information_agent_mission_admin: {
         Args: {
           p_admin_id: string;
+          p_daily_cap?: number;
           p_message_sha256: string;
           p_mission_id: string;
         };

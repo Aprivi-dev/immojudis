@@ -67,11 +67,50 @@ describe("résolution MX / A d'un domaine", () => {
     expect(await checkMailDomain("rien.fr", { resolver: none })).toBe("no_mail");
   });
 
-  it("ne bloque pas sur une panne DNS (SERVFAIL, délai) et ne la met pas en cache", async () => {
+  it("ne bloque pas sur une panne DNS (SERVFAIL, délai) et la retient 60 s seulement", async () => {
     const dns = resolver({ resolveMx: vi.fn(async () => Promise.reject(dnsError("ESERVFAIL"))) });
-    expect(await checkMailDomain("panne.fr", { resolver: dns })).toBe("unknown");
-    expect(await checkMailDomain("panne.fr", { resolver: dns })).toBe("unknown");
+    const start = Date.parse("2026-11-02T10:00:00Z");
+    expect(await checkMailDomain("panne.fr", { resolver: dns, now: start })).toBe("unknown");
+    expect(await checkMailDomain("panne.fr", { resolver: dns, now: start + 30_000 })).toBe(
+      "unknown",
+    );
+    expect(dns.resolveMx).toHaveBeenCalledTimes(1);
+    expect(await checkMailDomain("panne.fr", { resolver: dns, now: start + 61_000 })).toBe(
+      "unknown",
+    );
     expect(dns.resolveMx).toHaveBeenCalledTimes(2);
+  });
+
+  it("un résolveur qui ne répond jamais rend « unknown » dans le budget, sans bloquer", async () => {
+    const mute = resolver({ resolveMx: vi.fn(() => new Promise<never>(() => undefined)) });
+    const started = Date.now();
+    expect(await checkMailDomain("muet.fr", { resolver: mute, budgetMs: 50 })).toBe("unknown");
+    expect(Date.now() - started).toBeLessThan(5_000);
+    // L'envoi n'est pas bloqué : un domaine muet n'écarte pas l'adresse.
+    await expect(
+      assertInformationAgentAddressDeliverable("me@muet2.fr", {
+        env: {},
+        resolver: resolver({ resolveMx: vi.fn(() => new Promise<never>(() => undefined)) }),
+        countTemporaryBounces: async () => 0,
+      }),
+    ).resolves.toBeUndefined();
+  }, 15_000);
+
+  it("dix appels simultanés sur le même domaine ne font qu'une seule résolution", async () => {
+    let release: (() => void) | undefined;
+    const slow = resolver({
+      resolveMx: vi.fn(
+        () =>
+          new Promise<Array<{ exchange: string; priority: number }>>((resolve) => {
+            release = () => resolve([{ exchange: "mx.cabinet.fr", priority: 10 }]);
+          }),
+      ),
+    });
+    const calls = Array.from({ length: 10 }, () => checkMailDomain("meme.fr", { resolver: slow }));
+    await Promise.resolve();
+    release?.();
+    expect(await Promise.all(calls)).toEqual(Array(10).fill("ok"));
+    expect(slow.resolveMx).toHaveBeenCalledTimes(1);
   });
 
   it("met le résultat en cache 24 h par domaine", async () => {
@@ -149,6 +188,14 @@ describe("contrôle de délivrabilité d'une adresse", () => {
         countTemporaryBounces: async () => Promise.reject(new Error("base")),
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("INFORMATION_AGENT_ADDRESS_CHECK=off est sans effet en production", async () => {
+    await expect(
+      assertInformationAgentAddressDeliverable("logo@2x.png", {
+        env: { INFORMATION_AGENT_ADDRESS_CHECK: "off", VERCEL_ENV: "production" },
+      }),
+    ).rejects.toThrow(/extraction/);
   });
 
   it("est coupé par INFORMATION_AGENT_ADDRESS_CHECK=off", async () => {

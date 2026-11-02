@@ -1,5 +1,6 @@
 import "server-only";
 import type { z } from "zod";
+import { classifyApiError } from "@/lib/api-observability";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
@@ -90,11 +91,29 @@ export async function prepareAdminInformationAgentDraft({
     });
     return { ...response, preview, previewError: null, reused };
   } catch (error) {
-    return {
-      ...response,
-      preview: null,
-      previewError: error instanceof Error ? error.message : "Aperçu indisponible.",
-      reused,
-    };
+    return { ...response, preview: null, previewError: previewErrorMessage(error), reused };
   }
+}
+
+/**
+ * Message d'erreur d'aperçu montré à l'administrateur : les messages métier français passent, tout le reste
+ * (erreur de base, contrainte, réseau) devient un message générique. Le détail va au journal serveur, comme
+ * pour `adminErrorResponse`, sans adresse email.
+ */
+function previewErrorMessage(error: unknown): string {
+  const classified = classifyApiError(error, {
+    fallbackMessage: "Aperçu indisponible.",
+    fallbackStatus: 400,
+    exposeBusinessMessages: true,
+  });
+  const detail = error instanceof Error ? error.message : String(error);
+  console[classified.status >= 500 ? "error" : "warn"](
+    JSON.stringify({
+      scope: "admin.api",
+      status: classified.status,
+      code: classified.code,
+      error: detail.replace(/[^\s<>()"',;]+@[^\s<>()"',;]+/g, "[adresse]"),
+    }),
+  );
+  return classified.message;
 }

@@ -257,7 +257,8 @@ begin
     pg_catalog.count(*) filter (where status = 'failed')::integer
   into v_sent, v_delivered, v_delayed, v_bounced_permanent, v_bounced_temporary, v_complained, v_failed
   from public.email_send_log
-  where category = 'agent' and created_at >= v_since and created_at <= p_now;
+  -- Les essais d'administrateur (mode test) et les envois internes ne comptent pas dans les taux.
+  where category = 'agent' and mode not in ('test', 'internal') and created_at >= v_since and created_at <= p_now;
 
   select pg_catalog.count(*)::integer
   into v_oppositions
@@ -368,6 +369,7 @@ begin
   into recent_sent_count, recent_bounced_count, recent_complaint_count
   from public.email_send_log entry
   where entry.category = 'agent'
+    and entry.mode not in ('test', 'internal')
     and entry.created_at >= p_now - interval '14 days'
     and entry.created_at <= p_now;
   bounce_percent := case when recent_sent_count > 0
