@@ -137,10 +137,19 @@ export async function runDataRetention(now = new Date()): Promise<Record<string,
   if (noticePurge.error && !isMissingFunctionError(noticePurge.error)) {
     throw new Error(`Data retention: purge failed: purge_launch_offer_end_notices.`);
   }
+  // Journal du pilote automatique de l'agent (5 ans), identités exclues (24 mois), attestations (5 ans) :
+  // purge dédiée (migration 20261110230000), run_data_retention n'est pas redéfinie.
+  const autopilotPurge = await supabaseAdmin.rpc("purge_information_agent_autopilot");
+  if (autopilotPurge.error && !isMissingFunctionError(autopilotPurge.error)) {
+    throw new Error(`Data retention: purge failed: purge_information_agent_autopilot.`);
+  }
   return {
     deleted: {
       ...(data && typeof data === "object" && !Array.isArray(data) ? data : {}),
       ...(noticePurge.error ? {} : { launch_offer_end_notices: noticePurge.data ?? 0 }),
+      ...(autopilotPurge.error || !autopilotPurge.data || typeof autopilotPurge.data !== "object"
+        ? {}
+        : (autopilotPurge.data as Record<string, number>)),
     },
   };
 }
