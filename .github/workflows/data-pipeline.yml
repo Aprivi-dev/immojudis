@@ -179,6 +179,10 @@ jobs:
       # dépôt PHOTO_MIRROR_ENABLED n'est pas « true », aucune photo n'est téléchargée ni copiée ; seuls les
       # retraits (suppression de copies et de fichiers) s'exécutent.
       PHOTO_MIRROR_ENABLED: ${{ vars.PHOTO_MIRROR_ENABLED || 'false' }}
+      # Photos du bien trouvées dans les pièces jointes (src/pdf_photos.py, étape bornée du lanceur
+      # automatique après la file d'enrichissement). Allumé par défaut ; la variable de dépôt
+      # PDF_PHOTOS_ENABLED=false l'éteint (seuls les retraits s'appliquent alors).
+      PDF_PHOTOS_ENABLED: ${{ vars.PDF_PHOTOS_ENABLED || 'true' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -124,6 +124,26 @@ describe("photos copiées", () => {
     expect(images).toEqual([{ type: "image", url: "https://example.test/photo/a.jpg", mirror }]);
   });
 
+  it("garde les photos des pièces jointes (bucket sale-photos), après celles de la source", () => {
+    // Forme rendue par app_private.sale_document_photo_media (migration 20261111020117).
+    const path = "documents/f91d4624-09d6-4d25-b676-811ea30f6df9/0123456789abcdef";
+    const documentPhoto = {
+      type: "image" as const,
+      url: `https://project.supabase.co/storage/v1/object/public/sale-photos/${path}-1600.webp`,
+      source: "Pièce jointe de la vente",
+      mirror: {
+        path640: `${path}-640.webp`,
+        path1600: `${path}-1600.webp`,
+        width: 1046,
+        height: 657,
+      },
+    };
+    const sourcePhoto = { type: "image" as const, url: "https://example.test/photo/facade.jpg" };
+
+    expect(propertyImages([sourcePhoto, documentPhoto])).toEqual([sourcePhoto, documentPhoto]);
+    expect(shouldRejectPropertyImageSize(1046, 657)).toBe(false);
+  });
+
   it("applique la règle de taille à des dimensions connues", () => {
     expect(shouldRejectPropertyImageSize(1200, 800)).toBe(false);
     expect(shouldRejectPropertyImageSize(320, 180)).toBe(true);

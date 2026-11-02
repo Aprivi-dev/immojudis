@@ -594,6 +594,25 @@ def _run_address_positions(env: dict[str, str]) -> int:
         return 1
 
 
+PDF_PHOTOS_BUDGET_SECONDS = 6 * 60
+
+
+def _run_pdf_photos(env: dict[str, str]) -> int:
+    """Bounded « photos des pièces jointes » pass after the enrichment queue (src.pdf_photos).
+
+    Three sales per tick at most (nearest sale dates first): their cahier des charges or procès-verbal is read in a
+    process without secrets and the photos of the property it holds (maps, logos and diagrams left out) are added to
+    the sale's gallery. 180 s of work, so the slowest document still ends well inside the 6-minute timeout. Optional
+    like the document reading: its exit code is reported in the run summary and never changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.pdf_photos', '--max-sales', '3', '--budget-seconds', '180']
+    try:
+        result = subprocess.run(command, env=env, timeout=PDF_PHOTOS_BUDGET_SECONDS, check=False)
+        return int(result.returncode)
+    except Exception:
+        return 1
+
+
 LICITOR_HISTORY_BUDGET_SECONDS = 330
 # Copie des lots pour les scénarios d'enchères, seule, quand le tick a épuisé son budget (60 s de SQL au plus).
 LICITOR_SNAPSHOT_ONLY_SECONDS = 90
@@ -706,6 +725,8 @@ def execute(run_id: str) -> int:
     reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
     # Like the document reading: a failed worker leaves the catalogue in an unknown state, the positions wait for the next tick.
     positions_code = _run_address_positions(env) if source == 'enrichment-queue' and worker_code == 0 else None
+    # Same rule: the photos of the attachments wait for a tick whose worker succeeded.
+    pdf_photos_code = _run_pdf_photos(env) if source == 'enrichment-queue' and worker_code == 0 else None
     licitor_history_code = (
         _run_licitor_history_refresh(env)
         if source == 'enrichment-queue' and LICITOR_SOURCE not in withdrawn
@@ -729,6 +750,8 @@ def execute(run_id: str) -> int:
             summary["document_reading_exit_code"] = reading_code
         if positions_code is not None:
             summary["address_positions_exit_code"] = positions_code
+        if pdf_photos_code is not None:
+            summary["pdf_photos_exit_code"] = pdf_photos_code
         if licitor_history_code is not None:
             summary["licitor_history_exit_code"] = licitor_history_code
         elif source == 'enrichment-queue' and LICITOR_SOURCE in withdrawn:
