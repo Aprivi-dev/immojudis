@@ -614,7 +614,8 @@ function collectSaleMedia(row: AdminInformationAgentSaleRow): SaleMedia[] {
 function isUsableImageUrl(value: string): boolean {
   if (!/^https?:\/\//i.test(value)) return false;
   if (/\.(?:pdf|docx?|svg)(?:[?#].*)?$/i.test(value)) return false;
-  return !/(^|[/_.-])(avatar|brand|default|favicon|icon|icone|logo|placeholder|profile|sprite|user)([/_.-]|$)/i.test(
+  // « default » seulement dans le nom du fichier : /sites/default/files/ est le dossier des sites Drupal.
+  return !/(^|[/_.-])(avatar|brand|favicon|icon|icone|logo|placeholder|profile|sprite|user)([/_.-]|$)|(^|[/_.-])default([_.-][^/?#]*)?([?#].*)?$/i.test(
     value,
   );
 }
