@@ -105,7 +105,7 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert subprocess_calls[1][1]["env"]["DOCUMENT_READING_ENABLED"] == "false"
     assert subprocess_calls[3][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
     assert subprocess_calls[3][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS
-    assert subprocess_calls[4][0][3:] == ["--max-sales", "3", "--budget-seconds", "180"]
+    assert subprocess_calls[4][0][3:] == ["--max-sales", "25", "--budget-seconds", "180"]
     assert subprocess_calls[4][1]["timeout"] == autonomous_runner.PDF_PHOTOS_BUDGET_SECONDS
     assert subprocess_calls[5][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
     assert updates[0][2].obj["document_backlog_exit_code"] == 0
