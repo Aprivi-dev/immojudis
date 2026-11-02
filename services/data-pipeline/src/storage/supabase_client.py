@@ -332,29 +332,38 @@ def pdf_enrichment_input_hash_for_sale(
     return "pipeline_v2:" + revision
 
 
+_COALESCED_JOB_TYPES = frozenset({"display_description", "fact_extraction"})
+
+
 def _coalesce_queued_display_revisions(
     connection: Any,
     jobs: list[dict[str, object]],
 ) -> set[tuple[str, str, str]]:
-    """Re-key one queued display job instead of creating a superseded row.
+    """Re-key one queued display or fact job instead of creating a superseded row.
 
     A source refresh can arrive while an older display revision is still
     queued.  The claim RPC intentionally preserves that older row as an audit
     cancellation, but doing so for every refresh creates avoidable churn and
     lets the queue spend its capacity cancelling work.  Re-key only queued
-    display jobs, never running/failed jobs, and lock the selected row in the
-    caller's publication transaction so a concurrent claim cannot race the
-    rewrite.  The unique revision constraint still remains the final guard.
+    display and fact jobs, never running/failed jobs, and lock the selected row
+    in the caller's publication transaction so a concurrent claim cannot race
+    the rewrite.  The unique revision constraint still remains the final guard.
+
+    The re-keyed row keeps its ``created_at``: the claim order adds one point
+    per hour of age, so a new row on each republication never got old enough to
+    be claimed. Fact jobs were not re-keyed until 02/11/2026: 2,133 superseded,
+    3 completed in a day, 172 queued since 29/10 and never claimed.
     """
     candidates: dict[tuple[str, str], dict[str, object]] = {}
     for job in jobs:
-        if job.get("job_type") != "display_description":
+        job_type = str(job.get("job_type") or "")
+        if job_type not in _COALESCED_JOB_TYPES:
             continue
         source_url = str(job.get("source_url") or "")
         input_hash = str(job.get("input_hash") or "")
         if not source_url or not input_hash:
             continue
-        candidates[(source_url, "display_description")] = job
+        candidates[(source_url, job_type)] = job
     if not candidates:
         return set()
 
