@@ -49,6 +49,10 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(sendButton().disabled).toBe(true);
 
     await showPreview();
+    // L'aperçu ne suffit pas : la relecture doit être confirmée avant l'envoi.
+    expect(sendButton().disabled).toBe(true);
+    confirmReview();
+    expect(sendButton().disabled).toBe(false);
     fireEvent.click(sendButton());
     await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
     expect(mocks.action.mock.calls[0][0]).toMatchObject({
@@ -130,6 +134,7 @@ describe("AdminInformationAgentMissionsPanel", () => {
       recipientEmail: "new-contact@example.test",
       recipientName: null,
     });
+    confirmReview();
     fireEvent.click(sendButton());
     await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
     expect(mocks.action.mock.calls[0][0]).toMatchObject({
@@ -267,6 +272,7 @@ describe("AdminInformationAgentMissionsPanel", () => {
     await screen.findByRole("button", { name: "Valider et envoyer" });
     mocks.preview.mockResolvedValue(previewResponse());
     await showPreview();
+    confirmReview();
     fireEvent.click(sendButton());
     await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
@@ -299,6 +305,8 @@ describe("AdminInformationAgentMissionsPanel", () => {
 
     mocks.preview.mockResolvedValueOnce(previewResponse());
     await showPreview("Actualiser l’aperçu");
+    expect(sendButton().disabled).toBe(true);
+    confirmReview();
     expect(sendButton().disabled).toBe(false);
 
     fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
@@ -531,6 +539,11 @@ describe("AdminInformationAgentMissionsPanel", () => {
 
     await showPreview();
     expect(screen.queryByText("Affichez l’aperçu pour activer l’envoi.")).toBeNull();
+    const confirmation = screen.getByText(
+      "Cochez la confirmation de relecture pour activer l’envoi.",
+    );
+    expect(sendButton().getAttribute("aria-describedby")).toBe(confirmation.id);
+    confirmReview();
     expect(sendButton().getAttribute("aria-describedby")).toBeNull();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
@@ -941,6 +954,100 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(mocks.create).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("AdminInformationAgentMissionsPanel : préparation et relecture en deux étapes", () => {
+  it("affiche l'aperçu rendu avec le brouillon, sans cliquer sur « Afficher l'aperçu »", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: mission("draft"),
+      gaps: [],
+      facts: [],
+      preview: previewResponse(),
+      previewError: null,
+      reused: false,
+    });
+    mocks.action.mockResolvedValue({ ok: true, missions: [mission("sent")], facts: [] });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderPanel();
+
+    await screen.findByTitle("Aperçu de l’e-mail envoyé");
+    expect(mocks.preview).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Actualiser l’aperçu" })).toBeTruthy();
+    expect(sendButton().disabled).toBe(true);
+
+    confirmReview();
+    expect(sendButton().disabled).toBe(false);
+    fireEvent.click(sendButton());
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    expect(mocks.action.mock.calls[0][0]).toMatchObject({
+      action: "approve_and_send",
+      previewFingerprint: "f".repeat(64),
+    });
+  });
+
+  it("retire la confirmation dès que le message change, et refuse l'envoi sans case cochée", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: mission("draft"),
+      gaps: [],
+      facts: [],
+      preview: previewResponse(),
+      previewError: null,
+      reused: false,
+    });
+
+    renderPanel();
+    await screen.findByTitle("Aperçu de l’e-mail envoyé");
+    confirmReview();
+    expect(sendButton().disabled).toBe(false);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Message modifié après la relecture, à relire avant tout envoi." },
+    });
+    expect(sendButton().disabled).toBe(true);
+    expect(
+      (screen.getByRole("checkbox", { name: /J’ai relu le message exact/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    expect(mocks.action).not.toHaveBeenCalled();
+  });
+
+  it("ne permet pas de cocher la confirmation quand l'aperçu signale un blocage", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: mission("draft"),
+      gaps: [],
+      facts: [],
+      preview: previewResponse({
+        blockers: [
+          "Deux rebonds passagers en 30 jours pour cette adresse : elle n’est plus sollicitée.",
+        ],
+        fingerprint: null,
+      }),
+      previewError: null,
+      reused: false,
+    });
+
+    renderPanel();
+    await screen.findByTitle("Aperçu de l’e-mail envoyé");
+
+    expect(screen.getByRole("alert").textContent).toContain("rebonds passagers");
+    expect(
+      (screen.getByRole("checkbox", { name: /J’ai relu le message exact/ }) as HTMLInputElement)
+        .disabled,
+    ).toBe(true);
+    expect(sendButton().disabled).toBe(true);
+  });
+});
+
+/** Coche la case « J'ai relu le message exact » : l'envoi n'est possible qu'après cette confirmation. */
+function confirmReview() {
+  fireEvent.click(screen.getByRole("checkbox", { name: /J’ai relu le message exact/ }));
+}
 
 function sendButton() {
   return screen.getByRole("button", { name: "Valider et envoyer" }) as HTMLButtonElement;

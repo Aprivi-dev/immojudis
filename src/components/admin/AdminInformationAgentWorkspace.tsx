@@ -7,6 +7,7 @@ import {
 } from "@/components/admin/AdminCatalogueReadinessPanel";
 import { AdminAuctionFactClaimReviewPanel } from "@/components/admin/AdminAuctionFactClaimReviewPanel";
 import { AdminInformationAgentMissionsPanel } from "@/components/admin/AdminInformationAgentMissionsPanel";
+import { AdminInformationAgentOperationsPanel } from "@/components/admin/AdminInformationAgentOperationsPanel";
 import { AdminInformationAgentReviewPanel } from "@/components/admin/AdminInformationAgentReviewPanel";
 import { AdminInformationAgentTemplatePanel } from "@/components/admin/AdminInformationAgentTemplatePanel";
 import { AdminInformationAgentUnroutedPanel } from "@/components/admin/AdminInformationAgentUnroutedPanel";
@@ -20,6 +21,7 @@ export function AdminInformationAgentWorkspace() {
         selection={selection}
         onClose={() => setSelection(null)}
       />
+      <AdminInformationAgentOperationsPanel />
       <AdminAuctionFactClaimReviewPanel />
       <AdminInformationAgentReviewPanel />
       <AdminInformationAgentUnroutedPanel />

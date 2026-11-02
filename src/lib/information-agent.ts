@@ -105,6 +105,10 @@ export {
   createAdminInformationAgentDraft,
 } from "@/lib/information-agent/draft";
 export {
+  prepareAdminInformationAgentDraft,
+  type InformationAgentPrepareResponse,
+} from "@/lib/information-agent/prepare";
+export {
   previewAdminInformationAgentMission,
   type InformationAgentPreviewResponse,
 } from "@/lib/information-agent/preview";

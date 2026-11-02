@@ -68,6 +68,61 @@ describe("AdminCatalogueReadinessPanel", () => {
   });
 });
 
+describe("AdminCatalogueReadinessPanel : file de travail de l'agent", () => {
+  async function renderPanel(data: unknown, onPrepare = vi.fn()) {
+    mocks.fetch.mockResolvedValue(data);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminCatalogueReadinessPanel onPrepareInformationRequest={onPrepare} />
+      </QueryClientProvider>,
+    );
+    return onPrepare;
+  }
+
+  it("indique la classe de contact et les effectifs par classe", async () => {
+    await renderPanel({
+      ...overview({ contactClass: "C" }),
+      classCounts: { A: 4, B: 2, C: 1, D: 7 },
+    });
+
+    expect(await screen.findByText("Greffe", { selector: "span" })).toBeTruthy();
+    expect(screen.getByText(/Avocat 4 · Greffe 1 · À confirmer 2/)).toBeTruthy();
+  });
+
+  it("range les contacts impossibles dans un bloc replié, avec le motif et l'action de saisie", async () => {
+    const impossible = overview({
+      id: "99999999-9999-4999-8999-999999999999",
+      title: "Maison sans adresse",
+      contactClass: "D",
+      informationAgentBlockedReason: "Téléphone seul : aucune adresse email dans l’annonce.",
+    }).items;
+    const onPrepare = await renderPanel({
+      ...overview(),
+      classCounts: { A: 1, B: 0, C: 0, D: 7 },
+      impossibleItems: impossible,
+    });
+
+    const summary = await screen.findByText("Contact impossible (7)");
+    expect((summary.closest("details") as HTMLDetailsElement).open).toBe(false);
+    expect(screen.getByText("Téléphone seul : aucune adresse email dans l’annonce.")).toBeTruthy();
+    const button = screen.getByRole("button", {
+      name: "Saisir une adresse trouvée sur une page publique",
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+    expect(onPrepare).toHaveBeenCalledWith(
+      expect.objectContaining({ saleId: "99999999-9999-4999-8999-999999999999" }),
+    );
+  });
+
+  it("n'affiche aucun bloc quand tous les dossiers ont un contact", async () => {
+    await renderPanel({ ...overview(), classCounts: { A: 1, B: 0, C: 0, D: 0 } });
+    await screen.findByRole("button", { name: "Ouvrir le message" });
+    expect(screen.queryByText(/Contact impossible/)).toBeNull();
+  });
+});
+
 function overview(item: Record<string, unknown> = {}) {
   return {
     policy: {

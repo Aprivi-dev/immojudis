@@ -19,6 +19,8 @@ import {
   INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
   resolveInformationAgentAddressOrigin,
 } from "@/lib/information-agent/address-origin";
+import { assertAdminDailyApprovalCap } from "@/lib/information-agent/approval-cap";
+import { assertInformationAgentAddressDeliverable } from "@/lib/information-agent/address-deliverability";
 import {
   assertInformationAgentCanaryRecipient,
   assertInformationAgentOutboundEnabled,
@@ -121,12 +123,16 @@ export async function approveAndSendMission({
   assertInformationAgentSearchedAddressAllowed(addressOrigin.origin);
   assertInformationAgentOutboundEnabled();
   assertInformationAgentCanaryRecipient(input.recipientEmail);
+  // Hygiène, domaine qui reçoit du courrier, rebonds passagers récents (address-deliverability.ts).
+  await assertInformationAgentAddressDeliverable(input.recipientEmail);
   // Validate delivery prerequisites before approval reserves the case for sending.
   // Otherwise a configuration error can leave an approved case with no delivery attempt.
   const config = resolveInformationAgentEmailConfig();
 
   // GDPR art. 14 prerequisites: a named controller, and at most one email per recipient per 30 days.
   assertInformationAgentControllerIdentity();
+  // Plafond de validations par administrateur et par jour (pas d'envoi à la chaîne sans relecture).
+  await assertAdminDailyApprovalCap(adminId);
   await assertInformationAgentRecipientCooldown({
     email: input.recipientEmail,
     missionId: mission.id,

@@ -142,7 +142,9 @@
       "source_blocks": {
         "technique": "noreply@cabinet-exemple.test no-reply@cabinet-exemple.test",
         "donnees": "dpo@cabinet-exemple.test rgpd@cabinet-exemple.test dpo.cabinet@exemple.test",
-        "bureau": "carpa@cabinet-exemple.test batonnier.exemple@cabinet-exemple.test"
+        "bureau": "carpa@cabinet-exemple.test batonnier.exemple@cabinet-exemple.test",
+        "reseau": "abuse@cabinet-exemple.test postmaster@cabinet-exemple.test webmaster@cabinet-exemple.test root@cabinet-exemple.test mailer-daemon@cabinet-exemple.test",
+        "marketing": "spam@cabinet-exemple.test privacy@cabinet-exemple.test security@cabinet-exemple.test newsletter@cabinet-exemple.test unsubscribe@cabinet-exemple.test hostmaster@cabinet-exemple.test"
       },
       "expected": [
         "me.exemple@cabinet-exemple.test"

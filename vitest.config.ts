@@ -13,6 +13,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Domaines fictifs (.test, .example) des jeux d'essai : le contrôle DNS de l'agent est coupé. Ses propres
+    // tests le rallument en passant `env` explicitement.
+    env: { INFORMATION_AGENT_ADDRESS_CHECK: "off" },
     exclude: [...configDefaults.exclude, "e2e/**", ".claude/**"],
   },
 });

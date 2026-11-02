@@ -6,7 +6,9 @@
  * - `rpva` : adresses du réseau privé virtuel des avocats (`@avocat-conseil.fr`), canal réservé à
  *   la procédure ;
  * - `bar_or_carpa` : adresses de l'Ordre des avocats, du barreau, du bâtonnier et des CARPA ;
- * - `technical` : adresses `noreply`, `dpo` et `rgpd`, qui ne désignent aucun interlocuteur.
+ * - `technical` : adresses `noreply`, `dpo`, `rgpd`, `abuse`, `postmaster`, `hostmaster`, `webmaster`,
+ *   `root`, `mailer-daemon`, `spam`, `privacy`, `security`, `newsletter` et `unsubscribe`, qui ne
+ *   désignent aucun interlocuteur.
  *
  * Miroir Python : `services/data-pipeline/src/information_sufficiency.py`
  * (`excluded_contact_reason`). Cas partagés :
@@ -24,7 +26,8 @@ const RPVA_DOMAIN = /(?:^|\.)avocat-conseil\.fr$/;
 const BAR_OR_CARPA_DOMAIN =
   /^(?:www\.)?(?:(?:ordre|barreau|batonnat|batonnier|carpa)(?:[.-]|$)|ordredesavocats)/;
 const BAR_OR_CARPA_LOCAL = /^(?:ordre|barreau|batonnat|batonnier|carpa)(?:[._+-]|$)/;
-const TECHNICAL_LOCAL = /^(?:no[._-]?reply|do[._-]?not[._-]?reply|dpo|rgpd)(?:[._+-]|$)/;
+const TECHNICAL_LOCAL =
+  /^(?:no[._-]?reply|do[._-]?not[._-]?reply|dpo|rgpd|abuse|postmaster|hostmaster|webmaster|root|mailer-daemon|spam|privacy|security|newsletter|unsubscribe)(?:[._+-]|$)/;
 
 export function informationAgentExcludedAddressReason(
   email: string,
@@ -53,7 +56,7 @@ export function isCourtRegistryEmail(email: string): boolean {
 }
 
 export const INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE =
-  "Cette adresse (juridiction, messagerie RPVA, Ordre ou CARPA, adresse technique noreply, dpo ou rgpd) n’est jamais sollicitée par l’agent.";
+  "Cette adresse (juridiction, messagerie RPVA, Ordre ou CARPA, adresse technique : noreply, dpo, rgpd, abuse, postmaster, webmaster, privacy, security…) n’est jamais sollicitée par l’agent.";
 
 /**
  * Sites dont une page n'est jamais admise comme source d'une adresse saisie par un administrateur :

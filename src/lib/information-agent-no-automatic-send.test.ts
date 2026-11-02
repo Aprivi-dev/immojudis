@@ -126,7 +126,7 @@ describe("agent d'information : aucun envoi automatique", () => {
       const source = read(file);
       expect(source, file).not.toMatch(/from "@\/lib\/information-agent"/);
       expect(source, file).not.toMatch(
-        /from "@\/lib\/information-agent\/(?:send|draft|preview|schemas|mission-store|config)"/,
+        /from "@\/lib\/information-agent\/(?:send|draft|preview|prepare|schemas|mission-store|config)"/,
       );
       expect(source, file).not.toMatch(/\b(?:sendResendEmail|sendTrackedEmail)\b/);
       expect(source, file).not.toMatch(/\bapproveAndSendMission\b|approve_and_send/);

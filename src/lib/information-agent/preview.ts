@@ -21,6 +21,8 @@ import {
   INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
   resolveInformationAgentAddressOrigin,
 } from "@/lib/information-agent/address-origin";
+import { assertAdminDailyApprovalCap } from "@/lib/information-agent/approval-cap";
+import { assertInformationAgentAddressDeliverable } from "@/lib/information-agent/address-deliverability";
 import {
   assertInformationAgentCanaryRecipient,
   assertInformationAgentOutboundEnabled,
@@ -160,6 +162,8 @@ export async function previewAdminInformationAgentMission({
   await collect(() => assertInformationAgentSearchedAddressAllowed(addressOrigin.origin, env));
   await collect(() => assertInformationAgentOutboundEnabled(env));
   await collect(() => assertInformationAgentCanaryRecipient(recipient, env));
+  await collect(() => assertInformationAgentAddressDeliverable(recipient));
+  await collect(() => assertAdminDailyApprovalCap(auth.userId, { env }));
   await collect(() => resolveInformationAgentEmailConfig(env));
   await collect(() => assertInformationAgentControllerIdentity(env));
 

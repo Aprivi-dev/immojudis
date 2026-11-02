@@ -3,7 +3,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
 import Copy from "lucide-react/dist/esm/icons/copy.js";
-import Eye from "lucide-react/dist/esm/icons/eye.js";
 import MailCheck from "lucide-react/dist/esm/icons/mail-check.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import X from "lucide-react/dist/esm/icons/x.js";
@@ -11,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "@/lib/toast";
 import type { InformationRequestSelection } from "@/components/admin/AdminCatalogueReadinessPanel";
+import { AdminInformationAgentPreviewPanel as PreviewPanel } from "@/components/admin/AdminInformationAgentPreviewPanel";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {
@@ -231,6 +231,12 @@ export function AdminInformationAgentMissionsPanel({
               setPreparingSelectionKey(null);
               setDraftError(null);
               hydrateMission(response.mission);
+              // « Préparer » rend l'aperçu exact avec le brouillon : l'administrateur relit tout de suite.
+              setShownPreview(
+                response.preview
+                  ? { key: previewKeyOf(response.mission), response: response.preview }
+                  : null,
+              );
               toast.success("Brouillon généré. Aucun email n’a encore été envoyé.");
             }
             void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
@@ -364,6 +370,9 @@ export function AdminInformationAgentMissionsPanel({
         recipientOriginUrl.trim(),
       ])
     : null;
+  // Relecture confirmée : valable pour cet aperçu seulement (tout changement la retire).
+  const [confirmedKey, setConfirmedKey] = useState<string | null>(null);
+  const sendConfirmed = Boolean(previewKey) && confirmedKey === previewKey;
   const previewMutation = useMutation({
     mutationFn: ({
       key: _key,
@@ -394,7 +403,9 @@ export function AdminInformationAgentMissionsPanel({
             ? "Le message a changé depuis l’aperçu : actualisez l’aperçu pour activer l’envoi."
             : !previewAllowsSend
               ? "L’aperçu signale un blocage : l’envoi reste bloqué tant qu’un contrôle échoue."
-              : null;
+              : !sendConfirmed
+                ? "Cochez la confirmation de relecture pour activer l’envoi."
+                : null;
 
   const resumeMission = (mission: InformationAgentMission) => {
     // A pending automatic preparation for the queue must never overwrite a
@@ -763,6 +774,19 @@ export function AdminInformationAgentMissionsPanel({
                       : "Régénérer depuis la source actualisée"}
                   </button>
                 ) : null}
+                <label className="flex w-full items-start gap-2 rounded-lg border bg-warning-tint p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={sendConfirmed}
+                    disabled={!previewAllowsSend || runAction.isPending}
+                    onChange={(event) => setConfirmedKey(event.target.checked ? previewKey : null)}
+                  />
+                  <span>
+                    J’ai relu le message exact affiché dans l’aperçu et je confirme son envoi à{" "}
+                    {recipientEmail.trim() || "ce destinataire"}.
+                  </span>
+                </label>
                 <button
                   type="button"
                   className="admin-button-primary inline-flex items-center gap-2"
@@ -770,6 +794,7 @@ export function AdminInformationAgentMissionsPanel({
                   disabled={
                     runAction.isPending ||
                     !previewAllowsSend ||
+                    !sendConfirmed ||
                     !isValidInformationAgentEmail(recipientEmail) ||
                     subject.trim().length < 3 ||
                     bodyText.trim().length < 20
@@ -1094,127 +1119,16 @@ function QuestionChoice({
   );
 }
 
-function PreviewPanel({
-  preview,
-  current,
-  loading,
-  disabled,
-  onShow,
-}: {
-  preview: InformationAgentPreviewResponse | null;
-  current: boolean;
-  loading: boolean;
-  disabled: boolean;
-  onShow: () => void;
-}) {
-  return (
-    <section aria-label="Aperçu de l’e-mail" className="rounded-lg border bg-white p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold">Aperçu de l’e-mail</h4>
-        <button
-          type="button"
-          className="admin-button-secondary inline-flex items-center gap-2"
-          disabled={disabled || loading}
-          onClick={onShow}
-        >
-          <Eye className="size-4" aria-hidden="true" />
-          {loading ? "Préparation…" : current ? "Actualiser l’aperçu" : "Afficher l’aperçu"}
-        </button>
-      </div>
-      {!preview ? (
-        <p className="mt-2 text-xs text-brand-navy/60">
-          L’envoi n’est possible qu’après l’affichage de l’aperçu exact du message.
-        </p>
-      ) : (
-        <>
-          {!current ? (
-            <p role="status" className="mt-2 text-xs text-amber-900">
-              Le message a été modifié depuis cet aperçu : affichez-le de nouveau avant l’envoi.
-            </p>
-          ) : null}
-          {preview.blockers.length ? (
-            <ul
-              role="alert"
-              className="mt-2 list-inside list-disc rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800"
-            >
-              {preview.blockers.map((blocker) => (
-                <li key={blocker}>{blocker}</li>
-              ))}
-            </ul>
-          ) : null}
-          <dl className="mt-2 grid gap-1 text-xs text-brand-navy/75">
-            <div>
-              <dt className="inline font-medium">De : </dt>
-              <dd className="inline">{preview.preview.from ?? "expéditeur à configurer"}</dd>
-            </div>
-            <div>
-              <dt className="inline font-medium">À : </dt>
-              <dd className="inline">{preview.preview.to}</dd>
-            </div>
-            <div>
-              <dt className="inline font-medium">Objet : </dt>
-              <dd className="inline">{preview.preview.subject}</dd>
-            </div>
-            <div>
-              <dt className="inline font-medium">Origine de l’adresse : </dt>
-              <dd className="inline">{preview.addressOrigin.text}</dd>
-            </div>
-            {preview.addressOrigin.courtRegistry ? (
-              <div role="note" className="rounded-lg border border-sky-200 bg-sky-50 p-2">
-                <dt className="inline font-medium">Greffe : </dt>
-                <dd className="inline">
-                  cette demande est adressée au greffe du tribunal (aucun avocat trouvé), pas à un
-                  avocat.
-                </dd>
-              </div>
-            ) : null}
-            {preview.addressOrigin.automated ? (
-              <div role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-2">
-                <dt className="inline font-medium">Adresse retrouvée automatiquement : </dt>
-                <dd className="inline">
-                  l’outil de recherche l’a lue sur une page publique, personne ne l’a encore
-                  vérifiée.{" "}
-                  {preview.addressOrigin.url ? (
-                    <>
-                      <a
-                        href={preview.addressOrigin.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium underline"
-                      >
-                        Ouvrir la page source
-                      </a>{" "}
-                      et vérifier que l’adresse est bien celle de ce professionnel avant d’envoyer.
-                    </>
-                  ) : (
-                    "Vérifiez l’adresse avant d’envoyer."
-                  )}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-          <iframe
-            title="Aperçu de l’e-mail envoyé"
-            srcDoc={preview.preview.html}
-            sandbox=""
-            className="mt-3 h-[640px] w-full rounded-lg border"
-          />
-          <details className="mt-2 text-xs text-brand-navy/75">
-            <summary className="cursor-pointer font-medium">
-              Version texte (envoyée avec le HTML, lue par certaines messageries)
-            </summary>
-            <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border bg-slate-50 p-3 font-sans">
-              {preview.preview.text}
-            </pre>
-          </details>
-          <p className="mt-2 text-xs text-brand-navy/55">
-            Le jeton de l’adresse de réponse et le lien privé de dépôt sont attribués au moment de
-            l’envoi ; tout le reste est identique au message qui partira.
-          </p>
-        </>
-      )}
-    </section>
-  );
+/** Clé de l'aperçu d'un brouillon non modifié (même formule que `previewKey` du composant). */
+function previewKeyOf(mission: InformationAgentMission): string {
+  return JSON.stringify([
+    mission.id,
+    normalizeEmail(mission.recipientEmail),
+    (mission.recipientName ?? "").trim(),
+    mission.subject.trim(),
+    mission.bodyText.trim(),
+    "",
+  ]);
 }
 
 function selectionIdentityKey(selection: InformationRequestSelection): string {
