@@ -118,6 +118,12 @@ select s.source_url, s.source_name, s.sale_date,
    and s.retention_deadline_materialized
    and (s.retention_deadline is null or s.retention_deadline > now())
    and (s.sale_date is null or s.sale_date >= now())
+   -- Toutes les sources de la vente sont retirées du catalogue (Vench, Petites Affiches) : elle est masquée et
+   -- la file reporte ses tâches d'un jour (src/source_withdrawal.py). La choisir prenait une place de la
+   -- sélection pour rien. Même règle et même interrupteur que la base (catalogue_withdrawn).
+   and not app_private.sale_is_fully_withdrawn(
+         s.source_name, s.observations, (select app_private.catalogue_withdrawn_sources())
+       )
    and (
          p.source_url is not null
          or not exists (select 1 from public.auction_documents d where d.source_url = s.source_url)
