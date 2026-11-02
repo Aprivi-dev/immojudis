@@ -75,11 +75,16 @@ def _freeze_source_clock(monkeypatch, *, now: float = 100.0) -> dict[str, float]
 
 
 @pytest.mark.parametrize(
-    "robots_response",
-    [httpx.ReadTimeout("robots timeout"), _Response(503, text="upstream unavailable")],
+    "robots_responses",
+    [
+        # A timeout is tried again like a page, then blocks the catalogue.
+        [httpx.ReadTimeout("robots timeout")] * 4,
+        [_Response(503, text="upstream unavailable")],
+    ],
 )
-def test_polite_client_blocks_catalogue_when_robots_is_unavailable(monkeypatch, robots_response) -> None:
-    clients = _patch_http_client(monkeypatch, [[robots_response]])
+def test_polite_client_blocks_catalogue_when_robots_is_unavailable(monkeypatch, robots_responses) -> None:
+    _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(monkeypatch, [list(robots_responses)])
     client = common.PoliteHttpClient(
         base_url="https://source.example",
         user_agent="immojudis-test",
@@ -93,7 +98,24 @@ def test_polite_client_blocks_catalogue_when_robots_is_unavailable(monkeypatch, 
     assert isinstance(caught.value, httpx.NetworkError)
     assert "robots.txt could not be verified" in str(caught.value)
     assert "does not allow" not in str(caught.value)
-    assert clients[0].calls == [("GET", "https://source.example/robots.txt")]
+    assert clients[0].calls == [("GET", "https://source.example/robots.txt")] * len(robots_responses)
+
+
+def test_a_robots_timeout_is_tried_again_before_blocking_the_source(monkeypatch) -> None:
+    _freeze_source_clock(monkeypatch)
+    clients = _patch_http_client(
+        monkeypatch,
+        [[httpx.ReadTimeout("robots timeout"), _Response(200, text="User-agent: *\nAllow: /"), _Response(200, text="catalogue")]],
+    )
+    client = common.PoliteHttpClient(
+        base_url="https://source.example",
+        user_agent="immojudis-test",
+        delay_seconds=0,
+        timeout_seconds=1,
+    )
+
+    assert client.get("https://source.example/catalogue") == "catalogue"
+    assert [url for _method, url in clients[0].calls].count("https://source.example/robots.txt") == 2
 
 
 @pytest.mark.parametrize("status_code", [404, 410])
@@ -494,19 +516,20 @@ def test_polite_client_keeps_actual_rules_when_plain_text_is_mislabeled_html(mon
 
 
 @pytest.mark.parametrize(
-    "redirect_robots_response",
-    [httpx.ReadTimeout("redirect robots timeout"), _Response(503)],
+    "redirect_robots_responses",
+    [[httpx.ReadTimeout("redirect robots timeout")] * 4, [_Response(503)]],
 )
 def test_polite_client_blocks_redirect_target_when_robots_is_unavailable(
-    monkeypatch, redirect_robots_response
+    monkeypatch, redirect_robots_responses
 ) -> None:
+    _freeze_source_clock(monkeypatch)
     clients = _patch_http_client(
         monkeypatch,
         [
             [
                 _Response(200, text="User-agent: *\nAllow: /"),
                 _Response(302, location="https://cdn.example/landing"),
-                redirect_robots_response,
+                *redirect_robots_responses,
             ]
         ],
     )
@@ -523,7 +546,7 @@ def test_polite_client_blocks_redirect_target_when_robots_is_unavailable(
     assert clients[0].calls == [
         ("GET", "https://source.example/robots.txt"),
         ("GET", "https://source.example/catalogue"),
-        ("GET", "https://cdn.example/robots.txt"),
+        *[("GET", "https://cdn.example/robots.txt")] * len(redirect_robots_responses),
     ]
 
 

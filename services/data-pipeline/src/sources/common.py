@@ -496,6 +496,28 @@ class PoliteHttpClient:
             self._remember_robots_unavailable(base_origin, exc)
             LOGGER.warning("Could not verify robots.txt for %s: %s", self.base_url, exc)
 
+    def _get_robots_with_retries(self, url: str, origin: str | None) -> httpx.Response:
+        # A read that times out or is cut is tried again like a page (Enchères Immobilières, 31/10-02/11/2026:
+        # four collections in nine stopped on one robots.txt timeout). A refusal or an HTTP error is not.
+        attempts = max(1, int(getattr(self, "max_attempts", 4)))
+        for attempt in range(attempts):
+            try:
+                if source_task_deadline_remaining() is None:
+                    return self._client.get(url)
+                return self._client.get(
+                    url,
+                    timeout=source_task_bounded_timeout(self.timeout_seconds, "requesting robots policy"),
+                )
+            except TRANSIENT_TRANSPORT_ERRORS as exc:
+                ensure_source_task_deadline("handling failed robots policy request")
+                if attempt == attempts - 1:
+                    raise RobotsUnavailableError(
+                        f"robots.txt could not be verified for {url}: {exc}",
+                        origin=origin,
+                    ) from exc
+                _source_task_sleep(max(self.delay_seconds, 2 ** attempt), "waiting for robots policy retry")
+        raise RuntimeError("Robots retry budget exhausted")
+
     def _fetch_robots(self, url: str) -> httpx.Response:
         current_url = url
         self._last_robots_origin = None
@@ -508,24 +530,7 @@ class PoliteHttpClient:
                     origin=_origin(urlparse(current_url)),
                 )
             current_origin = _origin(urlparse(current_url))
-            try:
-                remaining = source_task_deadline_remaining()
-                if remaining is None:
-                    response = self._client.get(current_url)
-                else:
-                    response = self._client.get(
-                        current_url,
-                        timeout=source_task_bounded_timeout(
-                            self.timeout_seconds,
-                            "requesting robots policy",
-                        ),
-                    )
-            except TRANSIENT_TRANSPORT_ERRORS as exc:
-                ensure_source_task_deadline("handling failed robots policy request")
-                raise RobotsUnavailableError(
-                    f"robots.txt could not be verified for {current_url}: {exc}",
-                    origin=current_origin,
-                ) from exc
+            response = self._get_robots_with_retries(current_url, current_origin)
             ensure_source_task_deadline("receiving robots policy response")
             if response.status_code not in REDIRECT_STATUS_CODES:
                 ensure_source_task_deadline("parsing robots policy response")
