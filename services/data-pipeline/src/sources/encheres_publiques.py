@@ -28,7 +28,7 @@ from src.sources.common import (
     should_fetch_detail,
     unique_dicts,
 )
-from src.sources.encheres_publiques_extraction import refresh_encheres_publiques_raw_sale
+from src.sources.encheres_publiques_extraction import fill_text_schedule, refresh_encheres_publiques_raw_sale
 
 BASE_URL = "https://www.encheres-publiques.com"
 CANONICAL_BASE_URL = "https://encheres-publiques.com"
@@ -164,6 +164,8 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
                 "source_blocks": source_blocks,
             }
         )
+        # Sans horodatage, le titre de l'événement donne le jour (« … au Tribunal judiciaire de Paris le 9 Juillet 2026 »).
+        fill_text_schedule(sales[-1])
     return sales
 
 
