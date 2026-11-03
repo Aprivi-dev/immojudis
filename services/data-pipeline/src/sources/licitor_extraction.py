@@ -722,12 +722,22 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
     if not page.is_structured:
         return None
     raw_sale = raw_sale or {}
-    first = page.lots[0]
-    city = first.city or next((lot.city for lot in page.lots if lot.city), None) or page.headline_city or clean_text(
-        raw_sale.get("city")
+    from src.lot_scope import SELECTED
+    from src.sources.licitor_lots import select_licitor_lot
+
+    # Annonce en plusieurs lots : les faits propres au lot (occupation, conditions, surface, mise à prix,
+    # cadastre, visites) sont ceux du lot de l'URL, jamais d'office ceux du premier ; aucun si le lot est
+    # incertain (src.sources.licitor_lots).
+    choice = select_licitor_lot(page, raw_sale.get("source_url"), raw_sale.get("source_lots"))
+    first = choice.lot if choice.status == SELECTED else None
+    lot_city = choice.location.city if choice.location is not None else None
+    city = (
+        lot_city
+        if len(page.lots) > 1
+        else first.city or page.headline_city or clean_text(raw_sale.get("city"))
     )
     procedures = page.procedures()
-    occupancy, occupancy_lines = _occupancy(first)
+    occupancy, occupancy_lines = _occupancy(first) if first is not None else (None, [])
     lots_view = []
     for lot in page.lots:
         lot_occupancy, lot_occupancy_lines = _occupancy(lot)
@@ -755,10 +765,13 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
             }.items()
             if value not in (None, "", [], {})
         })
-    visits = list(dict.fromkeys(visit for lot in page.lots for visit in lot.visits))
+    if first is not None and choice.location is not None and len(page.lots) > 1:
+        visits = list(choice.location.visits)
+    else:
+        visits = list(dict.fromkeys(visit for lot in page.lots for visit in lot.visits))
     visit_notes = list(dict.fromkeys(note for lot in page.lots for note in lot.visit_notes))
-    facts = _condition_facts(first)
-    cadastre = _cadastre(first, city)
+    facts = _condition_facts(first) if first is not None else {}
+    cadastre = _cadastre(first, city) if first is not None else None
     media = _media(raw_sale)
     attachments = _attachments(raw_sale)
     multi = len(page.lots) > 1
@@ -788,7 +801,7 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
             " ".join(part for part in (_price_text(prior.get("price_eur")), f"le {prior['date']}" if prior.get("date") else None) if part),
             "conditions")
     add("bidding_restriction", "Enchères", facts.get("bidding_restriction"), "conditions")
-    other_conditions = [item for item in first.conditions if item not in {
+    other_conditions = [item for item in (first.conditions if first is not None else []) if item not in {
         facts.get("price_reduction"), (facts.get("deposit") or {}).get("text"), facts.get("bidding_restriction")
     } and not (prior and prior["text"] in item)]
     add("other_conditions", "Autres conditions", " ".join(other_conditions)[:600], "conditions")
@@ -804,15 +817,15 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
     add("notice", "Mention de la source", page.non_official_notice, "divers")
 
     surfaces: dict[str, str] = {}
-    primary = _primary_surface(first)
+    primary = _primary_surface(first) if first is not None else None
     if primary:
         surfaces["land_surface_m2" if _surface_scope(first) == "land" else "built_surface_m2"] = primary
-    land = clean_text(raw_sale.get("land_surface_m2"))
+    land = clean_text(raw_sale.get("land_surface_m2")) if first is not None else None
     if land and "land_surface_m2" not in surfaces:
         surfaces["land_surface_m2"] = land
 
     prices: dict[str, int] = {}
-    if first.price_eur is not None:
+    if first is not None and first.price_eur is not None:
         prices["starting_price_eur"] = first.price_eur
     deposit = facts.get("deposit") or {}
     if deposit.get("amount_eur"):
@@ -858,7 +871,7 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
         "procedure_vente": " · ".join(label for _, label in procedures) or None,
         "lieu_audience": page.venue,
         "lots_detail": "\n".join(_lot_summary(lot) for lot in page.lots) if multi else None,
-        "conditions_vente": " ".join(first.conditions)[:1500] or None,
+        "conditions_vente": " ".join(first.conditions if first is not None else [])[:1500] or None,
         "baisse_mise_a_prix": facts.get("price_reduction"),
         "consignation": deposit.get("text"),
         "adjudication_precedente": prior["text"] if prior else None,
@@ -1014,6 +1027,11 @@ def refresh_licitor_raw_sale(raw_sale: dict[str, Any]) -> bool:
     if extracted is None:
         return False
     apply_licitor_fields(raw_sale, extracted)
+    # Annonce en plusieurs lots : la vente stockée reprend les valeurs du lot de son URL (l'ancienne lecture
+    # prenait toujours celles du premier lot), ou aucune si le lot est incertain.
+    from src.sources.licitor_lots import apply_licitor_lot
+
+    apply_licitor_lot(raw_sale, extracted["page"])
     # Une relecture corrige aussi un département déduit d'une sous-chaîne (« Orglandes » -> 40).
     department = licitor_department(
         page_text,

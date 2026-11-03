@@ -9,7 +9,7 @@ from itertools import combinations
 from psycopg.types.json import Jsonb
 
 from src import listing_minimum, rejected_listings
-from src.admission import LICITOR_MULTI_LOT_QUARANTINE, MULTI_LOT_QUARANTINE, quarantine_reason
+from src.admission import LICITOR_MULTI_LOT_QUARANTINE, MULTI_LOT_QUARANTINE, licitor_lot_count, quarantine_reason
 from src.collection_evidence import record_sale_decisions
 from src.dedupe import (
     PRIMARY_SOURCE_PRIORITY,
@@ -224,6 +224,8 @@ def _urls(sale: AuctionSale) -> set[str]:
 
 def conflicting_identity(existing: AuctionSale, incoming: AuctionSale) -> bool:
     """Legacy aliases are claims, not proof that two properties are identical."""
+    if _corrects_first_lot_reading(existing, incoming):
+        return False
     for key in ('lot_number', 'lot_id'):
         before, after = existing.raw_payload.get(key), incoming.raw_payload.get(key)
         if before and after and str(before) != str(after):
@@ -231,6 +233,24 @@ def conflicting_identity(existing: AuctionSale, incoming: AuctionSale) -> bool:
     before = set(_address_dedupe_keys(existing))
     after = set(_address_dedupe_keys(incoming))
     return bool(before and after and not before.intersection(after))
+
+
+def _corrects_first_lot_reading(existing: AuctionSale, incoming: AuctionSale) -> bool:
+    """La même URL Licitor relue lot par lot : l'adresse stockée était celle du premier lot, pas une autre vente.
+
+    Avant le 03/11/2026, chaque URL d'une annonce à plusieurs lots recevait la commune, l'adresse et la mise à
+    prix du premier lot (src.sources.licitor_lots). La relecture du lot de l'URL change donc l'adresse sans
+    changer de bien : ce n'est pas un conflit d'identité à mettre en quarantaine.
+    """
+    if existing.source_name != 'licitor' or incoming.source_name != 'licitor':
+        return False
+    if not existing.source_url or existing.source_url != incoming.source_url:
+        return False
+    selection = incoming.raw_payload.get('source_lot_selection')
+    if not isinstance(selection, dict) or selection.get('status') != 'selected':
+        return False
+    # Ancienne lecture seulement : une ligne déjà lue lot par lot garde la règle d'identité ordinaire.
+    return 'source_lot_selection' not in existing.raw_payload and licitor_lot_count(existing.raw_payload) > 1
 
 
 def hold_identity(connection, incoming: AuctionSale, matches: list[AuctionSale], reason: str) -> None:
