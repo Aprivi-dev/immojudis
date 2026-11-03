@@ -278,7 +278,7 @@ def test_rejected_model_output_is_kept_privately_and_capped():
     assert sale.raw_payload["llm_display_status"] == "fallback"
     assert kept["text"].startswith("Maison de 500 m².")
     assert len(kept["text"]) == REJECTED_DISPLAY_MAX_CHARS and kept["truncated"] is True
-    assert kept["issue_codes"] == ["unsupported_area"]
+    assert kept["issue_codes"] == ["area_contradicts_canonical", "unsupported_area"]
     assert "500" not in sale.raw_payload["llm_display_description"]
 
 
