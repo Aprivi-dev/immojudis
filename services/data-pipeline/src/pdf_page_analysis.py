@@ -18,6 +18,14 @@ VISUAL_BLANK_RENDER_MAX_DIMENSION = 800
 # actual page is a scanned image. OCR must still run when the image covers a
 # meaningful part of the page. Keep small logos/stamps below this threshold.
 PAGE_OCR_IMAGE_COVERAGE_MIN = 0.20
+# A page of photographs or a plan: three OCR passes (upright, rotated, sparse
+# text with word confidence) found no confident word. It is settled like a
+# blank page (never retried: the same OCR gives the same answer) but kept
+# distinct from it, since the page is not empty. The source PDF keeps it.
+PICTURE_PAGE_STATUS = "picture_page_excluded"
+SETTLED_EXCLUDED_PAGE_STATUSES = frozenset(
+    {"blank_excluded", "blank_page_excluded", "visual_blank_excluded", PICTURE_PAGE_STATUS}
+)
 
 
 def is_decorative_edge_only_page(page: fitz.Page) -> bool:
@@ -170,7 +178,7 @@ def _page_requires_retry(page: object, *, ocr_enabled: bool) -> bool:
     status = str(page.get("status") or page.get("extraction_status") or "").strip().lower()
     if status in {"failed", "incomplete", "ocr_failed", "empty"} or page.get("retryable") is True:
         return True
-    if status in {"blank_excluded", "blank_page_excluded", "visual_blank_excluded"}:
+    if status in SETTLED_EXCLUDED_PAGE_STATUSES:
         return False
     if not clean_text(page.get("text")):
         return True
@@ -196,3 +204,30 @@ def _page_text_confidence(text: str | None, *, method: str) -> float:
     elif chars < 500:
         base -= Decimal("0.08")
     return float(max(Decimal("0.1"), min(Decimal("0.98"), base)))
+
+
+def page_outcome_summary(pages: list[dict[str, object]], *, ocr_enabled: bool) -> dict[str, object]:
+    """Document-level page lists, completeness and confidence of one page extraction."""
+
+    def _status(page: dict[str, object]) -> str:
+        return str(page.get("status") or page.get("extraction_status") or "")
+
+    failed_pages = [int(page["page"]) for page in pages if _page_requires_retry(page, ocr_enabled=ocr_enabled)]
+    confidences = [
+        float(page.get("confidence") or 0)
+        for page in pages
+        if page.get("text") and not _page_requires_retry(page, ocr_enabled=ocr_enabled)
+    ]
+    return {
+        "blank_pages": [
+            int(page["page"])
+            for page in pages
+            if _status(page) in SETTLED_EXCLUDED_PAGE_STATUSES - {PICTURE_PAGE_STATUS}
+        ],
+        "visual_blank_pages": [int(page["page"]) for page in pages if _status(page) == "visual_blank_excluded"],
+        "picture_pages": [int(page["page"]) for page in pages if _status(page) == PICTURE_PAGE_STATUS],
+        "failed_pages": failed_pages,
+        "complete": not failed_pages,
+        "extraction_status": "extracted" if not failed_pages else "incomplete",
+        "confidence": round(sum(confidences) / len(confidences), 3) if confidences else 0.0,
+    }
