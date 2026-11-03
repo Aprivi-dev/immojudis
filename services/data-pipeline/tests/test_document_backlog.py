@@ -9,9 +9,11 @@ import pytest
 
 from src import document_backlog as backlog
 from src.models import AuctionSale
+from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 
 
 def _sale(url: str, **fields: object) -> AuctionSale:
+    fields.setdefault("raw_payload", {"document_facts_version": DOCUMENT_FACTS_VERSION})
     return AuctionSale(
         source_name="vench",
         source_url=url,
@@ -38,7 +40,10 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
     sql = " ".join(backlog.CANDIDATES_SQL.split())
     # Sales with documents never tried first, then the soonest sale; an undated sale (State tender whose
     # deadline is only in its documents) counts as ending within a week instead of coming last.
-    assert "order by (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0)," in sql
+    assert (
+        "order by (p.source_url is null and exists (select 1 from public.auction_documents d"
+        " where d.source_url = s.source_url)), (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0),"
+    ) in sql
     assert "coalesce(s.sale_date, now() + interval '7 days')," in sql
     assert "(s.sale_date is null), s.sale_date" not in sql
     assert "(s.sale_date is null or s.sale_date >= now())" in sql
@@ -53,6 +58,11 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
         "and not app_private.sale_is_fully_withdrawn( s.source_name, s.observations,"
         " (select app_private.catalogue_withdrawn_sources()) )"
     ) in sql
+    # Documents all read with older extraction rules are read again from the cache (quality audit of
+    # 03/11/2026), after the documents never read, and a deferred re-read keeps its deadline.
+    assert "or coalesce(s.raw_payload->>'document_facts_version', '') <> %s" in sql
+    assert "and not ( a.status = 'queued' and a.next_attempt_at <= now() and p.source_url is null" in sql
+    assert sql.count("%s") == 5
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
     assert "j.job_type = 'pdf'" in claim and "for update of j, s skip locked" in claim
     ensure = " ".join(backlog.ENSURE_JOB_SQL.split())
@@ -147,6 +157,43 @@ def test_current_documents_only_rewrite_the_projection(monkeypatch) -> None:
     assert outcome.action == "reprojected"
     assert fake.processed == [] and fake.ensured == []
     assert fake.reprojected == [url]
+
+
+def test_documents_read_with_older_rules_are_read_again(monkeypatch) -> None:
+    url = "https://example.test/stale"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fresh = _sale(url, occupancy_status="occupied")
+    fake = _Fake(monkeypatch, {url: [stale, stale, fresh]}, {url: [("completed", "")]})
+    fake.current.add(url)  # every document is read and cached
+
+    outcome = backlog.drain_sale("db", {"source_url": url, "source_name": "vench"}, backlog.BacklogLimits(), 1e18)
+
+    assert outcome.action == "processed"
+    assert fake.ensured == [url] and fake.processed == [f"job:{url}"]
+    assert outcome.new_facts == ["occupancy_status"]
+
+
+def test_selection_passes_the_current_facts_version(monkeypatch) -> None:
+    seen: list[tuple] = []
+
+    class _Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, parameters=None):
+            if parameters is not None:
+                seen.append(parameters)
+            return self
+
+        def fetchall(self):
+            return []
+
+    monkeypatch.setattr(backlog, "_connect", lambda _db: _Connection())
+    assert backlog.select_backlog_candidates("db", 7) == []
+    assert seen[0][2:] == (DOCUMENT_FACTS_VERSION, DOCUMENT_FACTS_VERSION, 7)
 
 
 def test_one_failing_sale_never_stops_the_run(monkeypatch) -> None:

@@ -75,7 +75,7 @@ def replay(case_id: str):
                         "sale_date": "2026-10-27T08:00:00+00:00"}),
     ("avoventes-une-villa-a-ceyreste", {"city": "Ceyreste", "starting_price_eur": "200000.00",
         "carrez_surface_m2": "156.45", "rooms_count": 11, "bedrooms_count": 6,
-        "sale_date": "2026-10-21T07:30:00+00:00", "occupancy_status": None}),
+        "sale_date": "2026-10-21T07:30:00+00:00", "occupancy_status": "unknown"}),
     ("avoventes-un-appartement-a-marseille-2", {"city": "Marseille", "starting_price_eur": "40000.00",
         "surface_m2": "58.04", "rooms_count": 3, "bedrooms_count": 2,
         "sale_date": "2026-11-04T08:30:00+00:00", "occupancy_status": "occupied"}),
@@ -135,7 +135,7 @@ def test_conflicting_occupation_is_preserved_as_unknown_with_a_flag():
     raw, sale = replay("avoventes-une-villa-a-ceyreste")
     assert "les lieux ne sont pas occupés" in raw["description"]
     assert "Actuellement occupée" in raw["description"]
-    assert sale.occupancy_status is None
+    assert sale.occupancy_status == "unknown"
     assert "ambiguous_occupancy" in sale.raw_payload["quality_flags"]
 
 

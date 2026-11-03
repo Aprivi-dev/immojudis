@@ -71,6 +71,8 @@ def _backfill_document_price_from_known(
     extraction = known_payload.get("starting_price_extraction")
     if not isinstance(extraction, dict) or extraction.get("version") not in {
         DOCUMENT_FACTS_VERSION,
+        # A price read under the previous rules stays protected until its documents are read again.
+        "document_facts_v4_occupancy_dates_prices",
         "document_facts_v1_starting_price",
     }:
         return 0
@@ -125,4 +127,29 @@ def _backfill_document_sale_date_from_known(
     if is_missing_raw_value(value):
         return 0
     sale["sale_date"] = value
+    return 1
+
+
+def _backfill_document_occupancy_from_known(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> int:
+    """Keep the occupancy read in the attachments when the source page gives none.
+
+    Cessions de l'État pages say nothing of occupancy: « 3 – SITUATION D'OCCUPATION Le bien est libre de toute
+    occupation » is in the conditions of sale. A re-read of the page set the status back to null while its PDF
+    trace stayed, so the next PDF pass took the empty value for a manual correction (audit 03/11/2026: the
+    occupancy of most Cessions sales was read in their documents but not shown).
+    """
+    if not is_missing_raw_value(sale.get("occupancy_status")):
+        return 0
+    known_payload = known.get("raw_payload")
+    provenance = known_payload.get("pdf_fact_provenance") if isinstance(known_payload, dict) else None
+    trace = provenance.get("occupancy_status") if isinstance(provenance, dict) else None
+    if not isinstance(trace, dict) or trace.get("source") != "pdf":
+        return 0
+    value = known.get("occupancy_status") or trace.get("value")
+    if is_missing_raw_value(value):
+        return 0
+    sale["occupancy_status"] = value
     return 1

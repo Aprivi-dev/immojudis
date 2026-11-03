@@ -61,7 +61,8 @@ def test_agreeing_statements_survive_co_ownership_lot_numbers() -> None:
 
     enrich_sale_from_pdf_text(sale, pdf_texts)
 
-    assert sale.occupancy_status == "occupied"
+    # « occupés par le débiteur » makes the agreeing « occupée » precise (03/11/2026).
+    assert sale.occupancy_status == "owner_occupied"
 
 
 def test_diagnostic_wording_is_not_an_occupancy_statement() -> None:

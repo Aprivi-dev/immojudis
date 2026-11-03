@@ -10,6 +10,7 @@ from src.asset_normalization import (
     ScoreComponent,
 )
 from src.models import AuctionSale
+from src.multi_unit_surface import is_single_unit_surface_of_several
 from src.normalize import (
     MIN_DWELLING_SURFACE_M2,
     SURFACE_VALUE_PATTERN,
@@ -55,6 +56,9 @@ def _is_unestablished_multi_unit_surface(sale: AuctionSale, text: str) -> bool:
     La seule surface lue est alors celle d'un lot (le premier, le plus souvent) : « surface non établie »
     vaut mieux que de l'afficher comme surface du bien (immeuble de 6 appartements à 29,51 m²).
     """
+    current = sale.app_surface_m2 or sale.carrez_surface_m2 or sale.habitable_surface_m2 or sale.surface_m2
+    if sale.property_type != "land" and is_single_unit_surface_of_several(text, current):
+        return True  # la surface d'un des logements cités, même qualifiée « totale » pour ce logement
     if not text or _has_explicit_total_surface_evidence(text):
         return False
     if "multi_lot_sale" in sale.quality_flags:
@@ -317,24 +321,20 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
 
 
 def _infer_rooms_count(text: str, sale: AuctionSale) -> int | None:
-    if re.search(r"\bstudio\b|\bT\s*1\b|\btype\s*1\b", text, re.I):
+    """Un studio écrit compte une pièce ; aucun autre compte n'est déduit (chambres + séjour n'est pas une preuve).
+
+    « T 1 » seul (« servitudes AS 1 ; T 1 ») ne dit rien d'un logement : seul un type de logement nommé compte.
+    """
+    if sale.property_type in {"apartment", "house"} and _STUDIO_RE.search(text):
         return 1
-    if not sale.bedrooms_count or sale.property_type not in {"house", "apartment", "building"}:
-        return None
-    living_rooms = 0
-    if re.search(r"\bs[ée]jour\b|\bsalon\b|\bpi[eè]ce\s+principale\b", text, re.I):
-        living_rooms = 1
-    if re.search(r"\bsalle\s+[àa]\s+manger\b", text, re.I):
-        living_rooms += 1
-    extra_rooms = 0
-    match = re.search(
-        r"\b(?:mezzanine|combles?|annexe)\s+(?:avec|comprenant)\s+((?:une|deux|trois|[1-9]))\s+pi[eè]ces?\b", text, re.I
-    )
-    if match:
-        extra_rooms = _number_word_to_int(match.group(1)) or 0
-    if living_rooms or extra_rooms:
-        return sale.bedrooms_count + max(living_rooms, 1) + extra_rooms
     return None
+
+
+_STUDIO_RE = re.compile(
+    r"\bstudio\b(?!\s+(?:photo|d['’]enregistrement|de\s+(?:danse|musique|yoga)))"
+    r"|\b(?:appartement|logement)\s+(?:de\s+)?(?:type\s+)?[TF]\s*1\b|\btype\s+[TF]?\s*1\b(?![,.]\d)",
+    re.I,
+)
 
 
 def _number_word_to_int(value: str) -> int | None:

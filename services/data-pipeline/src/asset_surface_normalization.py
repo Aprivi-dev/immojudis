@@ -9,6 +9,7 @@ from src.asset_normalization import (
     SURFACE_PATTERNS,
 )
 from src.asset_normalization_helpers import (
+    _STUDIO_RE,
     _add_quality_flag,
     _decimal_value,
     _evidence,
@@ -25,6 +26,7 @@ from src.asset_normalization_helpers import (
     _surface_false_positive,
     _validate_app_surface_scope,
 )
+from src.land_parcels import parcel_m2_list, read_parcel_land_surface
 from src.models import AuctionSale
 from src.normalize import (
     _is_ambiguous_mixed_lot_surface,
@@ -37,6 +39,8 @@ from src.normalize import (
     is_outside_carrez_context,
     parse_surface,
 )
+from src.occupancy_statements import OCCUPIED_FAMILY, occupancy_from_text
+from src.room_counts import reconcile_room_counts
 from src.surface_plausibility import (
     SURFACE_VALUES_CONFLICT_KEY,
     built_surfaces_equal_to_land,
@@ -118,6 +122,8 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             "basis": "duplicated_built_surface_without_land_evidence",
         }
         _add_quality_flag(sale, "land_surface_conflict_resolved")
+    _sum_listed_land_parcels(sale, text)
+    _drop_dwelling_surfaces_of_bare_land(sale)
     rejected_equal_to_land = _reject_built_surface_equal_to_land(sale)
     _discard_placeholder_built_surface(sale)
     text_built_surface = _extract_built_surface(text, sale)
@@ -150,6 +156,7 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             "basis": carrez_basis,
         }
         _add_quality_flag(sale, "surface_conflict_resolved")
+    _prefer_carrez_over_smaller_generic_surface(sale)
     explicit_app_surface = None
     min_app_surface = Decimal("20")
     if sale.property_type == "apartment":
@@ -175,6 +182,7 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
     _validate_app_surface_scope(sale)
     _reconcile_surface_evidence(sale, text, ambiguous_mixed_lot_surface=ambiguous_mixed_lot_surface)
     _flag_ambiguous_surface(sale)
+    _flag_source_surface_conflict(sale)
     if rejected_equal_to_land and sale.app_surface_m2 is None:
         _add_quality_flag(sale, "ambiguous_surface")
     if (
@@ -184,6 +192,109 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         and sale.property_type in {"house", "building"}
     ):
         sale.surface_scope = "land"
+
+
+_SOURCE_HEADER_SURFACE_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*m\s*(?:2|²)\s+superficie\b", re.I)
+
+
+def _flag_source_surface_conflict(sale: AuctionSale) -> None:
+    """Fiche et document ne donnent pas la même surface : la valeur nommée retenue reste, l'écart est signalé.
+
+    Règle (audit du 03/11/2026, 85136d47 : fiche « 78.78 m² superficie », descriptif « Superficie privative (Loi
+    Carrez – hors balcon) : 78,20 m² » ; 332be623 : fiche 44,12 m², procès-verbal « superficie habitable de 45.45
+    m2 ») : une surface nommée (Carrez, habitable, totale) l'emporte sur un compteur sans libellé ; l'écart est
+    tracé dans ``raw_payload["surface_source_conflict"]`` et marqué ``surface_source_conflict``.
+    """
+    selected = sale.app_surface_m2
+    if selected is None or sale.property_type == "land":
+        return
+    blocks = sale.raw_payload.get("source_blocks")
+    header = _SOURCE_HEADER_SURFACE_RE.search(sale.raw_text or "")
+    source_value = (
+        parse_surface(sale.raw_payload.get("surface_m2"))
+        or (parse_surface(blocks.get("surface")) if isinstance(blocks, dict) else None)
+        or (parse_surface(header.group(1)) if header else None)
+    )
+    if source_value is None or abs(source_value - selected) <= max(Decimal("0.1"), selected * Decimal("0.005")):
+        return
+    if source_value in {sale.land_surface_m2, sale.carrez_surface_m2, sale.habitable_surface_m2}:
+        return
+    sale.raw_payload["surface_source_conflict"] = {
+        "source_surface_m2": str(source_value),
+        "selected_surface_m2": str(selected),
+        "selected_surface_kind": sale.app_surface_kind,
+        "rule": "named_measurement_wins_over_unlabelled_source_counter",
+    }
+    _add_quality_flag(sale, "surface_source_conflict")
+
+
+def _prefer_carrez_over_smaller_generic_surface(sale: AuctionSale) -> None:
+    """Une Carrez supérieure à la surface du bien est impossible : la valeur nommée (Carrez) fait foi.
+
+    8f9e445d : « surface selon Loi Carrez au rez-de-chaussée de 62,95 m² … au 1er étage 48,30 m² surface totale
+    Loi Carrez 111,25 m² » affichait 62,95 m² (un niveau) avec une Carrez de 111,25 m².
+    """
+    carrez, generic = sale.carrez_surface_m2, sale.surface_m2
+    if carrez is None or generic is None or sale.habitable_surface_m2 is not None:
+        return
+    if carrez <= generic + max(Decimal("1"), generic * Decimal("0.02")):
+        return
+    sale.raw_payload["surface_reconciliation"] = {
+        "status": "resolved",
+        "rejected_surface_m2": str(generic),
+        "resolved_surface_m2": str(carrez),
+        "basis": "carrez_greater_than_generic_surface",
+    }
+    sale.surface_m2 = carrez
+    if sale.app_surface_m2 == generic:
+        sale.app_surface_m2 = None
+    _add_quality_flag(sale, "surface_conflict_resolved")
+
+
+def _drop_dwelling_surfaces_of_bare_land(sale: AuctionSale) -> None:
+    """Un terrain n'a pas de surface habitable ni Carrez : celle lue vient d'un autre lot du même dossier.
+
+    d788c7bd : lot de parcelles non bâties (« 4a 13ca … 5a 04ca ») affiché avec « la surface habitable du bien est
+    de 101,3 m2 », lue dans le procès-verbal du lot 1.
+    """
+    if sale.property_type != "land":
+        return
+    rejected = {
+        field: str(value)
+        for field in ("habitable_surface_m2", "carrez_surface_m2")
+        if (value := getattr(sale, field)) is not None
+    }
+    if not rejected:
+        return
+    if sale.surface_m2 is not None and sale.surface_m2 in {sale.habitable_surface_m2, sale.carrez_surface_m2}:
+        sale.surface_m2 = None
+    sale.habitable_surface_m2 = None
+    sale.carrez_surface_m2 = None
+    sale.raw_payload["dwelling_surface_on_land_withheld"] = rejected
+    _add_quality_flag(sale, "ambiguous_surface")
+
+
+def _sum_listed_land_parcels(sale: AuctionSale, text: str) -> None:
+    """Terrain vendu en plusieurs parcelles toutes citées : leur somme, pas la première (ni la dernière).
+
+    « Parcelle YE n°53 de 15 840 m² Parcelle Yi n°75 de 10 065 m² », « deux parcelles … Superficie : 912 et
+    871 m2 », « d'une superficie respective de 170 m² et 605 m² » (Cessions de l'État, audit du 03/11/2026).
+    Seule une valeur égale à l'une des parcelles citées est remplacée.
+    """
+    if sale.property_type != "land" or sale.land_surface_m2 is None:
+        return
+    parcels = parcel_m2_list(text)
+    total = sum(parcels, Decimal("0"))
+    if len(parcels) < 2 or sale.land_surface_m2 == total or sale.land_surface_m2 not in parcels:
+        return
+    sale.raw_payload["land_surface_reconciliation"] = {
+        "status": "resolved",
+        "rejected_land_surface_m2": str(sale.land_surface_m2),
+        "resolved_land_surface_m2": str(total),
+        "basis": "sum_of_all_listed_parcels",
+    }
+    sale.land_surface_m2 = total
+    _add_quality_flag(sale, "land_surface_conflict_resolved")
 
 
 def _record_conflicting_surface_values(sale: AuctionSale) -> list[Decimal]:
@@ -431,7 +542,9 @@ def _apply_document_consistency_corrections(sale: AuctionSale, text: str) -> Non
             confidence=0.78,
         )
 
-    if sale.occupancy_status in {"vacant", "free"} and _has_unresolved_occupancy_conflict(lowered):
+    if sale.occupancy_status in {"vacant", "free", "unknown"} and _has_unresolved_occupancy_conflict(
+        text, declared_vacant=sale.occupancy_status != "unknown"
+    ):
         evidence = _first_rule_evidence(
             text,
             (
@@ -484,27 +597,16 @@ def _text_describes_single_apartment(text: str) -> bool:
     )
 
 
-def _has_unresolved_occupancy_conflict(text: str) -> bool:
-    occupied_signal = re.search(
-        r"\b(?:actuellement\s+)?occup[ée]\b|"
-        r"\bsuivant\s+un\s+bail\b|"
-        r"\bbail\s+(?:meubl[ée]|d['’]habitation|en\s+cours)\b|"
-        r"\blocataire\b|"
-        r"\bloyer\s+mensuel\b",
-        text,
-        re.I,
-    )
-    if not occupied_signal:
-        return False
-    resolved_vacancy = re.search(
-        r"\blibre\s+de\s+toute\s+occupation\b|"
-        r"\ba\s+quitt[ée]\s+les\s+lieux\b|"
-        r"\bd[ée]part\s+effectif\b|"
-        r"\bconstat[ée]?\s+libre\b",
-        text,
-        re.I,
-    )
-    return not bool(resolved_vacancy)
+def _has_unresolved_occupancy_conflict(text: str, *, declared_vacant: bool) -> bool:
+    """A lease, a tenant or an occupant stated in the documents, against a « libre » that nothing confirms.
+
+    Read sentence by sentence (03/11/2026): « Information acquéreur-locataire », « Si l'immeuble est loué »
+    or « Le locataire a quitté les lieux » are not an occupation.
+    """
+    decision = occupancy_from_text(text)
+    if decision.reason == "conflict":
+        return True
+    return declared_vacant and decision.status in OCCUPIED_FAMILY
 
 
 def _first_rule_evidence(text: str, patterns: tuple[str, ...], *, window: int = 170) -> str | None:
@@ -587,14 +689,11 @@ def _extract_surface_kind(text: str, kind: str, sale: AuctionSale | None = None)
         # « …, soit superficie totale 1550 m² » conclut une liste de parcelles : c'est la contenance du terrain.
         if parcel_totals := parcel_total_surfaces(text):
             return parcel_totals[-1]
-        cadastral = list(re.finditer(r'\b(?:([0-9]+)\s*ha\s*)?([0-9]+)\s*a\s*([0-9]+)\s*ca\b', text, re.I))
-        values = {Decimal(m.group(1) or 0)*10000 + Decimal(m.group(2))*100 + Decimal(m.group(3)) for m in cadastral}
-        if len(values) > 1:
-            if sale is not None:
+        # Total écrit, liste complète additionnée ; jamais la première parcelle d'une liste (src/land_parcels.py).
+        if (parcels := read_parcel_land_surface(text)) is not None:
+            if parcels.value is None and sale is not None:
                 _add_quality_flag(sale, 'parcel_surface_scope_unverified')
-            return None
-        if values:
-            return values.pop()
+            return parcels.value
     for pattern in SURFACE_PATTERNS[kind]:
         match = next(
             (
@@ -623,13 +722,13 @@ def _extract_surface_kind(text: str, kind: str, sale: AuctionSale | None = None)
 
 
 def _fill_counts(sale: AuctionSale, text: str) -> None:
+    # Les pièces ne se déduisent plus des chambres (« chambres + séjour ») : sans compte écrit, pas de compte
+    # (audit du 03/11/2026 : « 4 Appartements Loués » -> 3 pièces, pièces = chambres).
     if sale.rooms_count is None:
         sale.rooms_count = _infer_rooms_count(text, sale)
-    if sale.bedrooms_count is None and re.search(r"\bstudio\b|\bT\s*1\b|\btype\s*1\b", text, re.I):
+    if sale.bedrooms_count is None and sale.rooms_count == 1 and _STUDIO_RE.search(text):
         sale.bedrooms_count = 0
-    if sale.rooms_count is not None and sale.bedrooms_count is not None and sale.bedrooms_count > sale.rooms_count:
-        sale.rooms_count = None
-        _add_quality_flag(sale, "room_count_conflict")
+    reconcile_room_counts(sale, text)
     if sale.bathrooms_count is None:
         sale.bathrooms_count = _extract_count(
             text,

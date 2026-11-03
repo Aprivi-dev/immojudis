@@ -244,9 +244,10 @@ def test_parse_avoventes_detail_quarantines_conflicting_lot_occupancy() -> None:
     details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/synthetic-occupancy")
     sale = normalize_sale({**details, "source_name": "avoventes", "source_url": "https://avoventes.fr/enchere/synthetic-occupancy"})
 
-    assert details["occupancy_status"] is None
+    # Contradictory lots are shown « À confirmer » (unknown), never as an absent occupancy (03/11/2026).
+    assert details["occupancy_status"] == "unknown"
     assert "ambiguous_occupancy" in details["quality_flags"]
-    assert sale.occupancy_status is None
+    assert sale.occupancy_status == "unknown"
 
 
 def test_catalogue_returned_for_removed_detail_is_not_parsed_as_property():

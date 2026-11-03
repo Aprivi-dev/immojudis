@@ -11,6 +11,7 @@ from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.listing_location import classify_address
 from src.normalize import clean_text, extract_department, parse_surface, strip_accents
+from src.occupancy_statements import occupancy_from_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.avoventes_extraction import (
@@ -389,9 +390,10 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
     quality_flags = ["ambiguous_occupancy"] if _detail_occupancy_is_ambiguous(description) else []
     own_header = re.split(r"[ÀA] propos du bien|Autres biens", raw_text, maxsplit=1, flags=re.I)[0]
     event = None
+    # « Vente non requise » : personne n'a requis la vente à l'audience, elle n'aura pas lieu.
     for pattern, value in ((r"vente\s+report[ée]e?", "postponed"),
                            (r"vente\s+annul[ée]e?", "cancelled"),
-                           (r"vente\s+retir[ée]e?", "withdrawn")):
+                           (r"vente\s+(?:retir[ée]e?|non\s+requise|radi[ée]e?)", "withdrawn")):
         if re.search(pattern, own_header, re.I):
             event = value
             break
@@ -573,6 +575,8 @@ def _extract_property_location(description: str | None, title: str | None) -> di
         text,
         re.I,
     ):
+        if _is_court_or_office_address(text, address_match.start("address")):
+            continue
         candidate = _trim_property_address(address_match.group("address"))
         if candidate:
             addresses.append(candidate)
@@ -615,6 +619,20 @@ def _extract_property_location(description: str | None, title: str | None) -> di
     return result
 
 
+# « Au TRIBUNAL JUDICIAIRE de LORIENT, Centre d'Affaires … 39 rue de la Villeneuve » : adresse de
+# l'audience (ou d'un cabinet), pas celle du bien.
+_COURT_OR_OFFICE_CONTEXT = re.compile(
+    r"tribunal|palais\s+de\s+justice|juge\s+de\s+l|audience|greffe|barreau|avocat|cabinet\s+(?:d['’]|de\s+m)|huissier|"
+    r"commissaire|si[eè]ge\s+social|domicil|demeurant",
+    re.I,
+)
+
+
+def _is_court_or_office_address(text: str, start: int) -> bool:
+    sentence = re.split(r"[.!?;]\s|\n", text[max(0, start - 200) : start])[-1]
+    return bool(_COURT_OR_OFFICE_CONTEXT.search(sentence))
+
+
 def _looks_like_street_city_candidate(text: str, match: re.Match[str], raw_city: str) -> bool:
     """Reject a city match that is a fragment of a numbered street address."""
 
@@ -630,14 +648,15 @@ def _looks_like_street_city_candidate(text: str, match: re.Match[str], raw_city:
         default=-1,
     )
     prefix = prefix_window[separator + 1 :]
-    return bool(
-        re.search(
-            rf"\b\d{{1,4}}(?:\s*(?:bis|ter))?(?:\s+et\s+\d{{1,4}})?\s+"
-            rf"(?:{_STREET_KIND})\b[^,;()\n]{{0,100}}$",
-            prefix,
-            re.I,
-        )
+    street = re.search(
+        rf"\b\d{{1,4}}(?:\s*(?:bis|ter))?(?:\s+et\s+\d{{1,4}})?\s+"
+        rf"(?:{_STREET_KIND})\b[^,;()\n]{{0,100}}$",
+        prefix,
+        re.I,
     )
+    # « 39 rue de la Villeneuve – 56100 LORIENT … Commune de LANGUIDIC (56440) » : la rue est déjà close
+    # par son code postal, la commune qui suit n'en est pas un fragment.
+    return bool(street) and not re.search(r"\b\d{5}\b", street.group(0))
 
 
 def _clean_city_candidate(value: str | None) -> str | None:
@@ -652,7 +671,8 @@ def _clean_city_candidate(value: str | None) -> str | None:
     # "LE PONT DE BEAUVOISIN".
     parts = re.split(r"\b(?:à|a)\s+", city, flags=re.I)
     city = parts[-1] if parts else city
-    city = re.sub(r"^(?:sur\s+la\s+commune\s+de|commune\s+de)\s+", "", city, flags=re.I)
+    # « COMMUNE D'HENNEBONT », « (LIQUIDATION) JUDICIAIRE COMMUNE DE FORT DE FRANCE » : la commune suit.
+    city = re.split(r"\bcommune\s+(?:de\s+|d['’]\s*)", city, flags=re.I)[-1]
     return clean_text(city)
 
 
@@ -836,9 +856,18 @@ def _is_generic_title(value: object | None) -> bool:
     return text is None or text.lower() in {"autres", "autre", "bien", "vente aux enchères"}
 
 
+# En-tête de carte « 176 Kermat Saint-Germain, 56440 Languidic, France » : l'adresse du bien.
+_HEADER_ADDRESS = re.compile(r"[^,()€]{2,120},\s*\d{5}\s+[^,()€\d]{2,60}(?:,\s*France)?", re.I)
+
+
 def _extract_address(lines: list[str]) -> str | None:
+    """Adresse de la carte : l'en-tête « voie, CP Commune, France », jamais le titre « … (56700) »."""
     for line in lines:
-        if re.search(r"\b\d{5}\b", line):
+        if _HEADER_ADDRESS.fullmatch(line):
+            return line
+    for line in lines:
+        # Le titre de l'annonce cite la commune avec son code postal entre parenthèses : pas une adresse.
+        if re.search(r"\b\d{5}\b", line) and not re.search(r"\(\d{5}\)|€|mise à prix|date de", line, re.I):
             return line
     return None
 
@@ -974,8 +1003,8 @@ def _extract_detail_visit_dates(soup: BeautifulSoup, raw_text: str) -> list[str]
         if container is None:
             continue
         text = clean_text(container.get_text(" ", strip=True)) or ""
-        value = re.sub(r"^visites?\s*:?\s*", "", text, flags=re.I)
-        if value:
+        value = re.sub(r"^visites?[\s:]*", "", text, flags=re.I)
+        if _has_visit_content(value):
             return [value]
 
     lines = [clean_text(part) for part in raw_text.splitlines() if clean_text(part)]
@@ -1114,51 +1143,12 @@ def _extract_detail_land_surface(*values: object | None) -> str | None:
 
 
 def _extract_detail_occupancy_status(description: str | None) -> str | None:
-    """Use only the target description and keep mixed lot statuses unknown."""
-
-    text = strip_accents(clean_text(description) or "").lower()
-    if not text:
-        return None
-    vacant, rented, occupied = _detail_occupancy_signals(text)
-    if vacant and (rented or occupied):
-        return None
-    if rented:
-        return "rented"
-    if vacant:
-        return "vacant"
-    if occupied:
-        return "occupied"
-    return None
+    """Use only the target description; mixed lot statuses or hedged wording stay ``unknown``."""
+    return occupancy_from_text(description).status
 
 
 def _detail_occupancy_is_ambiguous(description: str | None) -> bool:
-    text = strip_accents(clean_text(description) or "").lower()
-    if not text:
-        return False
-    vacant, rented, occupied = _detail_occupancy_signals(text)
-    return vacant and (rented or occupied)
-
-
-_DETAIL_NEGATED_OCCUPIED_PATTERN = (
-    r"\b(?:ne\s+|n['’])?(?:est|sont)\s+pas\s+occupe(?:e|es|s)?\b"
-)
-
-
-def _detail_occupancy_signals(text: str) -> tuple[bool, bool, bool]:
-    vacant = bool(
-        re.search(
-            rf"\binoccupe(?:e|es|s)?\b|{_DETAIL_NEGATED_OCCUPIED_PATTERN}|"
-            r"\bvide(?:s)?\s+de\s+toute\s+occupation\b|\bbien\s+libre\b",
-            text,
-        )
-    )
-    rented = bool(re.search(r"\blou(?:e|es|ee|ees)?\b|\bbail\b|\blocataire\b", text))
-    # Remove only the negated occurrences before looking for a positive
-    # ``occupé`` signal.  This keeps "n'est pas occupé" vacant while still
-    # flagging a description that also contains another occupied component.
-    positive_occupancy_text = re.sub(_DETAIL_NEGATED_OCCUPIED_PATTERN, "", text)
-    occupied = bool(re.search(r"\boccupe(?:e|es|s)?\b", positive_occupancy_text))
-    return vacant, rented, occupied
+    return occupancy_from_text(description).reason in {"conflict", "mixed"}
 
 
 def _extract_detail_parking_count(raw_text: str) -> int | None:
@@ -1252,5 +1242,10 @@ def _extract_visit_dates(text: str) -> list[str]:
     )
     if not match:
         return []
-    visits = clean_text(match.group(1))
-    return [visits] if visits else []
+    visits = clean_text(match.group(1).lstrip(" :\n"))
+    return [visits] if _has_visit_content(visits) else []
+
+
+def _has_visit_content(value: str | None) -> bool:
+    """« VISITES : » laissé vide sur la fiche donne « : » : ce n'est jamais une visite."""
+    return bool(value and re.search(r"[0-9A-Za-zÀ-ÿ]", value) and not value.lstrip().startswith("%"))

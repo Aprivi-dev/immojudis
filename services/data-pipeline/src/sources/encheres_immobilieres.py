@@ -15,7 +15,8 @@ from src.catalogue_proof import public_page_proof
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text
 from src.listing_location import extract_adresse_du_bien
-from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
+from src.normalize import clean_text
+from src.occupancy_statements import occupancy_status_from_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
@@ -1177,28 +1178,8 @@ def _sale_status(adjudication_price: object | None, ended: object | None) -> str
 
 
 def _occupancy_status(*values: str | None) -> str | None:
-    text = strip_accents(" ".join(value for value in (clean_text(v) for v in values) if value)).lower()
-    if not text:
-        return None
-    if re.search(r"sans\s+droit\s+ni\s+titre|squat", text):
-        return "squatted"
-    if re.search(r"proprietaire\s+occupant|occupe(?:e?s?)?\s+par\s+le\s+proprietaire", text):
-        return "owner_occupied"
-    if re.search(
-        r"libre\s+(?:de\s+toute\s+occupation|d['’]occupation)|"
-        r"bien\s+libre|"
-        r"\b(?:appartement|maison|immeuble|local|logement)\s+libre\b|"
-        r"inoccupe(?:e?s?)?|vacant",
-        text,
-    ):
-        return "vacant"
-    if no_lease_status := no_lease_occupancy_status(text):
-        return no_lease_status
-    if has_rented_occupancy_signal(text):
-        return "rented"
-    if re.search(r"\boccupe(?:e?s?)?\b", text):
-        return "occupied"
-    return None
+    # « occupés par la partie saisie » (propriétaire), « Le locataire a quitté les lieux » (libre) : 03/11/2026.
+    return occupancy_status_from_text(*values)
 
 
 def _join_address(address: Any, postal_code: Any, city: Any) -> str | None:

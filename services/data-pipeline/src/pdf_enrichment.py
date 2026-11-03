@@ -112,7 +112,9 @@ MAX_DOCUMENT_REDIRECTS = 5
 
 # Deterministic PDF facts include page/document candidates and multi-lot
 # decisions; bump this marker when projection semantics change.
-DOCUMENT_FACTS_VERSION = "document_facts_v4_occupancy_dates_prices"
+# v5 (03/11/2026) : règles de l'audit qualité (surfaces, pièces, occupation, dates et prix des appels d'offres,
+# tribunal) ; toutes les ventes à pièces sont relues avec elles.
+DOCUMENT_FACTS_VERSION = "document_facts_v5_quality_audit"
 
 # Keep a fixed margin for queue finalization after a bounded PDF pass.
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0

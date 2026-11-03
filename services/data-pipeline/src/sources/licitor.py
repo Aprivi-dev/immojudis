@@ -17,9 +17,8 @@ from src.information_sufficiency import excluded_contact_reason
 from src.normalize import (
     clean_text,
     extract_department,
-    has_rented_occupancy_signal,
-    no_lease_occupancy_status,
 )
+from src.occupancy_statements import occupancy_status_from_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
@@ -923,36 +922,8 @@ def _extract_property_type(title: str | None, detail_text: str | None) -> str | 
 
 
 def _extract_occupancy_status(raw_text: str) -> str | None:
-    lowered = raw_text.lower()
-    occupied_word = r"(?:occup(?:e|é)(?:e|s|es)?|occupant(?:e|s|es)?)"
-    vacant = bool(
-        re.search(
-            rf"\b(?:libre|in{occupied_word}|non\s+{occupied_word}|vacant(?:e|s|es)?)\b",
-            lowered,
-        )
-    )
-    rented = has_rented_occupancy_signal(lowered)
-    occupied = bool(re.search(rf"\b{occupied_word}\b", lowered))
-    partial_or_ambiguous = bool(
-        re.search(
-            r"\b(?:partiellement|une\s+partie|partie\s+à\s+usage|les\s+biens|plusieurs\s+biens|r[ée]union\s+des\s+lots?)\b",
-            lowered,
-            re.I,
-        )
-    )
-    if (vacant and (rented or occupied)) or (rented and occupied) or (partial_or_ambiguous and (vacant or rented or occupied)):
-        return "unknown"
-    if re.search(rf"\b{occupied_word}\s+sans\s+bail\b", lowered):
-        return "occupied"
-    if no_lease_status := no_lease_occupancy_status(lowered):
-        return no_lease_status
-    if rented:
-        return "rented"
-    if vacant:
-        return "vacant"
-    if occupied:
-        return "occupied"
-    return None
+    # Une phrase lue à la fois : « Les biens sont, semble-t-il, occupés » n'est pas un statut certain (03/11/2026).
+    return occupancy_status_from_text(raw_text)
 
 
 def _extract_description(soup: BeautifulSoup, title: str | None) -> str | None:

@@ -33,6 +33,7 @@ from src.department_names import (
     departments_named_in_text,
 )
 from src.normalize import clean_text, extract_department
+from src.occupancy_statements import read_occupancy_statements, resolve_occupancy
 from src.pdf_document_types import classify_document_type
 
 FEATURES_SCHEMA_VERSION = "licitor_features_v1"
@@ -112,10 +113,6 @@ _CONDITION_CUE_RE = re.compile(
     r"précédemment|precedemment|adjug|mise\s+à\s+prix|émoluments|emoluments|montant|bâtonnier|batonnier",
     re.I,
 )
-_OCCUPANCY_LINE_RE = re.compile(
-    r"\b(?:occup\w*|inoccup\w*|libres?|lou[ée]e?s?|vacant\w*|vides?|bail|squatt\w*)\b", re.I
-)
-_PARTIAL_RE = re.compile(r"\b(?:partiellement|une\s+partie|seul|un\s+libre|en\s+partie)\b", re.I)
 _LAND_TITLE_RE = re.compile(r"\b(?:terrains?|parcelles?|bois|prés?|pâtures?|landes?|vignes?)\b", re.I)
 
 
@@ -216,10 +213,9 @@ class LicitorLot:
         return " ".join(part for part in (self.title, self.description) if part)
 
     def occupancy_lines(self) -> list[str]:
-        return [
-            paragraph for paragraph in self.paragraphs
-            if len(paragraph) <= 110 and _OCCUPANCY_LINE_RE.search(paragraph) and not _SURFACE_RE.search(paragraph)
-        ]
+        # Une phrase d'occupation compte aussi dans un long paragraphe (« Un appartement de 39,85 m² … Les lieux sont
+        # en l'état inhabitables et inhabités ») : au-delà de 110 caractères elle était ignorée (audit 03/11/2026).
+        return [paragraph for paragraph in self.paragraphs if read_occupancy_statements(paragraph)]
 
     def surfaces(self) -> list[dict[str, str]]:
         found: list[dict[str, str]] = []
@@ -582,29 +578,10 @@ def parse_licitor_page(page_text: str | None) -> LicitorPage:
     return page
 
 
-def _statement_status(line: str) -> str | None:
-    """Statut d'une phrase d'occupation courte (« Occupé », « Les biens sont inoccupés », « Loué »)."""
-    text = _fold(line)
-    text = re.sub(r"\bnon\s+occupe\w*", " inoccupe ", text)
-    found = set()
-    if re.search(r"\b(?:libres?|inoccupe\w*|vacant\w*|vides?|inhabite\w*)\b", text):
-        found.add("vacant")
-    if re.search(r"\b(?:louee?s?|bail|locataires?)\b", text):
-        found.add("rented")
-    if re.search(r"\b(?:occupee?s?|squatt\w*)\b", text):
-        found.add("occupied")
-    if found == {"rented", "occupied"} or (found == {"occupied"} and re.search(r"\bloyers?\b", text)):
-        return "rented"  # « Occupée (loyer de 550 €) » : occupé par un locataire
-    return found.pop() if len(found) == 1 else None
-
-
 def _occupancy(lot: LicitorLot) -> tuple[str | None, list[str]]:
-    """Statut d'occupation déclaré par les phrases d'occupation du lot, s'il est univoque."""
+    """Statut d'occupation déclaré par le lot : ``unknown`` s'il est prudent, partiel ou contradictoire."""
     lines = lot.occupancy_lines()
-    statuses = {_statement_status(line) for line in lines}
-    if not lines or len(statuses) != 1 or None in statuses or any(_PARTIAL_RE.search(line) for line in lines):
-        return None, lines
-    return statuses.pop(), lines
+    return resolve_occupancy(read_occupancy_statements(*lines)).status, lines
 
 
 def _prior_adjudication(text: str) -> dict[str, Any] | None:
