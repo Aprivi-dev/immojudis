@@ -12,10 +12,19 @@ from dateutil import parser
 
 from src.admission import is_date_only, licitor_lot_count, sale_date_has_passed
 from src.department_inference import department_from_geocode_evidence
+from src.land_parcels import read_parcel_land_surface
 from src.listing_location import recover_listing_address, reject_monetary_address
 from src.models import INTERNAL_CONTACTS_KEY, AuctionSale
 from src.multi_unit_type import is_multi_unit_building_text
 from src.null_text import clean_text
+from src.occupancy_statements import (
+    OCCUPANCY_ENUM,
+    occupancy_from_text,
+    occupancy_status_from_text,
+    page_text,
+    reconcile_occupancy,
+    vacancy_lacks_evidence,
+)
 from src.room_counts import (
     _parse_count_token,
     extract_bedrooms_count_from_text,
@@ -23,6 +32,7 @@ from src.room_counts import (
     parse_bedrooms_count,
     parse_parking_count,
     parse_rooms_count,
+    source_rooms_counter,
 )
 from src.sale_date_plausibility import reject_implausible_sale_date
 from src.surface_text_recovery import extra_built_surface_from_text
@@ -63,6 +73,7 @@ PROPERTY_TYPE_MAP = {
     "house": "house",
     "maison": "house",
     "villa": "house",
+    "chalet": "house", "pavillon": "house",  # « un CHALET de 180m2 », « Un pavillon … à usage de laboratoire »
     "building": "building",
     "batiment": "building",
     "immeuble": "building",
@@ -70,6 +81,7 @@ PROPERTY_TYPE_MAP = {
     "terrain": "land",
     "commercial": "commercial",
     "magasin": "commercial",
+    "local a usage d'habitation": "apartment", "local a usage d’habitation": "apartment",  # logement, pas un commerce
     "local": "commercial",
     "commerce": "commercial",
     "parking": "parking",
@@ -229,7 +241,7 @@ def normalize_lawyer_contact(value: object | None) -> str | None:
 def normalize_visit_text(value: object | None) -> str | None:
     """Normalize compact French visit text and remove dangling conjunctions."""
     text = clean_text(value)
-    if not text:
+    if not text or not re.search(r"\w", text):  # « : » d'un champ « VISITES : » vide n'est pas une visite
         return None
     text = re.sub(r"(?:\s*[,;|]\s*)?\b(?:et|ou)\b\s*$", "", text, flags=re.I).strip(" ,;|")
 
@@ -587,9 +599,9 @@ def _parse_complete_date(text: str) -> datetime | None:
 # stationnement n° 12 ». « Appartement avec box » ou « maison et garage » gardent leur type (le nom principal est
 # le logement) ; un libellé qui parle aussi d'un logement, d'un local ou d'un terrain n'est pas un stationnement.
 _PARKING_HEAD_RE = re.compile(
-    r"^(?:(?:un|une|le|la|l|ce|cette|des|les)\s+)?(?:\d+\s+)?"
-    r"(?:box(?:es)?|garages?|parkings?|stationnements?|(?:places?|emplacements?|lots?)\s+(?:de\s+|d['’]\s*)?"
-    r"(?:parking|stationnement|garage))\b"
+    r"^(?:(?:un|une|le|la|l|ce|cette|des|les)\s+)?(?:(?:\d+|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+)?"
+    r"(?:box(?:es)?|garages?|parkings?|stationnements?|(?:places?|emplacements?|lots?)\s+(?:couverts?\s+)?(?:de\s+|d['’]\s*)?"
+    r"(?:parking|stationnement|garage|pour\s+(?:voitures?|vehicules?)))\b"  # « Dix emplacements couverts pour voiture »
 )
 _NOT_PARKING_RE = re.compile(
     r"\b(?:appartements?|maisons?|villas?|studios?|immeubles?|commerces?|commerciaux?|locaux|local|terrains?|"
@@ -646,7 +658,7 @@ def normalize_sale_property_type(raw_sale: dict[str, object]) -> str:
         r"^(?:un[e]?\s+)?(?:appartement|studio|maison|villa)\b", detail_title, re.I
     ):
         return normalize_property_type(detail_title)
-    if property_type in {"apartment", "other", "unknown"} and any(
+    if property_type in {"apartment", "mixed", "other", "unknown"} and any(
         is_multi_unit_building_text(strip_accents(clean_text(raw_sale.get(key)) or "").lower())
         for key in ("title", "description")
     ):
@@ -685,10 +697,13 @@ def normalize_occupancy_status(value: object | None) -> str | None:
     than letting raw text reach the insert and fail the constraint.
     """
     text = strip_accents(clean_text(value) or "").lower()
-    if not text:
-        return None
+    if not text or text in OCCUPANCY_ENUM:
+        return text or None
+    # A sentence is read as a statement (03/11/2026): « semble inoccupé », « partiellement occupé » -> unknown.
+    if (status := occupancy_status_from_text(value)) or len(text) > 40:
+        return status
     # Order matters: check the most specific labels before the generic "occup".
-    if "squat" in text:
+    if re.search(r"(?<!anti-)(?<!anti )\bsquat", text):
         return "squatted"
     if "proprietaire" in text or "owner" in text:
         return "owner_occupied"
@@ -713,7 +728,8 @@ def has_rented_occupancy_signal(text: str) -> bool:
     text = strip_accents(text).lower()
     # « tenant compte des critères » is French, not the English label « tenant » (02/11/2026: a bid-scoring
     # table of a State sale read as « rented », which hid the « cédé libre » of the same document).
-    if re.search(r"\b(?:locataire|rented|leased|loyer)\b|\btenant\b(?!\s+(?:compte|et\b|lieu|a\b|au\b|aux\b|de\b|du\b|des\b|sur\b|dans\b|en\b))", text):
+    # « tenant son audience » / « tenant compte » are French participles; only a bare English label is a tenant.
+    if re.search(r"\b(?:locataire|rented|leased)\b|\bloyer\b(?!\s+modere)|^tenants?$|\btenant[- ]occupied\b", text):
         return True
     if re.search(r"\bloue(?:e|s|es)?\b", text):
         return True
@@ -948,6 +964,8 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             raw_sale.get("raw_text"),
             source_text,
         )
+    elif rooms_count is None and property_type == "mixed" and "multi_lot_sale" not in (raw_sale.get("quality_flags") or []):
+        rooms_count = source_rooms_counter(raw_sale.get("raw_text"), source_text)  # compteur de la fiche seul
     bedrooms_count = parse_bedrooms_count(
         _field_or_source_block(
             raw_sale,
@@ -1074,18 +1092,15 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     )
     if parking_count is None:
         parking_count = _extract_parking_count_from_text(source_text)
-    occupancy_status = normalize_occupancy_status(
-        _field_or_source_block(
-            raw_sale,
-            "occupancy_status",
-            "occupation",
-            "critere_occupation_du_bien",
-            "situation_locative",
-            "situationLocative",
-        )
+    declared_occupancy = _field_or_source_block(
+        raw_sale, "occupancy_status", "occupation", "critere_occupation_du_bien", "situation_locative", "situationLocative"
     )
-    if occupancy_status is None and not _suppress_avoventes_occupancy_inference(raw_sale):
-        occupancy_status = _extract_occupancy_status_from_text(source_text)
+    occupancy_status = normalize_occupancy_status(declared_occupancy)
+    occupancy_text = None if _suppress_avoventes_occupancy_inference(raw_sale) else occupancy_from_text(page_text(source_text))
+    if occupancy_text is not None:  # a page that contradicts its own label is not a certain status (03/11/2026)
+        occupancy_status = reconcile_occupancy(occupancy_status, occupancy_text)
+    if vacancy_lacks_evidence(raw_sale, occupancy_status, occupancy_text):
+        occupancy_status = None
     source_energy_diagnostics = _source_energy_diagnostics(raw_sale)
     if source_energy_diagnostics:
         raw_sale["source_energy_diagnostics"] = source_energy_diagnostics
@@ -1492,7 +1507,8 @@ def _has_conflicting_land_unit_evidence(text: str, value: Decimal | None) -> boo
     if value is None or not text:
         return False
     candidates = _land_unit_candidates(text)
-    return bool(candidates and value not in candidates)
+    parcels = read_parcel_land_surface(text)
+    return bool(candidates and value not in candidates and (parcels is None or parcels.value != value))
 
 
 def _land_unit_candidates(text: str) -> set[Decimal]:
@@ -1674,7 +1690,7 @@ def _skip_contextless_postal_code_fallback(raw_sale: dict[str, object], address:
     source_name = strip_accents(clean_text(raw_sale.get("source_name")) or "").lower()
     if source_name in {"cessions_etat", "encheres_publiques", "petites_affiches"}:
         return True
-    return bool(address and source_name == "licitor")
+    return bool(address and source_name in {"licitor", "avoventes"})  # avoventes : « dossier-PVD 19683 DPE.pdf »
 
 
 def _postal_code_is_starting_price_without_location(
@@ -1799,17 +1815,9 @@ def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:
 
 def _extract_land_surface_from_text(*values: object) -> Decimal | None:
     text = _joined_text(*values)
-    matches = list(re.finditer(
-        r"\b(?:([0-9]+)\s*ha\s*)?([0-9]+)\s*a\s*([0-9]+)\s*ca\b",
-        text,
-        re.I,
-    ))
-    if len(matches) > 1:
-        # Several cadastral parcels require scoped measurements, not the first value.
-        return None
-    if matches:
-        match = matches[0]
-        return Decimal(match.group(1) or 0) * Decimal('10000') + Decimal(match.group(2)) * Decimal('100') + Decimal(match.group(3))
+    # Total écrit, liste complète additionnée, sinon rien (jamais la première parcelle) : src/land_parcels.py.
+    if (parcels := read_parcel_land_surface(text)) is not None:
+        return parcels.value
     patterns = (
         rf"\b(?:terrain|parcelle|jardin)\s+(?:de\s+|d['’]une\s+surface\s+de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
         rf"\bcadastr[ée]e?.{{0,120}}?\bpour\s+un\s+total\s+de\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
@@ -1932,28 +1940,7 @@ def _extract_parking_count_from_text(*values: object) -> int | None:
 
 
 def _extract_occupancy_status_from_text(*values: object) -> str | None:
-    text = strip_accents(_joined_text(*values)).lower()
-    if not text:
-        return None
-    if re.search(r"sans\s+droit\s+ni\s+titre|squat", text):
-        return "squatted"
-    if re.search(r"proprietaire\s+occupant|occupe(?:e?s?)?\s+par\s+le\s+proprietaire", text):
-        return "owner_occupied"
-    if has_rented_occupancy_signal(text):
-        return "rented"
-    if re.search(
-        r"libre(?:s)?\s+(?:de\s+toute\s+occupation|d['’]occupation)|"
-        r"bien\s+libre|"
-        r"\b(?:appartement|maison|immeuble|local|logement)\s+libre\b|"
-        r"inoccupe(?:e?s?)?|vacant",
-        text,
-    ):
-        return "vacant"
-    if no_lease_status := no_lease_occupancy_status(text):
-        return no_lease_status
-    if re.search(r"\boccupe(?:e?s?)?\b", text):
-        return "occupied"
-    return None
+    return occupancy_status_from_text(page_text(_joined_text(*values)))
 
 
 def _surface_evidence_for_value(text: str, value: Decimal | None) -> str | None:

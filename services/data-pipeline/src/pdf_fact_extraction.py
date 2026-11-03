@@ -17,17 +17,13 @@ from src.enrichment.surface_reasoning import (
 )
 from src.models import AuctionSale
 from src.normalize import (
-    SURFACE_VALUE_PATTERN,
     clean_text,
     extract_bedrooms_count_from_text,
     extract_rooms_count_from_text,
-    has_rented_occupancy_signal,
-    no_lease_occupancy_status,
     normalize_property_type,
     normalize_status,
     parse_french_datetime,
     parse_price,
-    parse_surface,
     source_sale_timezone,
     strip_accents,
 )
@@ -74,10 +70,30 @@ from src.pdf_fact_scope import (
 from src.pdf_fact_scope import (
     _pdf_surface_candidates_with_provenance as _scope_pdf_surface_candidates_with_provenance,
 )
-from src.pdf_occupancy import best_occupancy_statement, occupancy_statement_is_relevant, occupancy_statements_agree
+from src.pdf_occupancy import (
+    apply_pdf_occupancy,
+    occupancy_statement_is_relevant,
+    occupancy_statements_agree,
+    pdf_occupancy_status,
+)
 from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
 from src.pdf_sale_date_guard import reject_past_pdf_sale_date
 from src.pdf_starting_price import _extract_starting_price_with_evidence  # noqa: F401  (re-exported)
+from src.pdf_surface_patterns import (  # noqa: F401  (re-exported)
+    _cadastral_units_to_square_meters,
+    _extract_land_surface_candidates_with_evidence,
+    _extract_land_surface_with_evidence,
+    _extract_surface,
+    _extract_surface_candidates_with_evidence,
+    _extract_surface_with_evidence,
+    _has_land_surface_context,
+    _is_land_surface_evidence,
+    _is_surface_false_positive,
+    _land_surface_match_is_built,
+    _land_unit_candidate_rank,
+    _surface_measurement_scope,
+)
+from src.pdf_tribunal import apply_pdf_tribunal
 
 
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:
@@ -211,10 +227,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             )
             if sale.bedrooms_count is not None:
                 _pdf_record_candidate_projection(sale, "bedrooms_count", selected_bedrooms, fallback_evidence=combined[:300])
-    best_occupancy = None if occupancy_ambiguous else best_occupancy_statement(occupancy_candidates)
-    if not sale.occupancy_status and best_occupancy:
-        sale.occupancy_status = str(best_occupancy["value"])
-        _pdf_record_candidate_projection(sale, "occupancy_status", best_occupancy)
+    apply_pdf_occupancy(sale, occupancy_candidates, ambiguous=occupancy_ambiguous)
     timezone = source_sale_timezone(sale.raw_payload)
     offer_deadline = record_offer_deadline(sale, pdf_texts, complete_texts=complete_texts, local_timezone=timezone)
     if sale.sale_date is None and offer_deadline and sale.source_name in OFFER_PROCEDURE_SOURCES:
@@ -244,6 +257,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             sale.raw_payload["pdf_visit_dates_extraction"] = visit_dates
             _pdf_record_fact_projection(sale, ["visit_dates"], candidate=visit_dates, payload_keys=("pdf_visit_dates_extraction",))
     apply_pdf_address(sale, pdf_texts)
+    apply_pdf_tribunal(sale, pdf_texts)
     # The per-document extractor also handles plain string inputs. Do not fall
     # back to the sale-wide concatenation: class/value pairs from different
     # PDFs or pages are not one DPE record.
@@ -401,6 +415,7 @@ def _extract_surface_from_documents(pdf_texts: list[dict[str, object]] | list[st
         "page_confidence": best.get("page_confidence"),
         "extraction_method": best.get("extraction_method"),
         "surface_scope": best.get("surface_scope"),
+        "match_text": best.get("match_text") or "",
         "lot_labels": best.get("lot_labels", []),
         "aggregate": best.get("aggregate", False),
         "aggregate_sources": best.get("aggregate_sources", []),
@@ -692,7 +707,8 @@ def _land_surface_document_rank(document_type: str) -> int:
 def _assign_pdf_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
     value = surface["value"]
     evidence = str(surface.get("evidence") or "")
-    lowered = evidence.lower()
+    # La nature (habitable, Carrez) se lit dans le libellé de la valeur, pas dans les 280 caractères autour.
+    lowered = str(surface.get("match_text") or evidence).lower()
     decimal_value = value if isinstance(value, Decimal) else Decimal(str(value))
     if _is_land_surface_evidence(evidence):
         _assign_pdf_land_surface(sale, surface)
@@ -891,134 +907,6 @@ def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]])
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
     return path
-
-def _extract_surface(text: str) -> Decimal | None:
-    result = _extract_surface_with_evidence(text)
-    return result["value"] if result else None
-
-def _extract_surface_with_evidence(text: str) -> dict[str, Decimal | str] | None:
-    candidates = _extract_surface_candidates_with_evidence(text)
-    return candidates[0] if candidates else None
-
-def _extract_surface_candidates_with_evidence(text: str) -> list[dict[str, Decimal | str]]:
-    patterns = (
-        rf"(?:surface|superficie)\s+de\s+r[ée]f[ée]rence\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
-        rf"surface\s+(?:privative\s+)?(?:loi\s+)?carrez(?:\s+totale)?\s*:?\s*(?:de\s+)?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
-        rf"(?:surface\s*(?:habitable|privative|utile|totale|carrez|au\s+sol\s+totale)?|superficie(?:\s+(?:carrez|habitable|privative))?)\s*:?\s*(?:de\s+)?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
-        rf"(?:surface\s+(?:habitable|privative|utile|totale|carrez)?|superficie(?:\s+carrez)?).{{0,80}}?\b(?:soit|est\s+de|de)\s+{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
-        rf"(?:mesurage\s+(?:loi\s+)?carrez|loi\s+carrez|surface\s+(?:privative\s+)?(?:loi\s+)?carrez|superficie\s+(?:privative\s+)?(?:loi\s+)?carrez)\s*:?\s*(?:de\s+)?(?:environ\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
-        rf"\b(?:appartement|maison|villa|logement|immeuble)\b[^.;:\n]{{0,30}}?(?:d['’]une\s+surface\s+de|de|d['’]environ|environ)\s+{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)",
-        rf"\b(?:d['’]\s*)?environ\s+{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b",
-        rf"{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²|\*)\s+(?:habitables?|de\s+surface|loi\s+carrez)",
-        rf"\btotal\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²|\*)",
-        rf"superficie\s*approximative\s*habitable\s*totale\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²|\?)",
-    )
-    candidates: list[dict[str, Decimal | str]] = []
-    seen: set[tuple[Decimal, str]] = set()
-    for pattern in patterns:
-        for match in re.finditer(pattern, text, re.I | re.S):
-            if _is_surface_false_positive(text, match.start(), match.end()):
-                continue
-            value = parse_surface(match.group(1))
-            if value is None:
-                continue
-            evidence = clean_text(text[max(0, match.start() - 120) : min(len(text), match.end() + 160)]) or ""
-            key = (value, _normalize_document_classifier_text(evidence))
-            if key in seen:
-                continue
-            seen.add(key)
-            candidates.append({"value": value, "evidence": evidence})
-    return candidates
-
-def _extract_land_surface_with_evidence(text: str) -> dict[str, Decimal | str] | None:
-    candidates = _extract_land_surface_candidates_with_evidence(text)
-    return candidates[0] if candidates else None
-
-def _extract_land_surface_candidates_with_evidence(text: str) -> list[dict[str, Decimal | str]]:
-    m2_patterns = (
-        rf"\b(?:surface|superficie)\s+(?:du\s+|de\s+la\s+)?(?:terrain|parcelle|jardin|cadastrale)\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b",
-        rf"\b(?:terrain|parcelles?|jardin)\b.{{0,140}}?\b(?:surface|superficie|contenance)\b.{{0,60}}?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b",
-        rf"\bcontenance(?:\s+(?:totale|cadastrale))?\b.{{0,100}}?{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b",
-        rf"\b{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)\b.{{0,80}}\b(?:de\s+terrain|terrain|parcelles?|jardin)\b",
-    )
-    candidates: list[dict[str, Decimal | str]] = []
-    seen: set[tuple[Decimal, str]] = set()
-    for pattern in m2_patterns:
-        for match in re.finditer(pattern, text, re.I | re.S):
-            if not _has_land_surface_context(text, match.start(), match.end()):
-                continue
-            if _land_surface_match_is_built(text, match):
-                continue
-            value = parse_surface(match.group(1))
-            if value is None:
-                continue
-            evidence = clean_text(text[max(0, match.start() - 120) : min(len(text), match.end() + 160)]) or ""
-            key = (value, _normalize_document_classifier_text(evidence))
-            if key in seen:
-                continue
-            seen.add(key)
-            candidates.append({"value": value, "evidence": evidence})
-
-    unit_patterns = (
-        r"\b(?P<ha>\d{1,5})\s*(?:ha|hectares?)\s*(?:(?P<a>\d{1,5})\s*(?:a|ares?))?\s*(?:(?P<ca>\d{1,2})\s*(?:ca|centiares?))?\b",
-        r"\b(?P<a>\d{1,5})\s*(?:a|ares?)\s*(?:(?P<ca>\d{1,2})\s*(?:ca|centiares?))?\b",
-    )
-    unit_candidates: list[dict[str, Decimal | str | int]] = []
-    for pattern in unit_patterns:
-        for match in re.finditer(pattern, text, re.I):
-            if not _has_land_surface_context(text, match.start(), match.end()):
-                continue
-            value = _cadastral_units_to_square_meters(match)
-            if value is None:
-                continue
-            evidence = clean_text(text[max(0, match.start() - 120) : min(len(text), match.end() + 160)]) or ""
-            unit_candidates.append(
-                {
-                    "value": value,
-                    "evidence": evidence,
-                    "rank": _land_unit_candidate_rank(text, match.start(), match.end()),
-                }
-            )
-    if unit_candidates:
-        unit_candidates.sort(key=lambda item: int(item["rank"]), reverse=True)
-        if len(unit_candidates) == 1 or int(unit_candidates[0]["rank"]) >= 40:
-            for candidate in unit_candidates:
-                value = candidate["value"]
-                evidence = str(candidate["evidence"])
-                key = (value, _normalize_document_classifier_text(evidence))
-                if key in seen:
-                    continue
-                seen.add(key)
-                candidates.append({"value": value, "evidence": evidence})
-    return candidates
-
-def _land_surface_match_is_built(text: str, match: re.Match[str]) -> bool:
-    value_start = match.start(1)
-    before_value = text[max(0, value_start - 100) : value_start]
-    if not re.search(
-        r"\b(?:habitable|carrez|privative|utile|b[âa]tie|surface\s+de\s+r[ée]f[ée]rence)\b",
-        before_value,
-        re.I,
-    ):
-        return False
-    return not re.search(r"\b(?:terrain|parcelle|jardin|cadastrale)\b", before_value[-70:], re.I)
-
-def _land_unit_candidate_rank(text: str, start: int, end: int) -> int:
-    before = _normalize_document_classifier_text(text[max(0, start - 120) : start])
-    after = _normalize_document_classifier_text(text[end : min(len(text), end + 100)])
-    context = f"{before} {after}"
-    rank = 0
-    if re.search(r"\b(?:parcelle|terrain|jardin)\b", before[-90:]):
-        rank += 60
-    if re.search(r"\b(?:parcelle|terrain|jardin)\b", after[:70]):
-        rank += 40
-    if re.search(r"\b(?:contenance|total|totale)\b", context):
-        rank += 45
-    if re.search(r"\bjouissance\s+(?:exclusive|privative)\b", before):
-        rank += 20
-    if re.search(r"\b(?:section|cadastre|cadastree|tableau)\b", context):
-        rank -= 15
-    return rank
 
 def _extract_energy_diagnostics_with_evidence(text: str) -> dict[str, object] | None:
     if not clean_text(text):
@@ -1290,77 +1178,6 @@ def _normalize_visit_candidate(text: str) -> str | None:
     value = re.sub(r"^date\s+des\s+visites?\s*:\s*", "", value, flags=re.I).strip()
     return value.rstrip(" .;")
 
-def _cadastral_units_to_square_meters(match: re.Match[str]) -> Decimal | None:
-    groups = match.groupdict()
-    hectares = int(groups.get("ha") or 0)
-    ares = int(groups.get("a") or 0)
-    centiares = int(groups.get("ca") or 0)
-    total = hectares * 10000 + ares * 100 + centiares
-    return Decimal(total) if total > 0 else None
-
-def _has_land_surface_context(text: str, start: int, end: int) -> bool:
-    context = _normalize_document_classifier_text(text[max(0, start - 180) : min(len(text), end + 180)])
-    return bool(
-        re.search(
-            r"\b(?:terrain|parcelles?|cadastr(?:e|ee|al|ale)|contenance|surface\s+cadastrale|superficie\s+cadastrale|jardin)\b",
-            context,
-        )
-    )
-
-def _is_land_surface_evidence(evidence: str) -> bool:
-    text = _normalize_document_classifier_text(evidence)
-    if re.search(
-        r"\b(?:habitable|habitables|carrez|loi\s+carrez|surface\s+privative|surface\s+de\s+reference|batie|bati)\b",
-        text,
-    ):
-        return False
-    return bool(
-        re.search(
-            r"\b(?:surface|superficie)\s+(?:du\s+|de\s+la\s+)?(?:terrain|parcelle|jardin|cadastrale)\b|"
-            r"\b(?:terrain|parcelles?|jardin)\b.{0,100}\b(?:surface|superficie|contenance)\b|"
-            r"\bcontenance(?:\s+(?:totale|cadastrale))?\b.{0,100}\b(?:m\s*(?:2|²)|ha|ares?|centiares?)\b",
-            text,
-        )
-    )
-
-def _is_surface_false_positive(text: str, start: int, end: int) -> bool:
-    context = text[max(0, start - 160) : min(len(text), end + 60)]
-    matched = text[start:end]
-    if re.search(r"\b(?:habitable|carrez|privative|surface\s+de\s+r[ée]f[ée]rence)\b", matched, re.I):
-        return False
-    if re.search(r"\b(?:appartement|maison|villa|logement|immeuble)\b", matched, re.I):
-        return False
-    if re.search(r"\b(?:surface|superficie)\s+de\s+r[ée]f[ée]rence\b", context, re.I):
-        return False
-    # Energy figures often appear in the same diagnostic page as the asset
-    # surface.  Only reject a surface when the energy marker is local to the
-    # matched measurement; a distant DPE annex must not erase it.
-    energy_context = text[max(0, start - 40) : min(len(text), end + 40)]
-    if re.search(r"\bkwh\b|kg\s*co2|\bges\b|performance\s+[ée]nerg[ée]tique", energy_context, re.I):
-        return True
-    prefix = text[max(0, start - 120) : start]
-    return bool(
-        re.search(
-            r"\b(?:mur|paroi|plafond|toiture|fa[çc]ade|isolant|isolation|plancher|baie|fen[eê]tre|porte|garage|cave|parking)\b",
-            prefix,
-            re.I,
-        )
-    )
-
-def _surface_measurement_scope(text: str, evidence: str) -> str:
-    context = _normalize_document_classifier_text(f"{evidence} {text}")
-    if re.search(
-        r"\b(?:mesurage|calcul\s+de\s+superficie).{0,80}\b(?:incomplet|partiel|pas\s+pu|n(?:'|’)ont\s+pu)\b|"
-        r"\bn(?:'|’)ont\s+pu\s+[eê]tre\s+r[ée]alis[ée]s?\s+dans\s+leur\s+int[ée]gralit[ée]\b|"
-        r"\bpi[eè]ces?\s+(?:non\s+)?(?:mesur[ée]es?|accessibles?)\b",
-        context,
-    ):
-        return "partial"
-    evidence_text = _normalize_document_classifier_text(evidence)
-    if "carrez" in evidence_text and len(re.findall(r"\bencombrement\s+trop\s+important\b", context)) >= 2:
-        return "partial"
-    return "total"
-
 def _extract_rooms_count(text: str) -> int | None:
     rooms = extract_rooms_count_from_text(text)
     if rooms is not None:
@@ -1384,51 +1201,7 @@ def _is_rooms_false_positive(text: str, start: int, end: int) -> bool:
     return bool(re.search(r"\barticle\b|\bpage\b|\blot\s+n", context, re.I))
 
 def _extract_occupancy_status(text: str) -> str | None:
-    lowered = strip_accents(text).lower()
-    no_lease_status = no_lease_occupancy_status(lowered)
-    if re.search(r"sans\s+droit\s+ni\s+titre|squatt?\w*", lowered):
-        return "squatted"
-    if re.search(
-        r"\b(?:actuellement\s+)?occupe(?:e?s?|s)?\b|"
-        r"\b(?:vivre|vit|vivent|habite(?:nt)?|occupent?)\s+(?:dans\s+)?les\s+lieux\b|"
-        r"\bsuivant\s+un\s+bail\b|"
-        r"\bbail\s+(?:meuble|d['’]habitation|en\s+cours)\b|"
-        r"\blocataire\b|"
-        r"\bloyer\s+mensuel\b",
-        lowered,
-    ) and not re.search(
-        r"\blibre(?:s)?\s+de\s+toute\s+occupation\b|"
-        r"\ba\s+quitte\s+les\s+lieux\b|"
-        r"\bdepart\s+effectif\b|"
-        r"\bconstate(?:e?s?|s)?\s+libre\b",
-        lowered,
-    ):
-        if no_lease_status:
-            return no_lease_status
-        return "rented" if has_rented_occupancy_signal(lowered) else "occupied"
-    if re.search(
-        r"\blibre(?:s)?\s+(?:de\s+toute\s+occupation|d['’]occupation)\b|"
-        r"\b(?:bien|biens|appartement|appartements|maison|maisons|immeuble|immeubles|local|locaux|"
-        r"logement|logements|terrain|terrains|studio|studios|propriete|proprietes|lieux)\b\s+(?:"
-        r"libre(?:s)?|"
-        r"(?:est|sont|sera|seront)\s+(?:actuellement\s+)?libre(?:s)?|"
-        r"(?:a|ont)\s+ete\s+(?:constate(?:e|es)?\s+)?libre(?:s)?|"
-        r"constate(?:e|es)?\s+libre(?:s)?)\b(?!\s+de\s+droit)|"
-        r"\binoccupe(?:e?s?|s?)\b|"
-        r"\b(?:est|sera|seront|sont)\s+cede(?:e?s?)?\s+libre(?:s)?\b|"
-        r"\bvide\s+de\s+toute\s+occupation\b|"
-        r"\bvacant(?:e?s?)?\b",
-        lowered,
-    ):
-        # A free viewing slot or a rights-free photo says nothing about the property's occupancy.
-        return "vacant"
-    if no_lease_status:
-        return no_lease_status
-    if re.search(r"\boccupe(?:e?s?|s)?\b", lowered):
-        return "occupied"
-    if has_rented_occupancy_signal(lowered):
-        return "rented"
-    return None
+    return pdf_occupancy_status(text)
 
 def _extract_property_type(text: str) -> str | None:
     match = re.search(r"\b(appartement|maison|immeuble|terrain|local commercial|commerce|garage|studio)\b", text, re.I)

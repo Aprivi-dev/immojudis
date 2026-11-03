@@ -45,6 +45,7 @@ from src.config import load_settings
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import clean_text
+from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 
 LOGGER = logging.getLogger(__name__)
 
@@ -124,9 +125,12 @@ select s.source_url, s.source_name, s.sale_date,
    and not app_private.sale_is_fully_withdrawn(
          s.source_name, s.observations, (select app_private.catalogue_withdrawn_sources())
        )
+   -- Pièces non lues, ou toutes lues avec des règles plus anciennes que DOCUMENT_FACTS_VERSION : la tâche pdf les
+   -- relit depuis le cache, sans nouveau téléchargement (relecture de l'audit qualité du 03/11/2026).
    and (
          p.source_url is not null
          or not exists (select 1 from public.auction_documents d where d.source_url = s.source_url)
+         or coalesce(s.raw_payload->>'document_facts_version', '') <> %s
        )
    and not exists (
          select 1 from public.auction_enrichment_jobs a
@@ -136,18 +140,28 @@ select s.source_url, s.source_name, s.sale_date,
        )
    -- Tried within a day: wait. The drain runs after every enrichment tick (about 27 a day), so a document
    -- that keeps failing must not be downloaded again each time.
+   -- Une relecture remise en file (tâche pdf « queued » et due) reste éligible : rien n'est retéléchargé, et un
+   -- report (accès refusé, source retirée, nouvel essai) garde son échéance.
    and not exists (
          select 1 from public.auction_enrichment_jobs a
           where a.source_url = s.source_url
             and a.job_type = 'pdf'
             and a.updated_at >= now() - interval '1 day'
+            and not (
+                  a.status = 'queued'
+                  and a.next_attempt_at <= now()
+                  and p.source_url is null
+                  and coalesce(s.raw_payload->>'document_facts_version', '') <> %s
+                )
        )
  -- Documents never tried come first: a sale whose only unread documents
  -- already failed (and will likely fail again) must not starve them.
  -- A sale without a date ranks as if it ended within a week: for a State tender (Cessions de
  -- l'État) the offer deadline is only in the conditions of sale, so ranking it last left its
  -- attachments unread for weeks (02/11/2026: 36 of 41 such sales).
- order by (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0),
+ -- Une relecture passe après les pièces jamais lues.
+ order by (p.source_url is null and exists (select 1 from public.auction_documents d where d.source_url = s.source_url)),
+          (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0),
           coalesce(s.sale_date, now() + interval '7 days'), coalesce(p.useful_pending, 0) desc, s.source_url
  limit %s
 """
@@ -317,7 +331,13 @@ def select_backlog_candidates(db_url: str, limit: int) -> list[dict[str, Any]]:
         connection.execute("set local statement_timeout = '30s'")
         rows = connection.execute(
             CANDIDATES_SQL,
-            (list(USEFUL_DOCUMENT_TYPES), list(ACTIONABLE_STATUSES), int(limit)),
+            (
+                list(USEFUL_DOCUMENT_TYPES),
+                list(ACTIONABLE_STATUSES),
+                DOCUMENT_FACTS_VERSION,
+                DOCUMENT_FACTS_VERSION,
+                int(limit),
+            ),
         ).fetchall()
     return [
         {
@@ -435,6 +455,12 @@ def _fetch_sale(source_url: str) -> AuctionSale | None:
     return fetch_sale_for_data_refresh(source_url)
 
 
+def _read_with_current_rules(sale: AuctionSale) -> bool:
+    """Every attachment is read (or terminal) and its facts come from the current extraction rules."""
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    return payload.get("document_facts_version") == DOCUMENT_FACTS_VERSION and documents_are_current(sale)
+
+
 def _input_hash(sale: AuctionSale) -> str:
     from src.storage.supabase_client import pdf_enrichment_input_hash_for_sale
 
@@ -466,7 +492,7 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
             outcome.action = "missing"
             return outcome
         before_facts = _fact_snapshot(sale)
-        if documents_are_current(sale):
+        if _read_with_current_rules(sale):
             _reproject(sale)
             outcome.action = "reprojected"
         else:
@@ -502,7 +528,7 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
                     # next six documents of a partial manifest, or the next
                     # OCR pages of a long scanned report. Anything else ends.
                     break
-                if refreshed is None or documents_are_current(refreshed):
+                if refreshed is None or _read_with_current_rules(refreshed):
                     break
                 # A durable checkpoint can re-key the job to the generation it
                 # has just written; follow that generation.

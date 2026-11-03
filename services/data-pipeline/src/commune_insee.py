@@ -33,7 +33,7 @@ from typing import Any
 
 from src.models import AuctionSale
 from src.municipality_location import PROVIDER as MUNICIPALITY_PROVIDER
-from src.municipality_location import find_commune
+from src.municipality_location import find_commune, unique_postal_code_for_commune
 from src.reference_data.names import arrondissement_number, commune_lookup_name, department_from_insee
 
 LOGGER = logging.getLogger(__name__)
@@ -198,7 +198,39 @@ def record_sale_commune(sale: AuctionSale) -> bool:
     except Exception as exc:  # noqa: BLE001 - jamais bloquant pour la collecte
         LOGGER.warning("Commune code resolution skipped for %s: %s", sale.source_url, type(exc).__name__)
         return False
-    if resolved is None or sale.raw_payload.get("commune") == resolved:
+    if resolved is None:
+        return False
+    fill_missing_postal_code(sale, resolved)
+    if sale.raw_payload.get("commune") == resolved:
         return False
     sale.raw_payload["commune"] = resolved
     return True
+
+
+POSTAL_CODE_INFERENCE_FIELD = "postal_code_inference"
+
+
+def fill_missing_postal_code(sale: AuctionSale, resolved: dict[str, Any]) -> bool:
+    """Code postal d'une vente qui n'en donne pas, quand sa commune résolue n'en porte qu'un seul.
+
+    Licitor ne publie que la commune (« Saint-Chaptes ») : 343 ventes sur 377 n'avaient pas de code postal. Une
+    commune à plusieurs codes postaux (Paris, Toulouse…) ou absente de ``reference_communes`` ne donne rien.
+    """
+    if clean_postal_code(sale.postal_code) or resolved.get("mismatch"):
+        return False
+    postal_code = unique_postal_code_for_commune(resolved.get("insee"))
+    if postal_code is None:
+        return False
+    sale.postal_code = postal_code
+    sale.raw_payload[POSTAL_CODE_INFERENCE_FIELD] = {
+        "source": "reference_communes",
+        "insee": resolved.get("insee"),
+        "commune_source": resolved.get("source"),
+        "value": postal_code,
+    }
+    return True
+
+
+def clean_postal_code(value: object) -> str | None:
+    text = str(value or "").strip()
+    return text if re.fullmatch(r"\d{5}", text) else None
