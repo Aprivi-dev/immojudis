@@ -3288,24 +3288,116 @@ def test_a_successful_ocr_that_finds_no_text_settles_a_uniformly_light_page(monk
     assert len(calls) == 1  # une page vide n'a pas de seconde passe
 
 
-def test_an_empty_ocr_on_a_page_with_ink_is_not_settled_and_gets_a_rotated_second_pass(monkeypatch) -> None:
+def test_an_empty_ocr_on_a_page_with_ink_gets_a_rotated_then_a_sparse_pass_before_being_settled(monkeypatch) -> None:
     from src.pdf_enrichment import _extract_page_text_with_ocr_result
-    from src.pdf_ocr import OCR_NO_TEXT_UNVERIFIED_METHOD
+    from src.pdf_ocr import OCR_PICTURE_NO_TEXT_METHOD
 
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     calls = []
     monkeypatch.setattr(
         "src.pdf_enrichment.subprocess.run",
-        lambda command, **kwargs: calls.append(command[1]) or SimpleNamespace(returncode=0, stdout="", stderr=""),
+        lambda command, **kwargs: calls.append(command) or SimpleNamespace(returncode=0, stdout="", stderr=""),
     )
 
     result = _extract_page_text_with_ocr_result(_fake_ocr_page(pixel=90), fallback="")
 
+    assert result["method"] == OCR_PICTURE_NO_TEXT_METHOD
+    assert result["retryable"] is False
+    assert result["sparse_confident_words"] == 0
+    assert len(calls) == 3
+    assert calls[1][1].endswith("page-rotated.png")
+    # The sparse pass reads the upright image, in sparse-text mode, with word confidences.
+    assert calls[2][1] == calls[0][1]
+    assert calls[2][-3:] == ["--psm", "11", "tsv"]
+
+
+def test_a_page_stays_retryable_when_the_sparse_verification_pass_fails(monkeypatch) -> None:
+    from src.pdf_enrichment import _extract_page_text_with_ocr_result
+    from src.pdf_ocr import OCR_NO_TEXT_UNVERIFIED_METHOD
+
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    results = iter(
+        [
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=0, stdout="", stderr=""),
+            SimpleNamespace(returncode=1, stdout="", stderr="Error"),
+        ]
+    )
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", lambda *args, **kwargs: next(results))
+
+    result = _extract_page_text_with_ocr_result(_fake_ocr_page(pixel=90), fallback="")
+
     assert result["method"] == OCR_NO_TEXT_UNVERIFIED_METHOD
-    assert result["retryable"] is True
-    assert result["status"] == "failed"
+    assert result["retryable"] is True and result["status"] == "failed"
     assert result["failure_reason"] == "ocr_no_text_unverified"
-    assert len(calls) == 2 and calls[0] != calls[1] and calls[1].endswith("page-rotated.png")
+
+
+def _tsv(*words: tuple[float, str]) -> str:
+    header = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext"
+    rows = [
+        f"5\t1\t1\t1\t1\t{index}\t0\t0\t10\t10\t{confidence}\t{text}"
+        for index, (confidence, text) in enumerate(words, 1)
+    ]
+    return "\n".join([header, *rows]) + "\n"
+
+
+def test_the_sparse_pass_reads_text_that_the_first_two_passes_missed(monkeypatch) -> None:
+    from src.pdf_enrichment import _extract_page_text_with_ocr_result
+    from src.pdf_ocr import OCR_SPARSE_METHOD
+
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    sparse = _tsv((91.0, "Cuisine"), (88.5, "équipée"), (85.0, "donnant"), (30.0, "x7%"), (80.0, "jardin"))
+    outputs = iter(["", "", sparse])
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=next(outputs), stderr=""),
+    )
+
+    result = _extract_page_text_with_ocr_result(_fake_ocr_page(pixel=90), fallback="")
+
+    assert result["method"] == OCR_SPARSE_METHOD
+    assert result["status"] == "extracted" and result["retryable"] is False
+    assert result["text"] == "Cuisine équipée donnant jardin"  # the low-confidence noise is dropped
+
+
+def test_low_confidence_sparse_noise_on_a_photograph_is_not_read_as_text(monkeypatch) -> None:
+    """Measured on production PVs (03/11/2026): sparse OCR of a photograph returns dozens of
+    low-confidence fragments and no confident word."""
+    from src.pdf_enrichment import _extract_page_text_with_ocr_result
+    from src.pdf_ocr import OCR_PICTURE_NO_TEXT_METHOD
+
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    noise = _tsv((12.0, "Re"), (35.0, "LT"), (41.0, "ind"), (95.0, "|"), (90.0, "ae"), (77.0, "Ex"))
+    outputs = iter(["", "fh", noise])
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=next(outputs), stderr=""),
+    )
+
+    result = _extract_page_text_with_ocr_result(_fake_ocr_page(pixel=90), fallback="")
+
+    # "fh" from the rotated pass is noise, not a sideways page.
+    assert result["method"] == OCR_PICTURE_NO_TEXT_METHOD
+    assert result["retryable"] is False and result["text"] == ""
+
+
+def test_tesseract_runs_single_threaded_unless_the_operator_set_a_limit(monkeypatch) -> None:
+    from src.pdf_enrichment import _extract_page_text_with_ocr_result
+
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    monkeypatch.delenv("OMP_THREAD_LIMIT", raising=False)
+    environments = []
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: environments.append(kwargs["env"])
+        or SimpleNamespace(returncode=0, stdout="Texte lu", stderr=""),
+    )
+
+    _extract_page_text_with_ocr_result(_fake_ocr_page(pixel=90), fallback="")
+    monkeypatch.setenv("OMP_THREAD_LIMIT", "2")
+    _extract_page_text_with_ocr_result(_fake_ocr_page(pixel=90), fallback="")
+
+    assert [env["OMP_THREAD_LIMIT"] for env in environments] == ["1", "2"]
 
 
 def test_the_rotated_second_pass_can_read_a_page_scanned_sideways(monkeypatch) -> None:
@@ -3328,7 +3420,7 @@ def test_the_rotated_second_pass_can_read_a_page_scanned_sideways(monkeypatch) -
 
 def test_a_page_that_cannot_be_measured_is_not_settled_as_blank(monkeypatch) -> None:
     from src.pdf_enrichment import _extract_page_text_with_ocr_result
-    from src.pdf_ocr import OCR_NO_TEXT_UNVERIFIED_METHOD
+    from src.pdf_ocr import OCR_NO_TEXT_METHOD, OCR_PICTURE_NO_TEXT_METHOD
 
     monkeypatch.setenv("PDF_OCR_ENABLED", "true")
     monkeypatch.setattr(
@@ -3338,14 +3430,18 @@ def test_a_page_that_cannot_be_measured_is_not_settled_as_blank(monkeypatch) -> 
 
     result = _extract_page_text_with_ocr_result(_fake_ocr_page(pixel=None), fallback="")
 
-    assert result["method"] == OCR_NO_TEXT_UNVERIFIED_METHOD and result["retryable"] is True
+    # Never "blank": it goes through the rotated and sparse passes, which find no text.
+    assert result["method"] != OCR_NO_TEXT_METHOD
+    assert result["method"] == OCR_PICTURE_NO_TEXT_METHOD
 
 
-def test_a_page_of_photographs_is_no_longer_settled_blank_without_proof(tmp_path, monkeypatch) -> None:
+def test_a_page_of_photographs_is_settled_as_a_picture_page_not_as_blank(tmp_path, monkeypatch) -> None:
     """Production case of 12/10/2026: a PV descriptif ends with pages of photos of the property and
     Tesseract finds no text. Since 20/10/2026 (point 15) a page that carries ink is no longer classed blank
-    on an empty OCR: it is read a second time rotated, then kept retryable (``ocr_no_text_unverified``) and
-    leaves the document incomplete until the bounded retry budget settles it for review."""
+    on an empty OCR. Until 03/11/2026 it then stayed retryable forever (``ocr_no_text_unverified``, logged
+    ``reasons=unknown``): PVs stayed incomplete and were OCR'd again on every pass. A third, sparse pass
+    with word confidences now proves the page has no text; it is settled as a picture page, never as a
+    blank one, and the document is complete."""
     import time
 
     import pymupdf
@@ -3373,13 +3469,15 @@ def test_a_page_of_photographs_is_no_longer_settled_blank_without_proof(tmp_path
         payload = extract_pdf_document(path, document={"label": "PV descriptif", "url": "https://example.test/pv.pdf"})
 
     photo_record = payload["pages"][1]
-    assert photo_record["status"] == "failed"
-    assert photo_record["method"] == "ocr_no_text_unverified"
-    assert photo_record["failure_reason"] == "ocr_no_text_unverified"
-    assert photo_record["ocr_no_text_unverified"] is True
-    assert photo_record["retryable"] is True
-    assert payload["complete"] is False
-    assert len(payload["failed_pages"]) == 1
+    assert photo_record["status"] == "picture_page_excluded"
+    assert photo_record["method"] == "ocr_picture_no_text"
+    assert photo_record["failure_reason"] == "picture_without_text_after_ocr"
+    assert photo_record["retryable"] is False
+    assert photo_record["source_page_preserved"] is True
+    assert payload["complete"] is True and payload["extraction_status"] == "extracted"
+    assert payload["failed_pages"] == []
+    assert payload["picture_pages"] == [2]
+    assert payload["blank_pages"] == [] and payload["visual_blank_pages"] == []
 
 
 def test_a_failed_tesseract_run_stays_retryable(monkeypatch) -> None:
@@ -3411,7 +3509,7 @@ def test_a_page_with_native_text_keeps_it_when_ocr_finds_nothing_more(tmp_path, 
     import pymupdf
 
     from src.pdf_enrichment import _page_requires_retry, pdf_deadline_scope
-    from src.pdf_ocr import OCR_NO_TEXT_UNVERIFIED_METHOD
+    from src.pdf_ocr import OCR_PICTURE_NO_TEXT_METHOD
 
     monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
     monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
@@ -3433,8 +3531,7 @@ def test_a_page_with_native_text_keeps_it_when_ocr_finds_nothing_more(tmp_path, 
         payload = extract_pdf_document(path, document={"label": "PV", "url": "https://example.test/pv.pdf"})
 
     record = payload["pages"][0]
-    assert record["method"] == OCR_NO_TEXT_UNVERIFIED_METHOD
-    assert record["ocr_no_text_unverified"] is True
+    assert record["method"] == OCR_PICTURE_NO_TEXT_METHOD
     assert record["status"] == "extracted"
     assert "failure_reason" not in record
     assert "Photographie 1" in record["text"]
