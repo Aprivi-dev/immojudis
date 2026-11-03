@@ -23,11 +23,13 @@ from src.asset_normalization_helpers import (
     _parse_surface_decimal,
     _set_app_surface,
     _set_surface_evidence,
+    _source_qualifies_surface_as_land,
     _surface_false_positive,
     _validate_app_surface_scope,
 )
 from src.land_parcels import parcel_m2_list, read_parcel_land_surface
 from src.models import AuctionSale
+from src.multi_unit_surface import single_dwelling_lot_surface
 from src.normalize import (
     _is_ambiguous_mixed_lot_surface,
     _is_coproperty_scoped_land_surface,
@@ -46,6 +48,7 @@ from src.surface_plausibility import (
     built_surfaces_equal_to_land,
     conflicting_generic_surfaces,
     parcel_total_surfaces,
+    text_states_built_surface,
 )
 
 _SURFACE_FIELDS = ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "land_surface_m2")
@@ -127,6 +130,9 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
     rejected_equal_to_land = _reject_built_surface_equal_to_land(sale)
     _discard_placeholder_built_surface(sale)
     text_built_surface = _extract_built_surface(text, sale)
+    if text_built_surface is None and sale.property_type in {"apartment", "house"} and not ambiguous_mixed_lot_surface:
+        # Lots de copropriété : le seul logement, les autres lots étant des annexes (991d7119).
+        text_built_surface = single_dwelling_lot_surface(text)
     if sale.surface_m2 is None:
         sale.surface_m2 = text_built_surface
     elif _should_prefer_text_built_surface(sale, text_built_surface):
@@ -180,7 +186,15 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         sale.app_surface_kind = None
         sale.surface_scope = "unknown"
     _validate_app_surface_scope(sale)
+    stale_land_source = sale.surface_source == "land_surface_m2" and (
+        sale.land_surface_m2 is None or sale.app_surface_kind not in {None, "land"}
+    )
+    if stale_land_source:
+        # Provenance d'un terrain écarté ou remplacé (e538fab2, ebafd1c4) : elle ne décrit plus la surface retenue.
+        sale.surface_source = None
     _reconcile_surface_evidence(sale, text, ambiguous_mixed_lot_surface=ambiguous_mixed_lot_surface)
+    if stale_land_source and sale.surface_source is None and sale.surface_evidence:
+        sale.surface_source = "source_text"
     _flag_ambiguous_surface(sale)
     _flag_source_surface_conflict(sale)
     if rejected_equal_to_land and sale.app_surface_m2 is None:
@@ -320,9 +334,24 @@ def _record_conflicting_surface_values(sale: AuctionSale) -> list[Decimal]:
 
 
 def _reject_built_surface_equal_to_land(sale: AuctionSale) -> bool:
-    """Retire une surface habitable ou bâtie égale à la surface du terrain (la contenance mal recopiée)."""
+    """Retire une surface habitable ou bâtie égale à la surface du terrain (la contenance mal recopiée).
+
+    Quand la page qualifie elle-même cette valeur de surface bâtie (« surface habitable de 167,08 m² », « surface
+    bâtie de 259,86 m² ») sans jamais en faire un terrain, c'est le terrain qui est la valeur suspecte : il est
+    retiré et la surface bâtie reste.
+    """
     fields = list(built_surfaces_equal_to_land(sale))
     if not fields:
+        return False
+    if _source_states_built_not_land_surface(sale, sale.land_surface_m2):
+        sale.raw_payload["land_surface_reconciliation"] = {
+            "status": "removed",
+            "rejected_land_surface_m2": str(sale.land_surface_m2),
+            "resolved_land_surface_m2": None,
+            "basis": "land_equal_to_explicit_built_surface",
+        }
+        sale.land_surface_m2 = None
+        _add_quality_flag(sale, "land_surface_conflict_resolved")
         return False
     for field in fields:
         setattr(sale, field, None)
@@ -465,10 +494,22 @@ def _should_clear_misclassified_land_surface(sale: AuctionSale) -> bool:
     current = sale.land_surface_m2
     if current is None or sale.property_type not in {"house", "apartment", "building"}:
         return False
+    if current not in _built_surface_values(sale):
+        return False
     extraction = sale.raw_payload.get("land_surface_extraction")
     if isinstance(extraction, dict) and extraction.get("source") == "pdf":
-        return False
-    return current in _built_surface_values(sale)
+        # Un terrain lu dans une pièce reste protégé, sauf si la page qualifie elle-même cette valeur de surface
+        # bâtie (07228862 : « surface habitable de 167,08 m² » ; la pièce lisait « maison … d'une surface de
+        # 167,08 m2 avec jardin privatif » comme terrain).
+        return _source_states_built_not_land_surface(sale, current)
+    return True
+
+
+def _source_states_built_not_land_surface(sale: AuctionSale, value: Decimal | None) -> bool:
+    """La page qualifie ``value`` de surface bâtie et jamais de terrain : un terrain égal est la valeur suspecte."""
+    return text_states_built_surface(
+        (sale.description, sale.title, sale.raw_text), value
+    ) and not _source_qualifies_surface_as_land(sale, value)
 
 
 def _built_surface_values(sale: AuctionSale) -> set[Decimal]:

@@ -14,6 +14,7 @@ from src.enrichment.surface_text_rules import (
     label_gap_is_broken,
     measurement_gap_is_broken,
     passage_key,
+    value_belongs_to_other_object,
     value_is_ground_area,
 )
 from src.models import AuctionSale
@@ -23,6 +24,7 @@ from src.normalize import (
     clean_text,
     is_outside_carrez_context,
 )
+from src.surface_plausibility import parcel_total_surfaces
 
 SURFACE_REASONING_VERSION = "surface_reasoning_v1"
 SURFACE_TOLERANCE_ABSOLUTE_M2 = Decimal("1")
@@ -210,6 +212,13 @@ _TYPED_TOTAL_SURFACE_RE = re.compile(
     rf"(?:(?:de|d['’]environ)\s*)?[:=]?\s*{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
     re.I,
 )
+_APPROXIMATE_BUILT_RE = re.compile(
+    # « élevée d'un rez-de-chaussée et de deux étages d'environ 128 m² » (62fe27e3) : sans « de » ni « surface »
+    # devant la valeur, elle ne remplace jamais une surface déjà connue (confiance sous 0,95).
+    rf"(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement)"
+    rf"[^.;:\n]{{0,80}}?d['’]environ\s+{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
+    re.I,
+)
 _EXPLICIT_SURFACE_PATTERNS: tuple[tuple[SurfaceKind, re.Pattern[str]], ...] = (
     # Chaque forme est parcourue séparément : avec une alternative unique, le parcours de gauche à droite
     # trouve d'abord « …de 100 m² Carrez (146 m² » (libellé puis valeur) et saute « 100 m² Carrez ».
@@ -257,7 +266,12 @@ _EXPLICIT_SURFACE_PATTERNS: tuple[tuple[SurfaceKind, re.Pattern[str]], ...] = (
             re.I,
         ),
     ),
+    (
+        "explicit_built",
+        _APPROXIMATE_BUILT_RE,
+    ),
 )
+_APPROXIMATE_BUILT_CONFIDENCE = 0.9
 
 # Surface « créée » par un permis de construire ou une déclaration préalable : surface d'un projet, jamais
 # celle du bien mis en vente (Mougins : surface créée prise pour la surface habitable).
@@ -284,6 +298,7 @@ _SECONDARY_BUILDING_RE = re.compile(
     re.I,
 )
 _MAIN_BUILDING_RE = re.compile(r"\bprincipa(?:l|le|les|ux)\b", re.I)
+_BUILT_NOUN_RE = re.compile(r"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement)\b", re.I)
 _EXCLUDED_BUILDING_RE = re.compile(
     r"\b(?:hors|sans|hormis|except[ée]|non\s+compris(?:e|es|s)?|à\s+l['’]exclusion)\s+"
     r"(?:(?:d[eu]s?|les?|la|l['’]|des|y)\s*)*\w+",
@@ -390,7 +405,9 @@ def extract_surface_facts_from_text(
                 scope="sale" if is_typed_total else "asset",
                 is_explicit=True,
                 unit_as_written=unit,
-                confidence=0.96 if unit == "m2" else 0.72,
+                confidence=(0.96 if unit == "m2" else 0.72)
+                if pattern is not _APPROXIMATE_BUILT_RE
+                else _APPROXIMATE_BUILT_CONFIDENCE,
                 evidence=SurfaceEvidence(quote=quote, **evidence_base),
             )
             if _candidate_key(candidate) not in {_candidate_key(item) for item in explicit}:
@@ -511,6 +528,7 @@ def reason_about_surfaces(
 ) -> SurfaceReasoningResult:
     result = SurfaceReasoningResult()
     context_normalized = _normalized_for_evidence(context)
+    parcel_totals = frozenset(parcel_total_surfaces(clean_text(context)))
     validated_assets: list[ExtractedAsset] = []
     for asset in merge_extracted_assets(assets):
         valid_measurements: list[SurfaceMeasurement] = []
@@ -528,7 +546,7 @@ def reason_about_surfaces(
             candidate = _prepare_candidate(candidate, asset.asset_id)
             if not _candidate_is_supported(candidate, context_normalized):
                 continue
-            if exclusion := _candidate_exclusion_reason(candidate):
+            if exclusion := _candidate_exclusion_reason(candidate, parcel_totals):
                 result.rejected_candidates.append(
                     {"candidate": candidate.model_dump(mode="json"), "reason": exclusion}
                 )
@@ -962,14 +980,20 @@ def _candidate_is_supported(candidate: SurfaceCandidate, context_normalized: str
     return True
 
 
-def _candidate_exclusion_reason(candidate: SurfaceCandidate) -> str | None:
+def _candidate_exclusion_reason(
+    candidate: SurfaceCandidate, parcel_totals: frozenset[Decimal] = frozenset()
+) -> str | None:
     """Raison d'écarter une surface qui n'est pas celle du bien principal, sinon ``None``.
 
     - surface « créée » par un permis ou une déclaration préalable : surface d'un projet ;
-    - dépendance, maison de gardien, annexe : un bâtiment secondaire n'est pas le bien (Lussac, Cannes).
+    - dépendance, maison de gardien, annexe : un bâtiment secondaire n'est pas le bien (Lussac, Cannes) ;
+    - « …, soit superficie totale 1550 m² » après une liste de parcelles : la contenance du terrain (62fe27e3) ;
+    - « une maison … sur un terrain de 800 m² » : la valeur du terrain ou de l'annexe nommé entre les deux.
     """
     if candidate.kind not in _DWELLING_SURFACE_KINDS:
         return None
+    if candidate.kind in {"explicit_total", "explicit_built"} and candidate.value_m2 in parcel_totals:
+        return "parcel_total_land_surface"
     quote = (candidate.evidence.quote or "").replace("\u00a0", " ")
     span = _value_span_in_quote(quote, candidate.value_m2)
     if span is None:
@@ -978,6 +1002,10 @@ def _candidate_exclusion_reason(candidate: SurfaceCandidate) -> str | None:
     trail = _SENTENCE_END_RE.split(quote[span[1] : span[1] + 70])[0]
     if _CREATED_SURFACE_RE.search(lead + " " + trail):
         return "created_surface_of_a_permit"
+    if candidate.kind == "explicit_built":
+        nouns = list(_BUILT_NOUN_RE.finditer(lead))
+        if nouns and value_belongs_to_other_object(lead[nouns[-1].end() :], candidate.value_m2):
+            return "surface_of_land_or_annex"
     if _SECONDARY_BUILDING_RE.search(_building_phrase(lead)):
         return "secondary_building_surface"
     if _PER_UNIT_RE.search(lead) or _EACH_RE.match(trail):
