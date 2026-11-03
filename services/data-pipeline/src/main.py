@@ -56,6 +56,7 @@ from src.known_document_backfill import (
     KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
     KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
     KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
+    _backfill_document_occupancy_from_known,
     _backfill_document_price_from_known,
     _backfill_document_sale_date_from_known,
     _backfill_document_surface_fields_from_known,
@@ -242,6 +243,7 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_due_diligence",
     "geocode",
     "tribunal_assignment",
+    "pdf_tribunal_extraction",
     # PDF projection traces and candidate evidence are enrichment metadata.
     # Preserve them through a cold source pass so the PDF worker can invalidate
     # only stale projections without treating the markers as fresh source text.
@@ -1617,6 +1619,7 @@ def _preserve_known_enrichment_payloads(
         preserved += _backfill_document_surface_fields_from_known(sale, known)
         preserved += _backfill_document_price_from_known(sale, known)
         preserved += _backfill_document_sale_date_from_known(sale, known)
+        preserved += _backfill_document_occupancy_from_known(sale, known)
     return preserved
 
 
