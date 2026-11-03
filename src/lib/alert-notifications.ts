@@ -357,6 +357,24 @@ export async function filterEmailNotificationsByMode({
   return { allowed, heldBackCount: notifications.length - allowed.length };
 }
 
+/** PostgREST rend au plus 1 000 lignes par requête : la file d'emails est lue par pages. */
+const EMAIL_QUEUE_PAGE_SIZE = 1_000;
+/** Comptes servis par passage, un seul récapitulatif chacun (consentement, offre, envoi, marquage). */
+const MAX_EMAIL_DIGEST_USERS_PER_RUN = 100;
+/**
+ * Garde-fou de durée (passage de 300 s, chaque notification envoyée est marquée) : au-delà, les comptes
+ * suivants partent au passage suivant, jamais une moitié de la file d'un compte.
+ */
+const MAX_EMAIL_ROWS_PER_RUN = 5_000;
+/** Pages de notifications dans l'application publiées par passage. */
+const MAX_IN_APP_PAGES_PER_RUN = 10;
+
+/**
+ * Publie les notifications dues : celles de l'application par pages, et un seul email par compte qui reprend
+ * TOUTE sa file d'emails échus (décision du 03/11/2026). Avant, une fenêtre de 200 lignes partagée entre les deux
+ * canaux ne prenait qu'une partie de la file d'un compte dont l'alerte couvre presque tout le catalogue : il
+ * recevait un email par jour pendant plus d'une semaine, et les autres comptes attendaient derrière lui.
+ */
 export async function dispatchDueAlertNotifications({
   now = new Date(),
   limit = DEFAULT_ALERT_NOTIFICATION_DISPATCH_LIMIT,
@@ -368,78 +386,27 @@ export async function dispatchDueAlertNotifications({
 } = {}): Promise<AlertNotificationDispatchResult> {
   const startedAt = new Date().toISOString();
   const dueAt = now.toISOString();
-  const dispatchLimit = clampLimit(limit, MAX_ALERT_NOTIFICATION_DISPATCH_LIMIT);
-  let candidateQuery = supabaseAdmin
-    .from("user_alert_notifications")
-    .select("*")
-    .eq("delivery_status", "queued")
-    .lte("scheduled_for", dueAt);
-  // Emails coupés : leur file ne doit pas occuper la fenêtre de lecture au détriment des
-  // notifications dans l'application.
-  if (emailMode === "off") candidateQuery = candidateQuery.eq("delivery_channel", "in_app");
-  if (emailMode === "internal") {
-    // Seuls les emails des administrateurs peuvent partir : on ne lit qu'eux (avec les notifications
-    // dans l'application, pour tous), sinon les emails écartés, restés `queued`, bloqueraient la
-    // fenêtre de lecture.
-    const adminUserIds = await readAllAdminUserIds();
-    candidateQuery = adminUserIds.length
-      ? candidateQuery.or(
-          `delivery_channel.eq.in_app,and(delivery_channel.eq.email,user_id.in.(${adminUserIds.join(",")}))`,
-        )
-      : candidateQuery.eq("delivery_channel", "in_app");
-  }
-  const { data: candidates, error: selectError } = await candidateQuery
-    .order("scheduled_for", { ascending: true })
-    .limit(dispatchLimit);
+  const pageSize = clampLimit(limit, MAX_ALERT_NOTIFICATION_DISPATCH_LIMIT);
 
-  if (selectError) throw selectError;
-
-  const candidateRows = candidates ?? [];
-  const dueIds = selectDueAlertNotificationIds({
-    notifications: candidateRows,
-    now,
-    limit: dispatchLimit,
-  });
-  const remainingEmailLimit = Math.max(0, dispatchLimit - dueIds.length);
-  const emailCandidates = remainingEmailLimit
-    ? selectDueEmailAlertNotifications({
-        notifications: candidateRows,
-        now,
-        limit: remainingEmailLimit,
-      })
-    : [];
-
-  let dispatchedRows: NotificationRow[] = [];
-  if (dueIds.length) {
-    const dispatchPatch = buildAlertNotificationDispatchPatch(now);
-    const { data, error: updateError } = await supabaseAdmin
-      .from("user_alert_notifications")
-      .update(dispatchPatch)
-      .in("id", dueIds)
-      .eq("delivery_channel", "in_app")
-      .eq("delivery_status", "queued")
-      .lte("scheduled_for", dueAt)
-      .select("*");
-
-    if (updateError) throw updateError;
-    dispatchedRows = data ?? [];
-  }
+  const inApp = await dispatchDueInAppNotifications({ now, dueAt, pageSize });
+  // Emails coupés : leur file n'est pas lue (le passage reste vert, rien n'est envoyé).
+  const emailCandidates =
+    emailMode === "off" ? [] : await readDueEmailQueue({ now, dueAt, emailMode });
 
   const { allowed: emailsToSend, heldBackCount } = await filterEmailNotificationsByMode({
     mode: emailMode,
     notifications: emailCandidates,
   });
-  // Mode `off` : rien n'est envoyé et la configuration d'envoi n'est pas exigée (le passage reste vert).
   const emailDispatch =
     emailMode === "off"
       ? { candidateCount: 0, sentCount: 0, failedCount: 0, skippedCount: 0, ...emailConfigStatus() }
       : await dispatchQueuedEmailAlertNotifications({ notifications: emailsToSend, now });
-  const notifications = (dispatchedRows ?? []).map(notificationRowToSummary);
+  const notifications = inApp.dispatched.map(notificationRowToSummary);
   return {
     ok: true,
     startedAt,
     finishedAt: new Date().toISOString(),
-    candidateCount: candidateRows.length,
+    candidateCount: inApp.candidateCount + emailCandidates.length,
     dispatchedCount: notifications.length,
     notifications,
     emailCandidateCount: emailDispatch.candidateCount,
@@ -451,6 +418,138 @@ export async function dispatchDueAlertNotifications({
     emailMode,
     emailHeldBackCount: heldBackCount,
   };
+}
+
+function dueQueuedNotifications(
+  columns: string,
+  channel: NotificationRow["delivery_channel"],
+  dueAt: string,
+) {
+  return supabaseAdmin
+    .from("user_alert_notifications")
+    .select(columns)
+    .eq("delivery_channel", channel)
+    .eq("delivery_status", "queued")
+    .lte("scheduled_for", dueAt);
+}
+
+async function dispatchDueInAppNotifications({
+  now,
+  dueAt,
+  pageSize,
+}: {
+  now: Date;
+  dueAt: string;
+  pageSize: number;
+}): Promise<{ candidateCount: number; dispatched: NotificationRow[] }> {
+  const dispatched: NotificationRow[] = [];
+  let candidateCount = 0;
+  for (let page = 0; page < MAX_IN_APP_PAGES_PER_RUN; page += 1) {
+    const { data, error } = await dueQueuedNotifications("*", "in_app", dueAt)
+      .order("scheduled_for", { ascending: true })
+      .limit(pageSize);
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as NotificationRow[];
+    candidateCount += rows.length;
+    const dueIds = selectDueAlertNotificationIds({ notifications: rows, now, limit: pageSize });
+    if (!dueIds.length) break;
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from("user_alert_notifications")
+      .update(buildAlertNotificationDispatchPatch(now))
+      .in("id", dueIds)
+      .eq("delivery_channel", "in_app")
+      .eq("delivery_status", "queued")
+      .lte("scheduled_for", dueAt)
+      .select("*");
+    if (updateError) throw updateError;
+    dispatched.push(...(updated ?? []));
+    // Page incomplète : la file est vide. Rien de publié : un autre passage l'a fait, on ne boucle pas.
+    if (rows.length < pageSize || !updated?.length) break;
+  }
+  return { candidateCount, dispatched };
+}
+
+/**
+ * Toute la file d'emails échus des comptes servis par ce passage. En mode `internal`, seuls les
+ * administrateurs sont lus : les emails des autres comptes, laissés en file, ne prennent aucune place.
+ */
+async function readDueEmailQueue({
+  now,
+  dueAt,
+  emailMode,
+}: {
+  now: Date;
+  dueAt: string;
+  emailMode: EmailFeatureMode;
+}): Promise<NotificationRow[]> {
+  const restrictTo = emailMode === "internal" ? await readAllAdminUserIds() : null;
+  if (restrictTo && !restrictTo.length) return [];
+  const userIds = await readDueEmailUserIds({ dueAt, restrictTo });
+  if (!userIds.length) return [];
+
+  const rows: NotificationRow[] = [];
+  let truncated = false;
+  for (let offset = 0; ; offset += EMAIL_QUEUE_PAGE_SIZE) {
+    if (offset >= MAX_EMAIL_ROWS_PER_RUN) {
+      truncated = true;
+      break;
+    }
+    const { data, error } = await dueQueuedNotifications("*", "email", dueAt)
+      .in("user_id", userIds)
+      .order("user_id", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + EMAIL_QUEUE_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as unknown as NotificationRow[];
+    rows.push(...page);
+    if (page.length < EMAIL_QUEUE_PAGE_SIZE) break;
+  }
+  const due = rows.filter((notification) => isDueEmail(notification, now));
+  if (!truncated) return due;
+  // La lecture s'est arrêtée au milieu de la file d'un compte (tri par compte) : ce compte part au passage suivant,
+  // avec toute sa file, sauf s'il est le seul servi.
+  const lastUserId = due.at(-1)?.user_id;
+  const others = due.filter((notification) => notification.user_id !== lastUserId);
+  return others.length ? others : due;
+}
+
+/** Les comptes qui ont au moins un email échu, les plus anciens d'abord, au plus MAX_EMAIL_DIGEST_USERS_PER_RUN. */
+async function readDueEmailUserIds({
+  dueAt,
+  restrictTo,
+}: {
+  dueAt: string;
+  restrictTo: string[] | null;
+}): Promise<string[]> {
+  const found: string[] = [];
+  // Chaque tour écarte les comptes déjà trouvés : un compte à 800 emails en file ne cache pas les autres.
+  for (let round = 0; round < MAX_EMAIL_DIGEST_USERS_PER_RUN; round += 1) {
+    let query = dueQueuedNotifications("user_id", "email", dueAt);
+    if (restrictTo) query = query.in("user_id", restrictTo);
+    if (found.length) query = query.not("user_id", "in", `(${found.join(",")})`);
+    const { data, error } = await query
+      .order("scheduled_for", { ascending: true })
+      .limit(EMAIL_QUEUE_PAGE_SIZE);
+    if (error) throw error;
+    const page = (data ?? []) as unknown as Array<{ user_id: string }>;
+    const before = found.length;
+    for (const { user_id: userId } of page) {
+      if (found.length >= MAX_EMAIL_DIGEST_USERS_PER_RUN) return found;
+      if (!found.includes(userId)) found.push(userId);
+    }
+    if (page.length < EMAIL_QUEUE_PAGE_SIZE || found.length === before) break;
+  }
+  return found;
+}
+
+function isDueEmail(notification: NotificationRow, now: Date): boolean {
+  const scheduledAt = Date.parse(notification.scheduled_for);
+  return (
+    notification.delivery_channel === "email" &&
+    notification.delivery_status === "queued" &&
+    Number.isFinite(scheduledAt) &&
+    scheduledAt <= now.getTime()
+  );
 }
 
 function emailConfigStatus() {
