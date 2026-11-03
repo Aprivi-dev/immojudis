@@ -1,6 +1,6 @@
 -- File d'enrichissement : la voie générale lit les pièces avant de décrire une vente
--- (20261111050000_enrichment_claim_pdf_first.sql), avec une avance bornée de 96 h pour les pièces
--- (20261111060000_enrichment_claim_pdf_head_start.sql).
+-- (20261111050000_enrichment_claim_pdf_first.sql), avec une avance bornée pour les pièces
+-- (20261111060000 : 96 h, puis 20261111070000 : 24 h).
 begin;
 
 select plan(16);
@@ -11,7 +11,7 @@ select ok(
   position('pdf.job_type = ''pdf''' in pg_get_functiondef(
     'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
   )) > 0
-  and position('case when j.job_type = ''pdf'' then 96 else 0 end' in pg_get_functiondef(
+  and position('case when j.job_type = ''pdf'' then 24 else 0 end' in pg_get_functiondef(
     'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
   )) > 0
   and position('(j.job_type = ''pdf'') desc' in pg_get_functiondef(
@@ -23,7 +23,7 @@ select ok(
   and position('r.is_near desc' in pg_get_functiondef(
     'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
   )) > 0,
-  'the general lane waits for the sale''s PDF job and gives PDF jobs a 96 h head start; urgency and the detail lane remain'
+  'the general lane waits for the sale''s PDF job and gives PDF jobs a 24 h head start; urgency and the detail lane remain'
 );
 
 select ok(
@@ -156,7 +156,7 @@ select is(
 );
 
 -- Une tâche pdf récente passe devant une description plus ancienne d'une autre vente, tant que l'écart
--- d'attente reste sous l'avance de 96 h des tâches pdf (20261111060000 ; voir aussi 872).
+-- d'attente reste sous l'avance de 24 h des tâches pdf (20261111070000).
 delete from public.auction_enrichment_jobs;
 insert into public.auction_enrichment_jobs (
   source_url, job_type, status, priority, input_hash,
@@ -164,7 +164,7 @@ insert into public.auction_enrichment_jobs (
 )
 values
   ('https://example.test/pgtap/871/old-display', 'display_description', 'queued', 20, 'pgtap-871-old-display',
-   now() - interval '1 minute', now() - interval '3 days', now() - interval '3 days'),
+   now() - interval '1 minute', now() - interval '12 hours', now() - interval '12 hours'),
   ('https://example.test/pgtap/871/new-pdf', 'pdf', 'queued', 30, 'pgtap-871-new-pdf',
    now() - interval '1 minute', now() - interval '1 hour', now() - interval '1 hour');
 
