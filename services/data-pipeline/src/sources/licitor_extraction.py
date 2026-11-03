@@ -79,8 +79,13 @@ _SALE_DATE_RE = re.compile(
     r"\b(?P<day>\d{1,2})\s*(?:er)?\s+(?P<month>[a-zéûô]+)\s+(?P<year>20\d{2})\s+à\s+(?P<hour>\d{1,2})\s*h\s*(?P<minute>\d{2})?",
     re.I,
 )
+# En-tête d'un lot : ordinal (« 1er lot », « 2ème lot de vente », « 3ème lot d'enchère ») ou numéroté (« Lot 1 »,
+# « Lot n°2 » : annonces 110492 et 110549, lues comme un seul lot avant le 03/11/2026). Un en-tête numéroté ne
+# compte que si les numéros se suivent depuis 1 (une ligne « Lot 12 » de copropriété ne coupe pas la désignation).
 _LOT_MARKER_RE = re.compile(
-    r"^(?:(?P<n>\d{1,2})\s*(?:er|ère|re|e|ème|eme|nd|nde)|(?P<w>premier|second|seconde))\s+lot(?:\s+de\s+(?:la\s+)?vente)?\s*:?$",
+    r"^(?:(?:\d{1,2}\s*(?:er|ère|re|e|ème|eme|nd|nde)|premier|second|seconde)\s+lot"
+    r"(?:\s+(?:de\s+(?:la\s+)?vente|d['’]\s*ench[eè]res?))?"
+    r"|lot\s*(?:n\s*[°º]|no\.?)?\s*(?P<number>\d{1,2}))\s*:?$",
     re.I,
 )
 _PRICE_RE = re.compile(r"^Mise\s+[àa]\s+prix\s*:?\s*(?P<value>.*)$", re.I)
@@ -387,7 +392,11 @@ def _header(lines: list[str], page: LicitorPage) -> int | None:
 
 
 def _split_lots(lines: list[str]) -> list[tuple[str | None, list[str]]]:
-    markers = [index for index, line in enumerate(lines) if _LOT_MARKER_RE.match(line)]
+    found = [(index, match) for index, line in enumerate(lines) if (match := _LOT_MARKER_RE.match(line))]
+    markers = [index for index, match in found if match.group("number") is None]
+    numbers = [int(match.group("number")) for _, match in found if match.group("number")]
+    if not markers and len(numbers) > 1 and numbers == list(range(1, len(numbers) + 1)):
+        markers = [index for index, _ in found]
     if not markers:
         return [(None, lines)]
     segments: list[tuple[str | None, list[str]]] = []
