@@ -147,6 +147,9 @@ jobs:
       PDF_EXTRACTOR: auto
       PDF_DOCLING_ENABLED: false
       PDF_OCR_ENABLED: true
+      # One Tesseract thread per OCR: two concurrent OCRs with the default (one thread per core) took
+      # 301 s for 12 pages on 4 vCPUs, 10 cut at the 60 s timeout; 9.8 s single-threaded (src/pdf_ocr.py).
+      OMP_THREAD_LIMIT: 1
       PDF_MAX_DOCUMENTS_PER_SALE: 6
       PDF_MAX_DOWNLOAD_MB: 50
       # Vench publishes a 416-page, 9.6 MB descriptive report. OCR remains

@@ -70,6 +70,7 @@ def _valid_pdf_checkpoint_pages(
                 "blank_excluded",
                 "blank_page_excluded",
                 "visual_blank_excluded",
+                "picture_page_excluded",
                 "failed",
             }
             or (

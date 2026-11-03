@@ -22,6 +22,24 @@ OCR_NO_TEXT_UNVERIFIED_METHOD = "ocr_no_text_unverified"
 OCR_ROTATED_METHOD = "ocr_tesseract_rotated"
 OCR_ROTATION_DEGREES = 90
 OCR_INK_SAMPLE_MAX_PIXELS = 200_000
+# Troisième lecture d'une page encrée que les deux premières n'ont pas lue : Tesseract en mode « texte épars »
+# (--psm 11) cherche le texte partout sur l'image et donne une confiance par mot. Sur une page de texte, il rend
+# des dizaines de mots sûrs ; sur une page de photos ou un plan, seulement du bruit de faible confiance (mesuré le
+# 03/11/2026 sur des PV avoventes et licitor : 0 mot sûr sur chaque page de photos, 29 à 101 sur une page de texte).
+OCR_SPARSE_METHOD = "ocr_tesseract_sparse"
+# Trois lectures sans un seul mot sûr : la page est une image sans texte (photographies du bien, plan). Elle est
+# réglée (plus de nouvelle tentative, qui donnerait le même résultat) et gardée telle quelle dans le PDF source.
+OCR_PICTURE_NO_TEXT_METHOD = "ocr_picture_no_text"
+OCR_SPARSE_PAGE_SEGMENTATION_MODE = "11"
+OCR_SPARSE_WORD_MIN_CONFIDENCE = 70.0
+OCR_SPARSE_WORD_MIN_LETTERS = 3
+OCR_SPARSE_MIN_CONFIDENT_WORDS = 3
+OCR_SPARSE_TEXT_MIN_CONFIDENCE = 60.0
+# Tesseract (OpenMP) lance par défaut un fil par cœur. Deux OCR simultanés (deux workers d'enrichissement sur un
+# runner de 4 vCPU) se disputent alors les cœurs : mesuré le 03/11/2026, 6 pages × 2 flux prennent 301 s dont 10
+# pages coupées à 60 s (« ocr_failed », puis report du document), contre 9,8 s et aucun échec avec un seul fil.
+# Un seul fil est aussi plus rapide pour un OCR isolé. Une valeur déjà fixée dans l'environnement est respectée.
+OCR_THREAD_LIMIT = "1"
 LOGGER = logging.getLogger(__name__)
 DOCUMENT_LOGGER = logging.getLogger("src.pdf_enrichment")
 
@@ -336,6 +354,61 @@ def _pixmap_is_uniformly_light(pixmap: object) -> bool | None:
     return inked / measured <= VISUAL_BLANK_INK_RATIO_MAX
 
 
+def tesseract_environment(tessdata: object = None) -> dict[str, str]:
+    """Environment of one Tesseract subprocess: single-threaded unless the operator chose otherwise."""
+    env = os.environ.copy()
+    if tessdata:
+        env["TESSDATA_PREFIX"] = str(tessdata)
+    if not clean_text(env.get("OMP_THREAD_LIMIT")):
+        env["OMP_THREAD_LIMIT"] = OCR_THREAD_LIMIT
+    return env
+
+
+def _has_word(text: str | None) -> bool:
+    """At least one token of three letters or digits (a sideways table may hold only numbers): the
+    rotated pass is speculative, and on a page of photographs it returns two-character noise
+    ("fh", "€T") that must not count as a read page."""
+    return any(
+        sum(character.isalnum() for character in token) >= OCR_SPARSE_WORD_MIN_LETTERS
+        for token in (text or "").split()
+    )
+
+
+def sparse_ocr_words(tsv: str | None) -> list[tuple[int, int, int, int, float, str]]:
+    """Words of a Tesseract TSV output: (block, paragraph, line, word, confidence, text)."""
+    words: list[tuple[int, int, int, int, float, str]] = []
+    for line in (tsv or "").splitlines()[1:]:
+        columns = line.split("\t")
+        if len(columns) != 12 or not columns[11].strip():
+            continue
+        try:
+            block, paragraph, row, word = (int(value) for value in columns[2:6])
+            confidence = float(columns[10])
+        except ValueError:
+            continue
+        words.append((block, paragraph, row, word, confidence, columns[11].strip()))
+    return words
+
+
+def sparse_ocr_confident_word_count(words: list[tuple[int, int, int, int, float, str]]) -> int:
+    """Words Tesseract is sure of and that look like words (at least three letters)."""
+    return sum(
+        1
+        for *_, confidence, text in words
+        if confidence >= OCR_SPARSE_WORD_MIN_CONFIDENCE
+        and sum(character.isalpha() for character in text) >= OCR_SPARSE_WORD_MIN_LETTERS
+    )
+
+
+def sparse_ocr_text(words: list[tuple[int, int, int, int, float, str]]) -> str:
+    """Text of the sufficiently confident words, one line per Tesseract line."""
+    lines: dict[tuple[int, int, int], list[str]] = {}
+    for block, paragraph, row, _word, confidence, text in words:
+        if confidence >= OCR_SPARSE_TEXT_MIN_CONFIDENCE:
+            lines.setdefault((block, paragraph, row), []).append(text)
+    return "\n".join(" ".join(parts) for _, parts in sorted(lines.items()))
+
+
 def _extract_page_text_with_tesseract_result(
     page: fitz.Page,
     *,
@@ -378,9 +451,7 @@ def _extract_page_text_with_tesseract_result(
                 total_pages=total_pages,
                 new_progress_pages=new_progress_pages,
             )
-            env = os.environ.copy()
-            if tessdata:
-                env["TESSDATA_PREFIX"] = str(tessdata)
+            env = tesseract_environment(tessdata)
             result = subprocess.run(
                 ["tesseract", image_path, "stdout", "-l", str(settings["pdf_ocr_language"])],
                 capture_output=True,
@@ -454,7 +525,7 @@ def _extract_page_text_with_tesseract_result(
                     total_pages=total_pages,
                     new_progress_pages=new_progress_pages,
                 )
-                if rotated.returncode == 0 and clean_text(rotated.stdout):
+                if rotated.returncode == 0 and _has_word(rotated.stdout):
                     text = "\n".join(
                         part for part in (clean_text(fallback), clean_text(rotated.stdout)) if part
                     )
@@ -465,6 +536,62 @@ def _extract_page_text_with_tesseract_result(
                         "status": "extracted",
                         "retryable": False,
                     }
+                if rotated.returncode == 0:
+                    # Troisième lecture, en texte épars, de l'image droite : elle lit un texte que la mise en
+                    # page automatique a manqué, ou prouve qu'il n'y en a pas (photographies, plan).
+                    timeout, deadline_bounded = deadline_bounded_timeout(
+                        timeout,
+                        operation="starting sparse OCR subprocess",
+                        checkpointed_pages=checkpointed_pages,
+                        total_pages=total_pages,
+                        new_progress_pages=new_progress_pages,
+                    )
+                    sparse = subprocess.run(
+                        [
+                            "tesseract",
+                            image_path,
+                            "stdout",
+                            "-l",
+                            str(settings["pdf_ocr_language"]),
+                            "--psm",
+                            OCR_SPARSE_PAGE_SEGMENTATION_MODE,
+                            "tsv",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=timeout,
+                        env=env,
+                        check=False,
+                    )
+                    ensure_deadline(
+                        operation="finishing sparse OCR subprocess",
+                        checkpointed_pages=checkpointed_pages,
+                        total_pages=total_pages,
+                        new_progress_pages=new_progress_pages,
+                    )
+                    if sparse.returncode == 0:
+                        words = sparse_ocr_words(sparse.stdout)
+                        confident_words = sparse_ocr_confident_word_count(words)
+                        sparse_text = clean_text(sparse_ocr_text(words)) if confident_words else None
+                        if confident_words >= OCR_SPARSE_MIN_CONFIDENT_WORDS and sparse_text:
+                            text = "\n".join(part for part in (clean_text(fallback), sparse_text) if part)
+                            return {
+                                "text": text,
+                                "method": OCR_SPARSE_METHOD,
+                                "confidence": page_text_confidence(sparse_text, method="ocr_tesseract"),
+                                "status": "extracted",
+                                "retryable": False,
+                                "sparse_confident_words": confident_words,
+                            }
+                        return {
+                            "text": fallback,
+                            "method": OCR_PICTURE_NO_TEXT_METHOD,
+                            "confidence": page_text_confidence(fallback, method="pymupdf_text"),
+                            "status": "extracted" if clean_text(fallback) else "no_text",
+                            "retryable": False,
+                            "sparse_confident_words": confident_words,
+                        }
+                    LOGGER.debug("Sparse Tesseract OCR returned %s: %s", sparse.returncode, sparse.stderr)
                 return {
                     "text": fallback,
                     "method": OCR_NO_TEXT_UNVERIFIED_METHOD,

@@ -17,14 +17,21 @@ KNOWN_PDF_FAILURE_REASONS = frozenset(
         "decorative_edge_after_ocr",
         "empty_page_not_proven_blank",
         "extractor_exception",
+        # Tesseract failed or timed out on the page: transient, retried.
         "ocr_failed",
+        # Ink but no text after the upright and rotated passes, and the sparse
+        # verification pass could not run: retried.
+        "ocr_no_text_unverified",
+        # A bounded pass stopped before these pages (OCR budget, worker
+        # cutoff): the next pass resumes from the checkpoint.
+        "pages_pending_next_pass",
         "visual_blank_after_ocr",
     }
 )
 
 _FAILURE_STATUSES = frozenset({"failed", "incomplete"})
 _NON_FAILURE_PAGE_STATUSES = frozenset(
-    {"blank", "blank_excluded", "blank_page_excluded", "visual_blank_excluded"}
+    {"blank", "blank_excluded", "blank_page_excluded", "visual_blank_excluded", "picture_page_excluded"}
 )
 _MAX_PAGE_NUMBER = 100_000
 
@@ -88,6 +95,15 @@ def summarize_pdf_failure(payload: Mapping[str, object] | None) -> dict[str, obj
     payload_reason = _safe_reason(payload.get("failure_reason"))
     if payload_reason:
         reasons.add(payload_reason)
+
+    recorded_pages: set[int] = set()
+    for page in page_records:
+        if isinstance(page, Mapping) and (number := _safe_page_number(page.get("page"))) is not None:
+            recorded_pages.add(number)
+    if page_records and any(page not in recorded_pages for page in explicit_failed_pages):
+        # A checkpoint lists only the pages it read: a failed page without a
+        # record was not reached by the bounded pass (or failed and is retried).
+        reasons.add("pages_pending_next_pass")
 
     for page in page_records:
         if not isinstance(page, Mapping):
