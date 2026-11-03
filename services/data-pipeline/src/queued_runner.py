@@ -49,7 +49,7 @@ from src.pdf_enrichment import (
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pdf_progress import manifest_is_complete, read_modern_cache
-from src.pipeline_usage import PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
+from src.pipeline_usage import PARTIAL_MANIFEST_DEFERRAL, PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
 from src.queue_job_state import finish_job as _finish_claim
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
@@ -797,8 +797,8 @@ def run_enrichment_queue_batch(
                     if missing_pdf_prerequisite and not pdf_retry_exhausted and not manifest_is_complete(
                         sale.raw_payload.get("document_analysis"), sale.documents
                     ):
-                        raise QueueJobDeferred(
-                            "Fact extraction deferred: PDF document manifest is still partial"
+                        raise QueueJobDeferred.after(
+                            "Fact extraction deferred: PDF document manifest is still partial", PARTIAL_MANIFEST_DEFERRAL
                         )
                     # A terminal/missing PDF prerequisite cannot advance on
                     # the next wake-up. Keep that fact pass visible for review

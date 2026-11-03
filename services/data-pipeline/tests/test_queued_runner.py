@@ -2811,3 +2811,47 @@ def test_a_pdf_job_reads_again_documents_whose_facts_used_older_rules(monkeypatc
     queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY)
 
     assert read == ([sale.source_url] if reads else [])
+
+
+def test_partial_manifest_without_an_advancing_pdf_job_waits_six_hours(monkeypatch) -> None:
+    """No PDF job can advance it: the pass waits for the document backlog instead of returning every tick."""
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/pdf-partial-no-job",
+            "description": "Maison",
+            "documents": [{"label": "CCV", "url": "https://example.test/ccv.pdf"}],
+        }
+    )
+    sale.raw_payload["document_analysis"] = {
+        "checked_at": datetime.now(UTC).isoformat(),
+        "input_fingerprint": document_fingerprint(sale.documents),
+        "progress_schema_version": 1,
+        "manifest_complete": False,
+        "failed_documents": 0,
+        "failed_document_urls": [],
+        "pending_document_urls": ["https://example.test/ccv.pdf"],
+        "document_progress": [],
+        "blocked_document_urls": [],
+        "skipped_document_urls": [],
+        "terminal_document_urls": [],
+    }
+    job = {"id": "job-fact-partial-no-pdf", "source_url": sale.source_url, "job_type": "fact_extraction", "attempt_count": 1}
+    deferred = []
+    monkeypatch.setattr(queued_runner, "claim_auction_enrichment_jobs_family_from_supabase", lambda *, family, limit: [job])
+    monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
+    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: False)
+    monkeypatch.setattr(queued_runner, "_pdf_failure_reached_retry_cap", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: pytest.fail("partial PDF evidence must not invoke the LLM"))
+    monkeypatch.setattr(queued_runner, "defer_budget_jobs", lambda jobs, error: deferred.append((jobs, error)))
+    monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", lambda job_id, **kwargs: pytest.fail("not finished"))
+
+    queued_runner.run_enrichment_queue_batch(limit=1, family=queued_runner.ENRICHMENT_FAMILY)
+
+    assert deferred and deferred[0][0] == [job]
+    error = deferred[0][1]
+    assert "manifest is still partial" in str(error)
+    wait = (error.next_attempt_at - datetime.now(UTC)).total_seconds()
+    assert 5.9 * 3600 < wait <= 6 * 3600

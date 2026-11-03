@@ -1,8 +1,9 @@
 -- File d'enrichissement : la voie générale lit les pièces avant de décrire une vente
--- (20261111050000_enrichment_claim_pdf_first.sql).
+-- (20261111050000_enrichment_claim_pdf_first.sql), avec une avance bornée de 96 h pour les pièces
+-- (20261111060000_enrichment_claim_pdf_head_start.sql).
 begin;
 
-select plan(15);
+select plan(16);
 
 set local role service_role;
 
@@ -10,16 +11,19 @@ select ok(
   position('pdf.job_type = ''pdf''' in pg_get_functiondef(
     'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
   )) > 0
-  and position('(j.job_type = ''pdf'') desc' in pg_get_functiondef(
+  and position('case when j.job_type = ''pdf'' then 96 else 0 end' in pg_get_functiondef(
     'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
   )) > 0
+  and position('(j.job_type = ''pdf'') desc' in pg_get_functiondef(
+    'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
+  )) = 0
   and position('then 168' in pg_get_functiondef(
     'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
   )) > 0
   and position('r.is_near desc' in pg_get_functiondef(
     'public.claim_auction_enrichment_jobs_family(text,integer)'::regprocedure
   )) > 0,
-  'the general lane waits for the sale''s PDF job and ranks PDF jobs first; urgency and the detail lane remain'
+  'the general lane waits for the sale''s PDF job and gives PDF jobs a 96 h head start; urgency and the detail lane remain'
 );
 
 select ok(
@@ -151,7 +155,8 @@ select is(
   'the exhausted PDF job itself is never claimed again'
 );
 
--- Une tâche pdf récente passe devant une description bien plus ancienne d'une autre vente.
+-- Une tâche pdf récente passe devant une description plus ancienne d'une autre vente, tant que l'écart
+-- d'attente reste sous l'avance de 96 h des tâches pdf (20261111060000 ; voir aussi 872).
 delete from public.auction_enrichment_jobs;
 insert into public.auction_enrichment_jobs (
   source_url, job_type, status, priority, input_hash,
@@ -159,7 +164,7 @@ insert into public.auction_enrichment_jobs (
 )
 values
   ('https://example.test/pgtap/871/old-display', 'display_description', 'queued', 20, 'pgtap-871-old-display',
-   now() - interval '1 minute', now() - interval '50 days', now() - interval '50 days'),
+   now() - interval '1 minute', now() - interval '3 days', now() - interval '3 days'),
   ('https://example.test/pgtap/871/new-pdf', 'pdf', 'queued', 30, 'pgtap-871-new-pdf',
    now() - interval '1 minute', now() - interval '1 hour', now() - interval '1 hour');
 
@@ -175,6 +180,27 @@ select is(
      from public.claim_auction_enrichment_jobs_family('enrichment', 1)),
   'https://example.test/pgtap/871/old-display display_description',
   'the description of a sale without a pending PDF job follows'
+);
+
+-- L'avance est bornée : une description qui attend depuis 10 jours passe devant une tâche pdf d'une heure.
+-- Avec un ordre strict, les descriptions sans pièce à lire n'étaient plus prises du tout (03/11/2026 :
+-- 254 descriptions et 71 passes de faits libres, 10 prises sur 10 pour des pdf).
+delete from public.auction_enrichment_jobs;
+insert into public.auction_enrichment_jobs (
+  source_url, job_type, status, priority, input_hash,
+  next_attempt_at, created_at, updated_at
+)
+values
+  ('https://example.test/pgtap/871/old-display', 'display_description', 'queued', 20, 'pgtap-871-starved-display',
+   now() - interval '1 minute', now() - interval '10 days', now() - interval '10 days'),
+  ('https://example.test/pgtap/871/new-pdf', 'pdf', 'queued', 30, 'pgtap-871-recent-pdf',
+   now() - interval '1 minute', now() - interval '1 hour', now() - interval '1 hour');
+
+select is(
+  (select source_url || ' ' || job_type
+     from public.claim_auction_enrichment_jobs_family('enrichment', 1)),
+  'https://example.test/pgtap/871/old-display display_description',
+  'a description waiting well beyond the PDF head start is not starved'
 );
 
 -- Entre deux tâches pdf, une vente proche passe toujours devant (bonus fini de 168 h).
