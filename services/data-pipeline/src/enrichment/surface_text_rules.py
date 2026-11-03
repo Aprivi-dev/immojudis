@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from decimal import Decimal
 
 # Ce qui sépare une pièce de la valeur qui suit : fin de phrase, nouvel élément d'une énumération
 # (« , un bureau », « , présentant »), ou un mot qui désigne le bien entier ou un autre local.
@@ -50,6 +51,38 @@ _EXCLUDED_SPACE_RE = re.compile(
     r"\b(?:hors|sans|hormis|except[ée]e?s?|non\s+compris(?:e|es|s)?)\s+(?:(?:d[eu]s?|les?|la|l['’])\s*)?[\w-]+",
     re.I,
 )
+
+
+# Terrain ou annexe nommé entre le bien et sa valeur : « une maison … construite sur un terrain de forme
+# rectangulaire de 207 m² », « une maison avec un jardin de 500 m² » (audit du 03/11/2026, e34acc33, db4a22d3).
+_LAND_OBJECT_RE = re.compile(r"\b(?:terrains?|parcelles?|jardins?|contenance|cadastr\w*)\b", re.I)
+# Une annexe ne reçoit la valeur que si elle est ajoutée au bien (« avec un garage de 25 m² ») : « une maison sur
+# cave partielle de 152,64 m² » (89179e7a) mesure la maison.
+_ANNEX_OBJECT_RE = re.compile(
+    r"\b(?:avec|et|plus|outre|ainsi\s+que|dont)\s+(?:(?:un|une|le|la|les|l['’]|des|son|sa|ses|deux|trois)\s+)?"
+    r"(?:garages?|caves?|parkings?|box|terrasses?|balcons?|piscines?|greniers?|combles?|d[ée]pendances?|annexes?"
+    r"|granges?|remises?|hangars?|abris?|celliers?)\b",
+    re.I,
+)
+_DWELLING_NOUN_RE = re.compile(
+    r"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement|pavillon|studio|habitation)s?\b", re.I
+)
+
+
+def value_belongs_to_other_object(gap: str, value: Decimal | None = None) -> bool:
+    """Vrai quand, entre le nom du bien et la valeur, un terrain ou une annexe reçoit cette valeur.
+
+    Seul le dernier objet nommé compte, et seulement s'il n'est séparé de la valeur ni par une virgule ni par
+    un nouveau nom de logement : « maison avec jardin, d'une surface de 90 m² » reste la surface de la maison.
+    Une contenance est un nombre entier de m² : « … et terrain attenant d'une superficie de 202,96 m2 » (afc981e0,
+    terrain de 37 a 92 ca) est une surface mesurée du bâti.
+    """
+    land_value = value is None or value == value.to_integral_value()
+    others = [*(_LAND_OBJECT_RE.finditer(gap) if land_value else ()), *_ANNEX_OBJECT_RE.finditer(gap)]
+    if not others:
+        return False
+    tail = gap[max(item.end() for item in others) :]
+    return not ("," in tail or _DWELLING_NOUN_RE.search(tail))
 
 
 def measurement_gap_is_broken(gap: str) -> bool:
