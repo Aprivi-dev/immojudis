@@ -474,3 +474,48 @@ def test_persisted_sale_procedure_validation_detects_stale_state_sale_method() -
     assert _validate_persisted_sale_procedure(row, expected_sale=expected) == [
         "state_sale_method differs from recompute",
     ]
+
+
+class LockNotAvailable(Exception):
+    """Same class name as psycopg.errors.LockNotAvailable."""
+
+
+def test_a_batch_that_waits_too_long_for_the_catalogue_lock_is_retried(monkeypatch) -> None:
+    from src import recompute_scoring
+
+    calls: list[int] = []
+
+    def upsert(batch, refresh_last_seen):
+        calls.append(len(batch))
+        if len(calls) < 3:
+            raise LockNotAvailable("canceling statement due to lock timeout")
+        return len(batch)
+
+    slept: list[float] = []
+    monkeypatch.setattr(recompute_scoring, "upsert_sales_to_supabase", upsert)
+
+    assert recompute_scoring._upsert_batch_with_lock_retry(["a", "b"], sleep=slept.append) == 2
+    assert calls == [2, 2, 2]
+    assert slept == [20.0, 60.0]
+
+
+def test_a_lock_timeout_that_never_clears_still_fails_and_other_errors_are_not_retried(monkeypatch) -> None:
+    import pytest
+
+    from src import recompute_scoring
+
+    def always_locked(batch, refresh_last_seen):
+        raise LockNotAvailable("lock timeout")
+
+    monkeypatch.setattr(recompute_scoring, "upsert_sales_to_supabase", always_locked)
+    with pytest.raises(LockNotAvailable):
+        recompute_scoring._upsert_batch_with_lock_retry(["a"], sleep=lambda _: None)
+
+    def broken(batch, refresh_last_seen):
+        raise ValueError("bad row")
+
+    slept: list[float] = []
+    monkeypatch.setattr(recompute_scoring, "upsert_sales_to_supabase", broken)
+    with pytest.raises(ValueError):
+        recompute_scoring._upsert_batch_with_lock_retry(["a"], sleep=slept.append)
+    assert slept == []
