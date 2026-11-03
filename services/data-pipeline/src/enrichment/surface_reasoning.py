@@ -20,6 +20,7 @@ from src.enrichment.surface_text_rules import (
 from src.models import AuctionSale
 from src.normalize import (
     MIN_DWELLING_SURFACE_M2,
+    _surface_evidence_for_value,
     carrez_rejection_basis,
     clean_text,
     is_outside_carrez_context,
@@ -260,7 +261,7 @@ _EXPLICIT_SURFACE_PATTERNS: tuple[tuple[SurfaceKind, re.Pattern[str]], ...] = (
     (
         "explicit_built",
         re.compile(
-            rf"(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement)"
+            rf"(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement|studio|pavillon|duplex)"
             rf"[^.;:\n]{{0,80}}?(?:surface|superficie|d['’]une\s+surface|de)\s+(?:d['’]environ\s+|environ\s+)?"
             rf"{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
             re.I,
@@ -633,13 +634,16 @@ def apply_surface_reasoning_to_sale(
     source: str,
 ) -> SurfaceReasoningResult:
     result = reason_about_surfaces(assets, context=context, property_type=sale.property_type)
+    previous_analysis = sale.raw_payload.get("surface_analysis")
     sale.raw_payload["surface_analysis"] = result.model_dump(mode="json")
     if any(item.get("kind") == MULTIPLE_BUILDINGS_CONTRADICTION for item in result.contradictions):
         # Plusieurs bâtiments sans bâtiment principal identifié : aucune des surfaces n'est celle du bien.
         _add_quality_flag(sale, "surface_contradiction")
     selected = result.selected
     if selected is None or selected.validation_status not in {"verified", "partial"}:
-        _drop_stale_reasoned_surface(sale, source)
+        # Rien de retenu : une valeur que le texte écrit encore reste en place. Une sélection contredite non.
+        kept_context = context if selected is None else None
+        _drop_stale_reasoned_surface(sale, source, context=kept_context, previous_analysis=previous_analysis)
         return result
     if selected.kind in {"annex", "unknown"}:
         # Une annexe ou une surface sans nature n'est jamais la surface du bien.
@@ -695,16 +699,31 @@ def apply_surface_reasoning_to_sale(
     return result
 
 
-def _drop_stale_reasoned_surface(sale: AuctionSale, source: str) -> None:
+def _drop_stale_reasoned_surface(
+    sale: AuctionSale,
+    source: str,
+    *,
+    context: str | None = None,
+    previous_analysis: object = None,
+) -> None:
     """Retire la surface qu'un raisonnement précédent avait posée et que celui-ci ne retient plus.
 
     Audit du 03/11/2026 : des sommes de pièces répétées ou partielles (117,51 = 3 × 39,17 ; 15,02 pour 41,76 m²)
     restaient affichées quand le raisonnement corrigé s'abstenait. Seule une valeur posée par cette même source de
     raisonnement est retirée ; une surface de la page, des pièces ou d'une correction reste en place.
+
+    Une valeur que le texte écrit lui-même (« Studio de 31m² », e538fab2) et qui n'était pas une somme calculée
+    reste en place, avec la provenance « source_text » : le raisonnement relancé sur un texte un peu différent (titre
+    affiché remplacé au recalcul) pouvait ne plus la retrouver et l'effaçait.
     """
     if source != "deterministic_surface_reasoning" or sale.surface_source != source:
         return
     stale = sale.surface_m2
+    evidence = _surface_evidence_for_value(context or "", stale)
+    if evidence and not _previous_selection_was_calculated(previous_analysis):
+        sale.surface_source = "source_text"
+        sale.surface_evidence = evidence[:800]
+        return
     for field in ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2"):
         if stale is not None and getattr(sale, field, None) == stale:
             setattr(sale, field, None)
@@ -715,6 +734,20 @@ def _drop_stale_reasoned_surface(sale: AuctionSale, source: str) -> None:
     sale.surface_confidence = None
     sale.surface_evidence = None
     sale.quality_flags = [flag for flag in sale.quality_flags if flag != "surface_calculated_from_rooms"]
+
+
+def _previous_selection_was_calculated(analysis: object) -> bool:
+    """La surface retenue par l'analyse précédente était une somme de pièces (``calculated_*``)."""
+    if not isinstance(analysis, dict):
+        return False
+    selected_id = analysis.get("selected_derivation_id")
+    derivations = analysis.get("derivations")
+    if not selected_id or not isinstance(derivations, list):
+        return False
+    selected = next(
+        (item for item in derivations if isinstance(item, dict) and item.get("derivation_id") == selected_id), None
+    )
+    return str((selected or {}).get("kind") or "").startswith("calculated_")
 
 
 def _type_equal_surface(sale: AuctionSale, selected: SurfaceDerivation) -> None:
@@ -731,7 +764,12 @@ def _type_equal_surface(sale: AuctionSale, selected: SurfaceDerivation) -> None:
 def extract_and_apply_deterministic_surface_reasoning(sale: AuctionSale, context: str) -> SurfaceReasoningResult | None:
     asset = extract_surface_facts_from_text(context)
     if asset is None:
-        _drop_stale_reasoned_surface(sale, "deterministic_surface_reasoning")
+        _drop_stale_reasoned_surface(
+            sale,
+            "deterministic_surface_reasoning",
+            context=context,
+            previous_analysis=sale.raw_payload.get("surface_analysis"),
+        )
         return None
     return apply_surface_reasoning_to_sale(
         sale,
