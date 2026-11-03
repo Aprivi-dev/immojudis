@@ -5,4 +5,4 @@
  * on the Python side fails the tests until this file follows.
  */
 export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display";
-export const EXPECTED_DISPLAY_QUALITY_VERSION = "display_quality_20261012_v4";
+export const EXPECTED_DISPLAY_QUALITY_VERSION = "display_quality_20261103_v5";
