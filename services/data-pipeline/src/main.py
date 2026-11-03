@@ -1868,7 +1868,7 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     if surface_context:
         extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
     normalize_asset_features(sale)
-    attach_source_property_features(sale.raw_payload)
+    attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
     apply_catalogue_readiness(sale)
 
 

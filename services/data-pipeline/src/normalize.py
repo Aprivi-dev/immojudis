@@ -38,6 +38,7 @@ from src.room_counts import (
 )
 from src.sale_date_plausibility import reject_implausible_sale_date
 from src.surface_text_recovery import built_value_names_other_object, extra_built_surface_from_text
+from src.text_fact_scope import private_amenity_mentioned
 from src.tribunal_labels import clean_city_label
 
 FRENCH_MONTHS = {
@@ -1211,7 +1212,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         has_garden=_property_feature_bool(raw_sale.get("has_garden"), source_text, "garden"),
         has_terrace=_property_feature_bool(raw_sale.get("has_terrace"), source_text, "terrace"),
         has_garage=_feature_bool(raw_sale.get("has_garage"), source_text, r"\bgarage\b"),
-        has_pool=_feature_bool(raw_sale.get("has_pool"), source_text, r"\bpiscine\b"),
+        has_pool=_property_feature_bool(raw_sale.get("has_pool"), source_text, "pool"),
         has_air_conditioning=_feature_bool(
             raw_sale.get("has_air_conditioning"), source_text, r"\bclimatisation\b", r"\bair\s+condition"
         ),
@@ -2064,11 +2065,10 @@ def _property_feature_bool(value: object | None, text: str, feature: str) -> boo
     explicit = _parse_bool(value)
     if explicit is not None:
         return explicit
-    if feature == "garden":
-        # ``rez-de-jardin`` names a level. It is not evidence of a garden
-        # right unless another, independently scoped garden mention exists.
-        evidence_text = re.sub(r"\brez[\s-]+de[\s-]+jardin\b", "", text, flags=re.I)
-        return True if re.search(r"\bjardin\b", evidence_text, re.I) else None
+    if feature in {"garden", "pool"}:
+        # ``rez-de-jardin`` names a level ; « jardin de la copropriété », « piscine commune », « rue du Jardin »
+        # name the building's amenity or a place, not the lot's (src.text_fact_scope).
+        return True if private_amenity_mentioned(text, feature) else None
     if feature == "terrace":
         for match in re.finditer(r"\bterrasse\b", text, re.I):
             if _is_building_scoped_terrace(text, match.start(), match.end()):
