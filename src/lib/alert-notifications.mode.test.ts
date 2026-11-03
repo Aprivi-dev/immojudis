@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   resolveConfig: vi.fn(),
   channelFilters: [] as string[],
   orFilters: [] as string[],
+  userFilters: [] as string[][],
 }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from: mocks.from } }));
@@ -36,18 +37,17 @@ function row(id: string, userId: string, channel: "email" | "in_app") {
 }
 
 /**
- * Chaîne de requête minimale : `await` rend les lignes du tableau lu ou mis à jour. À la lecture
- * des notifications, le filtre de canal (`eq`), le filtre `or` du mode internal, l'ordre et la
- * limite sont appliqués comme le ferait la base.
+ * Base minimale : `await` rend les lignes lues ou mises à jour. Les filtres (`eq`, `lte`, `in`, `not in`, `or` du
+ * mode internal), la limite et la page (`range`) sont appliqués comme le ferait PostgREST ; une mise à jour passe
+ * les lignes au statut `sent`.
  */
 function installTables(queue: Array<Record<string, unknown>>, adminUserIds: string[] = []) {
   mocks.from.mockImplementation((table: string) => {
     const builder: Record<string, unknown> = {};
-    let channel: string | null = null;
-    let allowedEmailUsers: string[] | null = null;
-    let max = Infinity;
+    const filters: Array<(item: Record<string, unknown>) => boolean> = [];
+    let window: [number, number] = [0, Infinity];
     let updating = false;
-    for (const method of ["select", "lte", "order", "in"]) {
+    for (const method of ["select", "order"]) {
       builder[method] = () => builder;
     }
     builder.update = () => {
@@ -55,20 +55,34 @@ function installTables(queue: Array<Record<string, unknown>>, adminUserIds: stri
       return builder;
     };
     builder.limit = (value: number) => {
-      max = value;
+      window = [0, value];
+      return builder;
+    };
+    builder.range = (from: number, to: number) => {
+      window = [from, to + 1];
       return builder;
     };
     builder.eq = (column: string, value: string) => {
-      if (column === "delivery_channel") {
-        mocks.channelFilters.push(value);
-        channel = value;
-      }
+      if (column === "delivery_channel") mocks.channelFilters.push(value);
+      filters.push((item) => item[column] === value);
+      return builder;
+    };
+    builder.lte = (column: string, value: string) => {
+      filters.push((item) => String(item[column]) <= value);
+      return builder;
+    };
+    builder.in = (column: string, values: string[]) => {
+      if (column === "user_id") mocks.userFilters.push([...values]);
+      filters.push((item) => values.includes(item[column] as string));
+      return builder;
+    };
+    builder.not = (column: string, _operator: string, list: string) => {
+      const values = list.replace(/^\(|\)$/g, "").split(",");
+      filters.push((item) => !values.includes(item[column] as string));
       return builder;
     };
     builder.or = (expression: string) => {
       mocks.orFilters.push(expression);
-      const list = /user_id\.in\.\(([^)]*)\)/.exec(expression)?.[1] ?? "";
-      allowedEmailUsers = list ? list.split(",") : [];
       return builder;
     };
     builder.then = (resolve: (value: unknown) => unknown) => {
@@ -76,17 +90,12 @@ function installTables(queue: Array<Record<string, unknown>>, adminUserIds: stri
         return resolve({ data: adminUserIds.map((user_id) => ({ user_id })), error: null });
       }
       if (table !== "user_alert_notifications") return resolve({ data: [], error: null });
-      if (updating) return resolve({ data: queue, error: null });
-      const rows = queue
-        .filter((item) => channel === null || item.delivery_channel === channel)
-        .filter(
-          (item) =>
-            allowedEmailUsers === null ||
-            item.delivery_channel === "in_app" ||
-            allowedEmailUsers.includes(item.user_id as string),
-        )
-        .slice(0, max);
-      return resolve({ data: rows, error: null });
+      const rows = queue.filter((item) => filters.every((filter) => filter(item)));
+      if (updating) {
+        for (const item of rows) item.delivery_status = "sent";
+        return resolve({ data: rows, error: null });
+      }
+      return resolve({ data: rows.slice(window[0], window[1]), error: null });
     };
     return builder;
   });
@@ -136,6 +145,7 @@ describe("dispatchDueAlertNotifications selon ALERT_NOTIFICATIONS_MODE", () => {
     vi.resetAllMocks();
     mocks.channelFilters = [];
     mocks.orFilters = [];
+    mocks.userFilters = [];
     mocks.dispatchEmails.mockResolvedValue({
       configured: true,
       missing: [],
@@ -155,19 +165,19 @@ describe("dispatchDueAlertNotifications selon ALERT_NOTIFICATIONS_MODE", () => {
 
     expect(mocks.dispatchEmails).not.toHaveBeenCalled();
     expect(mocks.channelFilters).toContain("in_app");
+    expect(mocks.channelFilters).not.toContain("email");
     expect(result.emailMode).toBe("off");
     expect(result.emailCandidateCount).toBe(0);
     expect(result.emailDispatchedCount).toBe(0);
   });
 
-  it("en mode on envoie les emails dus, sans filtre de canal à la lecture", async () => {
+  it("en mode on envoie les emails dus", async () => {
     installTables([row("n1", "user-1", "email")]);
 
     const result = await dispatchDueAlertNotifications({ now: NOW, emailMode: "on" });
 
     expect(mocks.dispatchEmails).toHaveBeenCalledTimes(1);
     expect(mocks.dispatchEmails.mock.calls[0][0].notifications).toHaveLength(1);
-    expect(mocks.channelFilters).not.toContain("in_app");
     expect(result).toMatchObject({
       emailMode: "on",
       emailDispatchedCount: 1,
@@ -195,8 +205,8 @@ describe("dispatchDueAlertNotifications selon ALERT_NOTIFICATIONS_MODE", () => {
       emailMode: "internal",
     });
 
-    expect(mocks.orFilters).toHaveLength(1);
-    expect(mocks.orFilters[0]).toContain("user_id.in.(admin-1)");
+    // Seuls les administrateurs sont lus : les 200 emails plus anciens des autres comptes restent en file.
+    expect(mocks.userFilters[0]).toEqual(["admin-1"]);
     expect(mocks.dispatchEmails).toHaveBeenCalledTimes(1);
     expect(
       mocks.dispatchEmails.mock.calls[0][0].notifications.map((item: { id: string }) => item.id),
@@ -210,8 +220,53 @@ describe("dispatchDueAlertNotifications selon ALERT_NOTIFICATIONS_MODE", () => {
     await dispatchDueAlertNotifications({ now: NOW, emailMode: "internal" });
 
     expect(mocks.channelFilters).toContain("in_app");
-    expect(mocks.orFilters).toHaveLength(0);
+    expect(mocks.channelFilters).not.toContain("email");
     expect(mocks.dispatchEmails.mock.calls[0][0].notifications).toHaveLength(0);
+  });
+
+  it("un compte reçoit toute sa file en un seul passage, même quand son alerte couvre le catalogue", async () => {
+    // 03/11/2026 : 841 emails en file pour un compte, 474 pour un autre ; la fenêtre de 200 lignes n'en prenait
+    // qu'une partie par jour, et un compte à une seule vente attendait derrière eux.
+    const heavy = Array.from({ length: 1_500 }, (_, index) =>
+      row(`heavy-${String(index).padStart(4, "0")}`, "user-heavy", "email"),
+    );
+    const other = Array.from({ length: 474 }, (_, index) =>
+      row(`other-${index}`, "user-other", "email"),
+    );
+    installTables([...heavy, ...other, row("single", "user-single", "email")]);
+
+    const result = await dispatchDueAlertNotifications({ now: NOW, emailMode: "on" });
+
+    expect(mocks.dispatchEmails).toHaveBeenCalledTimes(1);
+    const sent: Array<{ user_id: string }> = mocks.dispatchEmails.mock.calls[0][0].notifications;
+    expect(sent).toHaveLength(1_975);
+    expect(new Set(sent.map((item) => item.user_id))).toEqual(
+      new Set(["user-heavy", "user-other", "user-single"]),
+    );
+    expect(result.candidateCount).toBe(1_975);
+  });
+
+  it("publie toutes les notifications dues dans l'application, par pages", async () => {
+    installTables(
+      Array.from({ length: 450 }, (_, index) => row(`app-${index}`, `user-${index % 3}`, "in_app")),
+    );
+
+    const result = await dispatchDueAlertNotifications({ now: NOW, limit: 200, emailMode: "off" });
+
+    expect(result.dispatchedCount).toBe(450);
+  });
+
+  it("n'envoie pas un email prévu plus tard", async () => {
+    installTables([
+      row("due", "user-1", "email"),
+      { ...row("later", "user-1", "email"), scheduled_for: "2026-11-09T07:00:00.000Z" },
+    ]);
+
+    await dispatchDueAlertNotifications({ now: NOW, emailMode: "on" });
+
+    expect(
+      mocks.dispatchEmails.mock.calls[0][0].notifications.map((item: { id: string }) => item.id),
+    ).toEqual(["due"]);
   });
 
   it("par défaut (variable absente) le mode est on", async () => {

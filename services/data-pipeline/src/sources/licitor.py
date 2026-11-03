@@ -18,7 +18,6 @@ from src.normalize import (
     clean_text,
     extract_department,
 )
-from src.occupancy_statements import occupancy_status_from_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
@@ -28,7 +27,7 @@ from src.sources.common import (
     extract_surface,
     is_allowed_origin_url,
     is_plausible_email,
-    normalize_surface_number,
+    normalize_surface_number,  # noqa: F401 - normaliseur des surfaces partagé par les sources (test de parité)
     parse_html,
 )
 from src.sources.image_candidates import html_image_candidates
@@ -38,12 +37,10 @@ from src.sources.licitor_extraction import (
     extract_licitor_fields,
     licitor_department,
 )
+from src.sources.licitor_lots import apply_licitor_lot
+from src.sources.licitor_lots import postal_code_from_arrondissement as _postal_code_from_arrondissement
+from src.sources.licitor_lots import text_facts as licitor_text_facts
 from src.sources.professional_contact import clear_email
-from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
-from src.sources.source_features import extract_parking_count as _extract_parking_count
-from src.sources.source_features import extract_qualified_surface as _extract_qualified_surface_impl
-from src.sources.source_features import extract_rooms_count as _extract_rooms_count
-from src.sources.source_features import is_mixed_property as _is_mixed_property
 from src.sources.source_features import normalize_document_text as _normalize_document_text
 
 BASE_URL = "https://www.licitor.com"
@@ -274,7 +271,8 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
             summary["source_detail_status"] = "failed"
             raw_sales.append(summary)
             continue
-        sale = parse_licitor_detail_html(detail_html, detail_url)
+        # Les cartes de la liste pour cette URL désignent son lot quand la page en a plusieurs.
+        sale = parse_licitor_detail_html(detail_html, detail_url, summary.get("source_lots", []))
         # The detail page is authoritative for its own fields, but some
         # catalogue facts (in particular the department) are not repeated on
         # the detail page. Preserve those facts field by field instead of
@@ -437,7 +435,14 @@ def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[di
     return contacts
 
 
-def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
+def parse_licitor_detail_html(
+    html: str, source_url: str, listing_lots: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """Vente lue sur une fiche ; ``listing_lots`` : cartes de la liste publique pour cette URL.
+
+    Une page à plusieurs lots est joignable par une URL par lot : la vente décrit le lot de ``source_url``
+    (voir ``src.sources.licitor_lots``), les cartes de la liste départageant les lots quand l'URL ne suffit pas.
+    """
     soup = parse_html(html, "html.parser")
     # Cloudflare masque les adresses e-mail des avocats. Licitor ayant donné son accord (14/10/2026,
     # oral, à formaliser par écrit), on les décode dans le HTML déjà récupéré et dans les seuls blocs
@@ -474,16 +479,18 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     # Restrict enriched fields to the listing title/lot block. The page-wide
     # text contains navigation and generic labels that can look like facts.
     detail_text = description or title or ""
-    carrez_surface = _extract_qualified_surface(detail_text, "carrez")
-    habitable_surface = _extract_qualified_surface(detail_text, "habitable")
-    land_surface = _extract_land_surface_m2(detail_text)
-    rooms_count = _extract_rooms_count(detail_text, title)
-    parking_count = _extract_parking_count(detail_text)
-    property_type = _extract_property_type(title, detail_text)
+    facts = licitor_text_facts(detail_text, title)
+    carrez_surface = facts["carrez_surface_m2"]
+    habitable_surface = facts["habitable_surface_m2"]
+    land_surface = facts["land_surface_m2"]
+    rooms_count = facts["rooms_count"]
+    parking_count = facts["parking_count"]
+    property_type = facts["property_type"]
     starting_price = _extract_after(raw_text, r"Mise à prix\s*:?\s*([^\n]+)")
     sale_date = _extract_sale_date(lines)
     visit_dates = _extract_visit_dates(lines)
-    occupancy_status = _extract_occupancy_status(detail_text)
+    # Une phrase lue à la fois : « Les biens sont, semble-t-il, occupés » n'est pas un statut certain (03/11/2026).
+    occupancy_status = facts["occupancy_status"]
     documents, virtual_tours = _extract_attachments(soup, source_url)
     status = "unknown"
     for line in lines:
@@ -557,11 +564,16 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
             if value
         },
     }
+    if listing_lots is not None:
+        sale["source_lots"] = listing_lots
     # Lecture structurée du texte de la fiche (lots, procédure, conditions, avocats,
     # visites, régie) : même code que le recalcul sur les pages déjà stockées.
     extracted = extract_licitor_fields(raw_text, sale)
     if extracted is not None:
         apply_licitor_fields(sale, extracted)
+        # Page à plusieurs lots : les valeurs ci-dessus sont celles du premier lot (premier bloc
+        # .AddressBlock, première « Mise à prix ») ; la vente de cette URL prend celles de son lot.
+        apply_licitor_lot(sale, extracted["page"], lot_coordinates=_lot_coordinates(soup))
     if internal_contacts:
         # Hors de tout champ publié : extrait par ``normalize_sale``, écrit dans le registre interne.
         sale["internal_contacts"] = internal_contacts
@@ -876,24 +888,6 @@ def _postal_code_near_city(raw_text: str, city: str | None) -> str | None:
     return None
 
 
-def _postal_code_from_arrondissement(value: object | None) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    match = re.search(r"\b(Paris|Lyon|Marseille)\s+(\d{1,2})(?:er|[eè]me|eme)\b", text, re.I)
-    if not match:
-        return None
-    city = match.group(1).lower()
-    arrondissement = int(match.group(2))
-    if city == "paris" and 1 <= arrondissement <= 20:
-        return f"750{arrondissement:02d}"
-    if city == "lyon" and 1 <= arrondissement <= 9:
-        return f"6900{arrondissement}"
-    if city == "marseille" and 1 <= arrondissement <= 16:
-        return f"130{arrondissement:02d}"
-    return None
-
-
 def _extract_address(soup: BeautifulSoup, lines: list[str], city: str | None, postal_code: str | None) -> str | None:
     street = soup.select_one(".AddressBlock .Location .Street")
     if street:
@@ -912,18 +906,6 @@ def _extract_address(soup: BeautifulSoup, lines: list[str], city: str | None, po
                     return f"{candidate}, {city}"
                 return candidate
     return None
-
-
-def _extract_property_type(title: str | None, detail_text: str | None) -> str | None:
-    text = " ".join(part for part in (title, detail_text) if part)
-    if _is_mixed_property(text):
-        return "mixed"
-    return clean_text(title)
-
-
-def _extract_occupancy_status(raw_text: str) -> str | None:
-    # Une phrase lue à la fois : « Les biens sont, semble-t-il, occupés » n'est pas un statut certain (03/11/2026).
-    return occupancy_status_from_text(raw_text)
 
 
 def _extract_description(soup: BeautifulSoup, title: str | None) -> str | None:
@@ -945,7 +927,16 @@ def _extract_description(soup: BeautifulSoup, title: str | None) -> str | None:
     return clean_text(" ".join(parts))
 
 
-def _extract_coordinates(soup: BeautifulSoup) -> tuple[str | None, str | None]:
+def _lot_coordinates(soup: BeautifulSoup) -> list[tuple[str | None, str | None]]:
+    """Point du plan de chaque lot, dans l'ordre de la page (celui du bloc ``.AddressBlock`` du lot)."""
+    coordinates: list[tuple[str | None, str | None]] = []
+    for block in soup.select(".AddressBlock"):
+        point = _extract_coordinates(block.select_one(".Location") or BeautifulSoup("", "html.parser"))
+        coordinates.extend([point] * len(block.select(".Lot")))
+    return coordinates
+
+
+def _extract_coordinates(soup: Any) -> tuple[str | None, str | None]:
     for link in soup.find_all("a", href=True):
         href = str(link.get("href", ""))
         match = re.search(r"[?&](?:q|ll|center)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)", href)
@@ -1101,49 +1092,6 @@ def _is_disallowed_document_url(url: str) -> bool:
 def _extract_surface_m2(text: str) -> str | None:
     # Première surface bâtie plausible mentionnée dans la page (en m²).
     return extract_surface(text, unit=r"(?:m\s*(?:²|2)|²)")
-
-
-def _extract_qualified_surface(text: str | None, kind: str) -> str | None:
-    return _extract_qualified_surface_impl(text, kind, normalize_surface_number)
-
-
-def _extract_land_surface_m2(text: str | None) -> str | None:
-    value = clean_text(text) or ""
-    if not value:
-        return None
-    cadastral = r"(?:(\d+)\s*ha\s*)?(?:(\d+)\s*a\s*)?(\d+)\s*ca\b"
-    total_patterns = (
-        rf"\b(?:soit\s+une\s+)?(?:contenance|surface|superficie)\s+totale\s*(?:de|:)\s*{cadastral}",
-        rf"\b(?:parcelle|terrain)\b[^.\n]{{0,100}}?\b(?:d['’]une\s+)?(?:surface|superficie|contenance)\s+totale\s*(?:de|:)\s*{cadastral}",
-    )
-    totals = [
-        _cadastral_to_m2(match)
-        for pattern in total_patterns
-        for match in re.finditer(pattern, value, re.I)
-    ]
-    unique_totals = {candidate for candidate in totals if candidate}
-    if len(unique_totals) == 1:
-        return next(iter(unique_totals))
-    if len(unique_totals) > 1:
-        return None
-
-    cadastral_marker = r"(?:cadastr\w*|parcelle|section\s+[A-Z]{1,4}\s*(?:n[°o.]?\s*)?[0-9A-Za-z-]+)"
-    explicit_patterns = (
-        rf"\b{cadastral_marker}\b[^.;\n]{{0,180}}?\b(?:pour\s+)?(?:une\s+)?(?:contenance|surface|superficie)\s+(?:de\s+)?{cadastral}",
-        rf"\b{cadastral_marker}\b[^.;\n]{{0,180}}?\b(?:pour|de)\s+{cadastral}",
-    )
-    candidates_by_span: dict[tuple[int, int], str] = {}
-    for pattern in explicit_patterns:
-        for match in re.finditer(pattern, value, re.I):
-            candidate = _cadastral_to_m2(match)
-            if candidate:
-                candidates_by_span[(match.start(), match.end())] = candidate
-    candidates = list(candidates_by_span.values())
-    if len(candidates) != 1:
-        return None
-    return candidates[0]
-
-
 
 
 def _extract_after(text: str, pattern: str) -> str | None:

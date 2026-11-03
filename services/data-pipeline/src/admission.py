@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
+from src.lot_scope import lot_selected
 from src.models import AuctionSale
 
 DATE_ONLY_PRECISIONS = {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
@@ -251,6 +252,10 @@ def is_multi_lot_with_first_lot_values(sale: AuctionSale) -> bool:
     celles d'un seul lot.
     """
     if sale.source_name == "licitor":
+        # Le lot de l'URL désigné avec certitude (src.sources.licitor_lots) : la ligne porte ses valeurs, pas
+        # celles du premier lot. Un lot incertain garde la quarantaine (ses champs propres sont vides).
+        if lot_selected(sale.raw_payload):
+            return False
         return "multi_lot_sale" in sale.quality_flags and licitor_lot_count(sale.raw_payload) > 1
     if sale.source_name in MULTI_LOT_TEXT_SOURCES:
         return announces_several_lots(sale.title, sale.description, sale.source_url)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal, InvalidOperation
 
+from src.lot_scope import describes_one_lot
 from src.null_text import clean_text
 
 
@@ -300,7 +301,8 @@ def reconcile_room_counts(sale: object, text: str) -> None:
 def _describes_several_dwellings(sale: object, text: str) -> bool:
     flags = getattr(sale, "quality_flags", None) or []
     if "multi_lot_sale" in flags:
-        return True
+        # Un lot Licitor désigné avec certitude (src.lot_scope) est un seul logement, lu dans son texte.
+        return not describes_one_lot(sale)
     # « les trois maisons disposent d'une surface habitable d'environ 95 m² » (5003b2a5) : trois logements.
     if re.search(
         r"\b(?:les|des|ces)\s+(?:deux|trois|quatre|cinq|six|[2-9])\s+(?:maisons|villas|pavillons|appartements|logements)\b",

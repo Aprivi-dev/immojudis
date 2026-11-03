@@ -14,6 +14,8 @@ from src.admission import is_date_only, licitor_lot_count, sale_date_has_passed
 from src.department_inference import department_from_geocode_evidence
 from src.land_parcels import read_parcel_land_surface
 from src.listing_location import recover_listing_address, reject_monetary_address
+from src.lot_scope import fact_view as _fact_view
+from src.lot_scope import is_lot_scoped
 from src.models import INTERNAL_CONTACTS_KEY, AuctionSale
 from src.multi_unit_type import is_multi_unit_building_text
 from src.null_text import clean_text
@@ -35,7 +37,7 @@ from src.room_counts import (
     source_rooms_counter,
 )
 from src.sale_date_plausibility import reject_implausible_sale_date
-from src.surface_text_recovery import extra_built_surface_from_text
+from src.surface_text_recovery import built_value_names_other_object, extra_built_surface_from_text
 from src.tribunal_labels import clean_city_label
 
 FRENCH_MONTHS = {
@@ -839,6 +841,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     ):
         raw_sale = dict(raw_sale)
         raw_sale['quality_flags'] = [*(raw_sale.get('quality_flags') or []), 'multi_lot_sale']
+    # Annonce Licitor à plusieurs lots : les faits se lisent dans le seul texte du lot de l'URL (src.lot_scope).
+    if is_lot_scoped(raw_sale):
+        source_text = _normalization_text(_fact_view(raw_sale))
     title =clean_text(raw_sale.get("title"))
     detail_title = clean_text(_source_block_lookup(raw_sale, "titre_detail", "detail_titre", "asset_title"))
     if _is_generic_listing_title(title) and detail_title:
@@ -847,7 +852,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         title = _extract_asset_title_from_text(source_text) or title
     if title is None:
         title = clean_text(_source_block_lookup(raw_sale, "titre", "title"))
-    property_type = normalize_sale_property_type(raw_sale)
+    property_type = normalize_sale_property_type(_fact_view(raw_sale))
     if detail_title and property_type in {"apartment", "house"} and normalize_property_type(title) == "land":
         title = detail_title
     description = clean_text(_field_or_source_block(raw_sale, "description", "description", "detail_description"))
@@ -878,7 +883,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
                 flags.append("postal_address_conflict")
             raw_sale["quality_flags"] = flags
     if postal_code is None and not _skip_contextless_postal_code_fallback(raw_sale, address):
-        postal_code = extract_postal_code(raw_sale.get("raw_text"), source_text)
+        postal_code = extract_postal_code(_fact_view(raw_sale).get("raw_text"), source_text)
     if _postal_code_is_starting_price_without_location(raw_sale, address, postal_code):
         raw_sale = dict(raw_sale)
         raw_sale["invalid_postal_evidence"] = {
@@ -916,7 +921,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     # Une date écartée comme invraisemblable reste « à venir » face à un résultat annoncé.
     announced_sale_date = sale_date
     sale_date = reject_implausible_sale_date(raw_sale, sale_date)
-    starting_price, price_conflict = resolve_starting_price(raw_sale)
+    starting_price, price_conflict = resolve_starting_price(_fact_view(raw_sale))
     if price_conflict:
         raw_sale["price_conflict"] = True
         raw_sale["quality_flags"] = [*dict.fromkeys([*(raw_sale.get("quality_flags") or []), "price_conflict"])]
@@ -929,7 +934,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             flags.append("postal_department_conflict")
         raw_sale["quality_flags"] = flags
     department = postal_department or explicit_department or department_from_geocode_evidence(raw_sale)
-    adjudication_price = extract_adjudication_price(raw_sale)
+    adjudication_price = extract_adjudication_price(_fact_view(raw_sale))
     status = normalize_status(
         _field_or_source_block(raw_sale, "status", "status", "statut"), sale_date, date_only=sale_date_only
     )
@@ -961,11 +966,11 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         rooms_count = extract_rooms_count_from_text(
             title,
             description,
-            raw_sale.get("raw_text"),
+            _fact_view(raw_sale).get("raw_text"),
             source_text,
         )
     elif rooms_count is None and property_type == "mixed" and "multi_lot_sale" not in (raw_sale.get("quality_flags") or []):
-        rooms_count = source_rooms_counter(raw_sale.get("raw_text"), source_text)  # compteur de la fiche seul
+        rooms_count = source_rooms_counter(_fact_view(raw_sale).get("raw_text"), source_text)  # compteur de la fiche seul
     bedrooms_count = parse_bedrooms_count(
         _field_or_source_block(
             raw_sale,
@@ -978,7 +983,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     ) or extract_bedrooms_count_from_text(
         title,
         description,
-        raw_sale.get("raw_text"),
+        _fact_view(raw_sale).get("raw_text"),
         source_text,
     )
     structured_surface_m2 = parse_surface(
@@ -1847,7 +1852,7 @@ def _extract_built_surface_from_text(*values: object) -> Decimal | None:
         ),
         rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+(?:de\s+)?(?:surface\s+)?(?:bâtie|batie)\b",
     )
-    built = _extract_contextual_surface(text, patterns)
+    built = _extract_contextual_surface(text, patterns, skip_match=built_value_names_other_object)
     if built is not None:
         return built
     habitable = _extract_habitable_surface_from_text(text)
