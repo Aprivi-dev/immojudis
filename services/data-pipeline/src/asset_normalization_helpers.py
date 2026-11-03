@@ -63,8 +63,7 @@ def _is_unestablished_multi_unit_surface(sale: AuctionSale, text: str) -> bool:
         return True  # la surface d'un des logements cités, même qualifiée « totale » pour ce logement
     if not text or _has_explicit_total_surface_evidence(text):
         return False
-    if "multi_lot_sale" in sale.quality_flags and not describes_one_lot(sale):
-        # (un lot Licitor désigné avec certitude porte sa propre surface, lue dans son seul texte)
+    if "multi_lot_sale" in sale.quality_flags and not describes_one_lot(sale):  # lot Licitor désigné : sa surface
         return True
     return sale.property_type == "building" and bool(_MULTI_UNIT_PATTERN.search(text))
 
