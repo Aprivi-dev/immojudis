@@ -51,7 +51,7 @@ _OCCUPIED_DESCRIPTION_RE = re.compile(
 
 
 def _amount(value: str | None) -> float | None:
-    text = re.sub(r"[\s  ]", "", value or "")
+    text = re.sub(r"[\s\u00a0\u202f]", "", value or "")
     text = re.sub(r"[.,]00$", "", text).replace(".", "").replace(",", ".")
     try:
         amount = float(text)
@@ -246,10 +246,53 @@ def extract_encheres_publiques_characteristics(raw_sale: dict[str, Any]) -> dict
     }
 
 
+# Titre de l'événement : « Vente immobilière au Tribunal judiciaire de Paris le 9 Juillet 2026 », « Vente
+# immobilière par l'Office du Parc le 16 Septembre 2026 », « … par Carbonnier Notaires du 1er au 2 Septembre 2026 ».
+_MONTHS = r"janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre"
+_EVENT_DATE_RE = re.compile(
+    rf"\bVente\s+immobili[èe]re\b[^\n]{{0,120}}?\b(?:le\s+(?P<day>\d{{1,2}}(?:er)?\s+(?:{_MONTHS})\s+\d{{4}})|"
+    rf"du\s+\d{{1,2}}(?:er)?(?:\s+(?:{_MONTHS}))?(?:\s+\d{{4}})?\s+au\s+(?P<end>\d{{1,2}}(?:er)?\s+(?:{_MONTHS})\s+\d{{4}}))",
+    re.I,
+)
+# « Mise a prix: 120 000 » : ligne écrite par le collecteur, sans symbole €.
+_TEXT_PRICE_RE = re.compile(r"\bMise a prix:\s*(\d{1,3}(?:[ \u00a0]\d{3})*)(?![\d,.])")
+# « Visites: 31/08/2026 11:30 - 12:30 | 01/09/2026 09:30 - 12:30 » : ligne écrite par le collecteur.
+_VISIT_SLOT = r"\d{2}/\d{2}/\d{4}\s+\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}"
+_TEXT_VISITS_RE = re.compile(rf"\bVisites:\s*({_VISIT_SLOT}(?:\s*\|\s*{_VISIT_SLOT})*)")
+
+
+def text_event_sale_date(*texts: object) -> str | None:
+    """Jour de vente du titre de l'événement (la fin d'une vente sur plusieurs jours), sinon ``None``."""
+    for text in texts:
+        match = _EVENT_DATE_RE.search(str(text or ""))
+        if match:
+            return re.sub(r"(\d)er\b", r"\1", match.group("day") or match.group("end"))
+    return None
+
+
+def fill_text_schedule(raw_sale: dict[str, Any]) -> None:
+    """Date, mise à prix et visites relues dans le texte stocké quand le champ brut est vide."""
+    raw_text = str(raw_sale.get("raw_text") or "")
+    if not raw_sale.get("sale_date"):
+        sale_date = text_event_sale_date(raw_text, raw_sale.get("description"))
+        if sale_date:
+            raw_sale["sale_date"] = sale_date
+            raw_sale["date_precision"] = "day"
+    if raw_sale.get("starting_price_eur") in (None, ""):
+        price = _TEXT_PRICE_RE.search(raw_text)
+        if price:
+            raw_sale["starting_price_eur"] = re.sub(r"\s", "", price.group(1))
+    if not raw_sale.get("visit_dates"):
+        visits = _TEXT_VISITS_RE.search(raw_text)
+        if visits:
+            raw_sale["visit_dates"] = [value for part in visits.group(1).split("|") if (value := clean_text(part))]
+
+
 def refresh_encheres_publiques_raw_sale(raw_sale: dict[str, Any]) -> bool:
     """Relecture locale des blocs stockés (aucune requête, aucune nouvelle collecte)."""
     if str(raw_sale.get("source_name") or "") != "encheres_publiques":
         return False
+    fill_text_schedule(raw_sale)
     extracted = extract_encheres_publiques_characteristics(raw_sale)
     if extracted is None:
         return False

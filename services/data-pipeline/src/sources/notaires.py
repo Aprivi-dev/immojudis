@@ -40,6 +40,7 @@ from src.sources.notaires_inventory import (
     record_validated_results,
 )
 from src.sources.notaires_price_nature import starting_price_nature
+from src.sources.notaires_text_terms import notaires_price_fields, text_offer_schedule, text_sale_date
 from src.sources.source_features import extract_parking_count
 
 BASE_URL = "https://www.immobilier.notaires.fr"
@@ -690,10 +691,9 @@ def parse_notaires_detail_json(
         "has_air_conditioning": _first_known(
             _yes_no(property_block.get("climatisation")), description_features.get("has_air_conditioning")
         ),
-        "starting_price_eur": transaction.get("miseAPrix") or transaction.get("premierPrix") or transaction.get("prixMin"),
-        **starting_price_nature(transaction.get("miseAPrix"), transaction.get("premierPrix"), transaction.get("prixMin")),
-        "sale_date": _sale_date(transaction, transaction_type),
-        "source_sale_schedule": _sale_schedule(transaction, transaction_type),
+        **notaires_price_fields(transaction, description_text),
+        "sale_date": _sale_date(transaction, transaction_type) or text_sale_date(description_text),
+        "source_sale_schedule": text_offer_schedule(_sale_schedule(transaction, transaction_type), description_text),
         "visit_dates": visit_dates,
         "lawyer_name": _notary_from_text(description_text)
         or clean_text(contact.get("nom") or visit.get("visiteNomContact")),
