@@ -204,6 +204,20 @@ def test_a_passed_deadline_closes_the_call_for_offers() -> None:
     assert mark_past_sales([sale]).marked_past == 0  # already past
 
 
+def test_a_passed_deadline_of_an_earlier_round_keeps_a_pending_procedure_listed() -> None:
+    """« Procédure à venir » on the State page: the passed deadline belongs to an earlier round (13 sales, 03/11/2026)."""
+    passed = date.today() - timedelta(days=20)
+    sale = _tender(updated_at=datetime.now(UTC))
+    sale.raw_payload["state_listing"] = {"reason": "procedure_pending"}
+    text = f"Date limite de réception des offres {_french(passed)} à 12h00"
+
+    enrich_sale_from_pdf_text(sale, [_document(text)])
+
+    assert sale.status == "upcoming"
+    assert sale.sale_date is None
+    assert not closes_expired_offer_deadline(sale)
+
+
 def test_a_passed_deadline_is_not_forced_on_other_sales_or_without_certainty() -> None:
     passed = _french(date.today() - timedelta(days=20))
     judicial = _tender("licitor")

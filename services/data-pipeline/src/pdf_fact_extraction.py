@@ -218,8 +218,11 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     timezone = source_sale_timezone(sale.raw_payload)
     offer_deadline = record_offer_deadline(sale, pdf_texts, complete_texts=complete_texts, local_timezone=timezone)
     if sale.sale_date is None and offer_deadline and sale.source_name in OFFER_PROCEDURE_SOURCES:
-        # A call for offers has no hearing: its offer deadline is the echeance, and a passed one closes it.
-        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline, allow_expired=True))
+        # A call for offers has no hearing: its offer deadline is the echeance, and a passed one closes it, unless the
+        # State page announces a new procedure (« Procédure à venir »): that deadline belongs to an earlier round.
+        listing = sale.raw_payload.get("state_listing")
+        pending = isinstance(listing, dict) and listing.get("reason") == "procedure_pending"
+        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline, allow_expired=not pending))
     if sale.sale_date is None:
         sale_date = _extract_sale_date_from_documents(pdf_texts, local_timezone=timezone) or _extract_sale_date_with_evidence(
             combined, local_timezone=timezone,
