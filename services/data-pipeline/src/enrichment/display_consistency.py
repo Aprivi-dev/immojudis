@@ -235,7 +235,7 @@ def _area_issues(prose: str, evidence: str, fields: dict[str, Any]) -> list[dict
         # A land figure is compared with the land field, any other with the built fields;
         # with no field of that kind the figure only needs the evidence (checked elsewhere).
         relevant = [
-            key for key in canonical if property_type == "land" or (key == "land_surface_m2") == (label == "land")
+            name for name in canonical if property_type == "land" or (name == "land_surface_m2") == (label == "land")
         ]
         if relevant and not matched and label != "part":
             issues.append({"code": "area_contradicts_canonical", "claim": claim.group()})
