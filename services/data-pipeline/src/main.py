@@ -241,6 +241,7 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_due_diligence",
     "geocode",
     "tribunal_assignment",
+    "pdf_tribunal_extraction",
     # PDF projection traces and candidate evidence are enrichment metadata.
     # Preserve them through a cold source pass so the PDF worker can invalidate
     # only stale projections without treating the markers as fresh source text.
