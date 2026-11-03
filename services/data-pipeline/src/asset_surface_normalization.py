@@ -50,6 +50,7 @@ from src.surface_plausibility import (
     parcel_total_surfaces,
     text_states_built_surface,
 )
+from src.text_fact_scope import private_amenity_mentioned
 
 _SURFACE_FIELDS = ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "land_surface_m2")
 
@@ -801,5 +802,11 @@ def _fill_booleans(sale: AuctionSale, text: str) -> None:
         "has_double_glazing": r"double\s+vitrage",
     }
     for flag_name, pattern in checks.items():
-        if getattr(sale, flag_name) is None:
-            setattr(sale, flag_name, bool(re.search(pattern, text, re.I)))
+        if getattr(sale, flag_name) is not None:
+            continue
+        if flag_name in {"has_garden", "has_pool"}:
+            # Le jardin ou la piscine du bien lui-même, pas ceux de la copropriété ni la « rue du Jardin ».
+            feature = "garden" if flag_name == "has_garden" else "pool"
+            setattr(sale, flag_name, private_amenity_mentioned(text, feature) is True)
+            continue
+        setattr(sale, flag_name, bool(re.search(pattern, text, re.I)))
