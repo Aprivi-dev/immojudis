@@ -78,6 +78,7 @@ from src.pdf_occupancy import best_occupancy_statement, occupancy_statement_is_r
 from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
 from src.pdf_sale_date_guard import reject_past_pdf_sale_date
 from src.pdf_starting_price import _extract_starting_price_with_evidence  # noqa: F401  (re-exported)
+from src.pdf_tribunal import apply_pdf_tribunal
 
 
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:
@@ -241,6 +242,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             sale.raw_payload["pdf_visit_dates_extraction"] = visit_dates
             _pdf_record_fact_projection(sale, ["visit_dates"], candidate=visit_dates, payload_keys=("pdf_visit_dates_extraction",))
     apply_pdf_address(sale, pdf_texts)
+    apply_pdf_tribunal(sale, pdf_texts)
     # The per-document extractor also handles plain string inputs. Do not fall
     # back to the sale-wide concatenation: class/value pairs from different
     # PDFs or pages are not one DPE record.
