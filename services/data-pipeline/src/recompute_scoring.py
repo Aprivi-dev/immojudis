@@ -131,7 +131,7 @@ def recompute_scoring(
 
     upserted = 0
     for batch in _chunks(sales, max(1, batch_size)):
-        upserted += upsert_sales_to_supabase(batch, refresh_last_seen=False)
+        upserted += _upsert_batch_with_lock_retry(batch)
     _print_summary(sales, dry_run=False, upserted=upserted, failures=failures)
     if failures or upserted != len(sales):
         LOGGER.error(
@@ -666,6 +666,29 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
     normalize_asset_features(sale)
     attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
     return sale
+
+
+# Le recalcul écrit pendant que la collecte et le rattrapage des pièces publient aussi : un lot peut attendre plus
+# que les 15 s du verrou de publication. La transaction du lot est alors annulée en entier (rien n'est écrit) et le
+# lot est réessayé ; sans cela, le recalcul du 03/11/2026 s'est arrêté après 8 lots sur 75.
+LOCK_RETRY_DELAYS_SECONDS = (20.0, 60.0, 120.0)
+_TRANSIENT_LOCK_ERRORS = frozenset({"LockNotAvailable", "DeadlockDetected", "SerializationFailure"})
+
+
+def _upsert_batch_with_lock_retry(batch: list[Any], *, sleep=time.sleep) -> int:
+    for delay in (*LOCK_RETRY_DELAYS_SECONDS, None):
+        try:
+            return upsert_sales_to_supabase(batch, refresh_last_seen=False)
+        except Exception as exc:
+            if delay is None or type(exc).__name__ not in _TRANSIENT_LOCK_ERRORS:
+                raise
+            LOGGER.warning(
+                "Recompute batch waited too long for a catalogue lock (%s); retrying in %.0f s",
+                type(exc).__name__,
+                delay,
+            )
+            sleep(delay)
+    return 0
 
 
 def _parse_datetime(value: object | None):
