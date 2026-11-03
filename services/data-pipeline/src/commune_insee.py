@@ -33,7 +33,11 @@ from typing import Any
 
 from src.models import AuctionSale
 from src.municipality_location import PROVIDER as MUNICIPALITY_PROVIDER
-from src.municipality_location import find_commune, unique_postal_code_for_commune
+from src.municipality_location import (
+    find_commune,
+    postal_code_belongs_to_commune,
+    unique_postal_code_for_commune,
+)
 from src.reference_data.names import arrondissement_number, commune_lookup_name, department_from_insee
 
 LOGGER = logging.getLogger(__name__)
@@ -211,24 +215,56 @@ POSTAL_CODE_INFERENCE_FIELD = "postal_code_inference"
 
 
 def fill_missing_postal_code(sale: AuctionSale, resolved: dict[str, Any]) -> bool:
-    """Code postal d'une vente qui n'en donne pas, quand sa commune résolue n'en porte qu'un seul.
+    """Code postal d'une vente qui n'en donne pas, sans aucune supposition.
 
-    Licitor ne publie que la commune (« Saint-Chaptes ») : 343 ventes sur 377 n'avaient pas de code postal. Une
-    commune à plusieurs codes postaux (Paris, Toulouse…) ou absente de ``reference_communes`` ne donne rien.
+    Licitor ne publie que la commune (« Saint-Chaptes ») : 343 ventes sur 377 n'avaient pas de code postal.
+
+    1. La commune résolue n'a qu'un code postal : c'est le sien.
+    2. Sinon (Nice, Cannes, Saint-Étienne…), le code postal de l'adresse géocodée et acceptée (numéro ou rue de la
+       BAN), seulement s'il est de la même commune et figure parmi les codes de cette commune dans
+       ``reference_communes`` : 43 des 76 ventes encore sans code postal le 03/11/2026.
+
+    Une commune à plusieurs codes postaux sans adresse géocodée, ou absente de ``reference_communes``, ne donne rien.
     """
     if clean_postal_code(sale.postal_code) or resolved.get("mismatch"):
         return False
     postal_code = unique_postal_code_for_commune(resolved.get("insee"))
+    source = "reference_communes"
+    if postal_code is None:
+        postal_code = _geocoded_address_postal_code(sale, resolved)
+        source = "geocode_address"
     if postal_code is None:
         return False
     sale.postal_code = postal_code
     sale.raw_payload[POSTAL_CODE_INFERENCE_FIELD] = {
-        "source": "reference_communes",
+        "source": source,
         "insee": resolved.get("insee"),
         "commune_source": resolved.get("source"),
         "value": postal_code,
     }
     return True
+
+
+# Résultats BAN précis à l'adresse : un centre de commune ou un lieu-dit ne dit rien du code postal d'une adresse.
+_ADDRESS_RESULT_TYPES = frozenset({"housenumber", "street"})
+
+
+def _geocoded_address_postal_code(sale: AuctionSale, resolved: dict[str, Any]) -> str | None:
+    evidence = _accepted_evidence(sale)
+    if evidence is None or evidence.get("provider") == MUNICIPALITY_PROVIDER:
+        return None
+    if evidence.get("type") not in _ADDRESS_RESULT_TYPES:
+        return None
+    codes = commune_codes(evidence.get("citycode"))
+    if codes is None or codes[0] != resolved.get("insee"):
+        return None
+    postal_code = clean_postal_code(evidence.get("postcode"))
+    if postal_code is None:
+        return None
+    communes = {resolved.get("insee"), codes[1], resolved.get("arrondissement_insee")}
+    if not any(postal_code_belongs_to_commune(postal_code, code) for code in communes if code):
+        return None
+    return postal_code
 
 
 def clean_postal_code(value: object) -> str | None:

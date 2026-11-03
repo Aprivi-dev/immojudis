@@ -138,6 +138,14 @@ def unique_postal_code_for_commune(code_insee: object) -> str | None:
     return next(iter(valid)) if len(valid) == 1 else None
 
 
+def postal_code_belongs_to_commune(postal_code: object, code_insee: object) -> bool:
+    """Le code postal ``postal_code`` est l'un de ceux de la commune ``code_insee`` dans ``reference_communes``."""
+    postal = str(postal_code or "").strip()
+    if re.fullmatch(r"\d{5}", postal) is None:
+        return False
+    return postal in _index().postal_codes_by_insee.get(str(code_insee or "").strip().upper(), set())
+
+
 def is_municipality_point(sale: AuctionSale) -> bool:
     """Le point de la vente est un centre de commune (``geo_precision = municipality``), pas une adresse."""
     return (
