@@ -218,8 +218,11 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     timezone = source_sale_timezone(sale.raw_payload)
     offer_deadline = record_offer_deadline(sale, pdf_texts, complete_texts=complete_texts, local_timezone=timezone)
     if sale.sale_date is None and offer_deadline and sale.source_name in OFFER_PROCEDURE_SOURCES:
-        # A call for offers has no hearing: its offer deadline is the echeance.
-        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
+        # A call for offers has no hearing: its offer deadline is the echeance, and a passed one closes it, unless the
+        # State page announces a new procedure (« Procédure à venir »): that deadline belongs to an earlier round.
+        listing = sale.raw_payload.get("state_listing")
+        pending = isinstance(listing, dict) and listing.get("reason") == "procedure_pending"
+        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline, allow_expired=not pending))
     if sale.sale_date is None:
         sale_date = _extract_sale_date_from_documents(pdf_texts, local_timezone=timezone) or _extract_sale_date_with_evidence(
             combined, local_timezone=timezone,
@@ -228,7 +231,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             _assign_pdf_sale_date(sale, sale_date)
     if sale.sale_date is None and offer_deadline:
         _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
-    starting_price = _extract_starting_price_from_documents(pdf_texts)
+    starting_price = _extract_starting_price_from_documents(pdf_texts, tender=sale.source_name in OFFER_PROCEDURE_SOURCES)
     if starting_price:
         _reconcile_pdf_starting_price(sale, starting_price)
     if not sale.visit_dates:
@@ -438,7 +441,7 @@ def _extract_land_surface_from_documents(pdf_texts: list[dict[str, object]] | li
     }
 
 def _extract_starting_price_from_documents(
-    pdf_texts: list[dict[str, object]] | list[str],
+    pdf_texts: list[dict[str, object]] | list[str], *, tender: bool = False,
 ) -> dict[str, object] | None:
     candidates: list[dict[str, object]] = []
     for item in pdf_texts:
@@ -459,7 +462,7 @@ def _extract_starting_price_from_documents(
             for page in pages:
                 if not isinstance(page, dict):
                     continue
-                extracted = _extract_starting_price_with_evidence(str(page.get("text") or ""))
+                extracted = _extract_starting_price_with_evidence(str(page.get("text") or ""), tender=tender)
                 if not extracted:
                     continue
                 extracted.update(
@@ -474,7 +477,7 @@ def _extract_starting_price_from_documents(
                 )
                 candidates.append(extracted)
         if len(candidates) == item_candidate_count:
-            extracted = _extract_starting_price_with_evidence(str(item.get("text") or ""))
+            extracted = _extract_starting_price_with_evidence(str(item.get("text") or ""), tender=tender)
             if extracted:
                 extracted.update(
                     {
@@ -791,6 +794,7 @@ def _reconcile_pdf_starting_price(sale: AuctionSale, extraction: dict[str, objec
             float(source_value) if status == "resolved" and source_value is not None else None
         ),
         "selected_value_eur": float(sale.starting_price_eur) if sale.starting_price_eur is not None else None,
+        "price_kind": clean_text(extraction.get("price_kind")),  # mise_a_prix, prix_minimum, prix_de_depart…
         "document_label": clean_text(extraction.get("document_label")),
         "document_url": clean_text(extraction.get("document_url")),
         "document_type": clean_text(extraction.get("document_type")),
@@ -814,7 +818,7 @@ def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> No
     sale.sale_date = parsed
     sale.raw_payload["pdf_sale_date_extraction"] = {key: value for key, value in sale_date.items() if key != "value"}
     _pdf_record_fact_projection(sale, ["sale_date"], candidate=sale_date, payload_keys=("pdf_sale_date_extraction",))
-    if sale.status in {"", "unknown"}:
+    if sale.status in {"", "unknown"} or (sale_date.get("offer_deadline_expired") and sale.status in {"active", "upcoming"}):
         previous_status = sale.status or "unknown"
         projected_status = normalize_status(None, parsed)
         sale.status = projected_status
