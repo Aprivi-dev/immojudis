@@ -26,10 +26,12 @@ paths = [
 '''(?:^|/)supabase/migrations/20260928200000_information_agent_fact_claim_bridge\.sql''',
 '''(?:^|/)supabase/tests/370_auction_fact_claims\.sql''',
 '''(?:^|/)supabase/tests/383_ai_review_projection_guard\.sql''',
+'''(?:^|/)supabase/tests/872_catalogue_quality_sentinel\.sql''',
 ]
 regexes = [
 '''^property\.(?:surface_m2|carrez_surface_m2|land_surface_m2)$''',
-'''^(?:land_surface_m2|servitude_123)$'''
+'''^(?:land_surface_m2|servitude_123)$''',
+'''^catalogue\.quality\.[a-z0-9_]+$'''
 ]
 
 [[allowlists]]
