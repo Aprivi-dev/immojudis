@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
+from src.admission import licitor_lot_count
 from src.asset_normalization import normalize_asset_features
 from src.cadastre_references import resolve_sale_cadastre
 from src.catalogue_readiness import apply_catalogue_readiness
@@ -18,6 +19,7 @@ from src.config import ROOT_DIR, load_settings, require_encheres_publiques_acces
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.extraction_profiles import attach_source_property_features
 from src.geocode import geocode_sale, restore_accepted_geocode, verify_source_coordinates
+from src.lot_scope import fact_sources
 from src.normalize import normalize_sale
 from src.position_quality import preserved_position_flags
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
@@ -628,7 +630,14 @@ def _sale_from_storage_row(row: dict[str, Any]):
     # Les autres drapeaux se recalculent ; ceux de la position ne se déduisent pas du texte de la vente, ils viennent
     # d'un contrôle ou d'un géocodage passé : on les garde jusqu'à ce qu'une position vérifiée les retire. Même chose pour
     # « probable_duplicate », qui vient d'un rapprochement entre lignes (src.probable_duplicates).
+    normalized_flags = list(sale.quality_flags)
     sale.quality_flags = preserved_position_flags(row.get("quality_flags"))
+    # « multi_lot_sale » d'une page Licitor à plusieurs lots est relu à l'instant par normalize_sale et rien ne le
+    # recalcule ensuite : le perdre levait à chaque recalcul la quarantaine des lots incertains (31 lignes visibles
+    # le 03/11/2026, dont Cannes / Le Cannet affichant toutes deux le premier lot) et les garde-fous propres à un lot
+    # (pièces jointes communes aux lots, prix lu dans le texte).
+    if "multi_lot_sale" in normalized_flags and sale.source_name == "licitor" and licitor_lot_count(raw_sale) > 1:
+        sale.quality_flags.append("multi_lot_sale")
     sale.raw_payload = raw_sale
     return sale
 
@@ -647,10 +656,10 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
     fill_tribunal(sale)
     classify_sale_procedure(sale)
     payload = sale.raw_payload
-    blocks = payload.get("source_blocks")
-    values = [sale.title, sale.description, sale.raw_text, payload.get("source_description")]
-    if isinstance(blocks, dict):
-        values.extend(value for key, value in blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"})
+    # Annonce Licitor en plusieurs lots : le texte du seul lot de l'URL, pas celui de toute la page.
+    raw_text, blocks = fact_sources(payload, sale.raw_text)
+    values = [sale.title, sale.description, raw_text, payload.get("source_description")]
+    values.extend(value for key, value in blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"})
     context = "\n".join(dict.fromkeys(str(value).strip() for value in values if value))
     if context:
         extract_and_apply_deterministic_surface_reasoning(sale, context)

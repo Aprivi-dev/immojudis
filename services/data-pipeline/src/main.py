@@ -63,9 +63,11 @@ from src.known_document_backfill import (
 )
 from src.known_document_backfill import is_missing_raw_value as _is_missing_raw_value
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
+from src.lot_scope import other_commune
+from src.lot_scope import surface_reasoning_context as _surface_reasoning_context_for_sale
 from src.merge_guards import MergeGuardRefused
 from src.models import AuctionSale
-from src.normalize import clean_text, normalize_sale
+from src.normalize import normalize_sale
 from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
@@ -1606,14 +1608,16 @@ def _preserve_known_enrichment_payloads(
                 for key in payload_fields
                 if key not in KNOWN_SOURCE_REFRESH_METADATA_FIELDS
             )
+        # Le géocodage d'une autre commune n'est pas une preuve pour celle-ci (lot Licitor autrefois lu comme le premier).
+        foreign_geocode = other_commune(sale.get("city"), known.get("city"))
         preserved += _backfill_payload_fields_from_known(
             sale,
             known,
             keys=tuple(
                 key
                 for key in payload_fields
-                if sale.get("source_detail_status") not in {"complete", "restricted"}
-                or key not in {"source_images", "raw_image_url"}
+                if (sale.get("source_detail_status") not in {"complete", "restricted"}
+                    or key not in {"source_images", "raw_image_url"}) and not (foreign_geocode and key == "geocode")
             ),
         )
         preserved += _backfill_document_surface_fields_from_known(sale, known)
@@ -1866,25 +1870,6 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     normalize_asset_features(sale)
     attach_source_property_features(sale.raw_payload)
     apply_catalogue_readiness(sale)
-
-
-def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:
-    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-    source_blocks = payload.get("source_blocks")
-    block_values = [
-        value for key, value in source_blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"}
-    ] if isinstance(source_blocks, dict) else []
-    values: list[object] = [
-        sale.title,
-        sale.description,
-        sale.raw_text,
-        payload.get("source_description"),
-        *block_values,
-    ]
-    # Source descriptions are often copied into several payload fields. Keep
-    # each distinct field once without truncating or deduplicating within it.
-    parts = dict.fromkeys(clean_text(str(value)) for value in values if value)
-    return "\n".join(part for part in parts if part)
 
 
 def _needs_heavy_enrichment(
