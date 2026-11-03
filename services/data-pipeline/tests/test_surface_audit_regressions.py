@@ -9,6 +9,7 @@ import src.pdf_enrichment  # noqa: F401  (resolves the pdf_enrichment / pdf_fact
 from src.asset_normalization import normalize_asset_features
 from src.enrichment.surface_reasoning import (
     apply_surface_reasoning_to_sale,
+    extract_and_apply_deterministic_surface_reasoning,
     extract_surface_facts_from_text,
     reason_about_surfaces,
 )
@@ -343,3 +344,45 @@ def test_a_surface_from_the_page_is_kept_when_the_reasoning_abstains() -> None:
     sale = _apply(text, "house", surface_m2=Decimal("41.76"), surface_source="source_page")
 
     assert sale.surface_m2 == Decimal("41.76")
+
+
+def test_e538fab2_a_surface_still_written_on_the_page_is_not_wiped_when_the_reasoning_finds_nothing() -> None:
+    """Recompute of 03/11/2026: « Studio de 31m² » set by a previous pass, then wiped when the recompute text
+    (display title replaced by the description) gave no candidate. The page still states it: it stays."""
+    text = "Résidence services « Les Jardins d'Arcadie » au 1er étage, avec cave et parking : 31m²"
+    stale = Decimal("31")
+    previous = {
+        "selected_derivation_id": "d1",
+        "derivations": [{"derivation_id": "d1", "kind": "explicit_built", "value_m2": "31"}],
+    }
+    sale = _sale(
+        "apartment", surface_m2=stale, app_surface_m2=stale,
+        surface_source="deterministic_surface_reasoning", surface_evidence="Studio de 31m²",
+        raw_payload={"surface_analysis": previous},
+    )
+    extract_and_apply_deterministic_surface_reasoning(sale, text)
+
+    assert sale.surface_m2 == stale and sale.app_surface_m2 == stale
+    assert sale.surface_source == "source_text"
+
+
+def test_a_stale_room_sum_stays_removed_even_when_the_number_appears_in_the_text() -> None:
+    text = "SÉJOUR elle mesure 13.65m2. WC elle mesure 1.37m2. Total des pièces listées : 15,02 m²"
+    stale = Decimal("15.02")
+    previous = {
+        "selected_derivation_id": "d1",
+        "derivations": [{"derivation_id": "d1", "kind": "calculated_room_sum", "value_m2": "15.02"}],
+    }
+    sale = _sale(
+        "house", surface_m2=stale, habitable_surface_m2=stale, app_surface_m2=stale,
+        surface_source="deterministic_surface_reasoning", raw_payload={"surface_analysis": previous},
+    )
+    extract_and_apply_deterministic_surface_reasoning(sale, text)
+
+    assert sale.surface_m2 is None and sale.habitable_surface_m2 is None
+
+
+def test_studio_surface_is_an_explicit_built_candidate() -> None:
+    sale = _apply("Résidence services « Les Jardins d'Arcadie » Studio de 31m² au 1er étage avec cave", "apartment")
+
+    assert sale.surface_m2 == Decimal("31")
