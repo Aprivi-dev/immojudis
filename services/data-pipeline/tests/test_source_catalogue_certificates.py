@@ -286,6 +286,29 @@ def test_agrasc_seller_catalogue_card_is_excluded_with_public_catalogue_proof(mo
     assert result.coverage["inventory_scope"] == "addressable_public_catalogue"
 
 
+def test_agrasc_card_on_an_unsupported_operator_host_is_excluded_without_failing_the_source(monkeypatch) -> None:
+    # 03/11/2026 : une carte AGRASC renvoyait vers une annonce immobilier.notaires.fr ; refusée par la validation,
+    # elle comptait comme une erreur et toute la source AGRASC échouait.
+    url = "https://www.immobilier.notaires.fr/fr/annonce-immo/vente/maison/agen-47000/2101000"
+    html = f"""
+    <div class="view-liste-ventes-immobilieres">
+      <div class="card-vente-immo">
+        <h3 class="fr-card__title"><a href="{url}">Maison à Agen</a></h3>
+        <p class="fr-card__detail">Agen (47)</p>
+        <p class="fr-card__desc">Maison d'habitation.</p>
+      </div>
+      <a class="fr-pagination__link--last" href="/ventes-aux-encheres?page=0">Dernière page</a>
+    </div>
+    """
+    _patch_agrasc_client(monkeypatch, html)
+
+    result = agrasc.scrape_agrasc_aquitaine_result()
+
+    assert result.sales == []
+    assert result.errors == []
+    assert {"url": url, "reason": "unsupported_operator_url"} in result.coverage["certificate"]["excluded_urls"]
+
+
 def test_agrasc_seller_url_from_public_proof_is_excluded_when_parser_has_no_card_row(monkeypatch) -> None:
     # The live archive has emitted seller cards with ``data-url`` but without
     # the title/link structure used by parse_agrasc_html.  The independent
