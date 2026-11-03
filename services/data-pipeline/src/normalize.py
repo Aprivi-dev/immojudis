@@ -63,6 +63,7 @@ PROPERTY_TYPE_MAP = {
     "house": "house",
     "maison": "house",
     "villa": "house",
+    "chalet": "house", "pavillon": "house",  # « un CHALET de 180m2 », « Un pavillon … à usage de laboratoire »
     "building": "building",
     "batiment": "building",
     "immeuble": "building",
@@ -70,6 +71,7 @@ PROPERTY_TYPE_MAP = {
     "terrain": "land",
     "commercial": "commercial",
     "magasin": "commercial",
+    "local a usage d'habitation": "apartment", "local a usage d’habitation": "apartment",  # logement, pas un commerce
     "local": "commercial",
     "commerce": "commercial",
     "parking": "parking",
@@ -229,7 +231,7 @@ def normalize_lawyer_contact(value: object | None) -> str | None:
 def normalize_visit_text(value: object | None) -> str | None:
     """Normalize compact French visit text and remove dangling conjunctions."""
     text = clean_text(value)
-    if not text:
+    if not text or not re.search(r"\w", text):  # « : » d'un champ « VISITES : » vide n'est pas une visite
         return None
     text = re.sub(r"(?:\s*[,;|]\s*)?\b(?:et|ou)\b\s*$", "", text, flags=re.I).strip(" ,;|")
 
@@ -587,9 +589,9 @@ def _parse_complete_date(text: str) -> datetime | None:
 # stationnement n° 12 ». « Appartement avec box » ou « maison et garage » gardent leur type (le nom principal est
 # le logement) ; un libellé qui parle aussi d'un logement, d'un local ou d'un terrain n'est pas un stationnement.
 _PARKING_HEAD_RE = re.compile(
-    r"^(?:(?:un|une|le|la|l|ce|cette|des|les)\s+)?(?:\d+\s+)?"
-    r"(?:box(?:es)?|garages?|parkings?|stationnements?|(?:places?|emplacements?|lots?)\s+(?:de\s+|d['’]\s*)?"
-    r"(?:parking|stationnement|garage))\b"
+    r"^(?:(?:un|une|le|la|l|ce|cette|des|les)\s+)?(?:(?:\d+|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+)?"
+    r"(?:box(?:es)?|garages?|parkings?|stationnements?|(?:places?|emplacements?|lots?)\s+(?:couverts?\s+)?(?:de\s+|d['’]\s*)?"
+    r"(?:parking|stationnement|garage|pour\s+(?:voitures?|vehicules?)))\b"  # « Dix emplacements couverts pour voiture »
 )
 _NOT_PARKING_RE = re.compile(
     r"\b(?:appartements?|maisons?|villas?|studios?|immeubles?|commerces?|commerciaux?|locaux|local|terrains?|"
@@ -646,7 +648,7 @@ def normalize_sale_property_type(raw_sale: dict[str, object]) -> str:
         r"^(?:un[e]?\s+)?(?:appartement|studio|maison|villa)\b", detail_title, re.I
     ):
         return normalize_property_type(detail_title)
-    if property_type in {"apartment", "other", "unknown"} and any(
+    if property_type in {"apartment", "mixed", "other", "unknown"} and any(
         is_multi_unit_building_text(strip_accents(clean_text(raw_sale.get(key)) or "").lower())
         for key in ("title", "description")
     ):
@@ -1674,7 +1676,7 @@ def _skip_contextless_postal_code_fallback(raw_sale: dict[str, object], address:
     source_name = strip_accents(clean_text(raw_sale.get("source_name")) or "").lower()
     if source_name in {"cessions_etat", "encheres_publiques", "petites_affiches"}:
         return True
-    return bool(address and source_name == "licitor")
+    return bool(address and source_name in {"licitor", "avoventes"})  # avoventes : « dossier-PVD 19683 DPE.pdf »
 
 
 def _postal_code_is_starting_price_without_location(
