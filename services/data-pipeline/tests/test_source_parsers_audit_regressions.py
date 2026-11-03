@@ -85,6 +85,52 @@ def test_commune_with_several_postal_codes_gives_none(communes) -> None:
     assert POSTAL_CODE_INFERENCE_FIELD not in sale.raw_payload
 
 
+def _geocoded(sale, **overrides):
+    evidence = {
+        "provider": "ban_geoplateforme", "accepted": True, "type": "housenumber", "city": "Toulouse",
+        "citycode": "31555", "postcode": "31200", "score": 0.93, "label": "12 Rue Bayard 31200 Toulouse",
+        "latitude": 43.61, "longitude": 1.45,
+    }
+    evidence.update(overrides)
+    sale.raw_payload["geocode"] = evidence
+    return sale
+
+
+def test_postal_code_of_a_multi_code_commune_comes_from_the_geocoded_address(communes) -> None:
+    # Licitor Toulouse : la commune a plusieurs codes postaux, l'adresse géocodée (BAN, numéro) en donne un.
+    sale = _geocoded(_licitor("Toulouse", "31"))
+    record_sale_commune(sale)
+
+    assert sale.postal_code == "31200"
+    assert sale.raw_payload[POSTAL_CODE_INFERENCE_FIELD]["source"] == "geocode_address"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"type": "municipality"},  # centre de commune : aucun code postal d'adresse
+        {"type": "locality"},  # lieu-dit
+        {"postcode": "31999"},  # code absent des codes de la commune
+        {"accepted": False},  # géocodage écarté
+        {"postcode": None},
+    ],
+)
+def test_geocoded_postal_code_is_used_only_when_it_is_certain(communes, overrides) -> None:
+    sale = _geocoded(_licitor("Toulouse", "31"), **overrides)
+    record_sale_commune(sale)
+
+    assert sale.postal_code is None
+    assert POSTAL_CODE_INFERENCE_FIELD not in sale.raw_payload
+
+
+def test_unique_commune_code_still_wins_over_the_geocoded_one(communes) -> None:
+    sale = _geocoded(_licitor("Saint-Chaptes", "30"), city="Saint-Chaptes", citycode="30243", postcode="30190")
+    record_sale_commune(sale)
+
+    assert sale.postal_code == "30190"
+    assert sale.raw_payload[POSTAL_CODE_INFERENCE_FIELD]["source"] == "reference_communes"
+
+
 # --- Info-Enchères : heure des audiences --------------------------------------------------------------------
 
 
