@@ -72,6 +72,7 @@ from src.pdf_enrichment import (
     classify_document_type,
     enrich_sale_from_pdfs,
 )
+from src.pdf_offer_deadline import apply_page_offer_deadline
 from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION
 from src.quality import (
     build_extraction_gap_report,
@@ -1854,6 +1855,7 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     (geocode_sale if geocode else locate_sale_by_cadastre)(sale)
     filter_raw_image_url(sale.raw_payload)
     fill_tribunal(sale)
+    apply_page_offer_deadline(sale)  # appel d'offres : date limite publiée sur la page (AGRASC, notaires, Cessions)
     classify_sale_procedure(sale)
     surface_context = _surface_reasoning_context_for_sale(sale)
     if surface_context:

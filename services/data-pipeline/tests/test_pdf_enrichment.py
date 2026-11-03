@@ -431,6 +431,7 @@ def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> No
         "value_eur": 10500.0,
         "rejected_source_price_eur": 500.0,
         "selected_value_eur": 10500.0,
+        "price_kind": "mise_a_prix",
         "document_label": "Cahier des conditions de la vente",
         "document_url": "https://www.info-encheres.com/upload/cahier-6008.pdf",
         "document_type": "cahier_conditions_vente",

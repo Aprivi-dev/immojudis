@@ -493,8 +493,9 @@ def upsert_sales_to_supabase(
     *,
     refresh_last_seen: bool = True,
 ) -> int:
-    # Même règle que l'admission (publication_rejection) : une vente écartée ici l'a déjà été, avec sa décision.
-    sales = [sale for sale in sales if publication_rejection(sale) is None]
+    # Même règle que l'admission (publication_rejection), sauf la relecture qui clôt un appel d'offres échu.
+    from src.admission import closes_expired_offer_deadline as closes
+    sales = [s for s in sales if publication_rejection(s) is None or (not refresh_last_seen and closes(s))]
     for sale in sales:
         apply_catalogue_readiness(sale)
     if not sales:

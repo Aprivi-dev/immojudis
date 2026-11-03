@@ -28,7 +28,14 @@ def pdf_sale_date_is_too_far(parsed: datetime, now: datetime | None = None) -> b
 
 
 def reject_past_pdf_sale_date(sale: AuctionSale, parsed: datetime, sale_date: dict[str, object]) -> bool:
-    """Record and refuse an implausible PDF sale date (past or too far ahead); True when refused."""
+    """Record and refuse an implausible PDF sale date (past or too far ahead); True when refused.
+
+    An expired offer deadline of a call for offers (``offer_deadline_expired``) is the date that closes the
+    sale, not a misread: it is kept so the lifecycle marks the sale past.
+    """
+    if pdf_sale_date_is_past(parsed) and sale_date.get("offer_deadline_expired"):
+        sale.raw_payload.pop("pdf_sale_date_rejected", None)
+        return False
     if pdf_sale_date_is_past(parsed):
         reason = "past_date"
     elif pdf_sale_date_is_too_far(parsed):

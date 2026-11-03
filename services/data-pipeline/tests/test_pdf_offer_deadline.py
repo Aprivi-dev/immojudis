@@ -120,7 +120,7 @@ def test_state_tender_wordings_of_the_offer_deadline_are_read() -> None:
     assert _deadlines(
         "Date limite de réception des offres et de transmission des documents visés au II. ci-dessus "
         "13 novembre 2026 à midi (heure locale de Paris)"
-    ) == ["2026-11-13T00:00:00+00:00"]
+    ) == ["2026-11-13T11:00:00+00:00"]  # « midi » est 12 h à Paris
     assert _deadlines("Date limite de réception du dossier d’offre 02/12/2026 2.5.2 – Mise en œuvre") == [
         "2026-12-02T00:00:00+00:00"
     ]
