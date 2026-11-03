@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 DISPLAY_MIN_CHARS = 80
-DISPLAY_QUALITY_VERSION = "display_quality_20261012_v4"
+DISPLAY_QUALITY_VERSION = "display_quality_20261103_v5"
 # Keep the entire sentence, including negation and uncertainty. Never infer a risk
 # from a keyword or from unrelated PDF boilerplate.
 SOURCE_CONSTRAINT_RE = re.compile(
@@ -49,8 +49,9 @@ def preserve_source_constraints(
 ) -> tuple[str | None, list[str]]:
     """Fit verbatim source sentences first, then as much narrative as fits.
 
-    If all quotations cannot fit, return no validated display. Full evidence is
-    still retained separately, rather than silently dropping a constraint.
+    If all quotations cannot fit beside at least one sentence of narrative,
+    return no validated display. Full evidence is still retained separately,
+    rather than silently dropping a constraint.
     """
     source = re.sub(r"\s+", " ", source_description or "").strip()
     sentences = re.split(r"(?<=[.!?])\s+|(?<=\.)\)\s+|(?=,\s+comprenant\s*:)|(?:-\s*){3,}", source)
@@ -73,4 +74,7 @@ def preserve_source_constraints(
         # Never cut the narrative in the middle of a claim.
         ends = list(re.finditer(r"[.!?](?=\s|$)", narrative))
         narrative = narrative[:ends[-1].end()] if ends else ""
+    if not narrative:
+        # A quotation alone is a pasted source extract, not a synthesis (audit 03/11/2026).
+        return None, quotes
     return " ".join(filter(None, (narrative, suffix))), quotes

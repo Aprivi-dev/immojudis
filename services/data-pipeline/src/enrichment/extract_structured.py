@@ -20,6 +20,7 @@ from src.encheres_publiques_guard import (
     EncheresPubliquesAccessNotAuthorized,
     require_encheres_publiques_sale_access,
 )
+from src.enrichment.display_consistency import repair_generated_display
 from src.enrichment.display_evidence import verify_display_claims
 from src.enrichment.display_facts import canonical_facts_block
 from src.enrichment.display_fallback import build_fallback_display_description
@@ -2622,7 +2623,9 @@ def _apply_extraction_to_sale(
         ):
             sale.property_type = extraction.property_type
 
-    display_description = strip_filler_sentences(_normalize_display_description(extraction.display_description))
+    display_description = repair_generated_display(
+        strip_filler_sentences(_normalize_display_description(extraction.display_description)), reference_sale.model_dump()
+    )
     display_check = verify_display_claims(
         display_description or "", "\n".join(filter(None, (extract_source_description(sale), context))),
         reference_sale.model_dump(),

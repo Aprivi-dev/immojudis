@@ -57,3 +57,11 @@ f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/
 74561252b1ccc8ee92a2026b885b01a2aba4484b:services/data-pipeline/src/sources/cessions_etat_extraction.py:generic-api-key:492
 # False positive: a comparison with the published surface field name, not a credential.
 8c01363209c334cba3592b36dd5b2871bde2fcf5:services/data-pipeline/src/sources/avoventes_extraction.py:generic-api-key:429
+# False positive: a comparison with the land surface field name, not a credential (renamed in the next commit).
+d46b6b5ec91647314a12c31788c24a066b4b41ba:services/data-pipeline/src/enrichment/display_consistency.py:generic-api-key:238
+# False positives in branches of the 03/11/2026 quality audit that were superseded before merge: field-name
+# constants and comparisons (land_surface_m2, pdf_tribunal_extraction, postal_code_inference), not credentials.
+7c6495bba56de2bff274555e52799a911a848bd4:services/data-pipeline/src/enrichment/display_consistency.py:generic-api-key:236
+0d3ff3190400c2dbafe9be80993e1b12d89bae40:services/data-pipeline/src/pdf_tribunal.py:generic-api-key:29
+0d3ff3190400c2dbafe9be80993e1b12d89bae40:services/data-pipeline/tests/test_pdf_tribunal.py:generic-api-key:9
+ccf491c9ad3ef3f293e395a0af27169b62749859:services/data-pipeline/src/commune_insee.py:generic-api-key:210

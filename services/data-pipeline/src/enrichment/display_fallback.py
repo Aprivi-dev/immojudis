@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from src.enrichment.display_evidence import PUBLIC_EMAIL, PUBLIC_LINK, PUBLIC_PHONE, verify_display_claims
+from src.enrichment.display_facts import state_auction_wording
 from src.extraction_profiles import build_procedure_profile
 from src.models import AuctionSale
 from src.normalize import clean_text
@@ -296,7 +297,7 @@ def _sale_vocabulary(sale: AuctionSale) -> tuple[str | None, str]:
     if source == "cessions_etat" or family == "state":
         method = procedure.get("state_sale_method")
         if method == "adjudication":
-            return "Cession de l'État par adjudication", "mise à prix de"
+            return f"Cession de l'État {state_auction_wording(sale)}", "mise à prix de"
         if method == "appel_offres":
             return "Cession de l'État sur appel d'offres", "prix de"
         if method == "cession_amiable":
