@@ -35,7 +35,7 @@ from src.room_counts import (
     source_rooms_counter,
 )
 from src.sale_date_plausibility import reject_implausible_sale_date
-from src.surface_text_recovery import extra_built_surface_from_text
+from src.surface_text_recovery import built_value_names_other_object, extra_built_surface_from_text
 from src.tribunal_labels import clean_city_label
 
 FRENCH_MONTHS = {
@@ -1847,7 +1847,7 @@ def _extract_built_surface_from_text(*values: object) -> Decimal | None:
         ),
         rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+(?:de\s+)?(?:surface\s+)?(?:bâtie|batie)\b",
     )
-    built = _extract_contextual_surface(text, patterns)
+    built = _extract_contextual_surface(text, patterns, skip_match=built_value_names_other_object)
     if built is not None:
         return built
     habitable = _extract_habitable_surface_from_text(text)
