@@ -18,8 +18,10 @@ where job_name in ('smart-alerts', 'alert-notifications') order by started_at de
    e-mail est dû et que l'envoi n'est pas configuré (`RESEND_API_KEY`, `ALERT_EMAIL_FROM`, `SITE_URL` :
    l'erreur les nomme), ou quand 20 % des e-mails dus ont échoué. `smart-alerts` échoue quand 20 % des
    comptes analysés ont échoué.
-5. Plus de 200 notifications dues à la fois (`ALERT_NOTIFICATION_CRON_LIMIT`) : le surplus attend le
-   lendemain ; relever la limite.
+5. Plus de 100 comptes ou 5 000 emails dus à la fois : chaque passage envoie un seul récapitulatif par compte
+   avec toute sa file, aux 100 premiers comptes ; les suivants partent au passage suivant (rattrapage de 09:30,
+   puis le lendemain). Les notifications dans l'application sont publiées par pages de
+   `ALERT_NOTIFICATION_CRON_LIMIT` (200 par défaut), 10 pages au plus par passage.
 
 ## Actions
 
