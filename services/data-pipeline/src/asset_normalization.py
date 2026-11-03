@@ -13,6 +13,7 @@ from src.normalize import (
     clean_text,
     parse_surface,
 )
+from src.text_fact_scope import private_amenity_mentioned
 
 
 @dataclass
@@ -249,7 +250,7 @@ def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
 
 def _clear_scoped_feature_false_positives(sale: AuctionSale, text: str) -> None:
     """Quarantine lot amenities inferred from building/level wording."""
-    for feature_field, feature in (("has_garden", "garden"), ("has_terrace", "terrace")):
+    for feature_field, feature in (("has_garden", "garden"), ("has_terrace", "terrace"), ("has_pool", "pool")):
         if getattr(sale, feature_field) is not True:
             continue
         if not _feature_is_scope_only(text, feature):
@@ -285,6 +286,10 @@ def _clear_scoped_feature_false_positives(sale: AuctionSale, text: str) -> None:
 
 
 def _feature_is_scope_only(text: str, feature: str) -> bool:
+    # Le texte ne nomme que le jardin ou la piscine de la copropriété, une vue « sur jardin » ou un lieu (« rue du
+    # Jardin ») : une valeur reprise d'un ancien passage ou d'un champ de la source ne tient plus (audit 03/11/2026).
+    if feature in {"garden", "pool"} and private_amenity_mentioned(text, feature) is False:
+        return True
     if feature == "garden":
         ground_level = re.search(r"\brez[\s-]+de[\s-]+jardin\b", text, re.I)
         if not ground_level:

@@ -17,6 +17,20 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from src.contact_channels import contact_channels
+from src.lot_scope import fact_view
+from src.text_fact_scope import fold_aligned, select_unit_floor, unit_floor_claims
+from src.text_property_facts import (
+    NO_DWELLING_FACTS_TYPES,
+    OCCUPIED_RE,
+    TENANT_RE,
+    coownership_fact,
+    energy_class_match,
+    flooring_fact,
+    heating_facts,
+    orientation_fact,
+    room_count_facts,
+    year_built_fact,
+)
 
 PROPERTY_FEATURE_SCHEMA_VERSION = "source_property_features_v1"
 PROCEDURE_PROFILE_SCHEMA_VERSION = "source_procedure_profile_v1"
@@ -177,26 +191,19 @@ def _corpus(raw_sale: Mapping[str, Any]) -> str:
     return "\n".join(dict.fromkeys(values))
 
 
-def _primary_corpus(raw_sale: Mapping[str, Any]) -> str:
-    keys = (
-        "title",
-        "description",
-        "raw_text",
-        "address",
-        "city",
-        "postal_code",
-        "tribunal",
-        "lawyer_name",
-        "lawyer_contact",
-        "occupancy_status",
-    )
-    values: list[str] = []
+def _property_corpus(raw_sale: Mapping[str, Any]) -> str:
+    """Le texte qui décrit le bien : ni l'adresse du cabinet de l'avocat (« LE ROYAL - 2e étage »), ni le tribunal,
+    ni le texte des autres lots d'une page Licitor à plusieurs lots (src.lot_scope)."""
+
+    keys = ("title", "description", "raw_text", "occupancy_status")
     nested = raw_sale.get("raw_payload")
-    nested_sale = nested if isinstance(nested, Mapping) else {}
+    sources = [fact_view(dict(raw_sale))]
+    if isinstance(nested, Mapping):
+        sources.append(fact_view(dict(nested)))
+    values: list[str] = []
     for key in keys:
-        values.extend(_text_values(raw_sale.get(key)))
-        if key in nested_sale:
-            values.extend(_text_values(nested_sale.get(key)))
+        for source in sources:
+            values.extend(_text_values(source.get(key)))
     return "\n".join(dict.fromkeys(values))
 
 
@@ -765,28 +772,15 @@ def _quote(text: str, match: re.Match[str], radius: int = 100) -> str:
     return text[start:end].strip()
 
 
-def _explicit_room_claims(text: str, raw_sale: Mapping[str, Any]) -> list[dict[str, Any]]:
-    claims: list[dict[str, Any]] = []
-    patterns = (
-        ("rooms_count", r"\b(\d{1,2})\s*(?:pi[eè]ces?|pi[eè]ce)\b"),
-        ("rooms_count", r"\b(?:type|t|f)\s*([1-9]\d?)(?:[a-z])?\b"),
-        ("bedrooms_count", r"\b(\d{1,2})\s*chambres?\b"),
-        ("bathrooms_count", r"\b(\d{1,2})\s*salles?\s*de\s*bains?\b"),
-        ("showers_count", r"\b(\d{1,2})\s*salles?\s*d['’]?eau\b"),
-        ("wc_count", r"\b(\d{1,2})\s*(?:wc|w\.c\.)\b"),
-    )
-    for field, pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            claims.append(
-                _claim(
-                    field,
-                    int(match.group(1)),
-                    _quote(text, match),
-                    raw_sale=raw_sale,
-                    subject_scope="asset",
-                )
-            )
+def _span_quote(text: str, span: tuple[int, int], radius: int = 100) -> str:
+    return text[max(0, span[0] - radius) : min(len(text), span[1] + radius)].strip()
+
+
+def _explicit_room_claims(text: str, raw_sale: Mapping[str, Any], property_type: str) -> list[dict[str, Any]]:
+    claims = [
+        _claim(field, value, _span_quote(text, span), raw_sale=raw_sale, subject_scope="asset")
+        for field, (value, span) in room_count_facts(text, property_type).items()
+    ]
     # A parser field without an explicit textual match is still useful, but
     # must remain visibly inferred so exact-count assertions cannot treat it as
     # source evidence.
@@ -815,156 +809,82 @@ def _explicit_room_claims(text: str, raw_sale: Mapping[str, Any]) -> list[dict[s
     return claims
 
 
-def _technical_claims(raw_sale: Mapping[str, Any]) -> list[dict[str, Any]]:
-    text = _primary_corpus(raw_sale)
+def _technical_claims(raw_sale: Mapping[str, Any], property_type: str = "") -> list[dict[str, Any]]:
+    text = _property_corpus(raw_sale)
     claims: list[dict[str, Any]] = []
+    dwelling = property_type not in NO_DWELLING_FACTS_TYPES
 
-    # Floor.  ``rez-de-jardin`` is preserved as a label and does not create a
-    # land-surface fact.
-    floor_patterns = (
-        r"\b(rez[- ]de[- ]chauss(?:ée|ee)|rdc)\b",
-        r"\b(\d{1,2})(?:er|e|eme|ème)\s+étage\b",
-        r"\b(?:au|du|en)\s+(\d{1,2})(?:er|e|eme|ème)\s+étage\b",
-        r"\b(sous[- ]sol|combles)\b",
-        r"\b(rez[- ]de[- ]jardin)\b",
-    )
-    for floor_pattern in floor_patterns:
-        floor_match = re.search(floor_pattern, text, re.IGNORECASE)
-        if not floor_match:
-            continue
-        label = _clean(floor_match.group(1))
-        prefix = text[max(0, floor_match.start() - 90) : floor_match.start()]
-        if re.search(
-            r"(?:celliers?|caves?|parkings?|garages?|annexes?|local\s+technique)\s+(?:au|a|en|du|de)?\s*$",
-            prefix,
-            re.IGNORECASE,
-        ):
-            continue
-        normalized = _fold(label)
-        value: Any = label
-        if normalized in {"rez-de-chaussee", "rdc"}:
-            value = 0
-        elif label.isdigit():
-            value = int(label)
-        claim = _claim("floor", value, _quote(text, floor_match), raw_sale=raw_sale, subject_scope="asset")
-        claim["label"] = label
+    # Un seul étage, celui du lot lui-même (src.text_fact_scope) : rien pour une maison ou un immeuble entier.
+    floor = select_unit_floor(unit_floor_claims(text, property_type))
+    if floor is not None:
+        claim = _claim("floor", floor.value, floor.quote, raw_sale=raw_sale, subject_scope="asset")
+        claim["label"] = floor.label
         claims.append(claim)
 
     # Heating mode, energy and distribution are kept separate because a
     # listing can disclose one without the others.
-    heating_match = re.search(r"\bchauffage\b[^.\n]{0,140}", text, re.IGNORECASE)
-    if heating_match:
-        quote = heating_match.group(0).strip()
-        heating_folded = _fold(quote)
-        mode = None
-        if re.search(r"chauffage\s+(?:tr[eè]s\s+)?collectif|collectif", heating_folded):
-            mode = "collective"
-        elif re.search(r"chauffage\s+(?:tr[eè]s\s+)?individuel|individuel|privatif", heating_folded):
-            mode = "individual"
-        energy = None
-        for candidate, aliases in (
-            ("gas", ("gaz",)),
-            ("electricity", ("electrique", "électrique")),
-            ("fuel_oil", ("fioul", "fuel")),
-            ("wood", ("bois", "granules", "pellet")),
-            ("heat_pump", ("pompe a chaleur", "pompe à chaleur", "pac")),
-            ("solar", ("solaire",)),
-        ):
-            if any(alias in heating_folded for alias in aliases):
-                energy = candidate
-                break
-        distribution = None
-        for candidate, aliases in (
-            ("radiators", ("radiateur", "radiateurs")),
-            ("boiler", ("chaudiere", "chaudière")),
-            ("convectors", ("convecteur", "convecteurs")),
-            ("underfloor", ("plancher chauffant",)),
-        ):
-            if any(alias in heating_folded for alias in aliases):
-                distribution = candidate
-                break
-        value = {key: item for key, item in (("mode", mode), ("energy", energy), ("distribution", distribution)) if item}
-        if value:
-            claim = _claim("heating", value, quote, raw_sale=raw_sale, subject_scope="asset")
-            claim.update(value)
-            claims.append(claim)
-
-    flooring_match = _first_match(
-        text,
-        (
-            r"\b(?:rev[êe]tement(?:s)?(?:\s+de\s+sol)?|sols?)\s*:\s*([^.;\n]{1,100})",
-            r"\b(?:rev[êe]tement(?:s)?|sols?)\s+(?:en|de)\s+(parquet|carrelage|moquette|tomettes?|lino(?:l[eé]um)?)\b",
-            r"\b(parquet(?:\s+massif)?|carrelage|moquette|tomettes?|lino(?:l[eé]um)?)\b",
-        ),
-    )
-    if flooring_match:
-        value = _clean(flooring_match.group(1) if flooring_match.lastindex and flooring_match.lastindex > 0 else flooring_match.group(0))
-        claims.append(_claim("flooring", value, _quote(text, flooring_match), raw_sale=raw_sale, subject_scope="asset"))
-
-    year_match = _first_match(
-        text,
-        (
-            r"(?:construit|construction|ann[ée]e\s+de\s+construction)[^0-9]{0,24}((?:19|20)\d{2})",
-        ),
-    )
-    if year_match:
-        claims.append(_claim("year_built", int(year_match.group(1)), _quote(text, year_match), raw_sale=raw_sale, subject_scope="asset"))
-
-    orientation_match = _first_match(
-        text,
-        (
-            r"orientation\s*:?\s*([^.;\n]{1,50})",
-            r"expos[ée]e?\s+(?:plein\s+)?(nord|sud|est|ouest|nord[- ]est|nord[- ]ouest|sud[- ]est|sud[- ]ouest)",
-        ),
-    )
-    if orientation_match:
-        value = _clean(orientation_match.group(1))
-        claims.append(_claim("orientation", value, _quote(text, orientation_match), raw_sale=raw_sale, subject_scope="asset"))
-
-    copro_match = re.search(r"\bcopropri[eé]t[ée]\b", text, re.IGNORECASE)
-    charges_match = re.search(
-        r"charges?[^\d]{0,35}([\d\s\u202f.,]+)\s*€?[^.\n]{0,25}(par mois|/\s*mois|mensuel(?:le)?|par an|annuel(?:le)?|/\s*an)",
-        text,
-        re.IGNORECASE,
-    )
-    if copro_match:
-        quote = _quote(text, copro_match)
-        value: dict[str, Any] = {"is_coownership": True}
-        claim = _claim("coownership", value, quote, raw_sale=raw_sale)
+    heating = heating_facts(text) if dwelling else None
+    if heating:
+        value, span = heating
+        claim = _claim("heating", value, text[span[0] : span[1]], raw_sale=raw_sale, subject_scope="asset")
+        claim.update(value)
         claims.append(claim)
+
+    for field, fact in (
+        ("flooring", flooring_fact(text) if dwelling else None),
+        ("year_built", year_built_fact(text) if property_type != "land" else None),
+        ("orientation", orientation_fact(text)),
+    ):
+        if fact:
+            claims.append(_claim(field, fact[0], _span_quote(text, fact[1]), raw_sale=raw_sale, subject_scope="asset"))
+
+    coownership = coownership_fact(text)
+    if coownership:
+        claims.append(_claim("coownership", {"is_coownership": coownership[0]}, _span_quote(text, coownership[1]), raw_sale=raw_sale))
+    # La période suit le montant : « 92,25 € par mois, soit 1 107 € par an » est mensuel.
+    charges_match = re.search(
+        r"charges?[^\d]{0,35}([\d\s .,]+)\s*(?:€|eur(?:os?)?)?\s*(par mois|/\s*mois|mensuel(?:le)?s?|par an|annuel(?:le)?s?|/\s*an)\b",
+        fold_aligned(text),
+    )
     if charges_match:
         amount = _number(charges_match.group(1))
-        period = _fold(charges_match.group(2))
+        period = _clean(charges_match.group(2))
         if amount is not None:
             value = {"amount_eur": amount, "period": period}
             claim = _claim("coownership_charges", value, _quote(text, charges_match), raw_sale=raw_sale)
             claim["period"] = period
             claims.append(claim)
 
+    if dwelling:
+        claims.extend(_energy_class_claims(text, raw_sale))
+    claims.extend(_occupancy_claims(text, raw_sale))
+    claims.extend(_explicit_room_claims(text, raw_sale, property_type))
+    return claims
+
+
+def _energy_class_claims(text: str, raw_sale: Mapping[str, Any]) -> list[dict[str, Any]]:
+    claims: list[dict[str, Any]] = []
     dpe_not_applicable = re.search(r"\bdpe\b[^.\n]{0,30}(?:non soumis|non applicable|sans objet)", text, re.IGNORECASE)
     if dpe_not_applicable:
         claims.append(
             _claim("dpe_class", None, _quote(text, dpe_not_applicable), raw_sale=raw_sale, state="not_applicable", subject_scope="asset")
         )
     else:
-        dpe_match = _first_match(
-            text,
-            (r"\bdpe\b\s*:?\s*(?:classe\s*)?([a-g])\b", r"classe\s+[ée]nergie\s*:?\s*([a-g])\b"),
-        )
+        dpe_match = energy_class_match(text, (r"\bdpe\b\s*:?\s*(?:classe\s*)?([a-g])\b", r"classe\s+[ée]nergie\s*:?\s*([a-g])\b"))
         if dpe_match:
             claims.append(_claim("dpe_class", dpe_match.group(1).upper(), _quote(text, dpe_match), raw_sale=raw_sale, subject_scope="asset"))
-    ges_match = _first_match(text, (r"\bges\b\s*:?\s*(?:classe\s*)?([a-g])\b", r"[ée]missions?\s+ges\s*:?\s*([a-g])\b"))
+    ges_match = energy_class_match(text, (r"\bges\b\s*:?\s*(?:classe\s*)?([a-g])\b", r"[ée]missions?\s+ges\s*:?\s*([a-g])\b"))
     if ges_match:
         claims.append(_claim("ges_class", ges_match.group(1).upper(), _quote(text, ges_match), raw_sale=raw_sale, subject_scope="asset"))
+    return claims
 
+
+def _occupancy_claims(text: str, raw_sale: Mapping[str, Any]) -> list[dict[str, Any]]:
     # Keep physical occupation and legal possession distinct.  A phrase such
     # as "occupé mais vendu libre juridiquement" therefore yields two rows.
-    owner_match = re.search(
-        r"occup[ée]e?s?\s+par le propri[ée]taire|propri[ée]taire occupant", text, re.IGNORECASE
-    )
-    tenant_match = re.search(
-        r"occup[ée]e?s?\s+par un locataire|lou[ée]e?s?|locataire en place", text, re.IGNORECASE
-    )
+    claims: list[dict[str, Any]] = []
+    owner_match = re.search(r"occup[ée]e?s?\s+par le propri[ée]taire|propri[ée]taire occupant", text, re.IGNORECASE)
+    tenant_match = re.search(TENANT_RE, text, re.IGNORECASE)
     negative_match = re.search(
         r"ne\s+sont?\s+pas\s+occup[ée]e?s?|pas\s+d['’]?occupation|\bvacant(?:e|s)?\b|\bsans occupation\b|libre\s+physiquement",
         text,
@@ -981,7 +901,7 @@ def _technical_claims(raw_sale: Mapping[str, Any]) -> list[dict[str, Any]]:
         occupied_match = next(
             (
                 match
-                for match in re.finditer(r"\boccup[ée]e?s?\b", text, re.IGNORECASE)
+                for match in re.finditer(OCCUPIED_RE, text, re.IGNORECASE)
                 if not re.search(r"(?:ne\s+sont?\s+|pas\s+)$", text[max(0, match.start() - 24) : match.start()], re.IGNORECASE)
             ),
             None,
@@ -989,7 +909,7 @@ def _technical_claims(raw_sale: Mapping[str, Any]) -> list[dict[str, Any]]:
         if occupied_match:
             claims.append(_claim("occupancy_physical", "occupied", _quote(text, occupied_match), raw_sale=raw_sale, subject_scope="asset"))
     else:
-        occupied_match = re.search(r"\boccup[ée]e?s?\b", text, re.IGNORECASE)
+        occupied_match = re.search(OCCUPIED_RE, text, re.IGNORECASE)
         if occupied_match:
             claims.append(_claim("occupancy_physical", "occupied", _quote(text, occupied_match), raw_sale=raw_sale, subject_scope="asset"))
     legal_match = _first_match(
@@ -1003,21 +923,38 @@ def _technical_claims(raw_sale: Mapping[str, Any]) -> list[dict[str, Any]]:
     )
     if legal_match:
         claims.append(_claim("legal_possession", "free", _quote(text, legal_match), raw_sale=raw_sale, subject_scope="asset"))
-    elif re.search(r"vendu\s+occup[ée]|occupation\s+juridique", text, re.IGNORECASE):
-        match = re.search(r"vendu\s+occup[ée]|occupation\s+juridique", text, re.IGNORECASE)
-        if match:
-            claims.append(_claim("legal_possession", "occupied", _quote(text, match), raw_sale=raw_sale, subject_scope="asset"))
-
-    claims.extend(_explicit_room_claims(text, raw_sale))
+    elif match := re.search(r"vendu\s+occup[ée]|occupation\s+juridique", text, re.IGNORECASE):
+        claims.append(_claim("legal_possession", "occupied", _quote(text, match), raw_sale=raw_sale, subject_scope="asset"))
     return claims
 
 
-def extract_source_property_features(raw_sale: Mapping[str, Any]) -> dict[str, Any]:
-    """Extract technical facts without changing canonical sale fields."""
+def _resolved_property_type(raw_sale: Mapping[str, Any], property_type: str | None) -> str:
+    """Le type normalisé de la vente : celui passé par l'appelant, sinon relu sur la fiche brute."""
+
+    if property_type:
+        return _clean(property_type).casefold()
+    from src.normalize import normalize_sale_property_type  # import tardif : normalize importe des adaptateurs
+
+    try:
+        return normalize_sale_property_type(dict(raw_sale))
+    except Exception:  # noqa: BLE001 - une fiche partielle ne doit pas bloquer l'extraction
+        return ""
+
+
+def extract_source_property_features(
+    raw_sale: Mapping[str, Any],
+    *,
+    property_type: str | None = None,
+) -> dict[str, Any]:
+    """Extract technical facts without changing canonical sale fields.
+
+    ``property_type`` is the sale's normalized type: it decides which facts apply (no text floor for a house or a
+    whole building, no rooms for a parking space).  Without it, the raw listing's type is normalized here.
+    """
 
     fields: dict[str, Any] = {}
     evidence: list[dict[str, Any]] = []
-    for claim in _technical_claims(raw_sale):
+    for claim in _technical_claims(raw_sale, _resolved_property_type(raw_sale, property_type)):
         _append_claim(fields, evidence, claim)
     return {
         "schema_version": PROPERTY_FEATURE_SCHEMA_VERSION,
@@ -1759,14 +1696,22 @@ def _bounded_block_features(features: Mapping[str, Any]) -> dict[str, Any]:
     return projection
 
 
-def attach_source_property_features(raw_sale: dict[str, Any]) -> dict[str, Any]:
-    """Attach feature and procedure profiles to a parser payload in place."""
+def attach_source_property_features(
+    raw_sale: dict[str, Any],
+    *,
+    property_type: str | None = None,
+) -> dict[str, Any]:
+    """Attach feature and procedure profiles to a parser payload in place.
+
+    Callers holding a normalized sale pass ``sale.property_type``; the raw listing type (« Maison », « T3 ») is
+    normalized otherwise.
+    """
 
     view = _input_view(raw_sale)
     existing_features = view.get("source_property_features")
     existing_features = _without_generated_feature_claims(existing_features)
     existing_features = existing_features if isinstance(existing_features, Mapping) else {}
-    extracted = extract_source_property_features(view)
+    extracted = extract_source_property_features(view, property_type=property_type)
     merged_features = dict(existing_features)
     feature_collisions: dict[str, Any] = {}
     for field, claim in extracted["fields"].items():
