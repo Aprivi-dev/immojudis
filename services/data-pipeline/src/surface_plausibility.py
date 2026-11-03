@@ -152,3 +152,34 @@ def built_surfaces_equal_to_land(sale: Any) -> Iterator[str]:
     for field in ("habitable_surface_m2", "surface_m2"):
         if getattr(sale, field) == land:
             yield field
+
+
+# --- surface bâtie écrite en toutes lettres --------------------------------------------------------------
+
+# Libellé de surface bâtie juste avant la valeur (« surface habitable de », « surface bâtie de », « superficie
+# privative (loi Carrez) : ») ou juste après (« 120 m² habitables », « 63 m² loi Carrez »).
+_BUILT_LABEL_BEFORE_VALUE = re.compile(
+    r"\b(?:surface|superficie)\s+(?:totale\s+)?(?:habitable|b[âa]tie|construite|de\s+plancher|privative|(?:loi\s+)?carrez)"
+    r"(?:\s+totale)?(?:\s*\([^)]{0,40}\))?\s*(?::|=)?\s*(?:de\s+|d['’]environ\s+|environ\s+)?$",
+    re.I,
+)
+_BUILT_LABEL_AFTER_VALUE = re.compile(r"^\s*(?:m\s*(?:2|²)|mètres?\s+carrés?)\s+(?:de\s+surface\s+)?(?:habitables?|(?:loi\s+)?carrez)\b", re.I)
+
+
+def text_states_built_surface(texts: Iterable[str | None], value: Decimal | None) -> bool:
+    """Vrai si un texte donne lui-même ``value`` m² comme surface bâtie (habitable, Carrez, bâtie, de plancher).
+
+    Le libellé doit qualifier directement le nombre : « offrant une surface habitable de 167,08 m² » (07228862),
+    « surface bâtie de 259,86 m² » (ebafd1c4). Une simple proximité ne suffit pas.
+    """
+    if value is None:
+        return False
+    for text in texts:
+        for match in _NUMBER_M2.finditer(text or ""):
+            if parse_surface(match.group(1)) != value:
+                continue
+            if _BUILT_LABEL_BEFORE_VALUE.search((text or "")[max(0, match.start() - 80) : match.start()]):
+                return True
+            if _BUILT_LABEL_AFTER_VALUE.match((text or "")[match.end(1) : match.end(1) + 40]):
+                return True
+    return False

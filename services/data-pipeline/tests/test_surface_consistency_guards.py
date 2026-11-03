@@ -101,7 +101,11 @@ def test_different_built_and_land_surfaces_are_untouched() -> None:
 
 
 def test_a_generic_surface_read_from_the_land_wording_is_replaced_by_the_habitable_one() -> None:
-    """La lecture du texte donnait « Terrain de 800 m² » comme surface générique : elle est écartée."""
+    """La lecture du texte donnait « Terrain de 800 m² » comme surface générique : elle est écartée.
+
+    Depuis le 03/11/2026, la valeur reçue par le terrain nommé entre « Maison » et le nombre n'est plus lue comme
+    surface bâtie (src/surface_text_recovery.py) : il n'y a plus rien à retirer ensuite.
+    """
     sale = _sale(
         title="Maison à Bordeaux",
         property_type="house",
@@ -111,8 +115,9 @@ def test_a_generic_surface_read_from_the_land_wording_is_replaced_by_the_habitab
     )
 
     assert sale.surface_m2 == Decimal("120")
+    assert sale.app_surface_m2 == Decimal("120")
     assert sale.land_surface_m2 == Decimal("800")
-    assert sale.raw_payload["built_surface_equal_to_land_reconciliation"]["fields"] == ["surface_m2"]
+    assert Decimal("800") not in {sale.surface_m2, sale.habitable_surface_m2}
 
 
 # --- deux valeurs pour le même bien -------------------------------------------------------------------------
