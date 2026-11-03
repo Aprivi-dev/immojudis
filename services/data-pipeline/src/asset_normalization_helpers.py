@@ -9,6 +9,7 @@ from src.asset_normalization import (
     FACTOR_AXIS,
     ScoreComponent,
 )
+from src.lot_scope import describes_one_lot, sale_fact_text
 from src.models import AuctionSale
 from src.multi_unit_surface import is_single_unit_surface_of_several
 from src.normalize import (
@@ -37,7 +38,7 @@ MAX_PLAUSIBLE_PROVEN_BUILT_TOTAL_HOUSE_SURFACE_M2 = Decimal("5000")
 def _plausible_surface_ceiling(sale: AuctionSale) -> Decimal | None:
     if sale.property_type == "house" and sale.app_surface_kind == "habitable":
         if source_proves_built_total(
-            (sale.surface_evidence, sale.description, sale.title, sale.raw_text), sale.app_surface_m2
+            (sale.surface_evidence, sale.description, sale.title, sale_fact_text(sale)), sale.app_surface_m2
         ):
             return MAX_PLAUSIBLE_PROVEN_BUILT_TOTAL_HOUSE_SURFACE_M2
         return MAX_PLAUSIBLE_LABELLED_HOUSE_SURFACE_M2
@@ -62,7 +63,7 @@ def _is_unestablished_multi_unit_surface(sale: AuctionSale, text: str) -> bool:
         return True  # la surface d'un des logements cités, même qualifiée « totale » pour ce logement
     if not text or _has_explicit_total_surface_evidence(text):
         return False
-    if "multi_lot_sale" in sale.quality_flags:
+    if "multi_lot_sale" in sale.quality_flags and not describes_one_lot(sale):  # lot Licitor désigné : sa surface
         return True
     return sale.property_type == "building" and bool(_MULTI_UNIT_PATTERN.search(text))
 
@@ -212,9 +213,9 @@ def _source_qualifies_surface_as_land(sale: AuctionSale, value: Decimal | None) 
     if value is None:
         return False
     # « …, soit superficie totale 1550 m² » à la suite de parcelles cadastrales : la contenance du terrain.
-    if is_parcel_total((sale.surface_evidence, sale.description, sale.title, sale.raw_text), value):
+    if is_parcel_total((sale.surface_evidence, sale.description, sale.title, sale_fact_text(sale)), value):
         return True
-    for text in (sale.surface_evidence, sale.description, sale.title, sale.raw_text):
+    for text in (sale.surface_evidence, sale.description, sale.title, sale_fact_text(sale)):
         if not text:
             continue
         for match in _SURFACE_NUMBER_PATTERN.finditer(text):
@@ -229,7 +230,7 @@ def _source_qualifies_surface_as_land(sale: AuctionSale, value: Decimal | None) 
 
 
 def _large_non_residential_surface_is_supported(sale: AuctionSale) -> bool:
-    context = clean_text(" ".join(filter(None, (sale.surface_evidence, sale.description, sale.raw_text)))) or ""
+    context = clean_text(" ".join(filter(None, (sale.surface_evidence, sale.description, sale_fact_text(sale))))) or ""
     if not context:
         return False
     if re.search(r"\b(?:cadastr|parcelle|terrain|contenance)\b", context, re.I) and not re.search(
@@ -366,11 +367,11 @@ def _number_word_to_int(value: str) -> int | None:
 
 
 def _sale_text(sale: AuctionSale) -> str:
-    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale.risk_notes, sale.raw_text]))) or ""
+    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale.risk_notes, sale_fact_text(sale)]))) or ""
 
 
 def _risk_source_text(sale: AuctionSale) -> str:
-    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale.raw_text]))) or ""
+    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale_fact_text(sale)]))) or ""
 
 
 def _sale_type_context(sale: AuctionSale) -> dict[str, object]:

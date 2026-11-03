@@ -65,3 +65,6 @@ d46b6b5ec91647314a12c31788c24a066b4b41ba:services/data-pipeline/src/enrichment/d
 0d3ff3190400c2dbafe9be80993e1b12d89bae40:services/data-pipeline/src/pdf_tribunal.py:generic-api-key:29
 0d3ff3190400c2dbafe9be80993e1b12d89bae40:services/data-pipeline/tests/test_pdf_tribunal.py:generic-api-key:9
 ccf491c9ad3ef3f293e395a0af27169b62749859:services/data-pipeline/src/commune_insee.py:generic-api-key:210
+
+# Licitor multi-lot capture (03/11/2026): public Google Maps browser key of licitor.com, redacted in the next commit.
+8697f761cda9fe040c15979787c83a5d43453c0e:services/data-pipeline/tests/fixtures/licitor_fiche_deux_lots_cannes_le_cannet.html:gcp-api-key:288
