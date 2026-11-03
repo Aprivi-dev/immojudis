@@ -219,14 +219,15 @@ def test_digital_pdf_does_not_consume_ocr_budget_when_ocr_is_enabled(tmp_path, m
     assert pages[0]['retryable'] is False
 
 
-def test_ocr_document_budget_is_checked_after_final_page(tmp_path, monkeypatch):
+def _budget_overrun_pdf(tmp_path, monkeypatch, page_count):
     monkeypatch.setattr(pdf_enrichment, 'PDF_DOCUMENT_TEXTS_DIR', tmp_path / 'cache')
     monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
     monkeypatch.setenv('PDF_OCR_DOCUMENT_BUDGET_SECONDS', '1')
-    path = tmp_path / 'final-page-budget.pdf'
+    path = tmp_path / f'budget-{page_count}.pdf'
     with pymupdf.open() as document:
-        page = document.new_page()
-        page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        for _ in range(page_count):
+            page = document.new_page()
+            page.draw_rect(pymupdf.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
         document.save(path)
 
     clock = [0.0]
@@ -241,14 +242,29 @@ def test_ocr_document_budget_is_checked_after_final_page(tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', bounded_ocr)
+    return path
+
+
+def test_ocr_document_budget_is_checked_after_each_page_but_the_last(tmp_path, monkeypatch):
+    path = _budget_overrun_pdf(tmp_path, monkeypatch, page_count=2)
 
     with pytest.raises(pdf_enrichment.PdfDocumentOcrBudgetExceeded) as error:
         pdf_enrichment.extract_pdf_pages(path)
 
     assert error.value.checkpointed_pages == 1
-    assert error.value.total_pages == 1
+    assert error.value.total_pages == 2
     assert error.value.progress_made is True
     pages = pdf_enrichment.extract_pdf_pages(path)
+    assert [page['status'] for page in pages] == ['extracted', 'extracted']
+
+
+def test_an_ocr_budget_overrun_on_the_final_page_does_not_defer_a_read_document(tmp_path, monkeypatch):
+    """Production 03/11/2026: documents whose every page was read stayed ``incomplete`` (no failed
+    page) because the budget yielded after the last page; the next pass only assembled them."""
+    path = _budget_overrun_pdf(tmp_path, monkeypatch, page_count=1)
+
+    pages = pdf_enrichment.extract_pdf_pages(path)
+
     assert len(pages) == 1
     assert pages[0]['status'] == 'extracted'
 
