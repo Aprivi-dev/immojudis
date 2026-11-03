@@ -317,6 +317,25 @@ def publication_rejection(sale: AuctionSale, now=None) -> str | None:
     return None
 
 
+def closes_expired_offer_deadline(sale: AuctionSale) -> bool:
+    """Une relecture des pièces qui clôt un appel d'offres déjà publié : sa date limite, lue sans ambiguïté, est passée.
+
+    ``publication_rejection`` écarte une vente expirée ; la ligne publiée resterait alors « à venir » sans date
+    (13 appels d'offres Cessions de l'État le 03/11/2026). Cette écriture-là porte la date limite et le statut
+    ``past`` sur la ligne existante (``updated_at`` vient de la base) pour que la rétention la ferme.
+    """
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    extraction = payload.get("pdf_sale_date_extraction")
+    return (
+        isinstance(extraction, dict)
+        and extraction.get("offer_deadline_expired") is True
+        and sale.sale_date is not None
+        and sale.status == "past"
+        and sale.updated_at is not None
+        and has_price_or_surface(sale)
+    )
+
+
 CATALOGUE_EXPIRED_REASON = "catalogue_date_passed_not_evidence_of_sale"
 
 
