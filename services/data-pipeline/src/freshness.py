@@ -145,6 +145,30 @@ def record_source_checks(raw_sales: list, known: dict, *, capture: str = "collec
             invalidate_analysis(payload, "source_operational_changed", preserve_facts=True)
         elif change is not None:
             invalidate_analysis(payload, "source_content_changed", keep_display=change == CONTENT_CHANGE_KEEP_DISPLAY)
+        if change is not None:
+            payload["source_content_changed_at"] = check["checked_at"]
+
+
+def is_new_source_change(incoming: Any, existing: Any) -> bool:
+    """Whether ``incoming`` carries a source change the stored row has not already absorbed.
+
+    The collection copies ``source_content_changed`` from the stored row while it waits for the LLM stage
+    (``_preserve_known_enrichment_payloads``). Taken as a new change, that inherited flag invalidated the document
+    facts at every collection (04/11/2026: 99 sales read in the day, then invalidated again by the next pass,
+    without any change of the page). A real change is dated when it is detected (``record_source_checks``);
+    an inherited flag carries the stored date.
+    """
+    if not isinstance(incoming, dict) or not incoming.get("source_content_changed"):
+        return False
+    if not isinstance(existing, dict) or not existing.get("source_content_changed"):
+        return True
+    if incoming.get("source_content_changed_at") or existing.get("source_content_changed_at"):
+        return incoming.get("source_content_changed_at") != existing.get("source_content_changed_at")
+    # Rows stored before the date existed: an inherited flag also copies the reason and the operational marker.
+    return any(
+        incoming.get(key) != existing.get(key)
+        for key in ("source_content_change_reason", "source_operational_changed")
+    )
 
 
 def documents_are_current(sale: Any) -> bool:

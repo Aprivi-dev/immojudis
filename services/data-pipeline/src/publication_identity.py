@@ -26,7 +26,7 @@ from src.dedupe import (
     same_shared_listing,
     shared_listing_id,
 )
-from src.freshness import invalidate_analysis
+from src.freshness import invalidate_analysis, is_new_source_change
 from src.information_sufficiency import publication_gate
 from src.models import AuctionSale
 from src.retention_tombstones import drop_retired
@@ -321,7 +321,8 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
         result.source_name = existing.source_name
         result.primary_source = existing.primary_source or existing.source_name
         _merge_source_check_provenance(result, [existing, incoming])
-        if incoming.raw_payload.get('source_content_changed'):
+        if is_new_source_change(incoming.raw_payload, existing.raw_payload):
+            result.raw_payload['source_content_changed_at'] = incoming.raw_payload.get('source_content_changed_at')
             incoming_is_operational = (
                 incoming.raw_payload.get('source_operational_changed') is True
                 and incoming.raw_payload.get('source_content_change_reason') == 'source_operational_changed'

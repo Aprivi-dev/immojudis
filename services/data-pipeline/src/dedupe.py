@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from src.freshness import is_new_source_change
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_documents
 
@@ -261,8 +262,10 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
         elif field == "raw_payload" and isinstance(current, dict) and isinstance(incoming, dict):
             current.setdefault("source_checks", {}).update(incoming.get("source_checks") or {})
             previous_content_changed = bool(current.get("source_content_changed"))
-            if incoming.get("source_content_changed"):
+            # An inherited (already absorbed) change must not invalidate again: see is_new_source_change.
+            if is_new_source_change(incoming, current):
                 current["source_content_changed"] = True
+                current["source_content_changed_at"] = incoming.get("source_content_changed_at")
                 # A non-major source change marks the text stale instead of
                 # erasing it (see display_invalidation); serve it until rebuilt.
                 if incoming.get("llm_display_status") == "stale" and current.get("llm_display_description"):

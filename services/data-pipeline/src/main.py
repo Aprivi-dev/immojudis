@@ -56,6 +56,7 @@ from src.known_document_backfill import (
     KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
     KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
     KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
+    _backfill_document_facts_version_from_known,
     _backfill_document_occupancy_from_known,
     _backfill_document_price_from_known,
     _backfill_document_sale_date_from_known,
@@ -236,6 +237,7 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_prompt_version",
     "source_content_changed",
     "source_content_change_reason",
+    "source_content_changed_at",
     "superseded_analysis",
     "document_analysis",
     "surface_extraction",
@@ -1596,6 +1598,7 @@ def _preserve_known_enrichment_payloads(
             sale["superseded_document_analysis"] = known_payload.get("document_analysis")
             sale["llm_display_status"] = "pending"
             sale["source_content_changed"] = True
+            sale["source_content_changed_at"] = datetime.now(UTC).isoformat()
             continue
         payload_fields = KNOWN_ENRICHMENT_PAYLOAD_FIELDS
         if (
@@ -1622,6 +1625,7 @@ def _preserve_known_enrichment_payloads(
         )
         preserved += _backfill_document_surface_fields_from_known(sale, known)
         preserved += _backfill_document_price_from_known(sale, known)
+        preserved += _backfill_document_facts_version_from_known(sale, known)
         preserved += _backfill_document_sale_date_from_known(sale, known)
         preserved += _backfill_document_occupancy_from_known(sale, known)
     return preserved
