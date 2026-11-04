@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -215,3 +216,48 @@ def test_expired_complete_manifest_revalidates_in_six_six_four_passes(
     assert len(requests) == before_noop_requests
     assert len(extraction_urls) == 16
     assert documents_are_current(sale)
+
+
+def test_a_pending_revalidation_is_cleared_even_when_another_process_refreshed_the_sidecars(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    # 04/11/2026 : la lecture en avance retéléchargeait les pièces à revalider (fichiers .http.json frais) sans pouvoir
+    # retirer la liste « http_revalidation_pending_urls » enregistrée ; la passe ne les reprenait plus et le
+    # manifeste restait partiel indéfiniment.
+    sale, pdf_bytes = _sale_and_pdf_bytes(tmp_path / "fixtures")
+    requests, revalidate_only = _configure_runtime(monkeypatch, pdf_bytes, tmp_path)
+    for _ in range(3):
+        pdf_enrichment.enrich_sale_from_pdfs(sale)
+    assert documents_are_current(sale)
+
+    documents_dir = tmp_path / "documents"
+    _make_all_sidecars_stale(sale, documents_dir)
+    revalidate_only["value"] = True
+    old_timestamp = "2020-01-01T00:00:00+00:00"
+    analysis = sale.raw_payload["document_analysis"]
+    analysis["cache_proof"]["verified_at"] = old_timestamp
+    for proof_item in analysis["cache_proof"]["documents"]:
+        proof_item["http_checked_at"] = old_timestamp
+
+    pdf_enrichment.enrich_sale_from_pdfs(sale)  # first six URLs revalidated, ten still pending
+    assert len(sale.raw_payload["document_analysis"]["http_revalidation_pending_urls"]) == 10
+
+    # Another process refreshes every sidecar but cannot touch the persisted pending list.
+    sale_dir = documents_dir / pdf_enrichment.sale_storage_id(sale)
+    for document in sale.documents:
+        path = sale_dir / pdf_enrichment._document_filename(document)
+        metadata_path = path.with_suffix(path.suffix + ".http.json")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        metadata["checked_at"] = datetime.now(UTC).isoformat()
+        metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    before = len(requests)
+    for _ in range(3):
+        if documents_are_current(sale):
+            break
+        pdf_enrichment.enrich_sale_from_pdfs(sale)
+
+    assert sale.raw_payload["document_analysis"]["http_revalidation_pending_urls"] == []
+    assert documents_are_current(sale)
+    assert len(requests) == before  # fresh sidecars: cleared from the local cache, without a new request

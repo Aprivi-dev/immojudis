@@ -583,6 +583,11 @@ def stale_complete_document_urls(
         analysis["http_revalidation_pending_urls"] = sorted(
             (retained_pending | stale_urls) & revalidation_urls
         )
+        # A URL still pending from an earlier pass is revalidated too, even when its local sidecar looks fresh: only
+        # a pass that processes the URL clears it (pdf_document_selection). On 04/11/2026 another process (the
+        # document prefetch) refreshed the sidecars without being able to clear the persisted pending list, so the
+        # locked pass never selected those URLs again and the manifest stayed partial forever (53 empty passes).
+        stale_urls |= retained_pending & revalidation_urls
     return stale_urls
 
 
