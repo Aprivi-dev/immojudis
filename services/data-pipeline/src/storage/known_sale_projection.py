@@ -99,6 +99,7 @@ KNOWN_SALE_RAW_PAYLOAD_KEYS = (
     "source_detail_status",
     "source_content_changed",
     "source_content_change_reason",
+    "source_content_changed_at",
     "source_operational_changed",
     "superseded_analysis",
     "superseded_document_analysis",
