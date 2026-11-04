@@ -61,7 +61,16 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
     # Documents all read with older extraction rules are read again from the cache (quality audit of
     # 03/11/2026), after the documents never read, and a deferred re-read keeps its deadline.
     assert "or coalesce(s.raw_payload->>'document_facts_version', '') <> %s" in sql
-    assert "and not ( a.status = 'queued' and a.next_attempt_at <= now() and p.source_url is null" in sql
+    assert "and not ( a.status = 'queued' and a.next_attempt_at <= now() and ( a.attempt_count = 0" in sql
+    assert "or ( p.source_url is null and coalesce(s.raw_payload->>'document_facts_version', '') <> %s )" in sql
+    # Only a real attempt waits a day (04/11/2026: 0 of 270 sales selected). A cancelled job (superseded when a
+    # collection invalidates the reading) tried nothing, and a completed reading replaced by a newer
+    # generation is out of date.
+    assert "and a.status <> 'cancelled'" in sql
+    assert (
+        "and not ( a.status = 'completed' and exists ( select 1 from public.auction_enrichment_jobs b"
+        " where b.source_url = a.source_url and b.job_type = 'pdf' and b.created_at > a.created_at ) )"
+    ) in sql
     assert sql.count("%s") == 5
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
     assert "j.job_type = 'pdf'" in claim and "for update of j, s skip locked" in claim

@@ -142,16 +142,35 @@ select s.source_url, s.source_name, s.sale_date,
    -- that keeps failing must not be downloaded again each time.
    -- Une relecture remise en file (tâche pdf « queued » et due) reste éligible : rien n'est retéléchargé, et un
    -- report (accès refusé, source retirée, nouvel essai) garde son échéance.
+   -- Seul un essai réel fait attendre (04/11/2026 : 0 vente choisie sur 270 à relire). Une tâche annulée
+   -- (« Superseded by a newer input revision » quand la collecte invalide la lecture) n'a rien essayé ; une
+   -- tâche due jamais tentée non plus ; une lecture terminée qu'une génération plus récente remplace est
+   -- dépassée. Elles bloquaient la vente un jour entier.
    and not exists (
          select 1 from public.auction_enrichment_jobs a
           where a.source_url = s.source_url
             and a.job_type = 'pdf'
             and a.updated_at >= now() - interval '1 day'
+            and a.status <> 'cancelled'
             and not (
                   a.status = 'queued'
                   and a.next_attempt_at <= now()
-                  and p.source_url is null
-                  and coalesce(s.raw_payload->>'document_facts_version', '') <> %s
+                  and (
+                        a.attempt_count = 0
+                        or (
+                              p.source_url is null
+                              and coalesce(s.raw_payload->>'document_facts_version', '') <> %s
+                            )
+                      )
+                )
+            and not (
+                  a.status = 'completed'
+                  and exists (
+                        select 1 from public.auction_enrichment_jobs b
+                         where b.source_url = a.source_url
+                           and b.job_type = 'pdf'
+                           and b.created_at > a.created_at
+                      )
                 )
        )
  -- Documents never tried come first: a sale whose only unread documents
