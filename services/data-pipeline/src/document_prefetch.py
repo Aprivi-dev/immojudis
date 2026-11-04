@@ -73,7 +73,7 @@ def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[s
     )
     from src.pdf_ocr import PdfDeadlineExceeded, PdfExtractionDeferred
     from src.pdf_progress import restore_pdf_page_caches_from_manifest
-    from src.storage.supabase_client import fetch_sale_for_data_refresh, restore_persisted_pdf_progress_for_sale
+    from src.storage.supabase_client import fetch_sale_for_data_refresh
 
     started = time.monotonic()
     result: dict[str, Any] = {"source_url": source_url, "documents": 0, "read": 0, "cached": 0, "error": None}
@@ -82,8 +82,8 @@ def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[s
             sale = fetch_sale_for_data_refresh(source_url)
             if sale is None or not sale.documents:
                 return result
-            restore_persisted_pdf_progress_for_sale(sale)
             downloaded = download_documents(sale, stats=PdfEnrichmentStats())
+            restore_checkpointed_pages(sale, downloaded)
             settings = load_settings()
             restore_pdf_page_caches_from_manifest(
                 PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json",
@@ -112,6 +112,33 @@ def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[s
             result["error"] = f"{type(exc).__name__}: {exc}"[:300]
     result["seconds"] = round(time.monotonic() - started, 1)
     return result
+
+
+def restore_checkpointed_pages(sale: Any, downloaded: list[dict[str, Any]]) -> None:
+    """Bring back the pages a previous pass checkpointed in the database, as page caches only.
+
+    ``restore_persisted_pdf_progress_for_sale`` also writes the sale's local manifest
+    (``PDF_TEXTS_DIR/<sale>.json``). Written here, ahead of the locked pass, that manifest went stale whenever another
+    writer updated the sale in between: on 04/11/2026 (11:20) the locked passes then saw a partial manifest again and
+    again (53 passes without reading a document for 27 sales) and their checkpoints were refused by the revision guard.
+    Page caches are keyed by file content and never go stale; the locked pass rebuilds the manifest itself.
+    """
+    from src.config import load_settings
+    from src.storage import supabase_client as storage
+
+    settings = load_settings()
+    supabase_url, api_key = settings.get("supabase_url"), settings.get("supabase_service_role_key")
+    source_url = str(getattr(sale, "source_url", "") or "")
+    if not supabase_url or not api_key or not source_url or not downloaded:
+        return
+    rows = storage._read_persisted_pdf_rows_rest(str(supabase_url), str(api_key), [source_url])
+    for row in sorted(rows, key=lambda item: str(item.get("updated_at") or ""), reverse=True):
+        restored = storage._validated_persisted_pdf_texts(sale, row) or storage._validated_persisted_pdf_progress(
+            sale, row
+        )
+        if restored:
+            storage._restore_pdf_page_caches_for_documents(restored, downloaded)
+            return
 
 
 class DocumentPrefetcher:

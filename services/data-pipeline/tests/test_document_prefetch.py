@@ -178,7 +178,7 @@ def test_preparation_reads_pages_without_writing_to_the_database(monkeypatch, tm
         return {"text": "ok"}
 
     monkeypatch.setattr(supabase_client, "fetch_sale_for_data_refresh", lambda url: sale)
-    monkeypatch.setattr(supabase_client, "restore_persisted_pdf_progress_for_sale", lambda s: [])
+    monkeypatch.setattr(prefetch, "restore_checkpointed_pages", lambda s, downloaded: None)
     monkeypatch.setattr(
         pdf_enrichment, "download_documents", lambda s, stats=None: [{"url": "u", "file_path": str(pdf)}]
     )
@@ -232,3 +232,45 @@ def test_the_lookahead_keeps_workers_busy_while_the_lock_is_held() -> None:
     prefetcher.start()
     assert len(prefetcher._futures) == 3 * prefetch.LOOKAHEAD_PER_WORKER
     prefetcher.close()
+
+
+def test_restoring_checkpoints_never_writes_the_sale_manifest(monkeypatch) -> None:
+    # 04/11/2026 : un manifeste local écrit en avance devenait périmé et faisait tourner la passe sous verrou en rond.
+    from src import config
+    from src.models import AuctionSale
+    from src.pdf_fact_extraction import _write_pdf_text_cache  # noqa: F401 - must not be reached
+    from src.storage import supabase_client
+
+    sale = AuctionSale(source_name="vench", source_url="https://example.test/m", documents=[])
+    downloaded = [{"url": "https://example.test/m/pv.pdf", "file_path": "/tmp/pv.pdf"}]
+    restored_pages: list[tuple] = []
+    monkeypatch.setattr(
+        config,
+        "load_settings",
+        lambda: {"supabase_url": "https://db.example", "supabase_service_role_key": "k"},
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_read_persisted_pdf_rows_rest",
+        lambda url, key, urls: [{"updated_at": "2026-11-04T10:00:00Z"}, {"updated_at": "2026-11-04T11:00:00Z"}],
+    )
+    monkeypatch.setattr(supabase_client, "_validated_persisted_pdf_texts", lambda s, row: None)
+    monkeypatch.setattr(
+        supabase_client, "_validated_persisted_pdf_progress", lambda s, row: [{"row": row["updated_at"]}]
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_restore_pdf_page_caches_for_documents",
+        lambda restored, docs: restored_pages.append((restored, docs)),
+    )
+
+    def forbidden(*_a, **_k):
+        raise AssertionError("the sale manifest must not be written ahead of the locked pass")
+
+    monkeypatch.setattr(supabase_client, "restore_persisted_pdf_progress_for_sale", forbidden)
+    monkeypatch.setattr("src.pdf_fact_extraction._write_pdf_text_cache", forbidden)
+
+    prefetch.restore_checkpointed_pages(sale, downloaded)
+
+    # The newest checkpoint is used, and only as page caches beside the downloaded files.
+    assert restored_pages == [([{"row": "2026-11-04T11:00:00Z"}], downloaded)]
