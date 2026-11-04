@@ -55,14 +55,19 @@ def test_the_next_sales_are_prepared_ahead_and_awaited_in_order() -> None:
         return {"source_url": url}
 
     prefetcher = prefetch.DocumentPrefetcher(
-        list("abcdef"), workers=2, deadline=time.monotonic() + 60, executor_factory=_thread_executor(), prefetch=fake
+        list("abcdef"),
+        workers=2,
+        deadline=time.monotonic() + 60,
+        executor_factory=_thread_executor(),
+        prefetch=fake,
+        lookahead=3,
     )
     prefetcher.start()
     for _ in range(50):
         if len(started) >= 2:
             break
         threading.Event().wait(0.02)
-    # Two workers busy, one more sale queued: never more than workers + 1 scheduled.
+    # Two workers busy, one more sale queued: never more than the lookahead scheduled.
     assert sorted(started) == ["a", "b"]
     assert list(prefetcher._futures) == ["a", "b", "c"]
     release["a"].set()
@@ -214,3 +219,16 @@ def test_worker_processes_start_with_their_share_of_the_host_delay() -> None:
         assert executor.submit(os.getenv, "PDF_HOST_MIN_DELAY_SECONDS").result(timeout=60) == "6.0"
     finally:
         executor.shutdown()
+
+
+def test_the_lookahead_keeps_workers_busy_while_the_lock_is_held() -> None:
+    prefetcher = prefetch.DocumentPrefetcher(
+        [f"u{i}" for i in range(30)],
+        workers=3,
+        deadline=time.monotonic() + 60,
+        executor_factory=_thread_executor(),
+        prefetch=lambda url, remaining: {},
+    )
+    prefetcher.start()
+    assert len(prefetcher._futures) == 3 * prefetch.LOOKAHEAD_PER_WORKER
+    prefetcher.close()

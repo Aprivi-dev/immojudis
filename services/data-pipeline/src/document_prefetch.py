@@ -37,6 +37,10 @@ DEFAULT_PREFETCH_WORKERS = 3
 MAX_PREFETCH_WORKERS = 6
 # A long scanned report stops at the per-document OCR budget; each round resumes from the page cache.
 MAX_ROUNDS_PER_DOCUMENT = 6
+# Sales prepared ahead per worker. A collection can hold the catalogue lock for 30 minutes (04/11/2026, 10:45):
+# with one sale ahead per worker the processes sat idle while the locked pass waited. The queue is only file
+# names and a deadline; the work it holds is what the locked pass would have done anyway.
+LOOKAHEAD_PER_WORKER = 4
 
 
 def prefetch_workers_from_env() -> int:
@@ -122,9 +126,11 @@ class DocumentPrefetcher:
         executor_factory: Callable[[int, float], Executor] | None = None,
         prefetch: Callable[[str, float], dict[str, Any]] = prefetch_sale_documents,
         clock: Callable[[], float] = time.monotonic,
+        lookahead: int | None = None,
     ) -> None:
         self._urls = list(source_urls)
         self._workers = workers
+        self._lookahead = max(workers + 1, lookahead if lookahead is not None else workers * LOOKAHEAD_PER_WORKER)
         self._deadline = deadline
         self._prefetch = prefetch
         self._clock = clock
@@ -139,8 +145,8 @@ class DocumentPrefetcher:
     def _schedule(self) -> None:
         if self._executor is None:
             return
-        # Keep every worker busy plus one sale ready.
-        while self._next < len(self._urls) and len(self._futures) < self._workers + 1:
+        # Keep the workers busy even while the locked pass waits for a collection to release the lock.
+        while self._next < len(self._urls) and len(self._futures) < self._lookahead:
             url = self._urls[self._next]
             self._next += 1
             remaining = self._deadline - self._clock()
