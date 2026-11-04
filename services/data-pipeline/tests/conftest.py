@@ -111,3 +111,9 @@ def merge_trigger_present(monkeypatch):
     from src import merge_guards
 
     monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)
+
+
+@pytest.fixture(autouse=True)
+def _no_document_prefetch_processes(monkeypatch):
+    """Le vidage des pièces prépare les ventes suivantes dans des processus à part : jamais dans les tests."""
+    monkeypatch.setenv("DOCUMENT_BACKLOG_PREFETCH_WORKERS", "0")

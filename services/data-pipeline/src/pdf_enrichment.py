@@ -1095,7 +1095,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                     }
                 )
                 cache_dir.mkdir(parents=True, exist_ok=True)
-                temporary = cache_path.with_suffix(".tmp")
+                temporary = cache_path.with_suffix(f".{time.monotonic_ns()}.tmp")
                 temporary.write_text(json.dumps(pages[-1], ensure_ascii=False), encoding="utf-8")
                 temporary.replace(cache_path)
                 new_progress_pages += 1
@@ -1206,7 +1206,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 )
             pages.append(page_record)
             cache_dir.mkdir(parents=True, exist_ok=True)
-            temporary = cache_path.with_suffix(".tmp")
+            temporary = cache_path.with_suffix(f".{time.monotonic_ns()}.tmp")
             temporary.write_text(json.dumps(pages[-1], ensure_ascii=False), encoding="utf-8")
             temporary.replace(cache_path)
             if status in {"extracted", "visual_blank_excluded", PICTURE_PAGE_STATUS}:

@@ -606,40 +606,55 @@ def run_document_backlog(
     )
     from src.catalogue_lock import CatalogueLockTimeout
 
+    # Les ventes suivantes sont téléchargées et lues hors du verrou pendant que la courante est publiée
+    # (src/document_prefetch.py) : le verrou ne couvre plus que la passe, qui trouve les pages déjà lues.
+    prefetcher = _prefetcher([str(item["source_url"]) for item in candidates], deadline)
+    prefetcher.start()
     last_yield = time.monotonic()
-    for index, candidate in enumerate(candidates, start=1):
-        if time.monotonic() >= deadline:
-            report.stop_reason = "budget"
-            break
-        if time.monotonic() - last_yield >= LOCK_YIELD_EVERY_SECONDS:
-            sleep(LOCK_YIELD_PAUSE_SECONDS)
-            last_yield = time.monotonic()
-        try:
-            # A collection may hold the lock for its whole 35-minute budget.
-            with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())):
-                outcome = drain_sale(db_url, candidate, limits, deadline)
-        except CatalogueLockTimeout as exc:
-            LOGGER.warning("Document backlog stopped: %s", exc)
-            report.stop_reason = "catalogue_lock"
-            break
-        report.outcomes.append(outcome)
-        LOGGER.info(
-            "Document backlog %s/%s %s %s: action=%s passes=%s extracted %s->%s/%s facts=%s%s (%.1fs)",
-            index,
-            len(candidates),
-            outcome.source_name,
-            outcome.source_url,
-            outcome.action,
-            outcome.passes,
-            outcome.documents_extracted_before,
-            outcome.documents_extracted_after,
-            outcome.documents_total,
-            ",".join(outcome.new_facts) or "-",
-            f" error={outcome.error}" if outcome.error else "",
-            outcome.seconds,
-        )
+    try:
+        for index, candidate in enumerate(candidates, start=1):
+            if time.monotonic() >= deadline:
+                report.stop_reason = "budget"
+                break
+            if time.monotonic() - last_yield >= LOCK_YIELD_EVERY_SECONDS:
+                sleep(LOCK_YIELD_PAUSE_SECONDS)
+                last_yield = time.monotonic()
+            # Never prepared and processed at the same time: the locked pass writes the same caches.
+            prefetcher.wait_for(str(candidate["source_url"]))
+            try:
+                # A collection may hold the lock for its whole 35-minute budget.
+                with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())):
+                    outcome = drain_sale(db_url, candidate, limits, deadline)
+            except CatalogueLockTimeout as exc:
+                LOGGER.warning("Document backlog stopped: %s", exc)
+                report.stop_reason = "catalogue_lock"
+                break
+            report.outcomes.append(outcome)
+            LOGGER.info(
+                "Document backlog %s/%s %s %s: action=%s passes=%s extracted %s->%s/%s facts=%s%s (%.1fs)",
+                index,
+                len(candidates),
+                outcome.source_name,
+                outcome.source_url,
+                outcome.action,
+                outcome.passes,
+                outcome.documents_extracted_before,
+                outcome.documents_extracted_after,
+                outcome.documents_total,
+                ",".join(outcome.new_facts) or "-",
+                f" error={outcome.error}" if outcome.error else "",
+                outcome.seconds,
+            )
+    finally:
+        prefetcher.close()
     report.elapsed_seconds = time.monotonic() - started
     return report
+
+
+def _prefetcher(source_urls: list[str], deadline: float) -> Any:
+    from src.document_prefetch import DocumentPrefetcher, prefetch_workers_from_env
+
+    return DocumentPrefetcher(source_urls, workers=prefetch_workers_from_env(), deadline=deadline)
 
 
 def _write_step_summary(summary: dict[str, Any]) -> None:
