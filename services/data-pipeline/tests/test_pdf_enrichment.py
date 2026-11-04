@@ -2342,6 +2342,37 @@ def test_download_documents_marks_http_404_and_html_as_permanent_without_retry_e
     ]
 
 
+def test_download_documents_marks_an_oversized_document_as_permanent(tmp_path, monkeypatch) -> None:
+    # 04/11/2026 : des pièces de plus de 50 Mo (Avoventes, Licitor) étaient retentées à chaque vidage et faisaient
+    # échouer leur vente (« Document extraction incomplete; retry required »). La lecture les classait déjà comme
+    # définitivement trop lourdes ; le téléchargement le fait aussi.
+    monkeypatch.setenv("PDF_MAX_DOWNLOAD_MB", "1")
+
+    class HeavyResponse:
+        status_code = 200
+        headers = {"content-type": "application/pdf", "content-length": str(2 * 1024 * 1024)}
+        content = b"%PDF-1.4"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    monkeypatch.setattr("src.pdf_enrichment._send_pinned_document_request", lambda *args, **kwargs: HeavyResponse())
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://avoventes.fr/enchere/lourde",
+            "documents": [{"label": "Cahier", "url": "https://avoventes.fr/docs/lourd.pdf", "type": "pdf"}],
+        }
+    )
+    stats = PdfEnrichmentStats()
+
+    assert download_documents(sale, output_root=tmp_path, stats=stats) == []
+    assert stats.errors == 0
+    assert stats.permanent_document_failures == [
+        {"url": "https://avoventes.fr/docs/lourd.pdf", "reason": "document_too_large"}
+    ]
+
+
 def test_download_documents_reuses_fresh_permanent_failure_without_network(tmp_path, monkeypatch) -> None:
     class NotFoundResponse:
         status_code = 404
