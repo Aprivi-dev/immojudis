@@ -624,13 +624,13 @@ def _bounded_document_content(response: object, *, max_bytes: int) -> bytes:
     if raw_length:
         try:
             if int(raw_length) > max_bytes:
-                raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
+                raise PermanentDocumentFailure("document_too_large", f"document exceeds the {max_bytes}-byte download limit")
         except ValueError as exc:
             if "exceeds" in str(exc):
                 raise
     content = bytes(getattr(response, "content", b""))
     if len(content) > max_bytes:
-        raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
+        raise PermanentDocumentFailure("document_too_large", f"document exceeds the {max_bytes}-byte download limit")
     return content
 
 
@@ -813,7 +813,7 @@ def _read_document_stream(response: httpx.Response, max_bytes: int) -> bytes:
         _ensure_pdf_deadline(operation="received document chunk")
         size += len(chunk)
         if size > max_bytes:
-            raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
+            raise PermanentDocumentFailure("document_too_large", f"document exceeds the {max_bytes}-byte download limit")
         parts.append(chunk)
     return b"".join(parts)
 
