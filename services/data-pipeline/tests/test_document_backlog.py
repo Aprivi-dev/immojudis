@@ -142,6 +142,35 @@ def test_partial_manifest_is_continued_then_completed(monkeypatch) -> None:
     assert outcome.error is None
 
 
+def test_a_superseded_pass_is_followed_to_the_newer_generation(monkeypatch) -> None:
+    url = "https://example.test/superseded"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fresh = _sale(url, occupancy_status="vacant")
+    fake = _Fake(
+        monkeypatch,
+        {url: [stale, stale, stale, fresh]},
+        {url: [("cancelled", "Superseded by a newer input revision"), ("completed", "")]},
+    )
+
+    outcome = backlog.drain_sale("db", {"source_url": url, "source_name": "avoventes"}, backlog.BacklogLimits(), 1e18)
+
+    assert outcome.passes == 2
+    assert fake.ensured == [url, url]  # the newer generation is (re)queued and processed
+    assert outcome.new_facts == ["occupancy_status"]
+    assert outcome.error is None
+
+
+def test_a_cancelled_pass_for_another_reason_ends_the_sale(monkeypatch) -> None:
+    url = "https://example.test/removed"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fake = _Fake(monkeypatch, {url: [stale]}, {url: [("cancelled", "Listing removed, expired or explicitly cancelled")]})
+
+    outcome = backlog.drain_sale("db", {"source_url": url, "source_name": "avoventes"}, backlog.BacklogLimits(), 1e18)
+
+    assert outcome.passes == 1
+    assert fake.ensured == [url]
+
+
 def test_failed_pass_without_progress_is_recorded_and_republished(monkeypatch) -> None:
     url = "https://example.test/b"
     fake = _Fake(

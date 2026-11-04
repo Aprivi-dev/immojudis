@@ -542,6 +542,11 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
                     outcome.error = last_error[:300] or "PDF job failed"
                     if not progressed:
                         break
+                elif final_status == "cancelled" and "superseded" in last_error.lower():
+                    # The pass wrote the sale, whose new input revision (a durable checkpoint, a re-keyed
+                    # manifest) replaced the job. Follow the newer generation below instead of leaving the
+                    # sale half read until the next drain (04/11/2026: most re-reads stopped there).
+                    pass
                 elif final_status != "queued" or "authorization required" in last_error:
                     # ``queued`` is a deferral with a durable checkpoint: the
                     # next six documents of a partial manifest, or the next
