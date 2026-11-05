@@ -351,11 +351,34 @@ def private_amenity_mentioned(text: str | None, feature: str) -> bool | None:
     return any(_mention_is_private(text, folded, match) for match in mentions)
 
 
+def shared_amenity_mentioned(text: str | None, feature: str) -> bool:
+    """True si le texte nomme l'équipement de la copropriété ou de l'ensemble (« jardin commun », « jardin de la
+    copropriété », « jardin partagé ») et jamais celui du bien. Une vue « sur jardin » ou un lieu (« rue du Jardin »)
+    ne compte pas. Décision du 05/11/2026 : afficher « Jardin : commun » plutôt que rien ou un jardin privatif."""
+
+    pattern = _AMENITY_RE.get(feature)
+    if pattern is None or not text:
+        return False
+    folded = fold_aligned(text)
+    if feature == "garden":
+        folded = re.sub(r"\brez[\s-]+de[\s-]+jardin\b", lambda found: " " * len(found.group(0)), folded)
+    shared = False
+    for match in pattern.finditer(folded):
+        if _mention_is_private(text, folded, match):
+            return False
+        before = folded[max(0, match.start() - 160) : match.start()]
+        after = folded[match.end() : match.end() + 60]
+        if _COMMON_AFTER_RE.match(after) or _COMMON_BEFORE_RE.search(before):
+            shared = True
+    return shared
+
+
 __all__ = [
     "FLOOR_PROPERTY_TYPES",
     "FloorClaim",
     "fold_aligned",
     "private_amenity_mentioned",
+    "shared_amenity_mentioned",
     "select_unit_floor",
     "unit_floor_claims",
 ]
