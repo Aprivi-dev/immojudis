@@ -112,14 +112,15 @@ function SaleDetailContent({
   const [from, setFrom] = useState<string | null>(null);
   const [requestedHash, setRequestedHash] = useState("");
   useEffect(() => {
-    setFrom(takeSaleReturnOrigin(id));
+    setFrom(takeSaleReturnOrigin());
     const updateHash = () => setRequestedHash(window.location.hash);
     updateHash();
     window.addEventListener("hashchange", updateHash);
     return () => window.removeEventListener("hashchange", updateHash);
   }, [id]);
-  const returnTo = safeSalesReturnTo(from) ?? "/sales";
-  const loginReturnTo = `${saleDetailPath(id, safeSalesReturnTo(from))}${requestedHash}`;
+  const safeFrom = safeSalesReturnTo(from);
+  const returnTo = safeFrom ?? "/sales";
+  const loginReturnTo = `${saleDetailPath(id, safeFrom)}${requestedHash}`;
   const { session, loading: authLoading, authError } = useAuth();
   // Une session stockée dans le navigateur (lue après l'hydratation, pour ne pas écarter le HTML du
   // serveur) : pendant que ses droits arrivent, l'aperçu public dit qu'il vérifie le compte au lieu

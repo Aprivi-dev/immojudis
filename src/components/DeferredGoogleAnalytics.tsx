@@ -58,9 +58,7 @@ export function DeferredGoogleAnalytics() {
   if (!idle || excluded) return null;
   return (
     <Suspense fallback={null}>
-      {state === "granted" && isGoogleAnalyticsHost(window.location.hostname) ? (
-        <GoogleAnalytics />
-      ) : null}
+      {state === "granted" && isGoogleAnalyticsHost(location.hostname) ? <GoogleAnalytics /> : null}
       {state === "unset" ? <CookieConsentBanner /> : null}
     </Suspense>
   );
