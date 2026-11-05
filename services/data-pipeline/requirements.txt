@@ -4,7 +4,7 @@ httpcore==1.0.9
 pandas==2.3.3
 pillow==13.0.0
 pymupdf==1.28.2
-pydantic==2.14.1
+pydantic==2.14.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
 psycopg[binary]==3.3.6
