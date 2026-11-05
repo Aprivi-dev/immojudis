@@ -94,7 +94,7 @@ export function ListingActions({
     try {
       const url = new URL(window.location.href);
       url.hash = "";
-      url.searchParams.delete("from");
+      // Pas de `from` à retirer : la fiche l'ôte de l'adresse dès l'affichage (`takeSaleReturnOrigin`).
       if (navigator.share) {
         await navigator.share({ title: saleDisplayTitle(sale), url: url.href });
       } else {

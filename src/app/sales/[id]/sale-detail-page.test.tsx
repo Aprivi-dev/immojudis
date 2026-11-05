@@ -354,7 +354,6 @@ describe("listing access resolution", () => {
     // The return link leaves the address bar: a copied address is the canonical one.
     expect(window.location.pathname).toBe("/sales/sale");
     expect(window.location.search).toBe("");
-    window.sessionStorage.clear();
   });
 
   it("does not silently downgrade premium on an entitlement failure and retries", async () => {
