@@ -13,7 +13,7 @@ from src.normalize import (
     clean_text,
     parse_surface,
 )
-from src.text_fact_scope import private_amenity_mentioned
+from src.text_fact_scope import private_amenity_mentioned, shared_amenity_mentioned
 
 
 @dataclass
@@ -262,6 +262,13 @@ def _clear_scoped_feature_false_positives(sale: AuctionSale, text: str) -> None:
                 "status": "cleared",
                 "reason": "building_or_level_scope_without_lot_amenity",
             }
+
+    # Jardin de la copropriété seulement : pas de jardin privatif, mais l'information est gardée pour l'affichage
+    # « Jardin : commun (copropriété) » (décision du 05/11/2026).
+    if sale.has_garden is not True and shared_amenity_mentioned(text, "garden"):
+        sale.raw_payload["shared_garden"] = True
+    else:
+        sale.raw_payload.pop("shared_garden", None)
 
     if sale.bedrooms_count is not None and _bedroom_count_is_cold_room_only(text):
         previous = sale.bedrooms_count
