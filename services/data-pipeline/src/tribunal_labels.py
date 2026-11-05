@@ -179,6 +179,7 @@ _PROPERTY_DESCRIPTOR_WORDS = frozenset(
 )
 _CITY_FILLER_WORDS = frozenset({"de", "d", "du", "des", "la", "le", "les", "et", "a", "en"})
 _CITY_AFTER_A = re.compile(r"^(?P<prefix>.+?)\s+[àÀ]\s+(?P<city>\S.*)$")
+_COMMUNE_LEAD_IN = re.compile(r"(?:^|\s)(?:sur\s+la\s+)?commune\s+(?:de\s+|d['’]\s*)", re.I)
 
 
 def clean_city_label(value: str | None) -> str | None:
@@ -191,6 +192,16 @@ def clean_city_label(value: str | None) -> str | None:
     if not value:
         return value
     text = " ".join(str(value).split())
+    # « JUDICIAIRE COMMUNE DE FORT DE FRANCE », « COMMUNE D'HENNEBONT » : la commune suit le libellé.
+    text = _COMMUNE_LEAD_IN.split(text)[-1].strip(" ,;.-") or text
+    # « Mantes-la-Jolie (78) » : département ou code postal accolé.
+    text = re.sub(r"\s*\((?:\d{2,3}|2[AB]|\d{5})\)$", "", text, flags=re.I) or text
+    # « Bernis Bernis » : commune répétée par la source.
+    words = text.split(" ")
+    if len(words) % 2 == 0 and len(words) >= 2 and _fold(" ".join(words[: len(words) // 2])) == _fold(
+        " ".join(words[len(words) // 2 :])
+    ):
+        text = " ".join(words[: len(words) // 2])
     match = _CITY_AFTER_A.match(text)
     if match and _is_property_descriptor(match.group("prefix")):
         city = match.group("city").strip(" ,;.-")

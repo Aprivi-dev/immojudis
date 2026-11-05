@@ -360,7 +360,7 @@ def _recompute_sale(row: Mapping[str, Any]) -> Any:
     if context:
         extract_and_apply_deterministic_surface_reasoning(sale, context)
     normalize_asset_features(sale)
-    attach_source_property_features(sale.raw_payload)
+    attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
     return sale
 
 

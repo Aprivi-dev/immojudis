@@ -7,11 +7,14 @@ existing imports and test patches on ``supabase_client`` keep working.
 from __future__ import annotations
 
 import hashlib
+import logging
 
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION, document_url, is_modern_payload, modern_progress_entries
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _is_sha256(value: object) -> bool:
@@ -70,6 +73,7 @@ def _valid_pdf_checkpoint_pages(
                 "blank_excluded",
                 "blank_page_excluded",
                 "visual_blank_excluded",
+                "picture_page_excluded",
                 "failed",
             }
             or (
@@ -182,18 +186,18 @@ def _validate_pdf_document_checkpoint_payload(
 
     source_url = clean_text(sale.source_url)
     if not source_url or not isinstance(analysis, dict) or sale.updated_at is None:
-        return None
+        return _refused(source_url, "no_analysis_or_revision")
     if (
         analysis.get("progress_schema_version") != PDF_PROGRESS_SCHEMA_VERSION
         or analysis.get("input_fingerprint") != document_fingerprint(sale.documents)
         or not isinstance(analysis.get("manifest_complete"), bool)
     ):
-        return None
+        return _refused(source_url, "analysis_schema_or_fingerprint")
     progress = modern_progress_entries(analysis, sale.documents)
     if not progress:
-        return None
+        return _refused(source_url, "no_progress_entries")
     if not isinstance(payload, list) or not payload:
-        return None
+        return _refused(source_url, "no_local_text_cache")
     document_urls = {document_url(document) for document in sale.documents if document_url(document)}
     result: list[dict[str, object]] = []
     seen_urls: set[str] = set()
@@ -206,19 +210,19 @@ def _validate_pdf_document_checkpoint_payload(
             or url not in document_urls
             or not is_modern_payload(item, expected_url=url)
         ):
-            return None
+            return _refused(source_url, "cache_item_not_in_manifest", url)
         page_based_extraction = clean_text(item.get("extraction_method")) == "pymupdf_pages"
         if not _checkpoint_page_coverage_matches(item, require_chars=True):
-            return None
+            return _refused(source_url, "page_coverage", url)
         # PyMuPDF page extraction defines the aggregate text as the ordered
         # page text. Docling may provide a richer aggregate while retaining
         # the page diagnostics, so only the page based path can enforce this
         # exact text/hash relationship.
         if page_based_extraction and not _checkpoint_pages_match_payload(item, require_chars=True):
-            return None
+            return _refused(source_url, "pages_do_not_match_text", url)
         manifest_item = progress.get(url)
         if not isinstance(manifest_item, dict):
-            return None
+            return _refused(source_url, "cache_item_missing_from_progress", url)
         item_text_hash = _checkpoint_payload_text_hash(item)
         manifest_text_hash = _checkpoint_manifest_text_hash(manifest_item)
         if (
@@ -231,9 +235,9 @@ def _validate_pdf_document_checkpoint_payload(
             or manifest_text_hash is None
             or item_text_hash != manifest_text_hash
         ):
-            return None
+            return _refused(source_url, "cache_and_manifest_disagree", url)
         if analysis.get("manifest_complete") is True and item.get("complete") is not True:
-            return None
+            return _refused(source_url, "complete_manifest_with_partial_item", url)
         sanitized = dict(item)
         # A worker-local path is not a durable source of evidence and cannot
         # be reopened by the next worker. Keep the modern text and hashes only.
@@ -241,5 +245,14 @@ def _validate_pdf_document_checkpoint_payload(
         result.append(sanitized)
         seen_urls.add(url)
     if not result:
-        return None
+        return _refused(source_url, "empty_result")
     return dict(analysis), result
+
+
+def _refused(source_url: str | None, reason: str, document: str | None = None) -> None:
+    """Say why a checkpoint is refused: the queue only reported "checkpoint was not persisted" (04/11/2026: 9 sales
+    out of 34 in one drain, each then waiting a day)."""
+    LOGGER.warning(
+        "PDF checkpoint refused for %s: %s%s", source_url, reason, f" ({document})" if document else ""
+    )
+    return None

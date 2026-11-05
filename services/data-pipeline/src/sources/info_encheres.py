@@ -15,9 +15,8 @@ from src.normalize import (
     SURFACE_VALUE_PATTERN,
     clean_text,
     extract_department,
-    has_rented_occupancy_signal,
-    no_lease_occupancy_status,
 )
+from src.occupancy_statements import occupancy_status_from_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
@@ -302,7 +301,12 @@ def _tribunal_cell_text(soup: BeautifulSoup) -> str | None:
 def _sale_date_with_audience_time(date_text: str | None, text: str) -> str | None:
     if not date_text or not re.fullmatch(r"\d{2}/\d{2}/\d{4}", date_text.strip()):
         return date_text
-    match = re.search(r"audience[^.\n]{0,70}d[ée]bute(?:nt)?\s+[àa]\s+(\d{1,2})[hH:](\d{2})?\b", text, re.I)
+    # « débutent à 13 h 30 » (espaces) et la coquille « déutent à 14h » de certaines fiches.
+    match = re.search(
+        r"audience[^.\n]{0,70}(?:d[ée]b?ute(?:nt)?|commence(?:nt)?)\s+[àa]\s+(\d{1,2})\s*[hH:]\s*(\d{2})?\b",
+        text,
+        re.I,
+    )
     if match and int(match.group(1)) < 24 and int(match.group(2) or 0) < 60:
         return f"{date_text} à {match.group(1)}h{match.group(2) or '00'}"
     return date_text
@@ -701,39 +705,8 @@ def _parse_count_token(value: str) -> int | None:
 
 
 def _extract_occupancy_status(raw_text: str) -> str | None:
-    lowered = raw_text.lower()
-    if re.search(r"sans\s+droit\s+ni\s+titre|squat", lowered):
-        return "squatted"
-    owner_signal = bool(
-        re.search(
-            r"propri[ée]taires?\s+occupant(?:e|es|s)?|"
-            r"occup[ée]e?s?\s+par\s+(?:(?:le|la|les|un|une|son|sa)\s+)?propri[ée]taires?",
-            lowered,
-        )
-    )
-    vacant_signal = bool(
-        re.search(
-            r"libres?\s+(?:de\s+tout(?:e)?\s+occupation|d[\s’\x27]*occupation)|"
-            r"biens?\s+libres?|inoccup[ée]s?|vacants?",
-            lowered,
-        )
-    )
-    occupied_signal = bool(re.search(r"\boccup[ée]e?s?\b", lowered))
-    rented_signal = has_rented_occupancy_signal(lowered)
-    partial_signal = bool(re.search(r"partiellement\s+occup", lowered))
-    if partial_signal or (occupied_signal and (vacant_signal or rented_signal)) or (owner_signal and rented_signal):
-        return "unknown"
-    if owner_signal:
-        return "owner_occupied"
-    if vacant_signal:
-        return "vacant"
-    if no_lease_status := no_lease_occupancy_status(lowered):
-        return no_lease_status
-    if rented_signal:
-        return "rented"
-    if occupied_signal:
-        return "occupied"
-    return None
+    # « Le locataire a quitté les lieux » (libre), « La maison est occupée par Madame » (occupé) : audit 03/11/2026.
+    return occupancy_status_from_text(raw_text)
 
 
 # Point publié par le site quand son géocodage échoue (Alpes-de-Haute-Provence), quel

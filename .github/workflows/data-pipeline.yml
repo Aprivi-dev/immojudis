@@ -147,8 +147,15 @@ jobs:
       PDF_EXTRACTOR: auto
       PDF_DOCLING_ENABLED: false
       PDF_OCR_ENABLED: true
+      # One Tesseract thread per OCR: two concurrent OCRs with the default (one thread per core) took
+      # 301 s for 12 pages on 4 vCPUs, 10 cut at the 60 s timeout; 9.8 s single-threaded (src/pdf_ocr.py).
+      OMP_THREAD_LIMIT: 1
       PDF_MAX_DOCUMENTS_PER_SALE: 6
       PDF_MAX_DOWNLOAD_MB: 50
+      # Lecture des pièces en avance (src/document_prefetch.py) coupée le 04/11/2026 : avec elle, les passes sous
+      # verrou concluaient « manifest is partial » sans lire de pièce et des points d'étape étaient refusés.
+      # Remettre à 3 une fois la cause trouvée.
+      DOCUMENT_BACKLOG_PREFETCH_WORKERS: 0
       # Vench publishes a 416-page, 9.6 MB descriptive report. OCR remains
       # limited per pass and document downloads stay capped at 50 MB.
       PDF_MAX_TOTAL_PAGES: 500
@@ -179,6 +186,10 @@ jobs:
       # dépôt PHOTO_MIRROR_ENABLED n'est pas « true », aucune photo n'est téléchargée ni copiée ; seuls les
       # retraits (suppression de copies et de fichiers) s'exécutent.
       PHOTO_MIRROR_ENABLED: ${{ vars.PHOTO_MIRROR_ENABLED || 'false' }}
+      # Photos du bien trouvées dans les pièces jointes (src/pdf_photos.py, étape bornée du lanceur
+      # automatique après la file d'enrichissement). Allumé par défaut ; la variable de dépôt
+      # PDF_PHOTOS_ENABLED=false l'éteint (seuls les retraits s'appliquent alors).
+      PDF_PHOTOS_ENABLED: ${{ vars.PDF_PHOTOS_ENABLED || 'true' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

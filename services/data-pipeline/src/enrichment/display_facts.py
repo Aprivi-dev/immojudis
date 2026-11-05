@@ -49,6 +49,8 @@ VERIFIED_STATUSES = {"verified", "cross_checked"}
 FIXED_PRICE_RE = re.compile(r"\bvente\s+au\s+prix\b|\bpas\s+d['’]\s*ench[eè]res?\b", re.I)
 AMI_RE = re.compile(r"\bappel\s+[àa]\s+manifestation\s+d['’]\s*int[ée]r[êe]t\b", re.I)
 INTERACTIVE_RE = re.compile(r"\bimmo[-\s]?interactif\b|\bvente\s+(?:notariale\s+)?interactive\b", re.I)
+ADJUDICATION_RE = re.compile(r"\badjudication\b", re.I)
+ONLINE_AUCTION_RE = re.compile(r"\bench[eè]res?\s+en\s+ligne\b|\bagora\s?store\b", re.I)
 
 
 @dataclass(frozen=True)
@@ -94,6 +96,27 @@ def _listing_text(sale: Any) -> str:
         _value(sale, "raw_text"),
     )
     return " ".join(str(part) for part in parts if isinstance(part, str))
+
+
+def sale_listing_text(sale: Any) -> str:
+    """Title, source description and raw text of the listing (no PDF)."""
+    return _listing_text(sale)
+
+
+def state_auction_wording(sale: Any) -> str:
+    """How a State sale « by auction » is named, from the listing's own words.
+
+    The cessions source stores ``state_sale_method = adjudication`` for any
+    « Vente aux enchères », including online Agorastore sales; « par
+    adjudication » is only written when the listing says so (audit 03/11/2026).
+    """
+    text = _listing_text(sale)
+    if ADJUDICATION_RE.search(text):
+        return "par adjudication"
+    procedure = _value(sale, "sale_procedure")
+    if (isinstance(procedure, dict) and procedure.get("participation_mode") == "online") or ONLINE_AUCTION_RE.search(text):
+        return "par enchères en ligne"
+    return "aux enchères"
 
 
 def _transaction_type(sale: Any) -> str:
@@ -148,7 +171,7 @@ def sale_nature(sale: Any) -> SaleNature:
                 price_label="Prix",
             )
         method = {
-            "adjudication": "cession immobilière de l'État par adjudication",
+            "adjudication": f"cession immobilière de l'État {state_auction_wording(sale)}",
             "appel_offres": "cession immobilière de l'État par appel d'offres",
             "cession_amiable": "cession amiable d'un bien de l'État",
         }.get(state_method, "cession immobilière de l'État")
@@ -336,12 +359,14 @@ def canonical_display_facts(sale: Any) -> list[tuple[str, str]]:
         value = format_area(_value(sale, field))
         if value and value != retained_value:
             facts.append((label, value))
+    # A plot of land has no rooms: a count there comes from another lot or a cabin.
+    land = _fold(_value(sale, "property_type")) == "land"
     for field, label in (
         ("rooms_count", "Pièces"),
         ("bedrooms_count", "Chambres"),
         ("bathrooms_count", "Salles d'eau ou de bain"),
     ):
-        value = _value(sale, field)
+        value = None if land else _value(sale, field)
         if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             facts.append((label, str(value)))
     annexes = _annexes(sale)

@@ -43,7 +43,7 @@ from src.enrichment.operational_display import refresh_operational_display
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
 from src.extraction_profiles import attach_source_property_features
-from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
+from src.freshness import detail_is_fresh, document_list_changed, documents_are_current, record_source_checks
 from src.geocode import geocode_sale, locate_sale_by_cadastre
 from src.image_validation import filter_raw_image_url, warm_image_validations
 from src.information_sufficiency import (
@@ -56,15 +56,19 @@ from src.known_document_backfill import (
     KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
     KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
     KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
+    _backfill_document_facts_version_from_known,
+    _backfill_document_occupancy_from_known,
     _backfill_document_price_from_known,
     _backfill_document_sale_date_from_known,
     _backfill_document_surface_fields_from_known,
 )
 from src.known_document_backfill import is_missing_raw_value as _is_missing_raw_value
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
+from src.lot_scope import other_commune
+from src.lot_scope import surface_reasoning_context as _surface_reasoning_context_for_sale
 from src.merge_guards import MergeGuardRefused
 from src.models import AuctionSale
-from src.normalize import clean_text, normalize_sale
+from src.normalize import normalize_sale
 from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
@@ -72,6 +76,7 @@ from src.pdf_enrichment import (
     classify_document_type,
     enrich_sale_from_pdfs,
 )
+from src.pdf_offer_deadline import apply_page_offer_deadline
 from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION
 from src.quality import (
     build_extraction_gap_report,
@@ -232,6 +237,7 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_prompt_version",
     "source_content_changed",
     "source_content_change_reason",
+    "source_content_changed_at",
     "superseded_analysis",
     "document_analysis",
     "surface_extraction",
@@ -241,6 +247,7 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_due_diligence",
     "geocode",
     "tribunal_assignment",
+    "pdf_tribunal_extraction",
     # PDF projection traces and candidate evidence are enrichment metadata.
     # Preserve them through a cold source pass so the PDF worker can invalidate
     # only stale projections without treating the markers as fresh source text.
@@ -1584,13 +1591,13 @@ def _preserve_known_enrichment_payloads(
         documents_changed = (
             not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed")
             and "documents" in sale
-            and document_fingerprint(sale.get("documents") or [])
-            != document_fingerprint(known.get("documents") or [])
+            and document_list_changed(sale.get("documents") or [], known, source_url)
         )
         if documents_changed:
             sale["superseded_document_analysis"] = known_payload.get("document_analysis")
             sale["llm_display_status"] = "pending"
             sale["source_content_changed"] = True
+            sale["source_content_changed_at"] = datetime.now(UTC).isoformat()
             continue
         payload_fields = KNOWN_ENRICHMENT_PAYLOAD_FIELDS
         if (
@@ -1603,19 +1610,23 @@ def _preserve_known_enrichment_payloads(
                 for key in payload_fields
                 if key not in KNOWN_SOURCE_REFRESH_METADATA_FIELDS
             )
+        # Le géocodage d'une autre commune n'est pas une preuve pour celle-ci (lot Licitor autrefois lu comme le premier).
+        foreign_geocode = other_commune(sale.get("city"), known.get("city"))
         preserved += _backfill_payload_fields_from_known(
             sale,
             known,
             keys=tuple(
                 key
                 for key in payload_fields
-                if sale.get("source_detail_status") not in {"complete", "restricted"}
-                or key not in {"source_images", "raw_image_url"}
+                if (sale.get("source_detail_status") not in {"complete", "restricted"}
+                    or key not in {"source_images", "raw_image_url"}) and not (foreign_geocode and key == "geocode")
             ),
         )
         preserved += _backfill_document_surface_fields_from_known(sale, known)
         preserved += _backfill_document_price_from_known(sale, known)
+        preserved += _backfill_document_facts_version_from_known(sale, known)
         preserved += _backfill_document_sale_date_from_known(sale, known)
+        preserved += _backfill_document_occupancy_from_known(sale, known)
     return preserved
 
 
@@ -1854,32 +1865,14 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     (geocode_sale if geocode else locate_sale_by_cadastre)(sale)
     filter_raw_image_url(sale.raw_payload)
     fill_tribunal(sale)
+    apply_page_offer_deadline(sale)  # appel d'offres : date limite publiée sur la page (AGRASC, notaires, Cessions)
     classify_sale_procedure(sale)
     surface_context = _surface_reasoning_context_for_sale(sale)
     if surface_context:
         extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
     normalize_asset_features(sale)
-    attach_source_property_features(sale.raw_payload)
+    attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
     apply_catalogue_readiness(sale)
-
-
-def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:
-    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-    source_blocks = payload.get("source_blocks")
-    block_values = [
-        value for key, value in source_blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"}
-    ] if isinstance(source_blocks, dict) else []
-    values: list[object] = [
-        sale.title,
-        sale.description,
-        sale.raw_text,
-        payload.get("source_description"),
-        *block_values,
-    ]
-    # Source descriptions are often copied into several payload fields. Keep
-    # each distinct field once without truncating or deduplicating within it.
-    parts = dict.fromkeys(clean_text(str(value)) for value in values if value)
-    return "\n".join(part for part in parts if part)
 
 
 def _needs_heavy_enrichment(

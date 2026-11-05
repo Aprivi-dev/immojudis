@@ -243,7 +243,7 @@ def test_normalize_sale_calibrates_avoventes_house_surface_before_land_context()
     assert sale.land_surface_m2 == Decimal("773")
     assert sale.app_surface_m2 == Decimal("244.47")
     assert sale.app_surface_kind == "built"
-    assert sale.occupancy_status == "occupied"
+    assert sale.occupancy_status == "owner_occupied"  # « Biens occupés par la propriétaire »
 
 
 def test_normalize_sale_keeps_cadastral_surface_as_land_not_built_surface() -> None:

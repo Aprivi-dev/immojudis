@@ -90,12 +90,13 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert updates[0][2].obj["completion_status"] == "partial_success"
     assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_BUDGET_SECONDS"] == "1200"
     assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_MAX_JOBS"] == "180"
-    # After the queue: the attachment catch-up, the document reading, the batch positions, then one tick of
-    # the Licitor history collector.
+    # After the queue: the attachment catch-up, the document reading, the batch positions, the photos of the
+    # attachments, then one tick of the Licitor history collector.
     assert [call[0][2] for call in subprocess_calls[1:]] == [
         "src.document_backlog",
         "src.document_reading",
         "src.address_positions",
+        "src.pdf_photos",
         "src.sources.licitor_history_refresh",
     ]
     assert subprocess_calls[1][0][3:] == ["--max-sales", "6", "--budget-minutes", "8"]
@@ -104,9 +105,12 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert subprocess_calls[1][1]["env"]["DOCUMENT_READING_ENABLED"] == "false"
     assert subprocess_calls[3][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
     assert subprocess_calls[3][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS
-    assert subprocess_calls[4][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
+    assert subprocess_calls[4][0][3:] == ["--max-sales", "25", "--budget-seconds", "180"]
+    assert subprocess_calls[4][1]["timeout"] == autonomous_runner.PDF_PHOTOS_BUDGET_SECONDS
+    assert subprocess_calls[5][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
     assert updates[0][2].obj["document_backlog_exit_code"] == 0
     assert updates[0][2].obj["address_positions_exit_code"] == 0
+    assert updates[0][2].obj["pdf_photos_exit_code"] == 0
     assert updates[0][2].obj["licitor_history_exit_code"] == 0
     if exhausted:
         assert updates[0][1].obj["enrichment_jobs"] == [
@@ -158,7 +162,9 @@ def test_systemic_worker_failure_keeps_nonzero_code_with_exhausted_signal(monkey
     modules = [command[2] for command in commands if len(command) > 2]
     assert "src.document_backlog" not in modules
     assert "src.document_reading" not in modules and "src.address_positions" not in modules
+    assert "src.pdf_photos" not in modules
     assert "address_positions_exit_code" not in updates[0][2].obj
+    assert "pdf_photos_exit_code" not in updates[0][2].obj
     assert updates[0][0] == "failed"
     assert updates[0][1].obj["runner"] == ["Worker exited with status 7"]
     assert updates[0][1].obj["enrichment_jobs"] == [
@@ -322,3 +328,12 @@ def test_address_positions_failure_is_reported_and_never_raises(monkeypatch) -> 
     monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
 
     assert autonomous_runner._run_address_positions({}) == 1
+
+
+def test_pdf_photos_failure_is_reported_and_never_raises(monkeypatch) -> None:
+    def run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", run)
+
+    assert autonomous_runner._run_pdf_photos({}) == 1

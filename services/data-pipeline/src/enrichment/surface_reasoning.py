@@ -9,13 +9,23 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src.enrichment.surface_text_rules import (
+    base_space_label,
+    label_gap_is_broken,
+    measurement_gap_is_broken,
+    passage_key,
+    value_belongs_to_other_object,
+    value_is_ground_area,
+)
 from src.models import AuctionSale
 from src.normalize import (
     MIN_DWELLING_SURFACE_M2,
+    _surface_evidence_for_value,
     carrez_rejection_basis,
     clean_text,
     is_outside_carrez_context,
 )
+from src.surface_plausibility import parcel_total_surfaces
 
 SURFACE_REASONING_VERSION = "surface_reasoning_v1"
 SURFACE_TOLERANCE_ABSOLUTE_M2 = Decimal("1")
@@ -203,12 +213,31 @@ _TYPED_TOTAL_SURFACE_RE = re.compile(
     rf"(?:(?:de|d['’]environ)\s*)?[:=]?\s*{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
     re.I,
 )
+_APPROXIMATE_BUILT_RE = re.compile(
+    # « élevée d'un rez-de-chaussée et de deux étages d'environ 128 m² » (62fe27e3) : sans « de » ni « surface »
+    # devant la valeur, elle ne remplace jamais une surface déjà connue (confiance sous 0,95).
+    rf"(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement)"
+    rf"[^.;:\n]{{0,80}}?d['’]environ\s+{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
+    re.I,
+)
 _EXPLICIT_SURFACE_PATTERNS: tuple[tuple[SurfaceKind, re.Pattern[str]], ...] = (
+    # Chaque forme est parcourue séparément : avec une alternative unique, le parcours de gauche à droite
+    # trouve d'abord « …de 100 m² Carrez (146 m² » (libellé puis valeur) et saute « 100 m² Carrez ».
+    (
+        "explicit_carrez",
+        re.compile(rf"{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}[^.;:\n]{{0,35}}?(?:loi\s+carrez|carrez)", re.I),
+    ),
     (
         "explicit_carrez",
         re.compile(
-            rf"(?:surface|superficie)?[^.;:\n]{{0,45}}?(?:loi\s+carrez|carrez)[^.;:\n]{{0,45}}?{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}"
-            rf"|{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}[^.;:\n]{{0,35}}?(?:loi\s+carrez|carrez)",
+            rf"(?:surface|superficie)?[^.;:\n]{{0,45}}?(?:loi\s+carrez|carrez)[^.;:\n]{{0,45}}?{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
+            re.I,
+        ),
+    ),
+    (
+        "explicit_habitable",
+        re.compile(
+            rf"{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}\s+(?:de\s+)?(?:(?:surface|superficie)\s+)?habitables?",
             re.I,
         ),
     ),
@@ -216,15 +245,14 @@ _EXPLICIT_SURFACE_PATTERNS: tuple[tuple[SurfaceKind, re.Pattern[str]], ...] = (
         "explicit_habitable",
         re.compile(
             rf"(?:surface|superficie)\s+(?:approximative\s+)?habitable(?:\s+totale)?(?:\s+[^.;:\n]{{0,25}})?\s*[:=]?\s*"
-            rf"{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}"
-            rf"|{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}\s+habitables?",
+            rf"{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
             re.I,
         ),
     ),
     (
         "explicit_total",
         re.compile(
-            rf"(?:surface|superficie)\s+(?:privative\s+|utile\s+|au\s+sol\s+)?totale(?:\s+[^.;:\n]{{0,25}})?\s*[:=]?\s*"
+            rf"(?:surface|superficie)\s+(?:privative\s+|utile\s+)?totale(?:\s+[^.;:\n]{{0,25}})?\s*[:=]?\s*"
             rf"{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}"
             rf"|total\s+(?:mesur[ée]|surface)?[^.;:\n]{{0,25}}?{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
             re.I,
@@ -233,13 +261,18 @@ _EXPLICIT_SURFACE_PATTERNS: tuple[tuple[SurfaceKind, re.Pattern[str]], ...] = (
     (
         "explicit_built",
         re.compile(
-            rf"(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement)"
+            rf"(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement|studio|pavillon|duplex)"
             rf"[^.;:\n]{{0,80}}?(?:surface|superficie|d['’]une\s+surface|de)\s+(?:d['’]environ\s+|environ\s+)?"
             rf"{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
             re.I,
         ),
     ),
+    (
+        "explicit_built",
+        _APPROXIMATE_BUILT_RE,
+    ),
 )
+_APPROXIMATE_BUILT_CONFIDENCE = 0.9
 
 # Surface « créée » par un permis de construire ou une déclaration préalable : surface d'un projet, jamais
 # celle du bien mis en vente (Mougins : surface créée prise pour la surface habitable).
@@ -248,16 +281,25 @@ _CREATED_SURFACE_RE = re.compile(
     r"(?:cr[ée]{1,2}e?s?|à\s+cr[ée]er|projet[ée]e?s?|autoris[ée]e?s?|à\s+construire)\b"
     r"|\b(?:sdp|shon|shob)\s+(?:cr[ée]{1,2}e?s?|à\s+cr[ée]er|projet[ée]e?s?)\b"
     r"|\bcr[ée]ation\s+(?:de|d['’])"
+    # « créant une surface de plancher de 77.63 m2, portant la surface totale de plancher à 607.63 m² » (2f7dc9f0).
+    r"|\bcr[ée]ant\b|\bportant\s+la\s+surface\b"
     r"|\bcr[ée]{1,2}e?s?\s+(?:par|selon|suivant|aux\s+termes\s+d[ue])\s+(?:le\s+|un\s+|l['’])?(?:permis|d[ée]claration\s+pr[ée]alable)",
     re.I,
 )
 # Bâtiment qui n'est pas le bien principal : dépendance, maison de gardien, annexe, garage, pool house…
+_PER_UNIT_RE = re.compile(
+    r"\b(?:les|des|ces|aux)\s+(?:deux|trois|quatre|cinq|six|sept|huit|neuf|dix|[2-9])\s+"
+    r"(?:maisons|appartements|logements|lots|villas|pavillons|studios|chalets|g[îi]tes)\b",
+    re.I,
+)
+_EACH_RE = re.compile(r"^[^.;\n]{0,25}\bchacun(?:e|s|es)?\b", re.I)
 _SECONDARY_BUILDING_RE = re.compile(
     r"\b(?:d[ée]pendances?|annexes?|gardien(?:ne|nage)?s?|loge|pool[- ]?house|garages?|abris?|remises?"
     r"|cabanons?|appentis|(?:second|autre)s?\s+b[âa]timents?|b[âa]timents?\s+(?:secondaires?|annexes?))\b",
     re.I,
 )
 _MAIN_BUILDING_RE = re.compile(r"\bprincipa(?:l|le|les|ux)\b", re.I)
+_BUILT_NOUN_RE = re.compile(r"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|logement)\b", re.I)
 _EXCLUDED_BUILDING_RE = re.compile(
     r"\b(?:hors|sans|hormis|except[ée]|non\s+compris(?:e|es|s)?|à\s+l['’]exclusion)\s+"
     r"(?:(?:d[eu]s?|les?|la|l['’]|des|y)\s*)*\w+",
@@ -351,6 +393,8 @@ def extract_surface_facts_from_text(
             if kind == "explicit_carrez" and is_outside_carrez_context(raw_text, match.start(), match.end()):
                 # « hors Carrez 4,16 m² » : surface exclue de la mesure légale, jamais celle du bien.
                 continue
+            if _explicit_label_does_not_qualify_value(kind, match, raw_text):
+                continue
             unit = _match_unit(match)
             quote = _quote(raw_text, match.start(), match.end(), radius=85)
             total_match = _TYPED_TOTAL_SURFACE_RE.search(match.group(0))
@@ -362,7 +406,9 @@ def extract_surface_facts_from_text(
                 scope="sale" if is_typed_total else "asset",
                 is_explicit=True,
                 unit_as_written=unit,
-                confidence=0.96 if unit == "m2" else 0.72,
+                confidence=(0.96 if unit == "m2" else 0.72)
+                if pattern is not _APPROXIMATE_BUILT_RE
+                else _APPROXIMATE_BUILT_CONFIDENCE,
                 evidence=SurfaceEvidence(quote=quote, **evidence_base),
             )
             if _candidate_key(candidate) not in {_candidate_key(item) for item in explicit}:
@@ -371,6 +417,7 @@ def extract_surface_facts_from_text(
 
     measurements: list[SurfaceMeasurement] = []
     occurrence_counts: dict[str, int] = defaultdict(int)
+    seen_passages: set[str] = set()
     for match in _NUMBER_WITH_UNIT_RE.finditer(raw_text):
         if any(start <= match.start() and match.end() <= end for start, end in explicit_spans):
             continue
@@ -385,7 +432,16 @@ def extract_surface_facts_from_text(
         keyword_match = _nearest_space_keyword(left)
         if keyword_match is None:
             continue
-        label, category = keyword_match
+        label, category, gap = keyword_match
+        if measurement_gap_is_broken(gap):
+            # « une chambre, un bureau, présentant une superficie de 75,34 m² » : la valeur est celle du bien
+            # entier (ou d'un autre local), pas de la dernière pièce citée.
+            continue
+        repeated_key = passage_key(raw_text, match.start(), value)
+        if repeated_key in seen_passages:
+            # Même phrase recopiée (description, texte de la page, description de la source) : une seule mesure.
+            continue
+        seen_passages.add(repeated_key)
         occurrence_counts[label] += 1
         occurrence = occurrence_counts[label]
         display_label = f"{label} {occurrence}" if occurrence > 1 or _is_plural_label(label) else label
@@ -420,6 +476,31 @@ def extract_surface_facts_from_text(
     )
 
 
+_LABEL_WORD_RE = {
+    "explicit_carrez": re.compile(r"carrez", re.I),
+    "explicit_habitable": re.compile(r"habitables?", re.I),
+    "explicit_total": re.compile(r"\btotal(?:e|es)?\b", re.I),
+}
+
+
+def _explicit_label_does_not_qualify_value(kind: str, match: re.Match[str], raw_text: str) -> bool:
+    """Écarte une valeur que le libellé lu ne qualifie pas (surface au sol, élément suivant, ligne de tableau)."""
+    values = list(_NUMBER_WITH_UNIT_RE.finditer(match.group(0)))
+    if not values:
+        return False
+    value_match = values[-1]
+    value_end = match.start() + value_match.end()
+    if value_is_ground_area(raw_text[value_end:]):
+        return True
+    label_re = _LABEL_WORD_RE.get(kind)
+    if label_re is None:
+        return False
+    labels = [item for item in label_re.finditer(match.group(0)) if item.end() <= value_match.start()]
+    if not labels:
+        return False
+    return label_gap_is_broken(match.group(0)[labels[-1].end() : value_match.start()])
+
+
 def merge_extracted_assets(assets: list[ExtractedAsset]) -> list[ExtractedAsset]:
     grouped: dict[str, ExtractedAsset] = {}
     for asset in assets:
@@ -448,6 +529,7 @@ def reason_about_surfaces(
 ) -> SurfaceReasoningResult:
     result = SurfaceReasoningResult()
     context_normalized = _normalized_for_evidence(context)
+    parcel_totals = frozenset(parcel_total_surfaces(clean_text(context)))
     validated_assets: list[ExtractedAsset] = []
     for asset in merge_extracted_assets(assets):
         valid_measurements: list[SurfaceMeasurement] = []
@@ -465,7 +547,7 @@ def reason_about_surfaces(
             candidate = _prepare_candidate(candidate, asset.asset_id)
             if not _candidate_is_supported(candidate, context_normalized):
                 continue
-            if exclusion := _candidate_exclusion_reason(candidate):
+            if exclusion := _candidate_exclusion_reason(candidate, parcel_totals):
                 result.rejected_candidates.append(
                     {"candidate": candidate.model_dump(mode="json"), "reason": exclusion}
                 )
@@ -552,15 +634,25 @@ def apply_surface_reasoning_to_sale(
     source: str,
 ) -> SurfaceReasoningResult:
     result = reason_about_surfaces(assets, context=context, property_type=sale.property_type)
+    previous_analysis = sale.raw_payload.get("surface_analysis")
     sale.raw_payload["surface_analysis"] = result.model_dump(mode="json")
     if any(item.get("kind") == MULTIPLE_BUILDINGS_CONTRADICTION for item in result.contradictions):
         # Plusieurs bâtiments sans bâtiment principal identifié : aucune des surfaces n'est celle du bien.
         _add_quality_flag(sale, "surface_contradiction")
     selected = result.selected
     if selected is None or selected.validation_status not in {"verified", "partial"}:
+        # Rien de retenu : une valeur que le texte écrit encore reste en place. Une sélection contredite non.
+        kept_context = context if selected is None else None
+        _drop_stale_reasoned_surface(sale, source, context=kept_context, previous_analysis=previous_analysis)
         return result
     if selected.kind in {"annex", "unknown"}:
         # Une annexe ou une surface sans nature n'est jamais la surface du bien.
+        _drop_stale_reasoned_surface(sale, source)
+        return result
+    if selected.kind.startswith("calculated_") and selected.validation_status != "verified":
+        # « Surface calculée : salle d'eau 13,65 + WC 1,37 = 15,02 m² » pour une maison de 41,76 m² : une somme de
+        # pièces dont la liste n'est pas complète est un minorant, jamais la surface du bien.
+        _drop_stale_reasoned_surface(sale, source)
         return result
 
     explicit_candidate = next(
@@ -569,6 +661,7 @@ def apply_surface_reasoning_to_sale(
     )
     should_apply = _should_apply_selected_surface(sale, selected, explicit_candidate)
     if not should_apply:
+        _type_equal_surface(sale, selected)
         return result
 
     value = selected.value_m2.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -606,9 +699,77 @@ def apply_surface_reasoning_to_sale(
     return result
 
 
+def _drop_stale_reasoned_surface(
+    sale: AuctionSale,
+    source: str,
+    *,
+    context: str | None = None,
+    previous_analysis: object = None,
+) -> None:
+    """Retire la surface qu'un raisonnement précédent avait posée et que celui-ci ne retient plus.
+
+    Audit du 03/11/2026 : des sommes de pièces répétées ou partielles (117,51 = 3 × 39,17 ; 15,02 pour 41,76 m²)
+    restaient affichées quand le raisonnement corrigé s'abstenait. Seule une valeur posée par cette même source de
+    raisonnement est retirée ; une surface de la page, des pièces ou d'une correction reste en place.
+
+    Une valeur que le texte écrit lui-même (« Studio de 31m² », e538fab2) et qui n'était pas une somme calculée
+    reste en place, avec la provenance « source_text » : le raisonnement relancé sur un texte un peu différent (titre
+    affiché remplacé au recalcul) pouvait ne plus la retrouver et l'effaçait.
+    """
+    if source != "deterministic_surface_reasoning" or sale.surface_source != source:
+        return
+    stale = sale.surface_m2
+    evidence = _surface_evidence_for_value(context or "", stale)
+    if evidence and not _previous_selection_was_calculated(previous_analysis):
+        sale.surface_source = "source_text"
+        sale.surface_evidence = evidence[:800]
+        return
+    for field in ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2"):
+        if stale is not None and getattr(sale, field, None) == stale:
+            setattr(sale, field, None)
+    if sale.app_surface_m2 is None:
+        sale.app_surface_kind = None
+    sale.surface_source = None
+    sale.surface_scope = None
+    sale.surface_confidence = None
+    sale.surface_evidence = None
+    sale.quality_flags = [flag for flag in sale.quality_flags if flag != "surface_calculated_from_rooms"]
+
+
+def _previous_selection_was_calculated(analysis: object) -> bool:
+    """La surface retenue par l'analyse précédente était une somme de pièces (``calculated_*``)."""
+    if not isinstance(analysis, dict):
+        return False
+    selected_id = analysis.get("selected_derivation_id")
+    derivations = analysis.get("derivations")
+    if not selected_id or not isinstance(derivations, list):
+        return False
+    selected = next(
+        (item for item in derivations if isinstance(item, dict) and item.get("derivation_id") == selected_id), None
+    )
+    return str((selected or {}).get("kind") or "").startswith("calculated_")
+
+
+def _type_equal_surface(sale: AuctionSale, selected: SurfaceDerivation) -> None:
+    """La page a déjà donné la même valeur sans sa nature : « surface privative (loi Carrez) de 47,01 m² »."""
+    current = sale.app_surface_m2 or sale.surface_m2
+    if current is None or selected.validation_status != "verified" or current != selected.value_m2:
+        return
+    if selected.kind == "explicit_carrez" and sale.carrez_surface_m2 is None:
+        sale.carrez_surface_m2 = selected.value_m2
+    elif selected.kind == "explicit_habitable" and sale.habitable_surface_m2 is None:
+        sale.habitable_surface_m2 = selected.value_m2
+
+
 def extract_and_apply_deterministic_surface_reasoning(sale: AuctionSale, context: str) -> SurfaceReasoningResult | None:
     asset = extract_surface_facts_from_text(context)
     if asset is None:
+        _drop_stale_reasoned_surface(
+            sale,
+            "deterministic_surface_reasoning",
+            context=context,
+            previous_analysis=sale.raw_payload.get("surface_analysis"),
+        )
         return None
     return apply_surface_reasoning_to_sale(
         sale,
@@ -687,7 +848,13 @@ def _derive_asset_surface(
             )
         )
 
-    if len(included) >= 2 and room_sum >= Decimal("9"):
+    repeated_values = _repeated_room_values(included)
+    if repeated_values:
+        # 117,51 = 3 x 39,17 ; 48,54 = 3 x 16,18 : la même pièce relue plusieurs fois n'est pas une somme de pièces.
+        contradictions.append(
+            {"asset_id": asset.asset_id, "kind": "repeated_room_value", "values_m2": repeated_values}
+        )
+    elif len(included) >= 2 and room_sum >= Decimal("9"):
         status = "verified" if asset.measurement_completeness in {"complete", "likely_complete"} else "partial"
         confidence = 0.88 if status == "verified" else 0.68
         formula = " + ".join(str(item.value_m2.normalize()) for item in included)
@@ -705,6 +872,14 @@ def _derive_asset_surface(
             )
         )
     return derivations, contradictions
+
+
+def _repeated_room_values(measurements: list[SurfaceMeasurement]) -> list[str]:
+    """Valeurs portées plusieurs fois par une pièce de même nature (« chambre » 75,34 m² trois fois)."""
+    seen: dict[tuple[str, Decimal], int] = defaultdict(int)
+    for item in measurements:
+        seen[(base_space_label(item.space_label), item.value_m2)] += 1
+    return sorted({str(value) for (_, value), count in seen.items() if count > 1})
 
 
 def _derive_sale_total(
@@ -843,14 +1018,20 @@ def _candidate_is_supported(candidate: SurfaceCandidate, context_normalized: str
     return True
 
 
-def _candidate_exclusion_reason(candidate: SurfaceCandidate) -> str | None:
+def _candidate_exclusion_reason(
+    candidate: SurfaceCandidate, parcel_totals: frozenset[Decimal] = frozenset()
+) -> str | None:
     """Raison d'écarter une surface qui n'est pas celle du bien principal, sinon ``None``.
 
     - surface « créée » par un permis ou une déclaration préalable : surface d'un projet ;
-    - dépendance, maison de gardien, annexe : un bâtiment secondaire n'est pas le bien (Lussac, Cannes).
+    - dépendance, maison de gardien, annexe : un bâtiment secondaire n'est pas le bien (Lussac, Cannes) ;
+    - « …, soit superficie totale 1550 m² » après une liste de parcelles : la contenance du terrain (62fe27e3) ;
+    - « une maison … sur un terrain de 800 m² » : la valeur du terrain ou de l'annexe nommé entre les deux.
     """
     if candidate.kind not in _DWELLING_SURFACE_KINDS:
         return None
+    if candidate.kind in {"explicit_total", "explicit_built"} and candidate.value_m2 in parcel_totals:
+        return "parcel_total_land_surface"
     quote = (candidate.evidence.quote or "").replace("\u00a0", " ")
     span = _value_span_in_quote(quote, candidate.value_m2)
     if span is None:
@@ -859,8 +1040,15 @@ def _candidate_exclusion_reason(candidate: SurfaceCandidate) -> str | None:
     trail = _SENTENCE_END_RE.split(quote[span[1] : span[1] + 70])[0]
     if _CREATED_SURFACE_RE.search(lead + " " + trail):
         return "created_surface_of_a_permit"
+    if candidate.kind == "explicit_built":
+        nouns = list(_BUILT_NOUN_RE.finditer(lead))
+        if nouns and value_belongs_to_other_object(lead[nouns[-1].end() :], candidate.value_m2):
+            return "surface_of_land_or_annex"
     if _SECONDARY_BUILDING_RE.search(_building_phrase(lead)):
         return "secondary_building_surface"
+    if _PER_UNIT_RE.search(lead) or _EACH_RE.match(trail):
+        # « les trois maisons disposent d'une surface habitable d'environ 95 m² » : la surface d'un des logements.
+        return "per_unit_surface_of_several_dwellings"
     return None
 
 
@@ -890,7 +1078,10 @@ def _unresolved_rival_buildings(explicit: list[SurfaceCandidate]) -> list[Surfac
 def _value_variants(value: Decimal) -> set[str]:
     plain = format(value, "f")
     compact = plain.rstrip("0").rstrip(".") if "." in plain else plain
+    grouped = f"{int(value):,}" if value == value.to_integral_value() and value >= 1000 else compact
     return {
+        grouped.replace(",", "."),
+        grouped.replace(",", " "),
         str(value),
         str(value.normalize()),
         plain,
@@ -1033,7 +1224,7 @@ def _candidate_key(candidate: SurfaceCandidate) -> tuple[str, str, Decimal, str]
     )
 
 
-def _nearest_space_keyword(left_context: str) -> tuple[str, SurfaceCategory] | None:
+def _nearest_space_keyword(left_context: str) -> tuple[str, SurfaceCategory, str] | None:
     matches = list(_SPACE_KEYWORD_RE.finditer(left_context))
     if not matches:
         return None
@@ -1043,7 +1234,7 @@ def _nearest_space_keyword(left_context: str) -> tuple[str, SurfaceCategory] | N
         return None
     index = int(group_name[1:])
     label = clean_text(match.group(0).lower()) or "pièce"
-    return label, _SPACE_KEYWORDS[index][1]
+    return label, _SPACE_KEYWORDS[index][1], left_context[match.end() :]
 
 
 def _match_value(match: re.Match[str]) -> Decimal | None:
@@ -1076,7 +1267,11 @@ def _normalized_for_evidence(value: str) -> str:
 def _decimal(value: Any) -> Decimal | None:
     if value is None:
         return None
-    text = str(value).replace("\u00a0", " ").replace(" ", "").replace(",", ".")
+    text = str(value).replace("\u00a0", " ").replace(" ", "")
+    if re.fullmatch(r"\d\.\d{3}", text):
+        # « une surface totale de 7.552 m² » : le point sépare les milliers (7 552 m², pas 7,55 m²).
+        text = text.replace(".", "")
+    text = text.replace(",", ".")
     try:
         return Decimal(text)
     except (InvalidOperation, ValueError):
