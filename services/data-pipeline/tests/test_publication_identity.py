@@ -356,6 +356,32 @@ def test_room_bedroom_consistency_clears_invalid_direct_sale():
     assert invalid.raw_payload['source_conflicts'][0]['code'] == 'rooms_below_bedrooms'
 
 
+def test_room_bedroom_consistency_clears_rooms_when_they_equal_bedrooms():
+    """05/11/2026 : Avoventes « 3 pièces 3 chambres » ; le PV décrit une pièce à vivre et trois chambres."""
+    invalid = sale('https://example.test/equal-rooms')
+    invalid.rooms_count = 3
+    invalid.bedrooms_count = 3
+
+    ensure_room_bedroom_consistency(invalid)
+
+    assert invalid.rooms_count is None
+    assert invalid.bedrooms_count == 3
+    assert 'rooms_bedrooms_conflict' in invalid.quality_flags
+    assert invalid.raw_payload['source_conflicts'][0]['code'] == 'rooms_equal_bedrooms'
+
+
+def test_room_bedroom_consistency_keeps_a_one_room_one_bedroom_dwelling_and_valid_counts():
+    for rooms, bedrooms in ((1, 1), (4, 3), (2, 0)):
+        valid = sale(f'https://example.test/valid-{rooms}-{bedrooms}')
+        valid.rooms_count = rooms
+        valid.bedrooms_count = bedrooms
+
+        ensure_room_bedroom_consistency(valid)
+
+        assert (valid.rooms_count, valid.bedrooms_count) == (rooms, bedrooms)
+        assert 'rooms_bedrooms_conflict' not in valid.quality_flags
+
+
 def test_targeted_alias_publication_reuses_existing_identity_under_lock():
     url = os.getenv('PIPELINE_TEST_DB_URL')
     if not url:
