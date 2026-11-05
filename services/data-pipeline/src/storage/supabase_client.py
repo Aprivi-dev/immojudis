@@ -27,7 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - GitHub Actions installs psycop
     sql = None
     Jsonb = None
 
-from src.admission import has_price_or_surface, is_expired, publication_rejection, quarantine_reason
+from src.admission import catalogue_write_rejection, has_price_or_surface, is_expired, quarantine_reason
 from src.asset_normalization import (
     build_auction_features_row,
     build_auction_risk_rows_from_occurrences,
@@ -493,8 +493,9 @@ def upsert_sales_to_supabase(
     *,
     refresh_last_seen: bool = True,
 ) -> int:
-    # Même règle que l'admission (publication_rejection) : une vente écartée ici l'a déjà été, avec sa décision.
-    sales = [sale for sale in sales if publication_rejection(sale) is None]
+    # Même règle que l'admission (catalogue_write_rejection : une quarantaine s'écrit, masquée), sauf la relecture qui clôt un appel d'offres échu.
+    from src.admission import closes_expired_offer_deadline as closes
+    sales = [s for s in sales if catalogue_write_rejection(s) is None or (not refresh_last_seen and closes(s))]
     for sale in sales:
         apply_catalogue_readiness(sale)
     if not sales:
@@ -2067,8 +2068,8 @@ def _persist_pdf_document_checkpoint_with_connection(
             expected_updated_at,
         ),
     ).fetchone()
-    if updated is None:
-        return False
+    if updated is None:  # logged: the queue only said "checkpoint was not persisted" (04/11/2026)
+        return bool(LOGGER.warning("PDF checkpoint refused for %s: revision moved before the update", source_url))
     if updated[0] != expected_updated_at:
         raise RuntimeError("PDF checkpoint changed the source sale revision")
 

@@ -737,6 +737,7 @@ def _pdf_surface_candidates_with_provenance(
                 "page_number": chunk.get("page_number"),
                 "page_confidence": chunk.get("page_confidence"),
                 "extraction_method": chunk.get("extraction_method"),
+                "match_text": surface.get("match_text") or "",
             }
             if not land:
                 candidate["surface_scope"] = surface_scope_extractor(

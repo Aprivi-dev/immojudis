@@ -14,8 +14,7 @@ from src.config import TARGET_DEPARTMENTS, load_settings, require_encheres_publi
 from src.normalize import (
     clean_text,
     extract_department,
-    has_rented_occupancy_signal,
-    no_lease_occupancy_status,
+    normalize_occupancy_status,
     parse_surface,
 )
 from src.raw_models import validate_raw_sales
@@ -28,7 +27,7 @@ from src.sources.common import (
     should_fetch_detail,
     unique_dicts,
 )
-from src.sources.encheres_publiques_extraction import refresh_encheres_publiques_raw_sale
+from src.sources.encheres_publiques_extraction import fill_text_schedule, refresh_encheres_publiques_raw_sale
 
 BASE_URL = "https://www.encheres-publiques.com"
 CANONICAL_BASE_URL = "https://encheres-publiques.com"
@@ -164,6 +163,8 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
                 "source_blocks": source_blocks,
             }
         )
+        # Sans horodatage, le titre de l'événement donne le jour (« … au Tribunal judiciaire de Paris le 9 Juillet 2026 »).
+        fill_text_schedule(sales[-1])
     return sales
 
 
@@ -578,25 +579,8 @@ def _parking_count(lot: dict[str, Any], description: object) -> int | None:
 
 
 def _normalize_occupancy_status(value: object | None) -> str | None:
-    text = _plain_text(value)
-    if not text:
-        return None
-    lowered = text.lower()
-    if re.search(r"sans\s+droit\s+ni\s+titre|squat", lowered):
-        return "squatted"
-    if re.search(r"propri[ée]taire\s+occupant|occup[ée]\s+par\s+le\s+propri[ée]taire", lowered):
-        return "owner_occupied"
-    if re.search(r"libre\s+de\s+toute\s+occupation|bien\s+libre|inoccup[ée]|vacant", lowered):
-        return "vacant"
-    if no_lease_status := no_lease_occupancy_status(lowered):
-        return no_lease_status
-    if has_rented_occupancy_signal(lowered):
-        return "rented"
-    if re.search(r"occup[ée]", lowered):
-        return "occupied"
-    if re.search(r"inconnu|non\s+renseign[ée]", lowered):
-        return "unknown"
-    return None
+    # Le critère publié se lit comme une phrase ; normalize_sale le confronte ensuite au descriptif (03/11/2026).
+    return normalize_occupancy_status(_plain_text(value))
 
 
 def _plain_text(value: object | None) -> str | None:

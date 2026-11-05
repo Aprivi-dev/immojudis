@@ -14,6 +14,7 @@ from src.court_competence import (
 from src.department_inference import department_from_geocode_evidence
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_department
+from src.pdf_tribunal import pdf_tribunal_label
 from src.tribunal_labels import (
     NOTARIAL_VENUE_PHRASE,
     court_name_candidates,
@@ -124,6 +125,10 @@ def infer_tribunal(sale: AuctionSale) -> str | None:
             return explicit
     if _is_non_judicial_sale_context(sale):
         return None
+    # Tribunal unique nommé par les pièces jointes (« Tribunal Judiciaire de BOBIGNY ») : src.pdf_tribunal.
+    from_documents = pdf_tribunal_label(sale.raw_payload)
+    if from_documents:
+        return from_documents
 
     raw_text = _fingerprint(sale.raw_text)
     if _fingerprint(sale.city) == "ondres":

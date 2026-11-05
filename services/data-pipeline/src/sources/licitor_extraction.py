@@ -33,6 +33,7 @@ from src.department_names import (
     departments_named_in_text,
 )
 from src.normalize import clean_text, extract_department
+from src.occupancy_statements import read_occupancy_statements, resolve_occupancy
 from src.pdf_document_types import classify_document_type
 
 FEATURES_SCHEMA_VERSION = "licitor_features_v1"
@@ -78,8 +79,13 @@ _SALE_DATE_RE = re.compile(
     r"\b(?P<day>\d{1,2})\s*(?:er)?\s+(?P<month>[a-zéûô]+)\s+(?P<year>20\d{2})\s+à\s+(?P<hour>\d{1,2})\s*h\s*(?P<minute>\d{2})?",
     re.I,
 )
+# En-tête d'un lot : ordinal (« 1er lot », « 2ème lot de vente », « 3ème lot d'enchère ») ou numéroté (« Lot 1 »,
+# « Lot n°2 » : annonces 110492 et 110549, lues comme un seul lot avant le 03/11/2026). Un en-tête numéroté ne
+# compte que si les numéros se suivent depuis 1 (une ligne « Lot 12 » de copropriété ne coupe pas la désignation).
 _LOT_MARKER_RE = re.compile(
-    r"^(?:(?P<n>\d{1,2})\s*(?:er|ère|re|e|ème|eme|nd|nde)|(?P<w>premier|second|seconde))\s+lot(?:\s+de\s+(?:la\s+)?vente)?\s*:?$",
+    r"^(?:(?:\d{1,2}\s*(?:er|ère|re|e|ème|eme|nd|nde)|premier|second|seconde)\s+lot"
+    r"(?:\s+(?:de\s+(?:la\s+)?vente|d['’]\s*ench[eè]res?))?"
+    r"|lot\s*(?:n\s*[°º]|no\.?)?\s*(?P<number>\d{1,2}))\s*:?$",
     re.I,
 )
 _PRICE_RE = re.compile(r"^Mise\s+[àa]\s+prix\s*:?\s*(?P<value>.*)$", re.I)
@@ -112,10 +118,6 @@ _CONDITION_CUE_RE = re.compile(
     r"précédemment|precedemment|adjug|mise\s+à\s+prix|émoluments|emoluments|montant|bâtonnier|batonnier",
     re.I,
 )
-_OCCUPANCY_LINE_RE = re.compile(
-    r"\b(?:occup\w*|inoccup\w*|libres?|lou[ée]e?s?|vacant\w*|vides?|bail|squatt\w*)\b", re.I
-)
-_PARTIAL_RE = re.compile(r"\b(?:partiellement|une\s+partie|seul|un\s+libre|en\s+partie)\b", re.I)
 _LAND_TITLE_RE = re.compile(r"\b(?:terrains?|parcelles?|bois|prés?|pâtures?|landes?|vignes?)\b", re.I)
 
 
@@ -216,10 +218,9 @@ class LicitorLot:
         return " ".join(part for part in (self.title, self.description) if part)
 
     def occupancy_lines(self) -> list[str]:
-        return [
-            paragraph for paragraph in self.paragraphs
-            if len(paragraph) <= 110 and _OCCUPANCY_LINE_RE.search(paragraph) and not _SURFACE_RE.search(paragraph)
-        ]
+        # Une phrase d'occupation compte aussi dans un long paragraphe (« Un appartement de 39,85 m² … Les lieux sont
+        # en l'état inhabitables et inhabités ») : au-delà de 110 caractères elle était ignorée (audit 03/11/2026).
+        return [paragraph for paragraph in self.paragraphs if read_occupancy_statements(paragraph)]
 
     def surfaces(self) -> list[dict[str, str]]:
         found: list[dict[str, str]] = []
@@ -391,7 +392,11 @@ def _header(lines: list[str], page: LicitorPage) -> int | None:
 
 
 def _split_lots(lines: list[str]) -> list[tuple[str | None, list[str]]]:
-    markers = [index for index, line in enumerate(lines) if _LOT_MARKER_RE.match(line)]
+    found = [(index, match) for index, line in enumerate(lines) if (match := _LOT_MARKER_RE.match(line))]
+    markers = [index for index, match in found if match.group("number") is None]
+    numbers = [int(match.group("number")) for _, match in found if match.group("number")]
+    if not markers and len(numbers) > 1 and numbers == list(range(1, len(numbers) + 1)):
+        markers = [index for index, _ in found]
     if not markers:
         return [(None, lines)]
     segments: list[tuple[str | None, list[str]]] = []
@@ -582,29 +587,10 @@ def parse_licitor_page(page_text: str | None) -> LicitorPage:
     return page
 
 
-def _statement_status(line: str) -> str | None:
-    """Statut d'une phrase d'occupation courte (« Occupé », « Les biens sont inoccupés », « Loué »)."""
-    text = _fold(line)
-    text = re.sub(r"\bnon\s+occupe\w*", " inoccupe ", text)
-    found = set()
-    if re.search(r"\b(?:libres?|inoccupe\w*|vacant\w*|vides?|inhabite\w*)\b", text):
-        found.add("vacant")
-    if re.search(r"\b(?:louee?s?|bail|locataires?)\b", text):
-        found.add("rented")
-    if re.search(r"\b(?:occupee?s?|squatt\w*)\b", text):
-        found.add("occupied")
-    if found == {"rented", "occupied"} or (found == {"occupied"} and re.search(r"\bloyers?\b", text)):
-        return "rented"  # « Occupée (loyer de 550 €) » : occupé par un locataire
-    return found.pop() if len(found) == 1 else None
-
-
 def _occupancy(lot: LicitorLot) -> tuple[str | None, list[str]]:
-    """Statut d'occupation déclaré par les phrases d'occupation du lot, s'il est univoque."""
+    """Statut d'occupation déclaré par le lot : ``unknown`` s'il est prudent, partiel ou contradictoire."""
     lines = lot.occupancy_lines()
-    statuses = {_statement_status(line) for line in lines}
-    if not lines or len(statuses) != 1 or None in statuses or any(_PARTIAL_RE.search(line) for line in lines):
-        return None, lines
-    return statuses.pop(), lines
+    return resolve_occupancy(read_occupancy_statements(*lines)).status, lines
 
 
 def _prior_adjudication(text: str) -> dict[str, Any] | None:
@@ -745,12 +731,22 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
     if not page.is_structured:
         return None
     raw_sale = raw_sale or {}
-    first = page.lots[0]
-    city = first.city or next((lot.city for lot in page.lots if lot.city), None) or page.headline_city or clean_text(
-        raw_sale.get("city")
+    from src.lot_scope import SELECTED
+    from src.sources.licitor_lots import select_licitor_lot
+
+    # Annonce en plusieurs lots : les faits propres au lot (occupation, conditions, surface, mise à prix,
+    # cadastre, visites) sont ceux du lot de l'URL, jamais d'office ceux du premier ; aucun si le lot est
+    # incertain (src.sources.licitor_lots).
+    choice = select_licitor_lot(page, raw_sale.get("source_url"), raw_sale.get("source_lots"))
+    first = choice.lot if choice.status == SELECTED else None
+    lot_city = choice.location.city if choice.location is not None else None
+    city = (
+        lot_city
+        if len(page.lots) > 1
+        else first.city or page.headline_city or clean_text(raw_sale.get("city"))
     )
     procedures = page.procedures()
-    occupancy, occupancy_lines = _occupancy(first)
+    occupancy, occupancy_lines = _occupancy(first) if first is not None else (None, [])
     lots_view = []
     for lot in page.lots:
         lot_occupancy, lot_occupancy_lines = _occupancy(lot)
@@ -778,10 +774,13 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
             }.items()
             if value not in (None, "", [], {})
         })
-    visits = list(dict.fromkeys(visit for lot in page.lots for visit in lot.visits))
+    if first is not None and choice.location is not None and len(page.lots) > 1:
+        visits = list(choice.location.visits)
+    else:
+        visits = list(dict.fromkeys(visit for lot in page.lots for visit in lot.visits))
     visit_notes = list(dict.fromkeys(note for lot in page.lots for note in lot.visit_notes))
-    facts = _condition_facts(first)
-    cadastre = _cadastre(first, city)
+    facts = _condition_facts(first) if first is not None else {}
+    cadastre = _cadastre(first, city) if first is not None else None
     media = _media(raw_sale)
     attachments = _attachments(raw_sale)
     multi = len(page.lots) > 1
@@ -811,7 +810,7 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
             " ".join(part for part in (_price_text(prior.get("price_eur")), f"le {prior['date']}" if prior.get("date") else None) if part),
             "conditions")
     add("bidding_restriction", "Enchères", facts.get("bidding_restriction"), "conditions")
-    other_conditions = [item for item in first.conditions if item not in {
+    other_conditions = [item for item in (first.conditions if first is not None else []) if item not in {
         facts.get("price_reduction"), (facts.get("deposit") or {}).get("text"), facts.get("bidding_restriction")
     } and not (prior and prior["text"] in item)]
     add("other_conditions", "Autres conditions", " ".join(other_conditions)[:600], "conditions")
@@ -827,15 +826,15 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
     add("notice", "Mention de la source", page.non_official_notice, "divers")
 
     surfaces: dict[str, str] = {}
-    primary = _primary_surface(first)
+    primary = _primary_surface(first) if first is not None else None
     if primary:
         surfaces["land_surface_m2" if _surface_scope(first) == "land" else "built_surface_m2"] = primary
-    land = clean_text(raw_sale.get("land_surface_m2"))
+    land = clean_text(raw_sale.get("land_surface_m2")) if first is not None else None
     if land and "land_surface_m2" not in surfaces:
         surfaces["land_surface_m2"] = land
 
     prices: dict[str, int] = {}
-    if first.price_eur is not None:
+    if first is not None and first.price_eur is not None:
         prices["starting_price_eur"] = first.price_eur
     deposit = facts.get("deposit") or {}
     if deposit.get("amount_eur"):
@@ -881,7 +880,7 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
         "procedure_vente": " · ".join(label for _, label in procedures) or None,
         "lieu_audience": page.venue,
         "lots_detail": "\n".join(_lot_summary(lot) for lot in page.lots) if multi else None,
-        "conditions_vente": " ".join(first.conditions)[:1500] or None,
+        "conditions_vente": " ".join(first.conditions if first is not None else [])[:1500] or None,
         "baisse_mise_a_prix": facts.get("price_reduction"),
         "consignation": deposit.get("text"),
         "adjudication_precedente": prior["text"] if prior else None,
@@ -1037,6 +1036,11 @@ def refresh_licitor_raw_sale(raw_sale: dict[str, Any]) -> bool:
     if extracted is None:
         return False
     apply_licitor_fields(raw_sale, extracted)
+    # Annonce en plusieurs lots : la vente stockée reprend les valeurs du lot de son URL (l'ancienne lecture
+    # prenait toujours celles du premier lot), ou aucune si le lot est incertain.
+    from src.sources.licitor_lots import apply_licitor_lot
+
+    apply_licitor_lot(raw_sale, extracted["page"])
     # Une relecture corrige aussi un département déduit d'une sous-chaîne (« Orglandes » -> 40).
     department = licitor_department(
         page_text,

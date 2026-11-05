@@ -725,6 +725,19 @@ export async function withCurrentPepiteMentions<
   });
 }
 
+/**
+ * Marquage des notifications d'un récapitulatif, par lots en parallèle : un récapitulatif reprend toute la file
+ * d'un compte (plusieurs centaines de ventes pour une alerte qui couvre le catalogue), et le passage dure 300 s au
+ * plus. Chaque écriture reste conditionnelle à l'état `queued`.
+ */
+const MARK_BATCH_SIZE = 20;
+
+async function forEachInBatches<T>(items: T[], task: (item: T) => Promise<unknown>): Promise<void> {
+  for (let start = 0; start < items.length; start += MARK_BATCH_SIZE) {
+    await Promise.all(items.slice(start, start + MARK_BATCH_SIZE).map(task));
+  }
+}
+
 /** Âge maximal d'un email d'alerte en file : au-delà, il est annulé plutôt qu'envoyé (reprise après coupure). */
 const MAX_EMAIL_ALERT_AGE_MS = 48 * 60 * 60 * 1000;
 
@@ -749,9 +762,9 @@ async function deliverEmailAlertDigest({
   env: Pick<NodeJS.ProcessEnv, string>;
 }): Promise<{ outcomes: EmailAlertDeliveryOutcome[]; skipped: number }> {
   const failAll = async (detail: string, recipient: string | null) => {
-    for (const notification of notifications) {
-      await markEmailNotificationFailed({ notification, now, detail, recipient });
-    }
+    await forEachInBatches(notifications, (notification) =>
+      markEmailNotificationFailed({ notification, now, detail, recipient }),
+    );
     return {
       skipped: 0,
       outcomes: notifications.map((notification) => ({
@@ -782,9 +795,9 @@ async function deliverEmailAlertDigest({
       (eligibility.audience === "analyse" || notificationAudience(notification) === "discovery"),
   );
   const stale = notifications.filter((notification) => !sendable.includes(notification));
-  for (const notification of stale) {
-    await markEmailNotificationCancelled({ notification, now });
-  }
+  await forEachInBatches(stale, (notification) =>
+    markEmailNotificationCancelled({ notification, now }),
+  );
   if (!sendable.length) return { outcomes: [], skipped: stale.length };
 
   const recipient = await readUserEmail(userId);
@@ -827,15 +840,15 @@ async function deliverEmailAlertDigest({
       templateKey: "alert",
       userId,
     });
-    for (const notification of sendable) {
-      await markEmailNotificationSent({
+    await forEachInBatches(sendable, (notification) =>
+      markEmailNotificationSent({
         notification,
         now,
         recipient,
         messageId: sendResult.id,
         pepiteMentioned: mentioned.has(notification.id),
-      });
-    }
+      }),
+    );
     return {
       skipped: stale.length,
       outcomes: sendable.map((notification) => ({
@@ -848,9 +861,9 @@ async function deliverEmailAlertDigest({
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : "Envoi email impossible.";
-    for (const notification of sendable) {
-      await markEmailNotificationFailed({ notification, now, detail, recipient });
-    }
+    await forEachInBatches(sendable, (notification) =>
+      markEmailNotificationFailed({ notification, now, detail, recipient }),
+    );
     return {
       skipped: stale.length,
       outcomes: sendable.map((notification) => ({

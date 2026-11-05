@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from src.enrichment.display_consistency import consistency_issues
 from src.enrichment.display_facts import known_offer_amounts
 from src.enrichment.display_semantics import semantic_display_issues
 
@@ -126,9 +127,10 @@ def _labelled_amounts(evidence: str) -> set[Decimal]:
 
 
 def _is_room_count_claim(text: str, claim: re.Match[str]) -> bool:
-    """« une pièce » is a room, not a count, unless written « de N pièce(s) »."""
+    """« une pièce » is a room, not a count, unless written « de une pièce »; « 1 pièce » is a count."""
     value = _number(claim['value'])
-    return bool(value is not None and value > 1 or SINGLE_ROOM_PREFIX.search(text[max(0, claim.start() - 4):claim.start()]))
+    return bool(value is not None and (value > 1 or claim['value'].isdigit())
+                or SINGLE_ROOM_PREFIX.search(text[max(0, claim.start() - 4):claim.start()]))
 
 
 def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> dict[str, Any]:
@@ -191,6 +193,7 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
     ):
         issues.append({'code': 'works_conflict', 'claim': text})
     issues.extend(semantic_display_issues(text, evidence, fields))
+    issues.extend(consistency_issues(text, evidence, fields))
     for match in PROMOTIONAL.finditer(text):
         issues.append({'code': 'promotional_claim', 'claim': match.group()})
     for match in PROMPT_INJECTION.finditer(text):
@@ -209,5 +212,5 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
         issues.append({'code': 'public_secret_reference', 'claim': match.group()})
     return {'status': 'issues_detected' if issues else 'checks_passed',
             'scope': 'typed_numbers_dates_occupancy_works_absences_procedure_filler_promotional_language_'
-                     'prompt_injection_and_public_content',
+                     'prompt_injection_public_content_and_canonical_consistency',
             'semantic_completeness_certified': False, 'claims': claims, 'issues': issues}

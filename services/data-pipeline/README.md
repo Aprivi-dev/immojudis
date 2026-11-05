@@ -680,6 +680,34 @@ PHOTO_MIRROR_ENABLED=true python -m src.photo_mirror --max-photos 400 --budget-m
 - un JSON par photo, puis un résumé final ; le workflow manuel « Photo Mirror Backfill »
   (`.github/workflows/photo-mirror-backfill.yml`) rattrape le stock (60 min et 3 000 photos par défaut). Retrait : `docs/runbooks/retrait-photos.md`.
 
+### Ajouter à la galerie les photos des pièces jointes
+
+Le cahier des charges ou le procès-verbal descriptif contient souvent bien plus de photos du bien que la
+page de l'annonce. Le lanceur automatique exécute après chaque `enrichment-queue` réussi un passage borné
+(3 ventes, 180 s, délai de 6 min ; son code de sortie est noté dans le résumé et ne change jamais le statut
+du run) ; à la main :
+
+```bash
+python -m src.pdf_photos --max-sales 4 --budget-seconds 300
+```
+
+- interrupteur `PDF_PHOTOS_ENABLED`, allumé par défaut (`false`, `0`, `no` ou `off` l'éteignent : seuls les
+  retraits s'appliquent alors) ;
+- ventes du catalogue public ayant une pièce jointe `pv_huissier`, `cahier_conditions_vente`,
+  `proces_verbal` ou `conditions_vente` (jamais les diagnostics) pas encore lue
+  (`sale_document_photo_scans` ; échecs retentés 3 fois au plus, à 12 h d'écart) et moins de 12 photos de
+  documents ; la plus proche date d'abord, une vente sans date compte comme se terminant dans une semaine ;
+  Enchères Publiques exclue tant que l'accès n'est pas autorisé ;
+- téléchargement de `photo_mirror` (anti-SSRF, robots.txt, 2 s par hôte), PDF de 40 Mo au plus ;
+- le PDF n'est ouvert que par `src/pdf_photo_extract.py`, dans un sous-processus sans secret : images
+  dédoublonnées par `xref` et par empreinte, règle « photo du bien » (taille, part de blanc, contraste,
+  nombre de couleurs : cartes, logos, schémas et pages scannées écartés), WebP 640 px et 1600 px ;
+- 12 photos par vente au plus, dans le bucket `sale-photos` sous `documents/{sale_id}/`, lignes dans
+  `public.sale_document_photos` ; la galerie (`media` des vues de la fiche) les ajoute après les photos
+  des sources ;
+- retraits : photos d'une source retirée et photos passées à la main en `withdrawn` supprimées au début de
+  chaque passage, fichiers mis en file de purge (`sale_retention_storage_queue`).
+
 ### Invalider le cache public après un retrait
 
 Un déclencheur de `public.auction_sales` note dans `app_private.catalogue_invalidations` chaque vente qui

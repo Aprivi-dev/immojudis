@@ -45,6 +45,7 @@ from src.config import load_settings
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import clean_text
+from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 
 LOGGER = logging.getLogger(__name__)
 
@@ -118,9 +119,18 @@ select s.source_url, s.source_name, s.sale_date,
    and s.retention_deadline_materialized
    and (s.retention_deadline is null or s.retention_deadline > now())
    and (s.sale_date is null or s.sale_date >= now())
+   -- Toutes les sources de la vente sont retirées du catalogue (Vench, Petites Affiches) : elle est masquée et
+   -- la file reporte ses tâches d'un jour (src/source_withdrawal.py). La choisir prenait une place de la
+   -- sélection pour rien. Même règle et même interrupteur que la base (catalogue_withdrawn).
+   and not app_private.sale_is_fully_withdrawn(
+         s.source_name, s.observations, (select app_private.catalogue_withdrawn_sources())
+       )
+   -- Pièces non lues, ou toutes lues avec des règles plus anciennes que DOCUMENT_FACTS_VERSION : la tâche pdf les
+   -- relit depuis le cache, sans nouveau téléchargement (relecture de l'audit qualité du 03/11/2026).
    and (
          p.source_url is not null
          or not exists (select 1 from public.auction_documents d where d.source_url = s.source_url)
+         or coalesce(s.raw_payload->>'document_facts_version', '') <> %s
        )
    and not exists (
          select 1 from public.auction_enrichment_jobs a
@@ -130,18 +140,47 @@ select s.source_url, s.source_name, s.sale_date,
        )
    -- Tried within a day: wait. The drain runs after every enrichment tick (about 27 a day), so a document
    -- that keeps failing must not be downloaded again each time.
+   -- Une relecture remise en file (tâche pdf « queued » et due) reste éligible : rien n'est retéléchargé, et un
+   -- report (accès refusé, source retirée, nouvel essai) garde son échéance.
+   -- Seul un essai réel fait attendre (04/11/2026 : 0 vente choisie sur 270 à relire). Une tâche annulée
+   -- (« Superseded by a newer input revision » quand la collecte invalide la lecture) n'a rien essayé ; une
+   -- tâche due jamais tentée non plus ; une lecture terminée qu'une génération plus récente remplace est
+   -- dépassée. Elles bloquaient la vente un jour entier.
    and not exists (
          select 1 from public.auction_enrichment_jobs a
           where a.source_url = s.source_url
             and a.job_type = 'pdf'
             and a.updated_at >= now() - interval '1 day'
+            and a.status <> 'cancelled'
+            and not (
+                  a.status = 'queued'
+                  and a.next_attempt_at <= now()
+                  and (
+                        a.attempt_count = 0
+                        or (
+                              p.source_url is null
+                              and coalesce(s.raw_payload->>'document_facts_version', '') <> %s
+                            )
+                      )
+                )
+            and not (
+                  a.status = 'completed'
+                  and exists (
+                        select 1 from public.auction_enrichment_jobs b
+                         where b.source_url = a.source_url
+                           and b.job_type = 'pdf'
+                           and b.created_at > a.created_at
+                      )
+                )
        )
  -- Documents never tried come first: a sale whose only unread documents
  -- already failed (and will likely fail again) must not starve them.
  -- A sale without a date ranks as if it ended within a week: for a State tender (Cessions de
  -- l'État) the offer deadline is only in the conditions of sale, so ranking it last left its
  -- attachments unread for weeks (02/11/2026: 36 of 41 such sales).
- order by (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0),
+ -- Une relecture passe après les pièces jamais lues.
+ order by (p.source_url is null and exists (select 1 from public.auction_documents d where d.source_url = s.source_url)),
+          (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0),
           coalesce(s.sale_date, now() + interval '7 days'), coalesce(p.useful_pending, 0) desc, s.source_url
  limit %s
 """
@@ -311,7 +350,13 @@ def select_backlog_candidates(db_url: str, limit: int) -> list[dict[str, Any]]:
         connection.execute("set local statement_timeout = '30s'")
         rows = connection.execute(
             CANDIDATES_SQL,
-            (list(USEFUL_DOCUMENT_TYPES), list(ACTIONABLE_STATUSES), int(limit)),
+            (
+                list(USEFUL_DOCUMENT_TYPES),
+                list(ACTIONABLE_STATUSES),
+                DOCUMENT_FACTS_VERSION,
+                DOCUMENT_FACTS_VERSION,
+                int(limit),
+            ),
         ).fetchall()
     return [
         {
@@ -429,6 +474,12 @@ def _fetch_sale(source_url: str) -> AuctionSale | None:
     return fetch_sale_for_data_refresh(source_url)
 
 
+def _read_with_current_rules(sale: AuctionSale) -> bool:
+    """Every attachment is read (or terminal) and its facts come from the current extraction rules."""
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    return payload.get("document_facts_version") == DOCUMENT_FACTS_VERSION and documents_are_current(sale)
+
+
 def _input_hash(sale: AuctionSale) -> str:
     from src.storage.supabase_client import pdf_enrichment_input_hash_for_sale
 
@@ -460,7 +511,7 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
             outcome.action = "missing"
             return outcome
         before_facts = _fact_snapshot(sale)
-        if documents_are_current(sale):
+        if _read_with_current_rules(sale):
             _reproject(sale)
             outcome.action = "reprojected"
         else:
@@ -491,12 +542,17 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
                     outcome.error = last_error[:300] or "PDF job failed"
                     if not progressed:
                         break
+                elif final_status == "cancelled" and "superseded" in last_error.lower():
+                    # The pass wrote the sale, whose new input revision (a durable checkpoint, a re-keyed
+                    # manifest) replaced the job. Follow the newer generation below instead of leaving the
+                    # sale half read until the next drain (04/11/2026: most re-reads stopped there).
+                    pass
                 elif final_status != "queued" or "authorization required" in last_error:
                     # ``queued`` is a deferral with a durable checkpoint: the
                     # next six documents of a partial manifest, or the next
                     # OCR pages of a long scanned report. Anything else ends.
                     break
-                if refreshed is None or documents_are_current(refreshed):
+                if refreshed is None or _read_with_current_rules(refreshed):
                     break
                 # A durable checkpoint can re-key the job to the generation it
                 # has just written; follow that generation.
@@ -550,40 +606,55 @@ def run_document_backlog(
     )
     from src.catalogue_lock import CatalogueLockTimeout
 
+    # Les ventes suivantes sont téléchargées et lues hors du verrou pendant que la courante est publiée
+    # (src/document_prefetch.py) : le verrou ne couvre plus que la passe, qui trouve les pages déjà lues.
+    prefetcher = _prefetcher([str(item["source_url"]) for item in candidates], deadline)
+    prefetcher.start()
     last_yield = time.monotonic()
-    for index, candidate in enumerate(candidates, start=1):
-        if time.monotonic() >= deadline:
-            report.stop_reason = "budget"
-            break
-        if time.monotonic() - last_yield >= LOCK_YIELD_EVERY_SECONDS:
-            sleep(LOCK_YIELD_PAUSE_SECONDS)
-            last_yield = time.monotonic()
-        try:
-            # A collection may hold the lock for its whole 35-minute budget.
-            with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())):
-                outcome = drain_sale(db_url, candidate, limits, deadline)
-        except CatalogueLockTimeout as exc:
-            LOGGER.warning("Document backlog stopped: %s", exc)
-            report.stop_reason = "catalogue_lock"
-            break
-        report.outcomes.append(outcome)
-        LOGGER.info(
-            "Document backlog %s/%s %s %s: action=%s passes=%s extracted %s->%s/%s facts=%s%s (%.1fs)",
-            index,
-            len(candidates),
-            outcome.source_name,
-            outcome.source_url,
-            outcome.action,
-            outcome.passes,
-            outcome.documents_extracted_before,
-            outcome.documents_extracted_after,
-            outcome.documents_total,
-            ",".join(outcome.new_facts) or "-",
-            f" error={outcome.error}" if outcome.error else "",
-            outcome.seconds,
-        )
+    try:
+        for index, candidate in enumerate(candidates, start=1):
+            if time.monotonic() >= deadline:
+                report.stop_reason = "budget"
+                break
+            if time.monotonic() - last_yield >= LOCK_YIELD_EVERY_SECONDS:
+                sleep(LOCK_YIELD_PAUSE_SECONDS)
+                last_yield = time.monotonic()
+            # Never prepared and processed at the same time: the locked pass writes the same caches.
+            prefetcher.wait_for(str(candidate["source_url"]))
+            try:
+                # A collection may hold the lock for its whole 35-minute budget.
+                with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())):
+                    outcome = drain_sale(db_url, candidate, limits, deadline)
+            except CatalogueLockTimeout as exc:
+                LOGGER.warning("Document backlog stopped: %s", exc)
+                report.stop_reason = "catalogue_lock"
+                break
+            report.outcomes.append(outcome)
+            LOGGER.info(
+                "Document backlog %s/%s %s %s: action=%s passes=%s extracted %s->%s/%s facts=%s%s (%.1fs)",
+                index,
+                len(candidates),
+                outcome.source_name,
+                outcome.source_url,
+                outcome.action,
+                outcome.passes,
+                outcome.documents_extracted_before,
+                outcome.documents_extracted_after,
+                outcome.documents_total,
+                ",".join(outcome.new_facts) or "-",
+                f" error={outcome.error}" if outcome.error else "",
+                outcome.seconds,
+            )
+    finally:
+        prefetcher.close()
     report.elapsed_seconds = time.monotonic() - started
     return report
+
+
+def _prefetcher(source_urls: list[str], deadline: float) -> Any:
+    from src.document_prefetch import DocumentPrefetcher, prefetch_workers_from_env
+
+    return DocumentPrefetcher(source_urls, workers=prefetch_workers_from_env(), deadline=deadline)
 
 
 def _write_step_summary(summary: dict[str, Any]) -> None:

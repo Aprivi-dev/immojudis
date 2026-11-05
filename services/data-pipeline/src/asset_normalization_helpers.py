@@ -9,7 +9,9 @@ from src.asset_normalization import (
     FACTOR_AXIS,
     ScoreComponent,
 )
+from src.lot_scope import describes_one_lot, sale_fact_text
 from src.models import AuctionSale
+from src.multi_unit_surface import is_single_unit_surface_of_several
 from src.normalize import (
     MIN_DWELLING_SURFACE_M2,
     SURFACE_VALUE_PATTERN,
@@ -19,6 +21,7 @@ from src.normalize import (
     parse_surface,
 )
 from src.surface_plausibility import SURFACE_VALUES_CONFLICT_KEY, is_parcel_total, source_proves_built_total
+from src.surface_text_recovery import built_value_names_other_object
 
 # Plafonds de vraisemblance de la surface affichée (m²). Au-delà, la valeur est presque toujours celle
 # d'une parcelle, d'un lot voisin ou d'un chiffre du titre (appartement à 34 596 m², maison à 48 256 m²).
@@ -35,7 +38,7 @@ MAX_PLAUSIBLE_PROVEN_BUILT_TOTAL_HOUSE_SURFACE_M2 = Decimal("5000")
 def _plausible_surface_ceiling(sale: AuctionSale) -> Decimal | None:
     if sale.property_type == "house" and sale.app_surface_kind == "habitable":
         if source_proves_built_total(
-            (sale.surface_evidence, sale.description, sale.title, sale.raw_text), sale.app_surface_m2
+            (sale.surface_evidence, sale.description, sale.title, sale_fact_text(sale)), sale.app_surface_m2
         ):
             return MAX_PLAUSIBLE_PROVEN_BUILT_TOTAL_HOUSE_SURFACE_M2
         return MAX_PLAUSIBLE_LABELLED_HOUSE_SURFACE_M2
@@ -55,9 +58,12 @@ def _is_unestablished_multi_unit_surface(sale: AuctionSale, text: str) -> bool:
     La seule surface lue est alors celle d'un lot (le premier, le plus souvent) : « surface non établie »
     vaut mieux que de l'afficher comme surface du bien (immeuble de 6 appartements à 29,51 m²).
     """
+    current = sale.app_surface_m2 or sale.carrez_surface_m2 or sale.habitable_surface_m2 or sale.surface_m2
+    if sale.property_type != "land" and is_single_unit_surface_of_several(text, current):
+        return True  # la surface d'un des logements cités, même qualifiée « totale » pour ce logement
     if not text or _has_explicit_total_surface_evidence(text):
         return False
-    if "multi_lot_sale" in sale.quality_flags:
+    if "multi_lot_sale" in sale.quality_flags and not describes_one_lot(sale):  # lot Licitor désigné : sa surface
         return True
     return sale.property_type == "building" and bool(_MULTI_UNIT_PATTERN.search(text))
 
@@ -114,7 +120,8 @@ def _set_app_surface(sale: AuctionSale) -> None:
     if sale.property_type in {"house", "apartment"} and sale.app_surface_m2 is None and sale.surface_m2 is not None:
         sale.app_surface_m2 = sale.surface_m2
         sale.app_surface_kind = "built"
-        sale.surface_scope = sale.surface_scope or "total"
+        # « unknown » relu en base vient d'un retrait précédent (e34acc33) : il est recalculé ensuite.
+        sale.surface_scope = "total" if sale.surface_scope in {None, "unknown"} else sale.surface_scope
         _add_quality_flag(sale, "surface_type_unverified")
 
 
@@ -206,9 +213,9 @@ def _source_qualifies_surface_as_land(sale: AuctionSale, value: Decimal | None) 
     if value is None:
         return False
     # « …, soit superficie totale 1550 m² » à la suite de parcelles cadastrales : la contenance du terrain.
-    if is_parcel_total((sale.surface_evidence, sale.description, sale.title, sale.raw_text), value):
+    if is_parcel_total((sale.surface_evidence, sale.description, sale.title, sale_fact_text(sale)), value):
         return True
-    for text in (sale.surface_evidence, sale.description, sale.title, sale.raw_text):
+    for text in (sale.surface_evidence, sale.description, sale.title, sale_fact_text(sale)):
         if not text:
             continue
         for match in _SURFACE_NUMBER_PATTERN.finditer(text):
@@ -223,7 +230,7 @@ def _source_qualifies_surface_as_land(sale: AuctionSale, value: Decimal | None) 
 
 
 def _large_non_residential_surface_is_supported(sale: AuctionSale) -> bool:
-    context = clean_text(" ".join(filter(None, (sale.surface_evidence, sale.description, sale.raw_text)))) or ""
+    context = clean_text(" ".join(filter(None, (sale.surface_evidence, sale.description, sale_fact_text(sale))))) or ""
     if not context:
         return False
     if re.search(r"\b(?:cadastr|parcelle|terrain|contenance)\b", context, re.I) and not re.search(
@@ -290,7 +297,11 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
         if not match:
             continue
         value = _parse_surface_decimal(match.group(1))
-        if value and not _surface_false_positive(text, match.start(), match.end()):
+        if (
+            value
+            and not _surface_false_positive(text, match.start(), match.end())
+            and not built_value_names_other_object(text, match.start(), match.end())
+        ):
             if sale is not None:
                 _set_surface_evidence(sale, "built_surface_text", _evidence(text, match.start(), match.end()))
             return value
@@ -317,24 +328,20 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
 
 
 def _infer_rooms_count(text: str, sale: AuctionSale) -> int | None:
-    if re.search(r"\bstudio\b|\bT\s*1\b|\btype\s*1\b", text, re.I):
+    """Un studio écrit compte une pièce ; aucun autre compte n'est déduit (chambres + séjour n'est pas une preuve).
+
+    « T 1 » seul (« servitudes AS 1 ; T 1 ») ne dit rien d'un logement : seul un type de logement nommé compte.
+    """
+    if sale.property_type in {"apartment", "house"} and _STUDIO_RE.search(text):
         return 1
-    if not sale.bedrooms_count or sale.property_type not in {"house", "apartment", "building"}:
-        return None
-    living_rooms = 0
-    if re.search(r"\bs[ée]jour\b|\bsalon\b|\bpi[eè]ce\s+principale\b", text, re.I):
-        living_rooms = 1
-    if re.search(r"\bsalle\s+[àa]\s+manger\b", text, re.I):
-        living_rooms += 1
-    extra_rooms = 0
-    match = re.search(
-        r"\b(?:mezzanine|combles?|annexe)\s+(?:avec|comprenant)\s+((?:une|deux|trois|[1-9]))\s+pi[eè]ces?\b", text, re.I
-    )
-    if match:
-        extra_rooms = _number_word_to_int(match.group(1)) or 0
-    if living_rooms or extra_rooms:
-        return sale.bedrooms_count + max(living_rooms, 1) + extra_rooms
     return None
+
+
+_STUDIO_RE = re.compile(
+    r"\bstudio\b(?!\s+(?:photo|d['’]enregistrement|de\s+(?:danse|musique|yoga)))"
+    r"|\b(?:appartement|logement)\s+(?:de\s+)?(?:type\s+)?[TF]\s*1\b|\btype\s+[TF]?\s*1\b(?![,.]\d)",
+    re.I,
+)
 
 
 def _number_word_to_int(value: str) -> int | None:
@@ -360,11 +367,11 @@ def _number_word_to_int(value: str) -> int | None:
 
 
 def _sale_text(sale: AuctionSale) -> str:
-    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale.risk_notes, sale.raw_text]))) or ""
+    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale.risk_notes, sale_fact_text(sale)]))) or ""
 
 
 def _risk_source_text(sale: AuctionSale) -> str:
-    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale.raw_text]))) or ""
+    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale_fact_text(sale)]))) or ""
 
 
 def _sale_type_context(sale: AuctionSale) -> dict[str, object]:
@@ -435,16 +442,23 @@ def _land_surface_false_positive(text: str, match: re.Match[str], kind: str) -> 
     value_end = match.end(1)
     before_value = text[max(match.start(), value_start - 45) : value_start]
     after_value = text[value_end : min(len(text), value_end + 25)]
+    # « Résidence « Les Jardins d'Arcadie » Studio de 31m² » (e538fab2), « Jardin derrière Le tout représente une
+    # surface bâtie de 259,86 m² » (ebafd1c4) : la valeur est celle du logement nommé ou qualifié juste avant elle.
     return bool(
-        re.search(r"\b(?:maison|villa|appartement|immeuble|b[âa]timent|local|hangar)\s+de\s*$", before_value, re.I)
+        re.search(
+            r"\b(?:maison|villa|appartement|immeuble|b[âa]timent|local|hangar|studio|pavillon|logement)\s+de\s*$",
+            before_value,
+            re.I,
+        )
         or re.search(
-            rf"\b(?:maison|villa|appartement|immeuble|b[âa]timent|local|hangar)\b.{{0,60}}?"
+            rf"\b(?:maison|villa|appartement|immeuble|b[âa]timent|local|hangar|studio|pavillon|logement)\b.{{0,60}}?"
             rf"\b(?:de|d['’]une\s+surface\s+de|d['’]une\s+superficie\s+de)\s+{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
             matched_text,
             re.I | re.S,
         )
         or re.search(
-            r"\b(?:surface|superficie)\s+(?:habitable|carrez)\b|\bloi\s+carrez\b",
+            r"\b(?:surface|superficie)\s+(?:totale\s+)?(?:habitable|carrez|b[âa]tie|construite|de\s+plancher)\b"
+            r"|\bloi\s+carrez\b",
             before_value,
             re.I,
         )

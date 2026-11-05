@@ -1,4 +1,4 @@
-export const DISPLAY_QUALITY_VERSION = "display_quality_20260911_v3";
+export const DISPLAY_QUALITY_VERSION = "display_quality_20261103_v5";
 export function displayAuditIssues(payload, expectedDisplayPromptVersion = null) {
   const text =
     typeof payload.llm_display_description === "string"

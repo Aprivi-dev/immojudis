@@ -656,7 +656,8 @@ def test_asset_normalization_ignores_apartment_cadastral_surface_for_ambiguity()
     assert "ambiguous_surface" not in sale.quality_flags
 
 
-def test_asset_normalization_infers_rooms_from_composition_summary() -> None:
+def test_asset_normalization_does_not_deduce_rooms_from_composition_summary() -> None:
+    # Audit du 03/11/2026 : un nombre de pièces se lit, il ne se déduit pas (chambres + séjour + mezzanine).
     sale = normalize_sale(
         {
             "source_name": "avoventes",
@@ -669,7 +670,7 @@ def test_asset_normalization_infers_rooms_from_composition_summary() -> None:
     normalize_asset_features(sale)
 
     assert sale.bedrooms_count == 3
-    assert sale.rooms_count == 6
+    assert sale.rooms_count is None
 
 
 def test_scoring_truthset_risk_context_rules() -> None:
@@ -712,7 +713,10 @@ def test_asset_normalization_does_not_double_count_repeated_mezzanine_mentions()
 
     normalize_asset_features(sale)
 
-    assert sale.rooms_count == 7
+    # Aucun nombre de pièces écrit : pas de compte déduit (audit du 03/11/2026), et les chambres recopiées ne
+    # sont pas additionnées.
+    assert sale.rooms_count is None
+    assert sale.bedrooms_count == 3
 
 
 def test_asset_normalization_clears_impossible_room_bedroom_conflict() -> None:
@@ -849,7 +853,8 @@ def test_asset_normalization_prefers_source_description_surface() -> None:
     assert sale.habitable_surface_m2 is None
     assert sale.app_surface_kind == "built"
     assert sale.app_surface_m2 == Decimal("110")
-    assert sale.rooms_count == 4
+    # « 3 chambres, grand séjour » ne donne pas un nombre de pièces écrit (audit du 03/11/2026).
+    assert sale.rooms_count is None
 
 
 def test_asset_normalization_reads_surface_value_before_surface_label() -> None:

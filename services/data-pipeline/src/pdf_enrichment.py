@@ -69,6 +69,7 @@ from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_ur
 from src.pdf_ocr import (
     OCR_NO_TEXT_METHOD,
     OCR_NO_TEXT_UNVERIFIED_METHOD,
+    OCR_PICTURE_NO_TEXT_METHOD,
     PdfDeadlineExceeded,
     PdfDocumentOcrBudgetExceeded,
     PdfExtractionDeferred,
@@ -85,6 +86,7 @@ from src.pdf_ocr import (
     select_pdf_deadline_exception as _select_pdf_deadline_exception,
 )
 from src.pdf_page_analysis import (
+    PICTURE_PAGE_STATUS,
     VISUAL_BLANK_INK_RATIO_MAX,  # noqa: F401
     VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
     VISUAL_BLANK_RENDER_MAX_DIMENSION,  # noqa: F401
@@ -93,6 +95,7 @@ from src.pdf_page_analysis import (
     _page_requires_retry,
     _page_text_confidence,
     _visual_page_profile,
+    page_outcome_summary,
 )
 from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
@@ -112,7 +115,9 @@ MAX_DOCUMENT_REDIRECTS = 5
 
 # Deterministic PDF facts include page/document candidates and multi-lot
 # decisions; bump this marker when projection semantics change.
-DOCUMENT_FACTS_VERSION = "document_facts_v4_occupancy_dates_prices"
+# v5 (03/11/2026) : règles de l'audit qualité (surfaces, pièces, occupation, dates et prix des appels d'offres,
+# tribunal) ; toutes les ventes à pièces sont relues avec elles.
+DOCUMENT_FACTS_VERSION = "document_facts_v5_quality_audit"
 
 # Keep a fixed margin for queue finalization after a bounded PDF pass.
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0
@@ -619,13 +624,13 @@ def _bounded_document_content(response: object, *, max_bytes: int) -> bytes:
     if raw_length:
         try:
             if int(raw_length) > max_bytes:
-                raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
+                raise PermanentDocumentFailure("document_too_large", f"document exceeds the {max_bytes}-byte download limit")
         except ValueError as exc:
             if "exceeds" in str(exc):
                 raise
     content = bytes(getattr(response, "content", b""))
     if len(content) > max_bytes:
-        raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
+        raise PermanentDocumentFailure("document_too_large", f"document exceeds the {max_bytes}-byte download limit")
     return content
 
 
@@ -808,7 +813,7 @@ def _read_document_stream(response: httpx.Response, max_bytes: int) -> bytes:
         _ensure_pdf_deadline(operation="received document chunk")
         size += len(chunk)
         if size > max_bytes:
-            raise ValueError(f"document exceeds the {max_bytes}-byte download limit")
+            raise PermanentDocumentFailure("document_too_large", f"document exceeds the {max_bytes}-byte download limit")
         parts.append(chunk)
     return b"".join(parts)
 
@@ -868,29 +873,7 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
 
     _ensure_pdf_deadline(operation="finalizing PDF document")
     sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
-    failed_pages = [
-        int(page["page"])
-        for page in pages
-        if _page_requires_retry(page, ocr_enabled=bool(settings["pdf_ocr_enabled"]))
-    ]
-    blank_pages = [
-        int(page["page"])
-        for page in pages
-        if str(page.get("status") or page.get("extraction_status") or "")
-        in {"blank_excluded", "blank_page_excluded", "visual_blank_excluded"}
-    ]
-    visual_blank_pages = [
-        int(page["page"])
-        for page in pages
-        if str(page.get("status") or page.get("extraction_status") or "") == "visual_blank_excluded"
-    ]
-    page_confidences = [
-        float(page.get("confidence") or 0)
-        for page in pages
-        if page.get("text")
-        and not _page_requires_retry(page, ocr_enabled=bool(settings["pdf_ocr_enabled"]))
-    ]
-    confidence = round(sum(page_confidences) / len(page_confidences), 3) if page_confidences else 0.0
+    outcome = page_outcome_summary(pages, ocr_enabled=bool(settings["pdf_ocr_enabled"]))
     return {
         "cache_version": PDF_TEXT_CACHE_VERSION,
         "text": text,
@@ -901,13 +884,8 @@ def extract_pdf_document(file: str | Path, document: dict[str, str] | None = Non
         "page_text_chars": len(page_text),
         "ocr_pages": sum(1 for page in pages if str(page.get("method") or "").startswith("ocr_")),
         "empty_pages": sum(1 for page in pages if not clean_text(page.get("text"))),
-        "blank_pages": blank_pages,
-        "visual_blank_pages": visual_blank_pages,
-        "failed_pages": failed_pages,
-        "complete": not failed_pages,
-        "extraction_status": "extracted" if not failed_pages else "incomplete",
+        **outcome,
         "extraction_method": extraction_method,
-        "confidence": confidence,
     }
 
 
@@ -1117,7 +1095,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                     }
                 )
                 cache_dir.mkdir(parents=True, exist_ok=True)
-                temporary = cache_path.with_suffix(".tmp")
+                temporary = cache_path.with_suffix(f".{time.monotonic_ns()}.tmp")
                 temporary.write_text(json.dumps(pages[-1], ensure_ascii=False), encoding="utf-8")
                 temporary.replace(cache_path)
                 new_progress_pages += 1
@@ -1128,6 +1106,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             status = "extracted" if clean_text(raw_text) else "failed"
             failure_reason = "empty_page_not_proven_blank" if not clean_text(raw_text) else None
             needs_ocr = _should_try_ocr(raw_text, page=page)
+            ocr_result: dict[str, object] | None = None
             if needs_ocr:
                 _ensure_pdf_deadline(
                     operation=f"checking OCR budget for page {index}",
@@ -1149,7 +1128,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                         new_progress_pages=new_progress_pages,
                     )
                 ocr_attempts += 1
-                result = _extract_page_text_with_ocr_result(
+                result = ocr_result = _extract_page_text_with_ocr_result(
                     page,
                     fallback=raw_text,
                     checkpointed_pages=index - 1,
@@ -1170,8 +1149,13 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             elif method == OCR_NO_TEXT_METHOD and not cleaned:
                 status, failure_reason = "visual_blank_excluded", "image_without_text_after_ocr"
             elif method == OCR_NO_TEXT_UNVERIFIED_METHOD and not cleaned:
-                # Page qui porte de l'encre, lue deux fois (droite puis pivotée) sans texte : pas prouvée vide.
+                # Page qui porte de l'encre, sans texte aux deux premières lectures, et dont la troisième (texte
+                # épars) n'a pas pu se faire : pas prouvée sans texte, elle reste à reprendre.
                 status, failure_reason = "failed", ocr_failure_reason or "ocr_no_text_unverified"
+            elif method == OCR_PICTURE_NO_TEXT_METHOD and not cleaned:
+                # Trois lectures (droite, pivotée, texte épars) sans un mot sûr : photographies ou plan. Une nouvelle
+                # tentative donnerait le même résultat ; la page est réglée, l'original reste dans le PDF source.
+                status, failure_reason = PICTURE_PAGE_STATUS, "picture_without_text_after_ocr"
             elif cleaned:
                 status = "extracted"
                 failure_reason = None
@@ -1201,6 +1185,10 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 **({"failure_reason": failure_reason} if failure_reason else {}),
                 **({"ocr_no_text_unverified": True} if method == OCR_NO_TEXT_UNVERIFIED_METHOD else {}),
             }
+            if ocr_result is not None and "sparse_confident_words" in ocr_result:
+                page_record["sparse_confident_words"] = ocr_result["sparse_confident_words"]
+            if status == PICTURE_PAGE_STATUS:
+                page_record["source_page_preserved"] = True
             if visual_profile:
                 page_record["visual_analysis"] = visual_profile
             if status == "visual_blank_excluded":
@@ -1218,10 +1206,10 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 )
             pages.append(page_record)
             cache_dir.mkdir(parents=True, exist_ok=True)
-            temporary = cache_path.with_suffix(".tmp")
+            temporary = cache_path.with_suffix(f".{time.monotonic_ns()}.tmp")
             temporary.write_text(json.dumps(pages[-1], ensure_ascii=False), encoding="utf-8")
             temporary.replace(cache_path)
-            if status in {"extracted", "visual_blank_excluded"}:
+            if status in {"extracted", "visual_blank_excluded", PICTURE_PAGE_STATUS}:
                 new_progress_pages += 1
             _ensure_pdf_deadline(
                 operation=f"checkpointing PDF page {index}",
@@ -1229,7 +1217,9 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
                 total_pages=document.page_count,
                 new_progress_pages=new_progress_pages,
             )
-            if needs_ocr:
+            if needs_ocr and index < document.page_count:
+                # After the last page there is nothing left to bound: yielding there would only cost
+                # another pass to assemble a document whose every page is already checkpointed.
                 _ensure_pdf_document_ocr_budget(
                     operation=f"checkpointing OCR page {index}",
                     checkpointed_pages=index,
