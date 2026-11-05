@@ -33,7 +33,9 @@ const CookieConsentBanner = lazy(() =>
  * - la balise ne se charge que sur le site en production (`immojudis.com`, où `www` redirige) : ni le
  *   poste de développement (`localhost`, `127.0.0.1`) ni les préversions Vercel ne mêlent leurs visites
  *   de test aux chiffres. Le bandeau reste affiché partout, pour qu'on puisse le relire avant une mise
- *   en ligne. Comparaison écrite en place : le JavaScript client total est au ras de son plafond.
+ *   en ligne. Seul le build des tests de bout en bout (`playwright.config.ts`) lève cette limite avec
+ *   `NEXT_PUBLIC_ANALYTICS_ANY_HOST=1` : ses tests interceptent GTM, rien ne sort du poste. Ailleurs, la
+ *   variable est absente et Next.js la remplace par une constante, que la minification élimine.
  */
 export function DeferredGoogleAnalytics() {
   const [idle, setIdle] = useState(false);
@@ -60,7 +62,11 @@ export function DeferredGoogleAnalytics() {
   if (!idle || excluded) return null;
   return (
     <Suspense fallback={null}>
-      {state === "granted" && location.hostname === "immojudis.com" ? <GoogleAnalytics /> : null}
+      {state === "granted" &&
+      (location.hostname === "immojudis.com" ||
+        process.env.NEXT_PUBLIC_ANALYTICS_ANY_HOST === "1") ? (
+        <GoogleAnalytics />
+      ) : null}
       {state === "unset" ? <CookieConsentBanner /> : null}
     </Suspense>
   );
