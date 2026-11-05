@@ -3,7 +3,8 @@
 --   * chambres >= pièces (plus d'une pièce), terrain avec pièces, lot Licitor discordant avec sa carte : invariants,
 --     une vente suffit ; la carte « 27 742,81 € » est lue en euros, une carte illisible n'est jamais comptée ;
 --   * prix au m² au-dessus de 30 000 € hors ventes reconnues ; part sans code postal au-dessus de 8 % à partir de
---     100 ventes en ligne ; ventes avec une pièce « incomplete » connue depuis plus de 3 jours au-dessus de 80 ;
+--     100 ventes en ligne ; ventes avec une pièce « incomplete » connue depuis plus de 3 jours au-dessus de 30
+--     (80 jusqu'à 20261111120000) ;
 --   * les alertes catalogue.quality.* s'ouvrent en avertissement (catégorie import) avec le nombre et des
 --     identifiants en exemple, et se ferment deux heures après le retour sous le seuil ;
 --   * un cliché par jour UTC dans auction_pipeline_observations (catalogue-quality) ;
@@ -47,10 +48,10 @@ select is(
     "missing_postal_code_ratio_max": 0.08,
     "ratio_minimum_live_sales": 100,
     "documents_incomplete_minimum_age_days": 3,
-    "documents_incomplete_max_sales": 80,
+    "documents_incomplete_max_sales": 30,
     "example_limit": 5
   }'::jsonb,
-  'the default thresholds: 30 000 €/m² (Cap-Ferrat acknowledged), 8 % from 100 live sales, 80 sales after 3 days'
+  'the default thresholds: 30 000 €/m² (Cap-Ferrat acknowledged), 8 % from 100 live sales, 30 sales after 3 days'
 );
 
 select ok(
@@ -226,7 +227,7 @@ select is(
     'catalogue.quality.licitor_lot_mismatch',
     'catalogue.quality.price_per_m2_implausible'
   ],
-  'the invariants and the price per m² open; the ratio (under 100 live sales) and the documents (under 80) do not'
+  'the invariants and the price per m² open; the ratio (under 100 live sales) and the documents (under 30) do not'
 );
 
 select ok(
