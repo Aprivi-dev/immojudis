@@ -11,7 +11,12 @@ import pytest
 from src.asset_normalization import normalize_asset_features
 from src.extraction_profiles import attach_source_property_features, extract_source_property_features
 from src.normalize import normalize_sale
-from src.text_fact_scope import private_amenity_mentioned, select_unit_floor, unit_floor_claims
+from src.text_fact_scope import (
+    private_amenity_mentioned,
+    select_unit_floor,
+    shared_amenity_mentioned,
+    unit_floor_claims,
+)
 
 
 def _floor(text: str, property_type: str):
@@ -369,3 +374,52 @@ def test_a_stale_common_pool_column_is_cleared_on_recompute() -> None:
     assert sale.has_pool is False
     assert sale.has_garden is False
     assert sale.raw_payload["feature_scope_reconciliation"]["has_pool"]["status"] == "cleared"
+
+
+@pytest.mark.parametrize(
+    "text, shared",
+    [
+        ("il bénéficie d’un agréable balcon donnant sur le jardin de la copropriété.", True),
+        ("Rue calme, Petit immeuble de 2 étages, avec jardin partagé, Au 1er étage, lumineux appartement", True),
+        ("L'ensemble immobilier dispose d'un jardin commun et d'un local à vélos.", True),
+        # Une vue, un lieu, un rez-de-jardin : pas un jardin commun.
+        ("Dans une résidence récente, sur jardin et non sur rue, ce T2 se trouve au 1er étage", False),
+        ("proche du centre, rue du Jardin. L'appartement est composé d'une entrée", False),
+        ("Appartement T4 en rez-de-jardin, double séjour.", False),
+        # Le jardin du bien lui-même l'emporte.
+        ("Jardin privé de 25 m² attenant. La copropriété dispose aussi d'un jardin commun.", False),
+    ],
+)
+def test_a_shared_garden_is_told_apart(text: str, shared: bool) -> None:
+    assert shared_amenity_mentioned(text, "garden") is shared
+
+
+def test_a_sale_with_only_the_building_garden_shows_a_shared_garden() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/jardin-commun",
+            "property_type": "Appartement",
+            "has_garden": True,
+            "description": "Appartement de 3 pièces au 1er étage. Balcon donnant sur le jardin de la copropriété.",
+        }
+    )
+    normalize_asset_features(sale)
+
+    assert sale.has_garden is False
+    assert sale.raw_payload["shared_garden"] is True
+
+
+def test_a_private_garden_is_not_marked_shared() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/jardin-prive",
+            "property_type": "Maison",
+            "description": "Maison de 5 pièces avec jardin privatif de 300 m².",
+        }
+    )
+    normalize_asset_features(sale)
+
+    assert sale.has_garden is True
+    assert "shared_garden" not in sale.raw_payload

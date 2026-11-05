@@ -222,6 +222,24 @@ describe("getListingPublicInformation", () => {
     expect(item(result, "garage")).toMatchObject({ value: null, status: "missing" });
   });
 
+  it("shows the building garden as a shared garden, never as a private one", () => {
+    const shared = getListingPublicInformation(
+      sale({
+        has_garden: false,
+        raw_payload: { source_property_features: {}, shared_garden: true },
+      }),
+    );
+    expect(item(shared, "garden")).toMatchObject({ value: "Commun (copropriété)" });
+
+    const own = getListingPublicInformation(
+      sale({
+        has_garden: true,
+        raw_payload: { source_property_features: {}, shared_garden: true },
+      }),
+    );
+    expect(item(own, "garden")).toMatchObject({ value: "Oui" });
+  });
+
   it("labels inferred surface as estimated and keeps the three counters exhaustive", () => {
     const result = getListingPublicInformation(
       sale({

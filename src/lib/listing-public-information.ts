@@ -221,7 +221,8 @@ const PUBLIC_FIELD_DEFINITIONS: readonly PublicField[] = [
     label: "Jardin",
     fieldIds: ["garden"],
     importance: "medium",
-    formatValue: formatBoolean,
+    // « Oui » pour un jardin du bien, « Commun (copropriété) » pour celui de l'immeuble seulement.
+    formatValue: formatBooleanOrText,
   },
   {
     id: "terrace",
