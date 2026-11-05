@@ -54,16 +54,6 @@ export function isAnalyticsExcludedPath(pathname: string): boolean {
   );
 }
 
-/**
- * Hôte du site en production, le seul où la balise se charge : ni le poste de développement
- * (`localhost`, `127.0.0.1`), ni les préversions Vercel ne mêlent leurs visites de test aux chiffres
- * de la propriété. `www.immojudis.com` redirige vers cet hôte ; `location.hostname` est toujours en
- * minuscules. Le bandeau reste affiché partout, pour qu'on puisse le relire avant une mise en ligne.
- */
-export function isGoogleAnalyticsHost(hostname: string): boolean {
-  return hostname === "immojudis.com";
-}
-
 /** Vrai si la balise est déjà chargée ou si des cookies Google Analytics sont présents. */
 export function googleAnalyticsMayBeActive(): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") return false;
