@@ -99,6 +99,24 @@ def document_fingerprint(documents: list) -> str:
     return hashlib.sha256(json.dumps(identities).encode()).hexdigest()
 
 
+def document_list_changed(incoming: list, known: dict, source_url: str) -> bool:
+    """Whether a collection brings a document list the stored sale does not already have.
+
+    For a secondary source of a merged sale, the stored row carries the union of every source's documents
+    (``dedupe._merge_lists``): its list never equals the secondary's own. Compared whole, each detail refresh
+    of the secondary looked like a document change and erased the document reading (05/11/2026: about
+    70 sales at each Licitor pass). There, only a document the stored row does not have yet is a change.
+    """
+    known_documents = known.get("documents") or []
+    known_url = str(known.get("source_url") or "")
+    if known_url and known_url != source_url:
+        known_urls = {str(doc.get("url") or "") for doc in known_documents if isinstance(doc, dict)}
+        return any(
+            isinstance(doc, dict) and str(doc.get("url") or "") not in known_urls for doc in incoming or []
+        )
+    return document_fingerprint(incoming or []) != document_fingerprint(known_documents)
+
+
 def record_source_checks(raw_sales: list, known: dict, *, capture: str = "collection") -> None:
     """Record each capture's proof and invalidate the analysis on a real change.
 

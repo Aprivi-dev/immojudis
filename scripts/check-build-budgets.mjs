@@ -136,7 +136,10 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 //     indicateurs ; l'aperçu de l'e-mail est extrait en composant, le rendu des indicateurs est fait côté serveur) ;
 //   - lot 2 : +5 365 (panneau du pilote automatique rendu côté serveur, bouton « Mauvais destinataire »).
 // Plafond à 6 522 000, soit moins que 6 512 322 + 10 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_522_000;
+// Panneau « Contrôles qualité du catalogue » de /admin/quality (05/11/2026) : total mesuré 6 524 831 pour
+// 6 521 892 sur main (+2 939, la page /admin/quality seule ; la mise en forme est faite côté serveur).
+// Décision du propriétaire (05/11/2026) : relèvement à 6 525 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_525_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

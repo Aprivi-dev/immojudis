@@ -127,3 +127,52 @@ def test_a_collection_keeps_the_document_facts_until_the_source_really_changes()
     record_source_checks([changed], known)
     assert "document_facts_version" not in changed
     assert changed["source_content_changed"] is True
+
+
+def _raw(url: str, documents: list[dict], source_name: str = "licitor") -> dict:
+    return {
+        "source_url": url,
+        "source_name": source_name,
+        "source_detail_status": "complete",
+        "documents": documents,
+    }
+
+
+def test_a_secondary_source_does_not_change_the_documents_of_a_merged_sale() -> None:
+    """05/11/2026 : chaque passe Licitor effaçait la lecture des pièces d'environ 70 ventes fusionnées."""
+    from src import main
+
+    primary = "https://avoventes.fr/enchere/maison"
+    secondary = "https://www.licitor.com/annonce/1.html"
+    stored = [
+        {"url": "https://avoventes.fr/doc/ccv.pdf", "label": "CCV"},
+        {"url": "https://www.licitor.com/doc/pv.pdf", "label": "PV"},
+    ]
+    known = {"source_url": primary, "documents": stored, "raw_payload": {"document_facts_version": V5}}
+
+    for documents in ([], [{"url": "https://www.licitor.com/doc/pv.pdf", "label": "Procès-verbal"}]):
+        raw = _raw(secondary, documents)
+        main._preserve_known_enrichment_payloads([raw], {secondary: known})
+        assert "source_content_changed_at" not in raw
+        assert raw.get("document_facts_version") == V5
+
+    added = _raw(secondary, [{"url": "https://www.licitor.com/doc/diag.pdf", "label": "Diagnostics"}])
+    main._preserve_known_enrichment_payloads([added], {secondary: known})
+    assert added["source_content_changed"] is True
+    assert "source_content_changed_at" in added
+
+
+def test_the_primary_source_still_sees_a_removed_or_renamed_document() -> None:
+    from src import main
+
+    primary = "https://avoventes.fr/enchere/maison"
+    stored = [{"url": "https://avoventes.fr/doc/ccv.pdf", "label": "CCV"}]
+    known = {"source_url": primary, "documents": stored, "raw_payload": {"document_facts_version": V5}}
+
+    removed = _raw(primary, [], source_name="avoventes")
+    main._preserve_known_enrichment_payloads([removed], {primary: known})
+    assert removed["source_content_changed"] is True
+
+    unchanged = _raw(primary, list(stored), source_name="avoventes")
+    main._preserve_known_enrichment_payloads([unchanged], {primary: known})
+    assert "source_content_changed_at" not in unchanged
