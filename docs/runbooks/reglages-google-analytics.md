@@ -73,7 +73,7 @@ réglage le plus risqué de la liste.
 
 ### 4. Trafic de test
 
-Le code ne charge la balise que sur `immojudis.com` et `www.immojudis.com` (`isGoogleAnalyticsHost`) : ni le
+Le code ne charge la balise que sur `immojudis.com`, où `www` redirige (`DeferredGoogleAnalytics`) : ni le
 poste de développement ni les préversions Vercel n'envoient plus de visites. Restent les tests faits sur le
 site en production. Relevé du 20/10 au 04/11/2026 : 24 sessions venues de `tagassistant.google.com`, une
 de `127.0.0.1` (avant ce correctif) et une de la source `test`, soit environ 5 % des sessions.

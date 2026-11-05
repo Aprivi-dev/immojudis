@@ -7,7 +7,6 @@ import {
   getGoogleAnalyticsState,
   googleAnalyticsMayBeActive,
   isAnalyticsExcludedPath,
-  isGoogleAnalyticsHost,
   subscribeGoogleAnalyticsState,
 } from "@/lib/google-analytics-state";
 import { whenIdle } from "@/lib/when-idle";
@@ -31,7 +30,10 @@ const CookieConsentBanner = lazy(() =>
  *   ce qu'un accord précédent aurait laissé (balise chargée, cookies `_ga`) ;
  * - ni la balise ni le bandeau ne sont montés sur les pages de `ANALYTICS_EXCLUDED_PATHS` ; si la
  *   balise est déjà chargée, ses envois sont suspendus le temps de la visite de ces pages ;
- * - la balise ne se charge que sur le site en production (`isGoogleAnalyticsHost`).
+ * - la balise ne se charge que sur le site en production (`immojudis.com`, où `www` redirige) : ni le
+ *   poste de développement (`localhost`, `127.0.0.1`) ni les préversions Vercel ne mêlent leurs visites
+ *   de test aux chiffres. Le bandeau reste affiché partout, pour qu'on puisse le relire avant une mise
+ *   en ligne. Comparaison écrite en place : le JavaScript client total est au ras de son plafond.
  */
 export function DeferredGoogleAnalytics() {
   const [idle, setIdle] = useState(false);
@@ -58,7 +60,7 @@ export function DeferredGoogleAnalytics() {
   if (!idle || excluded) return null;
   return (
     <Suspense fallback={null}>
-      {state === "granted" && isGoogleAnalyticsHost(location.hostname) ? <GoogleAnalytics /> : null}
+      {state === "granted" && location.hostname === "immojudis.com" ? <GoogleAnalytics /> : null}
       {state === "unset" ? <CookieConsentBanner /> : null}
     </Suspense>
   );
