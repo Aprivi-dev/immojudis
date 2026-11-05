@@ -12,7 +12,9 @@ import { runInNewContext } from "node:vm";
 // avec son accord. Le chunk est reconnu à la bannière de licence de la bibliothèque (voir
 // `isMapboxChunk`) ; sans bannière trouvée, il retombe sous le budget des autres chunks et fait
 // échouer le contrôle (jamais de plafond large par défaut).
-const MAX_MAPBOX_CHUNK_BYTES = 1_875_000;
+// Mise à jour de mapbox-gl 3.33.0 -> 3.34.1 (PR #394, 05/11/2026) : le chunk mesure 1 878 958 octets en CI,
+// 3 958 au-dessus de l'ancien plafond. Décision du propriétaire (05/11/2026) : relèvement à 1 895 000.
+const MAX_MAPBOX_CHUNK_BYTES = 1_895_000;
 // Tous les autres chunks : le plus gros mesure 284 721 octets le 20/10/2026 ; plafond à la mesure
 // + 15 % (resserré : l'ancien plafond unique, 1 875 000, couvrait tout).
 const MAX_CLIENT_CHUNK_BYTES = 335_000;
@@ -139,7 +141,10 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // Panneau « Contrôles qualité du catalogue » de /admin/quality (05/11/2026) : total mesuré 6 524 831 pour
 // 6 521 892 sur main (+2 939, la page /admin/quality seule ; la mise en forme est faite côté serveur).
 // Décision du propriétaire (05/11/2026) : relèvement à 6 525 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_525_000;
+// Mises à jour de production #394 (05/11/2026 : mapbox-gl 3.34.1, next 16.4.3, @tanstack/react-query 5.105,
+// react-email 6.11.6, resend 6.36) : total mesuré 6 534 240 pour 6 524 862 sur main (+9 378, dont environ
+// 4 000 pour le chunk mapbox-gl). Décision du propriétaire (05/11/2026) : relèvement à 6 540 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_540_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
