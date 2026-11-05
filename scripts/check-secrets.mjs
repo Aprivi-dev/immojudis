@@ -10,15 +10,15 @@ const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "
 const immutableFixtureSha256 = new Map([
   [
     "docs/audits/sources-2026-10-02/primary/licitor-109932.html",
-    "c98c0a37af9812f36e02268080eaed3b6aff8a9afcdc0f89ed7dcd9b90370fcc",
+    "b88fe200600ca1aab26c9ab71b24b7a5c168a85fa3e56893ac712a10724372f8",
   ],
   [
     "docs/audits/sources-2026-10-02/primary/licitor-list.html",
-    "53fd2a85cdfcd11b91d62749f0791aacb914953ae7fb10b924a2d3f66e710ce5",
+    "a23e413fb4cc2a1a1929724def74b042e67fff1339fb21651941ddb3d416cab1",
   ],
   [
     "docs/audits/sources-2026-10-02/primary/licitor-110031.html",
-    "778ad8a5a1e007403c4ccc7216cebc09c3db1dab6302e30628414b03982f9e2f",
+    "3ba66ee4ace8ea8960e8907d4cf1f78c21747327014b3f9a4f0bccd58e67caa4",
   ],
   [
     "docs/audits/sources-2026-10-02/secondary/responses/info-6051-response.html",
