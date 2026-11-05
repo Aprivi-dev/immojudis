@@ -152,10 +152,10 @@ jobs:
       OMP_THREAD_LIMIT: 1
       PDF_MAX_DOCUMENTS_PER_SALE: 6
       PDF_MAX_DOWNLOAD_MB: 50
-      # Lecture des pièces en avance (src/document_prefetch.py) coupée le 04/11/2026 : avec elle, les passes sous
-      # verrou concluaient « manifest is partial » sans lire de pièce et des points d'étape étaient refusés.
-      # Remettre à 3 une fois la cause trouvée.
-      DOCUMENT_BACKLOG_PREFETCH_WORKERS: 0
+      # Lecture des pièces en avance (src/document_prefetch.py), coupée le 04/11/2026 puis remise le 05/11/2026 :
+      # la boucle « manifest is partial » venait de la revalidation HTTP jamais soldée (corrigée par #421).
+      # Mesure de référence sans elle (05/11/2026, 12:48-15:21) : 43 ventes traitées sur 80 candidates en 150 min.
+      DOCUMENT_BACKLOG_PREFETCH_WORKERS: 3
       # Vench publishes a 416-page, 9.6 MB descriptive report. OCR remains
       # limited per pass and document downloads stay capped at 50 MB.
       PDF_MAX_TOTAL_PAGES: 500
