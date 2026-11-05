@@ -45,7 +45,11 @@ function pageViews(): unknown[][] {
     .filter((call) => call[0] === "event" && call[1] === "page_view");
 }
 
+// L'instance JSDOM que Vitest expose : la balise ne se charge que sur l'hôte de production.
+declare const jsdom: { reconfigure(options: { url: string }): void };
+
 beforeEach(() => {
+  jsdom.reconfigure({ url: "https://immojudis.com/" });
   mocks.idle = [];
   mocks.pathname = "/sales";
   mocks.scripts = [];

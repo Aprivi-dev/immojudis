@@ -55,6 +55,10 @@ diagnostic vise les annonceurs ; il n'y a rien à corriger.
 - **Vérification : déjà faite par DNS, rien à changer.** `immojudis.com` porte l'enregistrement TXT
   `google-site-verification=…` (propriété _Domaine_, voir `docs/vercel_setup.md`, étape 5). Elle couvre
   `www`, `http` et les sous-domaines et ne dépend d'aucun script.
+- **Sitemaps : déclarés le 05/11/2026** (`sitemap.xml`, `ressources/sitemap.xml`, `sales/sitemap/0.xml`).
+  `robots.txt` les cite, mais avant cette déclaration Search Console n'en connaissait aucun et des pages
+  récentes restaient « inconnues de Google ». Quand le nombre de ventes fait apparaître un fichier
+  `sales/sitemap/1.xml`, le déclarer aussi.
 - **Ne pas utiliser la méthode de vérification « Google Tag Manager »** : le conteneur n'est chargé
   qu'après l'accord du visiteur, et le robot de Google ne donne jamais cet accord.
 - **Liaison avec Google Analytics** (une fois, dans la console) : Google Analytics → Administration →

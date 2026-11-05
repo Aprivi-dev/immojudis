@@ -13,6 +13,7 @@ import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
+import { takeSaleReturnOrigin } from "@/lib/sale-return-origin";
 import type { AuctionSale } from "@/lib/types";
 import * as queryKeys from "@/lib/query-keys";
 import type { SaleAccessMode } from "@/lib/query-keys";
@@ -106,11 +107,12 @@ function SaleDetailContent({
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
   // the public content from crawlers). The return link and the hash are read from
-  // the browser location once mounted.
+  // the browser location once mounted, then the return link leaves the address bar (see
+  // `takeSaleReturnOrigin`).
   const [from, setFrom] = useState<string | null>(null);
   const [requestedHash, setRequestedHash] = useState("");
   useEffect(() => {
-    setFrom(new URLSearchParams(window.location.search).get("from"));
+    setFrom(takeSaleReturnOrigin(id));
     const updateHash = () => setRequestedHash(window.location.hash);
     updateHash();
     window.addEventListener("hashchange", updateHash);

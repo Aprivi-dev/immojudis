@@ -50,7 +50,11 @@ function pageViews(): unknown[][] {
 const disableFlag = () =>
   (window as unknown as Record<string, unknown>)[`ga-disable-${GA_MEASUREMENT_ID}`];
 
+// L'instance JSDOM que Vitest expose : la balise ne se charge que sur l'hôte de production.
+declare const jsdom: { reconfigure(options: { url: string }): void };
+
 beforeEach(() => {
+  jsdom.reconfigure({ url: "https://immojudis.com/" });
   mocks.idle = [];
   mocks.pathname = "/";
   window.localStorage.clear();
@@ -83,6 +87,19 @@ describe("DeferredGoogleAnalytics : module de la balise", () => {
     expect(await screen.findByTestId("gtag-script")).toBeTruthy();
     expect(screen.queryByTestId("cookie-consent-banner")).toBeNull();
     expect(mocks.analyticsModuleLoads).toBe(1);
+  });
+
+  it("ne charge pas la balise hors du site en production (poste local, préversion)", async () => {
+    setAnalyticsConsent("granted");
+    const loadsBefore = mocks.analyticsModuleLoads;
+    for (const url of ["http://127.0.0.1:3000/", "https://immojudis-git-x.vercel.app/"]) {
+      jsdom.reconfigure({ url });
+      const view = render(<DeferredGoogleAnalytics />);
+      await becomeIdle();
+      expect(screen.queryByTestId("gtag-script")).toBeNull();
+      view.unmount();
+    }
+    expect(mocks.analyticsModuleLoads).toBe(loadsBefore);
   });
 
   it("efface les cookies Google Analytics restants quand il n'y a pas (ou plus) d'accord", async () => {

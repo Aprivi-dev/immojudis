@@ -138,6 +138,12 @@ export function saleHearingStartDate(value: string | null | undefined): string |
   return saleHearingTime(value) ? date.toISOString() : parisParts(date).date;
 }
 
+/** Jour de l'audience (heure de Paris), qui sert aussi de fin : l'audience se tient ce jour-là. */
+function saleHearingDay(value: string | null | undefined): string | null {
+  const date = parseDate(value);
+  return date ? parisParts(date).date : null;
+}
+
 /**
  * "TJ Perpignan", "Tribunal judiciaire de Bordeaux", "TJ d'Aix-en-Provence"
  * all reduce to the city the court sits in.
@@ -444,7 +450,10 @@ function thumbnail(sale: SaleFacts): string | null {
  *   it is the auction's opening bid, not an asking price.
  * - No `availability`: nothing verifies that a sale is sold out after its hearing (it may be
  *   postponed or unsold), and a limited availability does not describe an auction.
- * - The hearing is a separate Event, emitted only when its date and venue are known.
+ * - The hearing is a separate Event, emitted only when its date and venue are known. Its organizer
+ *   is the court that holds it, it ends on the day it starts (no hearing lasts longer, and no end
+ *   time is ever published), and its offer is the starting price, described as on the listing. No
+ *   `performer`: a hearing has none, and Google only warns when it is missing.
  */
 export function saleStructuredData(
   sale: SaleFacts,
@@ -460,6 +469,22 @@ export function saleStructuredData(
   // Date of the last VISIBLE change (price, date, status, address, surface, rooms, photo), or nothing:
   // the technical `updated_at` of the row moves with every collection run and is never published.
   const modified = parseDate(sale.content_changed_at);
+
+  const offer: Record<string, unknown> | null = hasPrice
+    ? {
+        "@type": "Offer",
+        url,
+        priceSpecification: {
+          "@type": "PriceSpecification",
+          name: "Mise à prix",
+          price: sale.starting_price_eur,
+          priceCurrency: "EUR",
+        },
+        // Pas d'`availability` : « SoldOut » après l'audience serait une affirmation que rien
+        // ne vérifie (le bien peut être reporté, ou resté sans adjudicataire), et
+        // « LimitedAvailability » ne décrit pas une vente aux enchères.
+      }
+    : null;
 
   const listing: Record<string, unknown> = {
     "@type": "RealEstateListing",
@@ -484,26 +509,11 @@ export function saleStructuredData(
           },
         }
       : {}),
-    ...(hasPrice
-      ? {
-          offers: {
-            "@type": "Offer",
-            url,
-            priceSpecification: {
-              "@type": "PriceSpecification",
-              name: "Mise à prix",
-              price: sale.starting_price_eur,
-              priceCurrency: "EUR",
-            },
-            // Pas d'`availability` : « SoldOut » après l'audience serait une affirmation que rien
-            // ne vérifie (le bien peut être reporté, ou resté sans adjudicataire), et
-            // « LimitedAvailability » ne décrit pas une vente aux enchères.
-          },
-        }
-      : {}),
+    ...(offer ? { offers: offer } : {}),
   };
 
   const startDate = saleHearingStartDate(sale.sale_date);
+  const endDate = saleHearingDay(sale.sale_date);
   const tribunal = type === "tribunal" ? tribunalDisplayName(sale) : null;
   const tribunalCity =
     tribunalCityName(sale.tribunal_name ?? sale.tribunal) ?? cleanText(sale.tribunal_city);
@@ -515,6 +525,7 @@ export function saleStructuredData(
       name: `Audience de vente : ${propertyLine(sale)}`,
       url,
       startDate,
+      ...(endDate ? { endDate } : {}),
       eventStatus: "https://schema.org/EventScheduled",
       eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
       ...(image ? { image: [image] } : {}),
@@ -528,6 +539,8 @@ export function saleStructuredData(
           addressCountry: "FR",
         },
       },
+      organizer: { "@type": "GovernmentOrganization", name: tribunal },
+      ...(offer ? { offers: offer } : {}),
     });
   }
 
