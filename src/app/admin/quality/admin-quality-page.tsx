@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { saleDetailPath } from "@/lib/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import Database from "lucide-react/dist/esm/icons/database.js";
@@ -10,6 +10,7 @@ import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import type { ReactElement } from "react";
+import { AdminCatalogueQualityPanel } from "@/components/admin/AdminCatalogueQualityPanel";
 import { AdminSaleFeedbackPanel } from "@/components/admin/AdminSaleFeedbackPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { saleDisplayTitle } from "@/lib/sale-title";
@@ -22,6 +23,7 @@ import type {
 import * as queryKeys from "@/lib/query-keys";
 
 export function AdminQualityPage() {
+  const queryClient = useQueryClient();
   const qualityQuery = useQuery({
     queryKey: queryKeys.adminQualityReport(),
     queryFn: fetchAdminDataQuality,
@@ -50,6 +52,7 @@ export function AdminQualityPage() {
       onRefresh={() => {
         void qualityQuery.refetch();
         void refetchValuation();
+        void queryClient.invalidateQueries({ queryKey: ["admin-catalogue-quality"] });
       }}
       isRefreshing={qualityQuery.isFetching || valuationFetching}
     >
@@ -98,6 +101,8 @@ export function AdminQualityPage() {
             value={qualityQuery.isLoading ? "…" : pct(metrics.sourcedRisks, metrics.riskSales)}
           />
         </div>
+
+        <AdminCatalogueQualityPanel />
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
           <section className="admin-panel rounded-lg p-5">
