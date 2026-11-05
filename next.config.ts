@@ -59,6 +59,9 @@ const nextConfig: NextConfig = {
       process.env.NEXT_PUBLIC_MAPBOX_STYLE_ID ??
       process.env.VITE_MAPBOX_STYLE ??
       process.env.VITE_MAPBOX_STYLE_ID,
+    // Toujours défini (vide par défaut) : Next.js remplace alors la lecture par une constante, et la
+    // minification retire le test du build normal. Seul le build e2e le met à "1" (playwright.config.ts).
+    NEXT_PUBLIC_ANALYTICS_ANY_HOST: process.env.NEXT_PUBLIC_ANALYTICS_ANY_HOST ?? "",
   },
   async headers() {
     return [
