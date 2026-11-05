@@ -43,7 +43,7 @@ from src.enrichment.operational_display import refresh_operational_display
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
 from src.extraction_profiles import attach_source_property_features
-from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
+from src.freshness import detail_is_fresh, document_list_changed, documents_are_current, record_source_checks
 from src.geocode import geocode_sale, locate_sale_by_cadastre
 from src.image_validation import filter_raw_image_url, warm_image_validations
 from src.information_sufficiency import (
@@ -1591,8 +1591,7 @@ def _preserve_known_enrichment_payloads(
         documents_changed = (
             not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed")
             and "documents" in sale
-            and document_fingerprint(sale.get("documents") or [])
-            != document_fingerprint(known.get("documents") or [])
+            and document_list_changed(sale.get("documents") or [], known, source_url)
         )
         if documents_changed:
             sale["superseded_document_analysis"] = known_payload.get("document_analysis")
