@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
+import { safeSalesReturnTo } from "./navigation";
 import { takeSaleReturnOrigin } from "./sale-return-origin";
 
 afterEach(() => {
@@ -30,11 +31,11 @@ describe("takeSaleReturnOrigin", () => {
     expect(takeSaleReturnOrigin("other")).toBeNull();
   });
 
-  it("drops an unsafe origin from the address bar without keeping it", () => {
+  it("removes an unsafe origin from the address bar; the page rejects it on use", () => {
     window.history.replaceState(null, "", "/sales/abc?from=https%3A%2F%2Fevil.example");
-    expect(takeSaleReturnOrigin("abc")).toBeNull();
+    const origin = takeSaleReturnOrigin("abc");
     expect(window.location.search).toBe("");
-    expect(takeSaleReturnOrigin("abc")).toBeNull();
+    expect(safeSalesReturnTo(origin)).toBeUndefined();
   });
 
   it("leaves an address without origin untouched", () => {

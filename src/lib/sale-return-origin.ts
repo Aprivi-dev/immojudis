@@ -1,7 +1,3 @@
-import { safeSalesReturnTo } from "@/lib/navigation";
-
-const STORAGE_PREFIX = "immojudis:sale-return:";
-
 /**
  * Origine du « Retour » d'une fiche (`?from=/sales?…`), lue dans l'adresse puis retirée de la barre
  * d'adresse. Sans ce retrait, une adresse copiée depuis la barre et publiée ailleurs donne aux
@@ -10,34 +6,22 @@ const STORAGE_PREFIX = "immojudis:sale-return:";
  * l'origine (`SaleListing`) ; la barre d'adresse le fait désormais aussi.
  *
  * L'origine reste connue de l'onglet (`sessionStorage`) : un rechargement de la fiche garde son
- * « Retour ». Seule une origine valide (`safeSalesReturnTo`) est gardée. Le stockage peut manquer
- * (navigation privée, stockage bloqué) : l'origine vaut alors pour l'affichage en cours seulement.
+ * « Retour ». Elle est rendue telle quelle : la fiche la valide à l'usage (`safeSalesReturnTo`). Le
+ * stockage peut manquer (navigation privée, stockage bloqué) : l'origine vaut alors pour l'affichage
+ * en cours seulement. Court à dessein : ce code compte dans le budget JavaScript de la fiche.
  */
 export function takeSaleReturnOrigin(saleId: string): string | null {
-  const key = `${STORAGE_PREFIX}${saleId}`;
-  const params = new URLSearchParams(window.location.search);
-  const fromUrl = params.get("from");
-  if (fromUrl === null) {
-    try {
-      return safeSalesReturnTo(window.sessionStorage.getItem(key)) ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  const origin = safeSalesReturnTo(fromUrl) ?? null;
+  const key = `sale-return:${saleId}`;
+  const url = new URL(window.location.href);
+  const origin = url.searchParams.get("from");
   try {
-    if (origin) window.sessionStorage.setItem(key, origin);
+    if (origin === null) return sessionStorage.getItem(key);
+    sessionStorage.setItem(key, origin);
   } catch {
-    // Stockage indisponible : l'origine sert seulement à l'affichage en cours.
+    if (origin === null) return null;
   }
-  params.delete("from");
-  const query = params.toString();
+  url.searchParams.delete("from");
   // Intégré au routeur de Next.js (voir la documentation « single-page applications »).
-  window.history.replaceState(
-    null,
-    "",
-    `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
-  );
+  history.replaceState(null, "", url.pathname + url.search + url.hash);
   return origin;
 }

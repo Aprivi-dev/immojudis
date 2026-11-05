@@ -60,10 +60,8 @@ export function isAnalyticsExcludedPath(pathname: string): boolean {
  * de la propriété. Le bandeau reste affiché partout, pour qu'on puisse le relire avant une mise en
  * ligne.
  */
-export const GOOGLE_ANALYTICS_HOSTS: readonly string[] = ["immojudis.com", "www.immojudis.com"];
-
 export function isGoogleAnalyticsHost(hostname: string): boolean {
-  return GOOGLE_ANALYTICS_HOSTS.includes(hostname.toLowerCase());
+  return /^(www\.)?immojudis\.com$/i.test(hostname);
 }
 
 /** Vrai si la balise est déjà chargée ou si des cookies Google Analytics sont présents. */
