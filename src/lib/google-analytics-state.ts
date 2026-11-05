@@ -54,6 +54,18 @@ export function isAnalyticsExcludedPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Hôtes du site en production, les seuls où la balise se charge : ni le poste de développement
+ * (`localhost`, `127.0.0.1`), ni les préversions Vercel ne mêlent leurs visites de test aux chiffres
+ * de la propriété. Le bandeau reste affiché partout, pour qu'on puisse le relire avant une mise en
+ * ligne.
+ */
+export const GOOGLE_ANALYTICS_HOSTS: readonly string[] = ["immojudis.com", "www.immojudis.com"];
+
+export function isGoogleAnalyticsHost(hostname: string): boolean {
+  return GOOGLE_ANALYTICS_HOSTS.includes(hostname.toLowerCase());
+}
+
 /** Vrai si la balise est déjà chargée ou si des cookies Google Analytics sont présents. */
 export function googleAnalyticsMayBeActive(): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") return false;

@@ -302,11 +302,17 @@ describe("sale structured data", () => {
     expect(withEvent["@graph"][1]).toMatchObject({
       "@type": "Event",
       startDate: "2026-10-20T07:00:00.000Z",
+      endDate: "2026-10-20",
       location: {
         name: "Tribunal judiciaire de Bobigny",
         address: { addressLocality: "Bobigny" },
       },
+      organizer: { "@type": "GovernmentOrganization", name: "Tribunal judiciaire de Bobigny" },
+      offers: { priceSpecification: { name: "Mise à prix", price: 85_000 } },
     });
+    // The offer is the listing's own: the starting price, never an asking price.
+    expect(withEvent["@graph"][1].offers).toEqual(withEvent["@graph"][0].offers);
+    expect(withEvent["@graph"][1]).not.toHaveProperty("performer");
     for (const incomplete of [
       sale({ sale_date: null }),
       sale({ tribunal: null }),

@@ -7,6 +7,7 @@ import {
   getGoogleAnalyticsState,
   googleAnalyticsMayBeActive,
   isAnalyticsExcludedPath,
+  isGoogleAnalyticsHost,
   subscribeGoogleAnalyticsState,
 } from "@/lib/google-analytics-state";
 import { whenIdle } from "@/lib/when-idle";
@@ -29,7 +30,8 @@ const CookieConsentBanner = lazy(() =>
  * - Sans accord (`unset`, `denied`), le module de la balise n'est jamais importé, sauf pour effacer
  *   ce qu'un accord précédent aurait laissé (balise chargée, cookies `_ga`) ;
  * - ni la balise ni le bandeau ne sont montés sur les pages de `ANALYTICS_EXCLUDED_PATHS` ; si la
- *   balise est déjà chargée, ses envois sont suspendus le temps de la visite de ces pages.
+ *   balise est déjà chargée, ses envois sont suspendus le temps de la visite de ces pages ;
+ * - la balise ne se charge que sur le site en production (`isGoogleAnalyticsHost`).
  */
 export function DeferredGoogleAnalytics() {
   const [idle, setIdle] = useState(false);
@@ -56,7 +58,9 @@ export function DeferredGoogleAnalytics() {
   if (!idle || excluded) return null;
   return (
     <Suspense fallback={null}>
-      {state === "granted" ? <GoogleAnalytics /> : null}
+      {state === "granted" && isGoogleAnalyticsHost(window.location.hostname) ? (
+        <GoogleAnalytics />
+      ) : null}
       {state === "unset" ? <CookieConsentBanner /> : null}
     </Suspense>
   );
