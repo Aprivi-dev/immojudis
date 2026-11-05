@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
+from src.lot_scope import lot_selected
 from src.models import AuctionSale
 
 DATE_ONLY_PRECISIONS = {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
@@ -251,14 +252,26 @@ def is_multi_lot_with_first_lot_values(sale: AuctionSale) -> bool:
     celles d'un seul lot.
     """
     if sale.source_name == "licitor":
+        # Le lot de l'URL désigné avec certitude (src.sources.licitor_lots) : la ligne porte ses valeurs, pas
+        # celles du premier lot. Un lot incertain garde la quarantaine (ses champs propres sont vides).
+        if lot_selected(sale.raw_payload):
+            return False
         return "multi_lot_sale" in sale.quality_flags and licitor_lot_count(sale.raw_payload) > 1
     if sale.source_name in MULTI_LOT_TEXT_SOURCES:
         return announces_several_lots(sale.title, sale.description, sale.source_url)
     return False
 
 
+MISSING_PRICE_AND_SURFACE_QUARANTINE = "missing_price_and_surface"
+
+
 def quarantine_reason(sale: AuctionSale) -> str | None:
-    """Only positive evidence of inconsistency blocks publication, never a missing secondary fact."""
+    """Only positive evidence of inconsistency blocks publication, never a missing secondary fact.
+
+    Exception : une ligne déjà stockée (``sale.id``) relue sans mise à prix ni surface est masquée. Sans cela,
+    l'écriture la refusait (``publication_rejection``) et la ligne publiée gardait ses anciennes valeurs, fausses
+    (lots Licitor incertains de 110280 et 110285, restés visibles avec la mise à prix du premier lot, 03/11/2026).
+    """
     import re
     text = str(sale.raw_payload.get("description") or sale.raw_payload.get("raw_text") or "")
     if re.search(r"\bpas\s+d['’]ench[eè]res\s+sur\s+ce\s+bien", text, re.I):
@@ -270,7 +283,22 @@ def quarantine_reason(sale: AuctionSale) -> str | None:
             return flag
     if is_multi_lot_with_first_lot_values(sale):
         return LICITOR_MULTI_LOT_QUARANTINE if sale.source_name == "licitor" else MULTI_LOT_QUARANTINE
+    if sale.id and not has_price_or_surface(sale):
+        return MISSING_PRICE_AND_SURFACE_QUARANTINE
     return None
+
+
+def catalogue_write_rejection(sale: AuctionSale, now=None) -> str | None:
+    """Motif pour lequel une vente n'est pas écrite au catalogue, ou ``None``.
+
+    Celui de ``publication_rejection``, sauf qu'une vente en quarantaine est écrite même sans mise à prix ni
+    surface : elle reste masquée, et sa ligne stockée ne garde pas d'anciennes valeurs encore visibles (lot
+    devenu incertain, lecture qui a perdu sa mise à prix). Une vente expirée n'est jamais écrite.
+    """
+    reason = publication_rejection(sale, now)
+    if reason == "missing_price_and_surface" and quarantine_reason(sale):
+        return None
+    return reason
 
 
 _DISPLAY_JOB_STATUSES = frozenset({"active", "unknown", "upcoming", "postponed"})
@@ -317,6 +345,25 @@ def publication_rejection(sale: AuctionSale, now=None) -> str | None:
     return None
 
 
+def closes_expired_offer_deadline(sale: AuctionSale) -> bool:
+    """Une relecture des pièces qui clôt un appel d'offres déjà publié : sa date limite, lue sans ambiguïté, est passée.
+
+    ``publication_rejection`` écarte une vente expirée ; la ligne publiée resterait alors « à venir » sans date
+    (13 appels d'offres Cessions de l'État le 03/11/2026). Cette écriture-là porte la date limite et le statut
+    ``past`` sur la ligne existante (``updated_at`` vient de la base) pour que la rétention la ferme.
+    """
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    extraction = payload.get("pdf_sale_date_extraction")
+    return (
+        isinstance(extraction, dict)
+        and extraction.get("offer_deadline_expired") is True
+        and sale.sale_date is not None
+        and sale.status == "past"
+        and sale.updated_at is not None
+        and has_price_or_surface(sale)
+    )
+
+
 CATALOGUE_EXPIRED_REASON = "catalogue_date_passed_not_evidence_of_sale"
 
 
@@ -328,7 +375,7 @@ def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:
     admitted: list[AuctionSale] = []
     rejected: dict[str, list[AuctionSale]] = {}
     for sale in sales:
-        reason = publication_rejection(sale)
+        reason = catalogue_write_rejection(sale)
         if reason is None:
             admitted.append(sale)
             continue

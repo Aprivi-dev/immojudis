@@ -69,6 +69,9 @@ DETAIL_HTML = f"""
 </div></article></body></html>
 """
 
+MULTI_LOT_FIRST_URL = (
+    "https://www.licitor.com/annonce/11/09/99/vente-aux-encheres/un-immeuble-de-rapport/testville/nievre/110999.html"
+)
 MULTI_LOT_TEXT = """Vente aux enchères : un immeuble de rapport à Testville (Nièvre) - n°110999 - Licitor
 Accueil
 Annonce n°110999 : un immeuble de rapport à Testville (Nièvre), mise à prix : 200 000 €
@@ -231,7 +234,8 @@ def test_multi_lot_page_text_is_read_lot_by_lot() -> None:
 def test_refresh_replays_stored_page_text_and_fixes_old_readings() -> None:
     raw = {
         "source_name": "licitor",
-        "source_url": URL,
+        # URL du 1er lot : la page en a deux, la vente prend les valeurs propres au lot de son URL.
+        "source_url": MULTI_LOT_FIRST_URL,
         "occupancy_status": "unknown",
         "visit_dates": ["Visite virtuelle"],
         "lawyer_contact": "3, rue des États | [email protected] | Le cahier des conditions de vente",
@@ -249,7 +253,14 @@ def test_refresh_replays_stored_page_text_and_fixes_old_readings() -> None:
 
 
 def test_refresh_never_overrides_a_known_occupancy_and_ignores_other_pages() -> None:
-    raw = {"source_name": "licitor", "occupancy_status": "vacant", "source_blocks": {"page_text": MULTI_LOT_TEXT}}
+    page_text = parse_licitor_detail_html(DETAIL_HTML, URL)["source_blocks"]["page_text"]
+    raw = {"source_name": "licitor", "source_url": URL, "occupancy_status": "vacant",
+           "source_blocks": {"page_text": page_text}}
+    assert refresh_licitor_raw_sale(raw) is True
+    assert raw["occupancy_status"] == "vacant"
+    # Page à plusieurs lots : une occupation déjà établie pour le lot affiché (le premier) n'est pas remplacée.
+    raw = {"source_name": "licitor", "source_url": MULTI_LOT_FIRST_URL, "occupancy_status": "vacant",
+           "city": "Testville", "address": "Rue du Moulin, Testville", "source_blocks": {"page_text": MULTI_LOT_TEXT}}
     assert refresh_licitor_raw_sale(raw) is True
     assert raw["occupancy_status"] == "vacant"
 

@@ -19,6 +19,12 @@ from src.normalize import clean_text
 
 PDF_TEXT_CACHE_VERSION = "pdf_text_v4_mixed_image_ocr"
 PDF_PROGRESS_SCHEMA_VERSION = 1
+# Status of a page of photographs or a plan settled without text (same value as
+# pdf_page_analysis.PICTURE_PAGE_STATUS; this leaf module does not import it).
+PICTURE_PAGE_STATUS = "picture_page_excluded"
+# Failure reason of the pages a bounded pass has not reached yet: the next pass
+# resumes from the checkpoint and reads them.
+PAGES_PENDING_NEXT_PASS_REASON = "pages_pending_next_pass"
 
 
 def document_url(value: object) -> str:
@@ -58,6 +64,7 @@ def _valid_cached_page(page: object, expected_page: int | None = None) -> bool:
         "blank_page",
         "blank_excluded",
         "visual_blank_excluded",
+        PICTURE_PAGE_STATUS,
     }
 
 
@@ -103,7 +110,14 @@ def partial_pdf_payload_from_page_cache(
     ocr_enabled: bool,
     ocr_language: str,
 ) -> dict[str, Any] | None:
-    """Build modern incomplete evidence from pages already checkpointed."""
+    """Build modern evidence from pages already checkpointed.
+
+    A bounded pass can stop after its last page was checkpointed (worker
+    cutoff while finalizing). Every page is then read: the payload is complete,
+    exactly as ``extract_pdf_document`` would have built it, instead of an
+    ``incomplete`` document without a single failed page that the next pass
+    has to assemble again.
+    """
 
     pages = read_checkpointed_pdf_pages(
         file_path,
@@ -127,6 +141,12 @@ def partial_pdf_payload_from_page_cache(
         for page in pages
         if str(page.get("status") or "") == "visual_blank_excluded"
     ]
+    picture_pages = [
+        int(page["page"])
+        for page in pages
+        if str(page.get("status") or "") == PICTURE_PAGE_STATUS
+    ]
+    complete = not failed_pages and bool(text)
     return {
         "cache_version": PDF_TEXT_CACHE_VERSION,
         "label": document.get("label") or "",
@@ -144,9 +164,11 @@ def partial_pdf_payload_from_page_cache(
         "empty_pages": sum(1 for page in pages if not clean_text(page.get("text"))),
         "blank_pages": blank_pages,
         "visual_blank_pages": visual_blank_pages,
+        "picture_pages": picture_pages,
         "failed_pages": failed_pages,
-        "complete": False,
-        "extraction_status": "incomplete",
+        "complete": complete,
+        "extraction_status": "extracted" if complete else "incomplete",
+        **({} if complete or not failed_pages else {"failure_reason": PAGES_PENDING_NEXT_PASS_REASON}),
         "extraction_method": "pymupdf_pages",
         "confidence": round(
             sum(float(page.get("confidence") or 0) for page in pages) / len(pages),
@@ -561,6 +583,11 @@ def stale_complete_document_urls(
         analysis["http_revalidation_pending_urls"] = sorted(
             (retained_pending | stale_urls) & revalidation_urls
         )
+        # A URL still pending from an earlier pass is revalidated too, even when its local sidecar looks fresh: only
+        # a pass that processes the URL clears it (pdf_document_selection). On 04/11/2026 another process (the
+        # document prefetch) refreshed the sidecars without being able to clear the persisted pending list, so the
+        # locked pass never selected those URLs again and the manifest stayed partial forever (53 empty passes).
+        stale_urls |= retained_pending & revalidation_urls
     return stale_urls
 
 

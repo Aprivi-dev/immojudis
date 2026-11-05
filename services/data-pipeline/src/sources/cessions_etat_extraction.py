@@ -15,6 +15,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from src.cadastre_references import designation, parse_cadastral_references, ref_label, references_signature
+from src.occupancy_statements import occupancy_status_from_text
 from src.sources.cessions_etat_labels import (
     CATEGORY_TYPES,
     GROUPS,
@@ -379,7 +380,7 @@ def extract_cessions_fields(
         "bedrooms_count": typed.get("bedrooms_count") if isinstance(typed.get("bedrooms_count"), int) else None,
         "bathrooms_count": typed.get("bathrooms_count") if isinstance(typed.get("bathrooms_count"), int) else None,
         "parking_count": typed.get("parking_spaces") if isinstance(typed.get("parking_spaces"), int) else None,
-        "occupancy_status": "libre" if _VACANT_RE.search(availability) else None,
+        "occupancy_status": "libre" if _VACANT_RE.search(availability) else occupancy_status_from_text(availability),
         "visit_dates": list(procedure.get("visits") or []),
     }
     if surfaces.get("built_surface_m2"):

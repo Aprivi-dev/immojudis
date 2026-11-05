@@ -46,7 +46,9 @@ class _Index:
     def __init__(self, rows: list[dict[str, Any]]) -> None:
         self.by_postal_code: dict[str, list[dict[str, Any]]] = {}
         self.by_department_name: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self.postal_codes_by_insee: dict[str, set[str]] = {}
         for row in rows:
+            self.postal_codes_by_insee.setdefault(row["code_insee"], set()).update(row["postal_codes"])
             for postal_code in row["postal_codes"]:
                 self.by_postal_code.setdefault(postal_code, []).append(row)
             self.by_department_name.setdefault((row["department_code"], row["name_normalized"]), []).append(row)
@@ -127,6 +129,21 @@ def commune_name_for_postal_code(postal_code: object) -> str | None:
         return None
     communes = {row["code_insee"]: row["name_normalized"] for row in _index().by_postal_code.get(postal, [])}
     return next(iter(communes.values())) if len(communes) == 1 else None
+
+
+def unique_postal_code_for_commune(code_insee: object) -> str | None:
+    """Le code postal de la commune ``code_insee`` quand elle n'en a qu'un, sinon ``None`` (aucune supposition)."""
+    codes = _index().postal_codes_by_insee.get(str(code_insee or "").strip().upper(), set())
+    valid = {code for code in codes if re.fullmatch(r"\d{5}", code)}
+    return next(iter(valid)) if len(valid) == 1 else None
+
+
+def postal_code_belongs_to_commune(postal_code: object, code_insee: object) -> bool:
+    """Le code postal ``postal_code`` est l'un de ceux de la commune ``code_insee`` dans ``reference_communes``."""
+    postal = str(postal_code or "").strip()
+    if re.fullmatch(r"\d{5}", postal) is None:
+        return False
+    return postal in _index().postal_codes_by_insee.get(str(code_insee or "").strip().upper(), set())
 
 
 def is_municipality_point(sale: AuctionSale) -> bool:

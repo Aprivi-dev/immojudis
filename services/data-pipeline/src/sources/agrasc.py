@@ -21,7 +21,11 @@ from src.sources.agrasc_operators import (
     discover_agora_seller_products,
     enrich_agrasc_operator,
 )
-from src.sources.agrasc_urls import AGORA_IMMO_SELLER_URL, classify_agrasc_operator_url
+from src.sources.agrasc_urls import (
+    AGORA_IMMO_SELLER_URL,
+    classify_agrasc_operator_url,
+    is_allowed_agrasc_source_url,
+)
 from src.sources.common import (
     PoliteHttpClient,
     RobotsAccessRefusedError,
@@ -126,6 +130,12 @@ def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult
                 # Keep this public catalogue card in CatalogueEvidence, but
                 # never publish it as a property without a listing identity.
                 exclusions[url] = "operator_seller_catalogue_without_listing_identity"
+                continue
+            if url and not is_allowed_agrasc_source_url(url):
+                # Carte qui renvoie vers un hôte que l'AGRASC n'emploie pas d'habitude (03/11/2026 : une annonce
+                # immobilier.notaires.fr). La validation la refusait comme erreur et toute la source passait en échec
+                # (inventaire non certifié depuis le 30/10). Elle est écartée, tracée, sans valeur publiée.
+                exclusions[url] = "unsupported_operator_url"
                 continue
             if sale.get("department") in TARGET_DEPARTMENTS:
                 from src.source_checkpoint import restore_detail

@@ -71,6 +71,17 @@ class QueueJobDeferred(RuntimeError):
         super().__init__(message)
         self.next_attempt_at = retry_after or (datetime.now(UTC) + timedelta(minutes=30))
 
+    @classmethod
+    def after(cls, message: str, delay: timedelta) -> QueueJobDeferred:
+        return cls(message, retry_after=datetime.now(UTC) + delay)
+
+
+#: Description or fact pass whose sale has a partial PDF manifest and no PDF job that can still advance: the
+#: document backlog re-queues that PDF job (pending documents), and the claim then holds the pass behind it. With
+#: the default 30 min wake-up it came back at every tick and was deferred again (40 of 84 general claims on
+#: 02/11/2026, 21:30 UTC).
+PARTIAL_MANIFEST_DEFERRAL = timedelta(hours=6)
+
 
 def defer_budget_jobs(jobs: list, error: PipelineBudgetExhausted | QueueJobDeferred) -> None:
     from src.storage.supabase_client import connect

@@ -43,6 +43,29 @@ def published_on(raw_sale: dict[str, Any]) -> date | None:
     return None
 
 
+def updated_on(raw_sale: dict[str, Any]) -> date | None:
+    """Dernière mise à jour de l'annonce par la source (ISO), sinon ``None``.
+
+    Une annonce notariale publiée en 2025 et remise en vente le 09/10/2026 (« source_updated_at ») annonce sa
+    nouvelle séance à cette date : l'horizon de 12 mois court depuis la mise à jour, pas la première publication.
+    """
+    blocks = raw_sale.get("source_blocks") if isinstance(raw_sale.get("source_blocks"), dict) else {}
+    features = raw_sale.get("source_property_features")
+    listing = features.get("listing") if isinstance(features, dict) else None
+    for value in (
+        raw_sale.get("source_updated_at"),
+        blocks.get("source_updated_at"),
+        listing.get("updated_on") if isinstance(listing, dict) else None,
+    ):
+        match = _ISO_DAY.search(str(value or ""))
+        if match:
+            try:
+                return date.fromisoformat(match.group(1))
+            except ValueError:
+                continue
+    return None
+
+
 def implausible_sale_date_reason(
     sale_date: datetime, raw_sale: dict[str, Any], *, now: datetime | None = None
 ) -> str | None:
@@ -52,6 +75,9 @@ def implausible_sale_date_reason(
     if sale_date.tzinfo is None:
         sale_date = sale_date.replace(tzinfo=UTC)
     published = published_on(raw_sale)
+    updated = updated_on(raw_sale)
+    if published is not None and updated is not None and updated > published:
+        published = updated
     if published is not None and sale_date.date() > published + horizon:
         return "publication_horizon"
     if sale_date > now + horizon:

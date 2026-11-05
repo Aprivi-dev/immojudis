@@ -71,6 +71,8 @@ def _backfill_document_price_from_known(
     extraction = known_payload.get("starting_price_extraction")
     if not isinstance(extraction, dict) or extraction.get("version") not in {
         DOCUMENT_FACTS_VERSION,
+        # A price read under the previous rules stays protected until its documents are read again.
+        "document_facts_v4_occupancy_dates_prices",
         "document_facts_v1_starting_price",
     }:
         return 0
@@ -102,6 +104,32 @@ def _backfill_document_price_from_known(
     return copied
 
 
+def _backfill_document_facts_version_from_known(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> int:
+    """Keep the version of the rules that read the attachments through a collection of the source page.
+
+    ``document_facts_version`` was carried only by the price backfill above: every collection erased it for the
+    sales whose price is not read in their documents, and the document drain read them again and again (04/11/2026:
+    Licitor, 0 sale up to date out of 34 without a document price, 13 out of 14 with one). A real change of the page
+    still removes it afterwards (``record_source_checks``). When the source price moved away from a price the
+    documents settled, the documents must arbitrate again: the version is not kept.
+    """
+    if not is_missing_raw_value(sale.get("document_facts_version")):
+        return 0
+    known_payload = known.get("raw_payload")
+    if not isinstance(known_payload, dict) or is_missing_raw_value(known_payload.get("document_facts_version")):
+        return 0
+    if isinstance(known_payload.get("starting_price_extraction"), dict):
+        known_price = parse_price(known.get("starting_price_eur"))
+        incoming_price = parse_price(sale.get("starting_price_eur"))
+        if known_price is not None and incoming_price is not None and incoming_price != known_price:
+            return 0
+    sale["document_facts_version"] = known_payload["document_facts_version"]
+    return 1
+
+
 def _backfill_document_sale_date_from_known(
     sale: dict[str, object],
     known: dict[str, object],
@@ -125,4 +153,29 @@ def _backfill_document_sale_date_from_known(
     if is_missing_raw_value(value):
         return 0
     sale["sale_date"] = value
+    return 1
+
+
+def _backfill_document_occupancy_from_known(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> int:
+    """Keep the occupancy read in the attachments when the source page gives none.
+
+    Cessions de l'État pages say nothing of occupancy: « 3 – SITUATION D'OCCUPATION Le bien est libre de toute
+    occupation » is in the conditions of sale. A re-read of the page set the status back to null while its PDF
+    trace stayed, so the next PDF pass took the empty value for a manual correction (audit 03/11/2026: the
+    occupancy of most Cessions sales was read in their documents but not shown).
+    """
+    if not is_missing_raw_value(sale.get("occupancy_status")):
+        return 0
+    known_payload = known.get("raw_payload")
+    provenance = known_payload.get("pdf_fact_provenance") if isinstance(known_payload, dict) else None
+    trace = provenance.get("occupancy_status") if isinstance(provenance, dict) else None
+    if not isinstance(trace, dict) or trace.get("source") != "pdf":
+        return 0
+    value = known.get("occupancy_status") or trace.get("value")
+    if is_missing_raw_value(value):
+        return 0
+    sale["occupancy_status"] = value
     return 1

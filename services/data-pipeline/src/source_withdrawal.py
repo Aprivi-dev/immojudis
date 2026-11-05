@@ -52,6 +52,10 @@ class SaleSourceWithdrawn(SourceWithdrawn):
 
 #: Les tâches d'enrichissement d'une vente masquée attendent un jour (sans consommer d'essai).
 SALE_DEFERRAL = timedelta(hours=24)
+#: Même attente pour une vente Encheres Publiques tant que l'accès n'est pas autorisé : l'autorisation est un
+#: réglage explicite, pas un état qui change d'un passage à l'autre. Avec le report par défaut (30 min), ces
+#: tâches revenaient à chaque tick prendre une place de la file générale sans rien faire (9 sur 84 le 02/11/2026).
+ACCESS_DEFERRAL = timedelta(hours=24)
 
 
 def read_withdrawn_sources(
@@ -156,7 +160,10 @@ def deferral_for(error: Exception):
 
     if isinstance(error, SaleSourceWithdrawn):
         return QueueJobDeferred(str(error), retry_after=datetime.now(UTC) + SALE_DEFERRAL)
-    return QueueJobDeferred("Encheres Publiques access authorization required before general enrichment")
+    return QueueJobDeferred(
+        "Encheres Publiques access authorization required before general enrichment",
+        retry_after=datetime.now(UTC) + ACCESS_DEFERRAL,
+    )
 
 
 def without_withdrawn(scrapers: dict, settings: dict) -> dict:
