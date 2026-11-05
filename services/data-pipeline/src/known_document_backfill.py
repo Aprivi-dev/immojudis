@@ -104,6 +104,32 @@ def _backfill_document_price_from_known(
     return copied
 
 
+def _backfill_document_facts_version_from_known(
+    sale: dict[str, object],
+    known: dict[str, object],
+) -> int:
+    """Keep the version of the rules that read the attachments through a collection of the source page.
+
+    ``document_facts_version`` was carried only by the price backfill above: every collection erased it for the
+    sales whose price is not read in their documents, and the document drain read them again and again (04/11/2026:
+    Licitor, 0 sale up to date out of 34 without a document price, 13 out of 14 with one). A real change of the page
+    still removes it afterwards (``record_source_checks``). When the source price moved away from a price the
+    documents settled, the documents must arbitrate again: the version is not kept.
+    """
+    if not is_missing_raw_value(sale.get("document_facts_version")):
+        return 0
+    known_payload = known.get("raw_payload")
+    if not isinstance(known_payload, dict) or is_missing_raw_value(known_payload.get("document_facts_version")):
+        return 0
+    if isinstance(known_payload.get("starting_price_extraction"), dict):
+        known_price = parse_price(known.get("starting_price_eur"))
+        incoming_price = parse_price(sale.get("starting_price_eur"))
+        if known_price is not None and incoming_price is not None and incoming_price != known_price:
+            return 0
+    sale["document_facts_version"] = known_payload["document_facts_version"]
+    return 1
+
+
 def _backfill_document_sale_date_from_known(
     sale: dict[str, object],
     known: dict[str, object],
