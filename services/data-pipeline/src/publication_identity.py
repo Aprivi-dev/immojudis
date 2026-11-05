@@ -181,11 +181,15 @@ def ensure_room_bedroom_consistency(
     """
     rooms = sale.rooms_count
     bedrooms = sale.bedrooms_count
-    if rooms is None or bedrooms is None or rooms >= bedrooms:
+    if rooms is None or bedrooms is None or rooms > bedrooms or (rooms == bedrooms and rooms <= 1):
         return sale
+    # Autant de chambres que de pièces (plus d'une) : les pièces comptent le séjour, le compte des pièces est faux
+    # (05/11/2026, Avoventes « 3 pièces 3 chambres » pour une maison dont le PV décrit une pièce à vivre et trois
+    # chambres). Seul le nombre de pièces, la valeur douteuse, est effacé ; les chambres restent.
+    equal = rooms == bedrooms
 
     evidence = {
-        'code': 'rooms_below_bedrooms',
+        'code': 'rooms_equal_bedrooms' if equal else 'rooms_below_bedrooms',
         'field': 'rooms_count',
         'rooms_count': rooms,
         'bedrooms_count': bedrooms,
@@ -215,7 +219,8 @@ def ensure_room_bedroom_consistency(
     sale.raw_payload['rooms_bedrooms_conflict_evidence'] = evidence
     sale.quality_flags = sorted(set(sale.quality_flags) | {'rooms_bedrooms_conflict'})
     sale.rooms_count = None
-    sale.bedrooms_count = None
+    if not equal:
+        sale.bedrooms_count = None
     return sale
 
 

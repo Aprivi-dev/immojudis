@@ -1,4 +1,5 @@
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -519,3 +520,47 @@ def test_a_lock_timeout_that_never_clears_still_fails_and_other_errors_are_not_r
     with pytest.raises(ValueError):
         recompute_scoring._upsert_batch_with_lock_retry(["a"], sleep=slept.append)
     assert slept == []
+
+
+def test_recompute_is_complete_when_the_admission_rule_refuses_expired_sales(monkeypatch) -> None:
+    """05/11/2026 : chaque recalcul complet concluait à un échec (1 369 écrites sur 1 501) ; l'écart était fait des
+    ventes que la règle d'admission n'écrit jamais (expirées, sans mise à prix ni surface)."""
+    rows = [{"source_url": "https://example.test/live"}, {"source_url": "https://example.test/expired"}]
+    sales = {row["source_url"]: SimpleNamespace(source_url=row["source_url"]) for row in rows}
+    written: list[str] = []
+    monkeypatch.setattr(recompute_module, "_load_env_fallbacks", lambda: None)
+    monkeypatch.setattr(recompute_module, "_fetch_sales", lambda **_kwargs: rows)
+    monkeypatch.setattr(
+        recompute_module, "_recomputed_sale_from_storage_row", lambda row, geocode=False: sales[row["source_url"]]
+    )
+    monkeypatch.setattr(
+        recompute_module,
+        "catalogue_write_rejection",
+        lambda sale: "expired_sale" if sale.source_url.endswith("expired") else None,
+    )
+    monkeypatch.setattr(recompute_module, "closes_expired_offer_deadline", lambda _sale: False)
+    monkeypatch.setattr(
+        recompute_module,
+        "_upsert_batch_with_lock_retry",
+        lambda batch: written.extend(sale.source_url for sale in batch) or len(batch),
+    )
+    monkeypatch.setattr(recompute_module, "_print_summary", lambda *_args, **_kwargs: None)
+
+    assert recompute_module.recompute_scoring() == 0
+    assert written == ["https://example.test/live"]
+
+
+def test_recompute_still_fails_when_a_writable_sale_is_not_written(monkeypatch) -> None:
+    rows = [{"source_url": "https://example.test/a"}, {"source_url": "https://example.test/b"}]
+    monkeypatch.setattr(recompute_module, "_load_env_fallbacks", lambda: None)
+    monkeypatch.setattr(recompute_module, "_fetch_sales", lambda **_kwargs: rows)
+    monkeypatch.setattr(
+        recompute_module,
+        "_recomputed_sale_from_storage_row",
+        lambda row, geocode=False: SimpleNamespace(source_url=row["source_url"]),
+    )
+    monkeypatch.setattr(recompute_module, "catalogue_write_rejection", lambda _sale: None)
+    monkeypatch.setattr(recompute_module, "_upsert_batch_with_lock_retry", lambda batch: len(batch) - 1)
+    monkeypatch.setattr(recompute_module, "_print_summary", lambda *_args, **_kwargs: None)
+
+    assert recompute_module.recompute_scoring(batch_size=10) == 1

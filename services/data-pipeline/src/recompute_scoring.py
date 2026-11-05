@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 
-from src.admission import licitor_lot_count
+from src.admission import catalogue_write_rejection, closes_expired_offer_deadline, licitor_lot_count
 from src.asset_normalization import normalize_asset_features
 from src.cadastre_references import resolve_sale_cadastre
 from src.catalogue_readiness import apply_catalogue_readiness
@@ -129,15 +129,29 @@ def recompute_scoring(
         _print_summary(sales, dry_run=True, failures=failures)
         return 1 if failures else 0
 
+    # La règle d'admission du catalogue n'écrit jamais une vente expirée ou sans mise à prix ni surface
+    # (upsert_sales_to_supabase). Comptées comme attendues, ces ventes faisaient conclure chaque recalcul complet à un
+    # échec (05/11/2026 : 1 369 écrites sur 1 501, environ 130 refusées par la règle à chaque passe).
+    writable: list[Any] = []
+    refused: Counter[str] = Counter()
+    for sale in sales:
+        reason = catalogue_write_rejection(sale)
+        if reason is None or closes_expired_offer_deadline(sale):
+            writable.append(sale)
+        else:
+            refused[reason] += 1
+    if refused:
+        LOGGER.info("Recompute leaves %s sales to the catalogue admission rule: %s", sum(refused.values()), dict(refused))
     upserted = 0
-    for batch in _chunks(sales, max(1, batch_size)):
+    for batch in _chunks(writable, max(1, batch_size)):
         upserted += _upsert_batch_with_lock_retry(batch)
     _print_summary(sales, dry_run=False, upserted=upserted, failures=failures)
-    if failures or upserted != len(sales):
+    if failures or upserted != len(writable):
         LOGGER.error(
-            "Incomplete scoring recompute: selected=%s computed=%s upserted=%s failures=%s",
+            "Incomplete scoring recompute: selected=%s computed=%s writable=%s upserted=%s failures=%s",
             len(rows),
             len(sales),
+            len(writable),
             upserted,
             len(failures),
         )
