@@ -43,7 +43,7 @@ from src.enrichment.operational_display import refresh_operational_display
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
 from src.extraction_profiles import attach_source_property_features
-from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
+from src.freshness import detail_is_fresh, document_list_changed, documents_are_current, record_source_checks
 from src.geocode import geocode_sale, locate_sale_by_cadastre
 from src.image_validation import filter_raw_image_url, warm_image_validations
 from src.information_sufficiency import (
@@ -56,6 +56,7 @@ from src.known_document_backfill import (
     KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
     KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
     KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
+    _backfill_document_facts_version_from_known,
     _backfill_document_occupancy_from_known,
     _backfill_document_price_from_known,
     _backfill_document_sale_date_from_known,
@@ -236,6 +237,7 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_prompt_version",
     "source_content_changed",
     "source_content_change_reason",
+    "source_content_changed_at",
     "superseded_analysis",
     "document_analysis",
     "surface_extraction",
@@ -1589,13 +1591,13 @@ def _preserve_known_enrichment_payloads(
         documents_changed = (
             not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed")
             and "documents" in sale
-            and document_fingerprint(sale.get("documents") or [])
-            != document_fingerprint(known.get("documents") or [])
+            and document_list_changed(sale.get("documents") or [], known, source_url)
         )
         if documents_changed:
             sale["superseded_document_analysis"] = known_payload.get("document_analysis")
             sale["llm_display_status"] = "pending"
             sale["source_content_changed"] = True
+            sale["source_content_changed_at"] = datetime.now(UTC).isoformat()
             continue
         payload_fields = KNOWN_ENRICHMENT_PAYLOAD_FIELDS
         if (
@@ -1622,6 +1624,7 @@ def _preserve_known_enrichment_payloads(
         )
         preserved += _backfill_document_surface_fields_from_known(sale, known)
         preserved += _backfill_document_price_from_known(sale, known)
+        preserved += _backfill_document_facts_version_from_known(sale, known)
         preserved += _backfill_document_sale_date_from_known(sale, known)
         preserved += _backfill_document_occupancy_from_known(sale, known)
     return preserved

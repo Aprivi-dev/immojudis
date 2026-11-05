@@ -98,6 +98,8 @@ const STATE_FACTOR: Record<CompletenessState, number> = {
   conflict: CATALOGUE.scoring.state_factors.conflict ?? 0,
 };
 
+export const SHARED_GARDEN_LABEL = "Commun (copropriété)";
+
 function isMeaningfulText(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const normalized = value
@@ -796,9 +798,13 @@ function directFieldValue(
         firstDefined(sale.surface_source, rawValue(["surface_provenance"]), sale.surface_evidence),
       );
     case 93:
+      // Jardin de la copropriété seulement (« shared_garden » posé par le pipeline) : « Commun (copropriété) »
+      // plutôt qu'un jardin privatif ou rien (décision du 05/11/2026).
       return inferredDirect(
         field,
-        sale.has_garden,
+        sale.has_garden !== true && rawValue(["shared_garden"]) === true
+          ? SHARED_GARDEN_LABEL
+          : sale.has_garden,
         "normalized_boolean_without_explicit_negative_proof",
       );
     case 94:
