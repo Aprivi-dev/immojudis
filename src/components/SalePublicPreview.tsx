@@ -2,21 +2,31 @@
 
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
+import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import CircleAlert from "lucide-react/dist/esm/icons/circle-alert.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
+import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
+import Heart from "lucide-react/dist/esm/icons/heart.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import dynamic from "next/dynamic";
 import { Terme } from "@/components/ceiling/Terme";
 import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import { PepiteBlockLazy } from "@/components/sale-detail/PepiteBlockLazy";
-import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
+import { PropertyIllustration, illustrationKind } from "@/components/PropertyIllustration";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
+import { SalePublicDeadline } from "@/components/SalePublicDeadline";
+import { SalePublicShareButton } from "@/components/SalePublicShareButton";
+import { SalePublicToc, type SalePublicTocItem } from "@/components/SalePublicToc";
+import { Badge } from "@/components/ui/primitives";
 import { contactReportPath } from "@/lib/contact-message";
+import { departmentFromCode } from "@/lib/department-pages";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
@@ -25,7 +35,7 @@ import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { isPastSaleDay } from "@/lib/sale-countdown";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatPricePerM2 } from "@/lib/format";
 import {
   MARKET_GAP_BAND_CAUTION,
   MARKET_GAP_BAND_LABELS,
@@ -35,6 +45,7 @@ import {
   type PublicMarketGapBand,
 } from "@/lib/market-gap-band";
 import { publicSaleDescription } from "@/lib/public-sale-description";
+import { getDisplaySurface } from "@/lib/surface";
 import {
   loginPathWithRedirect,
   saleDetailPath,
@@ -42,7 +53,7 @@ import {
   salesReturnLabel,
 } from "@/lib/navigation";
 import Link from "next/link";
-import { useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_LABEL, LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import { ceilingTermsFor } from "@/lib/fee-regime-labels";
@@ -54,13 +65,14 @@ import {
   saleVerificationExplanation,
   saleVerificationLabel,
   saleVenueLabel,
+  type SaleProcedurePresentation,
 } from "@/lib/sale-procedure";
 import {
   saleHeadline,
   saleHearingTime,
   saleReference,
-  saleHeadingSubtitle,
   saleShortHeading,
+  saleVenueSentence,
   seoLongDate,
   seoPropertyLabel,
   seoSurface,
@@ -73,6 +85,15 @@ import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
 /**
+ * « Marché local » chargé à la demande : le calcul du rendement (frais d'acquisition, régimes) n'est
+ * pas nécessaire au premier affichage (budget de JavaScript client, voir `check-build-budgets.mjs`).
+ * Rendu par le serveur comme le reste de la fiche.
+ */
+const SalePublicRentalMarketLazy = dynamic(() =>
+  import("@/components/SalePublicRentalMarket").then((module) => module.SalePublicRentalMarket),
+);
+
+/**
  * Internal links of the public page: they carry the visitor from one sale to the pages that
  * explain how a sale works, and give crawlers a path from every sale to the guides.
  */
@@ -80,22 +101,22 @@ const FURTHER_READING_LINKS = [
   {
     href: "/ventes-immobilieres-judiciaires",
     label: "Le guide des ventes immobilières judiciaires",
-    hint: "comprendre le déroulement d’une vente",
+    hint: "Comprendre le déroulement d’une vente",
   },
   {
     href: "/ressources/frais-vente-encheres-judiciaire",
     label: "Les frais d’une vente aux enchères",
-    hint: "ce qui s’ajoute au prix d’adjudication",
+    hint: "Ce qui s’ajoute au prix d’adjudication",
   },
   {
     href: "/tribunaux",
     label: "Les tribunaux",
-    hint: "l’activité des tribunaux qui organisent des ventes",
+    hint: "L’activité des tribunaux qui organisent des ventes",
   },
   {
     href: "/simulateur-frais-encheres",
     label: "Le simulateur de frais",
-    hint: "estimer les frais d’une enchère",
+    hint: "Estimer les frais d’une enchère",
   },
 ] as const;
 
@@ -127,6 +148,38 @@ const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> 
   },
 };
 
+/**
+ * Frise « La vente » : avant, le jour même, après. Des étapes de procédure, propres au type de vente,
+ * jamais une donnée de la vente qui n'est pas publiée.
+ */
+function timelineSteps(procedure: SaleProcedurePresentation): { before: string; after: string } {
+  switch (procedure.venueType) {
+    case "tribunal":
+      return {
+        before:
+          procedure.lawyerRequired === true
+            ? "Consulter le dossier et choisir un avocat pour porter votre enchère"
+            : "Consulter le dossier et les conditions pour enchérir",
+        after: "Délai de surenchère de dix jours, puis paiement du prix et des frais",
+      };
+    case "notary":
+      return {
+        before: "Consulter le dossier et les modalités de participation",
+        after: "Signature de l’acte, paiement du prix et des frais selon le dossier",
+      };
+    case "state":
+      return {
+        before: "Consulter l’annonce officielle et ses conditions",
+        after: "Suite de la cession selon les conditions du service vendeur",
+      };
+    default:
+      return {
+        before: "Consulter le dossier officiel et ses conditions",
+        after: "Suite de la vente selon le dossier officiel",
+      };
+  }
+}
+
 type TeaserItem = {
   label: string;
   width: "short" | "medium" | "wide";
@@ -156,6 +209,13 @@ function withAdjudicationTerm(text: string) {
   );
 }
 
+/** Position de la mise à prix sur la réglette de la fourchette (décor, sans chiffre). */
+const BAND_POSITION: Partial<Record<PublicMarketGapBand, string>> = {
+  under: "12%",
+  near: "50%",
+  above: "88%",
+};
+
 /**
  * Écart de la mise à prix au marché local, en trois bandes et sans chiffre (le pourcentage et la
  * fourchette restent au compte). Affichée seulement quand la base a jugé l'estimation fiable (ou
@@ -170,6 +230,20 @@ function MarketGapBandNote({ band, saleId }: { band: PublicMarketGapBand; saleId
       <p className={styles.marketBandLabel}>
         <span data-nosnippet="">{MARKET_GAP_BAND_LABELS[band]}</span>
       </p>
+      {isBand ? (
+        // Réglette : la fourchette au milieu, la mise à prix avant, dedans ou après. Le libellé
+        // ci-dessus dit déjà la même chose : décor, ignoré des lecteurs d'écran.
+        <div className={styles.bandRuler} aria-hidden>
+          <div className={styles.bandTrack}>
+            <i />
+            <b style={{ left: BAND_POSITION[band] }} />
+          </div>
+          <div className={styles.bandLabels}>
+            <span>Bas de fourchette</span>
+            <span>Haut de fourchette</span>
+          </div>
+        </div>
+      ) : null}
       {isBand ? (
         <p className={styles.marketBandNote}>{MARKET_GAP_BAND_STARTING_PRICE_NOTE}</p>
       ) : null}
@@ -245,6 +319,63 @@ function TeaserTier({ tier, offerAware }: { tier: string; offerAware?: boolean }
   );
 }
 
+/**
+ * Une section numérotée de la fiche (maquette « dossier » du 06/11/2026) : le grand numéro en or
+ * texte dans la marge, le titre et le contenu à côté. `labelled` : la section porte son propre titre
+ * `h2` ; sinon le contenu apporte le sien (bloc d'alerte du secteur).
+ */
+function NumberedSection({
+  id,
+  number,
+  title,
+  titleId,
+  children,
+}: {
+  id: string;
+  number: string;
+  title?: string;
+  titleId?: string;
+  children: ReactNode;
+}) {
+  const body = (
+    <>
+      <div className={styles.secNumber} aria-hidden>
+        {number}
+      </div>
+      <div className={styles.secBody}>
+        {title && titleId ? (
+          <h2 id={titleId} className={styles.secTitle}>
+            {title}
+          </h2>
+        ) : null}
+        {children}
+      </div>
+    </>
+  );
+  return titleId ? (
+    <section id={id} className={styles.sec} aria-labelledby={titleId}>
+      {body}
+    </section>
+  ) : (
+    <div id={id} className={styles.sec}>
+      {body}
+    </div>
+  );
+}
+
+const shortDateFormat = new Intl.DateTimeFormat("fr-FR", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "Europe/Paris",
+});
+
+function shortSaleDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? shortDateFormat.format(date) : null;
+}
+
 export function SalePublicPreview({
   saleId,
   preview,
@@ -264,7 +395,7 @@ export function SalePublicPreview({
   adjudicationStatisticsEnabled?: boolean;
   /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
   openFeeRegimes?: readonly FeeRegimeKey[];
-  /** Loyer de la commune (carte ANIL) et zonage tendu, lus par le serveur : bloc « Marché locatif de la commune ». */
+  /** Loyer de la commune (carte ANIL) et zonage tendu, lus par le serveur : section « Marché local ». */
   rentReference?: RentReference | null;
   housingTension?: HousingTension | null;
   /**
@@ -289,6 +420,10 @@ export function SalePublicPreview({
   const headline = saleHeadline(preview);
   const shortHeading = saleShortHeading(preview);
   const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
+  // Photos de l'annonce complète (`get_public_sale_details`) : le compte les ouvre ; la fiche
+  // publique n'en montre qu'une.
+  const photoCount = Math.max(0, preview.photo_count ?? 0);
+  const morePhotos = photoCount > (photo?.url ? 1 : 0);
   const surface = seoSurface(preview.app_surface_m2);
   const hearingDate = seoLongDate(preview.sale_date);
   // Vente dont le jour est passé : signal explicite, ni bouton d'agenda ni bande d'écart (le marché
@@ -304,7 +439,20 @@ export function SalePublicPreview({
   );
   const hearingTime = saleHearingTime(preview.sale_date);
   const tribunal = procedure.venueType === "tribunal" ? tribunalDisplayName(preview) : null;
-  const location = [preview.city, preview.department].filter(Boolean).join(" · ");
+  const department = departmentFromCode(preview.department);
+  const place = [preview.city, preview.department ? `(${preview.department})` : null]
+    .filter(Boolean)
+    .join(" ");
+  // Prix au m² de la mise à prix : seulement avec une surface publiée (ni estimée, ni de terrain),
+  // comme sur les cartes de /sales.
+  const displaySurface = getDisplaySurface(preview);
+  const startingPricePerM2 =
+    price && displaySurface.kind === "recorded" && displaySurface.value
+      ? (preview.starting_price_eur as number) / displaySurface.value
+      : null;
+  const rooms = preview.rooms_count != null && preview.rooms_count > 0 ? preview.rooms_count : null;
+  const bedrooms =
+    preview.bedrooms_count != null && preview.bedrooms_count > 0 ? preview.bedrooms_count : null;
   const propertyFacts = (
     <dl className={styles.facts}>
       <div className={styles.fact}>
@@ -314,32 +462,42 @@ export function SalePublicPreview({
       {surface ? (
         <div className={styles.fact}>
           <dt>Surface</dt>
-          <dd>{surface}</dd>
+          <dd className={styles.num}>{surface}</dd>
         </div>
       ) : null}
-      {preview.rooms_count != null && preview.rooms_count > 0 ? (
+      {rooms ? (
         <div className={styles.fact}>
           <dt>Pièces</dt>
-          <dd>{preview.rooms_count}</dd>
+          <dd className={styles.num}>
+            {rooms}
+            {bedrooms ? ` · ${bedrooms} chambre${bedrooms > 1 ? "s" : ""}` : ""}
+          </dd>
         </div>
       ) : null}
-      {location ? (
+      {place ? (
         <div className={styles.fact}>
-          <dt>Localisation</dt>
-          <dd>{location}</dd>
+          <dt>Lieu</dt>
+          <dd>{place}</dd>
         </div>
       ) : null}
     </dl>
   );
-  // Date, lieu et conditions de la vente : la colonne de synthèse, sous la mise à prix.
-  const hearingFacts = (
+  // Date, lieu et conditions de la vente : la liste de la fiche de vente, sous la mise à prix.
+  const saleFactRows = (
     <>
       {hearingDate ? (
         <div className={styles.saleFact}>
           <dt>{procedure.venueType === "tribunal" ? "Date de l’audience" : "Date de la vente"}</dt>
           <dd>
-            {hearingDate}
-            {hearingTime ? ` à ${hearingTime}` : ""}
+            <span className={styles.num}>
+              {hearingDate}
+              {hearingTime ? (
+                <>
+                  {" "}
+                  <span className={styles.nowrap}>à {hearingTime}</span>
+                </>
+              ) : null}
+            </span>
             {pastDate ? (
               <span className={styles.pastDate} data-testid="past-sale-date">
                 Date de vente passée
@@ -352,7 +510,7 @@ export function SalePublicPreview({
         </div>
       ) : procedure.venueType === "notary" ? (
         // Comme la carte de /sales (« Date à confirmer ») : une vente notariale sans date n'a pas
-        // à laisser un vide dans la synthèse.
+        // à laisser un vide dans la fiche.
         <div className={styles.saleFact}>
           <dt>Date de la vente</dt>
           <dd data-testid="sale-date-to-confirm">À confirmer</dd>
@@ -360,7 +518,7 @@ export function SalePublicPreview({
       ) : null}
       {tribunal ? (
         <div className={styles.saleFact}>
-          <dt>Tribunal</dt>
+          <dt>Lieu</dt>
           <dd>
             {preview.tribunal_code ? (
               <Link href={tribunalCodePagePath(preview.tribunal_code)} className="underline">
@@ -372,6 +530,32 @@ export function SalePublicPreview({
           </dd>
         </div>
       ) : null}
+      <div className={styles.saleFact}>
+        <dt>{state ? "Mode de cession" : "Type de vente"}</dt>
+        <dd>{state ? "À consulter dans le dossier" : saleVenueLabel(procedure.venueType)}</dd>
+      </div>
+      <div className={styles.saleFact}>
+        <dt>{state ? "Démarches" : notary ? "Participation" : "Pour enchérir"}</dt>
+        <dd>
+          {state ? (
+            "Conditions précisées par le service vendeur"
+          ) : notary ? (
+            "Modalités à consulter dans le dossier"
+          ) : (
+            <>
+              {lawyerRequirementLabel(procedure)}
+              {procedure.lawyerRequired === true ? (
+                <span className={styles.factLinks} data-testid="public-lawyer-links">
+                  <Link href={`/avocats?saleId=${encodeURIComponent(saleId)}`}>
+                    Trouver un avocat
+                  </Link>
+                  <Link href="/simulateur-frais-encheres">Estimer les frais (avocat compris)</Link>
+                </span>
+              ) : null}
+            </>
+          )}
+        </dd>
+      </div>
     </>
   );
   const description = publicSaleDescription(preview);
@@ -424,6 +608,9 @@ export function SalePublicPreview({
           {state
             ? "Vérifiez les conditions et frais dans l'annonce officielle"
             : "Prix de départ, hors frais"}
+          {startingPricePerM2 ? (
+            <span className={styles.num}> · {formatPricePerM2(startingPricePerM2)}</span>
+          ) : null}
         </p>
         {price && preview.market_gap_band && !pastDate ? (
           <MarketGapBandNote band={preview.market_gap_band} saleId={saleId} />
@@ -438,8 +625,10 @@ export function SalePublicPreview({
     `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
     { reason: "fiche" },
   );
-  // Sous le prix, là où le visiteur se demande ce que cache le reste : l'inscription, avec la ligne
-  // d'accès commune. Avec une session détectée, la page dit qu'elle vérifie le compte.
+  const followLink = loginPathWithRedirect(saleDetailPath(saleId, returnTo), { reason: "favori" });
+  const salesReturn = salesReturnHref(returnTo, preview.id ?? saleId);
+  // Sous la liste des faits : l'inscription, les actions secondaires et la ligne d'accès commune.
+  // Avec une session détectée, la page dit qu'elle vérifie le compte.
   const signupBlock = (
     <div className={styles.signup} data-testid="public-signup">
       {verifyingAccount ? (
@@ -448,144 +637,196 @@ export function SalePublicPreview({
         </p>
       ) : (
         <>
+          <Link href={accountLink} className={`${styles.primary} ${styles.block}`}>
+            Créer mon compte gratuit
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+          <div className={styles.actionRow}>
+            <Link href={followLink} className={styles.ghost} aria-label="Suivre cette vente">
+              <Heart className="h-4 w-4" aria-hidden />
+              Suivre
+            </Link>
+            {/* La comparaison se fait depuis la liste des ventes, où la carte de cette vente attend. */}
+            <Link
+              href={salesReturn}
+              className={styles.ghost}
+              aria-label="Comparer avec d’autres ventes de la liste"
+            >
+              Comparer
+            </Link>
+            <SalePublicShareButton title={headline} className={styles.ghost} />
+          </div>
           <p className={styles.signupText}>
             {/* Une photo est déjà visible : le compte ouvre « les autres », pas « les photos ». */}
             Créez votre compte gratuit pour voir l’adresse, l’occupation,{" "}
             {photo?.url ? "les autres photos" : "les photos"} et la fourchette de valeur de cette
             vente.
           </p>
-          <Link href={accountLink} className={styles.primary}>
-            Créer mon compte gratuit
-            <ArrowRight className="h-4 w-4" aria-hidden />
-          </Link>
           <SignupAccessLine />
         </>
       )}
     </div>
   );
-  // La date (et le tribunal) d'abord, puis l'inscription : le bouton se lit sans défiler après la
-  // date d'audience ; le type de vente et les conditions pour enchérir suivent.
-  const hasHearingFacts = Boolean(hearingDate || notary || tribunal);
-  const hearingFactsList = hasHearingFacts ? (
-    <dl className={styles.saleFacts}>{hearingFacts}</dl>
-  ) : null;
-  const saleFacts = (
-    <dl className={styles.saleFacts}>
-      <div className={styles.saleFact}>
-        <dt>{state ? "Mode de cession" : "Type de vente"}</dt>
-        <dd>{state ? "À consulter dans le dossier" : saleVenueLabel(procedure.venueType)}</dd>
-      </div>
-      <div className={styles.saleFact}>
-        <dt>{state ? "Démarches" : notary ? "Participation" : "Pour enchérir"}</dt>
-        <dd>
-          {state ? (
-            "Conditions précisées par le service vendeur"
-          ) : notary ? (
-            "Modalités à consulter dans le dossier"
-          ) : (
-            <>
-              {lawyerRequirementLabel(procedure)}
-              {procedure.lawyerRequired === true ? (
-                <span className={styles.factLinks} data-testid="public-lawyer-links">
-                  <Link href={`/avocats?saleId=${encodeURIComponent(saleId)}`}>
-                    Trouver un avocat
-                  </Link>
-                  <Link href="/simulateur-frais-encheres">Estimer les frais (avocat compris)</Link>
-                </span>
-              ) : null}
-            </>
-          )}
-        </dd>
-      </div>
-    </dl>
+  const venueSentence = saleVenueSentence(preview);
+  // Ligne sous le titre : lieu · type de vente · date et heure (la référence est dans le titre).
+  const headingLine = [
+    department
+      ? `${department.name} (${department.code})`
+      : preview.department
+        ? `Département ${preview.department}`
+        : null,
+    hearingDate
+      ? `${venueSentence}${procedure.venueType === "tribunal" ? ", audience" : ""} le ${hearingDate}${hearingTime ? ` à ${hearingTime}` : ""}`
+      : venueSentence,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const steps = timelineSteps(procedure);
+  const points = pointsToVerify(preview, { occupancyVisible: false });
+  const verified = ["verified", "cross_checked"].includes(procedure.verificationStatus);
+  const documentCount = Math.max(0, preview.document_count ?? 0);
+  const showMarket = Boolean(rentReference?.source.startsWith("anil_") || housingTension);
+  const showAlert = Boolean(preview.department && !verifyingAccount);
+
+  // Sections dans l'ordre de la maquette ; une section sans contenu disparaît et la suite est renumérotée.
+  const sectionDefs = [
+    { id: "le-bien", label: "Le bien", show: true },
+    { id: "la-vente", label: "La vente", show: true },
+    { id: "marche-local", label: "Marché local", show: showMarket },
+    { id: "analyse", label: "Analyse", show: true },
+    { id: "pieces-et-verifications", label: "Pièces et vérifications", show: true },
+    { id: "etre-prevenu", label: "Être prévenu", show: showAlert },
+  ].filter((section) => section.show);
+  const tocItems: SalePublicTocItem[] = sectionDefs.map((section, index) => ({
+    id: section.id,
+    number: String(index + 1).padStart(2, "0"),
+    label: section.label,
+  }));
+  const numberOf = (id: string) => tocItems.find((item) => item.id === id)?.number ?? "";
+
+  const mainVisual = photo?.url ? (
+    <figure className={styles.galleryMain}>
+      <ListingPhoto
+        src={photo.url}
+        mirror={photoMirrorForDetail(photo.mirror)}
+        alt={`Photo du bien : ${headline}`}
+        className="h-full w-full object-cover"
+        fetchPriority="high"
+      />
+      <span className={styles.mediaTag} aria-hidden>
+        Photo de l’annonce
+      </span>
+      {photoCount > 1 ? (
+        <span className={styles.photoCounter}>
+          <span aria-hidden>1 / {photoCount}</span>
+          <span className="sr-only">
+            Photo 1 sur {photoCount}, les autres avec un compte gratuit
+          </span>
+        </span>
+      ) : null}
+    </figure>
+  ) : (
+    // Sans photo : l'illustration du type de bien, toujours signalée (docs/design/fondations.md).
+    <div className={`${styles.galleryMain} ${styles.illustration}`}>
+      <span className={styles.illustrationTag} aria-hidden>
+        Illustration
+      </span>
+      <PropertyIllustration kind={illustrationKind(preview.property_type)} />
+      {preview.city ? <span className={styles.illustrationPlace}>{preview.city}</span> : null}
+    </div>
   );
-  const subtitle = saleHeadingSubtitle(preview);
 
   return (
     <main id="contenu" className={styles.page}>
       <div className={styles.container}>
-        {/* Même chemin que le BreadcrumbList JSON-LD de la fiche (Accueil, Ventes, la vente). */}
-        <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
-          <ol>
-            <li>
-              <Link href="/">Accueil</Link>
-            </li>
-            <li>
-              <Link href="/sales">Ventes</Link>
-            </li>
-            <li>
-              <span aria-current="page" title={shortHeading}>
-                {shortHeading}
-              </span>
-            </li>
-          </ol>
-        </nav>
-        <Link href={salesReturnHref(returnTo, preview.id ?? saleId)} className={styles.back}>
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          {salesReturnLabel(returnTo)}
-        </Link>
+        <div className={styles.grid}>
+          <div className={styles.crumbs}>
+            <Link href={salesReturn} className={styles.back}>
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              {salesReturnLabel(returnTo)}
+            </Link>
+            {/* Même chemin que le BreadcrumbList JSON-LD de la fiche (Accueil, Ventes, la vente). */}
+            <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
+              <ol>
+                <li>
+                  <Link href="/">Accueil</Link>
+                </li>
+                <li>
+                  <Link href="/sales">Ventes</Link>
+                </li>
+                <li>
+                  <span aria-current="page" title={shortHeading}>
+                    {shortHeading}
+                  </span>
+                </li>
+              </ol>
+            </nav>
+          </div>
 
-        <header className={styles.head}>
-          <SaleProcedureBadge sale={preview} />
-          {preview.pepite ? <PepiteHeroBadge blockLoaded={pepiteBlockLoaded} /> : null}
-          <h1 id="public-sale-title" className={styles.title}>
-            {shortHeading}
-            <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
-          </h1>
-          <p className={styles.subtitle}>{subtitle}</p>
-        </header>
+          <header className={styles.head}>
+            <div className={styles.tags}>
+              <SaleProcedureBadge sale={preview} />
+              <SalePublicDeadline sale={preview} />
+              {preview.pepite ? <PepiteHeroBadge blockLoaded={pepiteBlockLoaded} /> : null}
+            </div>
+            <h1 id="public-sale-title" className={styles.title}>
+              {shortHeading}
+              <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
+            </h1>
+            <p className={styles.subtitle}>{headingLine}</p>
+          </header>
 
-        <div className={styles.layout}>
-          {photo?.url ? (
-            <div className={styles.photoArea}>
-              <figure className={styles.photo}>
-                <ListingPhoto
-                  src={photo.url}
-                  mirror={photoMirrorForDetail(photo.mirror)}
-                  alt={`Photo du bien : ${headline}`}
-                  className="h-full w-full object-cover"
-                  fetchPriority="high"
-                />
-              </figure>
+          <div className={styles.gallery}>
+            <div className={`${styles.galleryGrid} ${morePhotos ? styles.galleryWithSide : ""}`}>
+              {mainVisual}
+              {morePhotos ? (
+                // Les autres photos sont réservées au compte : visuel réservé (fond beige, cadenas).
+                <div className={styles.gallerySide}>
+                  <LockKeyhole className={styles.galleryLock} aria-hidden />
+                  <Link href={accountLink} className={styles.white}>
+                    <Camera className="h-4 w-4" aria-hidden />
+                    Voir les {photoCount} photos
+                  </Link>
+                  <span className={styles.gallerySideNote}>avec un compte gratuit</span>
+                </div>
+              ) : null}
+            </div>
+            {photo?.url ? (
               <PhotoCredit
                 credit={photoCredit(photo.url, preview)}
-                className="mt-1.5 block text-xs text-muted-foreground"
+                className={styles.galleryCaption}
                 linkClassName="hover:text-foreground"
               />
-            </div>
-          ) : null}
+            ) : null}
+          </div>
 
-          {/* Synthèse : sous la photo sur mobile, à droite et suivant le défilement sur ordinateur. */}
-          <aside className={styles.summary} aria-label="Synthèse de la vente">
-            <div className={styles.summaryCard}>
+          {/* Fiche de vente : sous le titre sur mobile, à droite et suivant le défilement sur ordinateur. */}
+          <aside className={styles.side} aria-label="Synthèse de la vente">
+            <div className={styles.panel}>
+              <p className={styles.eyebrow}>Fiche de vente</p>
               {priceBlock}
-              {hearingFactsList}
+              <dl className={styles.saleFacts}>{saleFactRows}</dl>
               {signupBlock}
-              {saleFacts}
             </div>
-            <div className={styles.verification}>
-              <ShieldCheck aria-hidden />
-              <p>
-                <strong>{saleVerificationLabel(procedure.verificationStatus)}</strong>
-                <br />
-                {saleVerificationExplanation(procedure.verificationStatus)}
-              </p>
-            </div>
+            <Link href="/simulateur-frais-encheres" className={styles.sideLink}>
+              <span>
+                <b>Calculer les frais d’enchères</b>
+                <span>Ce qui s’ajoute au prix d’adjudication</span>
+              </span>
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
           </aside>
 
           <div className={styles.body}>
-            <section className={styles.card} aria-labelledby="public-property-title">
-              <h2 id="public-property-title" className={styles.cardTitle}>
-                Le bien
-              </h2>
+            <SalePublicToc items={tocItems} />
+
+            <NumberedSection
+              id="le-bien"
+              number={numberOf("le-bien")}
+              title="Le bien"
+              titleId="public-property-title"
+            >
               {propertyFacts}
-              <p className={styles.sourceNote} data-testid="public-source-note">
-                {preview.source_label ? <>Source de l’annonce : {preview.source_label}. </> : null}
-                <Link href={contactReportPath(saleId)} className="underline">
-                  Signaler une erreur sur cette fiche
-                </Link>
-              </p>
-              <p className={styles.description}>{description.sentence}</p>
               {description.amenities.length > 0 ? (
                 <ul className={styles.amenities} aria-label="Équipements mentionnés">
                   {description.amenities.map((item) => (
@@ -593,195 +834,322 @@ export function SalePublicPreview({
                   ))}
                 </ul>
               ) : null}
-            </section>
+              <p className={styles.description}>{description.sentence}</p>
+              <p className={styles.sourceNote} data-testid="public-source-note">
+                {preview.source_label ? <>Source de l’annonce : {preview.source_label}. </> : null}
+                <Link href={contactReportPath(saleId)}>Signaler une erreur sur cette fiche</Link>
+              </p>
+            </NumberedSection>
 
-            {/* Cible de `#points-a-verifier` ; l'occupation n'est pas lue sur l'aperçu public. */}
-            <SalePointsToVerify
-              points={pointsToVerify(preview, { occupancyVisible: false })}
-              saleId={saleId}
-            />
-
-            {/* « Pourquoi cette pépite » : les noms des critères, jamais un montant ni un flou ; le détail
-                demande un compte. Le repère vient de `get_public_sale_pepite` (mode « on » seulement). */}
-            {preview.pepite ? (
-              <PepiteBlockLazy
-                saleId={saleId}
-                known
-                onLoadedChange={setPepiteBlockLoaded}
-                lockedAction={
-                  <Link
-                    href={accountLink}
-                    className="font-semibold text-gold-text underline underline-offset-4"
-                  >
-                    Créez un compte gratuit pour voir le détail du calcul
-                  </Link>
-                }
-              />
-            ) : null}
-
-            {/* Marché locatif de la commune : chargé à la demande, seulement s'il a quelque chose à dire. */}
-            {rentReference?.source.startsWith("anil_") || housingTension ? (
-              <RentalMarketBlockLazy
-                sale={preview}
-                startingPriceEur={price ? preview.starting_price_eur : null}
-                surfaceM2={preview.app_surface_m2 ?? null}
-                reference={rentReference}
-                tension={housingTension}
-                className=""
-              />
-            ) : null}
-
-            <section className={styles.card} aria-labelledby="public-teaser-title">
-              <h2 id="public-teaser-title" className={styles.cardTitle}>
-                L’analyse de cette vente
-              </h2>
-              <dl className={styles.teaser}>
-                {analysisTeaser.map((item) => (
-                  <div key={item.label} className={styles.teaserRow}>
-                    <dt>
-                      <LockKeyhole aria-hidden />
-                      {item.label}
-                    </dt>
-                    <dd>
-                      {/* La barre est un décor (aria-hidden) et ne porte aucun chiffre : un lecteur
-                          d'écran entend que la valeur est masquée et ce qui la débloque. */}
-                      <span className="sr-only">
-                        Valeur masquée, visible avec {item.visibleWith}
-                      </span>
-                      <span
-                        className={`${styles.skeleton} ${styles[`skeleton_${item.width}`]}`}
-                        aria-hidden
-                        data-nosnippet
-                      />
-                      <TeaserTier tier={item.tier} offerAware={item.offerAware} />
-                    </dd>
+            <NumberedSection
+              id="la-vente"
+              number={numberOf("la-vente")}
+              title="La vente"
+              titleId="public-sale-steps-title"
+            >
+              <ol className={styles.steps} aria-label="Déroulement de la vente">
+                <li>
+                  <div className={styles.rail}>
+                    <span className={styles.knot} />
+                    <i />
                   </div>
-                ))}
-              </dl>
-              {verifyingAccount ? null : (
-                <Link href={accountLink} className={`${styles.primary} ${styles.teaserCta}`}>
-                  Créer mon compte gratuit
-                  <ArrowRight className="h-4 w-4" aria-hidden />
-                </Link>
-              )}
-            </section>
+                  <small>Avant la vente</small>
+                  <p>{steps.before}</p>
+                </li>
+                <li className={styles.stepNow}>
+                  <div className={styles.rail}>
+                    <span className={styles.knot} />
+                    <i />
+                  </div>
+                  <small className={styles.num}>
+                    {hearingDate
+                      ? `${hearingDate}${hearingTime ? ` à ${hearingTime}` : ""}`
+                      : "Date à confirmer"}
+                  </small>
+                  <p>{venueSentence}</p>
+                </li>
+                <li className={styles.stepNext}>
+                  <div className={styles.rail}>
+                    <span className={styles.knot} />
+                  </div>
+                  <small>Après la vente</small>
+                  <p>{steps.after}</p>
+                </li>
+              </ol>
 
-            {/* « Mon dossier » (statut, enchère plafond) : ce que le compte gratuit ajoute, sans le
-                montrer. Hors du bloc « L’analyse » : le plafond noté est le sien, pas un calcul promis. */}
-            <p className={styles.dossierNote} data-testid="public-dossier-teaser">
-              <FolderHeart aria-hidden />
-              <span>
-                {/* Sans régime de frais ouvert, aucun plafond n'est promis sur la page : le statut seul. */}
-                {ceilingTerms
-                  ? `Compte gratuit : notez votre statut et votre ${ceilingTerms.ceilingTerm} sur chaque vente suivie.`
-                  : "Compte gratuit : notez votre statut sur chaque vente suivie."}
-              </span>
-            </p>
-
-            {/* Repliée : le détail est redondant avec la synthèse et l'analyse ci-dessus. Les mises en
-                garde « indicatif » (écart au marché, simulations) sont ailleurs, jamais repliées. */}
-            <details className={styles.fold}>
-              <summary className={styles.foldSummary}>
-                {/* Dans un <summary> : des <span> (contenu de phrase), ni <div> ni titre <h2>. */}
-                <span>
-                  <span className={styles.cardTitle}>Cette vente en clair</span>
-                  <span className={styles.foldHint}>
-                    Le déroulement de la vente et ce que chaque accès ouvre
+              {/* Repliée : le détail est redondant avec la fiche de vente et l'analyse. Les mises en
+                  garde « indicatif » (écart au marché, simulations) sont ailleurs, jamais repliées. */}
+              <details className={styles.fold}>
+                <summary className={styles.foldSummary}>
+                  {/* Dans un <summary> : des <span> (contenu de phrase), ni <div> ni titre <h2>. */}
+                  <span>
+                    <span className={styles.foldTitle}>Cette vente en clair</span>
+                    <span className={styles.foldHint}>
+                      Le déroulement de la vente et ce que chaque accès ouvre
+                    </span>
                   </span>
-                </span>
-                <ChevronDown className={styles.foldIcon} aria-hidden />
-              </summary>
-              <div className={styles.foldBody}>
-                <p className={styles.procedureText}>
-                  {withAdjudicationTerm(venueCopy.explanation)}
-                </p>
-                <ol className={styles.tiers} aria-label="Ce que vous voyez, selon votre accès">
-                  <li className={styles.tier}>
-                    <h3 className={styles.tierTitle}>
-                      <Eye aria-hidden />
-                      Visible maintenant
-                    </h3>
-                    <p>
-                      {state
-                        ? "Le bien et ses équipements, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
-                        : "Le bien et ses équipements, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
-                    </p>
-                  </li>
-                  <li className={`${styles.tier} ${styles.tierFree}`}>
-                    <h3 className={styles.tierTitle}>
-                      <LockKeyholeOpen aria-hidden />
-                      Découverte · gratuit
-                    </h3>
-                    <p>
-                      Adresse, photos, description, occupation, dates de visite et contact du
-                      dossier, fourchette de valeur estimée, Street View, météo et risques de la
-                      commune. Et {MONTHLY_SALE_UNLOCKS} déblocages par mois, chacun ouvrant, pour
-                      une vente :{" "}
-                      {unlockedItemsText({
-                        ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
-                        statistics:
-                          procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
-                      })}
-                      .
-                    </p>
-                  </li>
-                  <li className={`${styles.tier} ${styles.tierAnalysis}`}>
-                    <h3 className={styles.tierTitle}>
-                      <ChartNoAxesCombined aria-hidden />
-                      Offre Analyse
-                    </h3>
-                    <p>
-                      {ceilingTerms
-                        ? procedure.venueType === "tribunal"
-                          ? `Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre ${ceilingTerms.ceilingTerm}.`
-                          : `Pièces du dossier, ventes comparables, travaux et calcul de votre ${ceilingTerms.ceilingTerm}.`
-                        : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
-                    </p>
-                  </li>
-                </ol>
-                <p className={styles.catalogueNote}>
-                  <strong>Un seul catalogue, plusieurs procédures</strong>
-                  Immojudis référence les ventes immobilières au tribunal, chez le notaire et les
-                  ventes domaniales. Les règles affichées s’adaptent au type de chaque vente.
-                </p>
-              </div>
-            </details>
-            <Link href={returnTo} className={styles.secondary}>
-              Continuer ma recherche
-            </Link>
+                  <ChevronDown className={styles.foldIcon} aria-hidden />
+                </summary>
+                <div className={styles.foldBody}>
+                  <p className={styles.procedureText}>
+                    {withAdjudicationTerm(venueCopy.explanation)}
+                  </p>
+                  <ol className={styles.tiers} aria-label="Ce que vous voyez, selon votre accès">
+                    <li className={styles.tier}>
+                      <h3 className={styles.tierTitle}>
+                        <Eye aria-hidden />
+                        Visible maintenant
+                      </h3>
+                      <p>
+                        {state
+                          ? "Le bien et ses équipements, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
+                          : "Le bien et ses équipements, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
+                      </p>
+                    </li>
+                    <li className={`${styles.tier} ${styles.tierFree}`}>
+                      <h3 className={styles.tierTitle}>
+                        <LockKeyholeOpen aria-hidden />
+                        Découverte · gratuit
+                      </h3>
+                      <p>
+                        Adresse, photos, description, occupation, dates de visite et contact du
+                        dossier, fourchette de valeur estimée, Street View, météo et risques de la
+                        commune. Et {MONTHLY_SALE_UNLOCKS} déblocages par mois, chacun ouvrant, pour
+                        une vente :{" "}
+                        {unlockedItemsText({
+                          ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
+                          statistics:
+                            procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
+                        })}
+                        .
+                      </p>
+                    </li>
+                    <li className={`${styles.tier} ${styles.tierAnalysis}`}>
+                      <h3 className={styles.tierTitle}>
+                        <ChartNoAxesCombined aria-hidden />
+                        Offre Analyse
+                      </h3>
+                      <p>
+                        {ceilingTerms
+                          ? procedure.venueType === "tribunal"
+                            ? `Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre ${ceilingTerms.ceilingTerm}.`
+                            : `Pièces du dossier, ventes comparables, travaux et calcul de votre ${ceilingTerms.ceilingTerm}.`
+                          : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
+                      </p>
+                    </li>
+                  </ol>
+                  <p className={styles.catalogueNote}>
+                    <strong>Un seul catalogue, plusieurs procédures</strong>
+                    Immojudis référence les ventes immobilières au tribunal, chez le notaire et les
+                    ventes domaniales. Les règles affichées s’adaptent au type de chaque vente.
+                  </p>
+                </div>
+              </details>
+            </NumberedSection>
 
-            {preview.department && !verifyingAccount ? (
-              <div data-testid="public-sector-alert">
-                <SectorAlertCta
-                  criteria={{ department: preview.department }}
-                  intro="Cette vente vous intéresse ? Recevez les nouvelles ventes du même département."
+            {/* Marché locatif de la commune : seulement s'il a quelque chose à dire. */}
+            {showMarket ? (
+              <NumberedSection
+                id="marche-local"
+                number={numberOf("marche-local")}
+                title="Marché local"
+                titleId="public-market-title"
+              >
+                <SalePublicRentalMarketLazy
+                  sale={preview}
+                  startingPriceEur={price ? preview.starting_price_eur : null}
+                  surfaceM2={preview.app_surface_m2 ?? null}
+                  reference={rentReference}
+                  tension={housingTension}
                 />
-              </div>
+              </NumberedSection>
             ) : null}
 
-            <section aria-labelledby="public-further-title">
-              <h2 id="public-further-title" className={styles.cardTitle}>
+            <div id="analyse" className={styles.sec}>
+              <div className={styles.secNumber} aria-hidden>
+                {numberOf("analyse")}
+              </div>
+              <div className={styles.secBody}>
+                {/* « Pourquoi cette pépite » : les noms des critères, jamais un montant ni un flou ; le
+                    détail demande un compte. Le repère vient de `get_public_sale_pepite` (mode « on »). */}
+                {preview.pepite ? (
+                  <PepiteBlockLazy
+                    saleId={saleId}
+                    known
+                    onLoadedChange={setPepiteBlockLoaded}
+                    lockedAction={
+                      <Link
+                        href={accountLink}
+                        className="font-semibold text-gold-text underline underline-offset-4"
+                      >
+                        Créez un compte gratuit pour voir le détail du calcul
+                      </Link>
+                    }
+                  />
+                ) : null}
+                <section className={styles.lock} aria-labelledby="public-teaser-title">
+                  <p className={styles.lockEyebrow}>Réservé aux comptes</p>
+                  <h2 id="public-teaser-title" className={styles.lockTitle}>
+                    L’analyse de cette vente
+                  </h2>
+                  <dl className={styles.teaser}>
+                    {analysisTeaser.map((item) => (
+                      <div key={item.label} className={styles.teaserRow}>
+                        <dt>
+                          <LockKeyhole aria-hidden />
+                          {item.label}
+                        </dt>
+                        <dd>
+                          {/* La barre est un décor (aria-hidden) et ne porte aucun chiffre : un
+                              lecteur d'écran entend que la valeur est masquée et ce qui la débloque. */}
+                          <span className="sr-only">
+                            Valeur masquée, visible avec {item.visibleWith}
+                          </span>
+                          <span
+                            className={`${styles.skeleton} ${styles[`skeleton_${item.width}`]}`}
+                            aria-hidden
+                            data-nosnippet
+                          />
+                          <TeaserTier tier={item.tier} offerAware={item.offerAware} />
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {verifyingAccount ? null : (
+                    <div className={styles.lockAction}>
+                      <Link href={accountLink} className={styles.white}>
+                        Créer mon compte gratuit
+                        <ArrowRight className="h-4 w-4" aria-hidden />
+                      </Link>
+                      <p>Sans carte bancaire.</p>
+                    </div>
+                  )}
+                </section>
+                {/* « Mon dossier » (statut, enchère plafond) : ce que le compte gratuit ajoute, sans le
+                    montrer. Hors du bloc « L’analyse » : le plafond noté est le sien, pas un calcul
+                    promis. */}
+                <p className={styles.dossierNote} data-testid="public-dossier-teaser">
+                  <FolderHeart aria-hidden />
+                  <span>
+                    {/* Sans régime de frais ouvert, aucun plafond n'est promis sur la page : le statut seul. */}
+                    {ceilingTerms
+                      ? `Compte gratuit : notez votre statut et votre ${ceilingTerms.ceilingTerm} sur chaque vente suivie.`
+                      : "Compte gratuit : notez votre statut sur chaque vente suivie."}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <NumberedSection
+              id="pieces-et-verifications"
+              number={numberOf("pieces-et-verifications")}
+              title="Pièces et vérifications"
+              titleId="public-checks-title"
+            >
+              <div className={styles.checks}>
+                <div className={styles.box}>
+                  <Badge
+                    tone={
+                      verified
+                        ? "success"
+                        : procedure.verificationStatus === "conflict"
+                          ? "danger"
+                          : "warning"
+                    }
+                  >
+                    {verified ? (
+                      <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                    ) : (
+                      <CircleAlert className="h-3.5 w-3.5" aria-hidden />
+                    )}
+                    {saleVerificationLabel(procedure.verificationStatus)}
+                  </Badge>
+                  <p>{saleVerificationExplanation(procedure.verificationStatus)}</p>
+                </div>
+                {/* Cible de `#points-a-verifier` ; l'occupation n'est pas lue sur l'aperçu public. */}
+                <SalePointsToVerify points={points} saleId={saleId} className={styles.points} />
+              </div>
+              <ul className={styles.docs} aria-label="Pièces et sources">
+                {documentCount > 0 ? (
+                  <li>
+                    <FileText aria-hidden />
+                    <b>Pièces du dossier</b>
+                    <span>
+                      {documentCount} pièce{documentCount > 1 ? "s" : ""}, avec l’offre Analyse
+                      {ceilingTerms ? " ou un déblocage" : ""}
+                    </span>
+                  </li>
+                ) : null}
+                <li>
+                  <FileText aria-hidden />
+                  <b>Risques naturels et technologiques</b>
+                  <a
+                    href="https://www.georisques.gouv.fr/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Consulter Géorisques
+                  </a>
+                </li>
+              </ul>
+              <p className={styles.officialSources}>
+                Les sources officielles restent consultables librement.
+              </p>
+            </NumberedSection>
+
+            {showAlert ? (
+              <NumberedSection id="etre-prevenu" number={numberOf("etre-prevenu")}>
+                <div className={styles.alert} data-testid="public-sector-alert">
+                  <SectorAlertCta
+                    criteria={{ department: preview.department as string }}
+                    intro="Cette vente vous intéresse ? Recevez les nouvelles ventes du même département."
+                  />
+                </div>
+              </NumberedSection>
+            ) : null}
+
+            <section className={styles.further} aria-labelledby="public-further-title">
+              <h2 id="public-further-title" className={styles.furtherTitle}>
                 Pour aller plus loin
               </h2>
-              <ul className={styles.further}>
+              <ul className={styles.furtherList}>
                 {FURTHER_READING_LINKS.map((link) => (
                   <li key={link.href}>
                     <Link href={link.href}>{link.label}</Link>
-                    <span> : {link.hint}</span>
+                    <span>{link.hint}</span>
                   </li>
                 ))}
               </ul>
             </section>
-            <p className={styles.officialSources}>
-              Les sources officielles restent consultables librement :{" "}
-              <a href="https://www.georisques.gouv.fr/" target="_blank" rel="noopener noreferrer">
-                consulter Géorisques
-              </a>
-              .
-            </p>
+            <Link href={returnTo} className={`${styles.secondary} ${styles.continue}`}>
+              Continuer ma recherche
+            </Link>
           </div>
         </div>
       </div>
+
+      {/* Mobile : la mise à prix et l'inscription restent à portée de pouce. */}
+      {verifyingAccount ? null : (
+        <div className={styles.mobileBar}>
+          <div>
+            <p className={styles.mobileBarPrice}>
+              {price
+                ? formatPrice(preview.starting_price_eur)
+                : state
+                  ? "Conditions au dossier"
+                  : "À confirmer"}
+            </p>
+            <p className={styles.mobileBarNote}>
+              {[state ? "prix publié" : "mise à prix", shortSaleDate(preview.sale_date)]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          </div>
+          <Link href={accountLink} className={styles.primary}>
+            Créer mon compte
+          </Link>
+        </div>
+      )}
     </main>
   );
 }

@@ -116,8 +116,8 @@ describe("SalePublicPreview", () => {
       lawyer_contact: "confidential@example.test",
     });
 
-    // Le type de vente reste écrit en toutes lettres près du titre, dans le sous-titre.
-    expect(screen.getByText(/^Vente chez le notaire/)).toBeTruthy();
+    // Le type de vente reste écrit en toutes lettres près du titre, dans la ligne sous le titre.
+    expect(container.querySelector("header")?.textContent).toContain("Vente chez le notaire");
     expect(screen.getAllByText("Vente notariale").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Modalités à consulter dans le dossier")).toBeTruthy();
     expect(screen.getByText("Un seul catalogue, plusieurs procédures")).toBeTruthy();
@@ -272,12 +272,13 @@ describe("SalePublicPreview", () => {
       sale_date: "2026-10-20T09:00:00+02:00",
       tribunal: "TJ Bobigny",
     });
-    // Titre court ; le type de vente, le département et la date passent dans le sous-titre.
+    // Titre court ; le lieu, le type de vente et la date passent dans la ligne sous le titre
+    // (maquette du 06/11/2026 : lieu · type de vente · date et heure).
     const heading = screen.getByRole("heading", { level: 1 });
     expect(heading.firstChild?.textContent).toBe("Appartement de 50 m² à Romainville");
     expect(
       screen.getByText(
-        "Vente au tribunal · Seine-Saint-Denis (93) · audience le 20 octobre 2026 à 9 h 00",
+        "Seine-Saint-Denis (93) · Vente au tribunal, audience le 20 octobre 2026 à 9 h 00",
       ),
     ).toBeTruthy();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
@@ -320,7 +321,7 @@ describe("SalePublicPreview", () => {
     expect(facts.textContent).toContain("Maison");
     expect(facts.textContent).toContain("92 m²");
     expect(facts.textContent).toContain("4");
-    expect(facts.textContent).toContain("Pau · 64");
+    expect(facts.textContent).toContain("Pau (64)");
     // La date et le tribunal sont dans la synthèse, sous la mise à prix.
     const summary = screen.getByRole("complementary", { name: "Synthèse de la vente" });
     expect(summary.textContent).toContain("20 octobre 2026 à 9 h 30");
@@ -341,7 +342,9 @@ describe("SalePublicPreview", () => {
     const summary = screen.getByRole("complementary", { name: "Synthèse de la vente" });
     expect(summary.textContent).toContain("23 octobre 2026");
     expect(summary.textContent).not.toMatch(/\d h \d{2}/);
-    expect(screen.queryByRole("img")).toBeNull();
+    // Sans photo, aucune image ne passe pour une photo du bien : l'illustration du type, signalée.
+    expect(screen.queryByRole("img", { name: /Photo du bien/ })).toBeNull();
+    expect(screen.getByRole("img", { name: /^Illustration générique/ })).toBeTruthy();
   });
 
   it("says what the free account opens in two places only, not three or four", () => {
@@ -360,12 +363,16 @@ describe("SalePublicPreview", () => {
       container.textContent?.match(/voir l’adresse, l’occupation, les photos et la fourchette/g),
     ).toHaveLength(1);
     expect(container.textContent?.match(/Découverte · gratuit/g)).toHaveLength(1);
-    // Rien de ce que le compte révèle n'est annoncé en chiffres.
-    expect(container.textContent).not.toContain("5 photos");
+    // Le nombre de photos de l'annonce n'est dit qu'une fois, dans la galerie (maquette du
+    // 06/11/2026 : « Voir les N photos »), et mène à l'inscription.
+    expect(container.textContent?.match(/5 photos/g)).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Voir les 5 photos" }).getAttribute("href")).toMatch(
+      /^\/login\?redirect=%2Fsales%2Fsale-1&mode=investor&reason=fiche$/,
+    );
   });
 
   describe("bloc d'inscription sous le prix", () => {
-    /** L'inscription suit le prix dans la synthèse, après la date, le lieu et les conditions. */
+    /** L'inscription suit le prix dans la fiche de vente, après la date, le lieu et les conditions. */
     const followsPrice = (block: HTMLElement) => {
       const price = screen.getByText(/^Mise à prix$|^Prix publié$/).closest("[class*=priceBlock]")!;
       expect(price.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -383,17 +390,22 @@ describe("SalePublicPreview", () => {
       followsPrice(block);
     });
 
-    it("se place juste sous la date d'audience, avant le type de vente et les conditions pour enchérir", () => {
+    it("se place sous la date, le lieu, le type de vente et les conditions pour enchérir", () => {
       renderPreview({
         sale_venue_type: "tribunal",
         starting_price_eur: 59_000,
         sale_date: "2026-10-20T09:00:00+02:00",
       });
+      // Maquette du 06/11/2026 : la liste Date / Lieu / Type de vente / Participation, puis le bouton.
       const signup = screen.getByTestId("public-signup");
       const date = screen.getByText("Date de l’audience");
       const venue = screen.getByText("Type de vente");
-      expect(date.compareDocumentPosition(signup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(signup.compareDocumentPosition(venue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const bidding = screen.getByText("Pour enchérir");
+      expect(date.compareDocumentPosition(venue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(venue.compareDocumentPosition(signup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(
+        bidding.compareDocumentPosition(signup) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
       expect(signup.parentElement).toBe(venue.closest("dl")?.parentElement);
     });
 
@@ -494,7 +506,11 @@ describe("SalePublicPreview", () => {
       });
       const note = screen.getByTestId("public-source-note");
       expect(note.textContent).toContain("Source de l’annonce : Licitor.");
-      expect(note.previousElementSibling?.tagName).toBe("DL");
+      // Dans la section « Le bien », sous les faits et la description (maquette du 06/11/2026).
+      const property = screen.getByRole("region", { name: "Le bien" });
+      expect(property.contains(note)).toBe(true);
+      const facts = within(property).getByText("Type de bien").closest("dl")!;
+      expect(facts.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       unmount();
       renderPreview({ sale_venue_type: "tribunal" });
       expect(screen.getByTestId("public-source-note").textContent).not.toContain("Source de");
@@ -1243,5 +1259,258 @@ describe("SalePublicPreview : repère « Pépite »", () => {
     expect(screen.getByRole("region", { name: "L’analyse de cette vente" }).textContent).toContain(
       "Valeur masquée, visible avec l’offre Analyse, ou avec un déblocage",
     );
+  });
+});
+
+describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => {
+  const RENT = {
+    rentPerM2: 36.1,
+    source: "anil_commune",
+    reliability: "reliable",
+    segment: "apt_all",
+    communeCode: "75108",
+    lowPerM2: 27.3,
+    highPerM2: 47.8,
+    observations: 8293,
+    vintage: 2025,
+    sourceUpdatedOn: "2025-12-11",
+  } as const;
+  const TENSION = {
+    communeCode: "75056",
+    zoning: "tendue",
+    decreeReference: null,
+    sourceUpdatedOn: "2025-12-30",
+    sourceUrl: "https://www.data.gouv.fr/",
+  } as const;
+
+  /** Les nombres de `Intl` portent des espaces insécables : on les compare en espaces simples. */
+  const plain = (text: string | null | undefined) => (text ?? "").replace(/[\u202f\u00a0]/g, " ");
+
+  function renderFull(overrides: Partial<AuctionSale> = {}, market = true) {
+    return render(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales?city=Paris"
+        rentReference={market ? { ...RENT } : null}
+        housingTension={market ? { ...TENSION } : null}
+        preview={
+          {
+            id: "sale-1",
+            starting_price_eur: 450_000,
+            sale_venue_type: "notary",
+            sale_verification_status: "cross_checked",
+            property_type: "apartment",
+            app_surface_m2: 47,
+            rooms_count: 2,
+            bedrooms_count: 1,
+            city: "Paris 8e Arrondissement",
+            department: "75",
+            ...overrides,
+          } as AuctionSale
+        }
+      />,
+    );
+  }
+
+  it("numérote le sommaire et les sections dans l'ordre, la première mise en avant", () => {
+    renderFull();
+    const toc = screen.getByRole("navigation", { name: "Sommaire de la fiche" });
+    const links = within(toc).getAllByRole("link");
+    expect(links.map((link) => link.textContent)).toEqual([
+      "01Le bien",
+      "02La vente",
+      "03Marché local",
+      "04Analyse",
+      "05Pièces et vérifications",
+      "06Être prévenu",
+    ]);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "#le-bien",
+      "#la-vente",
+      "#marche-local",
+      "#analyse",
+      "#pieces-et-verifications",
+      "#etre-prevenu",
+    ]);
+    expect(links[0].getAttribute("aria-current")).toBe("true");
+    expect(links.slice(1).every((link) => !link.hasAttribute("aria-current"))).toBe(true);
+    // Chaque lien mène à une section qui existe.
+    for (const link of links) {
+      expect(document.getElementById(link.getAttribute("href")!.slice(1))).not.toBeNull();
+    }
+  });
+
+  it("renumérote la suite quand une section n'a rien à dire (pas de marché local, pas d'alerte)", () => {
+    renderFull({ department: null }, false);
+    const links = within(
+      screen.getByRole("navigation", { name: "Sommaire de la fiche" }),
+    ).getAllByRole("link");
+    expect(links.map((link) => link.textContent)).toEqual([
+      "01Le bien",
+      "02La vente",
+      "03Analyse",
+      "04Pièces et vérifications",
+    ]);
+    expect(document.getElementById("marche-local")).toBeNull();
+  });
+
+  it("met les chiffres du marché locatif en phrase, avec la fourchette et le zonage", () => {
+    renderFull();
+    const market = screen.getByRole("region", { name: "Marché local" });
+    expect(plain(market.textContent)).toContain(
+      "Dans la commune, le loyer d’annonce des appartements est estimé à 36,1 €/m² par mois, charges comprises, d’après 8 293 annonces observées dans la commune.",
+    );
+    expect(plain(market.textContent)).toContain("Fourchette de 27,3 €/m² à 47,8 €/m².");
+    expect(within(market).getByTestId("housing-tension-line").textContent).toContain(
+      "Commune en zone tendue (TLV)",
+    );
+    expect(market.querySelector("[data-rent-source-notice]")).not.toBeNull();
+  });
+
+  it("donne le prix au m² d'une surface publiée, jamais d'une surface absente", () => {
+    const { unmount } = renderFull();
+    expect(plain(screen.getByText("Prix de départ, hors frais").textContent)).toBe(
+      "Prix de départ, hors frais · 9 574 €/m²",
+    );
+    unmount();
+    renderFull({ app_surface_m2: null });
+    expect(screen.getByText("Prix de départ, hors frais").textContent).toBe(
+      "Prix de départ, hors frais",
+    );
+  });
+
+  it("pose la réglette sous une vraie bande, jamais sous un message d'insuffisance", () => {
+    const { unmount } = renderFull({ market_gap_band: "under" });
+    const note = screen.getByTestId("market-gap-band");
+    expect(note.textContent).toContain("Bas de fourchette");
+    unmount();
+    renderFull({ market_gap_band: "occupied" });
+    expect(screen.getByTestId("market-gap-band").textContent).not.toContain("Bas de fourchette");
+  });
+
+  it("propose Suivre, Comparer et Partager sous le bouton d'inscription", () => {
+    renderFull();
+    const block = screen.getByTestId("public-signup");
+    const follow = within(block).getByRole("link", { name: "Suivre cette vente" });
+    expect(follow.getAttribute("href")).toBe(
+      "/login?redirect=%2Fsales%2Fsale-1%3Ffrom%3D%252Fsales%253Fcity%253DParis&mode=investor&reason=favori",
+    );
+    expect(
+      within(block)
+        .getByRole("link", { name: /^Comparer/ })
+        .getAttribute("href"),
+    ).toBe("/sales?city=Paris#sale-card-sale-1");
+    expect(within(block).getByRole("button", { name: "Partager cette annonce" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /Calculer les frais d’enchères/ }).getAttribute("href"),
+    ).toBe("/simulateur-frais-encheres");
+  });
+
+  it("garde la mise à prix et l'inscription dans une barre du bas, sauf pendant la vérification du compte", () => {
+    const { container, unmount } = renderFull({ sale_date: "2026-11-06T11:00:00Z" });
+    const bar = container.querySelector<HTMLElement>("[class*=mobileBar]")!;
+    expect(plain(bar.textContent)).toContain("450 000 €");
+    expect(bar.textContent).toContain("mise à prix · 6 nov. 2026");
+    const cta = within(bar).getByRole("link", { name: "Créer mon compte" });
+    expect(cta.getAttribute("href")).toBe(
+      screen.getAllByRole("link", { name: /Créer mon compte gratuit/ })[0].getAttribute("href"),
+    );
+    unmount();
+    render(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales"
+        verifyingAccount
+        preview={{ id: "sale-1", sale_venue_type: "notary" } as AuctionSale}
+      />,
+    );
+    expect(document.querySelector("[class*=mobileBar]")).toBeNull();
+  });
+
+  it("montre la frise de la vente en trois étapes, le jour de la vente au milieu", () => {
+    renderFull({ sale_venue_type: "tribunal", sale_date: "2026-11-20T09:00:00Z" });
+    const steps = screen.getByRole("list", { name: "Déroulement de la vente" });
+    const items = within(steps).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0].textContent).toContain("Avant la vente");
+    expect(items[1].textContent).toContain("20 novembre 2026 à 10 h 00");
+    expect(items[1].textContent).toContain("Vente au tribunal");
+    expect(items[2].textContent).toContain("Après la vente");
+  });
+
+  it("liste les pièces verrouillées et le lien vers Géorisques, et le niveau de vérification", () => {
+    renderFull({ document_count: 3 });
+    const checks = screen.getByRole("region", { name: "Pièces et vérifications" });
+    expect(checks.textContent).toContain("Recoupé");
+    const docs = within(checks).getByRole("list", { name: "Pièces et sources" });
+    expect(docs.textContent).toContain("3 pièces, avec l’offre Analyse");
+    expect(
+      within(docs).getByRole("link", { name: "Consulter Géorisques" }).getAttribute("href"),
+    ).toBe("https://www.georisques.gouv.fr/");
+  });
+
+  it("montre « Voir les N photos » seulement quand l'annonce en a d'autres", () => {
+    const { unmount } = renderFull({
+      photo_count: 1,
+      media: [{ type: "image", url: "https://www.licitor.com/photo.jpg" }],
+    });
+    expect(screen.queryByRole("link", { name: /Voir les \d+ photos/ })).toBeNull();
+    unmount();
+    renderFull({
+      photo_count: 4,
+      media: [{ type: "image", url: "https://www.licitor.com/photo.jpg" }],
+    });
+    expect(screen.getByRole("link", { name: "Voir les 4 photos" })).toBeTruthy();
+    expect(screen.getByText("Photo 1 sur 4, les autres avec un compte gratuit")).toBeTruthy();
+  });
+
+  it("garde dans le HTML du serveur tout le texte utile au référencement", () => {
+    const html = renderToString(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales"
+        rentReference={{ ...RENT }}
+        housingTension={{ ...TENSION }}
+        preview={
+          {
+            id: "sale-1",
+            starting_price_eur: 450_000,
+            sale_venue_type: "notary",
+            sale_verification_status: "cross_checked",
+            property_type: "apartment",
+            app_surface_m2: 47,
+            city: "Paris 8e Arrondissement",
+            department: "75",
+            sale_date: "2026-11-20T09:00:00Z",
+          } as AuctionSale
+        }
+      />,
+    );
+    const text = html.replace(/&#x27;/g, "'").replace(/<!-- -->/g, "");
+    for (const expected of [
+      "Appartement de 47 m² à Paris 8e Arrondissement",
+      "Paris (75) · Vente chez le notaire le 20 novembre 2026 à 10 h 00",
+      "Le bien",
+      "La vente",
+      "Marché local",
+      "L’analyse de cette vente",
+      "Pièces et vérifications",
+      "Pour aller plus loin",
+      "Le guide des ventes immobilières judiciaires",
+    ]) {
+      expect(text).toContain(expected);
+    }
+    expect(text).toMatch(/450\s000\s€/);
+  });
+
+  it("n'a pas de défaut d'accessibilité structurel", async () => {
+    const { container } = renderFull({
+      market_gap_band: "near",
+      photo_count: 3,
+      document_count: 2,
+      app_surface_m2: null,
+    });
+    const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
+    expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
   });
 });
