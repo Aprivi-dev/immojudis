@@ -8,7 +8,7 @@ import { FirstAuctionGuide, useFirstAuctionGuide } from "./FirstAuctionGuide";
 import { MarketReference, marketReferenceScale } from "./MarketReference";
 import { PriceSummaryCard } from "./PriceSummaryCard";
 import { SaleTimeline } from "./SaleTimeline";
-import { knownTabForAnchor, tabForAnchor } from "./sale-detail-anchors";
+import { sectionForAnchor } from "./sale-detail-anchors";
 
 afterEach(() => {
   cleanup();
@@ -251,11 +251,26 @@ describe("PriceSummaryCard", () => {
   });
 });
 
-describe("Quartier tab anchors", () => {
-  it("opens the Quartier tab for the urbanism anchor and its own name", () => {
-    expect(tabForAnchor("urbanism")).toBe("quartier");
-    expect(knownTabForAnchor("quartier")).toBe("quartier");
-    // Les points à vérifier restent dans l'Aperçu.
-    expect(tabForAnchor("risks")).toBe("apercu");
+describe("Section anchors", () => {
+  it("leads the neighbourhood anchors to « Marché et comparables »", () => {
+    expect(sectionForAnchor("urbanism")).toBe("marche");
+    expect(sectionForAnchor("quartier")).toBe("marche");
+    // Les points à vérifier restent dans « Le bien ».
+    expect(sectionForAnchor("risks")).toBe("bien");
+  });
+
+  it("maps every former tab to its section", () => {
+    expect(sectionForAnchor("apercu")).toBe("bien");
+    expect(sectionForAnchor("estimation")).toBe("prix");
+    expect(sectionForAnchor("statistiques")).toBe("marche");
+    expect(sectionForAnchor("travaux")).toBe("travaux-financement");
+    expect(sectionForAnchor("financement")).toBe("travaux-financement");
+    expect(sectionForAnchor("demarches")).toBe("demarches");
+    expect(sectionForAnchor("documents")).toBe("pieces");
+    expect(sectionForAnchor("rendez-vous")).toBe("demarches");
+    expect(sectionForAnchor("calculation")).toBe("prix");
+    // Statistiques fermées par leur drapeau : leurs ancres ramènent en haut de la fiche.
+    expect(sectionForAnchor("stats-overview", false)).toBe("bien");
+    expect(sectionForAnchor("mon-dossier")).toBeNull();
   });
 });

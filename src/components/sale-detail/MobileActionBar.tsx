@@ -9,8 +9,8 @@ import styles from "./SaleOverview.module.css";
 /**
  * Sous 960 px (téléphone et tablette), le plafond, le prix de départ et l'action principale restent
  * à portée, sur tous les onglets, quand les boutons du haut de page (`[data-hero-actions]`) sont
- * hors de l'écran. Au-delà, rappel dans la barre d'onglets (`SaleDetailTabNav`). Sans action
- * (onglet du calcul), la barre garde les deux montants : on ajuste les hypothèses sans perdre le
+ * hors de l'écran. Au-delà, le panneau collant de droite garde les montants en vue. Sans action
+ * (section du calcul), la barre garde les deux montants : on ajuste les hypothèses sans perdre le
  * plafond de vue.
  */
 export function MobileActionBar({

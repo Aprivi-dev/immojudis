@@ -8,7 +8,6 @@ import { DocumentsList } from "@/components/DocumentsList";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { listingSaleStatus } from "@/lib/listing-evidence";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
-import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
@@ -16,24 +15,6 @@ import {
   saleProcedureIsConfirmed,
 } from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
-
-export function PanelIntro({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow: string;
-  title: string;
-  description?: string;
-}) {
-  return (
-    <header className={panelStyles.intro}>
-      <p>{eyebrow}</p>
-      <h2>{title}</h2>
-      {description ? <span>{description}</span> : null}
-    </header>
-  );
-}
 
 export function SaleDocumentsSection({
   sale,
@@ -50,11 +31,7 @@ export function SaleDocumentsSection({
   const documents = collectSaleDocuments(sale);
   const lockedCount = locked ? Math.max(0, sale.document_count ?? 0) : 0;
   return (
-    <section
-      id="documents"
-      aria-label="Pièces du dossier"
-      className="mx-auto max-w-[1260px] scroll-mt-2 px-4 pb-8 sm:px-6 lg:px-8"
-    >
+    <section id="documents" aria-label="Liste des pièces" className="scroll-mt-2">
       <details
         className="group mt-4 rounded-lg border border-brand-navy/12 bg-white shadow-sm"
         open={open}
@@ -124,7 +101,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
 
   return (
     <section id="lawyer" className="scroll-mt-2 bg-white">
-      <div className="mx-auto max-w-[1380px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+      <div className="py-2">
         <div className="grid gap-7 rounded-lg border border-line bg-background p-6 sm:p-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] lg:items-center">
           <div>
             <h2 className="font-display text-3xl font-medium leading-tight text-brand-navy sm:text-4xl">

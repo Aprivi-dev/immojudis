@@ -49,7 +49,7 @@ import {
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleKeyFacts } from "@/lib/sale-key-facts";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
-import { saleHeadingSubtitle, saleShortHeading } from "@/lib/seo";
+import { saleHeadingSubtitle, saleReference, saleShortHeading } from "@/lib/seo";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleSession, saleWindow } from "@/lib/sale-window";
 import type { AuctionSale } from "@/lib/types";
@@ -418,11 +418,17 @@ export function SaleDetailHeading({
   aiReviewStatus = "ready",
   pepite = false,
   pepiteFloodExposed = false,
+  showAddress = false,
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
+  /**
+   * Ligne lieu / date / référence : l'adresse de l'annonce en tête quand le compte la lit (fiche des
+   * comptes connectés), et la référence de la vente.
+   */
+  showAddress?: boolean;
   /** La vente est une pépite publiable : pastille « Pépite » et lien « Pourquoi ? » vers le bloc `#pepite`. */
   pepite?: boolean;
   /** Pépite dont le bien est dans le périmètre d'un PPRi : mention courte à côté de la pastille. */
@@ -450,6 +456,7 @@ export function SaleDetailHeading({
       : `Type de bien à confirmer à ${sale.city}`
     : nonBreakingUnits(saleShortHeading(shown));
   const subtitle = saleHeadingSubtitle(shown, { withDate: !review("sale.sale_date") });
+  const address = showAddress && !cityBlocked ? listingAddress(sale) : "";
   return (
     <header className={styles.pageHeading}>
       <div className={styles.headingBadges}>
@@ -465,8 +472,12 @@ export function SaleDetailHeading({
         {publicDemo ? " (exemple fictif)" : null}
       </h1>
       <p className={styles.subtitle}>
+        {address ? `${address} · ` : null}
         {subtitle}
         {cityBlocked ? " · localisation à confirmer" : null}
+        {showAddress && !publicDemo ? (
+          <span className="tabular-nums"> · Réf. {saleReference(sale.id)}</span>
+        ) : null}
       </p>
     </header>
   );
