@@ -25,6 +25,8 @@ import {
   salesSearchCountQueryKey,
   salesSearchQueryKey,
 } from "@/lib/search/catalog-placeholder";
+import { upcomingWeekScope } from "@/lib/search/sales-week";
+import { salesSearchSignature } from "@/lib/search/search-url-state";
 
 const sales = Array.from({ length: 24 }, (_, index) => ({
   id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
@@ -38,6 +40,17 @@ const sales = Array.from({ length: 24 }, (_, index) => ({
   app_surface_m2: 50,
   media: [],
 })) as unknown as AuctionSale[];
+
+/** Texte du h1 du HTML, balises et commentaires de React retirés. */
+function headingText(html: string): string {
+  const inner = /<h1[^>]*>([\s\S]*?)<\/h1>/.exec(html)?.[1] ?? "";
+  return inner
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&#x27;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function seededClient() {
   const client = new QueryClient();
@@ -57,8 +70,27 @@ describe("SearchPage rendered on the server", () => {
     const links = new Set(html.match(/href="\/sales\/[0-9a-f-]{36}(?:\?[^"]*)?"/g));
     expect(links.size).toBe(24);
     expect(html.match(/<h1/g)).toHaveLength(1);
-    expect(html).toContain("Ventes immobilières aux enchères");
+    // Le titre en phrase porte déjà le total servi par le serveur.
+    expect(headingText(html)).toMatch(/^2\s?276 ventes immobilières aux enchères à venir\.$/);
     expect(html).toMatch(/2\s?276 annonces/);
+  });
+
+  it("dit dans le titre du HTML combien de ventes ont lieu cette semaine, quand le serveur l'a compté", () => {
+    const client = seededClient();
+    const week = upcomingWeekScope({}, "2026-11-06");
+    if (week.kind !== "count") throw new Error("semaine attendue");
+    client.setQueryData(
+      salesSearchCountQueryKey(salesSearchSignature(week.search), ANONYMOUS_PREVIEW_SCOPE),
+      41,
+    );
+    const html = renderToString(
+      <QueryClientProvider client={client}>
+        <SearchPage search={{}} serverSeeded serverToday="2026-11-06" />
+      </QueryClientProvider>,
+    );
+    expect(headingText(html)).toMatch(
+      /^2\s?276 ventes immobilières aux enchères à venir, dont 41 cette semaine\.$/,
+    );
   });
 
   it("does not shift the layout when the media query resolves", () => {
@@ -116,7 +148,7 @@ describe("SearchPage rendered on the server", () => {
     expect(
       new Set(container.innerHTML.match(/href="\/sales\/[0-9a-f-]{36}(?:\?[^"]*)?"/g)).size,
     ).toBe(24);
-    expect(before).toContain("Ventes immobilières aux enchères");
+    expect(headingText(before)).toContain("ventes immobilières aux enchères à venir");
     await act(async () => root.unmount());
     errors.mockRestore();
     container.remove();

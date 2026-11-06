@@ -8,20 +8,13 @@ afterEach(cleanup);
 
 describe("MobileMapToggle", () => {
   const renderBar = (props: Partial<React.ComponentProps<typeof MobileMapToggle>> = {}) =>
-    render(
-      <MobileMapToggle
-        activeFiltersCount={0}
-        onOpenFilters={vi.fn()}
-        onOpenMap={vi.fn()}
-        {...props}
-      />,
-    );
+    render(<MobileMapToggle onOpenMap={vi.fn()} {...props} />);
 
   it("précharge la carte à l'appui du doigt, avant le clic, et l'ouvre au clic", () => {
     const onPreloadMap = vi.fn();
     const onOpenMap = vi.fn();
     renderBar({ onPreloadMap, onOpenMap });
-    const map = screen.getByRole("button", { name: "Carte" });
+    const map = screen.getByRole("button", { name: "Voir sur la carte" });
 
     fireEvent.pointerDown(map);
     expect(onPreloadMap).toHaveBeenCalledTimes(1);
@@ -33,10 +26,9 @@ describe("MobileMapToggle", () => {
     expect(onOpenMap).toHaveBeenCalledTimes(1);
   });
 
-  it("ne précharge rien pour les autres boutons", () => {
+  it("ne précharge rien pour la pastille du comparateur", () => {
     const onPreloadMap = vi.fn();
     renderBar({ onPreloadMap, comparedCount: 2, onOpenComparison: vi.fn() });
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Filtres" }));
     fireEvent.pointerDown(screen.getByRole("button", { name: "Comparer (2)" }));
     expect(onPreloadMap).not.toHaveBeenCalled();
   });
@@ -47,32 +39,31 @@ describe("MobileMapToggle", () => {
     expect(screen.queryByRole("button", { name: /Comparer/ })).toBeNull();
 
     rerender(
-      <MobileMapToggle
-        activeFiltersCount={0}
-        comparedCount={3}
-        onOpenFilters={vi.fn()}
-        onOpenComparison={onOpenComparison}
-        onOpenMap={vi.fn()}
-      />,
+      <MobileMapToggle comparedCount={3} onOpenComparison={onOpenComparison} onOpenMap={vi.fn()} />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Comparer (3)" }));
     expect(onOpenComparison).toHaveBeenCalledTimes(1);
   });
 
-  it("reste une barre basse réservée au mobile, avec une colonne par bouton", () => {
+  it("est un bouton flottant centré, réservé au mobile, qui laisse passer les gestes autour", () => {
     renderBar({ comparedCount: 1, onOpenComparison: vi.fn() });
-    const bar = screen.getByRole("button", { name: "Carte" }).parentElement!;
+    const bar = screen.getByRole("button", { name: "Voir sur la carte" }).parentElement!;
     expect(bar.className).toContain("lg:hidden");
-    expect(bar.className).toContain("grid-flow-col");
-    expect(bar.className).toContain("auto-cols-fr");
-    for (const button of screen.getAllByRole("button")) expect(button.className).toContain("h-11");
+    expect(bar.className).toContain("justify-center");
+    expect(bar.className).toContain("pointer-events-none");
+    // Les filtres ne sont plus dans cette barre : ils sont sous le champ du lieu.
+    expect(screen.queryByRole("button", { name: /Filtres/ })).toBeNull();
+    for (const button of screen.getAllByRole("button")) {
+      expect(button.className).toContain("h-12");
+      expect(button.className).toContain("pointer-events-auto");
+    }
   });
 });
 
 describe("MobileMapToggle : pas de décalage à l'arrivée du bandeau de cookies", () => {
   it("se remonte par transform, jamais par bottom (une barre fixe qui change de bottom décale la page)", () => {
-    render(<MobileMapToggle activeFiltersCount={0} onOpenFilters={vi.fn()} onOpenMap={vi.fn()} />);
-    const bar = screen.getByRole("button", { name: "Carte" }).parentElement!;
+    render(<MobileMapToggle onOpenMap={vi.fn()} />);
+    const bar = screen.getByRole("button", { name: "Voir sur la carte" }).parentElement!;
     expect(bar.className).toContain("bottom-0");
     expect(bar.className).not.toContain("cookie-banner-height");
     expect(bar.style.transform).toBe("translateY(calc(var(--cookie-banner-height, 0px) * -1))");

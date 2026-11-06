@@ -119,8 +119,10 @@ describe("date d'une vente passée", () => {
 
   it("dit « Vente passée » au lieu d'une date de 2020", () => {
     renderCard(sale("sale-dated", { sale_date: "2020-03-12T09:00:00Z" }));
-    // La date est remplacée, et la pastille du compte à rebours ne le répète pas : une seule fois.
-    expect(screen.getAllByText("Vente passée")).toHaveLength(1);
+    // La date est remplacée, et la pastille du compte à rebours ne le répète pas : une fois dans la
+    // fiche technique (écran large), une fois dans la ligne de faits (mobile), jamais en pastille.
+    expect(screen.getAllByText("Vente passée")).toHaveLength(2);
+    expect(screen.getByTestId("card-badges").textContent).not.toContain("passée");
     expect(document.body.textContent).not.toContain("2020");
   });
 

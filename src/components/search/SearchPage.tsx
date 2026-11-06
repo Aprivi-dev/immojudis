@@ -54,10 +54,12 @@ import {
 import {
   canonicalSalesQuery,
   mergeSalesSearch,
+  salesSearchSignature,
   salesSearchToUrlRecord,
   type SalesSearchParams,
   type SalesSearchUrlRecord,
 } from "@/lib/search/search-url-state";
+import { parisToday, upcomingWeekScope } from "@/lib/search/sales-week";
 import { isOutOfRangeSearchError } from "@/lib/search/search-errors";
 import {
   fetchPepiteFloodExposedIds,
@@ -72,7 +74,7 @@ import {
 } from "@/lib/search/search-service";
 import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
-import { SALES_PAGINATION_ID, SearchPagination } from "./SearchPagination";
+import { SALES_PAGINATION_ID, SearchPagination, searchTotalPages } from "./SearchPagination";
 import { scrollToSaleCard } from "./scroll-to-sale-card";
 import { DESKTOP_MAP_ZONE_ID, DesktopMapZone } from "./DesktopMapZone";
 import { LazyMapPanel } from "./LazyMapPanel";
@@ -84,19 +86,21 @@ import { Footer, MobileMapToggle } from "./SearchFilters";
 import {
   CsvExportButton,
   FREE_ALERT_LIMIT,
+  LayoutToggle,
   ResultsSummary,
   ResultsViewToggle,
+  SaveSearchButton,
   SearchHeader,
-  SortAndSaleTypeControl,
   SortDropdown,
   type SaveSearchOptions,
 } from "./SearchHeader";
 import { ResultsHelp } from "./ResultsHelp";
+import { SalesCatalogueHead } from "./SalesCatalogueHead";
 import { SearchResultsList } from "./SearchResults";
 import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
 import { SaleComparisonBar } from "./SaleComparisonBar";
-import { SaleTypeSelect } from "./SaleTypeFilter";
 import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
+import { useFollowedSales } from "./use-followed-sales";
 import {
   SearchDraft,
   buildSearchStatistics,
@@ -152,6 +156,12 @@ const LazyMonDemarrage = dynamic(
   },
 );
 
+// « Votre suivi » : chargé pour un abonné de l'offre Analyse seulement.
+const LazyFollowedSalesSummary = dynamic(
+  () => import("./FollowedSalesSummary").then((mod) => mod.FollowedSalesSummary),
+  { ssr: false },
+);
+
 const LazySearchStatisticsPanel = dynamic(
   () => import("./SearchStatisticsPanel").then((mod) => mod.SearchStatisticsPanel),
   { loading: () => <SearchStatisticsLoading /> },
@@ -161,13 +171,18 @@ const LazySearchStatisticsPanel = dynamic(
  * `serverSeeded` is true when the server already rendered (and dehydrated) the
  * anonymous first page for this exact search. The list then stays visible while
  * the session is being restored instead of being replaced by a skeleton.
+ *
+ * `serverToday` : jour de Paris du rendu serveur, pour « dont M cette semaine » du titre ; repris
+ * à l'hydratation, puis remplacé par le jour du navigateur.
  */
 export function SearchPage({
   search,
   serverSeeded = false,
+  serverToday,
 }: {
   search: SalesSearchParams;
   serverSeeded?: boolean;
+  serverToday?: string;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -461,6 +476,36 @@ export function SearchPage({
     : undefined;
   const totalCount = publicListShown ? publicTotalCount : connectedTotalCount;
 
+  // « dont M cette semaine » (titre) : la même recherche bornée aux sept prochains jours, comptée à
+  // part (voir `upcomingWeekScope`). Le jour vient du serveur pour l'hydratation, puis du navigateur.
+  const [today, setToday] = useState(() => serverToday ?? parisToday());
+  useEffect(() => setToday(parisToday()), []);
+  const week = useMemo(() => upcomingWeekScope(search, today), [search, today]);
+  const weekSignature = week.kind === "count" ? salesSearchSignature(week.search) : "";
+  const { data: connectedWeekCount } = useQuery({
+    queryKey: salesSearchCountQueryKey(weekSignature, catalogScope),
+    placeholderData: (previous, query) =>
+      catalogPlaceholder(previous, query?.queryKey, catalogScope),
+    queryFn: () =>
+      week.kind === "count"
+        ? fetchSearchCount({ search: week.search, preview: isPreview, discovery: isDiscovery })
+        : 0,
+    enabled: catalogReady && week.kind === "count",
+    staleTime: 60_000,
+    refetchInterval: isPreview ? false : 60_000,
+    retry: false,
+  });
+  const weekCount =
+    week.kind === "none"
+      ? 0
+      : week.kind === "unavailable"
+        ? null
+        : ((publicListShown
+            ? queryClient.getQueryData<number>(
+                salesSearchCountQueryKey(weekSignature, ANONYMOUS_PREVIEW_SCOPE),
+              )
+            : connectedWeekCount) ?? null);
+
   // Copies de photos de la liste connectée : un appel dès que les ventes sont lues (leurs photos en
   // viennent), posé sur la liste à son arrivée. Les copies déjà connues du navigateur s'appliquent
   // tout de suite. Aperçu anonyme : la route apporte déjà les copies.
@@ -628,7 +673,16 @@ export function SearchPage({
         : aiReviewData
           ? "ready"
           : "loading";
-  const hasLocalFilters = false;
+  // Abonné de l'offre Analyse : bandeau « Votre suivi », ligne « Mon dossier » des ventes suivies et
+  // colonne « Mon plafond » du tableau (voir `useFollowedSales`). Rien n'est lu pour les autres.
+  const isAnalysis = Boolean(user) && entitlementsData?.plan.hasAnalysisAccess === true;
+  const followed = useFollowedSales({
+    userId: user?.id ?? null,
+    enabled: isAnalysis && !authLoading,
+    today,
+    aiReviewBySaleId,
+    aiReviewStatus,
+  });
   const isInitialLoading =
     !publicListShown && ((authLoading && !serverSeeded) || entitlementsLoading || isLoading);
   // Relecture de fond d'une liste déjà affichée (minuteur du compte connecté) : elle ne désactive
@@ -692,11 +746,18 @@ export function SearchPage({
       ? totalCount
       : null;
   // Un tableau a besoin de largeur : sans « Agrandir la carte », les résultats prennent plus de place.
+  // Liste et carte côte à côte dans la largeur de la page (maquette : 1,6 pour 1).
   const splitClass = wideMap
-    ? "lg:grid-cols-[minmax(360px,38%)_minmax(0,1fr)]"
+    ? "lg:grid-cols-[minmax(360px,1fr)_minmax(0,1.6fr)]"
     : displayedView === "table"
-      ? "lg:grid-cols-[minmax(0,66%)_minmax(0,34%)]"
-      : "lg:grid-cols-[minmax(0,52%)_minmax(0,48%)]";
+      ? "lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)]"
+      : "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]";
+  // Le total du titre : seulement un total connu, jamais la longueur de la page en attendant.
+  const listCountLoading =
+    isInitialLoading || publicTotalMissing || (isCountLoading && !publicListShown);
+  const listHasError = Boolean(error) && !pageOutOfRange && rawSales.length === 0;
+  const titleTotal = listCountLoading || listHasError ? null : (totalCount ?? null);
+  const totalPages = searchTotalPages(totalCount, pageSize);
   const localSearchStatistics = useMemo(
     () => buildSearchStatistics(displayedSales),
     [displayedSales],
@@ -1052,7 +1113,7 @@ export function SearchPage({
   return (
     <main
       id="contenu"
-      className="min-h-screen bg-surface-muted text-brand-navy [--sales-header-height:8rem] lg:[--sales-header-height:8rem]"
+      className="min-h-screen bg-background text-brand-navy [--sales-header-height:8.5rem]"
     >
       <a href="#sales-results" className={SKIP_LINK_CLASSES}>
         Aller aux résultats
@@ -1083,76 +1144,90 @@ export function SearchPage({
         signupLinks={signupLinks}
         freeAlertUsage={freeAlertUsage}
         onAlertDialogOpen={openAlertDialog}
-        wideMap={wideMap}
         isDesktop={isDesktop}
         onFiltersOpenChange={setFiltersOpen}
         onReset={resetFilters}
         onSaveSearch={saveSearch}
-        onToggleLayout={() => setWideMap((value) => !value)}
+        intro={
+          <SalesCatalogueHead
+            search={search}
+            total={titleTotal}
+            week={weekCount}
+            // Le chapô pour qui n'a pas l'offre Analyse ; l'abonné voit son suivi à la place.
+            lede={!isAnalysis}
+            followed={isAnalysis ? <LazyFollowedSalesSummary followed={followed} /> : null}
+            // Actions de la recherche, réservées au grand écran (sur mobile, l'alerte est à côté du
+            // champ du lieu). Droits inchangés : export réservé à l'offre Analyse, alerte gratuite.
+            actions={
+              <>
+                <CsvExportButton
+                  exporting={exportingCsv}
+                  locked={csvExportLocked}
+                  onClick={exportCsv}
+                />
+                <SaveSearchButton
+                  label="Créer une alerte sur cette recherche"
+                  saving={savingAlert}
+                  signedIn={Boolean(user)}
+                  dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+                  emailRecapEnabled={emailRecapEnabled}
+                  freeAlertUsage={
+                    entitlementsData?.plan.hasAnalysisAccess === true ? null : freeAlertUsage
+                  }
+                  onOpen={openAlertDialog}
+                  onClick={saveSearch}
+                />
+              </>
+            }
+          />
+        }
       />
 
       <AuthConnectionBanner className="my-3" />
       {user ? <LazyMonDemarrage className="mx-auto my-3 max-w-[1260px]" /> : null}
 
       <div
-        className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] grid-cols-1 ${splitClass}`}
+        className={`mx-auto grid min-h-[calc(100svh_-_var(--sales-header-height))] max-w-[90rem] gap-6 px-4 lg:px-6 grid-cols-1 ${splitClass}`}
       >
         <section
           id="sales-results"
           tabIndex={-1}
-          // L'en-tête ne colle à l'écran qu'à partir de lg : en dessous, rien à dégager.
-          className="min-w-0 scroll-mt-3 bg-surface-muted lg:order-1 lg:scroll-mt-[calc(var(--sales-header-height)+12px)] lg:border-r lg:border-line-soft"
+          // La barre de filtres ne colle à l'écran qu'à partir de lg : en dessous, rien à dégager.
+          className="min-w-0 scroll-mt-3 lg:order-1 lg:scroll-mt-[calc(var(--sales-header-height)+12px)]"
           aria-label="Résultats de recherche"
           aria-busy={listBusy}
         >
-          {/* En-tête des résultats : titre et compteur, puis UNE rangée de réglages (tri et type de vente
-              joints, cartes ou tableau, export). Les liens d'aide sont au pied de la liste (`ResultsHelp`).
-              Sans résultat, seul le titre reste : l'état vide et ses actions montent au premier écran. */}
-          <div className="border-b border-line-soft bg-white">
+          {/* Barre de liste : « N annonces · page X sur Y », le tri, puis cartes ou tableau. Les liens
+              d'aide sont au pied de la liste (`ResultsHelp`). Sans résultat, seul le compteur reste :
+              l'état vide et ses actions montent au premier écran. */}
+          {/* Mobile : compteur et tri sur une seule ligne, le tri se tronque plutôt que de passer dessous. */}
+          <div className="flex min-h-[4.25rem] items-center justify-between gap-x-3 gap-y-2 border-t border-line py-3 sm:flex-wrap">
             <ResultsSummary
-              search={search}
               displayCount={displayCount}
-              hasLocalFilters={hasLocalFilters}
-              isLoading={
-                isInitialLoading || publicTotalMissing || (isCountLoading && !publicListShown)
-              }
-              hasError={Boolean(error) && !pageOutOfRange && rawSales.length === 0}
+              isLoading={listCountLoading}
+              hasError={listHasError}
               geocoding={geocoding}
+              page={page}
+              totalPages={totalPages}
               refreshing={listBusy && !isInitialLoading}
             />
             {noResults ? null : (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 sm:px-5">
-                <SortAndSaleTypeControl>
-                  <SortDropdown
-                    bare
-                    preview={isPreview}
-                    hasCenter={Boolean(center)}
-                    investmentScore={investmentSortAllowed}
-                    sort={visibleSearchSort(search.sort, {
-                      allowInvestmentScore: investmentSortAllowed,
-                    })}
-                    onChange={(sort) => chooseSearch({ sort })}
-                  />
-                  <SaleTypeSelect
-                    value={draft.saleType}
-                    onChange={(saleType) =>
-                      setDraft((current) => ({
-                        ...current,
-                        saleType,
-                        tribunal: !saleType || saleType === "tribunal" ? current.tribunal : "",
-                      }))
-                    }
-                  />
-                </SortAndSaleTypeControl>
-                <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
-                {/* Export réservé au grand écran, comme avant dans la barre de filtres. */}
-                <span className="hidden text-xs lg:inline-flex">
-                  <CsvExportButton
-                    exporting={exportingCsv}
-                    locked={csvExportLocked}
-                    onClick={exportCsv}
-                  />
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none sm:flex-wrap">
+                <span aria-hidden="true" className="hidden text-sm text-ink-soft sm:inline">
+                  Trier
                 </span>
+                <SortDropdown
+                  bare
+                  preview={isPreview}
+                  hasCenter={Boolean(center)}
+                  investmentScore={investmentSortAllowed}
+                  sort={visibleSearchSort(search.sort, {
+                    allowInvestmentScore: investmentSortAllowed,
+                  })}
+                  onChange={(sort) => chooseSearch({ sort })}
+                />
+                <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
+                <LayoutToggle wideMap={wideMap} onToggle={() => setWideMap((value) => !value)} />
               </div>
             )}
           </div>
@@ -1186,6 +1261,10 @@ export function SearchPage({
             onToggleComparison={comparison.toggle}
             aiReviewBySaleId={aiReviewBySaleId}
             aiReviewStatus={aiReviewStatus}
+            dossierBySaleId={isAnalysis && !listIsPublic ? followed.dossierBySaleId : undefined}
+            lastChangeBySaleId={
+              isAnalysis && !listIsPublic ? followed.lastChangeBySaleId : undefined
+            }
             activeFilters={activeFilters}
             onRemoveFilter={(filter) => chooseSearch(filter.clear)}
             onResetFilters={resetFilters}
@@ -1259,7 +1338,7 @@ export function SearchPage({
           )}
 
           <details
-            className="mx-4 mt-3 rounded-lg border border-line-soft bg-white sm:mx-5"
+            className="mt-3 rounded-lg border border-line-soft bg-white"
             onToggle={(event) => setStatisticsOpen(event.currentTarget.open)}
           >
             <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
@@ -1288,7 +1367,7 @@ export function SearchPage({
 
         {/* Always rendered (hidden below lg): the two-column layout is decided by CSS
             alone, so nothing shifts when the media query resolves after hydration. */}
-        <aside className="relative hidden min-h-[calc(100svh_-_var(--sales-header-height))] bg-line-soft lg:order-2 lg:block">
+        <aside className="relative hidden pb-6 lg:order-2 lg:block">
           {isDesktop ? (
             <DesktopMapZone started={desktopMapStarted} onStart={startDesktopMap}>
               <LazyMapPanel {...mapPanelProps} />
@@ -1313,9 +1392,7 @@ export function SearchPage({
       ) : null}
 
       <MobileMapToggle
-        activeFiltersCount={activeFiltersCount}
         comparedCount={comparison.items.length}
-        onOpenFilters={() => setFiltersOpen(true)}
         onOpenComparison={() => setComparisonOpen(true)}
         // Le module de la carte (et Mapbox GL) se télécharge dès l'appui, pendant que le doigt se
         // relève : la carte est prête, ou presque, au moment du clic.
