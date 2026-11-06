@@ -11,7 +11,6 @@ import {
   ResultsViewToggle,
   SaveSearchButton,
   SearchHeader,
-  SortAndSaleTypeControl,
   SortDropdown,
 } from "./SearchHeader";
 import { PLAN_LIMITS } from "@/lib/plans";
@@ -177,28 +176,23 @@ describe("SortDropdown", () => {
   });
 });
 
-describe("SortAndSaleTypeControl : tri et type de vente en un seul élément", () => {
-  it("joint les deux listes dans un groupe nommé, sans cadre propre pour le tri", () => {
-    render(
-      <SortAndSaleTypeControl>
-        <SortDropdown bare sort="relevance" onChange={vi.fn()} />
-        <select aria-label="Type de vente" />
-      </SortAndSaleTypeControl>,
+describe("SortDropdown dans la barre de liste", () => {
+  it("n'a de cadre qu'à partir de sm : sur mobile, le tri est un mot dans la barre", () => {
+    render(<SortDropdown bare sort="relevance" onChange={vi.fn()} />);
+    const label = screen.getByRole("combobox", { name: "Tri" }).closest("label")!;
+    const classes = label.className.split(/\s+/);
+    expect(classes).toContain("sm:border");
+    expect(classes).not.toContain("border");
+    expect(classes).toContain("min-h-11");
+    expect(label.querySelector("svg.lucide-arrow-up-down")?.getAttribute("class")).toContain(
+      "hidden sm:block",
     );
-    const group = screen.getByRole("group", { name: "Tri et type de vente" });
-    expect(group.className).toContain("border");
-    const sort = screen.getByRole("combobox", { name: "Tri" });
-    expect(group.contains(sort)).toBe(true);
-    const label = sort.closest("label")!;
-    expect(label.className).not.toContain("border");
-    expect(label.className).toContain("min-h-11");
-    expect(label.querySelector("svg.lucide-arrow-up-down")).toBeNull();
   });
 
-  it("garde le tri autonome (cadre et icône) hors du contrôle joint", () => {
+  it("garde le tri autonome (cadre et icône) partout ailleurs", () => {
     render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
     const label = screen.getByRole("combobox", { name: "Tri" }).closest("label")!;
-    expect(label.className).toContain("border");
+    expect(label.className.split(/\s+/)).toContain("border");
   });
 });
 
@@ -252,99 +246,33 @@ describe("Tri et hauteur tactile", () => {
   });
 });
 
-describe("ResultsSummary", () => {
-  it("n'annonce que le compteur aux lecteurs d'écran", () => {
-    const { container } = render(
-      <ResultsSummary
-        search={{ city: "Lyon" }}
-        displayCount={12}
-        hasLocalFilters={false}
-        isLoading={false}
-        geocoding={false}
-      />,
-    );
+describe("ResultsSummary (barre de liste)", () => {
+  const props = {
+    displayCount: 833,
+    isLoading: false,
+    geocoding: false,
+    page: 1,
+    totalPages: 35,
+  };
+
+  it("dit « N annonces · page X sur Y » et n'annonce que le compteur aux lecteurs d'écran", () => {
+    const { container } = render(<ResultsSummary {...props} />);
     const live = container.querySelectorAll("[aria-live]");
     expect(live).toHaveLength(1);
-    expect(live[0].textContent).toBe("12 annonces");
+    expect(live[0].textContent).toBe("833 annonces");
+    expect(container.textContent).toBe("833 annonces · page 1 sur 35");
   });
 
-  it("réserve la hauteur de deux lignes de titre sous sm, pour qu'aucune police ne décale la page", () => {
-    // Le h1 pouvait passer de deux lignes (police de secours) à une à l'arrivée de la police :
-    // sans réserve, tout ce qui suit remonte de 33 px (CLS) et la photo de la première carte
-    // change de surface visible (LCP). 7,625 rem = py-4 + 2 lignes de h1 + compteur (le surtitre,
-    // masqué sous sm, n'y est plus compté : 8,8125 rem avant).
-    const summary = (city?: string) =>
-      render(
-        <ResultsSummary
-          search={city ? { city } : {}}
-          displayCount={12}
-          hasLocalFilters={false}
-          isLoading={false}
-          geocoding={false}
-        />,
-      ).container.firstElementChild as HTMLElement;
-
-    for (const root of [summary(), summary("Lyon")]) {
-      expect(root.className).toContain("min-h-[7.625rem]");
-      expect(root.className).toContain("sm:min-h-0");
-    }
-  });
-
-  it("nomme le département dans le titre et le compteur, au lieu de son code", () => {
-    const { container } = render(
-      <ResultsSummary
-        search={{ department: "13" }}
-        displayCount={28}
-        hasLocalFilters={false}
-        isLoading={false}
-        geocoding={false}
-      />,
-    );
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Ventes immobilières aux enchères : Bouches-du-Rhône (13)",
-    );
-    expect(container.textContent).toContain("28 annonces · Bouches-du-Rhône (13)");
-  });
-
-  it("garde la ville dans le titre quand elle est donnée avec le département", () => {
-    render(
-      <ResultsSummary
-        search={{ city: "Marseille", department: "13" }}
-        displayCount={3}
-        hasLocalFilters={false}
-        isLoading={false}
-        geocoding={false}
-      />,
-    );
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Ventes immobilières aux enchères à Marseille",
-    );
-  });
-
-  it("n'a plus de surtitre au-dessus du titre des résultats", () => {
-    render(
-      <ResultsSummary
-        search={{}}
-        displayCount={12}
-        hasLocalFilters={false}
-        isLoading={false}
-        geocoding={false}
-      />,
-    );
-    expect(screen.queryByText("Le catalogue des enchères")).toBeNull();
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-      "Ventes immobilières aux enchères",
-    );
+  it("ne parle pas de pages tant que le total n'est pas connu, ni pour une seule page", () => {
+    const { container, rerender } = render(<ResultsSummary {...props} totalPages={0} />);
+    expect(container.textContent).toBe("833 annonces");
+    rerender(<ResultsSummary {...props} displayCount={3} totalPages={1} />);
+    expect(container.textContent).toBe("3 annonces");
+    rerender(<ResultsSummary {...props} isLoading />);
+    expect(container.textContent).toBe("Recherche en cours…");
   });
 
   it("montre une petite pastille dans la ligne du compteur quand la liste se met à jour, sans texte", () => {
-    const props = {
-      search: {},
-      displayCount: 12,
-      hasLocalFilters: false,
-      isLoading: false,
-      geocoding: false,
-    };
     const { rerender } = render(<ResultsSummary {...props} />);
     expect(screen.queryByTestId("results-refreshing")).toBeNull();
     rerender(<ResultsSummary {...props} refreshing />);
@@ -432,14 +360,58 @@ describe("SearchHeader : mobile", () => {
     onToggleLayout: vi.fn(),
   };
 
-  it("ne reste collé en haut de l'écran qu'à partir de lg", () => {
+  it("laisse défiler l'en-tête du site : seule la barre de filtres reste à l'écran, à partir de lg", () => {
     render(<SearchHeader {...base} />);
     const header = document.querySelector("header[data-site-header]") as HTMLElement;
-    const classes = header.className.split(/\s+/);
-    // `sticky` sans préfixe aurait été conservé par l'ancien en-tête : seul `lg:sticky` reste.
-    expect(classes).toContain("static");
-    expect(classes).toContain("lg:sticky");
-    expect(classes).not.toContain("sticky");
+    const headerClasses = header.className.split(/\s+/);
+    expect(headerClasses).toContain("static");
+    expect(headerClasses).not.toContain("sticky");
+    expect(headerClasses).not.toContain("lg:sticky");
+    const bar = document.querySelector("[data-sales-filters]") as HTMLElement;
+    const barClasses = bar.className.split(/\s+/);
+    expect(barClasses).toContain("lg:sticky");
+    expect(barClasses).toContain("lg:top-0");
+    expect(barClasses).not.toContain("sticky");
+  });
+
+  it("place l'en-tête du catalogue entre l'en-tête du site et la barre de filtres", () => {
+    render(<SearchHeader {...base} intro={<h1>Titre du catalogue</h1>} />);
+    const header = document.querySelector("header[data-site-header]")!;
+    const title = screen.getByRole("heading", { name: "Titre du catalogue" });
+    const bar = document.querySelector("[data-sales-filters]")!;
+    expect(header.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(title.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Le champ du lieu est dans la barre, plus dans l'en-tête du site.
+    const place = screen.getByRole("textbox", { name: "Ville, département ou région" });
+    expect(bar.contains(place)).toBe(true);
+    expect(header.contains(place)).toBe(false);
+  });
+
+  it("met les types de vente en pastilles sous les filtres, et le choix va dans le brouillon", () => {
+    const setDraft = vi.fn();
+    render(<SearchHeader {...base} setDraft={setDraft} />);
+    const pills = screen.getByRole("group", { name: "Type de vente" });
+    expect(within(pills).getByRole("button", { name: "Toutes" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    fireEvent.click(within(pills).getByRole("button", { name: "Chez le notaire" }));
+    const update = setDraft.mock.calls[0][0] as (draft: SearchDraft) => SearchDraft;
+    expect(update({ ...emptySearchDraft(), tribunal: "Paris" })).toMatchObject({
+      saleType: "notary",
+      tribunal: "",
+    });
+  });
+
+  it("ouvre tous les filtres depuis la pastille « Filtres » de la rangée mobile", () => {
+    const onFiltersOpenChange = vi.fn();
+    render(
+      <SearchHeader {...base} activeFiltersCount={2} onFiltersOpenChange={onFiltersOpenChange} />,
+    );
+    const chips = screen.getByRole("group", { name: "Filtres rapides" });
+    const filters = within(chips).getByRole("button", { name: /^Filtres/ });
+    expect(filters.textContent).toContain("2");
+    fireEvent.click(filters);
+    expect(onFiltersOpenChange).toHaveBeenCalledWith(true);
   });
 
   it("propose « Type de bien », « Mise à prix max. » et « Date de vente » sous le champ de recherche", () => {

@@ -1,4 +1,3 @@
-import ListFilter from "lucide-react/dist/esm/icons/list-filter.js";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import Map from "lucide-react/dist/esm/icons/map.js";
 import X from "lucide-react/dist/esm/icons/x.js";
@@ -8,20 +7,22 @@ import { SearchRejectedError } from "@/lib/search/search-errors";
 import { userMessage } from "@/lib/user-messages";
 import type { ActiveFilterChip } from "./active-filter-chips";
 
+/**
+ * Bouton flottant du mobile (maquette /sales validée) : « Voir sur la carte », centré au bas de
+ * l'écran, et la pastille « Comparer (N) » à côté dès qu'un bien est choisi. Les filtres sont dans
+ * la rangée de filtres, sous le champ du lieu (pastille « Filtres »). Seul ce qui flotte porte une
+ * ombre. Rien n'intercepte le toucher entre les boutons : la rangée laisse passer les gestes.
+ */
 export function MobileMapToggle({
-  activeFiltersCount,
   comparedCount = 0,
-  onOpenFilters,
   onOpenComparison,
   onPreloadMap,
   onOpenMap,
 }: {
-  activeFiltersCount: number;
   /** Biens choisis pour la comparaison : au moins un, et la pastille « Comparer (N) » apparaît. */
   comparedCount?: number;
-  onOpenFilters: () => void;
   onOpenComparison?: () => void;
-  /** Appelé à l'appui du doigt sur « Carte » (avant le clic) pour télécharger la carte à l'avance. */
+  /** Appelé à l'appui du doigt sur « Voir sur la carte » (avant le clic) pour télécharger la carte à l'avance. */
   onPreloadMap?: () => void;
   onOpenMap: () => void;
 }) {
@@ -31,41 +32,28 @@ export function MobileMapToggle({
     // une transformation ne déclenche aucune mise en page.
     <div
       style={{ transform: "translateY(calc(var(--cookie-banner-height, 0px) * -1))" }}
-      className="fixed inset-x-0 bottom-0 z-30 grid auto-cols-fr grid-flow-col gap-2 border-t border-brand-navy/10 bg-white/95 p-2 shadow-[0_-14px_34px_rgba(19,34,56,0.12)] backdrop-blur lg:hidden"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center gap-2 px-4 pb-4 lg:hidden"
     >
       <button
         type="button"
-        onClick={onOpenFilters}
-        className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-sm font-extrabold text-brand-navy transition-colors hover:bg-surface-muted"
+        onClick={onOpenMap}
+        onPointerDown={onPreloadMap}
+        onTouchStart={onPreloadMap}
+        className="pointer-events-auto inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-brand-navy px-5 text-[0.9375rem] font-bold text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
-        <ListFilter className="h-4 w-4" />
-        Filtres
-        {activeFiltersCount > 0 ? (
-          <span className="rounded-full bg-brand-navy px-1.5 py-0.5 text-[10px] text-white">
-            {activeFiltersCount}
-          </span>
-        ) : null}
+        <Map className="h-[18px] w-[18px]" aria-hidden />
+        Voir sur la carte
       </button>
       {comparedCount > 0 && onOpenComparison ? (
         <button
           type="button"
           onClick={onOpenComparison}
           data-comparison-pill=""
-          className="inline-flex h-11 cursor-pointer items-center justify-center rounded-full border border-brand-navy bg-white px-3 text-sm font-extrabold text-brand-navy transition-colors hover:bg-surface-muted"
+          className="pointer-events-auto inline-flex h-12 cursor-pointer items-center justify-center rounded-full border border-brand-navy bg-white px-4 text-sm font-bold text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
           Comparer ({comparedCount})
         </button>
       ) : null}
-      <button
-        type="button"
-        onClick={onOpenMap}
-        onPointerDown={onPreloadMap}
-        onTouchStart={onPreloadMap}
-        className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy px-4 text-sm font-extrabold text-white transition-colors hover:bg-brand-navy-soft"
-      >
-        <Map className="h-4 w-4" />
-        Carte
-      </button>
     </div>
   );
 }

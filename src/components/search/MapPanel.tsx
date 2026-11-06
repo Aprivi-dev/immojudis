@@ -18,7 +18,6 @@ import Check from "lucide-react/dist/esm/icons/check.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up.js";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
-import LocateFixed from "lucide-react/dist/esm/icons/locate-fixed.js";
 import MapIcon from "lucide-react/dist/esm/icons/map.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Minus from "lucide-react/dist/esm/icons/minus.js";
@@ -894,31 +893,6 @@ export function MapPanel({
         ) : null}
         {!preview ? (
           <>
-            <button
-              type="button"
-              onClick={() => {
-                if (!canToggleSearchAsMove) return;
-                markUserInteracted();
-                onSearchAsMoveChange(!searchAsMove);
-                setViewportDirty(false);
-              }}
-              disabled={!canToggleSearchAsMove}
-              aria-pressed={searchAsMove}
-              className={`inline-flex min-h-11 items-center gap-2 rounded-md border px-3 py-1.5 text-left text-sm font-extrabold leading-tight shadow-lg backdrop-blur transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-60 ${
-                searchAsMove
-                  ? "border-brand-navy bg-brand-navy text-white"
-                  : "border-line-soft bg-white/95 text-brand-navy hover:border-gold disabled:hover:border-line-soft"
-              }`}
-            >
-              {/* Libellé fixe, court, qui peut passer à la ligne ; l'état est porté par aria-pressed
-                  (et par la couleur et l'icône), pas par un second libellé. */}
-              {searchAsMove ? (
-                <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
-              ) : (
-                <LocateFixed className="h-4 w-4 shrink-0" aria-hidden="true" />
-              )}
-              <span>Chercher en déplaçant la carte</span>
-            </button>
             {onSearchViewport && !searchAsMove && viewportDirty ? (
               <button
                 type="button"
@@ -935,7 +909,7 @@ export function MapPanel({
             ) : null}
           </>
         ) : (
-          <span className="rounded-md border border-line-soft bg-white/95 px-3 py-2 text-xs font-bold text-ink-strong shadow-lg">
+          <span className="rounded-md bg-white px-3 py-2 text-caption font-semibold text-brand-navy shadow-lg">
             Positions approximatives · annonces de cette page
           </span>
         )}
@@ -955,81 +929,127 @@ export function MapPanel({
         <MapControlButton icon={MapIcon} label="Voir la France" onClick={centerOnFrance} />
       </div>
 
-      <div className="absolute bottom-10 left-4 z-30 max-w-[calc(100%-2rem)] rounded-md bg-white/95 px-3 py-2 text-xs text-ink-soft">
-        {mappablePointsTotal != null && mappablePointsTotal > geocodedSales.length
-          ? `${geocodedSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")} : précisez vos filtres ou activez « Chercher en déplaçant la carte »`
-          : `${geocodedSales.length.toLocaleString("fr-FR")} annonces situées${
-              totalCount != null && totalCount > geocodedSales.length
-                ? ` sur ${totalCount.toLocaleString("fr-FR")} résultats${preview ? " · positions approximatives de cette page" : ""}`
-                : ""
-            }`}
-        <span className="sr-only">
-          {pepiteCount > 0
-            ? ` Dont ${pepiteCount} pépite${pepiteCount > 1 ? "s" : ""}, repérée${pepiteCount > 1 ? "s" : ""} par un anneau doré épais et un pictogramme.`
-            : ""}
-          {pepiteExposedCount > 0
-            ? ` Parmi elles, ${pepiteExposedCount} ${pepiteExposedCount > 1 ? "sont" : "est"} dans le périmètre d’un plan de prévention des risques d’inondation : zonage à vérifier.`
-            : ""}
-        </span>
-        {/* Mobile : la légende se replie derrière un bouton de 44 px, fermée par défaut (elle prenait
-            une centaine de pixels de la carte). Dès `sm`, elle reste affichée, sans bouton. */}
-        <button
-          type="button"
-          aria-expanded={legendOpen}
-          aria-controls={legendId}
-          onClick={() => setLegendOpen((open) => !open)}
-          className="mt-1 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-line-soft bg-white px-3 text-xs font-bold text-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:hidden"
-        >
-          Légende
-          {legendOpen ? (
-            <ChevronUp className="size-4" aria-hidden="true" />
-          ) : (
-            <ChevronDown className="size-4" aria-hidden="true" />
-          )}
-        </button>
-        <ul
-          id={legendId}
-          className={`mt-1.5 space-y-1 ${legendOpen ? "block" : "hidden sm:block"}`}
-          aria-label="Légende de la carte"
-        >
-          <li className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="inline-block size-4 shrink-0 rounded-full border-2 border-white shadow-[0_0_0_1px_var(--line)]"
-              style={{ backgroundColor: MAP_PALETTE.navy }}
-            />
-            Vente · mise à prix en euros
-          </li>
-          <li className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="inline-block size-4 shrink-0 rounded-full border-2 bg-white"
-              style={{ borderColor: MAP_PALETTE.navy }}
-            />
-            Plusieurs ventes, zoomez
-          </li>
-          <li className="flex items-center gap-2">
-            <span
-              aria-hidden="true"
-              className="inline-grid size-4 shrink-0 place-items-center rounded-full border-[1.5px] border-dashed"
-              style={{ borderColor: MAP_PALETTE.navy }}
-            >
+      {/* Encart blanc au bas de la carte (maquette /sales validée) : ce que la carte montre, la
+          légende (vente, vente survolée, regroupement…) et la case « Rechercher en déplaçant la
+          carte ». Il flotte au-dessus de la carte, donc porte l'ombre. Il laisse dessous la place de
+          l'attribution de Mapbox. */}
+      <div
+        data-testid="map-legend-panel"
+        className="absolute inset-x-4 bottom-9 z-30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md bg-white px-3.5 py-2.5 text-caption text-ink-strong shadow-lg"
+      >
+        <div className="min-w-0 flex-[1_1_16rem]">
+          <p className="text-xs text-ink-soft">
+            {mappablePointsTotal != null && mappablePointsTotal > geocodedSales.length
+              ? `${geocodedSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")} : précisez vos filtres ou activez « Rechercher en déplaçant la carte »`
+              : `${geocodedSales.length.toLocaleString("fr-FR")} annonces situées${
+                  totalCount != null && totalCount > geocodedSales.length
+                    ? ` sur ${totalCount.toLocaleString("fr-FR")} résultats${preview ? " · positions approximatives de cette page" : ""}`
+                    : ""
+                }`}
+            <span className="sr-only">
+              {pepiteCount > 0
+                ? ` Dont ${pepiteCount} pépite${pepiteCount > 1 ? "s" : ""}, repérée${pepiteCount > 1 ? "s" : ""} par un anneau doré épais et un pictogramme.`
+                : ""}
+              {pepiteExposedCount > 0
+                ? ` Parmi elles, ${pepiteExposedCount} ${pepiteExposedCount > 1 ? "sont" : "est"} dans le périmètre d’un plan de prévention des risques d’inondation : zonage à vérifier.`
+                : ""}
+            </span>
+          </p>
+          {/* Mobile : la légende se replie derrière un bouton de 44 px, fermée par défaut (elle prenait
+              une centaine de pixels de la carte). Dès `sm`, elle reste affichée, sans bouton. */}
+          <button
+            type="button"
+            aria-expanded={legendOpen}
+            aria-controls={legendId}
+            onClick={() => setLegendOpen((open) => !open)}
+            className="mt-1 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-line-soft bg-white px-3 text-xs font-bold text-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:hidden"
+          >
+            Légende
+            {legendOpen ? (
+              <ChevronUp className="size-4" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="size-4" aria-hidden="true" />
+            )}
+          </button>
+          <ul
+            id={legendId}
+            className={`mt-1.5 flex-wrap items-center gap-x-3.5 gap-y-1 ${legendOpen ? "flex" : "hidden sm:flex"}`}
+            aria-label="Légende de la carte"
+          >
+            <li className="inline-flex items-center gap-1.5">
               <span
-                className="block size-2 rounded-full"
+                aria-hidden="true"
+                className="inline-block size-3 shrink-0 rounded-full"
                 style={{ backgroundColor: MAP_PALETTE.navy }}
               />
-            </span>
-            Position approximative (centre de commune)
-          </li>
-          {pepiteCount > 0 ? (
-            <li className="flex items-center gap-2 font-semibold text-gold-text">
-              <PepiteIcon className="size-4 shrink-0" />
-              <span>
-                {PEPITE_LABEL} ({pepiteCount.toLocaleString("fr-FR")}) · anneau doré
-              </span>
+              Vente
             </li>
-          ) : null}
-        </ul>
+            <li className="inline-flex items-center gap-1.5">
+              {/* Même dessin que la couche du point actif : halo or, anneau or foncé. */}
+              <span
+                aria-hidden="true"
+                className="inline-block size-3 shrink-0 rounded-full border-2"
+                style={{ backgroundColor: MAP_ACTIVE_FILL, borderColor: MAP_PALETTE.goldSoft }}
+              />
+              Survolée
+            </li>
+            <li className="inline-flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                className="inline-block size-3 shrink-0 rounded-full border-2 bg-white"
+                style={{ borderColor: MAP_PALETTE.navy }}
+              />
+              Regroupement
+            </li>
+            <li className="inline-flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                className="inline-grid size-3 shrink-0 place-items-center rounded-full border-[1.5px] border-dashed"
+                style={{ borderColor: MAP_PALETTE.navy }}
+              >
+                <span
+                  className="block size-1.5 rounded-full"
+                  style={{ backgroundColor: MAP_PALETTE.navy }}
+                />
+              </span>
+              Position approximative
+            </li>
+            {pepiteCount > 0 ? (
+              <li className="inline-flex items-center gap-1.5 font-semibold text-gold-text">
+                <PepiteIcon className="size-3.5 shrink-0" />
+                <span>
+                  {PEPITE_LABEL} ({pepiteCount.toLocaleString("fr-FR")}) · anneau doré
+                </span>
+              </li>
+            ) : null}
+          </ul>
+        </div>
+        {!preview ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (!canToggleSearchAsMove) return;
+              markUserInteracted();
+              onSearchAsMoveChange(!searchAsMove);
+              setViewportDirty(false);
+            }}
+            disabled={!canToggleSearchAsMove}
+            aria-pressed={searchAsMove}
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 text-left text-sm font-semibold leading-tight text-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {/* Une case à cocher dessinée : l'état est porté par aria-pressed (et par la coche), le
+                libellé reste fixe et peut passer à la ligne. */}
+            <span
+              aria-hidden="true"
+              className={`grid size-[18px] shrink-0 place-items-center rounded-sm border-2 border-brand-navy ${
+                searchAsMove ? "bg-brand-navy text-white" : "bg-white"
+              }`}
+            >
+              {searchAsMove ? <Check className="size-3.5" strokeWidth={3} /> : null}
+            </span>
+            <span>Rechercher en déplaçant la carte</span>
+          </button>
+        ) : null}
       </div>
     </div>
   );

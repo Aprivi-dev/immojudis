@@ -219,6 +219,32 @@ export async function loadInitialCatalogue(
   }
 }
 
+/**
+ * Le seul total d'une recherche publique, pour le rendu serveur de /sales : « dont M cette semaine »
+ * du titre (`upcomingWeekScope`). Même fonction SQL et mêmes filtres que la liste, sans copies de
+ * photos ni lecture des sources retirées (aucune ligne n'est affichée). `null` en cas de panne ou
+ * de délai dépassé : le navigateur fera le comptage, le titre n'attend rien.
+ */
+export async function loadInitialCount(
+  search: SalesSearchParams,
+  dependencies: Pick<CatalogueDependencies, "search" | "timeoutMs"> = {},
+): Promise<number | null> {
+  const run = dependencies.search ?? defaultSearch;
+  try {
+    const response = await withTimeout(
+      run(search),
+      dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
+    );
+    return Number.isFinite(response.count) ? response.count : null;
+  } catch (error) {
+    console.warn(
+      "[catalogue] Comptage serveur indisponible, repli sur le navigateur:",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
+
 /** Une page de la recherche d'aperçu pour le navigateur : ventes sans copie, total et copies. */
 export type PreviewCataloguePage = {
   items: AuctionSale[];

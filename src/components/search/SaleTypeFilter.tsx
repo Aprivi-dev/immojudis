@@ -1,24 +1,40 @@
 import Link from "next/link";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import { visibleSaleTypeOptions, type SaleTypeFilter as SaleTypeValue } from "@/lib/sale-types";
 
+/**
+ * Types de vente en pastilles (« Toutes », « Au tribunal », « Chez le notaire »…) : la pastille
+ * pleine est celle qui est choisie (`aria-pressed`). Chaque pastille mesure 44 px de haut.
+ *
+ * - `compact` : sans légende visible (la légende reste lue par les lecteurs d'écran) ;
+ * - `bar` : la rangée de la barre de filtres de /sales, qui défile sur mobile au lieu de passer
+ *   à la ligne.
+ *
+ * Aucun nombre par type : le compter demanderait une recherche de plus par type à chaque changement
+ * de filtre. Le total de la recherche est dans le titre et la barre de liste.
+ */
 export function SaleTypeFilter({
   value,
   onChange,
   compact = false,
+  bar = false,
 }: {
   value: SaleTypeValue | "";
   compact?: boolean;
+  bar?: boolean;
   onChange: (value: SaleTypeValue | "") => void;
 }) {
   return (
     <fieldset className="min-w-0 border-0 p-0">
-      <legend className={compact ? "sr-only" : "mb-2 text-xs font-semibold text-ink-soft"}>
+      <legend className={compact || bar ? "sr-only" : "mb-2 text-xs font-semibold text-ink-soft"}>
         Type de vente
       </legend>
       <div
         className={
-          compact ? "flex flex-wrap items-center gap-1.5" : "flex flex-wrap items-center gap-2"
+          bar
+            ? "-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0"
+            : compact
+              ? "flex flex-wrap items-center gap-1.5"
+              : "flex flex-wrap items-center gap-2"
         }
       >
         {[{ value: "" as const, label: "Toutes" }, ...visibleSaleTypeOptions()].map((option) => (
@@ -27,7 +43,7 @@ export function SaleTypeFilter({
             type="button"
             aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}
-            className={`min-h-11 shrink-0 cursor-pointer whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+            className={`min-h-11 shrink-0 cursor-pointer whitespace-nowrap rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
               value === option.value
                 ? "border-brand-navy bg-brand-navy text-white"
                 : "border-line bg-white text-brand-navy hover:border-brand-navy"
@@ -40,42 +56,13 @@ export function SaleTypeFilter({
           href="/ventes-immobilieres-judiciaires#differences"
           // Affiché sur chaque visite de /sales : pas de préchargement de la page d'explication.
           prefetch={false}
-          className="inline-flex min-h-11 items-center px-1 py-2 text-xs font-semibold text-brand-navy underline underline-offset-4"
+          className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap px-1 py-2 font-semibold underline underline-offset-4 ${
+            bar ? "text-sm text-gold-text hover:text-brand-navy" : "text-xs text-brand-navy"
+          }`}
         >
           Quelle différence ?
         </Link>
       </div>
     </fieldset>
-  );
-}
-
-/**
- * Le type de vente en liste déroulante, segment du contrôle « Tri et type de vente » de /sales
- * (`SortAndSaleTypeControl`) : « Toutes » ou l'un des types, comme les pastilles de `SaleTypeFilter`.
- */
-export function SaleTypeSelect({
-  value,
-  onChange,
-}: {
-  value: SaleTypeValue | "";
-  onChange: (value: SaleTypeValue | "") => void;
-}) {
-  return (
-    <label className="relative inline-flex min-h-11 min-w-0 flex-[2] items-center focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-gold-soft">
-      <span className="sr-only">Type de vente</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value as SaleTypeValue | "")}
-        className="h-full w-full min-w-0 cursor-pointer appearance-none text-ellipsis bg-transparent py-0 pl-3 pr-9 text-sm font-bold text-brand-navy outline-none"
-      >
-        <option value="">Toutes les ventes</option>
-        {visibleSaleTypeOptions().map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
-    </label>
   );
 }

@@ -1,6 +1,4 @@
 import { FloodExposedNote, PepiteInfoBadge } from "@/components/PepiteBadge";
-import { PointsToVerifyBadge } from "@/components/PointsToVerifyBadge";
-import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import type * as React from "react";
 import { Fragment, memo, type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
@@ -12,7 +10,8 @@ import { ListingPhoto } from "@/components/ListingPhoto";
 import { isPhotoMirrorUrl, photoMirrorForCard } from "@/lib/photo-mirror";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
+import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
+import Bell from "lucide-react/dist/esm/icons/bell.js";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
@@ -38,12 +37,12 @@ import {
   fetchSaleUnlocksOverview,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { formatPricePerM2, occupancyLabel } from "@/lib/format";
+import { formatPrice, formatPricePerM2, occupancyLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { departmentFromCode } from "@/lib/department-pages";
-import { saleShortHeading, saleVenueSentence, seoSurface } from "@/lib/seo";
+import { saleShortHeading, seoSurface } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import type { ActiveFilterChip } from "./active-filter-chips";
@@ -51,7 +50,7 @@ import { ErrorState, NoResultsState } from "./SearchFilters";
 import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
 import { LaunchOfferTrialEnd } from "./LaunchOfferTrialEnd";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
-import { SearchResultsTable } from "./SearchResultsTable";
+import dynamic from "next/dynamic";
 import {
   departmentLabel,
   LISTING_DETAIL_LINE,
@@ -60,10 +59,14 @@ import {
   listingDateLabel,
   listingLinkLabel,
   listingPriceText,
+  listingShortDateLabel,
   PAST_SALE_LABEL,
   listingTitle,
+  saleTypeBadgeLabel,
   stateSaleWithoutPrice,
 } from "./listing-text";
+import type { FollowedSaleDossier } from "./use-followed-sales";
+import type { DescribedSaleChange } from "@/lib/sale-change-display";
 import { useSaleDetailLink } from "./use-sale-detail-link";
 import styles from "./SearchResults.module.css";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
@@ -80,6 +83,23 @@ import * as queryKeys from "@/lib/query-keys";
 import { useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
 import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import type { ResultsView } from "@/lib/search/results-view";
+
+/**
+ * Le tableau des résultats n'existe que sur écran large et après l'hydratation (le serveur rend
+ * toujours les cartes) : il est chargé à la demande, hors du JavaScript initial de /sales.
+ */
+const SearchResultsTable = dynamic(
+  () => import("./SearchResultsTable").then((mod) => mod.SearchResultsTable),
+  {
+    loading: () => (
+      <div
+        aria-hidden="true"
+        data-testid="results-table-loading"
+        className="hidden h-96 animate-pulse rounded-lg border border-line-soft bg-white motion-reduce:animate-none lg:block"
+      />
+    ),
+  },
+);
 
 /**
  * Vignette cartographique d'une carte de résultats (ratio 4:3, comme le cadre `aspect-[4/3]`).
@@ -148,7 +168,13 @@ export function SearchResultsList({
   pepiteSaleIds,
   pepiteExposedSaleIds,
   pepiteEmpty,
+  dossierBySaleId,
+  lastChangeBySaleId,
 }: {
+  /** Abonné de l'offre Analyse : « Mon dossier » des ventes suivies (cartes et colonne du tableau). */
+  dossierBySaleId?: ReadonlyMap<string, FollowedSaleDossier>;
+  /** Abonné de l'offre Analyse : dernier changement de chaque vente suivie. */
+  lastChangeBySaleId?: ReadonlyMap<string, DescribedSaleChange>;
   sales: AuctionSale[];
   sponsoredPlacement?: React.ReactNode;
   returnTo: string;
@@ -221,7 +247,7 @@ export function SearchResultsList({
   const verifying = Boolean(user) && locked;
 
   return (
-    <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
+    <div className="pb-24 lg:pb-6">
       <LaunchOfferListBanner />
       <LaunchOfferTrialEnd />
       {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
@@ -262,6 +288,7 @@ export function SearchResultsList({
             favoriteIds={favoriteIds}
             favoriteScope={favoriteScope}
             FavoriteButton={CompactFavoriteButton}
+            dossierBySaleId={dossierBySaleId}
           />
         </>
       ) : (
@@ -299,6 +326,14 @@ export function SearchResultsList({
                       pepiteSaleIds?.has(sale.id.toLowerCase()) === true &&
                       pepiteExposedSaleIds?.has(sale.id.toLowerCase()) === true
                     }
+                    // Une vente suivie : le cœur de la carte le dit, la ligne « Mon dossier » aussi.
+                    // Retirée des favoris depuis la carte, elle n'a plus de dossier.
+                    dossier={
+                      favoriteIds.has(sale.id) || !favoriteQuery.isSuccess
+                        ? (dossierBySaleId?.get(sale.id) ?? null)
+                        : null
+                    }
+                    lastChange={lastChangeBySaleId?.get(sale.id) ?? null}
                   />
                 </Fragment>
               ))}
@@ -313,11 +348,6 @@ export function SearchResultsList({
   );
 }
 /** Assemble les éléments présents, séparés par « · » : aucun séparateur ne reste seul. */
-/** « Vente par l'État » → « vente par l'État » : seule la première lettre passe en minuscule. */
-function lowerFirst(text: string): string {
-  return text.charAt(0).toLowerCase() + text.slice(1);
-}
-
 function withSeparators(parts: React.ReactNode[]): React.ReactNode {
   const kept = parts.filter((part) => part != null && part !== false && part !== "");
   return kept.map((part, index) => (
@@ -348,11 +378,17 @@ export const ListingCard = memo(function ListingCard({
   unlocked = false,
   pepite = false,
   pepiteFloodExposed = false,
+  dossier = null,
+  lastChange = null,
   onFavoriteChange,
 }: {
   sale: AuctionSale;
   returnTo: string;
   eagerImage?: boolean;
+  /** Abonné de l'offre Analyse, vente suivie : « Mon dossier » (statut, plafond) sur la carte. */
+  dossier?: FollowedSaleDossier | null;
+  /** Abonné de l'offre Analyse, vente suivie : dernier changement détecté (30 jours). */
+  lastChange?: DescribedSaleChange | null;
   locked: boolean;
   /** Compte reconnu, liste publique gardée le temps de la vérification : ligne d'accès neutre. */
   verifying?: boolean;
@@ -385,13 +421,9 @@ export const ListingCard = memo(function ListingCard({
   const detailLink = useSaleDetailLink(sale.id, returnTo);
   const { active: launchOffer, pending: launchPending } = useLaunchOffer();
   const openFeeRegimes = useFeeRegimes()?.open;
+  // L'occupation n'est montrée qu'à qui y a droit (offre Analyse, vente débloquée comprise via la
+  // liste connectée) : sinon la case du milieu dit les pièces.
   const premiumLocked = locked || analysisLocked;
-  // « N points à vérifier » : seulement des faits déjà sur la carte ; l'occupation n'est comptée
-  // que si la carte la montre.
-  const verifyPoints = useMemo(
-    () => pointsToVerify(sale, { occupancyVisible: !premiumLocked }),
-    [sale, premiumLocked],
-  );
   const viewed = !locked && isViewed(sale.id);
   const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
   const roomsReview = getAiReviewFieldResult(
@@ -452,15 +484,64 @@ export const ListingCard = memo(function ListingCard({
     : department
       ? `${department.name} (${department.code})`
       : departmentLabel(sale.department);
-  const roomSummary = roomsReview.blocked
-    ? null
-    : sale.rooms_count != null
-      ? `${sale.rooms_count} pièce${sale.rooms_count === 1 ? "" : "s"}`
-      : sale.bedrooms_count != null
+  const roomsCount = roomsReview.blocked ? null : sale.rooms_count;
+  const roomSummary =
+    roomsCount != null
+      ? `${roomsCount} pièce${roomsCount === 1 ? "" : "s"}`
+      : !roomsReview.blocked && sale.bedrooms_count != null
         ? `${sale.bedrooms_count} ch.`
         : null;
+  // Visiteur et offre Découverte : la case du milieu dit les pièces, la ligne du lieu les chambres.
+  const bedroomSummary =
+    roomsReview.blocked || sale.bedrooms_count == null
+      ? null
+      : `${sale.bedrooms_count} chambre${sale.bedrooms_count === 1 ? "" : "s"}`;
+  const occupancyText = sale.occupancy_status ? occupancyLabel(sale.occupancy_status) : null;
+  const occupancyTone =
+    occupancyText === "Libre"
+      ? "text-success"
+      : occupancyText && (occupancyText.startsWith("Occupé") || occupancyText === "Loué")
+        ? "text-warning"
+        : "";
+  const review = {
+    projections: aiReviewProjections,
+    reviewStatus: aiReviewStatus,
+    sourceName: sale.source_name,
+    sourceUrl: sale.source_url,
+    showSourceLink: false,
+  } as const;
+  const surfaceFact = surfaceReviewField ? (
+    <AiReviewField fieldKey={surfaceReviewField} fallback="À confirmer" {...review}>
+      {displaySurface.value != null ? displaySurface.label : "n.c."}
+    </AiReviewField>
+  ) : displaySurface.value != null ? (
+    displaySurface.label
+  ) : (
+    "n.c."
+  );
+  const roomsFact = roomsReview.blocked ? (
+    <AiReviewField fieldKey="property.rooms_count" fallback="À confirmer" {...review}>
+      {sale.rooms_count != null ? String(sale.rooms_count) : "n.c."}
+    </AiReviewField>
+  ) : sale.rooms_count != null ? (
+    String(sale.rooms_count)
+  ) : (
+    "n.c."
+  );
+  const occupancyFact = occupancyText ? (
+    <AiReviewField fieldKey="property.occupancy_status" {...review}>
+      {occupancyText}
+    </AiReviewField>
+  ) : (
+    "n.c."
+  );
+  const dateFact = (
+    <AiReviewField fieldKey="sale.sale_date" {...review}>
+      {stateListing ? stateListing.label : listingShortDateLabel(sale)}
+    </AiReviewField>
+  );
   // La ligne d'accès n'apparaît que lorsqu'elle dit quelque chose de propre à la vente : l'offre de
-  // lancement est dite une fois au-dessus de la liste, et « Voir le détail » répète le lien.
+  // lancement est dite une fois au-dessus de la liste, et « Voir la fiche » répète le lien.
   const accessLine = listingAccessLine(sale, {
     locked,
     analysisLocked,
@@ -479,7 +560,8 @@ export const ListingCard = memo(function ListingCard({
       onMouseLeave={() => onHover(null)}
       onFocusCapture={() => onHover(sale.id)}
       onBlurCapture={() => onHover(null)}
-      className={`group relative overflow-hidden rounded-lg border bg-white transition-[border-color,box-shadow] [contain-intrinsic-size:none_auto_28rem] [content-visibility:auto] ${active ? "border-gold-soft ring-1 ring-gold-soft" : "border-line hover:border-gold"}`}
+      // Carte blanche au filet, sans ombre ; survolée (ou survolée sur la carte), le filet passe au marine.
+      className={`group relative flex flex-col overflow-hidden rounded-lg border bg-white transition-colors [contain-intrinsic-size:none_auto_30rem] [content-visibility:auto] ${active ? "border-brand-navy ring-1 ring-brand-navy" : "border-line-soft hover:border-brand-navy"}`}
     >
       <Link
         id={`sale-card-${sale.id}`}
@@ -544,59 +626,42 @@ export const ListingCard = memo(function ListingCard({
           </div>
         )}
       </div>
-      <div className="relative min-w-0 p-4">
-        <h3 className="font-sans text-base font-semibold leading-snug text-brand-navy">
-          {heading}
-        </h3>
-        {pepite && pepiteFloodExposed ? <FloodExposedNote className="mt-1" /> : null}
-        <p className="mt-1 text-sm leading-5 text-ink-soft">
+      {/* « Fiche technique » (maquette /sales validée) : type de vente et échéance, titre, lieu, mise à
+          prix, puis trois cases (surface, pièces ou occupation, date de vente). Sur mobile, les faits
+          tiennent sur une ligne et le lieu s'efface : la carte reste compacte. */}
+      <div className="relative flex min-w-0 flex-1 flex-col gap-2.5 p-4 pb-3">
+        {/* Deux pastilles au plus (docs/design/fondations.md) : le type de vente et l'échéance. Hauteur
+            d'une pastille réservée : le compte à rebours ne s'écrit qu'après l'hydratation (il lit
+            l'heure du navigateur) et ne doit rien faire descendre (CLS). */}
+        <div
+          className="flex min-h-[1.625rem] flex-wrap items-center gap-1.5 text-xs"
+          data-testid="card-badges"
+        >
+          <Badge tone="neutral">{saleTypeBadgeLabel(sale)}</Badge>
+          <SaleCountdown
+            sale={sale}
+            precisionUnknown={locked}
+            variant="chip"
+            omitPast={!stateListing && listingDateLabel(sale) === PAST_SALE_LABEL}
+          />
+        </div>
+        <h3 className="font-sans text-lg font-semibold leading-snug text-brand-navy">{heading}</h3>
+        {pepite && pepiteFloodExposed ? <FloodExposedNote className="-mt-1" /> : null}
+        <p className="-mt-1 hidden text-sm leading-5 text-ink-soft sm:block">
           {withSeparators([
             cityReview.blocked || (!headingSale.city?.trim() && !departmentLine) ? (
               <span>Localisation à préciser</span>
             ) : null,
             departmentLine,
-            headingHasSurface ? null : surfaceReviewField ? (
-              <AiReviewField
-                fieldKey={surfaceReviewField}
-                projections={aiReviewProjections}
-                reviewStatus={aiReviewStatus}
-                fallback="Surface à confirmer"
-                sourceName={sale.source_name}
-                sourceUrl={sale.source_url}
-                showSourceLink={false}
-              >
-                {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-              </AiReviewField>
-            ) : displaySurface.value != null ? (
-              displaySurface.label
-            ) : (
-              "surface non communiquée"
-            ),
-            roomSummary,
-            !premiumLocked && sale.occupancy_status ? (
-              <AiReviewField
-                fieldKey="property.occupancy_status"
-                projections={aiReviewProjections}
-                reviewStatus={aiReviewStatus}
-                sourceName={sale.source_name}
-                sourceUrl={sale.source_url}
-                showSourceLink={false}
-              >
-                {occupancyLabel(sale.occupancy_status).toLowerCase()}
-              </AiReviewField>
-            ) : null,
+            headingHasSurface || displaySurface.value != null || surfaceReviewField
+              ? null
+              : "surface non communiquée",
+            premiumLocked ? bedroomSummary : roomSummary,
           ])}
         </p>
-        <p className="mt-3 flex flex-wrap items-baseline gap-x-2">
+        <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="text-2xl font-semibold leading-none tracking-[-0.01em] text-brand-navy tabular-nums">
-            <AiReviewField
-              fieldKey="sale.starting_price_eur"
-              projections={aiReviewProjections}
-              reviewStatus={aiReviewStatus}
-              sourceName={sale.source_name}
-              sourceUrl={sale.source_url}
-              showSourceLink={false}
-            >
+            <AiReviewField fieldKey="sale.starting_price_eur" {...review}>
               {listingPriceText(sale)}
             </AiReviewField>
           </span>
@@ -608,47 +673,102 @@ export const ListingCard = memo(function ListingCard({
             </span>
           )}
           {startingPricePerM2 != null ? (
-            <span className="text-caption text-ink-soft tabular-nums">
+            <span className="hidden text-caption text-ink-soft tabular-nums sm:inline">
               · {formatPricePerM2(startingPricePerM2)}
             </span>
           ) : null}
         </p>
-        <p className="mt-3 flex flex-wrap items-center gap-x-1.5 text-sm text-brand-navy">
-          <CalendarDays className="h-3.5 w-3.5 text-ink-soft" aria-hidden />
-          <AiReviewField
-            fieldKey="sale.sale_date"
-            projections={aiReviewProjections}
-            reviewStatus={aiReviewStatus}
-            sourceName={sale.source_name}
-            sourceUrl={sale.source_url}
-            showSourceLink={false}
-          >
-            {stateListing ? stateListing.label : listingDateLabel(sale)}
-          </AiReviewField>
-          <span className="text-ink-soft">· {lowerFirst(saleVenueSentence(sale))}</span>
+        <dl className="mt-0.5 hidden grid-cols-3 border-y border-line-soft sm:grid">
+          <div className="min-w-0 py-2.5 pr-2">
+            <dt className="text-xs text-ink-soft">Surface</dt>
+            <dd className="mt-0.5 truncate text-sm font-semibold text-brand-navy tabular-nums">
+              {surfaceFact}
+            </dd>
+          </div>
+          {premiumLocked ? (
+            <div className="min-w-0 border-l border-line-soft py-2.5 pl-3 pr-2">
+              <dt className="text-xs text-ink-soft">Pièces</dt>
+              <dd className="mt-0.5 truncate text-sm font-semibold text-brand-navy tabular-nums">
+                {roomsFact}
+              </dd>
+            </div>
+          ) : (
+            <div className="min-w-0 border-l border-line-soft py-2.5 pl-3 pr-2">
+              <dt className="text-xs text-ink-soft">Occupation</dt>
+              <dd
+                className={`mt-0.5 truncate text-sm font-semibold ${occupancyTone || "text-brand-navy"}`}
+              >
+                {occupancyFact}
+              </dd>
+            </div>
+          )}
+          <div className="min-w-0 border-l border-line-soft py-2.5 pl-3">
+            <dt className="text-xs text-ink-soft">Vente le</dt>
+            <dd className="mt-0.5 truncate text-sm font-semibold text-brand-navy tabular-nums">
+              {dateFact}
+            </dd>
+          </div>
+        </dl>
+        <p className="text-sm text-ink-strong tabular-nums sm:hidden" data-testid="card-facts-line">
+          {withSeparators([
+            displaySurface.value != null || surfaceReviewField ? surfaceFact : "Surface n.c.",
+            premiumLocked ? (
+              roomSummary
+            ) : occupancyText ? (
+              <span className={occupancyTone}>{occupancyFact}</span>
+            ) : null,
+            <Fragment key="date">
+              {stateListing ? null : "vente le "}
+              {dateFact}
+            </Fragment>,
+          ])}
         </p>
-        {/* Deux pastilles au plus (docs/design/fondations.md) : l'échéance et les points à vérifier.
-            Le type de vente est dans la ligne de date ; la qualité de l'annonce est sur la fiche. */}
-        {/* Hauteur d'une pastille (20 px) réservée : le compte à rebours ne s'écrit qu'après l'hydratation
-            (il lit l'heure du navigateur), et sa pastille faisait descendre tout ce qui suit (CLS). */}
-        <div className="mt-2 flex min-h-5 flex-wrap items-center gap-1.5 text-xs">
-          <SaleCountdown
-            sale={sale}
-            precisionUnknown={locked}
-            variant="chip"
-            omitPast={!stateListing && listingDateLabel(sale) === PAST_SALE_LABEL}
-          />
-          <PointsToVerifyBadge
-            points={verifyPoints}
-            detailHref={detailLink.href}
-            detailLinkProps={detailLink.armProps}
-            onNavigate={() => onSelect(sale.id)}
-          />
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-line-soft pt-2">
-          <span className="text-sm text-ink-soft">{showAccessLine ? accessLine : null}</span>
-          <div className="flex items-center">
-            <ShareButton sale={sale} title={title} />
+        {showAccessLine ? <p className="text-caption text-ink-soft">{accessLine}</p> : null}
+        {lastChange ? (
+          <p
+            className="flex items-start gap-1.5 text-caption font-semibold text-warning"
+            data-testid="card-last-change"
+          >
+            <Bell className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            <span>
+              {lastChange.label}
+              {lastChange.detail ? (
+                <span className="font-medium tabular-nums"> · {lastChange.detail}</span>
+              ) : null}
+            </span>
+          </p>
+        ) : null}
+        {dossier ? (
+          <p
+            className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-caption text-ink-strong"
+            data-testid="card-dossier"
+          >
+            <span className="inline-flex items-center gap-1.5 font-semibold text-brand-navy">
+              <span aria-hidden="true" className="size-2 rounded-full bg-gold" />
+              {dossier.statusLabel ?? "Vente suivie"}
+            </span>
+            <span>
+              Mon plafond :{" "}
+              <b className="font-semibold text-brand-navy tabular-nums">
+                {dossier.bidCeilingEur != null ? formatPrice(dossier.bidCeilingEur) : "à calculer"}
+              </b>
+            </span>
+          </p>
+        ) : null}
+        <div className="mt-auto flex items-center justify-between gap-2">
+          {/* Toute la carte mène à la fiche (lien qui la couvre, seul arrêt du clavier) : ce
+              libellé n'en est que le repère visible. */}
+          <span
+            aria-hidden="true"
+            className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-gold-text underline underline-offset-4 group-hover:text-brand-navy"
+          >
+            Voir la fiche
+            <ArrowRight className="size-4" />
+          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="hidden sm:contents">
+              <ShareButton sale={sale} title={title} />
+            </span>
             {onToggleComparison && (
               <button
                 type="button"
@@ -660,7 +780,7 @@ export const ListingCard = memo(function ListingCard({
                   event.stopPropagation();
                   onToggleComparison(sale);
                 }}
-                className={`relative z-20 min-h-11 rounded-md border px-3 text-xs font-semibold hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-gold-soft disabled:opacity-50 ${comparisonSelected ? "border-gold-soft bg-gold/10 text-brand-navy" : "border-brand-navy/55 text-brand-navy"}`}
+                className={`relative z-20 min-h-11 cursor-pointer rounded-md border px-4 text-sm font-semibold hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-gold-soft disabled:opacity-50 ${comparisonSelected ? "border-gold-soft bg-gold/10 text-brand-navy" : "border-brand-navy/55 text-brand-navy"}`}
               >
                 {comparisonSelected ? "Sélectionné ✓" : "Comparer"}
               </button>
@@ -1016,10 +1136,10 @@ export function ShareButton({ sale, title }: { sale: AuctionSale; title: string 
     <button
       type="button"
       onClick={share}
-      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-md border border-line bg-white text-brand-navy transition-colors hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       aria-label="Partager cette vente"
     >
-      <Share2 className="h-5 w-5" />
+      <Share2 className="h-[18px] w-[18px]" aria-hidden />
     </button>
   );
 }
