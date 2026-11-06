@@ -112,4 +112,71 @@ du propriétaire, numéro par numéro.
 
 ## Décision du propriétaire
 
-À compléter : numéros validés, remarques, puis ce qui a été fait.
+Le 06/11/2026, le propriétaire valide les numéros classés « garder » : 1 à 11 et 13 à 16. Le n° 12
+attend l'ouverture de la souscription ; les idées A, B et C restent à explorer.
+
+## Ce qui a été fait
+
+Trois lots `developpeur` en parallèle, puis un quatrième pour le n° 9. Le tout est relu par
+`juridique-rgpd` (deux passages) et `code-reviewer`. Les quatre vérifications (`tsc`, lint, 12 813
+tests, invariants de sécurité) passent.
+
+- **`/offres`**
+  - n° 1 : descriptions des offres par le bénéfice, « Le plafond des ventes au tribunal ou chez le
+    notaire, avant de choisir celles qui méritent une visite. » ; titre « 3 ventes chiffrées par mois,
+    ou sans limite. » ;
+  - n° 2 : comparatif avec les différences en tête et un groupe replié « Inclus dans les deux
+    offres », calculé sur les données ;
+  - n° 6 : « Commencer l’essai gratuit de 7 jours » en bouton principal pendant l'essai,
+    « Explorer gratuitement » en simple lien, motif `offre` sur les liens d'inscription ;
+  - n° 16 : phrase pour les marchands de biens.
+- **Accueil**
+  - n° 3 : bouton « Voir le plafond d’une vraie vente de mon secteur » juste après le verdict de
+    l'exemple, mesuré par `home_cta_clicked` avec la cible `example` ;
+  - n° 5 : paragraphe du premier écran réécrit, avec le titre et la devise inchangés ;
+  - n° 13 : bandeau « ≈ 13 % de frais en plus du prix, pour un bien adjugé 150 000 € au tribunal
+    (hypothèses du simulateur) ». Le chiffre est calculé par `computeAcquisitionCosts`, et la FAQ
+    lit la même source.
+- **Essai et passerelles**
+  - n° 4 : ligne d'essai « 7 jours d’offre Analyse, sans carte bancaire : toutes les ventes
+    ouvertes, puis retour au compte gratuit. » ;
+  - n° 14 : nouveaux textes à la fin de l'annonce exemple et du simulateur.
+- **Déblocage**
+  - n° 7 : « Votre enchère plafond est débloquée », puis le bouton. Ce qui reste réservé et la
+    réserve « aide à la décision » restent visibles dessous ;
+  - n° 8 : mois épuisé, « Vos 3 ventes de … sont débloquées », un lien vers ces ventes et « Vous
+    pourrez la débloquer le 1er … avec le compte gratuit ».
+- **Compte et fin d'essai**
+  - n° 10 : « Votre essai de l’offre Analyse a commencé ». La 3ᵉ étape garde son libellé, car elle
+    mène au catalogue et non à un plafond ;
+  - n° 11 : liste de fin d'essai corrigée (PDF cité une seule fois, plafond et alertes en tête),
+    dans la page compte et dans l'email ;
+  - n° 15 : les critères d'alerte réservés font l'objet d'un message d'information et non plus
+    d'une erreur.
+- **n° 9, alerte quotidienne pendant l'essai**
+  - L'accueil crée la première alerte en quotidien pendant l'essai, avec un consentement qui
+    annonce les deux rythmes.
+  - Correction d'un bug existant : une alerte quotidienne d'un compte Découverte n'était plus
+    évaluée du tout après l'essai. Elle est maintenant évaluée en hebdomadaire et réécrite en
+    `weekly` au premier passage.
+  - Une vente déjà notifiée n'est pas renotifiée, et le premier passage est borné à 7 jours.
+  - Le registre RGPD décrit ce fonctionnement.
+
+**Non fait :**
+
+- le bilan personnel de fin d'essai (n° 11) : les nombres ne sont disponibles ni sur la page
+  compte ni dans l'email ;
+- le n° 12, qui attend l'ouverture de la souscription.
+
+**Points ouverts :**
+
+- Une version du texte de consentement enregistrée avec le consentement aux alertes demande une
+  migration. En attendant, la preuve repose sur la date du consentement, la fin de l'essai et
+  l'historique du dépôt.
+- À faire valider par un avocat avant d'ouvrir la souscription :
+  - la qualification de l'abonnement dans les CGV (durée indéterminée ou reconduction) ;
+  - les conditions pour les professionnels ;
+  - l'identification de l'éditeur ;
+  - la nature des emails d'alerte (service ou prospection).
+- Le n° 13 reste à confirmer par `statisticien`.
+- Une alerte réécrite en hebdomadaire le reste si la personne s'abonne ensuite à Analyse.

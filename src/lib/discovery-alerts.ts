@@ -19,7 +19,11 @@ function hasPublicAlertCriteriaOnly(alert: UserAlert): boolean {
   );
 }
 
-/** Also enforced by the database; checked again for old alerts after downgrade. */
+/**
+ * Règle de la base pour enregistrer une alerte gratuite (déclencheur `enforce_user_alerts_quota`) : critères
+ * publics et récapitulatif hebdomadaire. L'application ne l'appelle plus (seuls les tests la lisent) : l'évaluation
+ * d'un compte Découverte suit `isDiscoveryAlertEvaluable`, qui garde aussi l'alerte quotidienne de l'essai.
+ */
 export function isDiscoveryAlertCompatible(alert: UserAlert): boolean {
   return hasPublicAlertCriteriaOnly(alert) && alert.alert_frequency === "weekly";
 }
