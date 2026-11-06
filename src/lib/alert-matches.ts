@@ -145,6 +145,11 @@ const DEFAULT_ALERT_EVALUATION_SALE_LIMIT = 6_000;
 const MAX_ALERT_EVALUATION_SALE_LIMIT = 20_000;
 /** Overlap with the previous evaluation so a sale updated mid-run is never missed. */
 const ALERT_EVALUATION_OVERLAP_MS = 60 * 60 * 1000;
+/**
+ * Fenêtre maximale de la première évaluation d'une alerte encore quotidienne d'un compte Découverte (fin de
+ * l'essai de l'offre Analyse) : sa date d'évaluation est restée à la fin de l'essai, parfois bien plus tôt.
+ */
+const DISCOVERY_CATCH_UP_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Users evaluated in parallel by the daily batch. */
 const ALERT_BATCH_CONCURRENCY = 4;
 /** The batch stops starting new users after this long; the rest come first next run. */
@@ -315,7 +320,13 @@ export async function evaluateUserAlertMatches({
   }
   const evaluationLimit = clampLimit(saleLimit, MAX_ALERT_EVALUATION_SALE_LIMIT);
   const sales = alerts.length
-    ? await loadSalesToEvaluate({ auth, alerts, discovery, limit: evaluationLimit })
+    ? await loadSalesToEvaluate({
+        auth,
+        alerts,
+        discovery,
+        limit: evaluationLimit,
+        now: Date.parse(evaluatedAt),
+      })
     : [];
   const pepiteOnlySaleIds = new Set<string>();
   if (pepiteSaleIds && pepiteSaleIds.size > 0 && alerts.length) {
@@ -608,9 +619,20 @@ async function persistAlertEvaluation({
   );
   let notificationCount = 0;
   for (let offset = 0; offset < persistedMatches.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
+    let batch = persistedMatches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE);
+    // Compte Découverte : seulement les correspondances sans aucune notification. La clé d'unicité comprend le
+    // genre : une vente notifiée en quotidien pendant l'essai le serait une seconde fois en hebdomadaire.
+    if (discovery) {
+      const notified = await readNotifiedMatchIds(
+        auth.userId,
+        batch.map((match) => match.id as string),
+      );
+      batch = batch.filter((match) => !notified.has(match.id as string));
+      if (!batch.length) continue;
+    }
     const result = await createAlertNotificationsForMatches({
       auth,
-      matches: persistedMatches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
+      matches: batch,
       alerts: [notificationAlert],
       now: new Date(evaluatedAt),
       discovery,
@@ -636,6 +658,23 @@ async function persistAlertEvaluation({
     .eq("id", alert.id)
     .eq("user_id", auth.userId);
   if (error) throw error;
+}
+
+/**
+ * Les correspondances de ce compte qui ont déjà une notification, quels qu'en soient le genre (quotidien,
+ * hebdomadaire), le canal ou le statut. Lu avec le rôle de service : pour un compte Découverte, la règle d'accès
+ * cache les notifications « analyse » de l'essai au client de la personne. Un lot de 200 correspondances rend au
+ * plus 800 lignes (deux genres, deux canaux), sous la limite de 1 000 lignes d'une requête PostgREST.
+ */
+async function readNotifiedMatchIds(userId: string, matchIds: string[]): Promise<Set<string>> {
+  if (!matchIds.length) return new Set();
+  const { data, error } = await supabaseAdmin
+    .from("user_alert_notifications")
+    .select("match_id")
+    .eq("user_id", userId)
+    .in("match_id", matchIds);
+  if (error) throw error;
+  return new Set((data ?? []).map((row) => row.match_id));
 }
 
 /** Journalise l'échec d'une alerte avec son message et son code (jamais « Évaluation impossible »). */
@@ -674,25 +713,30 @@ async function loadSalesToEvaluate({
   alerts,
   discovery,
   limit,
+  now,
 }: {
   auth: SupabaseAuthContext;
   alerts: UserAlert[];
   discovery: boolean;
   limit: number;
+  /** Heure de l'évaluation (ms). */
+  now: number;
 }): Promise<AuctionSale[]> {
   const evaluatedAt = alerts.map((alert) =>
     alert.last_evaluated_at ? Date.parse(alert.last_evaluated_at) : Number.NaN,
   );
   const neverEvaluated = evaluatedAt.some((time) => !Number.isFinite(time));
+  // Début de la fenêtre de chaque alerte. Alerte encore quotidienne d'un compte Découverte (première évaluation
+  // après l'essai) : 7 jours au plus, sans relire tout ce qui a changé depuis la fin de l'essai.
+  const windowStarts = alerts.map((alert, index) => {
+    const start = evaluatedAt[index] - ALERT_EVALUATION_OVERLAP_MS;
+    return discovery && alert.alert_frequency !== "weekly"
+      ? Math.max(start, now - DISCOVERY_CATCH_UP_WINDOW_MS)
+      : start;
+  });
   const filters: SaleFilters = {
     status_in: [...ALERT_SALE_STATUSES],
-    ...(neverEvaluated
-      ? {}
-      : {
-          updated_since: new Date(
-            Math.min(...evaluatedAt) - ALERT_EVALUATION_OVERLAP_MS,
-          ).toISOString(),
-        }),
+    ...(neverEvaluated ? {} : { updated_since: new Date(Math.min(...windowStarts)).toISOString() }),
     ...(discovery && alerts.length === 1
       ? { city: alerts[0].city ?? undefined, ...departmentPrefilter(alerts[0].department) }
       : {}),
