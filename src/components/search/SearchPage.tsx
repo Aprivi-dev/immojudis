@@ -99,6 +99,7 @@ import { SalesCatalogueHead } from "./SalesCatalogueHead";
 import { SearchResultsList } from "./SearchResults";
 import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
 import { SaleComparisonBar } from "./SaleComparisonBar";
+import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
 import type { FollowedCardData } from "./FollowedSalesSummary";
 import {
   SearchDraft,
@@ -153,12 +154,6 @@ const LazyMonDemarrage = dynamic(
   {
     ssr: false,
   },
-);
-
-// Encart des avocats, en fin de liste (sous la ligne de flottaison) : rendu par le serveur comme
-// avant, mais son code est un fichier à part, hors du JavaScript initial de la page.
-const SearchLawyerPlacement = dynamic(() =>
-  import("./SearchLawyerPlacement").then((mod) => mod.SearchLawyerPlacement),
 );
 
 // « Votre suivi » : chargé pour un abonné de l'offre Analyse seulement.
