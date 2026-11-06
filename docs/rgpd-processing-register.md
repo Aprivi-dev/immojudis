@@ -50,7 +50,7 @@ minimale : annuelle et avant toute nouvelle finalité, catégorie sensible, four
 ## Événements de parcours : listes fermées (ligne « Mesure et performance »)
 
 Deux mesures, aux listes fermées dans le code. Tout événement ou toute propriété de plus passe par
-ce registre et par `juridique-rgpd` avant d'être ajouté. Mise à jour du 28/10/2026 : [JR] à relire. Mise à jour du 31/10/2026 (lot 6 : `sale_unlock_confirmed`, `home_cta_clicked`, `ceiling_viewed`, `shared_report_viewed`, propriété `surface`, entrée `rapport`) : [JR] à relire.
+ce registre et par `juridique-rgpd` avant d'être ajouté. Mise à jour du 28/10/2026 : [JR] à relire. Mise à jour du 31/10/2026 (lot 6 : `sale_unlock_confirmed`, `home_cta_clicked`, `ceiling_viewed`, `shared_report_viewed`, propriété `surface`, entrée `rapport`) : [JR] à relire. Mise à jour du 06/11/2026 (revue marketing : cible `example` de `home_cta_clicked` ; l'entrée `offre`, déjà prévue, sert aussi aux liens d'inscription de `/offres`) : [JR] à relire.
 
 **Navigateur, Vercel Analytics** (`src/lib/product-events.ts`) : aucun identifiant de personne, de
 compte ni de vente, aucun cookie ; rien n'est envoyé après l'opposition à la mesure d'audience.
@@ -65,12 +65,13 @@ compte ni de vente, aucun cookie ; rien n'est envoyé après l'opposition à la 
 | `pepite_block_viewed` (le bloc « Pourquoi cette pépite » s'affiche)                                                                                        | `access` : `locked` (noms des critères) ou `detail` (détail ouvert)                                                                                                                                                      |
 | `pepite_filter_used` (« Pépites seulement » passe de faux à vrai)                                                                                          | aucune                                                                                                                                                                                                                   |
 | `sale_unlock_confirmed` (second clic du panneau « Débloquer cette vente », avant la réponse du serveur)                                                    | aucune                                                                                                                                                                                                                   |
-| `home_cta_clicked` (clic en haut ou en bas de l'accueil, visiteur non connecté)                                                                            | `target` : `signup` (Créer mon compte gratuit) ou `browse` (Explorer les ventes sans compte)                                                                                                                             |
+| `home_cta_clicked` (clic en haut, sous l'exemple ou en bas de l'accueil, visiteur non connecté)                                                                     | `target` : `signup` (Créer mon compte gratuit), `browse` (Explorer les ventes sans compte) ou `example` (bouton qui suit le verdict de l’exemple de l’accueil)                                                           |
 | `ceiling_viewed` (le plafond d'enchère d'une vente est calculé et affiché)                                                                                 | aucune                                                                                                                                                                                                                   |
 | `shared_report_viewed` (un destinataire ouvre un rapport partagé ; ni jeton ni identifiant du rapport)                                                     | `state` : `open` (rapport lisible) ou `unavailable` (lien fermé)                                                                                                                                                         |
 
-Valeurs de `entry` : `alerte`, `favori`, `export`, `offre`, `ouverture`, `fiche`, `mes-favoris`,
-`mes-alertes`, `exemple` (fin de l'annonce exemple), `rapport` (page d'un rapport partagé) et `direct`. Un compte déjà inscrit qui
+Valeurs de `entry` : `alerte`, `favori`, `export`, `offre` (dont les liens d'inscription de `/offres`), `ouverture`, `fiche`, `mes-favoris`,
+`mes-alertes`, `exemple` (fin de l'annonce exemple et bouton qui suit l'exemple de l'accueil), `rapport` (page d'un
+rapport partagé), `simulateur` (simulateur de frais) et `direct`. Un compte déjà inscrit qui
 ressaisit son adresse n'est plus compté comme inscription.
 
 **Serveur, par compte** (table `public.account_product_events`, `service_role` seul, lue en

@@ -1382,12 +1382,14 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     renderDetail("analysis", undefined, false);
     expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
     expect(screen.queryByText("Cette vente est débloquée")).toBeNull();
+    expect(screen.queryByText("Votre enchère plafond est débloquée")).toBeNull();
   });
 
   it("opens the market estimate, the bid ceiling and the statistics of an unlocked sale", async () => {
     const { container } = renderUnlocked();
 
-    expect(screen.getByText("Cette vente est débloquée")).toBeTruthy();
+    // A court sale with an open fee regime: the result first.
+    expect(screen.getByText("Votre enchère plafond est débloquée")).toBeTruthy();
     expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
     expect(mocks.fetchMarket).toHaveBeenCalledWith({

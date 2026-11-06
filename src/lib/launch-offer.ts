@@ -23,12 +23,16 @@ import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 export const LAUNCH_OFFER_LABEL = `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours`;
 
 /**
+ * Sous le bouton d'inscription de l'accueil et de l'annonce exemple, pendant l'essai. « Toutes les
+ * ventes ouvertes » : l'essai donne l'offre Analyse, sans limite de déblocages
+ * (`PLAN_LIMITS.analyse.monthlyUnlocks`, vérifié par `launch-offer.test.ts`).
+ */
+export const HOME_TRIAL_NOTE = `${ANALYSIS_TRIAL_DAYS} jours d’offre Analyse, sans carte bancaire : toutes les ventes ouvertes, puis retour au compte gratuit.`;
+
+/**
  * Résumé d'une ligne pour un visiteur, toujours accompagné du texte complet sur la même page ou d'un
  * lien (bannière repliable de /sales, premier écran de l'accueil).
  */
-/** Sous le bouton d'inscription de l'accueil et de l'annonce exemple, pendant l'essai. */
-export const HOME_TRIAL_NOTE = `${ANALYSIS_TRIAL_DAYS} jours d’accès à l’offre Analyse, sans carte bancaire.`;
-
 export const LAUNCH_OFFER_SHORT_TEXT = `Inscription gratuite : ${ANALYSIS_TRIAL_DAYS} jours d’accès à l’offre Analyse, sans carte bancaire`;
 
 /**

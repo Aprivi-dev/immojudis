@@ -274,9 +274,16 @@ describe("page Mon compte", () => {
     expect(text).toContain(`${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`);
     expect(text).toContain("« Mon dossier »");
     expect(text).toContain("Ce qui demandera l’offre Analyse");
-    expect(text).toContain("le rapport PDF");
+    expect(text).toContain(
+      `le plafond chiffré sans limite mensuelle (compte gratuit : ${PLAN_LIMITS.decouverte.monthlyUnlocks} ventes par mois)`,
+    );
+    expect(text).toContain(
+      `jusqu’à ${PLAN_LIMITS.analyse.watchedZones} alertes, chaque jour (compte gratuit : ${PLAN_LIMITS.decouverte.watchedZones}, chaque semaine)`,
+    );
     expect(text).toContain("ventes comparables");
-    expect(text).toContain("les exports");
+    expect(text).toContain("le rapport PDF et l’export CSV");
+    // Le PDF n'est cité qu'une fois.
+    expect(text.match(/PDF/g)).toHaveLength(1);
     expect(text).toContain(LAUNCH_OFFER_DURATION_TEXT);
     expect(text).toContain(
       "Vos données (favoris, alertes, rapports enregistrés) restent conservées tant que votre compte existe et dans les durées de la politique de confidentialité. Elles redeviennent accessibles avec l’offre Analyse.",

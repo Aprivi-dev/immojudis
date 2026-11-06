@@ -34,6 +34,12 @@ describe("/annonce-exemple server page", () => {
     expect(absent.props.adjudicationStatisticsEnabled).toBe(false);
   });
 
+  it("passes the fee regimes the server opened to the end-of-example text", async () => {
+    vi.stubEnv("CEILING_FEE_REGIMES_OPEN", "tribunal");
+    const element = await Page({ searchParams: Promise.resolve({}) });
+    expect(element.props.openFeeRegimes).toEqual(["tribunal"]);
+  });
+
   it("computes the dates when the page is generated: the hearing is in the future", async () => {
     const element = await Page({ searchParams: Promise.resolve({}) });
     const hearing = Date.parse(element.props.example.sale.sale_date);

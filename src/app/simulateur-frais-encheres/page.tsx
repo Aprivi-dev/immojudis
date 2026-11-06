@@ -73,9 +73,11 @@ function PageContent() {
           Et ensuite ?
         </h2>
         <p className="mt-2 max-w-2xl text-ink-soft">
-          Ce simulateur chiffre les frais, pas votre limite d’enchère. L’enchère plafond s’ouvre sur{" "}
-          {MONTHLY_SALE_UNLOCKS} ventes au tribunal par mois avec le compte gratuit, et sur toutes
-          les ventes au tribunal avec l’offre Analyse.
+          Vous connaissez maintenant les frais. Le plafond fait le chemin inverse sur une vraie
+          vente : il part de la valeur estimée du bien et calcule, selon vos hypothèses, l’enchère à
+          ne pas dépasser. L’enchère plafond s’ouvre sur {MONTHLY_SALE_UNLOCKS} ventes au tribunal
+          par mois avec le compte gratuit, et sur toutes les ventes au tribunal avec l’offre
+          Analyse.
         </p>
         <LaunchOfferNote className="mt-3 max-w-2xl" />
         <div className="mt-4 flex flex-wrap gap-2">
