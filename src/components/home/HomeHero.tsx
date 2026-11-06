@@ -76,7 +76,7 @@ export function HomeHero({
             dépasser selon votre projet.{" "}
             {notaryAndStatePilotsEnabled()
               ? "Les ventes des tribunaux, des notaires et de l’État sur une carte."
-              : "Toutes les ventes sur une carte."}
+              : "Les ventes des tribunaux sur une carte."}
           </p>
           <div className={styles.heroAnim} style={delay(240)}>
             <HomePrimaryAction browseLink />

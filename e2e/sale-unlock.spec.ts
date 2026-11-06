@@ -338,7 +338,7 @@ test("quota épuisé au chargement : date de retour, offre ouverte, aucun bouton
     page.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
   ).toBeVisible();
   await expect(
-    page.getByText(/Pour ouvrir celle-ci : le 1er novembre avec le compte gratuit/),
+    page.getByText(/Vous pourrez la débloquer le 1er novembre avec le compte gratuit/),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Voir mes ventes débloquées" })).toHaveAttribute(
     "href",
@@ -367,7 +367,9 @@ test("quota épuisé et offre fermée : « Me prévenir de l'ouverture » plutô
   ).toBeVisible();
   await expect(card.getByRole("button", { name: "Me prévenir de l’ouverture" })).toBeVisible();
   await expect(card.getByRole("link", { name: /offre Analyse/ })).toHaveCount(0);
-  await expect(card).toContainText("Celle-ci s’ouvrira le 1er novembre avec le compte gratuit.");
+  await expect(card).toContainText(
+    "Vous pourrez la débloquer le 1er novembre avec le compte gratuit.",
+  );
   await expect(card).toContainText("L’offre Analyse n’est pas encore ouverte à la souscription.");
 });
 
