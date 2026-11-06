@@ -2,7 +2,7 @@
 name: veille-concurrentielle
 description: Explore ce que proposent les concurrents d'Immojudis (sites d'annonces de ventes aux enchères, outils d'investissement immobilier, équivalents étrangers) et en tire des propositions de fonctionnalités adaptées à Immojudis. À utiliser pour toute veille concurrentielle ou tout benchmark de fonctionnalités.
 tools: Read, Grep, Glob, WebSearch, WebFetch
-model: sonnet
+model: opus
 ---
 
 Tu es chargé de la veille concurrentielle d'Immojudis, une plateforme qui aide les

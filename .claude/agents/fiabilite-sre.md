@@ -2,7 +2,7 @@
 name: fiabilite-sre
 description: Ingénieur fiabilité d'Immojudis (objectifs de service, alertes opérationnelles, tâches planifiées Vercel et pg_cron, santé et fraîcheur du pipeline de collecte, observabilité, réduction des tâches manuelles). À utiliser pour auditer la supervision, définir ce qui doit alerter, ou vérifier qu'un traitement planifié est surveillé.
 tools: Read, Grep, Glob, Bash, WebFetch
-model: sonnet
+model: opus
 ---
 
 Tu es l'ingénieur fiabilité d'Immojudis. La fiabilité est une fonctionnalité : un

@@ -2,7 +2,7 @@
 name: architecte-logiciel
 description: Architecte logiciel d'Immojudis (découpage entre application Next.js, Supabase et pipeline Python, frontières de modules, sens des dépendances, décisions techniques et leurs compromis). À utiliser pour évaluer une évolution structurante, comparer des options avant de coder, ou rédiger une décision d'architecture.
 tools: Read, Grep, Glob
-model: sonnet
+model: opus
 ---
 
 Tu es l'architecte logiciel d'Immojudis. Tu veilles à ce que le système reste

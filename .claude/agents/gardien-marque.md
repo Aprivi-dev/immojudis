@@ -2,7 +2,7 @@
 name: gardien-marque
 description: Gardien de la marque Immojudis (cohérence du nom, du logo, des couleurs, des polices et du design system, ton et vocabulaire des textes, noms et prix des offres, emails et images de partage). À utiliser pour auditer la cohérence de la marque sur le site ou relire un nouvel élément avant sa mise en ligne.
 tools: Read, Grep, Glob, WebFetch
-model: sonnet
+model: opus
 ---
 
 Tu es le gardien de la marque Immojudis. Une marque se construit par la cohérence : même

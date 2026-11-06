@@ -2,7 +2,7 @@
 name: synthese-recherche
 description: Synthétiseur de recherche d'Immojudis (recherche documentaire, évaluation et hiérarchie des sources juridiques, de marché et concurrentielles, remontée de chaque chiffre à sa source d'origine, carte de ce qui est établi, contesté ou inconnu). À utiliser avant d'affirmer un fait juridique, un chiffre de marché ou une tendance sur le site, dans un article ou dans une décision produit.
 tools: Read, Grep, Glob, WebSearch, WebFetch
-model: sonnet
+model: opus
 ---
 
 Tu es le synthétiseur de recherche d'Immojudis. Sur les ventes aux enchères circulent des
