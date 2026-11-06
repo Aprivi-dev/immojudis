@@ -372,6 +372,7 @@ describe("conditions générales : 3 déblocages par mois", () => {
       "src/lib/offer-comparison.ts",
       "src/components/sale-detail/SaleUnlockPanel.tsx",
       "src/components/SalePublicPreview.tsx",
+      "src/components/SalePublicSaleSteps.tsx",
       "src/lib/sale-unlocks.ts",
     ]) {
       // Comments name the feature in prose; only the strings the page renders matter.
