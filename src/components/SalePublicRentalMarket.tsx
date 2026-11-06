@@ -1,13 +1,7 @@
 "use client";
 
 import { RentSourceNotice } from "@/components/RentSourceNotice";
-import {
-  YIELD_AT_STARTING_PRICE_LABEL,
-  yieldText,
-} from "@/components/sale-detail/RentalMarketBlock";
 import { Badge } from "@/components/ui/primitives";
-import { feeRegimeKeyForSale } from "@/lib/fee-regime-key";
-import { estimateSaleGrossYieldRange } from "@/lib/geo";
 import {
   HOUSING_TENSION_NOTE,
   housingTensionLine,
@@ -16,7 +10,7 @@ import {
 } from "@/lib/housing-tension";
 import type { RentReference, RentReferenceSource, RentSegment } from "@/lib/rent-reference";
 import { formatRentSourceDate, isAnilRentReference } from "@/lib/rent-source-notice";
-import type { AuctionSale } from "@/lib/types";
+import { PUBLIC_YIELD_LABEL } from "@/lib/public-rental-yield";
 import styles from "./SalePublicPreview.module.css";
 
 /** Le segment dans la phrase : « le loyer d'annonce des appartements ». */
@@ -65,8 +59,6 @@ function rentNature(reference: RentReference): string {
     : "Estimation indicative : la commune compte peu d’annonces ou le modèle est peu précis.";
 }
 
-type MarketSale = Parameters<typeof estimateSaleGrossYieldRange>[0];
-
 /**
  * Section « Marché local » de la fiche publique : les chiffres du bloc « Marché locatif » (loyer
  * d'annonce de la carte de l'ANIL, fourchette, annonces observées, rendement brut à la mise à prix,
@@ -74,32 +66,18 @@ type MarketSale = Parameters<typeof estimateSaleGrossYieldRange>[0];
  * Aucune donnée de plus que le bloc des comptes. Sans loyer ANIL ni zonage, rien n'est rendu.
  */
 export function SalePublicRentalMarket({
-  sale,
-  startingPriceEur,
-  surfaceM2,
   reference,
   tension,
+  yieldValue,
 }: {
-  sale: MarketSale;
-  startingPriceEur: number | null;
-  surfaceM2: number | null;
   reference: RentReference | null;
   tension: HousingTension | null;
+  /** Rendement brut à la mise à prix, calculé par le serveur (`publicRentalYield`) ; `null` : aucun. */
+  yieldValue: string | null;
 }) {
   const anil = isAnilRentReference(reference) ? reference : null;
   if (!anil && !tension) return null;
 
-  // Mêmes conditions que le bloc des comptes : un rendement seulement quand les frais du type de vente sont connus.
-  const regimeKnown = feeRegimeKeyForSale(sale as AuctionSale) != null;
-  const range =
-    anil && regimeKnown && startingPriceEur != null && startingPriceEur > 0
-      ? estimateSaleGrossYieldRange(
-          { ...sale, starting_price_eur: startingPriceEur },
-          surfaceM2,
-          anil,
-        )
-      : null;
-  const yieldValue = range && anil ? yieldText(range, anil.reliability) : null;
   const bounds =
     anil?.lowPerM2 != null && anil.highPerM2 != null && anil.lowPerM2 !== anil.highPerM2
       ? ([
@@ -145,9 +123,9 @@ export function SalePublicRentalMarket({
             </div>
           ) : null}
           <p className={styles.fine}>{rentNature(anil)}</p>
-          {yieldValue ? (
+          {anil && yieldValue ? (
             <p className={styles.yield}>
-              {YIELD_AT_STARTING_PRICE_LABEL} : <strong>{yieldValue}</strong>
+              {PUBLIC_YIELD_LABEL} : <strong>{yieldValue}</strong>
               <span className={styles.fine}>
                 Calculé sur la mise à prix, avec les frais d’acquisition estimés du type de vente.
                 Si la vente se conclut au-dessus de la mise à prix, le rendement est plus faible.

@@ -3,37 +3,24 @@
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Camera from "lucide-react/dist/esm/icons/camera.js";
-import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import CircleAlert from "lucide-react/dist/esm/icons/circle-alert.js";
-import Eye from "lucide-react/dist/esm/icons/eye.js";
-import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import FolderHeart from "lucide-react/dist/esm/icons/folder-heart.js";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
-import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import dynamic from "next/dynamic";
 import { Terme } from "@/components/ceiling/Terme";
 import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import { PepiteBlockLazy } from "@/components/sale-detail/PepiteBlockLazy";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
-import { PropertyIllustration, illustrationKind } from "@/components/PropertyIllustration";
-import { SectorAlertCta } from "@/components/SectorAlertCta";
-import { SalePublicDeadline } from "@/components/SalePublicDeadline";
 import { SalePublicShareButton } from "@/components/SalePublicShareButton";
 import { SalePublicToc, type SalePublicTocItem } from "@/components/SalePublicToc";
-import { Badge } from "@/components/ui/primitives";
 import { contactReportPath } from "@/lib/contact-message";
 import { departmentFromCode } from "@/lib/department-pages";
 import { photoCredit } from "@/lib/photo-credit";
 import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
-import { SalePointsToVerify } from "@/components/sale-detail/SalePointsToVerify";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
-import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { isPastSaleDay } from "@/lib/sale-countdown";
 import { formatPrice, formatPricePerM2 } from "@/lib/format";
 import {
@@ -58,15 +45,8 @@ import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_LABEL, LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import { ceilingTermsFor } from "@/lib/fee-regime-labels";
 import { feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime-open";
-import { freeAccessLine, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
-import {
-  getSaleProcedure,
-  lawyerRequirementLabel,
-  saleVerificationExplanation,
-  saleVerificationLabel,
-  saleVenueLabel,
-  type SaleProcedurePresentation,
-} from "@/lib/sale-procedure";
+import { freeAccessLine, MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { getSaleProcedure, lawyerRequirementLabel, saleVenueLabel } from "@/lib/sale-procedure";
 import {
   saleHeadline,
   saleHearingTime,
@@ -85,40 +65,47 @@ import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
 /**
- * « Marché local » chargé à la demande : le calcul du rendement (frais d'acquisition, régimes) n'est
- * pas nécessaire au premier affichage (budget de JavaScript client, voir `check-build-budgets.mjs`).
- * Rendu par le serveur comme le reste de la fiche.
+ * « Marché local » chargé à part, rendu par le serveur comme le reste de la fiche ; le rendement y
+ * arrive déjà calculé (`rentalYield`) : le calcul des frais d'acquisition reste hors du navigateur
+ * (budget de JavaScript client, voir `check-build-budgets.mjs`).
  */
 const SalePublicRentalMarketLazy = dynamic(() =>
   import("@/components/SalePublicRentalMarket").then((module) => module.SalePublicRentalMarket),
 );
 
 /**
- * Internal links of the public page: they carry the visitor from one sale to the pages that
- * explain how a sale works, and give crawlers a path from every sale to the guides.
+ * Frise et dépliant « Cette vente en clair » de la section « La vente », chargés à part : du texte
+ * sous la ligne de flottaison, rendu par le serveur comme le reste (budget de JavaScript client).
  */
-const FURTHER_READING_LINKS = [
-  {
-    href: "/ventes-immobilieres-judiciaires",
-    label: "Le guide des ventes immobilières judiciaires",
-    hint: "Comprendre le déroulement d’une vente",
-  },
-  {
-    href: "/ressources/frais-vente-encheres-judiciaire",
-    label: "Les frais d’une vente aux enchères",
-    hint: "Ce qui s’ajoute au prix d’adjudication",
-  },
-  {
-    href: "/tribunaux",
-    label: "Les tribunaux",
-    hint: "L’activité des tribunaux qui organisent des ventes",
-  },
-  {
-    href: "/simulateur-frais-encheres",
-    label: "Le simulateur de frais",
-    hint: "Estimer les frais d’une enchère",
-  },
-] as const;
+const SalePublicSaleStepsLazy = dynamic(() =>
+  import("@/components/SalePublicSaleSteps").then((module) => module.SalePublicSaleSteps),
+);
+
+/** Section « Pièces et vérifications » : niveau de vérification, points à vérifier, pièces. */
+const SalePublicChecksLazy = dynamic(() =>
+  import("@/components/SalePublicChecks").then((module) => module.SalePublicChecks),
+);
+
+/** « Pour aller plus loin » et la suite de la recherche, en bas de fiche. */
+const SalePublicFurtherLazy = dynamic(() =>
+  import("@/components/SalePublicFurther").then((module) => module.SalePublicFurther),
+);
+
+/** Alerte du secteur, en bas de fiche (le formulaire des comptes reste lui-même chargé à la demande). */
+const SectorAlertCtaLazy = dynamic(() =>
+  import("@/components/SectorAlertCta").then((module) => module.SectorAlertCta),
+);
+
+/** Illustration du type de bien (sans photo), chargée à part. */
+const SalePublicIllustrationLazy = dynamic(() =>
+  import("@/components/SalePublicIllustration").then((module) => module.SalePublicIllustration),
+);
+
+/** L'échéance ne se calcule que dans le navigateur (heure locale) : rien à rendre côté serveur. */
+const SalePublicDeadlineLazy = dynamic(
+  () => import("@/components/SalePublicDeadline").then((module) => module.SalePublicDeadline),
+  { ssr: false },
+);
 
 const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> = {
   tribunal: {
@@ -148,38 +135,6 @@ const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> 
   },
 };
 
-/**
- * Frise « La vente » : avant, le jour même, après. Des étapes de procédure, propres au type de vente,
- * jamais une donnée de la vente qui n'est pas publiée.
- */
-function timelineSteps(procedure: SaleProcedurePresentation): { before: string; after: string } {
-  switch (procedure.venueType) {
-    case "tribunal":
-      return {
-        before:
-          procedure.lawyerRequired === true
-            ? "Consulter le dossier et choisir un avocat pour porter votre enchère"
-            : "Consulter le dossier et les conditions pour enchérir",
-        after: "Délai de surenchère de dix jours, puis paiement du prix et des frais",
-      };
-    case "notary":
-      return {
-        before: "Consulter le dossier et les modalités de participation",
-        after: "Signature de l’acte, paiement du prix et des frais selon le dossier",
-      };
-    case "state":
-      return {
-        before: "Consulter l’annonce officielle et ses conditions",
-        after: "Suite de la cession selon les conditions du service vendeur",
-      };
-    default:
-      return {
-        before: "Consulter le dossier officiel et ses conditions",
-        after: "Suite de la vente selon le dossier officiel",
-      };
-  }
-}
-
 type TeaserItem = {
   label: string;
   width: "short" | "medium" | "wide";
@@ -193,20 +148,6 @@ const subscribeNever = () => () => undefined;
 
 export function publicSaleVenueCopy(venueType: SaleVenueType) {
   return VENUE_COPY[venueType];
-}
-
-/** « adjudication » prend sa définition (`Terme`) ; le texte de `VENUE_COPY` reste une chaîne brute. */
-function withAdjudicationTerm(text: string) {
-  const word = "adjudication";
-  const index = text.indexOf(word);
-  if (index < 0) return text;
-  return (
-    <>
-      {text.slice(0, index)}
-      <Terme terme="adjudication">{word}</Terme>
-      {text.slice(index + word.length)}
-    </>
-  );
 }
 
 /** Position de la mise à prix sur la réglette de la fourchette (décor, sans chiffre). */
@@ -385,6 +326,7 @@ export function SalePublicPreview({
   openFeeRegimes,
   rentReference = null,
   housingTension = null,
+  rentalYield = null,
   verifyingAccount = false,
 }: {
   saleId: string;
@@ -398,6 +340,8 @@ export function SalePublicPreview({
   /** Loyer de la commune (carte ANIL) et zonage tendu, lus par le serveur : section « Marché local ». */
   rentReference?: RentReference | null;
   housingTension?: HousingTension | null;
+  /** Rendement brut à la mise à prix, calculé par le serveur (`publicRentalYield`) ; absent : aucun. */
+  rentalYield?: string | null;
   /**
    * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
    * pour ce visiteur, la page dit qu'elle vérifie son compte au lieu de proposer d'en créer un.
@@ -681,10 +625,6 @@ export function SalePublicPreview({
   ]
     .filter(Boolean)
     .join(" · ");
-  const steps = timelineSteps(procedure);
-  const points = pointsToVerify(preview, { occupancyVisible: false });
-  const verified = ["verified", "cross_checked"].includes(procedure.verificationStatus);
-  const documentCount = Math.max(0, preview.document_count ?? 0);
   const showMarket = Boolean(rentReference?.source.startsWith("anil_") || housingTension);
   const showAlert = Boolean(preview.department && !verifyingAccount);
 
@@ -731,7 +671,7 @@ export function SalePublicPreview({
       <span className={styles.illustrationTag} aria-hidden>
         Illustration
       </span>
-      <PropertyIllustration kind={illustrationKind(preview.property_type)} />
+      <SalePublicIllustrationLazy propertyType={preview.property_type ?? null} />
       {preview.city ? <span className={styles.illustrationPlace}>{preview.city}</span> : null}
     </div>
   );
@@ -766,7 +706,7 @@ export function SalePublicPreview({
           <header className={styles.head}>
             <div className={styles.tags}>
               <SaleProcedureBadge sale={preview} />
-              <SalePublicDeadline sale={preview} />
+              <SalePublicDeadlineLazy sale={preview} />
               {preview.pepite ? <PepiteHeroBadge blockLoaded={pepiteBlockLoaded} /> : null}
             </div>
             <h1 id="public-sale-title" className={styles.title}>
@@ -847,104 +787,18 @@ export function SalePublicPreview({
               title="La vente"
               titleId="public-sale-steps-title"
             >
-              <ol className={styles.steps} aria-label="Déroulement de la vente">
-                <li>
-                  <div className={styles.rail}>
-                    <span className={styles.knot} />
-                    <i />
-                  </div>
-                  <small>Avant la vente</small>
-                  <p>{steps.before}</p>
-                </li>
-                <li className={styles.stepNow}>
-                  <div className={styles.rail}>
-                    <span className={styles.knot} />
-                    <i />
-                  </div>
-                  <small className={styles.num}>
-                    {hearingDate
-                      ? `${hearingDate}${hearingTime ? ` à ${hearingTime}` : ""}`
-                      : "Date à confirmer"}
-                  </small>
-                  <p>{venueSentence}</p>
-                </li>
-                <li className={styles.stepNext}>
-                  <div className={styles.rail}>
-                    <span className={styles.knot} />
-                  </div>
-                  <small>Après la vente</small>
-                  <p>{steps.after}</p>
-                </li>
-              </ol>
-
-              {/* Repliée : le détail est redondant avec la fiche de vente et l'analyse. Les mises en
-                  garde « indicatif » (écart au marché, simulations) sont ailleurs, jamais repliées. */}
-              <details className={styles.fold}>
-                <summary className={styles.foldSummary}>
-                  {/* Dans un <summary> : des <span> (contenu de phrase), ni <div> ni titre <h2>. */}
-                  <span>
-                    <span className={styles.foldTitle}>Cette vente en clair</span>
-                    <span className={styles.foldHint}>
-                      Le déroulement de la vente et ce que chaque accès ouvre
-                    </span>
-                  </span>
-                  <ChevronDown className={styles.foldIcon} aria-hidden />
-                </summary>
-                <div className={styles.foldBody}>
-                  <p className={styles.procedureText}>
-                    {withAdjudicationTerm(venueCopy.explanation)}
-                  </p>
-                  <ol className={styles.tiers} aria-label="Ce que vous voyez, selon votre accès">
-                    <li className={styles.tier}>
-                      <h3 className={styles.tierTitle}>
-                        <Eye aria-hidden />
-                        Visible maintenant
-                      </h3>
-                      <p>
-                        {state
-                          ? "Le bien et ses équipements, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
-                          : "Le bien et ses équipements, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
-                      </p>
-                    </li>
-                    <li className={`${styles.tier} ${styles.tierFree}`}>
-                      <h3 className={styles.tierTitle}>
-                        <LockKeyholeOpen aria-hidden />
-                        Découverte · gratuit
-                      </h3>
-                      <p>
-                        Adresse, photos, description, occupation, dates de visite et contact du
-                        dossier, fourchette de valeur estimée, Street View, météo et risques de la
-                        commune. Et {MONTHLY_SALE_UNLOCKS} déblocages par mois, chacun ouvrant, pour
-                        une vente :{" "}
-                        {unlockedItemsText({
-                          ceiling: ceilingTerms?.ceilingTermWithArticle ?? null,
-                          statistics:
-                            procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
-                        })}
-                        .
-                      </p>
-                    </li>
-                    <li className={`${styles.tier} ${styles.tierAnalysis}`}>
-                      <h3 className={styles.tierTitle}>
-                        <ChartNoAxesCombined aria-hidden />
-                        Offre Analyse
-                      </h3>
-                      <p>
-                        {ceilingTerms
-                          ? procedure.venueType === "tribunal"
-                            ? `Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre ${ceilingTerms.ceilingTerm}.`
-                            : `Pièces du dossier, ventes comparables, travaux et calcul de votre ${ceilingTerms.ceilingTerm}.`
-                          : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
-                      </p>
-                    </li>
-                  </ol>
-                  <p className={styles.catalogueNote}>
-                    <strong>Un seul catalogue, plusieurs procédures</strong>
-                    Immojudis référence les ventes immobilières au tribunal, chez le notaire et les
-                    ventes domaniales. Les règles affichées s’adaptent au type de chaque vente.
-                  </p>
-                </div>
-              </details>
+              <SalePublicSaleStepsLazy
+                procedure={procedure}
+                hearingLabel={
+                  hearingDate
+                    ? `${hearingDate}${hearingTime ? ` à ${hearingTime}` : ""}`
+                    : "Date à confirmer"
+                }
+                venueSentence={venueSentence}
+                explanation={venueCopy.explanation}
+                ceilingTerms={ceilingTerms}
+                adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+              />
             </NumberedSection>
 
             {/* Marché locatif de la commune : seulement s'il a quelque chose à dire. */}
@@ -956,11 +810,9 @@ export function SalePublicPreview({
                 titleId="public-market-title"
               >
                 <SalePublicRentalMarketLazy
-                  sale={preview}
-                  startingPriceEur={price ? preview.starting_price_eur : null}
-                  surfaceM2={preview.app_surface_m2 ?? null}
                   reference={rentReference}
                   tension={housingTension}
+                  yieldValue={rentalYield}
                 />
               </NumberedSection>
             ) : null}
@@ -1046,61 +898,17 @@ export function SalePublicPreview({
               title="Pièces et vérifications"
               titleId="public-checks-title"
             >
-              <div className={styles.checks}>
-                <div className={styles.box}>
-                  <Badge
-                    tone={
-                      verified
-                        ? "success"
-                        : procedure.verificationStatus === "conflict"
-                          ? "danger"
-                          : "warning"
-                    }
-                  >
-                    {verified ? (
-                      <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-                    ) : (
-                      <CircleAlert className="h-3.5 w-3.5" aria-hidden />
-                    )}
-                    {saleVerificationLabel(procedure.verificationStatus)}
-                  </Badge>
-                  <p>{saleVerificationExplanation(procedure.verificationStatus)}</p>
-                </div>
-                {/* Cible de `#points-a-verifier` ; l'occupation n'est pas lue sur l'aperçu public. */}
-                <SalePointsToVerify points={points} saleId={saleId} className={styles.points} />
-              </div>
-              <ul className={styles.docs} aria-label="Pièces et sources">
-                {documentCount > 0 ? (
-                  <li>
-                    <FileText aria-hidden />
-                    <b>Pièces du dossier</b>
-                    <span>
-                      {documentCount} pièce{documentCount > 1 ? "s" : ""}, avec l’offre Analyse
-                      {ceilingTerms ? " ou un déblocage" : ""}
-                    </span>
-                  </li>
-                ) : null}
-                <li>
-                  <FileText aria-hidden />
-                  <b>Risques naturels et technologiques</b>
-                  <a
-                    href="https://www.georisques.gouv.fr/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Consulter Géorisques
-                  </a>
-                </li>
-              </ul>
-              <p className={styles.officialSources}>
-                Les sources officielles restent consultables librement.
-              </p>
+              <SalePublicChecksLazy
+                preview={preview}
+                saleId={saleId}
+                unlockOffered={Boolean(ceilingTerms)}
+              />
             </NumberedSection>
 
             {showAlert ? (
               <NumberedSection id="etre-prevenu" number={numberOf("etre-prevenu")}>
                 <div className={styles.alert} data-testid="public-sector-alert">
-                  <SectorAlertCta
+                  <SectorAlertCtaLazy
                     criteria={{ department: preview.department as string }}
                     intro="Cette vente vous intéresse ? Recevez les nouvelles ventes du même département."
                   />
@@ -1108,22 +916,7 @@ export function SalePublicPreview({
               </NumberedSection>
             ) : null}
 
-            <section className={styles.further} aria-labelledby="public-further-title">
-              <h2 id="public-further-title" className={styles.furtherTitle}>
-                Pour aller plus loin
-              </h2>
-              <ul className={styles.furtherList}>
-                {FURTHER_READING_LINKS.map((link) => (
-                  <li key={link.href}>
-                    <Link href={link.href}>{link.label}</Link>
-                    <span>{link.hint}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-            <Link href={returnTo} className={`${styles.secondary} ${styles.continue}`}>
-              Continuer ma recherche
-            </Link>
+            <SalePublicFurtherLazy returnTo={returnTo} />
           </div>
         </div>
       </div>
