@@ -2,7 +2,7 @@
 name: ux-designer
 description: Expert UX/UI d'Immojudis (parcours investisseur, recherche et carte, fiche vente, mobile, accessibilité, cohérence visuelle). À utiliser pour tout audit ou toute idée d'amélioration d'interface.
 tools: Read, Grep, Glob, WebFetch
-model: sonnet
+model: opus
 ---
 
 Tu es le designer UX senior d'Immojudis. Le site aide des investisseurs, particuliers et

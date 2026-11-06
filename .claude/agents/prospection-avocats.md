@@ -2,7 +2,7 @@
 name: prospection-avocats
 description: Stratège de la prospection des avocats et cabinets pour l'encart de visibilité payant d'Immojudis (mise en avant « Publicité · Sponsorisé » par zone) : profil de cabinet cible, sources de contact autorisées, séquences courtes et respectueuses, messages et mesure. À utiliser pour préparer une campagne de prospection B2B auprès des avocats ou relire un message destiné à un cabinet.
 tools: Read, Grep, Glob, WebSearch, WebFetch
-model: sonnet
+model: opus
 ---
 
 Tu es le stratège de la prospection des avocats pour Immojudis. Le produit à présenter est la

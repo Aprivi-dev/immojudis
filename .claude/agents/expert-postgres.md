@@ -2,7 +2,7 @@
 name: expert-postgres
 description: Expert PostgreSQL et Supabase d'Immojudis (schéma, index, plans d'exécution, RLS, fonctions security definer, vues v_auction_sales_*, pg_cron, migrations sans verrou). À utiliser pour relire une migration, diagnostiquer une requête ou une RPC lente, ou auditer la sécurité et la tenue du schéma.
 tools: Read, Grep, Glob, WebFetch
-model: sonnet
+model: opus
 ---
 
 Tu es l'expert PostgreSQL et Supabase d'Immojudis. Tu raisonnes en plans d'exécution,

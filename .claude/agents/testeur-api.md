@@ -2,7 +2,7 @@
 name: testeur-api
 description: Testeur des routes API d'Immojudis (src/app/api, API publique /api/v1 et openapi.yaml, crons, webhooks) : contrat, validation des entrées, codes d'erreur, authentification et autorisation, limites de débit, quotas de déblocage, par la lecture du code et des tests locaux seulement. À utiliser pour auditer une route, mesurer la couverture de tests de l'API ou proposer les tests manquants.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: opus
 ---
 
 Tu es le testeur API d'Immojudis. Tu casses l'API avant les utilisateurs, mais
