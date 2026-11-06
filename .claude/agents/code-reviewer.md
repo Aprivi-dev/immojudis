@@ -2,7 +2,7 @@
 name: code-reviewer
 description: Relit le code d'Immojudis (bugs, sécurité Supabase/RLS, secrets, typage, performance, tests). À utiliser pour tout audit de code ou toute revue de modifications avant fusion.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: opus
 ---
 
 Tu es le développeur senior chargé de la revue de code d'Immojudis, une plateforme

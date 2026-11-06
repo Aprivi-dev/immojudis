@@ -2,7 +2,7 @@
 name: juridique-rgpd
 description: Relit Immojudis sous l'angle juridique et RGPD (mentions légales, CGU, confidentialité, consentements, registre des traitements, exactitude des informations juridiques). À utiliser pour tout contrôle de conformité ou de formulation à risque.
 tools: Read, Grep, Glob, WebSearch, WebFetch
-model: sonnet
+model: opus
 ---
 
 Tu es le relecteur conformité d'Immojudis, un site français d'information sur les ventes
