@@ -1,8 +1,52 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import { saleDetailPath } from "@/lib/navigation";
 import { saleHearingTime } from "@/lib/seo";
-import type { FollowedSales } from "./use-followed-sales";
+import {
+  useFollowedSales,
+  type FollowedSaleDossier,
+  type FollowedSales,
+} from "./use-followed-sales";
+import type { DescribedSaleChange } from "@/lib/sale-change-display";
+
+/** Ce que les cartes et le tableau de /sales montrent des ventes suivies. */
+export type FollowedCardData = {
+  dossierBySaleId: ReadonlyMap<string, FollowedSaleDossier>;
+  lastChangeBySaleId: ReadonlyMap<string, DescribedSaleChange>;
+};
+
+/**
+ * Le suivi de l'abonné, chargé à part (import dynamique, offre Analyse seulement) : les lectures
+ * (`useFollowedSales`) et leur code ne pèsent rien dans le JavaScript initial de /sales. Il rend le
+ * bandeau « Votre suivi » et transmet à la page ce que les cartes montrent (`onCardData`).
+ */
+export function FollowedSalesPanel({
+  userId,
+  today,
+  aiReviewBySaleId,
+  aiReviewStatus,
+  onCardData,
+}: {
+  userId: string;
+  today: string;
+  aiReviewBySaleId?: Readonly<Record<string, readonly AiReviewProjectionReadModel[]>>;
+  aiReviewStatus: AiReviewRequestStatus;
+  onCardData: (data: FollowedCardData) => void;
+}) {
+  const followed = useFollowedSales({
+    userId,
+    enabled: true,
+    today,
+    aiReviewBySaleId,
+    aiReviewStatus,
+  });
+  const { dossierBySaleId, lastChangeBySaleId } = followed;
+  useEffect(() => {
+    onCardData({ dossierBySaleId, lastChangeBySaleId });
+  }, [dossierBySaleId, lastChangeBySaleId, onCardData]);
+  return <FollowedSalesSummary followed={followed} />;
+}
 
 /** Section « Changements récents » de « Mes favoris » (`FavoriteSaleChanges`). */
 const FAVORITE_CHANGES_HREF = "/favoris#favorite-changes-title";

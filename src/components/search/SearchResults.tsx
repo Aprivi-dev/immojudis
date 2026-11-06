@@ -50,7 +50,7 @@ import { ErrorState, NoResultsState } from "./SearchFilters";
 import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
 import { LaunchOfferTrialEnd } from "./LaunchOfferTrialEnd";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
-import { SearchResultsTable } from "./SearchResultsTable";
+import dynamic from "next/dynamic";
 import {
   departmentLabel,
   LISTING_DETAIL_LINE,
@@ -83,6 +83,23 @@ import * as queryKeys from "@/lib/query-keys";
 import { useFavoriteRemovalConfirmation } from "@/components/favorite-removal";
 import type { RemovedFavoriteDossier } from "@/lib/favorites";
 import type { ResultsView } from "@/lib/search/results-view";
+
+/**
+ * Le tableau des résultats n'existe que sur écran large et après l'hydratation (le serveur rend
+ * toujours les cartes) : il est chargé à la demande, hors du JavaScript initial de /sales.
+ */
+const SearchResultsTable = dynamic(
+  () => import("./SearchResultsTable").then((mod) => mod.SearchResultsTable),
+  {
+    loading: () => (
+      <div
+        aria-hidden="true"
+        data-testid="results-table-loading"
+        className="hidden h-96 animate-pulse rounded-lg border border-line-soft bg-white motion-reduce:animate-none lg:block"
+      />
+    ),
+  },
+);
 
 /**
  * Vignette cartographique d'une carte de résultats (ratio 4:3, comme le cadre `aspect-[4/3]`).

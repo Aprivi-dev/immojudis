@@ -25,6 +25,19 @@ const testState = vi.hoisted(() => {
   };
 });
 
+// Le tableau est chargé à la demande par la liste (`next/dynamic`) : ici, il est rendu tout de suite
+// pour que les tests lisent les lignes sans attendre le module. Les autres imports dynamiques
+// gardent leur comportement.
+vi.mock("next/dynamic", async () => {
+  const actual = await vi.importActual<typeof import("next/dynamic")>("next/dynamic");
+  const table = await import("./SearchResultsTable");
+  return {
+    default: (loader: Parameters<typeof actual.default>[0], options?: object) =>
+      String(loader).includes("SearchResultsTable")
+        ? table.SearchResultsTable
+        : actual.default(loader, options),
+  };
+});
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => testState.auth.current }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ useViewedSales: () => ({ isViewed: () => false }) }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: testState.supabase }));

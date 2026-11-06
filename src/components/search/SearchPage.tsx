@@ -99,8 +99,7 @@ import { SalesCatalogueHead } from "./SalesCatalogueHead";
 import { SearchResultsList } from "./SearchResults";
 import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
 import { SaleComparisonBar } from "./SaleComparisonBar";
-import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
-import { useFollowedSales } from "./use-followed-sales";
+import type { FollowedCardData } from "./FollowedSalesSummary";
 import {
   SearchDraft,
   buildSearchStatistics,
@@ -156,9 +155,15 @@ const LazyMonDemarrage = dynamic(
   },
 );
 
+// Encart des avocats, en fin de liste (sous la ligne de flottaison) : rendu par le serveur comme
+// avant, mais son code est un fichier à part, hors du JavaScript initial de la page.
+const SearchLawyerPlacement = dynamic(() =>
+  import("./SearchLawyerPlacement").then((mod) => mod.SearchLawyerPlacement),
+);
+
 // « Votre suivi » : chargé pour un abonné de l'offre Analyse seulement.
-const LazyFollowedSalesSummary = dynamic(
-  () => import("./FollowedSalesSummary").then((mod) => mod.FollowedSalesSummary),
+const LazyFollowedSalesPanel = dynamic(
+  () => import("./FollowedSalesSummary").then((mod) => mod.FollowedSalesPanel),
   { ssr: false },
 );
 
@@ -674,15 +679,13 @@ export function SearchPage({
           ? "ready"
           : "loading";
   // Abonné de l'offre Analyse : bandeau « Votre suivi », ligne « Mon dossier » des ventes suivies et
-  // colonne « Mon plafond » du tableau (voir `useFollowedSales`). Rien n'est lu pour les autres.
+  // colonne « Mon plafond » du tableau (voir `useFollowedSales`, chargé avec le bandeau par
+  // `FollowedSalesPanel`). Rien n'est chargé ni lu pour les autres.
   const isAnalysis = Boolean(user) && entitlementsData?.plan.hasAnalysisAccess === true;
-  const followed = useFollowedSales({
-    userId: user?.id ?? null,
-    enabled: isAnalysis && !authLoading,
-    today,
-    aiReviewBySaleId,
-    aiReviewStatus,
-  });
+  const [followedCards, setFollowedCards] = useState<FollowedCardData | null>(null);
+  const followedFor = isAnalysis && !authLoading ? (user?.id ?? null) : null;
+  // Le suivi d'un compte ne passe jamais à un autre (déconnexion, changement de compte).
+  useEffect(() => setFollowedCards(null), [followedFor]);
   const isInitialLoading =
     !publicListShown && ((authLoading && !serverSeeded) || entitlementsLoading || isLoading);
   // Relecture de fond d'une liste déjà affichée (minuteur du compte connecté) : elle ne désactive
@@ -1155,7 +1158,18 @@ export function SearchPage({
             week={weekCount}
             // Le chapô pour qui n'a pas l'offre Analyse ; l'abonné voit son suivi à la place.
             lede={!isAnalysis}
-            followed={isAnalysis ? <LazyFollowedSalesSummary followed={followed} /> : null}
+            followed={
+              followedFor ? (
+                <LazyFollowedSalesPanel
+                  key={followedFor}
+                  userId={followedFor}
+                  today={today}
+                  aiReviewBySaleId={aiReviewBySaleId}
+                  aiReviewStatus={aiReviewStatus}
+                  onCardData={setFollowedCards}
+                />
+              ) : null
+            }
             // Actions de la recherche, réservées au grand écran (sur mobile, l'alerte est à côté du
             // champ du lieu). Droits inchangés : export réservé à l'offre Analyse, alerte gratuite.
             actions={
@@ -1261,9 +1275,11 @@ export function SearchPage({
             onToggleComparison={comparison.toggle}
             aiReviewBySaleId={aiReviewBySaleId}
             aiReviewStatus={aiReviewStatus}
-            dossierBySaleId={isAnalysis && !listIsPublic ? followed.dossierBySaleId : undefined}
+            dossierBySaleId={
+              followedFor && !listIsPublic ? followedCards?.dossierBySaleId : undefined
+            }
             lastChangeBySaleId={
-              isAnalysis && !listIsPublic ? followed.lastChangeBySaleId : undefined
+              followedFor && !listIsPublic ? followedCards?.lastChangeBySaleId : undefined
             }
             activeFilters={activeFilters}
             onRemoveFilter={(filter) => chooseSearch(filter.clear)}
