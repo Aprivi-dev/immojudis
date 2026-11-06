@@ -1,0 +1,179 @@
+/* « Le prix » : trois montants côte à côte (docs/design/fondations.md : cartes blanches au filet,
+   sans ombre ; le plafond encadré d'or, jamais écrit en or). */
+.card {
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--gold-text);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.trio {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+@media (min-width: 760px) {
+  .trio {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.tile {
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.ceiling {
+  border: 2px solid var(--gold);
+  padding: 15px 17px;
+}
+
+.tile dt {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.tile dd {
+  margin: 0;
+}
+
+.value {
+  display: block;
+  margin-top: 4px;
+  color: var(--brand-navy);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.note a {
+  color: var(--gold-text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------- Réglette à l'échelle ---------- */
+.scale {
+  margin-top: 4px;
+}
+
+.track {
+  position: relative;
+  margin: 0 8px;
+  padding: 34px 0 30px;
+}
+
+.axis {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--line-soft);
+}
+
+.band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--sand);
+}
+
+.marker {
+  position: absolute;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transform: translateX(-50%);
+  color: var(--brand-navy);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.marker i {
+  width: 3px;
+  height: 22px;
+  border-radius: 2px;
+  background: var(--brand-navy);
+}
+
+.markerCeiling {
+  top: 30px;
+  flex-direction: column-reverse;
+}
+
+.markerCeiling i {
+  width: 5px;
+  background: var(--gold);
+}
+
+.markerValue i {
+  background: var(--ink-soft);
+}
+
+.bounds {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.status {
+  margin: 8px 0 0;
+  color: var(--ink-strong);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.caution {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--warning-tint);
+  color: var(--ink-strong);
+  font-size: 14px;
+  line-height: 1.5;
+}

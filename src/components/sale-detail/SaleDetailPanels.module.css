@@ -166,12 +166,32 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: center;
   gap: 20px;
-  margin-top: 20px;
   padding: 22px 26px;
   border: 1px solid var(--line-warm);
   border-radius: var(--radius);
   background: #ffffff;
 }
+/* « Valeur estimée à 555 000 €, soit 11 809 €/m² » : les chiffres surlignés en bloc marine. */
+.marketSentence {
+  max-width: 720px;
+  margin: 0;
+  color: var(--brand-navy);
+  font-size: clamp(18px, 1.8vw, 22px);
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.mark {
+  padding: 0 0.3em;
+  border-radius: 4px;
+  background: var(--brand-navy);
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
 .metricEyebrow {
   display: block;
   font-size: 12px;

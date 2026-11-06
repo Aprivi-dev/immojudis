@@ -86,7 +86,9 @@ import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib
 import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
 import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
 import { investorProfileFinancingDraft, investorProfileToChoices } from "@/lib/investor-profile";
-import { getSaleSurface } from "@/lib/surface";
+import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
+import { PriceScale } from "@/components/sale-detail/PriceScale";
+import { SaveCeilingButton } from "@/components/sale-detail/SaveCeilingButton";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
@@ -704,6 +706,16 @@ function SaleDetailWorkspace({
       : preparation;
   const ceilingSummaryLabel =
     ceilingTerms?.ceilingSimulationLabel ?? "Enchère plafond (simulation)";
+  // Fourchette de l'estimation détaillée (offre Analyse) : case « Valeur estimée » et réglette.
+  const marketRange =
+    detailedMarketEstimate?.actionable &&
+    (detailedMarketEstimate.estimatedValueLowEur ?? 0) > 0 &&
+    (detailedMarketEstimate.estimatedValueHighEur ?? 0) > 0
+      ? {
+          low: detailedMarketEstimate.estimatedValueLowEur!,
+          high: detailedMarketEstimate.estimatedValueHighEur!,
+        }
+      : null;
   const priceSummaryValue: PriceSummaryValue | null = valueGuarded
     ? null
     : fullData && marketEstimate?.actionable && (marketEstimate.estimatedValueEur ?? 0) > 0
@@ -713,6 +725,7 @@ function SaleDetailWorkspace({
           note: marketEstimate.sampleSize
             ? `d’après ${marketEstimate.sampleSize} ventes comparables`
             : "d’après des ventes comparables",
+          range: marketRange,
         }
       : valuePreview?.lowEur != null && valuePreview.highEur != null
         ? { kind: "range", low: valuePreview.lowEur, high: valuePreview.highEur }
@@ -732,6 +745,8 @@ function SaleDetailWorkspace({
               amount: heroCeiling,
               note: "selon vos hypothèses",
               reliability: ceilingConfidence(ceilingHypotheses).label,
+              startGap: startingPrice != null ? ceilingPlan.startingPriceGap : null,
+              startTerm: feeRegime?.labels.referencePriceTerm,
             }
           : heroCeilingUnreachable
             ? { kind: "note", note: UNPROFITABLE_HEADLINE }
@@ -1176,6 +1191,25 @@ function SaleDetailWorkspace({
                         )}
                       </div>
                     </div>
+                  ) : access === "analysis" && ceilingOpen ? (
+                    <>
+                      <PriceScale
+                        startingPrice={startingPrice}
+                        startLabel={startLabelText}
+                        ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}
+                        value={
+                          priceSummaryValue?.kind === "amount" ? priceSummaryValue.amount : null
+                        }
+                        range={marketRange}
+                      />
+                      {getMarketValuationSurfaces(displaySale).builtSurfaceEstimated ? (
+                        <p className={panelStyles.surfaceCaution}>
+                          Surface provisoire :{" "}
+                          {getMarketValuationSurfaces(displaySale).builtSurfaceAssumption}. À
+                          confirmer avant de retenir ce plafond.
+                        </p>
+                      ) : null}
+                    </>
                   ) : fullData && ceilingOpen ? (
                     <AnalysisDecisionPanel
                       sale={displaySale}
@@ -1215,6 +1249,14 @@ function SaleDetailWorkspace({
                       marketLoading={marketQuery.isLoading && marketEstimate == null}
                       valueReason={valueReason}
                       dpeClass={dpeClass}
+                      saveAction={
+                        access === "analysis" && user && !publicDemo ? (
+                          <SaveCeilingButton
+                            saleId={sale.id}
+                            ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}
+                          />
+                        ) : null
+                      }
                     />
                     {statisticsAvailable && heroCeiling != null && user && !publicDemo ? (
                       <CeilingVsCourt
