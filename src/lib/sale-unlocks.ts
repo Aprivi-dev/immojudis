@@ -199,10 +199,15 @@ export function unlockConfirmationText(status: Pick<SaleUnlockStatus, "limit" | 
 }
 
 /** « Vos 3 ventes d’octobre sont débloquées » : le titre de la fiche quand le mois est épuisé. */
-export function unlockQuotaReachedTitle(status: Pick<SaleUnlockStatus, "limit" | "periodStart">) {
+export function unlockQuotaReachedTitle(
+  status: Pick<SaleUnlockStatus, "limit" | "periodStart"> & { used?: number },
+) {
   const month = parisMonthName(status.periodStart);
   const ofMonth = /^[aeiouyàâéèêîôû]/i.test(month) ? `d’${month}` : `de ${month}`;
-  const limit = status.limit ?? MONTHLY_SALE_UNLOCKS;
+  // Le nombre réellement débloqué ; la limite seulement s'il n'est pas connu (limite changée en cours
+  // de mois : le titre ne doit pas affirmer plus de ventes qu'il n'y en a eu).
+  const limit =
+    status.used && status.used > 0 ? status.used : (status.limit ?? MONTHLY_SALE_UNLOCKS);
   return limit === 1
     ? `Votre vente ${ofMonth} est débloquée`
     : `Vos ${limit} ventes ${ofMonth} sont débloquées`;
@@ -212,9 +217,10 @@ export function unlockQuotaReachedTitle(status: Pick<SaleUnlockStatus, "limit" |
  * Comment ouvrir la vente affichée quand le mois est épuisé. `analysisOpen` : la souscription à
  * l'offre Analyse est réellement ouverte (`useAnalysisCheckoutOpen() === true`) ; sinon seul le
  * compte gratuit est cité.
- * - « Pour ouvrir celle-ci : le 1er novembre avec le compte gratuit, ou dès maintenant avec l’offre
- *   Analyse, qui ouvre toutes les ventes. »
- * - « Celle-ci s’ouvrira le 1er novembre avec le compte gratuit. »
+ * - « Vous pourrez la débloquer le 1er novembre avec le compte gratuit, ou l’ouvrir dès maintenant avec
+ *   l’offre Analyse, qui ouvre toutes les ventes. »
+ * - « Vous pourrez la débloquer le 1er novembre avec le compte gratuit. »
+ * Rien ne s'ouvre seul : la vente se débloque de nouveau, à la main, quand le compteur est remis.
  */
 export function unlockQuotaReachedText(
   status: Pick<SaleUnlockStatus, "resetsAt">,
@@ -222,6 +228,6 @@ export function unlockQuotaReachedText(
 ) {
   const reset = parisDayMonthLabel(status.resetsAt);
   return analysisOpen
-    ? `Pour ouvrir celle-ci : le ${reset} avec le compte gratuit, ou dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.`
-    : `Celle-ci s’ouvrira le ${reset} avec le compte gratuit.`;
+    ? `Vous pourrez la débloquer le ${reset} avec le compte gratuit, ou l’ouvrir dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.`
+    : `Vous pourrez la débloquer le ${reset} avec le compte gratuit.`;
 }

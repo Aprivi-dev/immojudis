@@ -268,29 +268,35 @@ describe("texts of the unlock", () => {
   });
 
   it("titles an exhausted quota with the sales of the Paris month", () => {
-    expect(unlockQuotaReachedTitle(status)).toBe("Vos 3 ventes d’octobre sont débloquées");
+    expect(unlockQuotaReachedTitle({ ...status, used: 3 })).toBe(
+      "Vos 3 ventes d’octobre sont débloquées",
+    );
     expect(unlockQuotaReachedTitle({ limit: 3, periodStart: "2026-10-31T23:00:00.000Z" })).toBe(
       "Vos 3 ventes de novembre sont débloquées",
     );
     // The figure is the one of the account (`PLAN_LIMITS` by default), never written by hand.
-    expect(unlockQuotaReachedTitle({ ...status, limit: null })).toBe(
+    expect(unlockQuotaReachedTitle({ ...status, used: 0, limit: null })).toBe(
       `Vos ${MONTHLY_SALE_UNLOCKS} ventes d’octobre sont débloquées`,
     );
-    expect(unlockQuotaReachedTitle({ ...status, limit: 1 })).toBe(
+    expect(unlockQuotaReachedTitle({ ...status, used: 1, limit: 1 })).toBe(
       "Votre vente d’octobre est débloquée",
+    );
+    // A limit changed during the month: the title says what was really unlocked.
+    expect(unlockQuotaReachedTitle({ ...status, used: 3, limit: 5 })).toBe(
+      "Vos 3 ventes d’octobre sont débloquées",
     );
   });
 
   it("explains how to open the sale: the reset date, and Analyse only when it can be bought", () => {
     expect(unlockQuotaReachedText(status, { analysisOpen: true })).toBe(
-      "Pour ouvrir celle-ci : le 1er novembre avec le compte gratuit, ou dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.",
+      "Vous pourrez la débloquer le 1er novembre avec le compte gratuit, ou l’ouvrir dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.",
     );
     expect(unlockQuotaReachedText(status)).toBe(
-      "Celle-ci s’ouvrira le 1er novembre avec le compte gratuit.",
+      "Vous pourrez la débloquer le 1er novembre avec le compte gratuit.",
     );
     expect(
       unlockQuotaReachedText({ resetsAt: "2026-11-30T23:00:00.000Z" }, { analysisOpen: false }),
-    ).toBe("Celle-ci s’ouvrira le 1er décembre avec le compte gratuit.");
+    ).toBe("Vous pourrez la débloquer le 1er décembre avec le compte gratuit.");
   });
 });
 

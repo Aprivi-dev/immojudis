@@ -121,7 +121,7 @@ describe("home texts", () => {
     try {
       const text = visibleText(renderToStaticMarkup(<HomeHero openFeeRegimes={["tribunal"]} />));
       expect(text).toContain(
-        "Pour chaque vente au tribunal : ce que disent les pièces quand elles sont publiées, la valeur du quartier et l’enchère à ne pas dépasser selon votre projet. Toutes les ventes sur une carte.",
+        "Pour chaque vente au tribunal : ce que disent les pièces quand elles sont publiées, la valeur du quartier et l’enchère à ne pas dépasser selon votre projet. Les ventes des tribunaux sur une carte.",
       );
       expect(text).not.toContain("l’État");
     } finally {

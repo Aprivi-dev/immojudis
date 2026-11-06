@@ -89,13 +89,6 @@ function Segmented<T extends string>({
 }
 
 /**
- * « Essayez sur un exemple » : les données qu'Immojudis croise pour l'annonce exemple, trois
- * réglages (projet, occupation, travaux) et le verdict, recalculé par le moteur d'enchère plafond
- * (tous les scénarios sont calculés au rendu serveur). Une démonstration défile une fois quand la
- * section apparaît ; elle s'arrête au survol, au focus, au toucher, au premier choix du visiteur et
- * sur le bouton « Mettre en pause l'animation ».
- */
-/**
  * Juste après le verdict : voir le plafond d'une vraie vente. Un visiteur crée son compte (motif
  * `exemple`), avec dessous la même ligne que sous le bouton du haut de l'accueil (l'essai quand il
  * est ouvert, sinon la ligne du compte gratuit) ; un compte connecté va au catalogue. Le rendu
@@ -138,6 +131,13 @@ function TryExampleNextStep() {
   );
 }
 
+/**
+ * « Essayez sur un exemple » : les données qu'Immojudis croise pour l'annonce exemple, trois
+ * réglages (projet, occupation, travaux) et le verdict, recalculé par le moteur d'enchère plafond
+ * (tous les scénarios sont calculés au rendu serveur). Une démonstration défile une fois quand la
+ * section apparaît ; elle s'arrête au survol, au focus, au toucher, au premier choix du visiteur et
+ * sur le bouton « Mettre en pause l'animation ».
+ */
 export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
   const [userChoice, setUserChoice] = useState<Choice | null>(null);
   const [visible, setVisible] = useState(false);

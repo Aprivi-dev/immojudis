@@ -226,7 +226,7 @@ describe("SaleUnlockPanel", () => {
     // Announced by the live region that stays mounted across the states, without naming the
     // subscription (its availability is not read there).
     expect(screen.getByRole("status").textContent).toBe(
-      "Vos 3 ventes d’octobre sont débloquées. Celle-ci s’ouvrira le 1er novembre avec le compte gratuit.",
+      "Vos 3 ventes d’octobre sont débloquées. Vous pourrez la débloquer le 1er novembre avec le compte gratuit.",
     );
   });
 
@@ -270,7 +270,7 @@ describe("SaleUnlockPanel", () => {
     ).toBeTruthy();
     const text = container.textContent ?? "";
     expect(text).toContain(
-      "Pour ouvrir celle-ci : le 1er novembre avec le compte gratuit, ou dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.",
+      "Vous pourrez la débloquer le 1er novembre avec le compte gratuit, ou l’ouvrir dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.",
     );
     expect(text).toContain("Son prix : 59\u00a0€\u00a0TTC / mois, résiliable à tout moment.");
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
@@ -293,7 +293,7 @@ describe("SaleUnlockPanel", () => {
     const text = container.textContent ?? "";
     expect(text).toContain("L’offre Analyse n’est pas encore ouverte à la souscription.");
     expect(text).not.toMatch(/souscrire|59[ \u00a0]€|résiliable|dès maintenant/);
-    expect(text).toContain("Celle-ci s’ouvrira le 1er novembre avec le compte gratuit.");
+    expect(text).toContain("Vous pourrez la débloquer le 1er novembre avec le compte gratuit.");
     // The primary action is the opening request (loaded on demand), not a link to a page that
     // cannot sell it yet.
     expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
@@ -312,7 +312,7 @@ describe("SaleUnlockPanel", () => {
     );
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/souscri|59[ \u00a0]€|résiliable|pas encore ouverte|dès maintenant/);
-    expect(text).toContain("Celle-ci s’ouvrira le 1er novembre avec le compte gratuit.");
+    expect(text).toContain("Vous pourrez la débloquer le 1er novembre avec le compte gratuit.");
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" })).toBeTruthy();
   });
 
