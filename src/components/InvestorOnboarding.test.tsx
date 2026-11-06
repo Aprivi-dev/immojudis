@@ -310,7 +310,7 @@ describe("investor welcome flow", () => {
       const checkbox = screen.getByRole("checkbox", { name: TRIAL_ALERT_LABEL });
       const help = document.getElementById(checkbox.getAttribute("aria-describedby")!);
       expect(help?.textContent).toBe(
-        "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif des nouvelles ventes correspondant à ces critères : un par jour pendant votre essai, puis un par semaine. Vous pourrez le désactiver à tout moment depuis votre compte ou le lien de désinscription de chaque email.",
+        "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif des nouvelles ventes correspondant à ces critères, seulement s’il y en a : au plus un par jour pendant votre essai, puis au plus un par semaine, le lundi, quand votre compte repasse en Découverte. Vous pourrez le désactiver à tout moment depuis votre compte ou par le lien de désinscription de chaque email.",
       );
       fireEvent.click(checkbox);
       expect(screen.getByTestId("first-alert-timing").textContent).toBe(
