@@ -34,16 +34,18 @@ export function PriceSummaryCard({
   value: PriceSummaryValue | null;
   ceilingLabel: ReactNode;
   ceiling: PriceSummaryCeiling | null;
-  /** Lien vers le calcul ou le panneau de prix. */
-  detailHref: string;
+  /** Lien vers le calcul ou le panneau de prix ; absent quand le calcul suit juste en dessous. */
+  detailHref?: string | null;
 }) {
   return (
     <section className={styles.card} aria-labelledby="price-summary-title">
       <div className={styles.cardHead}>
         <h2 id="price-summary-title">Le prix</h2>
-        <a href={detailHref} className={styles.cardLink}>
-          {ceiling?.kind === "amount" ? "Voir le calcul" : "Voir le détail"}
-        </a>
+        {detailHref ? (
+          <a href={detailHref} className={styles.cardLink}>
+            {ceiling?.kind === "amount" ? "Voir le calcul" : "Voir le détail"}
+          </a>
+        ) : null}
       </div>
       <dl className={styles.tiles}>
         <div className={styles.tile}>

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import * as React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchInvestorProfile } from "@/lib/client-api";
@@ -16,6 +16,20 @@ const auth = vi.hoisted(() => ({
   user: { id: "account-a" } as { id: string } | null,
   loading: false,
 }));
+
+// Rendu de test : aucune section n'approche de l'écran ; le sommaire monte les blocs de la section suivie.
+class NeverIntersectingObserver {
+  readonly root = null;
+  readonly rootMargin = "";
+  readonly thresholds = [];
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+}
+vi.stubGlobal("IntersectionObserver", NeverIntersectingObserver);
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => auth,
@@ -127,19 +141,27 @@ function renderDetail(
   };
 }
 
+/** Les anciens onglets et la section de la fiche sur une seule page qui reprend leur contenu. */
+const SECTION_FOR_TAB: Record<string, string> = {
+  Aperçu: "Le bien",
+  "Prix et plafond": "Prix et plafond",
+  Travaux: "Travaux et financement",
+  Financement: "Travaux et financement",
+};
+
+/** Suit le lien du sommaire vers la section qui reprend l'ancien onglet. */
 async function openTab(name: string) {
-  fireEvent.click(screen.getByRole("tab", { name }));
-  await waitFor(() =>
-    expect(screen.getByRole("tab", { name }).getAttribute("aria-selected")).toBe("true"),
-  );
+  const sommaire = screen.getByRole("navigation", { name: "Sommaire de la fiche" });
+  const link = within(sommaire).getByRole("link", { name: SECTION_FOR_TAB[name] ?? name });
+  fireEvent.click(link);
+  await waitFor(() => expect(link.getAttribute("aria-current")).toBe("true"));
 }
 
 // Ouvre « Détail de vos travaux » (l'unique détail de l'onglet Travaux) et y saisit un poste.
 async function addWorksPoste(poste: { kind: string; quantity: string; unitCost: string }) {
   await openTab("Travaux");
-  await waitFor(() =>
-    expect(screen.getByRole("heading", { name: "Travaux et état du bien" })).toBeTruthy(),
-  );
+  // Le bloc des travaux se charge à la demande quand la section est suivie depuis le sommaire.
+  await screen.findByRole("heading", { name: "Travaux et état du bien" }, { timeout: 5_000 });
   fireEvent.click(screen.getByRole("button", { name: "Détailler les travaux" }));
   fireEvent.click(screen.getByRole("button", { name: "Ajouter un poste" }));
   fireEvent.change(screen.getByRole("combobox", { name: "Type, poste 1" }), {
@@ -167,7 +189,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("integrated scenario workspace", () => {
+// La fiche sur une seule page rend ses six sections à chaque saisie : la suite complète, en parallèle,
+// dépasse parfois les 5 s par défaut sur les scénarios qui saisissent travaux, financement et loyer.
+describe("integrated scenario workspace", { timeout: 15_000 }, () => {
   it.each(["notary"] as const)(
     "keeps works drafts editable without advertising an unavailable shared scenario in %s",
     async (mode) => {
@@ -200,7 +224,9 @@ describe("integrated scenario workspace", () => {
     expect(screen.queryByRole("button", { name: "Détailler les travaux" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Type, poste 1" })).toBeNull();
     expect(
-      screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
+      within(document.getElementById("travaux-financement")!)
+        .getByRole("link", { name: "Découvrir l’offre Analyse" })
+        .getAttribute("href"),
     ).toBe("/offres");
   });
 

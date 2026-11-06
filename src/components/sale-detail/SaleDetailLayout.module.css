@@ -1,0 +1,326 @@
+/* Fiche vente sur une seule page (docs/design/fondations.md) : galerie et sections à gauche, panneau
+   collant à droite ; sous 1024 px, le panneau passe entre la galerie et le sommaire. */
+.split {
+  display: grid;
+  grid-template-areas:
+    "gallery"
+    "side"
+    "main";
+  gap: 24px;
+  align-items: start;
+}
+
+.gallery {
+  grid-area: gallery;
+  min-width: 0;
+}
+
+.main {
+  grid-area: main;
+  min-width: 0;
+}
+
+.side {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "gallery side"
+      "main side";
+    column-gap: 40px;
+    row-gap: 0;
+  }
+
+  .side {
+    align-self: start;
+  }
+}
+
+/* Collant seulement quand le panneau tient dans l'écran. */
+@media (min-width: 1024px) and (min-height: 820px) {
+  .side {
+    position: sticky;
+    top: 98px;
+  }
+}
+
+/* ---------- Sommaire ---------- */
+.toc {
+  position: sticky;
+  top: 88px;
+  z-index: 20;
+  margin-top: 28px;
+  padding: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.tocList {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+
+.tocList::-webkit-scrollbar {
+  display: none;
+}
+
+.tocList li {
+  flex: none;
+}
+
+.tocLink {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 44px;
+  padding: 11px 14px;
+  border-radius: 6px;
+  color: var(--ink-strong);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.tocLink:hover {
+  background: var(--surface-muted);
+  color: var(--brand-navy);
+}
+
+.tocLink:focus-visible {
+  outline: 3px solid var(--gold-text);
+  outline-offset: -3px;
+}
+
+.tocNumber {
+  color: var(--gold-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.tocShort {
+  display: none;
+}
+
+.tocLink[aria-current="true"] {
+  background: var(--brand-navy);
+  color: #ffffff;
+}
+
+.tocLink[aria-current="true"] .tocNumber {
+  color: var(--gold-light);
+}
+
+/* Téléphone : des pilules au libellé court, sur toute la largeur. */
+@media (max-width: 720px) {
+  .toc {
+    margin: 20px -16px 0;
+    padding: 10px 16px;
+    border-width: 1px 0;
+    border-radius: 0;
+    background: var(--surface);
+  }
+
+  .tocList {
+    gap: 6px;
+  }
+
+  .tocLink {
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: #ffffff;
+    color: var(--brand-navy);
+  }
+
+  .tocLabel {
+    display: none;
+  }
+
+  .tocShort {
+    display: inline;
+  }
+}
+
+/* ---------- Sections ---------- */
+.section {
+  display: flex;
+  gap: 28px;
+  padding-block: 48px;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 0.5rem;
+}
+
+.section:first-of-type {
+  margin-top: 32px;
+}
+
+.sectionNumber {
+  flex: 0 0 52px;
+  margin: 0;
+  color: var(--gold-text);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.sectionBody {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sectionTitle {
+  margin: 0 0 20px;
+  color: var(--brand-navy);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.sectionIntro {
+  margin: -8px 0 20px;
+  color: var(--ink-soft);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.sectionContent {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* Les blocs repris des anciens onglets gardent leur largeur : la section fixe la mise en page. */
+.sectionContent > * {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .section {
+    flex-direction: column;
+    gap: 6px;
+    padding-block: 32px;
+  }
+
+  .section:first-of-type {
+    margin-top: 0;
+    border-top: 0;
+  }
+
+  .sectionNumber {
+    flex-basis: auto;
+    font-size: 20px;
+  }
+
+  .sectionTitle {
+    font-size: 24px;
+  }
+}
+
+/* Deux blocs côte à côte (travaux et financement, calcul et travaux). */
+.pair {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (min-width: 1180px) {
+  .pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.deferred {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.deferred p {
+  margin: 0;
+}
+
+.fineprint {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tocLink {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .tocLink[aria-current="true"] {
+    outline: 2px solid Highlight;
+  }
+}
+
+/* ---------- Haut de page : retour et fil d'Ariane ---------- */
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  min-width: 0;
+}
+
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.breadcrumb li + li::before {
+  content: "›";
+  margin-right: 6px;
+  color: var(--ink-soft);
+}
+
+.breadcrumb a {
+  color: var(--gold-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  .breadcrumb {
+    display: none;
+  }
+}
