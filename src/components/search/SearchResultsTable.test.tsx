@@ -108,13 +108,16 @@ describe("vue « tableau » des résultats", () => {
 
     const headers = Array.from(table.querySelectorAll("thead th"));
     expect(headers.every((th) => th.getAttribute("scope") === "col")).toBe(true);
+    // Offre Analyse (liste connectée, rien de verrouillé) : l'occupation et le plafond en plus.
     expect(screen.getAllByRole("columnheader").map((th) => th.textContent)).toEqual([
       "Commune",
       "Type de bien",
       "Surface",
       "Prix",
+      "Occupation",
       "Date de vente",
       "Statut",
+      "Mon plafond",
       "Favori",
     ]);
     // Le nom de la commune est l'en-tête de sa ligne.
@@ -123,6 +126,42 @@ describe("vue « tableau » des résultats", () => {
     expect(container.querySelector("img")).toBeNull();
     expect(screen.queryByTestId("sale-visual")).toBeNull();
     expect(screen.queryAllByRole("article")).toHaveLength(0);
+  });
+
+  it("n'a ni occupation ni plafond pour un visiteur ou l'offre Découverte", () => {
+    for (const access of [
+      { locked: true, analysisLocked: false },
+      { locked: false, analysisLocked: true },
+    ]) {
+      renderTable([makeSale("sale-a", { occupancy_status: "libre" })], access);
+      const headers = screen.getAllByRole("columnheader").map((th) => th.textContent);
+      expect(headers).not.toContain("Occupation");
+      expect(headers).not.toContain("Mon plafond");
+      expect(screen.getByRole("table").textContent).not.toMatch(/libre/i);
+      cleanup();
+    }
+  });
+
+  it("donne l'occupation et le plafond enregistré des ventes suivies à l'abonné", async () => {
+    testState.auth.current = { user: { id: "user-a" }, loading: false };
+    testState.favoriteQuery.in.mockResolvedValue({ data: [{ sale_id: "sale-a" }], error: null });
+    renderTable(
+      [
+        makeSale("sale-a", { occupancy_status: "libre" }),
+        makeSale("sale-b", { occupancy_status: null }),
+      ],
+      {
+        dossierBySaleId: new Map([
+          ["sale-a", { statusLabel: "Analyse en cours", bidCeilingEur: 151_000 }],
+        ]),
+      },
+    );
+    const rows = within(screen.getAllByRole("rowgroup")[1]).getAllByRole("row");
+    expect(rows[0].textContent).toContain("Libre");
+    expect(rows[1].textContent).toContain("n.c.");
+    // Le plafond s'écrit pour une vente suivie (cœur plein), un tiret pour les autres.
+    await waitFor(() => expect(rows[0].textContent).toMatch(/151\s000\s€/));
+    expect(within(rows[1]).getByText("Aucun plafond enregistré").className).toContain("sr-only");
   });
 
   it("affiche commune, département, type, surface, prix, date et statut de chaque annonce", () => {

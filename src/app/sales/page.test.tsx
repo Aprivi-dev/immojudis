@@ -1,9 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ load: vi.fn() }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), count: vi.fn() }));
 
-vi.mock("@/lib/public-catalogue.server", () => ({ loadInitialCatalogue: mocks.load }));
+vi.mock("@/lib/public-catalogue.server", () => ({
+  loadInitialCatalogue: mocks.load,
+  loadInitialCount: mocks.count,
+}));
 vi.mock("./sales-page", () => ({
   SalesPage: ({ serverSeeded }: { serverSeeded: boolean }) => (
     <main data-seeded={String(serverSeeded)}>
@@ -25,6 +28,7 @@ vi.mock("@tanstack/react-query", async () => {
 
 import Page, { generateMetadata } from "./page";
 import { salesSearchCountQueryKey, salesSearchQueryKey } from "@/lib/search/catalog-placeholder";
+import { salesSearchSignature } from "@/lib/search/search-url-state";
 
 function hydratedQueries(html: string) {
   const raw = /data-state="([^"]*)"/.exec(html)![1].replaceAll("&quot;", '"');
@@ -33,7 +37,46 @@ function hydratedQueries(html: string) {
 }
 
 describe("/sales server page", () => {
-  beforeEach(() => mocks.load.mockReset());
+  beforeEach(() => {
+    mocks.load.mockReset();
+    mocks.count.mockReset().mockResolvedValue(null);
+  });
+
+  it("compte aussi les ventes des sept prochains jours pour le titre, sous la clé du comptage", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-06T10:00:00Z"));
+    try {
+      mocks.load.mockResolvedValue({ signature: '[["city","Pau"]]', items: [], count: 12 });
+      mocks.count.mockResolvedValue(4);
+      const html = renderToStaticMarkup(
+        await Page({ searchParams: Promise.resolve({ city: "Pau", page: "2" }) }),
+      );
+      const week = {
+        city: "Pau",
+        minSaleDate: "2026-11-06",
+        maxSaleDate: "2026-11-12",
+      };
+      expect(mocks.count).toHaveBeenCalledWith(expect.objectContaining(week));
+      expect(mocks.count.mock.calls[0][0].page).toBeUndefined();
+      const byKey = new Map(
+        hydratedQueries(html).map((query) => [JSON.stringify(query.queryKey), query.state.data]),
+      );
+      expect(
+        byKey.get(
+          JSON.stringify(salesSearchCountQueryKey(salesSearchSignature(week), "anonymous:preview")),
+        ),
+      ).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("n'ajoute rien quand le comptage de la semaine échoue : le titre s'arrête au total", async () => {
+    mocks.load.mockResolvedValue({ signature: "[]", items: [], count: 3 });
+    mocks.count.mockResolvedValue(null);
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+    expect(hydratedQueries(html)).toHaveLength(2);
+  });
 
   it("hands the first page to the browser under the keys the catalogue reads", async () => {
     mocks.load.mockResolvedValue({

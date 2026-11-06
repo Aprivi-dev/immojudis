@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
 import { pageMetadata } from "@/lib/page-metadata";
-import { loadInitialCatalogue } from "@/lib/public-catalogue.server";
+import { loadInitialCatalogue, loadInitialCount } from "@/lib/public-catalogue.server";
 import {
   ANONYMOUS_PREVIEW_SCOPE,
   salesSearchCountQueryKey,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/search/catalog-placeholder";
 import { RPC_LIMITS } from "@/lib/search/preview-search-request";
 import { DEFAULT_SEARCH_LIMIT } from "@/lib/search/search-filters";
+import { parisToday, upcomingWeekScope } from "@/lib/search/sales-week";
 import { salesSearchSignature, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { SalesPage } from "./sales-page";
 
@@ -73,6 +74,13 @@ export function salesPageMetadata(search: SalesSearchParams): Metadata {
  *
  * `photoMirrorTimeoutMs` : délai de lecture des copies de photos (300 ms par défaut). La régénération
  * statique en accepte davantage : voir `PHOTO_MIRROR_ISR_TIMEOUT_MS`.
+ *
+ * Le titre dit aussi combien de ces ventes ont lieu dans les sept prochains jours (« dont M cette
+ * semaine », `upcomingWeekScope`) : ce total est compté en même temps que la liste, pour que le
+ * titre du HTML soit déjà complet. Le jour retenu (`today`, Paris) est passé à la page : la
+ * variante statique, servie jusqu'à 5 minutes après sa génération, garde le jour de sa génération
+ * pour l'hydratation, puis le navigateur prend le sien. Une panne de ce comptage ne bloque rien :
+ * le titre n'affiche que le total, et le navigateur refait le comptage.
  */
 export async function renderSalesCatalogue(
   search: SalesSearchParams,
@@ -88,9 +96,14 @@ export async function renderSalesCatalogue(
     staticQuery?: string;
   } = {},
 ) {
-  const initial = await (photoMirrorTimeoutMs === undefined
-    ? loadInitialCatalogue(search)
-    : loadInitialCatalogue(search, { photoMirrorTimeoutMs }));
+  const today = parisToday();
+  const week = upcomingWeekScope(search, today);
+  const [initial, weekCount] = await Promise.all([
+    photoMirrorTimeoutMs === undefined
+      ? loadInitialCatalogue(search)
+      : loadInitialCatalogue(search, { photoMirrorTimeoutMs }),
+    week.kind === "count" ? loadInitialCount(week.search) : Promise.resolve(null),
+  ]);
   if (!initial && requireServerSeed) {
     throw new Error(
       "Catalogue public indisponible : la régénération de /sales est abandonnée, la dernière page valide reste servie.",
@@ -110,10 +123,17 @@ export async function renderSalesCatalogue(
       { updatedAt: dataUpdatedAt },
     );
   }
+  if (week.kind === "count" && weekCount !== null) {
+    queryClient.setQueryData(
+      salesSearchCountQueryKey(salesSearchSignature(week.search), ANONYMOUS_PREVIEW_SCOPE),
+      weekCount,
+      { updatedAt: dataUpdatedAt },
+    );
+  }
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <SalesPage serverSeeded={initial !== null} staticQuery={staticQuery} />
+      <SalesPage serverSeeded={initial !== null} staticQuery={staticQuery} today={today} />
     </HydrationBoundary>
   );
 }

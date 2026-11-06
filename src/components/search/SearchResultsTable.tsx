@@ -33,6 +33,8 @@ import {
   stateSaleWithoutPrice,
 } from "./listing-text";
 import { useSaleDetailLink } from "./use-sale-detail-link";
+import type { FollowedSaleDossier } from "./use-followed-sales";
+import { formatPrice, occupancyLabel } from "@/lib/format";
 
 const SKELETON_ROWS = 8;
 
@@ -68,7 +70,13 @@ export function SearchResultsTable({
   FavoriteButton,
   aiReviewBySaleId,
   aiReviewStatus = "disabled",
+  dossierBySaleId,
 }: {
+  /**
+   * Abonné de l'offre Analyse : « Mon dossier » des ventes suivies, pour la colonne « Mon plafond ».
+   * Les colonnes « Occupation » et « Mon plafond » n'existent que pour qui voit l'occupation.
+   */
+  dossierBySaleId?: ReadonlyMap<string, FollowedSaleDossier>;
   sales: AuctionSale[];
   returnTo: string;
   locked: boolean;
@@ -95,19 +103,23 @@ export function SearchResultsTable({
 }) {
   // Sans résultat, c'est l'état vide de la liste qui parle : pas de tableau creux.
   if (!isLoading && sales.length === 0) return null;
+  // Occupation et plafond : seulement pour qui voit l'occupation sur les cartes (offre Analyse).
+  const analysisColumns = !locked && !analysisLocked;
+  const columnCount = analysisColumns ? 9 : 7;
 
   return (
     <div
       // Le tableau est une vue d'écran large : en dessous de lg, la liste de cartes reste seule.
-      className="hidden overflow-x-auto rounded-xl border border-line-soft bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] lg:block"
+      className="hidden overflow-x-auto rounded-lg border border-line-soft bg-white lg:block"
       role="region"
       aria-label="Résultats sous forme de tableau"
       tabIndex={0}
     >
       <table className="w-full min-w-[640px] border-collapse text-left text-sm">
         <caption className="sr-only">
-          Annonces de cette page : commune et département, type de bien, surface, prix, date de
-          vente et statut
+          {analysisColumns
+            ? "Annonces de cette page : commune et département, type de bien, surface, prix, occupation, date de vente, statut et votre enchère plafond"
+            : "Annonces de cette page : commune et département, type de bien, surface, prix, date de vente et statut"}
         </caption>
         <thead className="border-b border-line-soft bg-surface-muted text-xs text-ink-soft">
           <tr>
@@ -123,12 +135,22 @@ export function SearchResultsTable({
             <th scope="col" className="px-3 py-2 font-semibold">
               Prix
             </th>
+            {analysisColumns ? (
+              <th scope="col" className="px-3 py-2 font-semibold">
+                Occupation
+              </th>
+            ) : null}
             <th scope="col" className="px-3 py-2 font-semibold">
               Date de vente
             </th>
             <th scope="col" className="px-3 py-2 font-semibold">
               Statut
             </th>
+            {analysisColumns ? (
+              <th scope="col" className="px-3 py-2 text-right font-semibold">
+                Mon plafond
+              </th>
+            ) : null}
             <th scope="col" className="px-1 py-2 font-semibold">
               <span className="sr-only">Favori</span>
             </th>
@@ -138,7 +160,7 @@ export function SearchResultsTable({
           {isLoading
             ? Array.from({ length: SKELETON_ROWS }).map((_, index) => (
                 <tr key={index} aria-hidden="true" className="border-b border-line-soft">
-                  <td colSpan={7} className="px-3 py-4">
+                  <td colSpan={columnCount} className="px-3 py-4">
                     <div className="h-4 w-full animate-pulse rounded bg-surface-tint" />
                   </td>
                 </tr>
@@ -165,6 +187,13 @@ export function SearchResultsTable({
                   favoriteScope={favoriteScope}
                   initialFavorite={favoriteIds.has(sale.id)}
                   FavoriteButton={FavoriteButton}
+                  analysisColumns={analysisColumns}
+                  // Retirée des favoris, la vente n'a plus de dossier.
+                  bidCeilingEur={
+                    favoriteIds.has(sale.id)
+                      ? (dossierBySaleId?.get(sale.id)?.bidCeilingEur ?? null)
+                      : null
+                  }
                 />
               ))}
         </tbody>
@@ -190,7 +219,11 @@ const ListingRow = memo(function ListingRow({
   favoriteScope,
   initialFavorite,
   FavoriteButton,
+  analysisColumns = false,
+  bidCeilingEur = null,
 }: {
+  analysisColumns?: boolean;
+  bidCeilingEur?: number | null;
   sale: AuctionSale;
   returnTo: string;
   locked: boolean;
@@ -312,7 +345,8 @@ const ListingRow = memo(function ListingRow({
         )}
       </td>
       <td className="px-3 py-3">
-        <span className="block whitespace-nowrap font-bold text-gold-text">
+        {/* Prix en marine, chiffres alignés (docs/design/fondations.md). */}
+        <span className="block whitespace-nowrap font-semibold text-brand-navy tabular-nums">
           <AiReviewField fieldKey="sale.starting_price_eur" {...review}>
             {listingPriceText(sale)}
           </AiReviewField>
@@ -323,6 +357,27 @@ const ListingRow = memo(function ListingRow({
           </span>
         )}
       </td>
+      {analysisColumns ? (
+        <td className="whitespace-nowrap px-3 py-3">
+          {sale.occupancy_status ? (
+            <span
+              className={
+                occupancyLabel(sale.occupancy_status) === "Libre"
+                  ? "font-semibold text-success"
+                  : /^(Occupé|Loué)/.test(occupancyLabel(sale.occupancy_status))
+                    ? "font-semibold text-warning"
+                    : ""
+              }
+            >
+              <AiReviewField fieldKey="property.occupancy_status" {...review}>
+                {occupancyLabel(sale.occupancy_status)}
+              </AiReviewField>
+            </span>
+          ) : (
+            <span className="text-ink-soft">n.c.</span>
+          )}
+        </td>
+      ) : null}
       <td className="px-3 py-3">
         {tribunal ? <span className="block text-xs text-ink-soft">Audience</span> : null}
         <AiReviewField fieldKey="sale.sale_date" {...review}>
@@ -359,6 +414,20 @@ const ListingRow = memo(function ListingRow({
           />
         </div>
       </td>
+      {analysisColumns ? (
+        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+          {bidCeilingEur != null ? (
+            <span className="font-semibold text-brand-navy">{formatPrice(bidCeilingEur)}</span>
+          ) : (
+            <>
+              <span className="text-ink-soft" aria-hidden="true">
+                –
+              </span>
+              <span className="sr-only">Aucun plafond enregistré</span>
+            </>
+          )}
+        </td>
+      ) : null}
       <td className="px-1 py-1 text-right">
         <FavoriteButton
           key={`${sale.id}:${favoriteScope ?? "anonymous"}`}

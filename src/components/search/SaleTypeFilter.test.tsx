@@ -11,7 +11,7 @@ import {
   buildAlertName,
 } from "./search-page-state";
 
-import { SaleTypeFilter, SaleTypeSelect } from "./SaleTypeFilter";
+import { SaleTypeFilter } from "./SaleTypeFilter";
 
 function FilterHarness() {
   const [value, setValue] = useState<SaleTypeValue | "">("");
@@ -80,32 +80,35 @@ describe("sale type search controls", () => {
   });
 });
 
-describe("SaleTypeSelect", () => {
+describe("SaleTypeFilter : rangée de la barre de filtres de /sales", () => {
   afterEach(cleanup);
 
-  it("propose « Toutes les ventes » et les types, et prévient du choix", () => {
+  it("met les types en pastilles, la pleine étant la sélection, avec le lien « Quelle différence ? »", () => {
     const onChange = vi.fn();
-    render(<SaleTypeSelect value="" onChange={onChange} />);
-    const select = screen.getByRole("combobox", { name: "Type de vente" }) as HTMLSelectElement;
-    expect([...select.options].map((option) => [option.value, option.textContent])).toEqual([
-      ["", "Toutes les ventes"],
-      ["tribunal", "Au tribunal"],
-      ["notary", "Chez le notaire"],
-      ["state", "Domaniales"],
-      ["unknown", "À préciser"],
+    render(<SaleTypeFilter bar value="tribunal" onChange={onChange} />);
+    const group = screen.getByRole("group", { name: "Type de vente" });
+    expect(screen.getAllByRole("button").map((pill) => pill.textContent)).toEqual([
+      "Toutes",
+      "Au tribunal",
+      "Chez le notaire",
+      "Domaniales",
+      "À préciser",
     ]);
-    fireEvent.change(select, { target: { value: "state" } });
+    const chosen = screen.getByRole("button", { name: "Au tribunal" });
+    expect(chosen.getAttribute("aria-pressed")).toBe("true");
+    expect(chosen.className).toContain("bg-brand-navy");
+    expect(screen.getByRole("button", { name: "Toutes" }).className).toContain("bg-white");
+    // Sur mobile, la rangée défile au lieu de passer à la ligne.
+    expect(group.querySelector("div")?.className).toContain("overflow-x-auto");
+    expect(screen.getByRole("link", { name: "Quelle différence ?" }).className).toContain(
+      "min-h-11",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Domaniales" }));
     expect(onChange).toHaveBeenCalledWith("state");
-    fireEvent.change(select, { target: { value: "" } });
-    expect(onChange).toHaveBeenLastCalledWith("");
   });
 
-  it("reflète la valeur choisie et cache les types pilotes quand ils sont désactivés", () => {
-    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
-    render(<SaleTypeSelect value="tribunal" onChange={() => undefined} />);
-    const select = screen.getByRole("combobox", { name: "Type de vente" }) as HTMLSelectElement;
-    expect(select.value).toBe("tribunal");
-    expect([...select.options].map((option) => option.value)).not.toContain("notary");
-    vi.unstubAllEnvs();
+  it("n'affiche aucun nombre d'annonces par type (aucun comptage par type n'est fait)", () => {
+    render(<SaleTypeFilter bar value="" onChange={() => undefined} />);
+    for (const pill of screen.getAllByRole("button")) expect(pill.textContent).not.toMatch(/\d/);
   });
 });
