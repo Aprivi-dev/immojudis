@@ -393,6 +393,8 @@ describe("integrated scenario workspace", { timeout: 15_000 }, () => {
 
     auth.user = { id: "account-b" };
     view.rerenderDetail();
+    // Nouveau compte : la fiche est remontée ; on revient à la section du financement.
+    await openTab("Financement");
 
     await waitFor(() => {
       expect((screen.getByLabelText(/Apport personnel/) as HTMLInputElement).value).not.toBe(

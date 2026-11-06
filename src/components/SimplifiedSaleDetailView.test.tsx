@@ -76,6 +76,12 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
   fetchValuePreview: mocks.fetchValuePreview,
   unlockSaleRequest: mocks.unlockSale,
+  // Panneau « Votre analyse » : dossier, suivi des changements et rappels (réponses sans effet ici).
+  fetchFavoriteDossier: () => new Promise(() => undefined),
+  saveFavoriteDossier: vi.fn(),
+  fetchSaleChangeEvents: () => new Promise(() => undefined),
+  fetchNotificationPreferences: () => new Promise(() => undefined),
+  updateNotificationPreferences: vi.fn(),
 }));
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,
@@ -1060,6 +1066,20 @@ describe("integrated listing", () => {
     expect(section.getByRole("heading", { name: "Votre plafond selon les travaux" })).toBeTruthy();
     // Le panneau de décision des ventes débloquées laisse place au trio et à la réglette.
     expect(section.queryByRole("link", { name: "Ajuster mes hypothèses" })).toBeNull();
+  });
+
+  it("turns the sticky summary into « Votre analyse » for Analyse, and keeps the locked one for Découverte", () => {
+    const analysis = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    const summary = screen.getByRole("region", { name: "Synthèse de la vente" });
+    expect(within(summary).getByText("Votre analyse")).toBeTruthy();
+    expect(within(summary).getByRole("link", { name: "Modifier les hypothèses" })).toBeTruthy();
+    expect(summary.textContent).toMatch(/par rapport à la mise à prix|sous la mise à prix/);
+    analysis.unmount();
+
+    window.history.replaceState(null, "", "/");
+    renderDetail("discovery");
+    const locked = screen.getByRole("region", { name: "Synthèse de la vente" });
+    expect(within(locked).queryByText("Votre analyse")).toBeNull();
   });
 
   it("recalculates the ceiling from the works pills of « Prix et plafond »", () => {
