@@ -61,6 +61,24 @@ discours commercial : il remet en question les formules, les accroches et l'ordr
 selon leur effet sur la souscription de l'offre Analyse, avec les leviers psychologiques utilisés
 honnêtement ; il complète `croissance` (canaux), `analyste-prix` (prix) et `gardien-marque` (ton).
 
+## Modèles des agents
+
+Chaque agent choisit son modèle dans son en-tête (`model:`). Répartition décidée le 06/11/2026 :
+
+- **`opus`** pour les agents de jugement : stratégie et arbitrages, sécurité et argent, code et
+  contenus produits, synthèse de sources. Ce sont `directeur-marketing`, `strategie-entreprise`,
+  `chef-de-produit`, `product-explorer`, `croissance`, `offres-acquisition`, `analyste-prix`,
+  `strategie-email`, `architecte-logiciel`, `securite-applicative`, `juridique-rgpd`,
+  `code-reviewer`, `developpeur`, `redacteur-contenu`, `audit-code-ia`, `archeologue-code`,
+  `expert-postgres`, `paiements-stripe`, `statisticien`, `analyste-spatial`, `qa-modeles`,
+  `prompts-llm`, `ux-designer`, `recherche-utilisateurs`, `parcours-persona`,
+  `synthese-recherche`, `veille-concurrentielle` et `gestion-incidents` ;
+- **`sonnet`** pour les autres, qui appliquent une liste de contrôles bien définie (audits
+  techniques, tests, cohérence, brouillons sur un format connu). Ils coûtent moins cher.
+
+Un nouvel agent suit la même règle. Un agent sur `sonnet` dont les rapports manquent de recul
+peut passer sur `opus` : une seule ligne à changer.
+
 ## Garde-fou base de données
 
 Aucun agent n'écrit dans la base de production. Trois protections dans `.claude/settings.json`
