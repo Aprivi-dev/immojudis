@@ -17,7 +17,8 @@
  *   `cookie_update: false`), comme le demande la CNIL ; Google les garde sinon deux ans ;
  * - l'opposition à la mesure d'audience (`audience-opt-out.ts`) l'emporte sur l'accord ; elle
  *   efface aussi l'accord, que le bandeau redemande après son retrait ;
- * - jamais monté sur les pages de `ANALYTICS_EXCLUDED_PATHS` (`google-analytics-state.ts`).
+ * - jamais monté sur les pages de `ANALYTICS_EXCLUDED_PATHS` (`google-analytics-state.ts`), ni
+ *   hors du site en production (`DeferredGoogleAnalytics`).
  *
  * Aucune balise Google Analytics ne doit être ajoutée dans le conteneur : elle doublerait les pages
  * vues, ou les enverrait avec l'adresse brute.

@@ -52,6 +52,9 @@ export default defineConfig({
       ...process.env,
       NEXT_PUBLIC_SUPABASE_URL: "https://ci.supabase.co",
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "ci-publishable-key",
+      // Google Analytics ne se charge que sur immojudis.com (DeferredGoogleAnalytics) ; les tests du
+      // consentement l'exigent sur 127.0.0.1, où ils interceptent GTM (e2e/consent.spec.ts).
+      NEXT_PUBLIC_ANALYTICS_ANY_HOST: "1",
       // Keep the paid-flow E2E build legally complete without importing
       // production publisher data into CI or the test bundle.
       NEXT_PUBLIC_LEGAL_ENTITY_NAME: "ImmoJudis E2E",

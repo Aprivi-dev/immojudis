@@ -351,6 +351,9 @@ describe("listing access resolution", () => {
     await waitFor(() =>
       expect(screen.getByTestId("return-to").textContent).toBe("/sales?city=Pau"),
     );
+    // The return link leaves the address bar: a copied address is the canonical one.
+    expect(window.location.pathname).toBe("/sales/sale");
+    expect(window.location.search).toBe("");
   });
 
   it("does not silently downgrade premium on an entitlement failure and retries", async () => {

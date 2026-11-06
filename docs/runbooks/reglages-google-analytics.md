@@ -37,6 +37,7 @@ de libellé.
       données d'événement réglée sur **14 mois** (le maximum de l'offre standard ; la valeur par défaut est de
       2 mois). Le chiffre retenu par la session du 23/10/2026 est 14 mois ; il s'aligne sur la durée des
       cookies (13 mois) et doit figurer dans la matrice de conservation (`docs/data-retention-matrix.md`).
+      Lu par l'API le 05/11/2026 : **toujours 2 mois** (`eventDataRetention: TWO_MONTHS`).
 - [ ] La réinitialisation des données utilisateur à chaque nouvelle activité : noter le choix fait. Il
       allonge la durée effective pour un visiteur régulier.
 
@@ -56,8 +57,8 @@ de libellé.
 
 _Administration > Flux de données > flux Web > Mesure améliorée_ (engrenage) :
 
-- [ ] **Changements de page basés sur l'historique de navigation : désactivé** (contrôlé le 30/10/2026 :
-      **activé**). Sinon chaque navigation
+- [ ] **Changements de page basés sur l'historique de navigation : désactivé** (contrôlé le 30/10/2026,
+      puis lu par l'API le 05/11/2026 : **toujours activé**, `pageChangesEnabled: true`). Sinon chaque navigation
       compte deux pages vues, la seconde avec l'adresse complète (raison inscrite dans `google-analytics.ts`).
 - [ ] **Téléchargements de fichiers : désactivé** (les liens des pièces peuvent porter un jeton d'accès).
 - [ ] **Clics sortants : désactivé.**
@@ -70,14 +71,28 @@ _Administration > Flux de données > flux Web > Mesure améliorée_ (engrenage) 
 Une case de la mesure améliorée réactivée par erreur contourne le nettoyage des adresses du code : c'est le
 réglage le plus risqué de la liste.
 
-### 4. Données fournies par l'utilisateur
+### 4. Trafic de test
+
+Le code ne charge la balise que sur `immojudis.com`, où `www` redirige (`DeferredGoogleAnalytics`) : ni le
+poste de développement ni les préversions Vercel n'envoient plus de visites. Restent les tests faits sur le
+site en production. Relevé du 20/10 au 04/11/2026 : 24 sessions venues de `tagassistant.google.com`, une
+de `127.0.0.1` (avant ce correctif) et une de la source `test`, soit environ 5 % des sessions.
+
+- [ ] _Administration > Flux de données > flux Web > Configurer les paramètres de la balise > Afficher
+      plus > Lister les sites référents indésirables_ : ajouter `tagassistant.google.com`.
+- [ ] _Administration > Collecte et modification des données > Filtres de données_ : le filtre « Trafic
+      de développement » (`debug_mode`, envoyé par Tag Assistant) passé de « Test » à **Actif**.
+- [ ] Filtre « Trafic interne » : déclarer les adresses IP du propriétaire (_flux Web > Configurer les
+      paramètres de la balise > Définir le trafic interne_), puis passer le filtre à **Actif**.
+
+### 5. Données fournies par l'utilisateur
 
 - [ ] _Collecte et modification des données > Collecte des données fournies par l'utilisateur_ :
       **désactivée**. Contrôlé le 30/10/2026 : la détection automatique des adresses email, numéros de
       téléphone et adresses postales est **activée** sur le flux. Elle n'a pas de raison d'être sur un
       site sans publicité, et la politique de confidentialité ne l'annonce pas.
 
-### 5. Accès
+### 6. Accès
 
 - [ ] _Gestion des accès au compte et à la propriété_ : seules les personnes habilitées y figurent.
 - [ ] Les exports et rapports ne sont pas partagés par un lien public.
