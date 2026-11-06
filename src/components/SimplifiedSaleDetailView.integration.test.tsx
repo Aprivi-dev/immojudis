@@ -258,7 +258,11 @@ describe("integrated scenario workspace", { timeout: 15_000 }, () => {
 
     await openTab("Prix et plafond");
     await waitFor(() => {
-      const row = screen.getByText("Votre montant").closest("tr")!;
+      // « Votre montant » est aussi une pilule des hypothèses : la ligne du tableau des travaux.
+      const row = screen
+        .getAllByText("Votre montant")
+        .map((label) => label.closest("tr"))
+        .find((line) => line != null)!;
       expect(row.getAttribute("aria-current")).toBe("true");
       expect(row.textContent?.replace(/\s/g, "")).toContain("2200€");
       expect(screen.getByText("Travaux (votre montant)")).toBeTruthy();
@@ -286,7 +290,11 @@ describe("integrated scenario workspace", { timeout: 15_000 }, () => {
     // The total of the postes is the budget travaux of the bid ceiling.
     await openTab("Prix et plafond");
     await waitFor(() => {
-      const row = screen.getByText("Votre montant").closest("tr")!;
+      // « Votre montant » est aussi une pilule des hypothèses : la ligne du tableau des travaux.
+      const row = screen
+        .getAllByText("Votre montant")
+        .map((label) => label.closest("tr"))
+        .find((line) => line != null)!;
       expect(row.getAttribute("aria-current")).toBe("true");
       expect(row.textContent?.replace(/\s/g, "")).toContain("8200€");
     });
@@ -457,11 +465,11 @@ describe("integrated scenario workspace", { timeout: 15_000 }, () => {
       renderDetail("analysis", studio);
       await openTab("Prix et plafond");
       await waitFor(() => expect(fetchInvestorProfile).toHaveBeenCalled());
-      await waitFor(() => expect(screen.getByText(/Travaux inclus/)).toBeTruthy());
+      await waitFor(() => expect(screen.getByText("Aucun budget travaux retenu.")).toBeTruthy());
       // Laisse au profil le temps d'être appliqué : aucun montant de travaux ne doit apparaître.
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(screen.queryByText("Travaux (votre montant)")).toBeNull();
-      expect(screen.getByText(/Travaux inclus : aucun/)).toBeTruthy();
+      expect(screen.getByText("Aucun budget travaux retenu.")).toBeTruthy();
     });
   });
 });

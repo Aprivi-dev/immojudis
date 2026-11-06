@@ -207,7 +207,7 @@ describe("PriceSummaryCard", () => {
     );
 
     const card = screen.getByRole("region", { name: "Le prix" });
-    expect(card.textContent).toMatch(/95.000\s€.*230.000\s€.*135.000\s€/);
+    expect(card.textContent).toMatch(/95.000\s€.*135.000\s€.*230.000\s€/);
     expect(card.textContent).toContain("fiabilité : à consolider");
     expect(screen.getByRole("link", { name: "Voir le calcul" }).getAttribute("href")).toBe(
       "#calculation",

@@ -1044,17 +1044,32 @@ describe("integrated listing", () => {
     expect(screen.queryByRole("region", { name: "Mes questions pour l’avocat" })).toBeNull();
   });
 
-  it("points the Estimation actions to the planner and its calculation", () => {
+  it("lays out « Prix et plafond » : the three amounts, the scale, the visible hypotheses and the calculation", () => {
     renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
     selectTab("Prix et plafond");
+    const section = within(document.getElementById("prix")!);
 
-    expect(screen.getByRole("link", { name: "Ajuster mes hypothèses" }).getAttribute("href")).toBe(
-      "#calculation",
-    );
-    expect(screen.getByRole("link", { name: "Voir le calcul" }).getAttribute("href")).toBe(
-      "#why-this-ceiling",
-    );
-    expect(screen.getByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
+    const trio = section.getByRole("region", { name: "Le prix" });
+    expect(trio.textContent).toMatch(/Mise à prix.*Enchère plafond.*Valeur estimée/);
+    expect(section.getByTestId("price-scale")).toBeTruthy();
+    // Les hypothèses sont visibles d'emblée, sans ouvrir de panneau.
+    for (const name of ["Votre projet", "Niveau de prudence", "Travaux"]) {
+      expect(section.getByRole("radiogroup", { name })).toBeTruthy();
+    }
+    expect(section.getByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
+    expect(section.getByRole("heading", { name: "Votre plafond selon les travaux" })).toBeTruthy();
+    // Le panneau de décision des ventes débloquées laisse place au trio et à la réglette.
+    expect(section.queryByRole("link", { name: "Ajuster mes hypothèses" })).toBeNull();
+  });
+
+  it("recalculates the ceiling from the works pills of « Prix et plafond »", () => {
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    const trio = screen.getByRole("region", { name: "Le prix" });
+    const before = trio.textContent;
+    const works = within(screen.getByRole("radiogroup", { name: "Travaux" })).getAllByRole("radio");
+    fireEvent.click(works[works.length - 1]);
+    expect(works[works.length - 1].getAttribute("aria-checked")).toBe("true");
+    expect(trio.textContent).not.toBe(before);
   });
 
   it("keeps the photo gallery action functional in the Aperçu panel", () => {
@@ -1077,6 +1092,10 @@ describe("integrated listing", () => {
     expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
     selectTab("Quartier");
     expect(analysis.container.querySelector("#market")).not.toBeNull();
+    // La valeur estimée mise en phrase, chiffres surlignés, en tête de « Marché et comparables ».
+    expect(screen.getByTestId("market-sentence").textContent).toMatch(
+      /^Valeur estimée à .+, d’après \d+ ventes? comparables? à moins de \d+ m/,
+    );
   });
 
   it("never places the starting price against the value while the occupancy is under review", async () => {

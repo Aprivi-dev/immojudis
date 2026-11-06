@@ -75,41 +75,65 @@ export function MarketSnapshot({
   const history = estimate?.comparableMode === "address_history";
   const aggregate = estimate?.comparableMode === "geographic_aggregate";
   const count = history ? estimate.addressHistory.length : (estimate?.sampleSize ?? 0);
+  // La valeur mise en phrase, chiffres surlignés : seulement pour des ventes comparables autour du
+  // bien (ni l'historique d'une adresse, ni une moyenne départementale), avec une valeur exploitable.
+  const value =
+    estimate?.actionable && !history && !aggregate && (estimate.estimatedValueEur ?? 0) > 0
+      ? Math.round(estimate.estimatedValueEur! / 1000) * 1000
+      : null;
+  const months = estimate ? Math.round(estimate.yearsBack * 12) : 0;
   return (
-    <section className={panelStyles.marketSnapshot} aria-label="Repères de marché">
-      <div>
-        <span className={panelStyles.metricEyebrow}>Fourchette indicative de marché</span>
-        <strong>
-          {hasRange
-            ? `${formatPrice(estimate.estimatedValueLowEur!)} – ${formatPrice(estimate.estimatedValueHighEur!)}`
-            : loading
-              ? "Calcul en cours…"
-              : "Références à compléter"}
-        </strong>
-        <p>
-          {estimate?.source ?? "DVF"}
-          {computedAt ? ` · Actualisée le ${formatDate(computedAt)}` : ""}
+    <>
+      {value != null && estimate ? (
+        <p className={panelStyles.marketSentence} data-testid="market-sentence">
+          Valeur estimée à <span className={panelStyles.mark}>{formatPrice(value)}</span>
+          {estimate.medianPricePerM2 ? (
+            <>
+              , soit{" "}
+              <span className={panelStyles.mark}>
+                {formatPricePerM2(estimate.medianPricePerM2)}
+              </span>
+            </>
+          ) : null}
+          , d’après {count} vente{count > 1 ? "s" : ""} comparable{count > 1 ? "s" : ""} à moins de{" "}
+          {estimate.radiusM} m{months > 0 ? ` sur ${months} mois` : ""}.
         </p>
-      </div>
-      <div>
-        <span className={panelStyles.metricEyebrow}>Solidité des données</span>
-        <strong className={panelStyles.confidenceText}>{confidence.confidenceLabel}</strong>
-        <p>
-          {count}{" "}
-          {history
-            ? `vente${count > 1 ? "s" : ""} à cette adresse`
-            : aggregate
-              ? `vente${count > 1 ? "s" : ""} de référence`
-              : `vente${count > 1 ? "s" : ""} comparable${count > 1 ? "s" : ""}`}
-          {estimate
-            ? ` · ${aggregate ? `Échelle ${aggregateScopeLabel(estimate.geographyLevel)}` : history ? "Lots potentiellement différents" : `Rayon ${estimate.radiusM} m`}`
-            : ""}
-        </p>
-      </div>
-      <a href="#market">
-        Examiner les références <ArrowRight className="h-4 w-4" aria-hidden />
-      </a>
-    </section>
+      ) : null}
+      <section className={panelStyles.marketSnapshot} aria-label="Repères de marché">
+        <div>
+          <span className={panelStyles.metricEyebrow}>Fourchette indicative de marché</span>
+          <strong>
+            {hasRange
+              ? `${formatPrice(estimate.estimatedValueLowEur!)} – ${formatPrice(estimate.estimatedValueHighEur!)}`
+              : loading
+                ? "Calcul en cours…"
+                : "Références à compléter"}
+          </strong>
+          <p>
+            {estimate?.source ?? "DVF"}
+            {computedAt ? ` · Actualisée le ${formatDate(computedAt)}` : ""}
+          </p>
+        </div>
+        <div>
+          <span className={panelStyles.metricEyebrow}>Solidité des données</span>
+          <strong className={panelStyles.confidenceText}>{confidence.confidenceLabel}</strong>
+          <p>
+            {count}{" "}
+            {history
+              ? `vente${count > 1 ? "s" : ""} à cette adresse`
+              : aggregate
+                ? `vente${count > 1 ? "s" : ""} de référence`
+                : `vente${count > 1 ? "s" : ""} comparable${count > 1 ? "s" : ""}`}
+            {estimate
+              ? ` · ${aggregate ? `Échelle ${aggregateScopeLabel(estimate.geographyLevel)}` : history ? "Lots potentiellement différents" : `Rayon ${estimate.radiusM} m`}`
+              : ""}
+          </p>
+        </div>
+        <a href="#market">
+          Examiner les références <ArrowRight className="h-4 w-4" aria-hidden />
+        </a>
+      </section>
+    </>
   );
 }
 
