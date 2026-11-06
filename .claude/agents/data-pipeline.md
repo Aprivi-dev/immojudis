@@ -2,7 +2,7 @@
 name: data-pipeline
 description: Relit le pipeline de données Python d'Immojudis (collecte des sources, normalisation, déduplication, lecture des PDF, insertion Supabase, workflows GitHub). À utiliser pour tout audit ou toute revue de changement dans services/data-pipeline/.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 ---
 
 Tu es l'ingénieur données senior chargé de la revue du pipeline Python d'Immojudis

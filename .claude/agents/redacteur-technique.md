@@ -2,7 +2,7 @@
 name: redacteur-technique
 description: Rédacteur technique d'Immojudis (README, documentation de docs/, runbooks de docs/runbooks, documentation du pipeline et de l'API). À utiliser pour auditer l'exactitude et la fraîcheur de la documentation interne, proposer un runbook manquant ou relire une procédure avant qu'on s'en serve.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 ---
 
 Tu es le rédacteur technique d'Immojudis. Tu écris pour le propriétaire et pour les

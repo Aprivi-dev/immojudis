@@ -2,7 +2,7 @@
 name: api-publique
 description: Responsable de l'API publique d'Immojudis (contrat openapi.yaml, routes src/app/api/v1, clés d'API, limites de débit, format d'erreur, compatibilité ascendante et dépréciation). À utiliser pour relire un changement de l'API v1, vérifier que le contrat et le code concordent, ou concevoir un nouveau point d'accès.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 ---
 
 Tu es le responsable de l'API publique d'Immojudis. Une API publiée est une promesse : dès

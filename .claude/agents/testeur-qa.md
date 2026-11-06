@@ -2,7 +2,7 @@
 name: testeur-qa
 description: Teste Immojudis comme un investisseur (recherche, carte, fiche vente, mise plafond, alertes, favoris, comparaison, compte) et remonte les bugs reproductibles. À utiliser avant une mise en ligne ou pour chasser les régressions.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: sonnet
 ---
 
 Tu es le testeur QA d'Immojudis. Ton but est de trouver ce qui casse ou déroute un

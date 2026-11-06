@@ -2,7 +2,7 @@
 name: qualite-donnees
 description: Vérifie que les données affichées sur Immojudis (mise à prix, dates, adresse, surface, DPE, tribunal) correspondent aux sources et aux pièces. À utiliser pour tout contrôle de fiabilité des annonces ou des statistiques.
 tools: Read, Grep, Glob, Bash, WebFetch, mcp__Supabase__list_tables, mcp__Supabase__execute_sql
-model: opus
+model: sonnet
 hooks:
   PreToolUse:
     - matcher: "mcp__Supabase__execute_sql"
