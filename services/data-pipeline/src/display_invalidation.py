@@ -52,8 +52,16 @@ SURFACE_FIELDS = (
 COUNT_FIELDS = ("rooms_count", "bedrooms_count")
 PROCEDURE_FIELDS = ("sale_type", "sale_venue_type")
 
-# A list card counts down the days before the sale (« J - 24 »).
-_COUNTDOWN_RE = re.compile(r"\bj\s*-\s*\d{1,4}\b")
+# A list card counts down the days before the sale (« J - 24 »). Cessions (État) pages also write the deadline
+# relative to today (« dans 34 jours », « hier ») : compared raw, each day's first pass saw 20 of its pages as changed
+# and erased their document reading (06/11/2026, 08:20). Texts are casefolded and stripped of accents first.
+_COUNTDOWN_RE = re.compile(
+    r"\bj\s*-\s*\d{1,4}\b"
+    r"|\b(?:dans|il y a)\s+\d{1,4}\s*(?:jours?|heures?|minutes?|semaines?|mois)\b"
+    r"|\b\d{1,4}\s*jours?\s+restants?\b"
+    r"|\breste(?:nt)?\s+\d{1,4}\s*jours?\b"
+    r"|\b(?:avant-hier|hier|aujourd['’ ]?hui)\b"
+)
 _TEXT_SURFACE_RE = re.compile(rf"{SURFACE_VALUE_PATTERN}\s*m\s*(?:2|²)", re.IGNORECASE)
 
 

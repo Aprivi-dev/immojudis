@@ -296,3 +296,28 @@ def test_cross_source_merge_keeps_a_stale_text_and_erases_on_major_change():
     merged = _merge_into(sale(URL, canonical), pending, confidence="source_url")
     assert "llm_display_description" not in merged.raw_payload
     assert merged.raw_payload["llm_display_status"] == "pending"
+
+
+def test_relative_deadlines_do_not_change_the_display_fingerprint() -> None:
+    """06/11/2026 : Cessions écrit l'échéance par rapport au jour (« dans 34 jours ») ; chaque premier passage du jour
+    voyait 20 pages modifiées et effaçait la lecture de leurs pièces."""
+    from src.display_invalidation import capture_fingerprints, normalize_display_text
+
+    yesterday = "Offres à déposer dans 35 jours. Publiée aujourd'hui. Visite il y a 2 heures, 12 jours restants."
+    today = "Offres à déposer dans 34 jours. Publiée hier. Visite il y a 3 heures, 11 jours restants."
+    assert normalize_display_text(yesterday) == normalize_display_text(today)
+    sale = {"description": "Terrain de 1 200 m²", "city": "Saint-Alexandre"}
+    assert capture_fingerprints({**sale, "raw_text": yesterday})["display"] == capture_fingerprints(
+        {**sale, "raw_text": today}
+    )["display"]
+
+
+def test_a_real_text_change_still_changes_the_display_fingerprint() -> None:
+    from src.display_invalidation import capture_fingerprints, normalize_display_text
+
+    sale = {"description": "Terrain de 1 200 m²", "city": "Saint-Alexandre"}
+    before = capture_fingerprints({**sale, "raw_text": "Offres dans 34 jours. Terrain constructible."})
+    after = capture_fingerprints({**sale, "raw_text": "Offres dans 34 jours. Terrain non constructible."})
+    assert before["display"] != after["display"]
+    # « hier » n'est retiré que comme mot entier.
+    assert "hierarchie" in normalize_display_text("Hiérarchie des normes")
