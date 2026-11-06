@@ -24,10 +24,10 @@ import { exampleVerdictData } from "@/lib/example-verdict";
 import homeStyles from "@/components/home/HomePage.module.css";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { loadHomeDepartmentCount } from "@/lib/home-departments.server";
-import { ceilingTermText } from "@/lib/fee-regime-labels";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { jsonLdString } from "@/lib/json-ld";
 import { readLaunchOfferState } from "@/lib/launch-offer.server";
+import { analysisOfferDescription } from "@/lib/offer-comparison";
 import { unlockHighlightsText } from "@/lib/sale-unlocks";
 
 // Titre et description propres à l'accueil (voir `home-seo.ts`) ; calculés au rendu, comme la page,
@@ -58,7 +58,6 @@ export default async function Page() {
   const trialOpen = launchOffer.degraded ? undefined : launchOffer.active;
   // Le terme du plafond des cartes d'offres suit l'interrupteur par régime (CEILING_FEE_REGIMES_OPEN).
   const openFeeRegimes = openFeeRegimesFromEnv();
-  const ceilingTerm = ceilingTermText(openFeeRegimes);
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = organizationStructuredData(origin);
   const faqStructuredData = {
@@ -96,7 +95,7 @@ export default async function Page() {
           <HomeGuides />
           <HomeOffers
             unlockHighlights={unlockHighlightsText(openFeeRegimes)}
-            ceilingFeature={`${ceilingTerm.charAt(0).toUpperCase()}${ceilingTerm.slice(1)} et travaux`}
+            ceilingFeature={analysisOfferDescription(openFeeRegimes)}
           />
           <HomeFaq trialOpen={trialOpen} openFeeRegimes={openFeeRegimes} />
           <HomeClosing summary={summary} departments={departments} />

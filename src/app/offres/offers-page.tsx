@@ -27,7 +27,13 @@ import {
   LAUNCH_OFFER_LABEL,
   launchOfferText,
 } from "@/lib/launch-offer";
-import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
+import {
+  analysisOfferDescription,
+  offerComparisonRows,
+  splitOfferComparisonRows,
+  type OfferCell,
+  type OfferRow,
+} from "@/lib/offer-comparison";
 import { PLAN_LIMITS } from "@/lib/plans";
 import {
   ceilingTermIndefiniteText,
@@ -78,6 +84,19 @@ const benefits = (open?: readonly FeeRegimeKey[]): readonly Benefit[] => [
  * mention le dit (elle ne parle ni de prix ni de paiement).
  */
 const LAUNCH_OFFER_FREE_PLAN_NOTE = `Pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai qui suivent la confirmation de son adresse email, un compte gratuit bénéficie de l’offre Analyse (un essai par personne). Les limites de Découverte indiquées ici s’appliquent ensuite.`;
+
+/** Inscription depuis /offres : motif `offre` (bandeau de la connexion, entrée de `signup_submitted`). */
+const OFFER_SIGNUP_PATH = pathWithSearch("/login", {
+  mode: "investor",
+  redirect: "/sales",
+  reason: "offre",
+});
+
+/**
+ * Sous les deux cartes, pour qui étudie beaucoup de ventes (marchands de biens). « Toutes les ventes
+ * ouvertes » : Analyse n'a pas de quota de déblocages (`PLAN_LIMITS.analyse.monthlyUnlocks`).
+ */
+const HEAVY_USE_NOTE = `Vous étudiez plus de ${MONTHLY_SALE_UNLOCKS} ventes par mois, ou vous suivez plusieurs secteurs ? C’est l’usage pour lequel l’offre Analyse est faite : toutes les ventes ouvertes, jusqu’à ${PLAN_LIMITS.analyse.watchedZones} alertes, export CSV.`;
 
 const unlockedItems = (open?: readonly FeeRegimeKey[]) =>
   unlockedItemsText({ ceiling: ceilingTermWithArticleText(open), statistics: true });
@@ -284,16 +303,42 @@ export function OffersPage({
             {launch.pending && !user ? <LaunchOfferBannerPlaceholder /> : null}
             {visitorTrial ? <LaunchOfferBanner /> : null}
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/annonce-exemple"
-                className={buttonClasses({ variant: "primary", size: "lg" })}
-              >
-                Voir une analyse exemple
-                <ArrowRight className="size-4" aria-hidden />
-              </Link>
-              <Link href="/sales" className={buttonClasses({ size: "lg" })}>
-                Explorer gratuitement
-              </Link>
+              {/* L'essai proposé au visiteur passe en tête ; sinon, l'analyse exemple. */}
+              {visitorTrial ? (
+                <>
+                  <Link
+                    href={OFFER_SIGNUP_PATH}
+                    className={buttonClasses({ variant: "primary", size: "lg" })}
+                  >
+                    Commencer l’essai gratuit de {ANALYSIS_TRIAL_DAYS} jours
+                    <ArrowRight className="size-4" aria-hidden />
+                  </Link>
+                  <Link href="/annonce-exemple" className={buttonClasses({ size: "lg" })}>
+                    Voir une analyse exemple
+                  </Link>
+                </>
+              ) : (
+                <Link
+                  href="/annonce-exemple"
+                  className={buttonClasses({ variant: "primary", size: "lg" })}
+                >
+                  Voir une analyse exemple
+                  <ArrowRight className="size-4" aria-hidden />
+                </Link>
+              )}
+              {/* Pendant l'essai, deux boutons suffisent : l'exploration passe en simple lien. */}
+              {visitorTrial ? (
+                <Link
+                  href="/sales"
+                  className="self-center font-semibold text-gold-text underline sm:self-auto sm:py-3"
+                >
+                  Explorer gratuitement
+                </Link>
+              ) : (
+                <Link href="/sales" className={buttonClasses({ size: "lg" })}>
+                  Explorer gratuitement
+                </Link>
+              )}
             </div>
           </div>
           <DecisionEquation />
@@ -334,7 +379,7 @@ export function OffersPage({
         className="mx-auto max-w-[1220px] px-4 py-12 sm:px-6 lg:px-8"
       >
         <h2 id="tarifs" className="font-display text-3xl font-medium sm:text-4xl">
-          Deux offres, un prix clair
+          {MONTHLY_SALE_UNLOCKS} ventes chiffrées par mois, ou sans limite.
         </h2>
         <p className="mt-2 max-w-3xl text-ink-soft">
           Découverte est gratuite, sans limite de durée ; elle comprend {MONTHLY_SALE_UNLOCKS}{" "}
@@ -352,7 +397,7 @@ export function OffersPage({
           <PlanPanel
             name="Découverte"
             price="0 €"
-            description="Pour repérer les ventes et conserver vos favoris."
+            description={`Pour repérer les ventes et chiffrer, chaque mois, les ${MONTHLY_SALE_UNLOCKS} qui vous intéressent le plus.`}
             features={discoveryFeatures(openFeeRegimes)}
           >
             {launchActive ? (
@@ -362,7 +407,7 @@ export function OffersPage({
             ) : null}
             {user ? null : (
               <Link
-                href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
+                href={OFFER_SIGNUP_PATH}
                 className={buttonClasses({ size: "lg", className: "w-full" })}
               >
                 Créer mon compte gratuit
@@ -373,7 +418,7 @@ export function OffersPage({
           <PlanPanel
             name="Analyse"
             price={price}
-            description="Pour décider, chiffrer et préparer l’enchère."
+            description={analysisOfferDescription(openFeeRegimes)}
             features={analysisFeatures(openFeeRegimes)}
             priceNote={priceNote}
             highlighted
@@ -403,6 +448,9 @@ export function OffersPage({
             )}
           </PlanPanel>
         </div>
+        <p data-testid="offers-heavy-use-note" className="mt-5 max-w-3xl text-sm text-ink-soft">
+          {HEAVY_USE_NOTE}
+        </p>
       </section>
 
       <section
@@ -474,12 +522,51 @@ function ComparisonTable({
   open?: readonly FeeRegimeKey[];
   analysisOpen: boolean;
 }) {
-  const rows = offerComparisonRows(open, { analysisOpen });
+  // Ce qui distingue les offres d'abord ; ce qu'elles ont en commun, replié, sans rien retirer.
+  const { differences, shared } = splitOfferComparisonRows(
+    offerComparisonRows(open, { analysisOpen }),
+  );
   return (
     <>
-      <ComparisonList rows={rows} />
-      <ComparisonGrid rows={rows} />
+      <ComparisonList rows={differences} />
+      <ComparisonGrid rows={differences} />
+      {shared.length > 0 ? <SharedComparisonRows rows={shared} /> : null}
     </>
+  );
+}
+
+/** Les lignes incluses à l'identique dans les deux offres, repliées par défaut. */
+function SharedComparisonRows({ rows }: { rows: readonly OfferRow[] }) {
+  return (
+    <details
+      data-testid="offer-comparison-shared"
+      className="group mt-4 rounded-xl border border-line bg-white"
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 px-3 py-3 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:px-4">
+        Inclus dans les deux offres
+        <ChevronDown
+          className="size-5 shrink-0 transition-transform group-open:rotate-180"
+          aria-hidden
+        />
+      </summary>
+      <ul className="divide-y divide-line-soft border-t border-line-soft">
+        {rows.map((row) => (
+          <li
+            key={row.id}
+            className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-2 px-3 py-3 text-sm sm:px-4"
+          >
+            <Check className="mt-0.5 size-4 text-success" aria-hidden />
+            <span>
+              <span className="font-medium">{row.label}</span>
+              {row.analyse.text === "Inclus" ? null : ` : ${row.analyse.text}`}
+              {row.hint ? (
+                <span className="mt-0.5 block text-xs text-ink-soft">{row.hint}</span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -638,7 +725,7 @@ function LaunchOfferPanel({ trialLine }: { trialLine: string | null }) {
       </p>
       {trialLine ? <p className="mt-1 text-ink-soft">{trialLine}</p> : null}
       <Link
-        href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
+        href={OFFER_SIGNUP_PATH}
         className={buttonClasses({ variant: "primary", size: "lg", className: "mt-4 w-full" })}
       >
         Commencer l’essai gratuit

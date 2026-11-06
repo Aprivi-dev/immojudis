@@ -52,6 +52,18 @@ function goToLastStep(area: string, extra: { homeType?: string; maxPrice?: strin
 
 const ALERT_LABEL =
   "Créer ma première alerte avec ces critères (un email récapitulatif par semaine)";
+const TRIAL_ALERT_LABEL =
+  "Créer ma première alerte avec ces critères (un email par jour pendant votre essai, puis chaque semaine)";
+
+/** Droits d'un compte dont l'essai de l'offre Analyse est en cours (fin dans 3 jours). */
+function runningTrialPlan(): Record<string, unknown> {
+  return {
+    plan: "analyse",
+    hasAnalysisAccess: true,
+    launchOffer: true,
+    trialEndsAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+  };
+}
 
 describe("investor welcome flow", () => {
   it("keeps criteria when going back, then opens the filtered catalogue", () => {
@@ -116,6 +128,41 @@ describe("investor welcome flow", () => {
     expect(text).toContain(
       "votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez 3 déblocages par mois.",
     );
+  });
+
+  it("titre l’accueil d’un compte en essai « Votre essai de l’offre Analyse a commencé »", () => {
+    alerts.plan = {
+      plan: "analyse",
+      hasAnalysisAccess: true,
+      launchOffer: true,
+      trialEndsAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+    };
+    render(<InvestorOnboarding />);
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("Votre essai de l’offre Analyse a commencé");
+    expect(text).not.toContain("Bienvenue dans votre compte Découverte");
+  });
+
+  it("garde « Bienvenue dans votre compte Découverte » hors essai et tant que les droits ne sont pas lus", () => {
+    for (const plan of [
+      undefined,
+      { plan: "decouverte", hasAnalysisAccess: false },
+      { plan: "decouverte", hasAnalysisAccess: false, trialEndedAt: "2026-10-01T10:00:00Z" },
+      // Essai dont la date est passée : il n'est plus en cours, même si le droit n'est pas encore relu.
+      {
+        plan: "analyse",
+        hasAnalysisAccess: true,
+        launchOffer: true,
+        trialEndsAt: new Date(Date.now() - 86_400_000).toISOString(),
+      },
+    ]) {
+      alerts.plan = plan;
+      render(<InvestorOnboarding />);
+      const text = document.body.textContent ?? "";
+      expect(text).toContain("Bienvenue dans votre compte Découverte");
+      expect(text).not.toContain("Votre essai de l’offre Analyse a commencé");
+      cleanup();
+    }
   });
 
   it("n’annonce pas les outils Analyse à un compte sans essai, avec un essai terminé ou refusé", () => {
@@ -252,6 +299,48 @@ describe("investor welcome flow", () => {
       expect(navigate).toHaveBeenCalledWith(
         "/sales?department=33&maxPrice=150000&homeTypes=apartment",
       );
+    });
+
+    it("crée la première alerte en quotidien pendant l'essai, et le dit dans la case, le consentement et le délai", async () => {
+      alerts.analysis = true;
+      alerts.plan = runningTrialPlan();
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      expect(screen.queryByRole("checkbox", { name: ALERT_LABEL })).toBeNull();
+      const checkbox = screen.getByRole("checkbox", { name: TRIAL_ALERT_LABEL });
+      const help = document.getElementById(checkbox.getAttribute("aria-describedby")!);
+      expect(help?.textContent).toBe(
+        "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif des nouvelles ventes correspondant à ces critères : un par jour pendant votre essai, puis un par semaine. Vous pourrez le désactiver à tout moment depuis votre compte ou le lien de désinscription de chaque email.",
+      );
+      fireEvent.click(checkbox);
+      expect(screen.getByTestId("first-alert-timing").textContent).toBe(
+        "Pendant votre essai, le récapitulatif part chaque jour, puis chaque lundi après l’essai, s’il y a de nouvelles ventes qui correspondent à vos critères. En attendant, ouvrez une fiche pour voir son plafond.",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalled());
+      expect(alerts.create.mock.calls[0][1]).toMatchObject({
+        frequency: "daily",
+        emailRecap: true,
+      });
+    });
+
+    it("garde l'alerte hebdomadaire hors essai : abonnement Analyse, essai terminé ou date passée", async () => {
+      for (const plan of [
+        { plan: "analyse", hasAnalysisAccess: true },
+        { plan: "decouverte", hasAnalysisAccess: false, trialEndedAt: "2026-10-01T10:00:00Z" },
+        { ...runningTrialPlan(), trialEndsAt: new Date(Date.now() - 86_400_000).toISOString() },
+      ]) {
+        alerts.plan = plan;
+        render(<InvestorOnboarding />);
+        goToLastStep("33");
+        expect(screen.queryByRole("checkbox", { name: TRIAL_ALERT_LABEL })).toBeNull();
+        fireEvent.click(screen.getByRole("checkbox", { name: ALERT_LABEL }));
+        fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
+        await waitFor(() => expect(alerts.create).toHaveBeenCalled());
+        expect(alerts.create.mock.calls[0][1]).toMatchObject({ frequency: "weekly" });
+        alerts.create.mockClear();
+        cleanup();
+      }
     });
 
     it("reste sur l'étape quand l'alerte n'a pas pu être créée", async () => {

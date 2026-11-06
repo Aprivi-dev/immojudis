@@ -6,8 +6,8 @@ import {
 } from "@/lib/search/search-url-state";
 import type { UserAlert } from "@/lib/types";
 
-/** Also enforced by the database; checked again for old alerts after downgrade. */
-export function isDiscoveryAlertCompatible(alert: UserAlert): boolean {
+/** Critères publics seulement : ni note, rendement, écart au marché, occupation, DPE, terrain ni texte libre. */
+function hasPublicAlertCriteriaOnly(alert: UserAlert): boolean {
   return (
     alert.min_investment_score == null &&
     alert.min_yield_pct == null &&
@@ -15,8 +15,24 @@ export function isDiscoveryAlertCompatible(alert: UserAlert): boolean {
     alert.occupancy_status == null &&
     !alert.dpe_classes?.length &&
     !alert.require_house_with_land &&
-    alert.alert_frequency === "weekly" &&
     !alert.advanced_criteria?.query
+  );
+}
+
+/** Also enforced by the database; checked again for old alerts after downgrade. */
+export function isDiscoveryAlertCompatible(alert: UserAlert): boolean {
+  return hasPublicAlertCriteriaOnly(alert) && alert.alert_frequency === "weekly";
+}
+
+/**
+ * Alerte qu'un compte Découverte garde à l'évaluation : critères publics, hebdomadaire ou quotidienne.
+ * Une alerte quotidienne vient de l'essai de l'offre Analyse : après l'essai, elle est évaluée et
+ * notifiée en hebdomadaire (`alert-matches.ts`), au lieu de ne plus être évaluée du tout.
+ */
+export function isDiscoveryAlertEvaluable(alert: UserAlert): boolean {
+  return (
+    hasPublicAlertCriteriaOnly(alert) &&
+    (alert.alert_frequency === "weekly" || alert.alert_frequency === "daily")
   );
 }
 

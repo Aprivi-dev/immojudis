@@ -577,7 +577,9 @@ export function buildAlertNotificationRows({
   return matches
     .filter((match) => match.id)
     .flatMap((match) => {
-      const frequency = frequencyByAlert.get(match.alertId) ?? "daily";
+      // Un compte Découverte n'a que le récapitulatif hebdomadaire (du lundi), quelle que soit la
+      // fréquence enregistrée : une alerte quotidienne créée pendant l'essai ne l'envoie jamais chaque jour.
+      const frequency = discovery ? "weekly" : (frequencyByAlert.get(match.alertId) ?? "daily");
       const notificationKind = notificationKindForFrequency(frequency);
       const scheduledFor = scheduledForFrequency(frequency, now);
       const snapshot = asJson({

@@ -1,4 +1,8 @@
-import { ceilingTermText, ceilingTermWithScopeText } from "@/lib/fee-regime-labels";
+import {
+  ceilingTermText,
+  ceilingTermWithScopeText,
+  ceilingVenueScopeText,
+} from "@/lib/fee-regime-labels";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import {
   isSaleUnlockFeature,
@@ -54,34 +58,16 @@ const UNLOCK_CELL_TEXT = `${UNLOCKS_PER_MONTH} déblocages par mois`;
  * Les lignes du comparatif. Le montant plafond, son nom (« enchère plafond », « offre plafond ») et
  * les ventes qui en ont un dépendent des régimes de frais ouverts (`open`, lus côté serveur dans
  * `CEILING_FEE_REGIMES_OPEN` ; absent : tous ceux dont les règles sont définies).
+ *
+ * L'ordre est celui de la page : ce qui distingue les deux offres d'abord (déblocages, plafond, pièces
+ * et historique, alertes, estimation, statistiques, PDF et CSV), puis le reste. Le partage entre
+ * « diffère » et « inclus dans les deux » se calcule sur les cellules (`splitOfferComparisonRows`).
  */
 function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
   const CEILING_TERM = ceilingTermText(open);
   const CEILING_TERM_CAPITALIZED = `${CEILING_TERM.charAt(0).toUpperCase()}${CEILING_TERM.slice(1)}`;
   const CEILING_WITH_SCOPE = ceilingTermWithScopeText(open);
   return [
-    {
-      id: "catalogue",
-      label: "Catalogue, filtres et fiches des ventes",
-      features: ["sales.filters"],
-    },
-    {
-      id: "favorites",
-      label: "Favoris",
-      features: ["sales.favorites"],
-      custom: {
-        decouverte: `${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
-        analyse: PLAN_LIMITS.analyse.favoriteSales == null ? "Illimités" : undefined,
-      },
-    },
-    {
-      // « Mon dossier » : le stockage est gratuit, sur chaque vente suivie ; le calcul du montant
-      // plafond garde ses droits (ligne « Enchère plafond chiffrée »).
-      id: "dossier",
-      label: `Statut et ${CEILING_TERM} enregistrés`,
-      hint: `Sur chaque vente suivie, dans « Mon dossier » ; le calcul du plafond reste soumis à ses droits`,
-      features: ["sales.favorites"],
-    },
     {
       id: "unlocks",
       label: `Déblocage d’une vente : ${CEILING_TERM}, pièces, historique, statistiques du tribunal`,
@@ -96,30 +82,19 @@ function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
       },
     },
     {
-      id: "alerts",
-      label: "Alertes email et zones surveillées",
-      hint: "Un email récapitulatif ; critères avancés avec Analyse",
-      features: ["alerts.advanced", "alerts.watchedZones"],
-      custom: {
-        decouverte: `${PLAN_LIMITS.decouverte.watchedZones} alerte, email hebdomadaire`,
-        analyse: `Jusqu’à ${PLAN_LIMITS.analyse.watchedZones}, email quotidien`,
-      },
-    },
-    { id: "directory", label: "Annuaire des avocats par barreau", features: ["lawyers.directory"] },
-    {
-      id: "referrals",
-      label: "Mise en relation avec un avocat référencé",
-      features: ["lawyers.referrals"],
+      id: "ceiling",
+      label: `${CEILING_TERM_CAPITALIZED} chiffrée`,
+      // Le montant plafond n'existe que pour les ventes dont un régime de frais est ouvert (voir
+      // unlockedItemsText).
+      hint: `Pour toutes les ventes concernées avec Analyse : ${CEILING_WITH_SCOPE} ; pour la vente choisie avec un déblocage`,
+      features: ["property.bidCeiling"],
     },
     {
-      id: "listing-facts",
-      label: "Adresse, photos, description, occupation et visites",
-      features: ["sales.filters"],
-    },
-    {
-      id: "value-range",
-      label: "Fourchette de valeur et écart avec la mise à prix",
-      features: ["sales.filters"],
+      id: "scenarios",
+      label: "Scénarios de frais, de travaux et de marge de sécurité",
+      features: ["property.advancedBidScenarios"],
+      // L'onglet Travaux reste fermé sur une vente débloquée.
+      lockedCustom: { decouverte: `${UNLOCK_CELL_TEXT} (hors budget travaux détaillé)` },
     },
     {
       // The free catalogue view publishes only the number of documents; the
@@ -143,27 +118,22 @@ function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
       features: ["property.saleHistory"],
     },
     {
+      id: "alerts",
+      label: "Alertes email et zones surveillées",
+      hint: "Un email récapitulatif ; critères avancés avec Analyse",
+      features: ["alerts.advanced", "alerts.watchedZones"],
+      custom: {
+        decouverte: `${PLAN_LIMITS.decouverte.watchedZones} alerte, email hebdomadaire`,
+        analyse: `Jusqu’à ${PLAN_LIMITS.analyse.watchedZones}, email quotidien`,
+      },
+    },
+    {
       id: "estimate",
       label: "Estimation détaillée et ventes comparables",
       hint: `La valeur de référence entre dans le calcul du plafond d’une vente débloquée ; la fourchette détaillée et les ventes comparables restent avec Analyse`,
       // Un déblocage ne renvoie ni la fourchette, ni les quartiles, ni les ventes comparables : « Non
       // inclus » est exact (voir ceilingMarketContext).
       features: ["property.valueEstimate", "property.soldComparables"],
-    },
-    {
-      id: "ceiling",
-      label: `${CEILING_TERM_CAPITALIZED} chiffrée`,
-      // Le montant plafond n'existe que pour les ventes dont un régime de frais est ouvert (voir
-      // unlockedItemsText).
-      hint: `Pour toutes les ventes concernées avec Analyse : ${CEILING_WITH_SCOPE} ; pour la vente choisie avec un déblocage`,
-      features: ["property.bidCeiling"],
-    },
-    {
-      id: "scenarios",
-      label: "Scénarios de frais, de travaux et de marge de sécurité",
-      features: ["property.advancedBidScenarios"],
-      // L'onglet Travaux reste fermé sur une vente débloquée.
-      lockedCustom: { decouverte: `${UNLOCK_CELL_TEXT} (hors budget travaux détaillé)` },
     },
     {
       id: "statistics",
@@ -173,13 +143,51 @@ function specs(open?: readonly FeeRegimeKey[]): RowSpec[] {
       // Un déblocage n'ouvre que les statistiques du tribunal de la vente débloquée.
       lockedCustom: { decouverte: `${UNLOCK_CELL_TEXT} (tribunal de la vente)` },
     },
+    { id: "pdf", label: "Rapport PDF du scénario", features: ["property.pdfExport"] },
+    { id: "csv", label: "Export CSV des résultats de recherche", features: ["sales.csvExport"] },
+    {
+      id: "favorites",
+      label: "Favoris",
+      features: ["sales.favorites"],
+      custom: {
+        decouverte: `${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
+        analyse: PLAN_LIMITS.analyse.favoriteSales == null ? "Illimités" : undefined,
+      },
+    },
     {
       id: "land",
       label: "Urbanisme, cadastre et risques du terrain",
       features: ["property.cadastralAnalysis", "property.urbanPlanning"],
     },
-    { id: "pdf", label: "Rapport PDF du scénario", features: ["property.pdfExport"] },
-    { id: "csv", label: "Export CSV des résultats de recherche", features: ["sales.csvExport"] },
+    {
+      id: "referrals",
+      label: "Mise en relation avec un avocat référencé",
+      features: ["lawyers.referrals"],
+    },
+    {
+      id: "catalogue",
+      label: "Catalogue, filtres et fiches des ventes",
+      features: ["sales.filters"],
+    },
+    {
+      // « Mon dossier » : le stockage est gratuit, sur chaque vente suivie ; le calcul du montant
+      // plafond garde ses droits (ligne « Enchère plafond chiffrée »).
+      id: "dossier",
+      label: `Statut et ${CEILING_TERM} enregistrés`,
+      hint: `Sur chaque vente suivie, dans « Mon dossier » ; le calcul du plafond reste soumis à ses droits`,
+      features: ["sales.favorites"],
+    },
+    { id: "directory", label: "Annuaire des avocats par barreau", features: ["lawyers.directory"] },
+    {
+      id: "listing-facts",
+      label: "Adresse, photos, description, occupation et visites",
+      features: ["sales.filters"],
+    },
+    {
+      id: "value-range",
+      label: "Fourchette de valeur et écart avec la mise à prix",
+      features: ["sales.filters"],
+    },
   ];
 }
 
@@ -222,4 +230,44 @@ export function offerComparisonRows(
           : analyse,
     };
   });
+}
+
+/** La ligne est la même dans les deux offres, et incluse : rien ne les y distingue. */
+function isSharedRow(row: OfferRow): boolean {
+  const { decouverte, analyse } = row;
+  return (
+    decouverte.included &&
+    analyse.included &&
+    decouverte.text === analyse.text &&
+    Boolean(decouverte.limited) === Boolean(analyse.limited)
+  );
+}
+
+/**
+ * Le comparatif en deux groupes, sans retirer aucune ligne : `differences`, les lignes où Découverte
+ * et Analyse diffèrent (affichées en tête), et `shared`, celles qui sont incluses à l'identique dans
+ * les deux offres (repliées sous « Inclus dans les deux offres »). Chaque groupe garde l'ordre des
+ * lignes. Une ligne fermée dans les deux offres n'est jamais rangée parmi les « inclus ».
+ */
+export function splitOfferComparisonRows(rows: readonly OfferRow[]): {
+  differences: OfferRow[];
+  shared: OfferRow[];
+} {
+  return {
+    differences: rows.filter((row) => !isSharedRow(row)),
+    shared: rows.filter(isSharedRow),
+  };
+}
+
+/**
+ * Description de l'offre Analyse (carte de /offres, première ligne de la carte de l'accueil) : le
+ * plafond n'existe que pour les ventes dont un régime de frais est ouvert (`open`, absent : tous ceux
+ * dont les règles sont définies), jamais pour les ventes domaniales.
+ */
+export function analysisOfferDescription(open?: readonly FeeRegimeKey[]): string {
+  // Une carte se lit en un coup d'œil : « au tribunal ou chez le notaire » plutôt que la liste des
+  // trois régimes, qui reste détaillée dans le comparatif.
+  const tribunalOnly = ceilingVenueScopeText(open) === ceilingVenueScopeText(["tribunal"]);
+  const venues = tribunalOnly ? "au tribunal" : "au tribunal ou chez le notaire";
+  return `Le plafond des ventes ${venues}, avant de choisir celles qui méritent une visite.`;
 }

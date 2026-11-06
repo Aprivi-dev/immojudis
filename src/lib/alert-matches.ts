@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { isDiscoveryAlertCompatible } from "@/lib/discovery-alerts";
+import { isDiscoveryAlertEvaluable } from "@/lib/discovery-alerts";
 import { alertMatchesSale } from "@/lib/alerts";
 import {
   createAlertNotificationsForMatches,
@@ -294,8 +294,10 @@ export async function evaluateUserAlertMatches({
   const discovery = !plan.hasAnalysisAccess;
   const evaluatedAt = new Date().toISOString();
   const activeAlerts = await getActiveUserAlerts(auth);
+  // Compte Découverte : une seule alerte aux critères publics. Une alerte quotidienne (créée pendant l'essai)
+  // est gardée et traitée en hebdomadaire (notifications et fréquence enregistrée, voir `persistAlertEvaluation`).
   const alerts = discovery
-    ? activeAlerts.filter(isDiscoveryAlertCompatible).slice(0, 1)
+    ? activeAlerts.filter(isDiscoveryAlertEvaluable).slice(0, 1)
     : activeAlerts;
   // « Seulement les pépites » : une vente devient pépite sans que sa ligne change (`updated_at`), la lecture
   // « depuis la dernière évaluation » la manquerait. La fenêtre incrémentale reste celle de tous les comptes ;
@@ -410,7 +412,7 @@ async function collectAlertMatches({
   // Liste des pépites illisible : l'alerte échoue (et garde sa date d'évaluation) au lieu de n'avoir aucune
   // correspondance et d'avancer.
   if (isPepiteAlert(alert) && pepiteFailure) throw pepiteFailure;
-  if (discovery && !isDiscoveryAlertCompatible(alert)) return;
+  if (discovery && !isDiscoveryAlertEvaluable(alert)) return;
   const watchedZone = alert.watched_zone_id
     ? (watchedZones.get(alert.watched_zone_id) ?? null)
     : null;
@@ -565,6 +567,11 @@ async function persistAlertEvaluation({
   discovery: boolean;
 }): Promise<void> {
   const { alert, matches, rows } = entry;
+  // Un compte Découverte n'a que le récapitulatif hebdomadaire : ses notifications le suivent, même si l'alerte
+  // enregistrée est encore quotidienne (créée pendant l'essai de l'offre Analyse).
+  const notificationAlert: Pick<UserAlert, "id" | "alert_frequency"> = discovery
+    ? { id: alert.id, alert_frequency: "weekly" }
+    : alert;
   for (let offset = 0; offset < rows.length; offset += ALERT_MATCH_UPSERT_BATCH_SIZE) {
     const data = await upsertAlertMatchRows(
       rows.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
@@ -591,7 +598,7 @@ async function persistAlertEvaluation({
     await suppressAlertNotificationsForMatches({
       auth,
       matches: silentMatches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
-      alerts: [alert],
+      alerts: [notificationAlert],
       now: new Date(evaluatedAt),
       discovery,
     });
@@ -604,7 +611,7 @@ async function persistAlertEvaluation({
     const result = await createAlertNotificationsForMatches({
       auth,
       matches: persistedMatches.slice(offset, offset + ALERT_MATCH_UPSERT_BATCH_SIZE),
-      alerts: [alert],
+      alerts: [notificationAlert],
       now: new Date(evaluatedAt),
       discovery,
     });
@@ -612,9 +619,20 @@ async function persistAlertEvaluation({
   }
   entry.notificationCount = notificationCount;
 
+  // Fréquence réécrite en hebdomadaire pour une alerte encore quotidienne d'un compte Découverte (fin de l'essai) :
+  // le déclencheur `enforce_user_alerts_quota` (`app_private.enforce_geographic_alert_quota()`, migration
+  // 20261017110000) refuse TOUTE modification d'une alerte gratuite qui n'est pas hebdomadaire, y compris cette
+  // date d'évaluation ; sans la réécriture, l'alerte échouerait à chaque passage. Même règle que la migration du
+  // 17/10/2026, qui a fait passer en hebdomadaire les alertes gratuites quotidiennes existantes.
   const { error } = await auth.supabase
     .from("user_alerts")
-    .update({ last_evaluated_at: evaluatedAt, last_match_count: matches.length })
+    .update({
+      last_evaluated_at: evaluatedAt,
+      last_match_count: matches.length,
+      ...(discovery && alert.alert_frequency !== "weekly"
+        ? { alert_frequency: "weekly" as const }
+        : {}),
+    })
     .eq("id", alert.id)
     .eq("user_id", auth.userId);
   if (error) throw error;

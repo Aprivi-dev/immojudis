@@ -54,6 +54,16 @@ describe("page /simulateur-frais-encheres", () => {
     expect(html).not.toContain("se fixe avec l’offre Analyse");
   });
 
+  it("relie les frais au plafond : le chemin inverse, de la valeur du bien au prix à ne pas dépasser", () => {
+    const html = renderToString(<Page />)
+      .replaceAll("<!-- -->", "")
+      .replace(/\s+/g, " ");
+    expect(html).toContain(
+      "Vous connaissez maintenant les frais. Le plafond fait le chemin inverse sur une vraie vente : il part de la valeur estimée du bien et calcule, selon vos hypothèses, l’enchère à ne pas dépasser. L’enchère plafond s’ouvre sur 3 ventes au tribunal par mois",
+    );
+    expect(html).not.toContain("Ce simulateur chiffre les frais, pas votre limite d’enchère.");
+  });
+
   it("propose les trois calculs, le calcul direct étant celui du rendu serveur", () => {
     const html = renderToString(<Page />);
     expect(html).toContain("Que voulez-vous calculer ?");

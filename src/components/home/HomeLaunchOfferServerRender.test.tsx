@@ -37,7 +37,9 @@ function renderHome(trialOpen: boolean | undefined) {
 describe("accueil : l'essai au rendu serveur", () => {
   it("essai ouvert : l'écran, les offres et la FAQ annoncent l'essai de 7 jours", () => {
     const text = renderHome(true);
-    expect(text).toContain("7 jours d’accès à l’offre Analyse, sans carte bancaire.");
+    expect(text).toContain(
+      "7 jours d’offre Analyse, sans carte bancaire : toutes les ventes ouvertes, puis retour au compte gratuit.",
+    );
     expect(text).toContain("Explorez gratuitement. Analysez 7 jours sans payer.");
     expect(text).toContain("Et après les 7 jours d’essai ?");
     expect(text).toContain("Quand commence l’essai ?");

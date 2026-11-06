@@ -74,16 +74,17 @@ describe("page Offres", () => {
 
   it("indique le chemin de résiliation : Mon compte, bouton « Résilier mon abonnement »", () => {
     const { container } = render(<OffersPage />);
-    const answer = container.querySelector("details")?.textContent ?? "";
+    const answer =
+      container.querySelector('section[aria-labelledby="faq"] details')?.textContent ?? "";
     expect(answer).toContain("« Mon compte », le bouton « Résilier mon abonnement »");
     expect(answer).toContain("date de fin d’accès est affichée avant confirmation");
   });
 
   it("répond aux six questions attendues", () => {
     const { container } = render(<OffersPage />);
-    const questions = Array.from(container.querySelectorAll("details > summary")).map((node) =>
-      node.textContent?.trim(),
-    );
+    const questions = Array.from(
+      container.querySelectorAll('section[aria-labelledby="faq"] details > summary'),
+    ).map((node) => node.textContent?.trim());
     expect(questions).toEqual([
       "Comment résilier ?",
       "Y a-t-il un essai gratuit ?",
@@ -440,14 +441,109 @@ describe("page Offres", () => {
     expect(toggle.textContent).toBe("Masquer les conditions");
   });
 
-  it("un seul bouton primaire dans l'en-tête, même avec l'essai ouvert", () => {
+  it("un seul bouton primaire dans l'en-tête : l'essai pour un visiteur quand il est proposé", () => {
+    const primaryOf = (container: HTMLElement) =>
+      Array.from(container.querySelector("section")!.querySelectorAll("a, button")).filter((node) =>
+        node.className.includes("bg-gold text-brand-navy"),
+      );
     mocks.launch.mockReturnValue({ active: true, pending: false });
-    const { container } = render(<OffersPage />);
-    const header = container.querySelector("section")!;
-    const primary = Array.from(header.querySelectorAll("a, button")).filter((node) =>
-      node.className.includes("bg-gold text-brand-navy"),
+    const trial = render(<OffersPage />);
+    const [primary, ...others] = primaryOf(trial.container);
+    expect(others).toEqual([]);
+    expect(primary.textContent).toBe("Commencer l’essai gratuit de 7 jours");
+    expect(primary.getAttribute("href")).toBe(
+      "/login?mode=investor&redirect=%2Fsales&reason=offre",
     );
-    expect(primary.map((node) => node.textContent)).toEqual(["Voir une analyse exemple"]);
+    // L'analyse exemple reste proposée, en bouton secondaire.
+    const header = trial.container.querySelector("section")!;
+    const example = within(header).getByRole("link", { name: "Voir une analyse exemple" });
+    expect(example.getAttribute("href")).toBe("/annonce-exemple");
+    expect(example.className).not.toContain("bg-gold text-brand-navy");
+    cleanup();
+
+    // Sans essai, ou pour un compte connecté : les boutons d'origine.
+    for (const state of [
+      { launch: { active: false, pending: false }, user: null },
+      { launch: { active: false, pending: true }, user: null },
+      { launch: { active: true, pending: false }, user: { id: "user-1" } },
+    ]) {
+      mocks.launch.mockReturnValue(state.launch);
+      mocks.user.mockReturnValue(state.user);
+      const { container } = render(<OffersPage />);
+      expect(primaryOf(container).map((node) => node.textContent)).toEqual([
+        "Voir une analyse exemple",
+      ]);
+      expect(container.textContent).not.toContain("Commencer l’essai gratuit de 7 jours");
+      cleanup();
+    }
+  });
+
+  it("inscrit depuis /offres avec le motif « offre »", () => {
+    mocks.launch.mockReturnValue({ active: true, pending: false });
+    render(<OffersPage />);
+    const signup = "/login?mode=investor&redirect=%2Fsales&reason=offre";
+    const discovery = screen.getByRole("article", { name: "Découverte" });
+    expect(
+      within(discovery)
+        .getByRole("link", { name: "Créer mon compte gratuit" })
+        .getAttribute("href"),
+    ).toBe(signup);
+    expect(
+      within(screen.getByTestId("launch-offer-panel"))
+        .getByRole("link", { name: "Commencer l’essai gratuit" })
+        .getAttribute("href"),
+    ).toBe(signup);
+  });
+
+  it("dit ce que chaque offre chiffre : 3 ventes par mois, ou toutes", () => {
+    render(<OffersPage />);
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "3 ventes chiffrées par mois, ou sans limite.",
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Deux offres, un prix clair")).toBeNull();
+    expect(screen.getByRole("article", { name: "Découverte" }).textContent).toContain(
+      "Pour repérer les ventes et chiffrer, chaque mois, les 3 qui vous intéressent le plus.",
+    );
+    expect(screen.getByRole("article", { name: "Analyse" }).textContent).toContain(
+      "Le plafond des ventes au tribunal ou chez le notaire, avant de choisir celles qui méritent une visite.",
+    );
+    // Sous les deux cartes, la phrase pour qui étudie beaucoup de ventes.
+    expect(screen.getByTestId("offers-heavy-use-note").textContent).toBe(
+      "Vous étudiez plus de 3 ventes par mois, ou vous suivez plusieurs secteurs ? C’est l’usage pour lequel l’offre Analyse est faite : toutes les ventes ouvertes, jusqu’à 25 alertes, export CSV.",
+    );
+    expect(PLAN_LIMITS.analyse.monthlyUnlocks).toBeNull();
+  });
+
+  it("décrit l'offre Analyse par les seules ventes au tribunal quand le notarial est fermé", () => {
+    render(<OffersPage openFeeRegimes={["tribunal"]} />);
+    expect(screen.getByRole("article", { name: "Analyse" }).textContent).toContain(
+      "Le plafond des ventes au tribunal, avant de choisir celles qui méritent une visite.",
+    );
+  });
+
+  it("comparatif : les différences en tête, ce qui est commun replié sous « Inclus dans les deux offres »", () => {
+    const { container } = render(<OffersPage />);
+    const table = screen.getByRole("table", { name: /Comparaison des offres/ });
+    const rowHeaders = within(table)
+      .getAllByRole("rowheader")
+      .map((node) => node.textContent ?? "");
+    expect(rowHeaders[0]).toMatch(/^Déblocage d’une vente/);
+    expect(rowHeaders[1]).toMatch(/^Enchère plafond ou offre plafond chiffrée/);
+    expect(rowHeaders.some((text) => text.startsWith("Catalogue, filtres"))).toBe(false);
+
+    const shared = screen.getByTestId("offer-comparison-shared");
+    expect(shared.tagName).toBe("DETAILS");
+    expect((shared as HTMLDetailsElement).open).toBe(false);
+    expect(shared.querySelector("summary")?.textContent).toBe("Inclus dans les deux offres");
+    expect(shared.textContent).toContain("Catalogue, filtres et fiches des ventes");
+    expect(shared.textContent).toContain("Annuaire des avocats par barreau");
+    // Le groupe commun suit le comparatif, avant la FAQ.
+    expect(container.querySelector('section[aria-labelledby="comparatif"]')?.contains(shared)).toBe(
+      true,
+    );
   });
 
   it("dit le prix dans l'en-tête, avec le tarif prévu tant que rien ne se souscrit", async () => {

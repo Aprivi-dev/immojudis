@@ -1,5 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_HYPOTHESES } from "@/components/fees-simulator/hypotheses";
+import { toAmount } from "@/components/fees-simulator/fields";
+import { computeAcquisitionCosts } from "@/lib/profitability";
 
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: null, loading: false }) }));
 vi.mock("@/hooks/use-launch-offer", () => ({
@@ -13,6 +16,8 @@ import {
   HomeFaq,
   HomeGuides,
   HomeStats,
+  HOME_FEES_EXAMPLE_PCT,
+  HOME_FEES_EXAMPLE_PRICE,
   homeFaqItems,
 } from "./HomeSections";
 
@@ -96,18 +101,32 @@ describe("home hero", () => {
 });
 
 describe("home texts", () => {
-  it("annonce le plafond pour le tribunal et le notaire, sans promettre l'État", () => {
+  it("annonce d'abord le bénéfice, pour le tribunal et le notaire, sans promettre l'État", () => {
     const text = visibleText(renderToStaticMarkup(<HomeHero />));
     expect(text).toContain(
-      "Pour les ventes au tribunal et chez le notaire : les points clés des pièces, selon la vente, et un plafond estimé à ne pas dépasser.",
+      "Pour chaque vente au tribunal et chez le notaire : ce que disent les pièces quand elles sont publiées, la valeur du quartier et l’enchère à ne pas dépasser selon votre projet. Les ventes des tribunaux, des notaires et de l’État sur une carte.",
     );
-    expect(text).toContain("réunies sur une carte");
     // Régimes notariaux fermés : le tribunal seul.
     const tribunalOnly = visibleText(
       renderToStaticMarkup(<HomeHero openFeeRegimes={["tribunal"]} />),
     );
-    expect(tribunalOnly).toContain("Pour les ventes au tribunal : les points clés des pièces");
+    expect(tribunalOnly).toContain(
+      "Pour chaque vente au tribunal : ce que disent les pièces quand elles sont publiées",
+    );
     expect(tribunalOnly).not.toContain("chez le notaire");
+  });
+
+  it("ne cite que les tribunaux sur la carte quand les ventes des notaires et de l'État sont masquées", () => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
+    try {
+      const text = visibleText(renderToStaticMarkup(<HomeHero openFeeRegimes={["tribunal"]} />));
+      expect(text).toContain(
+        "Pour chaque vente au tribunal : ce que disent les pièces quand elles sont publiées, la valeur du quartier et l’enchère à ne pas dépasser selon votre projet. Toutes les ventes sur une carte.",
+      );
+      expect(text).not.toContain("l’État");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("compte les points confirmés de l'analyse, sans afficher un « 6 sur 6 » faux", () => {
@@ -184,7 +203,9 @@ describe("home texts", () => {
 
   it("promet 7 jours d'accès à l'offre Analyse, sans « complet »", async () => {
     const { HOME_TRIAL_NOTE } = await import("./HomePrimaryAction");
-    expect(HOME_TRIAL_NOTE).toBe("7 jours d’accès à l’offre Analyse, sans carte bancaire.");
+    expect(HOME_TRIAL_NOTE).toBe(
+      "7 jours d’offre Analyse, sans carte bancaire : toutes les ventes ouvertes, puis retour au compte gratuit.",
+    );
   });
 });
 
@@ -204,7 +225,27 @@ describe("home figures band", () => {
     expect(markup).toMatch(
       /<dt>lieux de vente réunis : tribunal, notaire, État<\/dt><dd[^>]*>3<\/dd>/,
     );
-    expect(markup).toMatch(/<dt>déblocages par mois<\/dt><dd[^>]*>3<\/dd>/);
+    // Le poids des frais à 150 000 €, avec le lien vers le simulateur ; plus de case « déblocages ».
+    expect(markup).toMatch(
+      /<dt><a[^>]*href="\/simulateur-frais-encheres"[^>]*>de frais en plus du prix, pour un bien adjugé 150.000.€ au tribunal \(hypothèses du simulateur\)<\/a><\/dt><dd[^>]*>≈.13.%<\/dd>/,
+    );
+    expect(markup).not.toContain("déblocages par mois");
+  });
+
+  it("calcule le poids des frais avec le moteur et les hypothèses par défaut du simulateur", () => {
+    const simulator = computeAcquisitionCosts({
+      price: HOME_FEES_EXAMPLE_PRICE,
+      fpt: toAmount(DEFAULT_HYPOTHESES.fpt),
+      lawyerFees: toAmount(DEFAULT_HYPOTHESES.lawyerFees),
+      works: toAmount(DEFAULT_HYPOTHESES.works),
+      department: DEFAULT_HYPOTHESES.department || null,
+    });
+    expect(HOME_FEES_EXAMPLE_PCT).toBe(Math.round(simulator.acquisitionFeesPct));
+    // La FAQ publie le même chiffre que le bandeau.
+    const fees = homeFaqItems().find((item) => item.question.startsWith("Les frais s’ajoutent"));
+    expect(fees?.answer.replace(/\s/g, " ")).toContain(
+      `environ ${HOME_FEES_EXAMPLE_PCT} % du prix pour un bien adjugé 150 000 €.`,
+    );
   });
 
   it("leaves out the departments when that figure is unknown", () => {

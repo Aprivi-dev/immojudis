@@ -10,6 +10,7 @@ import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { UNLOCKED_SALES_PATH } from "@/lib/navigation";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import { trackProductEvent } from "@/lib/product-events";
 import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
@@ -20,6 +21,7 @@ import {
   unlockConfirmationText,
   unlockedItemsText,
   unlockQuotaReachedText,
+  unlockQuotaReachedTitle,
   type SaleUnlockResult,
   type SaleUnlockStatus,
 } from "@/lib/sale-unlocks";
@@ -99,6 +101,29 @@ export function SaleUnlockPanel({
   );
 
   if (unlocked) {
+    // What stays on Analyse, and the decision-aid reserve: always shown, under the result.
+    const reserved =
+      "Les exports PDF et CSV, les rapports enregistrés, l’estimation détaillée et les ventes comparables restent réservés à l’offre Analyse.";
+    const reserve = (
+      <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+        Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni un
+        conseil financier
+        {ceilingLabel
+          ? `, et ${ceilingLabel} est une simulation fondée sur des hypothèses modifiables`
+          : ""}
+        .
+      </p>
+    );
+    // The result first when the sale has a ceiling: what this unlock was for, then the way to it.
+    // Both terms (« enchère plafond », « offre plafond ») are feminine; « plafond » alone is not.
+    const title = !ceilingLabel
+      ? "Cette vente est débloquée"
+      : opens.ceilingTerm
+        ? `Votre ${opens.ceilingTerm} est débloquée`
+        : "Votre plafond est débloqué";
+    const remaining = remainingUnlocksLine(current) ? (
+      <p className="mt-2 text-sm font-medium text-brand-navy">{remainingUnlocksLine(current)}</p>
+    ) : null;
     return (
       <>
         {liveRegion}
@@ -117,36 +142,36 @@ export function SaleUnlockPanel({
             tabIndex={-1}
             className="mt-2 font-display text-2xl text-brand-navy focus:outline-none"
           >
-            Cette vente est débloquée
+            {title}
           </h2>
-          <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-            Pour cette vente seulement : {items}. Elle reste accessible tant qu’elle est en ligne
-            sur Immojudis, dans la limite de 24 mois. Les exports PDF et CSV, les rapports
-            enregistrés, l’estimation détaillée et les ventes comparables restent réservés à l’offre
-            Analyse.
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-ink-soft">
-            Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni
-            un conseil financier
-            {ceilingLabel
-              ? `, et ${ceilingLabel} est une simulation fondée sur des hypothèses modifiables`
-              : ""}
-            .
-          </p>
-          {remainingUnlocksLine(current) ? (
-            <p className="mt-2 text-sm font-medium text-brand-navy">
-              {remainingUnlocksLine(current)}
-            </p>
-          ) : null}
           {ceilingLabel ? (
-            // L'ancre est dans le calcul de la fiche : le lien de section de la fiche ouvre l'onglet.
-            <a
-              href="#calculation"
-              className={buttonClasses({ variant: "primary", className: "mt-4" })}
-            >
-              {opens.ceilingTerm ? `Voir mon ${opens.ceilingTerm}` : "Voir mon plafond"}
-            </a>
-          ) : null}
+            <>
+              {/* L'ancre est dans le calcul de la fiche : le lien de section de la fiche ouvre l'onglet. */}
+              <a
+                href="#calculation"
+                className={buttonClasses({ variant: "primary", className: "mt-4" })}
+              >
+                {opens.ceilingTerm ? `Voir mon ${opens.ceilingTerm}` : "Voir mon plafond"}
+              </a>
+              <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+                Ouvert pour cette vente, tant qu’elle est en ligne (24 mois au plus).
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+                Ce déblocage ouvre {items}. {reserved}
+              </p>
+              {reserve}
+              {remaining}
+            </>
+          ) : (
+            <>
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+                Pour cette vente seulement : {items}. Elle reste accessible tant qu’elle est en
+                ligne sur Immojudis, dans la limite de 24 mois. {reserved}
+              </p>
+              {reserve}
+              {remaining}
+            </>
+          )}
         </Card>
       </>
     );
@@ -184,7 +209,10 @@ export function SaleUnlockPanel({
       setStep("idle");
       if (failure instanceof SaleUnlockQuotaReachedError) {
         setRefused({ base, status: failure.status });
-        setLive(unlockQuotaReachedText(failure.status));
+        // The subscription is not read here: the free-account way is true in every case.
+        setLive(
+          `${unlockQuotaReachedTitle(failure.status)}. ${unlockQuotaReachedText(failure.status)}`,
+        );
         return;
       }
       setLive("");
@@ -207,7 +235,7 @@ export function SaleUnlockPanel({
             mois
           </Eyebrow>
           <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
-            Vous avez utilisé vos déblocages
+            {unlockQuotaReachedTitle(current)}
           </h2>
           <ExhaustedNotice status={current} />
         </Card>
@@ -297,18 +325,25 @@ export function SaleUnlockPanel({
 }
 
 /**
- * Spent quota: the reset date, and the way to the subscription only when it can really be bought
- * (the legal identity is published and the approved price is configured). While the offer is
- * closed, the primary action is the opening request, never a link to a page that cannot sell it.
+ * Spent quota: the sales already opened this month, then how to open this one. The subscription is
+ * named only when it can really be bought (the legal identity is published and the approved price
+ * is configured). While the offer is closed, the primary action is the opening request, never a
+ * link to a page that cannot sell it.
  */
 function ExhaustedNotice({ status }: { status: SaleUnlockStatus }) {
   const checkoutOpen = useAnalysisCheckoutOpen();
   return (
     <>
+      <Link
+        href={UNLOCKED_SALES_PATH}
+        className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4"
+      >
+        Voir mes ventes débloquées
+      </Link>
       <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-        {unlockQuotaReachedText(status)}{" "}
+        {unlockQuotaReachedText(status, { analysisOpen: checkoutOpen === true })}{" "}
         {checkoutOpen === true
-          ? `Analyse ouvre toutes les ventes sans limite : ${nonBreakingUnits(resolveAnalysisOfferLabel())}, résiliable à tout moment.`
+          ? `Son prix : ${nonBreakingUnits(resolveAnalysisOfferLabel())}, résiliable à tout moment.`
           : checkoutOpen === false
             ? "L’offre Analyse n’est pas encore ouverte à la souscription."
             : null}

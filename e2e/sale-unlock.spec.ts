@@ -272,7 +272,9 @@ test("un double clic sur « Confirmer le déblocage » ne consomme qu'un débloc
   await expect(confirmButton(page)).toBeFocused();
   await confirmButton(page).dblclick();
 
-  await expect(page.getByRole("heading", { name: "Cette vente est débloquée" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
+  ).toBeVisible();
   await expect(page.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeVisible();
   expect(counters.post).toBe(1);
 });
@@ -293,7 +295,9 @@ test("après le déblocage, la fiche reste affichée avec un bandeau pendant la 
   await expect(banner).toBeVisible();
   // Pas d'écran blanc ni de squelette plein écran : la fiche est toujours là.
   await expect(page.getByRole("status", { name: "Chargement de la fiche" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Cette vente est débloquée" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
+  ).toBeVisible();
   await expect(banner).toBeHidden();
   await expect(page.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeVisible();
 });
@@ -318,7 +322,9 @@ test("si la relecture échoue après le déblocage : bandeau « conservé », «
 
   await alert.getByRole("button", { name: "Réessayer" }).click();
   await expect(alert).toBeHidden();
-  await expect(page.getByRole("heading", { name: "Cette vente est débloquée" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
+  ).toBeVisible();
   expect(counters.post).toBe(1);
 });
 
@@ -329,9 +335,15 @@ test("quota épuisé au chargement : date de retour, offre ouverte, aucun bouton
   await page.goto(`/sales/${SALE_ID}`);
 
   await expect(
-    page.getByRole("heading", { name: "Vous avez utilisé vos déblocages" }),
+    page.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
   ).toBeVisible();
-  await expect(page.getByText(/Ils reviennent le 1er novembre/)).toBeVisible();
+  await expect(
+    page.getByText(/Pour ouvrir celle-ci : le 1er novembre avec le compte gratuit/),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Voir mes ventes débloquées" })).toHaveAttribute(
+    "href",
+    "/compte/ventes-debloquees",
+  );
   await expect(
     page.getByText("Vos 3 déblocages d’octobre reviennent le 1er novembre.").first(),
   ).toBeVisible();
@@ -351,10 +363,11 @@ test("quota épuisé et offre fermée : « Me prévenir de l'ouverture » plutô
 
   const card = page.locator("#debloquer");
   await expect(
-    card.getByRole("heading", { name: "Vous avez utilisé vos déblocages" }),
+    card.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
   ).toBeVisible();
   await expect(card.getByRole("button", { name: "Me prévenir de l’ouverture" })).toBeVisible();
   await expect(card.getByRole("link", { name: /offre Analyse/ })).toHaveCount(0);
+  await expect(card).toContainText("Celle-ci s’ouvrira le 1er novembre avec le compte gratuit.");
   await expect(card).toContainText("L’offre Analyse n’est pas encore ouverte à la souscription.");
 });
 
@@ -370,7 +383,7 @@ test("quota dépensé ailleurs : le 409 bascule sur l'écran épuisé", async ({
   await requestUnlock(page);
 
   await expect(
-    page.getByRole("heading", { name: "Vous avez utilisé vos déblocages" }),
+    page.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
   ).toBeVisible();
   await expect(unlockButton(page)).toHaveCount(0);
 });
@@ -434,7 +447,9 @@ for (const [name, reply, message] of [
 
     await expect(page.getByRole("alert").filter({ hasText: message })).toBeVisible();
     // Rien n'est consommé ni affiché comme débloqué : le compte peut réessayer.
-    await expect(page.getByRole("heading", { name: "Cette vente est débloquée" })).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
+    ).toHaveCount(0);
     await expect(unlockButton(page)).toBeVisible();
     expect(counters.post).toBe(1);
   });

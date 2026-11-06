@@ -192,14 +192,22 @@ vi.mock("@/lib/rent-reference.server", () => ({
     };
   },
 }));
-const notified = vi.hoisted(() => ({ saleIds: [] as string[], suppressedSaleIds: [] as string[] }));
+const notified = vi.hoisted(() => ({
+  saleIds: [] as string[],
+  suppressedSaleIds: [] as string[],
+  /** Fréquence transmise pour chaque notification créée (celle qui fixe le rythme des emails). */
+  frequencies: [] as string[],
+}));
 vi.mock("@/lib/alert-notifications", () => ({
   createAlertNotificationsForMatches: async ({
     matches,
+    alerts,
   }: {
     matches: Array<{ saleId: string }>;
+    alerts: Array<{ alert_frequency: string }>;
   }) => {
     notified.saleIds.push(...matches.map((match) => match.saleId));
+    notified.frequencies.push(...alerts.map((alert) => alert.alert_frequency));
     return { notificationCount: matches.length };
   },
   suppressAlertNotificationsForMatches: async ({
@@ -258,6 +266,7 @@ describe("smart alert batch", () => {
     rents.references = {};
     notified.saleIds = [];
     notified.suppressedSaleIds = [];
+    notified.frequencies = [];
     rents.unavailable = false;
     delete process.env.ALERT_RENT_BASIS_SWITCH_AT;
     resetPepiteSaleIdsForAlertsCache();
@@ -304,6 +313,74 @@ describe("smart alert batch", () => {
 
     expect(state.getSalesCalls[0].filters.departments).toEqual(["33"]);
     expect(state.getSalesCalls[0].filters.department).toBeUndefined();
+  });
+
+  it("évalue en hebdomadaire l'alerte quotidienne d'un compte Découverte (créée pendant l'essai)", async () => {
+    state.discovery = true;
+    state.userAlerts = [
+      alertRow(1, {
+        department: "33",
+        city: null,
+        alert_frequency: "daily",
+        last_evaluated_at: "2026-11-05T06:15:00.000Z",
+      }),
+    ];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedUserCount).toBe(0);
+    expect(result.results[0]).toMatchObject({ alertCount: 1, matchCount: 1 });
+    expect(notified.saleIds).toEqual(["sale-33"]);
+    // Notifications au rythme hebdomadaire, et fréquence enregistrée remise en hebdomadaire : sans elle, le
+    // déclencheur de quota refuserait la date d'évaluation d'une alerte gratuite quotidienne.
+    expect(notified.frequencies).toEqual(["weekly"]);
+    expect(state.updates).toEqual([
+      expect.objectContaining({ id: "alert-1", alert_frequency: "weekly", last_match_count: 1 }),
+    ]);
+  });
+
+  it("ne réécrit pas la fréquence d'une alerte Découverte déjà hebdomadaire", async () => {
+    state.discovery = true;
+    state.userAlerts = [alertRow(1, { department: "33", alert_frequency: "weekly" })];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(notified.frequencies).toEqual(["weekly"]);
+    expect(state.updates).toHaveLength(1);
+    expect(state.updates[0]).not.toHaveProperty("alert_frequency");
+  });
+
+  it("garde quotidienne l'alerte d'un compte Analyse", async () => {
+    state.userAlerts = [alertRow(1, { department: "33", alert_frequency: "daily" })];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(notified.frequencies).toEqual(["daily"]);
+    expect(state.updates[0]).not.toHaveProperty("alert_frequency");
+  });
+
+  it("exclut toujours d'un compte Découverte l'alerte quotidienne à critère avancé", async () => {
+    state.discovery = true;
+    state.userAlerts = [
+      alertRow(1, { department: "33", alert_frequency: "daily", min_yield_pct: 6 }),
+      alertRow(2, {
+        user_id: "user-1",
+        department: "33",
+        alert_frequency: "daily",
+        dpe_classes: ["C"],
+      }),
+    ];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.results.every((entry) => entry.alertCount === 0)).toBe(true);
+    expect(state.getSalesCalls).toHaveLength(0);
+    expect(notified.saleIds).toEqual([]);
+    expect(state.updates).toEqual([]);
   });
 
   it("garde l'égalité stricte pour un département que le catalogue ne connaît pas", async () => {
