@@ -243,6 +243,180 @@ export function departmentSaleDateText(
   return `${saleDateWord(sale.venueType)} le ${formatted.date}${formatted.time ? ` à ${formatted.time}` : ""}`;
 }
 
+/**
+ * Heure d'une vente pour une ligne de liste dont la date est déjà affichée à part (pavé de date) :
+ * « audience à 14 h 00 », « séance, heure à confirmer »… Mêmes mots et mêmes cas que
+ * `departmentSaleDateText` : une vente reportée n'a plus de date valable, une date passée n'est pas
+ * annoncée comme à venir. `null` sans date.
+ */
+export function departmentSaleTimeText(
+  sale: Pick<DepartmentSale, "venueType" | "status" | "saleDate">,
+  time: string | null,
+  now: Date = new Date(),
+): string | null {
+  if (sale.status === "postponed") return "Vente reportée · nouvelle date à confirmer";
+  const at = timestamp(sale.saleDate);
+  if (at == null) return null;
+  if (at < now.getTime()) return "Date de vente passée";
+  const word = saleDateWord(sale.venueType);
+  return time ? `${word} à ${time}` : `${word}, heure à confirmer`;
+}
+
+/**
+ * Libellé de la pastille du type de vente d'une ligne de liste ; `null` quand le type n'est pas
+ * établi (aucune pastille plutôt qu'une supposition).
+ */
+export function departmentVenueLabel(venueType: SaleVenueType | null): string | null {
+  if (venueType === "tribunal") return "Au tribunal";
+  if (venueType === "notary") return "Chez le notaire";
+  if (venueType === "state") return "Vente de l’État";
+  return null;
+}
+
+// ── Communes à arrondissements ────────────────────────────────────────────
+
+const ARRONDISSEMENT_CITIES: Readonly<Record<string, readonly [name: string, count: number]>> = {
+  paris: ["Paris", 20],
+  lyon: ["Lyon", 9],
+  marseille: ["Marseille", 16],
+};
+
+// « Paris 13ème », « Paris 13e Arrondissement », « PARIS 13E », « Marseille 1er Arr. », « Lyon - 3 ».
+const ARRONDISSEMENT_PATTERN =
+  /^(paris|lyon|marseille)(?:\s*-\s*|\s+)0?(\d{1,2})\s*(?:ième|ieme|ème|eme|er|re|e|è)?(?:\s+arr(?:ondissement|\.)?)?$/iu;
+
+/**
+ * Nom de commune tel que les pages par département l'affichent et le regroupent : les espaces sont
+ * resserrés, et les arrondissements de Paris, Lyon et Marseille prennent une seule écriture
+ * (« Paris 13ème » et « Paris 13e Arrondissement » deviennent « Paris 13e », « Marseille 1er
+ * Arrondissement » « Marseille 1er », « MARSEILLE » « Marseille »), pour qu'un même arrondissement
+ * ne soit pas compté deux fois dans « Communes les plus présentes ». Un numéro hors des
+ * arrondissements de la ville est laissé tel quel. Les données en base ne changent pas.
+ */
+export function normalizeDepartmentCity(city: string | null | undefined): string | null {
+  const label = city?.trim().replace(/\s+/g, " ");
+  if (!label) return null;
+  const match = ARRONDISSEMENT_PATTERN.exec(label);
+  if (match) {
+    const [name, count] = ARRONDISSEMENT_CITIES[match[1].toLowerCase()];
+    const number = Number(match[2]);
+    if (number >= 1 && number <= count) return `${name} ${number === 1 ? "1er" : `${number}e`}`;
+    return label;
+  }
+  return ARRONDISSEMENT_CITIES[label.toLowerCase()]?.[0] ?? label;
+}
+
+// ── Dates d'une liste de ventes (heure de Paris) ─────────────────────────
+
+const PARIS_TIME_ZONE = "Europe/Paris";
+
+const PARIS_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: PARIS_TIME_ZONE,
+});
+
+/** Jour calendaire à Paris, `AAAA-MM-JJ`. */
+function parisDayKey(time: number): string {
+  return PARIS_DAY_FORMAT.format(new Date(time));
+}
+
+/** Vrai quand la date tombe le même jour calendaire que `now`, à Paris. */
+export function isParisToday(value: string | null, now: Date = new Date()): boolean {
+  const time = timestamp(value);
+  return time != null && parisDayKey(time) === parisDayKey(now.getTime());
+}
+
+/** Pavé de date d'une ligne de liste : « 6 » et « nov. », à Paris. `null` sans date. */
+export function parisDateBlock(value: string | null): { day: string; month: string } | null {
+  const time = timestamp(value);
+  if (time == null) return null;
+  const date = new Date(time);
+  return {
+    day: new Intl.DateTimeFormat("fr-FR", { day: "numeric", timeZone: PARIS_TIME_ZONE }).format(
+      date,
+    ),
+    month: new Intl.DateTimeFormat("fr-FR", { month: "short", timeZone: PARIS_TIME_ZONE }).format(
+      date,
+    ),
+  };
+}
+
+/** Jour de la semaine à Paris (« jeudi »). `null` sans date. */
+export function parisWeekday(value: string | null): string | null {
+  const time = timestamp(value);
+  if (time == null) return null;
+  return new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: PARIS_TIME_ZONE }).format(
+    new Date(time),
+  );
+}
+
+/** Lundi de la semaine (à Paris) d'un instant, en jour UTC à minuit. */
+function parisWeekStart(time: number): Date {
+  const [year, month, day] = parisDayKey(time).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const fromMonday = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - fromMonday);
+  return date;
+}
+
+export type DepartmentSaleWeek = {
+  /** Lundi de la semaine (`AAAA-MM-JJ`), ou `later` pour les ventes sans date valable. */
+  key: string;
+  label: string;
+  sales: DepartmentSale[];
+};
+
+/**
+ * Regroupe des ventes (déjà triées par date) par semaine du lundi au dimanche, à Paris : « Semaine
+ * en cours », puis « Semaine du 9 novembre » (l'année n'est écrite que si elle diffère de celle de
+ * `now`). Une vente reportée, sans date, ou d'une semaine déjà passée va dans un dernier groupe
+ * « Date à confirmer ».
+ */
+export function groupDepartmentSalesByWeek(
+  sales: readonly DepartmentSale[],
+  now: Date = new Date(),
+): DepartmentSaleWeek[] {
+  const current = parisWeekStart(now.getTime());
+  const currentKey = current.toISOString().slice(0, 10);
+  const currentYear = Number(parisDayKey(now.getTime()).slice(0, 4));
+  const weeks = new Map<string, DepartmentSaleWeek>();
+  const later: DepartmentSale[] = [];
+  for (const sale of sales) {
+    const time = timestamp(sale.saleDate);
+    if (sale.status === "postponed" || time == null) {
+      later.push(sale);
+      continue;
+    }
+    const start = parisWeekStart(time);
+    const key = start.toISOString().slice(0, 10);
+    if (key < currentKey) {
+      later.push(sale);
+      continue;
+    }
+    let week = weeks.get(key);
+    if (!week) {
+      const label =
+        key === currentKey
+          ? "Semaine en cours"
+          : `Semaine du ${new Intl.DateTimeFormat("fr-FR", {
+              day: "numeric",
+              month: "long",
+              ...(start.getUTCFullYear() !== currentYear ? { year: "numeric" } : {}),
+              timeZone: "UTC",
+            }).format(start)}`;
+      week = { key, label, sales: [] };
+      weeks.set(key, week);
+    }
+    week.sales.push(sale);
+  }
+  const ordered = [...weeks.values()].sort((a, b) => a.key.localeCompare(b.key));
+  return later.length
+    ? [...ordered, { key: "later", label: "Date à confirmer", sales: later }]
+    : ordered;
+}
+
 function positivePrice(value: number | null): value is number {
   return value != null && Number.isFinite(value) && value > 0;
 }
@@ -259,11 +433,13 @@ export function aggregateDepartments(
 ): DepartmentCatalogue {
   const seen = new Set<string>();
   const byDepartment = new Map<string, DepartmentSale[]>();
-  for (const { department, ...sale } of rows) {
-    if (seen.has(sale.id)) continue;
-    seen.add(sale.id);
+  for (const { department, ...row } of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
     const code = departmentFromCode(department)?.code;
     if (!code) continue;
+    // Une seule écriture par arrondissement : la liste, les communes et les doublons s'y fient.
+    const sale = { ...row, city: normalizeDepartmentCity(row.city) };
     byDepartment.set(code, [...(byDepartment.get(code) ?? []), sale]);
   }
 

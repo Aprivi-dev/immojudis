@@ -14,12 +14,19 @@ import {
   departmentPriceLabel,
   departmentSaleCount,
   departmentSaleDateText,
+  departmentSaleTimeText,
   departmentSearchPath,
   departmentSlug,
+  departmentVenueLabel,
+  groupDepartmentSalesByWeek,
   identicalSaleRanks,
   indexableDepartments,
   isDepartmentPageIndexable,
+  isParisToday,
   medianOf,
+  normalizeDepartmentCity,
+  parisDateBlock,
+  parisWeekday,
   topCities,
   type DepartmentSaleInput,
 } from "./department-pages";
@@ -524,5 +531,175 @@ describe("identicalSaleRanks", () => {
     expect(ranks.get("d")).toEqual({ rank: 3, of: 3 });
     expect(ranks.has("c")).toBe(false);
     expect(sales).toHaveLength(4);
+  });
+});
+
+describe("noms des arrondissements de Paris, Lyon et Marseille", () => {
+  it("donne une seule écriture à un même arrondissement", () => {
+    for (const raw of [
+      "Paris 13ème",
+      "Paris 13e Arrondissement",
+      "Paris 13e arrondissement",
+      "PARIS 13E",
+      "Paris 13",
+      "paris  13ème ",
+      "Paris - 13",
+      "Paris 13 Arr.",
+      "Paris 13ième",
+    ]) {
+      expect(normalizeDepartmentCity(raw), raw).toBe("Paris 13e");
+    }
+    expect(normalizeDepartmentCity("Paris 1er")).toBe("Paris 1er");
+    expect(normalizeDepartmentCity("Paris 01")).toBe("Paris 1er");
+    expect(normalizeDepartmentCity("Paris 1er Arrondissement")).toBe("Paris 1er");
+    expect(normalizeDepartmentCity("Marseille 1er Arrondissement")).toBe("Marseille 1er");
+    expect(normalizeDepartmentCity("Marseille 3ème")).toBe("Marseille 3e");
+    expect(normalizeDepartmentCity("Lyon 2ème")).toBe("Lyon 2e");
+    expect(normalizeDepartmentCity("Lyon 6e Arrondissement")).toBe("Lyon 6e");
+  });
+
+  it("met la commune sans arrondissement à la même casse et laisse les autres communes", () => {
+    expect(normalizeDepartmentCity("MARSEILLE")).toBe("Marseille");
+    expect(normalizeDepartmentCity("paris")).toBe("Paris");
+    expect(normalizeDepartmentCity("  Saint-Denis   ")).toBe("Saint-Denis");
+    expect(normalizeDepartmentCity("Lyons-la-Forêt")).toBe("Lyons-la-Forêt");
+    expect(normalizeDepartmentCity("Parisot")).toBe("Parisot");
+    expect(normalizeDepartmentCity("")).toBeNull();
+    expect(normalizeDepartmentCity(null)).toBeNull();
+  });
+
+  it("ne crée pas d'arrondissement qui n'existe pas", () => {
+    expect(normalizeDepartmentCity("Lyon 12e")).toBe("Lyon 12e");
+    expect(normalizeDepartmentCity("Paris 21ème")).toBe("Paris 21ème");
+    expect(normalizeDepartmentCity("Marseille 17e Arrondissement")).toBe(
+      "Marseille 17e Arrondissement",
+    );
+  });
+
+  it("regroupe les arrondissements dans les communes les plus présentes du catalogue", () => {
+    const catalogue = aggregateDepartments([
+      sale("a", { department: "75", city: "Paris 13ème" }),
+      sale("b", { department: "75", city: "Paris 13e Arrondissement" }),
+      sale("c", { department: "75", city: "Paris 15ème" }),
+      sale("d", { department: "75", city: "Paris" }),
+    ]);
+    expect(catalogue.departments["75"].cities).toEqual([
+      { city: "Paris 13e", count: 2 },
+      { city: "Paris", count: 1 },
+      { city: "Paris 15e", count: 1 },
+    ]);
+    expect(catalogue.departments["75"].sales.map((item) => item.city)).toEqual([
+      "Paris 13e",
+      "Paris 13e",
+      "Paris 15e",
+      "Paris",
+    ]);
+  });
+});
+
+describe("lignes de la liste des ventes", () => {
+  const NOW = new Date("2026-11-06T09:00:00Z");
+
+  it("donne l'heure avec le mot de la procédure, ou dit qu'elle est à confirmer", () => {
+    const at = (venueType: SaleVenueType | null, time: string | null) =>
+      departmentSaleTimeText(
+        { venueType, status: "scheduled", saleDate: "2026-11-10T13:00:00Z" },
+        time,
+        NOW,
+      );
+    expect(at("tribunal", "14 h 00")).toBe("audience à 14 h 00");
+    expect(at("notary", "14 h 00")).toBe("séance à 14 h 00");
+    expect(at("state", "14 h 00")).toBe("échéance à 14 h 00");
+    expect(at(null, "14 h 00")).toBe("vente à 14 h 00");
+    expect(at("tribunal", null)).toBe("audience, heure à confirmer");
+  });
+
+  it("n'annonce ni une vente reportée ni une date passée comme à venir", () => {
+    expect(
+      departmentSaleTimeText(
+        { venueType: "tribunal", status: "postponed", saleDate: "2026-11-10T13:00:00Z" },
+        "14 h 00",
+        NOW,
+      ),
+    ).toBe("Vente reportée · nouvelle date à confirmer");
+    expect(
+      departmentSaleTimeText(
+        { venueType: "tribunal", status: "scheduled", saleDate: "2026-11-01T13:00:00Z" },
+        "14 h 00",
+        NOW,
+      ),
+    ).toBe("Date de vente passée");
+    expect(
+      departmentSaleTimeText({ venueType: "tribunal", status: "scheduled", saleDate: null }, null),
+    ).toBeNull();
+  });
+
+  it("nomme le type de vente de la pastille, et rien quand il n'est pas établi", () => {
+    expect(departmentVenueLabel("tribunal")).toBe("Au tribunal");
+    expect(departmentVenueLabel("notary")).toBe("Chez le notaire");
+    expect(departmentVenueLabel("state")).toBe("Vente de l’État");
+    expect(departmentVenueLabel("online")).toBeNull();
+    expect(departmentVenueLabel("unknown")).toBeNull();
+    expect(departmentVenueLabel(null)).toBeNull();
+  });
+
+  it("lit le jour à Paris pour le pavé de date et la vente du jour", () => {
+    // 23 h 30 UTC le 6 novembre : déjà le 7 à Paris.
+    expect(parisDateBlock("2026-11-06T23:30:00Z")).toEqual({ day: "7", month: "nov." });
+    expect(parisDateBlock(null)).toBeNull();
+    expect(isParisToday("2026-11-06T17:00:00Z", NOW)).toBe(true);
+    expect(isParisToday("2026-11-06T23:30:00Z", NOW)).toBe(false);
+    expect(isParisToday(null, NOW)).toBe(false);
+    expect(parisWeekday("2026-11-06T17:00:00Z")).toBe("vendredi");
+  });
+});
+
+describe("ventes regroupées par semaine", () => {
+  // Vendredi 6 novembre 2026, 10 h à Paris.
+  const NOW = new Date("2026-11-06T09:00:00Z");
+  const at = (
+    id: string,
+    saleDate: string | null,
+    overrides: Partial<DepartmentSaleInput> = {},
+  ) => {
+    const { department, ...rest } = sale(id, { saleDate, ...overrides });
+    void department;
+    return rest;
+  };
+
+  it("commence par la semaine en cours, puis une semaine par lundi", () => {
+    const weeks = groupDepartmentSalesByWeek(
+      [
+        at("a", "2026-11-06T11:00:00Z"),
+        at("b", "2026-11-08T20:00:00Z"), // dimanche : encore la semaine en cours
+        at("c", "2026-11-08T23:30:00Z"), // lundi 9 à Paris
+        at("d", "2026-11-19T13:00:00Z"),
+        at("e", "2027-01-04T13:00:00Z"),
+      ],
+      NOW,
+    );
+    expect(weeks.map((week) => [week.label, week.sales.map((item) => item.id)])).toEqual([
+      ["Semaine en cours", ["a", "b"]],
+      ["Semaine du 9 novembre", ["c"]],
+      ["Semaine du 16 novembre", ["d"]],
+      ["Semaine du 4 janvier 2027", ["e"]],
+    ]);
+  });
+
+  it("met à part les ventes reportées, sans date ou d'une semaine passée", () => {
+    const weeks = groupDepartmentSalesByWeek(
+      [
+        at("old", "2026-10-20T13:00:00Z"),
+        at("p", "2026-11-10T13:00:00Z", { status: "postponed" }),
+        at("n", "2026-11-12T13:00:00Z"),
+        at("none", null),
+      ],
+      NOW,
+    );
+    expect(weeks.map((week) => [week.key, week.label, week.sales.map((item) => item.id)])).toEqual([
+      ["2026-11-09", "Semaine du 9 novembre", ["n"]],
+      ["later", "Date à confirmer", ["old", "p", "none"]],
+    ]);
+    expect(groupDepartmentSalesByWeek([], NOW)).toEqual([]);
   });
 });

@@ -138,9 +138,11 @@ async function readDepartmentCatalogue(): Promise<DepartmentCatalogue> {
 
 // Partagé par l'index, les pages de département et le sitemap : une lecture par heure et par
 // instance. Une erreur n'est jamais mise en cache (`unstable_cache` ne garde que les succès).
+// « v2 » : les noms d'arrondissements y sont normalisés (`normalizeDepartmentCity`) ; un catalogue
+// mis en cache avant ne l'est pas.
 const cachedDepartmentCatalogue = unstable_cache(
   readDepartmentCatalogue,
-  ["department-pages", "catalogue", "v1"],
+  ["department-pages", "catalogue", "v2"],
   {
     revalidate: DEPARTMENT_CATALOGUE_REVALIDATE_SECONDS,
     tags: [DEPARTMENT_CATALOGUE_CACHE_TAG],
