@@ -89,6 +89,12 @@ import { investorProfileFinancingDraft, investorProfileToChoices } from "@/lib/i
 import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import { PriceScale } from "@/components/sale-detail/PriceScale";
 import { SaveCeilingButton } from "@/components/sale-detail/SaveCeilingButton";
+import {
+  AnalysisLead,
+  DossierActions,
+  hypothesesSummary,
+  SaleFollowChanges,
+} from "@/components/sale-detail/SaleAnalysisPanel";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
@@ -116,6 +122,7 @@ import {
 } from "@/lib/ai-review-guard";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
+import { formatDate } from "@/lib/format";
 import * as queryKeys from "@/lib/query-keys";
 import {
   type LegacyDetail,
@@ -889,6 +896,21 @@ function SaleDetailWorkspace({
     "property.city",
     aiReviewStatus,
   ).blocked;
+  // Offre Analyse, vente dont le plafond existe : le panneau collant devient « Votre analyse ».
+  const analysisPanel = access === "analysis" && ceilingPromised;
+  const dossierInPanel = analysisPanel && Boolean(user) && !publicDemo;
+  const dateBlocked = getAiReviewFieldResult(
+    resolvedAiReviewProjections,
+    "sale.sale_date",
+    aiReviewStatus,
+  ).blocked;
+  const followHiddenTopics = useMemo(() => {
+    const hidden = new Set<"price" | "date">();
+    if (priceBlocked) hidden.add("price");
+    if (dateBlocked) hidden.add("date");
+    return hidden;
+  }, [dateBlocked, priceBlocked]);
+
   const startLabelText =
     getSaleProcedure(displaySale).venueType === "state"
       ? "Prix publié"
@@ -923,7 +945,11 @@ function SaleDetailWorkspace({
                 </ol>
               </nav>
             </div>
-            <ListingActions sale={displaySale} publicDemo={publicDemo} showFavorite={false} />
+            <ListingActions
+              sale={displaySale}
+              publicDemo={publicDemo}
+              showFavorite={dossierInPanel && isPersistedSaleId(sale.id)}
+            />
           </div>
           <SaleDetailHeading
             sale={displaySale}
@@ -967,6 +993,40 @@ function SaleDetailWorkspace({
                     )
                   }
                   showSecondaryAction={!summaryFooter}
+                  lead={
+                    analysisPanel ? (
+                      <AnalysisLead
+                        label={
+                          <Terme
+                            terme={ceilingWording?.byOffers ? "offre-plafond" : "enchere-plafond"}
+                          >
+                            {ceilingSummaryLabel}
+                          </Terme>
+                        }
+                        ceiling={priceSummaryCeiling}
+                        startLabel={startLabelText}
+                        startingPrice={startingPrice}
+                        value={
+                          priceSummaryValue?.kind === "amount" ? priceSummaryValue.amount : null
+                        }
+                        hypotheses={
+                          heroCeiling != null ? hypothesesSummary(ceilingHypotheses) : null
+                        }
+                        modifyHref="#calculation"
+                      />
+                    ) : null
+                  }
+                  actions={
+                    dossierInPanel ? (
+                      <DossierActions
+                        saleId={sale.id}
+                        onOpenWorkspace={
+                          workspaceAvailable ? () => setWorkspaceOpen(true) : undefined
+                        }
+                        reportHref={ceilingOpen && !valuationConflict ? "#rapport" : null}
+                      />
+                    ) : null
+                  }
                   followAction={
                     !publicDemo && isPersistedSaleId(sale.id) ? (
                       <FavoriteButton saleId={sale.id} className="min-h-11 w-full px-4 text-sm" />
@@ -975,6 +1035,13 @@ function SaleDetailWorkspace({
                 />
                 {summaryFooter}
               </div>
+              {dossierInPanel && user ? (
+                <SaleFollowChanges
+                  saleId={sale.id}
+                  userId={user.id}
+                  hiddenTopics={followHiddenTopics}
+                />
+              ) : null}
             </div>
             <div className={layoutStyles.main}>
               {!publicDemo && user && access !== "analysis" ? (
@@ -998,7 +1065,7 @@ function SaleDetailWorkspace({
                   }}
                 />
               ) : null}
-              {!publicDemo && user ? (
+              {!publicDemo && user && !dossierInPanel ? (
                 <SaleFileCard
                   saleId={sale.id}
                   calculatedCeiling={heroCeiling}
@@ -1526,13 +1593,7 @@ function SaleDetailWorkspace({
                 <SaleTimeline
                   sale={displaySale}
                   priceBlocked={priceBlocked}
-                  dateBlocked={
-                    getAiReviewFieldResult(
-                      resolvedAiReviewProjections,
-                      "sale.sale_date",
-                      aiReviewStatus,
-                    ).blocked
-                  }
+                  dateBlocked={dateBlocked}
                 />
                 <div className={panelStyles.steps}>
                   <h3>Vos prochaines étapes</h3>
@@ -1553,6 +1614,16 @@ function SaleDetailWorkspace({
                     aiReviewStatus={aiReviewStatus}
                   />
                 </div>
+                {/* Offre Analyse : le panneau résume le dossier ; la carte complète (plafond saisi à la
+                    main, rappels, plafond à vérifier) est ici, à l'ancre `#mon-dossier`. */}
+                {dossierInPanel ? (
+                  <SaleFileCard
+                    saleId={sale.id}
+                    calculatedCeiling={heroCeiling}
+                    calculationPending={ceilingEnabled && marketPending}
+                    onOpenWorkspace={workspaceAvailable ? () => setWorkspaceOpen(true) : undefined}
+                  />
+                ) : null}
                 <LawyerSection sale={displaySale} />
                 {fullData &&
                 isTribunalSale &&
@@ -1601,6 +1672,18 @@ function SaleDetailWorkspace({
           ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}
           action={
             activeSection === "prix" && heroAction.href === "#calculation" ? null : heroAction
+          }
+          dossier={
+            dossierInPanel && workspaceAvailable && heroCeiling != null
+              ? {
+                  caption: `votre plafond${
+                    !dateBlocked && displaySale.sale_date
+                      ? ` · ${formatDate(displaySale.sale_date)}`
+                      : ""
+                  }`,
+                  onOpen: () => setWorkspaceOpen(true),
+                }
+              : null
           }
         />
       </main>

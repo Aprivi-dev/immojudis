@@ -161,8 +161,17 @@ export function ListingOverview({
   marketReference = null,
   followAction = null,
   showSecondaryAction = true,
+  lead = null,
+  actions = null,
 }: {
   sale: AuctionSale;
+  /**
+   * Tête du panneau à la place du prix et du repère marché (offre Analyse : « Votre analyse », le
+   * plafond en grand). Les faits (date, lieu, garantie, occupation) restent ceux de la synthèse.
+   */
+  lead?: ReactNode;
+  /** Actions du panneau à la place de l'action principale et du suivi (dossier de l'offre Analyse). */
+  actions?: ReactNode;
   /** Vocabulaire du plafond de la vente ; absent : celui du tribunal. */
   ceilingWording?: CeilingWording | null;
   /** Action principale (« Préparer mon enchère », « Débloquer le plafond »…). */
@@ -236,7 +245,8 @@ export function ListingOverview({
     getFactPresentation(sale, "occupancy_status", undefined, factReliabilities).kind === "missing";
   return (
     <section className={styles.overview} aria-label="Synthèse de la vente">
-      {notary || state ? (
+      {lead}
+      {!lead && (notary || state) ? (
         <div className={styles.procedureLead}>
           <p className={styles.procedureLeadEyebrow}>
             {notary ? "Vente notariale" : "Cession domaniale"}
@@ -255,7 +265,7 @@ export function ListingOverview({
           </span>
         </div>
       ) : null}
-      {price != null || !state ? (
+      {lead ? null : price != null || !state ? (
         <div className={styles.heroPrice}>
           <div className={styles.priceLabel}>
             {state ? (
@@ -370,7 +380,8 @@ export function ListingOverview({
         </div>
       </dl>
       <div className={styles.summaryActions} data-hero-actions="">
-        {preparation ? (
+        {actions}
+        {actions ? null : preparation ? (
           preparation.href.startsWith("#") ? (
             <a href={preparation.href} className={styles.primaryAction}>
               {preparation.label}
@@ -381,7 +392,7 @@ export function ListingOverview({
             </Link>
           )
         ) : null}
-        {!showSecondaryAction
+        {!showSecondaryAction || actions
           ? null
           : (followAction ?? (
               <a
