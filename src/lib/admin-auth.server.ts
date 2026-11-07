@@ -20,3 +20,7 @@ export function assertAdminAuth(authToken: string) {
     "Forbidden: ce compte n'a pas les droits administrateur Immojudis.",
   );
 }
+
+export async function assertAdminPipelineToken(authToken: string): Promise<void> {
+  await requireAdmin(authToken, "Forbidden: accès administrateur requis");
+}
