@@ -182,7 +182,8 @@ vi.mock("next/dynamic", () => ({
       }
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
       // n° 92 : « Mon plafond face au tribunal » (reçoit `ceiling`) et « Mes questions pour l'avocat ».
-      if (ceiling !== undefined) {
+      // (« Enregistrer ce plafond » reçoit aussi `ceiling`, sans `userKey` : rien ici.)
+      if (ceiling !== undefined && userKey !== undefined) {
         return <section aria-label="Mon plafond face au tribunal" data-ceiling={String(ceiling)} />;
       }
       if (userKey !== undefined) return <section aria-label="Mes questions pour l’avocat" />;

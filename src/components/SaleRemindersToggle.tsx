@@ -18,19 +18,7 @@ import { userMessage } from "@/lib/user-messages";
  * annoncé AVANT la case, et la mention qu'aucun envoi n'est garanti. Un seul vocabulaire, « rappels
  * d'audience », pour les explications et les messages.
  */
-export function SaleRemindersToggle({
-  userId,
-  className,
-  compact = false,
-}: {
-  userId: string;
-  className: string;
-  /**
-   * Bouton court du panneau de la fiche. Il ne recueille jamais le consentement : rappels activés,
-   * il permet de les retirer ; sinon, il mène à « Mon dossier », où la case présente le texte entier.
-   */
-  compact?: boolean;
-}) {
+export function SaleRemindersToggle({ userId, className }: { userId: string; className: string }) {
   const queryClient = useQueryClient();
   const preferencesQuery = useQuery({
     queryKey: queryKeys.notificationPreferences(userId),
@@ -54,32 +42,6 @@ export function SaleRemindersToggle({
   const data = preferencesQuery.data;
   const enabled = data?.preferences.saleRemindersEnabled ?? false;
   if (!data || (!data.saleRemindersAvailable && !enabled)) return null;
-
-  if (compact) {
-    return enabled ? (
-      <button
-        type="button"
-        aria-pressed="true"
-        aria-busy={mutation.isPending}
-        title="Rappels d’audience activés : touchez pour les retirer"
-        onClick={() => {
-          if (mutation.isPending) return;
-          mutation.mutate({ saleRemindersEnabled: false, consentSource: "settings" });
-        }}
-        className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-line bg-white px-2 text-[13px] font-semibold text-brand-navy hover:border-brand-navy"
-      >
-        Rappels activés
-      </button>
-    ) : (
-      <a
-        href="#mon-dossier"
-        title="Activer les rappels d’audience dans Mon dossier"
-        className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-line bg-white px-2 text-[13px] font-semibold text-brand-navy hover:border-brand-navy"
-      >
-        Rappels
-      </a>
-    );
-  }
 
   return (
     <label className={className}>
