@@ -468,7 +468,7 @@ export function SalePublicPreview({
           <dt>Lieu</dt>
           <dd>
             {preview.tribunal_code ? (
-              <Link href={tribunalCodePagePath(preview.tribunal_code)} className="underline">
+              <Link href={tribunalCodePagePath(preview.tribunal_code)} className={styles.factLink}>
                 {tribunal}
               </Link>
             ) : (

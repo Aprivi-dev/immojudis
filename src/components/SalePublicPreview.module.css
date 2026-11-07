@@ -442,20 +442,23 @@
 .factLinks {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 14px;
-  margin-top: 4px;
+  gap: 0 16px;
   font-size: 13px;
   font-weight: 500;
 }
 
-.factLinks a {
+/* Cibles tactiles de 44 px (repasse design n° 20), comme les autres actions de la fiche. */
+.factLinks a,
+.factLink {
   display: inline-flex;
   align-items: center;
-  /* Cible d'au moins 24 px (WCAG 2.5.8). */
-  min-height: 24px;
-  color: var(--gold-text);
+  min-height: 44px;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+.factLinks a {
+  color: var(--gold-text);
 }
 
 .pastDate {

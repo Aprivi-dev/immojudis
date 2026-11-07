@@ -236,6 +236,10 @@ describe("SalePublicPreview", () => {
     expect(
       screen.getByRole("link", { name: "Tribunal judiciaire de Bobigny" }).getAttribute("href"),
     ).toBe("/tribunaux/justice-tj-1-93");
+    // Cible tactile de 44 px (repasse n° 20) : classe `factLink`, réglée dans la feuille de style.
+    expect(screen.getByRole("link", { name: "Tribunal judiciaire de Bobigny" }).className).toMatch(
+      /factLink/,
+    );
     cleanup();
 
     // Base pas encore migrée, ou tribunal inconnu du référentiel : le nom reste un texte simple.
@@ -487,6 +491,13 @@ describe("SalePublicPreview", () => {
           .getByRole("link", { name: /Estimer les frais/ })
           .getAttribute("href"),
       ).toBe("/simulateur-frais-encheres");
+    });
+
+    it("donne 44 px de cible à « Trouver un avocat » et au lien du tribunal (repasse n° 20)", async () => {
+      const { readFileSync } = await import("node:fs");
+      const css = readFileSync("src/components/SalePublicPreview.module.css", "utf8");
+      const rule = css.slice(css.indexOf(".factLinks a,\n.factLink {"));
+      expect(rule.slice(0, rule.indexOf("}"))).toContain("min-height: 44px;");
     });
 
     it("n'ajoute aucun lien d'avocat pour une vente chez le notaire", () => {
