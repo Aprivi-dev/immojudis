@@ -258,7 +258,7 @@ function FollowedCalendarExport({
       {message ? (
         <p
           role={message.tone === "error" ? "alert" : "status"}
-          className={`mt-1 text-xs ${message.tone === "error" ? "text-red-700" : "text-ink-soft"}`}
+          className={`mt-1 text-xs ${message.tone === "error" ? "text-danger" : "text-ink-soft"}`}
         >
           {message.text}
         </p>

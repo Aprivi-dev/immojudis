@@ -439,7 +439,7 @@ function PersonalResult({ snapshot }: { snapshot: FollowedSaleSnapshot }) {
             ) : null}
           </div>
           {error ? (
-            <p id={priceErrorId} role="alert" className="mt-1 text-xs font-semibold text-red-700">
+            <p id={priceErrorId} role="alert" className="mt-1 text-xs font-semibold text-danger">
               {error}
             </p>
           ) : null}
