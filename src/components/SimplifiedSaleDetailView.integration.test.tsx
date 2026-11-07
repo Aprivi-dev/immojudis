@@ -152,7 +152,8 @@ const SECTION_FOR_TAB: Record<string, string> = {
 /** Suit le lien du sommaire vers la section qui reprend l'ancien onglet. */
 async function openTab(name: string) {
   const sommaire = screen.getByRole("navigation", { name: "Sommaire de la fiche" });
-  const link = within(sommaire).getByRole("link", { name: SECTION_FOR_TAB[name] ?? name });
+  const label = SECTION_FOR_TAB[name] ?? name;
+  const link = within(sommaire).getByRole("link", { name: new RegExp(`^\\d{2} ${label}$`) });
   fireEvent.click(link);
   await waitFor(() => expect(link.getAttribute("aria-current")).toBe("true"));
 }
