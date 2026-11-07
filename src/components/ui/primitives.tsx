@@ -157,7 +157,11 @@ export function Notice({
 }: ComponentProps<"div"> & { tone?: NoticeTone }) {
   return (
     <div
-      className={cn("rounded-lg border px-4 py-3 text-sm leading-relaxed", NOTICE_TONES[tone], className)}
+      className={cn(
+        "rounded-lg border px-4 py-3 text-sm leading-relaxed",
+        NOTICE_TONES[tone],
+        className,
+      )}
       {...props}
     />
   );
