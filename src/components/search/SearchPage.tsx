@@ -1164,7 +1164,7 @@ export function SearchPage({
     }
   }
 
-  // Repères : les liens d'évitement et l'en-tête du site (« bannière ») précèdent le `<main>`, qui
+  // Repères : les liens d'évitement et l'en-tête du site (« bannière ») précèdent l'élément `main`, qui
   // commence au titre du catalogue ; le pied de page du site suit la page (`AppProviders`).
   return (
     <>

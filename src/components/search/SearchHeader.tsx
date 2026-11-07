@@ -43,8 +43,8 @@ const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => mod
 });
 /**
  * En-tête du site de /sales : la barre pleine largeur, qui défile avec la page (`static` l'emporte
- * sur le `sticky` de `SiteHeader`) ; c'est la barre de filtres qui reste à l'écran. Rendue AVANT le
- * `<main>` de la page (repère « bannière »), avec la région qui annonce la mise à jour des résultats.
+ * sur le `sticky` de `SiteHeader`) ; c'est la barre de filtres qui reste à l'écran. Rendue AVANT
+ * l'élément `main` de la page (repère « bannière »), avec la région qui annonce la mise à jour des résultats.
  */
 export function SalesSiteHeader({ refreshing }: { refreshing: boolean }) {
   return (
