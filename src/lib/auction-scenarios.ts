@@ -1,4 +1,5 @@
 import { asRecordOrNull as record } from "@/lib/guards";
+import { parseFiniteNumber as num } from "@/lib/finite-number";
 /**
  * « Scénarios d'enchères » : ce que les trois dernières années d'adjudications
  * du tribunal disent d'une vente à venir. Licitor donne mise à prix et prix
@@ -243,12 +244,6 @@ const KEYS = new Set<AuctionScenarioKey>(
 );
 
 type Raw = Record<string, unknown> | null | undefined;
-
-function num(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 function str(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
