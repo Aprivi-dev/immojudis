@@ -2,6 +2,7 @@ import { occupancyLabel } from "@/lib/format";
 import { listingOccupation } from "@/lib/listing-evidence";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { cleanText } from "@/lib/clean-text";
 
 export type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
 
@@ -381,16 +382,4 @@ function dedupeEvidence(evidence: OccupancyEvidence[]): OccupancyEvidence[] {
     if (!byKey.has(key)) byKey.set(key, item);
   }
   return [...byKey.values()];
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  return null;
 }

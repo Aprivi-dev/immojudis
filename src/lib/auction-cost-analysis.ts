@@ -3,6 +3,7 @@ import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import { asRecordOrNull } from "@/lib/guards";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
+import { cleanText } from "@/lib/clean-text";
 
 export type AuctionCostSourceAmount = {
   amountEur: number;
@@ -408,16 +409,4 @@ function dedupeStrings(values: string[]): string[] {
 
 function formatMoney(value: number): string {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €`;
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  return null;
 }
