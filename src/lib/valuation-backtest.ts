@@ -15,6 +15,7 @@ import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
+import { propertyTypeFamily } from "@/lib/property-type-family";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
@@ -732,15 +733,6 @@ function propertyTypeMatches(value: string | null, reference: string | null): bo
   const referenceFamily = propertyTypeFamily(reference);
   if (referenceFamily === "unknown") return true;
   return propertyTypeFamily(value) === referenceFamily;
-}
-
-function propertyTypeFamily(value: string | null | undefined): string {
-  const text = (value ?? "").toLowerCase();
-  if (/maison|house|villa|pavillon/.test(text)) return "house";
-  if (/appartement|apartment|studio|t1|t2|t3|t4/.test(text)) return "apartment";
-  if (/immeuble|building/.test(text)) return "building";
-  if (/terrain|land/.test(text)) return "land";
-  return text.trim() || "unknown";
 }
 
 function bboxAround(lat: number, lng: number, radiusM: number) {
