@@ -4,7 +4,7 @@ import { HighlightedFigure } from "@/components/departments/HighlightedFigure";
 import { ProportionalBars } from "@/components/departments/ProportionalBars";
 import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
-import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
+import { Badge, Card, Eyebrow, PageTitle, buttonClasses } from "@/components/ui/primitives";
 import {
   DEPARTMENT_PAGES_PATH,
   departmentFromCode,
@@ -43,6 +43,17 @@ const count = new Intl.NumberFormat("fr-FR");
  */
 const NAVY_ALERT =
   "border-brand-navy bg-brand-navy text-white [&_a]:w-full [&_a]:bg-white [&_a]:text-center [&_a]:text-brand-navy [&_h2]:text-xl [&_h2_svg]:shrink-0 [&_h2_svg]:text-gold-light [&_p]:text-line-soft";
+
+/**
+ * Les trois chiffres clés. Sur mobile, chaque carte tient sur une ligne compacte : libellé et
+ * précision à gauche, chiffre à droite (repasse design n° 42) ; dès la tablette, trois cartes côte à
+ * côte, chiffre sous le libellé.
+ */
+const FIGURE_CARD =
+  "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3.5 py-3 sm:block sm:p-5";
+const FIGURE_VALUE =
+  "row-span-2 text-right text-xl font-semibold text-brand-navy sm:mt-1 sm:text-left sm:text-[1.75rem]";
+const FIGURE_NOTE = "col-start-1 text-caption text-ink-soft sm:mt-0.5";
 
 function saleWord(total: number): string {
   return total > 1 ? "ventes" : "vente";
@@ -207,7 +218,7 @@ export function DepartmentView({
 
       <header className="pt-5 pb-2">
         <Eyebrow>Ventes aux enchères{region ? ` · ${region}` : ""}</Eyebrow>
-        <h1 className="mt-3 max-w-[56rem] font-display text-3xl leading-snug font-semibold sm:text-4xl">
+        <PageTitle className="mt-3 max-w-[56rem] leading-snug">
           {total > 0 ? (
             <>
               <HighlightedFigure>{count.format(total)}</HighlightedFigure>{" "}
@@ -220,7 +231,7 @@ export function DepartmentView({
               moment.
             </>
           )}
-        </h1>
+        </PageTitle>
         <p className="mt-3 max-w-[41rem] text-base text-ink-soft">
           Au tribunal, chez le notaire et ventes de l’État, d’après le catalogue public
           {updated ? ` au ${updated}` : ""}. Seuls le cahier des conditions de vente et les pièces
@@ -229,38 +240,32 @@ export function DepartmentView({
 
         {total > 0 ? (
           <section aria-label="Les chiffres du département" className="mt-6">
-            <dl className="grid gap-3 sm:grid-cols-3">
-              <Card>
+            <dl className="grid gap-2 sm:grid-cols-3 sm:gap-3">
+              <Card className={FIGURE_CARD}>
                 <dt className="text-caption text-ink-soft">Ventes à venir</dt>
-                <dd className="mt-1 text-[1.75rem] font-semibold text-brand-navy tabular-nums">
-                  {count.format(total)}
-                </dd>
-                {updated ? (
-                  <dd className="mt-0.5 text-caption text-ink-soft">au {updated}</dd>
-                ) : null}
+                <dd className={cn(FIGURE_VALUE, "tabular-nums")}>{count.format(total)}</dd>
+                {updated ? <dd className={FIGURE_NOTE}>au {updated}</dd> : null}
               </Card>
-              <Card>
+              <Card className={FIGURE_CARD}>
                 <dt className="text-caption text-ink-soft">
                   {departmentNextDateLabel(stats?.nextSaleVenueType ?? null)}
                 </dt>
-                <dd className="mt-1 text-[1.75rem] font-semibold text-brand-navy">
-                  {nextDate ?? "Date à confirmer"}
-                </dd>
+                <dd className={FIGURE_VALUE}>{nextDate ?? "Date à confirmer"}</dd>
                 {nextDay ? (
-                  <dd className="mt-0.5 text-caption text-ink-soft">
+                  <dd className={FIGURE_NOTE}>
                     {nextDay}
                     {nextTime ? `, à ${nextTime}` : ""}
                   </dd>
                 ) : null}
               </Card>
-              <Card>
+              <Card className={FIGURE_CARD}>
                 <dt className="text-caption text-ink-soft">Mise à prix médiane au tribunal</dt>
-                <dd className="mt-1 text-[1.75rem] font-semibold text-brand-navy tabular-nums">
+                <dd className={cn(FIGURE_VALUE, "tabular-nums")}>
                   {stats?.medianStartingPriceEur != null
                     ? formatStartingPrice(stats.medianStartingPriceEur)
                     : "Non communiquée"}
                 </dd>
-                <dd className="mt-0.5 text-caption text-ink-soft">
+                <dd className={FIGURE_NOTE}>
                   {stats?.medianStartingPriceEur != null
                     ? `sur ${count.format(stats.medianSampleSize)} ${saleWord(stats.medianSampleSize)} au tribunal`
                     : "aucune vente au tribunal chiffrée"}

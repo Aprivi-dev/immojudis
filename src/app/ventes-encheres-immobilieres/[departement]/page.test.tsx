@@ -540,6 +540,26 @@ describe("page d'un département : contenu", () => {
     expect(list.children).toHaveLength(3);
   });
 
+  it("garde les trois chiffres compacts sur mobile : une ligne par chiffre, libellé à gauche", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du département" });
+    for (const card of figures.querySelector("dl")!.children) {
+      // Libellé et chiffre côte à côte sous 640 px, puis la carte en bloc dès la tablette.
+      expect(card.className).toContain("grid-cols-[minmax(0,1fr)_auto]");
+      expect(card.className).toContain("sm:block");
+      const value = card.querySelector("dd")!;
+      expect(value.className).toContain("text-xl");
+      expect(value.className).toContain("sm:text-[1.75rem]");
+    }
+  });
+
+  it("pose le titre avec l'échelle commune des titres de page", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    expect(screen.getByRole("heading", { level: 1 }).className).toContain("sm:text-[2.5rem]");
+  });
+
   it("garde un texte d'introduction générique, sans conseil", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const { container } = render(await Page(params("gironde")));
