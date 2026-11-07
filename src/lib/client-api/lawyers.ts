@@ -70,13 +70,14 @@ export async function fetchFeaturedReferencedLawyer(args: {
 }
 
 export async function fetchLawyerDirectory(
-  args: { saleId?: string; bar?: string; city?: string; department?: string } = {},
+  args: { saleId?: string; bar?: string; city?: string; department?: string; page?: number } = {},
 ): Promise<LawyerDirectoryResponse> {
   const search = new URLSearchParams();
   if (args.saleId) search.set("saleId", args.saleId);
   if (args.bar) search.set("bar", args.bar);
   if (args.city) search.set("city", args.city);
   if (args.department) search.set("department", args.department);
+  if (args.page && args.page > 1) search.set("page", String(args.page));
   const suffix = search.size ? `?${search.toString()}` : "";
   const response = await fetch(`/api/lawyers/directory${suffix}`);
   return readJson<LawyerDirectoryResponse>(response);
