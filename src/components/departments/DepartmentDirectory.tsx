@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { searchableText as searchable } from "@/lib/searchable-text";
 
 export type DepartmentDirectoryRow = {
   code: string;
@@ -22,16 +23,6 @@ const SORT_LABELS: Record<SortMode, string> = {
 };
 
 const numbers = new Intl.NumberFormat("fr-FR");
-
-/** Minuscules, sans accent ni tiret ni apostrophe : « Côte-d'Or » se trouve avec « cote d or ». */
-function searchable(value: string): string {
-  return value
-    .toLocaleLowerCase("fr")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[-'’\s]+/g, " ")
-    .trim();
-}
 
 function salesPhrase(total: number): string {
   if (total === 0) return "aucune vente à venir";
