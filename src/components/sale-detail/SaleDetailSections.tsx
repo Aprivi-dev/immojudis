@@ -155,9 +155,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
                 Consulter les coordonnées du dossier
               </a>
             ) : (
-              <p className="text-sm text-brand-navy/70">
-                Coordonnées à confirmer par Immojudis.
-              </p>
+              <p className="text-sm text-brand-navy/70">Coordonnées à confirmer par Immojudis.</p>
             )}
           </div>
           {isPersistedSale && isJudicial && !saleStatus ? (

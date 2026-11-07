@@ -510,9 +510,7 @@ describe("integrated listing", () => {
     // Dans le <main>, que l'en-tête fixe décale sous la pilule : plus derrière elle.
     expect(notice.closest("main")).not.toBeNull();
     const back = screen.getByRole("link", { name: /Retour aux ventes/ });
-    expect(
-      notice.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(notice.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("names the page the visitor came from in the back link, and keeps an explicit label", () => {
