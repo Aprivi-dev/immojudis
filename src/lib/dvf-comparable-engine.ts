@@ -1,3 +1,5 @@
+import { parseDateOrNull as parseDate } from "@/lib/parse-date";
+import { propertyTypeFamily } from "@/lib/property-type-family";
 export type DvfComparableCandidate = {
   id: string;
   saleDate: string;
@@ -666,11 +668,6 @@ function percentile(sortedAsc: number[], p: number): number {
   return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
 }
 
-function parseDate(value: string): Date | null {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function monthDistance(from: Date, to: Date): number {
   const ms = Math.max(0, to.getTime() - from.getTime());
   return ms / (1000 * 60 * 60 * 24 * 30.4375);
@@ -678,15 +675,6 @@ function monthDistance(from: Date, to: Date): number {
 
 function positiveNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function propertyTypeFamily(value: string | null | undefined): string {
-  const text = (value ?? "").toLowerCase();
-  if (/maison|house|villa|pavillon/.test(text)) return "house";
-  if (/appartement|apartment|studio|t1|t2|t3|t4/.test(text)) return "apartment";
-  if (/immeuble|building/.test(text)) return "building";
-  if (/terrain|land/.test(text)) return "land";
-  return text.trim() || "unknown";
 }
 
 function comparableTypeMatch(

@@ -6,21 +6,13 @@ import type { SaleCalendarRow } from "@/lib/sale-calendar";
 import { saleChangeEventRowToSummary } from "@/lib/sale-change-monitor";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import type { SaleReminderStore } from "@/lib/sale-reminders";
+import { chunks } from "@/lib/chunks";
 
 const PAGE_SIZE = 1_000;
 /** Pages lues au plus pour les favoris puis pour les ventes débloquées d'une personne. */
 const MAX_FOLLOWED_PAGES = 5;
 /** Garde-fou : au-delà, le passage s'arrête là (les personnes suivantes attendent le suivant). */
 const MAX_CONSENTING_USERS = 10_000;
-const IN_CHUNK = 100;
-
-function chunks<T>(values: readonly T[], size = IN_CHUNK): T[][] {
-  const result: T[][] = [];
-  for (let start = 0; start < values.length; start += size) {
-    result.push(values.slice(start, start + size));
-  }
-  return result;
-}
 
 /**
  * Dernière vérification d'une vente à la source : la plus récente entre `last_seen_at` (vente revue

@@ -1,3 +1,4 @@
+import { parseFiniteNumber as finiteNumber } from "@/lib/finite-number";
 /**
  * « Historique de la vente » : what happened to this listing (hearing moved,
  * starting price changed, postponed…) and the earlier passages of the same
@@ -68,12 +69,6 @@ const KINDS = new Set<SaleTimelineKind>([
   "cancelled",
   "adjudicated",
 ]);
-
-function finiteNumber(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 export function mapSalePassages(
   raw: RawPassages,

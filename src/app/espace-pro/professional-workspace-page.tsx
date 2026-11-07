@@ -42,6 +42,7 @@ import {
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
 import { formatFileSize } from "@/lib/format-file-size";
+import { PublicationStatusPill as StatusPill } from "@/components/PublicationStatusPill";
 
 /** Libellés en capitales des petits blocs : 12 px, encre douce (plus de 10 ou 11 px). */
 const LABEL_CLASS = "text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft";
@@ -516,21 +517,6 @@ function TextBlock({ label, value }: { label: string; value: string | null }) {
         {value?.trim() || "Non renseigné"}
       </p>
     </div>
-  );
-}
-
-/** Statut d'une demande : pastille aux jetons de la charte (plus de couleurs d'un thème sombre). */
-function StatusPill({ status }: { status: PublicationRequestSummary["status"] }) {
-  const [tone, label] =
-    status === "approved"
-      ? (["success", "Validée"] as const)
-      : status === "rejected"
-        ? (["danger", "Refusée"] as const)
-        : (["warning", "En attente"] as const);
-  return (
-    <Badge tone={tone} className="shrink-0">
-      {label}
-    </Badge>
   );
 }
 

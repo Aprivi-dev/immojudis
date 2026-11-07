@@ -10,6 +10,7 @@ import {
   type OutcomeGraphQuantiles,
 } from "@/lib/outcome-graph";
 import { assertPublicationVisibleSaleRow } from "@/lib/sale-publication-guard";
+import { finiteNumberFromNumberOrText as finiteNumber } from "@/lib/finite-number";
 
 const horizonSchema = z.enum(["T-30", "T-14", "T-7", "T-1", "T-2h"]);
 const cohortLevelSchema = z.enum([
@@ -670,11 +671,6 @@ function objectValue(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
-}
-
-function finiteNumber(value: unknown): number | null {
-  const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
-  return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : null;
 }
 
 function approximatelyOne(value: number): boolean {

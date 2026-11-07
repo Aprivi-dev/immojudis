@@ -3,7 +3,7 @@ import { isActiveComparableSale } from "@/lib/sale-window";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { type StructuredCadastralParcel } from "@/lib/cadastre-analysis";
-import { normalizeDpeClass, type StructuredDpeDiagnostic } from "@/lib/dpe";
+import { type StructuredDpeDiagnostic } from "@/lib/dpe";
 import { getSaleSurface } from "@/lib/surface";
 import { type StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -16,7 +16,6 @@ import {
   ActiveComparableSales,
   AppSaleRow,
   CadastreParcelRow,
-  DpeDiagnosticRow,
   SavedReportRow,
   SupabaseClient,
   UrbanPlanningSignalRow,
@@ -26,6 +25,8 @@ import {
   assertSalePublicationVisible,
   getPublicationVisibleSaleIds,
 } from "@/lib/sale-publication-guard";
+import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToAnalysis } from "@/lib/dpe-diagnostic-row";
+export { dpeDiagnosticRowToAnalysis };
 
 export async function getSale(supabase: SupabaseClient, saleId: string): Promise<AuctionSale> {
   const { data, error } = await supabase
@@ -157,30 +158,6 @@ export async function getDpeDiagnostics(
   }
 
   return (data ?? []).map(dpeDiagnosticRowToAnalysis);
-}
-
-export function dpeDiagnosticRowToAnalysis(row: DpeDiagnosticRow): StructuredDpeDiagnostic {
-  return {
-    diagnosticNumber: row.diagnostic_number ?? null,
-    dpeClass: normalizeDpeClass(row.dpe_class),
-    gesClass: normalizeDpeClass(row.ges_class),
-    establishedAt: row.established_at ?? null,
-    validUntil: row.valid_until ?? null,
-    propertyType: row.property_type ?? null,
-    address: row.address ?? null,
-    city: row.city ?? null,
-    postalCode: row.postal_code ?? null,
-    inseeCode: row.insee_code ?? null,
-    department: row.department ?? null,
-    surfaceM2: row.surface_m2 ?? null,
-    energyConsumptionKwhM2Year: row.energy_consumption_kwh_m2_year ?? null,
-    emissionsKgCo2M2Year: row.emissions_kg_co2_m2_year ?? null,
-    latitude: row.latitude ?? null,
-    longitude: row.longitude ?? null,
-    matchKind: row.match_kind ?? null,
-    confidence: row.confidence ?? null,
-    sourceApi: row.source_api ?? null,
-  };
 }
 
 export async function getUrbanPlanningSignals(

@@ -2,6 +2,10 @@ import type { MarketEstimate } from "@/lib/market.server";
 import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
+import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
+import { matchesAnyPattern as matches } from "@/lib/analysis-text";
 
 export type DemographicSignalKind =
   | "population"
@@ -435,16 +439,6 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   );
 }
 
-function matches(definition: SignalDefinition, text: string): boolean {
-  const normalized = normalizeText(text);
-  return definition.patterns.some((pattern) => pattern.test(normalized));
-}
-
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
-}
-
 function dedupeSignals(signals: DemographicSignal[]): DemographicSignal[] {
   const seen = new Set<string>();
   return signals.filter((signal) => {
@@ -453,33 +447,4 @@ function dedupeSignals(signals: DemographicSignal[]): DemographicSignal[] {
     seen.add(key);
     return true;
   });
-}
-
-function dedupeStrings(values: string[]): string[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = normalizeText(value);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  if (value && typeof value === "object") {
-    const text = Object.values(value as Record<string, unknown>)
-      .map(cleanText)
-      .filter(Boolean)
-      .join(" ");
-    return text || null;
-  }
-  return null;
 }

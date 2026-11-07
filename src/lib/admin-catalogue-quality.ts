@@ -1,4 +1,5 @@
 import { formatDateTime } from "@/lib/format/dates";
+import { finiteNumberFromNumberOrText as num } from "@/lib/finite-number";
 
 /**
  * Panneau « Contrôles qualité du catalogue » de /admin/quality : la sentinelle de qualité (migration
@@ -90,11 +91,6 @@ type Json = Record<string, unknown>;
 
 function record(value: unknown): Json {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
-}
-
-function num(value: unknown): number | null {
-  const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
-  return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : null;
 }
 
 const integer = (value: number) => new Intl.NumberFormat("fr-FR").format(value);

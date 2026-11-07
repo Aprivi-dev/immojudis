@@ -5,21 +5,13 @@ import { saleChangeEventRowToSummary } from "@/lib/sale-change-monitor";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import { createSupabaseSaleReminderStore } from "@/lib/sale-reminders-store";
 import type { NewSaleSummary, WeeklyDigestStore } from "@/lib/weekly-digest";
+import { chunks } from "@/lib/chunks";
 
 const PAGE_SIZE = 1_000;
 /** Garde-fou : au-delà, le passage s'arrête là (les comptes suivants attendent le suivant). */
 const MAX_CONSENTING_USERS = 10_000;
-const IN_CHUNK = 100;
 /** Ventes récentes lues par passage et par compte pour compter les nouvelles ventes. */
 const NEW_SALES_SCAN_LIMIT = 100;
-
-function chunks<T>(values: readonly T[], size = IN_CHUNK): T[][] {
-  const result: T[][] = [];
-  for (let start = 0; start < values.length; start += size) {
-    result.push(values.slice(start, start + size));
-  }
-  return result;
-}
 
 /**
  * Lecture et écriture réelles du cron `weekly-digest` (service_role). Les lectures qui échouent

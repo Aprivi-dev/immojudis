@@ -1,7 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isProductionRuntime } from "@/lib/runtime-phase";
 import {
   HEARINGS_RPC_DAYS,
   mapHearingRows,
@@ -92,8 +91,4 @@ export async function tryLoadUpcomingHearings(): Promise<UpcomingHearingsResult>
  * `next build` (sans base dans l'environnement de la CI) le build ne doit pas échouer : la page est
  * produite avec son message, en `noindex`.
  */
-export function mustFailOnHearingsReadError(
-  env: { NODE_ENV?: string; NEXT_PHASE?: string } = process.env,
-): boolean {
-  return isProductionRuntime(env);
-}
+export { isProductionRuntime as mustFailOnHearingsReadError } from "@/lib/runtime-phase";

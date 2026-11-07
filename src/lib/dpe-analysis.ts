@@ -5,8 +5,10 @@ import {
   type DpeSource,
   type StructuredDpeDiagnostic,
 } from "@/lib/dpe";
-import type { AuctionSale, SaleRisk } from "@/lib/types";
+import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues } from "@/lib/analysis-text";
+import { cleanText } from "@/lib/clean-text";
+import { riskTexts } from "@/lib/sale-risk-texts";
 
 export type DpeImpactLevel = "positive" | "neutral" | "watch" | "risk" | "unknown";
 
@@ -286,19 +288,6 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   return candidates.filter((candidate) => DPE_CONTEXT.test(candidate.text));
 }
 
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt, record.reasoning, record.why_it_matters, record.next_action);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
-}
-
 function addCandidate(
   candidates: TextCandidate[],
   value: unknown,
@@ -327,16 +316,4 @@ function dedupeEvidence(evidence: DpeEvidence[]): DpeEvidence[] {
     seen.add(key);
     return true;
   });
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  return null;
 }

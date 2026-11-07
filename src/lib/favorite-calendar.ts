@@ -13,6 +13,7 @@ import { saleDeadlines } from "@/lib/sale-deadlines";
 import { DETAIL_VIEW } from "@/lib/sale-views";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { visitSlots, type VisitSlot } from "@/lib/visit-slots";
+import { isMissingCalendarFunction as isMissingFunction } from "@/lib/sale-calendar-rpc";
 
 /**
  * Export `.ics` de toutes les audiences suivies, en un fichier (« Mon planning », `/favoris`).
@@ -43,16 +44,6 @@ type FavoriteCalendarResult = {
   /** Ventes suivies laissées de côté : date non exportable ou vente non publique. */
   skipped: number;
 };
-
-type RpcError = { code?: string; message?: string } | null;
-
-function isMissingFunction(error: RpcError): boolean {
-  return (
-    error?.code === "PGRST202" ||
-    error?.code === "42883" ||
-    /get_public_sale_calendar_event/.test(error?.message ?? "")
-  );
-}
 
 /**
  * Les ventes demandées que le compte suit vraiment : la RLS de `user_favorites` ne rend que les

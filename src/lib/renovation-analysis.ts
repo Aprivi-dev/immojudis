@@ -1,5 +1,8 @@
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
-import type { AuctionSale, SaleRisk } from "@/lib/types";
+import type { AuctionSale } from "@/lib/types";
+import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
+import { riskTextsWithType as riskTexts } from "@/lib/sale-risk-texts";
 
 export type RenovationConditionStatus =
   | "good"
@@ -386,27 +389,9 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   return candidates.filter((candidate) => hasRenovationText(candidate.text));
 }
 
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_type, risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt, record.reasoning, record.why_it_matters, record.next_action);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
-}
-
 function hasRenovationText(value: unknown): boolean {
   const text = cleanText(value);
   return Boolean(text && detectStatus(text));
-}
-
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
 }
 
 function dedupeEvidence(evidence: RenovationEvidence[]): RenovationEvidence[] {
@@ -416,25 +401,6 @@ function dedupeEvidence(evidence: RenovationEvidence[]): RenovationEvidence[] {
     if (!byKey.has(key)) byKey.set(key, item);
   }
   return [...byKey.values()];
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  if (value && typeof value === "object") {
-    const text = Object.values(value as Record<string, unknown>)
-      .map(cleanText)
-      .filter(Boolean)
-      .join(" ");
-    return text || null;
-  }
-  return null;
 }
 
 function formatBudgetRange(range: RenovationBudgetRange): string {
