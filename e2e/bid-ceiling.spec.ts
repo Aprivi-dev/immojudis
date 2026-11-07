@@ -26,10 +26,9 @@ test("l'enchère plafond de l'exemple est chiffrée, avec ses lignes dépliables
   await expect(calculation).not.toContainText("Marge de sécurité non tenue");
   await expect(calculation.getByText(/\d.*€/).first()).toBeVisible();
 
-  // Le détail du calcul est replié derrière le résultat ; ouvert, chaque ligne se déplie.
+  // « Le calcul, étape par étape » est ouvert d'emblée (maquette validée) ; chaque ligne se déplie.
   const steps = calculation.locator("#why-this-ceiling");
-  await steps.locator(":scope > summary").click();
-  await expect(steps).toHaveJSProperty("open", true);
+  await expect(steps.getByRole("heading", { name: "Le calcul, étape par étape" })).toBeVisible();
   const firstStep = steps.locator("ol summary").first();
   await firstStep.click();
   await expect(firstStep.locator("xpath=..")).toHaveJSProperty("open", true);

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MapPanel, type MapPanelProps } from "./MapPanel";
 import type { AuctionSale } from "@/lib/types";
@@ -368,9 +368,19 @@ describe("public map resilience", () => {
     await showMap({ sales: [sale], preview: false });
     act(() => mocks.handlers.get("load")?.());
     const legend = screen.getByRole("list", { name: "Légende de la carte" });
-    expect(legend.textContent).toContain("Vente · mise à prix en euros");
-    expect(legend.textContent).toContain("Plusieurs ventes, zoomez");
-    expect(legend.textContent).toContain("Position approximative (centre de commune)");
+    // Maquette /sales validée : vente, vente survolée, regroupement (et la position approximative).
+    expect([...legend.querySelectorAll("li")].map((item) => item.textContent)).toEqual([
+      "Vente",
+      "Survolée",
+      "Regroupement",
+      "Position approximative",
+    ]);
+    // L'encart blanc du bas porte aussi la case « Rechercher en déplaçant la carte ».
+    const panel = screen.getByTestId("map-legend-panel");
+    expect(panel.contains(legend)).toBe(true);
+    expect(
+      within(panel).getByRole("button", { name: "Rechercher en déplaçant la carte" }),
+    ).toBeTruthy();
     expect(mocks.mapOptions[0].attributionControl).toBe(true);
     expect(screen.queryByRole("link", { name: /Mapbox/ })).toBeNull();
   });
@@ -470,7 +480,7 @@ describe("public map resilience", () => {
     await showMap();
     expect(screen.getByRole("region", { name: /Carte/ })).toBeTruthy();
   });
-  it("names the move toggle « Chercher en déplaçant la carte »", async () => {
+  it("names the move toggle « Rechercher en déplaçant la carte »", async () => {
     const sale = {
       id: "movable",
       city: "Lyon",
@@ -481,13 +491,13 @@ describe("public map resilience", () => {
     } as unknown as AuctionSale;
     await showMap({ sales: [sale], preview: false });
     act(() => mocks.handlers.get("load")?.());
-    const toggle = screen.getByRole("button", { name: "Chercher en déplaçant la carte" });
+    const toggle = screen.getByRole("button", { name: "Rechercher en déplaçant la carte" });
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     cleanup();
     await showMap({ sales: [sale], preview: false, searchAsMove: true });
     act(() => mocks.handlers.get("load")?.());
     // Libellé fixe : l'état passe par aria-pressed, pas par un second texte.
-    const active = screen.getByRole("button", { name: "Chercher en déplaçant la carte" });
+    const active = screen.getByRole("button", { name: "Rechercher en déplaçant la carte" });
     expect(active.getAttribute("aria-pressed")).toBe("true");
   });
   it("gives the follow-the-map button a 44 px target that may wrap", async () => {
@@ -501,7 +511,7 @@ describe("public map resilience", () => {
     } as unknown as AuctionSale;
     await showMap({ sales: [sale], preview: false });
     act(() => mocks.handlers.get("load")?.());
-    const toggle = screen.getByRole("button", { name: "Chercher en déplaçant la carte" });
+    const toggle = screen.getByRole("button", { name: "Rechercher en déplaçant la carte" });
     expect(toggle.className).toContain("min-h-11");
     expect(toggle.className).not.toMatch(/(^|\s)h-10(\s|$)/);
     expect(toggle.className).toContain("leading-tight");
@@ -523,7 +533,7 @@ describe("public map resilience", () => {
     await showMap({ sales: [sale], mappablePointsTotal: 1200 });
     expect(
       screen.getByText(
-        /1 biens affichés sur 1\s?200 : précisez vos filtres ou activez « Chercher en déplaçant la carte »/,
+        /1 biens affichés sur 1\s?200 : précisez vos filtres ou activez « Rechercher en déplaçant la carte »/,
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/zoomez pour affiner/)).toBeNull();
@@ -880,7 +890,7 @@ describe("regroupements et légende", () => {
     expect(button.getAttribute("aria-controls")).toBe(list.id);
     // Fermée sur mobile (masquée par `hidden`), toujours visible dès `sm`.
     expect(list.className).toContain("hidden");
-    expect(list.className).toContain("sm:block");
+    expect(list.className).toContain("sm:flex");
     expect(button.className).toContain("sm:hidden");
 
     fireEvent.click(button);

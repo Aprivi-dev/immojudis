@@ -37,24 +37,25 @@ function renderPreview(overrides: Partial<AuctionSale> = {}) {
 }
 
 describe("retour en un clic sur la fiche publique", () => {
-  it("n'en propose aucun au visiteur sans compte : pas de mesure anonyme", () => {
+  it("n'en propose aucun au visiteur sans compte : pas de mesure anonyme", async () => {
     renderPreview();
 
     expect(screen.getByTestId("market-gap-band")).toBeTruthy();
-    expect(screen.getByRole("region", { name: "1 point à vérifier" })).toBeTruthy();
+    // La section « Pièces et vérifications » est chargée à part (rendue par le serveur).
+    expect(await screen.findByRole("region", { name: "1 point à vérifier" })).toBeTruthy();
     expect(screen.queryByTestId("sale-signal-feedback")).toBeNull();
     expect(screen.queryByRole("button", { name: "Utile" })).toBeNull();
   });
 
-  it("le propose à un compte connecté sous la bande et sous les points à vérifier", () => {
+  it("le propose à un compte connecté sous la bande et sous les points à vérifier", async () => {
     mocks.auth = { user: { id: "user-1" }, loading: false };
     renderPreview();
 
     const band = within(screen.getByTestId("market-gap-band")).getByTestId("sale-signal-feedback");
     expect(band.getAttribute("data-signal")).toBe("market_gap_band");
-    const points = within(screen.getByRole("region", { name: "1 point à vérifier" })).getByTestId(
-      "sale-signal-feedback",
-    );
+    const points = within(
+      await screen.findByRole("region", { name: "1 point à vérifier" }),
+    ).getByTestId("sale-signal-feedback");
     expect(points.getAttribute("data-signal")).toBe("points_to_verify");
     expect(screen.getAllByRole("button", { name: "Utile" })).toHaveLength(2);
   });

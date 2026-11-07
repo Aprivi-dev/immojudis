@@ -26,6 +26,15 @@ export const SALES_PAGINATION_ID = "sales-pagination";
  */
 const MAX_OFFSET = 10_000;
 
+/**
+ * Nombre de pages d'une recherche de `totalCount` annonces : celles que la pagination numérote, donc
+ * bornées au plus grand décalage que la recherche publique sait lire. 0 sans total connu.
+ */
+export function searchTotalPages(totalCount: number | null | undefined, pageSize: number): number {
+  if (totalCount == null || pageSize <= 0) return 0;
+  return Math.min(Math.ceil(totalCount / pageSize), Math.floor(MAX_OFFSET / pageSize) + 1);
+}
+
 /** Un numéro de page, ou « … » pour les pages sautées. */
 export type PageItem = number | "gap";
 
@@ -192,10 +201,7 @@ export function SearchPagination({
 
   const firstResult = loadedCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastResult = (page - 1) * pageSize + loadedCount;
-  const totalPages =
-    totalCount != null && pageSize > 0 && !mapListFollowsViewport
-      ? Math.min(Math.ceil(totalCount / pageSize), Math.floor(MAX_OFFSET / pageSize) + 1)
-      : 0;
+  const totalPages = mapListFollowsViewport ? 0 : searchTotalPages(totalCount, pageSize);
   const numbered = totalPages > 1 && pageHref && onGoToPage ? visiblePages(page, totalPages) : [];
 
   return (

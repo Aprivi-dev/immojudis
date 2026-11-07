@@ -18,12 +18,12 @@ import {
   HOME_TYPE_OPTIONS,
   SORT_OPTIONS,
 } from "@/lib/search/search-filters";
-import { departmentFromCode } from "@/lib/department-pages";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { ResultsView } from "@/lib/search/results-view";
-import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
+import type { SearchSortKey } from "@/lib/search/search-url-state";
 import { MobileFilterChips } from "./MobileFilterChips";
+import { SaleTypeFilter } from "./SaleTypeFilter";
 import { priceRangeError, type SearchDraft } from "./search-page-state";
 
 const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => module.DateFilter), {
@@ -32,7 +32,7 @@ const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => mod
   loading: () => (
     <span
       aria-hidden
-      className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-medium"
+      className="inline-flex min-h-11 items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy"
     >
       <CalendarDays className="h-4 w-4" />
       Date de vente
@@ -40,6 +40,19 @@ const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => mod
     </span>
   ),
 });
+/**
+ * Haut de /sales (maquette validée) : l'en-tête du site, puis l'en-tête du catalogue (`intro` :
+ * titre, actions, suivi), puis UNE barre de filtres blanche qui reste à l'écran au défilement (à
+ * partir de `lg`) : lieu, type de bien, mise à prix, date de vente, tous les filtres, et dessous
+ * les types de vente en pastilles.
+ *
+ * Sur mobile, la barre défile avec la page : le champ du lieu (avec l'alerte), une rangée de
+ * filtres qui défile (« Filtres », type de bien, mise à prix, date…), puis la rangée des types de
+ * vente.
+ *
+ * La hauteur de la barre est écrite dans `--sales-header-height` (sur l'élément `main` de la page) : la carte et la
+ * barre du comparateur se collent juste dessous.
+ */
 export function SearchHeader({
   draft,
   setDraft,
@@ -55,12 +68,11 @@ export function SearchHeader({
   signupLinks,
   freeAlertUsage = null,
   onAlertDialogOpen,
-  wideMap,
   isDesktop = false,
+  intro,
   onFiltersOpenChange,
   onReset,
   onSaveSearch,
-  onToggleLayout,
 }: {
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
@@ -81,110 +93,146 @@ export function SearchHeader({
   freeAlertUsage?: FreeAlertUsage | null;
   /** La fenêtre de création d'alerte s'ouvre (compte connecté) : de quoi lire l'usage de l'alerte gratuite. */
   onAlertDialogOpen?: () => void;
-  wideMap: boolean;
   isDesktop?: boolean;
+  /** En-tête du catalogue, entre l'en-tête du site et la barre de filtres. */
+  intro?: React.ReactNode;
   onFiltersOpenChange: (open: boolean) => void;
   onReset: () => void;
   onSaveSearch: (options?: SaveSearchOptions) => void;
-  onToggleLayout: () => void;
 }) {
-  const headerRef = useRef<HTMLElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const header = headerRef.current;
-    const main = header?.closest("main");
-    if (!header || !main) return;
+    const bar = barRef.current;
+    const main = bar?.closest("main");
+    if (!bar || !main) return;
     const update = () =>
-      main.style.setProperty("--sales-header-height", `${header.getBoundingClientRect().height}px`);
+      main.style.setProperty("--sales-header-height", `${bar.getBoundingClientRect().height}px`);
     update();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(update);
-    observer.observe(header);
+    observer.observe(bar);
     return () => observer.disconnect();
   }, []);
+  const filtersButtonLabel = (
+    <>
+      Tous les filtres
+      {activeFiltersCount > 0 && (
+        <span className="rounded-full bg-brand-navy px-2 py-0.5 text-xs text-white">
+          {activeFiltersCount}
+        </span>
+      )}
+    </>
+  );
   return (
-    <SiteHeader
-      placement="sticky"
-      headerRef={headerRef}
-      // L'en-tête ne reste collé en haut de l'écran qu'à partir de `lg` : sur mobile il défile avec la
-      // page et rend sa place à la liste (`static` l'emporte sur le `sticky` de `SiteHeader`).
-      className="sales-header static lg:sticky"
-      center={isDesktop ? <GeographicSearch draft={draft} setDraft={setDraft} /> : undefined}
-      belowBar={
-        <div className="border-t border-border px-4 py-2.5 lg:px-5">
-          <div className="flex flex-wrap items-center gap-2">
+    <>
+      <SiteHeader
+        placement="sticky"
+        // L'en-tête du site défile avec la page (`static` l'emporte sur le `sticky` de `SiteHeader`) :
+        // c'est la barre de filtres qui reste à l'écran.
+        className="sales-header static"
+        belowBar={
+          isFetching && !isLoading ? (
+            <p role="status" className="sr-only">
+              Mise à jour des résultats
+            </p>
+          ) : (
+            // Région présente dès le départ (vide) : l'annonce suivante sera bien lue.
+            <p role="status" className="sr-only" />
+          )
+        }
+      />
+      {intro}
+      <div
+        ref={barRef}
+        data-sales-filters=""
+        className="z-30 bg-background py-2.5 lg:sticky lg:top-0"
+      >
+        {/* Une seule colonne bornée à la largeur de l'écran : les rangées qui défilent (filtres,
+            types de vente) ne doivent pas élargir la grille. */}
+        <div className="mx-auto grid max-w-[90rem] grid-cols-[minmax(0,1fr)] gap-2 px-4 lg:gap-3 lg:px-6">
+          <div className="flex flex-wrap items-center gap-2 lg:rounded-lg lg:border lg:border-line-soft lg:bg-white lg:p-2">
+            <div className="flex min-w-0 flex-[2_1_16rem]">
+              <GeographicSearch draft={draft} setDraft={setDraft} />
+            </div>
             {!isDesktop ? (
-              <div className="flex min-w-0 flex-1">
-                <GeographicSearch draft={draft} setDraft={setDraft} />
-              </div>
+              <span className="lg:hidden">
+                <SaveSearchButton
+                  compact
+                  saving={savingAlert}
+                  signedIn={signedIn}
+                  dailyAllowed={dailyAlertsAllowed}
+                  emailRecapEnabled={emailRecapEnabled}
+                  freeAlertUsage={dailyAlertsAllowed ? null : freeAlertUsage}
+                  onOpen={onAlertDialogOpen}
+                  onClick={onSaveSearch}
+                />
+              </span>
             ) : null}
-            {!isDesktop ? (
-              <SaveSearchButton
-                compact
-                saving={savingAlert}
-                signedIn={signedIn}
-                dailyAllowed={dailyAlertsAllowed}
-                emailRecapEnabled={emailRecapEnabled}
-                freeAlertUsage={dailyAlertsAllowed ? null : freeAlertUsage}
-                onOpen={onAlertDialogOpen}
-                onClick={onSaveSearch}
-              />
-            ) : null}
+            <div className="hidden min-w-0 flex-[3_1_34rem] flex-wrap items-center gap-2 lg:flex">
+              <HomeTypeFilter draft={draft} setDraft={setDraft} />
+              <PriceFilter draft={draft} setDraft={setDraft} />
+              <LazyDateFilter draft={draft} setDraft={setDraft} />
+              <button
+                type="button"
+                aria-expanded={filtersOpen}
+                onClick={() => onFiltersOpenChange(!filtersOpen)}
+                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+              >
+                <SlidersHorizontal className="h-4 w-4" aria-hidden />
+                {filtersButtonLabel}
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:hidden">
             <MobileFilterChips
               draft={draft}
               setDraft={setDraft}
               preview={!signedIn}
               pepitesActive={pepitesActive}
               signupLinks={signupLinks}
+              activeFiltersCount={activeFiltersCount}
+              filtersOpen={filtersOpen}
+              onOpenFilters={() => onFiltersOpenChange(true)}
             />
-            <div className="hidden lg:flex flex-wrap items-center gap-2">
-              <HomeTypeFilter draft={draft} setDraft={setDraft} />
-              <PriceFilter draft={draft} setDraft={setDraft} />
-              <LazyDateFilter draft={draft} setDraft={setDraft} />
-            </div>
-            <button
-              type="button"
-              aria-expanded={filtersOpen}
-              onClick={() => onFiltersOpenChange(!filtersOpen)}
-              className="hidden min-h-11 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold hover:bg-surface-tint lg:inline-flex"
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              Tous les filtres
-              {activeFiltersCount > 0 && (
-                <span className="rounded-full bg-brand-navy px-2 py-0.5 text-xs text-white">
-                  {activeFiltersCount}
-                </span>
-              )}
-            </button>
-            {activeFiltersCount > 0 && (
+            {!isDesktop && activeFiltersCount > 0 && (
               <button
                 type="button"
                 onClick={onReset}
-                className="inline-flex min-h-11 items-center px-2 text-xs font-semibold text-ink-soft underline underline-offset-4"
+                className="inline-flex min-h-11 cursor-pointer items-center px-1 text-sm font-semibold text-ink-soft underline underline-offset-4"
               >
                 Effacer les filtres
               </button>
             )}
-            <div className="ml-auto hidden items-center gap-2 lg:flex">
-              <SaveSearchButton
-                saving={savingAlert}
-                signedIn={signedIn}
-                dailyAllowed={dailyAlertsAllowed}
-                emailRecapEnabled={emailRecapEnabled}
-                freeAlertUsage={dailyAlertsAllowed ? null : freeAlertUsage}
-                onOpen={onAlertDialogOpen}
-                onClick={onSaveSearch}
-              />
-              <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
-            </div>
           </div>
-          {isFetching && !isLoading && (
-            <p role="status" className="sr-only">
-              Mise à jour des résultats
-            </p>
-          )}
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <SaleTypeFilter
+                bar
+                value={draft.saleType}
+                onChange={(saleType) =>
+                  setDraft((current) => ({
+                    ...current,
+                    saleType,
+                    tribunal: !saleType || saleType === "tribunal" ? current.tribunal : "",
+                  }))
+                }
+              />
+            </div>
+            {/* Écran large : au bout de la rangée des types de vente, pour que la barre de filtres
+                tienne sur une ligne. */}
+            {isDesktop && activeFiltersCount > 0 && (
+              <button
+                type="button"
+                onClick={onReset}
+                className="inline-flex min-h-11 shrink-0 cursor-pointer items-center px-2 text-sm font-semibold text-ink-soft underline underline-offset-4 hover:text-brand-navy"
+              >
+                Effacer les filtres
+              </button>
+            )}
+          </div>
         </div>
-      }
-    />
+      </div>
+    </>
   );
 }
 
@@ -323,8 +371,10 @@ export function PriceFilter({
   }
   return (
     <>
-      <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
-        <span className="px-3 text-sm font-bold text-brand-navy">Mise à prix</span>
+      <div className="inline-flex h-11 min-w-0 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft">
+        <span className="flex h-full items-center border-r border-line-soft px-3 text-sm font-semibold text-brand-navy">
+          Mise à prix
+        </span>
         <input
           aria-label="Prix minimum"
           inputMode="numeric"
@@ -333,9 +383,12 @@ export function PriceFilter({
           onChange={(event) =>
             setDraft((current) => ({ ...current, minPrice: event.target.value }))
           }
-          placeholder="min"
-          className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
+          placeholder="min €"
+          className="h-full w-24 min-w-0 bg-transparent px-3 text-sm font-semibold tabular-nums outline-none"
         />
+        <span aria-hidden="true" className="text-ink-soft">
+          –
+        </span>
         <input
           aria-label="Prix maximum"
           inputMode="numeric"
@@ -344,8 +397,8 @@ export function PriceFilter({
           onChange={(event) =>
             setDraft((current) => ({ ...current, maxPrice: event.target.value }))
           }
-          placeholder="max"
-          className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
+          placeholder="max €"
+          className="h-full w-24 min-w-0 bg-transparent px-3 text-sm font-semibold tabular-nums outline-none"
         />
       </div>
       {rangeMessage}
@@ -430,7 +483,7 @@ export function HomeTypeFilter({
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
 }) {
   return (
-    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft">
       <Building2 className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Type de bien</span>
       <select
@@ -469,24 +522,27 @@ export function SortDropdown({
   investmentScore?: boolean;
   sort: SearchSortKey;
   onChange: (sort: SearchSortKey) => void;
-  /** Sans cadre ni icône : le tri est un segment d'un contrôle joint (voir `SortAndSaleTypeControl`). */
+  /** Sans cadre ni icône (mobile : le tri est un mot dans la barre de liste). */
   bare?: boolean;
 }) {
   return (
     <label
       className={`relative inline-flex min-h-11 min-w-0 items-center ${
         bare
-          ? "flex-[3] focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-gold-soft"
-          : "max-w-full rounded-md border border-line bg-white shadow-sm"
+          ? "max-w-full focus-within:outline-2 focus-within:outline-gold-soft sm:rounded-md sm:border sm:border-line sm:bg-white"
+          : "max-w-full rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft"
       }`}
     >
-      {bare ? null : <ArrowUpDown className="ml-3 h-4 w-4 shrink-0 text-ink-soft" />}
+      <ArrowUpDown
+        className={`ml-3 h-4 w-4 shrink-0 text-ink-soft ${bare ? "hidden sm:block" : ""}`}
+        aria-hidden
+      />
       <span className="sr-only">Tri</span>
       <select
         value={sort}
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
-        className={`h-full w-full min-w-0 cursor-pointer appearance-none text-ellipsis bg-transparent py-0 pr-9 text-sm font-bold text-brand-navy outline-none ${
-          bare ? "pl-3" : "pl-2"
+        className={`h-full w-full min-w-0 cursor-pointer appearance-none text-ellipsis bg-transparent py-0 pr-9 text-sm font-semibold text-brand-navy outline-none ${
+          bare ? "pl-1 sm:pl-2" : "pl-2"
         }`}
       >
         {SORT_OPTIONS.filter(
@@ -505,23 +561,6 @@ export function SortDropdown({
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
-  );
-}
-
-/**
- * Tri et type de vente en UN seul contrôle (deux listes déroulantes jointes, 44 px de haut) : avant,
- * le tri, puis une rangée de pastilles de type de vente, prenaient chacun une ligne avant la première
- * annonce. Chaque liste garde son nom accessible (« Tri », « Type de vente »).
- */
-export function SortAndSaleTypeControl({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      role="group"
-      aria-label="Tri et type de vente"
-      className="inline-flex min-w-0 max-w-full flex-1 items-stretch divide-x divide-line rounded-md border border-line bg-white shadow-sm sm:flex-none"
-    >
-      {children}
-    </div>
   );
 }
 
@@ -544,7 +583,7 @@ export function ResultsViewToggle({
   return (
     <fieldset className="hidden min-w-0 border-0 p-0 lg:block">
       <legend className="sr-only">Affichage des résultats</legend>
-      <div className="inline-flex overflow-hidden rounded-md border border-line bg-white shadow-sm">
+      <div className="inline-flex overflow-hidden rounded-md border border-line bg-white">
         {RESULTS_VIEW_OPTIONS.map(({ value, label }) => {
           const active = view === value;
           return (
@@ -631,7 +670,7 @@ export function SaveSearchButton({
       title="Créer une alerte à partir de cette recherche"
       onClick={signedIn ? undefined : () => onClick()}
       className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
-        compact ? "h-11 px-3" : "h-10 px-3"
+        compact ? "h-11 px-3" : "min-h-11 px-4"
       }`}
     >
       {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
@@ -745,14 +784,15 @@ export function CsvExportButton({
   locked: boolean;
   onClick: () => void;
 }) {
-  // Un lien discret dans la ligne d'aide sous le titre des résultats (maquette /sales du 24/10/2026).
+  // Bouton à droite du titre du catalogue (maquette /sales validée), à côté de l'alerte. Mêmes droits
+  // qu'avant : le clic d'un visiteur ou de l'offre Découverte explique, il ne télécharge rien.
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={exporting}
       title={locked ? "Export CSV réservé à l'offre Analyse" : "Exporter les résultats en CSV"}
-      className="inline-flex min-h-8 shrink-0 cursor-pointer items-center gap-1.5 font-semibold text-brand-navy underline underline-offset-2 hover:text-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:text-ink-soft"
+      className="inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:text-ink-soft"
     >
       {exporting ? (
         <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -770,7 +810,7 @@ export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle
     <button
       type="button"
       onClick={onToggle}
-      className="hidden h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm transition-colors hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft 2xl:inline-flex"
+      className="hidden min-h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy transition-colors hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft 2xl:inline-flex"
     >
       <LayoutPanelLeft className="h-4 w-4" />
       {label}
@@ -779,76 +819,54 @@ export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle
 }
 
 /**
- * Hauteur de l'en-tête avec un titre sur DEUX lignes, réservée sous `sm`. Mesuré avec l'ancienne
- * police de titre (Cormorant Garamond) : à 412 px, le h1 tenait sur une ligne avec elle (348 px
- * pour 348 px disponibles) mais sur deux dans la police de secours (379 px). Manrope, ramenée à la
- * hauteur de capitales de Cormorant (`--font-display-adjust`), est un peu plus large : le titre
- * prend deux lignes, la hauteur réservée.
- * Quand la police arrive après le premier affichage (4G), la ligne en trop disparaissait : tout
- * ce qui suit remontait de 33 px (CLS 0,03) et la photo de la première carte, déjà peinte, gardait
- * pour le LCP une surface rognée par le bas de l'écran (puis un second LCP quand elle était
- * recréée à l'hydratation). Valeur : py-4 (2 rem) + h1 de 2 × 2,0625 (1,65 rem, interligne 1,25)
- * + marge (0,25) + compteur (1,25) = 7,625 rem. Le surtitre n'est affiché qu'à partir de `sm`
- * (il prenait 1,1875 rem sur mobile : 0,9375 + marge 0,25) : la hauteur réservée ne le compte plus.
+ * Compteur de la barre de liste : « 833 annonces · page 1 sur 35 ». Seul le nombre d'annonces est
+ * annoncé aux lecteurs d'écran (région polie), pas toute la ligne. Le titre en phrase du catalogue
+ * dit déjà la zone : elle n'est plus répétée ici.
  */
-const RESULTS_SUMMARY_MOBILE_MIN_HEIGHT = "min-h-[7.625rem] sm:min-h-0";
-
 export function ResultsSummary({
-  search,
   displayCount,
-  hasLocalFilters,
   isLoading,
   hasError = false,
   geocoding,
+  page,
+  totalPages,
   refreshing = false,
 }: {
-  search: SalesSearchParams;
   displayCount: number;
-  hasLocalFilters: boolean;
   isLoading: boolean;
   hasError?: boolean;
   geocoding: boolean;
+  page: number;
+  /** Pages de la recherche ; 0 tant que le total n'est pas connu. */
+  totalPages: number;
   /** La liste se met à jour (page, filtre) : un petit indicateur dans la ligne du compteur. */
   refreshing?: boolean;
 }) {
-  // Un département seul s'écrit avec son nom (« Bouches-du-Rhône (13) »), pas avec son code.
-  const department = search.city ? null : departmentFromCode(search.department);
-  const departmentName = department ? `${department.name} (${department.code})` : null;
-  const location =
-    search.city || departmentName || search.department || search.query || "France entière";
   return (
-    <div className={`min-w-0 px-4 py-4 sm:px-5 ${RESULTS_SUMMARY_MOBILE_MIN_HEIGHT}`}>
-      <h1 className="font-display text-[1.65rem] font-medium leading-tight">
-        {location === "France entière"
-          ? "Ventes immobilières aux enchères"
-          : departmentName
-            ? `Ventes immobilières aux enchères : ${departmentName}`
-            : `Ventes immobilières aux enchères à ${location}`}
-      </h1>
-      <p className="mt-1 text-sm text-ink-soft">
-        {/* Seul le compteur est annoncé aux lecteurs d'écran, pas tout l'en-tête. */}
-        <span aria-live="polite">
-          {isLoading
-            ? "Recherche en cours…"
-            : hasError
-              ? "Catalogue momentanément indisponible"
-              : `${displayCount.toLocaleString("fr-FR")} annonce${displayCount === 1 ? "" : "s"}`}
+    <p className="min-w-0 shrink-0 text-sm text-ink-soft sm:shrink">
+      <strong className="font-semibold text-brand-navy tabular-nums" aria-live="polite">
+        {isLoading
+          ? "Recherche en cours…"
+          : hasError
+            ? "Catalogue momentanément indisponible"
+            : `${displayCount.toLocaleString("fr-FR")} annonce${displayCount === 1 ? "" : "s"}`}
+      </strong>
+      {/* Indicateur visuel seul (l'annonce « Mise à jour des résultats » existe pour les
+          lecteurs d'écran) : plus petit que la ligne, il ne change pas sa hauteur. */}
+      {refreshing ? (
+        <span
+          aria-hidden="true"
+          data-testid="results-refreshing"
+          className="ml-1.5 inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent align-[-1px] motion-reduce:animate-none"
+        />
+      ) : null}
+      {!isLoading && !hasError && totalPages > 1 ? (
+        <span className="hidden tabular-nums sm:inline">
+          {` · page ${page.toLocaleString("fr-FR")} sur ${totalPages.toLocaleString("fr-FR")}`}
         </span>
-        {/* Indicateur visuel seul (l'annonce « Mise à jour des résultats » existe pour les
-            lecteurs d'écran) : plus petit que la ligne, il ne change pas sa hauteur. */}
-        {refreshing ? (
-          <span
-            aria-hidden="true"
-            data-testid="results-refreshing"
-            className="ml-1.5 inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent align-[-1px] motion-reduce:animate-none"
-          />
-        ) : null}
-        {" · "}
-        {search.viewport ? "Zone sélectionnée" : location}
-        {hasLocalFilters ? " · filtres sur la page affichée" : ""}
-        {geocoding ? " · localisation en cours" : ""}
-      </p>
-    </div>
+      ) : null}
+      {geocoding ? " · localisation en cours" : ""}
+    </p>
   );
 }
 

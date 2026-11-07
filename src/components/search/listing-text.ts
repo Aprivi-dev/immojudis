@@ -156,6 +156,38 @@ export function listingDateLabel(sale: AuctionSale, now: Date = new Date()): str
   return formatDate(sale.sale_date);
 }
 
+const SHORT_DATE = new Intl.DateTimeFormat("fr-FR", {
+  day: "numeric",
+  month: "short",
+  timeZone: "Europe/Paris",
+  year: "numeric",
+});
+
+/**
+ * Date courte de la case « Vente le » d'une carte : « 6 nov. 2026 » ; « Vente passée » et « Date à
+ * confirmer » comme `listingDateLabel`. `now` est injectable pour les tests.
+ */
+export function listingShortDateLabel(sale: AuctionSale, now: Date = new Date()): string {
+  const long = listingDateLabel(sale, now);
+  if (long === PAST_SALE_LABEL || !sale.sale_date) return long;
+  const date = new Date(sale.sale_date);
+  return Number.isFinite(date.getTime()) ? SHORT_DATE.format(date) : long;
+}
+
+/**
+ * Pastille du type de vente d'une carte, avec les mots des filtres de type (« Au tribunal », « Chez
+ * le notaire ») : la pastille et le filtre disent la même chose.
+ */
+export function saleTypeBadgeLabel(sale: AuctionSale): string {
+  return {
+    tribunal: "Au tribunal",
+    notary: "Chez le notaire",
+    state: "Vente domaniale",
+    online: "En ligne",
+    unknown: "Type de vente à préciser",
+  }[getSaleProcedure(sale).venueType];
+}
+
 /**
  * Nom accessible du lien qui couvre une carte (ou une ligne de tableau) : « Voir <titre> » ne
  * distingue pas deux annonces de la même ville, la liste de liens du lecteur d'écran en serait

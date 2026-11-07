@@ -114,7 +114,7 @@ test.describe("« Retour » sur /sales", () => {
     await page.goto("/sales");
 
     await expect(async () => {
-      await page.getByRole("button", { name: "Carte", exact: true }).click();
+      await page.getByRole("button", { name: "Voir sur la carte", exact: true }).click();
       await expect(page).toHaveURL(/[?&]map=true/, { timeout: 1000 });
     }).toPass();
     await expect(page.getByRole("button", { name: "Liste" })).toBeVisible();

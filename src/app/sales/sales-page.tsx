@@ -29,13 +29,18 @@ function useHydrated(): boolean {
  * `/sales?page=2`) est rendue sans lire d'adresse : `useSearchParams()` y est vide côté serveur. Elle
  * donne ici l'adresse qu'elle représente, pour le HTML et l'hydratation ; ensuite c'est l'adresse
  * du navigateur qui fait foi (filtres, pages suivantes).
+ *
+ * `today` : jour de Paris retenu par le serveur pour « dont M cette semaine » (voir
+ * `renderSalesCatalogue`), repris tel quel à l'hydratation.
  */
 export function SalesPage({
   serverSeeded = false,
   staticQuery,
+  today,
 }: {
   serverSeeded?: boolean;
   staticQuery?: string;
+  today?: string;
 }) {
   const searchParams = useSearchParams();
   const hydrated = useHydrated();
@@ -45,5 +50,5 @@ export function SalesPage({
     () => validateSalesSearch(searchParamsToRecord(new URLSearchParams(queryString))),
     [queryString],
   );
-  return <SearchPage search={search} serverSeeded={serverSeeded} />;
+  return <SearchPage search={search} serverSeeded={serverSeeded} serverToday={today} />;
 }
