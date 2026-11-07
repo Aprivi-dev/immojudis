@@ -3,6 +3,7 @@ import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 
 export type DemographicSignalKind =
   | "population"
@@ -439,11 +440,6 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
 function matches(definition: SignalDefinition, text: string): boolean {
   const normalized = normalizeText(text);
   return definition.patterns.some((pattern) => pattern.test(normalized));
-}
-
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
 }
 
 function dedupeSignals(signals: DemographicSignal[]): DemographicSignal[] {

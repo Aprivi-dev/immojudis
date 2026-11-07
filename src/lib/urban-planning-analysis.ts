@@ -2,6 +2,7 @@ import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 import { dedupeStrings } from "@/lib/dedupe-strings";
 import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 
 export type UrbanPlanningSignalKind =
   | "zoning"
@@ -416,11 +417,6 @@ function riskTexts(risk: SaleRisk): string[] {
     texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
   }
   return texts.map(cleanText).filter((text): text is string => Boolean(text));
-}
-
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
 }
 
 function dedupeItems(items: UrbanPlanningItem[]): UrbanPlanningItem[] {
