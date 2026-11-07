@@ -26,22 +26,33 @@ export function LaunchOfferListBanner() {
       <div
         aria-hidden
         data-testid="launch-offer-list-banner-placeholder"
-        className="mb-3 min-h-[3.75rem] sm:min-h-11"
+        className="mb-4 min-h-[3.75rem] sm:min-h-11"
       />
     );
   }
   if (!active) return null;
+  // « Inscription gratuite : 7 jours… » : le début en gras, comme dans la maquette /sales validée.
+  const separator = LAUNCH_OFFER_SHORT_TEXT.indexOf(" : ");
+  const lead = separator > 0 ? LAUNCH_OFFER_SHORT_TEXT.slice(0, separator + 2) : "";
+  const rest =
+    separator > 0 ? LAUNCH_OFFER_SHORT_TEXT.slice(separator + 2) : LAUNCH_OFFER_SHORT_TEXT;
   return (
     <details
       data-testid="launch-offer-list-banner"
-      className="group mb-3 rounded-lg border border-gold/30 bg-gold/10 text-sm text-brand-navy"
+      className="group mb-4 rounded-lg bg-surface-tint text-sm text-ink-strong"
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-2 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft">
-        <span>{LAUNCH_OFFER_SHORT_TEXT}</span>
-        <ChevronDown
-          className="size-4 shrink-0 transition-transform group-open:rotate-180"
-          aria-hidden
-        />
+      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg px-4 py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft">
+        <span>
+          {lead ? <strong className="font-semibold text-brand-navy">{lead}</strong> : null}
+          {rest}
+        </span>
+        <span className="inline-flex items-center gap-1 font-semibold text-gold-text underline underline-offset-4 group-hover:text-brand-navy">
+          Voir les conditions
+          <ChevronDown
+            className="size-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+            aria-hidden
+          />
+        </span>
       </summary>
       <div className="px-4 pb-3 leading-relaxed">
         <p>{LAUNCH_OFFER_VISITOR_TEXT}</p>

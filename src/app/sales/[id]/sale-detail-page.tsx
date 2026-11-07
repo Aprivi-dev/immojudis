@@ -81,6 +81,8 @@ type SaleDetailPageProps = {
   rentReference?: RentReference | null;
   /** Zonage « zone tendue » de la commune, lu par le serveur ; `null` : inconnu (ligne absente de la fiche). */
   housingTension?: HousingTension | null;
+  /** Rendement brut à la mise à prix de la fiche publique, calculé par le serveur (`publicRentalYield`). */
+  rentalYield?: string | null;
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {
@@ -102,6 +104,7 @@ function SaleDetailContent({
   openFeeRegimes,
   rentReference = null,
   housingTension = null,
+  rentalYield = null,
 }: SaleDetailPageProps) {
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
@@ -293,6 +296,7 @@ function SaleDetailContent({
         openFeeRegimes={openFeeRegimes}
         rentReference={rentReference}
         housingTension={housingTension}
+        rentalYield={rentalYield}
         verifyingAccount={sessionHinted}
       />
     );
@@ -360,6 +364,7 @@ function SaleDetailContent({
         openFeeRegimes={openFeeRegimes}
         rentReference={rentReference}
         housingTension={housingTension}
+        rentalYield={rentalYield}
         verifyingAccount
       />
     );
@@ -379,6 +384,7 @@ function SaleDetailContent({
         openFeeRegimes={openFeeRegimes}
         rentReference={rentReference}
         housingTension={housingTension}
+        rentalYield={rentalYield}
       />
     );
   }

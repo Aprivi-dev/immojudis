@@ -48,7 +48,8 @@ export function DesktopMapZone({
       tabIndex={-1}
       role="region"
       aria-label="Carte des ventes"
-      className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft"
+      // Sous la barre de filtres collante, dans un cadre arrondi au filet (maquette /sales validée).
+      className="sticky top-[calc(var(--sales-header-height)_+_0.75rem)] h-[calc(100svh_-_var(--sales-header-height)_-_1.5rem)] min-h-[28rem] overflow-hidden rounded-lg border border-line bg-surface-tint focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft"
     >
       {started ? children : <MapPreview onStart={onStart} onExplicitStart={startFromButton} />}
       <p role="status" aria-live="polite" className="sr-only">

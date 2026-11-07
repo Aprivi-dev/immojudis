@@ -162,9 +162,11 @@ describe("/sales : « Retour » défait la carte, la page et les filtres validé
     });
     expect(pushStateCalls()).toEqual(["/sales?sort=price_asc"]);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Type de vente" }), {
-      target: { value: "tribunal" },
-    });
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Type de vente" })).getByRole("button", {
+        name: "Au tribunal",
+      }),
+    );
     await waitFor(() => expect(pushStateCalls().at(-1)).toContain("saleType=tribunal"), {
       timeout: 3000,
     });
@@ -185,7 +187,7 @@ describe("/sales : « Retour » défait la carte, la page et les filtres validé
     renderSales("/sales", { desktop: false });
     const back = vi.spyOn(window.history, "back").mockImplementation(() => undefined);
 
-    fireEvent.click(screen.getByRole("button", { name: "Carte" }));
+    fireEvent.click(screen.getByRole("button", { name: "Voir sur la carte" }));
     expect(pushStateCalls()).toEqual(["/sales?map=true"]);
     expect(await screen.findByRole("button", { name: "Liste" })).toBeTruthy();
 
@@ -207,7 +209,7 @@ describe("/sales : « Retour » défait la carte, la page et les filtres validé
 
   it("rouvre la liste quand « Retour » enlève ?map=true de l'adresse", async () => {
     renderSales("/sales", { desktop: false });
-    fireEvent.click(screen.getByRole("button", { name: "Carte" }));
+    fireEvent.click(screen.getByRole("button", { name: "Voir sur la carte" }));
     expect(await screen.findByRole("button", { name: "Liste" })).toBeTruthy();
     act(() => {
       window.history.replaceState(null, "", "/sales");
@@ -244,7 +246,7 @@ describe("/sales : compte en cours de vérification", () => {
   it("n'envoie pas vers la connexion et le dit, pour « Créer une alerte »", () => {
     state.auth = { user: null, loading: true };
     renderSales("/sales");
-    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte sur cette recherche" }));
     expect(state.toast.message).toHaveBeenCalledWith(
       "Vérification de votre compte en cours. Réessayez dans un instant.",
     );
@@ -277,7 +279,12 @@ describe("/sales : rafraîchissements", () => {
       await vi.advanceTimersByTimeAsync(5 * 60_000);
     });
     expect(state.fetchSearchResults).not.toHaveBeenCalled();
-    expect(state.fetchSearchCount).not.toHaveBeenCalled();
+    // Le total de la recherche n'est pas relu ; seul le comptage « cette semaine » du titre (non
+    // semé par ce test) part une fois, sans relecture ensuite.
+    expect(
+      state.fetchSearchCount.mock.calls.filter(([args]) => !args.search.minSaleDate),
+    ).toHaveLength(0);
+    expect(state.fetchSearchCount.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
   it("relit la liste d'un compte connecté toutes les 60 s", async () => {
@@ -311,8 +318,10 @@ describe("/sales : rafraîchissements", () => {
     await waitFor(() => expect(screen.getByTestId("results-refreshing")).toBeTruthy());
     expect(screen.queryByText("Actualisation des annonces…")).toBeNull();
     // Le compteur annonce toujours la même chose, sans texte de plus.
-    const summary = screen.getByRole("heading", { level: 1 }).parentElement!;
-    expect(within(summary).getByTestId("results-refreshing").textContent).toBe("");
+    const indicator = screen.getByTestId("results-refreshing");
+    expect(indicator.textContent).toBe("");
+    // Dans la ligne du compteur de la barre de liste.
+    expect(indicator.closest("p")!.textContent).toMatch(/annonces/);
 
     await act(async () => finish(sales));
     await waitFor(() => expect(screen.queryByTestId("results-refreshing")).toBeNull());

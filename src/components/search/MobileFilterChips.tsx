@@ -6,6 +6,7 @@ import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import {
   FILTER_NOT_IN_ALERT_NOTE,
@@ -19,7 +20,7 @@ import { DateRangeFields } from "./DateRangeFields";
 import { draftPrice, priceRangeError, type SearchDraft } from "./search-page-state";
 
 const CHIP_BASE =
-  "inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-3 text-sm font-semibold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
+  "inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 const CHIP_IDLE = "border-line bg-white text-brand-navy hover:border-brand-navy";
 const CHIP_ACTIVE = "border-brand-navy bg-brand-navy text-white";
 
@@ -47,7 +48,15 @@ export function MobileFilterChips({
   preview = false,
   pepitesActive = false,
   signupLinks,
+  activeFiltersCount = 0,
+  filtersOpen = false,
+  onOpenFilters,
 }: {
+  /** Critères actifs : le nombre s'écrit sur la pastille « Filtres ». */
+  activeFiltersCount?: number;
+  filtersOpen?: boolean;
+  /** Ouvre la fenêtre de tous les filtres : la pastille « Filtres » ouvre la rangée. */
+  onOpenFilters?: () => void;
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   /** Visiteur sans compte : les deux filtres de repères nécessitent un compte, ils sont grisés et mènent à l'inscription. */
@@ -72,6 +81,22 @@ export function MobileFilterChips({
         aria-label="Filtres rapides"
         className="-mx-4 flex w-full gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] lg:hidden"
       >
+        {onOpenFilters ? (
+          <button
+            type="button"
+            aria-expanded={filtersOpen}
+            onClick={onOpenFilters}
+            className={chipClass(false)}
+          >
+            <SlidersHorizontal className="h-4 w-4" aria-hidden />
+            Filtres
+            {activeFiltersCount > 0 ? (
+              <span className="rounded-full bg-brand-navy px-2 py-0.5 text-xs text-white">
+                {activeFiltersCount}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         {pepitesActive ? (
           <button
             type="button"

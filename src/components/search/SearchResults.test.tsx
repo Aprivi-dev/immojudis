@@ -277,9 +277,21 @@ describe("useful public discovery", () => {
         />
       </QueryClientProvider>,
     );
-    // Titre court de la fiche ; la surface y figure, la ligne dessous dit le département et les pièces.
+    // Titre court de la fiche ; la surface y figure, la ligne dessous dit le département et les
+    // chambres, et la fiche technique la surface, les pièces et la date.
     expect(screen.getByRole("heading", { name: "Appartement de 60 m² à Bordeaux" })).toBeTruthy();
-    expect(screen.getByText(/Gironde \(33\) · 3 pièces/)).toBeTruthy();
+    expect(screen.getByText(/Gironde \(33\) · 2 chambres/)).toBeTruthy();
+    const facts = container.querySelector("dl")!;
+    expect([...facts.querySelectorAll("dt")].map((term) => term.textContent)).toEqual([
+      "Surface",
+      "Pièces",
+      "Vente le",
+    ]);
+    expect([...facts.querySelectorAll("dd")].map((value) => value.textContent)).toEqual([
+      "60 m²",
+      "3",
+      "1 oct. 2099",
+    ]);
     expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
     expect(screen.getByText("mise à prix").className).not.toContain("text-xs");
     expect(screen.getAllByText(/oct/i).length).toBeGreaterThan(0);
@@ -392,7 +404,7 @@ describe("useful public discovery", () => {
     }
   });
 
-  describe("pastille « N points à vérifier »", () => {
+  describe("fiche technique de la carte", () => {
     const cardSale = (overrides: Record<string, unknown> = {}) =>
       ({
         ...sale("verify-card"),
@@ -423,16 +435,62 @@ describe("useful public discovery", () => {
         </QueryClientProvider>,
       );
 
-    it("compte les points déjà visibles sur la carte et mène à la fiche", () => {
-      renderCard({ app_surface_m2: null, occupancy_status: null });
-      expect(screen.getByText(/surface non communiquée/)).toBeTruthy();
-      fireEvent.click(screen.getByRole("button", { name: "2 points à vérifier" }));
-      const note = screen.getByRole("note");
-      expect(note.textContent).toContain("Surface non communiquée dans l’annonce");
-      expect(note.textContent).toContain("Occupation du bien à vérifier");
-      expect(screen.getByRole("link", { name: "Voir la fiche" }).getAttribute("href")).toBe(
-        "/sales/verify-card#points-a-verifier",
+    const facts = (container: HTMLElement) =>
+      Object.fromEntries(
+        [...container.querySelectorAll("dl > div")].map((item) => [
+          item.querySelector("dt")!.textContent,
+          item.querySelector("dd")!.textContent,
+        ]),
       );
+
+    it("n'a que deux pastilles, le type de vente et l'échéance : les points à vérifier restent sur la fiche", () => {
+      const { container } = renderCard({
+        app_surface_m2: null,
+        occupancy_status: null,
+        sale_venue_type: "notary",
+        sale_verification_status: "verified",
+      });
+      expect(screen.getByText(/surface non communiquée/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+      const badges = container.querySelector("[data-testid='card-badges']")!;
+      expect(badges.firstElementChild?.textContent).toBe("Chez le notaire");
+      expect(badges.children.length).toBeLessThanOrEqual(2);
+      expect(facts(container).Surface).toBe("n.c.");
+    });
+
+    it("dit les pièces au visiteur et l'occupation à l'abonné, dans la case du milieu", () => {
+      let view = renderCard({ rooms_count: 4 }, { locked: true, analysisLocked: false });
+      expect(facts(view.container)).toEqual({
+        Surface: "50 m²",
+        Pièces: "4",
+        "Vente le": "20 janv. 2099",
+      });
+      cleanup();
+      view = renderCard({ rooms_count: 4 }, { locked: false, analysisLocked: true });
+      expect(Object.keys(facts(view.container))).toEqual(["Surface", "Pièces", "Vente le"]);
+      cleanup();
+      view = renderCard({ rooms_count: 4, occupancy_status: "libre" });
+      expect(facts(view.container)).toEqual({
+        Surface: "50 m²",
+        Occupation: "Libre",
+        "Vente le": "20 janv. 2099",
+      });
+      const occupancy = [...view.container.querySelectorAll("dd")][1];
+      expect(occupancy.className).toContain("text-success");
+    });
+
+    it("ramène les faits sur une ligne pour le mobile", () => {
+      const { container } = renderCard(
+        { rooms_count: 2, occupancy_status: "occupied" },
+        { locked: true, analysisLocked: false },
+      );
+      expect(screen.getByTestId("card-facts-line").textContent).toBe(
+        "50 m² · 2 pièces · vente le 20 janv. 2099",
+      );
+      expect(screen.getByTestId("card-facts-line").className).toContain("sm:hidden");
+      const grid = container.querySelector("dl")!.className.split(/\s+/);
+      expect(grid).toContain("hidden");
+      expect(grid).toContain("sm:grid");
     });
 
     it("montre le prix au m² de la mise à prix quand la surface est publiée, et seulement alors", () => {
@@ -468,31 +526,90 @@ describe("useful public discovery", () => {
       expect(button.className).toContain("border-brand-navy/55");
     });
 
-    it("n'affiche rien pour une carte complète", () => {
-      renderCard({});
-      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
-    });
-
-    it("ne compte pas l'occupation quand la carte ne la montre pas (liste publique, compte gratuit)", () => {
-      renderCard({ occupancy_status: null }, { locked: true, analysisLocked: false });
-      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
-      cleanup();
-      renderCard({ occupancy_status: null }, { locked: false, analysisLocked: true });
-      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
-      cleanup();
-      renderCard(
-        { occupancy_status: null, app_surface_m2: null },
+    it("ne montre jamais l'occupation à qui n'y a pas droit (liste publique, compte gratuit)", () => {
+      for (const access of [
         { locked: true, analysisLocked: false },
-      );
-      expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
+        { locked: false, analysisLocked: true },
+      ]) {
+        const { container } = renderCard({ occupancy_status: "libre" }, access);
+        expect(container.textContent).not.toMatch(/libre/i);
+        cleanup();
+      }
     });
 
-    it("montre l'occupation dans la ligne du bien, pas dans une pastille", () => {
-      renderCard({ occupancy_status: "libre" });
-      expect(screen.getByRole("heading", { level: 3 }).nextElementSibling?.textContent).toBe(
-        "libre",
+    it("garde « Voir la fiche » comme repère visible, sans second lien pour le clavier", () => {
+      renderCard({});
+      const cue = screen.getByText("Voir la fiche");
+      expect(cue.getAttribute("aria-hidden")).toBe("true");
+      expect(cue.closest("a")).toBeNull();
+      // Le seul lien de la carte est celui qui la couvre.
+      expect(screen.getAllByRole("link")).toHaveLength(1);
+    });
+
+    it("montre « Mon dossier » et le dernier changement d'une vente suivie", () => {
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={cardSale()}
+            returnTo="/sales"
+            locked={false}
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+            dossier={{ statusLabel: "Analyse en cours", bidCeilingEur: 462_500 }}
+            lastChange={
+              {
+                label: "Mise à prix abaissée",
+                detail: "160 000 € → 142 000 €",
+                topic: "price",
+                event: { saleId: "verify-card" },
+              } as never
+            }
+          />
+        </QueryClientProvider>,
       );
-      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+      expect(screen.getByTestId("card-dossier").textContent).toMatch(
+        /^Analyse en coursMon plafond : 462\s500\s€$/,
+      );
+      expect(screen.getByTestId("card-last-change").textContent).toBe(
+        "Mise à prix abaissée · 160 000 € → 142 000 €",
+      );
+    });
+
+    it("dit « à calculer » sans plafond enregistré, et rien hors des ventes suivies", () => {
+      const { rerender } = render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={cardSale()}
+            returnTo="/sales"
+            locked={false}
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+            dossier={{ statusLabel: null, bidCeilingEur: null }}
+          />
+        </QueryClientProvider>,
+      );
+      expect(screen.getByTestId("card-dossier").textContent).toBe(
+        "Vente suivieMon plafond : à calculer",
+      );
+      rerender(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={cardSale()}
+            returnTo="/sales"
+            locked={false}
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+      expect(screen.queryByTestId("card-dossier")).toBeNull();
+      expect(screen.queryByTestId("card-last-change")).toBeNull();
     });
   });
 
@@ -904,8 +1021,8 @@ describe("cadre du visuel : hauteur réduite quand il n'y aura qu'une illustrati
 
   it("réserve la hauteur de la pastille de compte à rebours (écrite après l'hydratation)", () => {
     const { container } = renderResults([sale("sale-chip")]);
-    const row = container.querySelector("article .mt-2.flex.flex-wrap")!;
-    expect(row.className).toContain("min-h-5");
+    const row = container.querySelector("article [data-testid='card-badges']")!;
+    expect(row.className).toContain("min-h-[1.625rem]");
   });
 });
 
@@ -960,7 +1077,7 @@ describe("result cards off screen", () => {
     expect(cards).toHaveLength(2);
     for (const card of cards) {
       expect(card.className).toContain("[content-visibility:auto]");
-      expect(card.className).toContain("[contain-intrinsic-size:none_auto_28rem]");
+      expect(card.className).toContain("[contain-intrinsic-size:none_auto_30rem]");
     }
     expect(document.getElementById("sale-card-sale-a")).toBeTruthy();
     expect(cards[0].contains(document.getElementById("sale-card-sale-a"))).toBe(true);

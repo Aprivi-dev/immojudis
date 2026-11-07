@@ -86,17 +86,36 @@ const before = (a: Element, b: Element) =>
   Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
 describe("/sales : avant la première annonce", () => {
-  it("n'a qu'une rangée de réglages : le tri et le type de vente sont un seul contrôle", async () => {
+  it("suit la maquette : titre, barre de filtres, pastilles de type de vente, barre de liste, cartes", async () => {
     renderPage({});
     const cards = await screen.findAllByRole("article");
 
-    const control = screen.getByRole("group", { name: "Tri et type de vente" });
-    expect(within(control).getByRole("combobox", { name: "Tri" })).toBeTruthy();
-    expect(within(control).getByRole("combobox", { name: "Type de vente" })).toBeTruthy();
-    expect(before(control, cards[0])).toBe(true);
-    // Plus de rangée de pastilles de type de vente.
-    expect(screen.queryByRole("button", { name: "Au tribunal" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Chez le notaire" })).toBeNull();
+    const title = screen.getByRole("heading", { level: 1 });
+    await waitFor(() =>
+      expect(title.textContent).toMatch(/^3 ventes immobilières aux enchères à venir/),
+    );
+    const place = screen.getByRole("textbox", { name: "Ville, département ou région" });
+    const types = screen.getByRole("group", { name: "Type de vente" });
+    const sort = screen.getByRole("combobox", { name: "Tri" });
+    expect(within(types).getByRole("button", { name: "Au tribunal" })).toBeTruthy();
+    expect(within(types).getByRole("link", { name: "Quelle différence ?" })).toBeTruthy();
+    expect(before(title, place)).toBe(true);
+    expect(before(place, types)).toBe(true);
+    expect(before(types, sort)).toBe(true);
+    expect(before(sort, cards[0])).toBe(true);
+    // Le type de vente n'est plus une liste déroulante jointe au tri.
+    expect(screen.queryByRole("combobox", { name: "Type de vente" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Tri et type de vente" })).toBeNull();
+  });
+
+  it("met l'export et l'alerte à droite du titre, avant la barre de filtres", async () => {
+    renderPage({});
+    await screen.findAllByRole("article");
+    const place = screen.getByRole("textbox", { name: "Ville, département ou région" });
+    const csv = screen.getByRole("button", { name: "Exporter en CSV" });
+    const alert = screen.getByRole("button", { name: "Créer une alerte sur cette recherche" });
+    expect(before(csv, place)).toBe(true);
+    expect(before(alert, place)).toBe(true);
   });
 
   it("n'a plus les trois liens d'aide avant les annonces : ils sont au pied de la liste", async () => {
@@ -119,12 +138,14 @@ describe("/sales : avant la première annonce", () => {
     );
   });
 
-  it("le type de vente choisi dans la liste s'écrit dans l'adresse", async () => {
+  it("le type de vente choisi dans les pastilles s'écrit dans l'adresse", async () => {
     renderPage({});
     await screen.findAllByRole("article");
-    fireEvent.change(screen.getByRole("combobox", { name: "Type de vente" }), {
-      target: { value: "notary" },
-    });
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Type de vente" })).getByRole("button", {
+        name: "Chez le notaire",
+      }),
+    );
     await waitFor(() =>
       expect(new URLSearchParams(window.location.search).get("saleType")).toBe("notary"),
     );
@@ -183,6 +204,47 @@ describe("/sales sans résultat", () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-    expect(screen.getByRole("group", { name: "Tri et type de vente" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Tri" })).toBeTruthy();
+    // Aucun chiffre n'est inventé en attendant le total : le titre reste une phrase sans nombre.
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Ventes immobilières aux enchères à Pau",
+    );
+  });
+
+  it("dit « Aucune vente » dans le titre quand le total est nul", async () => {
+    renderPage({ city: "Pau" });
+    await screen.findByRole("heading", { name: "Aucune vente trouvée" });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+        "Aucune vente immobilière aux enchères à venir à Pau.",
+      ),
+    );
+  });
+});
+
+describe("/sales : « dont M cette semaine »", () => {
+  it("compte la même recherche bornée aux sept prochains jours et l'écrit dans le titre", async () => {
+    state.fetchSearchCount.mockImplementation(async ({ search }: { search: SalesSearchParams }) =>
+      search.minSaleDate ? 2 : 3,
+    );
+    renderPage({ city: "Pau" });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+        "3 ventes immobilières aux enchères à venir à Pau, dont 2 cette semaine.",
+      ),
+    );
+    const weekCall = state.fetchSearchCount.mock.calls.find(([args]) => args.search.minSaleDate);
+    expect(weekCall![0].search).toMatchObject({ city: "Pau" });
+    expect(weekCall![0].search.maxSaleDate > weekCall![0].search.minSaleDate).toBe(true);
+  });
+
+  it("ne compte rien de plus pour une recherche à filtre lu sur les lignes", async () => {
+    renderPage({ belowRange: true });
+    await screen.findAllByRole("article");
+    await waitFor(() => expect(state.fetchSearchCount).toHaveBeenCalled());
+    expect(state.fetchSearchCount.mock.calls.every(([args]) => !args.search.minSaleDate)).toBe(
+      true,
+    );
+    expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("semaine");
   });
 });
