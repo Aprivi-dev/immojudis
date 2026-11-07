@@ -8,11 +8,16 @@ import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business.js
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import EyeOff from "lucide-react/dist/esm/icons/eye-off.js";
+import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
+import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
+import Scale from "lucide-react/dist/esm/icons/scale.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import { Badge, buttonClasses, Card, Notice, PageTitle } from "@/components/ui/primitives";
 import { toast } from "@/lib/toast";
+import { LAWYER_CONTACT_HREF, SPONSORED_LABEL } from "@/lib/lawyer-placement-label";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
@@ -441,77 +446,121 @@ export function LoginPage() {
   }
 
   return (
-    <main
-      id="contenu"
-      className="liquid-page min-h-screen px-4 py-6 text-foreground sm:px-6 sm:py-10"
-    >
+    <main id="contenu" className="min-h-screen px-4 py-6 text-foreground sm:px-6 sm:py-10">
       <div className="mx-auto grid min-h-[calc(100svh-8rem)] max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,29rem)]">
-        <section className="glass-shell relative hidden min-h-[38rem] overflow-hidden rounded-lg p-8 lg:block">
-          <div className="cinematic-grid absolute inset-0 opacity-35" />
-          <div className="absolute inset-x-10 top-16 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
-          <div className="relative z-10 max-w-xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold-text">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Accès Immojudis
-            </div>
-            <p className="mt-6 font-display text-5xl leading-tight text-foreground">
-              Préparez votre achat aux enchères.
-            </p>
-            <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
-              {launchOffer ? (
-                <>
-                  Découverte ouvre gratuitement le catalogue. À l’inscription, l’offre Analyse est
-                  offerte pendant {ANALYSIS_TRIAL_DAYS} jours : comparables, alertes quotidiennes et
-                  exports (contenu selon la vente).
-                </>
-              ) : (
-                <>
-                  Découverte ouvre gratuitement le catalogue, avec {MONTHLY_UNLOCKS_TEXT} (
-                  {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes, avec les
-                  comparables, les alertes quotidiennes et les exports (tarif prévu :{" "}
-                  {nonBreakingUnits(resolveAnalysisOfferLabel())}, pas encore souscriptible).
-                </>
-              )}{" "}
-              Les professionnels déposent et suivent leurs annonces dans leur espace.
-            </p>
-            {launchOffer ? (
-              <p
-                data-testid="login-launch-offer-column"
-                className="mt-5 max-w-md rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
-              >
-                {LAUNCH_OFFER_VISITOR_TEXT}
+        {mode === "professional" ? (
+          // Repasse n° 35 : en mode professionnel, la colonne parle à l'avocat (dépôt, suivi,
+          // annuaire), plus de l'achat aux enchères.
+          <Card
+            as="section"
+            data-testid="login-professional-column"
+            className="hidden min-h-[38rem] p-8 lg:block"
+          >
+            <div className="max-w-xl">
+              <Badge tone="gold">
+                <BriefcaseBusiness className="h-3.5 w-3.5" aria-hidden />
+                Espace professionnel
+              </Badge>
+              <p className="mt-6 font-display text-5xl leading-tight text-foreground">
+                Déposez et suivez vos ventes.
               </p>
-            ) : null}
-
-            <div className="mt-10 grid gap-3">
-              <FeatureLine
-                icon={FileSearch}
-                title="Découverte"
-                text="Explorer les annonces et les aperçus gratuitement."
-              />
-              <FeatureLine
-                icon={BriefcaseBusiness}
-                title="Professionnel"
-                text="Référencer une vente et structurer le dossier."
-              />
+              <p className="mt-5 max-w-md text-sm leading-relaxed text-ink-soft">
+                Avocats, notaires, commissaires de justice et tribunaux transmettent une vente avec
+                ses pièces : l’équipe Immojudis la vérifie avant toute mise en ligne. Le compte
+                professionnel est validé avant le premier dépôt.
+              </p>
+              <div className="mt-10 grid gap-3">
+                <FeatureLine
+                  icon={FileText}
+                  title="Déposer une vente"
+                  text="Informations, pièces privées et demandes de visibilité, transmises pour validation."
+                />
+                <FeatureLine
+                  icon={FileCheck2}
+                  title="Suivre vos demandes"
+                  text="Statut de validation, retour de l’équipe et lien vers la vente publiée, dans votre espace pro."
+                />
+                <FeatureLine
+                  icon={Scale}
+                  title="Présenter votre cabinet"
+                  text={`Les avocats peuvent demander une mise en avant dans l’annuaire, signalée « ${SPONSORED_LABEL} ».`}
+                >
+                  <Link
+                    href={LAWYER_CONTACT_HREF}
+                    className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4"
+                  >
+                    Présenter mon cabinet
+                  </Link>
+                </FeatureLine>
+              </div>
             </div>
-          </div>
-        </section>
+          </Card>
+        ) : (
+          <Card as="section" className="hidden min-h-[38rem] p-8 lg:block">
+            <div className="max-w-xl">
+              <Badge tone="gold">
+                <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+                Accès Immojudis
+              </Badge>
+              <p className="mt-6 font-display text-5xl leading-tight text-foreground">
+                Préparez votre achat aux enchères.
+              </p>
+              <p className="mt-5 max-w-md text-sm leading-relaxed text-ink-soft">
+                {launchOffer ? (
+                  <>
+                    Découverte ouvre gratuitement le catalogue. À l’inscription, l’offre Analyse est
+                    offerte pendant {ANALYSIS_TRIAL_DAYS} jours : comparables, alertes quotidiennes
+                    et exports (contenu selon la vente).
+                  </>
+                ) : (
+                  <>
+                    Découverte ouvre gratuitement le catalogue, avec {MONTHLY_UNLOCKS_TEXT} (
+                    {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes, avec les
+                    comparables, les alertes quotidiennes et les exports (tarif prévu :{" "}
+                    {nonBreakingUnits(resolveAnalysisOfferLabel())}, pas encore souscriptible).
+                  </>
+                )}{" "}
+                Les professionnels déposent et suivent leurs annonces dans leur espace.
+              </p>
+              {launchOffer ? (
+                <p
+                  data-testid="login-launch-offer-column"
+                  className="mt-5 max-w-md rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
+                >
+                  {LAUNCH_OFFER_VISITOR_TEXT}
+                </p>
+              ) : null}
 
-        <section className="glass-shell rounded-lg p-5 sm:p-8">
+              <div className="mt-10 grid gap-3">
+                <FeatureLine
+                  icon={FileSearch}
+                  title="Découverte"
+                  text="Explorer les annonces et les aperçus gratuitement."
+                />
+                <FeatureLine
+                  icon={BriefcaseBusiness}
+                  title="Professionnel"
+                  text="Référencer une vente et structurer le dossier."
+                />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        <Card as="section" className="p-5 sm:p-8">
           {pendingEmail ? (
             <div>
               <div className="flex items-center gap-3 text-xs font-semibold text-gold-text">
                 <Mail className="h-4 w-4" />
                 {accountExists ? "Adresse déjà inscrite" : "Compte créé"}
               </div>
-              <h1
+              <PageTitle
                 ref={panelTitleRef}
                 tabIndex={-1}
-                className="mt-4 font-display text-3xl text-foreground outline-none"
+                className="mt-4 text-foreground outline-none"
               >
                 {accountExists ? "Un compte existe déjà" : "Confirmez votre adresse email"}
-              </h1>
+              </PageTitle>
               <div
                 role="status"
                 className="mt-4 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
@@ -545,12 +594,9 @@ export function LoginPage() {
                 .
               </p>
               {formError ? (
-                <p
-                  role="alert"
-                  className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-700"
-                >
+                <Notice tone="danger" role="alert" className="mt-3">
                   {formError}
-                </p>
+                </Notice>
               ) : null}
               <div className="mt-5 flex flex-wrap gap-3">
                 {accountExists ? null : (
@@ -558,7 +604,7 @@ export function LoginPage() {
                     type="button"
                     onClick={() => void resendConfirmation()}
                     disabled={resending || resendCountdown > 0}
-                    className="liquid-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                    className={buttonClasses({ variant: "primary" })}
                   >
                     {resending
                       ? "Envoi..."
@@ -570,7 +616,7 @@ export function LoginPage() {
                 <button
                   type="button"
                   onClick={changeAddress}
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-surface-tint"
+                  className={buttonClasses({ variant: "secondary" })}
                 >
                   Changer d'adresse
                 </button>
@@ -617,13 +663,13 @@ export function LoginPage() {
                   {copy.eyebrow}
                 </div>
               )}
-              <h1
+              <PageTitle
                 ref={panelTitleRef}
                 tabIndex={-1}
-                className={`${mode === "investor" ? "mt-5" : "mt-4"} font-display text-3xl text-foreground outline-none`}
+                className={`${mode === "investor" ? "mt-5" : "mt-4"} text-foreground outline-none`}
               >
                 {copy.title}
-              </h1>
+              </PageTitle>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {copy.description}
                 {mode === "investor" && !launchOffer ? (
@@ -839,18 +885,14 @@ export function LoginPage() {
                   </div>
                 ) : null}
                 {formError ? (
-                  <p
-                    id={FORM_ERROR_ID}
-                    role="alert"
-                    className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-700"
-                  >
+                  <Notice id={FORM_ERROR_ID} tone="danger" role="alert">
                     {formError}
-                  </p>
+                  </Notice>
                 ) : null}
                 <button
                   type="submit"
                   disabled={busy}
-                  className="liquid-button inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                  className={buttonClasses({ variant: "primary", className: "w-full" })}
                 >
                   {busy ? "Chargement..." : copy.submit}
                   {!busy ? <ArrowRight className="h-4 w-4" /> : null}
@@ -901,7 +943,7 @@ export function LoginPage() {
               Retour à la présentation
             </Link>
           </div>
-        </section>
+        </Card>
       </div>
     </main>
   );
@@ -964,7 +1006,7 @@ function ModeButton({
         noWrap ? "whitespace-nowrap" : ""
       } ${
         active
-          ? "bg-gold text-brand-navy shadow-[0_12px_28px_rgb(242_196_135_/_18%)]"
+          ? "bg-gold text-brand-navy"
           : "text-muted-foreground hover:bg-card hover:text-foreground"
       }`}
     >
@@ -977,17 +1019,20 @@ function FeatureLine({
   icon: Icon,
   title,
   text,
+  children,
 }: {
   icon: typeof FileSearch;
   title: string;
   text: string;
+  children?: ReactNode;
 }) {
   return (
-    <div className="liquid-panel-soft flex items-start gap-3 rounded-lg p-4">
-      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-gold-text" />
+    <div className="flex items-start gap-3 rounded-lg border border-line bg-surface-muted p-4">
+      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-gold-text" aria-hidden />
       <div>
         <div className="text-sm font-semibold text-foreground">{title}</div>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text}</p>
+        <p className="mt-1 text-sm leading-relaxed text-ink-soft">{text}</p>
+        {children}
       </div>
     </div>
   );
