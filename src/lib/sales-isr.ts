@@ -1,5 +1,3 @@
-import { isProductionRuntime } from "@/lib/runtime-phase";
-
 /**
  * `/sales` sans paramètre, servi depuis le cache (ISR) par une réécriture du proxy.
  *
@@ -125,8 +123,4 @@ export function publicPathname(pathname: string): string {
  * en développement ou en test (pas de page précédente à conserver). `NEXT_PHASE` n'est positionné
  * par Next.js que pendant le build : à l'exécution il est absent.
  */
-export function mustSeedStaticCatalogue(
-  env: { NODE_ENV?: string; NEXT_PHASE?: string } = process.env,
-): boolean {
-  return isProductionRuntime(env);
-}
+export { isProductionRuntime as mustSeedStaticCatalogue } from "@/lib/runtime-phase";
