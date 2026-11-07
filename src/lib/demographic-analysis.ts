@@ -5,6 +5,7 @@ import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import { cleanTextDeep as cleanText } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
+import { matchesAnyPattern as matches } from "@/lib/analysis-text";
 
 export type DemographicSignalKind =
   | "population"
@@ -436,11 +437,6 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   return candidates.filter((candidate) =>
     SIGNAL_DEFINITIONS.some((definition) => matches(definition, candidate.text)),
   );
-}
-
-function matches(definition: SignalDefinition, text: string): boolean {
-  const normalized = normalizeText(text);
-  return definition.patterns.some((pattern) => pattern.test(normalized));
 }
 
 function dedupeSignals(signals: DemographicSignal[]): DemographicSignal[] {
