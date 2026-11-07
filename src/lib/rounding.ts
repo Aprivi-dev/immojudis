@@ -12,3 +12,8 @@ export function roundWithEpsilon(value: number, digits: number): number {
 export function roundToTenth(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
 }
+
+export function averageRoundedToTenth(values: number[]): number | null {
+  if (!values.length) return null;
+  return roundToTenth(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
