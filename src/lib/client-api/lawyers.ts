@@ -1,11 +1,6 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
-import type { FeaturedReferencedLawyerResponse } from "@/lib/featured-lawyers";
 import type { LawyerDirectoryResponse } from "@/lib/lawyer-directory";
 import type { LawyerProsecutedSalesResponse } from "@/lib/lawyer-prosecuted-sales";
-import type {
-  LawyerPlacementEventInput,
-  LawyerPlacementEventResponse,
-} from "@/lib/lawyer-placement-events";
 import type {
   LawyerReferralListResponse,
   LawyerReferralPreviewResponse,
@@ -60,15 +55,6 @@ export async function fetchLawyerReferrals(
   return readJson<LawyerReferralListResponse>(response);
 }
 
-export async function fetchFeaturedReferencedLawyer(args: {
-  saleId: string;
-}): Promise<FeaturedReferencedLawyerResponse> {
-  const search = new URLSearchParams({ saleId: args.saleId });
-  const response = await fetch(`/api/lawyers/featured?${search.toString()}`);
-
-  return readJson<FeaturedReferencedLawyerResponse>(response);
-}
-
 export async function fetchLawyerDirectory(
   args: { saleId?: string; bar?: string; city?: string; department?: string; page?: number } = {},
 ): Promise<LawyerDirectoryResponse> {
@@ -96,20 +82,4 @@ export async function fetchLawyerProsecutedSales(
     cache: "no-store",
   });
   return readJson<LawyerProsecutedSalesResponse>(response);
-}
-
-export async function recordLawyerPlacementEvent(args: {
-  data: LawyerPlacementEventInput;
-}): Promise<LawyerPlacementEventResponse> {
-  const response = await fetch("/api/lawyers/placement-events", {
-    method: "POST",
-    keepalive: true,
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<LawyerPlacementEventResponse>(response);
 }

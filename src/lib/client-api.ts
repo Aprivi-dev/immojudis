@@ -4,8 +4,6 @@ export {
   updatePipelineControl,
 } from "@/lib/client-api/pipeline";
 
-export { fetchApiKeys, createApiKey, revokeApiKey } from "@/lib/client-api/api-keys";
-
 export {
   fetchAdminInformationAgentEmailTemplate,
   fetchAdminInformationAgentOperations,
@@ -72,12 +70,9 @@ export {
   fetchAdminProfessionalPrivacyExport,
 } from "@/lib/client-api/privacy";
 
-export { requestDataRefresh, fetchDataRefreshRequests } from "@/lib/client-api/data-refresh";
-
 export {
   fetchSaleAnalysisSets,
   createSaleAnalysisSet,
-  updateSaleAnalysisSet,
   deleteSaleAnalysisSet,
   enableSaleComparisonShare,
   disableSaleComparisonShare,
@@ -86,22 +81,10 @@ export {
 export {
   fetchWatchedZones,
   createWatchedZone,
-  updateWatchedZone,
   deleteWatchedZone,
 } from "@/lib/client-api/watched-zones";
 
-export {
-  fetchSaleWorkspace,
-  fetchAudienceTracking,
-  saveSaleWorkspace,
-  saveProfessionalPilotDossier,
-  fetchSaleWorkspaceCollaboration,
-  inviteSaleWorkspaceCollaboratorClient,
-  acceptSaleWorkspaceInvitationClient,
-  createSaleWorkspaceAnnotationClient,
-  updateSaleWorkspaceAnnotationClient,
-  revokeSaleWorkspaceCollaboratorClient,
-} from "@/lib/client-api/sale-workspace";
+export { fetchSaleWorkspace, saveProfessionalPilotDossier } from "@/lib/client-api/sale-workspace";
 
 export {
   fetchInvestorProfile,
@@ -110,13 +93,10 @@ export {
 } from "@/lib/client-api/investor-profile";
 
 export {
-  fetchAlertMatches,
   evaluateAlertMatches,
   fetchAlertNotifications,
   updateAlertNotification,
   fetchSaleChangeEvents,
-  monitorSaleChanges,
-  updateSaleChangeEvent,
   fetchNotificationPreferences,
   updateNotificationPreferences,
 } from "@/lib/client-api/alerts";
@@ -128,17 +108,14 @@ export {
   exportPropertyReportPdf,
   enablePropertyReportShare,
   disablePropertyReportShare,
-  fetchFeatureEntitlements,
 } from "@/lib/client-api/property-reports";
 
 export {
   requestLawyerReferral,
   fetchLawyerReferrals,
   fetchLawyerReferralPreview,
-  fetchFeaturedReferencedLawyer,
   fetchLawyerDirectory,
   fetchLawyerProsecutedSales,
-  recordLawyerPlacementEvent,
 } from "@/lib/client-api/lawyers";
 
 export {
@@ -171,11 +148,6 @@ export {
   fetchOutcomeGraphForecast,
   fetchSaleUrbanismeCadastre,
   fetchValuationAdminOverview,
-  fetchEnvironmentalContext,
-  fetchSaleHistory,
-  fetchMarketAnalytics,
-  fetchDvfComparables,
-  fetchValuationBacktest,
   fetchDpeExplorer,
   fetchSalesStatistics,
   exportSalesCsv,

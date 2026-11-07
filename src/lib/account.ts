@@ -52,14 +52,6 @@ export function isAccountType(value: unknown): value is AccountType {
   return value === "b2c" || value === "b2b";
 }
 
-export function isAccountTier(value: unknown): value is AccountTier {
-  return value === "free" || value === "premium";
-}
-
-export function isUserRole(value: unknown): value is UserRole {
-  return value === "user" || value === "admin";
-}
-
 export function isProfessionalRole(value: unknown): value is ProfessionalRole {
   return (
     value === "lawyer" ||
@@ -142,18 +134,6 @@ export function isProfessionalAccount(
     isAdminAccount(user, profile) ||
     (getAccountType(user, profile) === "b2b" && getProfessionalStatus(profile) === "approved")
   );
-}
-
-export function getProfessionalRole(
-  user: User | null | undefined,
-  profile?: AccountProfile | null,
-): ProfessionalRole | null {
-  if (profile?.professional_role) return profile.professional_role;
-  const value = user?.user_metadata?.professional_role;
-  if (isProfessionalRole(value)) {
-    return value;
-  }
-  return null;
 }
 
 export function getProfessionalStatus(profile: AccountProfile | null | undefined) {

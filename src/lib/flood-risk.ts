@@ -237,11 +237,6 @@ export function deriveFloodVerdict(observation: FloodRiskObservation): FloodDeri
   };
 }
 
-/** Un verdict dont le calcul des pépites peut se servir (ni inconnu ni expiré). */
-export function isKnownFloodVerdict(verdict: FloodVerdict): boolean {
-  return verdict !== "unknown";
-}
-
 export type StoredFloodRisk = {
   verdict: string;
   positionKey: string;

@@ -5,7 +5,6 @@ import {
   buildTribunalJudicialActivity,
   judicialActivityPeriod,
   TribunalCourtUnresolvedError,
-  type TribunalJudicialActivityHistoryMonths,
   type TribunalJudicialActivityQuery,
   type TribunalJudicialActivityResponse,
   type TribunalJudicialActivitySale,
@@ -450,16 +449,5 @@ function mapStoredSale(row: z.infer<typeof storedSaleSchema>): TribunalJudicialA
     firstSeenAt: row.first_seen_at,
     occupationStatus: row.occupancy_status ?? null,
     city: row.city ?? null,
-  };
-}
-
-export function activityQueryPeriod(
-  asOf: Date,
-  historyMonths: TribunalJudicialActivityHistoryMonths,
-): { historyStart: string; upcomingEnd: string } {
-  const period = judicialActivityPeriod(asOf, historyMonths);
-  return {
-    historyStart: period.historyStart.toISOString(),
-    upcomingEnd: period.upcomingEnd.toISOString(),
   };
 }
