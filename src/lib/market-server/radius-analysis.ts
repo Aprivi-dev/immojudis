@@ -28,6 +28,7 @@ import {
 } from "@/lib/market-server/geometry";
 import { finiteFloat, finiteNumber, monthDistance } from "@/lib/market-server/numbers";
 import { fetchDvfYear, parcelKey } from "@/lib/market-server/sources";
+import { supabaseServiceRoleConfigured as storedDvfConfigured } from "@/lib/supabase-service-configured";
 
 export async function analyzeAtRadius(
   lat: number,
@@ -374,12 +375,6 @@ function primarySurfaceForStoredCandidate(
   candidate: MarketEngineCandidate,
 ): number | null {
   return segment === "land" ? candidate.landSurfaceM2 : candidate.builtSurfaceM2;
-}
-
-function storedDvfConfigured(): boolean {
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
-  return Boolean(url?.trim() && key?.trim());
 }
 
 export function recentEnough(dateValue: string, maxAgeMonths: number): boolean {

@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { MarketPropertySegment } from "@/lib/market-estimation-engine";
 import { round } from "@/lib/rounding";
+import { supabaseServiceRoleConfigured as valuationRegistryConfigured } from "@/lib/supabase-service-configured";
 
 type SupportedSegment = Exclude<MarketPropertySegment, "unsupported">;
 type AuditedSegment = SupportedSegment | "parking";
@@ -126,10 +127,4 @@ function fingerprint(value: Record<string, unknown>): string {
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function valuationRegistryConfigured(): boolean {
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
-  return Boolean(url?.trim() && key?.trim());
 }
