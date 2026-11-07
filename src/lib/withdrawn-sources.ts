@@ -1,4 +1,5 @@
 import type { AuctionSale } from "@/lib/types";
+import { safeExternalHttpUrl } from "@/lib/external-url";
 
 /**
  * Sources retirées du catalogue (interrupteur `auction_source_state.catalogue_withdrawn`, posé et levé
@@ -204,4 +205,11 @@ export function stripWithdrawnSourceContent<T extends Partial<AuctionSale>>(sale
   if (Array.isArray(sale.documents)) next.documents = keepAllowed(sale.documents as unknown[]);
   if (Array.isArray(sale.documents_rich)) next.documents_rich = keepAllowed(sale.documents_rich);
   return next as T;
+}
+
+/** Lien http(s) sûr, sauf s'il pointe vers une source retirée du catalogue. */
+export function safeDocumentUrl(value: unknown): string | null {
+  const href = safeExternalHttpUrl(value);
+  // Pièce hébergée par une source retirée du catalogue : jamais proposée (voir withdrawn-sources.ts).
+  return href && !isWithdrawnSourceUrl(href) ? href : null;
 }
