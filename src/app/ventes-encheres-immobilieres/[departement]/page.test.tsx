@@ -20,6 +20,12 @@ vi.mock("next/navigation", () => ({
       digest: "NEXT_HTTP_ERROR_FALLBACK;404",
     });
   },
+  // Même forme de digest que le vrai : NEXT_REDIRECT;<type>;<url>;<statut>;
+  permanentRedirect: (url: string) => {
+    throw Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: `NEXT_REDIRECT;replace;${url};308;`,
+    });
+  },
 }));
 
 import { DEPARTMENT_PAGES_MAX_DURATION_SECONDS } from "@/lib/department-pages";
@@ -111,6 +117,29 @@ describe("page d'un département : génération", () => {
       digest: "NEXT_HTTP_ERROR_FALLBACK;404",
     });
     await expect(Page(params("Gironde"))).rejects.toMatchObject({
+      digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
+    expect(mocks.catalogue).not.toHaveBeenCalled();
+  });
+
+  it("redirige en 308 l'adresse par numéro vers l'adresse par nom, sans lire la base", async () => {
+    for (const [number, path] of [
+      ["13", "/ventes-encheres-immobilieres/bouches-du-rhone"],
+      ["01", "/ventes-encheres-immobilieres/ain"],
+      ["2A", "/ventes-encheres-immobilieres/corse-du-sud"],
+      ["2b", "/ventes-encheres-immobilieres/haute-corse"],
+      ["971", "/ventes-encheres-immobilieres/guadeloupe"],
+    ] as const) {
+      await expect(Page(params(number)), number).rejects.toMatchObject({
+        digest: `NEXT_REDIRECT;replace;${path};308;`,
+      });
+      expect((await generateMetadata(params(number))).robots, number).toEqual({
+        index: false,
+        follow: true,
+      });
+    }
+    // Un numéro qui ne désigne aucun département reste une page introuvable.
+    await expect(Page(params("97"))).rejects.toMatchObject({
       digest: "NEXT_HTTP_ERROR_FALLBACK;404",
     });
     expect(mocks.catalogue).not.toHaveBeenCalled();

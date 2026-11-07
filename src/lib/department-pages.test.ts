@@ -6,6 +6,7 @@ import {
   DEPARTMENTS,
   aggregateDepartments,
   departmentFromCode,
+  departmentFromNumberSlug,
   departmentFromSlug,
   departmentItemListStructuredData,
   departmentNextDateLabel,
@@ -91,6 +92,17 @@ describe("adresses des départements", () => {
     expect(departmentFromCode("2a")?.slug).toBe("corse-du-sud");
     expect(departmentFromCode("97")).toBeNull();
     expect(departmentFromCode(null)).toBeNull();
+  });
+
+  it("reconnaît une adresse écrite avec le numéro du département, et seulement un numéro", () => {
+    expect(departmentFromNumberSlug("13")?.slug).toBe("bouches-du-rhone");
+    expect(departmentFromNumberSlug("01")?.slug).toBe("ain");
+    expect(departmentFromNumberSlug("2A")?.slug).toBe("corse-du-sud");
+    expect(departmentFromNumberSlug("2b")?.slug).toBe("haute-corse");
+    expect(departmentFromNumberSlug("971")?.slug).toBe("guadeloupe");
+    for (const slug of ["97", "00", "1", "1234", "gironde", "Gironde", "2c", " 13", ""]) {
+      expect(departmentFromNumberSlug(slug), slug).toBeNull();
+    }
   });
 
   it("renvoie vers la recherche filtrée avec le code (zéro initial conservé)", () => {
