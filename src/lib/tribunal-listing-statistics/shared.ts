@@ -1,5 +1,7 @@
 import "server-only";
 import type { TribunalListingStatisticsSale } from "@/lib/tribunal-listing-statistics";
+import { labelFingerprint as normalizeLabel } from "@/lib/label-fingerprint";
+export { normalizeLabel };
 
 export type StoredListingSale = TribunalListingStatisticsSale & {
   tribunal: string | null;
@@ -11,15 +13,6 @@ export type StoredListingSale = TribunalListingStatisticsSale & {
   lotNumber: string | null;
   valuationSource: Record<string, unknown>;
 };
-
-export function normalizeLabel(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr-FR")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
 
 export function normalizeLegalReference(value: string | null): string | null {
   if (!value) return null;

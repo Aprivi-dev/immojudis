@@ -21,6 +21,7 @@ import {
   TribunalOutcomeGraphHistoryUnavailableError,
   type ArchivedHearing,
 } from "@/lib/tribunal-outcome-graph-history";
+import { labelFingerprint as courtNameFingerprint } from "@/lib/label-fingerprint";
 
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
@@ -321,15 +322,6 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
 
 function normalizeCourtCode(value: string): string {
   return value.trim().toLocaleLowerCase("fr-FR");
-}
-
-function courtNameFingerprint(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr-FR")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }
 
 async function loadEligibleSales(input: {

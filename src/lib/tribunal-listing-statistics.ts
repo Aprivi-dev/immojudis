@@ -20,6 +20,7 @@ import {
   type TribunalJudicialActivityHistoryMonths,
 } from "@/lib/tribunal-judicial-activity";
 import { roundWithEpsilon as round } from "@/lib/rounding";
+import { labelFingerprint } from "@/lib/label-fingerprint";
 
 export { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
 
@@ -705,15 +706,6 @@ function normalizeCityLabel(value: string | null | undefined): string | null {
     return null;
   }
   return display;
-}
-
-function labelFingerprint(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr-FR")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }
 
 function lawyerShares(sales: ParsedSale[]) {

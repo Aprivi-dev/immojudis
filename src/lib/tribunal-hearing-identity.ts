@@ -1,3 +1,5 @@
+import { labelFingerprint } from "@/lib/label-fingerprint";
+export { labelFingerprint };
 /**
  * Conservative identity of one judicial lot across announcements.
  *
@@ -20,15 +22,6 @@ const PARIS_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
 
 export function parisDayKey(value: Date): string {
   return PARIS_DAY_FORMAT.format(value);
-}
-
-export function labelFingerprint(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr-FR")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }
 
 export function hearingIdentityKey(input: {
