@@ -31,6 +31,7 @@ import {
   type InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
 import { requireAdmin } from "@/lib/admin-auth.server";
+import { asRecord as recordOrEmpty } from "@/lib/guards";
 
 export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
 export const adminInformationAgentActionSchema = informationAgentAdminActionSchema;
@@ -628,12 +629,6 @@ async function abortFailedEvidencePublication(factId: string, publicPath: string
     // Keep the original publication error. A failed cleanup leaves the path for
     // the next operational cleanup pass rather than risking a broader delete.
   }
-}
-
-function recordOrEmpty(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 /** What can be published for an attachment: photos and images become WebP, PDFs are flattened. */
