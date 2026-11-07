@@ -25,6 +25,7 @@ import type {
 } from "@/lib/tribunal-judicial-activity";
 import * as queryKeys from "@/lib/query-keys";
 import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
+import { formatWholeEuros as formatCurrency } from "@/lib/format-euros";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
@@ -721,14 +722,6 @@ function sampleLabel(
     " retenue" +
     (metric.sampleSize > 1 ? "s" : "")
   );
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
 }
 
 function formatNumber(value: number): string {
