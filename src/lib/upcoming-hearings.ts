@@ -6,6 +6,7 @@ import {
 } from "@/lib/hearings-department";
 import { saleHearingTime } from "@/lib/seo";
 import { tribunalLongNameFromRaw } from "@/lib/tribunal-pages";
+import { parseFiniteNumber as finite } from "@/lib/finite-number";
 
 /**
  * Page « Audiences à venir » : les ventes au tribunal dont la date est sourcée, des 7 puis des 30
@@ -76,12 +77,6 @@ export type PublicHearing = {
   /** Identifiant de groupe des annonces qui partagent une adresse source ; sert à reconnaître un doublon. */
   sourceGroup: string | null;
 };
-
-function finite(value: number | string | null | undefined): number | null {
-  if (value == null || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 /**
  * Identifiant de groupe d'une ligne, calculé par la base (`source_group`). Une valeur qui n'est pas une

@@ -2,6 +2,7 @@ import {
   TRIBUNAL_STATISTICS_MEDIAN_MIN_SAMPLE,
   TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE,
 } from "@/lib/tribunal-publication-thresholds";
+import { parseFiniteNumber as finite } from "@/lib/finite-number";
 
 /**
  * Public activity of each court (signed-out « Statistiques Tribunaux » page):
@@ -80,12 +81,6 @@ export function courtShortName(name: string): string {
   if (article)
     return `${article[1].toLowerCase() === "du" ? "Le" : "Les"} ${text.slice(article[0].length)}`;
   return text.replace(/^(?:de la|de l['’]|de|d['’])\s*/i, "").trim() || name.trim();
-}
-
-function finite(value: number | string | null | undefined): number | null {
-  if (value == null || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /** Courts with upcoming sales, busiest first, then alphabetically. */

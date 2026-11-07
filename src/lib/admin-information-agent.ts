@@ -2,7 +2,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { nullableRpcArg } from "@/lib/rpc-args";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminPageQueryShape } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta } from "@/lib/admin-pagination";
@@ -31,6 +30,8 @@ import {
   type InformationAgentPreviewInput,
   type InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
+import { requireAdmin } from "@/lib/admin-auth.server";
+import { asRecord as recordOrEmpty } from "@/lib/guards";
 
 export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
 export const adminInformationAgentActionSchema = informationAgentAdminActionSchema;
@@ -630,12 +631,6 @@ async function abortFailedEvidencePublication(factId: string, publicPath: string
   }
 }
 
-function recordOrEmpty(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 /** What can be published for an attachment: photos and images become WebP, PDFs are flattened. */
 export function publicRenditionKind(
   factKey: string,
@@ -645,12 +640,6 @@ export function publicRenditionKind(
   if (mimeType === "application/pdf") return "pdf";
   if (mimeType.startsWith("image/")) return "image";
   return null;
-}
-
-async function requireAdmin(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-  return auth;
 }
 
 const reviewableCaseStatuses = new Set(["sending", "sent", "replied", "review"]);

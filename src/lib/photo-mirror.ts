@@ -1,6 +1,7 @@
 import { publicEnv } from "@/lib/env";
 import { propertyImages, shouldRejectPropertyImageSize } from "@/lib/sale-media";
 import type { AuctionSale, SaleMedia, SaleMediaMirror } from "@/lib/types";
+import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
 
 /**
  * Copies hébergées des photos principales (test d'hébergement). Le pipeline copie la photo en WebP
@@ -80,14 +81,6 @@ export function mirrorFromRow(row: MirrorRow): SaleMediaMirror | null {
   if (!path640 || !width || !height) return null;
   if (shouldRejectPropertyImageSize(width, height)) return null;
   return { path640, path1600: safePath(row.path_1600), width, height };
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object" && "message" in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return String(error);
 }
 
 /** URL distinctes, http(s), au plus 100 : ce que la fonction SQL accepte. */

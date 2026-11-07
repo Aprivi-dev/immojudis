@@ -2,6 +2,7 @@ import { predictLightGbmQuantiles } from "@/lib/lightgbm-inference";
 import { hasLocalMarketExport, localMarketFeaturesFromArtifact } from "@/lib/local-market-features";
 import type { MarketPropertySegment } from "@/lib/market-estimation-engine";
 import { loadActiveValuationModel } from "@/lib/valuation-model-registry";
+import { round } from "@/lib/rounding";
 
 type SupportedSegment = Exclude<MarketPropertySegment, "unsupported">;
 
@@ -149,9 +150,4 @@ function geometricBlend(comparable: number, model: number, modelWeight: number):
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function round(value: number, digits: number): number {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
 }

@@ -13,6 +13,7 @@ import {
   type TribunalListingStatisticsSale,
 } from "@/lib/tribunal-listing-statistics";
 import type { AuctionSale } from "@/lib/types";
+import { roundWithEpsilon as round } from "@/lib/rounding";
 
 /**
  * All values in this file are deliberately synthetic. They are used by the
@@ -450,9 +451,4 @@ function shiftIsoDays(value: string, days: number): string {
   const date = new Date(value);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString();
-}
-
-function round(value: number, digits: number): number {
-  const scale = 10 ** digits;
-  return Math.round((value + Number.EPSILON) * scale) / scale;
 }

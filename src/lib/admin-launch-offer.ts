@@ -1,8 +1,8 @@
 import "server-only";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resetLaunchOfferCache } from "@/lib/launch-offer.server";
+import { requireAdmin } from "@/lib/admin-auth.server";
 
 /**
  * Interrupteur de l'offre de lancement pour l'administrateur (page /admin/clients).
@@ -16,12 +16,6 @@ export const adminLaunchOfferActionSchema = z.object({ active: z.boolean() }).st
 export type AdminLaunchOfferAction = z.infer<typeof adminLaunchOfferActionSchema>;
 
 export type AdminLaunchOfferState = { active: boolean };
-
-async function requireAdmin(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-  return auth;
-}
 
 /** Lecture directe dans la base (sans le cache de 30 s des pages) : l'administrateur voit l'état réel. */
 export async function getAdminLaunchOffer(authToken: string): Promise<AdminLaunchOfferState> {

@@ -35,6 +35,7 @@ import {
   type FloodApiOptions,
 } from "@/lib/land-risks-provider";
 import { syncSaleCommunes } from "@/lib/sale-communes-sync.server";
+import { parseTimestamp as time } from "@/lib/timestamp";
 
 /**
  * Observe le risque d'inondation des ventes à venir et le stocke (table `auction_sale_flood_risk`, migration
@@ -179,12 +180,6 @@ const REASON_ORDER: Record<FloodRefreshReason, number> = {
   version: 3,
   aged: 4,
 };
-
-function time(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 function isUpcoming(sale: FloodSale, now: Date): boolean {
   const saleTime = time(sale.saleDate);

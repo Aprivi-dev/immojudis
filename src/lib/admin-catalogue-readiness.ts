@@ -1,7 +1,6 @@
 import "server-only";
 import { z } from "zod";
 import { nullableRpcArg } from "@/lib/rpc-args";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminPageQueryShape } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE } from "@/lib/admin-pagination";
@@ -10,6 +9,7 @@ import {
   classifyInformationAgentSaleContacts,
   type InformationAgentSaleContactClass,
 } from "@/lib/admin-information-agent-sale";
+import { requireAdmin } from "@/lib/admin-auth.server";
 
 const ACTIVE_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
 
@@ -314,12 +314,6 @@ export async function runAdminCatalogueReadinessAction({
     if (error) throw error;
   }
   return getAdminCatalogueReadinessOverview(authToken);
-}
-
-async function requireAdmin(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-  return auth;
 }
 
 function toQueueItem(

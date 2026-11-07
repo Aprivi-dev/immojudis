@@ -25,6 +25,7 @@ import {
   emailLink,
   emailParagraph,
 } from "@/lib/email-layout";
+import { asRecord as jsonRecord } from "@/lib/guards";
 
 export const checkoutConsentSchema = z.object({
   termsAccepted: z.literal(true),
@@ -432,12 +433,6 @@ async function recordConfirmationDelivery({
 
 function digest(value: string | null): string | null {
   return value ? createHash("sha256").update(value).digest("hex") : null;
-}
-
-function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function formatMoney(amountCents: number, currency: string): string {

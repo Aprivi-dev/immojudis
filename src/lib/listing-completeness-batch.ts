@@ -9,6 +9,8 @@ import {
 } from "@/lib/listing-completeness-ranking";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
 import type { AuctionSale } from "@/lib/types";
+import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
+import { parseTimestamp as time } from "@/lib/timestamp";
 
 /**
  * Évalue la complétude des annonces en ligne et enregistre le palier de classement de /sales
@@ -58,12 +60,6 @@ export type ListingCompletenessBatchResult = {
   remaining: number;
   errors: string[];
 };
-
-function time(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 /**
  * Ventes à (ré)évaluer, les plus urgentes d'abord :
@@ -190,14 +186,6 @@ async function readStoredEvaluations(): Promise<StoredEvaluation[]> {
     if ((data?.length ?? 0) < PAGE_SIZE) return rows;
   }
   throw new Error("Trop d'évaluations de complétude stockées.");
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object" && "message" in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return String(error);
 }
 
 export async function runListingCompletenessBatch({

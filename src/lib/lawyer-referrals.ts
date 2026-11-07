@@ -10,6 +10,7 @@ import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { parseTimestamp as parseDateTime } from "@/lib/timestamp";
 
 type SupabaseClient = SupabaseAuthContext["supabase"];
 type SaleSnapshotSource = Pick<
@@ -652,12 +653,6 @@ function saleSnapshotJson(sale: SaleSnapshotSource): Json {
     starting_price_eur: sale.starting_price_eur,
     property_type: sale.property_type,
   };
-}
-
-function parseDateTime(value: string | null): number | null {
-  if (!value) return null;
-  const timestamp = new Date(value).getTime();
-  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function jsonRecord(value: Json): Record<string, Json> {

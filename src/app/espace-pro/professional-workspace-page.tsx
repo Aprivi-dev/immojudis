@@ -41,6 +41,7 @@ import {
 } from "@/lib/publication-requests-client";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
+import { formatFileSize } from "@/lib/format-file-size";
 
 /** Libellés en capitales des petits blocs : 12 px, encre douce (plus de 10 ou 11 px). */
 const LABEL_CLASS = "text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft";
@@ -589,11 +590,4 @@ function formatPrice(value: number | null): string {
     currency: "EUR",
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`;
-  const kilobytes = bytes / 1024;
-  if (kilobytes < 1024) return `${kilobytes.toFixed(1)} Ko`;
-  return `${(kilobytes / 1024).toFixed(1)} Mo`;
 }

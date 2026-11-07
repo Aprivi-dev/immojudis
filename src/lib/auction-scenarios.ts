@@ -1,3 +1,4 @@
+import { asRecordOrNull as record } from "@/lib/guards";
 /**
  * « Scénarios d'enchères » : ce que les trois dernières années d'adjudications
  * du tribunal disent d'une vente à venir. Licitor donne mise à prix et prix
@@ -242,12 +243,6 @@ const KEYS = new Set<AuctionScenarioKey>(
 );
 
 type Raw = Record<string, unknown> | null | undefined;
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
 
 function num(value: unknown): number | null {
   if (value == null || value === "") return null;

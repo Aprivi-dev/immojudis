@@ -6,6 +6,7 @@ import { publishedDay } from "@/lib/listing-evidence";
 import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication-thresholds";
 import { labelFingerprint, parisDayKey } from "@/lib/tribunal-hearing-identity";
 import { mergeDuplicateJudicialAnnouncements } from "@/lib/tribunal-judicial-activity-dedup";
+import { roundWithEpsilon as round } from "@/lib/rounding";
 
 export class TribunalCourtUnresolvedError extends Error {
   constructor(message = "Le rattachement exact au tribunal reste à confirmer.") {
@@ -703,11 +704,6 @@ function reliability(sampleSize: number): {
   if (sampleSize < 20) return { level: "indicative", label: "Activité indicative" };
   if (sampleSize < 50) return { level: "descriptive", label: "Activité descriptive" };
   return { level: "strong", label: "Échantillon étendu" };
-}
-
-function round(value: number, digits: number): number {
-  const scale = 10 ** digits;
-  return Math.round((value + Number.EPSILON) * scale) / scale;
 }
 
 function assertValidDate(value: Date, label: string): void {

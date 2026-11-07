@@ -20,6 +20,7 @@ import {
   type AdminInformationAgentEvidenceRightsStatus,
 } from "@/lib/client-api";
 import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
+import { asRecordOrNull as recordValue } from "@/lib/guards";
 
 const QUERY_KEY = ["admin-information-agent-review"] as const;
 const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"]);
@@ -733,12 +734,6 @@ function previewKindForAsset(asset: {
   }
   if (filename.endsWith(".txt")) return "text";
   return null;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }
 
 /**

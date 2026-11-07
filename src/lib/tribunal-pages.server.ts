@@ -4,6 +4,7 @@ import type { DepartmentSale } from "@/lib/department-pages";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { TRIBUNAL_PAGE_LISTED_SALES } from "@/lib/tribunal-pages";
 import { dedupeHearings, mapHearingRows, type UpcomingHearingRow } from "@/lib/upcoming-hearings";
+import { parseFiniteNumber as finite } from "@/lib/finite-number";
 
 /**
  * Prochaines ventes d'un tribunal, lues comme un visiteur anonyme avec la fonction publique
@@ -39,12 +40,6 @@ type TribunalRpcClient = {
     args: { p_tribunal_code: string; p_limit: number },
   ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
-
-function finite(value: number | string | null | undefined): number | null {
-  if (value == null || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 function tribunalSaleStatus(status: string | null): DepartmentSale["status"] {
   if (status === "postponed") return "postponed";
