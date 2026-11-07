@@ -3,6 +3,7 @@ import { departmentCode } from "@/lib/department-code";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
 import type { SaleVenueType } from "@/lib/types";
+import { parseTimestamp as timestamp } from "@/lib/timestamp";
 
 /**
  * Pages « Ventes aux enchères immobilières par département » : une page par département, qui
@@ -139,12 +140,6 @@ export type DepartmentCatalogue = {
   generatedAt: string;
   departments: Record<string, DepartmentStats>;
 };
-
-function timestamp(value: string | null): number | null {
-  if (!value) return null;
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : null;
-}
 
 /**
  * Les communes les plus présentes parmi des ventes : une commune se reconnaît à son nom sans tenir
