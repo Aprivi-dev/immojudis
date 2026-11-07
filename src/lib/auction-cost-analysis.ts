@@ -1,10 +1,11 @@
 import type { AcquisitionCostResult } from "@/lib/profitability";
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { excerpt, flattenKeyValues } from "@/lib/analysis-text";
 import { asRecordOrNull } from "@/lib/guards";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import { cleanText } from "@/lib/clean-text";
 import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
+import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
 
 export type AuctionCostSourceAmount = {
   amountEur: number;
@@ -391,16 +392,6 @@ function formatSignal(value: unknown, source: string, pattern = COST_CONTEXT): s
   const boundary = start ? text.indexOf(" ", start) : 0;
   const offset = boundary >= 0 && boundary < (match?.index ?? 0) ? boundary + 1 : start;
   return `${source} · ${offset ? "… " : ""}${excerpt(text.slice(offset))}`;
-}
-
-function dedupeStrings(values: string[]): string[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = normalizeText(value);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 function formatMoney(value: number): string {
