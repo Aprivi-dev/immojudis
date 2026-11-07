@@ -1,3 +1,4 @@
+import { decodeURIComponentSafe as decodeOnce } from "@/lib/safe-decode-uri";
 /**
  * Lien des emails d'authentification (`/auth/confirmer`), lu côté navigateur.
  *
@@ -40,14 +41,6 @@ const TOKEN_HASH_PATTERN = /^[A-Za-z0-9._-]{8,512}$/;
 
 function isAuthLinkType(value: string | null): value is AuthLinkType {
   return value !== null && (AUTH_LINK_TYPES as readonly string[]).includes(value);
-}
-
-function decodeOnce(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 /** Lit `?token_hash=…&type=…&redirect_to=…` ; `null` si le jeton ou le type manquent ou sont invalides. */
