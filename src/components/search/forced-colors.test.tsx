@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FORCED_COLORS_SELECTED } from "./forced-colors";
@@ -26,12 +27,17 @@ function expectOnlyPressedHighlighted(buttons: HTMLElement[]) {
 
 describe("contraste élevé : états choisis de /sales", () => {
   it("remplit la classe de sélection du système, texte compris, sans ajustement du navigateur", () => {
-    expect(selectedClasses).toEqual([
-      "forced-colors:forced-color-adjust-none",
-      "forced-colors:border-[color:Highlight]",
-      "forced-colors:bg-[color:Highlight]",
-      "forced-colors:text-[color:HighlightText]",
-    ]);
+    expect(selectedClasses).toEqual(["forced-selected"]);
+    const css = readFileSync("src/styles.css", "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const block = css.slice(css.indexOf("@media (forced-colors: active)"));
+    const rule = block.slice(
+      block.indexOf(".forced-selected"),
+      block.indexOf("}", block.indexOf(".forced-selected")),
+    );
+    expect(rule).toContain("forced-color-adjust: none");
+    expect(rule).toContain("border-color: Highlight");
+    expect(rule).toContain("background-color: Highlight");
+    expect(rule).toContain("color: HighlightText");
   });
 
   it("marque la pastille de type de vente choisie", () => {
