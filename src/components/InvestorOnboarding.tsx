@@ -26,6 +26,11 @@ const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
   "w-full rounded-lg border border-border bg-background px-4 py-3 text-base text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold";
 
+/** L'essai de ce compte est en cours (`trialEndsAt` dans le futur), et non l'interrupteur de l'offre. */
+function trialRunning(plan: PlanEntitlements | undefined, now: number): boolean {
+  return Boolean(plan?.launchOffer && plan.trialEndsAt && Date.parse(plan.trialEndsAt) > now);
+}
+
 /**
  * Ce que le compte ouvre, d'après ses propres droits et non d'après l'interrupteur de l'essai :
  * « votre compte ouvre les outils Analyse » n'est dit que si l'essai de ce compte est en cours
@@ -37,7 +42,7 @@ function accessSentence(
   now: number,
 ): string | null {
   if (!plan) return null;
-  if (plan.launchOffer && plan.trialEndsAt && Date.parse(plan.trialEndsAt) > now) {
+  if (trialRunning(plan, now) && plan.trialEndsAt) {
     return `Votre essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours court jusqu’au ${signupTrialDateLabel(plan.trialEndsAt)} : votre compte ouvre les outils de l’offre Analyse sur toutes les ventes (contenu selon la vente). Ensuite, vous aurez ${MONTHLY_UNLOCKS_TEXT}.`;
   }
   if (plan.hasAnalysisAccess) {
@@ -91,6 +96,9 @@ export function InvestorOnboarding({
         ? "L’alerte gratuite suit un département : indiquez son numéro (ex. 33) ou un code postal pour la créer."
         : null;
   const alertWanted = wantsAlert && alertUnavailable === null;
+  // Pendant l'essai, la première alerte est quotidienne ; après l'essai, elle repasse en hebdomadaire
+  // (`alert-matches.ts`).
+  const dailyDuringTrial = trialRunning(plan, now);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -99,10 +107,10 @@ export function InvestorOnboarding({
       return;
     }
     if (alertWanted) {
-      // Un seul geste : l'alerte (un récapitulatif par semaine) puis le catalogue filtré. En cas
-      // d'échec le message est affiché et la personne reste ici pour réessayer ou décocher.
+      // Un seul geste : l'alerte (un récapitulatif par jour pendant l'essai, sinon par semaine) puis le
+      // catalogue filtré. En cas d'échec le message est affiché et la personne reste ici pour réessayer ou décocher.
       const result = await createAlertFromSearch(alertSearch, {
-        frequency: "weekly",
+        frequency: dailyDuringTrial ? "daily" : "weekly",
         emailRecap: true,
         // Sans département, le secteur saisi sert de nom à l'alerte.
         nameSearch: alertSearch.query ? { ...alertSearch, city: alertSearch.query } : alertSearch,
@@ -119,7 +127,9 @@ export function InvestorOnboarding({
     >
       <section className="glass-shell mx-auto max-w-2xl rounded-lg p-6 sm:p-10">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
-          Bienvenue dans votre compte Découverte
+          {trialRunning(plan, now)
+            ? "Votre essai de l’offre Analyse a commencé"
+            : "Bienvenue dans votre compte Découverte"}
         </p>
         {launchOffer ? (
           <p
@@ -274,7 +284,9 @@ export function InvestorOnboarding({
                     className="mt-0.5 size-5 shrink-0 accent-[var(--gold)]"
                   />
                   <span>
-                    Créer ma première alerte avec ces critères (un email récapitulatif par semaine)
+                    {dailyDuringTrial
+                      ? "Créer ma première alerte avec ces critères (un email par jour pendant votre essai, puis chaque semaine)"
+                      : "Créer ma première alerte avec ces critères (un email récapitulatif par semaine)"}
                   </span>
                 </label>
                 <p
@@ -282,16 +294,19 @@ export function InvestorOnboarding({
                   className="mt-1 pl-8 text-xs leading-relaxed text-muted-foreground"
                 >
                   {alertUnavailable ??
-                    "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif hebdomadaire des nouvelles ventes correspondant à ces critères. Vous pourrez le désactiver à tout moment depuis votre compte ou le lien de désinscription de chaque email."}
+                    (dailyDuringTrial
+                      ? "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif des nouvelles ventes correspondant à ces critères, seulement s’il y en a : au plus un par jour pendant votre essai, puis au plus un par semaine, le lundi, quand votre compte repasse en Découverte. Vous pourrez le désactiver à tout moment depuis votre compte ou par le lien de désinscription de chaque email."
+                      : "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif hebdomadaire des nouvelles ventes correspondant à ces critères. Vous pourrez le désactiver à tout moment depuis votre compte ou le lien de désinscription de chaque email.")}
                 </p>
                 {alertWanted ? (
-                  // Le récapitulatif part le lundi suivant : le premier plafond ne doit pas attendre.
+                  // Le récapitulatif part le lendemain ou le lundi suivant : le premier plafond ne doit pas attendre.
                   <p
                     data-testid="first-alert-timing"
                     className="mt-2 pl-8 text-sm leading-relaxed text-foreground"
                   >
-                    Le récapitulatif part le lundi, s’il y a de nouvelles ventes qui correspondent à
-                    vos critères. En attendant, ouvrez une fiche pour voir son plafond.
+                    {dailyDuringTrial
+                      ? "Pendant votre essai, le récapitulatif part chaque jour, puis chaque lundi après l’essai, s’il y a de nouvelles ventes qui correspondent à vos critères. En attendant, ouvrez une fiche pour voir son plafond."
+                      : "Le récapitulatif part le lundi, s’il y a de nouvelles ventes qui correspondent à vos critères. En attendant, ouvrez une fiche pour voir son plafond."}
                   </p>
                 ) : null}
               </div>

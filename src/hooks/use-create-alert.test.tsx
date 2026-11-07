@@ -267,14 +267,40 @@ describe("useCreateAlert", () => {
     );
   });
 
-  it("refuse à un compte gratuit les critères réservés à Analyse", async () => {
+  it("explique à un compte gratuit, sans erreur, que ces critères font partie de l’offre Analyse", async () => {
     const hook = setup();
-    const outcome = await create(hook, { query: "Bordeaux" });
-    expect(outcome).toEqual({ status: "blocked" });
-    expect(mocks.toast.error).toHaveBeenCalledWith(
-      "L'alerte gratuite accepte les critères publics : zone, type de vente, type de bien, budget et surface.",
-    );
+    // Un critère par champ que la condition refuse : chacun est nommé par le message.
+    const reserved: SalesSearchParams[] = [
+      { query: "Bordeaux" },
+      { department: "33", occupancy: "free" },
+      { department: "33", minScore: 60 },
+      { department: "33", minYield: 6 },
+      { department: "33", minMarketDiscount: 20 },
+      { department: "33", dpeClasses: ["A"] },
+      { department: "33", houseWithLand: true },
+    ];
+    for (const search of reserved) {
+      mocks.toast.message.mockClear();
+      const outcome = await create(hook, search);
+      expect(outcome).toEqual({ status: "blocked" });
+      expect(mocks.toast.message).toHaveBeenCalledWith(
+        "Les critères avancés (écart avec le marché, rendement, occupation, DPE…) font partie des alertes de l’offre Analyse. Avec le compte gratuit : zone, type de vente, type de bien, budget, surface…",
+        expect.objectContaining({
+          action: expect.objectContaining({ label: "Voir les offres" }),
+        }),
+      );
+    }
+    expect(mocks.toast.error).not.toHaveBeenCalled();
     expect(mocks.createAlert).not.toHaveBeenCalled();
+
+    // L'action mène aux offres, sans y envoyer d'office.
+    expect(mocks.push).not.toHaveBeenCalled();
+    const [, options] = mocks.toast.message.mock.calls[0] as [
+      string,
+      { action: { onClick: () => void } },
+    ];
+    options.action.onClick();
+    expect(mocks.push).toHaveBeenCalledWith("/offres");
   });
 
   it("accepte à un compte gratuit un code de département tapé dans la recherche (critère public)", async () => {

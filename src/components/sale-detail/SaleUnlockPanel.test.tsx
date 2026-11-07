@@ -220,15 +220,14 @@ describe("SaleUnlockPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
 
     expect(
-      (
-        await screen.findAllByText(
-          /Vous avez utilisé vos 3 déblocages d’octobre\. Ils reviennent le 1er novembre\./,
-        )
-      ).length,
-    ).toBeGreaterThan(0);
+      await screen.findByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
-    // Announced by the live region that stays mounted across the states.
-    expect(screen.getByRole("status").textContent).toContain("Vous avez utilisé vos 3 déblocages");
+    // Announced by the live region that stays mounted across the states, without naming the
+    // subscription (its availability is not read there).
+    expect(screen.getByRole("status").textContent).toBe(
+      "Vos 3 ventes d’octobre sont débloquées. Vous pourrez la débloquer le 1er novembre avec le compte gratuit.",
+    );
   });
 
   it("forgets a refusal when the account status is read again", async () => {
@@ -241,7 +240,7 @@ describe("SaleUnlockPanel", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
-    await screen.findByRole("heading", { name: "Vous avez utilisé vos déblocages" });
+    await screen.findByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" });
 
     // The status is read again (a new month, a refund): the panel follows it.
     rerender(
@@ -266,14 +265,14 @@ describe("SaleUnlockPanel", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Vous avez utilisé vos déblocages" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Vos 3 ventes d’octobre sont débloquées" }),
+    ).toBeTruthy();
     const text = container.textContent ?? "";
     expect(text).toContain(
-      "Vous avez utilisé vos 3 déblocages d’octobre. Ils reviennent le 1er novembre.",
+      "Vous pourrez la débloquer le 1er novembre avec le compte gratuit, ou l’ouvrir dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.",
     );
-    expect(text).toContain(
-      "Analyse ouvre toutes les ventes sans limite : 59\u00a0€\u00a0TTC / mois, résiliable à tout moment.",
-    );
+    expect(text).toContain("Son prix : 59\u00a0€\u00a0TTC / mois, résiliable à tout moment.");
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
       "/offres",
     );
@@ -293,8 +292,8 @@ describe("SaleUnlockPanel", () => {
     );
     const text = container.textContent ?? "";
     expect(text).toContain("L’offre Analyse n’est pas encore ouverte à la souscription.");
-    expect(text).not.toMatch(/souscrire|59[ \u00a0]€|résiliable/);
-    expect(text).toContain("Ils reviennent le 1er novembre.");
+    expect(text).not.toMatch(/souscrire|59[ \u00a0]€|résiliable|dès maintenant/);
+    expect(text).toContain("Vous pourrez la débloquer le 1er novembre avec le compte gratuit.");
     // The primary action is the opening request (loaded on demand), not a link to a page that
     // cannot sell it yet.
     expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
@@ -312,8 +311,47 @@ describe("SaleUnlockPanel", () => {
       />,
     );
     const text = container.textContent ?? "";
-    expect(text).not.toMatch(/souscri|59[ \u00a0]€|résiliable|pas encore ouverte/);
+    expect(text).not.toMatch(/souscri|59[ \u00a0]€|résiliable|pas encore ouverte|dès maintenant/);
+    expect(text).toContain("Vous pourrez la débloquer le 1er novembre avec le compte gratuit.");
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" })).toBeTruthy();
+  });
+
+  it("links an account without unlock left to the sales it already opened", () => {
+    for (const open of [true, false, null]) {
+      mocks.checkoutOpen.mockReturnValue(open);
+      const view = render(
+        <SaleUnlockPanel
+          saleId={saleId}
+          status={status({ used: 3, remaining: 0 })}
+          unlocked={false}
+          onUnlocked={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByRole("link", { name: "Voir mes ventes débloquées" }).getAttribute("href"),
+      ).toBe("/compte/ventes-debloquees");
+      view.unmount();
+    }
+  });
+
+  it("names the month with its elision and follows the limit of the account", () => {
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={status({
+          used: 3,
+          remaining: 0,
+          periodStart: "2026-10-31T23:00:00.000Z",
+          resetsAt: "2026-11-30T23:00:00.000Z",
+        })}
+        unlocked={false}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Vos 3 ventes de novembre sont débloquées" }),
+    ).toBeTruthy();
+    expect(document.body.textContent).toContain("le 1er décembre avec le compte gratuit");
   });
 
   it("gives each of its three cards the « debloquer » anchor the previews link to", () => {
@@ -360,16 +398,18 @@ describe("SaleUnlockPanel", () => {
     expect(mocks.unlock).not.toHaveBeenCalled();
   });
 
-  it("still shows an unlocked sale as unlocked", () => {
+  it("still shows an unlocked sale without a ceiling as unlocked", () => {
     render(
       <SaleUnlockPanel
         saleId={saleId}
         status={status({ unlocked: true, unlockable: true, used: 2, remaining: 1 })}
         unlocked
+        opens={{ ceiling: null, ceilingTerm: null, statistics: false }}
         onUnlocked={vi.fn()}
       />,
     );
     expect(screen.getByRole("heading", { name: "Cette vente est débloquée" })).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/est prête|est prêt\b/);
   });
 
   it("does not look at the subscription before the quota is spent", () => {
@@ -414,11 +454,12 @@ describe("SaleUnlockPanel", () => {
         status={status({ unlocked: true, used: 2, remaining: 1 })}
         unlocked
         announce
+        opens={{ ceiling: "l’enchère plafond", ceilingTerm: "enchère plafond", statistics: false }}
         onUnlocked={vi.fn()}
       />,
     );
     expect(document.activeElement).toBe(
-      screen.getByRole("heading", { name: "Cette vente est débloquée" }),
+      screen.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
     );
   });
 
@@ -428,6 +469,7 @@ describe("SaleUnlockPanel", () => {
         saleId={saleId}
         status={status({ unlocked: true, used: 2, remaining: 1 })}
         unlocked
+        opens={{ ceiling: null, ceilingTerm: null, statistics: false }}
         onUnlocked={vi.fn()}
       />,
     );
@@ -441,8 +483,79 @@ describe("SaleUnlockPanel", () => {
         /exports PDF et CSV, les rapports enregistrés, l’estimation détaillée et les ventes comparables restent réservés/,
       ),
     ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni un conseil financier.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("Il vous reste 1 déblocage sur 3 ce mois-ci.")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("puts the ready ceiling first, then its button, then the duration, and keeps the rest under it", () => {
+    const { container } = render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={status({ unlocked: true, used: 2, remaining: 1 })}
+        unlocked
+        opens={{ ceiling: "l’enchère plafond", ceilingTerm: "enchère plafond", statistics: false }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+
+    const heading = screen.getByRole("heading", { name: "Votre enchère plafond est débloquée" });
+    const button = screen.getByRole("link", { name: "Voir mon enchère plafond" });
+    const duration = screen.getByText(
+      "Ouvert pour cette vente, tant qu’elle est en ligne (24 mois au plus).",
+    );
+    const reserved = screen.getByText(
+      /Les exports PDF et CSV, les rapports enregistrés, l’estimation détaillée et les ventes comparables restent réservés à l’offre Analyse\./,
+    );
+    const reserve = screen.getByText(
+      "Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni un conseil financier, et l’enchère plafond est une simulation fondée sur des hypothèses modifiables.",
+    );
+    // Document order: heading, button, duration, what stays reserved, the decision-aid reserve.
+    const order = [heading, button, duration, reserved, reserve];
+    for (let index = 1; index < order.length; index += 1) {
+      expect(
+        order[index - 1].compareDocumentPosition(order[index]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    expect(reserved.textContent).toContain(
+      "Ce déblocage ouvre l’enchère plafond, la lecture des pièces",
+    );
+    expect(screen.getByText("Il vous reste 1 déblocage sur 3 ce mois-ci.")).toBeTruthy();
+    expect(container.textContent).not.toContain("Cette vente est débloquée");
+  });
+
+  it("names the ready ceiling with the term of the regime, or « plafond » when both apply", () => {
+    const unlockedStatus = status({ unlocked: true, used: 2, remaining: 1 });
+    const online = render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={unlockedStatus}
+        unlocked
+        opens={{ ceiling: "l’offre plafond", ceilingTerm: "offre plafond", statistics: false }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Votre offre plafond est débloquée" })).toBeTruthy();
+    online.unmount();
+
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={unlockedStatus}
+        unlocked
+        opens={{
+          ceiling: "l’enchère plafond ou l’offre plafond",
+          ceilingTerm: null,
+          statistics: false,
+        }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Votre plafond est débloqué" })).toBeTruthy();
   });
 
   it("links an unlocked sale to its bid ceiling with the term of its regime, and never promises one elsewhere", () => {

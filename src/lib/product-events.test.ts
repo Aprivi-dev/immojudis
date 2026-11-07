@@ -102,7 +102,8 @@ describe("product events", () => {
     it("sends the target of a home click and the surface of an alert, from the closed lists only", () => {
       trackProductEvent("home_cta_clicked", { target: "signup" });
       trackProductEvent("home_cta_clicked", { target: "browse" });
-      // @ts-expect-error Only `signup` or `browse` are targets, never an address.
+      trackProductEvent("home_cta_clicked", { target: "example" });
+      // @ts-expect-error Only `signup`, `browse` or `example` are targets, never an address.
       trackProductEvent("home_cta_clicked", { target: "/sales?q=Bordeaux" });
       trackProductEvent("alert_created", { email_consent: true, surface: "department" });
       trackProductEvent("alert_created", { email_consent: false, surface: "hearings" });
@@ -111,6 +112,7 @@ describe("product events", () => {
       expect(track.mock.calls).toEqual([
         ["home_cta_clicked", { target: "signup" }],
         ["home_cta_clicked", { target: "browse" }],
+        ["home_cta_clicked", { target: "example" }],
         ["home_cta_clicked"],
         ["alert_created", { email_consent: true, surface: "department" }],
         ["alert_created", { email_consent: false, surface: "hearings" }],

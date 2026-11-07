@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  HOME_TRIAL_NOTE,
   LAUNCH_OFFER_ACCOUNT_TEXT,
   LAUNCH_OFFER_DATA_TEXT,
   LAUNCH_OFFER_DURATION_TEXT,
@@ -41,6 +42,14 @@ describe("textes de l'essai gratuit à l'inscription", () => {
     expect(LAUNCH_OFFER_SHORT_TEXT).toBe(
       "Inscription gratuite : 7 jours d’accès à l’offre Analyse, sans carte bancaire",
     );
+  });
+
+  it("disent sous le bouton d'inscription ce que l'essai ouvre : toutes les ventes", () => {
+    expect(HOME_TRIAL_NOTE).toBe(
+      "7 jours d’offre Analyse, sans carte bancaire : toutes les ventes ouvertes, puis retour au compte gratuit.",
+    );
+    // « Toutes les ventes ouvertes » n'est vrai que si l'offre Analyse n'a pas de quota de déblocages.
+    expect(PLAN_LIMITS.analyse.monthlyUnlocks).toBeNull();
   });
 
   it("ne promettent ni retrait « à tout moment » sans condition, ni prix sans le dire payant", () => {

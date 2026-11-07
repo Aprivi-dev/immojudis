@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import {
   bidVerdict,
   bidVerdictSentence,
@@ -19,8 +21,11 @@ import {
   type ExampleWorks,
 } from "@/lib/example-verdict-shared";
 import { formatNumber, formatPrice } from "@/lib/format";
+import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
-import { ArrowRight, Check } from "./HomeIcons";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
+import { ArrowRight, Check, ShieldCheck } from "./HomeIcons";
 import {
   OCCUPATION_LABEL,
   PROJECT_LABEL,
@@ -79,6 +84,49 @@ function Segmented<T extends string>({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Juste après le verdict : voir le plafond d'une vraie vente. Un visiteur crée son compte (motif
+ * `exemple`), avec dessous la même ligne que sous le bouton du haut de l'accueil (l'essai quand il
+ * est ouvert, sinon la ligne du compte gratuit) ; un compte connecté va au catalogue. Le rendu
+ * serveur est celui du visiteur. L'analyse complète de l'exemple reste en lien secondaire.
+ */
+function TryExampleNextStep() {
+  const { user } = useAuth();
+  const trialOpen = useLaunchOffer().active;
+  const label = (
+    <>
+      Voir le plafond d’une vraie vente de mon secteur <ArrowRight aria-hidden size={20} />
+    </>
+  );
+  return (
+    <div className={styles.ctaBlock}>
+      {user ? (
+        <Link href="/sales" prefetch={false} className={styles.button}>
+          {label}
+        </Link>
+      ) : (
+        <>
+          <Link
+            href={loginPathWithRedirect("/sales", { reason: "exemple" })}
+            prefetch={false}
+            className={styles.button}
+            onClick={() => trackProductEvent("home_cta_clicked", { target: "example" })}
+          >
+            {label}
+          </Link>
+          <p className={styles.ctaNote}>
+            <ShieldCheck aria-hidden size={16} />
+            {trialOpen ? HOME_TRIAL_NOTE : FREE_ACCESS_LINE}
+          </p>
+        </>
+      )}
+      <Link href="/annonce-exemple" prefetch={false} className={styles.textLink}>
+        Voir l’analyse complète <ArrowRight aria-hidden size={16} />
+      </Link>
     </div>
   );
 }
@@ -307,11 +355,7 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
               Mettre en pause l’animation
             </button>
           </div>
-          <p>
-            <Link href="/annonce-exemple" prefetch={false} className={styles.textLink}>
-              Voir l’analyse complète <ArrowRight aria-hidden size={16} />
-            </Link>
-          </p>
+          <TryExampleNextStep />
         </div>
         <div className={`${styles.head} ${styles.headAside}`} data-reveal="">
           <p className={styles.eyebrow}>Essayez sur un exemple</p>

@@ -71,11 +71,12 @@ export function HomeHero({
             en toute <span className={styles.clarte}>clarté.</span>
           </h1>
           <p className={`${styles.lead} ${styles.heroAnim}`} style={delay(160)}>
+            Pour chaque vente au tribunal{notaryCeiling ? " et chez le notaire" : ""} : ce que
+            disent les pièces quand elles sont publiées, la valeur du quartier et l’enchère à ne pas
+            dépasser selon votre projet.{" "}
             {notaryAndStatePilotsEnabled()
-              ? "Les ventes des tribunaux, des notaires et de l’État réunies sur une carte."
-              : "Les ventes des tribunaux réunies sur une carte."}{" "}
-            Pour les ventes au tribunal{notaryCeiling ? " et chez le notaire" : ""} : les points
-            clés des pièces, selon la vente, et un plafond estimé à ne pas dépasser.
+              ? "Les ventes des tribunaux, des notaires et de l’État sur une carte."
+              : "Les ventes des tribunaux sur une carte."}
           </p>
           <div className={styles.heroAnim} style={delay(240)}>
             <HomePrimaryAction browseLink />

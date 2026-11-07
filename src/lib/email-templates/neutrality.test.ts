@@ -30,13 +30,19 @@ import { EMAIL_TEMPLATES } from "./registry";
  * libellé et même adresse que celui du pied), en HTML (paragraphe discret) et en texte (« Ne plus être
  * contacté : <lien> »). Aucun autre texte ne change (vérifié par emails/information-request.test.tsx, qui garde
  * les textes juridiques mot pour mot).
+ *
+ * Mise à jour explicite du 06/11/2026 (revue marketing, n° 11, validée par le propriétaire) : l'empreinte de
+ * trial_end a changé, et SEULEMENT celle-là. Seule la liste « Ce qui se ferme » diffère
+ * (`LAUNCH_OFFER_END_NEEDS_ANALYSIS`, `launch-offer-end-lists.ts`) : le plafond et les alertes en tête, le PDF
+ * cité une seule fois, formulations relues par juridique-rgpd. Avec l’ancienne liste, le rendu redonne
+ * l’empreinte d’avant (vérifié).
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
   sale_reminder: "89b4e771c33a8e3ba65dd0013af35fd14e355bcf0626bbd58ad5b14cf867a4ce",
   weekly_digest: "da2f3c451922e5683f5c531a57099c45b57c16becd516aa0b6defd7d3961e19e",
   sale_result: "7c64c7e5a5b08e1b888fefc460c6759d69c12c695d60bfba30f5d585e1d96d3f",
-  trial_end: "e7f7fb729ad19574aad28e648a91bcdf5d5cbac4f872c73b770f5bb95c67b012",
+  trial_end: "c59fd7b65599c3e753cb0a957eb85033bc450b6be811646f71c3fa9c5eb30034",
   offer_opening: "33f6b0d764b9bb7b9e611de5250b6ac1cff11fd47139ace9da41154322d17f47",
   payment_failed: "a7cf5adb71220d3a7e3125032c3f5b22a82cbb7d713b29bb11b52c13352c4a40",
   trial_ending: "40d19feefa61fd75b6075103ed2ff7229ddf5a73988c9f8495ad619ff3fc9f13",

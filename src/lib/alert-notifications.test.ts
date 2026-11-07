@@ -259,6 +259,26 @@ describe("Discovery notifications", () => {
     }
     expect(JSON.stringify(rows)).not.toContain("Private");
   });
+
+  it("groupe en hebdomadaire une alerte encore quotidienne d'un compte Découverte (fin d'essai)", () => {
+    const rows = buildAlertNotificationRows({
+      userId: "user-1",
+      matches: [makeMatch()],
+      alerts: [{ id: "alert-1", alert_frequency: "daily" }],
+      // Vendredi 06/11/2026 : le récapitulatif part le lundi suivant, jamais le lendemain.
+      now: new Date("2026-11-06T06:15:00.000Z"),
+      includeEmail: true,
+      discovery: true,
+    });
+    expect(rows.map((row) => row.delivery_channel)).toEqual(["in_app", "email"]);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        notification_kind: "weekly_digest",
+        scheduled_for: "2026-11-09T07:00:00.000Z",
+      });
+      expect(row.notification_snapshot).toMatchObject({ alert: { frequency: "weekly" } });
+    }
+  });
 });
 
 describe("passage d'envoi des alertes : échecs partiels", () => {

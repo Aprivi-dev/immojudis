@@ -6,7 +6,7 @@ import { ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import { isFeeRegimeOpen, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { formatNumber, formatPrice } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
-import { MONTHLY_SALE_UNLOCKS, MONTHLY_UNLOCKS_LABEL } from "@/lib/sale-unlocks";
+import { computeAcquisitionCosts, DEFAULTS } from "@/lib/profitability";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import { ArrowRight, Bank, Bell, ChartBar, FileText, MapPin, Target } from "./HomeIcons";
 import {
@@ -19,11 +19,30 @@ import styles from "./HomePage.module.css";
 // Mêmes chiffres que /annonce-exemple : calculés une fois depuis l'exemple, jamais saisis ici.
 const EXAMPLE = exampleHeadlineFigures();
 
+/** Prix d'adjudication du repère de frais du bandeau de chiffres et de la FAQ. */
+export const HOME_FEES_EXAMPLE_PRICE = 150_000;
+
+/**
+ * Poids des frais en plus du prix (en %, arrondi à l'unité) pour un bien adjugé
+ * `HOME_FEES_EXAMPLE_PRICE`, calculé par le moteur du simulateur de frais avec ses hypothèses par
+ * défaut (`DEFAULT_HYPOTHESES` : département non précisé, frais préalables et honoraires d'exemple,
+ * sans travaux). Une seule source pour le bandeau et la FAQ.
+ */
+export const HOME_FEES_EXAMPLE_PCT = Math.round(
+  computeAcquisitionCosts({
+    price: HOME_FEES_EXAMPLE_PRICE,
+    fpt: DEFAULTS.fpt,
+    lawyerFees: DEFAULTS.lawyerFees,
+    works: 0,
+    department: null,
+  }).acquisitionFeesPct,
+);
+
 function delay(ms: number): CSSProperties {
   return { "--delay": `${ms}ms` } as CSSProperties;
 }
 
-type Stat = { value: string; label: string; countTo?: number };
+type Stat = { value: string; label: string; countTo?: number; href?: string };
 
 /** Les chiffres réels du catalogue ; un chiffre inconnu n'est pas affiché (jamais de repli inventé). */
 export function HomeStats({
@@ -56,8 +75,9 @@ export function HomeStats({
     stats.push({ value: "3", label: "lieux de vente réunis : tribunal, notaire, État" });
   }
   stats.push({
-    value: formatNumber(MONTHLY_SALE_UNLOCKS),
-    label: MONTHLY_UNLOCKS_LABEL,
+    value: `≈\u00a0${formatNumber(HOME_FEES_EXAMPLE_PCT)}\u00a0%`,
+    label: `de frais en plus du prix, pour un bien adjugé ${formatPrice(HOME_FEES_EXAMPLE_PRICE)} au tribunal (hypothèses du simulateur)`,
+    href: "/simulateur-frais-encheres",
   });
   return (
     <section className={styles.statsBand} aria-label="Le catalogue en chiffres">
@@ -65,7 +85,15 @@ export function HomeStats({
         <dl className={styles.stats} data-reveal="">
           {stats.map((stat) => (
             <div key={stat.label} className={styles.stat}>
-              <dt>{stat.label}</dt>
+              <dt>
+                {stat.href ? (
+                  <Link href={stat.href} prefetch={false} className={styles.textLink}>
+                    {stat.label}
+                  </Link>
+                ) : (
+                  stat.label
+                )}
+              </dt>
               <dd data-count-to={stat.countTo} className={styles.statValue}>
                 {stat.value}
               </dd>
@@ -443,8 +471,7 @@ export function homeFaqItems({
     },
     {
       question: "Les frais s’ajoutent-ils au prix d’adjudication ?",
-      answer:
-        "Oui. Les frais de poursuite fixés par le juge et les droits de mutation sont payés en plus du prix (art. R. 322-58), et les émoluments et honoraires des avocats s’y ajoutent. Avec les hypothèses du simulateur Immojudis, le total représente environ 13 % du prix pour un bien adjugé 150 000 €.",
+      answer: `Oui. Les frais de poursuite fixés par le juge et les droits de mutation sont payés en plus du prix (art. R. 322-58), et les émoluments et honoraires des avocats s’y ajoutent. Avec les hypothèses du simulateur Immojudis, le total représente environ ${formatNumber(HOME_FEES_EXAMPLE_PCT)}\u00a0% du prix pour un bien adjugé ${formatPrice(HOME_FEES_EXAMPLE_PRICE)}.`,
       guide: {
         href: "/ressources/frais-vente-encheres-judiciaire",
         label: "Lire le guide des frais",

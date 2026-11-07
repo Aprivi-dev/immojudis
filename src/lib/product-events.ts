@@ -53,8 +53,11 @@ export type SignupEntry = (typeof SIGNUP_ENTRIES)[number];
 export const ALERT_SURFACES = ["department", "tribunal", "hearings", "sale", "search"] as const;
 export type AlertSurface = (typeof ALERT_SURFACES)[number];
 
-/** Le bouton ou le lien cliqué en haut de l'accueil : créer un compte, ou explorer sans compte. */
-export const HOME_CTA_TARGETS = ["signup", "browse"] as const;
+/**
+ * Le bouton ou le lien cliqué sur l'accueil : créer un compte, explorer sans compte, ou « Voir le
+ * plafond d'une vraie vente de mon secteur » sous le verdict de l'exemple (`example`).
+ */
+export const HOME_CTA_TARGETS = ["signup", "browse", "example"] as const;
 export type HomeCtaTarget = (typeof HOME_CTA_TARGETS)[number];
 
 /** État de la page d'un rapport partagé quand son destinataire l'ouvre. */
