@@ -96,7 +96,8 @@ export function SearchHeader({
   isDesktop?: boolean;
   /** En-tête du catalogue, entre l'en-tête du site et la barre de filtres. */
   intro?: React.ReactNode;
-  onFiltersOpenChange: (open: boolean) => void;
+  /** `trigger` : le bouton qui ouvre la fenêtre des filtres, où le focus reviendra à sa fermeture. */
+  onFiltersOpenChange: (open: boolean, trigger?: HTMLElement) => void;
   onReset: () => void;
   onSaveSearch: (options?: SaveSearchOptions) => void;
 }) {
@@ -175,7 +176,7 @@ export function SearchHeader({
               <button
                 type="button"
                 aria-expanded={filtersOpen}
-                onClick={() => onFiltersOpenChange(!filtersOpen)}
+                onClick={(event) => onFiltersOpenChange(!filtersOpen, event.currentTarget)}
                 className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 <SlidersHorizontal className="h-4 w-4" aria-hidden />
@@ -192,7 +193,7 @@ export function SearchHeader({
               signupLinks={signupLinks}
               activeFiltersCount={activeFiltersCount}
               filtersOpen={filtersOpen}
-              onOpenFilters={() => onFiltersOpenChange(true)}
+              onOpenFilters={(trigger) => onFiltersOpenChange(true, trigger)}
             />
             {!isDesktop && activeFiltersCount > 0 && (
               <button

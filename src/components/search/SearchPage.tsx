@@ -236,6 +236,13 @@ export function SearchPage({
   const [mapViewport, setMapViewport] = useState<MapViewportChange | null>(null);
   const [wideMap, setWideMap] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // Bouton qui a ouvert « Tous les filtres » (bureau) ou « Filtres » (mobile) : le focus y revient
+  // à la fermeture de la fenêtre, Échap compris.
+  const filtersTriggerRef = useRef<HTMLElement | null>(null);
+  const changeFiltersOpen = useCallback((open: boolean, trigger?: HTMLElement) => {
+    if (open && trigger) filtersTriggerRef.current = trigger;
+    setFiltersOpen(open);
+  }, []);
   const [mobileMapOpen, setMobileMapOpen] = useState(Boolean(search.map));
   // Fenêtre du comparateur : ouverte par la barre (bureau) ou par la pastille de la barre basse.
   const [comparisonOpen, setComparisonOpen] = useState(false);
@@ -1143,7 +1150,7 @@ export function SearchPage({
         freeAlertUsage={freeAlertUsage}
         onAlertDialogOpen={openAlertDialog}
         isDesktop={isDesktop}
-        onFiltersOpenChange={setFiltersOpen}
+        onFiltersOpenChange={changeFiltersOpen}
         onReset={resetFilters}
         onSaveSearch={saveSearch}
         intro={
@@ -1399,6 +1406,7 @@ export function SearchPage({
           resultCount={filtersResultCount}
           onClose={() => setFiltersOpen(false)}
           onReset={resetFilters}
+          returnFocusRef={filtersTriggerRef}
         />
       ) : null}
 

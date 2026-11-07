@@ -55,8 +55,11 @@ export function MobileFilterChips({
   /** Critères actifs : le nombre s'écrit sur la pastille « Filtres ». */
   activeFiltersCount?: number;
   filtersOpen?: boolean;
-  /** Ouvre la fenêtre de tous les filtres : la pastille « Filtres » ouvre la rangée. */
-  onOpenFilters?: () => void;
+  /**
+   * Ouvre la fenêtre de tous les filtres : la pastille « Filtres » ouvre la rangée. `trigger` : la
+   * pastille, où le focus revient à la fermeture de la fenêtre.
+   */
+  onOpenFilters?: (trigger: HTMLElement) => void;
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   /** Visiteur sans compte : les deux filtres de repères nécessitent un compte, ils sont grisés et mènent à l'inscription. */
@@ -85,7 +88,7 @@ export function MobileFilterChips({
           <button
             type="button"
             aria-expanded={filtersOpen}
-            onClick={onOpenFilters}
+            onClick={(event) => onOpenFilters(event.currentTarget)}
             className={chipClass(false)}
           >
             <SlidersHorizontal className="h-4 w-4" aria-hidden />

@@ -411,7 +411,8 @@ describe("SearchHeader : mobile", () => {
     const filters = within(chips).getByRole("button", { name: /^Filtres/ });
     expect(filters.textContent).toContain("2");
     fireEvent.click(filters);
-    expect(onFiltersOpenChange).toHaveBeenCalledWith(true);
+    // La pastille est transmise : le focus y reviendra à la fermeture de la fenêtre.
+    expect(onFiltersOpenChange).toHaveBeenCalledWith(true, filters);
   });
 
   it("propose « Type de bien », « Mise à prix max. » et « Date de vente » sous le champ de recherche", () => {
