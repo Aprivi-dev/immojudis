@@ -1,5 +1,6 @@
 import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
+import { dedupeStrings } from "@/lib/dedupe-strings";
 
 export type ValuationAuditStatus = "robust" | "usable" | "fragile" | "missing";
 export type ValuationCheckpointStatus = "ok" | "watch" | "risk" | "missing";
@@ -431,14 +432,4 @@ function nextActions(checkpoints: ValuationCheckpoint[]): string[] {
     ...(priority.length ? priority : fallback),
     "Documenter les limites DVF dans le rapport partagé.",
   ]).slice(0, 5);
-}
-
-function dedupeStrings(values: string[]): string[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = value.trim().toLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }

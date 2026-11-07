@@ -1,5 +1,6 @@
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
+import { dedupeStrings } from "@/lib/dedupe-strings";
 
 export type UrbanPlanningSignalKind =
   | "zoning"
@@ -426,16 +427,6 @@ function dedupeItems(items: UrbanPlanningItem[]): UrbanPlanningItem[] {
   return items.filter((item) => {
     const key = `${item.kind}-${normalizeText(item.detail)}-${item.source}`;
     if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function dedupeStrings(values: string[]): string[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = value.trim().toLowerCase();
-    if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
