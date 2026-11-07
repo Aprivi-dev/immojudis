@@ -295,6 +295,31 @@ describe("login page", () => {
     expect(alert.textContent).toBe("Email ou mot de passe incorrect.");
     // Une seule annonce : l'alerte du formulaire, pas l'alerte et un toast.
     expect(mocks.toastError).not.toHaveBeenCalled();
+    // Repasse n° 12 et 19 : erreur aux jetons « danger », bouton principal marine.
+    expect(alert.className).toContain("text-danger");
+    expect(alert.className).not.toMatch(/red-\d/);
+    expect(submit!.className).toContain("bg-brand-navy");
+    expect(document.body.innerHTML).not.toMatch(/liquid-|glass-shell|cinematic-grid/);
+  });
+
+  it("parle à l'avocat dans la colonne de gauche du mode professionnel (repasse n° 35)", () => {
+    mocks.search = { mode: "professional" };
+    render(<LoginPage />);
+    const column = screen.getByTestId("login-professional-column");
+    expect(column.textContent).toContain("Déposez et suivez vos ventes.");
+    expect(column.textContent).toContain("Déposer une vente");
+    expect(column.textContent).toContain("Suivre vos demandes");
+    expect(column.textContent).not.toContain("Préparez votre achat aux enchères.");
+    expect(screen.getByRole("link", { name: "Présenter mon cabinet" }).getAttribute("href")).toBe(
+      "/contact?sujet=avocat",
+    );
+  });
+
+  it("garde la colonne de l'acquéreur hors du mode professionnel", () => {
+    mocks.search = { mode: "investor" };
+    render(<LoginPage />);
+    expect(screen.queryByTestId("login-professional-column")).toBeNull();
+    expect(screen.getByText("Préparez votre achat aux enchères.")).toBeTruthy();
   });
 
   it("relie l'erreur aux champs email et mot de passe (aria-invalid, aria-describedby)", async () => {

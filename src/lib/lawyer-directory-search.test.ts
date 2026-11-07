@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateDirectorySearch } from "./lawyer-directory-search";
+import { hasDirectoryCriteria, validateDirectorySearch } from "./lawyer-directory-search";
 
 describe("lawyer directory filters", () => {
   it("keeps the known filters, trimmed", () => {
@@ -15,5 +15,14 @@ describe("lawyer directory filters", () => {
       department: undefined,
       saleId: undefined,
     });
+  });
+
+  it("knows when the address names something to search (repasse n° 5)", () => {
+    expect(hasDirectoryCriteria(validateDirectorySearch({}))).toBe(false);
+    expect(hasDirectoryCriteria(validateDirectorySearch({ bar: " ", x: "1" }))).toBe(false);
+    expect(hasDirectoryCriteria({ bar: "Aix-en-Provence" })).toBe(true);
+    expect(hasDirectoryCriteria({ department: "13" })).toBe(true);
+    expect(hasDirectoryCriteria({ city: "Pau" })).toBe(true);
+    expect(hasDirectoryCriteria({ saleId: "abc" })).toBe(true);
   });
 });

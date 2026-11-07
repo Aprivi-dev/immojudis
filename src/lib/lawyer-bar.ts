@@ -18,14 +18,20 @@ export function resolveCnbDatasetBarKey(value: string | null | undefined): strin
 }
 
 /**
- * Bar of a "Tribunal judiciaire de X" (or "TJ de X", former TGI) label. Returns null when the label
+ * Bar of a "Tribunal judiciaire de X" (or "TJ X", former TGI) label. Returns null when the label
  * does not name the seat: the sale's own city is deliberately NOT used as a fallback.
+ *
+ * A hyphen inside a word belongs to the seat (Aix-en-Provence, Saint-Étienne, Bourg-en-Bresse…).
+ * Only a hyphen surrounded by spaces, or an en / em dash, separates a detail from the seat
+ * ("TJ de Paris — saisie immobilière", "TJ de Lyon - audience du 3 mars").
+ * Some reference names repeat the court type ("TJ Tribunal judiciaire du Mans"): the leading "TJ"
+ * is then ignored.
  */
 export function tribunalBarAssociation(tribunal: string | null | undefined): string | null {
-  const label = tribunal?.trim();
+  const label = tribunal?.trim().replace(/^(?:tj|tgi)\s+(?=tribunal\b)/i, "");
   if (!label) return null;
   const match = label.match(
-    /(?:tribunal\s+(?:judiciaire|de\s+grande\s+instance)|\btj\b|\btgi\b)\s+(?:de\s+|du\s+|des\s+|d[’']\s*)?([^,;()]+?)(?:\s*[-–—]|$)/i,
+    /(?:tribunal\s+(?:judiciaire|de\s+grande\s+instance|de\s+premi[eè]re\s+instance)|\btj\b|\btgi\b)\s+(?:de\s+|du\s+|des\s+|d[’']\s*)?([^,;()]+?)(?:\s+-(?=\s|$)|\s*[–—]|$)/i,
   );
   const city = match?.[1]?.replace(/\s+/g, " ").trim();
   return city ? city : null;

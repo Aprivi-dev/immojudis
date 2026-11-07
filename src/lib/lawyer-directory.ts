@@ -3,6 +3,8 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { CNB_DATASET_PAGE_URL, OPEN_LICENSE_URL } from "@/lib/cnb-open-data";
+import { departmentCode } from "@/lib/department-code";
+import { departmentFromCode } from "@/lib/department-pages";
 import {
   isProsecutingLawyer,
   isSameBar,
@@ -201,10 +203,17 @@ export async function listLawyerDirectory(
   }
 
   const activeLawyers = (data ?? []) as LawyerRow[];
-  const criteria = buildCriteria(resolvedBarAssociation, sale != null, query);
+  // Free browsing by department (`?department=13`): the bars of the department's tribunaux
+  // judiciaires, never the whole country.
+  const departmentBars =
+    !sale && !resolvedBarAssociation && query.department
+      ? await getDepartmentBars(query.department)
+      : null;
+  const criteria = buildCriteria(resolvedBarAssociation, sale != null, query, departmentBars);
+  const cnbBarKeys = resolvedBarAssociation ? [resolvedBarAssociation] : departmentBars;
   const [coverage, cnbLawyers] = await Promise.all([
     getCoverage(activeLawyers.map((lawyer) => lawyer.id)),
-    getCnbLawyers(resolvedBarAssociation),
+    getCnbLawyers(cnbBarKeys),
   ]);
   const matched = activeLawyers
     .map((lawyer) => {
@@ -267,7 +276,7 @@ export async function listLawyerDirectory(
     pagination: directoryPage.pagination,
     sectorLabel: resolvedBarAssociation
       ? `Barreau de ${resolvedBarAssociation}`
-      : (clean(sale?.department) ?? clean(query.department)),
+      : (clean(sale?.department) ?? departmentSectorLabel(query.department)),
     barAssociation: resolvedBarAssociation,
     isDemo: false,
     officialSource: sourceUpdatedAt
@@ -402,17 +411,60 @@ async function getCoverage(lawyerIds: string[]): Promise<Map<string, CoverageRow
   return rowsByLawyer;
 }
 
-async function getCnbLawyers(barAssociation: string | null): Promise<CnbLawyerRow[]> {
-  const barKey = resolveCnbDatasetBarKey(barAssociation);
+/**
+ * Official CNB profiles of the given bars. `null` means no bar filter (whole directory); an empty
+ * list means that no bar applies, hence no official profile.
+ */
+async function getCnbLawyers(bars: string[] | null): Promise<CnbLawyerRow[]> {
+  const barKeys = bars
+    ? Array.from(
+        new Set(bars.map(resolveCnbDatasetBarKey).filter((key): key is string => Boolean(key))),
+      )
+    : null;
+  if (barKeys && barKeys.length === 0) return [];
   let request = supabaseAdmin.from("cnb_lawyer_directory").select(CNB_LAWYER_COLUMNS);
-  if (barKey) request = request.eq("bar_key", barKey);
-  else request = request.order("bar_association", { ascending: true });
+  if (barKeys?.length === 1) {
+    request = request.eq("bar_key", barKeys[0]);
+  } else if (barKeys) {
+    request = request.in("bar_key", barKeys).order("bar_association", { ascending: true });
+  } else {
+    request = request.order("bar_association", { ascending: true });
+  }
 
   const { data, error } = await request
     .order("display_name", { ascending: true })
-    .limit(barKey ? 500 : 1_000);
+    .limit(barKeys ? 500 * barKeys.length : 1_000);
   if (error) throw error;
   return (data ?? []) as CnbLawyerRow[];
+}
+
+/**
+ * Bars of the tribunaux judiciaires seated in a department (code or name), read from the tribunal
+ * reference the same way as the bar of a sale (`resolveSaleBarAssociation`). An unknown department
+ * has no bar.
+ */
+async function getDepartmentBars(department: string): Promise<string[]> {
+  const code = departmentCode(department);
+  if (!code) return [];
+  const { data, error } = await supabaseAdmin
+    .from("tribunals")
+    .select("canonical_name,city")
+    .eq("department", code);
+  if (error) throw error;
+  const bars = new Map<string, string>();
+  for (const row of (data ?? []) as Array<{ canonical_name: string | null; city: string | null }>) {
+    const bar = tribunalBarAssociation(row.canonical_name) ?? clean(row.city);
+    const key = resolveCnbDatasetBarKey(bar);
+    if (bar && key && !bars.has(key)) bars.set(key, bar);
+  }
+  return Array.from(bars.values());
+}
+
+function departmentSectorLabel(value: string | null | undefined): string | null {
+  const cleaned = clean(value);
+  if (!cleaned) return null;
+  const department = departmentFromCode(cleaned);
+  return department ? `${department.name} (${department.code})` : cleaned;
 }
 
 type Criterion = {
@@ -426,16 +478,25 @@ function buildCriteria(
   barAssociation: string | null,
   saleMode: boolean,
   query: LawyerDirectoryQuery,
+  departmentBars: string[] | null,
 ): Criterion[] {
   const criteria: Criterion[] = [];
   if (barAssociation) {
     pushCriterion(criteria, "bar", barAssociation, 70, `Barreau de ${barAssociation}`);
     return criteria;
   }
-  // Free browsing of the directory (no sale): city / department filters stay available.
+  // Free browsing of the directory (no sale): city / department filters stay available. A
+  // department also matches the lawyers registered at the bars of its tribunaux judiciaires.
   if (!saleMode) {
     pushCriterion(criteria, "city", query.city, 25);
     pushCriterion(criteria, "department", query.department, 15);
+    const code = departmentCode(query.department);
+    if (code && code !== clean(query.department)) {
+      pushCriterion(criteria, "department", code, 15, clean(query.department) ?? code);
+    }
+    for (const bar of departmentBars ?? []) {
+      pushCriterion(criteria, "bar", bar, 15, `Barreau de ${bar}`);
+    }
   }
   return criteria;
 }

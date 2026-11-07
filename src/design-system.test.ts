@@ -6,10 +6,11 @@ import { describe, expect, it } from "vitest";
 const ROOT = process.cwd();
 
 // Plafonds du cliquet, relevés le 24/10/2026 (526 couleurs brutes, puis 514 après la fiche publique, 491 le 27/10/2026,
-// 454 le 07/11/2026 après l'espace compte de la repasse design) : à abaisser à chaque page migrée, jamais à relever.
-const RAW_PALETTE_CLASSES_MAX = 454;
-const TINY_TEXT_CLASSES_MAX = 84;
-// Déclarations `font-size` de 9 à 11 px des feuilles `.module.css` (accueil et attribution Mapbox du plan cadastral : 2 ;
+// 400 le 07/11/2026 après la repasse design : espace compte, avocats et espace pro) : à abaisser à chaque page migrée,
+// jamais à relever.
+const RAW_PALETTE_CLASSES_MAX = 400;
+const TINY_TEXT_CLASSES_MAX = 61;
+// Déclarations `font-size` de 9 à 11 px des feuilles `.module.css` (accueil et attribution Mapbox du plan cadastral ;
 // les ressources sont passées à 12 px le 07/11/2026).
 const TINY_TEXT_CSS_MAX = 2;
 
