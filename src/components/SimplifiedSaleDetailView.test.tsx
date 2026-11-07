@@ -553,14 +553,18 @@ describe("integrated listing", () => {
     const links = within(
       screen.getByRole("navigation", { name: "Sommaire de la fiche" }),
     ).getAllByRole("link");
-    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
-      "Le bien",
-      "Prix et plafond",
-      "Marché et comparables",
-      "Travaux et financement",
-      "Pièces du dossier",
-      "Démarches",
-    ]);
+    // Nom accessible : le numéro puis le libellé complet, même sous la pilule courte du téléphone.
+    const nav = screen.getByRole("navigation", { name: "Sommaire de la fiche" });
+    for (const name of [
+      "01 Le bien",
+      "02 Prix et plafond",
+      "03 Marché et comparables",
+      "04 Travaux et financement",
+      "05 Pièces du dossier",
+      "06 Démarches",
+    ]) {
+      expect(within(nav).getByRole("link", { name })).toBeTruthy();
+    }
     expect(links.map((link) => link.textContent?.slice(0, 2))).toEqual([
       "01",
       "02",
