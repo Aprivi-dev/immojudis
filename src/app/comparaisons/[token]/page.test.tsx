@@ -45,6 +45,15 @@ describe("shared comparison page", () => {
     expect(html).not.toContain("retirée");
   });
 
+  it("titles the page with the site's page title and eyebrow (repasse design n° 13)", async () => {
+    mocks.shared.mockResolvedValue(comparison(0));
+
+    const html = await render();
+
+    expect(html).toMatch(/<h1 class="[^"]*text-\[2rem\][^"]*">Ma sélection<\/h1>/);
+    expect(html).toMatch(/<p class="[^"]*text-gold-text[^"]*">Comparaison partagée Immojudis<\/p>/);
+  });
+
   it("announces one withdrawn sale in the singular", async () => {
     mocks.shared.mockResolvedValue(comparison(1));
 
