@@ -92,10 +92,6 @@ export function legacyDetailForAnchor(anchor: string, budgetTarget: string): Leg
   return null;
 }
 
-export function isSectionAnchor(anchor: string): anchor is SaleDetailSection {
-  return SALE_DETAIL_SECTIONS.some((section) => section.id === anchor);
-}
-
 /**
  * La section d'une ancre connue, `null` pour une ancre hors des sections (`#mon-dossier`, la carte
  * de déblocage…). Les statistiques du tribunal restent fermées tant que leur drapeau l'est : leurs

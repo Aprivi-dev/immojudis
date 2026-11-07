@@ -3,7 +3,6 @@ import type {
   SaleAnalysisSetInput,
   SaleAnalysisSetListResponse,
   SaleAnalysisSetResponse,
-  SaleAnalysisSetUpdateInput,
   SaleComparisonShareResponse,
 } from "@/lib/sale-analysis-sets";
 
@@ -29,22 +28,6 @@ export async function createSaleAnalysisSet(args: {
 }): Promise<SaleAnalysisSetResponse> {
   const response = await fetch("/api/sale-analysis-sets", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<SaleAnalysisSetResponse>(response);
-}
-
-export async function updateSaleAnalysisSet(args: {
-  setId: string;
-  data: SaleAnalysisSetUpdateInput;
-}): Promise<SaleAnalysisSetResponse> {
-  const response = await fetch(`/api/sale-analysis-sets/${args.setId}`, {
-    method: "PATCH",
     headers: {
       "Content-Type": "application/json",
       ...(await authHeaders()),

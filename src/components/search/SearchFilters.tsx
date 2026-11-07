@@ -4,7 +4,6 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import Map from "lucide-react/dist/esm/icons/map.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import SearchIcon from "lucide-react/dist/esm/icons/search.js";
-import { Skeleton } from "@/components/ui/skeleton";
 import { SearchRejectedError } from "@/lib/search/search-errors";
 import { userMessage } from "@/lib/user-messages";
 import type { ActiveFilterChip } from "./active-filter-chips";
@@ -220,29 +219,6 @@ export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => v
           Réessayer
         </button>
       ) : null}
-    </div>
-  );
-}
-
-export function ListingCardSkeleton() {
-  return (
-    <div className="grid overflow-hidden rounded-md border border-line-soft bg-white shadow-sm sm:grid-cols-[12.5rem_1fr]">
-      <Skeleton className="aspect-[1.5] w-full rounded-none bg-surface-tint sm:aspect-auto sm:min-h-[13rem]" />
-      <div className="space-y-3 p-4">
-        <div className="flex justify-between gap-3">
-          <div className="flex-1 space-y-2">
-            <Skeleton className="h-7 w-1/2 bg-surface-tint" />
-            <Skeleton className="h-4 w-3/4 bg-surface-tint" />
-          </div>
-          <div className="flex gap-2">
-            <Skeleton className="h-8 w-8 rounded-full bg-surface-tint" />
-            <Skeleton className="h-8 w-8 rounded-full bg-surface-tint" />
-          </div>
-        </div>
-        <Skeleton className="h-4 w-full bg-surface-tint" />
-        <Skeleton className="h-4 w-4/5 bg-surface-tint" />
-        <Skeleton className="h-5 w-24 bg-surface-tint" />
-      </div>
     </div>
   );
 }

@@ -3,32 +3,12 @@ import type {
   AlertNotificationListResponse,
   AlertNotificationSummary,
 } from "@/lib/alert-notifications";
-import type { PublicAlertEvaluationResponse, AlertMatchSummary } from "@/lib/alert-matches";
+import type { PublicAlertEvaluationResponse } from "@/lib/alert-matches";
 import type {
   NotificationPreferencesResponse,
   NotificationPreferenceUpdateInput,
 } from "@/lib/notification-preferences";
-import type {
-  SaleChangeEventListResponse,
-  SaleChangeEventSummary,
-  SaleChangeMonitorResponse,
-} from "@/lib/sale-change-monitor";
-
-export async function fetchAlertMatches(
-  args: {
-    limit?: number;
-    includeDismissed?: boolean;
-  } = {},
-): Promise<{ matches: AlertMatchSummary[] }> {
-  const search = new URLSearchParams();
-  if (args.limit) search.set("limit", String(args.limit));
-  if (args.includeDismissed) search.set("includeDismissed", "true");
-  const response = await fetch(`/api/alerts/matches${search.size ? `?${search.toString()}` : ""}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<{ matches: AlertMatchSummary[] }>(response);
-}
+import type { SaleChangeEventListResponse } from "@/lib/sale-change-monitor";
 
 export async function evaluateAlertMatches(
   args: {
@@ -105,31 +85,6 @@ export async function fetchSaleChangeEvents(
   );
 
   return readJson<SaleChangeEventListResponse>(response);
-}
-
-export async function monitorSaleChanges(): Promise<SaleChangeMonitorResponse> {
-  const response = await fetch("/api/sale-change-events", {
-    method: "POST",
-    headers: await authHeaders(),
-  });
-
-  return readJson<SaleChangeMonitorResponse>(response);
-}
-
-export async function updateSaleChangeEvent(args: {
-  eventId: string;
-  action: "read" | "unread" | "dismiss" | "restore";
-}): Promise<{ event: SaleChangeEventSummary }> {
-  const response = await fetch("/api/sale-change-events", {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args),
-  });
-
-  return readJson<{ event: SaleChangeEventSummary }>(response);
 }
 
 export async function fetchNotificationPreferences(): Promise<NotificationPreferencesResponse> {
