@@ -1,6 +1,5 @@
 import "server-only";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   currentPrivacyVersion,
@@ -16,6 +15,7 @@ import {
 } from "@/lib/information-agent/autopilot-settings";
 import { buildAutopilotView, type AutopilotView } from "@/lib/information-agent/autopilot-view";
 import { asObject } from "@/lib/information-agent/mission-store";
+import { requireAdmin } from "@/lib/admin-auth.server";
 
 /**
  * Panneau du pilote automatique (administrateurs). Lecture : modèle de vue déjà mis en forme. Écriture : les
@@ -70,12 +70,6 @@ function rpcFailure(error: { code?: string; message?: string }): Error {
   }
   console.error(JSON.stringify({ scope: "admin.autopilot", code: error.code ?? null }));
   return new Error("Action impossible.");
-}
-
-async function requireAdmin(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-  return auth;
 }
 
 async function readiness(now: Date, env: Readonly<Record<string, string | undefined>>) {

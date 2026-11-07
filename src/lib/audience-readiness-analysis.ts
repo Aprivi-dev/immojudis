@@ -41,6 +41,7 @@ export type AudienceReadinessAnalysis = {
 
 import { publishedDay, sourceVisitExcerpt, visitHasPassed } from "./listing-evidence";
 import { safeDocumentUrl } from "./documents";
+import { dedupeStrings } from "@/lib/dedupe-strings";
 
 export function buildAudienceReadinessAnalysis({
   sale,
@@ -459,14 +460,4 @@ function daysUntil(date: Date | null, now: Date): number | null {
 
 function formatMoney(value: number): string {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €`;
-}
-
-function dedupeStrings(values: string[]): string[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = value.trim().toLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }

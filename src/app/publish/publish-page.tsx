@@ -29,6 +29,7 @@ import {
 } from "@/lib/publication-requests-client";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
+import { formatFileSize } from "@/lib/format-file-size";
 
 type PublishDraft = {
   title: string;
@@ -630,13 +631,6 @@ function professionalStatusLabel(status: ReturnType<typeof getProfessionalStatus
   if (status === "rejected") return "refusé";
   if (status === "pending") return "en cours de revue";
   return "professionnel";
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`;
-  const kilobytes = bytes / 1024;
-  if (kilobytes < 1024) return `${kilobytes.toFixed(1)} Ko`;
-  return `${(kilobytes / 1024).toFixed(1)} Mo`;
 }
 
 function formatDate(value: string): string {

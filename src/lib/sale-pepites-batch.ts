@@ -53,6 +53,8 @@ import {
 } from "@/lib/sale-market-estimates";
 import type { AuctionSale } from "@/lib/types";
 import { isBusyWriteError } from "@/lib/write-busy";
+import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
+import { parseTimestamp as time } from "@/lib/timestamp";
 
 /**
  * Calcule la pépite des ventes en ligne et la stocke (table `auction_sale_pepites`, voir la migration
@@ -175,12 +177,6 @@ export type SalePepitesBatchResult = {
   floodVerdicts: Record<FloodVerdict, number> | null;
   errors: string[];
 };
-
-function time(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 /**
  * Une évaluation faite avec une autre version de la règle, du moteur ou du régime DE LA VENTE est obsolète. Quand la
@@ -505,14 +501,6 @@ function isUnknownColumn(error: unknown): boolean {
 function withoutEstimateVersions(row: PepiteTableInsert): PepiteTableInsert {
   const { estimate_model_version: _model, estimate_engine_kind: _engine, ...legacy } = row;
   return legacy;
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === "object" && "message" in error) {
-    return String((error as { message: unknown }).message);
-  }
-  return String(error);
 }
 
 /** Mode de la fonction `get_sale_pepite_mode` ; `null` : la migration n'est pas appliquée. */
