@@ -1522,6 +1522,9 @@
   }
 
   .secBody {
+    /* Conteneur de requêtes : les grilles d'une section suivent sa largeur réelle (~520 px à
+       1024 px, à côté du panneau collant), pas celle de l'écran (repasse design n° 1). */
+    container-type: inline-size;
     display: block;
     flex: 1 1 auto;
     min-width: 0;
@@ -1529,22 +1532,6 @@
 
   .secTitle {
     font-size: 30px;
-  }
-
-  .facts {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .fact {
-    border-top: 0;
-  }
-
-  .fact:nth-child(odd) {
-    border-left: 1px solid var(--line-soft);
-  }
-
-  .fact:first-child {
-    border-left: 0;
   }
 
   .steps {
@@ -1583,6 +1570,26 @@
   .furtherList {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 24px;
+  }
+}
+
+/* « Le bien » sur quatre colonnes seulement si chacune garde ~150 px : à 1024 px, la ville
+   « Aix-en-Provence (13) » s'écrivait sur trois lignes. */
+@container (min-width: 600px) {
+  .facts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .fact {
+    border-top: 0;
+  }
+
+  .fact:nth-child(odd) {
+    border-left: 1px solid var(--line-soft);
+  }
+
+  .fact:first-child {
+    border-left: 0;
   }
 }
 

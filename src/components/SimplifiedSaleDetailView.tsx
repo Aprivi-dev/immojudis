@@ -1501,7 +1501,7 @@ function SaleDetailWorkspace({
               </DetailSection>
 
               <DetailSection id="travaux-financement">
-                <div className={layoutStyles.pair}>
+                <div className={layoutStyles.stack}>
                   <div className="grid min-w-0 gap-4">
                     {access === "analysis" ? (
                       <>

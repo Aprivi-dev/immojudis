@@ -83,11 +83,11 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
   return (
     <section
       id="participation"
-      className="mt-8 scroll-mt-2 overflow-hidden rounded-[20px] border border-slate-200 bg-white"
+      className="@container mt-8 scroll-mt-2 overflow-hidden wrap-break-word rounded-[20px] border border-slate-200 bg-white"
       aria-labelledby="sale-procedure-title"
     >
       <div className="border-b border-slate-200 bg-slate-50/60 px-5 py-6 sm:px-7 lg:px-8">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-4 @3xl:flex-row @3xl:items-start @3xl:justify-between">
           <div className="flex min-w-0 items-start gap-4">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-brand-navy text-white">
               {procedure.venueType === "tribunal" || procedure.venueType === "state" ? (
@@ -113,7 +113,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 flex-col gap-2 sm:max-w-xs">
+          <div className="flex shrink-0 flex-col gap-2 @3xl:max-w-xs">
             <span
               className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${verificationTone}`}
             >
@@ -131,12 +131,12 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
         </div>
       </div>
 
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
-        <div className="p-5 sm:p-7 lg:border-r lg:border-brand-navy/10 lg:p-8">
+      <div className="grid gap-0 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+        <div className="@container p-5 sm:p-7 @4xl:border-r @4xl:border-brand-navy/10 lg:p-8">
           <h3 className="font-display text-2xl font-semibold text-brand-navy">
             Ce que cela change pour vous
           </h3>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="mt-5 grid gap-3 @md:grid-cols-2">
             {procedure.venueType === "state" ? (
               <ProcedureFact
                 icon={Landmark}
@@ -192,7 +192,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
           </div>
 
           <div className="mt-5 rounded-md border border-brand-navy/10 bg-background p-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 @md:grid-cols-2">
               <CompactFact
                 label={procedure.venueType === "state" ? "Service vendeur" : "Lieu / organisme"}
                 value={
@@ -229,7 +229,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
           </div>
         </div>
 
-        <div className="border-t border-brand-navy/10 p-5 sm:p-7 lg:border-t-0 lg:p-8">
+        <div className="border-t border-brand-navy/10 p-5 sm:p-7 @4xl:border-t-0 lg:p-8">
           <h3 className="font-display text-2xl font-semibold text-brand-navy">
             Votre parcours de participation
           </h3>
@@ -249,7 +249,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
 
           {procedure.organizerName || procedure.organizerContact ? (
             <div className="mt-6 rounded-md border border-gold/25 bg-surface p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-navy/75">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/75">
                 Contact de la vente
               </p>
               <p className="mt-2 font-semibold text-brand-navy">
@@ -296,7 +296,7 @@ function ProcedureFact({
 function CompactFact({ label, value }: { label: string; value: string }) {
   return (
     <dl>
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
+      <dt className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
         {label}
       </dt>
       <dd className="mt-1 text-sm font-semibold text-brand-navy">{value}</dd>
@@ -331,7 +331,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
             : "date à confirmer"}
         </span>
       </summary>
-      <div className="mt-4 grid gap-5 border-t border-brand-navy/10 pt-4 lg:grid-cols-2">
+      <div className="mt-4 grid gap-5 border-t border-brand-navy/10 pt-4 @2xl:grid-cols-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
             Sources contrôlées

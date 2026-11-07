@@ -100,9 +100,11 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
     : `/avocats?city=${encodeURIComponent(sale.city ?? "")}`;
 
   return (
-    <section id="lawyer" className="scroll-mt-2 bg-white">
+    <section id="lawyer" className="@container scroll-mt-2 bg-white wrap-break-word">
       <div className="py-2">
-        <div className="grid gap-7 rounded-lg border border-line bg-background p-6 sm:p-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] lg:items-center">
+        {/* Deux colonnes seulement si le bloc est assez large (pas l'écran) : dans la colonne de la
+            fiche, le barreau s'écrivait sur cinq lignes (repasse design n° 1). */}
+        <div className="grid gap-7 rounded-lg border border-line bg-background p-6 sm:p-8 @4xl:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] @4xl:items-center">
           <div>
             <h2 className="font-display text-3xl font-medium leading-tight text-brand-navy sm:text-4xl">
               {saleStatus
@@ -119,11 +121,11 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
                   : `${lawyerRequirementLabel(procedure)}. Participation ${participationModeLabel(procedure.participationMode).toLowerCase()} selon les conditions de la vente.`}
             </p>
           </div>
-          <div className="rounded-lg border border-brand-navy/14 bg-white p-5 shadow-sm sm:flex sm:items-center sm:gap-5">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-lg border border-brand-navy/14 bg-white p-5 shadow-sm">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-text">
               <Scale className="h-6 w-6" aria-hidden />
             </span>
-            <div className="mt-3 min-w-0 flex-1 sm:mt-0">
+            <div className="min-w-[12rem] flex-1">
               <p className="font-display text-2xl font-semibold text-brand-navy">
                 {showLawyerDirectory
                   ? (procedure.eligibleBar ?? sale.tribunal_city ?? "Barreau compétent")
@@ -140,7 +142,7 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
             {showLawyerDirectory ? (
               <a
                 href={directoryHref}
-                className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft sm:mt-0"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
               >
                 Voir les avocats disponibles
                 <ArrowRight className="h-4 w-4" aria-hidden />
@@ -148,18 +150,18 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
             ) : hasOrganizerContact ? (
               <a
                 href="#rendez-vous"
-                className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft sm:mt-0"
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gold-soft"
               >
                 Consulter les coordonnées du dossier
               </a>
             ) : (
-              <p className="mt-4 text-sm text-brand-navy/70 sm:mt-0">
+              <p className="text-sm text-brand-navy/70">
                 Coordonnées à confirmer par Immojudis.
               </p>
             )}
           </div>
           {isPersistedSale && isJudicial && !saleStatus ? (
-            <div className="lg:col-start-2">
+            <div className="@4xl:col-start-2">
               <LawyerReferralButton saleId={sale.id} className="min-h-11 w-full sm:w-auto" />
             </div>
           ) : null}
