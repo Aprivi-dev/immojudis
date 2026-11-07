@@ -15,6 +15,7 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
+import { displayCityName, withDisplayCity } from "@/lib/search/city-name";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
@@ -252,7 +253,12 @@ const ListingRow = memo(function ListingRow({
   );
   const displaySurface = getDisplaySurface(sale);
   const tribunal = saleIsTribunalVenue(sale);
-  const title = listingTitle(sale, { locked, aiReviewProjections, aiReviewStatus });
+  // Nom de la commune mis en forme pour l'affichage (« Aix-en-Provence », jamais « Aix-En-Provence »).
+  const title = listingTitle(withDisplayCity(sale), {
+    locked,
+    aiReviewProjections,
+    aiReviewStatus,
+  });
   const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
   const surfaceReviewField = firstBlockedAiReviewField(
     aiReviewProjections,
@@ -313,7 +319,7 @@ const ListingRow = memo(function ListingRow({
         >
           {showCity ? (
             <AiReviewField fieldKey="property.city" fallback="Localisation à préciser" {...review}>
-              {sale.city}
+              {displayCityName(sale.city)}
             </AiReviewField>
           ) : (
             "Localisation à préciser"
