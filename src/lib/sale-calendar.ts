@@ -3,6 +3,7 @@ import { parisDateKey } from "@/lib/sale-countdown";
 import { DEADLINES_CONFIRM_NOTICE, type SaleDeadline } from "@/lib/sale-deadlines";
 import { saleHearingTime, saleReference, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
 import type { VisitSlot } from "@/lib/visit-slots";
+import { parseDateOrNull as validDate } from "@/lib/parse-date";
 
 /**
  * Row returned by `get_public_sale_calendar_event`: the few public facts the « Ajouter à mon
@@ -69,12 +70,6 @@ export function saleCalendarSequence(updatedAt: Date | null): number {
 /** Stable identifier of the event: `sale-<id>@<domain>`, lower-cased like the canonical URL. */
 export function saleCalendarUid(saleId: string, origin: string): string {
   return `sale-${saleId.toLowerCase()}@${new URL(origin).hostname}`;
-}
-
-function validDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date : null;
 }
 
 /**
