@@ -21,8 +21,14 @@ const discoveryFeatures = (unlockHighlights: string) =>
     `Jusqu’à ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
   ] as const;
 
-/** Le terme par défaut de la carte Analyse : les régimes ouverts par défaut le justifient. */
-export const DEFAULT_HOME_CEILING_FEATURE = "Enchère plafond et travaux";
+/**
+ * Première ligne de la carte Analyse : la description de l'offre sur /offres
+ * (`analysisOfferDescription`), pour les régimes ouverts par défaut. Écrite en toutes lettres pour
+ * que l'accueil n'embarque pas le calcul des termes ; `HomeOffers.test.tsx` vérifie qu'elle reste
+ * égale à ce calcul.
+ */
+export const DEFAULT_HOME_CEILING_FEATURE =
+  "Le plafond des ventes au tribunal ou chez le notaire, avant de choisir celles qui méritent une visite.";
 
 const analysisFeatures = (ceilingFeature: string) =>
   [
@@ -61,7 +67,7 @@ export function HomeOffers({
    * (`unlockHighlightsText`) ; absent : le texte des régimes ouverts par défaut.
    */
   unlockHighlights?: string;
-  /** Première ligne de la carte Analyse (« Enchère plafond et travaux »), composée de même. */
+  /** Première ligne de la carte Analyse (`analysisOfferDescription`), composée de même. */
   ceilingFeature?: string;
 } = {}) {
   const checkoutOpen = useAnalysisCheckoutOpen();

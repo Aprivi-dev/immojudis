@@ -1,10 +1,34 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exampleVerdictData } from "@/lib/example-verdict";
+import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
+
+const mocks = vi.hoisted(() => ({
+  auth: { user: null as { id: string } | null, loading: false },
+  launch: { active: false, pending: false },
+  track: vi.fn(),
+}));
+
+vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
+vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => mocks.launch }));
+vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
+
 import { HomeTryExample } from "./HomeTryExample";
 
-afterEach(cleanup);
+// jsdom n'implémente pas la navigation : on la neutralise.
+const keepPage = (event: Event) => event.preventDefault();
+beforeEach(() => {
+  mocks.auth = { user: null, loading: false };
+  mocks.launch = { active: false, pending: false };
+  mocks.track.mockClear();
+  document.addEventListener("click", keepPage);
+});
+afterEach(() => {
+  document.removeEventListener("click", keepPage);
+  cleanup();
+});
 
 const text = (element: Element) => (element.textContent ?? "").replace(/\s/g, " ");
 
@@ -62,6 +86,47 @@ describe("Essayez sur un exemple", () => {
         .getAttribute("href"),
     ).toBe("/annonce-exemple");
     expect(document.getElementById("essayer")?.className).toMatch(/tryAnchor/);
+  });
+
+  it("propose l'inscription juste après le verdict, avec la ligne de l'essai, et la mesure", () => {
+    mocks.launch = { active: true, pending: false };
+    render(<HomeTryExample data={exampleVerdictData()} />);
+    const card = screen.getByRole("group", { name: /simulateur du verdict/ });
+    const cta = within(card).getByRole("link", {
+      name: /Voir le plafond d’une vraie vente de mon secteur/,
+    });
+    expect(cta.getAttribute("href")).toBe("/login?redirect=%2Fsales&mode=investor&reason=exemple");
+    expect(within(card).getByText(HOME_TRIAL_NOTE)).toBeTruthy();
+    expect(within(card).queryByText(FREE_ACCESS_LINE)).toBeNull();
+    // Le bouton suit le verdict ; l'analyse complète reste après, en lien secondaire.
+    const verdict = within(card).getByText("Votre enchère plafond");
+    const full = within(card).getByRole("link", { name: /Voir l’analyse complète/ });
+    expect(verdict.compareDocumentPosition(cta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cta.compareDocumentPosition(full) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(cta);
+    expect(mocks.track).toHaveBeenCalledWith("home_cta_clicked", { target: "example" });
+  });
+
+  it("essai fermé : la ligne du compte gratuit sous le bouton, comme en haut de l'accueil", () => {
+    render(<HomeTryExample data={exampleVerdictData()} />);
+    const card = screen.getByRole("group", { name: /simulateur du verdict/ });
+    expect(within(card).getByText(FREE_ACCESS_LINE)).toBeTruthy();
+    expect(within(card).queryByText(HOME_TRIAL_NOTE)).toBeNull();
+  });
+
+  it("envoie un compte connecté au catalogue, sans ligne d'inscription ni mesure", () => {
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    mocks.launch = { active: true, pending: false };
+    render(<HomeTryExample data={exampleVerdictData()} />);
+    const card = screen.getByRole("group", { name: /simulateur du verdict/ });
+    const cta = within(card).getByRole("link", {
+      name: /Voir le plafond d’une vraie vente de mon secteur/,
+    });
+    expect(cta.getAttribute("href")).toBe("/sales");
+    expect(within(card).queryByText(HOME_TRIAL_NOTE)).toBeNull();
+    expect(within(card).queryByText(FREE_ACCESS_LINE)).toBeNull();
+    fireEvent.click(cta);
+    expect(mocks.track).not.toHaveBeenCalledWith("home_cta_clicked", expect.anything());
   });
 
   it("n'a qu'un bouton de pause, qui reste pressé jusqu'à reprise", () => {

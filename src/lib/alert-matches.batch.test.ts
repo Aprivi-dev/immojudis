@@ -28,6 +28,10 @@ const state = vi.hoisted(() => ({
   tablesRead: [] as string[],
   /** Compte sans accès Analyse : alertes gratuites (pré-filtre SQL sur la zone). */
   discovery: false,
+  /** Notifications déjà enregistrées (`user_alert_notifications`), lues par correspondance. */
+  existingNotifications: [] as Row[],
+  /** Lectures de `user_alert_notifications` : identifiants de correspondance demandés à chaque fois. */
+  notificationReads: [] as string[][],
 }));
 
 function fakeClient() {
@@ -70,6 +74,7 @@ function fakeClient() {
     from(table: string) {
       state.tablesRead.push(table);
       const filters: Record<string, unknown> = {};
+      const inFilters: Record<string, unknown[]> = {};
       let range: [number, number] | null = null;
       let op: "select" | "update" | "upsert" = "select";
       let patch: Row | null = null;
@@ -85,7 +90,10 @@ function fakeClient() {
           return chain;
         },
         order: () => chain,
-        in: () => chain,
+        in(column: string, values: unknown[]) {
+          inFilters[column] = values;
+          return chain;
+        },
         range(from: number, to: number) {
           range = [from, to];
           return chain;
@@ -119,6 +127,14 @@ function fakeClient() {
               })),
               error: null,
             });
+          }
+          if (table === "user_alert_notifications" && op === "select") {
+            const matchIds = (inFilters.match_id ?? []).map(String);
+            state.notificationReads.push(matchIds);
+            const rows = state.existingNotifications.filter(
+              (row) => row.user_id === filters.user_id && matchIds.includes(String(row.match_id)),
+            );
+            return resolve({ data: rows, error: null });
           }
           if (table === "user_alerts" && op === "update") {
             state.updates.push({ ...patch, id: filters.id });
@@ -192,14 +208,22 @@ vi.mock("@/lib/rent-reference.server", () => ({
     };
   },
 }));
-const notified = vi.hoisted(() => ({ saleIds: [] as string[], suppressedSaleIds: [] as string[] }));
+const notified = vi.hoisted(() => ({
+  saleIds: [] as string[],
+  suppressedSaleIds: [] as string[],
+  /** Fréquence transmise pour chaque notification créée (celle qui fixe le rythme des emails). */
+  frequencies: [] as string[],
+}));
 vi.mock("@/lib/alert-notifications", () => ({
   createAlertNotificationsForMatches: async ({
     matches,
+    alerts,
   }: {
     matches: Array<{ saleId: string }>;
+    alerts: Array<{ alert_frequency: string }>;
   }) => {
     notified.saleIds.push(...matches.map((match) => match.saleId));
+    notified.frequencies.push(...alerts.map((alert) => alert.alert_frequency));
     return { notificationCount: matches.length };
   },
   suppressAlertNotificationsForMatches: async ({
@@ -253,11 +277,14 @@ describe("smart alert batch", () => {
     state.rpcCalls = [];
     state.tablesRead = [];
     state.discovery = false;
+    state.existingNotifications = [];
+    state.notificationReads = [];
     rents.calls = [];
     rents.sessions = 0;
     rents.references = {};
     notified.saleIds = [];
     notified.suppressedSaleIds = [];
+    notified.frequencies = [];
     rents.unavailable = false;
     delete process.env.ALERT_RENT_BASIS_SWITCH_AT;
     resetPepiteSaleIdsForAlertsCache();
@@ -304,6 +331,206 @@ describe("smart alert batch", () => {
 
     expect(state.getSalesCalls[0].filters.departments).toEqual(["33"]);
     expect(state.getSalesCalls[0].filters.department).toBeUndefined();
+  });
+
+  it("évalue en hebdomadaire l'alerte quotidienne d'un compte Découverte (créée pendant l'essai)", async () => {
+    state.discovery = true;
+    state.userAlerts = [
+      alertRow(1, {
+        department: "33",
+        city: null,
+        alert_frequency: "daily",
+        last_evaluated_at: "2026-11-05T06:15:00.000Z",
+      }),
+    ];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedUserCount).toBe(0);
+    expect(result.results[0]).toMatchObject({ alertCount: 1, matchCount: 1 });
+    expect(notified.saleIds).toEqual(["sale-33"]);
+    // Notifications au rythme hebdomadaire, et fréquence enregistrée remise en hebdomadaire : sans elle, le
+    // déclencheur de quota refuserait la date d'évaluation d'une alerte gratuite quotidienne.
+    expect(notified.frequencies).toEqual(["weekly"]);
+    expect(state.updates).toEqual([
+      expect.objectContaining({ id: "alert-1", alert_frequency: "weekly", last_match_count: 1 }),
+    ]);
+  });
+
+  it("ne notifie pas une seconde fois, en hebdomadaire, une vente déjà notifiée pendant l'essai", async () => {
+    state.discovery = true;
+    state.userAlerts = [
+      alertRow(1, {
+        department: "33",
+        alert_frequency: "daily",
+        last_evaluated_at: "2026-11-05T06:15:00.000Z",
+      }),
+    ];
+    state.salesPool = [
+      { id: "sale-deja", department: "33" },
+      { id: "sale-nouvelle", department: "33" },
+    ];
+    // Notification quotidienne de l'essai : la clé d'unicité (genre compris) ne bloque pas l'hebdomadaire.
+    state.existingNotifications = [
+      {
+        user_id: "user-1",
+        match_id: "match-sale-deja",
+        notification_kind: "daily_digest",
+        delivery_channel: "email",
+        delivery_status: "sent",
+      },
+      // Même correspondance chez un autre compte : jamais lue pour celui-ci.
+      { user_id: "user-2", match_id: "match-sale-nouvelle", notification_kind: "daily_digest" },
+    ];
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.failedUserCount).toBe(0);
+    expect(state.notificationReads).toEqual([["match-sale-deja", "match-sale-nouvelle"]]);
+    expect(notified.saleIds).toEqual(["sale-nouvelle"]);
+    expect(result.results[0]).toMatchObject({ matchCount: 2, notificationCount: 1 });
+    // L'alerte avance quand même : correspondances enregistrées, fréquence remise en hebdomadaire.
+    expect(state.updates).toEqual([
+      expect.objectContaining({ id: "alert-1", alert_frequency: "weekly", last_match_count: 2 }),
+    ]);
+  });
+
+  it("applique le même filtre à une alerte Découverte déjà hebdomadaire (passée en hebdomadaire pendant l'essai)", async () => {
+    state.discovery = true;
+    state.userAlerts = [alertRow(1, { department: "33", alert_frequency: "weekly" })];
+    state.salesPool = [{ id: "sale-deja", department: "33" }];
+    state.existingNotifications = [
+      { user_id: "user-1", match_id: "match-sale-deja", notification_kind: "daily_digest" },
+    ];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(notified.saleIds).toEqual([]);
+    expect(state.updates).toHaveLength(1);
+  });
+
+  it("ne lit pas les notifications existantes d'un compte Analyse (la clé d'unicité suffit)", async () => {
+    state.userAlerts = [alertRow(1, { department: "33" })];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(state.notificationReads).toEqual([]);
+    expect(notified.saleIds).toEqual(["sale-33"]);
+  });
+
+  it("borne à 7 jours la première fenêtre d'une alerte quotidienne après la fin de l'essai", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T06:15:00.000Z"));
+    try {
+      state.discovery = true;
+      // Essai terminé le 01/11 : la dernière évaluation date de ce jour-là.
+      state.userAlerts = [
+        alertRow(1, {
+          department: "33",
+          alert_frequency: "daily",
+          last_evaluated_at: "2026-11-01T06:15:00.000Z",
+        }),
+      ];
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(state.getSalesCalls[0].filters.updated_since).toBe("2026-11-13T06:15:00.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("garde la fenêtre habituelle quand l'alerte quotidienne a été évaluée il y a moins de 7 jours", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T06:15:00.000Z"));
+    try {
+      state.discovery = true;
+      state.userAlerts = [
+        alertRow(1, {
+          department: "33",
+          alert_frequency: "daily",
+          last_evaluated_at: "2026-11-18T06:15:00.000Z",
+        }),
+      ];
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(state.getSalesCalls[0].filters.updated_since).toBe("2026-11-18T05:15:00.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ne borne pas la fenêtre d'une alerte Découverte hebdomadaire ni d'un compte Analyse", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T06:15:00.000Z"));
+    try {
+      for (const [discovery, alert_frequency] of [
+        [true, "weekly"],
+        [false, "daily"],
+      ] as const) {
+        state.discovery = discovery;
+        state.getSalesCalls = [];
+        state.userAlerts = [
+          alertRow(1, {
+            department: "33",
+            alert_frequency,
+            last_evaluated_at: "2026-11-01T06:15:00.000Z",
+          }),
+        ];
+
+        await runSmartAlertEvaluationBatch();
+
+        expect(state.getSalesCalls[0].filters.updated_since).toBe("2026-11-01T05:15:00.000Z");
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ne réécrit pas la fréquence d'une alerte Découverte déjà hebdomadaire", async () => {
+    state.discovery = true;
+    state.userAlerts = [alertRow(1, { department: "33", alert_frequency: "weekly" })];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(notified.frequencies).toEqual(["weekly"]);
+    expect(state.updates).toHaveLength(1);
+    expect(state.updates[0]).not.toHaveProperty("alert_frequency");
+  });
+
+  it("garde quotidienne l'alerte d'un compte Analyse", async () => {
+    state.userAlerts = [alertRow(1, { department: "33", alert_frequency: "daily" })];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    await runSmartAlertEvaluationBatch();
+
+    expect(notified.frequencies).toEqual(["daily"]);
+    expect(state.updates[0]).not.toHaveProperty("alert_frequency");
+  });
+
+  it("exclut toujours d'un compte Découverte l'alerte quotidienne à critère avancé", async () => {
+    state.discovery = true;
+    state.userAlerts = [
+      alertRow(1, { department: "33", alert_frequency: "daily", min_yield_pct: 6 }),
+      alertRow(2, {
+        user_id: "user-1",
+        department: "33",
+        alert_frequency: "daily",
+        dpe_classes: ["C"],
+      }),
+    ];
+    state.salesPool = [{ id: "sale-33", department: "33" }];
+
+    const result = await runSmartAlertEvaluationBatch();
+
+    expect(result.results.every((entry) => entry.alertCount === 0)).toBe(true);
+    expect(state.getSalesCalls).toHaveLength(0);
+    expect(notified.saleIds).toEqual([]);
+    expect(state.updates).toEqual([]);
   });
 
   it("garde l'égalité stricte pour un département que le catalogue ne connaît pas", async () => {

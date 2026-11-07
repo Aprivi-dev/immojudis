@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { offerComparisonRows } from "./offer-comparison";
+import {
+  analysisOfferDescription,
+  offerComparisonRows,
+  splitOfferComparisonRows,
+} from "./offer-comparison";
 import { PLAN_FEATURES, PLAN_LIMITS } from "./plans";
 
 describe("offerComparisonRows", () => {
@@ -63,11 +67,11 @@ describe("offerComparisonRows", () => {
       ),
     );
     expect(opened.map((candidate) => candidate.id)).toEqual([
+      "ceiling",
+      "scenarios",
       "documents",
       "document-reading",
       "passages",
-      "ceiling",
-      "scenarios",
       "statistics",
     ]);
     for (const candidate of opened) {
@@ -122,6 +126,66 @@ describe("offerComparisonRows", () => {
     expect(tribunalOnly.find((candidate) => candidate.id === "dossier")!.label).toBe(
       "Statut et enchère plafond enregistrés",
     );
+  });
+
+  it("met en tête ce qui distingue les offres et range à part ce qui est inclus dans les deux", () => {
+    const { differences, shared } = splitOfferComparisonRows(rows);
+    // Aucune ligne retirée : les deux groupes couvrent tout le comparatif.
+    expect([...differences, ...shared].map((candidate) => candidate.id).sort()).toEqual(
+      rows.map((candidate) => candidate.id).sort(),
+    );
+    expect(differences.map((candidate) => candidate.id)).toEqual([
+      "unlocks",
+      "ceiling",
+      "scenarios",
+      "documents",
+      "document-reading",
+      "passages",
+      "alerts",
+      "estimate",
+      "statistics",
+      "pdf",
+      "csv",
+      "favorites",
+      "land",
+      "referrals",
+    ]);
+    expect(shared.map((candidate) => candidate.id)).toEqual([
+      "catalogue",
+      "dossier",
+      "directory",
+      "listing-facts",
+      "value-range",
+    ]);
+    // Le groupe « Inclus dans les deux offres » ne contient que des lignes incluses à l'identique.
+    for (const candidate of shared) {
+      expect(candidate.decouverte, candidate.id).toEqual(candidate.analyse);
+      expect(candidate.decouverte.included, candidate.id).toBe(true);
+    }
+    // Calculé sur les cellules : une ligne qui diffère ne peut pas passer dans le groupe commun.
+    for (const candidate of differences) {
+      expect(candidate.decouverte, candidate.id).not.toEqual(candidate.analyse);
+    }
+  });
+
+  it("garde la mise en relation parmi les différences, qu'Analyse soit souscriptible ou non", () => {
+    // Fermée dans les deux offres tant qu'Analyse ne se souscrit pas : jamais « incluse dans les deux ».
+    expect(splitOfferComparisonRows(rows).shared.map((candidate) => candidate.id)).not.toContain(
+      "referrals",
+    );
+    const open = splitOfferComparisonRows(offerComparisonRows(undefined, { analysisOpen: true }));
+    expect(open.differences.map((candidate) => candidate.id)).toContain("referrals");
+  });
+
+  it("décrit l'offre Analyse par les ventes qui ont un plafond, selon les régimes ouverts", () => {
+    expect(analysisOfferDescription(["tribunal"])).toBe(
+      "Le plafond des ventes au tribunal, avant de choisir celles qui méritent une visite.",
+    );
+    expect(analysisOfferDescription()).toBe(
+      "Le plafond des ventes au tribunal ou chez le notaire, avant de choisir celles qui méritent une visite.",
+    );
+    // Jamais les ventes domaniales, qui n'ont pas de régime de frais.
+    expect(analysisOfferDescription()).not.toMatch(/État|domaniales/);
   });
 
   it("n'expose aucun fournisseur ni « Premium »", () => {
