@@ -14,6 +14,7 @@ import { featureIncluded, isPlanPeriodActive, normalizePlanCode } from "@/lib/pl
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
@@ -796,12 +797,6 @@ function positiveNumber(value: number | null | undefined): number | null {
 
 function finiteNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) ? value : null;
-}
-
-function parseDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function round(value: number, digits = 0): number {

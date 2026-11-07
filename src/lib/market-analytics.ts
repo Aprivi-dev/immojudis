@@ -7,6 +7,7 @@ import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { SelectedRow } from "@/lib/supabase-select";
+import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -782,12 +783,6 @@ function addMonthsIso(now: Date, months: number): string {
   const date = new Date(now);
   date.setUTCMonth(date.getUTCMonth() + months);
   return date.toISOString();
-}
-
-function parseDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function daysBetween(start: Date, end: Date): number {
