@@ -10,6 +10,7 @@ import {
   type InformationAgentSaleContactClass,
 } from "@/lib/admin-information-agent-sale";
 import { requireAdmin } from "@/lib/admin-auth.server";
+import { asRecord as jsonObject } from "@/lib/guards";
 
 const ACTIVE_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
 
@@ -371,12 +372,6 @@ function normalizeStatus(value: string): CatalogueReadinessStatus {
   return value === "internal_only" || value === "needs_enrichment" || value === "premium_ready"
     ? value
     : "unassessed";
-}
-
-function jsonObject(value: Json): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function jsonStrings(value: Json): string[] {
