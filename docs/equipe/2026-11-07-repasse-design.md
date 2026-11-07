@@ -107,3 +107,40 @@ demi-journée, L = plus. La mention « [refonte] » signale un défaut introduit
 - Fiche visiteur : sections numérotées, frise, « ce que chaque accès ouvre », signalement d'erreur.
 - Fenêtres modales (galerie, menu mobile, date) : focus gardé et rendu au déclencheur.
 - Nom « Immojudis », offres Découverte et Analyse, vouvoiement et Manrope seule : cohérents partout.
+
+## Mise en œuvre (07/11/2026, pull request #435)
+
+Le propriétaire a validé tous les constats retenus. Cinq lots `developpeur` en parallèle (D : design
+system, erreurs, compte ; P : avocats, espace pro, publication, connexion ; N : navigation,
+départements, tribunaux, audiences ; F : fiche vente et annonce exemple ; S : catalogue `/sales`), puis
+fusion, relecture `code-reviewer` et corrections par le chef d'orchestre.
+
+**Fait : 45 numéros sur 46.** Tous sauf le n° 10.
+
+**Non fait :**
+
+- **n° 10 (pages légales)** : `src/routes/legal.tsx`, `privacy.tsx` et `conditions-generales.tsx` sont
+  ancrés par leur empreinte SHA-256 dans `LEGAL_DOCUMENTS` (`src/lib/legal-documents.ts`). Même un
+  changement purement visuel impose une nouvelle version, une archive dans `docs/legal-archives/` et,
+  pour les CGU, le préavis de 30 jours (art. 14). Décision du propriétaire attendue. Les classes
+  `.liquid-*` restent donc dans `src/styles.css` (pages légales, administration, squelettes).
+
+**Choix faits pendant la mise en œuvre, à connaître :**
+
+- n° 8 et 43 : la barre basse de la fiche abonné se masque à partir de 1 024 px (au lieu de 960) ;
+  entre 960 et 1 023 px, ni barre ni panneau collant ne gardaient les montants en vue.
+- n° 28 : sur la page tribunal, un compte connecté qui choisit « tout le département » passe par
+  `/alertes/creer` (un clic de plus) ; la mention de l'essai a été retirée de cette carte pour tenir le
+  budget JavaScript.
+- n° 25 : « Comparer » de la fiche visiteur ouvre `/sales?comparer=<id>` en gardant les critères de la
+  recherche d'origine ; le catalogue ajoute la vente puis retire le paramètre de l'adresse.
+- n° 45 : la casse des villes est corrigée à l'affichage seulement ; le doublon éventuel des deux
+  annonces d'Aix-en-Provence n'a pas été vérifié en base (à confier à `qualite-donnees`).
+- n° 4 et 5 (après relecture) : l'annuaire filtré par département lit chaque barreau à part, une seule
+  requête sur plusieurs barreaux étant tronquée à 1 000 lignes par PostgREST.
+
+**Vérifications sur la branche fusionnée :** `tsc`, lint, invariants de sécurité, Vitest complet
+(969 fichiers, 13 042 tests), build de production et budgets (`/sales` 564 885 octets sur 565 000, total
+client 6 678 220 sur 6 730 000 ; plusieurs allègements de `/sales` ont été nécessaires), détecteur de
+textes écrasés sur `/annonce-exemple` (0 alerte de 390 à 1 440 px, contre 118 avant), parcours
+Playwright de la CI.
