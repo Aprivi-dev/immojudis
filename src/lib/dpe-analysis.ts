@@ -7,6 +7,7 @@ import {
 } from "@/lib/dpe";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import { excerpt, flattenKeyValues } from "@/lib/analysis-text";
+import { cleanText } from "@/lib/clean-text";
 
 export type DpeImpactLevel = "positive" | "neutral" | "watch" | "risk" | "unknown";
 
@@ -327,16 +328,4 @@ function dedupeEvidence(evidence: DpeEvidence[]): DpeEvidence[] {
     seen.add(key);
     return true;
   });
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  return null;
 }
