@@ -7,6 +7,8 @@ import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSaleSurface } from "@/lib/surface";
 import type { SelectedRow } from "@/lib/supabase-select";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { roundToTenth as roundedNumber } from "@/lib/rounding";
+import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -359,15 +361,6 @@ function isPositiveFinite(value: unknown): value is number {
 
 function positiveNumber(value: unknown): number | null {
   return isPositiveFinite(value) ? value : null;
-}
-
-function roundedNumber(value: number | null | undefined): number | null {
-  return value != null && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
-}
-
-function averageRounded(values: number[]): number | null {
-  if (!values.length) return null;
-  return roundedNumber(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
 function medianRounded(values: number[]): number | null {

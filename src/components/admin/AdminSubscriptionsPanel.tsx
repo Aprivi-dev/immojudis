@@ -11,6 +11,10 @@ import type {
   AdminSubscriptionSummary,
 } from "@/lib/admin-subscriptions";
 import { PLAN_LABELS, type PlanCode, type PlanStatus } from "@/lib/plans";
+import { AdminPrevNextPagination as AdminPagination } from "@/components/admin/AdminPrevNextPagination";
+import { formatAdminShortDateTime as formatDate } from "@/lib/admin-date-format";
+import { TextField } from "@/components/admin/AdminFormFields";
+import { SelectField } from "@/components/admin/AdminFormFields";
 
 type SubscriptionFormState = {
   target: string;
@@ -202,50 +206,6 @@ export function AdminSubscriptionsPanel() {
   );
 }
 
-function AdminPagination({
-  offset,
-  count,
-  totalCount,
-  hasMore,
-  busy,
-  onPrevious,
-  onNext,
-}: {
-  offset: number;
-  count: number;
-  totalCount: number;
-  hasMore: boolean;
-  busy: boolean;
-  onPrevious: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-      <span>
-        {offset + 1}–{offset + count} sur {totalCount}
-      </span>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy || offset === 0}
-          onClick={onPrevious}
-        >
-          Précédent
-        </button>
-        <button
-          type="button"
-          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={busy || !hasMore}
-          onClick={onNext}
-        >
-          Suivant
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function SubscriptionLine({ subscription }: { subscription: AdminSubscriptionSummary }) {
   return (
     <div className="grid grid-cols-[1.1fr_0.75fr_0.7fr_0.8fr] items-center gap-3 px-3 py-3 text-sm">
@@ -263,62 +223,6 @@ function SubscriptionLine({ subscription }: { subscription: AdminSubscriptionSum
       <StatusPill status={subscription.status} />
       <span className="text-xs text-muted-foreground">{formatDate(subscription.updatedAt)}</span>
     </div>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-  type = "text",
-  required = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  required?: boolean;
-}) {
-  return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-      {label}
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        type={type}
-        required={required}
-        className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
-      />
-    </label>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: Array<[string, string]>;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-      {label}
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
-      >
-        {options.map(([optionValue, label]) => (
-          <option key={optionValue} value={optionValue}>
-            {label}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 
@@ -355,13 +259,4 @@ function formToInput(form: SubscriptionFormState): AdminSubscriptionGrantInput {
     currentPeriodEnd: dateTimeLocalToUtcIso(form.currentPeriodEnd),
     note: form.note,
   };
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }

@@ -1,8 +1,11 @@
 import type { AcquisitionCostResult } from "@/lib/profitability";
-import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { excerpt, flattenKeyValues } from "@/lib/analysis-text";
 import { asRecordOrNull } from "@/lib/guards";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
+import { cleanText } from "@/lib/clean-text";
+import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
+import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
 
 export type AuctionCostSourceAmount = {
   amountEur: number;
@@ -357,11 +360,6 @@ function riskTexts(risk: SaleRisk): string[] {
   return texts.map(cleanText).filter((text): text is string => Boolean(text));
 }
 
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
-}
-
 function moneyValue(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) return Math.round(value);
   const text = cleanText(value);
@@ -396,28 +394,6 @@ function formatSignal(value: unknown, source: string, pattern = COST_CONTEXT): s
   return `${source} · ${offset ? "… " : ""}${excerpt(text.slice(offset))}`;
 }
 
-function dedupeStrings(values: string[]): string[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = normalizeText(value);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 function formatMoney(value: number): string {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €`;
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  return null;
 }

@@ -12,6 +12,8 @@ import {
 import type { PublicTribunalDirectoryEntry } from "@/lib/public-tribunal-directory";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
 import { TRIBUNAL_PAGES_PATH, tribunalCodeSlug } from "@/lib/tribunal-code-path";
+import { parseTimestamp as timestamp } from "@/lib/timestamp";
+import { formatLongParisDate as longDate } from "@/lib/long-date";
 
 /**
  * Pages « Ventes judiciaires au tribunal de X » (`/tribunaux/[slug]`), sur le modèle des pages
@@ -340,23 +342,6 @@ export function tribunalPageTitle(
 }
 
 const DESCRIPTION_MAX_LENGTH = 158;
-
-function timestamp(value: string | null): number | null {
-  if (!value) return null;
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : null;
-}
-
-function longDate(value: string | null): string | null {
-  const time = timestamp(value);
-  if (time == null) return null;
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Europe/Paris",
-  }).format(new Date(time));
-}
 
 function priceLabel(value: number): string {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €`;

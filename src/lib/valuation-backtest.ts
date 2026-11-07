@@ -14,6 +14,10 @@ import { featureIncluded, isPlanPeriodActive, normalizePlanCode } from "@/lib/pl
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { parseDateOrNull as parseDate } from "@/lib/parse-date";
+import { propertyTypeFamily } from "@/lib/property-type-family";
+import { round } from "@/lib/rounding";
+import { averageRounded } from "@/lib/rounding";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
@@ -733,15 +737,6 @@ function propertyTypeMatches(value: string | null, reference: string | null): bo
   return propertyTypeFamily(value) === referenceFamily;
 }
 
-function propertyTypeFamily(value: string | null | undefined): string {
-  const text = (value ?? "").toLowerCase();
-  if (/maison|house|villa|pavillon/.test(text)) return "house";
-  if (/appartement|apartment|studio|t1|t2|t3|t4/.test(text)) return "apartment";
-  if (/immeuble|building/.test(text)) return "building";
-  if (/terrain|land/.test(text)) return "land";
-  return text.trim() || "unknown";
-}
-
 function bboxAround(lat: number, lng: number, radiusM: number) {
   const dLat = radiusM / 111_000;
   const dLng = radiusM / (111_000 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
@@ -785,26 +780,10 @@ function shareTrue(values: boolean[]): number | null {
   return round((values.filter(Boolean).length / values.length) * 100, 1);
 }
 
-function averageRounded(values: number[], digits = 0): number | null {
-  if (!values.length) return null;
-  return round(values.reduce((sum, value) => sum + value, 0) / values.length, digits);
-}
-
 function positiveNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function finiteNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) ? value : null;
-}
-
-function parseDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function round(value: number, digits = 0): number {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
 }

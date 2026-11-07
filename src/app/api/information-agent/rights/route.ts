@@ -1,11 +1,6 @@
 import "server-only";
 import { RateLimitError } from "@/lib/api-errors";
 import {
-  normalizeOptOutEmail,
-  parseOptOutEmail,
-  verifyInformationAgentOptOutToken,
-} from "@/lib/information-agent-opt-out";
-import {
   createProfessionalPrivacyRequest,
   isProfessionalRequestType,
 } from "@/lib/information-agent-professional-rights";
@@ -13,6 +8,7 @@ import { informationAgentPage } from "@/lib/information-agent-public-page";
 import { logInformationAgentRouteError } from "@/lib/information-agent-route-log";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { verifiedOptOutLink as verifiedLink } from "@/lib/information-agent-opt-out-link.server";
 
 /**
  * Accès et effacement des données d'un professionnel contacté par l'agent d'information.
@@ -96,16 +92,6 @@ async function readRequestType(request: Request) {
   } catch {
     return null;
   }
-}
-
-function verifiedLink(request: Request): { email: string } | null {
-  const params = new URL(request.url).searchParams;
-  const email = parseOptOutEmail(params.get("e"));
-  const secret = process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim() ?? "";
-  if (!email || !verifyInformationAgentOptOutToken(email, params.get("t") ?? "", secret)) {
-    return null;
-  }
-  return { email: normalizeOptOutEmail(email) };
 }
 
 function invalidLink() {

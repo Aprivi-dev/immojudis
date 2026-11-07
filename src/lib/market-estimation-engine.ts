@@ -1,6 +1,7 @@
 import { gridDistance, latLngToCell } from "h3-js";
 import { MARKET_JACKKNIFE_MIN_COMPARABLES } from "@/lib/market-comparable-minimums";
 import { round } from "@/lib/rounding";
+import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 
 export type MarketPropertySegment =
   | "apartment"
@@ -539,11 +540,6 @@ function surfaceWindow(value: number, tolerance: number, minimum: number) {
 
 function inWindow(value: number, window: { min: number; max: number }): boolean {
   return value >= window.min && value <= window.max;
-}
-
-function parseDate(value: string): Date | null {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function monthDistance(from: Date, to: Date): number {

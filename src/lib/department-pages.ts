@@ -3,6 +3,8 @@ import { departmentCode } from "@/lib/department-code";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
 import type { SaleVenueType } from "@/lib/types";
+import { parseTimestamp as timestamp } from "@/lib/timestamp";
+import { formatLongParisDate as longDate } from "@/lib/long-date";
 
 /**
  * Pages « Ventes aux enchères immobilières par département » : une page par département, qui
@@ -139,12 +141,6 @@ export type DepartmentCatalogue = {
   generatedAt: string;
   departments: Record<string, DepartmentStats>;
 };
-
-function timestamp(value: string | null): number | null {
-  if (!value) return null;
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : null;
-}
 
 /**
  * Les communes les plus présentes parmi des ventes : une commune se reconnaît à son nom sans tenir
@@ -538,17 +534,6 @@ export const DEPARTMENT_INDEX_TITLE = "Ventes aux enchères immobilières par d�
 /** Titre d'une page de département : 48 caractères au plus, comme les autres titres du site. */
 export function departmentPageTitle(department: Pick<DepartmentRef, "name">): string {
   return `Enchères immobilières : ${department.name}`;
-}
-
-function longDate(value: string | null): string | null {
-  const time = timestamp(value);
-  if (time == null) return null;
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Europe/Paris",
-  }).format(new Date(time));
 }
 
 function priceLabel(value: number): string {

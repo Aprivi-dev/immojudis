@@ -7,6 +7,9 @@ import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { SelectedRow } from "@/lib/supabase-select";
+import { parseDateOrNull as parseDate } from "@/lib/parse-date";
+import { roundToTenth as roundedNumber } from "@/lib/rounding";
+import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -784,12 +787,6 @@ function addMonthsIso(now: Date, months: number): string {
   return date.toISOString();
 }
 
-function parseDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function daysBetween(start: Date, end: Date): number {
   return (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
 }
@@ -804,15 +801,6 @@ function positiveNumber(value: unknown): number | null {
 
 function positiveRounded(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? roundedNumber(value) : null;
-}
-
-function roundedNumber(value: number | null | undefined): number | null {
-  return value != null && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
-}
-
-function averageRounded(values: number[]): number | null {
-  if (!values.length) return null;
-  return roundedNumber(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
 function percentileRounded(values: number[], percentile: number): number | null {

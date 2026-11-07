@@ -17,6 +17,7 @@ import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 import { reportWording } from "@/lib/property-report/report-wording";
 import { RentSourceNotice } from "@/components/RentSourceNotice";
 import { reportRentReference } from "@/lib/property-report/rent-notice";
+import { formatRenovationBudgetRange } from "@/lib/property-report/serialization";
 
 type PageParams = {
   params: Promise<{ token: string }>;
@@ -1375,20 +1376,6 @@ function formatKnownPrice(value: number | null): string {
 function formatPercent(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(value)} %`;
-}
-
-function formatRenovationBudgetRange(range: Record<string, unknown>): string {
-  const lowEur = numberValue(range.lowEur);
-  const highEur = numberValue(range.highEur);
-  if (lowEur != null && highEur != null) {
-    return `${formatPrice(lowEur)} - ${formatPrice(highEur)}`;
-  }
-  const lowPerM2 = numberValue(range.lowPerM2);
-  const highPerM2 = numberValue(range.highPerM2);
-  if (lowPerM2 != null && highPerM2 != null) {
-    return `${formatPricePerM2(lowPerM2)} - ${formatPricePerM2(highPerM2)}`;
-  }
-  return "";
 }
 
 function externalUrl(value: unknown): string {

@@ -36,6 +36,7 @@ import {
   RENT_SOURCE_URL,
   rentSourceDetail,
 } from "@/lib/rent-source-notice";
+import { stringArrayValue as arrayOfStrings } from "@/lib/guards";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -1259,10 +1260,4 @@ function buildAlertDigestHtml({
       ],
     },
   });
-}
-
-function arrayOfStrings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
 }

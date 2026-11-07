@@ -1,15 +1,11 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { RateLimitError } from "@/lib/api-errors";
-import {
-  normalizeOptOutEmail,
-  parseOptOutEmail,
-  verifyInformationAgentOptOutToken,
-} from "@/lib/information-agent-opt-out";
 import { informationAgentPage } from "@/lib/information-agent-public-page";
 import { logInformationAgentRouteError } from "@/lib/information-agent-route-log";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { verifiedOptOutLink as verifiedOptOut } from "@/lib/information-agent-opt-out-link.server";
 
 /**
  * Opposition depuis le pied d'un e-mail de l'agent d'information.
@@ -85,16 +81,6 @@ export async function POST(request: Request) {
   } catch (error) {
     return failure(error, "POST");
   }
-}
-
-function verifiedOptOut(request: Request): { email: string } | null {
-  const params = new URL(request.url).searchParams;
-  const email = parseOptOutEmail(params.get("e"));
-  const secret = process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim() ?? "";
-  if (!email || !verifyInformationAgentOptOutToken(email, params.get("t") ?? "", secret)) {
-    return null;
-  }
-  return { email: normalizeOptOutEmail(email) };
 }
 
 function invalidLink() {

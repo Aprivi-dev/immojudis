@@ -1,6 +1,9 @@
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 import { dedupeStrings } from "@/lib/dedupe-strings";
+import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
+import { matchesAnyPattern as matches } from "@/lib/analysis-text";
 
 export type UrbanPlanningSignalKind =
   | "zoning"
@@ -273,11 +276,6 @@ function documentEvidenceItems(documents: SaleDocumentRich[]): UrbanPlanningItem
     .filter((item): item is UrbanPlanningItem => Boolean(item));
 }
 
-function matches(definition: SignalDefinition, text: string): boolean {
-  const normalized = normalizeText(text);
-  return definition.patterns.some((pattern) => pattern.test(normalized));
-}
-
 function resolveStatus(items: UrbanPlanningItem[]): UrbanPlanningAnalysis["status"] {
   if (items.some((item) => item.status === "documented")) return "documented";
   if (items.length) return "source_signals";
@@ -417,11 +415,6 @@ function riskTexts(risk: SaleRisk): string[] {
   return texts.map(cleanText).filter((text): text is string => Boolean(text));
 }
 
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
-}
-
 function dedupeItems(items: UrbanPlanningItem[]): UrbanPlanningItem[] {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -430,23 +423,4 @@ function dedupeItems(items: UrbanPlanningItem[]): UrbanPlanningItem[] {
     seen.add(key);
     return true;
   });
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  if (value && typeof value === "object") {
-    const text = Object.values(value as Record<string, unknown>)
-      .map(cleanText)
-      .filter(Boolean)
-      .join(" ");
-    return text || null;
-  }
-  return null;
 }

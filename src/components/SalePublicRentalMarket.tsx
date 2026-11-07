@@ -12,6 +12,7 @@ import type { RentReference, RentReferenceSource, RentSegment } from "@/lib/rent
 import { formatRentSourceDate, isAnilRentReference } from "@/lib/rent-source-notice";
 import { PUBLIC_YIELD_LABEL } from "@/lib/public-rental-yield";
 import styles from "./SalePublicPreview.module.css";
+import { rentNature } from "@/lib/rent-nature";
 
 /** Le segment dans la phrase : « le loyer d'annonce des appartements ». */
 const SEGMENT_PHRASES: Record<RentSegment, string> = {
@@ -36,28 +37,6 @@ const rentFormat = new Intl.NumberFormat("fr-FR", {
 });
 const countFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
 const perM2 = (value: number) => `${rentFormat.format(value)} €/m²`;
-
-/**
- * Nature de l'estimation, mot pour mot celle du bloc « Marché locatif » de la fiche des comptes
- * (`RentalMarketBlock`) : la fiche publique dit la même chose de la même donnée.
- */
-function rentNature(reference: RentReference): string {
-  if (reference.source === "anil_arrondissements_median") {
-    return "Loyer calculé par Immojudis : médiane des estimations ANIL des arrondissements, faute d’estimation propre à celui du bien. Indicatif.";
-  }
-  if (reference.source === "anil_department_median") {
-    return "Loyer calculé par Immojudis : médiane des estimations ANIL des communes du département, faute d’estimation pour la commune du bien. Indicatif.";
-  }
-  if (reference.source === "anil_maille") {
-    return "Loyer de maille : estimation commune à un groupe de communes voisines, la commune comptant trop peu d’annonces pour une estimation propre. Indicatif.";
-  }
-  if (reference.source === "anil_epci") {
-    return "Loyer de l’intercommunalité : estimation indicative, la commune comptant trop peu d’annonces.";
-  }
-  return reference.reliability === "reliable"
-    ? "Estimation calculée sur les annonces de la commune."
-    : "Estimation indicative : la commune compte peu d’annonces ou le modèle est peu précis.";
-}
 
 /**
  * Section « Marché local » de la fiche publique : les chiffres du bloc « Marché locatif » (loyer

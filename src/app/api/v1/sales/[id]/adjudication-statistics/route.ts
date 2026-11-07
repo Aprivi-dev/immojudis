@@ -9,7 +9,7 @@ import { getAdjudicationPriceStatisticsForSale } from "@/lib/adjudication-price-
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { recordFeatureUsageEvent } from "@/lib/usage";
+import { recordUsageSafely } from "@/lib/record-usage-safely.server";
 
 const paramsSchema = z.object({ id: z.string().guid() });
 
@@ -63,13 +63,5 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     response.headers.set("cache-control", "private, no-store");
     response.headers.set("vary", "authorization");
     return response;
-  }
-}
-
-function recordUsageSafely(input: Parameters<typeof recordFeatureUsageEvent>[0]): void {
-  try {
-    void recordFeatureUsageEvent(input).catch(() => undefined);
-  } catch {
-    // Telemetry must never delay or fail a Premium statistics read.
   }
 }

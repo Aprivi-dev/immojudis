@@ -4,6 +4,7 @@ import { departmentFromCode } from "@/lib/department-pages";
 import { propertyImages } from "@/lib/sale-media";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
+import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 
 /**
  * Search-engine text for a public sale page.
@@ -77,12 +78,6 @@ export function seoPrice(value: number): string {
     .format(value)
     .replaceAll(" ", " ")
     .replaceAll(" ", " ")} €`;
-}
-
-function parseDate(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date : null;
 }
 
 export function seoLongDate(value: string | null | undefined): string | null {

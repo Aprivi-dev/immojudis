@@ -16,10 +16,10 @@ import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { SaleDocumentRich } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { SelectedRow } from "@/lib/supabase-select";
+import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToExplorer } from "@/lib/dpe-diagnostic-row";
+import { emptyDpeCounts } from "@/lib/dpe-counts";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
-type DpeDiagnosticRow = Database["public"]["Tables"]["auction_dpe_diagnostics"]["Row"];
-
 const DPE_COLUMNS =
   "id,title,city,department,postal_code,address,property_type,starting_price_eur,sale_date,updated_at,latitude,longitude,documents_rich,source_blocks,source_name,source_url";
 
@@ -266,30 +266,6 @@ async function getDpeDiagnosticsBySourceUrl(
   return bySource;
 }
 
-function dpeDiagnosticRowToExplorer(row: DpeDiagnosticRow): StructuredDpeDiagnostic {
-  return {
-    diagnosticNumber: row.diagnostic_number ?? null,
-    dpeClass: normalizeDpeClass(row.dpe_class),
-    gesClass: normalizeDpeClass(row.ges_class),
-    establishedAt: row.established_at ?? null,
-    validUntil: row.valid_until ?? null,
-    propertyType: row.property_type ?? null,
-    address: row.address ?? null,
-    city: row.city ?? null,
-    postalCode: row.postal_code ?? null,
-    inseeCode: row.insee_code ?? null,
-    department: row.department ?? null,
-    surfaceM2: row.surface_m2 ?? null,
-    energyConsumptionKwhM2Year: row.energy_consumption_kwh_m2_year ?? null,
-    emissionsKgCo2M2Year: row.emissions_kg_co2_m2_year ?? null,
-    latitude: row.latitude ?? null,
-    longitude: row.longitude ?? null,
-    matchKind: row.match_kind ?? null,
-    confidence: row.confidence ?? null,
-    sourceApi: row.source_api ?? null,
-  };
-}
-
 function rowToDpeItem(
   row: DpeSaleRow,
   structuredDiagnostics: StructuredDpeDiagnostic[] = [],
@@ -336,16 +312,6 @@ function rowToDpeItem(
 function dpeClassMatches(value: DpeClass | null, accepted: DpeClass[]): boolean {
   if (!accepted.length) return true;
   return value != null && accepted.includes(normalizeDpeClass(value) as DpeClass);
-}
-
-function emptyDpeCounts(): Record<DpeClass, number> {
-  return DPE_CLASSES.reduce(
-    (acc, dpeClass) => {
-      acc[dpeClass] = 0;
-      return acc;
-    },
-    {} as Record<DpeClass, number>,
-  );
 }
 
 function finiteNumber(value: unknown): number | null {

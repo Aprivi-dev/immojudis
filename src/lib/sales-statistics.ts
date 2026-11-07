@@ -1,5 +1,5 @@
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import { DPE_CLASSES, extractDpe, type DpeClass } from "@/lib/dpe";
+import { extractDpe, type DpeClass } from "@/lib/dpe";
 import { estimateSaleGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
 import type { RentLookup } from "@/lib/rent-reference";
 import { RENT_ATTRIBUTION } from "@/lib/rent-source-notice";
@@ -17,6 +17,9 @@ import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/sea
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { emptyDpeCounts } from "@/lib/dpe-counts";
+import { round } from "@/lib/rounding";
+import { averageRounded } from "@/lib/rounding";
 
 const SALES_STATISTICS_SOURCE_LIMIT = 1_000;
 
@@ -227,16 +230,6 @@ function buildSegments(
     .slice(0, 8);
 }
 
-function emptyDpeCounts(): Record<DpeClass, number> {
-  return DPE_CLASSES.reduce(
-    (acc, dpeClass) => {
-      acc[dpeClass] = 0;
-      return acc;
-    },
-    {} as Record<DpeClass, number>,
-  );
-}
-
 function isAdjudicatedStatus(status: string | null): boolean {
   return Boolean(status && /adjud|sold|pass/i.test(status));
 }
@@ -246,11 +239,6 @@ function cleanSegmentValue(value: string | null | undefined): string | null {
   return text || null;
 }
 
-function averageRounded(values: number[], digits = 0): number | null {
-  if (!values.length) return null;
-  return round(values.reduce((sum, value) => sum + value, 0) / values.length, digits);
-}
-
 function medianRounded(values: number[], digits = 0): number | null {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
@@ -258,11 +246,6 @@ function medianRounded(values: number[], digits = 0): number | null {
   const value =
     sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
   return round(value, digits);
-}
-
-function round(value: number, digits = 0): number {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
 }
 
 function isFiniteNumber(value: number | null | undefined): value is number {
