@@ -30,3 +30,10 @@ export function cleanTextDeep(value: unknown): string | null {
   }
   return null;
 }
+
+export type TextCandidate = { text: string; source: string };
+
+export function addCleanTextCandidate(candidates: TextCandidate[], value: unknown, source: string) {
+  const text = cleanText(value);
+  if (text) candidates.push({ text, source });
+}

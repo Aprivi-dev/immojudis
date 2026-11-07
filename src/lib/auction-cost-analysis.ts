@@ -4,6 +4,7 @@ import { asRecordOrNull } from "@/lib/guards";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import { cleanText } from "@/lib/clean-text";
+import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
 
 export type AuctionCostSourceAmount = {
   amountEur: number;
@@ -356,11 +357,6 @@ function riskTexts(risk: SaleRisk): string[] {
     texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
   }
   return texts.map(cleanText).filter((text): text is string => Boolean(text));
-}
-
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
 }
 
 function moneyValue(value: unknown): number | null {

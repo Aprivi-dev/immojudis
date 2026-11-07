@@ -3,6 +3,7 @@ import { listingOccupation } from "@/lib/listing-evidence";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import { cleanText } from "@/lib/clean-text";
+import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
 
 export type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
 
@@ -368,11 +369,6 @@ function hasPattern(candidates: TextCandidate[], patterns: RegExp[]): boolean {
 function hasOccupancyText(value: unknown): boolean {
   const text = cleanText(value);
   return Boolean(text && detectStatus(text));
-}
-
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
 }
 
 function dedupeEvidence(evidence: OccupancyEvidence[]): OccupancyEvidence[] {
