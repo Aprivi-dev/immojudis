@@ -18,6 +18,7 @@ import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { emptyDpeCounts } from "@/lib/dpe-counts";
+import { round } from "@/lib/rounding";
 
 const SALES_STATISTICS_SOURCE_LIMIT = 1_000;
 
@@ -249,11 +250,6 @@ function medianRounded(values: number[], digits = 0): number | null {
   const value =
     sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
   return round(value, digits);
-}
-
-function round(value: number, digits = 0): number {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
 }
 
 function isFiniteNumber(value: number | null | undefined): value is number {
