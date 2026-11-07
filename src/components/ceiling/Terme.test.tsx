@@ -126,6 +126,12 @@ describe("Terme : glossaire et zone d'appui", () => {
     ],
     ["portage", "portage", "Ce que coûte le bien", "lexique-portage"],
     ["emoluments", "émoluments", "barème réglementé", "lexique-emoluments"],
+    [
+      "avocat-poursuivant",
+      "avocat poursuivant",
+      "Avocat qui conduit la procédure pour le compte du créancier",
+      "lexique-avocat-poursuivant",
+    ],
   ] as const)("définit « %s » avec un texte court et neutre", (terme, label, extrait, ancre) => {
     render(<Terme terme={terme} />);
     expect(screen.getByText(label)).toBeTruthy();
@@ -231,5 +237,20 @@ describe("Terme : ventes notariales", () => {
     render(<Terme terme="offre-plafond" />);
     fireEvent.click(screen.getByRole("button", { name: "Définition : offre plafond" }));
     expect(screen.getByRole("note").textContent).not.toMatch(/ench[èe]re|adjudication/i);
+  });
+});
+
+describe("Terme : définitions reprises du guide (repasse n° 26)", () => {
+  it("« avocat poursuivant » reprend mot pour mot la définition publiée dans le lexique", async () => {
+    const { readFileSync } = await import("node:fs");
+    const guide = readFileSync(
+      "src/app/ventes-immobilieres-judiciaires/resources-guide.tsx",
+      "utf8",
+    );
+    render(<Terme terme="avocat-poursuivant" />);
+    fireEvent.click(screen.getByRole("button", { name: "Définition : avocat poursuivant" }));
+    const definition = screen.getByRole("note").firstElementChild?.textContent ?? "";
+    expect(definition.length).toBeGreaterThan(40);
+    expect(guide).toContain(`term: "Avocat poursuivant",\n    def: "${definition}"`);
   });
 });

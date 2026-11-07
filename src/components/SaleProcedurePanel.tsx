@@ -25,6 +25,8 @@ import {
   type SaleProcedurePresentation,
 } from "@/lib/sale-procedure";
 import type { AuctionSale, SaleVerificationStatus } from "@/lib/types";
+import type { ReactNode } from "react";
+import { Terme } from "@/components/ceiling/Terme";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 
@@ -177,7 +179,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
             {procedure.venueType !== "state" ? (
               <ProcedureFact
                 icon={FileCheck2}
-                label="Surenchère"
+                label={<Terme terme="surenchere">Surenchère</Terme>}
                 value={overbidLabel(procedure)}
                 detail={procedure.overbidNote}
               />
@@ -277,7 +279,7 @@ function ProcedureFact({
   detail,
 }: {
   icon: typeof Scale;
-  label: string;
+  label: ReactNode;
   value: string;
   detail: string;
 }) {

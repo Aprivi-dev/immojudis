@@ -1457,6 +1457,9 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     expect(items[1].textContent).toContain("20 novembre 2026 à 10 h 00");
     expect(items[1].textContent).toContain("Vente au tribunal");
     expect(items[2].textContent).toContain("Après la vente");
+    // « surenchère » porte sa définition au survol, comme dans le guide (repasse n° 26).
+    expect(within(items[2]).getByRole("button", { name: "Définition : surenchère" })).toBeTruthy();
+    expect(items[2].textContent).toContain("Délai de surenchère de dix jours");
   });
 
   it("liste les pièces verrouillées et le lien vers Géorisques, et le niveau de vérification", () => {
