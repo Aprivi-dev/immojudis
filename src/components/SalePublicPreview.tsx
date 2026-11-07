@@ -13,6 +13,7 @@ import { PepiteBlockLazy } from "@/components/sale-detail/PepiteBlockLazy";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
 import { SalePublicMobileBar } from "@/components/SalePublicMobileBar";
+import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import { SalePublicShareButton } from "@/components/SalePublicShareButton";
 import { SalePublicToc, type SalePublicTocItem } from "@/components/SalePublicToc";
 import { contactReportPath } from "@/lib/contact-message";
@@ -363,7 +364,8 @@ export function SalePublicPreview({
   // Titre long : nom des données structurées et texte alternatif de la photo ; titre court : h1 et
   // fil d'Ariane (avis SEO du 24/10/2026, docs/design/fondations.md).
   const headline = saleHeadline(preview);
-  const shortHeading = saleShortHeading(preview);
+  // « 114 m² » ne se coupe pas en fin de ligne (repasse n° 24), comme le titre de la fiche abonné.
+  const shortHeading = nonBreakingUnits(saleShortHeading(preview));
   const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
   // Photos de l'annonce complète (`get_public_sale_details`) : le compte les ouvre ; la fiche
   // publique n'en montre qu'une.

@@ -275,7 +275,8 @@ describe("SalePublicPreview", () => {
     // Titre court ; le lieu, le type de vente et la date passent dans la ligne sous le titre
     // (maquette du 06/11/2026 : lieu · type de vente · date et heure).
     const heading = screen.getByRole("heading", { level: 1 });
-    expect(heading.firstChild?.textContent).toBe("Appartement de 50 m² à Romainville");
+    // Espace insécable entre la surface et son unité : « 50 m² » ne se coupe pas (repasse n° 24).
+    expect(heading.firstChild?.textContent).toBe("Appartement de 50\u00a0m² à Romainville");
     expect(
       screen.getByText(
         "Seine-Saint-Denis (93) · Vente au tribunal, audience le 20 octobre 2026 à 9 h 00",
@@ -1508,7 +1509,8 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     );
     const text = html.replace(/&#x27;/g, "'").replace(/<!-- -->/g, "");
     for (const expected of [
-      "Appartement de 47 m² à Paris 8e Arrondissement",
+      // Espace insécable entre la surface et son unité (repasse n° 24) : le texte reste le même.
+      "Appartement de 47\u00a0m² à Paris 8e Arrondissement",
       "Paris (75) · Vente chez le notaire le 20 novembre 2026 à 10 h 00",
       "Le bien",
       "La vente",
