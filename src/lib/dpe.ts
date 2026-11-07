@@ -86,25 +86,25 @@ export function normalizeStructuredDpeDiagnostics(
 ): StructuredDpeDiagnostic[] {
   return diagnostics
     .map((diagnostic) => ({
-      diagnosticNumber: cleanText(diagnostic.diagnosticNumber),
+      diagnosticNumber: cleanScalarText(diagnostic.diagnosticNumber),
       dpeClass: normalizeDpeClass(diagnostic.dpeClass),
       gesClass: normalizeDpeClass(diagnostic.gesClass),
-      establishedAt: cleanText(diagnostic.establishedAt),
-      validUntil: cleanText(diagnostic.validUntil),
-      propertyType: cleanText(diagnostic.propertyType),
-      address: cleanText(diagnostic.address),
-      city: cleanText(diagnostic.city),
-      postalCode: cleanText(diagnostic.postalCode),
-      inseeCode: cleanText(diagnostic.inseeCode),
-      department: cleanText(diagnostic.department),
+      establishedAt: cleanScalarText(diagnostic.establishedAt),
+      validUntil: cleanScalarText(diagnostic.validUntil),
+      propertyType: cleanScalarText(diagnostic.propertyType),
+      address: cleanScalarText(diagnostic.address),
+      city: cleanScalarText(diagnostic.city),
+      postalCode: cleanScalarText(diagnostic.postalCode),
+      inseeCode: cleanScalarText(diagnostic.inseeCode),
+      department: cleanScalarText(diagnostic.department),
       surfaceM2: positiveNumber(diagnostic.surfaceM2),
       energyConsumptionKwhM2Year: positiveNumber(diagnostic.energyConsumptionKwhM2Year),
       emissionsKgCo2M2Year: positiveNumber(diagnostic.emissionsKgCo2M2Year),
       latitude: finiteNumber(diagnostic.latitude),
       longitude: finiteNumber(diagnostic.longitude),
-      matchKind: cleanText(diagnostic.matchKind),
+      matchKind: cleanScalarText(diagnostic.matchKind),
       confidence: finiteNumber(diagnostic.confidence),
-      sourceApi: cleanText(diagnostic.sourceApi) ?? "ADEME DPE Open Data",
+      sourceApi: cleanScalarText(diagnostic.sourceApi) ?? "ADEME DPE Open Data",
     }))
     .filter((diagnostic) => diagnostic.diagnosticNumber || diagnostic.dpeClass)
     .sort((first, second) => {
@@ -167,18 +167,19 @@ function dpeFromSourceBlocks(blocks: AuctionSale["source_blocks"]): DpeClass | n
   );
 }
 
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  return null;
-}
-
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function positiveNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Texte ou nombre réduit à une chaîne sans espaces superflus ; `null` sinon. */
+export function cleanScalarText(value: unknown): string | null {
+  if (typeof value === "string" || typeof value === "number") {
+    const text = String(value).replace(/\s+/g, " ").trim();
+    return text || null;
+  }
+  return null;
 }
