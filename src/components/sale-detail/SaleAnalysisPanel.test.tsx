@@ -4,7 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyFavoriteDossier, type FavoriteDossier } from "@/lib/favorite-dossier-shared";
-import { AnalysisLead, DossierActions, SaleFollowChanges } from "./SaleAnalysisPanel";
+import { DossierActions, SaleFollowChanges } from "./SaleAnalysisDossier";
+import { AnalysisLead } from "./SaleAnalysisPanel";
 
 const mocks = vi.hoisted(() => ({
   auth: { user: { id: "user-1" } as { id: string } | null, loading: false },
@@ -84,7 +85,14 @@ describe("DossierActions", () => {
       saleRemindersAvailable: true,
     });
     const open = vi.fn();
-    wrap(<DossierActions saleId={SALE_ID} onOpenWorkspace={open} reportHref="#rapport" />);
+    wrap(
+      <DossierActions
+        saleId={SALE_ID}
+        onOpenWorkspace={open}
+        reportHref="#rapport"
+        calendarHref="#rendez-vous"
+      />,
+    );
 
     const status = await screen.findByLabelText("Statut de mon dossier");
     expect(screen.getByTestId("panel-saved-ceiling").textContent).toMatch(/150.000/);
@@ -94,6 +102,9 @@ describe("DossierActions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ouvrir Mon dossier" }));
     expect(open).toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "Rapport PDF" }).getAttribute("href")).toBe("#rapport");
+    expect(screen.getByRole("link", { name: "Calendrier" }).getAttribute("href")).toBe(
+      "#rendez-vous",
+    );
     // Les rappels non activés mènent à « Mon dossier », où la case présente le texte de consentement.
     expect((await screen.findByRole("link", { name: "Rappels" })).getAttribute("href")).toBe(
       "#mon-dossier",
@@ -114,8 +125,8 @@ describe("DossierActions", () => {
     expect(screen.queryByLabelText("Statut de mon dossier")).toBeNull();
     expect(screen.queryByRole("button", { name: "Ouvrir Mon dossier" })).toBeNull();
     expect(
-      (await screen.findByRole("button", { name: "Rappels activés" })).getAttribute("aria-pressed"),
-    ).toBe("true");
+      (await screen.findByRole("link", { name: "Rappels activés" })).getAttribute("href"),
+    ).toBe("#mon-dossier");
   });
 });
 

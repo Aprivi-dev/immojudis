@@ -19,6 +19,12 @@ import {
   type FavoriteDossierResponse,
 } from "@/lib/favorite-dossier-shared";
 import { formatDate, formatPrice } from "@/lib/format";
+
+// Les autres pièces du dossier de la fiche (panneau « Votre analyse », changements de la vente,
+// « Enregistrer ce plafond ») voyagent avec la carte : un seul morceau chargé à la demande, sans
+// recopier ses dépendances (favori, rappels, API du dossier) dans un autre.
+export { DossierActions, SaleFollowChanges } from "@/components/sale-detail/SaleAnalysisDossier";
+export { SaveCeilingButton } from "@/components/sale-detail/SaveCeilingButton";
 import * as queryKeys from "@/lib/query-keys";
 import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";

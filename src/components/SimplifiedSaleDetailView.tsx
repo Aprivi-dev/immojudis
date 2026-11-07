@@ -88,13 +88,7 @@ import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBloc
 import { investorProfileFinancingDraft, investorProfileToChoices } from "@/lib/investor-profile";
 import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import { PriceScale } from "@/components/sale-detail/PriceScale";
-import { SaveCeilingButton } from "@/components/sale-detail/SaveCeilingButton";
-import {
-  AnalysisLead,
-  DossierActions,
-  hypothesesSummary,
-  SaleFollowChanges,
-} from "@/components/sale-detail/SaleAnalysisPanel";
+import { AnalysisLead, hypothesesSummary } from "@/components/sale-detail/SaleAnalysisPanel";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
@@ -172,6 +166,17 @@ const CeilingVsCourt = dynamic(() =>
 // « Mes questions pour l'avocat » (n° 92) : chargé à la demande, avec le repérage des points ouverts.
 const LawyerQuestions = dynamic(() =>
   import("@/components/sale-detail/LawyerQuestions").then((module) => module.LawyerQuestions),
+);
+// Dossier du panneau « Votre analyse », changements de la vente et « Enregistrer ce plafond » (offre
+// Analyse) : chargés à la demande avec « Mon dossier » (même morceau), hors du JavaScript initial.
+const DossierActions = dynamic(() =>
+  import("@/components/sale-detail/SaleFileCard").then((module) => module.DossierActions),
+);
+const SaleFollowChanges = dynamic(() =>
+  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFollowChanges),
+);
+const SaveCeilingButton = dynamic(() =>
+  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaveCeilingButton),
 );
 // Bloc « Pourquoi cette pépite » : chargé à la demande, seule une pépite l'affiche.
 const PepiteBlock = dynamic(() =>
@@ -1024,6 +1029,15 @@ function SaleDetailWorkspace({
                           workspaceAvailable ? () => setWorkspaceOpen(true) : undefined
                         }
                         reportHref={ceilingOpen && !valuationConflict ? "#rapport" : null}
+                        // Même condition que « Ajouter à mon agenda » dans les rendez-vous de la vente.
+                        calendarHref={
+                          isTribunalSale &&
+                          displaySale.sale_date &&
+                          !dateBlocked &&
+                          !listingSaleStatus(displaySale)
+                            ? "#rendez-vous"
+                            : null
+                        }
                       />
                     ) : null
                   }

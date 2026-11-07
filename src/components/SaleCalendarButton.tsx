@@ -37,14 +37,7 @@ async function reportExport(saleId: string): Promise<void> {
  * enough to be exported; a refusal is shown here in words, not as a broken download. A signed-in
  * account also reports the download, so that it is measured per account (`reportExport`).
  */
-export function SaleCalendarButton({
-  saleId,
-  compact = false,
-}: {
-  saleId: string;
-  /** Bouton court « Calendrier » du panneau de la fiche ; l'avertissement reste lu par son nom. */
-  compact?: boolean;
-}) {
+export function SaleCalendarButton({ saleId }: { saleId: string }) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -71,29 +64,6 @@ export function SaleCalendarButton({
     } finally {
       setPending(false);
     }
-  }
-
-  if (compact) {
-    return (
-      <div className="min-w-0">
-        <button
-          type="button"
-          onClick={() => void download()}
-          disabled={pending}
-          aria-busy={pending}
-          title="Ajouter à mon agenda : date issue de l’annonce, à vérifier auprès de l’avocat poursuivant"
-          className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-line bg-white px-2 text-[13px] font-semibold text-brand-navy hover:border-brand-navy disabled:opacity-60"
-        >
-          {pending ? "Préparation…" : "Calendrier"}
-          <span className="sr-only"> : ajouter la vente à mon agenda</span>
-        </button>
-        {message ? (
-          <p role="alert" className="mt-1 text-xs text-danger">
-            {message}
-          </p>
-        ) : null}
-      </div>
-    );
   }
 
   return (
