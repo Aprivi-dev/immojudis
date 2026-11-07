@@ -11,6 +11,7 @@ import { fetchAdminReferencedLawyers, saveAdminReferencedLawyer } from "@/lib/cl
 import type { AdminReferencedLawyerInput, AdminReferencedLawyerSummary } from "@/lib/admin-lawyers";
 import { parseTimestamp as dateToTimestamp } from "@/lib/timestamp";
 import { TextField } from "@/components/admin/AdminFormFields";
+import { SelectField } from "@/components/admin/AdminFormFields";
 
 type CoverageDraft = {
   tribunalCode: string;
@@ -497,35 +498,6 @@ function CompactField({
         onChange={(event) => onChange(event.target.value)}
         className="rounded-md border border-brand-navy/10 bg-white px-2 py-2 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
       />
-    </label>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: Array<[string, string]>;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-      {label}
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
-      >
-        {options.map(([optionValue, label]) => (
-          <option key={optionValue} value={optionValue}>
-            {label}
-          </option>
-        ))}
-      </select>
     </label>
   );
 }
