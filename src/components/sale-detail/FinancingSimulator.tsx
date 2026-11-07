@@ -11,6 +11,7 @@ import {
 } from "@/lib/ai-review-guard";
 import styles from "./FinancingSimulator.module.css";
 import { clamp } from "@/lib/guards";
+import { parseNumericInput as parseInput } from "@/lib/parse-numeric-input";
 
 const TERM_OPTIONS = [10, 15, 20, 25, 30] as const;
 const DEFAULT_DOWN_PAYMENT_RATE = 0.2;
@@ -167,16 +168,6 @@ export type FinancingSimulatorProps = {
 function inputValue(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "";
   return String(Number(value.toFixed(2)));
-}
-
-function parseInput(value: string): number | null {
-  const normalized = value
-    .trim()
-    .replace(/[\s\u00a0\u202f]/g, "")
-    .replace(",", ".");
-  if (!normalized) return null;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeTerm(value: number | undefined): number {
