@@ -5,10 +5,11 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 
-// Plafonds du cliquet, relevés le 24/10/2026 (526 couleurs brutes, puis 514 après la fiche publique, 491 le 27/10/2026) :
+// Plafonds du cliquet, relevés le 24/10/2026 (526 couleurs brutes, puis 514 après la fiche publique, 491 le 27/10/2026,
+// 436 après la repasse du 07/11/2026 sur les avocats et l’espace pro) :
 // à abaisser à chaque page migrée, jamais à relever.
-const RAW_PALETTE_CLASSES_MAX = 491;
-const TINY_TEXT_CLASSES_MAX = 109;
+const RAW_PALETTE_CLASSES_MAX = 436;
+const TINY_TEXT_CLASSES_MAX = 85;
 // Déclarations `font-size` de 9 à 11 px des feuilles `.module.css` (accueil, ressources, attribution Mapbox du plan cadastral : 6).
 const TINY_TEXT_CSS_MAX = 6;
 
