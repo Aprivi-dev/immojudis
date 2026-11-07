@@ -25,6 +25,7 @@ import {
 } from "@/lib/admin-signups-format";
 import type { AdminSignupAccount, AdminTrialExtensionResponse } from "@/lib/admin-signups";
 import { toast } from "@/lib/toast";
+import { formatAdminDateTime as formatDateTime } from "@/lib/admin-date-format";
 
 export const SIGNUPS_QUERY_KEY = ["admin-signups"] as const;
 
@@ -544,10 +545,4 @@ function accessDetail(account: AdminSignupAccount): string {
 
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(value));
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
-  );
 }
