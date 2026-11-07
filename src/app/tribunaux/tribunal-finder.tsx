@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
+import { searchableText as searchable } from "@/lib/searchable-text";
 
 /** Une ligne du tableau des tribunaux : rendue par le serveur, avec le texte où chercher. */
 export type TribunalFinderRow = {
@@ -12,16 +13,6 @@ export type TribunalFinderRow = {
 };
 
 const count = new Intl.NumberFormat("fr-FR");
-
-/** Minuscules, sans accent ni tiret ni apostrophe : « Saint-Étienne » se trouve avec « saint etienne ». */
-function searchable(value: string): string {
-  return value
-    .toLocaleLowerCase("fr")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[-'’\s]+/g, " ")
-    .trim();
-}
 
 /**
  * « Trouver un tribunal » sur `/tribunaux` (repasse design n° 34), comme « Trouver un département »
