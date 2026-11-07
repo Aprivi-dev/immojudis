@@ -1,12 +1,13 @@
 import "server-only";
 import { z } from "zod";
 import type { User } from "@supabase/supabase-js";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { normalizeEmail } from "@/lib/account";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
+export { assertAdminAuth };
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
 type UserSubscriptionInsert = Database["public"]["Tables"]["user_subscriptions"]["Insert"];
@@ -274,14 +275,6 @@ async function grantWithNote({
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-export async function assertAdminAuth(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
-  }
-  return auth;
 }
 
 async function getSubscriptionByUserId(userId: string): Promise<UserSubscriptionRow | null> {

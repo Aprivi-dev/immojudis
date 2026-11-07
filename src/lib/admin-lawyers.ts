@@ -1,9 +1,9 @@
 import "server-only";
 import { z } from "zod";
 import { nullableRpcArg } from "@/lib/rpc-args";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 type ReferencedLawyerRow = Database["public"]["Tables"]["referenced_lawyers"]["Row"];
 type ReferencedLawyerInsert = Database["public"]["Tables"]["referenced_lawyers"]["Insert"];
@@ -282,14 +282,6 @@ function referencedLawyerCoveragePayload(
     department: row.department,
     postal_code_prefix: row.postalCodePrefix,
   }));
-}
-
-async function assertAdminAuth(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
-  }
-  return auth;
 }
 
 async function getCoverageByLawyerId(
