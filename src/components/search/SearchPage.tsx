@@ -120,6 +120,11 @@ import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
 import { capMapPoints } from "@/lib/search/map-points";
+import {
+  COMPARE_SALE_PARAM,
+  MAX_COMPARED_SALES,
+  compareSaleIdFromParam,
+} from "@/lib/search/sale-comparison";
 
 /** The map draws at most this many points: more would make clusters and popups sluggish. */
 const MAP_POINT_LIMIT = 500;
@@ -416,6 +421,49 @@ export function SearchPage({
     ? `${user?.id ?? "anonymous"}:${isPreview ? "preview" : isDiscovery ? "discovery" : "analysis"}`
     : null;
   const comparison = useSaleComparison(comparisonScope);
+  // « Comparer » d'une fiche : `/sales?comparer=<id>`. Le paramètre est lu une fois, à l'arrivée, puis
+  // retiré de l'adresse (un rechargement ou un lien copié ne rajoute rien) ; la vente est ajoutée à la
+  // comparaison dès que le compte est connu, et la barre de comparaison (la pastille « Comparer (N) »
+  // sur mobile) apparaît avec elle.
+  const [saleToCompare, setSaleToCompare] = useState<string | null>(null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(COMPARE_SALE_PARAM)) return;
+    const id = compareSaleIdFromParam(url.searchParams.get(COMPARE_SALE_PARAM));
+    url.searchParams.delete(COMPARE_SALE_PARAM);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    if (id) setSaleToCompare(id);
+  }, []);
+  const comparedItemsRef = useRef(comparison.items);
+  useEffect(() => {
+    comparedItemsRef.current = comparison.items;
+  }, [comparison.items]);
+  const toggleCompared = comparison.toggle;
+  useEffect(() => {
+    if (!saleToCompare || comparisonScope == null) return;
+    let cancelled = false;
+    const failed = () => {
+      if (!cancelled) toast.message("Cette vente n’a pas pu être ajoutée à la comparaison.");
+    };
+    import("@/lib/search/compared-sale")
+      .then(({ fetchComparedSale }) =>
+        fetchComparedSale(saleToCompare, { signedIn: !isPreview, discovery: isDiscovery }),
+      )
+      .then((sale) => {
+        if (cancelled) return;
+        setSaleToCompare(null);
+        if (!sale) return failed();
+        if (comparedItemsRef.current.some((item) => item.id === sale.id)) return;
+        if (comparedItemsRef.current.length >= MAX_COMPARED_SALES) return failed();
+        toggleCompared(sale);
+        toast.message(
+          `Vente ajoutée à la comparaison. Choisissez jusqu’à ${MAX_COMPARED_SALES - 1} autres biens dans la liste.`,
+        );
+      }, failed);
+    return () => {
+      cancelled = true;
+    };
+  }, [comparisonScope, isDiscovery, isPreview, saleToCompare, toggleCompared]);
   // While the session is restored, a server-seeded page reads the rows the
   // server rendered for the signed-out catalogue (same keys as the dehydrated
   // queries). They are replaced by the signed-in rows as soon as auth settles.
