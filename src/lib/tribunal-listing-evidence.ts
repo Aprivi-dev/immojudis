@@ -1,3 +1,4 @@
+import { normalizeComparableText as normalizeForMatching } from "@/lib/normalize-comparable-text";
 export type TribunalListingEvidence = {
   publicationAt: string | null;
   publicationKind: "source_explicit" | "legal_notice" | null;
@@ -461,15 +462,6 @@ function isAvoVentesSource(value: string): boolean {
 
 function normalizeKey(value: string): string {
   return normalizeForMatching(value).replace(/[^a-z0-9]+/g, "");
-}
-
-function normalizeForMatching(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr-FR")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function uniqueEvidence(values: string[]): string[] {

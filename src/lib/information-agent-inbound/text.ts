@@ -2,6 +2,8 @@ import "server-only";
 import { Parser } from "htmlparser2";
 import type { Json } from "@/integrations/supabase/types";
 import { trimmedStringValue } from "@/lib/guards";
+import { normalizeComparableText } from "@/lib/normalize-comparable-text";
+export { normalizeComparableText };
 
 const MAX_HTML_BODY_CHARS = 500_000;
 const MAX_EXTRACTED_BODY_CHARS = 20_000;
@@ -191,15 +193,6 @@ export function normalizeWhitespace(value: string): string {
   return value
     .replace(/[\t ]+/g, " ")
     .replace(/\s*\n\s*/g, " ")
-    .trim();
-}
-
-export function normalizeComparableText(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr-FR")
-    .replace(/\s+/g, " ")
     .trim();
 }
 
