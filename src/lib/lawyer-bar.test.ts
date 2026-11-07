@@ -31,6 +31,8 @@ describe("tribunalBarAssociation", () => {
 
   it("still separates a detail introduced by a spaced hyphen or a dash", () => {
     expect(tribunalBarAssociation("TJ de Lyon - audience du 3 mars")).toBe("Lyon");
+    expect(tribunalBarAssociation("Tribunal judiciaire de Lyon- audience")).toBe("Lyon");
+    expect(tribunalBarAssociation("TJ Aix-en-Provence")).toBe("Aix-en-Provence");
     expect(tribunalBarAssociation("TJ Aix-en-Provence - saisie immobilière")).toBe(
       "Aix-en-Provence",
     );
