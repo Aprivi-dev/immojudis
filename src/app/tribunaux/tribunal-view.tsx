@@ -81,8 +81,9 @@ export function TribunalView({
   // L'annuaire filtré sur le barreau du tribunal (« Tribunal judiciaire de Bobigny » → Bobigny). À
   // défaut de barreau lisible (tribunal sans nom, tribunal de première instance), le département.
   const bar = hasReadableTribunalName(tribunal) ? tribunalBarAssociation(longName) : null;
+  // Format de l'annuaire : `/avocats?bar=<barreau encodé>` (voir `lawyer-directory-search.ts`).
   const lawyersHref = bar
-    ? pathWithSearch("/avocats", { bar })
+    ? `/avocats?bar=${encodeURIComponent(bar)}`
     : pathWithSearch("/avocats", { department: department?.code });
   const where = department ? departmentIn(department) : null;
 

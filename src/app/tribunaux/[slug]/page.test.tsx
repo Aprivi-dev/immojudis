@@ -569,6 +569,18 @@ describe("page d'un tribunal : contenu", () => {
     );
   });
 
+  it("encode le barreau dans le lien vers les avocats (accents, espaces)", async () => {
+    mocks.directory.mockResolvedValue({ status: "ok", items: [] });
+    mocks.activity.mockResolvedValue({
+      status: "ok",
+      items: [activity("TJ Évry", { code: "justice_tj_1_91", department: "91" })],
+    });
+    render(await Page(params("tribunal-judiciaire-evry")));
+    expect(screen.getByRole("link", { name: "Avocats" }).getAttribute("href")).toBe(
+      `/avocats?bar=${encodeURIComponent("Évry")}`,
+    );
+  });
+
   it("accorde la préposition du département : « En Gironde », « Dans le Nord », « À Paris »", async () => {
     mocks.directory.mockResolvedValue({ status: "ok", items: [] });
     mocks.activity.mockResolvedValue({
