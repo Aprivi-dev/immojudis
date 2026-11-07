@@ -2,10 +2,11 @@ import type { EnvironmentalContext } from "@/lib/environmental-context";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { StreetFacadeAnalysis } from "@/lib/street-facade-analysis";
-import type { AuctionSale, SaleRisk } from "@/lib/types";
+import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import { cleanTextDeep as cleanText } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
+import { riskTextsWithType as riskTexts } from "@/lib/sale-risk-texts";
 
 export type NeighborhoodStatus = "profiled" | "market_only" | "location_only" | "missing";
 export type NeighborhoodSignalKind = "market" | "services" | "street" | "environment" | "source";
@@ -419,19 +420,6 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   }
 
   return candidates.filter((candidate) => hasNeighborhoodSignal(candidate.text));
-}
-
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_type, risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt, record.reasoning, record.why_it_matters, record.next_action);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
 }
 
 function hasNeighborhoodSignal(value: unknown): boolean {
