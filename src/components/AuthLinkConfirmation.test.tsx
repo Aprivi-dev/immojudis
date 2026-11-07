@@ -45,6 +45,15 @@ describe("page de confirmation des liens d'email", () => {
     expect(screen.getByText(/rien n’est validé tant que vous n’avez pas cliqué/)).toBeTruthy();
   });
 
+  it("prend les briques du site : carte, titre de page, bouton principal marine, sans habillage « liquid »", async () => {
+    open(`?token_hash=${HASH}&type=signup`);
+    const { container } = render(<AuthLinkConfirmation />);
+    const button = await screen.findByRole("button", { name: "Confirmer mon adresse" });
+    expect(button.className).toContain("bg-brand-navy");
+    expect(screen.getByRole("heading", { level: 1 }).className).toContain("text-[2rem]");
+    expect(container.innerHTML).not.toMatch(/liquid-|glass-|red-700/);
+  });
+
   it("vérifie le jeton au clic, efface-le de l'adresse et mène vers l'adresse de retour du site", async () => {
     open(
       `?token_hash=${HASH}&type=signup&redirect_to=${encodeURIComponent(`${window.location.origin}/bienvenue?retour=%2Fsales%2F12`)}`,
