@@ -17,3 +17,8 @@ export function averageRoundedToTenth(values: number[]): number | null {
   if (!values.length) return null;
   return roundToTenth(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
+
+export function averageRounded(values: number[], digits = 0): number | null {
+  if (!values.length) return null;
+  return round(values.reduce((sum, value) => sum + value, 0) / values.length, digits);
+}
