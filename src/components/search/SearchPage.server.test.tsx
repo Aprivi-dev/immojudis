@@ -41,15 +41,10 @@ const sales = Array.from({ length: 24 }, (_, index) => ({
   media: [],
 })) as unknown as AuctionSale[];
 
-/** Texte du h1 du HTML, balises et commentaires de React retirés. */
+/** Texte du h1 du HTML, lu par le parseur du navigateur (balises et commentaires de React ignorés). */
 function headingText(html: string): string {
-  const inner = /<h1[^>]*>([\s\S]*?)<\/h1>/.exec(html)?.[1] ?? "";
-  return inner
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&#x27;/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return (doc.querySelector("h1")?.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
 function seededClient() {
