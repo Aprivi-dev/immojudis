@@ -5,6 +5,7 @@ import type { StreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 
 export type NeighborhoodStatus = "profiled" | "market_only" | "location_only" | "missing";
 export type NeighborhoodSignalKind = "market" | "services" | "street" | "environment" | "source";
@@ -436,11 +437,6 @@ function riskTexts(risk: SaleRisk): string[] {
 function hasNeighborhoodSignal(value: unknown): boolean {
   const text = cleanText(value);
   return Boolean(text && sourceSignalStatus(text));
-}
-
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
 }
 
 function dedupeSignals(signals: NeighborhoodSignal[]): NeighborhoodSignal[] {

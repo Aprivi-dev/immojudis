@@ -1,6 +1,7 @@
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import { cleanTextDeep as cleanText } from "@/lib/clean-text";
+import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 
 export type RenovationConditionStatus =
   | "good"
@@ -403,11 +404,6 @@ function riskTexts(risk: SaleRisk): string[] {
 function hasRenovationText(value: unknown): boolean {
   const text = cleanText(value);
   return Boolean(text && detectStatus(text));
-}
-
-function addCandidate(candidates: TextCandidate[], value: unknown, source: string) {
-  const text = cleanText(value);
-  if (text) candidates.push({ text, source });
 }
 
 function dedupeEvidence(evidence: RenovationEvidence[]): RenovationEvidence[] {
