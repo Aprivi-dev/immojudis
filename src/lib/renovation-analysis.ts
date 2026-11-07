@@ -1,5 +1,6 @@
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
+import { cleanTextDeep as cleanText } from "@/lib/clean-text";
 
 export type RenovationConditionStatus =
   | "good"
@@ -416,25 +417,6 @@ function dedupeEvidence(evidence: RenovationEvidence[]): RenovationEvidence[] {
     if (!byKey.has(key)) byKey.set(key, item);
   }
   return [...byKey.values()];
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  if (value && typeof value === "object") {
-    const text = Object.values(value as Record<string, unknown>)
-      .map(cleanText)
-      .filter(Boolean)
-      .join(" ");
-    return text || null;
-  }
-  return null;
 }
 
 function formatBudgetRange(range: RenovationBudgetRange): string {
