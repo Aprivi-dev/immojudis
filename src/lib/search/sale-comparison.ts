@@ -5,6 +5,19 @@ export const MAX_COMPARED_SALES = 3;
 export const MAX_SAVED_COMPARED_SALES = 12;
 const MAX_SNAPSHOT_CANDIDATES = 30;
 
+/**
+ * Paramètre d'adresse du bouton « Comparer » d'une fiche : `/sales?comparer=<identifiant>` ouvre le
+ * catalogue avec cette vente déjà dans la comparaison. Lu une fois par `SearchPage`, puis retiré de
+ * l'adresse.
+ */
+export const COMPARE_SALE_PARAM = "comparer";
+
+/** L'identifiant de vente porté par `?comparer=`, ou `null` s'il n'en a pas la forme (UUID). */
+export function compareSaleIdFromParam(value: string | null | undefined): string | null {
+  const id = value?.trim().toLowerCase();
+  return isUuid(id) ? id : null;
+}
+
 // Only catalogue facts belong in this temporary comparison, even when the
 // selected record comes from an account with access to the full analysis.
 export type ComparedSale = {

@@ -45,6 +45,7 @@ import { departmentFromCode } from "@/lib/department-pages";
 import { saleShortHeading, seoSurface } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
+import { withDisplayCity } from "@/lib/search/city-name";
 import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
 import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
@@ -67,6 +68,7 @@ import {
 } from "./listing-text";
 import type { FollowedSaleDossier } from "./use-followed-sales";
 import type { DescribedSaleChange } from "@/lib/sale-change-display";
+import { keepUnitsTogether } from "./keep-units-together";
 import { useSaleDetailLink } from "./use-sale-detail-link";
 import styles from "./SearchResults.module.css";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
@@ -168,6 +170,7 @@ export function SearchResultsList({
   pepiteSaleIds,
   pepiteExposedSaleIds,
   pepiteEmpty,
+  emptyAlertAction,
   dossierBySaleId,
   lastChangeBySaleId,
 }: {
@@ -207,6 +210,8 @@ export function SearchResultsList({
   pepiteExposedSaleIds?: ReadonlySet<string>;
   /** Actions de l'état vide quand « Pépites seulement » est actif (voir `NoResultsState`). */
   pepiteEmpty?: ComponentProps<typeof NoResultsState>["pepite"];
+  /** « Me prévenir des prochaines ventes ici » dans l'état vide (voir `NoResultsState`). */
+  emptyAlertAction?: React.ReactNode;
 }) {
   const { user, loading: authLoading } = useAuth();
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
@@ -261,6 +266,7 @@ export function SearchResultsList({
           onRemoveFilter={onRemoveFilter}
           onReset={onResetFilters}
           onShowFrance={onShowFrance}
+          alertAction={emptyAlertAction}
           pepite={
             activeFilters?.some((filter) => filter.key === "pepite") ? pepiteEmpty : undefined
           }
@@ -417,6 +423,9 @@ export const ListingCard = memo(function ListingCard({
   ) => void;
 }) {
   const displaySurface = getDisplaySurface(sale);
+  // Textes de la carte : le nom de la commune mis en forme (« Aix-en-Provence », jamais
+  // « Aix-En-Provence ») ; la vente elle-même (comparaison, favoris) garde la valeur reçue.
+  const shown = useMemo(() => withDisplayCity(sale), [sale]);
   const { isViewed } = useViewedSales();
   const detailLink = useSaleDetailLink(sale.id, returnTo);
   const { active: launchOffer, pending: launchPending } = useLaunchOffer();
@@ -436,7 +445,7 @@ export const ListingCard = memo(function ListingCard({
     AI_REVIEW_SURFACE_FIELD_KEYS,
     aiReviewStatus,
   );
-  const title = listingTitle(sale, { locked, aiReviewProjections, aiReviewStatus });
+  const title = listingTitle(shown, { locked, aiReviewProjections, aiReviewStatus });
   // Cession de l'État en ligne sans échéance publiée : « Procédure à venir » plutôt que « Date à confirmer ».
   const stateListing = stateListingStatus(sale);
   // Titre court de la fiche (« Appartement de 39 m² à Beure ») : un champ en cours de vérification
@@ -453,11 +462,12 @@ export const ListingCard = memo(function ListingCard({
       ? pricePerM2(sale.starting_price_eur, displaySurface.value)
       : null;
   const headingSale = {
-    ...sale,
-    city: cityReview.blocked ? null : sale.city,
+    ...shown,
+    city: cityReview.blocked ? null : shown.city,
     app_surface_m2: surfaceReviewField ? null : sale.app_surface_m2,
   };
   // Type en cours de vérification : « Type de bien à confirmer » et sa source, puis la ville.
+  // « 114 m² » ne se coupe pas en fin de ligne (`keepUnitsTogether`).
   const heading = typeReview.blocked ? (
     <>
       <AiReviewField
@@ -469,12 +479,12 @@ export const ListingCard = memo(function ListingCard({
         sourceUrl={sale.source_url}
         showSourceLink={false}
       >
-        {saleShortHeading(headingSale)}
+        {keepUnitsTogether(saleShortHeading(headingSale))}
       </AiReviewField>
       {headingSale.city?.trim() ? ` à ${headingSale.city.trim()}` : null}
     </>
   ) : (
-    saleShortHeading(headingSale)
+    keepUnitsTogether(saleShortHeading(headingSale))
   );
   const headingHasSurface = !surfaceReviewField && seoSurface(sale.app_surface_m2) != null;
   const department = departmentFromCode(sale.department);
@@ -512,10 +522,10 @@ export const ListingCard = memo(function ListingCard({
   } as const;
   const surfaceFact = surfaceReviewField ? (
     <AiReviewField fieldKey={surfaceReviewField} fallback="À confirmer" {...review}>
-      {displaySurface.value != null ? displaySurface.label : "n.c."}
+      {displaySurface.value != null ? keepUnitsTogether(displaySurface.label) : "n.c."}
     </AiReviewField>
   ) : displaySurface.value != null ? (
-    displaySurface.label
+    keepUnitsTogether(displaySurface.label)
   ) : (
     "n.c."
   );
@@ -569,7 +579,7 @@ export const ListingCard = memo(function ListingCard({
         {...detailLink.armProps}
         prefetch={false}
         onClick={() => onSelect(sale.id)}
-        aria-label={listingLinkLabel(sale, title, {
+        aria-label={listingLinkLabel(shown, title, {
           price: getAiReviewFieldResult(
             aiReviewProjections,
             "sale.starting_price_eur",
@@ -674,7 +684,7 @@ export const ListingCard = memo(function ListingCard({
           )}
           {startingPricePerM2 != null ? (
             <span className="hidden text-caption text-ink-soft tabular-nums sm:inline">
-              · {formatPricePerM2(startingPricePerM2)}
+              · {keepUnitsTogether(formatPricePerM2(startingPricePerM2))}
             </span>
           ) : null}
         </p>
@@ -932,8 +942,15 @@ export function ListingMediaCarousel({
   };
 
   if (!photo) {
+    // Masqué aux lecteurs d'écran, comme la photo (lien `aria-hidden` ci-dessous) : le lien qui couvre
+    // la carte dit déjà le bien et sa ville. Sans cela, chaque carte sans photo répétait
+    // « Illustration » et « Illustration générique d'un appartement : aucune photo… » (24 par page).
     return (
-      <div className={styles.fallbackVisual} data-testid={`sale-media-fallback-${sale.id}`}>
+      <div
+        className={styles.fallbackVisual}
+        data-testid={`sale-media-fallback-${sale.id}`}
+        aria-hidden="true"
+      >
         <SaleVisual
           sale={sale}
           title={title}

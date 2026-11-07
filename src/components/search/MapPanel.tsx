@@ -57,6 +57,7 @@ import {
 import { firstPropertyImage } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
+import { withDisplayCity } from "@/lib/search/city-name";
 import { hasCoordinates } from "@/lib/search/search-filters";
 import { framingPoints, isInMetropolitanFrance } from "@/lib/search/map-framing";
 import type { ViewportBounds } from "@/lib/search/search-url-state";
@@ -1371,9 +1372,11 @@ function popupDetailUrl(saleId: string): string {
 }
 
 function buildPopupHtml(
-  sale: AuctionSale & { latitude: number; longitude: number },
+  row: AuctionSale & { latitude: number; longitude: number },
   access: PopupAccess,
 ) {
+  // Nom de la commune mis en forme pour l'affichage, comme sur les cartes de la liste.
+  const sale = withDisplayCity(row);
   const saleTitle = access.preview
     ? [propertyTypeLabel(sale.property_type), sale.city ? `à ${sale.city}` : null]
         .filter(Boolean)
