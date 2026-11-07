@@ -8,6 +8,7 @@ import {
   REPORT_RENTAL_EXPENSE_FIELD_LABELS,
 } from "@/lib/report-simulation";
 import styles from "./ListingRental.module.css";
+import { parseNumericInput as parseInput } from "@/lib/parse-numeric-input";
 
 export type ListingRentalDraft = {
   monthlyRent: string;
@@ -63,16 +64,6 @@ const FIELD_LABELS: Record<keyof ListingRentalDraft, string> = {
   annualPropertyTax: "Taxe foncière / an",
   annualLandlordInsurance: "Assurance propriétaire / an",
 };
-
-function parseInput(value: string): number | null {
-  const normalized = value
-    .trim()
-    .replace(/[\s\u00a0\u202f]/g, "")
-    .replace(",", ".");
-  if (!normalized) return null;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 function positiveNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
