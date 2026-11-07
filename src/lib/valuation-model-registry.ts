@@ -53,10 +53,6 @@ export async function loadActiveValuationModel(
   }
 }
 
-export function clearValuationModelCache(): void {
-  modelCache.clear();
-}
-
 export async function recordValuationEstimate(input: {
   userId: string | null;
   auctionSaleId?: string | null;

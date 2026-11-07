@@ -110,29 +110,6 @@ export function resolveBillingOrigin(requestOrigin?: string | null): string {
   return resolveSiteOrigin(process.env, requestOrigin || "http://localhost:3000")!;
 }
 
-export async function createAnalyseCheckoutSession({
-  auth,
-  origin,
-  consent,
-  requestId,
-  userAgent,
-}: {
-  auth: SupabaseAuthContext;
-  origin?: string | null;
-  consent: CheckoutConsent;
-  requestId?: string | null;
-  userAgent?: string | null;
-}): Promise<BillingSessionResponse> {
-  return createPlanCheckoutSession({
-    auth,
-    origin,
-    plan: "analyse",
-    consent,
-    requestId,
-    userAgent,
-  });
-}
-
 export async function createPlanCheckoutSession({
   auth,
   origin,
