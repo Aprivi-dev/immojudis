@@ -7,6 +7,7 @@ import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
 import { SalePublicPreview } from "@/components/SalePublicPreview";
+import { Button, Notice } from "@/components/ui/primitives";
 import { hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
@@ -307,29 +308,22 @@ function SaleDetailContent({
     return (
       <>
         {error ? (
-          <div
+          <Notice
+            tone="warning"
             role="alert"
-            className="mx-auto mt-24 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            className="mx-auto mt-24 flex max-w-[1260px] flex-wrap items-center gap-3"
           >
             <p className="font-medium">
               Vente débloquée, mais le détail n’a pas pu être chargé. Votre déblocage est conservé.
             </p>
-            <button
-              type="button"
-              className="min-h-11 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
-              onClick={() => void refetch()}
-              disabled={isFetching}
-            >
+            <Button onClick={() => void refetch()} disabled={isFetching}>
               Réessayer
-            </button>
-          </div>
+            </Button>
+          </Notice>
         ) : (
-          <div
-            role="status"
-            className="mx-auto mt-24 max-w-[1260px] rounded-lg border border-emerald-700/30 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
-          >
+          <Notice tone="success" role="status" className="mx-auto mt-24 max-w-[1260px] font-medium">
             Vente débloquée. Chargement du détail…
-          </div>
+          </Notice>
         )}
         <DiscoverySaleDetailView
           sale={freeViewBeforeUnlock}
@@ -430,24 +424,20 @@ function SaleDetailContent({
   return accessMode === "discovery" ? (
     <>
       {unlockEnabled && unlockQuery.isError ? (
-        <div
+        <Notice
+          tone="warning"
           role="alert"
-          className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3"
         >
           <p className="font-medium">État de vos déblocages indisponible</p>
           <p>
             Si vous avez déjà débloqué cette vente, elle apparaîtra de nouveau dès que l’état sera
             relu.
           </p>
-          <button
-            type="button"
-            className="min-h-11 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
-            onClick={() => void unlockQuery.refetch()}
-            disabled={unlockQuery.isFetching}
-          >
+          <Button onClick={() => void unlockQuery.refetch()} disabled={unlockQuery.isFetching}>
             Réessayer
-          </button>
-        </div>
+          </Button>
+        </Notice>
       ) : null}
       <DiscoverySaleDetailView
         sale={sale}

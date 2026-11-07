@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildTribunalJudicialActivityDirectory,
@@ -157,6 +157,84 @@ describe("/tribunaux", () => {
     expect(screen.queryByRole("region", { name: "Résultats premium Licitor" })).toBeNull();
     expect(document.body.textContent).not.toMatch(/adjug|adjudication/i);
     expect(mocks.fetchDirectory).not.toHaveBeenCalled();
+  });
+
+  it("trouve un tribunal par sa ville ou son département, la liste complète restant dans la page", async () => {
+    mocks.useAuth.mockReturnValue({ session: null, loading: false });
+    // 17 tribunaux : 15 d'emblée, 2 dans le dépliant « Voir les 2 autres tribunaux ».
+    const others = Array.from({ length: 16 }, (_, index) => ({
+      ...ACTIVITY,
+      code: `autre-${index}`,
+      name: `Ville ${index}`,
+      searchName: `TJ Ville ${index}`,
+      city: `Ville ${index}`,
+      department: "33",
+      upcomingCount: 50 - index,
+    }));
+    const etienne = {
+      ...ACTIVITY,
+      code: "saint-etienne",
+      name: "Saint-Étienne",
+      searchName: "TJ Saint-Étienne",
+      city: "Saint-Étienne",
+      department: "42",
+      upcomingCount: 1,
+    };
+    mocks.loadPublicActivity.mockResolvedValue({
+      status: "ok",
+      items: [ACTIVITY, ...others, etienne],
+    });
+
+    await renderPage();
+
+    const section = screen.getByRole("region", { name: /ventes judiciaires à venir dans 18/ });
+    // Sans recherche : toutes les lignes dans le HTML, les dernières dans le dépliant.
+    expect(section.querySelectorAll("tbody tr")).toHaveLength(18);
+    expect(within(section).getByText("Voir les 3 autres tribunaux")).toBeTruthy();
+
+    const search = within(section).getByRole("searchbox", { name: "Trouver un tribunal" });
+    // Sans accent ni tiret, par la ville.
+    fireEvent.change(search, { target: { value: "saint etienne" } });
+    expect(section.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(within(section).getByRole("link", { name: "Saint-Étienne" })).toBeTruthy();
+    expect(within(section).getByText("1 tribunal")).toBeTruthy();
+    // Par le nom du département, puis par son numéro.
+    fireEvent.change(search, { target: { value: "seine-saint-denis" } });
+    expect(within(section).getByRole("link", { name: "Bobigny" })).toBeTruthy();
+    expect(section.querySelectorAll("tbody tr")).toHaveLength(1);
+    fireEvent.change(search, { target: { value: "33" } });
+    expect(section.querySelectorAll("tbody tr")).toHaveLength(16);
+    fireEvent.change(search, { target: { value: "atlantide" } });
+    expect(section.querySelectorAll("tbody tr")).toHaveLength(0);
+    expect(section.textContent).toContain("Aucun tribunal ne correspond à « atlantide ».");
+    fireEvent.change(search, { target: { value: "" } });
+    expect(section.querySelectorAll("tbody tr")).toHaveLength(18);
+  });
+
+  it("range la règle de lecture de la mise à prix dans un dépliant sur mobile", async () => {
+    mocks.useAuth.mockReturnValue({ session: null, loading: false });
+    mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
+
+    await renderPage();
+
+    const section = screen.getByRole("region", {
+      name: "107 ventes judiciaires à venir dans 1 tribunal",
+    });
+    const summary = within(section).getByText("Comment lire la mise à prix");
+    const details = summary.closest("details")!;
+    expect(details.className).toContain("sm:hidden");
+    expect(details.textContent).toContain("« — » sous 5");
+    // Sur ordinateur, la même règle reste en clair.
+    const rules = [...section.querySelectorAll("p")].filter((node) =>
+      node.textContent?.includes("« — » sous 5"),
+    );
+    expect(rules.map((node) => node.className.includes("sm:block"))).toContain(true);
+  });
+
+  it("pose le titre avec l'échelle commune des titres de page", async () => {
+    mocks.useAuth.mockReturnValue({ session: null, loading: false });
+    await renderPage();
+    expect(screen.getByRole("heading", { level: 1 }).className).toContain("sm:text-[2.5rem]");
   });
 
   it("annonce les résultats d’adjudication réservés à Analyse une fois les statistiques ouvertes", async () => {

@@ -168,7 +168,7 @@ function PageContent() {
             <li>
               <a
                 href="https://accessibilite.numerique.gouv.fr/obligations/declaration-accessibilite/"
-                className="font-semibold text-gold-text underline"
+                className="font-semibold text-gold-text underline wrap-anywhere"
                 target="_blank"
                 rel="noopener noreferrer"
               >

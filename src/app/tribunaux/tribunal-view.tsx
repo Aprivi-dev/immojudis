@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Terme } from "@/components/ceiling/Terme";
 import { SaleDetailLink } from "@/components/SaleDetailLink";
-import { SectorAlertCta } from "@/components/SectorAlertCta";
 import { UnderstandBlock, type UnderstandLink } from "@/components/UnderstandBlock";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import {
@@ -12,6 +11,7 @@ import {
 } from "@/lib/department-pages";
 import { departmentIn } from "@/lib/department-grammar";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
+import { tribunalBarAssociation } from "@/lib/lawyer-bar";
 import { pathWithSearch } from "@/lib/navigation";
 import {
   tribunalPriceFigure,
@@ -28,6 +28,7 @@ import {
   tribunalPagePath,
   tribunalPlaceName,
 } from "@/lib/tribunal-pages";
+import { TribunalAlert } from "./tribunal-alert";
 
 const count = new Intl.NumberFormat("fr-FR");
 
@@ -77,7 +78,13 @@ export function TribunalView({
     ? pathWithSearch("/sales", { tribunal: tribunal.searchName })
     : "/sales";
   const listed = sales.length;
-  const lawyersHref = pathWithSearch("/avocats", { department: department?.code });
+  // L'annuaire filtré sur le barreau du tribunal (« Tribunal judiciaire de Bobigny » → Bobigny). À
+  // défaut de barreau lisible (tribunal sans nom, tribunal de première instance), le département.
+  const bar = hasReadableTribunalName(tribunal) ? tribunalBarAssociation(longName) : null;
+  // Format de l'annuaire : `/avocats?bar=<barreau encodé>` (voir `lawyer-directory-search.ts`).
+  const lawyersHref = bar
+    ? `/avocats?bar=${encodeURIComponent(bar)}`
+    : pathWithSearch("/avocats", { department: department?.code });
   const where = department ? departmentIn(department) : null;
 
   const nearby: UnderstandLink[] = [
@@ -287,21 +294,12 @@ export function TribunalView({
           ) : null}
         </Card>
 
-        {hasReadableTribunalName(tribunal) ? (
-          <SectorAlertCta
-            criteria={{ tribunal: tribunal.searchName }}
-            title="Suivre ce tribunal"
-            label="Suivre ce tribunal"
-            intro={`Vous êtes prévenu des nouvelles ventes référencées pour ce tribunal (${longName}), et pour lui seul.`}
-          />
-        ) : null}
-
-        {department && where ? (
-          <SectorAlertCta
-            criteria={{ department: department.code }}
-            intro={`Pour suivre tous les tribunaux à la fois : cette alerte porte sur les nouvelles ventes référencées ${where}, tous tribunaux confondus.`}
-          />
-        ) : null}
+        <TribunalAlert
+          tribunal={
+            hasReadableTribunalName(tribunal) ? { searchName: tribunal.searchName, longName } : null
+          }
+          department={department && where ? { code: department.code, where } : null}
+        />
 
         <UnderstandBlock
           articles={understandingResources(tribunal.code)}

@@ -97,6 +97,13 @@ describe("investor welcome flow", () => {
       "/sales?query=Bordeaux&maxPrice=150000&homeTypes=apartment",
     );
   });
+  it("prend les briques du site : carte, surtitre, titre de page, bouton principal marine", () => {
+    const { container } = render(<InvestorOnboarding />);
+    expect(screen.getByRole("button", { name: "Continuer" }).className).toContain("bg-brand-navy");
+    expect(screen.getByRole("heading", { level: 1 }).className).toContain("text-[2rem]");
+    expect(container.innerHTML).not.toMatch(/liquid-|glass-/);
+  });
+
   it("announces the monthly unlocks of the free account instead of a flat « Analyse only »", () => {
     render(<InvestorOnboarding />);
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));

@@ -31,6 +31,12 @@ const TERMES: Record<TermeKey, TermeEntry> = {
       "Offre formée après une adjudication, dans les conditions et délais prévus par la loi, entraînant une nouvelle audience.",
     anchor: "lexique-surenchere",
   },
+  "avocat-poursuivant": {
+    label: "avocat poursuivant",
+    definition:
+      "Avocat qui conduit la procédure pour le compte du créancier ou de la partie à l’origine de la vente.",
+    anchor: "lexique-avocat-poursuivant",
+  },
   consignation: {
     label: "consignation du prix",
     definition:
@@ -130,6 +136,7 @@ export type TermeKey =
   | "mise-a-prix"
   | "adjudication"
   | "surenchere"
+  | "avocat-poursuivant"
   | "consignation"
   | "enchere-plafond"
   | "offre-plafond"

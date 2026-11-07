@@ -1,4 +1,9 @@
 .section {
+  /* Grilles pilotées par la largeur réelle du bloc, pas par celle de l'écran (repasse n° 1). */
+  container-type: inline-size;
+  /* La fiche coupe les mots n'importe où (`overflow-wrap: anywhere`) : ici, un titre ne se coupe
+     qu'en dernier recours, et la pastille voisine passe dessous. */
+  overflow-wrap: break-word;
   min-width: 0;
   margin-top: 24px;
   overflow: hidden;
@@ -11,6 +16,7 @@
 
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
@@ -30,7 +36,7 @@
 .title {
   margin: 5px 0 0;
   color: var(--brand-navy, var(--brand-navy));
-  font-size: clamp(24px, 4vw, 32px);
+  font-size: clamp(24px, 4cqi, 32px);
   line-height: 1.1;
   letter-spacing: -0.025em;
 }
@@ -65,9 +71,15 @@
 
 .content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(290px, 0.9fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
   padding: 0 22px 22px;
+}
+
+@container (min-width: 720px) {
+  .content {
+    grid-template-columns: minmax(0, 1fr) minmax(290px, 0.9fr);
+  }
 }
 
 .inputPanel,
@@ -131,10 +143,17 @@
 
 .fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 15px;
   margin-top: 16px;
 }
+
+/* Les panneaux sont eux-mêmes des conteneurs : leurs paires suivent leur largeur. */
+.inputPanel,
+.resultPanel {
+  container-type: inline-size;
+}
+
 
 .field {
   display: grid;
@@ -244,8 +263,15 @@
 
 .resultGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+}
+
+@container (min-width: 320px) {
+  .fields,
+  .resultGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .resultCard {
@@ -269,7 +295,7 @@
 
 .resultCard strong {
   color: var(--brand-navy, var(--brand-navy));
-  font-size: clamp(22px, 3vw, 32px);
+  font-size: clamp(22px, 7cqi, 32px);
   line-height: 1.05;
   letter-spacing: -0.04em;
   overflow-wrap: anywhere;
@@ -353,28 +379,21 @@
   line-height: 1.5;
 }
 
-@media (max-width: 760px) {
+@container (max-width: 560px) {
   .header {
-    flex-direction: column;
     padding: 20px 16px 16px;
   }
 
   .content {
-    grid-template-columns: 1fr;
     padding-inline: 16px;
     padding-bottom: 16px;
   }
 }
 
-@media (max-width: 520px) {
+@container (max-width: 520px) {
   .inputPanel,
   .resultPanel {
     padding: 16px;
-  }
-
-  .fields,
-  .resultGrid {
-    grid-template-columns: 1fr;
   }
 
   .badge {

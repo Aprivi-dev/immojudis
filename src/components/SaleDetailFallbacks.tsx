@@ -1,6 +1,7 @@
 import { BrandMark } from "@/components/BrandMark";
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
+import { Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 
 export function SaleDetailSkeleton() {
   return (
@@ -26,28 +27,33 @@ export function SaleDetailSkeleton() {
   );
 }
 
+/**
+ * « Annonce introuvable » : rendue par `app/sales/[id]/not-found.tsx` (identifiant inconnu côté
+ * serveur, vraie 404) et par la fiche quand la vente disparaît côté navigateur. Le `h1` reprend le
+ * titre de l'onglet (« Annonce introuvable », `generateMetadata`) : repasse design n° 46.
+ */
 export function SaleNotFoundComponent() {
   return (
-    <main
-      id="contenu"
-      className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center"
-    >
-      <div className="max-w-2xl rounded-lg border border-border bg-white p-8 shadow-xl shadow-slate-900/10">
+    <main id="contenu" className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6 sm:py-24">
+      <Card className="text-center sm:!p-10">
         <BrandMark decorative className="mx-auto h-14 w-14" />
-        <h1 className="mt-5 font-sans text-2xl font-semibold text-foreground">
+        <Eyebrow className="mt-5">Erreur 404</Eyebrow>
+        <h1 className="mt-3 font-display text-4xl font-semibold sm:text-5xl">
           Annonce introuvable
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Cette vente n&apos;existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée
-          par la source.
+        <p className="mx-auto mt-3 max-w-md text-ink-soft">
+          Cette vente n’existe plus ou a été retirée. Elle peut avoir été adjugée ou supprimée par
+          la source.
         </p>
-        <Link
-          href="/sales"
-          className="mt-6 inline-flex items-center rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
-        >
-          ← Retour aux annonces
-        </Link>
-      </div>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link href="/sales" className={buttonClasses({ variant: "primary" })}>
+            Voir les ventes
+          </Link>
+          <Link href="/" className={buttonClasses()}>
+            Retour à l’accueil
+          </Link>
+        </div>
+      </Card>
     </main>
   );
 }

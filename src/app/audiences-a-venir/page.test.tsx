@@ -354,6 +354,15 @@ describe("/audiences-a-venir : contenu", () => {
     ]);
     expect(breadcrumb.itemListElement.at(-1).item).toBe("https://immojudis.com/audiences-a-venir");
   });
+
+  it("place le fil d'Ariane au-dessus du titre", async () => {
+    const { container } = render(await Page());
+    const trail = screen.getByRole("navigation", { name: "Fil d’Ariane" });
+    const title = screen.getByRole("heading", { level: 1 });
+    const position = (node: Element) => Array.from(container.querySelectorAll("*")).indexOf(node);
+    expect(position(trail)).toBeLessThan(position(title));
+    expect(trail.textContent).toContain("Tribunaux");
+  });
 });
 
 describe("/audiences-a-venir : filtre par département et jours repliables", () => {

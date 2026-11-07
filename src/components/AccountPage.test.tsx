@@ -301,3 +301,37 @@ describe("AccountPage unlocks", () => {
     expect(screen.queryByText("Rappels d’audience et avertissements")).toBeNull();
   });
 });
+
+describe("AccountPage : mise en page et couleurs de la charte (repasse design n° 12 et 15)", () => {
+  it("suit la mise en page des pages de compte : surtitre « Mon espace », titre de page, sans décalage codé en dur", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: { plan: "analyse", label: "Analyse", hasAnalysisAccess: true },
+    });
+    renderPage();
+
+    const title = await screen.findByRole("heading", { level: 1, name: "Mon compte" });
+    const main = title.closest("main")!;
+    expect(main.id).toBe("contenu");
+    expect(main.className).not.toMatch(/pt-28/);
+    expect(title.previousElementSibling?.textContent).toBe("Mon espace");
+  });
+
+  it("dit un paiement échoué en jeton « warning » et la suppression du compte en variante danger", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        label: "Analyse",
+        hasAnalysisAccess: true,
+        billing: { status: "past_due", hasStripeCustomer: true, graceEndsAt: null },
+      },
+    });
+    const { container } = renderPage();
+
+    const pastDue = await screen.findByText(/Votre dernier paiement a échoué/);
+    expect(pastDue.className).toContain("bg-warning-tint");
+    const removal = screen.getByRole("link", { name: "Demander la suppression de mon compte" });
+    expect(removal.className).toContain("text-danger");
+    expect(removal.className).toContain("min-h-11");
+    expect(container.innerHTML).not.toMatch(/\b(?:text|bg|border)-(?:red|amber|emerald)-\d/);
+  });
+});

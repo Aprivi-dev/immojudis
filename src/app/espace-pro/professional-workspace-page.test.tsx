@@ -175,4 +175,92 @@ describe("ProfessionalWorkspacePage", () => {
     expect(screen.getByRole("heading", { name: /Connectez-vous/ })).toBeTruthy();
     expect(mocks.list).not.toHaveBeenCalled();
   });
+
+  describe("parcours vers l'espace pro (repasse n° 18)", () => {
+    it("ouvre le formulaire de connexion, et propose à part la création d'un compte pro", () => {
+      mocks.auth.user = null;
+      mocks.auth.profile = null;
+
+      renderPage();
+
+      expect(screen.getByRole("link", { name: /Se connecter/ }).getAttribute("href")).toBe(
+        "/login?redirect=%2Fespace-pro",
+      );
+      expect(
+        screen.getByRole("link", { name: "Créer un compte professionnel" }).getAttribute("href"),
+      ).toBe("/login?mode=professional&redirect=%2Fespace-pro");
+    });
+
+    it("n'envoie pas un compte connecté non professionnel vers la connexion (boucle)", () => {
+      mocks.auth.profile = {
+        ...mocks.auth.profile!,
+        account_type: "b2c",
+        professional_role: null,
+        professional_status: "not_applicable",
+      };
+
+      renderPage();
+
+      expect(
+        screen.getByRole("heading", { name: "Cet espace est réservé aux comptes professionnels" }),
+      ).toBeTruthy();
+      const link = screen.getByRole("link", { name: /Demander un accès pro/ });
+      expect(link.getAttribute("href")).toBe("/contact?sujet=professionnel");
+      expect(document.querySelector('a[href^="/login"]')).toBeNull();
+    });
+
+    it("renvoie un compte refusé vers le contact « Espace professionnel »", () => {
+      mocks.auth.profile = { ...mocks.auth.profile!, professional_status: "rejected" };
+
+      renderPage();
+
+      expect(screen.getByRole("link", { name: /Contacter Immojudis/ }).getAttribute("href")).toBe(
+        "/contact?sujet=professionnel",
+      );
+    });
+
+    it("envoie vers le compte, pas vers la connexion, quand l'adresse email manque", () => {
+      mocks.auth.user = { id: "user-1", email: "" };
+
+      renderPage();
+
+      expect(screen.getByRole("link", { name: /Gérer mon compte/ }).getAttribute("href")).toBe(
+        "/compte",
+      );
+    });
+  });
+
+  it("affiche statuts et alertes aux jetons de la charte, lisibles sur fond clair (repasse n° 6)", async () => {
+    mocks.auth.profile = { ...mocks.auth.profile!, professional_status: "pending" };
+    mocks.list.mockResolvedValue({
+      requests: [
+        publicationSummary(),
+        publicationSummary({ id: "b", status: "approved", title: "Vente validée" }),
+        publicationSummary({ id: "c", status: "rejected", title: "Vente refusée" }),
+      ],
+    });
+
+    renderPage();
+
+    expect((await screen.findByText("Validée")).className).toContain("text-success");
+    expect(screen.getByText("Refusée").className).toContain("text-danger");
+    expect(screen.getByText("En attente").className).toContain("text-warning");
+    expect(
+      screen.getByText(/Votre compte professionnel est en cours de validation/).className,
+    ).toContain("bg-warning-tint");
+    // Plus aucune couleur claire d'un ancien thème sombre, ni de texte sous 12 px.
+    expect(document.body.innerHTML).not.toMatch(
+      /text-(?:amber|red|emerald)-(?:50|100)\b|text-\[1[01]px\]|text-\[10px\]|liquid-/,
+    );
+  });
+
+  it("affiche l'erreur de chargement en bandeau d'alerte", async () => {
+    mocks.list.mockRejectedValue(new Error("Service indisponible"));
+
+    renderPage();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Impossible de charger vos demandes.");
+    expect(alert.className).toContain("text-danger");
+  });
 });

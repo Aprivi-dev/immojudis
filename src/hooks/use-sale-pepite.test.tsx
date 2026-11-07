@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from "@testing-library/react";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ ids: vi.fn(), fetchPepite: vi.fn() }));
 vi.mock("@/lib/search/pepite-filter", () => ({ fetchPepiteSaleIds: mocks.ids }));
@@ -12,6 +12,10 @@ import { useSalePepite, useSalePepiteState } from "./use-sale-pepite";
 
 const saleId = "11111111-1111-4111-8111-111111111111";
 const PAYLOAD = { access: "criteria", count: 1, criteria: [] };
+
+// Sans globales Vitest, Testing Library ne démonte pas seul : un hook resté monté recevait la fin de sa
+// requête après le démontage de jsdom (« window is not defined », erreur non gérée en CI le 07/11/2026).
+afterEach(cleanup);
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

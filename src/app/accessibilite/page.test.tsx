@@ -69,4 +69,10 @@ describe("page Déclaration d'accessibilité", () => {
     expect(String(metadata.title)).toContain("Déclaration d’accessibilité");
     expect(String(metadata.description).length).toBeGreaterThan(50);
   });
+
+  it("laisse l’adresse longue des références passer à la ligne (aucun défilement horizontal à 320 px)", () => {
+    render(<Page />);
+    const link = screen.getByRole("link", { name: /accessibilite\.numerique\.gouv\.fr/ });
+    expect(link.className).toContain("wrap-anywhere");
+  });
 });

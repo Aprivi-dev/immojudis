@@ -11,9 +11,14 @@ import {
   isAdminAccount,
   isProfessionalAccount,
 } from "@/lib/account";
-import { BrandMark } from "@/components/BrandMark";
+import Link from "next/link";
 import { AdminMfaGate } from "@/components/admin/AdminMfaGate";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
+import { buttonClasses, Card, Eyebrow, PageTitle } from "@/components/ui/primitives";
+import {
+  PROFESSIONAL_ACCESS_REQUEST_HREF,
+  PROFESSIONAL_WORKSPACE_HREF,
+} from "@/lib/professional-access";
 
 const PUBLIC_PATHS = new Set([
   "/",
@@ -81,31 +86,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <main
         id="contenu"
-        className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10"
+        className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10"
       >
-        <div className="glass-shell grid w-full max-w-3xl overflow-hidden rounded-lg sm:grid-cols-[1fr_15rem]">
-          <div className="p-6 sm:p-8">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
-              Accès protégé
-            </div>
-            <h1 className="mt-4 font-display text-3xl leading-tight text-foreground">
-              Vérification de l'accès
-            </h1>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              Cette page est réservée aux comptes connectés.
-            </p>
-            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-line-soft">
-              <div className="h-full w-1/2 animate-pulse rounded-full bg-gold" />
-            </div>
+        <Card role="status" className="w-full max-w-3xl p-6 sm:p-8">
+          <Eyebrow>Accès protégé</Eyebrow>
+          <PageTitle className="mt-4 text-brand-navy">Vérification de l'accès</PageTitle>
+          <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+            Cette page est réservée aux comptes connectés.
+          </p>
+          <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-line-soft">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-gold" />
           </div>
-          <div className="relative hidden min-h-[13rem] overflow-hidden sm:block">
-            <div className="cinematic-grid absolute inset-0 opacity-40" />
-            <BrandMark
-              decorative
-              className="absolute bottom-8 right-8 h-28 w-28 opacity-35 drop-shadow-[0_26px_52px_rgba(0,0,0,0.48)]"
-            />
-          </div>
-        </div>
+        </Card>
       </main>
     );
   }
@@ -115,7 +107,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <main
         id="contenu"
-        className="liquid-page flex min-h-[calc(100vh-4rem)] items-start justify-center px-4 py-10"
+        className="flex min-h-[calc(100vh-4rem)] items-start justify-center px-4 py-10"
       >
         <div className="w-full max-w-3xl">
           <h1 className="sr-only">Accès protégé</h1>
@@ -127,67 +119,54 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (requiresAdminAccount && !isAdmin) {
     return (
-      <main
-        id="contenu"
-        className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10"
+      <GateMessage
+        badge="Admin"
+        title="Accès administrateur"
+        description="Cette zone est réservée au compte administrateur Immojudis."
       >
-        <div className="liquid-panel max-w-lg rounded-lg p-6 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold-text">
-            Admin
-          </div>
-          <h1 className="mt-5 font-display text-2xl text-foreground">Accès administrateur</h1>
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Cette zone est réservée au compte administrateur Immojudis.
-          </p>
-          <div className="mt-6 flex justify-center">
-            <a
-              href="/sales"
-              className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
-            >
-              Retour aux annonces
-            </a>
-          </div>
-        </div>
-      </main>
+        <Link href="/sales" className={buttonClasses({ variant: "primary" })}>
+          Retour aux annonces
+        </Link>
+      </GateMessage>
     );
   }
 
   if (requiresProfessionalAccount && !isProfessionalAccount(user, profile)) {
+    // Un compte pro en cours de validation suit sa demande dans l'espace pro ; les autres comptes
+    // demandent un accès pro par le contact (sujet « Espace professionnel »), sans impasse.
     return (
-      <main
-        id="contenu"
-        className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10"
+      <GateMessage
+        badge="Pro"
+        title={
+          isPendingProfessional
+            ? "Accès pro en cours de validation"
+            : "Espace réservé aux professionnels"
+        }
+        description={
+          isPendingProfessional
+            ? "Votre compte professionnel doit être validé avant de transmettre une annonce."
+            : "La publication d'annonces est destinée aux comptes B2B : avocats, notaires, huissiers ou commissaires de justice."
+        }
       >
-        <div className="liquid-panel max-w-lg rounded-lg p-6 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold-text">
-            Pro
-          </div>
-          <h1 className="mt-5 font-display text-2xl text-foreground">
-            {isPendingProfessional
-              ? "Accès pro en cours de validation"
-              : "Espace réservé aux professionnels"}
-          </h1>
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            {isPendingProfessional
-              ? "Votre compte professionnel doit être validé avant de transmettre une annonce."
-              : "La publication d'annonces est destinée aux comptes B2B : avocats, notaires, huissiers ou commissaires de justice."}
-          </p>
-          <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-            <a
-              href="/sales"
-              className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
-            >
-              Retour aux annonces
-            </a>
-            <a
-              href="/contact"
-              className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold-text hover:border-gold"
-            >
-              Demander un accès pro
-            </a>
-          </div>
-        </div>
-      </main>
+        {isPendingProfessional ? (
+          <Link
+            href={PROFESSIONAL_WORKSPACE_HREF}
+            className={buttonClasses({ variant: "primary" })}
+          >
+            Suivre ma demande dans l'espace pro
+          </Link>
+        ) : (
+          <Link
+            href={PROFESSIONAL_ACCESS_REQUEST_HREF}
+            className={buttonClasses({ variant: "primary" })}
+          >
+            Demander un accès pro
+          </Link>
+        )}
+        <Link href="/sales" className={buttonClasses({ variant: "secondary" })}>
+          Retour aux annonces
+        </Link>
+      </GateMessage>
     );
   }
 
@@ -208,5 +187,34 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <AuthConnectionBanner className="mt-3" />
       {children}
     </>
+  );
+}
+
+/** Accès refusé (administration, publication) : un message et des actions, sans impasse. */
+function GateMessage({
+  badge,
+  title,
+  description,
+  children,
+}: {
+  badge: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <main
+      id="contenu"
+      className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10"
+    >
+      <Card className="max-w-lg p-6 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-line bg-surface-tint text-sm font-semibold text-gold-text">
+          {badge}
+        </div>
+        <h1 className="mt-5 font-display text-2xl font-semibold text-brand-navy">{title}</h1>
+        <p className="mt-3 text-sm leading-relaxed text-ink-soft">{description}</p>
+        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">{children}</div>
+      </Card>
+    </main>
   );
 }

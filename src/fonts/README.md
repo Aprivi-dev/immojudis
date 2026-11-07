@@ -23,7 +23,17 @@ changer son nom, puis relancer `npm run build` et comparer le rendu.
 
 ## Image de partage (`src/app/opengraph-image.tsx`)
 
-`ImageResponse` n'accepte que le TTF, l'OTF et le WOFF (pas le WOFF2 variable ci-dessus). Aucun TTF
-statique de Manrope n'était disponible hors ligne (ni dans `node_modules`, ni dans le dépôt) au
-28/10/2026 : l'image utilise la police système par défaut. Pour passer à Manrope 800/500, ajouter ici
-les deux TTF statiques (licence : `OFL-manrope.txt`) et les passer à l'option `fonts` de l'image.
+`ImageResponse` n'accepte que le TTF, l'OTF et le WOFF (pas le WOFF2 variable ci-dessus). Depuis le
+07/11/2026, l'image est dessinée en Manrope avec trois fichiers statiques :
+
+| Fichier                  | Famille | Graisse | Style  |
+| ------------------------ | ------- | ------- | ------ |
+| `manrope-latin-400.woff` | Manrope | 400     | normal |
+| `manrope-latin-700.woff` | Manrope | 700     | normal |
+| `manrope-latin-800.woff` | Manrope | 800     | normal |
+
+Ce sont des TrueType statiques de sous-ensemble `latin` dans un conteneur WOFF 1, récupérés le
+07/11/2026 dans le paquet npm `@fontsource/manrope` 5.3.0 (`files/manrope-latin-<graisse>-normal.woff`),
+sous la même licence SIL Open Font License 1.1 (`OFL-manrope.txt`). L'image les lit sur le disque
+(`readFile`), elle ne les importe pas : ils ne passent pas par `next/font` et ne sont jamais servis aux
+pages, qui gardent un seul fichier de police.

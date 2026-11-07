@@ -72,6 +72,16 @@ describe("SiteHeader", () => {
     expect(screen.queryByRole("link", { name: "Connexion" })).toBeNull();
   });
 
+  it("garde le bouton du menu dans la pilule à 320 px : « S’inscrire » se replie dans le menu sous 360 px", () => {
+    render(<SiteHeader />);
+    const signup = screen.getByRole("link", { name: "S’inscrire" });
+    expect(signup.parentElement?.className).toContain("max-[359px]:hidden");
+    // Le bouton du menu n'est jamais masqué : il donne accès à « Créer un compte ».
+    const menuButton = screen.getByRole("button", { name: "Ouvrir le menu" });
+    expect(menuButton.parentElement?.contains(signup)).toBe(true);
+    expect(menuButton.className).not.toMatch(/(^|\s)hidden/);
+  });
+
   it("ne monte pas le menu mobile avant le premier appui, puis le ferme et rend le focus au bouton", async () => {
     render(<SiteHeader />);
     const button = screen.getByRole("button", { name: "Ouvrir le menu" });

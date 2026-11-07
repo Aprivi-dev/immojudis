@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
 export const alt = "Immojudis — les enchères immobilières, en toute clarté";
@@ -10,16 +12,25 @@ const NAVY = "#132238";
 const GOLD_TEXT = "#84602e";
 const GOLD = "#c98d45";
 
+/** Graisses de Manrope employées par l'image (fichiers statiques de `src/fonts/`). */
+const OPEN_GRAPH_FONT_WEIGHTS = [400, 700, 800] as const;
+
 /**
  * Image de partage des pages sans image propre. Marque de la refonte : fond papier, nom « Immojudis »
  * (jamais en capitales), pictogramme du favicon (temple), accroche du site.
  *
- * Police : `ImageResponse` n'accepte que du TTF, OTF ou WOFF, pas le WOFF2 variable de `src/fonts/`.
- * Aucun TTF statique de Manrope n'est disponible hors ligne dans le dépôt ni dans `node_modules` : la
- * police système par défaut de l'image est donc utilisée. À remplacer par Manrope 800/500 (TTF
- * statique et sa licence OFL, déjà dans `src/fonts/OFL-manrope.txt`) quand le fichier sera ajouté.
+ * Police : Manrope, la police du site (repasse design n° 38). `ImageResponse` n'accepte que du TTF,
+ * de l'OTF ou du WOFF, pas le WOFF2 variable de `src/fonts/` : l'image lit les fichiers statiques
+ * `manrope-latin-{400,700,800}.woff` (TrueType dans un conteneur WOFF, licence OFL :
+ * `src/fonts/OFL-manrope.txt`). Ils sont lus sur le disque, jamais importés : `next/font` ne les sert
+ * pas, et les pages ne chargent toujours qu'un seul fichier de police.
  */
-export default function OpenGraphImage() {
+export default async function OpenGraphImage() {
+  const [regular, bold, extraBold] = await Promise.all(
+    OPEN_GRAPH_FONT_WEIGHTS.map((weight) =>
+      readFile(join(process.cwd(), `src/fonts/manrope-latin-${weight}.woff`)),
+    ),
+  );
   return new ImageResponse(
     <div
       style={{
@@ -28,6 +39,7 @@ export default function OpenGraphImage() {
         color: NAVY,
         display: "flex",
         flexDirection: "column",
+        fontFamily: "Manrope",
         height: "100%",
         justifyContent: "center",
         padding: "80px 96px",
@@ -72,6 +84,13 @@ export default function OpenGraphImage() {
         Annonces, procédures expliquées et enchère plafond chiffrée
       </div>
     </div>,
-    size,
+    {
+      ...size,
+      fonts: [
+        { name: "Manrope", data: regular, weight: 400, style: "normal" },
+        { name: "Manrope", data: bold, weight: 700, style: "normal" },
+        { name: "Manrope", data: extraBold, weight: 800, style: "normal" },
+      ],
+    },
   );
 }

@@ -211,4 +211,32 @@ describe("ComparisonsPage", () => {
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
     view.unmount();
   });
+
+  it("suit la mise en page des pages de compte et les couleurs de la charte (repasse design n° 12, 14, 15, 17)", async () => {
+    const { container } = renderPage({
+      sets: [
+        comparisonSet({
+          sharing: {
+            enabled: true,
+            sharedAt: "2026-10-01T10:00:00.000Z",
+            expiresAt: "2026-11-30T10:00:00.000Z",
+          },
+        }),
+      ],
+      limit: 1,
+      itemLimit: 3,
+    });
+
+    await screen.findByRole("heading", { name: "Maisons à Bordeaux" });
+    const title = screen.getByRole("heading", { level: 1, name: "Mes comparaisons" });
+    expect(title.previousElementSibling?.textContent).toBe("Mon espace");
+    expect(screen.getByText(/Lien actif jusqu’au/).className).toContain("bg-success-tint");
+    const remove = screen.getByRole("button", { name: "Supprimer" });
+    expect(remove.className).toContain("text-danger");
+    for (const name of ["Générer un nouveau lien", "Désactiver le lien", "Supprimer"]) {
+      expect(screen.getByRole("button", { name }).className).toContain("min-h-11");
+    }
+    expect(container.innerHTML).not.toMatch(/\b(?:text|bg|border)-(?:red|amber|emerald)-\d/);
+    expect(container.innerHTML).not.toMatch(/liquid-|glass-|text-\[11px\]/);
+  });
 });

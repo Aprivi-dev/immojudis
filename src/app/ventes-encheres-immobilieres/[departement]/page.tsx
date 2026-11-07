@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import {
   DEPARTMENT_PAGES_PATH,
   departmentFromCode,
+  departmentFromNumberSlug,
   departmentFromSlug,
   departmentItemListStructuredData,
   departmentPageDescription,
@@ -38,8 +39,12 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const department = departmentFromSlug((await params).departement);
+  const slug = (await params).departement;
+  const department = departmentFromSlug(slug);
   if (!department) {
+    // Adresse par numéro (`/13`) : la page la redirige, sans lire la base pour ses métadonnées.
+    const byNumber = departmentFromNumberSlug(slug);
+    if (byNumber) return { robots: { index: false, follow: true } };
     return { title: "Département introuvable", robots: { index: false, follow: false } };
   }
   const { departments } = await loadDepartmentCatalogue();
@@ -59,8 +64,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function Page({ params }: PageProps) {
-  const department = departmentFromSlug((await params).departement);
-  if (!department) notFound();
+  const slug = (await params).departement;
+  const department = departmentFromSlug(slug);
+  if (!department) {
+    // `/ventes-encheres-immobilieres/13` (ou `2a`, `971`) : redirection définitive (308) vers
+    // l'adresse par nom, avant toute écriture de la réponse et sans lire la base.
+    const byNumber = departmentFromNumberSlug(slug);
+    if (byNumber) permanentRedirect(byNumber.path);
+    notFound();
+  }
 
   const [catalogue, activity] = await Promise.all([
     loadDepartmentCatalogue(),

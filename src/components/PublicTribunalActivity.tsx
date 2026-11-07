@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { TribunalFinder, type TribunalFinderRow } from "@/app/tribunaux/tribunal-finder";
+import { departmentFromCode } from "@/lib/department-pages";
 import { formatPrice } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import {
@@ -12,6 +14,10 @@ import { tribunalPages } from "@/lib/tribunal-pages";
 
 /** Busiest courts shown upfront; the others stay one click away. */
 const FIRST_ROWS = 15;
+
+/** Comment lire la colonne « Mise à prix » (seuils de `tribunalPriceFigure`). */
+const PRICE_RULE =
+  "La mise à prix n’est publiée qu’avec assez de ventes chiffrées : « — » sous 5, la fourchette observée (minimum et maximum) de 5 à 9, la médiane à partir de 10.";
 
 function formatCount(value: number): string {
   return new Intl.NumberFormat("fr-FR").format(value);
@@ -59,91 +65,95 @@ function PriceCell({ figure }: { figure: TribunalPriceFigure }) {
   );
 }
 
-function Rows({
-  items,
-  pagePaths,
-}: {
-  items: PublicTribunalActivity[];
+/**
+ * Les lignes du tableau, rendues ici (serveur) : le filtre « Trouver un tribunal » ne fait que les
+ * choisir. `search` réunit le nom, la ville, le numéro et le nom du département.
+ */
+function finderRows(
+  items: PublicTribunalActivity[],
   /** Adresse de la page de chaque tribunal (`/tribunaux/[slug]`), par code. */
-  pagePaths: ReadonlyMap<string, string>;
-}) {
-  return items.map((item) => {
-    const figure = tribunalPriceFigure(item);
-    return (
-      <tr key={item.code} className="border-t border-brand-navy/10">
-        <th scope="row" className="py-3 pr-4 text-left font-semibold">
-          <Link
-            href={
-              pagePaths.get(item.code) ?? pathWithSearch("/sales", { tribunal: item.searchName })
-            }
-            className="underline-offset-4 hover:underline"
-          >
-            {item.name}
-          </Link>
-          {item.department ? (
-            <span className="ml-1 font-normal text-ink-soft">({item.department})</span>
-          ) : null}
-          <span className="block text-xs font-normal text-ink-soft sm:hidden">
-            Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
-          </span>
-        </th>
-        {/* Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche). */}
-        <td className="py-3 pr-4 text-right tabular-nums">{formatCount(item.upcomingCount)}</td>
-        <td className="hidden whitespace-nowrap py-3 pr-4 text-right sm:table-cell">
-          {formatShortDate(item.nextSaleDate)}
-        </td>
-        <td className="hidden py-3 pr-4 text-right tabular-nums sm:table-cell">
-          {formatCount(figure.sampleSize)}
-        </td>
-        <td className="whitespace-nowrap py-3 text-right tabular-nums sm:pr-4">
-          <PriceCell figure={figure} />
-        </td>
-        <td className="hidden py-3 text-sm text-ink-soft sm:table-cell">{mix(item)}</td>
-      </tr>
-    );
-  });
+  pagePaths: ReadonlyMap<string, string>,
+): TribunalFinderRow[] {
+  return items.map((item) => ({
+    code: item.code,
+    search: [
+      item.name,
+      item.searchName,
+      item.city,
+      item.department,
+      departmentFromCode(item.department)?.name,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    row: <Row item={item} pagePaths={pagePaths} />,
+  }));
 }
 
-function Table({
-  items,
-  caption,
+function Row({
+  item,
   pagePaths,
 }: {
-  items: PublicTribunalActivity[];
-  caption: string;
+  item: PublicTribunalActivity;
   pagePaths: ReadonlyMap<string, string>;
 }) {
+  const figure = tribunalPriceFigure(item);
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <caption className="sr-only">{caption}</caption>
-        <thead>
-          <tr className="text-xs uppercase tracking-[0.08em] text-ink-soft">
-            <th scope="col" className="pb-2 pr-4 text-left font-semibold">
-              Tribunal judiciaire
-            </th>
-            <th scope="col" className="pb-2 pr-4 text-right font-semibold">
-              Ventes à venir
-            </th>
-            <th scope="col" className="hidden pb-2 pr-4 text-right font-semibold sm:table-cell">
-              Prochaine audience
-            </th>
-            <th scope="col" className="hidden pb-2 pr-4 text-right font-semibold sm:table-cell">
-              Ventes chiffrées (n)
-            </th>
-            <th scope="col" className="pb-2 text-right font-semibold sm:pr-4">
-              Mise à prix
-            </th>
-            <th scope="col" className="hidden pb-2 text-left font-semibold sm:table-cell">
-              Biens
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <Rows items={items} pagePaths={pagePaths} />
-        </tbody>
-      </table>
-    </div>
+    <tr className="border-t border-brand-navy/10">
+      <th scope="row" className="py-3 pr-4 text-left font-semibold">
+        <Link
+          href={pagePaths.get(item.code) ?? pathWithSearch("/sales", { tribunal: item.searchName })}
+          className="underline-offset-4 hover:underline"
+        >
+          {item.name}
+        </Link>
+        {item.department ? (
+          <span className="ml-1 font-normal text-ink-soft">({item.department})</span>
+        ) : null}
+        <span className="block text-xs font-normal text-ink-soft sm:hidden">
+          Audience le {formatShortDate(item.nextSaleDate)} · {mix(item)}
+        </span>
+      </th>
+      {/* Un seul lien par ligne : le nom, vers la page du tribunal (qui renvoie à la recherche). */}
+      <td className="py-3 pr-4 text-right tabular-nums">{formatCount(item.upcomingCount)}</td>
+      <td className="hidden whitespace-nowrap py-3 pr-4 text-right sm:table-cell">
+        {formatShortDate(item.nextSaleDate)}
+      </td>
+      <td className="hidden py-3 pr-4 text-right tabular-nums sm:table-cell">
+        {formatCount(figure.sampleSize)}
+      </td>
+      <td className="whitespace-nowrap py-3 text-right tabular-nums sm:pr-4">
+        <PriceCell figure={figure} />
+      </td>
+      <td className="hidden py-3 text-sm text-ink-soft sm:table-cell">{mix(item)}</td>
+    </tr>
+  );
+}
+
+/** En-tête des colonnes, commun aux tableaux du filtre. */
+function Head() {
+  return (
+    <thead>
+      <tr className="text-xs uppercase tracking-[0.08em] text-ink-soft">
+        <th scope="col" className="pb-2 pr-4 text-left font-semibold">
+          Tribunal judiciaire
+        </th>
+        <th scope="col" className="pb-2 pr-4 text-right font-semibold">
+          Ventes à venir
+        </th>
+        <th scope="col" className="hidden pb-2 pr-4 text-right font-semibold sm:table-cell">
+          Prochaine audience
+        </th>
+        <th scope="col" className="hidden pb-2 pr-4 text-right font-semibold sm:table-cell">
+          Ventes chiffrées (n)
+        </th>
+        <th scope="col" className="pb-2 text-right font-semibold sm:pr-4">
+          Mise à prix
+        </th>
+        <th scope="col" className="hidden pb-2 text-left font-semibold sm:table-cell">
+          Biens
+        </th>
+      </tr>
+    </thead>
   );
 }
 
@@ -170,8 +180,6 @@ export function PublicTribunalActivitySection({
   const pagePaths = new Map(
     tribunalPages(items, ambiguousCodes).map((page) => [page.activity.code, page.path]),
   );
-  const first = items.slice(0, FIRST_ROWS);
-  const rest = items.slice(FIRST_ROWS);
   return (
     <section
       aria-labelledby="public-tribunal-activity-title"
@@ -188,8 +196,7 @@ export function PublicTribunalActivitySection({
       </h2>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-ink-soft">
         Le volume d’audiences, la prochaine date et la mise à prix des biens annoncés, tribunal par
-        tribunal. La mise à prix n’est publiée qu’avec assez de ventes chiffrées : « — » sous 5, la
-        fourchette observée (minimum et maximum) de 5 à 9, la médiane à partir de 10.
+        tribunal.
         {adjudicationStatisticsEnabled
           ? " Les prix d’adjudication et les résultats des ventes passées sont réservés à l’offre Analyse."
           : null}{" "}
@@ -199,27 +206,34 @@ export function PublicTribunalActivitySection({
         </Link>
         .
       </p>
-      <div className="mt-6">
-        <Table
-          items={first}
-          caption="Tribunaux ayant le plus de ventes à venir"
-          pagePaths={pagePaths}
-        />
-      </div>
-      {rest.length ? (
-        <details className="mt-4">
-          <summary className="cursor-pointer text-sm font-semibold text-brand-navy">
-            Voir les {formatCount(rest.length)} autres tribunaux
-          </summary>
-          <div className="mt-3">
-            <Table
-              items={rest}
-              caption="Autres tribunaux ayant des ventes à venir"
-              pagePaths={pagePaths}
-            />
-          </div>
-        </details>
-      ) : null}
+      {/* La règle de lecture : en clair sur ordinateur, dans un dépliant sur mobile (n° 44). */}
+      <p className="mt-2 hidden max-w-3xl text-sm leading-relaxed text-ink-soft sm:block">
+        {PRICE_RULE}
+      </p>
+      <details className="mt-2 text-sm sm:hidden">
+        <summary className="cursor-pointer py-3 font-semibold text-brand-navy underline underline-offset-2">
+          Comment lire la mise à prix
+        </summary>
+        <p className="mt-1 leading-relaxed text-ink-soft">{PRICE_RULE}</p>
+      </details>
+      <TribunalFinder
+        rows={finderRows(items, pagePaths)}
+        firstCount={FIRST_ROWS}
+        head={<Head />}
+        searchIcon={
+          <svg
+            aria-hidden
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            className="pointer-events-none absolute top-1/2 left-3.5 size-[18px] -translate-y-1/2 text-ink-soft"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-4-4" />
+          </svg>
+        }
+      />
     </section>
   );
 }

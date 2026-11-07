@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({ load: vi.fn() }));
 
 vi.mock("@/lib/department-pages.server", () => ({ tryLoadDepartmentCatalogue: mocks.load }));
 
+import { renderToStaticMarkup } from "react-dom/server";
+import { DepartmentFranceMap } from "@/components/departments/DepartmentFranceMap";
 import Page, { generateMetadata, maxDuration, revalidate } from "./page";
 
 function sale(id: string, department: string): DepartmentSaleInput {
@@ -111,15 +113,21 @@ describe("index des ventes par département", () => {
     render(await Page());
     const map = screen.getByRole("region", { name: "Où se trouvent les ventes" });
     const group = within(map).getByRole("group");
-    expect(group.getAttribute("aria-label")).toContain("La liste détaillée");
+    expect(group.getAttribute("aria-label")).toContain("la liste détaillée des départements");
+    // Les ronds sont hors de la tabulation, et l'intitulé du groupe le dit.
+    expect(group.getAttribute("aria-label")).toContain("pas atteints avec la touche Tab");
     const dots = [...group.querySelectorAll<HTMLAnchorElement>("a[data-code]")];
     // 96 départements de métropole ; l'outre-mer n'est que dans la liste.
     expect(dots).toHaveLength(96);
     const dot = (slug: string) =>
       group.querySelector<HTMLAnchorElement>(`a[href="/ventes-encheres-immobilieres/${slug}"]`)!;
-    expect(dot("gironde").getAttribute("aria-label")).toBe("Gironde (33) : 3 ventes à venir");
+    // Le nom accessible est le texte visible de l'info-bulle (WCAG 2.5.3).
+    expect(dot("gironde").getAttribute("aria-label")).toBe("Gironde (33) · 3 ventes à venir");
     expect(dot("gironde").textContent).toContain("Gironde (33) · 3 ventes à venir");
-    expect(dot("ain").getAttribute("aria-label")).toBe("Ain (01) : aucune vente à venir");
+    expect(dot("ain").getAttribute("aria-label")).toBe("Ain (01) · aucune vente à venir");
+    expect(dot("ain").textContent).toContain("Ain (01) · aucune vente à venir");
+    // 96 arrêts clavier en moins : la liste qui suit reste la voie clavier.
+    expect(dots.every((link) => link.tabIndex === -1)).toBe(true);
     // Les plus grands ronds d'abord, pour que les petits restent visibles par-dessus.
     expect(dots.slice(0, 2).map((link) => link.dataset.code)).toEqual(["33", "75"]);
     // Positions : le Nord au-dessus de la Gironde, Paris agrandi dans le médaillon en bas à gauche.
@@ -129,6 +137,38 @@ describe("index des ventes par département", () => {
     expect(left("finistere")).toBeLessThan(left("bas-rhin"));
     expect(top("paris")).toBeGreaterThan(64);
     expect(left("paris")).toBeLessThan(28);
+  });
+
+  it("donne à chaque rond une zone cliquable de 24 px au moins, centrée sur le rond", () => {
+    // jsdom ignore `max()` avec des unités de conteneur : le HTML du serveur est lu tel qu'écrit.
+    const html = renderToStaticMarkup(
+      <DepartmentFranceMap
+        departments={[
+          { code: "33", name: "Gironde", path: "/ventes-encheres-immobilieres/gironde", count: 30 },
+          { code: "01", name: "Ain", path: "/ventes-encheres-immobilieres/ain", count: 0 },
+        ]}
+      />,
+    );
+    const links = [...html.matchAll(/<a [^>]*>/g)].map((match) => match[0]);
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toMatch(/width:max\(24px, /);
+      expect(link).toMatch(/height:max\(24px, /);
+    }
+  });
+
+  it("garde les ronds pleins visibles en contraste élevé (couleurs système)", async () => {
+    mocks.load.mockResolvedValue({ status: "ok", catalogue: CATALOGUE });
+    render(await Page());
+    const group = within(
+      screen.getByRole("region", { name: "Où se trouvent les ventes" }),
+    ).getByRole("group");
+    const disc = (code: string) =>
+      group.querySelector<HTMLElement>(`a[data-code="${code}"] > span`)!.className;
+    expect(disc("33")).toContain("forced-colors:bg-[color:CanvasText]");
+    expect(disc("33")).toContain("forced-colors:forced-color-adjust-none");
+    expect(disc("01")).toContain("forced-colors:bg-[color:Canvas]");
+    expect(disc("01")).toContain("forced-colors:border-[color:CanvasText]");
   });
 
   it("classe les départements les plus actifs, avec une barre proportionnelle", async () => {

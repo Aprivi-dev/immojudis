@@ -42,17 +42,17 @@ export function WorksScenarioSelector({
     }`;
   const badge = (selected: boolean, suggested: boolean) =>
     selected ? (
-      <span className="rounded-full bg-gold px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-navy">
+      <span className="rounded-full bg-gold px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-brand-navy">
         Retenu
       </span>
     ) : suggested ? (
-      <span className="rounded-full border border-gold/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-gold-text">
+      <span className="rounded-full border border-gold/40 px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-gold-text">
         Suggéré
       </span>
     ) : null;
 
   return (
-    <div className="rounded-lg border border-border bg-muted/35 p-4 sm:p-5">
+    <div className="@container rounded-lg border border-border bg-muted/35 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
@@ -71,7 +71,7 @@ export function WorksScenarioSelector({
       </div>
 
       <div
-        className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+        className="mt-4 grid gap-3 @md:grid-cols-2 @4xl:grid-cols-4"
         role="radiogroup"
         aria-label="Étendue estimée des travaux"
       >
@@ -82,8 +82,8 @@ export function WorksScenarioSelector({
           onClick={() => onSelect(null)}
           className={cardClass(noWorksSelected)}
         >
-          <span className="flex items-start justify-between gap-3">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+          <span className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Sans travaux
             </span>
             {badge(noWorksSelected, suggestedScenario === null)}
@@ -110,8 +110,8 @@ export function WorksScenarioSelector({
               onClick={() => onSelect(scenario.key)}
               className={cardClass(selected)}
             >
-              <span className="flex items-start justify-between gap-3">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                   {ppm2(scenario.pricePerM2)}
                 </span>
                 {badge(selected, suggestedScenario === scenario.key)}

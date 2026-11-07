@@ -71,6 +71,22 @@ describe("featured lawyer of a sale (bar of the tribunal only)", () => {
     expect(lawyer).toBeNull();
   });
 
+  it("reads a compound seat whole: Saint-Étienne is not the bar of Saint-Dié (repasse n° 4)", async () => {
+    mockTables({ ...sale, tribunal: "TJ Saint-Etienne", tribunal_code: "justice_tj_1_174" }, [
+      lawyerRow({ id: "saint-die", display_name: "Me Déodatien", bar_association: "Saint-Dié" }),
+      lawyerRow({
+        id: "saint-etienne",
+        display_name: "Me Stéphanois",
+        bar_association: "Saint-Étienne",
+      }),
+    ]);
+
+    const { lawyer } = await getFeaturedReferencedLawyerForSale({ saleId: "sale-1" });
+
+    expect(lawyer?.id).toBe("saint-etienne");
+    expect(lawyer?.sectorLabel).toBe("Barreau de Saint-Etienne");
+  });
+
   it("features nobody when the tribunal does not name a bar", async () => {
     mockTables({ ...sale, tribunal: "Cour d'appel", tribunal_code: null }, [
       lawyerRow({ id: "bordeaux", bar_association: "Bordeaux" }),

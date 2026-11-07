@@ -94,6 +94,16 @@ describe("public sale page", () => {
     expect(metadata.alternates).toBeUndefined();
   });
 
+  it("répond à une vente inconnue par la 404 du segment, h1 aligné sur le titre (repasse n° 46)", async () => {
+    mocks.lookup.mockResolvedValue({ status: "missing" });
+    const { default: SaleNotFound } = await import("./not-found");
+    const html = renderToStaticMarkup(<SaleNotFound />);
+    const title = (await generateMetadata({ params })).title;
+    expect(html).toContain(`<h1`);
+    expect(html.match(/<h1[^>]*>([^<]*)<\/h1>/)?.[1]).toBe(title);
+    expect(html).toContain('href="/sales"');
+  });
+
   it("builds per-sale metadata without repeating the site name", async () => {
     mocks.lookup.mockResolvedValue({ status: "found", sale });
     const metadata = await generateMetadata({ params });

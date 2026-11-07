@@ -20,6 +20,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
     returnTo,
     adjudicationStatisticsEnabled,
     summaryFooter,
+    topNotice,
   }: {
     sale: { city: string; title: string };
     marketEstimateOverride: { actionable?: boolean };
@@ -27,6 +28,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
     returnTo?: string;
     adjudicationStatisticsEnabled?: boolean;
     summaryFooter?: ReactNode;
+    topNotice?: ReactNode;
   }) => (
     <div
       data-testid="example-detail"
@@ -36,6 +38,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
       data-return-to={returnTo}
       data-statistics={adjudicationStatisticsEnabled ? "open" : "closed"}
     >
+      {topNotice}
       {sale.title}
       {summaryFooter}
     </div>
@@ -175,12 +178,17 @@ describe("ExampleSalePage", () => {
   });
 
   it("annonce clairement que l'exemple est fictif, avant tout chiffre", () => {
-    const { container } = render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
     const banner = screen.getByRole("complementary", { name: "Exemple fictif" });
     expect(banner.textContent).toMatch(/Exemple fictif/);
     expect(banner.textContent).toMatch(/Aucune vente réelle/);
-    // The banner comes first in the page.
-    expect(container.firstElementChild).toBe(banner);
+    // En tête du contenu de la fiche (sous la pilule de navigation, pas derrière elle : repasse
+    // n° 3), avant le titre de la vente.
+    const detail = screen.getByTestId("example-detail");
+    expect(detail.firstElementChild).toBe(banner);
+    // Jetons `warning` de la charte, plus aucune couleur ambre brute.
+    expect(banner.innerHTML).toContain("bg-warning-tint");
+    expect(banner.innerHTML).not.toMatch(/amber-/);
   });
 
   it("ne contient pas de lien externe ni de données structurées d'annonce", () => {

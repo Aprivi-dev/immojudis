@@ -219,8 +219,9 @@ describe("home figures band", () => {
     expect(markup).toMatch(
       /<dt>ventes à venir en France<\/dt><dd[^>]*data-count-to="1548"[^>]*>1.548<\/dd>/,
     );
+    // Le nombre de départements mène à la page des ventes par département.
     expect(markup).toMatch(
-      /<dt>départements où une vente est annoncée<\/dt><dd[^>]*data-count-to="94"[^>]*>94<\/dd>/,
+      /<dt><a[^>]*href="\/ventes-encheres-immobilieres"[^>]*>départements où une vente est annoncée<\/a><\/dt><dd[^>]*data-count-to="94"[^>]*>94<\/dd>/,
     );
     expect(markup).toMatch(
       /<dt>lieux de vente réunis : tribunal, notaire, État<\/dt><dd[^>]*>3<\/dd>/,

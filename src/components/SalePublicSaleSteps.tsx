@@ -42,15 +42,17 @@ function timelineSteps(procedure: SaleProcedurePresentation): { before: string; 
   }
 }
 
-/** « adjudication » prend sa définition (`Terme`) ; le texte de `VENUE_COPY` reste une chaîne brute. */
-function withAdjudicationTerm(text: string) {
-  const word = "adjudication";
+/**
+ * Un mot du métier prend sa définition (`Terme`) : « adjudication » dans le texte de `VENUE_COPY`,
+ * « surenchère » dans la frise (repasse n° 26). Le texte reste une chaîne brute.
+ */
+function withTerm(text: string, word: string, terme: "adjudication" | "surenchere") {
   const index = text.indexOf(word);
   if (index < 0) return text;
   return (
     <>
       {text.slice(0, index)}
-      <Terme terme="adjudication">{word}</Terme>
+      <Terme terme={terme}>{word}</Terme>
       {text.slice(index + word.length)}
     </>
   );
@@ -104,7 +106,7 @@ export function SalePublicSaleSteps({
             <span className={styles.knot} />
           </div>
           <small>Après la vente</small>
-          <p>{steps.after}</p>
+          <p>{withTerm(steps.after, "surenchère", "surenchere")}</p>
         </li>
       </ol>
 
@@ -122,7 +124,9 @@ export function SalePublicSaleSteps({
           <ChevronDown className={styles.foldIcon} aria-hidden />
         </summary>
         <div className={styles.foldBody}>
-          <p className={styles.procedureText}>{withAdjudicationTerm(explanation)}</p>
+          <p className={styles.procedureText}>
+            {withTerm(explanation, "adjudication", "adjudication")}
+          </p>
           <ol className={styles.tiers} aria-label="Ce que vous voyez, selon votre accès">
             <li className={styles.tier}>
               <h3 className={styles.tierTitle}>

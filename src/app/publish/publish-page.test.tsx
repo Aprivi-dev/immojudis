@@ -64,4 +64,28 @@ describe("page de publication professionnelle", () => {
     expect(promotions).toHaveLength(3);
     for (const box of promotions) expect((box as HTMLInputElement).checked).toBe(false);
   });
+
+  it("présente la validation sans vocabulaire interne (repasse n° 36)", () => {
+    renderPage();
+    const text = document.body.textContent ?? "";
+    expect(text).toContain(
+      "Votre demande et ses pièces sont enregistrées en attente de validation. L'équipe Immojudis les vérifie, peut les compléter, puis valide la mise en ligne.",
+    );
+    expect(text).not.toMatch(/panel admin|côté admin|file de validation admin/i);
+  });
+
+  it("garde des textes, champs et cases lisibles sur fond clair (repasse n° 6 et 14)", () => {
+    renderPage();
+    expect(screen.getByRole("heading", { level: 1 }).className).toContain("sm:text-[2.5rem]");
+    expect(screen.getByRole("progressbar", { name: "Préparation de la demande" })).toBeTruthy();
+    // Les cases des documents sont visibles : leur état ne repose plus sur une teinte.
+    const document = screen.getByRole("checkbox", { name: "Cahier des conditions de vente" });
+    expect(document.className).not.toContain("sr-only");
+    expect(screen.getByRole("button", { name: "Envoyer pour validation" }).className).toContain(
+      "bg-brand-navy",
+    );
+    expect(window.document.body.innerHTML).not.toMatch(
+      /text-(?:amber|red|emerald)-(?:50|100)\b|text-\[1[01]px\]|liquid-|glass-shell|bg-white\/10/,
+    );
+  });
 });

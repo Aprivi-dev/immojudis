@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSupabase } from "@/integrations/supabase/lazy";
+import { Button, Card, PageTitle } from "@/components/ui/primitives";
 import {
   AUTH_CONFIRMATION_PATH,
   PASSWORD_RESET_EXPIRED_PATH,
@@ -89,13 +90,13 @@ export function AuthLinkConfirmation() {
 
   const copy = link ? COPY[link.type] : null;
   return (
-    <main id="contenu" className="liquid-page min-h-[75vh] px-4 py-12 text-foreground">
-      <section className="glass-shell mx-auto max-w-md rounded-lg p-6 sm:p-8">
+    <main id="contenu" className="mx-auto min-h-[75vh] w-full max-w-md px-4 py-12 text-foreground">
+      <Card as="section" className="sm:p-8">
         {phase === "reading" ? (
           <p role="status">Vérification du lien…</p>
         ) : phase === "invalid" || !link || !copy ? (
           <>
-            <h1 className="font-display text-3xl">Lien incomplet</h1>
+            <PageTitle>Lien incomplet</PageTitle>
             <p role="alert" className="mt-5 text-sm leading-relaxed">
               Ce lien est incomplet ou n’est plus valable. Ouvrez-le depuis l’email le plus récent
               reçu d’Immojudis, ou demandez-en un nouveau.
@@ -108,25 +109,25 @@ export function AuthLinkConfirmation() {
           <FailedLink link={link} />
         ) : (
           <>
-            <h1 className="font-display text-3xl">{copy.title}</h1>
+            <PageTitle>{copy.title}</PageTitle>
             <p className="mt-5 text-sm leading-relaxed">{copy.text}</p>
             <p className="mt-3 text-xs text-muted-foreground">
               Pour votre sécurité, rien n’est validé tant que vous n’avez pas cliqué sur le bouton.
             </p>
-            <button
-              type="button"
+            <Button
+              variant="primary"
               onClick={() => void confirm()}
               disabled={phase === "verifying"}
-              className="liquid-button mt-6 w-full rounded-lg px-4 py-3 text-sm font-semibold disabled:opacity-50"
+              className="mt-6 w-full"
             >
               {phase === "verifying" ? "Veuillez patienter…" : copy.button}
-            </button>
+            </Button>
           </>
         )}
         <Link href="/login" className="mt-6 block text-sm underline">
           Retour à la connexion
         </Link>
-      </section>
+      </Card>
     </main>
   );
 }
@@ -164,7 +165,7 @@ function FailedLink({ link }: { link: AuthLink }) {
 
   return (
     <>
-      <h1 className="font-display text-3xl">Ce lien n’est plus valable</h1>
+      <PageTitle>Ce lien n’est plus valable</PageTitle>
       <p role="alert" className="mt-5 text-sm leading-relaxed">
         Il a expiré ou il a déjà servi. Les liens des emails Immojudis sont temporaires et ne
         fonctionnent qu’une fois.
@@ -182,20 +183,16 @@ function FailedLink({ link }: { link: AuthLink }) {
               className="form-input"
             />
           </label>
-          <button
-            type="submit"
-            disabled={busy || notice !== null}
-            className="liquid-button rounded-lg px-4 py-3 text-sm font-semibold disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" disabled={busy || notice !== null}>
             {busy ? "Veuillez patienter…" : "Renvoyer l’email"}
-          </button>
+          </Button>
           {notice ? (
             <p role="status" className="text-sm">
               {notice}
             </p>
           ) : null}
           {error ? (
-            <p role="alert" className="text-sm text-red-700">
+            <p role="alert" className="text-sm text-danger">
               {error}
             </p>
           ) : null}

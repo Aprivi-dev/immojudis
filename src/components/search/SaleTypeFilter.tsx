@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { visibleSaleTypeOptions, type SaleTypeFilter as SaleTypeValue } from "@/lib/sale-types";
+import { FORCED_COLORS_SELECTED } from "./forced-colors";
 
 /**
  * Types de vente en pastilles (« Toutes », « Au tribunal », « Chez le notaire »…) : la pastille
@@ -45,7 +46,7 @@ export function SaleTypeFilter({
             onClick={() => onChange(option.value)}
             className={`min-h-11 shrink-0 cursor-pointer whitespace-nowrap rounded-full border px-4 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
               value === option.value
-                ? "border-brand-navy bg-brand-navy text-white"
+                ? `border-brand-navy bg-brand-navy text-white ${FORCED_COLORS_SELECTED}`
                 : "border-line bg-white text-brand-navy hover:border-brand-navy"
             }`}
           >

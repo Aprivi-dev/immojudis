@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SaleComparisonTable } from "@/components/search/SaleComparisonTable";
+import { Eyebrow, PageTitle } from "@/components/ui/primitives";
 import { formatDate } from "@/lib/format";
 import { getSharedSaleComparison } from "@/lib/sale-analysis-sets";
 
@@ -26,10 +27,8 @@ export default async function SharedSaleComparisonPage({
     <main id="contenu" className="min-h-screen bg-surface-muted px-3 py-8 text-brand-navy sm:px-6">
       <article className="mx-auto max-w-5xl overflow-hidden rounded-xl border border-line-soft bg-white shadow-sm">
         <header className="border-b border-line-soft px-4 py-5 sm:px-6">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-navy">
-            Comparaison partagée Immojudis
-          </p>
-          <h1 className="mt-2 text-2xl font-extrabold sm:text-3xl">{comparison.name}</h1>
+          <Eyebrow>Comparaison partagée Immojudis</Eyebrow>
+          <PageTitle className="mt-2">{comparison.name}</PageTitle>
           <p className="mt-2 text-sm text-ink-soft">
             Instantané mis à jour le {formatDate(comparison.updatedAt)} · lien valable jusqu’au{" "}
             {formatDate(comparison.expiresAt)}
@@ -48,7 +47,8 @@ export default async function SharedSaleComparisonPage({
           </p>
         ) : null}
 
-        <SaleComparisonTable items={comparison.items} returnTo="/sales" />
+        {/* « Retour à la comparaison » sur la fiche : `saleDetailPath` ne garde qu'un jeton valide. */}
+        <SaleComparisonTable items={comparison.items} returnTo={`/comparaisons/${token}`} />
 
         <footer className="space-y-2 border-t border-line-soft bg-white px-4 py-4 text-xs leading-relaxed text-ink-soft sm:px-6">
           <p>

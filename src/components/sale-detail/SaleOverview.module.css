@@ -378,6 +378,9 @@
   left: 0;
   z-index: 30;
   display: flex;
+  /* Même hauteur que la barre de la fiche visiteur (72 px) : les deux fiches se ressemblent. */
+  box-sizing: border-box;
+  min-height: calc(72px + env(safe-area-inset-bottom, 0px));
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -456,7 +459,9 @@
   outline-offset: 2px;
 }
 
-@media (min-width: 960px) {
+/* À partir de 1024 px, le panneau collant de droite garde les montants en vue (comme sur la fiche
+   visiteur) ; en dessous, il passe sous la galerie et la barre prend le relais. */
+@media (min-width: 1024px) {
   .mobileBar {
     display: none;
   }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ErrorState, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import { SearchRejectedError } from "@/lib/search/search-errors";
 
@@ -24,6 +24,40 @@ describe("MobileMapToggle", () => {
 
     fireEvent.click(map);
     expect(onOpenMap).toHaveBeenCalledTimes(1);
+  });
+
+  it("n'affiche « Voir sur la carte » qu'après un premier défilement (le prix reste lisible)", () => {
+    window.scrollY = 0;
+    renderBar({ comparedCount: 1, onOpenComparison: vi.fn() });
+    const map = screen.getByRole("button", { name: "Voir sur la carte" });
+    expect(map.className.split(/\s+/)).toContain("hidden");
+    // La pastille du comparateur, elle, reste visible.
+    expect(screen.getByRole("button", { name: "Comparer (1)" }).className).not.toMatch(
+      /(^|\s)hidden(\s|$)/,
+    );
+
+    act(() => {
+      window.scrollY = 120;
+      window.dispatchEvent(new Event("scroll"));
+    });
+    expect(map.className.split(/\s+/)).toContain("inline-flex");
+    expect(map.className.split(/\s+/)).not.toContain("hidden");
+
+    // Revenue en haut de page : le bouton s'efface de nouveau.
+    act(() => {
+      window.scrollY = 0;
+      window.dispatchEvent(new Event("scroll"));
+    });
+    expect(map.className.split(/\s+/)).toContain("hidden");
+  });
+
+  it("s'affiche dès le montage sur une page rouverte plus bas (retour depuis une fiche)", () => {
+    window.scrollY = 900;
+    renderBar();
+    expect(
+      screen.getByRole("button", { name: "Voir sur la carte" }).className.split(/\s+/),
+    ).toContain("inline-flex");
+    window.scrollY = 0;
   });
 
   it("ne précharge rien pour la pastille du comparateur", () => {

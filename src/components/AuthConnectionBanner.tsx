@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { loginPathWithRedirect } from "@/lib/navigation";
-import { Button, buttonClasses } from "@/components/ui/primitives";
+import { Button, Notice, buttonClasses } from "@/components/ui/primitives";
 
 /**
  * Bandeau commun quand l'identité du compte n'a pas pu être vérifiée (`/sales`, `/favoris`,
@@ -31,10 +31,11 @@ export function AuthConnectionBanner({
       { mode: "login" },
     );
   return (
-    <div
+    <Notice
+      tone="warning"
       role="alert"
       data-testid="auth-connection-banner"
-      className={`mx-auto flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900 ${className}`}
+      className={`mx-auto flex max-w-[1260px] flex-wrap items-center gap-3 ${className}`}
     >
       <p className="font-medium">
         {expired
@@ -49,6 +50,6 @@ export function AuthConnectionBanner({
       <a href={href} className={buttonClasses({ variant: expired ? "dark" : "secondary" })}>
         Se reconnecter
       </a>
-    </div>
+    </Notice>
   );
 }

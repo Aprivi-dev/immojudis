@@ -444,7 +444,7 @@ describe("page Offres", () => {
   it("un seul bouton primaire dans l'en-tête : l'essai pour un visiteur quand il est proposé", () => {
     const primaryOf = (container: HTMLElement) =>
       Array.from(container.querySelector("section")!.querySelectorAll("a, button")).filter((node) =>
-        node.className.includes("bg-gold text-brand-navy"),
+        node.className.includes("bg-brand-navy text-white hover:bg-brand-navy-soft"),
       );
     mocks.launch.mockReturnValue({ active: true, pending: false });
     const trial = render(<OffersPage />);
@@ -612,6 +612,15 @@ describe("page Offres", () => {
       ),
     ).toBeTruthy();
   });
+
+  it("coupe les libellés du schéma de la formule plutôt que de déborder à 320 px", () => {
+    render(<OffersPage />);
+    const label = screen
+      .getAllByText("Enchère plafond (simulation)")
+      .find((element) => element.closest("[aria-hidden]"));
+    expect(label?.className).toContain("break-words");
+  });
+
   it("rendu serveur : ne dit pas « Analyse coûte » tant que l'état de l'offre n'est pas lu", () => {
     // Pas d'effet côté serveur : l'état de l'offre de lancement et de la souscription est inconnu.
     mocks.launch.mockReturnValue({ active: false, pending: true });

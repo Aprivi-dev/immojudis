@@ -7,9 +7,9 @@ import type { OverviewAction } from "./SaleListing";
 import styles from "./SaleOverview.module.css";
 
 /**
- * Sous 960 px (téléphone et tablette), le plafond, le prix de départ et l'action principale restent
- * à portée, sur tous les onglets, quand les boutons du haut de page (`[data-hero-actions]`) sont
- * hors de l'écran. Au-delà, le panneau collant de droite garde les montants en vue. Sans action
+ * Sous 1024 px (téléphone et tablette), le plafond, le prix de départ et l'action principale restent
+ * à portée, sur tous les onglets, une fois les boutons de la synthèse (`[data-hero-actions]`)
+ * passés au-dessus de l'écran ; pas avant de les avoir atteints (repasse design n° 43). Au-delà, le panneau collant de droite garde les montants en vue. Sans action
  * (section du calcul), la barre garde les deux montants : on ajuste les hypothèses sans perdre le
  * plafond de vue.
  */
@@ -31,18 +31,18 @@ export function MobileActionBar({
    */
   dossier?: { caption: string; onOpen: () => void } | null;
 }) {
-  const [heroActionsVisible, setHeroActionsVisible] = useState(true);
+  const [heroActionsPassed, setHeroActionsPassed] = useState(false);
   useEffect(() => {
     const target = document.querySelector("[data-hero-actions]");
     if (!target || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) =>
-      setHeroActionsVisible(entry.isIntersecting),
+      setHeroActionsPassed(!entry.isIntersecting && entry.boundingClientRect.top < 0),
     );
     observer.observe(target);
     return () => observer.disconnect();
   }, []);
 
-  const visible = (Boolean(action) || ceiling != null || Boolean(dossier)) && !heroActionsVisible;
+  const visible = (Boolean(action) || ceiling != null || Boolean(dossier)) && heroActionsPassed;
   // Un élément pris au clavier en bas d'écran ne passe pas sous la barre (WCAG 2.4.11).
   useEffect(() => {
     if (!visible) return;
@@ -58,7 +58,7 @@ export function MobileActionBar({
   return (
     <>
       {/* Réserve la hauteur de la barre en bas de page : elle ne recouvre pas le pied de page. */}
-      <div aria-hidden className="h-20 min-[960px]:hidden" />
+      <div aria-hidden className="h-20 min-[1024px]:hidden" />
       <div className={styles.mobileBar} data-testid="mobile-action-bar">
         {dossier && ceiling != null ? (
           <>

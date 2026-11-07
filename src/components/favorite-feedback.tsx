@@ -12,7 +12,10 @@ export const FAVORITE_ANONYMOUS_TITLE = `Créer un compte gratuit pour garder ce
 /** Compte reconnu dont la liste connectée n'est pas encore arrivée : le cœur attend les droits. */
 export const FAVORITE_VERIFYING_TITLE = "Vérification du compte…";
 
-/** Confirms an add and, on a capped plan, shows how many places are used. */
+/**
+ * Confirms an add and, on a capped plan, shows how many places are used. Links to the list
+ * (« Voir mes favoris ») and to the alert form.
+ */
 export async function announceFavoriteAdded(
   queryClient: QueryClient,
   userId: string,
@@ -32,11 +35,17 @@ export async function announceFavoriteAdded(
       // The count is a courtesy: the add itself already succeeded.
     }
   }
+  // La suite logique d'un ajout : retrouver la liste (repasse design n° 27), puis l'alerte.
   toast.success(message, {
     description: (
-      <Link href="/alertes" className="font-semibold underline">
-        Être prévenu des nouvelles ventes : créer une alerte
-      </Link>
+      <span className="flex flex-wrap gap-x-4 gap-y-1">
+        <Link href="/favoris" className="font-semibold underline">
+          Voir mes favoris
+        </Link>
+        <Link href="/alertes" className="font-semibold underline">
+          Être prévenu des nouvelles ventes : créer une alerte
+        </Link>
+      </span>
     ),
   });
 }

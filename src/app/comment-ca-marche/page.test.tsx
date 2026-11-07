@@ -84,6 +84,17 @@ describe("page Comment ça marche", () => {
     expect(container.textContent).not.toMatch(/se fixe avec l’offre Analyse/);
   });
 
+  it("donne aux liens des étapes une cible d'au moins 44 px (min-h-11)", () => {
+    render(<Page />);
+    const steps = screen.getByRole("list", { name: "Les trois étapes" });
+    const links = within(steps).getAllByRole("link");
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.className).toContain("min-h-11");
+      expect(link.className).not.toContain("min-h-9");
+    }
+  });
+
   it("ne montre pas la mention de l'offre de lancement tant que son état n'est pas lu", () => {
     render(<Page />);
     expect(screen.queryByTestId("launch-offer-note")).toBeNull();

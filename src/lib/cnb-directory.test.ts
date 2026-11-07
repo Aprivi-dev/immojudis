@@ -11,6 +11,19 @@ describe("CNB directory routing", () => {
     expect(findCnbBarAssociation("ville inconnue")).toBeNull();
   });
 
+  it("ne rapproche que des mots entiers et connaît les sièges sans barreau homonyme", () => {
+    // « bains » contient « ain » : Thonon ne doit pas tomber sur le barreau de l'Ain.
+    expect(findCnbBarAssociation("Thonon-les-Bains")?.code).toBe("0169");
+    expect(findCnbBarAssociation("Digne-les-Bains")?.code).toBe("0067");
+    expect(findCnbBarAssociation("Le Mans")?.code).toBe("0091");
+    expect(findCnbBarAssociation("Mans")?.code).toBe("0091");
+    expect(findCnbBarAssociation("Évry-Courcouronnes")?.code).toBe("0076");
+    expect(findCnbBarAssociation("Perpignan")?.code).toBe("0135");
+    expect(findCnbBarAssociation("St Gaudens")?.code).toBe("0152");
+    expect(findCnbBarAssociation("Saint-Pierre")?.code).toBe("0156");
+    expect(findCnbBarAssociation("Saint-Pierre-et-Miquelon")?.code).toBe("0183");
+  });
+
   it("génère une soumission CNB filtrée par barreau et droit immobilier", async () => {
     const response = await GET(
       new Request("https://immojudis.fr/api/lawyers/cnb-redirect?bar=Paris"),

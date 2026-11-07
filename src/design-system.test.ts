@@ -5,12 +5,14 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 
-// Plafonds du cliquet, relevés le 24/10/2026 (526 couleurs brutes, puis 514 après la fiche publique, 491 le 27/10/2026) :
-// à abaisser à chaque page migrée, jamais à relever.
-const RAW_PALETTE_CLASSES_MAX = 491;
-const TINY_TEXT_CLASSES_MAX = 109;
-// Déclarations `font-size` de 9 à 11 px des feuilles `.module.css` (accueil, ressources, attribution Mapbox du plan cadastral : 6).
-const TINY_TEXT_CSS_MAX = 6;
+// Plafonds du cliquet, relevés le 24/10/2026 (526 couleurs brutes, puis 514 après la fiche publique, 491 le 27/10/2026,
+// 381 le 07/11/2026 après la repasse design : espace compte, avocats, espace pro, fiche vente, catalogue) : à abaisser à chaque page migrée,
+// jamais à relever.
+const RAW_PALETTE_CLASSES_MAX = 381;
+const TINY_TEXT_CLASSES_MAX = 53;
+// Déclarations `font-size` de 9 à 11 px des feuilles `.module.css` (accueil et attribution Mapbox du plan cadastral ;
+// les ressources sont passées à 12 px le 07/11/2026).
+const TINY_TEXT_CSS_MAX = 2;
 
 // Couleurs qui ne peuvent pas passer par une classe ou une variable CSS :
 // e-mails (styles en ligne), image Open Graph, page d'erreur globale (sans feuille de style),

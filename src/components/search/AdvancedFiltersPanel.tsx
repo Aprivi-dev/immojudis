@@ -35,8 +35,15 @@ export function MoreFiltersModal({
   resultCount,
   onClose,
   onReset,
+  returnFocusRef,
 }: {
   open: boolean;
+  /**
+   * Bouton qui a ouvert la fenêtre, où le focus revient à la fermeture (Échap, « Fermer », clic à
+   * côté). À l'ouverture, le focus est d'abord sur la fenêtre de chargement (`FiltersLoadingFallback`)
+   * tant que ce module se télécharge : `document.activeElement` ne désigne alors plus le bouton.
+   */
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
   analysisLocked?: boolean;
   preview?: boolean;
   /** Les pépites sont ouvertes au public (liste non vide) : la bascule « Pépites seulement » est proposée. */
@@ -65,7 +72,7 @@ export function MoreFiltersModal({
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            triggerRef.current?.focus();
+            (returnFocusRef?.current ?? triggerRef.current)?.focus();
           }}
           aria-describedby={undefined}
           className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl bg-white shadow-xl outline-none"

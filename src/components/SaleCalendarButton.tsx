@@ -82,7 +82,7 @@ export function SaleCalendarButton({ saleId }: { saleId: string }) {
         à jour si la date change.
       </p>
       {message ? (
-        <p role="alert" className="mt-1 text-xs text-red-700">
+        <p role="alert" className="mt-1 text-xs text-danger">
           {message}
         </p>
       ) : null}

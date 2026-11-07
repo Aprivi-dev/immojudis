@@ -17,6 +17,9 @@ export type DepartmentMapEntry = { code: string; name: string; path: string; cou
 
 const count = new Intl.NumberFormat("fr-FR");
 
+/** Côté minimal de la zone cliquable d'un rond, quelle que soit sa taille à l'écran. */
+const MIN_TARGET = "24px";
+
 function salesPhrase(total: number): string {
   if (total === 0) return "aucune vente à venir";
   return `${count.format(total)} ${total > 1 ? "ventes" : "vente"} à venir`;
@@ -36,10 +39,15 @@ function mapUnits(value: number): string {
  * Carte de France des ventes à venir : un rond par département de métropole, posé sur le centre
  * officiel du département (`DEPARTMENT_CENTROIDS`), d'aire proportionnelle au nombre de ventes ; un
  * rond vide pour un département sans vente. Paris et la petite couronne sont agrandis dans un
- * médaillon. Chaque rond est un lien vers la page du département, avec une info-bulle au survol et
- * au focus. Tout est rendu par le serveur, en HTML et CSS (aucun JavaScript) : les ronds sont posés
- * en pourcentage du cadre et dimensionnés en unités de conteneur. La carte complète la liste, qui
+ * médaillon. Chaque rond est un lien vers la page du département, avec une info-bulle au survol.
+ * Tout est rendu par le serveur, en HTML et CSS (aucun JavaScript) : les ronds sont posés en
+ * pourcentage du cadre et dimensionnés en unités de conteneur. La carte complète la liste, qui
  * reste la référence (l'outre-mer n'est que dans la liste).
+ *
+ * Accessibilité (repasse design n° 21 et 40) : les 96 ronds sont hors de la tabulation (la liste
+ * qui suit est la voie clavier, et l'intitulé du groupe le dit) ; le nom de chaque lien reprend le
+ * texte de son info-bulle ; la zone cliquable fait au moins 24 px de côté autour d'un petit rond ;
+ * en contraste élevé, les ronds pleins restent pleins (couleurs système).
  */
 export function DepartmentFranceMap({
   departments,
@@ -72,7 +80,7 @@ export function DepartmentFranceMap({
     <div className="@container mt-3">
       <div
         role="group"
-        aria-label="Carte de France du nombre de ventes à venir par département. La liste détaillée des départements suit la carte."
+        aria-label="Carte de France du nombre de ventes à venir par département. Au clavier, utilisez la liste détaillée des départements qui suit la carte : les ronds de la carte ne sont pas atteints avec la touche Tab."
         className="relative aspect-[1060/1000] w-full"
       >
         <div
@@ -94,40 +102,42 @@ export function DepartmentFranceMap({
           style={{ ...at(parisMark.x, parisMark.y), width: mapUnits(28), height: mapUnits(24) }}
         />
         {dots.map((dot) => {
-          const phrase = salesPhrase(dot.count);
+          const label = `${dot.name} (${dot.code}) · ${salesPhrase(dot.count)}`;
           const size = dot.radius ? mapUnits(2 * dot.radius) : emptySize;
+          // Zone cliquable d'au moins 24 px de côté, centrée sur le rond (WCAG 2.5.8).
+          const target = `max(${MIN_TARGET}, ${size})`;
           return (
             <a
               key={dot.code}
               href={dot.path}
               data-code={dot.code}
-              aria-label={`${dot.name} (${dot.code}) : ${phrase}`}
-              className="group absolute -translate-x-1/2 -translate-y-1/2 rounded-full outline-none hover:z-20 focus-visible:z-20"
-              style={{ ...at(dot.x, dot.y), width: size, height: size }}
+              tabIndex={-1}
+              aria-label={label}
+              className="group absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none hover:z-20 focus-visible:z-20"
+              style={{ ...at(dot.x, dot.y), width: target, height: target }}
             >
               <span
                 aria-hidden
                 className={cn(
-                  "block size-full rounded-full transition-colors motion-reduce:transition-none",
+                  "relative block shrink-0 rounded-full transition-colors motion-reduce:transition-none forced-colors:forced-color-adjust-none",
                   dot.radius
-                    ? "border border-white bg-brand-navy/85 group-hover:bg-gold group-focus-visible:bg-gold group-focus-visible:ring-2 group-focus-visible:ring-brand-navy"
-                    : "border-2 border-line bg-white group-hover:border-gold group-focus-visible:border-gold group-focus-visible:ring-2 group-focus-visible:ring-brand-navy",
+                    ? "border border-white bg-brand-navy/85 group-hover:bg-gold group-focus-visible:bg-gold group-focus-visible:ring-2 group-focus-visible:ring-brand-navy forced-colors:border-[color:Canvas] forced-colors:bg-[color:CanvasText] forced-colors:group-hover:bg-[color:Highlight]"
+                    : "border-2 border-line bg-white group-hover:border-gold group-focus-visible:border-gold group-focus-visible:ring-2 group-focus-visible:ring-brand-navy forced-colors:border-[color:CanvasText] forced-colors:bg-[color:Canvas] forced-colors:group-hover:border-[color:Highlight]",
                 )}
-              />
+                style={{ width: size, height: size }}
+              >
+                {dot.inset && dot.radius ? (
+                  <span className="absolute top-full left-1/2 -translate-x-1/2 text-xs font-semibold text-ink-strong tabular-nums @max-lg:hidden">
+                    {dot.code}
+                  </span>
+                ) : null}
+              </span>
               <span
                 aria-hidden
                 className="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 rounded-md bg-brand-navy px-2.5 py-1.5 text-caption font-semibold whitespace-nowrap text-white shadow-lg group-hover:block group-focus-visible:block"
               >
-                {dot.name} ({dot.code}) · {phrase}
+                {label}
               </span>
-              {dot.inset && dot.radius ? (
-                <span
-                  aria-hidden
-                  className="absolute top-full left-1/2 -translate-x-1/2 text-xs font-semibold text-ink-strong tabular-nums @max-lg:hidden"
-                >
-                  {dot.code}
-                </span>
-              ) : null}
             </a>
           );
         })}
@@ -141,7 +151,7 @@ export function DepartmentFranceMap({
           return (
             <span key={value} className="inline-flex items-center gap-2">
               <i
-                className="inline-block rounded-full bg-brand-navy/85"
+                className="inline-block rounded-full bg-brand-navy/85 forced-colors:bg-[color:CanvasText] forced-colors:forced-color-adjust-none"
                 style={{ width: size, height: size }}
               />
               {value === 1 ? "1 vente" : `${count.format(value)} ventes`}
@@ -150,7 +160,7 @@ export function DepartmentFranceMap({
         })}
         <span className="inline-flex items-center gap-2">
           <i
-            className="inline-block rounded-full border-2 border-line bg-white"
+            className="inline-block rounded-full border-2 border-line bg-white forced-colors:border-[color:CanvasText] forced-colors:bg-[color:Canvas] forced-colors:forced-color-adjust-none"
             style={{ width: emptySize, height: emptySize }}
           />
           Aucune vente à venir

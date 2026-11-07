@@ -1,4 +1,10 @@
 .root {
+  /* Les grilles suivent la largeur réelle du bloc (colonne de la fiche, ~550 à 780 px), pas celle
+     de l'écran : en 4 colonnes, « Types de biens » s'écrivait une lettre par ligne (repasse n° 1). */
+  container-type: inline-size;
+  /* La fiche coupe les mots n'importe où (`overflow-wrap: anywhere`) : ici, un titre ne se coupe
+     qu'en dernier recours, et la pastille voisine passe dessous. */
+  overflow-wrap: break-word;
   --stats-navy: var(--brand-navy);
   --stats-gold: var(--gold-soft);
   --stats-warm: var(--surface);
@@ -26,9 +32,10 @@
 .progressHeader,
 .distributionHeading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 8px 18px;
 }
 
 .heroTopline {
@@ -66,7 +73,7 @@
   max-width: 38ch;
   margin: 5px 0 0;
   color: var(--stats-navy);
-  font-size: clamp(31px, 4vw, 46px);
+  font-size: clamp(31px, 4cqi, 46px);
   font-weight: 500;
   letter-spacing: -0.035em;
   line-height: 1.05;
@@ -192,7 +199,7 @@
 .sectionTitle {
   margin: 4px 0 0;
   color: var(--stats-navy);
-  font-size: clamp(25px, 3.4vw, 37px);
+  font-size: clamp(25px, 3.4cqi, 37px);
   font-weight: 500;
   letter-spacing: -0.028em;
   line-height: 1.1;
@@ -223,7 +230,7 @@
 
 .kpiGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-top: 18px;
 }
@@ -255,14 +262,14 @@
   display: block;
   margin-top: 12px;
   color: var(--stats-navy);
-  font-size: clamp(26px, 3.2vw, 40px);
+  font-size: clamp(26px, 3.2cqi, 40px);
   font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1.05;
 }
 
 .kpiValueSmall {
-  font-size: clamp(20px, 2.3vw, 29px);
+  font-size: clamp(20px, 2.3cqi, 29px);
   line-height: 1.13;
 }
 
@@ -274,7 +281,7 @@
 
 .familyGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   margin-top: 18px;
 }
@@ -435,7 +442,7 @@
 
 .priceMetricGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-top: 22px;
 }
@@ -464,7 +471,7 @@
   display: block;
   margin-top: 9px;
   color: var(--stats-navy);
-  font-size: clamp(19px, 2.6vw, 28px);
+  font-size: clamp(19px, 2.6cqi, 28px);
   font-weight: 600;
   letter-spacing: -0.025em;
 }
@@ -582,7 +589,7 @@
 .communesGrid,
 .salesGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   margin-top: 18px;
 }
@@ -760,15 +767,14 @@
   margin: 0;
 }
 
-@media (max-width: 960px) {
+/* Colonnes selon la largeur du bloc : une carte de statistiques garde ~200 px de texte au moins. */
+@container (min-width: 440px) {
   .kpiGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
-  .familyGrid {
-    grid-template-columns: 1fr;
-  }
-
+@container (min-width: 520px) {
   .calendarGrid,
   .communesGrid,
   .salesGrid {
@@ -776,7 +782,29 @@
   }
 }
 
-@media (max-width: 680px) {
+@container (min-width: 640px) {
+  .priceMetricGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 900px) {
+  .kpiGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .familyGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .calendarGrid,
+  .communesGrid,
+  .salesGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 680px) {
   .hero {
     padding-top: 28px;
   }
@@ -789,7 +817,7 @@
 
   .heroTitle {
     max-width: none;
-    font-size: clamp(30px, 9vw, 42px);
+    font-size: clamp(30px, 9cqi, 42px);
   }
 
   .periodControl {
@@ -800,22 +828,11 @@
     width: 100%;
   }
 
-  .kpiGrid,
-  .calendarGrid,
-  .communesGrid,
-  .salesGrid {
-    grid-template-columns: 1fr;
-  }
-
   .lawyerRowHeader,
   .lawyerRow {
     grid-template-columns: minmax(0, 1fr) 74px 62px;
     gap: 10px;
     padding-inline: 12px;
-  }
-
-  .priceMetricGrid {
-    grid-template-columns: 1fr;
   }
 
   .cardTopline {

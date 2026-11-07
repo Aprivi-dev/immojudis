@@ -647,7 +647,15 @@ export function ListingPracticalDetails({
         <div className={styles.contact}>
           <p className={styles.contactTitle}>Interlocuteur du dossier</p>
           <p className={styles.contactName}>{procedure.organizerName || "Contact non renseigné"}</p>
-          {roleLabel ? <p className={styles.muted}>{roleLabel}</p> : null}
+          {roleLabel ? (
+            <p className={styles.muted}>
+              {role === "pursuing_lawyer" ? (
+                <Terme terme="avocat-poursuivant">{roleLabel}</Terme>
+              ) : (
+                roleLabel
+              )}
+            </p>
+          ) : null}
           {contacts.length ? (
             <div className={styles.contactLinks}>
               {contacts.map(({ href, label, kind }) => {

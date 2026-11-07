@@ -25,3 +25,16 @@ describe("page À propos : ce que le site ne fait pas", () => {
     expect(text).not.toMatch(/bonnes? affaires?/i);
   });
 });
+
+describe("page À propos : briques du site (repasse design n° 13, 14, 17)", () => {
+  it("prend le titre de page, le surtitre de 12 px, les cartes et les boutons de la charte", () => {
+    const { container } = render(<Page />);
+    const title = screen.getByRole("heading", { level: 1 });
+    expect(title.className).toContain("text-[2rem]");
+    expect(screen.getByText("À propos d’Immojudis").className).toContain("text-xs");
+    expect(screen.getByRole("link", { name: "Lire les ressources" }).className).toContain(
+      "bg-brand-navy",
+    );
+    expect(container.innerHTML).not.toMatch(/liquid-|glass-|ij-login-button|text-\[11px\]/);
+  });
+});

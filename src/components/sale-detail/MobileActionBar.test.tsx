@@ -4,15 +4,21 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MobileActionBar } from "./MobileActionBar";
 
-let notify: (isIntersecting: boolean) => void = () => {};
+let notify: (isIntersecting: boolean, top?: number) => void = () => {};
 
 beforeEach(() => {
   document.body.innerHTML = '<div data-hero-actions=""></div>';
   vi.stubGlobal(
     "IntersectionObserver",
     class {
-      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
-        notify = (isIntersecting) => callback([{ isIntersecting }]);
+      constructor(
+        callback: (
+          entries: Array<{ isIntersecting: boolean; boundingClientRect: { top: number } }>,
+        ) => void,
+      ) {
+        // Par défaut, les boutons sortent par le haut (le lecteur les a dépassés).
+        notify = (isIntersecting, top = isIntersecting ? 100 : -300) =>
+          callback([{ isIntersecting, boundingClientRect: { top } }]);
       }
       observe() {}
       disconnect() {}
@@ -39,6 +45,9 @@ describe("MobileActionBar", () => {
         action={{ href: "#calculation", label: "Préparer mon enchère" }}
       />,
     );
+    expect(screen.queryByTestId("mobile-action-bar")).toBeNull();
+    // Boutons encore sous l'écran (pas atteints) : la synthèse n'est pas passée, pas de barre (n° 43).
+    act(() => notify(false, 1200));
     expect(screen.queryByTestId("mobile-action-bar")).toBeNull();
 
     hideHeroActions();
@@ -95,5 +104,20 @@ describe("MobileActionBar", () => {
     expect(screen.queryByRole("link", { name: "Préparer mon enchère" })).toBeNull();
     screen.getByRole("button", { name: "Mon dossier" }).click();
     expect(onOpen).toHaveBeenCalled();
+  });
+});
+
+describe("barre du bas alignée sur la fiche visiteur (repasse n° 43)", () => {
+  it("garde 72 px de haut et laisse la place au panneau collant à partir de 1024 px", async () => {
+    const { readFileSync } = await import("node:fs");
+    const overview = readFileSync("src/components/sale-detail/SaleOverview.module.css", "utf8");
+    const visitor = readFileSync("src/components/SalePublicPreview.module.css", "utf8");
+    expect(overview).toContain("min-height: calc(72px + env(safe-area-inset-bottom, 0px));");
+    expect(visitor).toContain("min-height: calc(72px + env(safe-area-inset-bottom, 0px));");
+    expect(overview).toMatch(/@media \(min-width: 1024px\) \{\s*\.mobileBar \{\s*display: none;/);
+    expect(overview).not.toContain("@media (min-width: 960px)");
+    render(<MobileActionBar priceLabel="Mise à prix" price={90_000} action={null} ceiling={1} />);
+    hideHeroActions();
+    expect(document.querySelector(".min-\\[1024px\\]\\:hidden")).not.toBeNull();
   });
 });

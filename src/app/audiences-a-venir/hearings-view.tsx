@@ -53,6 +53,26 @@ export function HearingsView({
 
   return (
     <PageShell
+      // Le fil d'Ariane au-dessus du titre, comme sur les autres pages (repasse design n° 41).
+      breadcrumb={
+        <nav aria-label="Fil d’Ariane" className="mb-6 text-sm text-ink-soft">
+          <ol className="flex flex-wrap items-center gap-x-2">
+            <li>
+              <Link href="/" className="hover:underline">
+                Accueil
+              </Link>
+            </li>
+            <li aria-hidden>/</li>
+            <li>
+              <Link href="/tribunaux" className="hover:underline">
+                Tribunaux
+              </Link>
+            </li>
+            <li aria-hidden>/</li>
+            <li aria-current="page">Audiences à venir</li>
+          </ol>
+        </nav>
+      }
       eyebrow="Ventes judiciaires"
       title="Audiences de ventes judiciaires à venir"
       description={
@@ -82,24 +102,6 @@ export function HearingsView({
         </>
       }
     >
-      <nav aria-label="Fil d’Ariane" className="mb-6 text-sm text-ink-soft">
-        <ol className="flex flex-wrap items-center gap-x-2">
-          <li>
-            <Link href="/" className="hover:underline">
-              Accueil
-            </Link>
-          </li>
-          <li aria-hidden>/</li>
-          <li>
-            <Link href="/tribunaux" className="hover:underline">
-              Tribunaux
-            </Link>
-          </li>
-          <li aria-hidden>/</li>
-          <li aria-current="page">Audiences à venir</li>
-        </ol>
-      </nav>
-
       <div className="grid gap-5">
         {total === 0 && unavailable ? (
           <Card as="section" aria-labelledby="indisponible">

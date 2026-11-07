@@ -231,7 +231,14 @@ function SitePill({
           </nav>
           <div className="hidden items-center gap-2 lg:flex">{actions}</div>
           <div className="flex items-center gap-2 lg:hidden">
-            {signup ? <SignupLink /> : null}
+            {/* Sous 360 px (320 px : agrandissement de 400 %), « S’inscrire » ferait sortir le bouton du
+                menu de la pilule et défiler la page en largeur : il reste dans le menu (« Créer un
+                compte »). */}
+            {signup ? (
+              <span data-site-pill-signup className="contents max-[359px]:hidden">
+                <SignupLink />
+              </span>
+            ) : null}
             {menu}
           </div>
         </div>

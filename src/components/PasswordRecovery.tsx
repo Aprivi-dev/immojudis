@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { Button, Card, PageTitle } from "@/components/ui/primitives";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 
 export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
@@ -107,11 +108,9 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
 
   const invalid = reset && !checking && (!ready || needsNewRecoveryLink);
   return (
-    <main id="contenu" className="liquid-page min-h-[75vh] px-4 py-12 text-foreground">
-      <section className="glass-shell mx-auto max-w-md rounded-lg p-6 sm:p-8">
-        <h1 className="font-display text-3xl">
-          {reset ? "Nouveau mot de passe" : "Mot de passe oublié"}
-        </h1>
+    <main id="contenu" className="mx-auto min-h-[75vh] w-full max-w-md px-4 py-12 text-foreground">
+      <Card as="section" className="sm:p-8">
+        <PageTitle>{reset ? "Nouveau mot de passe" : "Mot de passe oublié"}</PageTitle>
         {done ? (
           <p role="status" className="mt-5 text-sm leading-relaxed">
             {reset
@@ -174,21 +173,17 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
                 />
               </label>
             )}
-            <button
-              type="submit"
-              disabled={busy}
-              className="liquid-button rounded-lg px-4 py-3 text-sm font-semibold disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" disabled={busy}>
               {busy
                 ? "Veuillez patienter…"
                 : reset
                   ? "Enregistrer le mot de passe"
                   : "Recevoir le lien de réinitialisation"}
-            </button>
+            </Button>
           </form>
         )}
         {error ? (
-          <p role="alert" className="mt-4 text-sm text-red-700">
+          <p role="alert" className="mt-4 text-sm text-danger">
             {error}
           </p>
         ) : null}
@@ -200,7 +195,7 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
         <Link href="/login" className="mt-6 block text-sm underline">
           Retour à la connexion
         </Link>
-      </section>
+      </Card>
     </main>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { pathWithSearch } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type * as React from "react";
 import { useMemo, useState } from "react";
@@ -16,8 +15,13 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import { toast } from "@/lib/toast";
+import { Badge, buttonClasses, Card, Eyebrow, Notice, PageTitle } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { getProfessionalStatus, isProfessionalAccount } from "@/lib/account";
+import {
+  PROFESSIONAL_ACCESS_REQUEST_HREF,
+  PROFESSIONAL_WORKSPACE_HREF,
+} from "@/lib/professional-access";
 import {
   fetchPublicationRequestsClient,
   submitPublicationRequestClient,
@@ -56,6 +60,9 @@ const INITIAL_DRAFT: PublishDraft = {
   selectedPromotions: [],
   fileCount: 0,
 };
+
+/** Libellés en capitales des petits blocs : 12 px, encre douce (plus de 11 px). */
+const LABEL_CLASS = "text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft";
 
 const DOCUMENT_TYPES = [
   "Cahier des conditions de vente",
@@ -185,7 +192,7 @@ export function PublishPage() {
       });
 
       await queryClient.invalidateQueries({ queryKey: queryKeys.publicationRequestsAll() });
-      toast.success("Demande envoyée. Elle apparaît maintenant dans la file de validation admin.");
+      toast.success("Demande envoyée. Elle attend maintenant la validation de l'équipe Immojudis.");
       setDraft(INITIAL_DRAFT);
       setFiles([]);
     } catch (error) {
@@ -197,102 +204,101 @@ export function PublishPage() {
 
   if (loading) {
     return (
-      <main
-        id="contenu"
-        className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
-      >
-        <div className="glass-shell mx-auto max-w-3xl rounded-lg p-6">
-          <RefreshCw className="h-5 w-5 animate-spin text-gold-text" />
-          <p className="mt-4 text-sm text-muted-foreground">Vérification de l'accès pro...</p>
-        </div>
+      <main id="contenu" className="min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
+        <Card role="status" className="mx-auto max-w-3xl p-6">
+          <RefreshCw className="h-5 w-5 animate-spin text-gold-text" aria-hidden />
+          <p className="mt-4 text-sm text-ink-soft">Vérification de l'accès pro...</p>
+        </Card>
       </main>
     );
   }
 
   if (!isProfessional) {
+    // La page est derrière `AuthGate` : la personne est connectée. `/login?mode=professional`
+    // l'aurait renvoyée ici aussitôt (boucle) : la demande d'accès passe par le contact.
     return (
-      <main
-        id="contenu"
-        className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
-      >
-        <div className="glass-shell mx-auto max-w-3xl rounded-lg p-6 sm:p-8">
-          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
-            <LockKeyhole className="h-4 w-4" />
+      <main id="contenu" className="min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
+        <Card className="mx-auto max-w-3xl p-6 sm:p-8">
+          <Eyebrow className="flex items-center gap-2">
+            <LockKeyhole className="h-4 w-4" aria-hidden />
             Accès professionnel
-          </div>
-          <h1 className="mt-4 font-display text-4xl leading-tight">
+          </Eyebrow>
+          <PageTitle className="mt-4 text-brand-navy">
             La publication d'annonce est réservée aux comptes pro.
-          </h1>
-          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+          </PageTitle>
+          <p className="mt-4 text-base leading-relaxed text-ink-soft">
             Les comptes Découverte conservent l'accès au catalogue et les comptes Analyse aux outils
             de suivi. Pour référencer une vente, créez un compte professionnel avocat, notaire,
             commissaire de justice ou tribunal.
           </p>
           <Link
-            href={pathWithSearch("/login", { mode: "professional", redirect: "/publish" })}
-            className="liquid-button mt-6 inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
+            href={PROFESSIONAL_ACCESS_REQUEST_HREF}
+            className={buttonClasses({ variant: "primary", className: "mt-6" })}
           >
-            Créer un compte pro
+            Demander un accès pro
           </Link>
-        </div>
+        </Card>
       </main>
     );
   }
 
   return (
-    <main
-      id="contenu"
-      className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
-    >
+    <main id="contenu" className="min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
       <div className="mx-auto max-w-7xl">
-        <header className="glass-shell mb-8 grid gap-6 rounded-lg p-6 sm:p-8 lg:grid-cols-[1fr_24rem] lg:items-end">
+        <header className="mb-8 grid gap-6 lg:grid-cols-[1fr_24rem] lg:items-start">
           <div>
-            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
-              <Megaphone className="h-4 w-4" />
+            <Eyebrow className="flex items-center gap-2">
+              <Megaphone className="h-4 w-4" aria-hidden />
               Demande de publication pro
-            </div>
-            <h1 className="mt-4 max-w-4xl font-display text-4xl leading-tight text-foreground sm:text-5xl">
+            </Eyebrow>
+            <PageTitle className="mt-4 max-w-4xl text-brand-navy">
               Transmettre une annonce complète pour validation Immojudis.
-            </h1>
-            <p className="mt-5 max-w-3xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Les informations et pièces déposées sont enregistrées en statut « en attente ».
-              L'équipe peut ensuite contrôler, compléter et valider la mise en ligne depuis le panel
-              admin.
+            </PageTitle>
+            <p className="mt-4 max-w-3xl text-base leading-relaxed text-ink-soft">
+              Votre demande et ses pièces sont enregistrées en attente de validation. L'équipe
+              Immojudis les vérifie, peut les compléter, puis valide la mise en ligne.
             </p>
           </div>
 
-          <div className="liquid-panel-soft rounded-lg p-5">
+          <Card>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Préparation
-                </div>
-                <div className="mt-2 font-display text-3xl text-gold-text">{completion}%</div>
+                <p className={LABEL_CLASS}>Préparation</p>
+                <p className="mt-2 font-display text-3xl font-semibold tabular-nums text-brand-navy">
+                  {completion}%
+                </p>
               </div>
-              <BadgeCheck className="h-8 w-8 text-gold-text" />
+              <BadgeCheck className="h-8 w-8 text-gold-text" aria-hidden />
             </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+            <div
+              role="progressbar"
+              aria-label="Préparation de la demande"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={completion}
+              className="mt-4 h-2 overflow-hidden rounded-full bg-line-soft"
+            >
               <div
                 className="h-full rounded-full bg-gold transition-all"
                 style={{ width: `${completion}%` }}
               />
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-3 text-sm leading-relaxed text-ink-soft">
               Statut pro : {professionalStatusLabel(professionalStatus)}. La publication reste
               soumise à validation interne avant diffusion.
             </p>
-          </div>
+          </Card>
         </header>
 
         <form onSubmit={submitRequest} className="grid gap-6 lg:grid-cols-[1fr_22rem]">
           {!user?.email?.trim() ? (
-            <div className="liquid-panel border border-amber-300/20 bg-amber-400/10 p-4 text-sm leading-relaxed text-amber-50 lg:col-span-2">
+            <Notice tone="warning" role="alert" className="lg:col-span-2">
               Une adresse email confirmée est obligatoire avant tout dépôt. Ajoutez-la à votre
               compte puis revenez ici pour envoyer la demande.
-            </div>
+            </Notice>
           ) : null}
           <div className="grid gap-6">
-            <section className="liquid-panel rounded-lg p-5 sm:p-6">
+            <Card as="section" className="sm:p-6">
               <SectionTitle
                 icon={FileText}
                 title="Informations de l'annonce"
@@ -342,8 +348,9 @@ export function PublishPage() {
                   />
                 </Field>
                 <Field label="Pièces transmises">
-                  <label className="form-dropzone">
-                    <ImagePlus className="h-5 w-5 text-gold-text" />
+                  {/* Bordure de champ (3:1 au moins), comme `.form-input`. */}
+                  <label className="form-dropzone border-brand-navy/55 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-gold-soft">
+                    <ImagePlus className="h-5 w-5 text-gold-text" aria-hidden />
                     <span>{files.length > 0 ? `${files.length} fichier(s)` : "Ajouter"}</span>
                     <input
                       type="file"
@@ -357,20 +364,16 @@ export function PublishPage() {
               </div>
 
               {files.length ? (
-                <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.03] p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Fichiers prêts à envoyer
-                  </div>
+                <div className="mt-4 rounded-lg border border-line bg-surface-muted p-3">
+                  <p className={LABEL_CLASS}>Fichiers prêts à envoyer</p>
                   <div className="mt-3 grid gap-2">
                     {files.map((file) => (
                       <div
                         key={`${file.name}-${file.size}`}
-                        className="flex items-center justify-between gap-3 rounded-md bg-background/35 px-3 py-2 text-xs"
+                        className="flex items-center justify-between gap-3 rounded-md bg-white px-3 py-2 text-xs"
                       >
                         <span className="truncate text-foreground">{file.name}</span>
-                        <span className="shrink-0 text-muted-foreground">
-                          {formatFileSize(file.size)}
-                        </span>
+                        <span className="shrink-0 text-ink-soft">{formatFileSize(file.size)}</span>
                       </div>
                     ))}
                   </div>
@@ -405,9 +408,9 @@ export function PublishPage() {
                   </Field>
                 </div>
               </div>
-            </section>
+            </Card>
 
-            <section className="liquid-panel rounded-lg p-5 sm:p-6">
+            <Card as="section" className="sm:p-6">
               <SectionTitle
                 icon={ShieldCheck}
                 title="Documents et confidentialité"
@@ -417,42 +420,44 @@ export function PublishPage() {
               <div className="mt-6 grid gap-3 md:grid-cols-2">
                 {DOCUMENT_TYPES.map((name) => (
                   <label key={name} className="choice-card">
+                    {/* Case visible : l'état coché ne repose plus sur une teinte d'or à peine
+                        perceptible. */}
                     <input
                       type="checkbox"
                       checked={draft.selectedDocuments.includes(name)}
                       onChange={() => toggleDocument(name)}
-                      className="sr-only"
+                      className="h-4 w-4 shrink-0 accent-brand-navy"
                     />
-                    <FileText className="h-4 w-4 text-gold-text" />
+                    <FileText className="h-4 w-4 text-gold-text" aria-hidden />
                     <span>{name}</span>
                   </label>
                 ))}
               </div>
 
-              <label className="mt-5 flex items-start gap-3 rounded-lg border border-gold/20 bg-gold/10 p-4">
+              <label className="mt-5 flex items-start gap-3 rounded-lg border border-line bg-surface-muted p-4">
                 <input
                   type="checkbox"
                   checked={draft.anonymizeDocuments}
                   onChange={(event) => updateDraft("anonymizeDocuments", event.target.checked)}
-                  className="mt-1"
+                  className="mt-1 h-4 w-4 shrink-0 accent-brand-navy"
                 />
                 <span>
                   <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <EyeOff className="h-4 w-4 text-gold-text" />
+                    <EyeOff className="h-4 w-4 text-gold-text" aria-hidden />
                     Demander l'anonymisation avant diffusion
                   </span>
-                  <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
+                  <span className="mt-1 block text-sm leading-relaxed text-ink-soft">
                     Les pièces restent privées. Cette demande sera traitée lors de la validation ;
                     la diffusion publique ne doit conserver que les éléments utiles à
                     l'investisseur.
                   </span>
                 </span>
               </label>
-            </section>
+            </Card>
           </div>
 
           <aside className="grid gap-6 lg:sticky lg:top-24 lg:self-start">
-            <section className="liquid-panel rounded-lg p-5">
+            <Card as="section">
               <SectionTitle
                 icon={Megaphone}
                 title="Promotion"
@@ -466,41 +471,41 @@ export function PublishPage() {
                       type="checkbox"
                       checked={draft.selectedPromotions.includes(option.id)}
                       onChange={() => togglePromotion(option.id)}
-                      className="mt-1"
+                      className="mt-1 h-4 w-4 shrink-0 accent-brand-navy"
                     />
                     <span>
                       <span className="block text-sm font-semibold text-foreground">
                         {option.label}
                       </span>
-                      <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                      <span className="mt-1 block text-xs leading-relaxed text-ink-soft">
                         {option.desc}
                       </span>
                     </span>
                   </label>
                 ))}
               </div>
-            </section>
+            </Card>
 
-            <section className="liquid-panel-soft rounded-lg p-5">
-              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-text">
-                <UploadCloud className="h-4 w-4" />
+            <Card as="section" className="bg-surface-muted">
+              <Eyebrow className="flex items-center gap-2">
+                <UploadCloud className="h-4 w-4" aria-hidden />
                 Prochaine étape
-              </div>
-              <h2 className="mt-4 font-display text-2xl text-foreground">
+              </Eyebrow>
+              <h2 className="mt-4 font-display text-2xl font-semibold text-brand-navy">
                 Envoyer à la validation
               </h2>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                La demande sera visible côté admin avec les fichiers associés, en attente de
-                contrôle avant publication.
+              <p className="mt-3 text-sm leading-relaxed text-ink-soft">
+                L'équipe Immojudis reçoit la demande et les fichiers associés, et les contrôle avant
+                toute publication.
               </p>
               <button
                 type="submit"
                 disabled={submitting || !user?.email?.trim()}
-                className="liquid-button mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
+                className={buttonClasses({ variant: "primary", className: "mt-5 w-full" })}
               >
                 {submitting ? (
                   <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <RefreshCw className="h-4 w-4 animate-spin" aria-hidden />
                     Envoi en cours
                   </>
                 ) : (
@@ -508,21 +513,21 @@ export function PublishPage() {
                 )}
               </button>
               <Link
-                href="/espace-pro"
-                className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-white/10 px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold-text hover:border-gold"
+                href={PROFESSIONAL_WORKSPACE_HREF}
+                className={buttonClasses({ variant: "secondary", className: "mt-3 w-full" })}
               >
                 Ouvrir mon espace pro
               </Link>
-            </section>
+            </Card>
 
-            <section className="liquid-panel rounded-lg p-5">
+            <Card as="section" aria-labelledby="publish-recent-title">
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
-                  <Clock className="h-4 w-4" />
+                <Eyebrow id="publish-recent-title" className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" aria-hidden />
                   Mes demandes
-                </div>
+                </Eyebrow>
                 {requestsLoading ? (
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-ink-soft" aria-hidden />
                 ) : null}
               </div>
               <div className="mt-4 grid gap-3">
@@ -531,12 +536,12 @@ export function PublishPage() {
                     <PublicationRequestLine key={request.id} request={request} />
                   ))
                 ) : (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-ink-soft">
                     Aucune demande encore transmise depuis ce compte.
                   </p>
                 )}
               </div>
-            </section>
+            </Card>
           </aside>
         </form>
       </div>
@@ -546,25 +551,25 @@ export function PublishPage() {
 
 function PublicationRequestLine({ request }: { request: PublicationRequestSummary }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+    <div className="rounded-lg border border-line bg-white p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-foreground">{request.title}</div>
-          <div className="mt-1 text-xs text-muted-foreground">
+          <div className="mt-1 text-xs text-ink-soft">
             {request.location ?? "Localisation à préciser"}
           </div>
         </div>
         <StatusPill status={request.status} />
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink-soft">
         <span>{request.documentCount} fichier(s)</span>
-        <span>•</span>
+        <span aria-hidden>•</span>
         <span>{formatDate(request.createdAt)}</span>
       </div>
       {request.publishedUrl ? (
         <Link
           href={request.publishedUrl}
-          className="mt-3 inline-block text-xs text-gold-text underline"
+          className="mt-1 inline-flex min-h-11 items-center text-sm text-gold-text underline"
         >
           Voir la vente publiée
         </Link>
@@ -584,14 +589,14 @@ function SectionTitle({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gold/20 bg-gold/10 text-gold-text">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface-tint text-gold-text">
         <Icon className="h-5 w-5" />
       </span>
       <div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-brand-navy">
           {title}
         </h2>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{subtitle}</p>
+        <p className="mt-1 text-sm leading-relaxed text-ink-soft">{subtitle}</p>
       </div>
     </div>
   );
@@ -600,31 +605,26 @@ function SectionTitle({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="grid gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </span>
+      <span className="text-sm font-semibold text-brand-navy">{label}</span>
       {children}
     </label>
   );
 }
 
+/** Statut d'une demande : pastille aux jetons de la charte (plus de couleurs d'un thème sombre). */
 function StatusPill({ status }: { status: PublicationRequestSummary["status"] }) {
-  const label =
-    status === "approved" ? "Validée" : status === "rejected" ? "Refusée" : "En attente";
-  const tone =
+  const [tone, label] =
     status === "approved"
-      ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+      ? (["success", "Validée"] as const)
       : status === "rejected"
-        ? "border-red-300/20 bg-red-500/10 text-red-100"
-        : "border-amber-300/20 bg-amber-400/10 text-amber-100";
-
+        ? (["danger", "Refusée"] as const)
+        : (["warning", "En attente"] as const);
   return (
-    <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-[11px] ${tone}`}>
+    <Badge tone={tone} className="shrink-0">
       {label}
-    </span>
+    </Badge>
   );
 }
-
 function professionalStatusLabel(status: ReturnType<typeof getProfessionalStatus>) {
   if (status === "approved") return "validé";
   if (status === "rejected") return "refusé";

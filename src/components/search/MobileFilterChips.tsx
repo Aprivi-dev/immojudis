@@ -17,12 +17,13 @@ import {
 import { PepiteIcon } from "@/components/PepiteBadge";
 import { PEPITE_FILTER_LABEL } from "@/lib/pepite-copy";
 import { DateRangeFields } from "./DateRangeFields";
+import { FORCED_COLORS_SELECTED } from "./forced-colors";
 import { draftPrice, priceRangeError, type SearchDraft } from "./search-page-state";
 
 const CHIP_BASE =
   "inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-full border px-3.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 const CHIP_IDLE = "border-line bg-white text-brand-navy hover:border-brand-navy";
-const CHIP_ACTIVE = "border-brand-navy bg-brand-navy text-white";
+const CHIP_ACTIVE = `border-brand-navy bg-brand-navy text-white ${FORCED_COLORS_SELECTED}`;
 
 const chipClass = (active: boolean) => `${CHIP_BASE} ${active ? CHIP_ACTIVE : CHIP_IDLE}`;
 
@@ -55,8 +56,11 @@ export function MobileFilterChips({
   /** Critères actifs : le nombre s'écrit sur la pastille « Filtres ». */
   activeFiltersCount?: number;
   filtersOpen?: boolean;
-  /** Ouvre la fenêtre de tous les filtres : la pastille « Filtres » ouvre la rangée. */
-  onOpenFilters?: () => void;
+  /**
+   * Ouvre la fenêtre de tous les filtres : la pastille « Filtres » ouvre la rangée. `trigger` : la
+   * pastille, où le focus revient à la fermeture de la fenêtre.
+   */
+  onOpenFilters?: (trigger: HTMLElement) => void;
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   /** Visiteur sans compte : les deux filtres de repères nécessitent un compte, ils sont grisés et mènent à l'inscription. */
@@ -85,7 +89,7 @@ export function MobileFilterChips({
           <button
             type="button"
             aria-expanded={filtersOpen}
-            onClick={onOpenFilters}
+            onClick={(event) => onOpenFilters(event.currentTarget)}
             className={chipClass(false)}
           >
             <SlidersHorizontal className="h-4 w-4" aria-hidden />

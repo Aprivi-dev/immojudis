@@ -4,9 +4,20 @@ import { cn } from "@/lib/utils";
 
 /** Éléments communs à l'en-tête et aux menus qu'il charge à la demande. */
 
+/**
+ * Rubriques de l'en-tête qui couvrent d'autres adresses que la leur : les pages par département
+ * sont des pages de ventes, les audiences à venir une page des tribunaux.
+ */
+const SECTION_PATHS: Readonly<Record<string, readonly string[]>> = {
+  "/sales": ["/ventes-encheres-immobilieres"],
+  "/tribunaux": ["/audiences-a-venir"],
+};
+
 export function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
-  return pathname === href || pathname.startsWith(`${href}/`);
+  return [href, ...(SECTION_PATHS[href] ?? [])].some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
 }
 
 /**
