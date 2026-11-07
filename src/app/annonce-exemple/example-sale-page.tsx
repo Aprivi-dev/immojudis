@@ -9,9 +9,12 @@ import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
 import { Card, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
+import { ceilingVenueScopeText } from "@/lib/fee-regime-labels";
+import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
-import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
+import { FREE_ACCESS_LINE, MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
 import type { AuctionSale } from "@/lib/types";
@@ -49,6 +52,17 @@ function ExampleSummarySignup() {
 }
 
 /**
+ * Fin de l'exemple, pour un visiteur : le même calcul sur les ventes réelles. Avec l'essai, sur toutes
+ * les ventes qui ont un plafond (`open` : les régimes de frais ouverts ; jamais les ventes domaniales)
+ * pendant l'essai, puis sur les déblocages du mois ; sans l'essai (ou état non lu), les déblocages seuls.
+ */
+function exampleNextStepsText(trialOpen: boolean, open?: readonly FeeRegimeKey[]): string {
+  return trialOpen
+    ? `Avec un compte gratuit, ce calcul sur les ventes réelles (${ceilingVenueScopeText(open)}) : sur toutes pendant ${ANALYSIS_TRIAL_DAYS} jours, puis sur ${MONTHLY_SALE_UNLOCKS} par mois. Sans carte bancaire.`
+    : `Avec un compte gratuit, ce calcul sur ${MONTHLY_SALE_UNLOCKS} ventes réelles par mois. Sans carte bancaire.`;
+}
+
+/**
  * The example is chosen on the server (`?bien=`), so the page content is part of
  * the HTML sent to crawlers; nothing here reads the URL.
  */
@@ -56,14 +70,18 @@ export function ExampleSalePage({
   example,
   ceilingChoices,
   adjudicationStatisticsEnabled = false,
+  openFeeRegimes,
 }: {
   example: { sale: AuctionSale; marketEstimate: MarketEstimate };
   /** Choix de départ de l'enchère plafond, les mêmes que les chiffres de l'accueil. */
   ceilingChoices?: CeilingUserChoices;
   /** Lu côté serveur (`ADJUDICATION_PRICE_STATISTICS_ENABLED`) : la démo montre l'onglet quand le drapeau est ouvert. */
   adjudicationStatisticsEnabled?: boolean;
+  /** Régimes de frais ouverts (`openFeeRegimesFromEnv`) ; absent : tous ceux dont les règles sont définies. */
+  openFeeRegimes?: readonly FeeRegimeKey[];
 }) {
   const { user } = useAuth();
+  const trialOpen = useLaunchOffer().active;
   useEffect(() => {
     trackProductEvent("sample_report_viewed");
   }, []);
@@ -101,10 +119,9 @@ export function ExampleSalePage({
             Essayez sur une vraie vente
           </h2>
           <p className="text-sm text-ink-soft">
-            Cette analyse est un exemple fictif.{" "}
             {user
-              ? "Parcourez le catalogue pour ouvrir la fiche d’une vente réelle."
-              : "Un compte gratuit, sans carte bancaire, ouvre l’adresse, les photos et la fourchette de valeur des ventes du catalogue."}
+              ? "Cette analyse est un exemple fictif. Parcourez le catalogue pour ouvrir la fiche d’une vente réelle."
+              : exampleNextStepsText(trialOpen, openFeeRegimes)}
           </p>
           <div className="flex flex-wrap gap-3">
             {user ? null : (

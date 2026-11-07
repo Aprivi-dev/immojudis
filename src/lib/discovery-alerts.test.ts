@@ -3,6 +3,7 @@ import {
   alertCreationLoginPath,
   alertCreationPath,
   isDiscoveryAlertCompatible,
+  isDiscoveryAlertEvaluable,
   publicAlertCriteria,
 } from "./discovery-alerts";
 import { firstSearchToUrl } from "./onboarding";
@@ -45,6 +46,34 @@ describe("isDiscoveryAlertCompatible", () => {
     expect(
       isDiscoveryAlertCompatible({ ...baseAlert, advanced_criteria: { query: "Bordeaux" } }),
     ).toBe(false);
+  });
+});
+
+describe("isDiscoveryAlertEvaluable", () => {
+  it("garde l'alerte quotidienne aux critères publics créée pendant l'essai", () => {
+    expect(isDiscoveryAlertEvaluable(baseAlert)).toBe(true);
+    expect(isDiscoveryAlertEvaluable({ ...baseAlert, alert_frequency: "daily" })).toBe(true);
+  });
+
+  it("exclut toujours les critères avancés, quelle que soit la fréquence", () => {
+    for (const alert_frequency of ["daily", "weekly"] as const) {
+      expect(isDiscoveryAlertEvaluable({ ...baseAlert, alert_frequency, dpe_classes: ["C"] })).toBe(
+        false,
+      );
+      expect(isDiscoveryAlertEvaluable({ ...baseAlert, alert_frequency, min_yield_pct: 6 })).toBe(
+        false,
+      );
+      expect(
+        isDiscoveryAlertEvaluable({ ...baseAlert, alert_frequency, min_market_discount_pct: 20 }),
+      ).toBe(false);
+      expect(
+        isDiscoveryAlertEvaluable({
+          ...baseAlert,
+          alert_frequency,
+          advanced_criteria: { query: "Bordeaux" },
+        }),
+      ).toBe(false);
+    }
   });
 });
 

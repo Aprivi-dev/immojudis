@@ -30,6 +30,14 @@ import { userMessage } from "@/lib/user-messages";
 /** Page où l'on retrouve ses alertes. */
 const ALERTS_PATH = "/alertes";
 
+/**
+ * Critère d'alerte réservé à l'offre Analyse, pour un compte gratuit : un par champ que refuse la
+ * condition de `createAlertFromSearch` (texte libre, occupation, note, rendement, écart avec le
+ * marché, DPE, maison avec terrain), puis ce que l'alerte gratuite accepte.
+ */
+export const RESERVED_ALERT_CRITERIA_TEXT =
+  "Les critères avancés (écart avec le marché, rendement, occupation, DPE…) font partie des alertes de l’offre Analyse. Avec le compte gratuit : zone, type de vente, type de bien, budget, surface…";
+
 export type CreateAlertOptions = {
   frequency?: "daily" | "weekly";
   /** Case « email récapitulatif » cochée : le consentement est donné à la création de l'alerte. */
@@ -176,9 +184,11 @@ export function useCreateAlert({
           search.dpeClasses?.length ||
           search.houseWithLand)
       ) {
-        toast.error(
-          "L'alerte gratuite accepte les critères publics : zone, type de vente, type de bien, budget et surface.",
-        );
+        // Une information, pas une erreur : ces critères existent, ils font partie de l'offre Analyse.
+        // Les exemples cités sont tous dans la condition ci-dessus, qui en compte sept.
+        toast.message(RESERVED_ALERT_CRITERIA_TEXT, {
+          action: { label: "Voir les offres", onClick: () => router.push(OFFERS_PATH) },
+        });
         return { status: "blocked" };
       }
       setSaving(true);
