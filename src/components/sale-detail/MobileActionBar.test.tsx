@@ -77,4 +77,23 @@ describe("MobileActionBar", () => {
     hideHeroActions();
     expect(screen.getByTestId("mobile-action-bar").textContent).not.toContain("Plafond");
   });
+
+  it("Analyse : « plafond · Mon dossier », le bouton ouvre le dossier de travail", () => {
+    const onOpen = vi.fn();
+    render(
+      <MobileActionBar
+        priceLabel="Mise à prix"
+        price={90_000}
+        ceiling={128_000}
+        action={{ href: "#calculation", label: "Préparer mon enchère" }}
+        dossier={{ caption: "votre plafond · 27 nov. 2026", onOpen }}
+      />,
+    );
+    hideHeroActions();
+    const bar = screen.getByTestId("mobile-action-bar");
+    expect(bar.textContent).toMatch(/128.000\s€votre plafond · 27 nov. 2026/);
+    expect(screen.queryByRole("link", { name: "Préparer mon enchère" })).toBeNull();
+    screen.getByRole("button", { name: "Mon dossier" }).click();
+    expect(onOpen).toHaveBeenCalled();
+  });
 });

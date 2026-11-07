@@ -35,6 +35,20 @@ import {
   type PepitePayload,
 } from "@/lib/sale-pepite-view";
 
+// Rendu de test : aucune section n'approche de l'écran, seules les ancres montent les blocs lourds.
+class NeverIntersectingObserver {
+  readonly root = null;
+  readonly rootMargin = "";
+  readonly thresholds = [];
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+}
+vi.stubGlobal("IntersectionObserver", NeverIntersectingObserver);
+
 const mocks = vi.hoisted(() => ({
   fetchMarket: vi.fn(),
   fetchAiReviewProjections: vi.fn(),
@@ -62,6 +76,12 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
   fetchValuePreview: mocks.fetchValuePreview,
   unlockSaleRequest: mocks.unlockSale,
+  // Panneau « Votre analyse » : dossier, suivi des changements et rappels (réponses sans effet ici).
+  fetchFavoriteDossier: () => new Promise(() => undefined),
+  saveFavoriteDossier: vi.fn(),
+  fetchSaleChangeEvents: () => new Promise(() => undefined),
+  fetchNotificationPreferences: () => new Promise(() => undefined),
+  updateNotificationPreferences: vi.fn(),
 }));
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,
@@ -102,6 +122,8 @@ vi.mock("next/dynamic", () => ({
       showUpcomingListings,
       propertyTypeVerified,
       onOpenWorkspace,
+      requireSimulation,
+      initialInsuranceRate,
       ceiling,
       userKey,
       payload,
@@ -133,6 +155,8 @@ vi.mock("next/dynamic", () => ({
       showUpcomingListings?: boolean;
       propertyTypeVerified?: boolean;
       onOpenWorkspace?: () => void;
+      requireSimulation?: boolean;
+      initialInsuranceRate?: number;
     }) {
       // Onglet Quartier : le vrai bloc urbanisme et cadastre ; les risques de la commune, rien.
       if (mapLocation !== undefined && sale) {
@@ -158,7 +182,8 @@ vi.mock("next/dynamic", () => ({
       }
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
       // n° 92 : « Mon plafond face au tribunal » (reçoit `ceiling`) et « Mes questions pour l'avocat ».
-      if (ceiling !== undefined) {
+      // (« Enregistrer ce plafond » reçoit aussi `ceiling`, sans `userKey` : rien ici.)
+      if (ceiling !== undefined && userKey !== undefined) {
         return <section aria-label="Mon plafond face au tribunal" data-ceiling={String(ceiling)} />;
       }
       if (userKey !== undefined) return <section aria-label="Mes questions pour l’avocat" />;
@@ -175,7 +200,7 @@ vi.mock("next/dynamic", () => ({
           </section>
         );
       }
-      if (sale && marketEstimateOverride === undefined) {
+      if (sale && marketEstimateOverride === undefined && premium !== undefined) {
         return (
           <section
             id="stats-overview"
@@ -189,7 +214,11 @@ vi.mock("next/dynamic", () => ({
           </section>
         );
       }
-      if (saleId) return <button data-sale-id={saleId}>Export PDF</button>;
+      if (saleId && requireSimulation !== undefined) {
+        return <button data-sale-id={saleId}>Export PDF</button>;
+      }
+      // Simulateur de financement, simulation locative, météo : sans objet ici.
+      if (initialInsuranceRate !== undefined || saleId) return null;
       return images ? (
         <div role="dialog" aria-label="Galerie photos">
           <button onClick={onClose}>Fermer les photos</button>
@@ -236,16 +265,48 @@ function renderDetail(
   );
 }
 
+/** Les anciens onglets et la section de la fiche sur une seule page qui reprend leur contenu. */
+const SECTION_FOR_TAB: Record<string, string> = {
+  Aperçu: "bien",
+  apercu: "bien",
+  "Prix et plafond": "prix",
+  estimation: "prix",
+  Statistiques: "marche",
+  statistiques: "marche",
+  Quartier: "marche",
+  quartier: "marche",
+  Travaux: "travaux-financement",
+  travaux: "travaux-financement",
+  Financement: "travaux-financement",
+  financement: "travaux-financement",
+  Démarches: "demarches",
+  demarches: "demarches",
+};
+
+function tocLink(tab: string): HTMLAnchorElement {
+  const link = document.querySelector<HTMLAnchorElement>(
+    `nav[aria-label="Sommaire de la fiche"] a[href="#${SECTION_FOR_TAB[tab] ?? tab}"]`,
+  );
+  expect(link).not.toBeNull();
+  return link!;
+}
+
+/** Suit le lien du sommaire vers la section qui reprend l'ancien onglet. */
 function selectTab(label: string) {
-  fireEvent.click(screen.getByRole("tab", { name: label }));
+  fireEvent.click(tocLink(label));
+}
+
+/** « true » quand le sommaire met en avant la section de l'ancien onglet. */
+function sectionCurrent(tab: string): string {
+  return tocLink(tab).getAttribute("aria-current") === "true" ? "true" : "false";
 }
 
 function expectActivePanel(container: HTMLElement, tab: string): HTMLElement {
-  const panels = [...container.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
-  expect(panels).toHaveLength(1);
-  expect(panels[0].id).toBe(`sale-detail-panel-${tab}`);
-  expect(panels[0].getAttribute("aria-labelledby")).toBe(`sale-detail-tab-${tab}`);
-  return panels[0];
+  const id = SECTION_FOR_TAB[tab] ?? tab;
+  const section = container.querySelector<HTMLElement>(`section#${id}`);
+  expect(section).not.toBeNull();
+  expect(sectionCurrent(tab)).toBe("true");
+  return section!;
 }
 
 const PEPITE_CRITERIA = pepiteCriteriaViews(
@@ -486,49 +547,69 @@ describe("integrated listing", () => {
     }
   });
 
-  it("mounts one panel at a time and supports keyboard tab navigation", () => {
+  it("lays out the six numbered sections on one page, with a sommaire that follows the reader", () => {
     const { container } = renderDetail("analysis", undefined, true, true);
 
-    expect(screen.getAllByRole("tab")).toHaveLength(7);
-    expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
-    expectActivePanel(container, "apercu");
+    const links = within(
+      screen.getByRole("navigation", { name: "Sommaire de la fiche" }),
+    ).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+      "Le bien",
+      "Prix et plafond",
+      "Marché et comparables",
+      "Travaux et financement",
+      "Pièces du dossier",
+      "Démarches",
+    ]);
+    expect(links.map((link) => link.textContent?.slice(0, 2))).toEqual([
+      "01",
+      "02",
+      "03",
+      "04",
+      "05",
+      "06",
+    ]);
+    const sections = ["bien", "prix", "marche", "travaux-financement", "pieces", "demarches"].map(
+      (id) => container.querySelector<HTMLElement>(`section#${id}`),
+    );
+    sections.forEach((section, index) => {
+      expect(section).not.toBeNull();
+      if (index > 0) {
+        expect(
+          sections[index - 1]!.compareDocumentPosition(section!) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
+    });
+    expect(container.querySelector('[role="tab"], [role="tabpanel"]')).toBeNull();
 
+    expect(sectionCurrent("Aperçu")).toBe("true");
     selectTab("Prix et plafond");
-    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expectActivePanel(container, "estimation");
-
-    fireEvent.keyDown(screen.getByRole("tab", { name: "Prix et plafond" }), { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expectActivePanel(container, "statistiques");
-
-    fireEvent.keyDown(screen.getByRole("tab", { name: "Statistiques" }), { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "Travaux" }).getAttribute("aria-selected")).toBe("true");
-    expectActivePanel(container, "travaux");
-
-    fireEvent.keyDown(screen.getByRole("tab", { name: "Travaux" }), { key: "End" });
-    expect(screen.getByRole("tab", { name: "Démarches" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(sectionCurrent("Prix et plafond")).toBe("true");
+    expect(sectionCurrent("Aperçu")).toBe("false");
+    selectTab("Démarches");
     expectActivePanel(container, "demarches");
+  });
+
+  it("mounts the heavy blocks of a section only when it is reached", () => {
+    const { container } = renderDetail("analysis", undefined, true, true);
+
+    expect(container.querySelector("#stats-overview")).toBeNull();
+    expect(screen.getByText("Chargement des statistiques du tribunal…")).toBeTruthy();
+    selectTab("Statistiques");
+    expect(screen.getByText("Statistiques du tribunal")).toBeTruthy();
   });
 
   it("maps legacy deep links to the corresponding compact panel", () => {
     window.history.replaceState(null, "", "#works");
     const { container } = renderDetail("analysis");
 
-    expect(screen.getByRole("tab", { name: "Travaux" }).getAttribute("aria-selected")).toBe("true");
+    expect(sectionCurrent("Travaux")).toBe("true");
     expectActivePanel(container, "travaux");
 
     window.history.pushState(null, "", "#market");
     fireEvent(window, new Event("hashchange"));
-    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expectActivePanel(container, "estimation");
+    expect(sectionCurrent("Quartier")).toBe("true");
+    expectActivePanel(container, "quartier");
   });
 
   it("defers tribunal forecast loading until its disclosure opens", () => {
@@ -566,7 +647,7 @@ describe("integrated listing", () => {
     try {
       const { container } = renderDetail("analysis");
 
-      expect(screen.getByRole("tab", { name: tab }).getAttribute("aria-selected")).toBe("true");
+      expect(sectionCurrent(tab)).toBe("true");
       expectActivePanel(container, panel);
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
     } finally {
@@ -575,12 +656,6 @@ describe("integrated listing", () => {
   });
 
   it.each([
-    {
-      anchor: "market",
-      tab: "estimation",
-      target: "market",
-      summary: "Voir les références de marché",
-    },
     {
       anchor: "budget",
       tab: "estimation",
@@ -617,18 +692,7 @@ describe("integrated listing", () => {
         expectation.publicDemo ?? false,
       );
 
-      expect(
-        screen
-          .getByRole("tab", {
-            name:
-              expectation.tab === "estimation"
-                ? "Prix et plafond"
-                : expectation.tab === "demarches"
-                  ? "Démarches"
-                  : "Aperçu",
-          })
-          .getAttribute("aria-selected"),
-      ).toBe("true");
+      expect(sectionCurrent(expectation.tab)).toBe("true");
       expectActivePanel(container, expectation.tab);
 
       const target = expectation.target ? container.querySelector(`#${expectation.target}`) : null;
@@ -651,9 +715,7 @@ describe("integrated listing", () => {
       window.history.replaceState(null, "", `#${anchor}`);
       const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
 
-      expect(
-        screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected"),
-      ).toBe("true");
+      expect(sectionCurrent("Prix et plafond")).toBe("true");
       const target = container.querySelector(`#${anchor}`);
       expect(target).not.toBeNull();
       // « Le calcul, étape par étape » est replié par défaut : l'ancre l'ouvre.
@@ -662,14 +724,12 @@ describe("integrated listing", () => {
     },
   );
 
-  it("opens the documents disclosure when #documents targets Démarches", () => {
+  it("opens the documents disclosure when #documents targets « Pièces du dossier »", () => {
     window.history.replaceState(null, "", "#documents");
     const { container } = renderDetail("analysis");
 
-    expect(screen.getByRole("tab", { name: "Démarches" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    expectActivePanel(container, "demarches");
+    expect(sectionCurrent("pieces")).toBe("true");
+    expectActivePanel(container, "pieces");
 
     const documents = container.querySelector<HTMLElement>("#documents");
     expect(documents).not.toBeNull();
@@ -690,9 +750,7 @@ describe("integrated listing", () => {
     window.history.replaceState(null, "", "#budget-analysis");
     const { container } = renderDetail("analysis", conflictingSale, false);
 
-    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(sectionCurrent("Prix et plafond")).toBe("true");
     expectActivePanel(container, "estimation");
 
     const budget = container.querySelector<HTMLElement>("#budget");
@@ -730,7 +788,7 @@ describe("integrated listing", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
+    expect(sectionCurrent("Aperçu")).toBe("true");
     expectActivePanel(view.container, "apercu");
   });
 
@@ -887,16 +945,12 @@ describe("integrated listing", () => {
       false,
       estimate,
     );
-    selectTab("Prix et plafond");
+    selectTab("Quartier");
 
-    const summary = screen.getByText("Voir les références de marché");
-    const disclosure = summary.closest("details");
-    expect(disclosure).not.toBeNull();
-    expect(disclosure?.open).toBe(false);
-    expect(disclosure?.contains(container.querySelector("#market"))).toBe(true);
-
-    fireEvent.click(summary);
+    // Les références de marché sont montrées directement dans « Marché et comparables ».
     const market = container.querySelector("#market")!;
+    expect(container.querySelector("section#marche")?.contains(market)).toBe(true);
+    expect(market.closest("details")).toBeNull();
     expect(market.textContent).toContain("1 vente à cette adresse");
     expect(market.textContent).toContain("Historique des ventes à cette adresse");
     expect(market.textContent).toContain("lots différents");
@@ -917,8 +971,7 @@ describe("integrated listing", () => {
       false,
       estimate,
     );
-    selectTab("Prix et plafond");
-    fireEvent.click(screen.getByText("Voir les références de marché"));
+    selectTab("Quartier");
 
     const market = container.querySelector("#market")!;
     expect(market.textContent).toContain("12 ventes de référence");
@@ -998,17 +1051,46 @@ describe("integrated listing", () => {
     expect(screen.queryByRole("region", { name: "Mes questions pour l’avocat" })).toBeNull();
   });
 
-  it("points the Estimation actions to the planner and its calculation", () => {
+  it("lays out « Prix et plafond » : the three amounts, the scale, the visible hypotheses and the calculation", () => {
     renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
     selectTab("Prix et plafond");
+    const section = within(document.getElementById("prix")!);
 
-    expect(screen.getByRole("link", { name: "Ajuster mes hypothèses" }).getAttribute("href")).toBe(
-      "#calculation",
-    );
-    expect(screen.getByRole("link", { name: "Voir le calcul" }).getAttribute("href")).toBe(
-      "#why-this-ceiling",
-    );
-    expect(screen.getByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
+    const trio = section.getByRole("region", { name: "Le prix" });
+    expect(trio.textContent).toMatch(/Mise à prix.*Enchère plafond.*Valeur estimée/);
+    expect(section.getByTestId("price-scale")).toBeTruthy();
+    // Les hypothèses sont visibles d'emblée, sans ouvrir de panneau.
+    for (const name of ["Votre projet", "Niveau de prudence", "Travaux"]) {
+      expect(section.getByRole("radiogroup", { name })).toBeTruthy();
+    }
+    expect(section.getByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
+    expect(section.getByRole("heading", { name: "Votre plafond selon les travaux" })).toBeTruthy();
+    // Le panneau de décision des ventes débloquées laisse place au trio et à la réglette.
+    expect(section.queryByRole("link", { name: "Ajuster mes hypothèses" })).toBeNull();
+  });
+
+  it("turns the sticky summary into « Votre analyse » for Analyse, and keeps the locked one for Découverte", () => {
+    const analysis = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    const summary = screen.getByRole("region", { name: "Synthèse de la vente" });
+    expect(within(summary).getByText("Votre analyse")).toBeTruthy();
+    expect(within(summary).getByRole("link", { name: "Modifier les hypothèses" })).toBeTruthy();
+    expect(summary.textContent).toMatch(/par rapport à la mise à prix|sous la mise à prix/);
+    analysis.unmount();
+
+    window.history.replaceState(null, "", "/");
+    renderDetail("discovery");
+    const locked = screen.getByRole("region", { name: "Synthèse de la vente" });
+    expect(within(locked).queryByText("Votre analyse")).toBeNull();
+  });
+
+  it("recalculates the ceiling from the works pills of « Prix et plafond »", () => {
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+    const trio = screen.getByRole("region", { name: "Le prix" });
+    const before = trio.textContent;
+    const works = within(screen.getByRole("radiogroup", { name: "Travaux" })).getAllByRole("radio");
+    fireEvent.click(works[works.length - 1]);
+    expect(works[works.length - 1].getAttribute("aria-checked")).toBe("true");
+    expect(trio.textContent).not.toBe(before);
   });
 
   it("keeps the photo gallery action functional in the Aperçu panel", () => {
@@ -1027,10 +1109,14 @@ describe("integrated listing", () => {
     discovery.unmount();
 
     window.history.replaceState(null, "", "/");
-    renderDetail("analysis");
+    const analysis = renderDetail("analysis");
     expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
-    selectTab("Prix et plafond");
-    expect(screen.getByText("Voir les références de marché")).toBeTruthy();
+    selectTab("Quartier");
+    expect(analysis.container.querySelector("#market")).not.toBeNull();
+    // La valeur estimée mise en phrase, chiffres surlignés, en tête de « Marché et comparables ».
+    expect(screen.getByTestId("market-sentence").textContent).toMatch(
+      /^Valeur estimée à .+, d’après \d+ ventes? comparables? à moins de \d+ m/,
+    );
   });
 
   it("never places the starting price against the value while the occupancy is under review", async () => {
@@ -1119,7 +1205,7 @@ describe("integrated listing", () => {
         source_blocks: null,
       } as AuctionSale;
       const { container } = renderDetail("analysis", sale, false);
-      expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
+      expect(screen.queryByText("Chargement des statistiques du tribunal…")).toBeNull();
       selectTab("Prix et plafond");
 
       expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
@@ -1142,9 +1228,7 @@ describe("integrated listing", () => {
     window.history.replaceState(null, "", `#${anchor}`);
     const { container } = renderDetail("analysis", undefined, true, true);
     expectActivePanel(container, "statistiques");
-    expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(sectionCurrent("Statistiques")).toBe("true");
     expect(screen.getByText("Statistiques du tribunal")).toBeTruthy();
   });
 
@@ -1153,8 +1237,8 @@ describe("integrated listing", () => {
     (access) => {
       const { container } = renderDetail(access);
 
-      expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
-      expect(screen.getAllByRole("tab")).toHaveLength(6);
+      expect(container.querySelector("#stats-overview")).toBeNull();
+      expect(screen.queryByText("Chargement des statistiques du tribunal…")).toBeNull();
       expect(container.textContent).not.toContain(
         "Prix d’adjudication accessibles avec l’offre Analyse",
       );
@@ -1171,7 +1255,7 @@ describe("integrated listing", () => {
       const { container } = renderDetail(access);
 
       expectActivePanel(container, "apercu");
-      expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
+      expect(screen.queryByText("Chargement des statistiques du tribunal…")).toBeNull();
       expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
       expect(container.textContent).not.toContain(
         "Prix d’adjudication accessibles avec l’offre Analyse",
@@ -1190,7 +1274,7 @@ describe("integrated listing", () => {
         source_blocks: null,
       } as AuctionSale);
       expectActivePanel(container, "apercu");
-      expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
+      expect(screen.queryByText("Chargement des statistiques du tribunal…")).toBeNull();
       expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
     },
   );
@@ -1305,16 +1389,12 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     mocks.unlockSale.mockResolvedValue(unlockStatus({ unlocked: true, used: 2, remaining: 1 }));
     window.history.replaceState(null, "", "/");
     renderFree(unlockStatus());
-    expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
+    expect(sectionCurrent("Aperçu")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmer le déblocage" }));
 
-    await waitFor(() =>
-      expect(
-        screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected"),
-      ).toBe("true"),
-    );
+    await waitFor(() => expect(sectionCurrent("Prix et plafond")).toBe("true"));
     expect(mocks.unlockSale).toHaveBeenCalledWith(saleId);
     expect(window.location.hash).toBe("#calculation");
     // The confirmation of the unlock stays on the page.
@@ -1420,9 +1500,9 @@ describe("« 3 déblocages par mois » on the sale page", () => {
 
     // Aperçu: no risk evidence panel, only the generic « Points à vérifier » card.
     expect(screen.queryByText("Voir les sources et actions à confirmer")).toBeNull();
-    // Estimation: no market evidence disclosure.
-    selectTab("Prix et plafond");
-    expect(screen.queryByText("Voir les références de marché")).toBeNull();
+    // Marché et comparables: no market evidence.
+    selectTab("Quartier");
+    expect(document.getElementById("market")).toBeNull();
     // Travaux stays a preview of the Analyse offer.
     selectTab("Travaux");
     expect(
@@ -1620,6 +1700,6 @@ describe("« 3 déblocages par mois » on the sale page", () => {
       source_blocks: null,
     } as AuctionSale);
     expect(mocks.fetchMarket).not.toHaveBeenCalled();
-    expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
+    expect(screen.queryByText("Chargement des statistiques du tribunal…")).toBeNull();
   });
 });

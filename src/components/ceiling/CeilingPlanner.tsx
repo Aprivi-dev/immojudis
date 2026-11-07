@@ -50,6 +50,7 @@ export function CeilingPlanner({
   marketLoading = false,
   valueReason,
   dpeClass = null,
+  saveAction = null,
 }: {
   hypotheses: CeilingHypotheses;
   plan: CeilingPlan;
@@ -61,6 +62,8 @@ export function CeilingPlanner({
   /** Pourquoi la valeur de marché manque (« estimation en cours », …), quand elle manque. */
   valueReason?: string;
   dpeClass?: string | null;
+  /** « Enregistrer ce plafond dans mon dossier », sous le calcul et le tableau des travaux. */
+  saveAction?: ReactNode;
 }) {
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
   useCeilingViewEvent(plan.available);
@@ -94,12 +97,12 @@ export function CeilingPlanner({
       <div className="p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2
+            <h3
               id="ceiling-planner-title"
-              className="font-display text-2xl font-medium text-brand-navy sm:text-3xl"
+              className="font-display text-2xl font-medium text-brand-navy"
             >
               {labels.title}
-            </h2>
+            </h3>
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-soft">{labels.intro}</p>
           </div>
           <button
@@ -112,7 +115,16 @@ export function CeilingPlanner({
           </button>
         </div>
 
-        <ProjectPicker project={hypotheses.project} onChoicesChange={onChoicesChange} />
+        {/* Les hypothèses visibles d'emblée : chaque choix recalcule le plafond en direct. */}
+        <div className="mt-5 grid gap-x-4 gap-y-4 rounded-lg border border-line-soft bg-white p-4 lg:grid-cols-3">
+          <ProjectPicker project={hypotheses.project} onChoicesChange={onChoicesChange} />
+          <ProfilePicker
+            profiles={profilePlans}
+            selected={choices.customMarginPct != null ? null : hypotheses.profile}
+            onChoicesChange={onChoicesChange}
+          />
+          <WorksPicker hypotheses={hypotheses} onChoicesChange={onChoicesChange} />
+        </div>
 
         <div className="mt-5 rounded-lg border border-gold/30 bg-gold/[0.07] p-5 sm:p-6">
           <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
@@ -142,11 +154,6 @@ export function CeilingPlanner({
               ) : null}
               <Verdict hypotheses={hypotheses} plan={plan} labels={regimeLabels} />
             </div>
-            <ProfilePicker
-              profiles={profilePlans}
-              selected={choices.customMarginPct != null ? null : hypotheses.profile}
-              onChoicesChange={onChoicesChange}
-            />
           </div>
           <ConfidenceNote
             confidence={confidence}
@@ -195,8 +202,11 @@ export function CeilingPlanner({
 
         {plan.available ? (
           <>
-            <CeilingSteps steps={plan.steps} />
-            <WorksCeilings hypotheses={hypotheses} onEditWorks={onEditWorks} />
+            <div className="mt-6 grid items-start gap-3 xl:grid-cols-2">
+              <CeilingSteps steps={plan.steps} />
+              <WorksCeilings hypotheses={hypotheses} onEditWorks={onEditWorks} />
+            </div>
+            {saveAction ? <div className="mt-4">{saveAction}</div> : null}
             {/* Le point de départ du simulateur suit le passage du plafond sous la mise à prix. */}
             <BidSimulator
               key={startGap?.kind === "below" ? "ceiling-below-start" : "ceiling-above-start"}
@@ -242,15 +252,13 @@ function ProjectPicker({
   onChoicesChange: ChoicesUpdate;
 }) {
   return (
-    <div className="mt-5">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
-        Votre projet
-      </div>
+    <div className="min-w-0">
+      <div className={PICKER_LEGEND}>Votre projet</div>
       <div
         role="radiogroup"
         aria-label="Votre projet"
         onKeyDown={onRadioGroupKeyDown}
-        className="mt-2 grid gap-2 sm:grid-cols-3"
+        className="flex flex-wrap gap-1.5"
       >
         {CEILING_PROJECTS.map((item) => {
           const selected = item.key === project;
@@ -261,19 +269,18 @@ function ProjectPicker({
               role="radio"
               aria-checked={selected}
               tabIndex={selected ? 0 : -1}
+              title={item.summary}
               onClick={() => onChoicesChange((choices) => ({ ...choices, project: item.key }))}
-              className={`rounded-lg border p-3 text-left transition ${
-                selected
-                  ? "border-gold-soft bg-gold/10 text-foreground"
-                  : "border-line text-ink-soft hover:border-gold/50"
-              }`}
+              className={pillClasses(selected)}
             >
-              <span className="block text-sm font-semibold text-foreground">{item.label}</span>
-              <span className="mt-1 block text-xs leading-relaxed">{item.summary}</span>
+              {item.label}
             </button>
           );
         })}
       </div>
+      <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+        {CEILING_PROJECTS.find((item) => item.key === project)?.summary}
+      </p>
     </div>
   );
 }
@@ -288,47 +295,108 @@ function ProfilePicker({
   onChoicesChange: ChoicesUpdate;
 }) {
   return (
-    <div
-      role="radiogroup"
-      aria-label="Niveau de prudence"
-      onKeyDown={onRadioGroupKeyDown}
-      className="grid min-w-0 grid-cols-1 gap-1.5 sm:grid-cols-3"
-    >
-      {profiles.map((profile, index) => {
-        const active = profile.key === selected;
-        // Un seul arrêt de Tab : le profil coché, ou le premier quand la marge est personnalisée.
-        const stop = selected == null ? index === 0 : active;
-        return (
-          <button
-            key={profile.key}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            tabIndex={stop ? 0 : -1}
-            onClick={() =>
-              onChoicesChange((choices) => ({
-                ...choices,
-                profile: profile.key,
-                customMarginPct: null,
-              }))
-            }
-            className={`flex min-h-14 items-baseline justify-between gap-3 rounded-lg border px-3 py-2 text-left transition sm:block ${
-              active
-                ? "border-gold-soft bg-gold text-brand-navy"
-                : "border-line bg-white text-ink-soft hover:text-foreground"
-            }`}
-          >
-            <span className="block text-xs font-semibold">{profile.label}</span>
-            <span className="block whitespace-nowrap text-sm font-semibold tabular-nums">
-              {profile.plan.available && profile.plan.reachable
-                ? formatPrice(profile.plan.maxBid)
-                : "—"}
-            </span>
-          </button>
-        );
-      })}
+    <div className="min-w-0">
+      <div className={PICKER_LEGEND}>Niveau de prudence</div>
+      <div
+        role="radiogroup"
+        aria-label="Niveau de prudence"
+        onKeyDown={onRadioGroupKeyDown}
+        className="flex flex-wrap gap-1.5"
+      >
+        {profiles.map((profile, index) => {
+          const active = profile.key === selected;
+          // Un seul arrêt de Tab : le profil coché, ou le premier quand la marge est personnalisée.
+          const stop = selected == null ? index === 0 : active;
+          return (
+            <button
+              key={profile.key}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              tabIndex={stop ? 0 : -1}
+              onClick={() =>
+                onChoicesChange((choices) => ({
+                  ...choices,
+                  profile: profile.key,
+                  customMarginPct: null,
+                }))
+              }
+              className={pillClasses(active)}
+            >
+              {profile.label}
+              <span className="sr-only">
+                {" : "}
+                {profile.plan.available && profile.plan.reachable
+                  ? formatPrice(profile.plan.maxBid)
+                  : "aucun plafond"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+/** Les niveaux de travaux du tableau « Votre plafond selon les travaux », en pilules. */
+function WorksPicker({
+  hypotheses,
+  onChoicesChange,
+}: {
+  hypotheses: CeilingHypotheses;
+  onChoicesChange: ChoicesUpdate;
+}) {
+  const rows = useMemo(() => ceilingsByWorks(hypotheses), [hypotheses]);
+  const selectedIndex = rows.findIndex((row) => row.key === hypotheses.works.key);
+  return (
+    <div className="min-w-0">
+      <div className={PICKER_LEGEND}>Travaux</div>
+      <div
+        role="radiogroup"
+        aria-label="Travaux"
+        onKeyDown={onRadioGroupKeyDown}
+        className="flex flex-wrap gap-1.5"
+      >
+        {rows.map((row, index) => {
+          const selected = index === selectedIndex;
+          const stop = selectedIndex < 0 ? index === 0 : selected;
+          return (
+            <button
+              key={row.key}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              tabIndex={stop ? 0 : -1}
+              onClick={() =>
+                onChoicesChange((choices) => ({
+                  ...choices,
+                  works: { key: row.key, amount: row.works },
+                }))
+              }
+              className={pillClasses(selected)}
+            >
+              {row.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+        {hypotheses.works.amount > 0
+          ? `Budget retenu : ${formatPrice(hypotheses.works.amount)}, plus ${hypotheses.works.contingencyPct} % d’imprévus.`
+          : "Aucun budget travaux retenu."}
+      </p>
+    </div>
+  );
+}
+
+const PICKER_LEGEND = "mb-2 text-[13px] font-semibold text-ink-soft";
+
+function pillClasses(selected: boolean): string {
+  return `inline-flex min-h-11 items-center rounded-full border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+    selected
+      ? "border-brand-navy bg-brand-navy text-white"
+      : "border-line bg-white text-brand-navy hover:border-brand-navy"
+  }`;
 }
 
 function Verdict({
@@ -449,22 +517,18 @@ function PlannerFold({
 
 function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
   return (
-    <PlannerFold
+    <PlannerCard
       id="why-this-ceiling"
       titleId="ceiling-steps-title"
       title="Le calcul, étape par étape"
-      meta="De la valeur du bien au plafond"
-      first
+      meta="Touchez ou cliquez sur une ligne pour voir d’où vient le chiffre."
     >
-      <p className="text-sm text-ink-soft">
-        Touchez ou cliquez sur une ligne pour voir d’où vient le chiffre.
-      </p>
-      <ol className="mt-4 divide-y divide-line border-y border-line">
+      <ol className="divide-y divide-line-soft">
         {steps.map((step) => (
           <li key={step.key}>
             <details className="group">
               <summary
-                className={`flex min-h-11 cursor-pointer list-none items-baseline justify-between gap-4 py-3 [&::-webkit-details-marker]:hidden ${
+                className={`flex min-h-11 cursor-pointer list-none items-baseline justify-between gap-4 px-4 py-2.5 [&::-webkit-details-marker]:hidden ${
                   step.kind === "subtotal" || step.kind === "result" ? "font-semibold" : ""
                 }`}
               >
@@ -494,12 +558,16 @@ function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
                   {formatPrice(Math.abs(step.amount))}
                 </span>
               </summary>
-              <p className="pb-3 pl-6 text-sm leading-relaxed text-ink-soft">{step.detail}</p>
+              <p className="px-4 pb-3 pl-10 text-sm leading-relaxed text-ink-soft">{step.detail}</p>
             </details>
           </li>
         ))}
       </ol>
-    </PlannerFold>
+      <p className="border-t border-line-soft px-4 py-3 text-xs leading-relaxed text-ink-soft">
+        Simulation indicative à partir des ventes comparables : ni un prix garanti, ni un conseil
+        d’achat.
+      </p>
+    </PlannerCard>
   );
 }
 
@@ -512,25 +580,12 @@ function WorksCeilings({
 }) {
   const rows = useMemo(() => ceilingsByWorks(hypotheses), [hypotheses]);
   return (
-    <PlannerFold
+    <PlannerCard
       titleId="ceiling-works-title"
       title="Votre plafond selon les travaux"
       meta="Sans travaux, rafraîchissement, rénovation"
     >
-      {onEditWorks ? (
-        <button
-          type="button"
-          onClick={onEditWorks}
-          className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline-offset-4 hover:underline"
-        >
-          Choisir les travaux
-        </button>
-      ) : null}
-      <p className="mt-1 text-sm text-ink-soft">
-        Les scénarios incluent 10 % d’imprévus et le portage pendant le chantier ; une rénovation
-        complète peut aussi augmenter la valeur du bien.
-      </p>
-      <div className="mt-3 overflow-x-auto">
+      <div className="overflow-x-auto px-4">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-[0.08em] text-ink-soft">
@@ -539,7 +594,7 @@ function WorksCeilings({
               <th className="py-2 pl-2 text-right font-semibold">Plafond</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line border-y border-line">
+          <tbody className="divide-y divide-line-soft">
             {rows.map((row) => {
               const selected = row.key === hypotheses.works.key;
               return (
@@ -566,7 +621,53 @@ function WorksCeilings({
           </tbody>
         </table>
       </div>
-    </PlannerFold>
+      <div className="border-t border-line-soft px-4 py-3 text-xs leading-relaxed text-ink-soft">
+        <p>
+          Les scénarios incluent 10 % d’imprévus et le portage pendant le chantier ; une rénovation
+          complète peut aussi augmenter la valeur du bien.
+        </p>
+        {onEditWorks ? (
+          <button
+            type="button"
+            onClick={onEditWorks}
+            className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline-offset-4 hover:underline"
+          >
+            Choisir les travaux
+          </button>
+        ) : null}
+      </div>
+    </PlannerCard>
+  );
+}
+
+/** Un bloc du détail du calcul, ouvert : carte blanche au filet, titre et ligne d'aide. */
+function PlannerCard({
+  id,
+  titleId,
+  title,
+  meta,
+  children,
+}: {
+  id?: string;
+  titleId: string;
+  title: ReactNode;
+  meta: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      id={id}
+      aria-labelledby={titleId}
+      className="min-w-0 scroll-mt-2 overflow-hidden rounded-lg border border-line-soft bg-white"
+    >
+      <div className="border-b border-line-soft px-4 py-3">
+        <h4 id={titleId} className="text-[15px] font-bold text-brand-navy">
+          {title}
+        </h4>
+        <p className="text-xs text-ink-soft">{meta}</p>
+      </div>
+      {children}
+    </section>
   );
 }
 
