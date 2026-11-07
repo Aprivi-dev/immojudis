@@ -5,7 +5,7 @@
 const LINKED_PARTICLE = /^(?:au|aux|de|des|du|en|et|la|le|les|lès|lez|sous|sur)$/i;
 
 /** « D'Olonne », « L'Isle » après un trait d'union : l'élision s'écrit en minuscule. */
-const LINKED_ELISION = /^([DL])(['’])/;
+const LINKED_ELISION = /^[DL](?=['’])/;
 
 /**
  * Nom de commune tel qu'il s'affiche dans le catalogue : les petits mots liés par un trait d'union
@@ -19,15 +19,13 @@ const LINKED_ELISION = /^([DL])(['’])/;
 export function displayCityName(city: string): string;
 export function displayCityName(city: string | null | undefined): string | null | undefined;
 export function displayCityName(city: string | null | undefined): string | null | undefined {
-  if (!city || !city.includes("-") || city === city.toLocaleUpperCase("fr-FR")) return city;
+  if (!city || !city.includes("-") || city === city.toUpperCase()) return city;
   return city
     .split("-")
     .map((part, index) => {
       if (index === 0) return part;
-      if (LINKED_PARTICLE.test(part)) return part.toLocaleLowerCase("fr-FR");
-      return part.replace(LINKED_ELISION, (_, letter: string, apostrophe: string) => {
-        return `${letter.toLocaleLowerCase("fr-FR")}${apostrophe}`;
-      });
+      if (LINKED_PARTICLE.test(part)) return part.toLowerCase();
+      return part.replace(LINKED_ELISION, (letter) => letter.toLowerCase());
     })
     .join("-");
 }

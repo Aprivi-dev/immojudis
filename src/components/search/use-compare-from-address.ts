@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "@/lib/toast";
 import { COMPARE_SALE_PARAM, type ComparedSale } from "@/lib/search/sale-comparison";
 import type { AuctionSale } from "@/lib/types";
 
@@ -53,7 +54,12 @@ export function useCompareFromAddress({
         }).then(() => {
           if (!cancelled) setSaleToCompare(null);
         }),
-      () => undefined,
+      // Module introuvable (déploiement entre-temps) : le dire plutôt que de ne rien faire.
+      () => {
+        if (cancelled) return;
+        setSaleToCompare(null);
+        toast.message("Cette vente n’a pas pu être ajoutée à la comparaison.");
+      },
     );
     return () => {
       cancelled = true;

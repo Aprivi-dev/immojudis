@@ -254,10 +254,9 @@ export function salesReturnHref(returnTo: string | null | undefined, saleId: str
 export function salesCompareHref(returnTo: string | null | undefined, saleId: string): string {
   const safe = returnTo ? safeSalesReturnTo(returnTo) : null;
   const base = safe && (safe === "/sales" || safe.startsWith("/sales?")) ? safe : "/sales";
-  const [path, query = ""] = base.split("?");
-  const params = new URLSearchParams(query);
-  params.set("comparer", saleId);
-  return `${path}?${params.toString()}#${SALE_CARD_ANCHOR_PREFIX}${encodeURIComponent(saleId)}`;
+  const url = new URL(base, RETURN_BASE);
+  url.searchParams.set("comparer", saleId);
+  return `${url.pathname}${url.search}#${SALE_CARD_ANCHOR_PREFIX}${encodeURIComponent(saleId)}`;
 }
 
 export type SearchValue = string | number | boolean | null | undefined;

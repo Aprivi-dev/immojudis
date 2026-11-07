@@ -24,6 +24,10 @@ describe("salesCompareHref", () => {
       `/sales?city=Lyon&page=2&${COMPARE_SALE_PARAM}=${id}#sale-card-${id}`,
     );
     expect(salesCompareHref(undefined, id)).toBe(`/sales?comparer=${id}#sale-card-${id}`);
+    // Un « ? » non encodé dans une valeur reste dans la valeur, le critère n'est pas perdu.
+    expect(salesCompareHref("/sales?city=a?b", id)).toBe(
+      `/sales?city=a%3Fb&comparer=${id}#sale-card-${id}`,
+    );
   });
 
   it("revient au catalogue sans critères quand on vient d'ailleurs ou d'une origine refusée", () => {

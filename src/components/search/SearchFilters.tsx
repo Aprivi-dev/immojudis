@@ -61,7 +61,6 @@ export function MobileMapToggle({
         onClick={onOpenMap}
         onPointerDown={onPreloadMap}
         onTouchStart={onPreloadMap}
-        data-map-toggle=""
         className={`pointer-events-auto ${scrolled ? "inline-flex" : "hidden"} h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-brand-navy px-5 text-[0.9375rem] font-bold text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft`}
       >
         <Map className="h-[18px] w-[18px]" aria-hidden />

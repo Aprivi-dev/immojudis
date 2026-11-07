@@ -405,7 +405,8 @@ export function SearchPage({
     enabled: Boolean(user) && !authLoading,
     staleTime: 5 * 60_000,
   });
-  const isDiscovery = Boolean(user) && entitlementsData?.plan.hasAnalysisAccess !== true;
+  const hasAnalysisAccess = entitlementsData?.plan.hasAnalysisAccess === true;
+  const isDiscovery = Boolean(user) && !hasAnalysisAccess;
   // Le tri par score d'investissement n'existe que dans l'offre Analyse.
   const investmentSortAllowed = !isPreview && !isDiscovery;
   // `isPending`, pas `isLoading` : au rendu où le compte vient d'être reconnu, la requête des droits
@@ -692,7 +693,7 @@ export function SearchPage({
   // Abonné de l'offre Analyse : bandeau « Votre suivi », ligne « Mon dossier » des ventes suivies et
   // colonne « Mon plafond » du tableau (voir `useFollowedSales`, chargé avec le bandeau par
   // `FollowedSalesPanel`). Rien n'est chargé ni lu pour les autres.
-  const isAnalysis = Boolean(user) && entitlementsData?.plan.hasAnalysisAccess === true;
+  const isAnalysis = Boolean(user) && hasAnalysisAccess;
   const [followedCards, setFollowedCards] = useState<FollowedCardData | null>(null);
   const followedFor = isAnalysis && !authLoading ? (user?.id ?? null) : null;
   // Le suivi d'un compte ne passe jamais à un autre (déconnexion, changement de compte).
@@ -1078,9 +1079,9 @@ export function SearchPage({
   const alertButtonProps = {
     saving: savingAlert,
     signedIn: Boolean(user),
-    dailyAllowed: entitlementsData?.plan.hasAnalysisAccess === true,
+    dailyAllowed: hasAnalysisAccess,
     emailRecapEnabled,
-    freeAlertUsage: entitlementsData?.plan.hasAnalysisAccess === true ? null : freeAlertUsage,
+    freeAlertUsage: hasAnalysisAccess ? null : freeAlertUsage,
     onOpen: openAlertDialog,
     onClick: saveSearch,
   };
@@ -1164,7 +1165,7 @@ export function SearchPage({
           filtersOpen={filtersOpen}
           savingAlert={savingAlert}
           signedIn={Boolean(user)}
-          dailyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+          dailyAlertsAllowed={hasAnalysisAccess}
           emailRecapEnabled={emailRecapEnabled}
           pepitesActive={pepitesActive}
           signupLinks={signupLinks}
@@ -1345,7 +1346,7 @@ export function SearchPage({
                 resultCount={displayCount}
                 saving={savingAlert}
                 signedIn={Boolean(user)}
-                dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+                dailyAllowed={hasAnalysisAccess}
                 emailRecapEnabled={emailRecapEnabled}
                 freeAlertUsage={freeAlertUsage}
                 onAlertDialogOpen={openAlertDialog}

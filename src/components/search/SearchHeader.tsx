@@ -51,15 +51,11 @@ export function SalesSiteHeader({ refreshing }: { refreshing: boolean }) {
     <SiteHeader
       placement="sticky"
       className="sales-header static"
+      // Région présente dès le départ (vide) : l'annonce suivante sera bien lue.
       belowBar={
-        refreshing ? (
-          <p role="status" className="sr-only">
-            Mise à jour des résultats
-          </p>
-        ) : (
-          // Région présente dès le départ (vide) : l'annonce suivante sera bien lue.
-          <p role="status" className="sr-only" />
-        )
+        <p role="status" className="sr-only">
+          {refreshing ? "Mise à jour des résultats" : null}
+        </p>
       }
     />
   );
