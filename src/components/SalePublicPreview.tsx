@@ -12,6 +12,7 @@ import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import { PepiteBlockLazy } from "@/components/sale-detail/PepiteBlockLazy";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
+import { SalePublicMobileBar } from "@/components/SalePublicMobileBar";
 import { SalePublicShareButton } from "@/components/SalePublicShareButton";
 import { SalePublicToc, type SalePublicTocItem } from "@/components/SalePublicToc";
 import { contactReportPath } from "@/lib/contact-message";
@@ -741,7 +742,7 @@ export function SalePublicPreview({
           </div>
 
           {/* Fiche de vente : sous le titre sur mobile, à droite et suivant le défilement sur ordinateur. */}
-          <aside className={styles.side} aria-label="Synthèse de la vente">
+          <aside className={styles.side} aria-label="Synthèse de la vente" data-sale-synthesis>
             <div className={styles.panel}>
               <p className={styles.eyebrow}>Fiche de vente</p>
               {priceBlock}
@@ -921,9 +922,10 @@ export function SalePublicPreview({
         </div>
       </div>
 
-      {/* Mobile : la mise à prix et l'inscription restent à portée de pouce. */}
+      {/* Mobile : la mise à prix et l'inscription restent à portée de pouce, une fois la synthèse
+          passée. */}
       {verifyingAccount ? null : (
-        <div className={styles.mobileBar}>
+        <SalePublicMobileBar className={styles.mobileBar}>
           <div>
             <p className={styles.mobileBarPrice}>
               {price
@@ -941,7 +943,7 @@ export function SalePublicPreview({
           <Link href={accountLink} className={styles.primary}>
             Créer mon compte
           </Link>
-        </div>
+        </SalePublicMobileBar>
       )}
     </main>
   );
