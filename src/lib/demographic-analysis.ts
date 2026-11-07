@@ -4,6 +4,7 @@ import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import { cleanTextDeep as cleanText } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
+import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
 
 export type DemographicSignalKind =
   | "population"
@@ -447,16 +448,6 @@ function dedupeSignals(signals: DemographicSignal[]): DemographicSignal[] {
   return signals.filter((signal) => {
     const key = `${signal.kind}-${signal.status}-${normalizeText(signal.detail)}`;
     if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function dedupeStrings(values: string[]): string[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = normalizeText(value);
-    if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
