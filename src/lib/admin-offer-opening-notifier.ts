@@ -1,6 +1,5 @@
 import "server-only";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { PublicApiError } from "@/lib/api-errors";
 import { resolveNoReplyEmailConfig, type ResendEmailMessage } from "@/lib/email-alerts";
@@ -9,6 +8,7 @@ import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { asRecord, escapeHtml } from "@/lib/guards";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
 import { emailButton, emailLayout, emailNoReplyText, emailParagraph } from "@/lib/email-layout";
+import { requireAdmin } from "@/lib/admin-auth.server";
 
 /**
  * Envoi de l'email d'ouverture à la liste d'attente (`offer_opening_notifications`), depuis
@@ -177,12 +177,6 @@ export function buildOfferOpeningMessage({
     unsubscribeUrl,
     oneClickUnsubscribe: true,
   };
-}
-
-async function requireAdmin(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-  return auth;
 }
 
 const REQUESTS = "offer_opening_notifications" as const;

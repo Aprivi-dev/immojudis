@@ -1,21 +1,11 @@
 import "server-only";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   buildInformationAgentOperationsView,
   type InformationAgentIndicatorsRaw,
   type InformationAgentOperationsView,
 } from "@/lib/information-agent/operations-view";
-
-/**
- * Indicateurs d'exploitation de l'agent d'information et attestation de l'aller-retour de réception.
- * Lecture seule côté indicateurs ; la seule écriture est la date de vérification (administrateur).
- */
-async function requireAdmin(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-  return auth;
-}
+import { requireAdmin } from "@/lib/admin-auth.server";
 
 export async function getAdminInformationAgentOperations(
   authToken: string,

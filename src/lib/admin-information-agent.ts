@@ -2,7 +2,6 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { nullableRpcArg } from "@/lib/rpc-args";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminPageQueryShape } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta } from "@/lib/admin-pagination";
@@ -31,6 +30,7 @@ import {
   type InformationAgentPreviewInput,
   type InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
+import { requireAdmin } from "@/lib/admin-auth.server";
 
 export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
 export const adminInformationAgentActionSchema = informationAgentAdminActionSchema;
@@ -645,12 +645,6 @@ export function publicRenditionKind(
   if (mimeType === "application/pdf") return "pdf";
   if (mimeType.startsWith("image/")) return "image";
   return null;
-}
-
-async function requireAdmin(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-  return auth;
 }
 
 const reviewableCaseStatuses = new Set(["sending", "sent", "replied", "review"]);
