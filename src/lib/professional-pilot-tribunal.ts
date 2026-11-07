@@ -18,6 +18,7 @@ import type {
   PilotFact,
   PilotMilestone,
 } from "@/lib/professional-pilots";
+import { firstSafeUrl } from "@/lib/professional-pilot-sources";
 
 /**
  * Build the tribunal-only preparation brief used by the professional pilot.
@@ -296,14 +297,6 @@ function riskSource(sale: AuctionSale, pattern: RegExp): string | null {
     .flatMap((risk) => risk.occurrences ?? [])
     .find((item) => safeDocumentUrl(item.document_url));
   return safeDocumentUrl(occurrence?.document_url);
-}
-
-function firstSafeUrl(...values: unknown[]): string | null {
-  for (const value of values) {
-    const url = safeDocumentUrl(value);
-    if (url) return url;
-  }
-  return null;
 }
 
 function moneyValue(value: number | null | undefined): string | null {
