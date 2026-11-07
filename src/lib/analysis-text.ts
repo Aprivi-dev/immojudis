@@ -47,3 +47,8 @@ export function dedupeNormalizedStrings(values: string[]): string[] {
     return true;
   });
 }
+
+export function matchesAnyPattern(definition: { patterns: RegExp[] }, text: string): boolean {
+  const normalized = normalizeText(text);
+  return definition.patterns.some((pattern) => pattern.test(normalized));
+}
