@@ -167,7 +167,14 @@ describe("favorite vocabulary and onboarding", () => {
     await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledOnce());
     const [message, options] = mocks.toastSuccess.mock.calls[0];
     expect(message).toBe("Vente ajoutée aux favoris : 2 favoris sur 3.");
-    expect(options.description.props.href).toBe("/alertes");
+    // « Voir mes favoris » puis l'alerte (repasse n° 27).
+    render(<>{options.description}</>);
+    expect(screen.getByRole("link", { name: "Voir mes favoris" }).getAttribute("href")).toBe(
+      "/favoris",
+    );
+    expect(screen.getByRole("link", { name: /créer une alerte/ }).getAttribute("href")).toBe(
+      "/alertes",
+    );
   });
 
   it("does not show a count when the plan has no limit", async () => {
