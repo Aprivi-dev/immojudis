@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { HighlightedFigure } from "@/components/departments/HighlightedFigure";
 import { ProportionalBars } from "@/components/departments/ProportionalBars";
+import { SaleDetailLink } from "@/components/SaleDetailLink";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 import {
@@ -51,15 +52,22 @@ function positivePrice(value: number | null): value is number {
   return value != null && Number.isFinite(value) && value > 0;
 }
 
-/** Une ligne de « Les prochaines ventes » : pavé de date, commune, détails, type de vente, prix. */
+/**
+ * Une ligne de « Les prochaines ventes » : pavé de date, commune, détails, type de vente, prix. Le
+ * lien garde la page du département comme origine de la fiche (« Retour aux ventes du
+ * département »), ajoutée dans le navigateur seulement : le HTML reste `/sales/<id>`.
+ */
 function SaleRow({
   sale,
   identical,
   now,
+  returnTo,
 }: {
   sale: DepartmentSale;
   identical: { rank: number; of: number } | undefined;
   now: Date;
+  /** Adresse de la page du département. */
+  returnTo: string;
 }) {
   const postponed = sale.status === "postponed";
   const block = postponed ? null : parisDateBlock(sale.saleDate);
@@ -73,8 +81,9 @@ function SaleRow({
   ].filter(Boolean);
   return (
     <li>
-      <Link
-        href={`/sales/${sale.id.toLowerCase()}`}
+      <SaleDetailLink
+        saleId={sale.id.toLowerCase()}
+        returnTo={returnTo}
         className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 px-3.5 py-3 hover:bg-surface-muted sm:grid-cols-[4rem_minmax(0,1fr)_auto] sm:px-[1.125rem] sm:py-3.5"
       >
         <span
@@ -121,7 +130,7 @@ function SaleRow({
             <span className="text-sm font-semibold text-ink-soft sm:block">Non communiqué</span>
           )}
         </span>
-      </Link>
+      </SaleDetailLink>
     </li>
   );
 }
@@ -321,6 +330,7 @@ export function DepartmentView({
                           sale={sale}
                           identical={identicalSales.get(sale.id)}
                           now={now}
+                          returnTo={department.path}
                         />
                       ))}
                     </ul>

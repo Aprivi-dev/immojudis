@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aggregateDepartments, type DepartmentSaleInput } from "@/lib/department-pages";
 
@@ -198,6 +198,21 @@ describe("page d'un département : contenu", () => {
       "/sales/c",
     ]);
     expect(container.textContent).toContain("Mérignac");
+  });
+
+  it("transmet la page du département à la fiche dans le navigateur seulement (« Retour aux ventes du département »)", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
+    const link = within(list)
+      .getAllByRole("link")
+      .find((candidate) => candidate.getAttribute("href")?.startsWith("/sales/"))!;
+    // HTML du serveur : l'adresse canonique de la fiche, sans origine.
+    expect(link.getAttribute("href")).toBe("/sales/a");
+    fireEvent.pointerEnter(link);
+    expect(link.getAttribute("href")).toBe(
+      "/sales/a?from=%2Fventes-encheres-immobilieres%2Fgironde",
+    );
   });
 
   it("dit « audience » et « mise à prix » pour le tribunal, avec la médiane des ventes au tribunal", async () => {

@@ -48,7 +48,8 @@ export default async function SharedSaleComparisonPage({
           </p>
         ) : null}
 
-        <SaleComparisonTable items={comparison.items} returnTo="/sales" />
+        {/* « Retour à la comparaison » sur la fiche : `saleDetailPath` ne garde qu'un jeton valide. */}
+        <SaleComparisonTable items={comparison.items} returnTo={`/comparaisons/${token}`} />
 
         <footer className="space-y-2 border-t border-line-soft bg-white px-4 py-4 text-xs leading-relaxed text-ink-soft sm:px-6">
           <p>

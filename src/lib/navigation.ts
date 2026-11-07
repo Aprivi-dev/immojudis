@@ -144,21 +144,38 @@ const RETURN_BASE = "http://immojudis.local";
 
 /**
  * Pages privées ou de liste, sans paramètre, d'où l'on ouvre une fiche et où « Retour » ramène.
- * La page du tribunal (`/tribunaux/<adresse>`) est reconnue à part (voir `TRIBUNAL_RETURN_PATH`).
+ * Les pages d'un tribunal, d'un département et d'une comparaison partagée sont reconnues à part
+ * (voir `TRIBUNAL_RETURN_PATH`, `DEPARTMENT_RETURN_PATH` et `SHARED_COMPARISON_RETURN_PATH`).
  */
 const FIXED_RETURN_PATHS: ReadonlySet<string> = new Set([
   "/favoris",
   "/alertes",
   "/comparaisons",
   "/audiences-a-venir",
+  UNLOCKED_SALES_PATH,
 ]);
 
 /** Adresse du tribunal : minuscules, chiffres et tirets (voir `tribunalSlug`). */
 const TRIBUNAL_RETURN_PATH = /^\/tribunaux\/[a-z0-9][a-z0-9-]*$/;
 
 /**
+ * Page d'un département (`/ventes-encheres-immobilieres/gironde`) : minuscules, chiffres et tirets
+ * (voir `departmentSlug`). L'index des départements ne liste aucune vente : il n'est pas une origine.
+ */
+const DEPARTMENT_RETURN_PATH = /^\/ventes-encheres-immobilieres\/[a-z0-9][a-z0-9-]*$/;
+
+/** Comparaison partagée (`/comparaisons/<jeton>`) : le jeton de 32 caractères du lien de partage. */
+const SHARED_COMPARISON_RETURN_PATH = /^\/comparaisons\/[A-Za-z0-9_-]{32}$/;
+
+const PATTERN_RETURN_PATHS: readonly RegExp[] = [
+  TRIBUNAL_RETURN_PATH,
+  DEPARTMENT_RETURN_PATH,
+  SHARED_COMPARISON_RETURN_PATH,
+];
+
+/**
  * Origine acceptée pour le « Retour » d'une fiche (`?from=`). Validation stricte : le catalogue
- * (`/sales`, avec sa recherche) ou l'une des pages listées ci-dessus, rien d'autre (ni autre
+ * (`/sales`, avec sa recherche) ou l'une des pages reconnues ci-dessus, rien d'autre (ni autre
  * origine, ni ancre, ni paramètre sur les pages hors catalogue). Une adresse reconstruite à partir
  * de l'URL analysée est rendue, jamais la chaîne reçue.
  */
@@ -169,7 +186,10 @@ export function safeSalesReturnTo(value: unknown): string | undefined {
   if (url.origin !== RETURN_BASE || url.hash) return undefined;
   if (url.pathname === "/sales") return `${url.pathname}${url.search}`;
   if (url.search) return undefined;
-  if (FIXED_RETURN_PATHS.has(url.pathname) || TRIBUNAL_RETURN_PATH.test(url.pathname)) {
+  if (
+    FIXED_RETURN_PATHS.has(url.pathname) ||
+    PATTERN_RETURN_PATHS.some((pattern) => pattern.test(url.pathname))
+  ) {
     return url.pathname;
   }
   return undefined;
@@ -188,7 +208,10 @@ export function salesReturnLabel(returnTo: string | null | undefined): string {
   if (url.pathname === "/alertes") return "Retour à mes alertes";
   if (url.pathname === "/comparaisons") return "Retour à mes comparaisons";
   if (url.pathname === "/audiences-a-venir") return "Retour aux audiences";
+  if (url.pathname === UNLOCKED_SALES_PATH) return "Retour à mes ventes débloquées";
   if (TRIBUNAL_RETURN_PATH.test(url.pathname)) return "Retour au tribunal";
+  if (DEPARTMENT_RETURN_PATH.test(url.pathname)) return "Retour aux ventes du département";
+  if (SHARED_COMPARISON_RETURN_PATH.test(url.pathname)) return "Retour à la comparaison";
   const map = url.searchParams.get("map");
   return map === "true" || map === "1" ? "Retour à la carte" : "Retour aux ventes";
 }
@@ -213,7 +236,7 @@ export const SALE_CARD_ANCHOR_PREFIX = "sale-card-";
  * `useRestoreSaleCard`). L'identifiant de la fiche est celui de la carte : rien d'autre n'est à
  * transmettre dans l'origine (`?from=`). Une origine qui n'est pas une recherche du catalogue (page
  * d'exemple, par exemple) est rendue telle quelle ; une page d'origine acceptée hors catalogue
- * (favoris, tribunal, audiences…) l'est sans ancre.
+ * (favoris, tribunal, département, audiences…) l'est sans ancre.
  */
 export function salesReturnHref(returnTo: string | null | undefined, saleId: string): string {
   const base = returnTo ? safeSalesReturnTo(returnTo) : "/sales";

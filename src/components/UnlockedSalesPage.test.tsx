@@ -68,8 +68,9 @@ describe("UnlockedSalesPage", () => {
 
     const list = await screen.findByRole("list", { name: "Ventes débloquées" });
     expect(list.querySelectorAll("li")).toHaveLength(2);
+    // L'origine suit le lien : la fiche propose « Retour à mes ventes débloquées ».
     expect(screen.getByRole("link", { name: "Appartement à Lyon" }).getAttribute("href")).toBe(
-      "/sales/11111111-1111-4111-8111-111111111111",
+      "/sales/11111111-1111-4111-8111-111111111111?from=%2Fcompte%2Fventes-debloquees",
     );
     expect(list.textContent).toContain("Mise à prix à confirmer");
     expect(screen.getByRole("link", { name: "Vente sans titre" })).toBeTruthy();
