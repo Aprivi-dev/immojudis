@@ -3,6 +3,7 @@ import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middlew
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { numberValue } from "@/lib/guards";
+import { round } from "@/lib/rounding";
 
 type ModelRow = Database["public"]["Tables"]["valuation_model_versions"]["Row"];
 type EstimateRow = Pick<
@@ -324,9 +325,4 @@ function jsonObject(value: Json): Record<string, Json | undefined> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, Json | undefined>)
     : {};
-}
-
-function round(value: number, digits: number): number {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
 }

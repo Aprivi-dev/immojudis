@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { MarketPropertySegment } from "@/lib/market-estimation-engine";
+import { round } from "@/lib/rounding";
 
 type SupportedSegment = Exclude<MarketPropertySegment, "unsupported">;
 type AuditedSegment = SupportedSegment | "parking";
@@ -129,11 +130,6 @@ function fingerprint(value: Record<string, unknown>): string {
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function round(value: number, digits: number): number {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
 }
 
 function valuationRegistryConfigured(): boolean {
