@@ -63,3 +63,15 @@ describe("shared comparison page", () => {
     await expect(render()).rejects.toMatchObject({ digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
   });
 });
+
+describe("shared comparison link that no longer works (repasse design n° 29)", () => {
+  it("explains that the link expired, was disabled or replaced, instead of the generic 404", async () => {
+    const { default: SharedComparisonNotFound } = await import("./not-found");
+    const html = renderToStaticMarkup(<SharedComparisonNotFound />);
+
+    expect(html).toContain("Ce lien de comparaison n’est plus valable");
+    expect(html).toMatch(/expiré, été désactivé ou remplacé/);
+    expect(html).not.toContain("Page introuvable");
+    expect(html).toMatch(/<a[^>]*href="\/sales"[^>]*>Voir les ventes<\/a>/);
+  });
+});
