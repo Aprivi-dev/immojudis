@@ -33,6 +33,7 @@ import {
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
 import { saleDetailPath } from "@/lib/navigation";
+import { formatAdminDateTime as formatDateTime } from "@/lib/admin-date-format";
 
 const QUERY_KEY = ["admin-information-agent-missions"] as const;
 const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as const;
@@ -1219,12 +1220,6 @@ function sourceRefreshStatusLabel(status: string): string {
       failed: "en échec",
       cancelled: "annulé",
     }[status] ?? status
-  );
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
   );
 }
 
