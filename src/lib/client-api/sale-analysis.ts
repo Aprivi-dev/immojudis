@@ -1,15 +1,11 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
-import type { EnvironmentalContextResponse } from "@/lib/environmental-context";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
-import type { MarketAnalyticsResponse } from "@/lib/market-analytics";
 import type { SaleMarketContext } from "@/lib/market-estimate-ceiling";
 import type { ValuePreview } from "@/lib/value-preview";
 import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
-import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
-import type { SaleHistoryResponse } from "@/lib/sale-history";
 import type { SalePassagesResponse } from "@/lib/sale-passages";
 import type { AuctionScenariosResponse, CourtAuctionSummary } from "@/lib/auction-scenarios";
 import type { DocumentReadingResponse } from "@/lib/document-reading";
@@ -20,7 +16,6 @@ import type {
   SaleUnlocksOverview,
 } from "@/lib/sale-unlocks";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
-import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
 import type { ValuationAdminResponse } from "@/lib/valuation-admin";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
 import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
@@ -214,109 +209,6 @@ export async function fetchValuationAdminOverview(): Promise<ValuationAdminRespo
     headers: await authHeaders(),
   });
   return readJson<ValuationAdminResponse>(response);
-}
-
-export async function fetchEnvironmentalContext(args: {
-  data: unknown;
-}): Promise<EnvironmentalContextResponse> {
-  const response = await fetch("/api/environment-context", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<EnvironmentalContextResponse>(response);
-}
-
-export async function fetchSaleHistory(args: {
-  saleId?: string;
-  department?: string;
-  city?: string;
-  tribunalCode?: string;
-  propertyType?: string;
-  months?: number;
-  limit?: number;
-}): Promise<SaleHistoryResponse> {
-  const params = new URLSearchParams();
-  if (args.saleId) params.set("saleId", args.saleId);
-  if (args.department) params.set("department", args.department);
-  if (args.city) params.set("city", args.city);
-  if (args.tribunalCode) params.set("tribunalCode", args.tribunalCode);
-  if (args.propertyType) params.set("propertyType", args.propertyType);
-  if (args.months) params.set("months", String(args.months));
-  if (args.limit) params.set("limit", String(args.limit));
-
-  const response = await fetch(`/api/sales/history?${params.toString()}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<SaleHistoryResponse>(response);
-}
-
-export async function fetchMarketAnalytics(args: {
-  saleId?: string;
-  department?: string;
-  city?: string;
-  tribunalCode?: string;
-  propertyType?: string;
-  months?: number;
-  futureMonths?: number;
-  limit?: number;
-}): Promise<MarketAnalyticsResponse> {
-  const params = new URLSearchParams();
-  if (args.saleId) params.set("saleId", args.saleId);
-  if (args.department) params.set("department", args.department);
-  if (args.city) params.set("city", args.city);
-  if (args.tribunalCode) params.set("tribunalCode", args.tribunalCode);
-  if (args.propertyType) params.set("propertyType", args.propertyType);
-  if (args.months) params.set("months", String(args.months));
-  if (args.futureMonths != null) params.set("futureMonths", String(args.futureMonths));
-  if (args.limit) params.set("limit", String(args.limit));
-
-  const response = await fetch(`/api/market-analytics?${params.toString()}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<MarketAnalyticsResponse>(response);
-}
-
-export async function fetchDvfComparables(args: {
-  saleId: string;
-  radiusM?: number;
-  months?: number;
-  limit?: number;
-}): Promise<DvfComparablesResponse> {
-  const params = new URLSearchParams({ saleId: args.saleId });
-  if (args.radiusM) params.set("radiusM", String(args.radiusM));
-  if (args.months) params.set("months", String(args.months));
-  if (args.limit) params.set("limit", String(args.limit));
-
-  const response = await fetch(`/api/dvf-comparables?${params.toString()}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<DvfComparablesResponse>(response);
-}
-
-export async function fetchValuationBacktest(args: {
-  saleId: string;
-  radiusM?: number;
-  months?: number;
-  maxTests?: number;
-}): Promise<ValuationBacktestResponse> {
-  const params = new URLSearchParams({ saleId: args.saleId });
-  if (args.radiusM) params.set("radiusM", String(args.radiusM));
-  if (args.months) params.set("months", String(args.months));
-  if (args.maxTests) params.set("maxTests", String(args.maxTests));
-
-  const response = await fetch(`/api/valuation-backtest?${params.toString()}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<ValuationBacktestResponse>(response);
 }
 
 export async function fetchDpeExplorer(args: {

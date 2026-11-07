@@ -488,14 +488,6 @@ function assessEngineQuality({
   };
 }
 
-export function marketEstimateCacheControl(context: MarketContext): string {
-  const reliable = context.estimate?.actionable === true;
-  if (!context.ok) return "private, max-age=60";
-  return reliable
-    ? "private, max-age=86400, stale-while-revalidate=604800"
-    : "private, max-age=300";
-}
-
 export async function getMarketEstimate(
   input: unknown,
   audit?: { userId: string | null; auctionSaleId?: string | null },

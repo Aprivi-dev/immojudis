@@ -3,7 +3,6 @@ import type {
   WatchedZoneInput,
   WatchedZoneResponse,
   WatchedZonesResponse,
-  WatchedZoneUpdateInput,
 } from "@/lib/watched-zones";
 
 export async function fetchWatchedZones(
@@ -25,22 +24,6 @@ export async function createWatchedZone(args: {
 }): Promise<WatchedZoneResponse> {
   const response = await fetch("/api/watched-zones", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<WatchedZoneResponse>(response);
-}
-
-export async function updateWatchedZone(args: {
-  zoneId: string;
-  data: WatchedZoneUpdateInput;
-}): Promise<WatchedZoneResponse> {
-  const response = await fetch(`/api/watched-zones/${args.zoneId}`, {
-    method: "PATCH",
     headers: {
       "Content-Type": "application/json",
       ...(await authHeaders()),

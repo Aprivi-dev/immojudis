@@ -5,9 +5,7 @@ import type {
   PropertyReportSaveResponse,
   PropertyReportShareResponse,
   PropertyReportUpdateInput,
-  PlanEntitlements,
 } from "@/lib/property-reports";
-import type { PlanUsageSummary } from "@/lib/usage";
 
 export async function fetchPropertyReports(
   args: {
@@ -106,16 +104,4 @@ export async function disablePropertyReportShare(args: {
   });
 
   return readJson<PropertyReportShareResponse>(response);
-}
-
-export async function fetchFeatureEntitlements(): Promise<{
-  plan: PlanEntitlements;
-  usage: PlanUsageSummary;
-}> {
-  const response = await fetch("/api/feature-entitlements", {
-    headers: await authHeaders(),
-    cache: "no-store",
-  });
-
-  return readJson<{ plan: PlanEntitlements; usage: PlanUsageSummary }>(response);
 }

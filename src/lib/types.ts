@@ -225,20 +225,10 @@ export const SORT_KEYS = [
 
 export type SortKey = (typeof SORT_KEYS)[number];
 
-export function asSearchString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
 export function asFiniteNumber(value: unknown): number | undefined {
   if (value == null || value === "") return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
-}
-
-export function asSortKey(value: unknown): SortKey | undefined {
-  return typeof value === "string" && SORT_KEYS.includes(value as SortKey)
-    ? (value as SortKey)
-    : undefined;
 }
 
 export type UserAlert = {

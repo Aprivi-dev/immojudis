@@ -1,8 +1,6 @@
 import {
   DEPARTMENT_PAGE_LISTED_SALES,
-  departmentFromCode,
   isDepartmentPageIndexable,
-  type DepartmentRef,
   type DepartmentSale,
 } from "@/lib/department-pages";
 import {
@@ -436,13 +434,6 @@ export function tribunalActivityWithoutDuplicates<
     upcomingCount: Math.max(activity.upcomingCount - removed, listed),
     mayCountDuplicates: true,
   };
-}
-
-/** Le département du tribunal, quand son code est reconnu. */
-export function tribunalDepartment(
-  activity: Pick<PublicTribunalActivity, "department">,
-): DepartmentRef | null {
-  return departmentFromCode(activity.department);
 }
 
 /**

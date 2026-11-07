@@ -150,13 +150,6 @@ export function parseBbox(value: unknown): ViewportBounds | undefined {
   return { north, south, east, west };
 }
 
-export function serializeViewport(bounds: ViewportBounds | undefined): string | undefined {
-  if (!bounds) return undefined;
-  return [bounds.north, bounds.south, bounds.east, bounds.west]
-    .map((value) => Number(value.toFixed(5)))
-    .join(":");
-}
-
 export function serializeBbox(bounds: ViewportBounds | undefined): string | undefined {
   if (!bounds) return undefined;
   return [bounds.west, bounds.south, bounds.east, bounds.north]

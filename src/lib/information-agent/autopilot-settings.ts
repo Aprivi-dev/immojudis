@@ -117,15 +117,6 @@ export async function syncAutopilotWarning(code: string, active: boolean): Promi
   if (error) throw error;
 }
 
-export async function recordAutopilotExclusions(identityKeys: readonly string[]): Promise<void> {
-  if (!identityKeys.length) return;
-  const { error } = await supabaseAdmin.rpc("record_information_agent_autopilot_exclusions", {
-    p_identity_keys: [...identityKeys],
-    p_reason: "wrong_recipient",
-  });
-  if (error) throw error;
-}
-
 /** Clés d'identité (parmi celles données) exclues du pilote. Une lecture impossible est propagée. */
 export async function loadExcludedIdentityKeys(keys: readonly string[]): Promise<Set<string>> {
   if (!keys.length) return new Set();

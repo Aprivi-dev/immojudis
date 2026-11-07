@@ -226,16 +226,6 @@ export function saleVenueLabel(venueType: SaleVenueType): string {
   }[venueType];
 }
 
-export function saleVenueShortLabel(venueType: SaleVenueType): string {
-  return {
-    tribunal: "Tribunal",
-    notary: "Notaire",
-    state: "État",
-    online: "À confirmer",
-    unknown: "À confirmer",
-  }[venueType];
-}
-
 export function saleVerificationLabel(status: SaleVerificationStatus): string {
   return {
     verified: "Vérifié",
