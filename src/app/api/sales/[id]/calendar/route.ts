@@ -7,6 +7,7 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { buildSaleCalendarFile, type SaleCalendarRow } from "@/lib/sale-calendar";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { isMissingCalendarFunction as isMissingFunction } from "@/lib/sale-calendar-rpc";
 
 /**
  * One minute in the CDN. It was 300 s, as long as the public page of the sale
@@ -17,16 +18,6 @@ import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
  * invalidation of its page. See docs/runbooks/catalogue-visibility-projection.md.
  */
 const CALENDAR_CACHE_SECONDS = 60;
-
-type RpcError = { code?: string; message?: string } | null;
-
-function isMissingFunction(error: RpcError): boolean {
-  return (
-    error?.code === "PGRST202" ||
-    error?.code === "42883" ||
-    /get_public_sale_calendar_event/.test(error?.message ?? "")
-  );
-}
 
 /**
  * « Ajouter à mon agenda » : the `.ics` file of the hearing of a sale, for everyone (no account).
