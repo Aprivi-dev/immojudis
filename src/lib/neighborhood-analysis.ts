@@ -4,6 +4,7 @@ import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { StreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
+import { cleanTextDeep as cleanText } from "@/lib/clean-text";
 
 export type NeighborhoodStatus = "profiled" | "market_only" | "location_only" | "missing";
 export type NeighborhoodSignalKind = "market" | "services" | "street" | "environment" | "source";
@@ -450,25 +451,6 @@ function dedupeSignals(signals: NeighborhoodSignal[]): NeighborhoodSignal[] {
     seen.add(key);
     return true;
   });
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  if (Array.isArray(value)) {
-    const text = value.map(cleanText).filter(Boolean).join(" ");
-    return text || null;
-  }
-  if (value && typeof value === "object") {
-    const text = Object.values(value as Record<string, unknown>)
-      .map(cleanText)
-      .filter(Boolean)
-      .join(" ");
-    return text || null;
-  }
-  return null;
 }
 
 function formatNumber(value: number): string {
