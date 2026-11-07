@@ -476,7 +476,10 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
 
     renderPage();
-    await screen.findByRole("alert", {}, { timeout: 5000 });
+    const alert = await screen.findByRole("alert", {}, { timeout: 5000 });
+    // Bandeau `Notice` aux jetons de la charte (repasse n° 11), plus d'ambre brut.
+    expect(alert.className).toContain("bg-warning-tint");
+    expect(alert.outerHTML).not.toMatch(/amber-/);
     fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
 
     await screen.findByText("Vente débloquée");

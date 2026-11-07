@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { SaleProcedureBadge, SaleProcedureSummary } from "./SaleProcedurePanel";
+import { SaleProcedureBadge, SaleProcedurePanel, SaleProcedureSummary } from "./SaleProcedurePanel";
 import type { AuctionSale } from "@/lib/types";
 
 describe("sale procedure identity", () => {
@@ -55,5 +55,14 @@ describe("sale procedure identity", () => {
     );
     expect(screen.getByText("Type de vente à confirmer")).toBeTruthy();
     expect(screen.getByText("Cadre juridique à confirmer")).toBeTruthy();
+  });
+
+  it("définit « surenchère » au survol dans les conditions d'une vente au tribunal (repasse n° 26)", () => {
+    render(
+      <SaleProcedurePanel
+        sale={{ sale_venue_type: "tribunal", sale_verification_status: "verified" } as AuctionSale}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Définition : surenchère" })).toBeTruthy();
   });
 });

@@ -242,6 +242,11 @@ type SaleDetailProps = {
   /** Sous la synthèse du haut de page (annonce exemple : le bouton d'inscription). */
   summaryFooter?: ReactNode;
   /**
+   * Bandeau en tête du contenu, sous la pilule de navigation (annonce exemple : « Exemple fictif »).
+   * Placé avant la page, il passait sous l'en-tête fixe (repasse design n° 3).
+   */
+  topNotice?: ReactNode;
+  /**
    * Fee regimes whose bid ceiling is open (server switch `CEILING_FEE_REGIMES_OPEN`, see
    * `parseOpenFeeRegimes`). Absent: every regime whose rules are defined (the tribunal is always open).
    */
@@ -272,6 +277,7 @@ export function AnalysisSaleDetailView({
   defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
   summaryFooter,
+  topNotice,
   openFeeRegimes,
   rentReference = null,
   housingTension = null,
@@ -289,6 +295,7 @@ export function AnalysisSaleDetailView({
       defaultCeilingChoices={defaultCeilingChoices}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       summaryFooter={summaryFooter}
+      topNotice={topNotice}
       openFeeRegimes={openFeeRegimes}
       rentReference={rentReference}
       housingTension={housingTension}
@@ -376,6 +383,7 @@ function SaleDetailWorkspace({
   defaultCeilingChoices,
   adjudicationStatisticsEnabled = false,
   summaryFooter,
+  topNotice,
   openFeeRegimes,
   rentReference = null,
   housingTension = null,
@@ -927,6 +935,7 @@ function SaleDetailWorkspace({
     <SaleUnlockOfferProvider status={unlockOffer}>
       <main id="contenu" className={listingStyles.page} onClickCapture={handleSectionLink}>
         <div className={listingStyles.container}>
+          {topNotice}
           <div className={listingStyles.topbar}>
             <div className={layoutStyles.crumbs}>
               <Link
@@ -1501,7 +1510,7 @@ function SaleDetailWorkspace({
               </DetailSection>
 
               <DetailSection id="travaux-financement">
-                <div className={layoutStyles.pair}>
+                <div className={layoutStyles.stack}>
                   <div className="grid min-w-0 gap-4">
                     {access === "analysis" ? (
                       <>

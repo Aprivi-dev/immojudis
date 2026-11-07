@@ -395,6 +395,8 @@ describe("readable listing sections", () => {
       screen.getByRole("link", { name: "contact-demo@immojudis.com" }).getAttribute("href"),
     ).toBe("mailto:contact-demo@immojudis.com");
     expect(screen.getByText(/n’est pas automatiquement votre représentant/)).toBeTruthy();
+    // Le rôle porte sa définition, celle du lexique du guide (repasse n° 26).
+    expect(screen.getByRole("button", { name: "Définition : avocat poursuivant" })).toBeTruthy();
   });
   it("does not call a notarial event a court hearing", () => {
     const { container } = render(<ListingPracticalDetails sale={notary()} />);

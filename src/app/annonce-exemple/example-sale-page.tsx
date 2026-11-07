@@ -6,7 +6,7 @@ import { DepartmentAlertProposal } from "@/components/DepartmentAlertProposalLaz
 import { MapboxPreconnect } from "@/components/MapboxPreconnect";
 import Link from "next/link";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
-import { Card, buttonClasses } from "@/components/ui/primitives";
+import { Card, Notice, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
@@ -52,6 +52,22 @@ function ExampleSummarySignup() {
 }
 
 /**
+ * Mention « Exemple fictif », en tête du contenu de la fiche : sous la pilule de navigation (avant la
+ * page, l'en-tête fixe la barrait), aux couleurs `warning` de la charte. Un repère `complementary`
+ * nommé : un `role="note"` seul reste hors de tout repère (RGAA 9.2).
+ */
+function ExampleFictionNotice() {
+  return (
+    <aside aria-label="Exemple fictif" className="mb-4">
+      <Notice tone="warning" className="font-semibold">
+        Exemple fictif : ce bien, son adresse et ses chiffres sont inventés pour illustrer
+        l’analyse. Aucune vente réelle ne correspond à cette page.
+      </Notice>
+    </aside>
+  );
+}
+
+/**
  * Fin de l'exemple, pour un visiteur : le même calcul sur les ventes réelles. Avec l'essai, sur toutes
  * les ventes qui ont un plafond (`open` : les régimes de frais ouverts ; jamais les ventes domaniales)
  * pendant l'essai, puis sur les déblocages du mois ; sans l'essai (ou état non lu), les déblocages seuls.
@@ -89,15 +105,8 @@ export function ExampleSalePage({
     <>
       {/* L'image d'attente de la vue aérienne vient de api.mapbox.com : connexion préparée tôt. */}
       <MapboxPreconnect />
-      {/* Un repère `complementary` nommé : un `role="note"` seul reste hors de tout repère (RGAA 9.2). */}
-      <aside
-        aria-label="Exemple fictif"
-        className="border-b border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-950"
-      >
-        Exemple fictif : ce bien, son adresse et ses chiffres sont inventés pour illustrer
-        l’analyse. Aucune vente réelle ne correspond à cette page.
-      </aside>
       <AnalysisSaleDetailView
+        topNotice={<ExampleFictionNotice />}
         sale={example.sale}
         marketEstimateOverride={example.marketEstimate}
         returnTo="/#essayer"

@@ -236,6 +236,10 @@ describe("SalePublicPreview", () => {
     expect(
       screen.getByRole("link", { name: "Tribunal judiciaire de Bobigny" }).getAttribute("href"),
     ).toBe("/tribunaux/justice-tj-1-93");
+    // Cible tactile de 44 px (repasse n° 20) : classe `factLink`, réglée dans la feuille de style.
+    expect(screen.getByRole("link", { name: "Tribunal judiciaire de Bobigny" }).className).toMatch(
+      /factLink/,
+    );
     cleanup();
 
     // Base pas encore migrée, ou tribunal inconnu du référentiel : le nom reste un texte simple.
@@ -275,7 +279,8 @@ describe("SalePublicPreview", () => {
     // Titre court ; le lieu, le type de vente et la date passent dans la ligne sous le titre
     // (maquette du 06/11/2026 : lieu · type de vente · date et heure).
     const heading = screen.getByRole("heading", { level: 1 });
-    expect(heading.firstChild?.textContent).toBe("Appartement de 50 m² à Romainville");
+    // Espace insécable entre la surface et son unité : « 50 m² » ne se coupe pas (repasse n° 24).
+    expect(heading.firstChild?.textContent).toBe("Appartement de 50\u00a0m² à Romainville");
     expect(
       screen.getByText(
         "Seine-Saint-Denis (93) · Vente au tribunal, audience le 20 octobre 2026 à 9 h 00",
@@ -486,6 +491,13 @@ describe("SalePublicPreview", () => {
           .getByRole("link", { name: /Estimer les frais/ })
           .getAttribute("href"),
       ).toBe("/simulateur-frais-encheres");
+    });
+
+    it("donne 44 px de cible à « Trouver un avocat » et au lien du tribunal (repasse n° 20)", async () => {
+      const { readFileSync } = await import("node:fs");
+      const css = readFileSync("src/components/SalePublicPreview.module.css", "utf8");
+      const rule = css.slice(css.indexOf(".factLinks a,\n.factLink {"));
+      expect(rule.slice(0, rule.indexOf("}"))).toContain("min-height: 44px;");
     });
 
     it("n'ajoute aucun lien d'avocat pour une vente chez le notaire", () => {
@@ -1456,6 +1468,9 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     expect(items[1].textContent).toContain("20 novembre 2026 à 10 h 00");
     expect(items[1].textContent).toContain("Vente au tribunal");
     expect(items[2].textContent).toContain("Après la vente");
+    // « surenchère » porte sa définition au survol, comme dans le guide (repasse n° 26).
+    expect(within(items[2]).getByRole("button", { name: "Définition : surenchère" })).toBeTruthy();
+    expect(items[2].textContent).toContain("Délai de surenchère de dix jours");
   });
 
   it("liste les pièces verrouillées et le lien vers Géorisques, et le niveau de vérification", () => {
@@ -1508,7 +1523,8 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     );
     const text = html.replace(/&#x27;/g, "'").replace(/<!-- -->/g, "");
     for (const expected of [
-      "Appartement de 47 m² à Paris 8e Arrondissement",
+      // Espace insécable entre la surface et son unité (repasse n° 24) : le texte reste le même.
+      "Appartement de 47\u00a0m² à Paris 8e Arrondissement",
       "Paris (75) · Vente chez le notaire le 20 novembre 2026 à 10 h 00",
       "Le bien",
       "La vente",

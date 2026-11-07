@@ -32,6 +32,9 @@ describe("AuthConnectionBanner", () => {
     expect(screen.getByRole("alert").textContent).toContain(
       "Nous n’avons pas pu vérifier votre connexion.",
     );
+    // Bandeau `Notice` aux jetons de la charte (repasse n° 11), plus d'ambre brut.
+    expect(screen.getByRole("alert").className).toContain("bg-warning-tint");
+    expect(screen.getByRole("alert").className).not.toMatch(/amber-/);
     fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
     expect(mocks.retry).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("link", { name: "Se reconnecter" }).getAttribute("href")).toBe(

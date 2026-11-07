@@ -12,6 +12,8 @@ import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import { PepiteBlockLazy } from "@/components/sale-detail/PepiteBlockLazy";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
+import { SalePublicMobileBar } from "@/components/SalePublicMobileBar";
+import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import { SalePublicShareButton } from "@/components/SalePublicShareButton";
 import { SalePublicToc, type SalePublicTocItem } from "@/components/SalePublicToc";
 import { contactReportPath } from "@/lib/contact-message";
@@ -362,7 +364,8 @@ export function SalePublicPreview({
   // Titre long : nom des données structurées et texte alternatif de la photo ; titre court : h1 et
   // fil d'Ariane (avis SEO du 24/10/2026, docs/design/fondations.md).
   const headline = saleHeadline(preview);
-  const shortHeading = saleShortHeading(preview);
+  // « 114 m² » ne se coupe pas en fin de ligne (repasse n° 24), comme le titre de la fiche abonné.
+  const shortHeading = nonBreakingUnits(saleShortHeading(preview));
   const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
   // Photos de l'annonce complète (`get_public_sale_details`) : le compte les ouvre ; la fiche
   // publique n'en montre qu'une.
@@ -465,7 +468,7 @@ export function SalePublicPreview({
           <dt>Lieu</dt>
           <dd>
             {preview.tribunal_code ? (
-              <Link href={tribunalCodePagePath(preview.tribunal_code)} className="underline">
+              <Link href={tribunalCodePagePath(preview.tribunal_code)} className={styles.factLink}>
                 {tribunal}
               </Link>
             ) : (
@@ -741,7 +744,7 @@ export function SalePublicPreview({
           </div>
 
           {/* Fiche de vente : sous le titre sur mobile, à droite et suivant le défilement sur ordinateur. */}
-          <aside className={styles.side} aria-label="Synthèse de la vente">
+          <aside className={styles.side} aria-label="Synthèse de la vente" data-sale-synthesis>
             <div className={styles.panel}>
               <p className={styles.eyebrow}>Fiche de vente</p>
               {priceBlock}
@@ -921,9 +924,10 @@ export function SalePublicPreview({
         </div>
       </div>
 
-      {/* Mobile : la mise à prix et l'inscription restent à portée de pouce. */}
+      {/* Mobile : la mise à prix et l'inscription restent à portée de pouce, une fois la synthèse
+          passée. */}
       {verifyingAccount ? null : (
-        <div className={styles.mobileBar}>
+        <SalePublicMobileBar className={styles.mobileBar}>
           <div>
             <p className={styles.mobileBarPrice}>
               {price
@@ -941,7 +945,7 @@ export function SalePublicPreview({
           <Link href={accountLink} className={styles.primary}>
             Créer mon compte
           </Link>
-        </div>
+        </SalePublicMobileBar>
       )}
     </main>
   );
