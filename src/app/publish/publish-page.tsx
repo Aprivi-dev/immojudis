@@ -15,7 +15,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import { toast } from "@/lib/toast";
-import { Badge, buttonClasses, Card, Eyebrow, Notice, PageTitle } from "@/components/ui/primitives";
+import { buttonClasses, Card, Eyebrow, Notice, PageTitle } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { getProfessionalStatus, isProfessionalAccount } from "@/lib/account";
 import {
@@ -30,6 +30,7 @@ import {
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
 import { formatFileSize } from "@/lib/format-file-size";
+import { PublicationStatusPill as StatusPill } from "@/components/PublicationStatusPill";
 
 type PublishDraft = {
   title: string;
@@ -612,20 +613,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/** Statut d'une demande : pastille aux jetons de la charte (plus de couleurs d'un thème sombre). */
-function StatusPill({ status }: { status: PublicationRequestSummary["status"] }) {
-  const [tone, label] =
-    status === "approved"
-      ? (["success", "Validée"] as const)
-      : status === "rejected"
-        ? (["danger", "Refusée"] as const)
-        : (["warning", "En attente"] as const);
-  return (
-    <Badge tone={tone} className="shrink-0">
-      {label}
-    </Badge>
-  );
-}
 function professionalStatusLabel(status: ReturnType<typeof getProfessionalStatus>) {
   if (status === "approved") return "validé";
   if (status === "rejected") return "refusé";
