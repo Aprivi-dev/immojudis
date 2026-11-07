@@ -17,6 +17,7 @@ import type { SaleDocumentRich } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { SelectedRow } from "@/lib/supabase-select";
 import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToExplorer } from "@/lib/dpe-diagnostic-row";
+import { emptyDpeCounts } from "@/lib/dpe-counts";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 const DPE_COLUMNS =
@@ -311,16 +312,6 @@ function rowToDpeItem(
 function dpeClassMatches(value: DpeClass | null, accepted: DpeClass[]): boolean {
   if (!accepted.length) return true;
   return value != null && accepted.includes(normalizeDpeClass(value) as DpeClass);
-}
-
-function emptyDpeCounts(): Record<DpeClass, number> {
-  return DPE_CLASSES.reduce(
-    (acc, dpeClass) => {
-      acc[dpeClass] = 0;
-      return acc;
-    },
-    {} as Record<DpeClass, number>,
-  );
 }
 
 function finiteNumber(value: unknown): number | null {
