@@ -108,6 +108,27 @@ describe("/sales : avant la première annonce", () => {
     expect(screen.queryByRole("group", { name: "Tri et type de vente" })).toBeNull();
   });
 
+  it("pose l'en-tête du site et les liens d'évitement avant le <main>, qui commence au titre", async () => {
+    renderPage({});
+    await screen.findAllByRole("article");
+    const main = screen.getByRole("main");
+    expect(main.id).toBe("contenu");
+    // L'en-tête du site garde son rôle de bannière : il n'est plus dans le `<main>`.
+    const banner = screen.getByRole("banner");
+    expect(main.contains(banner)).toBe(false);
+    expect(before(banner, main)).toBe(true);
+    expect(within(banner).getByRole("navigation", { name: "Navigation principale" })).toBeTruthy();
+    // Liens d'évitement : premiers arrêts de la page, avant l'en-tête, et leurs cibles dans le `<main>`.
+    const skip = screen.getByRole("link", { name: "Aller aux résultats" });
+    expect(main.contains(skip)).toBe(false);
+    expect(before(skip, banner)).toBe(true);
+    expect(main.contains(document.getElementById("sales-results"))).toBe(true);
+    // Le titre, la recherche et les annonces sont dans le `<main>`.
+    expect(main.contains(screen.getByRole("heading", { level: 1 }))).toBe(true);
+    expect(main.contains(screen.getByRole("search"))).toBe(true);
+    expect(main.contains(screen.getAllByRole("article")[0])).toBe(true);
+  });
+
   it("met l'export et l'alerte à droite du titre, avant la barre de filtres", async () => {
     renderPage({});
     await screen.findAllByRole("article");

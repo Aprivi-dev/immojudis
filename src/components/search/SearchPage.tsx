@@ -89,6 +89,7 @@ import {
   LayoutToggle,
   ResultsSummary,
   ResultsViewToggle,
+  SalesSiteHeader,
   SaveSearchButton,
   SearchHeader,
   SortDropdown,
@@ -1115,11 +1116,10 @@ export function SearchPage({
     }
   }
 
+  // Repères : les liens d'évitement et l'en-tête du site (« bannière ») précèdent le `<main>`, qui
+  // commence au titre du catalogue ; le pied de page du site suit la page (`AppProviders`).
   return (
-    <main
-      id="contenu"
-      className="min-h-screen bg-background text-brand-navy [--sales-header-height:8.5rem]"
-    >
+    <>
       <a href="#sales-results" className={SKIP_LINK_CLASSES}>
         Aller aux résultats
       </a>
@@ -1133,340 +1133,344 @@ export function SearchPage({
           Aller à la carte
         </a>
       ) : null}
+      <SalesSiteHeader refreshing={listBusy && !isInitialLoading} />
 
-      <SearchHeader
-        draft={draft}
-        setDraft={setDraft}
-        activeFiltersCount={activeFiltersCount}
-        isLoading={isInitialLoading}
-        isFetching={listBusy}
-        filtersOpen={filtersOpen}
-        savingAlert={savingAlert}
-        signedIn={Boolean(user)}
-        dailyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
-        emailRecapEnabled={emailRecapEnabled}
-        pepitesActive={pepitesActive}
-        signupLinks={signupLinks}
-        freeAlertUsage={freeAlertUsage}
-        onAlertDialogOpen={openAlertDialog}
-        isDesktop={isDesktop}
-        onFiltersOpenChange={changeFiltersOpen}
-        onReset={resetFilters}
-        onSaveSearch={saveSearch}
-        intro={
-          <SalesCatalogueHead
-            search={search}
-            total={titleTotal}
-            week={weekCount}
-            // Le chapô pour qui n'a pas l'offre Analyse ; l'abonné voit son suivi à la place.
-            lede={!isAnalysis}
-            followed={
-              followedFor ? (
-                <LazyFollowedSalesPanel
-                  key={followedFor}
-                  userId={followedFor}
-                  today={today}
-                  aiReviewBySaleId={aiReviewBySaleId}
-                  aiReviewStatus={aiReviewStatus}
-                  onCardData={setFollowedCards}
-                />
-              ) : null
-            }
-            // Actions de la recherche, réservées au grand écran (sur mobile, l'alerte est à côté du
-            // champ du lieu). Droits inchangés : export réservé à l'offre Analyse, alerte gratuite.
-            actions={
-              <>
-                <CsvExportButton
-                  exporting={exportingCsv}
-                  locked={csvExportLocked}
-                  onClick={exportCsv}
-                />
-                <SaveSearchButton
-                  label="Créer une alerte sur cette recherche"
-                  saving={savingAlert}
-                  signedIn={Boolean(user)}
-                  dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
-                  emailRecapEnabled={emailRecapEnabled}
-                  freeAlertUsage={
-                    entitlementsData?.plan.hasAnalysisAccess === true ? null : freeAlertUsage
-                  }
-                  onOpen={openAlertDialog}
-                  onClick={saveSearch}
-                />
-              </>
-            }
-          />
-        }
-      />
-
-      <AuthConnectionBanner className="my-3" />
-      {user ? <LazyMonDemarrage className="mx-auto my-3 max-w-[1260px]" /> : null}
-
-      <div
-        className={`mx-auto grid min-h-[calc(100svh_-_var(--sales-header-height))] max-w-[90rem] gap-6 px-4 lg:px-6 grid-cols-1 ${splitClass}`}
+      <main
+        id="contenu"
+        className="min-h-screen bg-background text-brand-navy [--sales-header-height:8.5rem]"
       >
-        <section
-          id="sales-results"
-          tabIndex={-1}
-          // La barre de filtres ne colle à l'écran qu'à partir de lg : en dessous, rien à dégager.
-          className="min-w-0 scroll-mt-3 lg:order-1 lg:scroll-mt-[calc(var(--sales-header-height)+12px)]"
-          aria-label="Résultats de recherche"
-          aria-busy={listBusy}
-        >
-          {/* Barre de liste : « N annonces · page X sur Y », le tri, puis cartes ou tableau. Les liens
-              d'aide sont au pied de la liste (`ResultsHelp`). Sans résultat, seul le compteur reste :
-              l'état vide et ses actions montent au premier écran. */}
-          {/* Mobile : compteur et tri sur une seule ligne, le tri se tronque plutôt que de passer dessous. */}
-          <div className="flex min-h-[4.25rem] items-center justify-between gap-x-3 gap-y-2 border-t border-line py-3 sm:flex-wrap">
-            <ResultsSummary
-              displayCount={displayCount}
-              isLoading={listCountLoading}
-              hasError={listHasError}
-              geocoding={geocoding}
-              page={page}
-              totalPages={totalPages}
-              refreshing={listBusy && !isInitialLoading}
-            />
-            {noResults ? null : (
-              <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none sm:flex-wrap">
-                <span aria-hidden="true" className="hidden text-sm text-ink-soft sm:inline">
-                  Trier
-                </span>
-                <SortDropdown
-                  bare
-                  preview={isPreview}
-                  hasCenter={Boolean(center)}
-                  investmentScore={investmentSortAllowed}
-                  sort={visibleSearchSort(search.sort, {
-                    allowInvestmentScore: investmentSortAllowed,
-                  })}
-                  onChange={(sort) => chooseSearch({ sort })}
-                />
-                <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
-                <LayoutToggle wideMap={wideMap} onToggle={() => setWideMap((value) => !value)} />
-              </div>
-            )}
-          </div>
-          <SaleComparisonBar
-            key={comparisonScope ?? "loading"}
-            items={comparison.items}
-            returnTo={currentHref}
-            userId={user?.id ?? null}
-            onRemove={comparison.remove}
-            onClear={comparison.clear}
-            onRestore={comparison.replace}
-            open={comparisonOpen}
-            onOpenChange={setComparisonOpen}
-            hideWhenEmpty
-          />
-
-          <SearchResultsList
-            sales={displayedSales}
-            returnTo={currentHref}
-            locked={listIsPublic}
-            analysisLocked={isDiscovery && !publicListShown}
-            isLoading={isInitialLoading}
-            error={pageOutOfRange ? null : error}
-            onRetry={() => void refetchSales()}
-            selectedSaleId={selectedSaleId}
-            hoveredSaleId={hoveredSaleId}
-            onHover={setHoveredSaleId}
-            onSelect={setSelectedSaleId}
-            comparedSaleIds={comparison.items.map((item) => item.id)}
-            comparisonDisabled={!catalogReady}
-            onToggleComparison={comparison.toggle}
-            aiReviewBySaleId={aiReviewBySaleId}
-            aiReviewStatus={aiReviewStatus}
-            dossierBySaleId={
-              followedFor && !listIsPublic ? followedCards?.dossierBySaleId : undefined
-            }
-            lastChangeBySaleId={
-              followedFor && !listIsPublic ? followedCards?.lastChangeBySaleId : undefined
-            }
-            activeFilters={activeFilters}
-            onRemoveFilter={(filter) => chooseSearch(filter.clear)}
-            onResetFilters={resetFilters}
-            onShowFrance={
-              hasGeographicFilter(search) ? () => chooseSearch(WHOLE_FRANCE_PATCH) : undefined
-            }
-            hideEmptyState={page > 1}
-            view={displayedView}
-            pepiteSaleIds={pepiteSaleIds}
-            pepiteExposedSaleIds={pepiteExposedSaleIds}
-            pepiteEmpty={{
-              count: pepiteSaleIds?.size ?? 0,
-              // Garde la seule pépite (et le tri) : les autres critères sont retirés.
-              onKeepOnlyPepite: keepOnlyPepite,
-              onAlert: () => void saveSearch(),
-              alertSaving: savingAlert,
-            }}
-            // Encart des avocats : en fin de liste, sur la première page seulement.
-            sponsoredPlacement={
-              page === 1 ? (
-                <SearchLawyerPlacement
-                  geographicLabel={geographicLabel}
-                  city={search.city}
-                  department={search.department}
-                  pepites={pepitesActive}
-                />
-              ) : undefined
-            }
-          />
-
-          {!isInitialLoading &&
-          !error &&
-          page === 1 &&
-          activeFiltersCount > 0 &&
-          !(search.pepite && displayCount === 0) &&
-          displayCount < FEW_RESULTS_ALERT_THRESHOLD ? (
-            <SectorAlertPrompt
-              resultCount={displayCount}
-              saving={savingAlert}
-              signedIn={Boolean(user)}
-              dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
-              emailRecapEnabled={emailRecapEnabled}
-              freeAlertUsage={freeAlertUsage}
-              onAlertDialogOpen={openAlertDialog}
-              onSaveSearch={saveSearch}
-            />
-          ) : null}
-
-          <SearchPagination
-            hasMore={hasMore}
-            hasPrevious={hasPrevious}
-            isFetching={listBusy}
-            loadedCount={filteredCount}
-            totalCount={mapListFollowsViewport ? displayCount : totalCount}
-            mapListFollowsViewport={mapListFollowsViewport}
-            page={page}
-            pageSize={pageSize}
-            onNext={loadNextPage}
-            onPrevious={loadPreviousPage}
-            nextHref={pageHref(page + 1)}
-            previousHref={pageHref(page - 1)}
-            pageHref={pageHref}
-            onGoToPage={goToPage}
-            onFirstPage={() => chooseSearch({ page: 1 })}
-            firstHref={pageHref(1)}
-            outOfRange={outOfRange}
-          />
-
-          {noResults || isInitialLoading ? null : (
-            <ResultsHelp investmentScore={investmentSortAllowed} pepites={pepitesActive} />
-          )}
-
-          <details
-            className="mt-3 rounded-lg border border-line-soft bg-white"
-            onToggle={(event) => setStatisticsOpen(event.currentTarget.open)}
-          >
-            <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
-              Repères sur cette recherche
-            </summary>
-            {statisticsOpen ? (
-              <LazySearchStatisticsPanel
-                statistics={searchStatistics}
-                locked={statisticsLocked}
-                signedIn={Boolean(user)}
-                dpeLocked={dpeLocked}
-                loading={entitlementsLoading || statisticsLoading}
-                dpeExplorer={dpeExplorerData}
-                dpeExplorerLoading={dpeExplorerLoading}
-                dpeExplorerError={dpeExplorerError ? userMessage(dpeExplorerError) : null}
-                dpeExplorerRequested={dpeExplorerOpen}
-                onLoadDpeExplorer={() => {
-                  setDpeExplorerOpen(true);
-                  if (dpeExplorerOpen) void refetchDpeExplorer();
-                }}
-              />
-            ) : null}
-          </details>
-          <Footer />
-        </section>
-
-        {/* Always rendered (hidden below lg): the two-column layout is decided by CSS
-            alone, so nothing shifts when the media query resolves after hydration. */}
-        <aside className="relative hidden pb-6 lg:order-2 lg:block">
-          {isDesktop ? (
-            <DesktopMapZone started={desktopMapStarted} onStart={startDesktopMap}>
-              <LazyMapPanel {...mapPanelProps} />
-            </DesktopMapZone>
-          ) : null}
-        </aside>
-      </div>
-
-      {filtersOpen ? (
-        <LazyMoreFiltersModal
-          open={filtersOpen}
-          analysisLocked={isPreview || isDiscovery}
-          preview={isPreview}
-          pepitesActive={pepitesActive}
+        <SearchHeader
           draft={draft}
           setDraft={setDraft}
           activeFiltersCount={activeFiltersCount}
-          resultCount={filtersResultCount}
-          onClose={() => setFiltersOpen(false)}
+          filtersOpen={filtersOpen}
+          savingAlert={savingAlert}
+          signedIn={Boolean(user)}
+          dailyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+          emailRecapEnabled={emailRecapEnabled}
+          pepitesActive={pepitesActive}
+          signupLinks={signupLinks}
+          freeAlertUsage={freeAlertUsage}
+          onAlertDialogOpen={openAlertDialog}
+          isDesktop={isDesktop}
+          onFiltersOpenChange={changeFiltersOpen}
           onReset={resetFilters}
-          returnFocusRef={filtersTriggerRef}
+          onSaveSearch={saveSearch}
+          intro={
+            <SalesCatalogueHead
+              search={search}
+              total={titleTotal}
+              week={weekCount}
+              // Le chapô pour qui n'a pas l'offre Analyse ; l'abonné voit son suivi à la place.
+              lede={!isAnalysis}
+              followed={
+                followedFor ? (
+                  <LazyFollowedSalesPanel
+                    key={followedFor}
+                    userId={followedFor}
+                    today={today}
+                    aiReviewBySaleId={aiReviewBySaleId}
+                    aiReviewStatus={aiReviewStatus}
+                    onCardData={setFollowedCards}
+                  />
+                ) : null
+              }
+              // Actions de la recherche, réservées au grand écran (sur mobile, l'alerte est à côté du
+              // champ du lieu). Droits inchangés : export réservé à l'offre Analyse, alerte gratuite.
+              actions={
+                <>
+                  <CsvExportButton
+                    exporting={exportingCsv}
+                    locked={csvExportLocked}
+                    onClick={exportCsv}
+                  />
+                  <SaveSearchButton
+                    label="Créer une alerte sur cette recherche"
+                    saving={savingAlert}
+                    signedIn={Boolean(user)}
+                    dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+                    emailRecapEnabled={emailRecapEnabled}
+                    freeAlertUsage={
+                      entitlementsData?.plan.hasAnalysisAccess === true ? null : freeAlertUsage
+                    }
+                    onOpen={openAlertDialog}
+                    onClick={saveSearch}
+                  />
+                </>
+              }
+            />
+          }
         />
-      ) : null}
 
-      <MobileMapToggle
-        comparedCount={comparison.items.length}
-        onOpenComparison={() => setComparisonOpen(true)}
-        // Le module de la carte (et Mapbox GL) se télécharge dès l'appui, pendant que le doigt se
-        // relève : la carte est prête, ou presque, au moment du clic.
-        onPreloadMap={preloadMapModules}
-        onOpenMap={openMobileMap}
-      />
+        <AuthConnectionBanner className="my-3" />
+        {user ? <LazyMonDemarrage className="mx-auto my-3 max-w-[1260px]" /> : null}
 
-      <DialogPrimitive.Root
-        open={mobileMapOpen && !isDesktop}
-        onOpenChange={(open) => {
-          if (!open) closeMobileMap();
-        }}
-      >
-        <DialogPrimitive.Portal>
-          <DialogPrimitive.Content
-            aria-describedby={undefined}
-            onOpenAutoFocus={() => {
-              mapTriggerRef.current = document.activeElement as HTMLElement;
-            }}
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              mapTriggerRef.current?.focus();
-            }}
-            className="fixed inset-0 z-50 bg-surface-tint outline-none"
+        <div
+          className={`mx-auto grid min-h-[calc(100svh_-_var(--sales-header-height))] max-w-[90rem] gap-6 px-4 lg:px-6 grid-cols-1 ${splitClass}`}
+        >
+          <section
+            id="sales-results"
+            tabIndex={-1}
+            // La barre de filtres ne colle à l'écran qu'à partir de lg : en dessous, rien à dégager.
+            className="min-w-0 scroll-mt-3 lg:order-1 lg:scroll-mt-[calc(var(--sales-header-height)+12px)]"
+            aria-label="Résultats de recherche"
+            aria-busy={listBusy}
           >
-            <DialogPrimitive.Title className="sr-only">Carte des annonces</DialogPrimitive.Title>
-            <div className="absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between border-b border-brand-navy/10 bg-white/95 px-3 backdrop-blur">
-              <button
-                type="button"
-                onClick={closeMobileMap}
-                className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
-              >
-                <List className="h-4 w-4" aria-hidden="true" />
-                Liste
-              </button>
-              {/* Titre court : la phrase qui explique la limite est dans la légende de la carte. */}
-              <span className="text-sm font-bold text-ink-strong">
-                {mappablePointsTotal > mapSales.length
-                  ? `${mapSales.length.toLocaleString("fr-FR")} sur ${mappablePointsTotal.toLocaleString("fr-FR")} biens`
-                  : `${mapSales.length.toLocaleString("fr-FR")} biens sur la carte`}
-              </span>
+            {/* Barre de liste : « N annonces · page X sur Y », le tri, puis cartes ou tableau. Les liens
+              d'aide sont au pied de la liste (`ResultsHelp`). Sans résultat, seul le compteur reste :
+              l'état vide et ses actions montent au premier écran. */}
+            {/* Mobile : compteur et tri sur une seule ligne, le tri se tronque plutôt que de passer dessous. */}
+            <div className="flex min-h-[4.25rem] items-center justify-between gap-x-3 gap-y-2 border-t border-line py-3 sm:flex-wrap">
+              <ResultsSummary
+                displayCount={displayCount}
+                isLoading={listCountLoading}
+                hasError={listHasError}
+                geocoding={geocoding}
+                page={page}
+                totalPages={totalPages}
+                refreshing={listBusy && !isInitialLoading}
+              />
+              {noResults ? null : (
+                <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none sm:flex-wrap">
+                  <span aria-hidden="true" className="hidden text-sm text-ink-soft sm:inline">
+                    Trier
+                  </span>
+                  <SortDropdown
+                    bare
+                    preview={isPreview}
+                    hasCenter={Boolean(center)}
+                    investmentScore={investmentSortAllowed}
+                    sort={visibleSearchSort(search.sort, {
+                      allowInvestmentScore: investmentSortAllowed,
+                    })}
+                    onChange={(sort) => chooseSearch({ sort })}
+                  />
+                  <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
+                  <LayoutToggle wideMap={wideMap} onToggle={() => setWideMap((value) => !value)} />
+                </div>
+              )}
             </div>
-            <div ref={showMobileMap} className="h-full pt-14" />
-          </DialogPrimitive.Content>
-        </DialogPrimitive.Portal>
-      </DialogPrimitive.Root>
-      {keepMobileMapMounted && mobileMapHost ? (
-        <>
-          {createPortal(<LazyMapPanel {...mapPanelProps} />, mobileMapHost)}
-          <div
-            ref={holdMobileMap}
-            className="pointer-events-none invisible fixed inset-x-0 bottom-0 top-14 -z-10"
+            <SaleComparisonBar
+              key={comparisonScope ?? "loading"}
+              items={comparison.items}
+              returnTo={currentHref}
+              userId={user?.id ?? null}
+              onRemove={comparison.remove}
+              onClear={comparison.clear}
+              onRestore={comparison.replace}
+              open={comparisonOpen}
+              onOpenChange={setComparisonOpen}
+              hideWhenEmpty
+            />
+
+            <SearchResultsList
+              sales={displayedSales}
+              returnTo={currentHref}
+              locked={listIsPublic}
+              analysisLocked={isDiscovery && !publicListShown}
+              isLoading={isInitialLoading}
+              error={pageOutOfRange ? null : error}
+              onRetry={() => void refetchSales()}
+              selectedSaleId={selectedSaleId}
+              hoveredSaleId={hoveredSaleId}
+              onHover={setHoveredSaleId}
+              onSelect={setSelectedSaleId}
+              comparedSaleIds={comparison.items.map((item) => item.id)}
+              comparisonDisabled={!catalogReady}
+              onToggleComparison={comparison.toggle}
+              aiReviewBySaleId={aiReviewBySaleId}
+              aiReviewStatus={aiReviewStatus}
+              dossierBySaleId={
+                followedFor && !listIsPublic ? followedCards?.dossierBySaleId : undefined
+              }
+              lastChangeBySaleId={
+                followedFor && !listIsPublic ? followedCards?.lastChangeBySaleId : undefined
+              }
+              activeFilters={activeFilters}
+              onRemoveFilter={(filter) => chooseSearch(filter.clear)}
+              onResetFilters={resetFilters}
+              onShowFrance={
+                hasGeographicFilter(search) ? () => chooseSearch(WHOLE_FRANCE_PATCH) : undefined
+              }
+              hideEmptyState={page > 1}
+              view={displayedView}
+              pepiteSaleIds={pepiteSaleIds}
+              pepiteExposedSaleIds={pepiteExposedSaleIds}
+              pepiteEmpty={{
+                count: pepiteSaleIds?.size ?? 0,
+                // Garde la seule pépite (et le tri) : les autres critères sont retirés.
+                onKeepOnlyPepite: keepOnlyPepite,
+                onAlert: () => void saveSearch(),
+                alertSaving: savingAlert,
+              }}
+              // Encart des avocats : en fin de liste, sur la première page seulement.
+              sponsoredPlacement={
+                page === 1 ? (
+                  <SearchLawyerPlacement
+                    geographicLabel={geographicLabel}
+                    city={search.city}
+                    department={search.department}
+                    pepites={pepitesActive}
+                  />
+                ) : undefined
+              }
+            />
+
+            {!isInitialLoading &&
+            !error &&
+            page === 1 &&
+            activeFiltersCount > 0 &&
+            !(search.pepite && displayCount === 0) &&
+            displayCount < FEW_RESULTS_ALERT_THRESHOLD ? (
+              <SectorAlertPrompt
+                resultCount={displayCount}
+                saving={savingAlert}
+                signedIn={Boolean(user)}
+                dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+                emailRecapEnabled={emailRecapEnabled}
+                freeAlertUsage={freeAlertUsage}
+                onAlertDialogOpen={openAlertDialog}
+                onSaveSearch={saveSearch}
+              />
+            ) : null}
+
+            <SearchPagination
+              hasMore={hasMore}
+              hasPrevious={hasPrevious}
+              isFetching={listBusy}
+              loadedCount={filteredCount}
+              totalCount={mapListFollowsViewport ? displayCount : totalCount}
+              mapListFollowsViewport={mapListFollowsViewport}
+              page={page}
+              pageSize={pageSize}
+              onNext={loadNextPage}
+              onPrevious={loadPreviousPage}
+              nextHref={pageHref(page + 1)}
+              previousHref={pageHref(page - 1)}
+              pageHref={pageHref}
+              onGoToPage={goToPage}
+              onFirstPage={() => chooseSearch({ page: 1 })}
+              firstHref={pageHref(1)}
+              outOfRange={outOfRange}
+            />
+
+            {noResults || isInitialLoading ? null : (
+              <ResultsHelp investmentScore={investmentSortAllowed} pepites={pepitesActive} />
+            )}
+
+            <details
+              className="mt-3 rounded-lg border border-line-soft bg-white"
+              onToggle={(event) => setStatisticsOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
+                Repères sur cette recherche
+              </summary>
+              {statisticsOpen ? (
+                <LazySearchStatisticsPanel
+                  statistics={searchStatistics}
+                  locked={statisticsLocked}
+                  signedIn={Boolean(user)}
+                  dpeLocked={dpeLocked}
+                  loading={entitlementsLoading || statisticsLoading}
+                  dpeExplorer={dpeExplorerData}
+                  dpeExplorerLoading={dpeExplorerLoading}
+                  dpeExplorerError={dpeExplorerError ? userMessage(dpeExplorerError) : null}
+                  dpeExplorerRequested={dpeExplorerOpen}
+                  onLoadDpeExplorer={() => {
+                    setDpeExplorerOpen(true);
+                    if (dpeExplorerOpen) void refetchDpeExplorer();
+                  }}
+                />
+              ) : null}
+            </details>
+            <Footer />
+          </section>
+
+          {/* Always rendered (hidden below lg): the two-column layout is decided by CSS
+            alone, so nothing shifts when the media query resolves after hydration. */}
+          <aside className="relative hidden pb-6 lg:order-2 lg:block">
+            {isDesktop ? (
+              <DesktopMapZone started={desktopMapStarted} onStart={startDesktopMap}>
+                <LazyMapPanel {...mapPanelProps} />
+              </DesktopMapZone>
+            ) : null}
+          </aside>
+        </div>
+
+        {filtersOpen ? (
+          <LazyMoreFiltersModal
+            open={filtersOpen}
+            analysisLocked={isPreview || isDiscovery}
+            preview={isPreview}
+            pepitesActive={pepitesActive}
+            draft={draft}
+            setDraft={setDraft}
+            activeFiltersCount={activeFiltersCount}
+            resultCount={filtersResultCount}
+            onClose={() => setFiltersOpen(false)}
+            onReset={resetFilters}
+            returnFocusRef={filtersTriggerRef}
           />
-        </>
-      ) : null}
-    </main>
+        ) : null}
+
+        <MobileMapToggle
+          comparedCount={comparison.items.length}
+          onOpenComparison={() => setComparisonOpen(true)}
+          // Le module de la carte (et Mapbox GL) se télécharge dès l'appui, pendant que le doigt se
+          // relève : la carte est prête, ou presque, au moment du clic.
+          onPreloadMap={preloadMapModules}
+          onOpenMap={openMobileMap}
+        />
+
+        <DialogPrimitive.Root
+          open={mobileMapOpen && !isDesktop}
+          onOpenChange={(open) => {
+            if (!open) closeMobileMap();
+          }}
+        >
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Content
+              aria-describedby={undefined}
+              onOpenAutoFocus={() => {
+                mapTriggerRef.current = document.activeElement as HTMLElement;
+              }}
+              onCloseAutoFocus={(event) => {
+                event.preventDefault();
+                mapTriggerRef.current?.focus();
+              }}
+              className="fixed inset-0 z-50 bg-surface-tint outline-none"
+            >
+              <DialogPrimitive.Title className="sr-only">Carte des annonces</DialogPrimitive.Title>
+              <div className="absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between border-b border-brand-navy/10 bg-white/95 px-3 backdrop-blur">
+                <button
+                  type="button"
+                  onClick={closeMobileMap}
+                  className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
+                >
+                  <List className="h-4 w-4" aria-hidden="true" />
+                  Liste
+                </button>
+                {/* Titre court : la phrase qui explique la limite est dans la légende de la carte. */}
+                <span className="text-sm font-bold text-ink-strong">
+                  {mappablePointsTotal > mapSales.length
+                    ? `${mapSales.length.toLocaleString("fr-FR")} sur ${mappablePointsTotal.toLocaleString("fr-FR")} biens`
+                    : `${mapSales.length.toLocaleString("fr-FR")} biens sur la carte`}
+                </span>
+              </div>
+              <div ref={showMobileMap} className="h-full pt-14" />
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+        {keepMobileMapMounted && mobileMapHost ? (
+          <>
+            {createPortal(<LazyMapPanel {...mapPanelProps} />, mobileMapHost)}
+            <div
+              ref={holdMobileMap}
+              className="pointer-events-none invisible fixed inset-x-0 bottom-0 top-14 -z-10"
+            />
+          </>
+        ) : null}
+      </main>
+    </>
   );
 }

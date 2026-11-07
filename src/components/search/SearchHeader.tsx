@@ -41,10 +41,34 @@ const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => mod
   ),
 });
 /**
- * Haut de /sales (maquette validée) : l'en-tête du site, puis l'en-tête du catalogue (`intro` :
- * titre, actions, suivi), puis UNE barre de filtres blanche qui reste à l'écran au défilement (à
- * partir de `lg`) : lieu, type de bien, mise à prix, date de vente, tous les filtres, et dessous
- * les types de vente en pastilles.
+ * En-tête du site de /sales : la barre pleine largeur, qui défile avec la page (`static` l'emporte
+ * sur le `sticky` de `SiteHeader`) ; c'est la barre de filtres qui reste à l'écran. Rendue AVANT le
+ * `<main>` de la page (repère « bannière »), avec la région qui annonce la mise à jour des résultats.
+ */
+export function SalesSiteHeader({ refreshing }: { refreshing: boolean }) {
+  return (
+    <SiteHeader
+      placement="sticky"
+      className="sales-header static"
+      belowBar={
+        refreshing ? (
+          <p role="status" className="sr-only">
+            Mise à jour des résultats
+          </p>
+        ) : (
+          // Région présente dès le départ (vide) : l'annonce suivante sera bien lue.
+          <p role="status" className="sr-only" />
+        )
+      }
+    />
+  );
+}
+
+/**
+ * Haut du contenu de /sales (maquette validée), sous l'en-tête du site (`SalesSiteHeader`) :
+ * l'en-tête du catalogue (`intro` : titre, actions, suivi), puis UNE barre de filtres blanche qui
+ * reste à l'écran au défilement (à partir de `lg`) : lieu, type de bien, mise à prix, date de
+ * vente, tous les filtres, et dessous les types de vente en pastilles.
  *
  * Sur mobile, la barre défile avec la page : le champ du lieu (avec l'alerte), une rangée de
  * filtres qui défile (« Filtres », type de bien, mise à prix, date…), puis la rangée des types de
@@ -57,8 +81,6 @@ export function SearchHeader({
   draft,
   setDraft,
   activeFiltersCount,
-  isLoading,
-  isFetching,
   filtersOpen,
   savingAlert,
   signedIn = false,
@@ -77,8 +99,6 @@ export function SearchHeader({
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   activeFiltersCount: number;
-  isLoading: boolean;
-  isFetching: boolean;
   filtersOpen: boolean;
   savingAlert: boolean;
   signedIn?: boolean;
@@ -126,22 +146,6 @@ export function SearchHeader({
   );
   return (
     <>
-      <SiteHeader
-        placement="sticky"
-        // L'en-tête du site défile avec la page (`static` l'emporte sur le `sticky` de `SiteHeader`) :
-        // c'est la barre de filtres qui reste à l'écran.
-        className="sales-header static"
-        belowBar={
-          isFetching && !isLoading ? (
-            <p role="status" className="sr-only">
-              Mise à jour des résultats
-            </p>
-          ) : (
-            // Région présente dès le départ (vide) : l'annonce suivante sera bien lue.
-            <p role="status" className="sr-only" />
-          )
-        }
-      />
       {intro}
       <div
         ref={barRef}

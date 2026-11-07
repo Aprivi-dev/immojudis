@@ -9,6 +9,7 @@ import {
   PriceFilter,
   ResultsSummary,
   ResultsViewToggle,
+  SalesSiteHeader,
   SaveSearchButton,
   SearchHeader,
   SortDropdown,
@@ -361,7 +362,12 @@ describe("SearchHeader : mobile", () => {
   };
 
   it("laisse défiler l'en-tête du site : seule la barre de filtres reste à l'écran, à partir de lg", () => {
-    render(<SearchHeader {...base} />);
+    render(
+      <>
+        <SalesSiteHeader refreshing={false} />
+        <SearchHeader {...base} />
+      </>,
+    );
     const header = document.querySelector("header[data-site-header]") as HTMLElement;
     const headerClasses = header.className.split(/\s+/);
     expect(headerClasses).toContain("static");
@@ -375,7 +381,12 @@ describe("SearchHeader : mobile", () => {
   });
 
   it("place l'en-tête du catalogue entre l'en-tête du site et la barre de filtres", () => {
-    render(<SearchHeader {...base} intro={<h1>Titre du catalogue</h1>} />);
+    render(
+      <>
+        <SalesSiteHeader refreshing={false} />
+        <SearchHeader {...base} intro={<h1>Titre du catalogue</h1>} />
+      </>,
+    );
     const header = document.querySelector("header[data-site-header]")!;
     const title = screen.getByRole("heading", { name: "Titre du catalogue" });
     const bar = document.querySelector("[data-sales-filters]")!;
@@ -385,6 +396,21 @@ describe("SearchHeader : mobile", () => {
     const place = screen.getByRole("textbox", { name: "Ville, département ou région" });
     expect(bar.contains(place)).toBe(true);
     expect(header.contains(place)).toBe(false);
+  });
+
+  it("annonce la mise à jour des résultats dans une région présente dès le départ", () => {
+    const { rerender } = render(<SalesSiteHeader refreshing={false} />);
+    const header = document.querySelector("header[data-site-header]")!;
+    const status = within(header as HTMLElement).getByRole("status");
+    expect(status.textContent).toBe("");
+    rerender(<SalesSiteHeader refreshing />);
+    expect(within(header as HTMLElement).getByRole("status").textContent).toBe(
+      "Mise à jour des résultats",
+    );
+    // L'en-tête du catalogue ne rend plus l'en-tête du site : il est posé avant le `<main>`.
+    cleanup();
+    render(<SearchHeader {...base} />);
+    expect(document.querySelector("header[data-site-header]")).toBeNull();
   });
 
   it("met les types de vente en pastilles sous les filtres, et le choix va dans le brouillon", () => {
