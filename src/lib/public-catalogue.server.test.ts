@@ -14,6 +14,7 @@ import {
   FIRST_PAGE_CACHE_KEY,
   isDefaultCatalogueSearch,
   loadInitialCatalogue,
+  loadInitialCount,
   loadPreviewCataloguePage,
 } from "./public-catalogue.server";
 import { salesSearchSignature } from "./search/search-url-state";
@@ -21,6 +22,29 @@ import { salesSearchSignature } from "./search/search-url-state";
 const page = (ids: string[], count = ids.length) => ({
   items: ids.map((id) => ({ id })) as never[],
   count,
+});
+
+describe("comptage seul (« dont M cette semaine » du titre)", () => {
+  const search = vi.fn();
+  beforeEach(() => {
+    search.mockReset();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("rend le total de la recherche demandée, sans passer par le cache de la première page", async () => {
+    search.mockResolvedValue(page(["a"], 41));
+    const week = { minSaleDate: "2026-11-06", maxSaleDate: "2026-11-12" };
+    await expect(loadInitialCount(week, { search })).resolves.toBe(41);
+    expect(search).toHaveBeenCalledWith(week);
+  });
+
+  it("rend null en cas de panne ou de délai dépassé : le navigateur refera le comptage", async () => {
+    search.mockRejectedValue(new Error("statement timeout"));
+    await expect(loadInitialCount({}, { search })).resolves.toBeNull();
+    search.mockReturnValue(new Promise(() => undefined));
+    await expect(loadInitialCount({}, { search, timeoutMs: 5 })).resolves.toBeNull();
+  });
 });
 
 describe("cache of the first page", () => {

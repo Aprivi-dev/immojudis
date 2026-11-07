@@ -28,11 +28,11 @@ it("announces a catalogue failure, hides technical details and offers a retry", 
 
 it("never reports zero listings when the search failed", () => {
   const props = {
-    search: {},
     displayCount: 0,
-    hasLocalFilters: false,
     isLoading: false,
     geocoding: false,
+    page: 1,
+    totalPages: 0,
   };
   const { rerender } = render(<ResultsSummary {...props} hasError />);
   expect(screen.getByText(/Catalogue momentanément indisponible/)).toBeTruthy();

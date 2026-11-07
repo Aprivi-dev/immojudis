@@ -9,6 +9,7 @@ import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { alertCreationLoginPath } from "@/lib/discovery-alerts";
 import { LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
 import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
+import { cn } from "@/lib/utils";
 
 // La création elle-même (droits, zone, consentement) n'est chargée que pour une personne
 // connectée : une page publique n'en paie pas le JavaScript pour ses visiteurs (import dynamique
@@ -28,6 +29,7 @@ export function SectorAlertCta({
   intro,
   title,
   label = SECTOR_ALERT_LABEL,
+  className,
 }: {
   criteria: SalesSearchUrlRecord;
   intro?: string;
@@ -35,6 +37,12 @@ export function SectorAlertCta({
   title?: string;
   /** Libellé du bouton qui crée l'alerte. */
   label?: string;
+  /**
+   * Classes de l'encart proposé à un visiteur (l'encart marine des pages de département, par
+   * exemple). Le formulaire d'une personne connectée garde son aspect. Les variantes sont écrites
+   * par la page, côté serveur : ce composant, copié dans plusieurs pages, n'en porte aucune.
+   */
+  className?: string;
 }) {
   const { user, loading } = useAuth();
   // L'essai n'est annoncé qu'une fois son ouverture lue (comme sur le reste du site).
@@ -43,7 +51,7 @@ export function SectorAlertCta({
     return <SectorAlertForm criteria={criteria} intro={intro} title={title} actionLabel={label} />;
   }
   return (
-    <Card as="section" aria-label={title ?? DEFAULT_TITLE} className="grid gap-3">
+    <Card as="section" aria-label={title ?? DEFAULT_TITLE} className={cn("grid gap-3", className)}>
       <h2 className="flex items-center gap-2 font-display text-2xl font-semibold">
         <Bell className="size-5 text-gold-text" aria-hidden />
         {title ?? DEFAULT_TITLE}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
+import { publicRentalYield } from "@/lib/public-rental-yield";
 import { lookupPublicSale } from "@/lib/public-sale.server";
 import { loadSaleHousingTension, loadSaleRentReference } from "@/lib/rent-reference.server";
 import {
@@ -137,6 +138,8 @@ export default async function Page({ params }: PageProps) {
   const [rentReference, housingTension] = sale
     ? await Promise.all([rentReferenceWithinDeadline(sale), loadSaleHousingTension(sale)])
     : [null, null];
+  // Rendement brut de la fiche publique, calculé ici : le navigateur n'embarque pas le calcul des frais.
+  const rentalYield = sale ? publicRentalYield(sale, rentReference) : null;
   const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const structuredData = sale
     ? saleStructuredData({ ...sale, id: sale.id.toLowerCase() }, { origin: siteOrigin })
@@ -161,6 +164,7 @@ export default async function Page({ params }: PageProps) {
         openFeeRegimes={openFeeRegimesFromEnv()}
         rentReference={rentReference}
         housingTension={housingTension}
+        rentalYield={rentalYield}
       />
     </>
   );

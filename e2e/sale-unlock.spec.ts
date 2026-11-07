@@ -251,8 +251,8 @@ test("compte Découverte : « Débloquer cette vente » d'un aperçu mène à la
     page.getByRole("link", { name: /Découvrir l.(offre Analyse|analyse)/ }).first(),
   ).toBeVisible();
 
-  // La page a défilé jusqu'aux onglets : le lien ramène quand même à la carte, sans changer d'onglet.
-  await page.locator("#annonce-sections").scrollIntoViewIfNeeded();
+  // La page a défilé jusqu'à la dernière section : le lien ramène quand même à la carte de déblocage.
+  await page.locator("#demarches").scrollIntoViewIfNeeded();
   await expect(page.locator("#debloquer")).not.toBeInViewport();
   await link.evaluate((element) => (element as HTMLElement).click());
 

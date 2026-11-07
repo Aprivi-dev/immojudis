@@ -134,7 +134,9 @@ describe("/sales : repère « Pépite » en mode « on »", () => {
     renderSales("/sales");
     const chip = await screen.findByRole("button", { name: "Pépites seulement" });
     const group = screen.getByRole("group", { name: "Filtres rapides" });
-    expect(group.firstElementChild).toBe(chip);
+    // Première pastille de filtre, juste après « Filtres » (qui ouvre tous les filtres).
+    expect(group.children[0].textContent).toMatch(/^Filtres/);
+    expect(group.children[1]).toBe(chip);
     fireEvent.click(chip);
     await waitFor(() =>
       expect(new URLSearchParams(window.location.search).get("pepite")).toBe("true"),
