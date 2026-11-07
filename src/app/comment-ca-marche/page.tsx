@@ -128,7 +128,6 @@ function PageContent() {
                       href={link.href}
                       className={buttonClasses({
                         variant: linkIndex === 0 ? "primary" : "secondary",
-                        size: "sm",
                       })}
                     >
                       {link.label}
