@@ -29,6 +29,7 @@ import type { AuctionSale, SaleFilters, UserAlert, UserWatchedZone } from "@/lib
 import { normalizeWatchedZone } from "@/lib/watched-zones";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
+import { primitiveDocumentValues } from "@/lib/document-signature";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
 
@@ -1280,14 +1281,6 @@ function documentSignatureParts(sale: AuctionSale): { count: number; signature: 
     count: unique.length,
     signature: unique.length ? unique.join("||") : null,
   };
-}
-
-function primitiveDocumentValues(value: unknown): string[] {
-  if (!value) return [];
-  if (typeof value === "string") return [value];
-  if (Array.isArray(value)) return value.flatMap(primitiveDocumentValues);
-  if (typeof value === "object") return Object.values(value).flatMap(primitiveDocumentValues);
-  return [];
 }
 
 function asJson(value: unknown): Json {
