@@ -19,6 +19,7 @@ import {
   pepiteV12EffectiveClause,
   pepiteV2EffectiveClause,
 } from "./method";
+import { MethodSection as Section } from "@/components/MethodSection";
 
 const euros = new Intl.NumberFormat("fr-FR");
 
@@ -93,25 +94,6 @@ const ABSENCE_V1 = (
 
 const ABSENCE_V2 =
   "L’absence de ce repère ne permet de tirer aucune conclusion sur le bien : les données peuvent manquer, ou un critère, dont celui du risque d’inondation, peut ne pas être rempli. Immojudis n’indique pas, vente par vente, la raison. Un bien peut convenir à votre projet sans remplir ces critères.";
-
-function Section({
-  id,
-  title,
-  children,
-}: {
-  id: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card as="section" aria-labelledby={id}>
-      <h2 id={id} className="font-display text-2xl font-semibold">
-        {title}
-      </h2>
-      <div className="mt-3 space-y-3 text-ink-soft">{children}</div>
-    </Card>
-  );
-}
 
 export default function Page() {
   return (
