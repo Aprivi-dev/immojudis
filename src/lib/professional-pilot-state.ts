@@ -1,11 +1,11 @@
 import { formatStartingPrice } from "./format";
-import { safeDocumentUrl } from "./documents";
 import { buildCadastralAnalysis, formatCadastralReference } from "./cadastre-analysis";
 import { listingDate, listingVisits } from "./sale-listing";
 import { collectSaleDocuments } from "./sale-documents";
 import { getSaleProcedure, saleVerificationLabel, stateSaleMethodLabel } from "./sale-procedure";
 import type { AuctionSale } from "./types";
 import type { PilotCheck, PilotDefinition, PilotFact, PilotMilestone } from "./professional-pilots";
+import { firstSafeUrl } from "@/lib/professional-pilot-sources";
 
 /**
  * Build the domanial pilot from facts already present on the sale.
@@ -229,12 +229,4 @@ export function buildStatePilot(sale: AuctionSale): PilotDefinition {
     milestones,
     checks,
   };
-}
-
-function firstSafeUrl(...values: unknown[]): string | null {
-  for (const value of values) {
-    const url = safeDocumentUrl(value);
-    if (url) return url;
-  }
-  return null;
 }
