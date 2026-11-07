@@ -14,6 +14,7 @@ import {
   type ComparedSale,
 } from "@/lib/search/sale-comparison";
 import { asRecord } from "@/lib/guards";
+import { asRecord as normalizeJsonObject } from "@/lib/guards";
 
 type AnalysisSetRow = Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
 type AnalysisSetInsert = Database["public"]["Tables"]["user_sale_analysis_sets"]["Insert"];
@@ -711,12 +712,6 @@ function normalizeDecisionStatus(value: string): (typeof SALE_ANALYSIS_DECISION_
   )
     ? (value as (typeof SALE_ANALYSIS_DECISION_STATUSES)[number])
     : "watching";
-}
-
-function normalizeJsonObject(value: Json): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function sumOrNull(values: number[]): number | null {
