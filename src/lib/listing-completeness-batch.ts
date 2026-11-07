@@ -10,6 +10,7 @@ import {
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
 import type { AuctionSale } from "@/lib/types";
 import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
+import { parseTimestamp as time } from "@/lib/timestamp";
 
 /**
  * Évalue la complétude des annonces en ligne et enregistre le palier de classement de /sales
@@ -59,12 +60,6 @@ export type ListingCompletenessBatchResult = {
   remaining: number;
   errors: string[];
 };
-
-function time(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 /**
  * Ventes à (ré)évaluer, les plus urgentes d'abord :

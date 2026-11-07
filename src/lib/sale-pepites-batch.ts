@@ -54,6 +54,7 @@ import {
 import type { AuctionSale } from "@/lib/types";
 import { isBusyWriteError } from "@/lib/write-busy";
 import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
+import { parseTimestamp as time } from "@/lib/timestamp";
 
 /**
  * Calcule la pépite des ventes en ligne et la stocke (table `auction_sale_pepites`, voir la migration
@@ -176,12 +177,6 @@ export type SalePepitesBatchResult = {
   floodVerdicts: Record<FloodVerdict, number> | null;
   errors: string[];
 };
-
-function time(value: string | null): number | null {
-  if (!value) return null;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 /**
  * Une évaluation faite avec une autre version de la règle, du moteur ou du régime DE LA VENTE est obsolète. Quand la
