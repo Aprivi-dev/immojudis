@@ -19,6 +19,7 @@ import {
   tribunalJudicialActivityHistoryMonthsSchema,
   type TribunalJudicialActivityHistoryMonths,
 } from "@/lib/tribunal-judicial-activity";
+import { roundWithEpsilon as round } from "@/lib/rounding";
 
 export { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
 
@@ -933,11 +934,6 @@ function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
   const candidate = new Date(value);
   return Number.isFinite(candidate.getTime()) ? candidate : null;
-}
-
-function round(value: number, digits: number): number {
-  const scale = 10 ** digits;
-  return Math.round((value + Number.EPSILON) * scale) / scale;
 }
 
 function assertValidDate(value: Date, label: string): void {
