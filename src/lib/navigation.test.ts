@@ -27,6 +27,10 @@ describe("salesReturnHref", () => {
     expect(salesReturnHref("/favoris", "abc")).toBe("/favoris");
     expect(salesReturnHref("/tribunaux/justice-tj-1-93", "abc")).toBe("/tribunaux/justice-tj-1-93");
     expect(salesReturnHref("/audiences-a-venir", "abc")).toBe("/audiences-a-venir");
+    expect(salesReturnHref("/ventes-encheres-immobilieres/gironde", "abc")).toBe(
+      "/ventes-encheres-immobilieres/gironde",
+    );
+    expect(salesReturnHref("/compte/ventes-debloquees", "abc")).toBe("/compte/ventes-debloquees");
   });
 
   it("n'ajoute pas d'ancre à une origine qui n'est pas le catalogue", () => {
@@ -51,6 +55,10 @@ describe("safeSalesReturnTo", () => {
       "/audiences-a-venir",
       "/tribunaux/justice-tj-1-93",
       "/tribunaux/bobigny",
+      "/ventes-encheres-immobilieres/gironde",
+      "/ventes-encheres-immobilieres/cote-d-or",
+      "/compte/ventes-debloquees",
+      "/comparaisons/AbCdEfGhIjKlMnOpQrStUvWxYz012_-9",
     ]) {
       expect(safeSalesReturnTo(path), path).toBe(path);
     }
@@ -79,6 +87,19 @@ describe("safeSalesReturnTo", () => {
       "/tribunaux/a/b",
       "/tribunaux/%2e%2e",
       "/tribunaux/x?utm=1",
+      "/ventes-encheres-immobilieres",
+      "/ventes-encheres-immobilieres/",
+      "/ventes-encheres-immobilieres/Gironde",
+      "/ventes-encheres-immobilieres/gironde/x",
+      "/ventes-encheres-immobilieres/gironde?page=2",
+      "/ventes-encheres-immobilieres/gironde#ventes",
+      "/compte",
+      "/compte/ventes-debloquees/",
+      "/compte/ventes-debloquees?x=1",
+      "/comparaisons/court",
+      "/comparaisons/AbCdEfGhIjKlMnOpQrStUvWxYz012_-9x",
+      "/comparaisons/AbCdEfGhIjKlMnOpQrStUvWxYz012_-.",
+      "/comparaisons/AbCdEfGhIjKlMnOpQrStUvWxYz012_-9?x=1",
       "//evil.test/favoris",
       "///evil.test/sales",
       "/\\evil.test/sales",
@@ -104,6 +125,15 @@ describe("saleDetailPath", () => {
     expect(saleDetailPath("abc", "/tribunaux/justice-tj-1-93")).toBe(
       "/sales/abc?from=%2Ftribunaux%2Fjustice-tj-1-93",
     );
+    expect(saleDetailPath("abc", "/ventes-encheres-immobilieres/gironde")).toBe(
+      "/sales/abc?from=%2Fventes-encheres-immobilieres%2Fgironde",
+    );
+    expect(saleDetailPath("abc", "/compte/ventes-debloquees")).toBe(
+      "/sales/abc?from=%2Fcompte%2Fventes-debloquees",
+    );
+    expect(saleDetailPath("abc", "/comparaisons/AbCdEfGhIjKlMnOpQrStUvWxYz012_-9")).toBe(
+      "/sales/abc?from=%2Fcomparaisons%2FAbCdEfGhIjKlMnOpQrStUvWxYz012_-9",
+    );
     expect(saleDetailPath("abc", "/offres")).toBe("/sales/abc");
     expect(saleDetailPath("abc", "https://evil.test")).toBe("/sales/abc");
   });
@@ -116,6 +146,13 @@ describe("salesReturnLabel", () => {
     expect(salesReturnLabel("/comparaisons")).toBe("Retour à mes comparaisons");
     expect(salesReturnLabel("/tribunaux/justice-tj-1-93")).toBe("Retour au tribunal");
     expect(salesReturnLabel("/audiences-a-venir")).toBe("Retour aux audiences");
+    expect(salesReturnLabel("/ventes-encheres-immobilieres/gironde")).toBe(
+      "Retour aux ventes du département",
+    );
+    expect(salesReturnLabel("/compte/ventes-debloquees")).toBe("Retour à mes ventes débloquées");
+    expect(salesReturnLabel("/comparaisons/AbCdEfGhIjKlMnOpQrStUvWxYz012_-9")).toBe(
+      "Retour à la comparaison",
+    );
     expect(salesReturnLabel("/sales?city=Lyon&map=true")).toBe("Retour à la carte");
     expect(salesReturnLabel("/sales?map=1")).toBe("Retour à la carte");
   });

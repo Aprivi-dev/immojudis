@@ -5,8 +5,10 @@ const mocks = vi.hoisted(() => ({ shared: vi.fn() }));
 
 vi.mock("@/lib/sale-analysis-sets", () => ({ getSharedSaleComparison: mocks.shared }));
 vi.mock("@/components/search/SaleComparisonTable", () => ({
-  SaleComparisonTable: ({ items }: { items: unknown[] }) => (
-    <div data-testid="table">{items.length}</div>
+  SaleComparisonTable: ({ items, returnTo }: { items: unknown[]; returnTo: string }) => (
+    <div data-testid="table" data-return-to={returnTo}>
+      {items.length}
+    </div>
   ),
 }));
 vi.mock("next/navigation", () => ({
@@ -35,6 +37,13 @@ const render = async () =>
 
 describe("shared comparison page", () => {
   beforeEach(() => vi.resetAllMocks());
+
+  it("makes the shared comparison the origin of each sale sheet (« Retour à la comparaison »)", async () => {
+    mocks.shared.mockResolvedValue(comparison(0));
+    const token = "AbCdEfGhIjKlMnOpQrStUvWxYz012_-9";
+    const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ token }) }));
+    expect(html).toContain(`data-return-to="/comparaisons/${token}"`);
+  });
 
   it("says nothing about withdrawn sales when none was withdrawn", async () => {
     mocks.shared.mockResolvedValue(comparison(0));

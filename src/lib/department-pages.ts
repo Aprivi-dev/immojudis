@@ -56,6 +56,15 @@ export function departmentFromCode(code: string | null | undefined): DepartmentR
   return BY_CODE.get(departmentCode(code) ?? "") ?? null;
 }
 
+/**
+ * Le département d'une adresse écrite avec son numéro (`/ventes-encheres-immobilieres/13`, `2a`,
+ * `971`), ou `null`. Une telle adresse n'est jamais servie : elle se redirige définitivement vers
+ * l'adresse par nom. Seul un numéro est reconnu, pas un nom approchant.
+ */
+export function departmentFromNumberSlug(slug: string): DepartmentRef | null {
+  return /^(?:\d{2,3}|2[ab])$/i.test(slug) ? departmentFromCode(slug) : null;
+}
+
 /** Lien vers la recherche des ventes du département (`/sales?department=33`). */
 export function departmentSearchPath(department: Pick<DepartmentRef, "code">): string {
   return `/sales?department=${encodeURIComponent(department.code)}`;

@@ -7,7 +7,7 @@ import {
 } from "@/components/departments/DepartmentDirectory";
 import { DepartmentFranceMap } from "@/components/departments/DepartmentFranceMap";
 import { HighlightedFigure } from "@/components/departments/HighlightedFigure";
-import { Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
+import { Card, Eyebrow, PageTitle, buttonClasses } from "@/components/ui/primitives";
 import {
   DEPARTMENT_INDEX_TITLE,
   DEPARTMENT_PAGES_PATH,
@@ -149,9 +149,9 @@ export default async function Page() {
       <main id="contenu" className="mx-auto w-full max-w-7xl px-4 pb-12 sm:px-6">
         <section className="pt-6 pb-2 sm:pt-11">
           <Eyebrow>Ventes aux enchères · Par département</Eyebrow>
-          <h1 className="mt-3 max-w-[56rem] font-display text-3xl leading-snug font-semibold sm:text-4xl">
+          <PageTitle className="mt-3 max-w-[56rem] leading-snug">
             <IndexTitle total={total} active={active} />
-          </h1>
+          </PageTitle>
           <p className="mt-3 max-w-[41rem] text-base text-ink-soft">
             Au tribunal, chez le notaire et ventes de l’État. Choisissez un département pour voir
             ses ventes, sa prochaine date de vente et la mise à prix médiane des ventes au tribunal.

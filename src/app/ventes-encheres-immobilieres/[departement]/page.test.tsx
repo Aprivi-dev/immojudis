@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aggregateDepartments, type DepartmentSaleInput } from "@/lib/department-pages";
 
@@ -18,6 +18,12 @@ vi.mock("next/navigation", () => ({
   notFound: () => {
     throw Object.assign(new Error("NEXT_HTTP_ERROR_FALLBACK;404"), {
       digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
+  },
+  // Même forme de digest que le vrai : NEXT_REDIRECT;<type>;<url>;<statut>;
+  permanentRedirect: (url: string) => {
+    throw Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: `NEXT_REDIRECT;replace;${url};308;`,
     });
   },
 }));
@@ -116,6 +122,29 @@ describe("page d'un département : génération", () => {
     expect(mocks.catalogue).not.toHaveBeenCalled();
   });
 
+  it("redirige en 308 l'adresse par numéro vers l'adresse par nom, sans lire la base", async () => {
+    for (const [number, path] of [
+      ["13", "/ventes-encheres-immobilieres/bouches-du-rhone"],
+      ["01", "/ventes-encheres-immobilieres/ain"],
+      ["2A", "/ventes-encheres-immobilieres/corse-du-sud"],
+      ["2b", "/ventes-encheres-immobilieres/haute-corse"],
+      ["971", "/ventes-encheres-immobilieres/guadeloupe"],
+    ] as const) {
+      await expect(Page(params(number)), number).rejects.toMatchObject({
+        digest: `NEXT_REDIRECT;replace;${path};308;`,
+      });
+      expect((await generateMetadata(params(number))).robots, number).toEqual({
+        index: false,
+        follow: true,
+      });
+    }
+    // Un numéro qui ne désigne aucun département reste une page introuvable.
+    await expect(Page(params("97"))).rejects.toMatchObject({
+      digest: "NEXT_HTTP_ERROR_FALLBACK;404",
+    });
+    expect(mocks.catalogue).not.toHaveBeenCalled();
+  });
+
   it("garde un département inconnu hors de l'index sans lire la base", async () => {
     const metadata = await generateMetadata(params("atlantide"));
     expect(metadata.robots).toEqual({ index: false, follow: false });
@@ -198,6 +227,21 @@ describe("page d'un département : contenu", () => {
       "/sales/c",
     ]);
     expect(container.textContent).toContain("Mérignac");
+  });
+
+  it("transmet la page du département à la fiche dans le navigateur seulement (« Retour aux ventes du département »)", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
+    const link = within(list)
+      .getAllByRole("link")
+      .find((candidate) => candidate.getAttribute("href")?.startsWith("/sales/"))!;
+    // HTML du serveur : l'adresse canonique de la fiche, sans origine.
+    expect(link.getAttribute("href")).toBe("/sales/a");
+    fireEvent.pointerEnter(link);
+    expect(link.getAttribute("href")).toBe(
+      "/sales/a?from=%2Fventes-encheres-immobilieres%2Fgironde",
+    );
   });
 
   it("dit « audience » et « mise à prix » pour le tribunal, avec la médiane des ventes au tribunal", async () => {
@@ -494,6 +538,26 @@ describe("page d'un département : contenu", () => {
     const list = figures.querySelector("dl")!;
     expect(list.className).toContain("sm:grid-cols-3");
     expect(list.children).toHaveLength(3);
+  });
+
+  it("garde les trois chiffres compacts sur mobile : une ligne par chiffre, libellé à gauche", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du département" });
+    for (const card of figures.querySelector("dl")!.children) {
+      // Libellé et chiffre côte à côte sous 640 px, puis la carte en bloc dès la tablette.
+      expect(card.className).toContain("grid-cols-[minmax(0,1fr)_auto]");
+      expect(card.className).toContain("sm:block");
+      const value = card.querySelector("dd")!;
+      expect(value.className).toContain("text-xl");
+      expect(value.className).toContain("sm:text-[1.75rem]");
+    }
+  });
+
+  it("pose le titre avec l'échelle commune des titres de page", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    expect(screen.getByRole("heading", { level: 1 }).className).toContain("sm:text-[2.5rem]");
   });
 
   it("garde un texte d'introduction générique, sans conseil", async () => {

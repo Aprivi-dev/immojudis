@@ -6,7 +6,7 @@ import { Button, Card, Notice, PageShell } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { formatDate, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
-import { saleDetailPath } from "@/lib/navigation";
+import { UNLOCKED_SALES_PATH, saleDetailPath } from "@/lib/navigation";
 import * as queryKeys from "@/lib/query-keys";
 import { unlockUsageLine, type UnlockedSaleSummary } from "@/lib/sale-unlocks";
 
@@ -92,7 +92,7 @@ export function UnlockedSalesPage() {
           {sales.map((sale) => (
             <li key={sale.id} className="rounded-xl border border-border bg-card p-4">
               <Link
-                href={saleDetailPath(sale.id)}
+                href={saleDetailPath(sale.id, UNLOCKED_SALES_PATH)}
                 className="font-semibold text-foreground underline underline-offset-4"
               >
                 {sale.title ?? "Vente sans titre"}
