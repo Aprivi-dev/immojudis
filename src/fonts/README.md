@@ -26,11 +26,11 @@ changer son nom, puis relancer `npm run build` et comparer le rendu.
 `ImageResponse` n'accepte que le TTF, l'OTF et le WOFF (pas le WOFF2 variable ci-dessus). Depuis le
 07/11/2026, l'image est dessinée en Manrope avec trois fichiers statiques :
 
-| Fichier                  | Famille        | Graisse | Style  |
-| ------------------------ | -------------- | ------- | ------ |
-| `manrope-latin-400.woff` | Manrope (v15)  | 400     | normal |
-| `manrope-latin-700.woff` | Manrope (v15)  | 700     | normal |
-| `manrope-latin-800.woff` | Manrope (v15)  | 800     | normal |
+| Fichier                  | Famille | Graisse | Style  |
+| ------------------------ | ------- | ------- | ------ |
+| `manrope-latin-400.woff` | Manrope | 400     | normal |
+| `manrope-latin-700.woff` | Manrope | 700     | normal |
+| `manrope-latin-800.woff` | Manrope | 800     | normal |
 
 Ce sont des TrueType statiques de sous-ensemble `latin` dans un conteneur WOFF 1, récupérés le
 07/11/2026 dans le paquet npm `@fontsource/manrope` 5.3.0 (`files/manrope-latin-<graisse>-normal.woff`),
