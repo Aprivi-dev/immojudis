@@ -49,6 +49,7 @@ import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
+import { cleanScalarText as cleanString } from "@/lib/clean-text";
 
 const EXPORT_SOURCE_LIMIT = 1_000;
 const EXPORT_ROW_LIMIT = 500;
@@ -762,14 +763,6 @@ function compactStrings(values: unknown[]): string[] {
     seen.add(value);
     return true;
   });
-}
-
-function cleanString(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  return null;
 }
 
 function saleToCsvRow(sale: AuctionSale, origin?: string | null): Array<string | number | null> {

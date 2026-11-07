@@ -1,4 +1,5 @@
 import type { AuctionSale } from "@/lib/types";
+import { cleanScalarText as cleanText } from "@/lib/clean-text";
 
 export const DPE_CLASSES = ["A", "B", "C", "D", "E", "F", "G"] as const;
 
@@ -165,14 +166,6 @@ function dpeFromSourceBlocks(blocks: AuctionSale["source_blocks"]): DpeClass | n
     normalizeDpeClass(blocks.diagnostic_dpe) ??
     normalizeDpeClass(blocks.classe_energie)
   );
-}
-
-function cleanText(value: unknown): string | null {
-  if (typeof value === "string" || typeof value === "number") {
-    const text = String(value).replace(/\s+/g, " ").trim();
-    return text || null;
-  }
-  return null;
 }
 
 function finiteNumber(value: unknown): number | null {
