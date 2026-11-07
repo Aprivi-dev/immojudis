@@ -29,7 +29,7 @@ import type { AuctionSale, SaleFilters, UserAlert, UserWatchedZone } from "@/lib
 import { normalizeWatchedZone } from "@/lib/watched-zones";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
-import { primitiveDocumentValues } from "@/lib/document-signature";
+import { documentSignatureParts } from "@/lib/document-signature";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
 
@@ -1260,27 +1260,6 @@ function roundNumber(value: number | null | undefined): number | null {
 
 function roundPercent(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
-}
-
-function documentSignatureParts(sale: AuctionSale): { count: number; signature: string | null } {
-  const values = Array.isArray(sale.documents_rich)
-    ? sale.documents_rich.map((document) =>
-        [
-          document.url,
-          document.label,
-          document.type ?? document.document_type,
-          document.extraction_status,
-        ]
-          .filter(Boolean)
-          .join("|"),
-      )
-    : primitiveDocumentValues(sale.documents);
-  const unique = [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
-
-  return {
-    count: unique.length,
-    signature: unique.length ? unique.join("||") : null,
-  };
 }
 
 function asJson(value: unknown): Json {
