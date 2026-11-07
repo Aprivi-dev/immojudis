@@ -1,9 +1,10 @@
 import { occupancyLabel } from "@/lib/format";
 import { listingOccupation } from "@/lib/listing-evidence";
-import type { AuctionSale, SaleRisk } from "@/lib/types";
+import type { AuctionSale } from "@/lib/types";
 import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import { cleanText } from "@/lib/clean-text";
 import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
+import { riskTexts } from "@/lib/sale-risk-texts";
 
 export type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
 
@@ -345,19 +346,6 @@ function collectTextCandidates(sale: AuctionSale): TextCandidate[] {
   }
 
   return candidates.filter((candidate) => hasOccupancyText(candidate.text));
-}
-
-function riskTexts(risk: SaleRisk): string[] {
-  const texts: unknown[] = [risk.risk_label, risk.evidence];
-  const evidence = risk.evidence_json;
-  if (evidence && typeof evidence === "object") {
-    const record = evidence as Record<string, unknown>;
-    texts.push(record.excerpt, record.reasoning, record.why_it_matters, record.next_action);
-  }
-  for (const occurrence of risk.occurrences ?? []) {
-    texts.push(occurrence.document_label, occurrence.document_type, occurrence.excerpt);
-  }
-  return texts.map(cleanText).filter((text): text is string => Boolean(text));
 }
 
 function hasPattern(candidates: TextCandidate[], patterns: RegExp[]): boolean {
