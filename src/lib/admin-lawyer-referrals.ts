@@ -15,6 +15,7 @@ import {
   emailParagraph,
 } from "@/lib/email-layout";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { formatWholeEuros as formatPrice } from "@/lib/format-euros";
 
 type LawyerReferralMatchingStatus = "unmatched" | "matched" | "manual_review";
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
@@ -752,14 +753,6 @@ function contactMethodLabel(value: LawyerReferralRow["preferred_contact_method"]
   if (value === "phone") return "Téléphone";
   if (value === "either") return "Email ou téléphone";
   return "Email";
-}
-
-function formatPrice(value: number): string {
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
 }
 
 function referencedLawyerToOption(
