@@ -114,6 +114,8 @@ test.describe("« Retour » sur /sales", () => {
     await page.goto("/sales");
 
     await expect(async () => {
+      // « Voir sur la carte » n'apparaît qu'après un premier défilement (il couvrait le premier prix).
+      await page.evaluate(() => window.scrollTo(0, 300));
       await page.getByRole("button", { name: "Voir sur la carte", exact: true }).click();
       await expect(page).toHaveURL(/[?&]map=true/, { timeout: 1000 });
     }).toPass();

@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { useEffect, useState } from "react";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import Map from "lucide-react/dist/esm/icons/map.js";
 import X from "lucide-react/dist/esm/icons/x.js";
@@ -9,10 +10,29 @@ import { userMessage } from "@/lib/user-messages";
 import type { ActiveFilterChip } from "./active-filter-chips";
 
 /**
+ * Vrai dès que la page a défilé. Faux au premier rendu (serveur compris) : rien ne s'affiche puis ne
+ * disparaît. Une page rouverte plus bas (retour depuis une fiche) le passe à vrai dès le montage.
+ */
+function useScrolledPastTop(): boolean {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const update = () => setScrolled(window.scrollY > 0);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
+  return scrolled;
+}
+
+/**
  * Bouton flottant du mobile (maquette /sales validée) : « Voir sur la carte », centré au bas de
  * l'écran, et la pastille « Comparer (N) » à côté dès qu'un bien est choisi. Les filtres sont dans
  * la rangée de filtres, sous le champ du lieu (pastille « Filtres »). Seul ce qui flotte porte une
  * ombre. Rien n'intercepte le toucher entre les boutons : la rangée laisse passer les gestes.
+ *
+ * « Voir sur la carte » n'apparaît qu'après un premier défilement : en haut de page, à 390 × 844, il
+ * recouvrait le prix de la première carte. La pastille « Comparer (N) », elle, reste visible dès
+ * qu'un bien est choisi (arrivée depuis le « Comparer » d'une fiche comprise).
  */
 export function MobileMapToggle({
   comparedCount = 0,
@@ -27,6 +47,7 @@ export function MobileMapToggle({
   onPreloadMap?: () => void;
   onOpenMap: () => void;
 }) {
+  const scrolled = useScrolledPastTop();
   return (
     // Remontée par `transform`, non par `bottom` : la hauteur du bandeau de cookies est posée après
     // l'hydratation, et changer `bottom` d'une barre fixe décale la page (CLS 0,09 mesuré sur mobile) ;
@@ -40,7 +61,8 @@ export function MobileMapToggle({
         onClick={onOpenMap}
         onPointerDown={onPreloadMap}
         onTouchStart={onPreloadMap}
-        className="pointer-events-auto inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-brand-navy px-5 text-[0.9375rem] font-bold text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+        data-map-toggle=""
+        className={`pointer-events-auto ${scrolled ? "inline-flex" : "hidden"} h-12 cursor-pointer items-center justify-center gap-2 rounded-full bg-brand-navy px-5 text-[0.9375rem] font-bold text-white shadow-lg transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft`}
       >
         <Map className="h-[18px] w-[18px]" aria-hidden />
         Voir sur la carte
