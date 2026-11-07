@@ -16,6 +16,7 @@ import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { propertyTypeFamily } from "@/lib/property-type-family";
+import { round } from "@/lib/rounding";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
@@ -789,9 +790,4 @@ function positiveNumber(value: number | null | undefined): number | null {
 
 function finiteNumber(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) ? value : null;
-}
-
-function round(value: number, digits = 0): number {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
 }
