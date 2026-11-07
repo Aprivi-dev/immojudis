@@ -49,7 +49,7 @@ import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
-import { cleanScalarText as cleanString } from "@/lib/clean-text";
+import { cleanScalarText as cleanString } from "@/lib/dpe";
 
 const EXPORT_SOURCE_LIMIT = 1_000;
 const EXPORT_ROW_LIMIT = 500;

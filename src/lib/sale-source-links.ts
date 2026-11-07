@@ -1,6 +1,5 @@
 import type { AuctionSale } from "@/lib/types";
-import { isWithdrawnSourceName } from "@/lib/withdrawn-sources";
-import { safeDocumentUrl as cleanHref } from "@/lib/documents";
+import { isWithdrawnSourceName, safeDocumentUrl as cleanHref } from "@/lib/withdrawn-sources";
 
 export type SaleSourceLink = { label: string; href: string };
 
