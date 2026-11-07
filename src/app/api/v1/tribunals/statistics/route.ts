@@ -10,7 +10,7 @@ import {
   getTribunalStatistics,
   tribunalStatisticsQuerySchema,
 } from "@/lib/tribunal-statistics-repository";
-import { recordFeatureUsageEvent } from "@/lib/usage";
+import { recordUsageSafely } from "@/lib/record-usage-safely.server";
 
 export async function GET(request: Request) {
   const context = createApiRequestContext(request, "tribunal.statistics");
@@ -63,13 +63,5 @@ export async function GET(request: Request) {
     response.headers.set("cache-control", "private, no-store");
     response.headers.set("vary", "authorization");
     return response;
-  }
-}
-
-function recordUsageSafely(input: Parameters<typeof recordFeatureUsageEvent>[0]): void {
-  try {
-    void recordFeatureUsageEvent(input).catch(() => undefined);
-  } catch {
-    // A synchronous adapter failure is non-critical for this read endpoint.
   }
 }
