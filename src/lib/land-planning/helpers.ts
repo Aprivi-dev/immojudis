@@ -5,6 +5,8 @@ import type {
   LandParcelReference,
 } from "../land-report-types";
 import { asRecord, decimalCommaNumberValue } from "@/lib/guards";
+import { textValue as text } from "@/lib/guards";
+export { text };
 
 const MAX_GEOMETRY_POSITIONS = 100_000;
 
@@ -22,12 +24,6 @@ export type GeoJsonFeature = {
   geometry?: unknown;
   properties?: unknown;
 };
-
-export function text(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return null;
-}
 
 export function boundedInteger(
   value: number | undefined,
