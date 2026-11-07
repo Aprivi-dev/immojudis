@@ -211,7 +211,7 @@ export function PublicTribunalActivitySection({
         {PRICE_RULE}
       </p>
       <details className="mt-2 text-sm sm:hidden">
-        <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-brand-navy underline underline-offset-2">
+        <summary className="cursor-pointer py-3 font-semibold text-brand-navy underline underline-offset-2">
           Comment lire la mise à prix
         </summary>
         <p className="mt-1 leading-relaxed text-ink-soft">{PRICE_RULE}</p>

@@ -80,7 +80,7 @@ export function DepartmentFranceMap({
     <div className="@container mt-3">
       <div
         role="group"
-        aria-label="Carte de France du nombre de ventes à venir par département. Au clavier, utilisez la liste détaillée des départements qui suit la carte : ses ronds ne sont pas atteints avec la touche Tab."
+        aria-label="Carte de France du nombre de ventes à venir par département. Au clavier, utilisez la liste détaillée des départements qui suit la carte : les ronds de la carte ne sont pas atteints avec la touche Tab."
         className="relative aspect-[1060/1000] w-full"
       >
         <div
