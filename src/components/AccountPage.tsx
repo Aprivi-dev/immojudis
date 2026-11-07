@@ -9,6 +9,7 @@ import { InvestorProfileForm } from "@/components/InvestorProfileForm";
 import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { SaleResultsToggle } from "@/components/SaleResultsToggle";
 import { WeeklyDigestToggle } from "@/components/WeeklyDigestToggle";
+import { Card, Notice, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { fetchAccessPlan } from "@/lib/client-billing";
@@ -73,28 +74,22 @@ export function AccountPage() {
     !launchOffer || hasLiveStripeSubscription(plan?.billing, plan?.currentPeriodEnd);
 
   return (
-    <main id="contenu" className="mx-auto max-w-3xl px-4 pb-16 pt-28 sm:px-6">
-      <h1 className="font-display text-4xl text-foreground">Mon compte</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Gérez votre abonnement, votre moyen de paiement et vos données personnelles.
-      </p>
-
-      <section
-        className="mt-8 rounded-xl border border-border bg-card p-5"
-        aria-labelledby="acc-id"
-      >
+    <PageShell
+      eyebrow="Mon espace"
+      title="Mon compte"
+      description="Gérez votre abonnement, votre moyen de paiement et vos données personnelles."
+      width="narrow"
+    >
+      <Card as="section" aria-labelledby="acc-id">
         <h2 id="acc-id" className="text-lg font-semibold text-foreground">
           Connexion
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Adresse email : <strong className="text-foreground">{user?.email ?? "—"}</strong>
         </p>
-      </section>
+      </Card>
 
-      <section
-        className="mt-6 rounded-xl border border-border bg-card p-5"
-        aria-labelledby="acc-space"
-      >
+      <Card as="section" className="mt-6" aria-labelledby="acc-space">
         <h2 id="acc-space" className="text-lg font-semibold text-foreground">
           Mon espace
         </h2>
@@ -123,12 +118,9 @@ export function AccountPage() {
             </li>
           ))}
         </ul>
-      </section>
+      </Card>
 
-      <section
-        className="mt-6 rounded-xl border border-border bg-card p-5"
-        aria-labelledby="acc-notifications"
-      >
+      <Card as="section" className="mt-6" aria-labelledby="acc-notifications">
         <h2 id="acc-notifications" className="text-lg font-semibold text-foreground">
           Notifications
         </h2>
@@ -144,12 +136,9 @@ export function AccountPage() {
             <WeeklyDigestToggle userId={user.id} className={TOGGLE_CLASS} />
           </>
         ) : null}
-      </section>
+      </Card>
 
-      <section
-        className="mt-6 rounded-xl border border-border bg-card p-5"
-        aria-labelledby="acc-investor"
-      >
+      <Card as="section" className="mt-6" aria-labelledby="acc-investor">
         <h2 id="acc-investor" className="text-lg font-semibold text-foreground">
           Mon profil d’investisseur
         </h2>
@@ -164,17 +153,14 @@ export function AccountPage() {
           profil ».
         </p>
         {user ? <InvestorProfileForm userId={user.id} /> : null}
-      </section>
+      </Card>
 
-      <section
-        className="mt-6 rounded-xl border border-border bg-card p-5"
-        aria-labelledby="acc-sub"
-      >
+      <Card as="section" className="mt-6" aria-labelledby="acc-sub">
         <h2 id="acc-sub" className="text-lg font-semibold text-foreground">
           Abonnement
         </h2>
         {planQuery.isError ? (
-          <p role="alert" className="mt-2 text-sm text-red-700">
+          <p role="alert" className="mt-2 text-sm text-danger">
             Impossible de lire votre abonnement pour le moment. Réessayez dans un instant.
           </p>
         ) : (
@@ -210,18 +196,15 @@ export function AccountPage() {
           </p>
         ) : null}
         {pastDue ? (
-          <p
-            role="status"
-            className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
-          >
+          <Notice role="status" tone="warning" className="mt-3">
             Votre dernier paiement a échoué. Mettez à jour votre moyen de paiement
             {graceEnd ? <> avant le {graceEnd}</> : null} pour conserver l’accès aux outils Analyse.
-          </p>
+          </Notice>
         ) : null}
         {plan && !plan.hasAnalysisAccess ? (
           <div className="mt-3 text-sm text-muted-foreground" data-testid="account-unlocks">
             {unlocksQuery.isError ? (
-              <p role="alert" className="text-red-700">
+              <p role="alert" className="text-danger">
                 Le suivi de vos déblocages est indisponible pour le moment.
               </p>
             ) : unlockStatus ? (
@@ -241,7 +224,7 @@ export function AccountPage() {
             résiliation, à tout moment. La résiliation prend effet à la fin de la période payée.
           </p>
         ) : null}
-      </section>
+      </Card>
 
       {launchOffer && !manageableSubscription ? (
         <AccountLaunchOfferEnd
@@ -250,10 +233,7 @@ export function AccountPage() {
         />
       ) : null}
 
-      <section
-        className="mt-6 rounded-xl border border-border bg-card p-5"
-        aria-labelledby="acc-data"
-      >
+      <Card as="section" className="mt-6" aria-labelledby="acc-data">
         <h2 id="acc-data" className="text-lg font-semibold text-foreground">
           Mes données
         </h2>
@@ -262,20 +242,14 @@ export function AccountPage() {
           de rétractation.
         </p>
         <div className="mt-4 flex flex-wrap gap-3">
-          <Link
-            href="/mes-droits"
-            className="inline-flex rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:bg-muted"
-          >
+          <Link href="/mes-droits" className={buttonClasses()}>
             Exercer mes droits
           </Link>
-          <Link
-            href="/mes-droits"
-            className="inline-flex rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
-          >
+          <Link href="/mes-droits" className={buttonClasses({ variant: "danger" })}>
             Demander la suppression de mon compte
           </Link>
         </div>
-      </section>
-    </main>
+      </Card>
+    </PageShell>
   );
 }

@@ -299,6 +299,15 @@ html:has([data-sale-tabs]) {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }
+
+  /* Pastille ou bascule choisie de /sales (`FORCED_COLORS_SELECTED`) : remplie de la couleur de
+     sélection du système, la pastille pleine marine n'étant plus distincte des autres. */
+  .forced-selected {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background-color: Highlight;
+    color: HighlightText;
+  }
 }
 
 /* Un titre passé en police de texte (`font-sans`) garde la taille de Manrope, sans l'ajustement

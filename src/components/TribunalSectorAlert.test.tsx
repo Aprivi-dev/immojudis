@@ -15,7 +15,7 @@ afterEach(cleanup);
 describe("TribunalSectorAlert", () => {
   it("demande un département (l’alerte d’un seul tribunal se crée depuis sa page) avant de proposer le bouton", () => {
     render(<TribunalSectorAlert />);
-    expect(screen.getByText(/Suivre ce tribunal/)).toBeTruthy();
+    expect(screen.getByText(/Être prévenu des ventes de ce tribunal/)).toBeTruthy();
     expect(screen.queryByTestId("cta")).toBeNull();
 
     fireEvent.change(screen.getByLabelText("Département"), { target: { value: "33" } });

@@ -25,6 +25,11 @@ export const EMAIL_COLORS = {
   lineWarm: "#e1d8ca",
   /** `--background` : fond de la page de l'email (le papier chaud du site). */
   background: "#fbf9f5",
+  /**
+   * `--background` encore, sous son nom de la charte : le « papier » des pages web sans feuille de
+   * style (erreur globale), qui ne sont pas des emails.
+   */
+  paper: "#fbf9f5",
   /** `--surface` : fond des pages web de confirmation (désinscription, erreur), pas des emails. */
   surface: "#fffaf2",
   /** `--surface-muted` : panneau discret. */
@@ -44,6 +49,7 @@ export const EMAIL_COLOR_TOKENS: Record<Exclude<keyof typeof EMAIL_COLORS, "whit
   line: "--line",
   lineWarm: "--line-warm",
   background: "--background",
+  paper: "--background",
   surface: "--surface",
   surfaceMuted: "--surface-muted",
   cream: "--cream",

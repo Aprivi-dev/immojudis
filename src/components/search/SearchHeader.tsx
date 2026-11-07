@@ -23,6 +23,7 @@ import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { ResultsView } from "@/lib/search/results-view";
 import type { SearchSortKey } from "@/lib/search/search-url-state";
 import { MobileFilterChips } from "./MobileFilterChips";
+import { FORCED_COLORS_SELECTED } from "./forced-colors";
 import { SaleTypeFilter } from "./SaleTypeFilter";
 import { priceRangeError, type SearchDraft } from "./search-page-state";
 
@@ -41,10 +42,30 @@ const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => mod
   ),
 });
 /**
- * Haut de /sales (maquette validée) : l'en-tête du site, puis l'en-tête du catalogue (`intro` :
- * titre, actions, suivi), puis UNE barre de filtres blanche qui reste à l'écran au défilement (à
- * partir de `lg`) : lieu, type de bien, mise à prix, date de vente, tous les filtres, et dessous
- * les types de vente en pastilles.
+ * En-tête du site de /sales : la barre pleine largeur, qui défile avec la page (`static` l'emporte
+ * sur le `sticky` de `SiteHeader`) ; c'est la barre de filtres qui reste à l'écran. Rendue AVANT
+ * l'élément `main` de la page (repère « bannière »), avec la région qui annonce la mise à jour des résultats.
+ */
+export function SalesSiteHeader({ refreshing }: { refreshing: boolean }) {
+  return (
+    <SiteHeader
+      placement="sticky"
+      className="sales-header static"
+      // Région présente dès le départ (vide) : l'annonce suivante sera bien lue.
+      belowBar={
+        <p role="status" className="sr-only">
+          {refreshing ? "Mise à jour des résultats" : null}
+        </p>
+      }
+    />
+  );
+}
+
+/**
+ * Haut du contenu de /sales (maquette validée), sous l'en-tête du site (`SalesSiteHeader`) :
+ * l'en-tête du catalogue (`intro` : titre, actions, suivi), puis UNE barre de filtres blanche qui
+ * reste à l'écran au défilement (à partir de `lg`) : lieu, type de bien, mise à prix, date de
+ * vente, tous les filtres, et dessous les types de vente en pastilles.
  *
  * Sur mobile, la barre défile avec la page : le champ du lieu (avec l'alerte), une rangée de
  * filtres qui défile (« Filtres », type de bien, mise à prix, date…), puis la rangée des types de
@@ -57,8 +78,6 @@ export function SearchHeader({
   draft,
   setDraft,
   activeFiltersCount,
-  isLoading,
-  isFetching,
   filtersOpen,
   savingAlert,
   signedIn = false,
@@ -77,8 +96,6 @@ export function SearchHeader({
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
   activeFiltersCount: number;
-  isLoading: boolean;
-  isFetching: boolean;
   filtersOpen: boolean;
   savingAlert: boolean;
   signedIn?: boolean;
@@ -96,7 +113,8 @@ export function SearchHeader({
   isDesktop?: boolean;
   /** En-tête du catalogue, entre l'en-tête du site et la barre de filtres. */
   intro?: React.ReactNode;
-  onFiltersOpenChange: (open: boolean) => void;
+  /** `trigger` : le bouton qui ouvre la fenêtre des filtres, où le focus reviendra à sa fermeture. */
+  onFiltersOpenChange: (open: boolean, trigger?: HTMLElement) => void;
   onReset: () => void;
   onSaveSearch: (options?: SaveSearchOptions) => void;
 }) {
@@ -125,22 +143,6 @@ export function SearchHeader({
   );
   return (
     <>
-      <SiteHeader
-        placement="sticky"
-        // L'en-tête du site défile avec la page (`static` l'emporte sur le `sticky` de `SiteHeader`) :
-        // c'est la barre de filtres qui reste à l'écran.
-        className="sales-header static"
-        belowBar={
-          isFetching && !isLoading ? (
-            <p role="status" className="sr-only">
-              Mise à jour des résultats
-            </p>
-          ) : (
-            // Région présente dès le départ (vide) : l'annonce suivante sera bien lue.
-            <p role="status" className="sr-only" />
-          )
-        }
-      />
       {intro}
       <div
         ref={barRef}
@@ -175,7 +177,7 @@ export function SearchHeader({
               <button
                 type="button"
                 aria-expanded={filtersOpen}
-                onClick={() => onFiltersOpenChange(!filtersOpen)}
+                onClick={(event) => onFiltersOpenChange(!filtersOpen, event.currentTarget)}
                 className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy hover:border-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 <SlidersHorizontal className="h-4 w-4" aria-hidden />
@@ -192,7 +194,7 @@ export function SearchHeader({
               signupLinks={signupLinks}
               activeFiltersCount={activeFiltersCount}
               filtersOpen={filtersOpen}
-              onOpenFilters={() => onFiltersOpenChange(true)}
+              onOpenFilters={(trigger) => onFiltersOpenChange(true, trigger)}
             />
             {!isDesktop && activeFiltersCount > 0 && (
               <button
@@ -594,7 +596,7 @@ export function ResultsViewToggle({
               onClick={() => onChange(value)}
               className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-sm font-bold focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft ${
                 active
-                  ? "bg-brand-navy text-white"
+                  ? `bg-brand-navy text-white ${FORCED_COLORS_SELECTED}`
                   : "bg-white text-brand-navy hover:bg-surface-tint"
               }`}
             >
@@ -638,9 +640,12 @@ export function SaveSearchButton({
   freeAlertUsage = null,
   onOpen,
   label = "Créer une alerte",
+  secondary = false,
   onClick,
 }: {
   saving: boolean;
+  /** Bouton secondaire (bordure, fond blanc) : à côté d'une action principale, comme dans l'état vide. */
+  secondary?: boolean;
   /** Version mobile : l'icône et le mot « Alerte » (le nom accessible reste « Créer une alerte »). */
   compact?: boolean;
   /** Texte du bouton (hors version compacte). */
@@ -669,9 +674,11 @@ export function SaveSearchButton({
       aria-label={compact ? "Créer une alerte" : undefined}
       title="Créer une alerte à partir de cette recherche"
       onClick={signedIn ? undefined : () => onClick()}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
-        compact ? "h-11 px-3" : "min-h-11 px-4"
-      }`}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
+        secondary
+          ? "border border-line bg-white text-brand-navy hover:border-brand-navy"
+          : "bg-brand-navy text-white shadow-sm hover:bg-brand-navy-soft"
+      } ${compact ? "h-11 px-3" : "min-h-11 px-4"}`}
     >
       {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
       {compact ? "Alerte" : label}

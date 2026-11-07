@@ -199,6 +199,7 @@ const CNB_BAR_ALIASES: Record<string, string> = {
   chaumont: "0057",
   evreux: "0075",
   evry: "0076",
+  "evry courcouronnes": "0076",
   foix: "0077",
   gap: "0080",
   mende: "0107",
@@ -207,9 +208,13 @@ const CNB_BAR_ALIASES: Record<string, string> = {
   niort: "0127",
   "basse terre": "0136",
   "pointe a pitre": "0136",
+  perpignan: "0135",
   pontoise: "0138",
   privas: "0139",
   rodez: "0146",
+  // Tribunal judiciaire de Saint-Pierre (La Réunion), not Saint-Pierre-et-Miquelon.
+  "saint pierre": "0156",
+  "st gaudens": "0152",
 };
 
 const CNB_BAR_BY_CODE = new Map(CNB_BAR_ASSOCIATIONS.map((bar) => [bar.code, bar]));
@@ -226,8 +231,13 @@ export function findCnbBarAssociation(value: string | null | undefined): CnbBarA
   if (exact) return exact;
 
   if (key.length < 4) return null;
+  // Whole words only: "Thonon-les-Bains" must not match the bar of the Ain through "bains".
+  const paddedKey = ` ${key} `;
   const candidates = Array.from(CNB_BAR_BY_KEY.entries())
-    .filter(([candidateKey]) => candidateKey.includes(key) || key.includes(candidateKey))
+    .filter(([candidateKey]) => {
+      const paddedCandidate = ` ${candidateKey} `;
+      return paddedCandidate.includes(paddedKey) || paddedKey.includes(paddedCandidate);
+    })
     .sort(
       ([left], [right]) => Math.abs(left.length - key.length) - Math.abs(right.length - key.length),
     );

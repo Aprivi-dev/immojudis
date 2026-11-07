@@ -10,6 +10,7 @@ import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Input } from "@/components/ui/input";
+import { PageTitle } from "@/components/ui/primitives";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { PremiumAdjudicationExplorer } from "@/components/PremiumAdjudicationExplorer";
@@ -89,9 +90,9 @@ export function TribunalJudicialActivityExplorer({
             <Landmark className="h-4 w-4" aria-hidden />
             Observatoire des ventes judiciaires
           </p>
-          <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl">
+          <PageTitle className="mt-3 max-w-5xl">
             Ventes judiciaires à venir par tribunal judiciaire
-          </h1>
+          </PageTitle>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
             {adjudicationStatisticsEnabled
               ? "À quel prix les biens sont-ils adjugés ? Comparez les prix d’adjudication publiés par Licitor, les mises à prix et les types de biens, en France et tribunal par tribunal. Un baromètre réservé à l’offre Analyse, complété par l’historique des audiences suivies par Immojudis."

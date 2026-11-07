@@ -15,11 +15,11 @@ describe("primitives", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it("le bouton principal porte du texte marine sur or (jamais blanc)", () => {
+  it("le bouton principal est marine, texte blanc, sur tout le site (décision du 07/11/2026)", () => {
     const classes = buttonClasses({ variant: "primary" });
-    expect(classes).toContain("bg-gold");
-    expect(classes).toContain("text-brand-navy");
-    expect(classes).not.toContain("text-white");
+    expect(classes).toContain("bg-brand-navy");
+    expect(classes).toContain("text-white");
+    expect(classes).not.toContain("bg-gold ");
   });
 
   it("le bouton inactif est gris et lisible", () => {

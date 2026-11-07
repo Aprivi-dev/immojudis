@@ -118,6 +118,30 @@ describe("annuaire des avocats", () => {
     expect(link.className).toContain("w-full");
     expect(entry.className).toContain("min-w-0");
     expect(entry.textContent).toContain("Publicité · Sponsorisé");
+    // Repasse n° 18 : l'avocat trouve aussi le dépôt d'une vente.
+    const publish = within(entry).getByRole("link", { name: "Publier une vente" });
+    expect(publish.getAttribute("href")).toBe("/publish");
+    expect(publish.className).toContain("min-h-11");
+  });
+
+  it("place les encadrés « avocat » après les résultats, qui suivent directement le formulaire (repasse n° 16)", () => {
+    mocks.fetchLawyerDirectory.mockReturnValue(new Promise(() => {}));
+    mocks.query = "bar=Bordeaux";
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <LawyerDirectoryPage />
+      </QueryClientProvider>,
+    );
+    const form = screen.getByRole("textbox", { name: "Rechercher un barreau" }).closest("form");
+    const results = screen.getByRole("region", { name: "Résultats de l'annuaire" });
+    const entry = screen.getByRole("complementary", { name: "Vous êtes avocat ?" });
+    const following = Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(form?.compareDocumentPosition(results)).toBe(following);
+    expect(results.compareDocumentPosition(entry) & following).toBe(following);
+    // Plus de vide au-dessus du titre : titre et formulaire sont alignés en haut.
+    const grid = screen.getByRole("heading", { level: 1 }).parentElement?.parentElement;
+    expect(grid?.className).toContain("lg:items-start");
+    expect(grid?.className).not.toContain("lg:items-end");
   });
 
   it("indique à l'avocat poursuivant comment faire corriger une fiche, vers le contact prérempli", () => {
@@ -370,9 +394,10 @@ describe("annuaire des avocats", () => {
         city: "Tarbes",
         department: "64",
       });
+      // Pour une annonce, le champ montre le barreau du tribunal que l'annuaire a cherché.
       expect(
         (screen.getByPlaceholderText("Bordeaux, Paris, Lyon…") as HTMLInputElement).value,
-      ).toBe("Pau");
+      ).toBe("Bordeaux");
       expect(document.querySelector('input[name="saleId"]')?.getAttribute("value")).toBe("abc");
       expect(screen.getByRole("link", { name: "Retour à l'annonce" }).getAttribute("href")).toBe(
         "/sales/abc",
@@ -387,16 +412,115 @@ describe("annuaire des avocats", () => {
       expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({ saleId: "abc", bar: "Paris" });
     });
 
-    it("sans filtre : annuaire non filtré, lien de retour vers les ventes, pas de vente cachée", async () => {
-      renderDirectory([profile({ id: "a" })], "");
+    it("sans annonce, garde dans le champ le barreau demandé", async () => {
+      renderDirectory([profile({ id: "a" })], "bar=Pau");
 
       await screen.findByRole("heading", { name: "Avocats de l'annuaire" });
 
-      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({});
+      expect(
+        (screen.getByPlaceholderText("Bordeaux, Paris, Lyon…") as HTMLInputElement).value,
+      ).toBe("Pau");
+    });
+
+    it("sans filtre : invite à choisir un barreau sans interroger l'annuaire (repasse n° 5)", async () => {
+      renderDirectory([profile({ id: "a" })], "");
+
+      expect(await screen.findByRole("heading", { name: "Choisissez un barreau" })).toBeTruthy();
+      expect(mocks.fetchLawyerDirectory).not.toHaveBeenCalled();
+      expect(screen.queryByText("Maître Dupont")).toBeNull();
       expect(screen.getByRole("link", { name: "Retour aux ventes" }).getAttribute("href")).toBe(
         "/sales",
       );
       expect(document.querySelector('input[name="saleId"]')).toBeNull();
+    });
+
+    it("?department= interroge l'annuaire sur le département et affiche son libellé", async () => {
+      mocks.query = "department=13";
+      mocks.fetchLawyerDirectory.mockResolvedValue({
+        lawyers: [profile({ id: "a", barAssociation: "Aix-en-Provence" })],
+        pagination: { page: 1, pageSize: 50, total: 1, hasMore: false },
+        sectorLabel: "Bouches-du-Rhône (13)",
+        barAssociation: null,
+        isDemo: false,
+        officialSource: null,
+      } satisfies LawyerDirectoryResponse);
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <LawyerDirectoryPage />
+        </QueryClientProvider>,
+      );
+
+      expect(
+        await screen.findByRole("heading", { name: "Avocats — Bouches-du-Rhône (13)" }),
+      ).toBeTruthy();
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({ department: "13" });
+    });
+  });
+
+  describe("état vide et pages suivantes", () => {
+    it("nomme le barreau de l'annonce quand il n'y a aucun avocat, et le met dans le champ (repasse n° 4)", async () => {
+      mocks.query = "saleId=52d72de3-d795-492e-be50-58eb72d2eb47";
+      mocks.fetchLawyerDirectory.mockResolvedValue({
+        lawyers: [],
+        pagination: { page: 1, pageSize: 50, total: 0, hasMore: false },
+        sectorLabel: "Barreau de Aix-en-Provence",
+        barAssociation: "Aix-en-Provence",
+        isDemo: false,
+        officialSource: null,
+      } satisfies LawyerDirectoryResponse);
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <LawyerDirectoryPage />
+        </QueryClientProvider>,
+      );
+
+      expect(
+        await screen.findByRole("heading", {
+          name: "Aucun avocat trouvé pour le barreau de Aix-en-Provence",
+        }),
+      ).toBeTruthy();
+      expect(
+        (screen.getByPlaceholderText("Bordeaux, Paris, Lyon…") as HTMLInputElement).value,
+      ).toBe("Aix-en-Provence");
+    });
+
+    it("« Voir les avocats suivants » ajoute la page suivante sous la première", async () => {
+      mocks.query = "bar=Paris";
+      const first = Array.from({ length: 2 }, (_, index) =>
+        profile({ id: `p1-${index}`, displayName: `Maître Premier ${index}` }),
+      );
+      mocks.fetchLawyerDirectory
+        .mockResolvedValueOnce({
+          lawyers: first,
+          pagination: { page: 1, pageSize: 2, total: 3, hasMore: true },
+          sectorLabel: "Barreau de Paris",
+          barAssociation: "Paris",
+          isDemo: false,
+          officialSource: null,
+        } satisfies LawyerDirectoryResponse)
+        .mockResolvedValueOnce({
+          lawyers: [profile({ id: "p2-0", displayName: "Maître Suivant" })],
+          pagination: { page: 2, pageSize: 2, total: 3, hasMore: false },
+          sectorLabel: "Barreau de Paris",
+          barAssociation: "Paris",
+          isDemo: false,
+          officialSource: null,
+        } satisfies LawyerDirectoryResponse);
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <LawyerDirectoryPage />
+        </QueryClientProvider>,
+      );
+
+      const button = await screen.findByRole("button", { name: "Voir les avocats suivants" });
+      expect(screen.getByRole("status").textContent).toBe("3 profils · 2 affichés");
+      button.click();
+
+      expect(await screen.findByText("Maître Suivant")).toBeTruthy();
+      expect(screen.getByText("Maître Premier 0")).toBeTruthy();
+      expect(mocks.fetchLawyerDirectory).toHaveBeenLastCalledWith({ bar: "Paris", page: 2 });
+      expect(screen.queryByRole("button", { name: "Voir les avocats suivants" })).toBeNull();
+      expect(screen.getByRole("status").textContent).toBe("3 profils");
     });
   });
 });

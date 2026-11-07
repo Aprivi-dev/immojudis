@@ -181,7 +181,7 @@ function AuthenticatedSavedSaleComparisons({
               : "Enregistrer"}
         </button>
       </div>
-      <p className="mt-1 text-[11px] text-ink-soft">
+      <p className="mt-1 text-xs text-ink-soft">
         {setsQuery.data?.limit == null
           ? "Comparaisons enregistrées sans limite fixe."
           : `${savedSets.length}/${setsQuery.data?.limit ?? 1} comparaison enregistrée · ${setsQuery.data?.itemLimit ?? 3} biens maximum.`}
@@ -266,7 +266,7 @@ function SavedComparisonRow({
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-surface-tint px-3 py-2">
       <div>
         <p className="font-bold">{set.name}</p>
-        <p className="text-[11px] text-ink-soft">
+        <p className="text-xs text-ink-soft">
           {readSaleComparisonSnapshot(set.summary_snapshot).length} bien(s) · mise à jour le{" "}
           {formatDate(set.updated_at)}
           {set.sharing.enabled ? ` · lien actif jusqu’au ${formatDate(set.sharing.expiresAt)}` : ""}

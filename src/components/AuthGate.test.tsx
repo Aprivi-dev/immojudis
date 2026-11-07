@@ -191,4 +191,48 @@ describe("AuthGate", () => {
     expect(mocks.replace).not.toHaveBeenCalled();
     expect(screen.getByText("Catalogue")).toBeTruthy();
   });
+
+  describe("publication réservée aux comptes pro (repasse n° 14 et 18)", () => {
+    function signIn(profile: Record<string, unknown>) {
+      mocks.auth = {
+        user: { id: "user-1" },
+        profile: { user_id: "user-1", user_role: "user", ...profile } as unknown as null,
+        loading: false,
+      };
+    }
+
+    it("envoie un compte pro en cours de validation vers son espace pro, pas vers une impasse", () => {
+      signIn({ account_type: "b2b", professional_status: "pending" });
+      render(
+        <AuthGate>
+          <p>Contenu protégé</p>
+        </AuthGate>,
+      );
+      expect(
+        screen.getByRole("heading", { name: "Accès pro en cours de validation" }),
+      ).toBeTruthy();
+      expect(
+        screen
+          .getByRole("link", { name: "Suivre ma demande dans l'espace pro" })
+          .getAttribute("href"),
+      ).toBe("/espace-pro");
+      expect(screen.queryByText("Contenu protégé")).toBeNull();
+    });
+
+    it("fait demander l'accès pro d'un compte particulier par le contact « Espace professionnel »", () => {
+      signIn({ account_type: "b2c", professional_status: "not_applicable" });
+      render(
+        <AuthGate>
+          <p>Contenu protégé</p>
+        </AuthGate>,
+      );
+      const request = screen.getByRole("link", { name: "Demander un accès pro" });
+      expect(request.getAttribute("href")).toBe("/contact?sujet=professionnel");
+      expect(request.className).toContain("bg-brand-navy");
+      expect(screen.getByRole("link", { name: "Retour aux annonces" }).getAttribute("href")).toBe(
+        "/sales",
+      );
+      expect(document.body.innerHTML).not.toMatch(/liquid-|glass-shell/);
+    });
+  });
 });

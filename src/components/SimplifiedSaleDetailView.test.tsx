@@ -493,6 +493,26 @@ describe("integrated listing", () => {
     expect(back.className).toContain("min-h-11");
   });
 
+  it("place le bandeau de tête dans le contenu, avant le lien de retour (sous la pilule)", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+    render(
+      <QueryClientProvider client={client}>
+        <AnalysisSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          marketEstimateOverride={EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate}
+          publicDemo
+          topNotice={<aside aria-label="Exemple fictif">Exemple fictif</aside>}
+        />
+      </QueryClientProvider>,
+    );
+    const notice = screen.getByRole("complementary", { name: "Exemple fictif" });
+    // Dans le <main>, que l'en-tête fixe décale sous la pilule : plus derrière elle.
+    expect(notice.closest("main")).not.toBeNull();
+    const back = screen.getByRole("link", { name: /Retour aux ventes/ });
+    expect(notice.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("names the page the visitor came from in the back link, and keeps an explicit label", () => {
     const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
