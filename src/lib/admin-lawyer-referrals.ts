@@ -1,6 +1,5 @@
 import "server-only";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { resolveTransactionalEmailConfig, type ResendEmailMessage } from "@/lib/email-alerts";
@@ -15,6 +14,7 @@ import {
   emailLayout,
   emailParagraph,
 } from "@/lib/email-layout";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 type LawyerReferralMatchingStatus = "unmatched" | "matched" | "manual_review";
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
@@ -302,14 +302,6 @@ export function adminLawyerReferralUpdatePayload({
       },
     }),
   };
-}
-
-async function assertAdminAuth(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
-  }
-  return auth;
 }
 
 async function getReferralRequest(id: string): Promise<LawyerReferralRow> {
