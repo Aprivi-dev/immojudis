@@ -9,6 +9,7 @@ import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { fetchAdminReferencedLawyers, saveAdminReferencedLawyer } from "@/lib/client-api";
 import type { AdminReferencedLawyerInput, AdminReferencedLawyerSummary } from "@/lib/admin-lawyers";
+import { parseTimestamp as dateToTimestamp } from "@/lib/timestamp";
 
 type CoverageDraft = {
   tribunalCode: string;
@@ -721,10 +722,4 @@ function dateTimeLocalToIso(value: string): string | null {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function dateToTimestamp(value: string | null): number | null {
-  if (!value) return null;
-  const timestamp = new Date(value).getTime();
-  return Number.isFinite(timestamp) ? timestamp : null;
 }

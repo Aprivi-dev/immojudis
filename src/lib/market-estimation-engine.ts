@@ -1,5 +1,6 @@
 import { gridDistance, latLngToCell } from "h3-js";
 import { MARKET_JACKKNIFE_MIN_COMPARABLES } from "@/lib/market-comparable-minimums";
+import { round } from "@/lib/rounding";
 
 export type MarketPropertySegment =
   | "apartment"
@@ -559,9 +560,4 @@ function percentile(sortedAsc: number[], p: number): number {
 
 function positive(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function round(value: number, digits: number): number {
-  const factor = 10 ** digits;
-  return Math.round(value * factor) / factor;
 }

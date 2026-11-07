@@ -5,6 +5,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { isLawyerEligibleForSale } from "@/lib/lawyer-bar";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
+import { parseTimestamp as parseDateTime } from "@/lib/timestamp";
 
 type SaleSectorSource = Pick<
   Database["public"]["Tables"]["auction_sales"]["Row"],
@@ -159,10 +160,4 @@ function lawyerRowToFeatured(
     matchingBasis,
     sectorLabel,
   };
-}
-
-function parseDateTime(value: string | null): number | null {
-  if (!value) return null;
-  const timestamp = new Date(value).getTime();
-  return Number.isFinite(timestamp) ? timestamp : null;
 }

@@ -7,7 +7,6 @@ import {
   informationAgentControllerIdentity,
 } from "@/lib/information-agent-compliance";
 import { renderInformationRequestEmail } from "../../emails/information-request";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { resolveSiteOrigin } from "@/lib/site-url";
@@ -24,6 +23,7 @@ import {
   type InformationAgentEmailTemplateSummary,
   type InformationAgentEmailTemplateWorkspace,
 } from "@/lib/information-agent-email-template";
+import { requireAdmin } from "@/lib/admin-auth.server";
 
 type TemplateRow = Database["public"]["Tables"]["information_agent_email_templates"]["Row"];
 
@@ -287,10 +287,4 @@ function templateSummaryFromRow(row: TemplateRow): InformationAgentEmailTemplate
     updatedAt: row.updated_at,
     publishedAt: row.published_at,
   };
-}
-
-async function requireAdmin(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-  return auth;
 }
