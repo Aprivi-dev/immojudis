@@ -80,6 +80,7 @@ import { DESKTOP_MAP_ZONE_ID, DesktopMapZone } from "./DesktopMapZone";
 import { LazyMapPanel } from "./LazyMapPanel";
 import { preloadMapModules } from "./preload-map";
 import { useRestoreSaleCard } from "./use-restore-sale-card";
+import { useCompareFromAddress } from "./use-compare-from-address";
 import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MobileMapToggle } from "./SearchFilters";
@@ -120,11 +121,6 @@ import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 import * as queryKeys from "@/lib/query-keys";
 import { capMapPoints } from "@/lib/search/map-points";
-import {
-  COMPARE_SALE_PARAM,
-  MAX_COMPARED_SALES,
-  compareSaleIdFromParam,
-} from "@/lib/search/sale-comparison";
 
 /** The map draws at most this many points: more would make clusters and popups sluggish. */
 const MAP_POINT_LIMIT = 500;
@@ -242,8 +238,7 @@ export function SearchPage({
   const [mapViewport, setMapViewport] = useState<MapViewportChange | null>(null);
   const [wideMap, setWideMap] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  // Bouton qui a ouvert « Tous les filtres » (bureau) ou « Filtres » (mobile) : le focus y revient
-  // à la fermeture de la fenêtre, Échap compris.
+  // Bouton qui a ouvert la fenêtre des filtres : le focus y revient à sa fermeture (Échap compris).
   const filtersTriggerRef = useRef<HTMLElement | null>(null);
   const changeFiltersOpen = useCallback((open: boolean, trigger?: HTMLElement) => {
     if (open && trigger) filtersTriggerRef.current = trigger;
@@ -421,49 +416,14 @@ export function SearchPage({
     ? `${user?.id ?? "anonymous"}:${isPreview ? "preview" : isDiscovery ? "discovery" : "analysis"}`
     : null;
   const comparison = useSaleComparison(comparisonScope);
-  // « Comparer » d'une fiche : `/sales?comparer=<id>`. Le paramètre est lu une fois, à l'arrivée, puis
-  // retiré de l'adresse (un rechargement ou un lien copié ne rajoute rien) ; la vente est ajoutée à la
-  // comparaison dès que le compte est connu, et la barre de comparaison (la pastille « Comparer (N) »
-  // sur mobile) apparaît avec elle.
-  const [saleToCompare, setSaleToCompare] = useState<string | null>(null);
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (!url.searchParams.has(COMPARE_SALE_PARAM)) return;
-    const id = compareSaleIdFromParam(url.searchParams.get(COMPARE_SALE_PARAM));
-    url.searchParams.delete(COMPARE_SALE_PARAM);
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-    if (id) setSaleToCompare(id);
-  }, []);
-  const comparedItemsRef = useRef(comparison.items);
-  useEffect(() => {
-    comparedItemsRef.current = comparison.items;
-  }, [comparison.items]);
-  const toggleCompared = comparison.toggle;
-  useEffect(() => {
-    if (!saleToCompare || comparisonScope == null) return;
-    let cancelled = false;
-    const failed = () => {
-      if (!cancelled) toast.message("Cette vente n’a pas pu être ajoutée à la comparaison.");
-    };
-    import("@/lib/search/compared-sale")
-      .then(({ fetchComparedSale }) =>
-        fetchComparedSale(saleToCompare, { signedIn: !isPreview, discovery: isDiscovery }),
-      )
-      .then((sale) => {
-        if (cancelled) return;
-        setSaleToCompare(null);
-        if (!sale) return failed();
-        if (comparedItemsRef.current.some((item) => item.id === sale.id)) return;
-        if (comparedItemsRef.current.length >= MAX_COMPARED_SALES) return failed();
-        toggleCompared(sale);
-        toast.message(
-          `Vente ajoutée à la comparaison. Choisissez jusqu’à ${MAX_COMPARED_SALES - 1} autres biens dans la liste.`,
-        );
-      }, failed);
-    return () => {
-      cancelled = true;
-    };
-  }, [comparisonScope, isDiscovery, isPreview, saleToCompare, toggleCompared]);
+  // « Comparer » d'une fiche : `/sales?comparer=<id>` ajoute la vente à la comparaison.
+  useCompareFromAddress({
+    scope: comparisonScope,
+    signedIn: !isPreview,
+    discovery: isDiscovery,
+    items: comparison.items,
+    toggle: comparison.toggle,
+  });
   // While the session is restored, a server-seeded page reads the rows the
   // server rendered for the signed-out catalogue (same keys as the dehydrated
   // queries). They are replaced by the signed-in rows as soon as auth settles.
@@ -1114,6 +1074,17 @@ export function SearchPage({
     }
   }
 
+  // Bouton d'alerte de la recherche (en-tête du catalogue, état vide) : mêmes droits partout.
+  const alertButtonProps = {
+    saving: savingAlert,
+    signedIn: Boolean(user),
+    dailyAllowed: entitlementsData?.plan.hasAnalysisAccess === true,
+    emailRecapEnabled,
+    freeAlertUsage: entitlementsData?.plan.hasAnalysisAccess === true ? null : freeAlertUsage,
+    onOpen: openAlertDialog,
+    onClick: saveSearch,
+  };
+
   // Visiteur : les pastilles réservées aux comptes mènent à l'inscription, qui le ramène sur cette
   // recherche (critères saisis compris) avec le filtre qu'il vient de choisir.
   const signupLinkWith = (patch: Partial<SalesSearchParams>) =>
@@ -1164,8 +1135,7 @@ export function SearchPage({
     }
   }
 
-  // Repères : les liens d'évitement et l'en-tête du site (« bannière ») précèdent l'élément `main`, qui
-  // commence au titre du catalogue ; le pied de page du site suit la page (`AppProviders`).
+  // Liens d'évitement et en-tête du site (bannière) avant l'élément `main`, qui commence au titre.
   return (
     <>
       <a href="#sales-results" className={SKIP_LINK_CLASSES}>
@@ -1234,15 +1204,7 @@ export function SearchPage({
                   />
                   <SaveSearchButton
                     label="Créer une alerte sur cette recherche"
-                    saving={savingAlert}
-                    signedIn={Boolean(user)}
-                    dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
-                    emailRecapEnabled={emailRecapEnabled}
-                    freeAlertUsage={
-                      entitlementsData?.plan.hasAnalysisAccess === true ? null : freeAlertUsage
-                    }
-                    onOpen={openAlertDialog}
-                    onClick={saveSearch}
+                    {...alertButtonProps}
                   />
                 </>
               }
@@ -1356,15 +1318,7 @@ export function SearchPage({
                 <SaveSearchButton
                   secondary
                   label="Me prévenir des prochaines ventes ici"
-                  saving={savingAlert}
-                  signedIn={Boolean(user)}
-                  dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
-                  emailRecapEnabled={emailRecapEnabled}
-                  freeAlertUsage={
-                    entitlementsData?.plan.hasAnalysisAccess === true ? null : freeAlertUsage
-                  }
-                  onOpen={openAlertDialog}
-                  onClick={saveSearch}
+                  {...alertButtonProps}
                 />
               }
               // Encart des avocats : en fin de liste, sur la première page seulement.
