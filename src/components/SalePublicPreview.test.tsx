@@ -1431,7 +1431,7 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
       within(block)
         .getByRole("link", { name: /^Comparer/ })
         .getAttribute("href"),
-    ).toBe("/sales?city=Paris#sale-card-sale-1");
+    ).toBe("/sales?city=Paris&comparer=sale-1#sale-card-sale-1");
     expect(within(block).getByRole("button", { name: "Partager cette annonce" })).toBeTruthy();
     expect(
       screen.getByRole("link", { name: /Calculer les frais d’enchères/ }).getAttribute("href"),

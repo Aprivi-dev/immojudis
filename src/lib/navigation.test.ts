@@ -7,12 +7,32 @@ import {
   pathWithSearch,
   safeSalesReturnTo,
   saleDetailPath,
+  salesCompareHref,
   salesReturnHref,
   salesReturnLabel,
   searchParamsToRecord,
   SITE_NAV_LINKS,
 } from "./navigation";
+import { COMPARE_SALE_PARAM } from "./search/sale-comparison";
 import { validateSalesSearch } from "./search/search-url-state";
+
+describe("salesCompareHref", () => {
+  const id = "52d72de3-d795-492e-be50-58eb72d2eb47";
+
+  it("ouvre le catalogue avec la vente dans la comparaison, en gardant les critères d'origine", () => {
+    expect(salesCompareHref("/sales?city=Lyon&page=2", id)).toBe(
+      `/sales?city=Lyon&page=2&${COMPARE_SALE_PARAM}=${id}#sale-card-${id}`,
+    );
+    expect(salesCompareHref(undefined, id)).toBe(`/sales?comparer=${id}#sale-card-${id}`);
+  });
+
+  it("revient au catalogue sans critères quand on vient d'ailleurs ou d'une origine refusée", () => {
+    expect(salesCompareHref("/favoris", id)).toBe(`/sales?comparer=${id}#sale-card-${id}`);
+    expect(salesCompareHref("https://example.test/sales", id)).toBe(
+      `/sales?comparer=${id}#sale-card-${id}`,
+    );
+  });
+});
 
 describe("salesReturnHref", () => {
   it("ramène à la recherche d'origine, sur la carte de la vente", () => {

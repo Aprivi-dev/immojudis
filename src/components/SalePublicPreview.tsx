@@ -38,6 +38,7 @@ import { getDisplaySurface } from "@/lib/surface";
 import {
   loginPathWithRedirect,
   saleDetailPath,
+  salesCompareHref,
   salesReturnHref,
   salesReturnLabel,
 } from "@/lib/navigation";
@@ -593,9 +594,9 @@ export function SalePublicPreview({
               <Heart className="h-4 w-4" aria-hidden />
               Suivre
             </Link>
-            {/* La comparaison se fait depuis la liste des ventes, où la carte de cette vente attend. */}
+            {/* Le catalogue s'ouvre avec cette vente déjà dans la comparaison (`?comparer=`). */}
             <Link
-              href={salesReturn}
+              href={salesCompareHref(returnTo, preview.id ?? saleId)}
               className={styles.ghost}
               aria-label="Comparer avec d’autres ventes de la liste"
             >
