@@ -5,6 +5,6 @@ export function recordUsageSafely(input: Parameters<typeof recordFeatureUsageEve
   try {
     void recordFeatureUsageEvent(input).catch(() => undefined);
   } catch {
-    // Telemetry must never delay or fail a Premium statistics read.
+    // La mesure d'usage ne doit jamais retarder ni faire échouer la lecture des statistiques de l'offre Analyse.
   }
 }
