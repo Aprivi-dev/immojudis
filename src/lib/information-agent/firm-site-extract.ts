@@ -5,6 +5,7 @@ import {
 } from "@/lib/information-agent/excluded-addresses";
 import { normalizeInformationAgentIdentityName } from "@/lib/information-agent/identity";
 import type { AuctionSale } from "@/lib/types";
+import { decodeURIComponentSafe } from "@/lib/safe-decode-uri";
 
 /**
  * Extraction pure (aucun réseau) pour la recherche d'adresse sur le site du cabinet ou de l'étude :
@@ -175,14 +176,6 @@ function linkPriority(path: string, label: string): number | null {
     return 2;
   }
   return null;
-}
-
-function decodeURIComponentSafe(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 /**
