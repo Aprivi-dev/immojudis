@@ -422,18 +422,34 @@ async function getCnbLawyers(bars: string[] | null): Promise<CnbLawyerRow[]> {
       )
     : null;
   if (barKeys && barKeys.length === 0) return [];
-  let request = supabaseAdmin.from("cnb_lawyer_directory").select(CNB_LAWYER_COLUMNS);
-  if (barKeys?.length === 1) {
-    request = request.eq("bar_key", barKeys[0]);
-  } else if (barKeys) {
-    request = request.in("bar_key", barKeys).order("bar_association", { ascending: true });
-  } else {
-    request = request.order("bar_association", { ascending: true });
+  if (barKeys) {
+    // Une requête par barreau : PostgREST rend au plus 1 000 lignes par réponse, et un seul
+    // `in("bar_key", …)` sur plusieurs barreaux perdait sans le dire les derniers par ordre
+    // alphabétique (Tarascon après Aix-en-Provence et Marseille pour les Bouches-du-Rhône).
+    const perBar = await Promise.all(barKeys.map(getCnbLawyersOfBar));
+    return perBar
+      .flat()
+      .sort((a, b) => (a.bar_association ?? "").localeCompare(b.bar_association ?? "", "fr"));
   }
 
-  const { data, error } = await request
+  const { data, error } = await supabaseAdmin
+    .from("cnb_lawyer_directory")
+    .select(CNB_LAWYER_COLUMNS)
+    .order("bar_association", { ascending: true })
     .order("display_name", { ascending: true })
-    .limit(barKeys ? 500 * barKeys.length : 1_000);
+    .limit(1_000);
+  if (error) throw error;
+  return (data ?? []) as CnbLawyerRow[];
+}
+
+/** Official CNB profiles of one bar, by name (at most 500, the limit of a single-bar search). */
+async function getCnbLawyersOfBar(barKey: string): Promise<CnbLawyerRow[]> {
+  const { data, error } = await supabaseAdmin
+    .from("cnb_lawyer_directory")
+    .select(CNB_LAWYER_COLUMNS)
+    .eq("bar_key", barKey)
+    .order("display_name", { ascending: true })
+    .limit(500);
   if (error) throw error;
   return (data ?? []) as CnbLawyerRow[];
 }

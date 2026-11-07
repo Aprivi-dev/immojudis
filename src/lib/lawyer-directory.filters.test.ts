@@ -40,8 +40,9 @@ function referencedLawyer(id: string, overrides: Record<string, unknown>) {
   };
 }
 
-function cnbLawyer(key: string, bar: string) {
+function cnbLawyer(key: string, bar: string, barKey?: string) {
   return {
+    ...(barKey ? { bar_key: barKey } : {}),
     source_key: key,
     display_name: `CNB ${key}`,
     firm_name: null,
@@ -60,14 +61,23 @@ function cnbLawyer(key: string, bar: string) {
 /** Chaîne Supabase qui enregistre ses appels et se résout avec les lignes de la table lue. */
 function queryFor(table: string) {
   const single = { data: mocks.rows[table]?.[0] ?? null, error: null };
+  // `eq` filtre les lignes qui portent la colonne (les autres lignes de test l'ignorent).
+  const filters: Array<[string, unknown]> = [];
+  const rows = () =>
+    (mocks.rows[table] ?? []).filter((row) =>
+      filters.every(([column, value]) => {
+        const record = row as Record<string, unknown>;
+        return !(column in record) || record[column] === value;
+      }),
+    );
   const chain: Record<string, unknown> = {
-    then: (resolve: (value: unknown) => unknown) =>
-      resolve({ data: mocks.rows[table] ?? [], error: null }),
+    then: (resolve: (value: unknown) => unknown) => resolve({ data: rows(), error: null }),
     maybeSingle: () => Promise.resolve(single),
   };
   for (const method of ["select", "eq", "in", "order", "limit"]) {
     chain[method] = (...args: unknown[]) => {
       mocks.calls.push({ table, method, args });
+      if (method === "eq") filters.push([args[0] as string, args[1]]);
       return chain;
     };
   }
@@ -127,7 +137,10 @@ describe("filtres de l'annuaire des avocats", () => {
         referencedLawyer("bordeaux", { bar_association: "Bordeaux", department: "33" }),
         referencedLawyer("dept", { bar_association: null, department: "13" }),
       ],
-      cnb_lawyer_directory: [cnbLawyer("mrs-1", "MARSEILLE")],
+      cnb_lawyer_directory: [
+        cnbLawyer("mrs-1", "MARSEILLE", "marseille"),
+        cnbLawyer("tar-1", "TARASCON", "tarascon"),
+      ],
     };
 
     const directory = await listLawyerDirectory(
@@ -135,10 +148,21 @@ describe("filtres de l'annuaire des avocats", () => {
     );
 
     expect(callsOn("tribunals", "eq")).toEqual([["department", "13"]]);
-    expect(callsOn("cnb_lawyer_directory", "in")).toEqual([
-      ["bar_key", ["marseille", "aix en provence", "tarascon"]],
+    // Un barreau par requête, chacune limitée comme une recherche sur un seul barreau : la limite de
+    // 1 000 lignes d'une réponse ne peut plus faire disparaître les derniers barreaux.
+    expect(callsOn("cnb_lawyer_directory", "eq")).toEqual([
+      ["bar_key", "marseille"],
+      ["bar_key", "aix en provence"],
+      ["bar_key", "tarascon"],
     ]);
-    expect(directory.lawyers.map((lawyer) => lawyer.id)).toEqual(["aix", "dept", "cnb:mrs-1"]);
+    expect(callsOn("cnb_lawyer_directory", "in")).toEqual([]);
+    expect(callsOn("cnb_lawyer_directory", "limit")).toEqual([[500], [500], [500]]);
+    expect(directory.lawyers.map((lawyer) => lawyer.id)).toEqual([
+      "aix",
+      "dept",
+      "cnb:mrs-1",
+      "cnb:tar-1",
+    ]);
     expect(directory.sectorLabel).toBe("Bouches-du-Rhône (13)");
     expect(directory.barAssociation).toBeNull();
   });
