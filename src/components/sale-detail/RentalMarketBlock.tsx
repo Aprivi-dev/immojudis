@@ -12,6 +12,7 @@ import {
 import { formatRentSourceDate, isAnilRentReference } from "@/lib/rent-source-notice";
 import type { RentReference, RentSegment } from "@/lib/rent-reference";
 import type { AuctionSale } from "@/lib/types";
+import { rentNature } from "@/lib/rent-nature";
 
 /** Titre du bloc, et libellé exact du rendement affiché (n° 44). */
 export const RENTAL_MARKET_TITLE = "Marché locatif (estimation)";
@@ -36,28 +37,6 @@ const countFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 })
 
 const perM2 = (value: number) => `${rentFormat.format(value)} €/m²`;
 const percent = (value: number) => `${percentFormat.format(value)} %`;
-
-/**
- * Ce que le bloc dit de la nature de l'estimation : commune, « loyer de maille », intercommunalité, ou
- * médiane calculée par Immojudis sur la carte de l'ANIL (arrondissements, département).
- */
-function rentNature(reference: RentReference): string {
-  if (reference.source === "anil_arrondissements_median") {
-    return "Loyer calculé par Immojudis : médiane des estimations ANIL des arrondissements, faute d’estimation propre à celui du bien. Indicatif.";
-  }
-  if (reference.source === "anil_department_median") {
-    return "Loyer calculé par Immojudis : médiane des estimations ANIL des communes du département, faute d’estimation pour la commune du bien. Indicatif.";
-  }
-  if (reference.source === "anil_maille") {
-    return "Loyer de maille : estimation commune à un groupe de communes voisines, la commune comptant trop peu d’annonces pour une estimation propre. Indicatif.";
-  }
-  if (reference.source === "anil_epci") {
-    return "Loyer de l’intercommunalité : estimation indicative, la commune comptant trop peu d’annonces.";
-  }
-  return reference.reliability === "reliable"
-    ? "Estimation calculée sur les annonces de la commune."
-    : "Estimation indicative : la commune compte peu d’annonces ou le modèle est peu précis.";
-}
 
 /**
  * Le rendement à afficher : une référence fiable donne la valeur centrale et sa fourchette ; une référence
