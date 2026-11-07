@@ -17,6 +17,7 @@ import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { propertyTypeFamily } from "@/lib/property-type-family";
 import { round } from "@/lib/rounding";
+import { averageRounded } from "@/lib/rounding";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
@@ -777,11 +778,6 @@ function shareUnder(values: number[], threshold: number): number | null {
 function shareTrue(values: boolean[]): number | null {
   if (!values.length) return null;
   return round((values.filter(Boolean).length / values.length) * 100, 1);
-}
-
-function averageRounded(values: number[], digits = 0): number | null {
-  if (!values.length) return null;
-  return round(values.reduce((sum, value) => sum + value, 0) / values.length, digits);
 }
 
 function positiveNumber(value: number | null | undefined): number | null {

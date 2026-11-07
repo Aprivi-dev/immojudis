@@ -19,6 +19,7 @@ import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { emptyDpeCounts } from "@/lib/dpe-counts";
 import { round } from "@/lib/rounding";
+import { averageRounded } from "@/lib/rounding";
 
 const SALES_STATISTICS_SOURCE_LIMIT = 1_000;
 
@@ -236,11 +237,6 @@ function isAdjudicatedStatus(status: string | null): boolean {
 function cleanSegmentValue(value: string | null | undefined): string | null {
   const text = value?.trim();
   return text || null;
-}
-
-function averageRounded(values: number[], digits = 0): number | null {
-  if (!values.length) return null;
-  return round(values.reduce((sum, value) => sum + value, 0) / values.length, digits);
 }
 
 function medianRounded(values: number[], digits = 0): number | null {
