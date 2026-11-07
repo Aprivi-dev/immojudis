@@ -2,22 +2,7 @@
  * Petits mots qu'un nom de commune lie par un trait d'union et écrit en minuscules : « Aix-en-Provence »,
  * « Boulogne-sur-Mer », « Bourg-la-Reine », « Villeneuve-lès-Avignon », « Saint-Pierre-des-Corps ».
  */
-const LINKED_PARTICLES = new Set([
-  "au",
-  "aux",
-  "de",
-  "des",
-  "du",
-  "en",
-  "et",
-  "la",
-  "le",
-  "les",
-  "lès",
-  "lez",
-  "sous",
-  "sur",
-]);
+const LINKED_PARTICLE = /^(?:au|aux|de|des|du|en|et|la|le|les|lès|lez|sous|sur)$/i;
 
 /** « D'Olonne », « L'Isle » après un trait d'union : l'élision s'écrit en minuscule. */
 const LINKED_ELISION = /^([DL])(['’])/;
@@ -39,9 +24,7 @@ export function displayCityName(city: string | null | undefined): string | null 
     .split("-")
     .map((part, index) => {
       if (index === 0) return part;
-      if (LINKED_PARTICLES.has(part.toLocaleLowerCase("fr-FR"))) {
-        return part.toLocaleLowerCase("fr-FR");
-      }
+      if (LINKED_PARTICLE.test(part)) return part.toLocaleLowerCase("fr-FR");
       return part.replace(LINKED_ELISION, (_, letter: string, apostrophe: string) => {
         return `${letter.toLocaleLowerCase("fr-FR")}${apostrophe}`;
       });
