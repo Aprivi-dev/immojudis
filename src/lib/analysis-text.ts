@@ -37,3 +37,13 @@ export function excerpt(value: string, maxLength = 180): string {
   const text = value.replace(/\s+/g, " ").trim();
   return text.length > maxLength ? `${text.slice(0, maxLength - 3).trim()}...` : text;
 }
+
+export function dedupeNormalizedStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = normalizeText(value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
