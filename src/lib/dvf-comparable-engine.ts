@@ -1,3 +1,4 @@
+import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 export type DvfComparableCandidate = {
   id: string;
   saleDate: string;
@@ -664,11 +665,6 @@ function percentile(sortedAsc: number[], p: number): number {
   const hi = Math.ceil(idx);
   if (lo === hi) return sortedAsc[lo];
   return sortedAsc[lo] + (sortedAsc[hi] - sortedAsc[lo]) * (idx - lo);
-}
-
-function parseDate(value: string): Date | null {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function monthDistance(from: Date, to: Date): number {
