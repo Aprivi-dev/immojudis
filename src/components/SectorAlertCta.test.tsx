@@ -81,4 +81,15 @@ describe("SectorAlertCta", () => {
     expect(form.getAttribute("data-criteria")).toBe('{"department":"33"}');
     expect(screen.queryByRole("link", { name: SECTOR_ALERT_LABEL })).toBeNull();
   });
+
+  it("prend les classes de la page pour l'encart d'un visiteur (encart marine), sans changer le parcours", () => {
+    render(<SectorAlertCta criteria={{ department: "75" }} className="bg-brand-navy text-white" />);
+    const panel = screen.getByRole("region", { name: "Être prévenu des nouvelles ventes" });
+    expect(panel.className).toContain("bg-brand-navy");
+    // La couleur de la page remplace celle de la carte, sans s'y ajouter.
+    expect(panel.className).not.toContain("bg-white");
+    expect(screen.getByRole("link", { name: SECTOR_ALERT_LABEL }).getAttribute("href")).toBe(
+      "/login?redirect=%2Falertes%2Fcreer%3Fdepartment%3D75&mode=investor&reason=alerte",
+    );
+  });
 });

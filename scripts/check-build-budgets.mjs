@@ -144,7 +144,11 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // Mises à jour de production #394 (05/11/2026 : mapbox-gl 3.34.1, next 16.4.3, @tanstack/react-query 5.105,
 // react-email 6.11.6, resend 6.36) : total mesuré 6 534 240 pour 6 524 862 sur main (+9 378, dont environ
 // 4 000 pour le chunk mapbox-gl). Décision du propriétaire (05/11/2026) : relèvement à 6 540 000.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_540_000;
+// Refonte du 06/11/2026 (catalogue /sales, fiche vente visiteur et abonné, pages par département) : total
+// mesuré 6 711 353 pour 6 534 227 sur main (+177 126). Les plafonds par page restent tous tenus ; l'ajout
+// vient surtout de modules partagés que Turbopack recopie dans plusieurs chunks (la liste des départements
+// figure déjà dans 14 chunks sur main). Décision du propriétaire (07/11/2026) : relèvement à 6 730 000.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_730_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

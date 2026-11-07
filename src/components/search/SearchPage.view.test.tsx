@@ -156,7 +156,12 @@ describe("/sales : choix Cartes / Tableau", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cartes" }));
     await waitFor(() => expect(screen.queryByRole("table")).toBeNull());
     expect(state.fetchSearchResults).not.toHaveBeenCalled();
-    expect(state.fetchSearchCount).not.toHaveBeenCalled();
+    // Seul le comptage « cette semaine » du titre (non semé dans ce test) a pu partir, une fois.
+    const searchCounts = state.fetchSearchCount.mock.calls.filter(
+      ([args]) => !(args as { search: { minSaleDate?: string } }).search.minSaleDate,
+    );
+    expect(searchCounts).toHaveLength(0);
+    expect(state.fetchSearchCount.mock.calls.length).toBeLessThanOrEqual(1);
   });
 
   it("réutilise le tri existant et garde le tableau quand le tri change", async () => {

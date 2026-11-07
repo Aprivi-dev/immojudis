@@ -163,27 +163,35 @@ describe("page d'un département : indexation", () => {
 });
 
 describe("page d'un département : contenu", () => {
-  it("montre les chiffres calculés sur nos ventes, la répartition et la liste", async () => {
+  it("montre le titre-phrase, les chiffres calculés sur nos ventes, la répartition et la liste", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const { container } = render(await Page(params("gironde")));
 
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
-      "Ventes aux enchères immobilières : Gironde (33)",
+      "3 ventes immobilières aux enchères à venir en Gironde (33).",
     ]);
+    expect(container.querySelector("header")?.textContent).toContain(
+      "Ventes aux enchères · Nouvelle-Aquitaine",
+    );
     const figures = screen.getByRole("region", { name: "Les chiffres du département" });
     expect(figures.textContent).toContain("Ventes à venir3");
+    expect(figures.textContent).toContain("au 15 octobre 2026");
     expect(figures.textContent).toContain("10 novembre 2026");
     expect(figures.textContent).toMatch(/80\s000\s€/);
 
-    const types = screen.getByRole("region", { name: "Répartition par type de bien" });
+    const types = screen.getByRole("region", { name: "Types de bien" });
     expect(
       within(types)
         .getAllByRole("listitem")
         .map((item) => item.textContent),
-    ).toEqual(["Appartement2", "Maison1"]);
+    ).toEqual(["Appartement2 ventes", "Maison1 vente"]);
+    const bars = [...types.querySelectorAll<HTMLElement>("[aria-hidden] > span")];
+    expect(bars.map((bar) => bar.style.width)).toEqual(["100%", "50%"]);
 
-    const list = screen.getByRole("region", { name: "Les ventes à venir" });
-    const links = within(list).getAllByRole("link");
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
+    const links = within(list)
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("href")?.startsWith("/sales/"));
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
       "/sales/a",
       "/sales/b",
@@ -197,11 +205,14 @@ describe("page d'un département : contenu", () => {
     render(await Page(params("gironde")));
     const figures = screen.getByRole("region", { name: "Les chiffres du département" });
     expect(figures.textContent).toContain("Prochaine audience");
-    expect(figures.textContent).toContain("Mise à prix médiane (ventes au tribunal)");
+    expect(figures.textContent).toContain("Mise à prix médiane au tribunal");
     expect(figures.textContent).toContain("sur 3 ventes au tribunal");
-    const list = screen.getByRole("region", { name: "Les ventes à venir" });
-    expect(list.textContent).toContain("audience le 10 novembre 2026");
+    // Le jour et l'heure de la prochaine audience (heure de Paris).
+    expect(figures.textContent).toContain("mardi, à 14 h 00");
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
+    expect(list.textContent).toContain("audience à 14 h 00");
     expect(list.textContent).toContain("Mise à prix");
+    expect(list.textContent).toContain("Au tribunal");
     expect(list.textContent).not.toContain("Prix publié");
   });
 
@@ -211,7 +222,7 @@ describe("page d'un département : contenu", () => {
         [
           sale("n", { venueType: "notary", saleDate: "2026-11-02T10:00:00Z" }),
           sale("s", { venueType: "state", saleDate: "2026-11-03T10:00:00Z" }),
-          sale("u", { venueType: null, saleDate: "2026-11-04T10:00:00Z" }),
+          sale("u", { venueType: null, saleDate: "2026-11-04T00:00:00Z", startingPriceEur: null }),
         ],
         NOW,
       ),
@@ -223,14 +234,17 @@ describe("page d'un département : contenu", () => {
     // Aucune vente au tribunal : pas de médiane inventée à partir des prix publiés.
     expect(figures.textContent).toContain("Non communiquée");
     expect(figures.textContent).toContain("aucune vente au tribunal chiffrée");
-    const list = screen.getByRole("region", { name: "Les ventes à venir" });
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
     const text = list.textContent ?? "";
-    expect(text).toContain("séance le 2 novembre 2026");
-    expect(text).toContain("échéance le 3 novembre 2026");
-    expect(text).toContain("vente le 4 novembre 2026");
+    expect(text).toContain("séance à 11 h 00");
+    expect(text).toContain("échéance à 11 h 00");
+    expect(text).toContain("vente, heure à confirmer");
+    expect(text).toContain("Chez le notaire");
+    expect(text).toContain("Vente de l’État");
     expect(text).not.toContain("audience");
     expect(text).not.toContain("Mise à prix");
     expect(text.match(/Prix publié/g)).toHaveLength(3);
+    expect(text).toContain("Non communiqué");
   });
 
   it("ne présente pas une vente reportée comme la prochaine audience", async () => {
@@ -247,9 +261,41 @@ describe("page d'un département : contenu", () => {
     const figures = screen.getByRole("region", { name: "Les chiffres du département" });
     expect(figures.textContent).toContain("1 décembre 2026");
     expect(figures.textContent).not.toContain("20 octobre 2026");
-    const list = screen.getByRole("region", { name: "Les ventes à venir" });
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
     expect(list.textContent).toContain("Vente reportée · nouvelle date à confirmer");
-    expect(list.textContent).not.toContain("audience le 20 octobre 2026");
+    expect(list.textContent).not.toContain("audience à 12 h 00");
+    // La vente reportée va dans un dernier groupe, sans pavé de date.
+    expect(
+      within(list)
+        .getAllByRole("heading", { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toEqual(["Semaine du 30 novembre", "Date à confirmer"]);
+  });
+
+  it("regroupe les ventes par semaine et marque la vente du jour", async () => {
+    mocks.catalogue.mockResolvedValue(
+      aggregateDepartments(
+        [
+          sale("t", { saleDate: "2026-10-15T10:00:00Z" }),
+          sale("w", { saleDate: "2026-10-18T10:00:00Z" }),
+          sale("n", { saleDate: "2026-10-19T10:00:00Z" }),
+          sale("y", { saleDate: "2027-01-05T10:00:00Z" }),
+        ],
+        NOW,
+      ),
+    );
+    render(await Page(params("gironde")));
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
+    expect(
+      within(list)
+        .getAllByRole("heading", { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toEqual(["Semaine en cours", "Semaine du 19 octobre", "Semaine du 4 janvier 2027"]);
+    const today = within(list).getByRole("link", { name: /15\s*oct\./ });
+    expect(today.textContent).toContain("Aujourd’hui");
+    expect(within(list).getAllByText("Aujourd’hui")).toHaveLength(1);
+    const figures = screen.getByRole("region", { name: "Les chiffres du département" });
+    expect(figures.textContent).toContain("aujourd’hui, à 12 h 00");
   });
 
   it("propose à un visiteur « Recevoir les nouvelles ventes de ce secteur » via la connexion", async () => {
@@ -260,6 +306,15 @@ describe("page d'un département : contenu", () => {
     expect(cta.getAttribute("href")).toBe(
       "/login?redirect=%2Falertes%2Fcreer%3Fdepartment%3D33&mode=investor&reason=alerte",
     );
+    // L'encart marine de la colonne, que le bouton du haut de page fait atteindre.
+    const panel = screen.getByRole("region", {
+      name: "Être prévenu des nouvelles ventes en Gironde",
+    });
+    expect(panel.className).toContain("bg-brand-navy");
+    expect(panel.closest("#alerte")).not.toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Être prévenu des nouvelles ventes" }).getAttribute("href"),
+    ).toBe("#alerte");
     // Aucune alerte ni email n'est créé par la page elle-même.
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
@@ -268,10 +323,14 @@ describe("page d'un département : contenu", () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     render(await Page(params("gironde")));
     expect(
+      screen.getByRole("link", { name: "Voir les 3 ventes sur la carte" }).getAttribute("href"),
+    ).toBe("/sales?department=33");
+    expect(
       screen.getByRole("link", { name: /Voir les 3 ventes en Gironde/ }).getAttribute("href"),
     ).toBe("/sales?department=33");
 
     const tribunals = screen.getByRole("region", { name: "Tribunaux et ventes" });
+    expect(tribunals.textContent).toContain("9 ventes");
     const hrefs = within(tribunals)
       .getAllByRole("link")
       .map((link) => link.getAttribute("href"));
@@ -281,7 +340,7 @@ describe("page d'un département : contenu", () => {
     expect(hrefs).not.toContain("/sales?tribunal=TJ+Paris");
   });
 
-  it("ajoute un bloc « Pour comprendre » : le guide, deux articles et les départements limitrophes", async () => {
+  it("ajoute « Pour comprendre » (le guide et deux articles) et les départements limitrophes en pastilles", async () => {
     mocks.catalogue.mockResolvedValue(
       aggregateDepartments(
         [...THREE, sale("l1", { department: "40" }), sale("l2", { department: "40" })],
@@ -298,30 +357,39 @@ describe("page d'un département : contenu", () => {
     const articles = hrefs.filter((href) => href?.startsWith("/ressources/"));
     expect(articles).toHaveLength(2);
     expect(new Set(articles).size).toBe(2);
+    expect(block.textContent).toContain("min de lecture");
 
     // Charente-Maritime, Dordogne, Landes et Lot-et-Garonne touchent la Gironde.
-    expect(hrefs.filter((href) => href?.startsWith("/ventes-encheres-immobilieres/"))).toEqual([
+    const nearby = screen.getByRole("region", { name: "Départements limitrophes" });
+    expect(
+      within(nearby)
+        .getAllByRole("link")
+        .map((link) => link.getAttribute("href")),
+    ).toEqual([
       "/ventes-encheres-immobilieres/charente-maritime",
       "/ventes-encheres-immobilieres/dordogne",
       "/ventes-encheres-immobilieres/landes",
       "/ventes-encheres-immobilieres/lot-et-garonne",
+      "/ventes-encheres-immobilieres",
     ]);
-    // Les ventes du voisin ne sont annoncées que lorsqu'il y en a.
-    expect(
-      within(block).getByRole("link", { name: "Landes" }).parentElement?.textContent,
-    ).toContain("(2 ventes)");
-    expect(
-      within(block).getByRole("link", { name: "Dordogne" }).parentElement?.textContent,
-    ).not.toContain("vente");
+    expect(within(nearby).getByRole("link", { name: /^Landes/ }).textContent).toBe(
+      "Landes2 ventes à venir",
+    );
+    expect(within(nearby).getByRole("link", { name: /^Dordogne/ }).textContent).toBe(
+      "Dordogne0 vente à venir",
+    );
   });
 
-  it("garde le bloc « Pour comprendre » sans voisin pour l'outre-mer", async () => {
+  it("garde « Pour comprendre » et la liste des départements sans voisin pour l'outre-mer", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     render(await Page(params("la-reunion")));
 
     const block = screen.getByRole("region", { name: "Pour comprendre" });
-    expect(within(block).queryByText("Départements limitrophes")).toBeNull();
     expect(within(block).getAllByRole("link").length).toBe(3);
+    expect(screen.queryByRole("region", { name: "Départements limitrophes" })).toBeNull();
+    const others = screen.getByRole("region", { name: "Autres départements" });
+    expect(within(others).getByRole("link", { name: "Tous les départements" })).toBeTruthy();
+    expect(document.body.textContent).toContain("Ventes aux enchères · Outre-mer");
   });
 
   it("garde la page quand l'activité des tribunaux est indisponible", async () => {
@@ -332,22 +400,22 @@ describe("page d'un département : contenu", () => {
     expect(within(tribunals).getByRole("link", { name: /tous les tribunaux/ })).toBeTruthy();
   });
 
-  it("montre les 5 prochaines ventes juste après les chiffres, le reste plus bas, et renvoie vers la recherche", async () => {
+  it("liste les 30 prochaines ventes et renvoie vers la recherche pour les autres", async () => {
     const many = Array.from({ length: 45 }, (_, index) =>
       sale(`s-${String(index).padStart(2, "0")}`),
     );
     mocks.catalogue.mockResolvedValue(aggregateDepartments(many, NOW));
     render(await Page(params("gironde")));
-    const next = screen.getByRole("region", { name: "Les 5 prochaines ventes" });
-    expect(within(next).getAllByRole("listitem")).toHaveLength(5);
-    const later = screen.getByRole("region", { name: "Les 25 ventes suivantes" });
-    expect(within(later).getAllByRole("listitem")).toHaveLength(25);
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(30);
+    expect(list.textContent).toContain("Les 30 prochaines ventes sont listées ici");
     expect(
-      within(later).getByRole("link", { name: "la recherche du département" }).getAttribute("href"),
+      within(list).getByRole("link", { name: "la recherche du département" }).getAttribute("href"),
     ).toBe("/sales?department=33");
+    expect(within(list).getByRole("link", { name: "Voir les 45 ventes en Gironde" })).toBeTruthy();
   });
 
-  it("ordonne la page : fil d'Ariane, titre, chiffres, 5 ventes, « Voir les N ventes », alerte, répartition", async () => {
+  it("ordonne la page : fil d'Ariane, titre, chiffres, boutons, ventes, puis la colonne (alerte, répartition)", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const { container } = render(await Page(params("gironde")));
     const position = (node: Element) => Array.from(container.querySelectorAll("*")).indexOf(node);
@@ -355,13 +423,19 @@ describe("page d'un département : contenu", () => {
       screen.getByRole("navigation", { name: "Fil d’Ariane" }),
       screen.getByRole("heading", { level: 1 }),
       screen.getByRole("region", { name: "Les chiffres du département" }),
-      screen.getByRole("region", { name: "Les ventes à venir" }),
+      screen.getByRole("link", { name: "Voir les 3 ventes sur la carte" }),
+      screen.getByRole("region", { name: "Les prochaines ventes" }),
       screen.getByRole("link", { name: /Voir les 3 ventes en Gironde/ }),
+      screen.getByRole("region", { name: "Tribunaux et ventes" }),
+      screen.getByRole("region", { name: "Pour comprendre" }),
       screen.getByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" }),
-      screen.getByRole("region", { name: "Répartition par type de bien" }),
+      screen.getByRole("region", { name: "Types de bien" }),
+      screen.getByRole("region", { name: "Communes les plus présentes" }),
+      screen.getByRole("region", { name: "Départements limitrophes" }),
     ].map(position);
     expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
     expect(new Set(ordered).size).toBe(ordered.length);
+    expect(screen.getByRole("complementary", { name: "En un coup d’œil" })).toBeTruthy();
   });
 
   it("génère « Communes les plus présentes » à partir des ventes, avec un lien vers la recherche", async () => {
@@ -381,18 +455,44 @@ describe("page d'un département : contenu", () => {
     expect(block.textContent).not.toMatch(/doit|obligatoire|garanti/i);
   });
 
+  it("compte une seule fois un arrondissement écrit de deux façons", async () => {
+    mocks.catalogue.mockResolvedValue(
+      aggregateDepartments(
+        [
+          sale("p1", { department: "75", city: "Paris 13ème" }),
+          sale("p2", { department: "75", city: "Paris 13e Arrondissement" }),
+          sale("p3", { department: "75", city: "PARIS 13E" }),
+          sale("p4", { department: "75", city: "Paris 15e Arrondissement" }),
+        ],
+        NOW,
+      ),
+    );
+    render(await Page(params("paris")));
+    const block = screen.getByRole("region", { name: "Communes les plus présentes" });
+    expect(
+      within(block)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Paris 13e3 ventes", "Paris 15e1 vente"]);
+    expect(within(block).getByRole("link", { name: "Paris 13e" }).getAttribute("href")).toBe(
+      "/sales?department=75&city=Paris+13e",
+    );
+    const list = screen.getByRole("region", { name: "Les prochaines ventes" });
+    expect(list.textContent).not.toMatch(/ème|Arrondissement|13E/);
+  });
+
   it("n'affiche pas ce bloc quand une seule commune est concernée", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments([sale("a"), sale("b")], NOW));
     render(await Page(params("gironde")));
     expect(screen.queryByRole("region", { name: "Communes les plus présentes" })).toBeNull();
   });
 
-  it("met les trois chiffres sur une seule ligne", async () => {
+  it("met les trois chiffres sur une seule ligne à partir de la tablette", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     render(await Page(params("gironde")));
     const figures = screen.getByRole("region", { name: "Les chiffres du département" });
     const list = figures.querySelector("dl")!;
-    expect(list.className).toContain("grid-cols-3");
+    expect(list.className).toContain("sm:grid-cols-3");
     expect(list.children).toHaveLength(3);
   });
 
@@ -400,9 +500,10 @@ describe("page d'un département : contenu", () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const { container } = render(await Page(params("gironde")));
     const intro = container.querySelector("header")?.textContent ?? "";
-    expect(intro).toContain("catalogue public");
-    expect(intro).toContain("ne constituent pas un conseil juridique");
+    expect(intro).toContain("catalogue public au 15 octobre 2026");
+    expect(intro).toContain("pièces officielles font foi");
     expect(intro).not.toMatch(/investir|rentab|opportunit/i);
+    expect(container.textContent).toContain("ne constituent pas un conseil juridique");
   });
 });
 

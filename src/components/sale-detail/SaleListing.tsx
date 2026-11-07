@@ -49,7 +49,7 @@ import {
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { saleKeyFacts } from "@/lib/sale-key-facts";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
-import { saleHeadingSubtitle, saleShortHeading } from "@/lib/seo";
+import { saleHeadingSubtitle, saleReference, saleShortHeading } from "@/lib/seo";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleSession, saleWindow } from "@/lib/sale-window";
 import type { AuctionSale } from "@/lib/types";
@@ -161,8 +161,17 @@ export function ListingOverview({
   marketReference = null,
   followAction = null,
   showSecondaryAction = true,
+  lead = null,
+  actions = null,
 }: {
   sale: AuctionSale;
+  /**
+   * Tête du panneau à la place du prix et du repère marché (offre Analyse : « Votre analyse », le
+   * plafond en grand). Les faits (date, lieu, garantie, occupation) restent ceux de la synthèse.
+   */
+  lead?: ReactNode;
+  /** Actions du panneau à la place de l'action principale et du suivi (dossier de l'offre Analyse). */
+  actions?: ReactNode;
   /** Vocabulaire du plafond de la vente ; absent : celui du tribunal. */
   ceilingWording?: CeilingWording | null;
   /** Action principale (« Préparer mon enchère », « Débloquer le plafond »…). */
@@ -236,7 +245,8 @@ export function ListingOverview({
     getFactPresentation(sale, "occupancy_status", undefined, factReliabilities).kind === "missing";
   return (
     <section className={styles.overview} aria-label="Synthèse de la vente">
-      {notary || state ? (
+      {lead}
+      {!lead && (notary || state) ? (
         <div className={styles.procedureLead}>
           <p className={styles.procedureLeadEyebrow}>
             {notary ? "Vente notariale" : "Cession domaniale"}
@@ -255,7 +265,7 @@ export function ListingOverview({
           </span>
         </div>
       ) : null}
-      {price != null || !state ? (
+      {lead ? null : price != null || !state ? (
         <div className={styles.heroPrice}>
           <div className={styles.priceLabel}>
             {state ? (
@@ -370,7 +380,8 @@ export function ListingOverview({
         </div>
       </dl>
       <div className={styles.summaryActions} data-hero-actions="">
-        {preparation ? (
+        {actions}
+        {actions ? null : preparation ? (
           preparation.href.startsWith("#") ? (
             <a href={preparation.href} className={styles.primaryAction}>
               {preparation.label}
@@ -381,7 +392,7 @@ export function ListingOverview({
             </Link>
           )
         ) : null}
-        {!showSecondaryAction
+        {!showSecondaryAction || actions
           ? null
           : (followAction ?? (
               <a
@@ -418,11 +429,17 @@ export function SaleDetailHeading({
   aiReviewStatus = "ready",
   pepite = false,
   pepiteFloodExposed = false,
+  showAddress = false,
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
+  /**
+   * Ligne lieu / date / référence : l'adresse de l'annonce en tête quand le compte la lit (fiche des
+   * comptes connectés), et la référence de la vente.
+   */
+  showAddress?: boolean;
   /** La vente est une pépite publiable : pastille « Pépite » et lien « Pourquoi ? » vers le bloc `#pepite`. */
   pepite?: boolean;
   /** Pépite dont le bien est dans le périmètre d'un PPRi : mention courte à côté de la pastille. */
@@ -450,6 +467,7 @@ export function SaleDetailHeading({
       : `Type de bien à confirmer à ${sale.city}`
     : nonBreakingUnits(saleShortHeading(shown));
   const subtitle = saleHeadingSubtitle(shown, { withDate: !review("sale.sale_date") });
+  const address = showAddress && !cityBlocked ? listingAddress(sale) : "";
   return (
     <header className={styles.pageHeading}>
       <div className={styles.headingBadges}>
@@ -465,8 +483,12 @@ export function SaleDetailHeading({
         {publicDemo ? " (exemple fictif)" : null}
       </h1>
       <p className={styles.subtitle}>
+        {address ? `${address} · ` : null}
         {subtitle}
         {cityBlocked ? " · localisation à confirmer" : null}
+        {showAddress && !publicDemo ? (
+          <span className="tabular-nums"> · Réf. {saleReference(sale.id)}</span>
+        ) : null}
       </p>
     </header>
   );

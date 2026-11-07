@@ -308,7 +308,11 @@ describe("/sales : compte reconnu avec une liste publique déjà affichée", () 
     // 3. Les droits arrivent : la liste et le décompte partent ensemble, la liste publique reste.
     await act(async () => plan.resolve(analysisPlan));
     await waitFor(() => expect(state.fetchSearchResults).toHaveBeenCalledTimes(1));
-    expect(state.fetchSearchCount).toHaveBeenCalledTimes(1);
+    // Le décompte de la recherche, et celui des sept prochains jours pour le titre.
+    expect(state.fetchSearchCount).toHaveBeenCalledTimes(2);
+    expect(
+      state.fetchSearchCount.mock.calls.filter(([args]) => !args.search.minSaleDate),
+    ).toHaveLength(1);
     expect(state.fetchSearchResults.mock.calls[0]![0]).toMatchObject({
       preview: false,
       discovery: false,
