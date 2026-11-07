@@ -23,6 +23,7 @@ import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { ResultsView } from "@/lib/search/results-view";
 import type { SearchSortKey } from "@/lib/search/search-url-state";
 import { MobileFilterChips } from "./MobileFilterChips";
+import { FORCED_COLORS_SELECTED } from "./forced-colors";
 import { SaleTypeFilter } from "./SaleTypeFilter";
 import { priceRangeError, type SearchDraft } from "./search-page-state";
 
@@ -599,7 +600,7 @@ export function ResultsViewToggle({
               onClick={() => onChange(value)}
               className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-sm font-bold focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft ${
                 active
-                  ? "bg-brand-navy text-white"
+                  ? `bg-brand-navy text-white ${FORCED_COLORS_SELECTED}`
                   : "bg-white text-brand-navy hover:bg-surface-tint"
               }`}
             >
