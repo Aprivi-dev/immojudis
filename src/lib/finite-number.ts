@@ -4,3 +4,8 @@ export function parseFiniteNumber(value: number | string | null | undefined): nu
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+export function finiteNumberFromNumberOrText(value: unknown): number | null {
+  const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : null;
+}
