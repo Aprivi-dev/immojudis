@@ -2,8 +2,8 @@ import type { ComponentProps, ElementType, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Primitives du système visuel Immojudis : Card, Eyebrow, Button, Badge et
- * PageShell. Elles ne portent que des jetons (voir src/styles.css), jamais de
+ * Primitives du système visuel Immojudis : Card, Eyebrow, Button, Badge, Notice,
+ * PageTitle et PageShell. Elles ne portent que des jetons (voir src/styles.css), jamais de
  * couleur codée en dur.
  */
 
@@ -53,7 +53,9 @@ export type ButtonVariant = "primary" | "secondary" | "dark" | "ghost" | "danger
 export type ButtonSize = "sm" | "md" | "lg";
 
 const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-gold text-brand-navy hover:bg-gold-light",
+  // Bouton principal en marine sur tout le site (décision du propriétaire du 07/11/2026, repasse
+  // design n° 19) : l'or reste au décor et aux accents. `dark` est conservé pour les appels existants.
+  primary: "bg-brand-navy text-white hover:bg-brand-navy-soft",
   secondary: "border border-line bg-white text-brand-navy hover:border-brand-navy",
   dark: "bg-brand-navy text-white hover:bg-brand-navy-soft",
   ghost: "text-brand-navy hover:bg-surface-tint",
@@ -132,6 +134,54 @@ export function Badge({
   );
 }
 
+// ── Notice ────────────────────────────────────────────────────────────────
+
+/**
+ * Bandeau d'information dans le flux (alerte, confirmation, erreur, aide), aux couleurs par rôle de
+ * la charte. Remplace les bandeaux faits à la main en couleurs Tailwind brutes (ambre, émeraude,
+ * rouge, bleu). Le rôle ARIA (`status`, `alert`) reste au choix de l'appelant.
+ */
+export type NoticeTone = "warning" | "success" | "danger" | "info";
+
+const NOTICE_TONES: Record<NoticeTone, string> = {
+  warning: "border-warning/30 bg-warning-tint text-foreground",
+  success: "border-success/30 bg-success-tint text-foreground",
+  danger: "border-danger/30 bg-danger-tint text-danger",
+  info: "border-info/30 bg-info-tint text-foreground",
+};
+
+export function Notice({
+  tone = "info",
+  className,
+  ...props
+}: ComponentProps<"div"> & { tone?: NoticeTone }) {
+  return (
+    <div
+      className={cn("rounded-lg border px-4 py-3 text-sm leading-relaxed", NOTICE_TONES[tone], className)}
+      {...props}
+    />
+  );
+}
+
+// ── PageTitle ─────────────────────────────────────────────────────────────
+
+/**
+ * Titre de page (h1) des pages autres que l'accueil : une seule échelle sur tout le site
+ * (docs/design/fondations.md : 40 px sur ordinateur), au lieu des tailles de 30 à 72 px relevées par
+ * la repasse design du 07/11/2026.
+ */
+export function PageTitle({ className, ...props }: ComponentProps<"h1">) {
+  return (
+    <h1
+      className={cn(
+        "font-display text-[2rem] font-semibold leading-tight text-balance sm:text-[2.5rem]",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 // ── PageShell ─────────────────────────────────────────────────────────────
 
 const SHELL_WIDTHS = {
@@ -173,7 +223,7 @@ export function PageShell({
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           {eyebrow ? <Eyebrow className="mb-2">{eyebrow}</Eyebrow> : null}
-          <h1 className="font-display text-3xl font-semibold leading-tight sm:text-4xl">{title}</h1>
+          <PageTitle>{title}</PageTitle>
           {description ? (
             <div className="mt-3 max-w-2xl text-base text-ink-soft">{description}</div>
           ) : null}
