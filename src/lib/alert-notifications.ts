@@ -14,6 +14,7 @@ import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { UserAlert } from "@/lib/types";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
+import { stringArrayValue as arrayOfStrings } from "@/lib/guards";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 type NotificationInsert = Database["public"]["Tables"]["user_alert_notifications"]["Insert"];
@@ -783,12 +784,6 @@ function notificationRowToSummary(row: NotificationRow): AlertNotificationSummar
 
 function asJson(value: Record<string, unknown>): Json {
   return value as Json;
-}
-
-function arrayOfStrings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
 }
 
 function clampLimit(value: number, max: number): number {
