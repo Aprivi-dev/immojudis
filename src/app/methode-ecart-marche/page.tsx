@@ -22,6 +22,7 @@ import {
   VALUATION_MODEL_MIN_COVERAGE_PCT,
 } from "@/lib/market-comparable-minimums";
 import { pageMetadata } from "@/lib/page-metadata";
+import { MethodSection as Section } from "@/components/MethodSection";
 
 export const metadata: Metadata = pageMetadata({
   path: MARKET_GAP_METHOD_PATH,
@@ -73,25 +74,6 @@ const LIMITS = [
   "Une surface mal renseignée (un terrain pris pour la surface habitable, par exemple) fausse la valeur estimée et donc l’écart.",
   "L’estimation donne un ordre de grandeur, pas une expertise, et ne constitue ni un conseil juridique ni un conseil financier.",
 ] as const;
-
-function Section({
-  id,
-  title,
-  children,
-}: {
-  id: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card as="section" aria-labelledby={id}>
-      <h2 id={id} className="font-display text-2xl font-semibold">
-        {title}
-      </h2>
-      <div className="mt-3 space-y-3 text-ink-soft">{children}</div>
-    </Card>
-  );
-}
 
 export default function Page() {
   return (
