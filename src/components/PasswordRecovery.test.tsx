@@ -54,6 +54,17 @@ describe("password recovery", () => {
     expect(auth.resetPasswordForEmail).not.toHaveBeenCalled();
   });
 
+  it("prend les briques du site : carte, titre de page, bouton principal marine, sans habillage « liquid »", () => {
+    const { container } = render(<PasswordRecovery />);
+    expect(
+      screen.getByRole("button", { name: "Recevoir le lien de réinitialisation" }).className,
+    ).toContain("bg-brand-navy");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Mot de passe oublié" }).className,
+    ).toContain("text-[2rem]");
+    expect(container.innerHTML).not.toMatch(/liquid-|glass-|red-700/);
+  });
+
   it("uses the recovery destination and does not disclose whether the email exists", async () => {
     render(<PasswordRecovery />);
     fireEvent.change(screen.getByLabelText("Adresse email du compte"), {

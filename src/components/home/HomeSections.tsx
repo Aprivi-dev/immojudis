@@ -69,6 +69,8 @@ export function HomeStats({
         departments > 1
           ? "départements où une vente est annoncée"
           : "département où une vente est annoncée",
+      // Le chiffre mène à la liste des ventes par département (repasse design n° 32).
+      href: "/ventes-encheres-immobilieres",
     });
   }
   if (notaryAndStatePilotsEnabled()) {

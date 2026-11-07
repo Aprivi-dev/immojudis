@@ -766,7 +766,7 @@ function DecisionEquation() {
               {item.icon}
             </span>
             <p
-              className={`mt-3 text-xs font-semibold leading-tight sm:text-sm ${
+              className={`mt-3 hyphens-auto break-words text-xs font-semibold leading-tight sm:text-sm ${
                 item.accent ? "text-gold-text" : "text-brand-navy"
               }`}
             >

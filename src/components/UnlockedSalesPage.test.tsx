@@ -103,4 +103,18 @@ describe("UnlockedSalesPage", () => {
     expect(await screen.findByText(/aucune vente en ligne/)).toBeTruthy();
     expect(mocks.overview).toHaveBeenCalledTimes(2);
   });
+
+  it("suit la mise en page des pages de compte et les couleurs de la charte (repasse design n° 12 et 15)", async () => {
+    mocks.overview.mockRejectedValueOnce(new Error("indisponible"));
+    mocks.overview.mockResolvedValue(overview([]));
+    const { container } = renderPage();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.className).toContain("bg-danger-tint");
+    expect(screen.getByRole("button", { name: "Réessayer" }).className).toContain("text-danger");
+    const title = screen.getByRole("heading", { level: 1, name: "Mes ventes débloquées" });
+    expect(title.previousElementSibling?.textContent).toBe("Mon espace");
+    expect(title.closest("main")!.className).not.toMatch(/pt-28/);
+    expect(container.innerHTML).not.toMatch(/\b(?:text|bg|border)-(?:red|amber|emerald)-\d/);
+  });
 });

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Button, Card, Eyebrow, PageTitle } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccessPlan } from "@/hooks/use-access-plan";
 import { useCreateAlert } from "@/hooks/use-create-alert";
@@ -123,14 +124,14 @@ export function InvestorOnboarding({
   return (
     <main
       id="contenu"
-      className="liquid-page min-h-[calc(100svh-4rem)] px-4 py-10 sm:px-6 sm:py-16"
+      className="mx-auto min-h-[calc(100svh-4rem)] w-full max-w-2xl px-4 py-10 sm:px-6 sm:py-16"
     >
-      <section className="glass-shell mx-auto max-w-2xl rounded-lg p-6 sm:p-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
+      <Card as="section" className="sm:p-10">
+        <Eyebrow>
           {trialRunning(plan, now)
             ? "Votre essai de l’offre Analyse a commencé"
             : "Bienvenue dans votre compte Découverte"}
-        </p>
+        </Eyebrow>
         {launchOffer ? (
           <p
             data-testid="onboarding-launch-offer"
@@ -155,13 +156,9 @@ export function InvestorOnboarding({
         <p className="mt-6 text-sm text-muted-foreground">
           Étape {step + 1} sur {steps.length}
         </p>
-        <h1
-          ref={heading}
-          tabIndex={-1}
-          className="mt-2 font-display text-3xl text-foreground outline-none"
-        >
+        <PageTitle ref={heading} tabIndex={-1} className="mt-2 outline-none">
           {steps[step]}
-        </h1>
+        </PageTitle>
 
         <form onSubmit={submit} className="mt-6 space-y-6">
           {step === 0 && (
@@ -332,17 +329,13 @@ export function InvestorOnboarding({
             ) : (
               <span />
             )}
-            <button
-              type="submit"
-              disabled={saving}
-              className="liquid-button rounded-lg px-6 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <Button type="submit" variant="primary" disabled={saving}>
               {saving
                 ? "Création de l’alerte…"
                 : step === steps.length - 1
                   ? "Voir les biens"
                   : "Continuer"}
-            </button>
+            </Button>
           </div>
         </form>
         <Link
@@ -351,7 +344,7 @@ export function InvestorOnboarding({
         >
           {returnTo ? "Passer et revenir à la fiche" : "Passer et explorer le catalogue"}
         </Link>
-      </section>
+      </Card>
     </main>
   );
 }

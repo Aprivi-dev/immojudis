@@ -27,9 +27,9 @@
 
 .eyebrow {
   color: var(--copper);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   line-height: 1.6;
   text-transform: uppercase;
 }
@@ -38,11 +38,20 @@
   padding-block: 76px 56px;
 }
 
-.hero h1 {
+/* Titre de page : la même échelle que `PageTitle` (32 px, puis 40 px dès 640 px ; repasse design
+   n° 13), au lieu de 76 px. */
+.hero h1,
+.articleHeader h1 {
   margin-top: 20px;
-  font-size: clamp(46px, 5.6vw, 76px);
-  letter-spacing: -0.02em;
-  line-height: 1.02;
+  font-size: 32px;
+  line-height: 1.25;
+}
+
+@media (min-width: 640px) {
+  .hero h1,
+  .articleHeader h1 {
+    font-size: 40px;
+  }
 }
 
 .hero h1 em {
@@ -103,9 +112,9 @@
   position: absolute;
   z-index: 1;
   left: 30px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
@@ -269,7 +278,7 @@
   border-radius: 2px;
   background: var(--surface);
   color: var(--ink);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.05em;
 }
@@ -372,13 +381,6 @@
 .articleHeader {
   max-width: 940px;
   padding-block: 46px 36px;
-}
-
-.articleHeader h1 {
-  margin-top: 20px;
-  font-size: clamp(40px, 5vw, 64px);
-  line-height: 1.04;
-  letter-spacing: -0.025em;
 }
 
 .articleHeader > p:not(.eyebrow, .meta) {
@@ -638,9 +640,6 @@
   .hero {
     padding-block: 44px 36px;
   }
-  .hero h1 {
-    font-size: clamp(39px, 10vw, 56px);
-  }
   .heroDescription {
     font-size: 15px;
   }
@@ -678,7 +677,7 @@
   }
   .articleCount {
     padding-top: 4px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .filters {
     gap: 6px;
@@ -713,9 +712,6 @@
   }
   .articleHeader {
     padding-block: 32px;
-  }
-  .articleHeader h1 {
-    font-size: 43px;
   }
   .articleHeader > p:not(.eyebrow, .meta) {
     font-size: 15px;

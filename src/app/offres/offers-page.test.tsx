@@ -612,6 +612,15 @@ describe("page Offres", () => {
       ),
     ).toBeTruthy();
   });
+
+  it("coupe les libellés du schéma de la formule plutôt que de déborder à 320 px", () => {
+    render(<OffersPage />);
+    const label = screen
+      .getAllByText("Enchère plafond (simulation)")
+      .find((element) => element.closest("[aria-hidden]"));
+    expect(label?.className).toContain("break-words");
+  });
+
   it("rendu serveur : ne dit pas « Analyse coûte » tant que l'état de l'offre n'est pas lu", () => {
     // Pas d'effet côté serveur : l'état de l'offre de lancement et de la souscription est inconnu.
     mocks.launch.mockReturnValue({ active: false, pending: true });

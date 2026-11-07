@@ -45,6 +45,15 @@ describe("shared comparison page", () => {
     expect(html).not.toContain("retirée");
   });
 
+  it("titles the page with the site's page title and eyebrow (repasse design n° 13)", async () => {
+    mocks.shared.mockResolvedValue(comparison(0));
+
+    const html = await render();
+
+    expect(html).toMatch(/<h1 class="[^"]*text-\[2rem\][^"]*">Ma sélection<\/h1>/);
+    expect(html).toMatch(/<p class="[^"]*text-gold-text[^"]*">Comparaison partagée Immojudis<\/p>/);
+  });
+
   it("announces one withdrawn sale in the singular", async () => {
     mocks.shared.mockResolvedValue(comparison(1));
 
@@ -61,5 +70,17 @@ describe("shared comparison page", () => {
     mocks.shared.mockRejectedValue(new Error("Comparaison partagée introuvable ou expirée."));
 
     await expect(render()).rejects.toMatchObject({ digest: "NEXT_HTTP_ERROR_FALLBACK;404" });
+  });
+});
+
+describe("shared comparison link that no longer works (repasse design n° 29)", () => {
+  it("explains that the link expired, was disabled or replaced, instead of the generic 404", async () => {
+    const { default: SharedComparisonNotFound } = await import("./not-found");
+    const html = renderToStaticMarkup(<SharedComparisonNotFound />);
+
+    expect(html).toContain("Ce lien de comparaison n’est plus valable");
+    expect(html).toMatch(/expiré, été désactivé ou remplacé/);
+    expect(html).not.toContain("Page introuvable");
+    expect(html).toMatch(/<a[^>]*href="\/sales"[^>]*>Voir les ventes<\/a>/);
   });
 });
