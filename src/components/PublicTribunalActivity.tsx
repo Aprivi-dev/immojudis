@@ -216,7 +216,24 @@ export function PublicTribunalActivitySection({
         </summary>
         <p className="mt-1 leading-relaxed text-ink-soft">{PRICE_RULE}</p>
       </details>
-      <TribunalFinder rows={finderRows(items, pagePaths)} firstCount={FIRST_ROWS} head={<Head />} />
+      <TribunalFinder
+        rows={finderRows(items, pagePaths)}
+        firstCount={FIRST_ROWS}
+        head={<Head />}
+        searchIcon={
+          <svg
+            aria-hidden
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            className="pointer-events-none absolute top-1/2 left-3.5 size-[18px] -translate-y-1/2 text-ink-soft"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-4-4" />
+          </svg>
+        }
+      />
     </section>
   );
 }

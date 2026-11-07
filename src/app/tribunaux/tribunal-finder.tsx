@@ -34,12 +34,15 @@ export function TribunalFinder({
   rows,
   firstCount,
   head,
+  searchIcon,
 }: {
   rows: readonly TribunalFinderRow[];
   /** Lignes montrées d'emblée ; les suivantes sont dans « Voir les N autres tribunaux ». */
   firstCount: number;
   /** En-tête des colonnes (`<thead>`), rendu par le serveur. */
   head: ReactNode;
+  /** Icône du champ, rendue par le serveur (rien de plus à envoyer au navigateur). */
+  searchIcon?: ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const needle = searchable(query);
@@ -71,17 +74,7 @@ export function TribunalFinder({
       >
         <label htmlFor="recherche-tribunal" className="relative block sm:max-w-[32.5rem]">
           <span className="sr-only">Trouver un tribunal</span>
-          <svg
-            aria-hidden
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.8}
-            className="pointer-events-none absolute top-1/2 left-3.5 size-[18px] -translate-y-1/2 text-ink-soft"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-4-4" />
-          </svg>
+          {searchIcon}
           <input
             id="recherche-tribunal"
             type="search"
