@@ -7,6 +7,7 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { toast } from "@/lib/toast";
 import { fetchAdminReadiness } from "@/lib/client-api";
 import type { ReadinessItem, ReadinessStatus } from "@/lib/admin-readiness";
+import { formatAdminShortDateTime as formatDateTime } from "@/lib/admin-date-format";
 
 const READINESS_QUERY_KEY = ["admin-readiness"] as const;
 
@@ -242,15 +243,6 @@ async function copyWebhookUrl(url: string) {
   } catch {
     toast.error("Copie impossible.");
   }
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }
 
 function formatAiCoverage(

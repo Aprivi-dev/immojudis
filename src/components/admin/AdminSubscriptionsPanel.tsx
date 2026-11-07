@@ -12,6 +12,7 @@ import type {
 } from "@/lib/admin-subscriptions";
 import { PLAN_LABELS, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { AdminPrevNextPagination as AdminPagination } from "@/components/admin/AdminPrevNextPagination";
+import { formatAdminShortDateTime as formatDate } from "@/lib/admin-date-format";
 
 type SubscriptionFormState = {
   target: string;
@@ -312,13 +313,4 @@ function formToInput(form: SubscriptionFormState): AdminSubscriptionGrantInput {
     currentPeriodEnd: dateTimeLocalToUtcIso(form.currentPeriodEnd),
     note: form.note,
   };
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }
