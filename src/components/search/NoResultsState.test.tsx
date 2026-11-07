@@ -36,6 +36,41 @@ describe("NoResultsState", () => {
     expect(onShowFrance).toHaveBeenCalledTimes(1);
   });
 
+  it("propose « Me prévenir des prochaines ventes ici » avec les critères actifs", () => {
+    const alert = <button type="button">Me prévenir des prochaines ventes ici</button>;
+    const { rerender } = render(
+      <NoResultsState
+        filters={filters}
+        onRemoveFilter={vi.fn()}
+        onReset={vi.fn()}
+        onShowFrance={vi.fn()}
+        alertAction={alert}
+      />,
+    );
+    const buttons = screen.getAllByRole("button").map((button) => button.textContent);
+    // Après les actions qui élargissent la recherche.
+    expect(buttons.slice(-3)).toEqual([
+      "Effacer les filtres",
+      "Voir toute la France",
+      "Me prévenir des prochaines ventes ici",
+    ]);
+    // Sans critère : rien à enregistrer. Pépites : l'état vide a sa propre alerte.
+    rerender(<NoResultsState filters={[]} alertAction={alert} />);
+    expect(
+      screen.queryByRole("button", { name: "Me prévenir des prochaines ventes ici" }),
+    ).toBeNull();
+    rerender(
+      <NoResultsState
+        filters={[{ key: "pepite", label: "Pépites seulement", clear: { pepite: undefined } }]}
+        alertAction={alert}
+        pepite={{ count: 0, onAlert: vi.fn() }}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Me prévenir des prochaines ventes ici" }),
+    ).toBeNull();
+  });
+
   it("has no action to offer when nothing is filtered", () => {
     render(<NoResultsState onReset={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Aucune vente trouvée" })).toBeTruthy();

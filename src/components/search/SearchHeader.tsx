@@ -643,9 +643,12 @@ export function SaveSearchButton({
   freeAlertUsage = null,
   onOpen,
   label = "Créer une alerte",
+  secondary = false,
   onClick,
 }: {
   saving: boolean;
+  /** Bouton secondaire (bordure, fond blanc) : à côté d'une action principale, comme dans l'état vide. */
+  secondary?: boolean;
   /** Version mobile : l'icône et le mot « Alerte » (le nom accessible reste « Créer une alerte »). */
   compact?: boolean;
   /** Texte du bouton (hors version compacte). */
@@ -674,9 +677,11 @@ export function SaveSearchButton({
       aria-label={compact ? "Créer une alerte" : undefined}
       title="Créer une alerte à partir de cette recherche"
       onClick={signedIn ? undefined : () => onClick()}
-      className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
-        compact ? "h-11 px-3" : "min-h-11 px-4"
-      }`}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
+        secondary
+          ? "border border-line bg-white text-brand-navy hover:border-brand-navy"
+          : "bg-brand-navy text-white shadow-sm hover:bg-brand-navy-soft"
+      } ${compact ? "h-11 px-3" : "min-h-11 px-4"}`}
     >
       {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
       {compact ? "Alerte" : label}

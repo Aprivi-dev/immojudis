@@ -170,6 +170,7 @@ export function SearchResultsList({
   pepiteSaleIds,
   pepiteExposedSaleIds,
   pepiteEmpty,
+  emptyAlertAction,
   dossierBySaleId,
   lastChangeBySaleId,
 }: {
@@ -209,6 +210,8 @@ export function SearchResultsList({
   pepiteExposedSaleIds?: ReadonlySet<string>;
   /** Actions de l'état vide quand « Pépites seulement » est actif (voir `NoResultsState`). */
   pepiteEmpty?: ComponentProps<typeof NoResultsState>["pepite"];
+  /** « Me prévenir des prochaines ventes ici » dans l'état vide (voir `NoResultsState`). */
+  emptyAlertAction?: React.ReactNode;
 }) {
   const { user, loading: authLoading } = useAuth();
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
@@ -263,6 +266,7 @@ export function SearchResultsList({
           onRemoveFilter={onRemoveFilter}
           onReset={onResetFilters}
           onShowFrance={onShowFrance}
+          alertAction={emptyAlertAction}
           pepite={
             activeFilters?.some((filter) => filter.key === "pepite") ? pepiteEmpty : undefined
           }

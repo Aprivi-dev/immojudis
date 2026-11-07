@@ -1,3 +1,4 @@
+import type * as React from "react";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import Map from "lucide-react/dist/esm/icons/map.js";
 import X from "lucide-react/dist/esm/icons/x.js";
@@ -62,8 +63,15 @@ export function NoResultsState({
   onRemoveFilter,
   onReset,
   onShowFrance,
+  alertAction,
   pepite,
 }: {
+  /**
+   * « Me prévenir des prochaines ventes ici » : le bouton d'alerte de la recherche (`SaveSearchButton`),
+   * proposé avec les autres actions quand des critères sont actifs. Sans objet quand « Pépites
+   * seulement » est actif : l'état vide des pépites a sa propre alerte.
+   */
+  alertAction?: React.ReactNode;
   /** Critères actifs : chacun peut être retiré seul. */
   filters?: ActiveFilterChip[];
   onRemoveFilter?: (filter: ActiveFilterChip) => void;
@@ -108,7 +116,7 @@ export function NoResultsState({
           ))}
         </ul>
       ) : null}
-      {onReset || onShowFrance || pepite ? (
+      {onReset || onShowFrance || pepite || alertAction ? (
         <div className="mt-5 flex flex-wrap justify-center gap-3">
           {pepite && others.length > 0 && pepite.onKeepOnlyPepite ? (
             <button
@@ -156,6 +164,7 @@ export function NoResultsState({
               Voir toute la France
             </button>
           ) : null}
+          {!pepite && filters.length > 0 ? alertAction : null}
         </div>
       ) : null}
     </div>

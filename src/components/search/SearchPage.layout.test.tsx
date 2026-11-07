@@ -206,6 +206,12 @@ describe("/sales sans résultat", () => {
       0,
     );
     expect(screen.getByRole("button", { name: "Voir toute la France" })).toBeTruthy();
+    // Et l'alerte, dans l'état vide lui-même, sans second encart d'alerte sous la liste.
+    const empty = screen.getByRole("heading", { name: "Aucune vente trouvée" }).parentElement!;
+    expect(
+      within(empty).getByRole("button", { name: "Me prévenir des prochaines ventes ici" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Être prévenu des nouvelles ventes" })).toBeNull();
   });
 
   it("retirer le critère du type de vente depuis l'état vide relance la recherche", async () => {

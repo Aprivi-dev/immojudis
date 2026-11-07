@@ -1303,6 +1303,22 @@ export function SearchPage({
                 onAlert: () => void saveSearch(),
                 alertSaving: savingAlert,
               }}
+              // Sans résultat : l'alerte de la recherche est proposée dans l'état vide lui-même.
+              emptyAlertAction={
+                <SaveSearchButton
+                  secondary
+                  label="Me prévenir des prochaines ventes ici"
+                  saving={savingAlert}
+                  signedIn={Boolean(user)}
+                  dailyAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+                  emailRecapEnabled={emailRecapEnabled}
+                  freeAlertUsage={
+                    entitlementsData?.plan.hasAnalysisAccess === true ? null : freeAlertUsage
+                  }
+                  onOpen={openAlertDialog}
+                  onClick={saveSearch}
+                />
+              }
               // Encart des avocats : en fin de liste, sur la première page seulement.
               sponsoredPlacement={
                 page === 1 ? (
@@ -1320,7 +1336,8 @@ export function SearchPage({
             !error &&
             page === 1 &&
             activeFiltersCount > 0 &&
-            !(search.pepite && displayCount === 0) &&
+            // Aucun résultat : l'état vide porte déjà l'alerte (« Me prévenir des prochaines ventes ici »).
+            displayCount > 0 &&
             displayCount < FEW_RESULTS_ALERT_THRESHOLD ? (
               <SectorAlertPrompt
                 resultCount={displayCount}
