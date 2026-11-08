@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { FAVORITE_DOSSIER_STATUSES } from "@/lib/favorite-dossier-shared";
 import { MAX_SIMULATOR_AMOUNT_EUR } from "@/lib/simulator-limits";
+import { MAX_ENTERED_SURFACE_M2 } from "@/lib/surface";
 
 /**
  * Schémas du corps et de la requête de `/api/favorites/dossier` (point 68). Séparés de
@@ -24,10 +25,26 @@ export const favoriteDossierInputSchema = z
       .transform((value) => Math.round(value))
       .nullable()
       .optional(),
+    /**
+     * « Surface lue dans les pièces », en m² : `null` l'efface ; absent : elle n'est pas modifiée.
+     * Même borne que la contrainte de la base : strictement plus de 0, au plus 10 000 m².
+     */
+    userSurfaceM2: z
+      .number()
+      .finite()
+      .gt(0, { message: "La surface doit être supérieure à 0 m²." })
+      .max(MAX_ENTERED_SURFACE_M2, { message: "La surface ne peut pas dépasser 10 000 m²." })
+      .transform((value) => Math.round(value * 100) / 100)
+      .nullable()
+      .optional(),
   })
-  .refine((value) => value.personalStatus !== undefined || value.bidCeilingEur !== undefined, {
-    message: "Aucune modification demandée.",
-  });
+  .refine(
+    (value) =>
+      value.personalStatus !== undefined ||
+      value.bidCeilingEur !== undefined ||
+      value.userSurfaceM2 !== undefined,
+    { message: "Aucune modification demandée." },
+  );
 
 export type FavoriteDossierInput = z.input<typeof favoriteDossierInputSchema>;
 export type FavoriteDossierPayload = z.output<typeof favoriteDossierInputSchema>;

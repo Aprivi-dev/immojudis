@@ -119,7 +119,7 @@ export function SaleComparisonTable({
       role="region"
       aria-label="Tableau comparatif, défilement horizontal et vertical"
       tabIndex={0}
-      className="overflow-auto outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-gold"
+      className="overflow-auto outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-gold-soft"
     >
       <table
         className="w-full min-w-[calc(80px+var(--compared-count)*140px)] table-fixed border-collapse text-left text-sm sm:min-w-[calc(140px+var(--compared-count)*180px)]"
@@ -160,7 +160,7 @@ export function SaleComparisonTable({
                         onRemove(sale.id);
                       }}
                       aria-label={`Retirer le bien ${index + 1} de la comparaison`}
-                      className="min-h-11 rounded-md px-1 text-xs font-bold text-ink-soft hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-gold"
+                      className="min-h-11 rounded-md px-1 text-xs font-bold text-ink-soft hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-gold-soft"
                     >
                       Retirer
                     </button>

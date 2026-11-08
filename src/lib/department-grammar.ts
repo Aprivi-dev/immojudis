@@ -3,7 +3,7 @@ import type { DepartmentRef } from "@/lib/department-pages";
 /**
  * Le département dans une phrase : « en Gironde », « à Paris », « dans le Nord », « dans la Loire », « dans les
  * Bouches-du-Rhône ». La préposition dépend du genre et du nombre du nom, qu'aucune règle ne
- * devine : une table par code (les noms viennent de `FEES_SIMULATOR_DEPARTMENTS`, un test vérifie
+ * devine : une table par code (les noms viennent de `FRENCH_DEPARTMENTS`, un test vérifie
  * que chaque département y figure).
  */
 type Locative = "en" | "à" | "le" | "la" | "l" | "les";

@@ -129,6 +129,18 @@ describe("buildCeilingHypotheses", () => {
     expect(h.carrying.monthlyCharges).toBe(210);
   });
 
+  it("keeps the effective sample for the ceiling and says the whole number of sales (D4)", () => {
+    const h = buildCeilingHypotheses(sale, {
+      ...estimate,
+      sampleSize: 9,
+      effectiveSampleSize: 5.3,
+    });
+    expect(h.value).toMatchObject({ sampleSize: 5.3, salesCount: 9 });
+    const value = computeCeilingPlan(h).steps.find((step) => step.key === "value");
+    expect(value?.detail).toContain("à partir de 9 ventes comparables");
+    expect(value?.detail).not.toMatch(/5[.,]3/);
+  });
+
   it("lets the user's choices win and falls back to prudent preliminary costs", () => {
     const h = buildCeilingHypotheses({ ...sale, description: null }, estimate, {
       project: "louer",

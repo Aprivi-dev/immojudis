@@ -146,7 +146,8 @@ function photoProps(): ExamplePhotoProps {
     radiusM: data.radiusM,
     sameBuildingYear: data.sameBuilding?.year ?? null,
     sameBuildingPrice: data.sameBuilding?.totalPrice ?? null,
-    startingGapPct: data.startingGapPct,
+    startingPricePerM2: data.startingPricePerM2,
+    medianPricePerM2: data.medianPricePerM2,
     dpe: data.dpe,
     presets: [
       {

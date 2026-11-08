@@ -34,7 +34,9 @@ from src.valuation_activation_gate import (  # noqa: F401  (re-exported: callers
     decide_activation,
     gap_interval_reason,
     paired_bootstrap_error_gap,
+    served_blend_reasons,
 )
+from src.valuation_served_blend import evaluate_served_blend
 
 try:
     from psycopg.types.json import Jsonb
@@ -782,12 +784,23 @@ def served_interval_coverage(
     is served. Here the corrections are estimated on the calibration window and applied to the
     newest sales, which neither the fit nor the corrections have seen.
     """
+    low, _, high = served_model_quantiles(models, conformal, x_calibration, x_test)
+    return interval_coverage(actual, low, high)
+
+
+def served_model_quantiles(
+    models: tuple[Any, Any, Any],
+    conformal: Any,
+    x_calibration: pd.DataFrame,
+    x_test: pd.DataFrame,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """p10 / p50 / p90 of the model alone as ``predictLightGbmQuantiles`` serves them (see above)."""
     lower, upper, median = models
     _, _, _, lower_correction, upper_correction = _predict_intervals(conformal, models, x_calibration)
     p50 = np.exp(median.predict(x_test))
     low = np.minimum(np.exp(lower.predict(x_test) - max(0.0, lower_correction)), p50)
     high = np.maximum(np.exp(upper.predict(x_test) + max(0.0, upper_correction)), p50)
-    return interval_coverage(actual, low, high)
+    return low, p50, high
 
 
 def _model_artifact(
@@ -829,7 +842,9 @@ def train_segment_model(
 
     1. Validation: fit on the oldest 70 % of sales, conformalize on the next
        15 %, evaluate on the newest 15 %. These metrics drive the promotion
-       gate and are compared with the active model and a naive local reference.
+       gate and are compared with the active model and a naive local reference;
+       the blend with the comparables that the application serves is scored on
+       the same sales (``report["blend"]``).
     2. Publication: refit on train + calibration (the oldest 85 %) and
        recalibrate the intervals on the newest window, which the refit never
        saw and which reflects the current market.
@@ -860,9 +875,8 @@ def train_segment_model(
     summary = _ape_summary(predicted, actual)
     coverage = np.mean((actual >= predicted_low) & (actual <= predicted_high)) * 100
     width_pct = np.mean((predicted_high - predicted_low) / predicted * 100)
-    served_coverage = served_interval_coverage(
-        validation_models, conformal, x_calibration, x_test, actual
-    )
+    served_quantiles = served_model_quantiles(validation_models, conformal, x_calibration, x_test)
+    served_coverage = interval_coverage(actual, served_quantiles[0], served_quantiles[2])
     metrics = TrainingMetrics(
         train_rows=len(train),
         calibration_rows=len(calibration),
@@ -921,6 +935,15 @@ def train_segment_model(
             "model interval only, before any combination with the comparable sales"
         ),
     }
+    # What the application serves: the model blended with the comparables (D19), on the same sales.
+    report["blend"] = evaluate_served_blend(
+        actual=actual,
+        model_quantiles=served_quantiles,
+        local_median_log=x_test["local_median_log"].to_numpy(dtype=float),
+        local_spread_log=x_test["local_spread_log"].to_numpy(dtype=float),
+        local_sample_size_log=x_test["local_sample_size_log"].to_numpy(dtype=float),
+        model_test_mape_pct=metrics.test_mape_pct,
+    )
     report["published_model"] = {
         "refit_rows": len(fit_part),
         "recalibration_rows": len(test),
@@ -1301,15 +1324,29 @@ def published_training_metrics(bundle: ModelBundle) -> dict[str, Any]:
         error_gap = report.get("error_gap")
         if error_gap:
             metrics["comparison"]["error_gap"] = error_gap
+        blend = report.get("blend")
+        if blend:
+            metrics["comparison"]["blend"] = blend
     return metrics
+
+
+def worst_served_blend_cell(report: dict[str, Any]) -> str:
+    """Step-summary cell: worst served-blend median APE across quality tiers vs the comparables alone."""
+    blend = report.get("blend") or {}
+    tiers = blend.get("served_blend") or {}
+    if blend.get("status") != "evaluated" or not tiers:
+        return "not evaluated"
+    worst = max(float(tier["median_ape_pct"]) for tier in tiers.values())
+    return f"{worst}% vs {blend['comparables_only']['median_ape_pct']}%"
 
 
 def format_step_summary(bundles: Sequence[ModelBundle]) -> str:
     lines = [
         "### Valuation models: candidate vs active vs naive (median APE on the newest sales)",
         "",
-        "| Segment | Candidate | Active | Naive local | Interval coverage (nominal 80%) | Test rows | Activated | Reasons |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Segment | Candidate | Active | Naive local | Interval coverage (nominal 80%) "
+        "| Served blend (worst tier) vs comparables | Test rows | Activated | Reasons |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for bundle in bundles:
         report = bundle.report
@@ -1322,12 +1359,13 @@ def format_step_summary(bundles: Sequence[ModelBundle]) -> str:
         promotion = report.get("promotion", {})
         served = (report.get("coverage") or {}).get("served_interval_pct")
         lines.append(
-            "| {segment} | {candidate}% | {active} | {naive}% | {coverage} | {rows} | {activated} | {reasons} |".format(
+            "| {segment} | {candidate}% | {active} | {naive}% | {coverage} | {blend} | {rows} | {activated} | {reasons} |".format(
                 segment=bundle.segment,
                 candidate=report["candidate"]["median_ape_pct"],
                 active=active_cell,
                 naive=report["naive"]["gate_median_ape_pct"],
                 coverage="not measured" if served is None else f"{served}%",
+                blend=worst_served_blend_cell(report),
                 rows=report["split"]["test_rows"],
                 activated="yes" if promotion.get("activate") else "no",
                 reasons="; ".join(promotion.get("reasons", [])) or "-",

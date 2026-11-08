@@ -155,7 +155,10 @@ jobs:
       # Lecture des pièces en avance (src/document_prefetch.py), coupée le 04/11/2026 puis remise le 05/11/2026 :
       # la boucle « manifest is partial » venait de la revalidation HTTP jamais soldée (corrigée par #421).
       # Mesure de référence sans elle (05/11/2026, 12:48-15:21) : 43 ventes traitées sur 80 candidates en 150 min.
-      DOCUMENT_BACKLOG_PREFETCH_WORKERS: 3
+      # Variable de dépôt DOCUMENT_BACKLOG_PREFETCH_WORKERS : 3 si absente, « 0 » la coupe sans commit (une chaîne
+      # non vide n'est jamais remplacée par le défaut) ; bornée à 0-6 par src/document_prefetch.py.
+      # Procédure : docs/runbooks/vidage-des-pieces.md.
+      DOCUMENT_BACKLOG_PREFETCH_WORKERS: ${{ vars.DOCUMENT_BACKLOG_PREFETCH_WORKERS || '3' }}
       # Vench publishes a 416-page, 9.6 MB descriptive report. OCR remains
       # limited per pass and document downloads stay capped at 50 MB.
       PDF_MAX_TOTAL_PAGES: 500
@@ -354,16 +357,18 @@ jobs:
       # app_private.catalogue_invalidations les ventes qui quittent le catalogue ; cette étape les envoie à
       # POST /api/pipeline/revalidate-sale (100 par appel, supprimées seulement sur une réponse 2xx). Elle
       # tourne même quand la collecte échoue (un retrait déjà enregistré doit partir), ne fait jamais échouer
-      # le job, et c'est la seule étape qui reçoit CRON_SECRET (variable de dépôt SITE_URL : l'origine
-      # publique, https://immojudis.com, valeur de repli quand la variable est absente). Une configuration
-      # manquante (secret absent, adresse invalide) rend l'étape rouge avec une annotation d'erreur : elle ne
-      # saute plus en silence. Voir docs/runbooks/catalogue-visibility-projection.md.
+      # le job, et c'est la seule étape qui reçoit PIPELINE_CALLBACK_SECRET et CRON_SECRET (le premier est
+      # envoyé s'il est posé, sinon le second ; ordre de bascule dans docs/vercel_setup.md) (variable de dépôt
+      # SITE_URL : l'origine publique, https://immojudis.com, valeur de repli quand la variable est absente).
+      # Une configuration manquante (secret absent, adresse invalide) rend l'étape rouge avec une annotation
+      # d'erreur : elle ne saute plus en silence. Voir docs/runbooks/catalogue-visibility-projection.md.
       - name: Invalidate public cache
         if: always()
         continue-on-error: true
         timeout-minutes: 5
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PIPELINE_CALLBACK_SECRET: ${{ secrets.PIPELINE_CALLBACK_SECRET }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           SITE_URL: ${{ vars.SITE_URL || 'https://immojudis.com' }}
         run: python -m src.cache_invalidation --flush

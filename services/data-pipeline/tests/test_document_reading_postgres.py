@@ -34,7 +34,7 @@ def setup(db) -> None:
     db.execute(
         """create table auction_sales(id uuid primary key default gen_random_uuid(), source_url text unique,
         source_name text not null default 'licitor', observations jsonb default '[]',
-        status text default 'upcoming', sale_date timestamptz)"""
+        status text default 'upcoming', sale_date timestamptz, property_type text, city text, raw_payload jsonb)"""
     )
     db.execute(
         """create table auction_source_state(source_name text primary key,
@@ -108,6 +108,38 @@ def test_failed_readings_come_back_only_when_their_backoff_has_elapsed():
             db.rollback()
 
 
+def test_v3_reads_again_only_the_v2_readings_whose_lot_is_designated():
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+    with _postgres_connect(url) as db:
+        try:
+            setup(db)
+            add_sale(db, "never-read", status=None)
+            add_sale(db, "v2-without-lot", status="completed", version="document_reading_v2")
+            add_sale(db, "v2-ambiguous-lot", status="completed", version="document_reading_v2")
+            add_sale(db, "v2-designated-lot", status="completed", version="document_reading_v2")
+            add_sale(db, "v2-new-text", status="completed", version="document_reading_v2")
+            add_sale(db, "v2-failed-due", status="failed", attempts=1, generated_hours_ago=13,
+                     version="document_reading_v2")
+            add_sale(db, "v1", status="completed", version="document_reading_v1")
+            for source_url, selection in (
+                ("v2-ambiguous-lot", {"status": "ambiguous", "lot_count": 2}),
+                ("v2-designated-lot", {"status": "selected", "lot_number": 2, "lot_count": 2}),
+            ):
+                db.execute(
+                    "update auction_sales set raw_payload = jsonb_build_object('source_lot_selection', %s::jsonb) "
+                    "where source_url = %s",
+                    (json.dumps(selection), source_url),
+                )
+            db.execute("update auction_extractions set updated_at = now() + interval '1 minute' "
+                       "where source_url = 'v2-new-text'")
+
+            assert set(candidates(db)) == {"never-read", "v2-designated-lot", "v2-new-text", "v2-failed-due", "v1"}
+        finally:
+            db.rollback()
+
+
 def test_sales_whose_sources_are_all_withdrawn_are_not_read():
     url = os.getenv("PIPELINE_TEST_DB_URL")
     if not url:
@@ -160,5 +192,38 @@ def test_upsert_stores_and_resets_the_attempt_count():
             assert stored() == ("completed", None, 0)
             with pytest.raises(Exception, match="attempt_count"):
                 upsert("failed", "x", -1)
+        finally:
+            db.rollback()
+
+
+def test_revalidation_rewrites_points_only_and_keeps_updated_at():
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+    with _postgres_connect(url) as db:
+        try:
+            setup(db)
+            add_sale(db, "kept", status="completed")
+            add_sale(db, "failed", status="failed")
+            add_sale(db, "past", status="completed")
+            db.execute("update auction_sales set sale_date = now() - interval '1 day' where source_url = 'past'")
+            db.execute(
+                "update auction_document_readings set points = '[{\"title\": \"x\"}]'::jsonb, "
+                "updated_at = '2026-01-01T00:00:00Z'"
+            )
+            rows = db.execute(reading.REVALIDATION_SQL, (100,)).fetchall()
+            assert [row[4] for row in rows] == [[]]  # latest pdf_text manifest of « kept » only
+            sale_id, version, fingerprint = rows[0][:3]
+            assert version == reading.DOCUMENT_READING_VERSION
+
+            db.execute(reading.REVALIDATED_POINTS_SQL, ("[]", sale_id, "another-fingerprint"))
+            assert db.execute(
+                "select points from auction_document_readings where sale_id = %s", (sale_id,)
+            ).fetchone()[0] == [{"title": "x"}]
+            db.execute(reading.REVALIDATED_POINTS_SQL, ("[]", sale_id, fingerprint))
+            points, updated_at = db.execute(
+                "select points, updated_at::text from auction_document_readings where sale_id = %s", (sale_id,)
+            ).fetchone()
+            assert points == [] and updated_at.startswith("2026-01-01")
         finally:
             db.rollback()

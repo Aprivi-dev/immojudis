@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,6 +33,15 @@ def test_workers_come_from_the_environment(monkeypatch) -> None:
     assert prefetch.prefetch_workers_from_env() == prefetch.MAX_PREFETCH_WORKERS
     monkeypatch.setenv(prefetch.PREFETCH_WORKERS_ENV, "abc")
     assert prefetch.prefetch_workers_from_env() == prefetch.DEFAULT_PREFETCH_WORKERS
+
+
+def test_the_workflow_takes_the_worker_count_from_a_repository_variable() -> None:
+    # Couper ou remettre la lecture en avance sans commit (04-05/11/2026 : deux commits pour 0 puis 3). « 0 » est
+    # une chaîne non vide : l'expression ne la remplace pas par le défaut.
+    workflow = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "data-pipeline.yml"
+    text = workflow.read_text(encoding="utf-8")
+    assert "DOCUMENT_BACKLOG_PREFETCH_WORKERS: ${{ vars.DOCUMENT_BACKLOG_PREFETCH_WORKERS || '3' }}" in text
+    assert str(prefetch.DEFAULT_PREFETCH_WORKERS) == "3"
 
 
 def test_the_host_delay_is_shared_between_the_processes(monkeypatch) -> None:
@@ -123,6 +133,8 @@ def test_the_drain_waits_for_each_preparation_before_taking_the_lock(monkeypatch
     events: list[str] = []
 
     class _Recorder:
+        stats: dict[str, int] = {}
+
         def start(self) -> None:
             events.append("start")
 
@@ -135,7 +147,7 @@ def test_the_drain_waits_for_each_preparation_before_taking_the_lock(monkeypatch
     @contextmanager
     def lock(_db, _wait):
         events.append("lock")
-        yield
+        yield SimpleNamespace(ensure_held=lambda: None)
 
     monkeypatch.setattr(backlog, "load_settings", lambda: {"supabase_db_url": "postgres://test"})
     monkeypatch.setattr(
@@ -146,7 +158,7 @@ def test_the_drain_waits_for_each_preparation_before_taking_the_lock(monkeypatch
     monkeypatch.setattr(
         backlog,
         "drain_sale",
-        lambda _db, candidate, _limits, _deadline: backlog.SaleOutcome(
+        lambda _db, candidate, _limits, _deadline, lock=None: backlog.SaleOutcome(
             source_url=candidate["source_url"], source_name="vench", action="processed"
         ),
     )
@@ -196,8 +208,20 @@ def test_preparation_reads_pages_without_writing_to_the_database(monkeypatch, tm
     result = prefetch.prefetch_sale_documents(sale.source_url, 60.0)
 
     assert result["error"] is None
-    assert (result["documents"], result["read"]) == (1, 1)
+    assert (result["documents"], result["read"], result["deferred_exhausted"]) == (1, 1, 0)
     assert rounds == [str(pdf), str(pdf)]  # the deferred document is resumed from its page cache
+
+    # Still deferred after every round: counted for the drain report instead of being dropped silently.
+    rounds.clear()
+
+    def always_deferred(path, document=None):
+        rounds.append(str(path))
+        raise PdfExtractionDeferred("OCR budget reached; retry resumes", checkpointed_pages=3, total_pages=900, new_progress_pages=3)
+
+    monkeypatch.setattr(pdf_enrichment, "extract_attached_document", always_deferred)
+    result = prefetch.prefetch_sale_documents(sale.source_url, 60.0)
+    assert (result["read"], result["deferred_exhausted"]) == (0, 1)
+    assert len(rounds) == prefetch.MAX_ROUNDS_PER_DOCUMENT
 
 
 @pytest.mark.parametrize("budget", [0.0])
@@ -274,3 +298,35 @@ def test_restoring_checkpoints_never_writes_the_sale_manifest(monkeypatch) -> No
 
     # The newest checkpoint is used, and only as page caches beside the downloaded files.
     assert restored_pages == [([{"row": "2026-11-04T11:00:00Z"}], downloaded)]
+
+
+def test_the_prefetcher_totals_its_preparations_for_the_drain_report() -> None:
+    outcomes = {
+        "a": {"documents": 3, "read": 2, "cached": 1, "deferred_exhausted": 0, "error": None},
+        "b": {"documents": 2, "read": 0, "cached": 0, "deferred_exhausted": 2, "error": None},
+        "c": {"documents": 0, "read": 0, "cached": 0, "deferred_exhausted": 0, "error": "HTTPError: 503"},
+    }
+
+    def fake(url: str, remaining: float) -> dict:
+        if url == "d":
+            raise RuntimeError("worker died")
+        return outcomes[url]
+
+    prefetcher = prefetch.DocumentPrefetcher(
+        list("abcd"), workers=1, deadline=time.monotonic() + 60, executor_factory=_thread_executor(), prefetch=fake
+    )
+    prefetcher.start()
+    wait(list(prefetcher._futures.values()), timeout=5)  # all started and finished: none is cancelled below
+    for url in "abcd":
+        prefetcher.wait_for(url)
+    prefetcher.close()
+
+    assert prefetcher.stats == {
+        "workers": 1,
+        "prepared": 3,
+        "documents": 5,
+        "read": 2,
+        "cached": 1,
+        "deferred_exhausted": 2,
+        "errors": 2,
+    }

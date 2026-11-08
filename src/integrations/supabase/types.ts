@@ -11943,6 +11943,7 @@ export type Database = {
           personal_status_updated_at: string | null;
           sale_id: string;
           user_id: string;
+          user_surface_m2: number | null;
         };
         Insert: {
           bid_ceiling_eur?: number | null;
@@ -11953,6 +11954,7 @@ export type Database = {
           personal_status_updated_at?: string | null;
           sale_id: string;
           user_id: string;
+          user_surface_m2?: number | null;
         };
         Update: {
           bid_ceiling_eur?: number | null;
@@ -11963,6 +11965,7 @@ export type Database = {
           personal_status_updated_at?: string | null;
           sale_id?: string;
           user_id?: string;
+          user_surface_m2?: number | null;
         };
         Relationships: [
           {
@@ -14699,6 +14702,10 @@ export type Database = {
       admin_count_flood_reobservation_pending: {
         Args: { p_now?: string };
         Returns: number;
+      };
+      admin_cross_source_duplicates_summary: {
+        Args: { p_limit?: number };
+        Returns: Json;
       };
       admin_email_received_list: {
         Args: {

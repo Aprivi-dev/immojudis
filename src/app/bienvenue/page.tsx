@@ -3,6 +3,7 @@ import { AuthGate } from "@/components/AuthGate";
 import { InvestorOnboarding } from "@/components/InvestorOnboarding";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { ONBOARDING_RETURN_PARAM, saleDetailReturnPath } from "@/lib/onboarding";
+import { onboardingAreaForSale } from "@/lib/onboarding.server";
 import { unlockHighlightsInlineText } from "@/lib/sale-unlocks";
 
 export const metadata: Metadata = {
@@ -19,10 +20,13 @@ export default async function Page({
   const returnParam = (await searchParams)[ONBOARDING_RETURN_PARAM];
   // Une seule fiche du site, reconstruite : jamais une adresse reçue telle quelle.
   const returnTo = saleDetailReturnPath(Array.isArray(returnParam) ? returnParam[0] : returnParam);
+  // Inscription lancée depuis une fiche : le secteur part du département de la vente.
+  const initialArea = await onboardingAreaForSale(returnTo);
   return (
     <AuthGate>
       <InvestorOnboarding
         returnTo={returnTo}
+        initialArea={initialArea}
         unlockHighlights={unlockHighlightsInlineText(openFeeRegimesFromEnv())}
       />
     </AuthGate>

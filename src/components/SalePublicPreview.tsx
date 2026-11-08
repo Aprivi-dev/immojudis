@@ -64,6 +64,7 @@ import {
 import { tribunalCodePagePath } from "@/lib/tribunal-code-path";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
+import type { PublicRentalYield } from "@/lib/public-rental-yield";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
@@ -343,8 +344,8 @@ export function SalePublicPreview({
   /** Loyer de la commune (carte ANIL) et zonage tendu, lus par le serveur : section « Marché local ». */
   rentReference?: RentReference | null;
   housingTension?: HousingTension | null;
-  /** Rendement brut à la mise à prix, calculé par le serveur (`publicRentalYield`) ; absent : aucun. */
-  rentalYield?: string | null;
+  /** Rendement brut à la mise à prix (ou loyer estimé s'il n'est pas significatif), calculé par le serveur (`publicRentalYield`) ; absent : aucun. */
+  rentalYield?: PublicRentalYield | null;
   /**
    * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
    * pour ce visiteur, la page dit qu'elle vérifie son compte au lieu de proposer d'en créer un.
@@ -430,40 +431,43 @@ export function SalePublicPreview({
       ) : null}
     </dl>
   );
-  // Date, lieu et conditions de la vente : la liste de la fiche de vente, sous la mise à prix.
+  // Date de la vente, sous la mise à prix ; l'inscription la suit (P12 : le bouton reste en vue dans
+  // le panneau collant, à partir de 1024 px). La mise en garde de l'agenda reste sous la date.
+  const saleDateRow = hearingDate ? (
+    <div className={styles.saleFact}>
+      <dt>{procedure.venueType === "tribunal" ? "Date de l’audience" : "Date de la vente"}</dt>
+      <dd>
+        <span className={styles.num}>
+          {hearingDate}
+          {hearingTime ? (
+            <>
+              {" "}
+              <span className={styles.nowrap}>à {hearingTime}</span>
+            </>
+          ) : null}
+        </span>
+        {pastDate ? (
+          <span className={styles.pastDate} data-testid="past-sale-date">
+            Date de vente passée
+          </span>
+        ) : null}
+        {procedure.venueType === "tribunal" && !pastDate ? (
+          <SaleCalendarButton saleId={saleId} />
+        ) : null}
+      </dd>
+    </div>
+  ) : procedure.venueType === "notary" ? (
+    // Comme la carte de /sales (« Date à confirmer ») : une vente notariale sans date n'a pas
+    // à laisser un vide dans la fiche.
+    <div className={styles.saleFact}>
+      <dt>Date de la vente</dt>
+      <dd data-testid="sale-date-to-confirm">À confirmer</dd>
+    </div>
+  ) : null;
+  // Lieu et conditions de la vente, sous l'inscription : « Trouver un avocat » et « Estimer les
+  // frais » y restent, sous « Pour enchérir ».
   const saleFactRows = (
     <>
-      {hearingDate ? (
-        <div className={styles.saleFact}>
-          <dt>{procedure.venueType === "tribunal" ? "Date de l’audience" : "Date de la vente"}</dt>
-          <dd>
-            <span className={styles.num}>
-              {hearingDate}
-              {hearingTime ? (
-                <>
-                  {" "}
-                  <span className={styles.nowrap}>à {hearingTime}</span>
-                </>
-              ) : null}
-            </span>
-            {pastDate ? (
-              <span className={styles.pastDate} data-testid="past-sale-date">
-                Date de vente passée
-              </span>
-            ) : null}
-            {procedure.venueType === "tribunal" && !pastDate ? (
-              <SaleCalendarButton saleId={saleId} />
-            ) : null}
-          </dd>
-        </div>
-      ) : procedure.venueType === "notary" ? (
-        // Comme la carte de /sales (« Date à confirmer ») : une vente notariale sans date n'a pas
-        // à laisser un vide dans la fiche.
-        <div className={styles.saleFact}>
-          <dt>Date de la vente</dt>
-          <dd data-testid="sale-date-to-confirm">À confirmer</dd>
-        </div>
-      ) : null}
       {tribunal ? (
         <div className={styles.saleFact}>
           <dt>Lieu</dt>
@@ -575,7 +579,7 @@ export function SalePublicPreview({
   );
   const followLink = loginPathWithRedirect(saleDetailPath(saleId, returnTo), { reason: "favori" });
   const salesReturn = salesReturnHref(returnTo, preview.id ?? saleId);
-  // Sous la liste des faits : l'inscription, les actions secondaires et la ligne d'accès commune.
+  // Sous la date de la vente : l'inscription, les actions secondaires et la ligne d'accès commune.
   // Avec une session détectée, la page dit qu'elle vérifie le compte.
   const signupBlock = (
     <div className={styles.signup} data-testid="public-signup">
@@ -749,8 +753,9 @@ export function SalePublicPreview({
             <div className={styles.panel}>
               <p className={styles.eyebrow}>Fiche de vente</p>
               {priceBlock}
-              <dl className={styles.saleFacts}>{saleFactRows}</dl>
+              {saleDateRow ? <dl className={styles.saleFacts}>{saleDateRow}</dl> : null}
               {signupBlock}
+              <dl className={styles.saleFacts}>{saleFactRows}</dl>
             </div>
             <Link href="/simulateur-frais-encheres" className={styles.sideLink}>
               <span>

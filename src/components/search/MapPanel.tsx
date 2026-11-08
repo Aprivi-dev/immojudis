@@ -1,22 +1,11 @@
 "use client";
 
 import "mapbox-gl/dist/mapbox-gl.css";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import type mapboxgl from "mapbox-gl";
-import type {
-  CircleLayerSpecification,
-  FillLayerSpecification,
-  GeoJSONSource,
-  LngLatBoundsLike,
-  LineLayerSpecification,
-  MapLayerMouseEvent,
-  MapMouseEvent,
-  SymbolLayerSpecification,
-} from "mapbox-gl";
+import type { LngLatBoundsLike, MapLayerMouseEvent, MapMouseEvent } from "mapbox-gl";
 import Check from "lucide-react/dist/esm/icons/check.js";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import ChevronUp from "lucide-react/dist/esm/icons/chevron-up.js";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import MapIcon from "lucide-react/dist/esm/icons/map.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
@@ -38,22 +27,19 @@ import {
   buildMapboxSaleFeatureCollection,
   isApproximatePosition,
   isMunicipalityCenter,
-  type MapboxSaleFeatureCollection,
 } from "@/lib/mapbox-sales";
-import { MAP_ACTIVE_FILL, MAP_PALETTE, MAP_PRICE_HALO } from "@/lib/map-palette";
+import { MAP_PALETTE } from "@/lib/map-palette";
 import {
-  APPROX_RING_ICON_ID,
-  APPROX_RING_SIZE,
-  CLUSTER_GLYPH_OFFSET,
-  CLUSTER_RADIUS,
-  HIT_RADIUS,
-  ACTIVE_RADIUS,
-  PEPITE_GLYPH_OFFSET,
-  PEPITE_ICON_ID,
-  POINT_RADIUS,
-  addApproxRingIcon,
-  addPepiteIcon,
-} from "./map-sales-style";
+  CLUSTER_LAYER_ID,
+  SALE_HIT_LAYER_ID,
+  addBoundaryLayers,
+  addSalesLayers,
+  setBoundaryData,
+  setSalesData,
+  updateActiveLayer,
+  zoomIntoCluster,
+  type QueriedMapFeature,
+} from "./map-sales-layers";
 import { firstPropertyImage } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
@@ -71,28 +57,14 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import { escapeHtml } from "@/lib/guards";
-import { PepiteIcon } from "@/components/PepiteBadge";
 import { PEPITE_LABEL } from "@/lib/pepite-copy";
 import { FLOOD_EXPOSED_SHORT } from "@/lib/pepite-flood-copy";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import { MapFallback } from "./MapFallback";
+import { MapLegend } from "./MapLegend";
 
 // Chargé à la demande par l'effet de création de la carte (import dynamique).
 let mapboxRuntime: typeof mapboxgl | null = null;
-
-const SALES_SOURCE_ID = "immojudis-sales";
-const BOUNDARY_SOURCE_ID = "immojudis-search-boundary";
-const BOUNDARY_FILL_LAYER_ID = "immojudis-search-boundary-fill";
-const BOUNDARY_LINE_LAYER_ID = "immojudis-search-boundary-line";
-const CLUSTER_LAYER_ID = "immojudis-sales-clusters";
-const CLUSTER_COUNT_LAYER_ID = "immojudis-sales-cluster-count";
-const SALE_POINT_LAYER_ID = "immojudis-sales-points";
-const SALE_ACTIVE_LAYER_ID = "immojudis-sales-active";
-const SALE_PRICE_LAYER_ID = "immojudis-sales-price";
-const SALE_HIT_LAYER_ID = "immojudis-sales-hit";
-const SALE_PEPITE_LAYER_ID = "immojudis-sales-pepite";
-const CLUSTER_PEPITE_LAYER_ID = "immojudis-sales-cluster-pepite";
-const SALE_APPROX_LAYER_ID = "immojudis-sales-approx";
 
 const DEFAULT_MAP_CENTER: [number, number] = [1.7191, 46.7111];
 const DEFAULT_MAP_ZOOM = 5.7;
@@ -100,17 +72,12 @@ const DEFAULT_MOBILE_MAP_ZOOM = 4.8;
 const MIN_MAP_ZOOM = 4;
 const MAX_MAP_ZOOM = 18;
 const MAX_FIT_ZOOM = 13;
-const EMPTY_ACTIVE_FILTER: MapboxFilter = ["==", ["get", "saleId"], "__none__"];
 const FRANCE_BOUNDS: LngLatBoundsLike = [
   [-5.6, 41.0],
   [9.7, 51.5],
 ];
 const FIT_PADDING = { top: 82, right: 70, bottom: 86, left: 70 };
 const MOBILE_FIT_PADDING = { top: 88, right: 30, bottom: 120, left: 30 };
-const EMPTY_BOUNDARY: Pick<GeographicBoundary, "type" | "features"> = {
-  type: "FeatureCollection",
-  features: [],
-};
 
 export type MapPanelProps = {
   locationCenter?: { lat: number; lng: number; zoom?: number } | null;
@@ -158,15 +125,6 @@ export type MapViewportChange = {
 };
 
 type MapboxMap = mapboxgl.Map;
-type GeoJSONData = Parameters<GeoJSONSource["setData"]>[0];
-type MapboxFilter = NonNullable<Parameters<MapboxMap["setFilter"]>[1]>;
-type QueriedMapFeature = {
-  geometry?: {
-    type?: string;
-    coordinates?: unknown;
-  };
-  properties?: Record<string, unknown>;
-};
 
 type PopupAccess = { preview: boolean; analysisLocked: boolean; detailLoading: boolean };
 
@@ -308,8 +266,6 @@ export function MapPanel({
   const [mapError, setMapError] = useState<string | null>(null);
   // Chaque « Réessayer » relance le démarrage de la carte (téléchargement de Mapbox compris).
   const [attempt, setAttempt] = useState(0);
-  const [legendOpen, setLegendOpen] = useState(false);
-  const legendId = useId();
   const [boundary, setBoundary] = useState<GeographicBoundary | null>(null);
   const [boundaryLoading, setBoundaryLoading] = useState(false);
   const [viewportDirty, setViewportDirty] = useState(false);
@@ -589,24 +545,7 @@ export function MapPanel({
 
       const handleClusterClick = (event: MapMouseEvent) => {
         markUserInteracted();
-        const features = map.queryRenderedFeatures(event.point, { layers: [CLUSTER_LAYER_ID] });
-        const feature = features[0] as QueriedMapFeature | undefined;
-        const clusterId = Number(feature?.properties?.cluster_id);
-        if (!Number.isFinite(clusterId)) return;
-        const source = map.getSource(SALES_SOURCE_ID) as GeoJSONSource | undefined;
-        source?.getClusterExpansionZoom(clusterId, (error, zoom) => {
-          if (error || zoom == null) return;
-          const coordinates =
-            feature?.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)
-              ? feature.geometry.coordinates
-              : null;
-          if (!coordinates) return;
-          map.easeTo({
-            center: [Number(coordinates[0]), Number(coordinates[1])],
-            zoom: Math.min(zoom + 0.4, MAX_MAP_ZOOM),
-            duration: 420,
-          });
-        });
+        zoomIntoCluster(map, event.point, MAX_MAP_ZOOM);
       };
 
       map.on("mouseenter", SALE_HIT_LAYER_ID, handlePointEnter);
@@ -656,15 +595,13 @@ export function MapPanel({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const source = map.getSource(SALES_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(featureCollection as GeoJSONData);
+    setSalesData(map, featureCollection);
   }, [featureCollection, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    const source = map.getSource(BOUNDARY_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData((boundary ?? EMPTY_BOUNDARY) as GeoJSONData);
+    setBoundaryData(map, boundary);
   }, [boundary, mapReady]);
 
   useEffect(() => {
@@ -956,74 +893,7 @@ export function MapPanel({
                 : ""}
             </span>
           </p>
-          {/* Mobile : la légende se replie derrière un bouton de 44 px, fermée par défaut (elle prenait
-              une centaine de pixels de la carte). Dès `sm`, elle reste affichée, sans bouton. */}
-          <button
-            type="button"
-            aria-expanded={legendOpen}
-            aria-controls={legendId}
-            onClick={() => setLegendOpen((open) => !open)}
-            className="mt-1 inline-flex min-h-11 items-center gap-1.5 rounded-md border border-line-soft bg-white px-3 text-xs font-bold text-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft sm:hidden"
-          >
-            Légende
-            {legendOpen ? (
-              <ChevronUp className="size-4" aria-hidden="true" />
-            ) : (
-              <ChevronDown className="size-4" aria-hidden="true" />
-            )}
-          </button>
-          <ul
-            id={legendId}
-            className={`mt-1.5 flex-wrap items-center gap-x-3.5 gap-y-1 ${legendOpen ? "flex" : "hidden sm:flex"}`}
-            aria-label="Légende de la carte"
-          >
-            <li className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden="true"
-                className="inline-block size-3 shrink-0 rounded-full"
-                style={{ backgroundColor: MAP_PALETTE.navy }}
-              />
-              Vente
-            </li>
-            <li className="inline-flex items-center gap-1.5">
-              {/* Même dessin que la couche du point actif : halo or, anneau or foncé. */}
-              <span
-                aria-hidden="true"
-                className="inline-block size-3 shrink-0 rounded-full border-2"
-                style={{ backgroundColor: MAP_ACTIVE_FILL, borderColor: MAP_PALETTE.goldSoft }}
-              />
-              Survolée
-            </li>
-            <li className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden="true"
-                className="inline-block size-3 shrink-0 rounded-full border-2 bg-white"
-                style={{ borderColor: MAP_PALETTE.navy }}
-              />
-              Regroupement
-            </li>
-            <li className="inline-flex items-center gap-1.5">
-              <span
-                aria-hidden="true"
-                className="inline-grid size-3 shrink-0 place-items-center rounded-full border-[1.5px] border-dashed"
-                style={{ borderColor: MAP_PALETTE.navy }}
-              >
-                <span
-                  className="block size-1.5 rounded-full"
-                  style={{ backgroundColor: MAP_PALETTE.navy }}
-                />
-              </span>
-              Position approximative
-            </li>
-            {pepiteCount > 0 ? (
-              <li className="inline-flex items-center gap-1.5 font-semibold text-gold-text">
-                <PepiteIcon className="size-3.5 shrink-0" />
-                <span>
-                  {PEPITE_LABEL} ({pepiteCount.toLocaleString("fr-FR")}) · anneau doré
-                </span>
-              </li>
-            ) : null}
-          </ul>
+          <MapLegend pepiteCount={pepiteCount} />
         </div>
         {!preview ? (
           <button
@@ -1054,217 +924,6 @@ export function MapPanel({
       </div>
     </div>
   );
-}
-
-function addBoundaryLayers(map: MapboxMap, boundary: GeographicBoundary | null) {
-  if (map.getSource(BOUNDARY_SOURCE_ID)) return;
-
-  map.addSource(BOUNDARY_SOURCE_ID, {
-    type: "geojson",
-    data: (boundary ?? EMPTY_BOUNDARY) as GeoJSONData,
-  });
-
-  const fillLayer: FillLayerSpecification = {
-    id: BOUNDARY_FILL_LAYER_ID,
-    type: "fill",
-    source: BOUNDARY_SOURCE_ID,
-    paint: {
-      "fill-color": MAP_PALETTE.navy,
-      "fill-opacity": 0.06,
-    },
-  };
-  const lineLayer: LineLayerSpecification = {
-    id: BOUNDARY_LINE_LAYER_ID,
-    type: "line",
-    source: BOUNDARY_SOURCE_ID,
-    layout: { "line-cap": "round", "line-join": "round" },
-    paint: {
-      "line-color": MAP_PALETTE.navy,
-      "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.5, 10, 2.5, 14, 3.5],
-      "line-opacity": 0.88,
-      "line-dasharray": [2, 1.5],
-    },
-  };
-  const beforeLayer = map.getLayer(CLUSTER_LAYER_ID) ? CLUSTER_LAYER_ID : undefined;
-  map.addLayer(fillLayer, beforeLayer);
-  map.addLayer(lineLayer, beforeLayer);
-}
-
-function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
-  if (map.getSource(SALES_SOURCE_ID)) return;
-
-  map.addSource(SALES_SOURCE_ID, {
-    type: "geojson",
-    data: data as GeoJSONData,
-    cluster: true,
-    clusterMaxZoom: 13,
-    clusterRadius: 54,
-    // Nombre de pépites dans chaque regroupement : une petite pastille signale celles qu'il contient.
-    clusterProperties: { pepites: ["+", ["get", "pepite"]] },
-    generateId: true,
-  });
-  addPepiteIcon(map);
-  addApproxRingIcon(map);
-
-  const clusterLayer: CircleLayerSpecification = {
-    id: CLUSTER_LAYER_ID,
-    type: "circle",
-    source: SALES_SOURCE_ID,
-    filter: ["has", "point_count"],
-    paint: {
-      // Disque blanc liseré marine : un groupe de ventes se distingue d'une vente isolée (disque marine
-      // avec son prix). L'or est réservé aux pépites.
-      "circle-color": MAP_PALETTE.white,
-      "circle-radius": CLUSTER_RADIUS,
-      "circle-stroke-color": MAP_PALETTE.navy,
-      "circle-stroke-width": 3,
-      "circle-opacity": 1,
-    },
-  };
-
-  const clusterCountLayer: SymbolLayerSpecification = {
-    id: CLUSTER_COUNT_LAYER_ID,
-    type: "symbol",
-    source: SALES_SOURCE_ID,
-    filter: ["has", "point_count"],
-    layout: {
-      "text-field": ["get", "point_count_abbreviated"],
-      "text-size": 12,
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-    },
-    paint: {
-      "text-color": MAP_PALETTE.navy,
-      "text-halo-width": 0,
-    },
-  };
-
-  const salePointLayer: CircleLayerSpecification = {
-    id: SALE_POINT_LAYER_ID,
-    type: "circle",
-    source: SALES_SOURCE_ID,
-    filter: ["!", ["has", "point_count"]],
-    paint: {
-      "circle-color": MAP_PALETTE.navy,
-      // The price label sits inside this dark capsule-like circle. Keeping a
-      // generous radius at national zoom makes short prices readable without
-      // the detached grey text halo that the old map used.
-      "circle-radius": POINT_RADIUS,
-      // Pépite : anneau or plus épais (le glyphe en haut à droite le double : jamais la couleur seule).
-      "circle-stroke-color": [
-        "case",
-        ["==", ["get", "pepite"], 1],
-        MAP_PALETTE.gold,
-        MAP_PALETTE.white,
-      ],
-      "circle-stroke-width": ["case", ["==", ["get", "pepite"], 1], 4, 2],
-      "circle-opacity": 0.98,
-    },
-  };
-
-  const pepiteGlyphLayer: SymbolLayerSpecification = {
-    id: SALE_PEPITE_LAYER_ID,
-    type: "symbol",
-    source: SALES_SOURCE_ID,
-    filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "pepite"], 1]],
-    layout: {
-      "icon-image": PEPITE_ICON_ID,
-      "icon-offset": PEPITE_GLYPH_OFFSET,
-      "icon-allow-overlap": true,
-      "icon-ignore-placement": true,
-    },
-  };
-
-  const clusterPepiteLayer: SymbolLayerSpecification = {
-    id: CLUSTER_PEPITE_LAYER_ID,
-    type: "symbol",
-    source: SALES_SOURCE_ID,
-    filter: ["all", ["has", "point_count"], [">", ["get", "pepites"], 0]],
-    layout: {
-      "icon-image": PEPITE_ICON_ID,
-      "icon-offset": CLUSTER_GLYPH_OFFSET,
-      "icon-allow-overlap": true,
-      "icon-ignore-placement": true,
-    },
-  };
-
-  const activeLayer: CircleLayerSpecification = {
-    id: SALE_ACTIVE_LAYER_ID,
-    type: "circle",
-    source: SALES_SOURCE_ID,
-    filter: EMPTY_ACTIVE_FILTER,
-    paint: {
-      "circle-radius": ACTIVE_RADIUS,
-      "circle-color": MAP_ACTIVE_FILL,
-      "circle-stroke-color": MAP_PALETTE.goldSoft,
-      "circle-stroke-width": 3,
-    },
-  };
-
-  // Centre de commune ou point douteux : anneau en pointillé autour du point (un trait de cercle
-  // Mapbox ne peut pas être pointillé, d'où une icône).
-  const approxRingLayer: SymbolLayerSpecification = {
-    id: SALE_APPROX_LAYER_ID,
-    type: "symbol",
-    source: SALES_SOURCE_ID,
-    filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "approx"], 1]],
-    layout: {
-      "icon-image": APPROX_RING_ICON_ID,
-      "icon-size": APPROX_RING_SIZE,
-      "icon-allow-overlap": true,
-      "icon-ignore-placement": true,
-    },
-  };
-
-  const salePriceLayer: SymbolLayerSpecification = {
-    id: SALE_PRICE_LAYER_ID,
-    type: "symbol",
-    source: SALES_SOURCE_ID,
-    filter: ["!", ["has", "point_count"]],
-    layout: {
-      "text-field": ["get", "priceLabel"],
-      "text-size": 12,
-      "text-anchor": "center",
-      "text-offset": [0, 0],
-      "text-padding": 2,
-      "text-allow-overlap": true,
-      "text-ignore-placement": true,
-    },
-    paint: {
-      "text-color": MAP_PALETTE.white,
-      "text-halo-color": MAP_PRICE_HALO,
-      "text-halo-width": 1,
-      "text-halo-blur": 0,
-    },
-  };
-
-  const hitLayer: CircleLayerSpecification = {
-    id: SALE_HIT_LAYER_ID,
-    type: "circle",
-    source: SALES_SOURCE_ID,
-    filter: ["!", ["has", "point_count"]],
-    paint: {
-      "circle-radius": HIT_RADIUS,
-      "circle-color": MAP_PALETTE.navy,
-      "circle-opacity": 0.01,
-    },
-  };
-
-  map.addLayer(clusterLayer);
-  map.addLayer(clusterCountLayer);
-  map.addLayer(activeLayer);
-  map.addLayer(salePointLayer);
-  map.addLayer(approxRingLayer);
-  map.addLayer(salePriceLayer);
-  map.addLayer(pepiteGlyphLayer);
-  map.addLayer(clusterPepiteLayer);
-  map.addLayer(hitLayer);
-}
-
-function updateActiveLayer(map: MapboxMap, activeId: string | null | undefined) {
-  if (!map.getLayer(SALE_ACTIVE_LAYER_ID)) return;
-  const filter: MapboxFilter = activeId ? ["==", ["get", "saleId"], activeId] : EMPTY_ACTIVE_FILTER;
-  map.setFilter(SALE_ACTIVE_LAYER_ID, filter);
 }
 
 function centerMapOnFrance(map: MapboxMap, animate: boolean, container: HTMLDivElement | null) {

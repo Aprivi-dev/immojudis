@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { bidVerdict, bidVerdictSentence, BID_VERDICT_LABEL } from "@/lib/bid-verdict";
 import { formatNumber, formatPrice } from "@/lib/format";
+import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import { ArrowRight, Check } from "./HomeIcons";
 import { useCountTo } from "./use-count-to";
 import { useDemoLoop } from "./use-demo-loop";
@@ -27,7 +28,9 @@ export type ExamplePhotoProps = {
   radiusM: number;
   sameBuildingYear: number | null;
   sameBuildingPrice: number | null;
-  startingGapPct: number;
+  /** Mise à prix au m² et médiane des ventes DVF (biens libres) : deux faits, sans écart. */
+  startingPricePerM2: number;
+  medianPricePerM2: number;
   dpe: string | null;
   presets: ExamplePhotoPreset[];
 };
@@ -66,7 +69,14 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
           },
         ]
       : []),
-    { label: "Mise à prix face au marché", value: `−${formatNumber(props.startingGapPct)} %` },
+    // Bien occupé : la mise à prix et la médiane des ventes de biens libres côte à côte, sans écart
+    // ni « sous le marché » (comme `HomeTryExample`).
+    {
+      label: "Mise à prix au m² / médiane des ventes de biens libres",
+      value: nonBreakingUnits(
+        `${formatNumber(props.startingPricePerM2)} / ${formatNumber(props.medianPricePerM2)} €/m²`,
+      ),
+    },
     { label: "Occupation", value: "À confirmer", warn: true },
     ...(props.dpe ? [{ label: "DPE", value: props.dpe }] : []),
     { label: "Frais, travaux, portage", value: "Chiffrés" },
@@ -139,7 +149,7 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
         <div>
           <div className={styles.exampleTiles}>
             <div className={styles.valueTile}>
-              <span className={styles.tileLabel}>Estimation</span>{" "}
+              <span className={styles.tileLabel}>Valeur d’un bien libre comparable</span>{" "}
               <p className={styles.tileAmount}>{formatPrice(props.value)}</p>
               {range ? <span className={styles.tileNote}>Fourchette : {range}</span> : null}
             </div>

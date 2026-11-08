@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   enforce: vi.fn(),
   record: vi.fn(),
+  entered: vi.fn(),
+  enteredSurface: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -17,7 +19,11 @@ vi.mock("@/lib/property-reports", () => ({
   assertFeatureEntitlementVia: mocks.entitlement,
   featureIncludedForSale: mocks.included,
 }));
-vi.mock("@/lib/sale-market-estimates", () => ({ refreshSaleValuationOnDemand: mocks.refresh }));
+vi.mock("@/lib/sale-market-estimates", () => ({
+  refreshSaleValuationOnDemand: mocks.refresh,
+  estimateSaleValueWithEnteredSurface: mocks.entered,
+}));
+vi.mock("@/lib/favorite-dossier", () => ({ getFavoriteEnteredSurface: mocks.enteredSurface }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
 vi.mock("@/lib/account-product-events.server", () => ({
@@ -165,21 +171,85 @@ describe("POST /api/market-estimate sale readiness", () => {
       expect(response.status).toBe(200);
       expect(from).toHaveBeenCalledWith("v_auction_sales_discovery");
       expect(from).not.toHaveBeenCalledWith("v_auction_sales_app");
+      // Exact shape (toEqual): the real count of sales, the effective sample size the ceiling
+      // reads for fragility, the engine and the public gate; nothing else of the estimate.
       expect(body.estimate).toEqual({
         source: "DVF normalisé",
+        engineKind: "comparable_ensemble",
         sourceUpdatedAt: "2026-09-01T00:00:00.000Z",
         subjectSurfaceEstimated: false,
         estimatedValueEur: 210_000,
         actionable: true,
         qualityLabel: "correcte",
-        sampleSize: 9,
+        sampleSize: 14,
+        effectiveSampleSize: 9,
         medianPricePerM2: 3_500,
         p75PricePerM2: 3_900,
+        publicGatePassed: false,
       });
       expect(body.computedAt).toBe("2026-10-01T00:00:00.000Z");
       expect(JSON.stringify(body)).not.toMatch(
         /recentTransactions|addressHistory|p10PricePerM2|p90PricePerM2|HighEur|LowEur|commune/,
       );
+    });
+
+    describe("surface entered by the account (« Mon dossier »)", () => {
+      const enteredRequest = (body: Record<string, unknown> = { enteredSurface: true }) =>
+        new Request("https://example.test/api/market-estimate", {
+          method: "POST",
+          headers: { authorization: "Bearer token" },
+          body: JSON.stringify({ saleId, ...body }),
+        });
+
+      it("recomputes the value on the surface read on the account, never on one sent by the browser", async () => {
+        authWithVisibleSale(true);
+        mocks.enteredSurface.mockResolvedValue(75);
+        mocks.entered.mockResolvedValue({
+          ok: true,
+          error: null,
+          estimate,
+          status: "ready",
+          computedAt: "2026-11-08T00:00:00.000Z",
+        });
+
+        const response = await POST(enteredRequest({ enteredSurface: true, surfaceM2: 9_999 }));
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(mocks.enteredSurface).toHaveBeenCalledWith({ auth: expect.anything(), saleId });
+        expect(mocks.entered).toHaveBeenCalledWith(saleId, 75);
+        expect(mocks.refresh).not.toHaveBeenCalled();
+        // Only what the ceiling reads, even for Analyse; nothing stored, measured or cached.
+        expect(JSON.stringify(body)).not.toMatch(/recentTransactions|addressHistory|commune/);
+        expect(body.estimate.estimatedValueEur).toBe(210_000);
+        expect(mocks.record).not.toHaveBeenCalled();
+        expect(response.headers.get("cache-control")).toBe("private, no-store");
+      });
+
+      it("answers 404 without an entered surface and 409 when the listing publishes one", async () => {
+        authWithVisibleSale(true);
+        mocks.enteredSurface.mockResolvedValue(null);
+        expect((await POST(enteredRequest())).status).toBe(404);
+        expect(mocks.entered).not.toHaveBeenCalled();
+
+        mocks.enteredSurface.mockResolvedValue(75);
+        mocks.entered.mockResolvedValue(null);
+        expect((await POST(enteredRequest())).status).toBe(409);
+      });
+
+      it("keeps the rights of the sale: no unlock, no recomputed value", async () => {
+        authWithVisibleSale(true);
+        mocks.included.mockResolvedValue(false);
+        mocks.entitlement.mockRejectedValue(
+          Object.assign(new Error("Estimation de marché réservée à l’offre Analyse."), {
+            status: 403,
+          }),
+        );
+        const response = await POST(enteredRequest());
+        expect(response.status).toBeGreaterThanOrEqual(400);
+        expect(mocks.enteredSurface).not.toHaveBeenCalled();
+        expect(mocks.entered).not.toHaveBeenCalled();
+      });
     });
   });
 

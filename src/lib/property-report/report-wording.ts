@@ -1,4 +1,5 @@
 import { FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime";
+import { formatDate } from "@/lib/format";
 
 /**
  * Vocabulaire des rapports enregistrés (PDF, dossier de financement, page partagée), choisi d'après
@@ -85,4 +86,16 @@ export function reportWording(regimeKey: unknown): ReportWording {
       ? "Plafond inférieur à la première offre possible : ce scénario ne permet pas de faire une offre."
       : "Plafond inférieur à la mise à prix : ce scénario ne permet pas d’enchérir au prix de départ.",
   };
+}
+
+/**
+ * Avertissement en tête du rapport partagé public (proposition juridique J1, validée le 08/11/2026) :
+ * le destinataire du lien n'a pas accepté les CGU. Même module que le pied de page du PDF
+ * (`footerSentence`), pour que les mentions des rapports restent au même endroit. `calculatedAt` :
+ * date de génération du rapport ; absente ou illisible, la phrase est donnée sans date.
+ */
+export function reportIndicativeNotice(calculatedAt: string | null | undefined): string {
+  const date = calculatedAt ? new Date(calculatedAt) : null;
+  const when = date && !Number.isNaN(date.getTime()) ? ` le ${formatDate(calculatedAt)}` : "";
+  return `Rapport indicatif calculé automatiquement${when}. Ni conseil, ni recommandation d’enchérir ou de faire une offre, ni garantie de prix ou de rendement. Vérifiez les pièces officielles avec votre conseil (avocat ou notaire).`;
 }

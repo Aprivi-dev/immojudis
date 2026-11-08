@@ -38,8 +38,10 @@ import {
   normalizeStringList,
   normalizeUrbanPlanningItems,
   normalizeValuationCheckpoints,
+  opportunityScoreLabel,
 } from "./serialization";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
+import { rentabilityLabel } from "@/lib/profitability";
 export const REPORT_PDF_HEADINGS = [
   "Bien",
   "Estimation marché",
@@ -164,6 +166,10 @@ export function reportToPdfLines(
   const valuationRiskFlags = normalizeStringList(valuationAudit.riskFlags);
   const opportunity = asRecord(analysis.opportunity);
   const rentabilityScore = asRecord(opportunity.rentabilityScore);
+  // Libellés recalculés depuis le score : un rapport enregistré avant le 08/11/2026 porte encore
+  // « Très rentable à confirmer » ou « Très favorable » dans son instantané.
+  const opportunityScore = numberValue(opportunity.score);
+  const rentabilityScoreValue = numberValue(rentabilityScore.score);
   const rentNotice = rentSourceNotice(reportRentReference(opportunity.rentReference));
   const personalRentalScenario = asRecord(ceiling.personalRentalScenario);
   const personalSimulation = describeReportSimulation(ceiling.personalSimulation);
@@ -377,7 +383,7 @@ export function reportToPdfLines(
       : []),
     "",
     "Lecture opportunité",
-    `Score du dossier, distinct du scénario personnel: ${opportunity.score != null ? `${opportunity.score}/100 - ${stringOrNumberValue(opportunity.label, "à qualifier")}` : "à compléter"}`,
+    `Score du dossier, distinct du scénario personnel: ${opportunityScore != null ? `${opportunityScore}/100 - ${opportunityScoreLabel(opportunityScore)}` : "à compléter"}`,
     // Écart absent : la phrase de la fiche (bien occupé, écart non significatif) plutôt qu'un tiret.
     `Décote apparente: ${
       numberValue(opportunity.apparentDiscountPct) != null
@@ -424,8 +430,8 @@ export function reportToPdfLines(
       : [
           "Estimation locative indicative",
           "Hypothèses: loyer estimé par défaut et paramètres de vacance, charges, taxe foncière, assurance et financement du modèle.",
-          rentabilityScore.score != null
-            ? `Score de rentabilité : ${rentabilityScore.score}/100 - ${stringOrNumberValue(rentabilityScore.label, "à qualifier")}`
+          rentabilityScoreValue != null
+            ? `Score de rentabilité : ${rentabilityScoreValue}/100 - ${rentabilityLabel(rentabilityScoreValue)}`
             : `Score de rentabilité : indisponible (${stringOrNumberValue(rentabilityScore.reason, "données incomplètes")})`,
           rentabilityScore.netYieldPct != null
             ? `${rentNotice ? "Rendement estimé, charges comprises" : "Rendement net estimé"} : ${formatPercent(rentabilityScore.netYieldPct)}`

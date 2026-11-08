@@ -513,3 +513,27 @@ describe("rapport au snapshot clairsemé", () => {
     expect(lines).toContain("Décote apparente: Bien occupé : l’écart n’est pas indiqué.");
   });
 });
+
+describe("libellés des scores d'un rapport enregistré avant le 08/11/2026", () => {
+  it("recalcule le libellé depuis le score au lieu de reprendre l'ancien qualificatif", () => {
+    const report = reportWithRentalScenario();
+    report.report_snapshot = {
+      generatedAt: "2026-10-02T10:00:00.000Z",
+      sale: { title: "Maison test" },
+      analysis: {
+        opportunity: {
+          score: 84,
+          label: "Très favorable",
+          rentabilityScore: { score: 82, label: "Très rentable à confirmer" },
+        },
+      },
+    } as Json;
+    report.ceiling_snapshot = { available: true, maxBid: 80_000 } as Json;
+    const text = reportToPdfLines(report, buildPlanEntitlements("analyse")).join("\n");
+    expect(text).toContain(
+      "Score du dossier, distinct du scénario personnel: 84/100 - Score élevé (hypothèses à confirmer)",
+    );
+    expect(text).toContain("Score de rentabilité : 82/100 - Score élevé (hypothèses à confirmer)");
+    expect(text).not.toMatch(/Très favorable|Très rentable/);
+  });
+});

@@ -12,6 +12,11 @@ import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
+import {
+  estimateSourceNote,
+  observedMedianPricePerM2,
+  passesPublicEstimateGate,
+} from "@/lib/market-estimate-display";
 import type { AuctionSale } from "@/lib/types";
 
 const OutcomeForecast = dynamic(() =>
@@ -76,11 +81,13 @@ export function MarketSnapshot({
   const aggregate = estimate?.comparableMode === "geographic_aggregate";
   const count = history ? estimate.addressHistory.length : (estimate?.sampleSize ?? 0);
   // La valeur mise en phrase, chiffres surlignés : seulement pour des ventes comparables autour du
-  // bien (ni l'historique d'une adresse, ni une moyenne départementale), avec une valeur exploitable.
+  // bien (ni l'historique d'une adresse, ni une moyenne départementale), avec une valeur qui passe
+  // la porte publique ; sinon la fourchette seule, plus bas.
   const value =
-    estimate?.actionable && !history && !aggregate && (estimate.estimatedValueEur ?? 0) > 0
-      ? Math.round(estimate.estimatedValueEur! / 1000) * 1000
+    estimate && !history && !aggregate && passesPublicEstimateGate(estimate)
+      ? Math.round((estimate.estimatedValueEur ?? 0) / 1000) * 1000
       : null;
+  const hybrid = estimate?.engineKind === "hybrid_lightgbm";
   const months = estimate ? Math.round(estimate.yearsBack * 12) : 0;
   return (
     <>
@@ -95,8 +102,11 @@ export function MarketSnapshot({
               </span>
             </>
           ) : null}
-          , d’après {count} vente{count > 1 ? "s" : ""} comparable{count > 1 ? "s" : ""} à moins de{" "}
-          {estimate.radiusM} m{months > 0 ? ` sur ${months} mois` : ""}.
+          , {estimateSourceNote(estimate)}
+          {hybrid
+            ? ""
+            : ` à moins de ${estimate.radiusM} m${months > 0 ? ` sur ${months} mois` : ""}`}
+          .
         </p>
       ) : null}
       <section className={panelStyles.marketSnapshot} aria-label="Repères de marché">
@@ -153,6 +163,7 @@ export function MarketEvidence({
       }))
     : (marketEstimate?.recentTransactions ?? []);
   const usesAggregateStatistics = marketEstimate?.comparableMode === "geographic_aggregate";
+  const observedMedian = marketEstimate ? observedMedianPricePerM2(marketEstimate) : null;
   const usesParkingSales = marketEstimate?.comparableMode === "unit_sales";
   const sampleCount = usesAddressHistory
     ? (marketEstimate?.addressHistory.length ?? 0)
@@ -177,11 +188,13 @@ export function MarketEvidence({
           icon={<BadgeEuro className="h-5 w-5" />}
           label="Valeur estimée"
           value={
-            marketEstimate?.estimatedValueEur
+            marketEstimate?.estimatedValueEur && passesPublicEstimateGate(marketEstimate)
               ? formatPrice(Math.round(marketEstimate.estimatedValueEur / 1000) * 1000)
-              : marketLoading
-                ? "Calcul…"
-                : "À compléter"
+              : marketEstimate?.estimatedValueLowEur && marketEstimate.estimatedValueHighEur
+                ? `${formatPrice(marketEstimate.estimatedValueLowEur)} – ${formatPrice(marketEstimate.estimatedValueHighEur)}`
+                : marketLoading
+                  ? "Calcul…"
+                  : "À compléter"
           }
         />
         <MarketFact
@@ -190,8 +203,8 @@ export function MarketEvidence({
           value={
             marketEstimate?.medianUnitPriceEur
               ? `Médiane ${formatPrice(marketEstimate.medianUnitPriceEur)} / place`
-              : marketEstimate?.medianPricePerM2
-                ? `Médiane ${formatPricePerM2(marketEstimate.medianPricePerM2)}`
+              : observedMedian
+                ? `Médiane ${formatPricePerM2(observedMedian)}`
                 : "Échantillon à compléter"
           }
         />

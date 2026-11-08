@@ -4,6 +4,7 @@ import {
   ceilingMarketContext,
   ceilingMarketEstimate,
   isDetailedMarketEstimate,
+  showsPointEstimate,
 } from "@/lib/market-estimate-ceiling";
 
 const detailed: MarketEstimate = {
@@ -65,15 +66,37 @@ describe("ceiling projection of the market estimate", () => {
   it("keeps only what the bid ceiling reads", () => {
     expect(ceilingMarketEstimate(detailed)).toEqual({
       source: "DVF normalisé",
+      engineKind: "comparable_ensemble",
       sourceUpdatedAt: "2026-09-01T00:00:00.000Z",
       subjectSurfaceEstimated: true,
       estimatedValueEur: 210_000,
       actionable: true,
       qualityLabel: "correcte",
-      sampleSize: 9,
+      sampleSize: 14,
+      effectiveSampleSize: 9,
       medianPricePerM2: 3_500,
       p75PricePerM2: 3_900,
+      publicGatePassed: true,
     });
+  });
+
+  it("sends the whole number of sales for display and keeps the effective one for the ceiling (D4)", () => {
+    const projected = ceilingMarketEstimate({
+      ...detailed,
+      sampleSize: 9,
+      effectiveSampleSize: 5.3,
+    });
+    expect(projected.sampleSize).toBe(9);
+    expect(projected.effectiveSampleSize).toBe(5.3);
+  });
+
+  it("says whether the estimate passes the public gate, as the detailed estimate does (D2)", () => {
+    const thin = { ...detailed, sampleSize: 5, effectiveSampleSize: 3.4 };
+    expect(showsPointEstimate(detailed)).toBe(true);
+    expect(showsPointEstimate(ceilingMarketEstimate(detailed))).toBe(true);
+    expect(showsPointEstimate(thin)).toBe(false);
+    expect(showsPointEstimate(ceilingMarketEstimate(thin))).toBe(false);
+    expect(showsPointEstimate(null)).toBe(false);
   });
 
   it("sends no distribution, range, comparable, address history or location", () => {
@@ -90,7 +113,6 @@ describe("ceiling projection of the market estimate", () => {
       "estimatedValueHighEur",
       "recentTransactions",
       "addressHistory",
-      "effectiveSampleSize",
       "totalNearbySampleSize",
       "commune",
       "radiusM",
@@ -100,9 +122,10 @@ describe("ceiling projection of the market estimate", () => {
     }
   });
 
-  it("falls back to the plain sample size", () => {
+  it("leaves the effective sample size out when the estimate has none", () => {
     const { effectiveSampleSize: _unused, ...rest } = detailed;
     expect(ceilingMarketEstimate(rest).sampleSize).toBe(14);
+    expect(ceilingMarketEstimate(rest)).not.toHaveProperty("effectiveSampleSize");
   });
 
   it("keeps the status fields of the context and an empty estimate", () => {
