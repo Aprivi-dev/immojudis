@@ -622,7 +622,9 @@
   column-gap: 12px;
   padding-block: 32px;
   border-top: 1px solid var(--line);
-  scroll-margin-top: 150px;
+  /* S'ajoute au `scroll-padding-top` de `html` (9rem, sommaire `data-sale-tabs`) : 150 px en tout,
+     sous la pilule du site et le sommaire. */
+  scroll-margin-top: 6px;
 }
 
 .toc + .sec {
@@ -1518,7 +1520,8 @@
     align-items: flex-start;
     gap: 28px;
     padding-block: 48px;
-    scroll-margin-top: 170px;
+    /* 9rem de `scroll-padding-top` + 26 px : 170 px en tout. */
+    scroll-margin-top: 26px;
   }
 
   .secNumber {

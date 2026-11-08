@@ -1352,6 +1352,24 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     }
   });
 
+  it("réserve la hauteur du sommaire collant au défilement, sans doubler l'écart des ancres (P10 a)", async () => {
+    renderFull();
+    const toc = screen.getByRole("navigation", { name: "Sommaire de la fiche" });
+    expect(toc.hasAttribute("data-sale-tabs")).toBe(true);
+    const { readFileSync } = await import("node:fs");
+    const site = readFileSync("src/styles.css", "utf8");
+    expect(site).toMatch(
+      /html:has\(\[data-sale-tabs\]\) \{\s*scroll-padding-top: var\(--sale-sticky-offset\);/,
+    );
+    expect(site).toMatch(/--sale-sticky-offset: 9rem;/);
+    // 9rem (144 px) + la marge des sections : la même place qu'avant, 150 px puis 170 px.
+    const css = readFileSync("src/components/SalePublicPreview.module.css", "utf8");
+    const margins = [...css.matchAll(/\.sec \{[^}]*scroll-margin-top: (\d+)px;/g)].map(
+      (match) => 144 + Number(match[1]),
+    );
+    expect(margins).toEqual([150, 170]);
+  });
+
   it("renumérote la suite quand une section n'a rien à dire (pas de marché local, pas d'alerte)", () => {
     renderFull({ department: null }, false);
     const links = within(
