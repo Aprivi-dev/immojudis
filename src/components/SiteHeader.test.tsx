@@ -72,6 +72,24 @@ describe("SiteHeader", () => {
     expect(screen.queryByRole("link", { name: "Connexion" })).toBeNull();
   });
 
+  it("garde la vente dans « S’inscrire » et « Créer un compte » sur une fiche, pas ailleurs", () => {
+    const sale = "/sales/4655881c-249d-4eab-beba-f2624d8a1af0";
+    state.pathname = sale;
+    const { unmount } = render(<SiteHeader />);
+    const expected = `/login?redirect=${encodeURIComponent(sale)}&mode=investor&reason=fiche`;
+    expect(screen.getByRole("link", { name: "S’inscrire" }).getAttribute("href")).toBe(expected);
+    expect(screen.getByRole("link", { name: "Créer un compte" }).getAttribute("href")).toBe(
+      expected,
+    );
+    unmount();
+
+    state.pathname = "/sales";
+    render(<SiteHeader />);
+    expect(screen.getByRole("link", { name: "S’inscrire" }).getAttribute("href")).toBe(
+      "/login?mode=investor",
+    );
+  });
+
   it("garde le bouton du menu dans la pilule à 320 px : « S’inscrire » se replie dans le menu sous 360 px", () => {
     render(<SiteHeader />);
     const signup = screen.getByRole("link", { name: "S’inscrire" });

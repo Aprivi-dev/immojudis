@@ -16,7 +16,7 @@ import {
   signupTrialDateLabel,
 } from "@/lib/launch-offer";
 import { pathWithSearch } from "@/lib/navigation";
-import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
+import { firstSearchToUrl, SALE_CEILING_ANCHOR, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatPrice } from "@/lib/format";
@@ -25,7 +25,7 @@ import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
-  "w-full rounded-lg border border-border bg-background px-4 py-3 text-base text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold";
+  "w-full rounded-lg border border-border bg-background px-4 py-3 text-base text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
 
 /** L'essai de ce compte est en cours (`trialEndsAt` dans le futur), et non l'interrupteur de l'offre. */
 function trialRunning(plan: PlanEntitlements | undefined, now: number): boolean {
@@ -59,9 +59,13 @@ function accessSentence(
 
 export function InvestorOnboarding({
   returnTo,
+  initialArea = "",
   unlockHighlights = UNLOCK_HIGHLIGHTS_INLINE_TEXT,
 }: {
+  /** La fiche d'où part l'inscription : le dernier bouton y ramène, sur son plafond. */
   returnTo?: string;
+  /** Secteur prérempli : le département de la vente d'origine (`onboardingAreaForSale`). */
+  initialArea?: string;
   /**
    * Ce qu'un déblocage ouvre, composé par la page serveur avec les régimes de frais ouverts
    * (`unlockHighlightsInlineText`) ; absent : le texte des régimes ouverts par défaut.
@@ -71,7 +75,11 @@ export function InvestorOnboarding({
   const router = useRouter();
   const launchOffer = useLaunchOffer().active;
   const [step, setStep] = useState(0);
-  const [search, setSearch] = useState<FirstSearch>({ area: "", maxPrice: "", homeType: "" });
+  const [search, setSearch] = useState<FirstSearch>({
+    area: initialArea,
+    maxPrice: "",
+    homeType: "",
+  });
   // Jamais pré-cochée : la première alerte et son email récapitulatif sont un choix explicite.
   const [wantsAlert, setWantsAlert] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -118,7 +126,10 @@ export function InvestorOnboarding({
       });
       if (result.status !== "created") return;
     }
-    router.push(pathWithSearch("/sales", criteria));
+    // Inscription lancée depuis une fiche : retour à la vente, sur son plafond.
+    router.push(
+      returnTo ? `${returnTo}#${SALE_CEILING_ANCHOR}` : pathWithSearch("/sales", criteria),
+    );
   }
 
   return (
@@ -333,7 +344,9 @@ export function InvestorOnboarding({
               {saving
                 ? "Création de l’alerte…"
                 : step === steps.length - 1
-                  ? "Voir les biens"
+                  ? returnTo
+                    ? "Voir le plafond de cette vente"
+                    : "Voir les biens"
                   : "Continuer"}
             </Button>
           </div>

@@ -430,40 +430,43 @@ export function SalePublicPreview({
       ) : null}
     </dl>
   );
-  // Date, lieu et conditions de la vente : la liste de la fiche de vente, sous la mise à prix.
+  // Date de la vente, sous la mise à prix ; l'inscription la suit (P12 : le bouton reste en vue dans
+  // le panneau collant, à partir de 1024 px). La mise en garde de l'agenda reste sous la date.
+  const saleDateRow = hearingDate ? (
+    <div className={styles.saleFact}>
+      <dt>{procedure.venueType === "tribunal" ? "Date de l’audience" : "Date de la vente"}</dt>
+      <dd>
+        <span className={styles.num}>
+          {hearingDate}
+          {hearingTime ? (
+            <>
+              {" "}
+              <span className={styles.nowrap}>à {hearingTime}</span>
+            </>
+          ) : null}
+        </span>
+        {pastDate ? (
+          <span className={styles.pastDate} data-testid="past-sale-date">
+            Date de vente passée
+          </span>
+        ) : null}
+        {procedure.venueType === "tribunal" && !pastDate ? (
+          <SaleCalendarButton saleId={saleId} />
+        ) : null}
+      </dd>
+    </div>
+  ) : procedure.venueType === "notary" ? (
+    // Comme la carte de /sales (« Date à confirmer ») : une vente notariale sans date n'a pas
+    // à laisser un vide dans la fiche.
+    <div className={styles.saleFact}>
+      <dt>Date de la vente</dt>
+      <dd data-testid="sale-date-to-confirm">À confirmer</dd>
+    </div>
+  ) : null;
+  // Lieu et conditions de la vente, sous l'inscription : « Trouver un avocat » et « Estimer les
+  // frais » y restent, sous « Pour enchérir ».
   const saleFactRows = (
     <>
-      {hearingDate ? (
-        <div className={styles.saleFact}>
-          <dt>{procedure.venueType === "tribunal" ? "Date de l’audience" : "Date de la vente"}</dt>
-          <dd>
-            <span className={styles.num}>
-              {hearingDate}
-              {hearingTime ? (
-                <>
-                  {" "}
-                  <span className={styles.nowrap}>à {hearingTime}</span>
-                </>
-              ) : null}
-            </span>
-            {pastDate ? (
-              <span className={styles.pastDate} data-testid="past-sale-date">
-                Date de vente passée
-              </span>
-            ) : null}
-            {procedure.venueType === "tribunal" && !pastDate ? (
-              <SaleCalendarButton saleId={saleId} />
-            ) : null}
-          </dd>
-        </div>
-      ) : procedure.venueType === "notary" ? (
-        // Comme la carte de /sales (« Date à confirmer ») : une vente notariale sans date n'a pas
-        // à laisser un vide dans la fiche.
-        <div className={styles.saleFact}>
-          <dt>Date de la vente</dt>
-          <dd data-testid="sale-date-to-confirm">À confirmer</dd>
-        </div>
-      ) : null}
       {tribunal ? (
         <div className={styles.saleFact}>
           <dt>Lieu</dt>
@@ -575,7 +578,7 @@ export function SalePublicPreview({
   );
   const followLink = loginPathWithRedirect(saleDetailPath(saleId, returnTo), { reason: "favori" });
   const salesReturn = salesReturnHref(returnTo, preview.id ?? saleId);
-  // Sous la liste des faits : l'inscription, les actions secondaires et la ligne d'accès commune.
+  // Sous la date de la vente : l'inscription, les actions secondaires et la ligne d'accès commune.
   // Avec une session détectée, la page dit qu'elle vérifie le compte.
   const signupBlock = (
     <div className={styles.signup} data-testid="public-signup">
@@ -749,8 +752,9 @@ export function SalePublicPreview({
             <div className={styles.panel}>
               <p className={styles.eyebrow}>Fiche de vente</p>
               {priceBlock}
-              <dl className={styles.saleFacts}>{saleFactRows}</dl>
+              {saleDateRow ? <dl className={styles.saleFacts}>{saleDateRow}</dl> : null}
               {signupBlock}
+              <dl className={styles.saleFacts}>{saleFactRows}</dl>
             </div>
             <Link href="/simulateur-frais-encheres" className={styles.sideLink}>
               <span>

@@ -40,7 +40,8 @@ export function SalePublicMobileBar({
     if (!visible) return;
     const root = document.documentElement;
     const previous = root.style.scrollPaddingBottom;
-    root.style.scrollPaddingBottom = "88px";
+    // La barre est posée sur le bandeau des cookies tant qu'il est là : sa hauteur s'ajoute.
+    root.style.scrollPaddingBottom = "calc(88px + var(--cookie-banner-height, 0px))";
     return () => {
       root.style.scrollPaddingBottom = previous;
     };
