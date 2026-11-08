@@ -27,11 +27,8 @@ describe("fiche vente : grilles pilotées par la largeur de leur bloc", () => {
     const layout = read("src/components/sale-detail/SaleDetailLayout.module.css");
     expect(layout).not.toMatch(/\.pair\b/);
     expect(rule(layout, ".stack")).not.toContain("grid-template-columns");
-    const view = read("src/components/SimplifiedSaleDetailView.tsx");
-    const section = view.slice(
-      view.indexOf('<DetailSection id="travaux-financement">'),
-      view.indexOf('<DetailSection id="pieces">'),
-    );
+    const section = read("src/components/sale-detail/SaleDetailWorksFinancingSection.tsx");
+    expect(section).toContain('<DetailSection id="travaux-financement">');
     expect(section).toContain("layoutStyles.stack");
     expect(section.indexOf("<ListingWorks")).toBeLessThan(section.indexOf("<FinancingSimulator"));
   });
