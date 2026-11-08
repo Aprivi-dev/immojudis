@@ -51,6 +51,7 @@ export function CeilingPlanner({
   valueReason,
   dpeClass = null,
   saveAction = null,
+  surfaceEntryHref = null,
 }: {
   hypotheses: CeilingHypotheses;
   plan: CeilingPlan;
@@ -64,6 +65,11 @@ export function CeilingPlanner({
   dpeClass?: string | null;
   /** « Enregistrer ce plafond dans mon dossier », sous le calcul et le tableau des travaux. */
   saveAction?: ReactNode;
+  /**
+   * Ancre du champ « Surface lue dans les pièces » de « Mon dossier », quand l'utilisateur peut y
+   * saisir la surface que l'annonce ne donne pas : proposée sous « À compléter : surface manquante ».
+   */
+  surfaceEntryHref?: string | null;
 }) {
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
   useCeilingViewEvent(plan.available);
@@ -144,6 +150,23 @@ export function CeilingPlanner({
                     : `À compléter : ${gap.reason}`}
                 </div>
               )}
+              {gap?.reason === "surface manquante" && surfaceEntryHref ? (
+                <a
+                  href={surfaceEntryHref}
+                  className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4"
+                >
+                  Saisir la surface lue dans les pièces
+                </a>
+              ) : null}
+              {gap == null && hypotheses.surfaceEnteredByUser ? (
+                <p
+                  data-testid="entered-surface"
+                  className="mt-2 text-xs font-semibold text-ink-soft"
+                >
+                  Calculée avec la surface saisie par vous ({Math.round(hypotheses.surface ?? 0)}{" "}
+                  m²), lue dans les pièces.
+                </p>
+              ) : null}
               {gap == null && plan.available && propertyTaxMissing(hypotheses) ? (
                 <p
                   data-testid="property-tax-missing"

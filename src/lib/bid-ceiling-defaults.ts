@@ -23,7 +23,11 @@ import {
   registrationRateForDepartment,
 } from "@/lib/profitability";
 import { isRentApplicable, resolveRentReference, type RentReference } from "@/lib/rent-reference";
-import { getMarketValuationSurfaces } from "@/lib/surface";
+import {
+  acceptsEnteredBuiltSurface,
+  getMarketValuationSurfaces,
+  validEnteredSurface,
+} from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
 // Frais préalables retenus quand l'annonce ne les donne pas : valeur unique de `profitability.ts`.
@@ -120,6 +124,8 @@ export function occupationCaseForStatus(status: string | null | undefined): Occu
  * le calcul est celui du tribunal (barème, frais par défaut et consignation d'origine), sans que
  * l'hypothèse porte de régime. `rentReference` : la référence de loyer de la vente (carte ANIL à la
  * commune, lue par le serveur) ; absente, le loyer départemental sert de repli.
+ * `enteredSurfaceM2` : la surface que l'utilisateur a lue dans les pièces (« Mon dossier »), retenue
+ * seulement quand l'annonce ne publie pas la surface bâtie (`acceptsEnteredBuiltSurface`).
  */
 export function buildCeilingHypotheses(
   sale: AuctionSale,
@@ -127,9 +133,14 @@ export function buildCeilingHypotheses(
   choices: CeilingUserChoices = {},
   regime: FeeRegime | null = null,
   rentReference: RentReference | null = null,
+  enteredSurfaceM2: number | null = null,
 ): CeilingHypotheses {
   const surfaces = getMarketValuationSurfaces(sale);
-  const surface = surfaces.builtSurfaceM2;
+  // Surface lue dans les pièces par l'utilisateur (« Mon dossier ») : elle ne remplace qu'une surface
+  // que l'annonce ne publie pas (absente ou estimée), jamais une surface publiée.
+  const entered = acceptsEnteredBuiltSurface(sale) ? validEnteredSurface(enteredSurfaceM2) : null;
+  const surface = entered ?? surfaces.builtSurfaceM2;
+  const surfaceEstimated = entered == null && surfaces.builtSurfaceEstimated;
   const apartment = /appart|apartment|studio|duplex|loft/i.test(sale.property_type ?? "");
   // Un bien qui n'est pas un logement (terrain, parking, local…) n'a aucun loyer de référence.
   const reference = isRentApplicable(sale)
@@ -171,8 +182,9 @@ export function buildCeilingHypotheses(
     profile: choices.profile ?? "equilibre",
     customMarginPct: choices.customMarginPct ?? null,
     surface,
+    ...(entered != null ? { surfaceEnteredByUser: true } : {}),
     startingPrice,
-    value: valueHypothesis(estimate, surface, surfaces.builtSurfaceEstimated, choices),
+    value: valueHypothesis(estimate, surface, surfaceEstimated, choices),
     works: {
       key: works.key,
       amount: Math.max(0, Math.round(works.amount || 0)),

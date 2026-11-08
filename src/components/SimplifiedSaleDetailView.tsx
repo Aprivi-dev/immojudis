@@ -73,6 +73,7 @@ import layoutStyles from "@/components/sale-detail/SaleDetailLayout.module.css";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
 import {
+  fetchFavoriteDossier,
   fetchPrecomputedMarketEstimate,
   fetchSaleAiReviewProjections,
   fetchSaleFactReliabilities,
@@ -84,16 +85,29 @@ import { estimateSourceNote } from "@/lib/market-estimate-display";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import { ceilingConfidence, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
-import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
+import {
+  assessSaleCeilingInputs,
+  computeSaleCeiling,
+  withEnteredSurface,
+} from "@/lib/sale-ceiling";
 import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
 import { investorProfileFinancingDraft, investorProfileToChoices } from "@/lib/investor-profile";
-import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
+import {
+  acceptsEnteredBuiltSurface,
+  getMarketValuationSurfaces,
+  getSaleSurface,
+} from "@/lib/surface";
 import { PriceScale } from "@/components/sale-detail/PriceScale";
 import { AnalysisLead, hypothesesSummary } from "@/components/sale-detail/SaleAnalysisPanel";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
-import { ceilingGap, UNPROFITABLE_HEADLINE, valueGapReason } from "@/lib/bid-ceiling-gaps";
+import {
+  ceilingGap,
+  UNPROFITABLE_HEADLINE,
+  unlockCeilingGap,
+  valueGapReason,
+} from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
 import { LaunchOfferIncludedTag } from "@/components/LaunchOfferIncludedTag";
@@ -117,7 +131,7 @@ import {
 } from "@/lib/ai-review-guard";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatSurface } from "@/lib/format";
 import * as queryKeys from "@/lib/query-keys";
 import {
   type LegacyDetail,
@@ -459,7 +473,7 @@ function SaleDetailWorkspace({
     : null;
   // Les gardes du plafond (conflit de valorisation, champs bloqués par la relecture IA, surface,
   // régime de frais) : `computeSaleCeiling` s'appuie sur le même résultat plus bas.
-  const ceilingInputs = useMemo(
+  const listingCeilingInputs = useMemo(
     () =>
       assessSaleCeilingInputs({
         sale,
@@ -469,6 +483,27 @@ function SaleDetailWorkspace({
       }),
     [aiReviewStatus, openFeeRegimes, resolvedAiReviewProjections, sale],
   );
+  // « Surface lue dans les pièces » (« Mon dossier ») : quand l'annonce ne publie pas la surface
+  // bâtie, celle que le compte a saisie sert à SON plafond. Même requête (même clé) que la carte.
+  const enteredSurfaceAccepted =
+    Boolean(user) &&
+    !publicDemo &&
+    isPersistedSaleId(sale.id) &&
+    !listingCeilingInputs.blocked.critical &&
+    acceptsEnteredBuiltSurface(listingCeilingInputs.displaySale);
+  const dossierQuery = useQuery({
+    queryKey: queryKeys.favoriteDossier(user?.id ?? null, sale.id),
+    queryFn: () => fetchFavoriteDossier(sale.id),
+    enabled: enteredSurfaceAccepted && !authLoading,
+  });
+  const enteredSurfaceM2 = enteredSurfaceAccepted
+    ? (dossierQuery.data?.dossier.userSurfaceM2 ?? null)
+    : null;
+  const ceilingInputs = useMemo(
+    () => withEnteredSurface(listingCeilingInputs, enteredSurfaceM2),
+    [enteredSurfaceM2, listingCeilingInputs],
+  );
+  const surfaceEnteredByUser = ceilingInputs.surfaceEnteredByUser === true;
   const { displaySale, valuationConflict, surface } = ceilingInputs;
   const priceBlocked = ceilingInputs.blocked.price;
   const propertyTypeBlocked = ceilingInputs.blocked.propertyType;
@@ -499,6 +534,8 @@ function SaleDetailWorkspace({
   // Une vente débloquée dont le mode reste inconnu (conditions illisibles) n'a pas de plafond : on ne
   // le promet plus, seul le compte qui n'a pas encore débloqué la vente reçoit les deux termes possibles.
   const ceilingTerms = feeRegime?.labels ?? (access === "discovery" ? venueCeilingTerms : null);
+  // « Surface lue dans les pièces » dans « Mon dossier » : seulement quand elle peut servir au plafond.
+  const surfaceEntryOpen = enteredSurfaceAccepted && ceilingPromised;
   // Action principale de la synthèse et du bloc « À vérifier » : le calcul du plafond quand il est
   // possible, sinon les rendez-vous et contacts du dossier.
   const preparation = ceilingOpen
@@ -541,14 +578,38 @@ function SaleDetailWorkspace({
     refetchInterval: (query) =>
       query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
+  // Surface saisie par le compte : la valeur du plafond est recalculée sur elle par le serveur (rien
+  // n'est stocké). Les blocs de marché détaillés gardent l'estimation de l'annonce.
+  const enteredSurfaceMarketQuery = useQuery({
+    queryKey: queryKeys.enteredSurfaceMarketEstimate(sale.id, user?.id, enteredSurfaceM2 ?? 0),
+    queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id, enteredSurface: true }),
+    enabled:
+      marketAccess &&
+      surfaceEnteredByUser &&
+      marketEstimateOverride == null &&
+      !valuationConflict &&
+      !criticalAnalysisInputsBlocked,
+    staleTime: 24 * 60 * 60_000,
+    retry: false,
+  });
+  const ceilingMarketQuery = surfaceEnteredByUser ? enteredSurfaceMarketQuery : marketQuery;
+  const listingMarketEstimate =
+    !marketAccess || valuationConflict || criticalAnalysisInputsBlocked
+      ? null
+      : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
   // What the ceiling reads: the whole estimate (Analyse) or its ceiling projection (unlock).
   const marketEstimate =
     !marketAccess || valuationConflict || criticalAnalysisInputsBlocked
       ? null
-      : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
+      : (marketEstimateOverride ??
+        (surfaceEnteredByUser
+          ? (enteredSurfaceMarketQuery.data?.estimate ?? null)
+          : (marketQuery.data?.estimate ?? null)));
   // The detailed blocks (range, references, comparables) exist for Analyse only.
   const detailedMarketEstimate =
-    access === "analysis" && isDetailedMarketEstimate(marketEstimate) ? marketEstimate : null;
+    access === "analysis" && isDetailedMarketEstimate(listingMarketEstimate)
+      ? listingMarketEstimate
+      : null;
   // Hypothèses et plan du plafond : la chaîne de `computeSaleCeiling`, la même que celle du rapport.
   const ceiling = useMemo(
     () =>
@@ -585,11 +646,23 @@ function SaleDetailWorkspace({
     : venueCeilingTerms
       ? { label: venueCeilingTerms.ceilingSimulationLabel }
       : null;
-  const marketPending = marketQuery.isLoading && marketEstimate == null;
+  const marketPending = ceilingMarketQuery.isLoading && marketEstimate == null;
   const valueReason = marketPending
     ? "estimation en cours"
-    : valueGapReason({ surface, marketStatus: marketQuery.data?.status });
+    : valueGapReason({ surface, marketStatus: ceilingMarketQuery.data?.status });
   const ceilingMissing = ceilingGap(ceilingPlan, valueReason);
+  // Ce qui empêchera (avant le déblocage) ou empêche (après) le plafond d'être chiffré : la carte du
+  // déblocage le dit avant la confirmation et ne titre pas « plafond débloqué ». Avant le déblocage,
+  // seules les gardes lisibles sur la vente gratuite comptent (surface) ; une estimation ou une
+  // relecture en cours n'est pas un manque.
+  const unlockGap =
+    ceilingTerms && !dossierQuery.isLoading
+      ? unlockCeilingGap({
+          inputs: ceilingInputs,
+          gap: fullData ? ceilingMissing : null,
+          pending: !fullData || marketPending || aiReviewStatus === "loading",
+        })
+      : null;
   const dpeClass = useMemo(() => buildDpeAnalysis(displaySale).class, [displaySale]);
   // Aucun travaux n'est supposé tant que l'utilisateur n'en a pas chiffré.
   const retainedWorks =
@@ -610,7 +683,10 @@ function SaleDetailWorkspace({
       ? financingResult
       : null;
   const reportSimulation = useMemo(() => {
-    if (!ceilingEnabled || !ceilingPlan.available || !ceilingPlan.reachable) return undefined;
+    // Le rapport est recalculé par le serveur sur les données de l'annonce : un plafond qui repose
+    // sur la surface saisie par le compte n'y entre pas (le serveur ne le retrouverait pas).
+    if (!ceilingEnabled || surfaceEnteredByUser || !ceilingPlan.available || !ceilingPlan.reachable)
+      return undefined;
     const rentalScenario = buildReportRentalScenario({
       draft: rentalDraft,
       acquisitionCost: activeFinancingResult?.totalProjectCost ?? projectCosts?.totalCost ?? null,
@@ -634,6 +710,7 @@ function SaleDetailWorkspace({
     ceilingPlan,
     projectCosts,
     rentalDraft,
+    surfaceEnteredByUser,
   ]);
   // Scenario (or « Aucun travaux ») picked in the Travaux tab. Without a ceiling (non-judicial
   // sale), the amount only feeds the displayed budget.
@@ -1080,6 +1157,7 @@ function SaleDetailWorkspace({
                     ceilingTerm: ceilingTerms?.ceilingTerm ?? null,
                     statistics: statisticsAvailable,
                     pepite: pepite != null,
+                    ceilingGap: unlockGap,
                   }}
                   announce={justUnlocked}
                   onUnlocked={(result) => {
@@ -1094,6 +1172,7 @@ function SaleDetailWorkspace({
                   saleId={sale.id}
                   calculatedCeiling={heroCeiling}
                   calculationPending={ceilingEnabled && marketPending}
+                  surfaceEntry={surfaceEntryOpen}
                   // « Mon dossier » est l'unique porte du dossier de travail (offre Analyse).
                   onOpenWorkspace={workspaceAvailable ? () => setWorkspaceOpen(true) : undefined}
                 />
@@ -1292,7 +1371,12 @@ function SaleDetailWorkspace({
                         value={comparedValue}
                         range={occupancyGapWithheld ? null : marketRange}
                       />
-                      {getMarketValuationSurfaces(displaySale).builtSurfaceEstimated ? (
+                      {surfaceEnteredByUser ? (
+                        <p className={panelStyles.surfaceCaution}>
+                          Surface saisie par vous : {formatSurface(surface ?? 0)}, lue dans les
+                          pièces. Elle sert à votre seul calcul ; l’annonce n’est pas modifiée.
+                        </p>
+                      ) : getMarketValuationSurfaces(displaySale).builtSurfaceEstimated ? (
                         <p className={panelStyles.surfaceCaution}>
                           Surface provisoire :{" "}
                           {getMarketValuationSurfaces(displaySale).builtSurfaceAssumption}. À
@@ -1304,7 +1388,7 @@ function SaleDetailWorkspace({
                     <AnalysisDecisionPanel
                       sale={displaySale}
                       marketEstimate={marketEstimate}
-                      marketLoading={marketQuery.isLoading && marketEstimate == null}
+                      marketLoading={marketPending}
                       worksBudget={retainedWorks}
                       recommendedCeiling={ceilingPlan.maxBid}
                       ceilingAvailable={ceilingPlan.available && ceilingPlan.reachable}
@@ -1336,9 +1420,10 @@ function SaleDetailWorkspace({
                       onChoicesChange={ceilingChoices.update}
                       onReset={ceilingChoices.reset}
                       onEditWorks={editWorks}
-                      marketLoading={marketQuery.isLoading && marketEstimate == null}
+                      marketLoading={marketPending}
                       valueReason={valueReason}
                       dpeClass={dpeClass}
+                      surfaceEntryHref={surfaceEntryOpen && user ? "#mon-dossier" : null}
                       saveAction={
                         access === "analysis" && user && !publicDemo ? (
                           <SaveCeilingButton
@@ -1644,6 +1729,7 @@ function SaleDetailWorkspace({
                     saleId={sale.id}
                     calculatedCeiling={heroCeiling}
                     calculationPending={ceilingEnabled && marketPending}
+                    surfaceEntry={surfaceEntryOpen}
                     onOpenWorkspace={workspaceAvailable ? () => setWorkspaceOpen(true) : undefined}
                   />
                 ) : null}
@@ -1677,6 +1763,12 @@ function SaleDetailWorkspace({
                   >
                     <h3>Conserver votre analyse</h3>
                     <p>Sauvegardez le dossier ou exportez le rapport avec le scénario courant.</p>
+                    {surfaceEnteredByUser ? (
+                      <p data-testid="report-entered-surface">
+                        Le rapport reprend les seules données de l’annonce : un plafond calculé avec
+                        la surface saisie par vous n’y figure pas.
+                      </p>
+                    ) : null}
                     <PropertyReportActions
                       saleId={sale.id}
                       compact
