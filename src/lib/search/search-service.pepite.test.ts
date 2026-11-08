@@ -143,7 +143,7 @@ describe("« Pépites seulement » avec un filtre lu sur les lignes : balayage r
     const rows = await fetchSearchResults({ search: { pepite: true }, preview: false });
 
     expect(rows.map((row) => row.id)).toEqual(["pepite-3"]);
-    expect(mocks.getSalesForCompleteSearch.mock.calls[0]?.[0]).not.toHaveProperty("ids");
+    expect(mocks.getSalesForCompleteSearch.mock.calls[0]?.[0]?.ids).toBeUndefined();
     expect(mocks.getSalesForSearch).not.toHaveBeenCalled();
   });
 });

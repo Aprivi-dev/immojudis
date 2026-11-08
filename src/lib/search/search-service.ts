@@ -282,13 +282,11 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
     const pepiteSaleIds = search.pepite ? await fetchPepiteSaleIds() : null;
     // Aucune pépite : rien à croiser, on ne lit pas le catalogue pour retirer toutes ses lignes.
     if (pepiteSaleIds && pepiteSaleIds.size === 0) return [];
-    // Les deux listes réduisent la lecture elle-même quand elles tiennent dans l'adresse de la requête.
-    const idScope = intersectIdScopes(underRangeSaleIds, pepiteSaleIds);
-    if (idScope && idScope.length === 0) return [];
     const batchSize = 100;
+    // Les pépites réduisent la lecture elle-même quand leur liste tient dans l'adresse de la requête.
     const dataFilters: SaleFilters = {
       ...dataFiltersFromSearch(criteria),
-      ...(idScope && idScope.length <= MAX_ID_SCOPE ? { ids: idScope } : {}),
+      ids: pepiteSaleIds && pepiteSaleIds.size <= MAX_ID_SCOPE ? [...pepiteSaleIds] : undefined,
     };
     const dataSort = dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery });
     // The batches are read in parallel once the total is known (see `readPagedRows`): same rows,
@@ -312,29 +310,23 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
       // Comme sur les cartes : l'occupation ne compte parmi les points que si le compte la lit.
       occupancyVisible: !discovery,
     };
-    const candidates = excludeHomepageExampleSales(rows);
-    if (!needsDetailColumns(search)) {
-      return sortClientSearchResults(
-        applyClientSearchFilters(candidates, search, center, context),
-        search,
-        center,
-      );
-    }
+    let candidates = excludeHomepageExampleSales(rows);
     // DPE, visites ou texte : les autres critères trient d'abord sur les lignes légères, puis les blocs
     // des sources, les pièces et les descriptions ne sont relus que pour les ventes restantes.
-    const retained = applyClientSearchFilters(
-      candidates,
-      withoutDetailCriteria(search),
-      center,
-      context,
-    );
-    const details = await getSaleRowsByIds(
-      retained.map((sale) => sale.id),
-      "detail",
-      { discovery },
-    );
+    const light = withoutDetailCriteria(search);
+    if (light) {
+      candidates = applyClientSearchFilters(candidates, light, center, context);
+      candidates = mergeRows(
+        candidates,
+        await getSaleRowsByIds(
+          candidates.map((sale) => sale.id),
+          "detail",
+          { discovery },
+        ),
+      );
+    }
     return sortClientSearchResults(
-      applyClientSearchFilters(mergeRows(retained, details), search, center, context),
+      applyClientSearchFilters(candidates, search, center, context),
       search,
       center,
     );
@@ -343,35 +335,24 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
   return request;
 }
 
-/** Critères avancés qui lisent les blocs des sources, les pièces ou les descriptions (`SEARCH_DETAIL_COLUMNS`). */
-function needsDetailColumns(search: SalesSearchParams): boolean {
-  return Boolean(
-    search.dpeClasses?.length ||
+/**
+ * La recherche sans les critères qui lisent les colonnes lourdes (`SEARCH_DETAIL_COLUMNS` : DPE,
+ * visites, texte), pour un premier tri plus large ; `null` quand aucun de ces critères n'est actif.
+ */
+function withoutDetailCriteria(search: SalesSearchParams): SalesSearchParams | null {
+  const textQuery = resolveFrenchGeoSearch(search.query).kind === "text";
+  return search.dpeClasses?.length ||
     search.openHouse ||
     search.visitSoon ||
     search.keywords?.trim() ||
-    resolveFrenchGeoSearch(search.query).kind === "text",
-  );
-}
-
-/** La même recherche sans les critères qui demandent les colonnes lourdes (premier tri, plus large). */
-function withoutDetailCriteria(search: SalesSearchParams): SalesSearchParams {
-  return {
-    ...search,
-    dpeClasses: undefined,
-    openHouse: undefined,
-    visitSoon: undefined,
-    keywords: undefined,
-    query: resolveFrenchGeoSearch(search.query).kind === "text" ? undefined : search.query,
-  };
-}
-
-/** Intersection des listes d'identifiants actives (en minuscules), ou `null` sans aucune liste. */
-function intersectIdScopes(...scopes: Array<ReadonlySet<string> | null>): string[] | null {
-  const active = scopes.filter((scope): scope is ReadonlySet<string> => scope != null);
-  if (!active.length) return null;
-  const [first, ...others] = active;
-  return [...first]
-    .map((id) => id.toLowerCase())
-    .filter((id) => others.every((scope) => scope.has(id)));
+    textQuery
+    ? {
+        ...search,
+        dpeClasses: undefined,
+        openHouse: undefined,
+        visitSoon: undefined,
+        keywords: undefined,
+        query: textQuery ? undefined : search.query,
+      }
+    : null;
 }
