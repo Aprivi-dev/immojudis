@@ -149,7 +149,7 @@ export function HomeExamplePhoto(props: ExamplePhotoProps) {
         <div>
           <div className={styles.exampleTiles}>
             <div className={styles.valueTile}>
-              <span className={styles.tileLabel}>Estimation</span>{" "}
+              <span className={styles.tileLabel}>Valeur d’un bien libre comparable</span>{" "}
               <p className={styles.tileAmount}>{formatPrice(props.value)}</p>
               {range ? <span className={styles.tileNote}>Fourchette : {range}</span> : null}
             </div>

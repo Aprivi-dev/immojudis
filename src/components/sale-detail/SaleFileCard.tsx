@@ -432,7 +432,7 @@ export function SaleFileCard({
                   <p
                     id={surfaceErrorId}
                     role="alert"
-                    className="mt-1 text-xs font-semibold text-red-700"
+                    className="mt-1 text-xs font-semibold text-danger"
                   >
                     {surfaceError}
                   </p>

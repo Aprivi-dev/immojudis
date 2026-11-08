@@ -84,7 +84,9 @@ describe("home hero", () => {
     expect(text).toContain("Analyse du bien");
     expect(text).toMatch(/Mise à prix 95.000.€/);
     // L'estimation et sa fourchette, à côté de l'enchère à ne pas dépasser.
-    expect(text).toMatch(/Estimation 230.000.€ ?Fourchette : 215.000 – 247.000.€/);
+    expect(text).toMatch(
+      /Valeur d’un bien libre comparable ?230.000.€ ?Fourchette : 215.000 – 247.000.€/,
+    );
     expect(text).toMatch(/Enchère à ne pas dépasser 136.000.€/);
     expect(text).toMatch(/Même immeuble, 2024 226.000.€/);
     expect(text).toContain("Occupation À confirmer");
