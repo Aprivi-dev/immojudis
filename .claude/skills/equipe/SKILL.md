@@ -81,6 +81,25 @@ Un agent retiré se restaure depuis l'historique git quand son sujet redevient a
 `git checkout <commit de retrait>^ -- .claude/agents/linkedin.md`
 (`git log --diff-filter=D --oneline -- .claude/agents/linkedin.md` donne le commit).
 
+## Départements et chefs de département
+
+Les 33 agents sont rangés en quatre départements. Chaque département a un chef, qui est un
+spécialiste existant : il garde son métier et, sur les grosses missions, consolide en plus les
+rapports de son département (phase 1 bis).
+
+| Département            | Chef                  | Membres                                                                                                                                                      |
+| ---------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Technique              | `architecte-logiciel` | `code-reviewer`, `expert-postgres`, `archeologue-code`, `testeur-api`, `securite-applicative`, `devops-ci`, `fiabilite-sre`, `performance-web`, `testeur-qa` |
+| Données                | `qualite-donnees`     | `data-pipeline`, `donnees-geographiques`, `statisticien`, `qa-modeles`, `prompts-llm`                                                                        |
+| Produit et expérience  | `product-explorer`    | `ux-designer`, `optimisation-interface`, `audit-accessibilite`, `carte-web`, `gardien-marque`, `veille-concurrentielle`, `analyste-indicateurs`              |
+| Commercial et contenus | `directeur-marketing` | `strategie-email`, `seo-expert`, `analyste-prix`, `paiements-stripe`, `redacteur-contenu`, `synthese-recherche`                                              |
+
+Hors départements : `juridique-rgpd` relit tous les domaines et te rend compte directement ;
+`developpeur` est réservé à l'exécution (phase 4).
+
+Un agent ne peut pas en lancer un autre : c'est toujours toi qui lances les spécialistes, puis
+les chefs de département. Un chef de département ne fait que consolider ce que tu lui transmets.
+
 ## Phase 1 : analyse
 
 1. Si la mission est vide, demande-la. Reformule-la en une phrase ; si elle est floue,
@@ -89,6 +108,32 @@ Un agent retiré se restaure depuis l'historique git quand son sujet redevient a
    appels à l'outil Agent dans le même message) quand leurs missions sont indépendantes.
 3. Donne à chacun un brief autonome : il ne voit pas cette conversation. Précise
    l'objectif, le périmètre (pages, dossiers), et ce que tu attends en retour.
+
+## Phase 1 bis : consolidation par département (grosses missions seulement)
+
+Seulement si la mission mobilise **plus de 8 spécialistes**. En dessous, passe directement à la
+phase 2. Même pour une grosse mission, ne consolide pas un département qui a rendu moins de
+3 rapports : tu le relis toi-même.
+
+1. Pour chaque département concerné, lance son chef (en parallèle pour les départements
+   indépendants) avec un brief qui contient :
+   - la mission, reformulée ;
+   - les rapports **bruts et complets** des spécialistes du département, y compris le sien,
+     sans les résumer ;
+   - les consignes ci-dessous.
+2. Consignes au chef de département :
+   - fusionner les doublons en gardant le nom de chaque agent source ;
+   - trancher les conflits internes au département, ou les signaler s'il ne peut pas trancher ;
+   - ouvrir le fichier cité pour chaque proposition Critique ou Haute et la marquer
+     **[vérifié]** ou **[non vérifié]**, sans jamais présenter une supposition comme un fait ;
+   - ne rien écarter en silence : chaque proposition écartée figure dans une liste avec sa raison ;
+   - ne pas favoriser ses propres propositions par rapport à celles des autres membres ;
+   - signaler ce qui dépend d'un autre département ou de `juridique-rgpd` ;
+   - ne modifier aucun fichier et n'écrire jamais en base.
+3. Format attendu de chaque chef : un tableau numéroté (D1, D2…) avec les agents sources, la
+   proposition, le fichier et la ligne, la priorité, l'effort et le statut de vérification ;
+   puis les propositions écartées avec leur raison ; puis les conflits non tranchés et les
+   dépendances vers d'autres départements.
 
 ## Phase 2 : relecture (ton rôle clé)
 
@@ -99,6 +144,10 @@ Avant tout compte-rendu, contrôle chaque proposition :
 - Repère les conflits entre agents (par exemple l'UX veut retirer un bloc que le SEO juge
   utile) : tranche, ou signale-le.
 - Si un rapport est faible, relance l'agent avec des consignes plus précises.
+- Après une consolidation par département : un chef de département n'est pas une preuve.
+  Vérifie toi-même chaque proposition Critique ou Haute, qu'elle soit marquée [vérifié] ou non.
+  Parcours aussi la liste de ses points écartés pour repérer un rejet injustifié. Tranche les
+  conflits entre départements et intègre directement le rapport de `juridique-rgpd`.
 
 ## Phase 3 : compte-rendu
 
@@ -107,7 +156,8 @@ Avant tout compte-rendu, contrôle chaque proposition :
 2. Affiche à l'utilisateur :
    - une phrase de synthèse ;
    - un tableau numéroté : N° · Agent · Proposition · Priorité · Effort · Avis du chef
-     (garder / discutable / écarté) ;
+     (garder / discutable / écarté), regroupé par département quand il y a eu une
+     consolidation (phase 1 bis) ;
    - les points écartés, une ligne chacun avec la raison.
 3. Termine en demandant quels numéros il valide, et arrête-toi là.
 

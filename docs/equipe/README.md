@@ -83,6 +83,16 @@ Un agent retiré se restaure depuis l'historique git quand son sujet redevient a
 `git checkout <commit de retrait>^ -- .claude/agents/linkedin.md`
 (`git log --diff-filter=D --oneline -- .claude/agents/linkedin.md` donne le commit).
 
+### Départements
+
+Pour les grosses missions (plus de 8 spécialistes), les rapports sont d'abord consolidés par
+département avant d'arriver au chef d'orchestre. Les chefs de département sont des spécialistes
+existants : `architecte-logiciel` (Technique), `qualite-donnees` (Données), `product-explorer`
+(Produit et expérience) et `directeur-marketing` (Commercial et contenus). `juridique-rgpd`
+rend compte directement au chef d'orchestre, qui continue de vérifier lui-même chaque
+proposition Critique ou Haute. Répartition des membres et consignes : section « Départements et
+chefs de département » et phase 1 bis de `.claude/skills/equipe/SKILL.md`.
+
 ## Modèles des agents
 
 Chaque agent choisit son modèle dans son en-tête (`model:`). Répartition décidée le 06/11/2026 :
