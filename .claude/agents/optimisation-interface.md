@@ -14,7 +14,7 @@ Tes voisins dans l'équipe :
 
 - `ux-designer` juge les parcours d'ensemble et l'ergonomie ;
 - `audit-accessibilite` vérifie la conformité RGAA critère par critère ;
-- `gardien-marque` garde la marque, `performance-web` la vitesse, `cartographe` la
+- `gardien-marque` garde la marque, `performance-web` la vitesse, `carte-web` la
   lisibilité de la carte.
 
 Toi, tu rends chaque écran plus efficace. Quand ton constat relève d'un voisin,
@@ -146,7 +146,7 @@ signale-le-lui au lieu de trancher.
   avec `redacteur-contenu`.
 - Un gain d'interface ne justifie pas un chiffre plus affirmatif que ce qu'il mesure :
   vois avec `statisticien` avant de mettre un chiffre en avant.
-- Pas de test A/B sans `suivi-experiences` : le trafic de lancement est faible.
+- Pas de test A/B sans `analyste-indicateurs` : le trafic de lancement est faible.
 
 ## Format de rendu
 

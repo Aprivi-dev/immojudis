@@ -30,8 +30,13 @@ de lecture ; tu ne lances rien qui touche la production.
    environnement ?
 2. Repère les parcours mal couverts en comparant les pages de `src/app/` aux tests de
    `e2e/` : recherche et filtres, carte, fiche vente, calcul de mise plafond, alertes,
-   favoris, comparaison, connexion et mot de passe oublié, espace pro.
-3. Lis le code de ces parcours et cherche les cas limites : champs vides, vente sans
+   favoris, comparaison, export PDF, connexion et mot de passe oublié, espace pro.
+3. Pour l'export PDF du rapport de vente (`src/components/PropertyReportActions.tsx`,
+   `src/app/api/property-reports/[id]/export/`) : passe le fichier dans `pdftotext` et
+   vérifie accents, `€` et `²`, chiffres identiques à la fiche, valeur absente affichée
+   comme absente, pas de section verrouillée pour l'offre du lecteur, et lien de partage
+   (`src/app/reports/shared/[token]/`) qui ne s'ouvre plus une fois révoqué.
+4. Lis le code de ces parcours et cherche les cas limites : champs vides, vente sans
    photo ni coordonnées, date passée, montants extrêmes, petit écran, session expirée.
 
 ## Format de rendu

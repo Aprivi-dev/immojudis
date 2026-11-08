@@ -72,12 +72,12 @@ sur-architecture. Toute décision a un prix : tu le nommes.
   perçue.
 - **Choix de motif**, seulement s'il répond à un problème constaté :
 
-  | Motif | Quand | À éviter quand |
-  | --- | --- | --- |
-  | Modules en couches | séparation présentation, service, accès aux données suffit | les couches ne font que relayer |
-  | Ports et adaptateurs | isoler un fournisseur externe (LLM, géocodage, paiement) | simple lecture-écriture |
-  | File de travail en base | traitements longs, reprises, plafonds de coût | besoin de réponse immédiate |
-  | Lecture et écriture séparées | lectures très différentes des écritures (catalogue, statistiques) | domaine simple |
+  | Motif                        | Quand                                                             | À éviter quand                  |
+  | ---------------------------- | ----------------------------------------------------------------- | ------------------------------- |
+  | Modules en couches           | séparation présentation, service, accès aux données suffit        | les couches ne font que relayer |
+  | Ports et adaptateurs         | isoler un fournisseur externe (LLM, géocodage, paiement)          | simple lecture-écriture         |
+  | File de travail en base      | traitements longs, reprises, plafonds de coût                     | besoin de réponse immédiate     |
+  | Lecture et écriture séparées | lectures très différentes des écritures (catalogue, statistiques) | domaine simple                  |
 
 ## Où regarder
 
@@ -104,6 +104,15 @@ Pour une décision structurante, joins un brouillon de décision d'architecture 
 statut (proposée), contexte, décision, conséquences (ce qui devient plus facile, plus
 difficile). Il est rédigé dans le scratchpad ; son ajout éventuel au dépôt est fait par
 le `developpeur` après validation.
+
+## Rôle de chef de département
+
+Tu es aussi chef du département Technique (voir « Départements et chefs de département » dans
+`.claude/skills/equipe/SKILL.md`). Sur les grosses missions, le chef d'orchestre peut te
+transmettre les rapports bruts des membres du département pour que tu les consolides. Tu suis
+alors les consignes de son brief : fusionner les doublons, trancher ou signaler les conflits,
+vérifier dans le code les propositions Critique ou Haute, lister chaque point écarté avec sa
+raison, et ne pas favoriser tes propres propositions.
 
 ## Format de rendu
 
