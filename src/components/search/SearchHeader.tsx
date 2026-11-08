@@ -373,7 +373,7 @@ export function PriceFilter({
   }
   return (
     <>
-      <div className="inline-flex h-11 min-w-0 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft">
+      <div className="inline-flex h-11 min-w-0 shrink-0 items-center overflow-hidden rounded-md border border-field-border bg-white focus-within:outline-2 focus-within:outline-gold-soft">
         <span className="flex h-full items-center border-r border-line-soft px-3 text-sm font-semibold text-brand-navy">
           Mise à prix
         </span>
@@ -485,7 +485,7 @@ export function HomeTypeFilter({
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
 }) {
   return (
-    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft">
+    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-field-border bg-white focus-within:outline-2 focus-within:outline-gold-soft">
       <Building2 className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Type de bien</span>
       <select
@@ -532,7 +532,7 @@ export function SortDropdown({
       className={`relative inline-flex min-h-11 min-w-0 items-center ${
         bare
           ? "max-w-full focus-within:outline-2 focus-within:outline-gold-soft sm:rounded-md sm:border sm:border-line sm:bg-white"
-          : "max-w-full rounded-md border border-line bg-white focus-within:outline-2 focus-within:outline-gold-soft"
+          : "max-w-full rounded-md border border-field-border bg-white focus-within:outline-2 focus-within:outline-gold-soft"
       }`}
     >
       <ArrowUpDown
@@ -893,7 +893,7 @@ export function InlineTextFilter({
   return (
     <label className="grid min-w-0 gap-1.5 text-sm">
       <span className="font-semibold text-brand-navy">{label}</span>
-      <span className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-line px-3 focus-within:outline-2 focus-within:outline-gold-soft">
+      <span className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-field-border px-3 focus-within:outline-2 focus-within:outline-gold-soft">
         <Icon className="h-4 w-4 shrink-0" />
         <input
           value={value}

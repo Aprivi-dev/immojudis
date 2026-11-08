@@ -253,6 +253,20 @@ describe("bordure des champs hors .form-input (border-field-border)", () => {
     const simulator = readFileSync(join(process.cwd(), fields[0]), "utf8");
     expect(simulator).not.toMatch(/FIELD_CLASSES =\s*"[^"]*border-line/);
   });
+
+  it("encadre les champs de saisie de la barre de filtres en border-field-border (P14)", () => {
+    const header = readFileSync(
+      join(process.cwd(), "src/components/search/SearchHeader.tsx"),
+      "utf8",
+    );
+    // Cadre d'un champ (prix, type de bien, tri, lieu du panneau) : celui qui marque le focus de son
+    // contenu. Les boutons à texte (bordure border-line) ne sont pas concernés.
+    const fields = header.match(
+      /"[^"]*rounded-md border border-[\w-]+[^"]*focus-within:outline[^"]*"/g,
+    );
+    expect(fields?.length).toBeGreaterThanOrEqual(5);
+    for (const field of fields ?? []) expect(field).toContain("border border-field-border");
+  });
 });
 
 describe("champs de formulaire (.form-input)", () => {
