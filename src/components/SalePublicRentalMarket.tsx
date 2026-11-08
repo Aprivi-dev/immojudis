@@ -10,7 +10,12 @@ import {
 } from "@/lib/housing-tension";
 import type { RentReference, RentReferenceSource, RentSegment } from "@/lib/rent-reference";
 import { formatRentSourceDate, isAnilRentReference } from "@/lib/rent-source-notice";
-import { PUBLIC_YIELD_LABEL } from "@/lib/public-rental-yield";
+import {
+  PUBLIC_MONTHLY_RENT_LABEL,
+  PUBLIC_YIELD_LABEL,
+  PUBLIC_YIELD_NOT_SIGNIFICANT_NOTE,
+  type PublicRentalYield,
+} from "@/lib/public-rental-yield";
 import styles from "./SalePublicPreview.module.css";
 import { rentNature } from "@/lib/rent-nature";
 
@@ -51,8 +56,11 @@ export function SalePublicRentalMarket({
 }: {
   reference: RentReference | null;
   tension: HousingTension | null;
-  /** Rendement brut à la mise à prix, calculé par le serveur (`publicRentalYield`) ; `null` : aucun. */
-  yieldValue: string | null;
+  /**
+   * Rendement brut à la mise à prix, calculé par le serveur (`publicRentalYield`), ou loyer mensuel
+   * estimé quand ce rendement n'est pas significatif ; `null` : aucun.
+   */
+  yieldValue: PublicRentalYield | null;
 }) {
   const anil = isAnilRentReference(reference) ? reference : null;
   if (!anil && !tension) return null;
@@ -102,9 +110,15 @@ export function SalePublicRentalMarket({
             </div>
           ) : null}
           <p className={styles.fine}>{rentNature(anil)}</p>
-          {anil && yieldValue ? (
+          {anil && yieldValue?.kind === "rent" ? (
             <p className={styles.yield}>
-              {PUBLIC_YIELD_LABEL} : <strong>{yieldValue}</strong>
+              {PUBLIC_MONTHLY_RENT_LABEL} : <strong>{yieldValue.text}</strong>
+              <span className={styles.fine}>{PUBLIC_YIELD_NOT_SIGNIFICANT_NOTE}</span>
+            </p>
+          ) : null}
+          {anil && yieldValue?.kind === "yield" ? (
+            <p className={styles.yield}>
+              {PUBLIC_YIELD_LABEL} : <strong>{yieldValue.text}</strong>
               <span className={styles.fine}>
                 Calculé sur la mise à prix, avec les frais d’acquisition estimés du type de vente.
                 Si la vente se conclut au-dessus de la mise à prix, le rendement est plus faible.

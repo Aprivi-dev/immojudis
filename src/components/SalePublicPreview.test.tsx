@@ -1386,7 +1386,10 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
         returnTo="/sales"
         rentReference={{ ...RENT }}
         housingTension={null}
-        rentalYield="6,1 % (de 4,6 % à 8,1 % selon la fourchette de loyer)"
+        rentalYield={{
+          kind: "yield",
+          text: "6,1 % (de 4,6 % à 8,1 % selon la fourchette de loyer)",
+        }}
         preview={
           { id: "sale-1", sale_venue_type: "tribunal", starting_price_eur: 90_000 } as AuctionSale
         }
@@ -1397,6 +1400,30 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
       "Rendement brut à la mise à prix (charges comprises) : 6,1 % (de 4,6 % à 8,1 % selon la fourchette de loyer)",
     );
     expect(market.textContent).toContain("pas une promesse de gain");
+    expect(market.textContent).not.toContain("Rendement non significatif");
+  });
+
+  it("affiche le loyer mensuel estimé à la place d'un rendement non significatif", () => {
+    render(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales"
+        rentReference={{ ...RENT }}
+        housingTension={null}
+        rentalYield={{ kind: "rent", text: "entre 610 € et 1 040 €" }}
+        preview={
+          { id: "sale-1", sale_venue_type: "tribunal", starting_price_eur: 9_000 } as AuctionSale
+        }
+      />,
+    );
+    const market = screen.getByRole("region", { name: "Marché local" });
+    expect(plain(market.textContent)).toContain(
+      "Loyer mensuel estimé (charges comprises) : entre 610 € et 1 040 €",
+    );
+    expect(market.textContent).toContain(
+      "Rendement non significatif à la mise à prix : le prix final sera plus élevé.",
+    );
+    expect(market.textContent).not.toContain("Rendement brut à la mise à prix (charges comprises)");
   });
 
   it("donne le prix au m² d'une surface publiée, jamais d'une surface absente", () => {
