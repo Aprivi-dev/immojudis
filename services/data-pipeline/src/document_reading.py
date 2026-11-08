@@ -10,8 +10,10 @@ quote reaches a subscriber.
 
 Results go to ``public.auction_document_readings`` (service role only); the web
 app serves them to Analyse members. A reading is redone only when the persisted
-text or the prompt version changes; a failed one is retried with a growing delay
-(12 h, 24 h, 72 h) and abandoned at the fourth failure on the same text.
+text or the prompt version changes (a completed v2 reading only when the lot sold is
+designated); a failed one is retried with a growing delay (12 h, 24 h, 72 h) and
+abandoned at the fourth failure on the same text. A failed attempt never replaces a
+completed reading, and a refused LLM budget ends the run.
 """
 
 from __future__ import annotations
@@ -43,6 +45,9 @@ LOGGER = logging.getLogger(__name__)
 # v3 (08/11/2026, D8): the lot sold is named in the prompt of a multi-lot listing, each point says
 # which lot it is about, quotes of 25 characters at least.
 DOCUMENT_READING_VERSION = "document_reading_v3"
+# A completed v2 reading is read again in v3 only when the listing designates the lot sold: without a lot,
+# v3 changes nothing that revalidate_stored_points does not already apply without a model call (D8).
+LOT_ONLY_PREVIOUS_VERSION = "document_reading_v2"
 MAX_PROMPT_CHARS = 45_000
 MAX_PAGE_CHARS = 2_500
 MAX_POINTS = 14
@@ -243,14 +248,34 @@ def lot_numbers_named(text: str) -> set[int]:
     return numbers
 
 
+# A lot number written next to these words is a co-ownership lot (« lots n° 1 et 2 de l'état descriptif de
+# division », « lot 3 et les 120 tantièmes »), not a lot of the sale.
+_CO_OWNERSHIP_LOT_CONTEXT = re.compile(r"copropriete|etat descriptif|tantiemes")
+CO_OWNERSHIP_LOT_WINDOW_CHARS = 30
+
+
+def sale_lot_numbers_named(text: str) -> set[int]:
+    """Like :func:`lot_numbers_named`, without the numbers that a nearby word marks as co-ownership lots."""
+    folded = fold(text)
+    numbers: set[int] = set()
+    for match in [*_LOT_NUMBERS.finditer(folded), *_LOT_ORDINAL.finditer(folded)]:
+        before = folded[max(0, match.start() - CO_OWNERSHIP_LOT_WINDOW_CHARS) : match.start()]
+        after = folded[match.end() : match.end() + CO_OWNERSHIP_LOT_WINDOW_CHARS]
+        if _CO_OWNERSHIP_LOT_CONTEXT.search(before) or _CO_OWNERSHIP_LOT_CONTEXT.search(after):
+            continue
+        numbers |= lot_numbers_named(match.group())
+    return numbers
+
+
 def names_another_lot(quote: str, lot: SoldLot) -> bool:
     """The quote names another lot of the sale and not the lot sold (« Le lot 2 est loué » on lot 1).
 
     Only numbers of the sale's own lots count (1 to ``lot_count``): « lot n° 45 » of a co-ownership
-    is not a lot of the sale.
+    is not a lot of the sale, nor a number that « copropriété », « état descriptif » or « tantièmes »
+    follows or precedes closely (« lots n° 1 et 2 de l'état descriptif de division »).
     """
     highest = lot.lot_count or 9
-    named = {number for number in lot_numbers_named(quote) if 1 <= number <= highest}
+    named = {number for number in sale_lot_numbers_named(quote) if 1 <= number <= highest}
     return bool(named) and lot.number not in named
 
 
@@ -679,10 +704,22 @@ def _retry_due_sql() -> str:
 
 _RETRY_DUE_SQL = _retry_due_sql()
 
+
+def kept_without_v3(previous_version: object, previous_status: object, lot_selection: object) -> bool:
+    """A completed v2 reading of a sale whose listing designates no lot: v3 would read it the same way.
+
+    Same rule as ``CANDIDATES_SQL`` (``source_lot_selection.status = 'selected'``), so that a sale it lets
+    through because its text changed is read again, and one it lets through for a rewritten but identical
+    text keeps its reading.
+    """
+    designated = isinstance(lot_selection, Mapping) and lot_selection.get("status") == "selected"
+    return previous_status == "completed" and previous_version == LOT_ONLY_PREVIOUS_VERSION and not designated
+
+
 CANDIDATES_SQL = f"""
 select sale.id, sale.source_url, latest.result, reading.input_fingerprint,
        reading.status, coalesce(reading.attempt_count, 0), coalesce({_RETRY_DUE_SQL}, false),
-       sale.property_type, sale.city, sale.raw_payload -> 'source_lot_selection'
+       sale.property_type, sale.city, sale.raw_payload -> 'source_lot_selection', reading.prompt_version
   from public.auction_sales sale
   join lateral (
     select extraction.result
@@ -703,7 +740,16 @@ select sale.id, sale.source_url, latest.result, reading.input_fingerprint,
    )
    and (
      reading.sale_id is null
-     or reading.prompt_version <> %s
+     or (
+       reading.prompt_version <> %s
+       -- D8 : la v3 ne change rien à une lecture v2 réussie d'une vente sans lot désigné (la règle des
+       -- citations de 25 caractères lui est appliquée sans appel par revalidate_stored_points).
+       and not (
+         reading.status = 'completed'
+         and reading.prompt_version = '{LOT_ONLY_PREVIOUS_VERSION}'
+         and coalesce(sale.raw_payload -> 'source_lot_selection' ->> 'status', '') <> 'selected'
+       )
+     )
      or {_RETRY_DUE_SQL}
      or reading.updated_at < (
        select max(extraction.updated_at) from public.auction_extractions extraction
@@ -817,12 +863,16 @@ def run_document_readings(
     generate_json, model = generator if generator is not None else _llm_generator()
     for row in rows:
         (sale_id, source_url, manifest, previous_fingerprint, previous_status, previous_attempts, retry_due,
-         property_type, city, lot_selection) = row
+         property_type, city, lot_selection, previous_version) = row
         if time.monotonic() - started >= budget_seconds:
             break
         sold_lot = sold_lot_from_sale(property_type, city, lot_selection)
         fingerprint = input_fingerprint(manifest, sold_lot=sold_lot)
         same_input = fingerprint == previous_fingerprint
+        if not same_input and kept_without_v3(previous_version, previous_status, lot_selection):
+            # Candidate because its extraction was rewritten: the v2 reading stands while its text is the same
+            # (same rule as CANDIDATES_SQL).
+            same_input = input_fingerprint(manifest, version=str(previous_version)) == previous_fingerprint
         # A failed reading on the same text is read again only when its back-off
         # has elapsed and attempts remain; otherwise it waits for a new text.
         if same_input and not (previous_status == "failed" and retry_due):
@@ -835,6 +885,19 @@ def run_document_readings(
         if result.status == "unavailable":
             LOGGER.info("Document reading skipped: no LLM provider configured")
             break
+        # A budget refusal says nothing about this dossier, and every following sale would be refused too.
+        budget_refused = result.status == "failed" and not result.attempt_counted
+        if result.status == "failed" and previous_status == "completed":
+            # D8: the site keeps serving the previous reading (document-reading.server.ts); a failed attempt
+            # must not replace it with an empty one. The sale stays a candidate and is read on a later run.
+            counts["failed"] += 1
+            LOGGER.warning(
+                "Document reading %s failed (%s): previous completed reading kept", source_url, result.error_code
+            )
+            if budget_refused:
+                LOGGER.info("Document reading stopped: LLM budget exhausted")
+                break
+            continue
         attempts = failed_attempts_after(
             result,
             previous_status=previous_status,
@@ -870,6 +933,9 @@ def run_document_readings(
             len(result.points),
             len(documents),
         )
+        if budget_refused:
+            LOGGER.info("Document reading stopped: LLM budget exhausted")
+            break
     return counts
 
 

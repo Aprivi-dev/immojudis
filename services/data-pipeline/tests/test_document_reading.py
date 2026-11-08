@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import src.pdf_enrichment  # noqa: F401  (import order used across the pipeline tests)
 from src import document_reading as reading
 
+V3 = reading.DOCUMENT_READING_VERSION
+
 PV_PAGE_2 = (
     "Le bien est occupé par Monsieur X et sa famille, qui déclarent ne disposer d'aucun bail écrit. "
     "Des traces d'humidité importantes sont visibles au plafond de la salle de bains."
@@ -170,8 +172,8 @@ def test_run_stores_readings_and_skips_unchanged_texts(monkeypatch) -> None:
             if "from public.auction_sales sale" in statement:
                 return SimpleNamespace(
                     fetchall=lambda: [
-                        ("sale-1", "https://example.test/1", MANIFEST, None, None, 0, False, None, None, None),
-                        ("sale-2", "https://example.test/2", MANIFEST, unchanged, "completed", 0, False, None, None, None),
+                        ("sale-1", "https://example.test/1", MANIFEST, None, None, 0, False, None, None, None, None),
+                        ("sale-2", "https://example.test/2", MANIFEST, unchanged, "completed", 0, False, None, None, None, V3),
                     ]
                 )
             return SimpleNamespace(fetchone=lambda: None)
@@ -235,7 +237,7 @@ def test_candidates_leave_out_sales_whose_sources_are_all_withdrawn() -> None:
 
 def test_failed_reading_is_retried_when_due_and_counts_the_attempt(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 1, True, None, None, None)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 1, True, None, None, None, V3)
 
     counts, upserts, touched = _run_with_candidate(monkeypatch, row, _boom)
 
@@ -248,7 +250,7 @@ def test_failed_reading_is_retried_when_due_and_counts_the_attempt(monkeypatch) 
 
 def test_failed_reading_gives_up_at_the_fourth_failure_with_a_readable_error_code(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True, None, None, None)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True, None, None, None, V3)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, _boom)
 
@@ -261,7 +263,7 @@ def test_failed_reading_gives_up_at_the_fourth_failure_with_a_readable_error_cod
 def test_failed_reading_waiting_for_its_backoff_is_not_read_again(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
     # Candidate because its extraction was rewritten, but the back-off has not elapsed (or attempts ran out).
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 4, False, None, None, None)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 4, False, None, None, None, V3)
     calls: list[str] = []
 
     def generator(_system: str, _user: str):
@@ -275,7 +277,7 @@ def test_failed_reading_waiting_for_its_backoff_is_not_read_again(monkeypatch) -
 
 
 def test_changed_text_restarts_the_attempt_count(monkeypatch) -> None:
-    row = ("sale-1", "https://example.test/1", MANIFEST, "an-older-fingerprint", "failed", 4, False, None, None, None)
+    row = ("sale-1", "https://example.test/1", MANIFEST, "an-older-fingerprint", "failed", 4, False, None, None, None, V3)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, _boom)
 
@@ -286,7 +288,7 @@ def test_changed_text_restarts_the_attempt_count(monkeypatch) -> None:
 
 def test_completed_reading_after_failures_resets_the_counter(monkeypatch) -> None:
     same = reading.input_fingerprint(MANIFEST)
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 2, True, None, None, None)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 2, True, None, None, None, V3)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, lambda _s, _u: {"points": []})
 
@@ -301,7 +303,7 @@ def test_budget_refusal_does_not_use_up_an_attempt(monkeypatch) -> None:
         raise PipelineBudgetExhausted("Daily LLM budget exhausted")
 
     same = reading.input_fingerprint(MANIFEST)
-    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True, None, None, None)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True, None, None, None, V3)
 
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, over_budget)
 
@@ -591,7 +593,7 @@ def test_run_passes_the_lot_of_the_sale_to_the_reading(monkeypatch) -> None:
         prompts.append(user)
         return LOTS_RESPONSE
 
-    row = ("sale-1", "https://example.test/1", LOTS_MANIFEST, None, None, 0, False, "apartment", "Nice", LOT_1)
+    row = ("sale-1", "https://example.test/1", LOTS_MANIFEST, None, None, 0, False, "apartment", "Nice", LOT_1, None)
     counts, upserts, _ = _run_with_candidate(monkeypatch, row, generator)
 
     assert counts["completed"] == 1
@@ -623,3 +625,144 @@ def test_stored_v2_points_of_another_lot_are_dropped_by_the_revalidation(monkeyp
     assert counts["updated"] == 1 and counts["points_removed"] == 1
     [params] = [values for sql, values in executed if sql.lstrip().startswith("update")]
     assert [point["title"] for point in json.loads(params[0])] == ["Lot libre"]
+
+
+def test_co_ownership_lot_numbers_are_not_lots_of_the_sale() -> None:
+    lot_1 = reading.SoldLot(1, 3)
+    assert reading.names_another_lot("lots n° 1 et 2 de l'état descriptif de division", lot_1) is False
+    # Before 08/11/2026 these quotes on the sale of lot 1 were dropped as being about lot 3 or lot 2.
+    assert reading.names_another_lot("Le bien forme le lot n° 3 de l'état descriptif de division", lot_1) is False
+    assert reading.names_another_lot("le lot 2 et les 120/1000èmes tantièmes des parties communes", lot_1) is False
+    assert reading.names_another_lot("Dans la copropriété, lot n° 3 : un appartement", lot_1) is False
+    # A lot of the sale is still told apart.
+    assert reading.names_another_lot("Le lot 2 est loué suivant un bail d'habitation", lot_1) is True
+    assert reading.sale_lot_numbers_named("Le 2ème lot de vente ; lot 3 de la copropriété") == {2}
+
+
+def test_co_ownership_lots_quote_is_kept_for_the_lot_sold() -> None:
+    page = "Les biens vendus forment les lots n° 1 et 2 de l'état descriptif de division de l'immeuble."
+    manifest = [{"label": "Cahier", "document_type": "cahier_conditions_vente", "pages": [{"page": 1, "text": page}]}]
+    response = {"points": [_point(theme="copropriete", title="Lots de copropriété", quote=page[:80], lot="ce_lot")]}
+
+    result = reading.read_sale_documents(
+        reading.documents_from_manifest(manifest),
+        generate_json=lambda _s, _u: response,
+        sold_lot=reading.sold_lot_from_sale("apartment", "Nice", LOT_1),
+    )
+
+    assert [point["title"] for point in result.points] == ["Lots de copropriété"]
+
+
+def _run_rows(monkeypatch, rows, generate_json):
+    """Run several candidates; return (counts, upserts, touched, model calls)."""
+    executed: list[tuple[str, tuple]] = []
+    calls: list[str] = []
+
+    def generator(system: str, user: str):
+        calls.append(user)
+        return generate_json(system, user)
+
+    class FakeConnection:
+        def execute(self, statement, params=()):
+            executed.append((statement, params))
+            if "from public.auction_sales sale" in statement:
+                return SimpleNamespace(fetchall=lambda: rows)
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(reading, "_connect", lambda _url: nullcontext(FakeConnection()))
+    counts = reading.run_document_readings(
+        "postgresql://test", max_sales=10, budget_seconds=60, generator=(generator, "test-model")
+    )
+    upserts = [params for statement, params in executed if "insert into public.auction_document_readings" in statement]
+    touched = [params for statement, params in executed if "set updated_at = now()" in statement]
+    return counts, upserts, touched, calls
+
+
+V2 = "document_reading_v2"
+
+
+def _over_budget(_system: str, _user: str):
+    from src.pipeline_usage import PipelineBudgetExhausted
+
+    raise PipelineBudgetExhausted("Daily LLM budget exhausted")
+
+
+def test_a_budget_refusal_keeps_a_completed_reading_and_stops_the_run(monkeypatch) -> None:
+    rows = [
+        # Read in v2 for lot 1; v3 reads it again with the lot and the model is refused.
+        ("sale-1", "https://example.test/1", LOTS_MANIFEST, "v2-fingerprint", "completed", 0, False,
+         "apartment", "Nice", LOT_1, V2),
+        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None),
+    ]
+
+    counts, upserts, touched, calls = _run_rows(monkeypatch, rows, _over_budget)
+
+    assert upserts == [] and touched == []  # the site keeps serving the v2 reading
+    assert len(calls) == 1  # the next sale would be refused too
+    assert counts["failed"] == 1 and counts["completed"] == 0
+
+
+def test_a_provider_failure_keeps_the_previous_reading_and_goes_on(monkeypatch) -> None:
+    rows = [
+        ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V3),
+        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None),
+    ]
+
+    counts, upserts, _, calls = _run_rows(monkeypatch, rows, _boom)
+
+    assert len(calls) == 2
+    assert [(params[0], params[5]) for params in upserts] == [("sale-2", "failed")]
+    assert counts["failed"] == 2
+
+
+def test_a_budget_refusal_on_a_sale_never_read_is_stored_and_stops_the_run(monkeypatch) -> None:
+    rows = [
+        ("sale-1", "https://example.test/1", MANIFEST, None, None, 0, False, None, None, None, None),
+        ("sale-2", "https://example.test/2", MANIFEST, None, None, 0, False, None, None, None, None),
+    ]
+
+    counts, upserts, _, calls = _run_rows(monkeypatch, rows, _over_budget)
+
+    assert len(calls) == 1
+    assert [(params[0], params[5], params[-1]) for params in upserts] == [("sale-1", "failed", 0)]
+    assert counts["failed"] == 1
+
+
+def test_v3_reads_again_only_the_v2_readings_of_a_designated_lot() -> None:
+    sql = " ".join(reading.CANDIDATES_SQL.split())
+    assert "or ( reading.prompt_version <> %s" in sql
+    assert (
+        "and not ( reading.status = 'completed' and reading.prompt_version = 'document_reading_v2'"
+        " and coalesce(sale.raw_payload -> 'source_lot_selection' ->> 'status', '') <> 'selected' ) )"
+    ) in sql
+    assert reading.kept_without_v3(V2, "completed", None) is True
+    assert reading.kept_without_v3(V2, "completed", {"status": "ambiguous", "lot_count": 2}) is True
+    assert reading.kept_without_v3(V2, "completed", LOT_1) is False
+    assert reading.kept_without_v3(V2, "failed", None) is False
+    assert reading.kept_without_v3("document_reading_v1", "completed", None) is False
+
+
+def test_a_v2_reading_without_lot_is_kept_while_its_text_is_the_same(monkeypatch) -> None:
+    v2 = reading.input_fingerprint(MANIFEST, version=V2)
+    # Candidate because its extraction was rewritten with the same text.
+    rows = [("sale-1", "https://example.test/1", MANIFEST, v2, "completed", 0, False, None, None, None, V2)]
+
+    counts, upserts, touched, calls = _run_rows(monkeypatch, rows, lambda _s, _u: {"points": []})
+
+    assert calls == [] and upserts == [] and len(touched) == 1
+    assert counts["unchanged"] == 1
+
+
+def test_a_v2_reading_is_read_again_in_v3_when_its_text_changed_or_its_lot_is_designated(monkeypatch) -> None:
+    v2_lots = reading.input_fingerprint(LOTS_MANIFEST, version=V2)
+    rows = [
+        ("sale-1", "https://example.test/1", MANIFEST, "an-older-text", "completed", 0, False, None, None, None, V2),
+        ("sale-2", "https://example.test/2", LOTS_MANIFEST, v2_lots, "completed", 0, False,
+         "apartment", "Nice", LOT_1, V2),
+    ]
+
+    counts, upserts, _, calls = _run_rows(monkeypatch, rows, lambda _s, _u: LOTS_RESPONSE)
+
+    assert counts["completed"] == 2
+    assert [params[3] for params in upserts] == [V3, V3]
+    assert calls[1].startswith("Bien vendu : lot 1")
