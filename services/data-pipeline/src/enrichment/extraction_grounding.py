@@ -14,6 +14,7 @@ from typing import Any
 
 from src.document_reading import MIN_QUOTE_CHARS, grounded_quote
 from src.normalize import strip_accents
+from src.occupancy_statements import OCCUPIED_FAMILY, VACANT, is_template_clause, occupancy_from_text
 
 # A scalar field (type, rooms, occupation) is often supported by a very short quote (« Maison »,
 # « Studio T2 »): shorter than the 12 characters asked of a document-reading quote.
@@ -84,9 +85,25 @@ def grounded_field_quote(context: str, evidence: Mapping[str, Any] | None, field
     return cited_excerpt(context, item)
 
 
+def _same_occupancy_family(claimed: str, read: str | None) -> bool:
+    """Free with free, or two statuses of the occupied family (occupied, rented, owner, squat)."""
+    if claimed == VACANT:
+        return read == VACANT
+    return claimed in OCCUPIED_FAMILY and read in OCCUPIED_FAMILY
+
+
 def occupancy_is_supported(context: str, status: str | None, evidence: Mapping[str, Any] | None) -> bool:
+    """The quote exists, states this status and reads as a statement about this property.
+
+    The quote must also give the same family of status with the grammar of ``occupancy_statements``
+    (#403): a template clause of the conditions of sale (« Si l'immeuble est loué, l'adjudicataire fera
+    son affaire du bail », « expulsion des occupants éventuels »), a conditional (« le bien serait
+    occupé ») or a mixed sentence give no certain status there, so they support none here either.
+    """
     excerpt = grounded_field_quote(context, evidence, "occupancy_status")
     if not excerpt or not status:
+        return False
+    if is_template_clause(excerpt) or not _same_occupancy_family(status, occupancy_from_text(excerpt).status):
         return False
     text = _normalized(excerpt)
     vacant = bool(_VACANT.search(text))

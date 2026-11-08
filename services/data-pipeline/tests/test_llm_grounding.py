@@ -14,6 +14,7 @@ from src.enrichment.extract_structured import (
     LLMExtraction,
     enrich_sale_with_llm,
 )
+from src.enrichment.extraction_grounding import occupancy_is_supported
 from src.enrichment.prompts import DISPLAY_DESCRIPTION_SYSTEM_PROMPT
 from src.models import AuctionSale
 
@@ -147,6 +148,49 @@ def test_occupancy_stays_unknown_without_a_supporting_quote(payload: dict) -> No
 
     sale = _apply(payload, CONTEXT + " Le bien est libre de toute occupation.")
 
+    assert sale.occupancy_status in (None, "unknown")
+
+
+TEMPLATE_CONTEXT = (
+    "Maison de cinq pièces. Le bien est occupé par le saisi et sa famille. Si l'immeuble est loué, "
+    "l'adjudicataire fera son affaire du bail en cours. Le bien serait occupé par un tiers selon le voisinage. "
+    "L'adjudicataire poursuivra à ses frais l'expulsion des occupants éventuels. "
+    "Le premier étage est libre, le rez-de-chaussée est loué à un commerçant."
+)
+
+
+def test_occupancy_quote_read_as_a_statement_on_the_property_is_kept() -> None:
+    # Nominal: the grammar of #403 reads « occupé par le saisi » in the occupied family.
+    evidence = {"occupancy_status": _quote("Le bien est occupé par le saisi et sa famille")}
+
+    assert occupancy_is_supported(TEMPLATE_CONTEXT, "occupied", evidence) is True
+    assert occupancy_is_supported(TEMPLATE_CONTEXT, "owner_occupied", evidence) is True
+    assert occupancy_is_supported(TEMPLATE_CONTEXT, "vacant", evidence) is False
+
+
+def test_mixed_occupancy_quote_supports_no_status() -> None:
+    # Limit: one sentence says free and rented; the grammar gives « unknown », so does the extraction.
+    evidence = {"occupancy_status": _quote("Le premier étage est libre, le rez-de-chaussée est loué à un commerçant")}
+
+    assert occupancy_is_supported(TEMPLATE_CONTEXT, "rented", evidence) is False
+    assert occupancy_is_supported(TEMPLATE_CONTEXT, "vacant", evidence) is False
+
+
+@pytest.mark.parametrize(
+    ("status", "quote"),
+    [
+        # Adversarial: real quotes from the offline probe of 08/11/2026, accepted until then.
+        ("rented", "Si l'immeuble est loué, l'adjudicataire fera son affaire du bail en cours"),
+        ("occupied", "Le bien serait occupé par un tiers selon le voisinage"),
+        ("occupied", "L'adjudicataire poursuivra à ses frais l'expulsion des occupants éventuels"),
+    ],
+)
+def test_template_clauses_and_conditionals_support_no_occupancy(status: str, quote: str) -> None:
+    evidence = {"occupancy_status": _quote(quote)}
+
+    assert occupancy_is_supported(TEMPLATE_CONTEXT, status, evidence) is False
+    sale = _apply({"occupancy_status": status, "confidence": {"occupancy_status": 0.95}, "evidence": evidence},
+                  TEMPLATE_CONTEXT)
     assert sale.occupancy_status in (None, "unknown")
 
 
