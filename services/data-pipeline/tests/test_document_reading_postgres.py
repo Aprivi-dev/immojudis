@@ -34,7 +34,7 @@ def setup(db) -> None:
     db.execute(
         """create table auction_sales(id uuid primary key default gen_random_uuid(), source_url text unique,
         source_name text not null default 'licitor', observations jsonb default '[]',
-        status text default 'upcoming', sale_date timestamptz)"""
+        status text default 'upcoming', sale_date timestamptz, property_type text, city text, raw_payload jsonb)"""
     )
     db.execute(
         """create table auction_source_state(source_name text primary key,
@@ -160,5 +160,38 @@ def test_upsert_stores_and_resets_the_attempt_count():
             assert stored() == ("completed", None, 0)
             with pytest.raises(Exception, match="attempt_count"):
                 upsert("failed", "x", -1)
+        finally:
+            db.rollback()
+
+
+def test_revalidation_rewrites_points_only_and_keeps_updated_at():
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+    with _postgres_connect(url) as db:
+        try:
+            setup(db)
+            add_sale(db, "kept", status="completed")
+            add_sale(db, "failed", status="failed")
+            add_sale(db, "past", status="completed")
+            db.execute("update auction_sales set sale_date = now() - interval '1 day' where source_url = 'past'")
+            db.execute(
+                "update auction_document_readings set points = '[{\"title\": \"x\"}]'::jsonb, "
+                "updated_at = '2026-01-01T00:00:00Z'"
+            )
+            rows = db.execute(reading.REVALIDATION_SQL, (100,)).fetchall()
+            assert [row[4] for row in rows] == [[]]  # latest pdf_text manifest of « kept » only
+            sale_id, version, fingerprint = rows[0][:3]
+            assert version == reading.DOCUMENT_READING_VERSION
+
+            db.execute(reading.REVALIDATED_POINTS_SQL, ("[]", sale_id, "another-fingerprint"))
+            assert db.execute(
+                "select points from auction_document_readings where sale_id = %s", (sale_id,)
+            ).fetchone()[0] == [{"title": "x"}]
+            db.execute(reading.REVALIDATED_POINTS_SQL, ("[]", sale_id, fingerprint))
+            points, updated_at = db.execute(
+                "select points, updated_at::text from auction_document_readings where sale_id = %s", (sale_id,)
+            ).fetchone()
+            assert points == [] and updated_at.startswith("2026-01-01")
         finally:
             db.rollback()

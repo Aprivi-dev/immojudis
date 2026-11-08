@@ -1,4 +1,4 @@
-"""Revalidate stored extractions with current checks, without calling an AI provider."""
+"""Revalidate stored extractions and document readings with current checks, without calling an AI provider."""
 from __future__ import annotations
 
 import argparse
@@ -62,11 +62,29 @@ def revalidate_cached_displays(limit: int = 1000) -> dict[str, int]:
     return report
 
 
+def revalidate_document_readings(limit: int = 1000) -> dict[str, int] | str:
+    """Stored « lecture des pièces » points replayed through the current checks (no model call)."""
+    from src.document_reading import revalidate_stored_readings
+
+    if not 1 <= limit <= 5000:
+        raise ValueError('Revalidation limit must be between 1 and 5000')
+    db_url = str(load_settings().get('supabase_db_url') or '')
+    if not db_url:
+        return 'skipped: SUPABASE_DB_URL is not set'
+    try:
+        return revalidate_stored_readings(db_url, limit=limit)
+    except Exception as exc:  # noqa: BLE001 - reported, never blocks the display revalidation that follows
+        LOGGER.warning('Document reading revalidation stopped: %s', type(exc).__name__)
+        return f'error: {type(exc).__name__}'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--limit', type=int, default=1000)
     args = parser.parse_args()
-    print(json.dumps(revalidate_cached_displays(args.limit)))
+    report: dict[str, object] = dict(revalidate_cached_displays(args.limit))
+    report['document_readings'] = revalidate_document_readings(args.limit)
+    print(json.dumps(report))
 
 
 if __name__ == '__main__':
