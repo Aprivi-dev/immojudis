@@ -338,12 +338,21 @@ def test_queue_batch_accepts_pre_claimed_jobs_without_claiming(monkeypatch) -> N
     assert finished == [("j1", {"succeeded": False, "error_message": "sale not found"})]
 
 
-def _free_lock(taken: list | None = None):
+def _free_lock(taken: list | None = None, *, lost_after: int | None = None):
+    """A lock that is always free; with ``lost_after``, its heartbeat fails during that sale (1-based)."""
+    from src.catalogue_lock import CatalogueLockHandle
+
+    calls: list[int] = []
+
     @contextmanager
     def lock(db_url, wait_seconds):
         if taken is not None:
             taken.append(wait_seconds)
-        yield
+        calls.append(1)
+        handle = CatalogueLockHandle("document backlog")
+        if lost_after is not None and len(calls) == lost_after:
+            handle.mark_lost()
+        yield handle
 
     return lock
 
@@ -407,3 +416,26 @@ def test_a_lock_that_never_frees_stops_the_drain_cleanly(monkeypatch) -> None:
 
     assert report.outcomes == []
     assert report.stop_reason == "catalogue_lock"
+
+
+def test_a_lost_lock_stops_the_drain_before_the_next_sale(monkeypatch) -> None:
+    _two_candidates(monkeypatch)
+    monkeypatch.setattr(backlog, "_catalogue_lock", _free_lock(lost_after=1))
+
+    report = backlog.run_document_backlog(backlog.BacklogLimits(budget_seconds=600), sleep=lambda _s: None)
+
+    assert [outcome.source_url for outcome in report.outcomes] == ["https://a"]
+    assert report.stop_reason == backlog.LOCK_LOST_STOP_REASON
+
+
+def test_a_lost_lock_fails_the_job_with_a_clear_message(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        backlog,
+        "run_document_backlog",
+        lambda _limits: backlog.BacklogReport(stop_reason=backlog.LOCK_LOST_STOP_REASON),
+    )
+    monkeypatch.setattr(backlog, "_run_document_reading", lambda: pytest.fail("nothing runs after a lost lock"))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+    assert backlog.main([]) != 0
+    assert "::error title=Verrou du catalogue perdu::" in capsys.readouterr().out

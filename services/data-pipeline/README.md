@@ -123,6 +123,14 @@ Quand `SUPABASE_DB_URL` est présent, l'upsert principal des ventes passe par
 Postgres direct, puis les tables dérivées (`auction_risks`, documents, score
 factors, surfaces, etc.) sont synchronisées via l'API REST service-role.
 
+Le port 6543 (pooler en mode transaction) convient aux écritures, mais pas au
+verrou d'écriture du catalogue (`src/catalogue_lock.py`), qui est un verrou
+consultatif de session : en mode transaction, chaque transaction peut changer de
+session serveur et le verrou ne tient pas. La connexion du verrou passe donc
+d'elle-même au port 5432 (pooler en mode session) quand l'hôte est
+`*.pooler.supabase.com`, et refuse le port 6543 sur tout autre hôte. Une URL
+directe (`db.<project-ref>.supabase.co:5432`) reste inchangée.
+
 #### Chiffrement de la connexion Postgres
 
 La connexion directe est chiffrée : si l'URL ne porte pas de `sslmode`, le

@@ -39,13 +39,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.config import load_settings
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
+
+if TYPE_CHECKING:
+    from src.catalogue_lock import CatalogueLockHandle
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +65,8 @@ MAX_PASSES_LIMIT = 8
 # waiting collection takes the lock; the drain then waits for it to finish.
 LOCK_YIELD_EVERY_SECONDS = 120.0
 LOCK_YIELD_PAUSE_SECONDS = 20.0
+# The lock heartbeat failed during a sale: the drain stops before the next one and exits non-zero.
+LOCK_LOST_STOP_REASON = "catalogue_lock_lost"
 # Priority used for (re)queued PDF generations; the ordinary enqueue uses 30.
 BACKLOG_PDF_PRIORITY = 40
 ACTIONABLE_STATUSES = ("active", "unknown", "upcoming", "postponed")
@@ -579,11 +584,11 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
 
 
 @contextmanager
-def _catalogue_lock(db_url: str, wait_seconds: float) -> Iterator[None]:
+def _catalogue_lock(db_url: str, wait_seconds: float) -> Iterator[CatalogueLockHandle]:
     from src.catalogue_lock import catalogue_writer_lock
 
-    with catalogue_writer_lock(db_url, label="document backlog", wait_seconds=wait_seconds):
-        yield
+    with catalogue_writer_lock(db_url, label="document backlog", wait_seconds=wait_seconds) as lock:
+        yield lock
 
 
 def run_document_backlog(
@@ -604,7 +609,7 @@ def run_document_backlog(
         int(limits.budget_seconds),
         limits.max_passes,
     )
-    from src.catalogue_lock import CatalogueLockTimeout
+    from src.catalogue_lock import CatalogueLockLost, CatalogueLockTimeout
 
     # Les ventes suivantes sont téléchargées et lues hors du verrou pendant que la courante est publiée
     # (src/document_prefetch.py) : le verrou ne couvre plus que la passe, qui trouve les pages déjà lues.
@@ -623,7 +628,7 @@ def run_document_backlog(
             prefetcher.wait_for(str(candidate["source_url"]))
             try:
                 # A collection may hold the lock for its whole 35-minute budget.
-                with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())):
+                with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())) as lock:
                     outcome = drain_sale(db_url, candidate, limits, deadline)
             except CatalogueLockTimeout as exc:
                 LOGGER.warning("Document backlog stopped: %s", exc)
@@ -645,6 +650,13 @@ def run_document_backlog(
                 f" error={outcome.error}" if outcome.error else "",
                 outcome.seconds,
             )
+            # The heartbeat failed while this sale was published: the next sale must not start.
+            try:
+                lock.ensure_held()
+            except CatalogueLockLost as exc:
+                LOGGER.error("Document backlog stopped: %s", exc)
+                report.stop_reason = LOCK_LOST_STOP_REASON
+                break
     finally:
         prefetcher.close()
     report.elapsed_seconds = time.monotonic() - started
@@ -714,9 +726,19 @@ def main(argv: list[str] | None = None) -> int:
     limits = limits_from_inputs(args.max_sales, args.budget_minutes, args.max_passes)
     report = run_document_backlog(limits)
     summary = report.as_dict()
-    summary["document_reading"] = _run_document_reading()
+    lock_lost = report.stop_reason == LOCK_LOST_STOP_REASON
+    summary["document_reading"] = "skipped" if lock_lost else _run_document_reading()
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     _write_step_summary(summary)
+    if lock_lost:
+        from src.catalogue_lock import LOCK_LOST_EXIT_CODE
+
+        print(
+            "::error title=Verrou du catalogue perdu::the catalogue writer lock may have been lost "
+            "(heartbeat failed); the document backlog stopped before the next sale.",
+            flush=True,
+        )
+        return LOCK_LOST_EXIT_CODE
     return 0
 
 
