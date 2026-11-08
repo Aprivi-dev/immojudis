@@ -337,7 +337,8 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
 
 /**
  * La recherche sans les critères qui lisent les colonnes lourdes (`SEARCH_DETAIL_COLUMNS` : DPE,
- * visites, texte), pour un premier tri plus large ; `null` quand aucun de ces critères n'est actif.
+ * visites, texte, et les blocs des sources pour le rendement des ventes notariales et le type de vente),
+ * pour un premier tri plus large ; `null` quand aucun de ces critères n'est actif.
  */
 function withoutDetailCriteria(search: SalesSearchParams): SalesSearchParams | null {
   const textQuery = resolveFrenchGeoSearch(search.query).kind === "text";
@@ -345,9 +346,13 @@ function withoutDetailCriteria(search: SalesSearchParams): SalesSearchParams | n
     search.openHouse ||
     search.visitSoon ||
     search.keywords?.trim() ||
+    search.minYield != null ||
+    search.saleType ||
     textQuery
     ? {
         ...search,
+        minYield: undefined,
+        saleType: undefined,
         dpeClasses: undefined,
         openHouse: undefined,
         visitSoon: undefined,

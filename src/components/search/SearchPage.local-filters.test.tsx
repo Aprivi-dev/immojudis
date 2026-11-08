@@ -124,10 +124,27 @@ describe("/sales connecté : filtres appliqués par la recherche, pas rejoués l
     );
   });
 
-  it("garde un filtre local ordinaire : une surface minimale écarte toujours les lignes trop petites", async () => {
-    renderPage({ belowRange: true, minSqft: 100 });
-    await waitFor(() => expect(state.fetchSearchResults).toHaveBeenCalled());
-    // Les 3 lignes font 50 m² : le filtre de surface, lui, est rejoué localement.
+  it("lignes de la recherche en cours : affichées telles quelles, même sans les colonnes du critère", async () => {
+    // Pépites + code postal : la base a filtré ; la carte de résultat n'a pas de code postal, et la refiltrer
+    // localement vidait la liste alors que le total comptait les ventes.
+    renderPage({ pepite: true, query: "75011", minSqft: 100 });
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(rows.length));
+  });
+
+  it("lignes provisoires d'une recherche précédente : refiltrées en attendant la nouvelle", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const page = (search: SalesSearchParams) => (
+      <QueryClientProvider client={client}>
+        <SearchPage search={search} serverSeeded={false} />
+      </QueryClientProvider>
+    );
+    const view = render(page({}));
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(rows.length));
+
+    // La nouvelle recherche ne répond pas encore : les lignes affichées sont celles de la précédente.
+    state.fetchSearchResults.mockImplementation(() => new Promise(() => undefined));
+    view.rerender(page({ minSqft: 100 }));
+    // Les 3 lignes font 50 m² : le filtre de surface les écarte de l'affichage provisoire.
     await waitFor(() => expect(screen.queryAllByRole("article")).toHaveLength(0));
   });
 });

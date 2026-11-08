@@ -558,6 +558,7 @@ export function SearchPage({
     data: rawMapSales = [],
     isLoading: isMapLoading,
     isFetching: isMapFetching,
+    isPlaceholderData: isMapPlaceholder,
   } = useQuery({
     queryKey: queryKeys.salesSearchMap(mapSearchKeySignature, comparisonScope),
     placeholderData: (previous, query) =>
@@ -597,17 +598,20 @@ export function SearchPage({
         : search,
     [search],
   );
+  // Le second passage local ne filtre que les lignes provisoires d'une recherche précédente. Les lignes de la
+  // recherche en cours sont déjà filtrées par elle, et la carte de résultat ou les points de carte n'ont pas
+  // toutes les colonnes des critères (surface, code postal, descriptions) : les refiltrer les écarterait à tort.
+  const localFilter = (sales: AuctionSale[], placeholder: boolean) =>
+    sortClientSearchResults(
+      placeholder ? applyClientSearchFilters(sales, localFilterSearch, center) : sales,
+      localFilterSearch,
+      center,
+    );
 
   const filteredSales = useMemo(
-    () =>
-      listIsPublic
-        ? rawSales
-        : sortClientSearchResults(
-            applyClientSearchFilters(rawSales, localFilterSearch, center),
-            localFilterSearch,
-            center,
-          ),
-    [center, listIsPublic, localFilterSearch, rawSales],
+    () => (listIsPublic ? rawSales : localFilter(rawSales, isPlaceholderData)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `localFilter` ne lit que ces valeurs.
+    [center, isPlaceholderData, listIsPublic, localFilterSearch, rawSales],
   );
 
   const mappableSales = useMemo(
@@ -616,17 +620,21 @@ export function SearchPage({
         ? []
         : listIsPublic
           ? rawSales
-          : sortClientSearchResults(
-              applyClientSearchFilters(
-                rawMapSales.length ? rawMapSales : rawSales,
-                localFilterSearch,
-                center,
-              ),
-              localFilterSearch,
-              center,
-            )
+          : rawMapSales.length
+            ? localFilter(rawMapSales, isMapPlaceholder)
+            : localFilter(rawSales, isPlaceholderData)
       ).filter(hasCoordinates),
-    [center, listIsPublic, localFilterSearch, mapVisible, rawMapSales, rawSales],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `localFilter` ne lit que ces valeurs.
+    [
+      center,
+      isMapPlaceholder,
+      isPlaceholderData,
+      listIsPublic,
+      localFilterSearch,
+      mapVisible,
+      rawMapSales,
+      rawSales,
+    ],
   );
   // Au plafond, les pépites passent avant les autres ventes : elles ne sont jamais coupées en premier.
   const mapSales = useMemo(

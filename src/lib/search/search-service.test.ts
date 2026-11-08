@@ -667,6 +667,16 @@ describe("balayage : colonnes légères, colonnes lourdes relues pour peu de ven
     });
   });
 
+  it.each([{ minYield: 1 }, { saleType: "notary" as const, maxPricePerM2: 1000 }])(
+    "rendement ou type de vente : relit les blocs des sources (régime de frais, procédure) %o",
+    async (search) => {
+      getSales.mockResolvedValue([row("a")]);
+      getSalesCount.mockResolvedValue(1);
+      await fetchSearchCount({ search, preview: false });
+      expect(getSaleRowsByIds).toHaveBeenCalledWith(["a"], "detail", { discovery: false });
+    },
+  );
+
   it("sans critère de DPE, de visite ni de texte, aucune colonne lourde n'est relue", async () => {
     getSales.mockResolvedValue([row("a"), row("b", { starting_price_eur: 900_000 })]);
     getSalesCount.mockResolvedValue(2);

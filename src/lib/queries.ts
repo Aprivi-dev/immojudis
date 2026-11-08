@@ -528,7 +528,7 @@ export async function getSalesForSearch(
       );
       if (ids.length === 0) return [];
       // Les identifiants lus sont déjà dans la liste `filters.ids` : on ne la renvoie pas une seconde fois
-      // dans l'URL (jusqu'à 200 identifiants pour « Pépites seulement »).
+      // dans l'URL (jusqu'à 100 identifiants pour « Pépites seulement »).
       const rows = await fetchSaleRowsByIds(
         db,
         catalogView,
