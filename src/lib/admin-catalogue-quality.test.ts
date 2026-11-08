@@ -1,18 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), from: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), from: vi.fn(), rpc: vi.fn() }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: mocks.from },
+  supabaseAdmin: { from: mocks.from, rpc: mocks.rpc },
 }));
 
 import {
   buildAdminCatalogueQualityView,
+  buildCeilingCoverage,
+  buildCrossSourceDuplicates,
   CATALOGUE_QUALITY_ALERT_PREFIX,
   catalogueQualityRows,
+  ceilingFailureReason,
   type CatalogueQualityRow,
+  type CeilingCoverageSale,
 } from "@/lib/admin-catalogue-quality";
 
 const alertKey = (metric: string) => `${CATALOGUE_QUALITY_ALERT_PREFIX}${metric}`;
@@ -208,6 +212,153 @@ describe("buildAdminCatalogueQualityView", () => {
   });
 });
 
+describe("buildCeilingCoverage (P7)", () => {
+  const now = new Date("2026-11-08T09:00:00Z");
+  const evaluation = (
+    venueType: string | null,
+    codes: string[],
+    estimate: { status?: string | null; code?: string | null } = {},
+    saleDate = "2026-12-01T09:00:00Z",
+  ): CeilingCoverageSale => ({
+    reasonCodes: ["pass:regime_open", "pass:sale_upcoming", ...codes],
+    venueType,
+    saleDate,
+    estimateStatus: estimate.status === undefined ? "ready" : estimate.status,
+    estimateErrorCode: estimate.code ?? null,
+  });
+
+  it("mesure la part calculable par type de vente, avec le motif d'échec principal", () => {
+    const view = buildCeilingCoverage(
+      [
+        evaluation("tribunal", ["pass:estimate_actionable", "pass:ceiling_computed"]),
+        evaluation("tribunal", ["pass:estimate_actionable", "pass:ceiling_computed"]),
+        evaluation("tribunal", ["fail:estimate_actionable", "fail:ceiling_computed"], {
+          status: "insufficient_data",
+          code: "MISSING_SURFACE",
+        }),
+        evaluation("tribunal", ["fail:estimate_actionable", "fail:ceiling_computed"], {
+          status: "insufficient_data",
+          code: "MISSING_SURFACE",
+        }),
+        evaluation("tribunal", ["fail:estimate_actionable", "fail:ceiling_computed"], {
+          status: "insufficient_data",
+          code: "NO_COMPARABLES",
+        }),
+        evaluation("notary", ["pass:estimate_actionable", "pass:ceiling_computed"]),
+        evaluation("notary", ["fail:no_valuation_conflict", "fail:ceiling_computed"]),
+        {
+          reasonCodes: ["fail:regime_open", "pass:sale_upcoming"],
+          venueType: "state",
+          saleDate: "2026-12-01T09:00:00Z",
+          estimateStatus: null,
+          estimateErrorCode: null,
+        },
+      ],
+      now,
+    )!;
+    const plainText = (value: unknown) => JSON.stringify(value).replace(/\s/g, " ");
+
+    expect(view.rows.map((row) => row.key)).toEqual(["tribunal", "notary", "state"]);
+    const [tribunal, notary, state] = view.rows;
+    expect(plainText(tribunal)).toContain('"computable":"2 (40 %)"');
+    expect(tribunal.ratio).toBeCloseTo(0.4);
+    expect(tribunal.mainFailure).toBe("Surface absente : 2 ventes");
+    expect(notary.mainFailure).toBe("Conflit de valorisation : 1 vente");
+    expect(state.ratio).toBe(0);
+    expect(state.mainFailure).toBe("Type de vente non ouvert au calcul : 1 vente");
+    expect(view.total.upcoming).toBe("8");
+    expect(view.total.ratio).toBeCloseTo(3 / 8);
+    expect(view.note).toContain("Une surface saisie par un utilisateur n’y entre pas");
+  });
+
+  it("ne compte que les ventes à venir, et rien sans évaluation", () => {
+    const past = evaluation("tribunal", ["pass:ceiling_computed"], {}, "2026-11-01T09:00:00Z");
+    const notUpcoming: CeilingCoverageSale = {
+      ...evaluation("tribunal", ["pass:ceiling_computed"]),
+      reasonCodes: ["fail:sale_upcoming"],
+    };
+    expect(buildCeilingCoverage([past, notUpcoming], now)).toBeNull();
+    expect(buildCeilingCoverage([], now)).toBeNull();
+  });
+
+  it("explique l'échec par l'état de l'estimation stockée", () => {
+    const failing = (estimate: { status?: string | null; code?: string | null }) =>
+      ceilingFailureReason(
+        evaluation("tribunal", ["fail:estimate_actionable", "fail:ceiling_computed"], estimate),
+      );
+    expect(failing({ status: null })).toBe("estimate_pending");
+    expect(failing({ status: "processing" })).toBe("estimate_pending");
+    expect(failing({ status: "ready" })).toBe("estimate_not_actionable");
+    expect(failing({ status: "failed", code: "UPSTREAM_UNAVAILABLE" })).toBe("estimate_failed");
+    expect(failing({ status: "insufficient_data", code: "MISSING_LOCATION" })).toBe(
+      "missing_location",
+    );
+    expect(failing({ status: "insufficient_data", code: "UNSUPPORTED_SEGMENT" })).toBe(
+      "unsupported_segment",
+    );
+    expect(
+      ceilingFailureReason(evaluation("tribunal", ["fail:no_ai_block", "fail:ceiling_computed"])),
+    ).toBe("ai_block");
+    expect(
+      ceilingFailureReason(
+        evaluation("notary", ["pass:estimate_actionable", "fail:ceiling_computed"]),
+      ),
+    ).toBe("other");
+  });
+});
+
+describe("buildCrossSourceDuplicates (D12)", () => {
+  const plainText = (value: unknown) => JSON.stringify(value).replace(/\s/g, " ");
+
+  it("reprend les groupes, les lignes, les seuils de la base et les groupes à trois sources", () => {
+    const view = buildCrossSourceDuplicates(
+      {
+        groups: 72,
+        lines: 152,
+        thresholds: { warning_groups: 100, critical_groups: 200 },
+        three_source_groups: 1,
+        three_source_examples: [
+          {
+            sale_day: "2026-12-12",
+            starting_price_eur: 95000,
+            city_key: "lyon",
+            line_count: 3,
+            source_count: 3,
+          },
+        ],
+      },
+      { kind: "function" },
+    )!;
+    expect(view.groups).toBe("72");
+    expect(view.lines).toBe("152");
+    expect(view.threshold).toBe("Alerte à partir de 100 groupes (critique : 200)");
+    expect(view.state).toBe("ok");
+    expect(view.threeSourceGroups).toBe("1");
+    expect(plainText(view.threeSourceExamples)).toBe(
+      '["12/12/2026 · lyon · 95 000 € · 3 sources, 3 lignes"]',
+    );
+    expect(view.note).toContain("La fusion des doublons reste coupée");
+  });
+
+  it("passe au rouge au seuil d'avertissement de la base, sans le changer", () => {
+    const view = buildCrossSourceDuplicates(
+      { groups: 100, lines: 210, warning_groups: 100, critical_groups: 200 },
+      { kind: "alert", seenAt: "2026-11-07T10:00:00Z" },
+    )!;
+    expect(view.state).toBe("alert");
+    expect(view.threshold).toBe("Alerte à partir de 100 groupes (critique : 200)");
+    expect(view.threeSourceGroups).toBe("—");
+    expect(view.note).toContain("attend la migration 20261112100100");
+  });
+
+  it("ne rend rien sans mesure", () => {
+    expect(buildCrossSourceDuplicates(null, { kind: "function" })).toBeNull();
+    expect(
+      buildCrossSourceDuplicates({ groups: null, lines: null }, { kind: "function" }),
+    ).toBeNull();
+  });
+});
+
 describe("getAdminCatalogueQuality", () => {
   beforeEach(() => vi.resetAllMocks());
 
@@ -268,5 +419,107 @@ describe("getAdminCatalogueQuality", () => {
     };
     mocks.from.mockReturnValue(failing);
     await expect(getAdminCatalogueQuality("token")).rejects.toThrow("lecture impossible");
+  });
+
+  it("ajoute la part des plafonds calculables et les doublons, en lecture seule", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    mocks.auth.mockResolvedValue({ isAdmin: true });
+    const calls: Record<string, unknown[][]> = {};
+    const chain = (table: string, result: unknown) => {
+      const builder: Record<string, unknown> = {};
+      for (const method of ["select", "eq", "like", "order", "limit", "contains", "range"]) {
+        builder[method] = (...args: unknown[]) => {
+          (calls[table] ??= []).push([method, ...args]);
+          return builder;
+        };
+      }
+      builder.then = (resolve: (value: unknown) => unknown) =>
+        Promise.resolve(result).then(resolve);
+      return builder;
+    };
+    mocks.from.mockImplementation((table: string) =>
+      table === "auction_sale_pepites"
+        ? chain(table, {
+            data: [
+              {
+                sale_id: "s1",
+                reason_codes: ["pass:sale_upcoming", "pass:ceiling_computed"],
+                sale: { sale_venue_type: "tribunal", sale_date: "2099-01-01", estimate: null },
+              },
+              {
+                sale_id: "s2",
+                reason_codes: ["pass:sale_upcoming", "fail:ceiling_computed"],
+                sale: {
+                  sale_venue_type: "tribunal",
+                  sale_date: "2099-01-01",
+                  estimate: { status: "insufficient_data", last_error_code: "MISSING_SURFACE" },
+                },
+              },
+            ],
+            error: null,
+          })
+        : chain(table, { data: [], error: null }),
+    );
+    mocks.rpc.mockResolvedValue({
+      data: { groups: 3, lines: 7, thresholds: { warning_groups: 100, critical_groups: 200 } },
+      error: null,
+    });
+
+    const view = await getAdminCatalogueQuality("token", new Date("2026-11-05T09:30:00Z"));
+
+    expect(view.ceilingCoverage?.rows[0]).toMatchObject({
+      key: "tribunal",
+      ratio: 0.5,
+      mainFailure: "Surface absente : 1 vente",
+    });
+    expect(calls.auction_sale_pepites).toContainEqual([
+      "contains",
+      "reason_codes",
+      ["pass:sale_upcoming"],
+    ]);
+    expect(mocks.rpc).toHaveBeenCalledWith("admin_cross_source_duplicates_summary", {
+      p_limit: 10,
+    });
+    expect(view.crossSourceDuplicates).toMatchObject({ groups: "3", lines: "7", state: "ok" });
+    // Aucune écriture : ni insert, ni update, ni delete n'existent sur les requêtes simulées.
+    expect(
+      Object.values(calls)
+        .flat()
+        .map((call) => call[0]),
+    ).not.toContain("update");
+  });
+
+  it("lit le dernier passage de l'alerte tant que la fonction n'est pas déployée", async () => {
+    mocks.auth.mockResolvedValue({ isAdmin: true });
+    const builder = (result: unknown) => {
+      const query: Record<string, unknown> = {};
+      for (const method of ["select", "eq", "like", "order", "limit", "contains", "range"]) {
+        query[method] = () => query;
+      }
+      query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
+      return query;
+    };
+    mocks.from.mockImplementation((table: string) =>
+      table === "operational_alerts"
+        ? builder({
+            data: [
+              {
+                alert_key: "catalogue.duplicates.cross_source",
+                last_seen_at: "2026-11-04T10:00:00Z",
+                first_seen_at: "2026-11-04T10:00:00Z",
+                details: { groups: 120, lines: 250, warning_groups: 100, critical_groups: 200 },
+              },
+            ],
+            error: null,
+          })
+        : builder({ data: [], error: null }),
+    );
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202", message: "missing" } });
+
+    const view = await getAdminCatalogueQuality("token", new Date("2026-11-05T09:30:00Z"));
+
+    expect(view.crossSourceDuplicates).toMatchObject({ groups: "120", state: "alert" });
+    expect(view.crossSourceDuplicates?.note).toContain("Dernier passage de l’alerte");
+    expect(view.ceilingCoverage).toBeNull();
   });
 });
