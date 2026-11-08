@@ -635,10 +635,9 @@ function addMarketMarginFactor(
  * score, pour qu'un rapport enregistré avant ne garde pas l'ancien libellé.
  */
 export function rentabilityLabel(score: number): string {
-  if (score >= 80) return "Score élevé (hypothèses à confirmer)";
-  if (score >= 65) return "Score moyen (hypothèses à confirmer)";
-  if (score >= 50) return "Score à travailler (hypothèses à confirmer)";
-  return "Score faible (hypothèses à confirmer)";
+  const level =
+    score >= 80 ? "élevé" : score >= 65 ? "moyen" : score >= 50 ? "à travailler" : "faible";
+  return `Score ${level} (hypothèses à confirmer)`;
 }
 
 function rentabilityConfidencePct({

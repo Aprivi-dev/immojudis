@@ -809,3 +809,97 @@ Aucun fichier n'a été modifié. Je n'avais pas de shell, donc pas de `git log`
 8. Le texte exact du formulaire type de rétractation.
 
 Sources : [C. conso. L121-2](https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044563114) · [LCEN](https://www.legifrance.gouv.fr/loda/id/JORFTEXT000000801164) · [CNIL, art. 13](https://www.cnil.fr/fr/reglement-europeen-protection-donnees/chapitre3#Article13) · [Simonnet Avocat, LCEN 1-1](https://www.simonnetavocat.fr/mentions-legales-dun-site-internet-obligations-sanctions-et-modele/) · [Dalloz, Civ. 1re 20/12/2023](https://www.dalloz-actualite.fr/document/civ-1re-20-dec-2023-fs-b-n-21-16491) · [Village de la justice, R221-1](https://www.village-justice.com/articles/commerce-tout-savoir-sur-droit-retractation,48261.html)
+
+---
+
+## 8. Exécution (08/11/2026)
+
+### Validation du propriétaire
+
+- **Validés** : les propositions Critiques et Hautes marquées « garder » des départements Technique,
+  Produit et expérience et Données, P1 et P2 compris.
+- **Non traités** : Commercial et contenus (C), juridique (J), équipe (E), propositions
+  « discutables » (T2, P13, P15, D12 hors affichage), Moyennes et Basses.
+- **Décision du propriétaire (T1)** : les photos tirées des procès-verbaux d'huissier **restent
+  publiées**, sans avis juridique. Seuls le registre, la matrice de conservation et la procédure de
+  retrait ont été complétés (« Publication maintenue par décision du propriétaire du 08/11/2026 » ;
+  base légale « à renseigner par le propriétaire »).
+
+### Fait
+
+Chaque lot a été développé dans une copie isolée du dépôt, puis fusionné dans la branche de la
+session.
+
+| Lot | Numéros                     | Résultat                                                                                                                                                                                                                                                          |
+| --- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A   | P1, P3, P10a, P11, P12, P14 | Retour à la vente après l'inscription ; barres du bas au-dessus du bandeau cookies (fiche visiteur et abonné) ; focus non masqué ; contours de focus conformes ; bouton d'inscription remonté ; bordures des champs à 3:1                                         |
+| B   | P4, P7, P8, D12 (affichage) | Avertissement avant un déblocage sans plafond calculable ; part des plafonds calculables et groupes de doublons dans « Contrôles qualité » ; surface saisie dans « Mon dossier » (migration `20261112100000`)                                                     |
+| C   | P5 + J1, P6                 | Libellés de score neutres ; avertissement du rapport partagé ; loyer estimé au lieu d'un rendement invraisemblable (seuil 15 %, à confirmer par `statisticien`)                                                                                                   |
+| D1  | T1 (doc), T3, T5, D9        | Documentation des photos ; port 5432 forcé pour le verrou du catalogue ; `PIPELINE_CALLBACK_SECRET` lu en priorité ; arrêt propre si le verrou est perdu                                                                                                          |
+| D2  | T8, T9                      | Post-mortem (`docs/audits/2026-11-04-post-mortem-vidage-pieces.md`), runbook du vidage, README du pipeline, nombre de processus de lecture en avance réglable par variable de dépôt ; alerte `pipeline.documents_backlog.low_yield` (migration `20261111131500`)  |
+| F   | T11                         | 60 tests de route sur les données personnelles ; défaut corrigé : `sale-workspace` répondait sans `cache-control`                                                                                                                                                 |
+| G   | T7                          | Référentiel unique des départements, lectures réservées aux comptes sorties de `SearchPage` (1 424 lignes) ; aucun plafond relevé                                                                                                                                 |
+| H   | D2 à D5                     | Valeur d'un bien libre jamais placée face à la mise à prix d'un bien occupé (fiche et accueil) ; phrase de valeur réservée aux estimations qui passent la porte publique ; « comparables et modèle » en mode hybride ; vrai nombre de ventes ; quartiles observés |
+| I   | D6 à D8                     | Titre et explication de la lecture des pièces contrôlés ; clauses types d'occupation refusées ; lot vendu transmis au modèle (version v3)                                                                                                                         |
+| J   | D1 (doc), D19               | Model card du modèle de valorisation ; runbook de retour arrière complété ; mélange servi évalué et porte d'activation portée sur lui                                                                                                                             |
+| T6  | T6                          | Fiche (1 434 lignes) et carte (1 201 lignes) découpées ; exceptions de longueur retirées, fichiers générés exclus par règle                                                                                                                                       |
+| P17 | P17                         | Liste go / no-go du lancement mise à jour                                                                                                                                                                                                                         |
+
+**Écarts aux briefs, acceptés** : T7 et T6 n'utilisent pas `next/dynamic`. Mesuré, chaque nouvel
+import dynamique faisait recopier des modules partagés par Turbopack et dépasser le plafond du
+JavaScript total. P8 ne reprend pas la surface saisie dans le PDF (le rapport est recalculé sur les
+seules données de l'annonce ; la fiche le signale).
+
+**Mesures en lecture seule** :
+
+- T3 : aucun verrou consultatif tenu au moment du relevé (non concluant).
+- P16 : aucun prix d'adjudication Avoventes n'est conservé ; les statistiques d'adjudication
+  viennent à 100 % de Licitor (529 ventes éligibles sur 6 mois). Avoventes ne réduit pas la
+  dépendance en l'état.
+
+### Relectures et corrections
+
+- `code-reviewer` a relevé deux points Critiques, corrigés :
+  - D8 : une lecture en échec effaçait la lecture précédente, et un budget épuisé en vidait jusqu'à 40. La lecture précédente est maintenant gardée, et la boucle s'arrête sur un refus de budget.
+  - Un test de route était cassé.
+- Points importants corrigés :
+  - seuil de T9 (30 min, débit de lecture, attente du verrou déduite) ;
+  - contrôle du verrou avant chaque écriture du vidage (le worker de file ne vérifie pas encore le
+    verrou : fichier au plafond de longueur) ;
+  - lots de copropriété (D8) ;
+  - relecture v3 limitée aux ventes dont le lot est désigné.
+- `juridique-rgpd` a demandé quatre reformulations avant la mise en ligne. Toutes sont appliquées :
+  - avertissement valable aussi pour les ventes notariales ;
+  - « le prix final est souvent bien plus élevé » ;
+  - « frais estimés compris » ;
+  - « médiane des ventes de biens libres » ;
+  - et le bouton « Revenir à cette vente ».
+
+### Vérifications sur la branche fusionnée
+
+- `tsc`, le lint et les 40 invariants de sécurité : verts.
+- Vitest : 13 197 tests verts. pytest : 6 274 verts. `ruff` : vert.
+- Build de production : vert.
+- En local, le contrôle des budgets signale `/annonce-exemple` à 185 035 octets pour 185 000. La
+  même valeur est mesurée sur des états antérieurs aux changements de cette page, et le contrôle
+  passait en CI sur `main` : l'écart est attribué à l'environnement local (variables publiques
+  factices). La CI tranche.
+
+### À faire par le propriétaire
+
+1. **D1** : appliquer l'action B du runbook `docs/runbooks/modeles-valorisation-retour-arriere.md`
+   (section « Cas : modèles actifs antérieurs à la porte »), puis lancer un entraînement en
+   brouillon.
+2. **Migrations** à appliquer par le workflow « Apply Supabase migrations » :
+   - `20261111131500` (alerte de rendement du vidage) ;
+   - `20261112100000` (surface saisie) ;
+   - `20261112100100` (résumé des doublons).
+     Le code fonctionne en les attendant.
+3. **D8** : au déploiement, les ventes dont le lot est désigné seront relues en v3 (environ 0,007 $
+   par vente, dans le budget quotidien). Pour différer, poser `DOCUMENT_READING_ENABLED=false`.
+4. **T3** : si `SUPABASE_DB_URL` pointe vers un hôte direct sur le port 6543, le pipeline refusera
+   désormais de démarrer : passer au pooler en mode session (5432).
+5. **T5** : poser `PIPELINE_CALLBACK_SECRET` dans les secrets GitHub, puis sur Vercel (ordre
+   documenté).
+6. **P2** : vérifier dans la console Vercel l'arrivée des événements produit, et le plan.
+7. **T13** : Lighthouse mobile après la mise en ligne.
