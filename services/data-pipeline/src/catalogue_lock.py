@@ -13,9 +13,20 @@ a Supabase pooler URL (``*.pooler.supabase.com``) to its session port 5432 and
 refuses the transaction port 6543 on any other host.
 
 A heartbeat keeps the idle lock session alive. If it fails, the lock may be
-gone: the handle yielded by ``catalogue_writer_lock`` is marked lost, and the
-writers check it (``ensure_held`` or ``ensure_catalogue_lock_held``) before
-their next write, then stop with ``CatalogueLockLost``.
+gone: the handle yielded by ``catalogue_writer_lock`` is marked lost. These
+checks then stop the writer with ``CatalogueLockLost``:
+
+* ``src.main``: before the early and the final publication
+  (``ensure_catalogue_lock_held``); a progressive publication is skipped
+  (``catalogue_lock_lost``);
+* ``src.document_backlog``: ``drain_sale`` before each pass and each projection
+  rewrite, and the run after each sale (``ensure_held``).
+
+``src.queued_runner`` checks nothing itself. In the document backlog, a pass
+it runs can still write its checkpoint or its sale after a heartbeat failure
+that happens during that pass; the drain stops right after. The queue worker
+(``python -m src.queued_runner``) holds the lock for its whole run and never
+checks it.
 """
 
 from __future__ import annotations

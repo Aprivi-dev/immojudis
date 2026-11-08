@@ -8,9 +8,12 @@ d'étape étaient refusés. Seule la lecture du journal du workflow l'a montré
 En fin de vidage, ``src.document_backlog`` écrit son bilan (ventes lues, passes partielles, points d'étape
 refusés, durée, lecture en avance) dans le résumé d'étape et le journal, puis ce module décide :
 
-* un vidage de plus de ``LOW_YIELD_MIN_DURATION_SECONDS`` (60 min) est évalué ; un vidage plus court (celui de
-  8 minutes qui suit chaque passage de la file d'enrichissement) ne mesure rien et ne touche pas l'alerte ;
-* l'alerte est active s'il a lu moins de ``LOW_YIELD_MIN_SALES_READ`` ventes, ou si plus de
+* un vidage de plus de ``LOW_YIELD_MIN_DURATION_SECONDS`` (30 min), attente du verrou du catalogue retranchée,
+  est évalué ; un vidage plus court (celui de 8 minutes qui suit chaque passage de la file d'enrichissement)
+  ne mesure rien et ne touche pas l'alerte, pas plus qu'un vidage arrêté faute d'avoir obtenu le verrou du
+  catalogue (``catalogue_lock``) : il n'a pas pu travailler ;
+* l'alerte est active si son débit est inférieur à ``LOW_YIELD_MIN_SALES_READ_PER_HOUR`` ventes lues par
+  heure (référence saine du 05/11/2026 : 43 ventes en 150 minutes, environ 17 par heure), ou si plus de
   ``LOW_YIELD_MAX_PARTIAL_PASS_SHARE`` de ses passes sont partielles.
 
 L'enregistrement passe par ``app_private.sync_documents_backlog_low_yield_alert`` (migration
@@ -31,15 +34,20 @@ LOGGER = logging.getLogger(__name__)
 ALERT_KEY = "pipeline.documents_backlog.low_yield"
 FUNCTION = "app_private.sync_documents_backlog_low_yield_alert(boolean,jsonb,timestamptz)"
 
-#: Seuils de l'alerte (décision du 08/11/2026, T9 ; supposés, à recalibrer sur les vidages suivants).
-LOW_YIELD_MIN_DURATION_SECONDS = 60 * 60
-LOW_YIELD_MIN_SALES_READ = 5
+#: Seuils de l'alerte (décision du 08/11/2026, T9, revue de code du 08/11 ; à recalibrer sur les vidages suivants).
+LOW_YIELD_MIN_DURATION_SECONDS = 30 * 60
+#: Environ le quart du débit sain (43 ventes en 150 minutes, soit 17 par heure) : un vidage qui tourne sans
+#: lire, pas un vidage simplement plus lent.
+LOW_YIELD_MIN_SALES_READ_PER_HOUR = 4.0
 LOW_YIELD_MAX_PARTIAL_PASS_SHARE = 0.30
+#: Arrêt sur l'attente du verrou du catalogue (src/document_backlog.py) : le vidage n'a pas pu travailler.
+LOCK_WAIT_STOP_REASON = "catalogue_lock"
 
 #: Champs du bilan recopiés dans le détail de l'alerte (aucune adresse de vente, aucune donnée personnelle).
 DETAIL_KEYS = (
     "stop_reason",
     "elapsed_seconds",
+    "lock_wait_seconds",
     "sales_seen",
     "sales_processed",
     "sales_read",
@@ -57,14 +65,21 @@ def partial_pass_share(passes: int, partial_passes: int) -> float:
 
 
 def evaluate_low_yield(summary: dict[str, Any]) -> dict[str, Any]:
-    """Décide si le bilan d'un vidage ouvre l'alerte. ``evaluated`` faux : vidage trop court, alerte inchangée."""
+    """Décide si le bilan d'un vidage ouvre l'alerte.
+
+    ``evaluated`` faux : vidage trop court une fois l'attente du verrou retranchée, ou arrêté sur l'attente du
+    verrou ; l'alerte reste inchangée.
+    """
     elapsed = float(summary.get("elapsed_seconds") or 0.0)
+    lock_wait = min(elapsed, max(0.0, float(summary.get("lock_wait_seconds") or 0.0)))
+    working = elapsed - lock_wait
     sales_read = int(summary.get("sales_read") or 0)
+    rate = round(sales_read * 3600.0 / working, 1) if working > 0 else 0.0
     share = partial_pass_share(int(summary.get("passes") or 0), int(summary.get("partial_passes") or 0))
-    evaluated = elapsed > LOW_YIELD_MIN_DURATION_SECONDS
+    evaluated = working > LOW_YIELD_MIN_DURATION_SECONDS and summary.get("stop_reason") != LOCK_WAIT_STOP_REASON
     reasons: list[str] = []
-    if evaluated and sales_read < LOW_YIELD_MIN_SALES_READ:
-        reasons.append("few_sales_read")
+    if evaluated and rate < LOW_YIELD_MIN_SALES_READ_PER_HOUR:
+        reasons.append("low_read_rate")
     if evaluated and share > LOW_YIELD_MAX_PARTIAL_PASS_SHARE:
         reasons.append("partial_passes")
     return {
@@ -72,9 +87,11 @@ def evaluate_low_yield(summary: dict[str, Any]) -> dict[str, Any]:
         "evaluated": evaluated,
         "active": bool(reasons),
         "reasons": reasons,
+        "evaluated_seconds": round(working, 1),
+        "sales_read_per_hour": rate,
         "thresholds": {
             "min_duration_seconds": LOW_YIELD_MIN_DURATION_SECONDS,
-            "min_sales_read": LOW_YIELD_MIN_SALES_READ,
+            "min_sales_read_per_hour": LOW_YIELD_MIN_SALES_READ_PER_HOUR,
             "max_partial_pass_share": LOW_YIELD_MAX_PARTIAL_PASS_SHARE,
         },
     }
@@ -82,6 +99,8 @@ def evaluate_low_yield(summary: dict[str, Any]) -> dict[str, Any]:
 
 def alert_details(summary: dict[str, Any], evaluation: dict[str, Any]) -> dict[str, Any]:
     details = {key: summary.get(key) for key in DETAIL_KEYS if key in summary}
+    details["evaluated_seconds"] = evaluation.get("evaluated_seconds")
+    details["sales_read_per_hour"] = evaluation.get("sales_read_per_hour")
     details["reasons"] = list(evaluation.get("reasons") or [])
     details["thresholds"] = dict(evaluation.get("thresholds") or {})
     return details
