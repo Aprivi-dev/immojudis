@@ -134,7 +134,11 @@ def decide_activation(report: dict[str, Any], *, requested: bool) -> PromotionDe
     Accuracy: the median APE must beat both the active model and the naive local reference, and the
     paired bootstrap interval of each gap (``report["error_gap"]``) must lie entirely below zero.
     Interval: at least ``MIN_PROMOTION_COVERAGE_PCT`` of the newest validation sales must fall
-    inside the served interval (nominal 80 %). ``--force`` bypasses none of this.
+    inside the served interval (nominal 80 %).
+    Served blend (D19): what the application shows is the model blended with the comparables
+    (``report["blend"]``, see ``valuation_served_blend``); at every quality tier its median APE must not
+    be worse than that of the comparables alone, and a blend that was not evaluated is a refusal.
+    ``--force`` bypasses none of this.
     """
     if not requested:
         return PromotionDecision(False, ("activation not requested",))
@@ -178,4 +182,33 @@ def decide_activation(report: dict[str, Any], *, requested: bool) -> PromotionDe
             f"the served interval covers {coverage}% of the validation sales, below the "
             f"{MIN_PROMOTION_COVERAGE_PCT}% floor (nominal {_rounded(CONFIDENCE_LEVEL * 100)}%)"
         )
+    reasons.extend(served_blend_reasons(report.get("blend")))
     return PromotionDecision(not reasons, tuple(reasons))
+
+
+def served_blend_reasons(blend: Any) -> list[str]:
+    """Why the served model + comparables blend forbids activation (empty when it does not).
+
+    Refused when the blend was not evaluated, or when, at any quality tier of the comparables, the
+    blend's median APE is worse than that of the comparables alone on the same sales: the
+    application would then show, for those comparables, a value less accurate than without the model.
+    """
+    if not isinstance(blend, dict) or blend.get("status") != "evaluated":
+        detail = blend.get("reason") if isinstance(blend, dict) else None
+        return [
+            "the served model + comparables blend was not evaluated on the validation sales"
+            + (f" ({detail})" if detail else "")
+        ]
+    tiers = blend.get("served_blend")
+    if not isinstance(tiers, dict) or not tiers:
+        return ["the served model + comparables blend has no quality tier evaluated"]
+    comparables = float(blend["comparables_only"]["median_ape_pct"])
+    reasons: list[str] = []
+    for label, tier in tiers.items():
+        blended = float(tier["median_ape_pct"])
+        if blended > comparables:
+            reasons.append(
+                f"the served blend with '{label}' comparables (model weight {tier.get('model_weight')}) has a "
+                f"median APE of {blended}%, worse than the comparables alone ({comparables}%)"
+            )
+    return reasons
