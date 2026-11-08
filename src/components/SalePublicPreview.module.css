@@ -1623,8 +1623,9 @@
   }
 
   /* La fiche de vente suit le défilement, sous la pilule de navigation du site. Plus haute que
-     l'écran (bande d'écart et ses mises en garde), elle défile d'elle-même : le bouton d'inscription
-     reste atteignable. */
+     l'écran (bande d'écart et ses mises en garde), elle défile d'elle-même. Le bouton d'inscription
+     suit la date de la vente (P12) : il est en vue sans faire défiler le panneau ; le lieu, les
+     conditions et les liens d'avocat et de frais viennent après. */
   .side {
     position: sticky;
     top: 96px;
