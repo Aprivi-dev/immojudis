@@ -845,6 +845,12 @@ session.
 | T6  | T6                          | Fiche (1 434 lignes) et carte (1 201 lignes) découpées ; exceptions de longueur retirées, fichiers générés exclus par règle                                                                                                                                       |
 | P17 | P17                         | Liste go / no-go du lancement mise à jour                                                                                                                                                                                                                         |
 
+**Report (budget JavaScript)** : le sous-point de P1 « S'inscrire de l'en-tête garde la vente » est
+retiré avant la mise en ligne. L'en-tête est chargé sur toutes les pages et ce calcul faisait passer
+`/annonce-exemple` à 185 053 octets en CI (plafond 185 000). Le cœur de P1 (retour à la vente après
+une inscription lancée depuis les boutons de la fiche) est en ligne. À reprendre par une solution qui
+ne pèse pas sur l'en-tête (par exemple lire la page d'origine sur `/login`).
+
 **Écarts aux briefs, acceptés** : T7 et T6 n'utilisent pas `next/dynamic`. Mesuré, chaque nouvel
 import dynamique faisait recopier des modules partagés par Turbopack et dépasser le plafond du
 JavaScript total. P8 ne reprend pas la surface saisie dans le PDF (le rapport est recalculé sur les

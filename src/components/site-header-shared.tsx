@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { BrandMark } from "@/components/BrandMark";
-import { loginPathWithRedirect } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 /** Éléments communs à l'en-tête et aux menus qu'il charge à la demande. */
@@ -81,26 +80,10 @@ export function MenuBars({
   );
 }
 
-/**
- * Inscription depuis l'en-tête. Sur une fiche, la page de connexion garde la vente (`redirect`) et
- * son motif : après l'accueil, la personne revient sur la vente.
- */
-export function signupHref(pathname?: string | null): string {
-  return pathname?.startsWith("/sales/")
-    ? loginPathWithRedirect(pathname, { reason: "fiche" })
-    : "/login?mode=investor";
-}
-
 /** « S'inscrire », dans la pilule sous « lg » (en-tête et menu mobile ouvert). */
-export function SignupLink({
-  onClick,
-  pathname,
-}: {
-  onClick?: () => void;
-  pathname?: string | null;
-}) {
+export function SignupLink({ onClick }: { onClick?: () => void }) {
   return (
-    <Link href={signupHref(pathname)} onClick={onClick} className={cn(buttonBase, primaryButton)}>
+    <Link href="/login?mode=investor" onClick={onClick} className={cn(buttonBase, primaryButton)}>
       S’inscrire
     </Link>
   );

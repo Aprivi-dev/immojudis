@@ -13,7 +13,6 @@ import {
   MenuBars,
   primaryButton,
   SignupLink,
-  signupHref,
   SITE_HEADER_PILL_CLASSES,
 } from "@/components/site-header-shared";
 import { useAuth } from "@/hooks/use-auth";
@@ -63,7 +62,7 @@ export function MobileMenu({
         <div className={cn(SITE_HEADER_PILL_CLASSES, "pointer-events-auto")}>
           <HeaderLogo onClick={onNavigate} />
           <div className="flex items-center gap-2">
-            {signedIn ? null : <SignupLink onClick={onNavigate} pathname={pathname} />}
+            {signedIn ? null : <SignupLink onClick={onNavigate} />}
             <DialogPrimitive.Close asChild>
               <button
                 type="button"
@@ -157,7 +156,7 @@ export function MobileMenu({
               Connexion
             </Link>
             <Link
-              href={signupHref(pathname)}
+              href="/login?mode=investor"
               onClick={onNavigate}
               className={cn(buttonBase, primaryButton, "w-full")}
             >

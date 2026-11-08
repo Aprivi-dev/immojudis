@@ -1,25 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { postAuthDestination } from "@/lib/onboarding";
-import { isActive, signupHref } from "./site-header-shared";
-
-describe("signupHref (inscription depuis l'en-tête)", () => {
-  const sale = "/sales/4655881c-249d-4eab-beba-f2624d8a1af0";
-
-  it("garde la fiche en cours, qui ramène sur la vente après l'accueil", () => {
-    const href = signupHref(sale);
-    expect(href).toBe(`/login?redirect=${encodeURIComponent(sale)}&mode=investor&reason=fiche`);
-    const redirect = new URLSearchParams(href.split("?")[1]).get("redirect") ?? undefined;
-    expect(postAuthDestination({ mode: "investor", professional: false, redirect })).toBe(
-      `/bienvenue?retour=${encodeURIComponent(sale)}`,
-    );
-  });
-
-  it("reste l'inscription simple hors d'une fiche", () => {
-    for (const pathname of [null, undefined, "/", "/sales", "/salesx/1", "/avocats"]) {
-      expect(signupHref(pathname), String(pathname)).toBe("/login?mode=investor");
-    }
-  });
-});
+import { isActive } from "./site-header-shared";
 
 describe("isActive (entrée de l'en-tête marquée comme courante)", () => {
   it("marque l'entrée sur sa page et sur ses sous-pages", () => {

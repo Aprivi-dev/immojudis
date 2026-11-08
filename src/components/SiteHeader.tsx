@@ -14,7 +14,6 @@ import {
   primaryButton,
   quietButton,
   SignupLink,
-  signupHref,
   SITE_HEADER_PILL_CLASSES,
   SITE_HEADER_PILL_SHELL_CLASSES,
   SITE_HEADER_PILL_SPACER_CLASSES,
@@ -138,7 +137,7 @@ export function SiteHeader({
       </Suspense>
     </>
   ) : (
-    <VisitorActions pathname={pathname} />
+    <VisitorActions />
   );
   const menuButton = (
     <>
@@ -237,7 +236,7 @@ function SitePill({
                 compte »). */}
             {signup ? (
               <span data-site-pill-signup className="contents max-[359px]:hidden">
-                <SignupLink pathname={pathname} />
+                <SignupLink />
               </span>
             ) : null}
             {menu}
@@ -249,13 +248,13 @@ function SitePill({
   );
 }
 
-function VisitorActions({ pathname }: { pathname?: string | null }) {
+function VisitorActions() {
   return (
     <>
       <Link href="/login" className={cn(buttonBase, quietButton)}>
         Connexion
       </Link>
-      <Link href={signupHref(pathname)} className={cn(buttonBase, primaryButton)}>
+      <Link href="/login?mode=investor" className={cn(buttonBase, primaryButton)}>
         Créer un compte
       </Link>
     </>
