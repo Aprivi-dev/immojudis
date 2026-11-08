@@ -1,4 +1,10 @@
-import { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints } from "@/lib/queries";
+import {
+  getSaleMapPoints,
+  getSaleRowsByIds,
+  getSalesCount,
+  getSalesForCompleteSearch,
+  getSalesForSearch,
+} from "@/lib/queries";
 import { getSupabase } from "@/integrations/supabase/lazy";
 import { readJson } from "@/lib/client-api-core";
 import { geocodeAddress } from "@/lib/geo";
@@ -11,13 +17,14 @@ import {
   withPhotoMirrors,
   type PhotoMirrorClient,
 } from "@/lib/photo-mirror";
-import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
+import type { AuctionSale, SaleFilters, SaleMediaMirror } from "@/lib/types";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import { previewSearchRequestKey, type PreviewSearchResponse } from "./preview-search";
 import { previewSearchApiUrl, type PreviewSearchApiResponse } from "./preview-search-request";
 import { fetchUnderRangeSaleIds } from "./market-range-filter";
 import { fetchPepiteSaleIds } from "./pepite-filter";
 import { SearchRejectedError } from "./search-errors";
+import { resolveFrenchGeoSearch } from "./french-geo-search";
 import type { SalesSearchParams } from "./search-url-state";
 import {
   applyClientSearchFilters,
@@ -31,6 +38,12 @@ import {
 
 /** Garde-fou de la lecture complète des filtres avancés : au-delà, la recherche est trop large. */
 const MAX_COMPLETE_SEARCH_ROWS = 10_000;
+
+/**
+ * Au plus autant d'identifiants passés à la base dans une même lecture : ils voyagent dans l'adresse de
+ * la requête (voir `SaleFilters.ids`). Au-delà, la liste est croisée avec les lignes lues.
+ */
+const MAX_ID_SCOPE = 100;
 
 /** Réponse de la route d'aperçu : les ventes, leur total et les copies de photos trouvées. */
 type PreviewSearchPage = PreviewSearchResponse & {
@@ -102,23 +115,69 @@ async function loadSearchResults({
   search: SalesSearchParams;
   discovery?: boolean;
 }): Promise<AuctionSale[]> {
-  if (hasClientOnlyFilters(search)) {
-    const rows = await fetchCompleteFilteredSearch(search, discovery);
-    const start = ((search.page ?? 1) - 1) * (search.limit ?? DEFAULT_SEARCH_LIMIT);
-    return rows.slice(start, start + (search.limit ?? DEFAULT_SEARCH_LIMIT));
-  }
+  const plan = await searchPlan(search);
+  if (plan.kind === "none") return [];
   const page = search.page ?? 1;
   const perPage = search.limit ?? DEFAULT_SEARCH_LIMIT;
   const offset = (page - 1) * perPage;
+  if (plan.kind === "scan") {
+    const rows = await fetchCompleteFilteredSearch(search, discovery);
+    // Le balayage ne lit que les colonnes légères : photos et pastilles de la carte de résultat sont
+    // relues pour la seule page affichée.
+    return withCardColumns(rows.slice(offset, offset + perPage), discovery);
+  }
   return excludeHomepageExampleSales(
     await getSalesForSearch(
-      dataFiltersFromSearch(search),
+      plan.filters,
       perPage,
       dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery }),
       offset,
       { discovery },
     ),
   );
+}
+
+type SearchPlan =
+  /** Aucune vente possible (aucune pépite) : rien à lire. */
+  | { kind: "none" }
+  /** Tous les critères sont des filtres de la base : pagination, total et carte par la base. */
+  | { kind: "server"; filters: SaleFilters }
+  /** Un critère se lit sur les lignes : balayage complet partagé (`fetchCompleteFilteredSearch`). */
+  | { kind: "scan" };
+
+/**
+ * Comment servir une recherche. « Pépites seulement » n'impose plus de balayer tout le catalogue : la
+ * liste publique des pépites (quelques ventes, gardée 5 minutes) est passée à la base comme liste
+ * d'identifiants, avec les autres filtres, le tri et la pagination. Le balayage ne reste que pour les
+ * critères lus sur les lignes (prix au m², rendement, DPE…) ou une liste trop longue pour l'adresse.
+ */
+async function searchPlan(search: SalesSearchParams): Promise<SearchPlan> {
+  if (hasClientOnlyFilters({ ...search, pepite: undefined })) return { kind: "scan" };
+  const filters = dataFiltersFromSearch(search);
+  if (!search.pepite) return { kind: "server", filters };
+  const pepiteSaleIds = await fetchPepiteSaleIds();
+  if (pepiteSaleIds.size === 0) return { kind: "none" };
+  if (pepiteSaleIds.size > MAX_ID_SCOPE) return { kind: "scan" };
+  return { kind: "server", filters: { ...filters, ids: [...pepiteSaleIds] } };
+}
+
+/** Ajoute aux lignes du balayage les colonnes de la carte de résultat (photos, pastilles), dans le même ordre. */
+async function withCardColumns(rows: AuctionSale[], discovery: boolean): Promise<AuctionSale[]> {
+  if (!rows.length) return rows;
+  const cards = await getSaleRowsByIds(
+    rows.map((row) => row.id),
+    "card",
+    { discovery },
+  );
+  return mergeRows(rows, cards);
+}
+
+function mergeRows(rows: AuctionSale[], extra: AuctionSale[]): AuctionSale[] {
+  const extraById = new Map(extra.map((row) => [row.id, row]));
+  return rows.map((row) => {
+    const more = extraById.get(row.id);
+    return more ? { ...row, ...more } : row;
+  });
 }
 
 // The total is deliberately NOT folded into the list request (`count` on the
@@ -139,24 +198,24 @@ export async function fetchSearchCount({
 }): Promise<number> {
   if (preview) return (await fetchPreviewSearch(search)).count;
 
-  if (hasClientOnlyFilters(search))
-    return (await fetchCompleteFilteredSearch(search, discovery)).length;
-  const filters = dataFiltersFromSearch(search);
-  return getSalesCount(filters, { discovery });
+  const plan = await searchPlan(search);
+  if (plan.kind === "none") return 0;
+  if (plan.kind === "scan") return (await fetchCompleteFilteredSearch(search, discovery)).length;
+  return getSalesCount(plan.filters, { discovery });
 }
 
 export async function fetchSearchMapResults(
   search: SalesSearchParams,
   options: { discovery?: boolean } = {},
 ): Promise<AuctionSale[]> {
-  if (hasClientOnlyFilters(search))
+  const plan = await searchPlan(search);
+  if (plan.kind === "none") return [];
+  if (plan.kind === "scan")
     return (await fetchCompleteFilteredSearch(search, options.discovery ?? false))
       .filter((sale) => sale.latitude != null && sale.longitude != null)
       .slice(0, MAX_MAP_RESULTS);
   // Tous les points de la recherche (identifiant, position, prix), pas un échantillon de 300.
-  return excludeHomepageExampleSales(
-    await getSaleMapPoints(dataFiltersFromSearch(search), options),
-  );
+  return excludeHomepageExampleSales(await getSaleMapPoints(plan.filters, options));
 }
 
 /**
@@ -223,8 +282,14 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
     const pepiteSaleIds = search.pepite ? await fetchPepiteSaleIds() : null;
     // Aucune pépite : rien à croiser, on ne lit pas le catalogue pour retirer toutes ses lignes.
     if (pepiteSaleIds && pepiteSaleIds.size === 0) return [];
+    // Les deux listes réduisent la lecture elle-même quand elles tiennent dans l'adresse de la requête.
+    const idScope = intersectIdScopes(underRangeSaleIds, pepiteSaleIds);
+    if (idScope && idScope.length === 0) return [];
     const batchSize = 100;
-    const dataFilters = dataFiltersFromSearch(criteria);
+    const dataFilters: SaleFilters = {
+      ...dataFiltersFromSearch(criteria),
+      ...(idScope && idScope.length <= MAX_ID_SCOPE ? { ids: idScope } : {}),
+    };
     const dataSort = dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery });
     // The batches are read in parallel once the total is known (see `readPagedRows`): same rows,
     // same order, same limit as reading them one after the other.
@@ -232,26 +297,81 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
       pageSize: batchSize,
       maxRows: MAX_COMPLETE_SEARCH_ROWS,
       countTotal: () => getSalesCount(dataFilters, { discovery }),
-      // Advanced client-side filters need fields intentionally omitted from
-      // the lightweight card projection (DPE, visits, documents, evidence).
+      // Colonnes légères seulement (`SEARCH_SCAN_COLUMNS`) : les colonnes lourdes coûtaient plusieurs
+      // secondes par page dans la base.
       readPage: (offset) =>
-        getSales(dataFilters, batchSize, dataSort, offset, { discovery, completenessTier: true }),
+        getSalesForCompleteSearch(dataFilters, batchSize, dataSort, offset, { discovery }),
     });
     if (truncated)
       throw new Error(
         "Cette recherche est trop large. Choisissez une région ou un département pour appliquer les filtres avancés.",
       );
+    const context = {
+      underRangeSaleIds,
+      pepiteSaleIds,
+      // Comme sur les cartes : l'occupation ne compte parmi les points que si le compte la lit.
+      occupancyVisible: !discovery,
+    };
+    const candidates = excludeHomepageExampleSales(rows);
+    if (!needsDetailColumns(search)) {
+      return sortClientSearchResults(
+        applyClientSearchFilters(candidates, search, center, context),
+        search,
+        center,
+      );
+    }
+    // DPE, visites ou texte : les autres critères trient d'abord sur les lignes légères, puis les blocs
+    // des sources, les pièces et les descriptions ne sont relus que pour les ventes restantes.
+    const retained = applyClientSearchFilters(
+      candidates,
+      withoutDetailCriteria(search),
+      center,
+      context,
+    );
+    const details = await getSaleRowsByIds(
+      retained.map((sale) => sale.id),
+      "detail",
+      { discovery },
+    );
     return sortClientSearchResults(
-      applyClientSearchFilters(excludeHomepageExampleSales(rows), search, center, {
-        underRangeSaleIds,
-        pepiteSaleIds,
-        // Comme sur les cartes : l'occupation ne compte parmi les points que si le compte la lit.
-        occupancyVisible: !discovery,
-      }),
+      applyClientSearchFilters(mergeRows(retained, details), search, center, context),
       search,
       center,
     );
   })().finally(() => completeSearches.delete(key));
   completeSearches.set(key, request);
   return request;
+}
+
+/** Critères avancés qui lisent les blocs des sources, les pièces ou les descriptions (`SEARCH_DETAIL_COLUMNS`). */
+function needsDetailColumns(search: SalesSearchParams): boolean {
+  return Boolean(
+    search.dpeClasses?.length ||
+    search.openHouse ||
+    search.visitSoon ||
+    search.keywords?.trim() ||
+    resolveFrenchGeoSearch(search.query).kind === "text",
+  );
+}
+
+/** La même recherche sans les critères qui demandent les colonnes lourdes (premier tri, plus large). */
+function withoutDetailCriteria(search: SalesSearchParams): SalesSearchParams {
+  return {
+    ...search,
+    dpeClasses: undefined,
+    openHouse: undefined,
+    visitSoon: undefined,
+    keywords: undefined,
+    query: resolveFrenchGeoSearch(search.query).kind === "text" ? undefined : search.query,
+  };
+}
+
+/** Intersection des listes d'identifiants actives (en minuscules), ou `null` sans aucune liste. */
+function intersectIdScopes(...scopes: Array<ReadonlySet<string> | null>): string[] | null {
+  const active = scopes.filter((scope): scope is ReadonlySet<string> => scope != null);
+  if (!active.length) return null;
+  const [first, ...others] = active;
+  return [...first]
+    .map((id) => id.toLowerCase())
+    .filter((id) => others.every((scope) => scope.has(id)));
 }
