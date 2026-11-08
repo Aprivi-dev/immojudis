@@ -354,16 +354,18 @@ jobs:
       # app_private.catalogue_invalidations les ventes qui quittent le catalogue ; cette étape les envoie à
       # POST /api/pipeline/revalidate-sale (100 par appel, supprimées seulement sur une réponse 2xx). Elle
       # tourne même quand la collecte échoue (un retrait déjà enregistré doit partir), ne fait jamais échouer
-      # le job, et c'est la seule étape qui reçoit CRON_SECRET (variable de dépôt SITE_URL : l'origine
-      # publique, https://immojudis.com, valeur de repli quand la variable est absente). Une configuration
-      # manquante (secret absent, adresse invalide) rend l'étape rouge avec une annotation d'erreur : elle ne
-      # saute plus en silence. Voir docs/runbooks/catalogue-visibility-projection.md.
+      # le job, et c'est la seule étape qui reçoit PIPELINE_CALLBACK_SECRET et CRON_SECRET (le premier est
+      # envoyé s'il est posé, sinon le second ; ordre de bascule dans docs/vercel_setup.md) (variable de dépôt
+      # SITE_URL : l'origine publique, https://immojudis.com, valeur de repli quand la variable est absente).
+      # Une configuration manquante (secret absent, adresse invalide) rend l'étape rouge avec une annotation
+      # d'erreur : elle ne saute plus en silence. Voir docs/runbooks/catalogue-visibility-projection.md.
       - name: Invalidate public cache
         if: always()
         continue-on-error: true
         timeout-minutes: 5
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PIPELINE_CALLBACK_SECRET: ${{ secrets.PIPELINE_CALLBACK_SECRET }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           SITE_URL: ${{ vars.SITE_URL || 'https://immojudis.com' }}
         run: python -m src.cache_invalidation --flush
