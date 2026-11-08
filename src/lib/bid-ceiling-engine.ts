@@ -124,7 +124,10 @@ export type CeilingHypotheses = {
     /** Valeur au prix du quart supérieur des ventes : plafond de la plus-value après travaux. */
     upperAmount: number | null;
     reliability: ValueReliability;
+    /** Effectif (pondéré, décimal) : sous 8, la valeur est jugée fragile. */
     sampleSize: number | null;
+    /** Nombre réel de ventes comparables, pour l'affichage (jamais l'effectif décimal). */
+    salesCount?: number | null;
     surfaceEstimated: boolean;
   };
   works: { key: CeilingWorksKey; amount: number; contingencyPct: number; months: number };
@@ -494,7 +497,9 @@ function buildSteps(h: CeilingHypotheses, plan: CeilingPlan, value: number): Cei
 function valueDetail(h: CeilingHypotheses): string {
   const surface = `${Math.round(h.surface ?? 0)} m²`;
   if (h.value.source === "saisie") return `Prix au m² que vous avez saisi, appliqué à ${surface}.`;
-  const sample = h.value.sampleSize ? ` à partir de ${h.value.sampleSize} ventes comparables` : "";
+  const sales = h.value.salesCount;
+  const plural = sales && sales > 1 ? "s" : "";
+  const sample = sales ? ` à partir de ${sales} vente${plural} comparable${plural}` : "";
   const reliability = { forte: "solide", correcte: "correcte", fragile: "fragile", saisie: "" }[
     h.value.reliability
   ];

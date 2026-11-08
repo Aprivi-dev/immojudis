@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exampleVerdictData } from "@/lib/example-verdict";
+import { formatNumber } from "@/lib/format";
 import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 
@@ -48,6 +49,12 @@ describe("Essayez sur un exemple", () => {
     expect(text(card)).toContain("12 ventes à moins de 100 m");
     expect(text(card)).toContain("Même immeuble : 226 000 €");
     expect(text(card)).toContain("Occupant déclaré, bail non produit (PV p. 3)");
+    // Exemple occupé : la mise à prix et la médiane des ventes libres, sans écart « sous le marché ».
+    const data = exampleVerdictData();
+    const perM2 = (value: number) => `${formatNumber(value)} €/m²`.replace(/\s/g, " ");
+    expect(text(card)).toContain(`Mise à prix : ${perM2(data.startingPricePerM2)}`);
+    expect(text(card)).toContain(`médiane des ventes libres : ${perM2(data.medianPricePerM2)}`);
+    expect(text(card)).not.toMatch(/sous le marché/);
     expect(within(card).getByRole("button", { name: "Habiter" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
