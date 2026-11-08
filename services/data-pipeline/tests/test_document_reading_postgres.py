@@ -34,7 +34,7 @@ def setup(db) -> None:
     db.execute(
         """create table auction_sales(id uuid primary key default gen_random_uuid(), source_url text unique,
         source_name text not null default 'licitor', observations jsonb default '[]',
-        status text default 'upcoming', sale_date timestamptz)"""
+        status text default 'upcoming', sale_date timestamptz, property_type text, city text, raw_payload jsonb)"""
     )
     db.execute(
         """create table auction_source_state(source_name text primary key,
