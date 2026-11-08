@@ -24,7 +24,10 @@ import { DELETE, PATCH } from "./route";
 const OWN = "1f3e5a7c-9b1d-4f2a-8c3e-5a7b9c1d3e01";
 const OTHER = "2a4c6e8f-0b2d-4e4f-9a6b-8c0d2e4f6a02";
 
-type Handler = (request: Request, context: { params: Promise<{ id: string }> }) => Promise<Response>;
+type Handler = (
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) => Promise<Response>;
 
 function call(
   handler: Handler,

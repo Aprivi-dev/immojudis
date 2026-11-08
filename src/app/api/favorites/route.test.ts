@@ -137,7 +137,10 @@ describe("/api/favorites", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(await response.json()).toMatchObject({ created: true, favorite: { saleId: SALE_OTHER } });
+    expect(await response.json()).toMatchObject({
+      created: true,
+      favorite: { saleId: SALE_OTHER },
+    });
     expect(mocks.db.rows("user_favorites", { sale_id: SALE_OTHER })).toEqual([
       expect.objectContaining({ user_id: "user-2" }),
       expect.objectContaining({ user_id: "user-1" }),
