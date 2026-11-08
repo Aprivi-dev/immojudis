@@ -17,7 +17,11 @@ import {
   NO_CEILING_REGIME_REASON,
 } from "@/lib/property-report/ceiling-snapshot";
 import { computeAcquisitionCosts } from "@/lib/profitability";
-import { assessSaleCeilingInputs, computeSaleCeiling } from "@/lib/sale-ceiling";
+import {
+  assessSaleCeilingInputs,
+  computeSaleCeiling,
+  withEnteredSurface,
+} from "@/lib/sale-ceiling";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -574,5 +578,70 @@ describe("computeSaleCeiling : loyer de référence de la commune", () => {
     expect(fromReport.maxBid).toBe(fromSheet.plan.maxBid);
     // Sans la référence, le loyer (donc le plafond) serait celui du département.
     expect(otherReport.maxBid).not.toBe(fromReport.maxBid);
+  });
+});
+
+describe("surface saisie par l'utilisateur (« Surface lue dans les pièces »)", () => {
+  // Un local sans surface publiée : pas de surface estimée, donc pas de plafond.
+  const shop = () =>
+    sale({ property_type: "commercial", app_surface_m2: null, app_surface_kind: null });
+  const assess = (item: AuctionSale) =>
+    assessSaleCeilingInputs({ sale: item, aiProjections: null, aiReviewStatus: "disabled" });
+
+  it("rend le plafond calculable quand l'annonce ne donne pas la surface", () => {
+    const listing = assess(shop());
+    expect(listing.surface).toBeNull();
+    const without = computeSaleCeiling({ assessed: listing, estimate: estimate(150_000, 75) });
+    expect(without.plan.available).toBe(false);
+
+    const entered = withEnteredSurface(listing, 75);
+    expect(entered.surface).toBe(75);
+    expect(entered.surfaceEnteredByUser).toBe(true);
+    const ceiling = computeSaleCeiling({ assessed: entered, estimate: estimate(150_000, 75) });
+    expect(ceiling.plan.available).toBe(true);
+    expect(ceiling.hypotheses.surface).toBe(75);
+    expect(ceiling.hypotheses.surfaceEnteredByUser).toBe(true);
+    // La valeur est celle de l'estimation calculée sur la surface saisie.
+    expect(ceiling.hypotheses.value.amount).toBe(150_000);
+    // Elle est dite « saisie par vous » dans le détail de la valeur.
+    const valueStep = ceiling.plan.steps.find((step) => /saisie par vous/.test(step.detail));
+    expect(valueStep).toBeDefined();
+  });
+
+  it("remplace une surface seulement estimée, jamais une surface publiée", () => {
+    const estimated = assess(sale({ app_surface_m2: null, rooms_count: 3 }));
+    expect(getMarketValuationSurfaces(estimated.displaySale).builtSurfaceEstimated).toBe(true);
+    const replaced = computeSaleCeiling({
+      assessed: withEnteredSurface(estimated, 71),
+      estimate: estimate(142_000, 71),
+    });
+    expect(replaced.hypotheses.surface).toBe(71);
+    // Lue dans les pièces : ce n'est plus une surface estimée (pas de marge de donnée pour elle).
+    expect(replaced.hypotheses.value.surfaceEstimated).toBe(false);
+
+    const published = assess(sale());
+    expect(withEnteredSurface(published, 30)).toBe(published);
+    expect(buildCeilingHypotheses(sale(), null, {}, null, null, 30).surface).toBe(62);
+  });
+
+  it("ignore une surface hors bornes, un terrain nu et un champ critique bloqué", () => {
+    const listing = assess(shop());
+    expect(withEnteredSurface(listing, 0)).toBe(listing);
+    expect(withEnteredSurface(listing, -5)).toBe(listing);
+    expect(withEnteredSurface(listing, 10_001)).toBe(listing);
+    expect(withEnteredSurface(listing, 10_000).surface).toBe(10_000);
+
+    const land = assess(
+      sale({ property_type: "land", app_surface_m2: 800, app_surface_kind: "land" }),
+    );
+    expect(withEnteredSurface(land, 90)).toBe(land);
+
+    const blocked = assessSaleCeilingInputs({
+      sale: shop(),
+      aiProjections: blockedPrice(),
+      aiReviewStatus: "ready",
+    });
+    expect(blocked.blocked.critical).toBe(true);
+    expect(withEnteredSurface(blocked, 75)).toBe(blocked);
   });
 });

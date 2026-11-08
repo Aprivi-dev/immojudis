@@ -11,11 +11,33 @@ import { PublicApiError } from "@/lib/api-errors";
 import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 import { assertFeatureEntitlementVia, featureIncludedForSale } from "@/lib/property-reports";
 import { ceilingMarketContext } from "@/lib/market-estimate-ceiling";
-import { refreshSaleValuationOnDemand } from "@/lib/sale-market-estimates";
+import {
+  estimateSaleValueWithEnteredSurface,
+  refreshSaleValuationOnDemand,
+} from "@/lib/sale-market-estimates";
+import { getFavoriteEnteredSurface } from "@/lib/favorite-dossier";
+import type { MarketContext } from "@/lib/market.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { z } from "zod";
 
-const requestSchema = z.object({ saleId: z.string().guid() });
+const requestSchema = z.object({
+  saleId: z.string().guid(),
+  /**
+   * La valeur du plafond est recalculée sur la surface que le compte a saisie dans « Mon dossier ».
+   * La surface est relue sur le compte, jamais prise dans la demande.
+   */
+  enteredSurface: z.literal(true).optional(),
+});
+
+function contextStatus(context: MarketContext): number {
+  return context.estimate
+    ? 200
+    : context.status === "queued"
+      ? 202
+      : context.status === "insufficient_data"
+        ? 422
+        : 503;
+}
 
 export const maxDuration = 60;
 
@@ -27,7 +49,7 @@ export async function POST(request: Request) {
       bucketKey: "market-estimate",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    const { saleId } = requestSchema.parse(await request.json());
+    const { saleId, enteredSurface } = requestSchema.parse(await request.json());
     // Analyse reads the detailed estimate. A Découverte account that unlocked this very sale
     // (« 3 déblocages par mois ») gets the reference value under the bid-ceiling right, reduced to
     // what the ceiling reads: the detailed estimate (range, quartiles, comparables) stays with
@@ -51,6 +73,23 @@ export async function POST(request: Request) {
       .maybeSingle();
     if (visibilityError) throw visibilityError;
     if (!visibleSale) throw new PublicApiError("Vente introuvable.", 404);
+    if (enteredSurface) {
+      // Surface lue dans les pièces par ce compte : la valeur n'est ni stockée, ni journalisée, ni
+      // comptée (aucun événement d'usage) ; elle ne sert qu'au plafond de ce compte. Toujours la
+      // projection du plafond : le détail de l'estimation (Analyse) reste celui de l'annonce.
+      const surface = await getFavoriteEnteredSurface({ auth, saleId });
+      if (surface == null) {
+        throw new PublicApiError("Aucune surface saisie dans votre dossier pour cette vente.", 404);
+      }
+      const context = await estimateSaleValueWithEnteredSurface(saleId, surface);
+      if (!context) {
+        throw new PublicApiError("L’annonce publie déjà la surface de cette vente.", 409);
+      }
+      return NextResponse.json(ceilingMarketContext(context), {
+        status: contextStatus(context),
+        headers: { "cache-control": "private, no-store" },
+      });
+    }
     const response = await refreshSaleValuationOnDemand(saleId);
     if (response.estimate) {
       await recordFeatureUsageEvent({
@@ -73,13 +112,7 @@ export async function POST(request: Request) {
       // plafond se fait dans le navigateur, mesuré à part (`ceiling_viewed`).
       await recordAccountProductEvent(auth.userId, { type: "bid_ceiling_calculated", saleId });
     }
-    const status = response.estimate
-      ? 200
-      : response.status === "queued"
-        ? 202
-        : response.status === "insufficient_data"
-          ? 422
-          : 503;
+    const status = contextStatus(response);
     return NextResponse.json(detailed ? response : ceilingMarketContext(response), {
       status,
       headers: {

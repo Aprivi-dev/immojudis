@@ -160,6 +160,11 @@ export async function fetchCourtAuctionSummaries(): Promise<{ courts: CourtAucti
 
 export async function fetchPrecomputedMarketEstimate(args: {
   saleId: string;
+  /**
+   * La valeur est recalculée sur la surface que le compte a saisie dans « Mon dossier » : le serveur
+   * la relit sur le compte (jamais envoyée par le navigateur) et ne rend que ce que lit le plafond.
+   */
+  enteredSurface?: boolean;
 }): Promise<SaleMarketContext> {
   const response = await fetch("/api/market-estimate", {
     method: "POST",
@@ -167,7 +172,10 @@ export async function fetchPrecomputedMarketEstimate(args: {
       "Content-Type": "application/json",
       ...(await authHeaders()),
     },
-    body: JSON.stringify({ saleId: args.saleId }),
+    body: JSON.stringify({
+      saleId: args.saleId,
+      ...(args.enteredSurface ? { enteredSurface: true } : {}),
+    }),
   });
 
   const payload = (await response.json().catch(() => null)) as SaleMarketContext | null;

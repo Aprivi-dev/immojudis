@@ -4,6 +4,7 @@ import {
   type SaleWorkspaceStatus,
 } from "@/lib/sale-workspace-shared";
 import { MAX_SIMULATOR_AMOUNT_EUR } from "@/lib/simulator-limits";
+import { MAX_ENTERED_SURFACE_M2, validEnteredSurface } from "@/lib/surface";
 
 /**
  * « Mon dossier » gratuit (point 68) : le statut personnel et l'enchère plafond d'une vente suivie.
@@ -39,6 +40,12 @@ export type FavoriteDossier = {
   personalStatusUpdatedAt: string | null;
   bidCeilingEur: number | null;
   bidCeilingSavedAt: string | null;
+  /**
+   * Surface que le compte a lue dans les pièces (« Surface lue dans les pièces »), en m², quand
+   * l'annonce ne la publie pas. Saisie par la personne, pour son seul calcul : jamais recopiée au
+   * catalogue, ni dans les statistiques ni dans les alertes ; effacée avec le favori et le compte.
+   */
+  userSurfaceM2: number | null;
 };
 
 export type FavoriteDossierResponse = { dossier: FavoriteDossier };
@@ -49,6 +56,8 @@ export type FavoriteDossierRow = {
   personal_status_updated_at: string | null;
   bid_ceiling_eur: number | null;
   bid_ceiling_saved_at: string | null;
+  /** Absente tant que la migration 20261112100000 n'est pas appliquée. PostgREST rend un `numeric` en nombre. */
+  user_surface_m2?: number | string | null;
 };
 
 export function toFavoriteDossier(row: FavoriteDossierRow): FavoriteDossier {
@@ -59,6 +68,9 @@ export function toFavoriteDossier(row: FavoriteDossierRow): FavoriteDossier {
     personalStatusUpdatedAt: row.personal_status_updated_at,
     bidCeilingEur: typeof row.bid_ceiling_eur === "number" ? row.bid_ceiling_eur : null,
     bidCeilingSavedAt: row.bid_ceiling_saved_at,
+    userSurfaceM2: validEnteredSurface(
+      row.user_surface_m2 == null ? null : Number(row.user_surface_m2),
+    ),
   };
 }
 
@@ -109,5 +121,45 @@ export function emptyFavoriteDossier(saleId: string): FavoriteDossier {
     personalStatusUpdatedAt: null,
     bidCeilingEur: null,
     bidCeilingSavedAt: null,
+    userSurfaceM2: null,
   };
+}
+
+const SURFACE_FORMAT = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 });
+
+/** Une surface à l'écran, virgule décimale française (« 54,5 »), sans unité : « m² » est à côté. */
+export function formatSurfaceInput(value: number): string {
+  return SURFACE_FORMAT.format(value);
+}
+
+export type SurfaceInputResult = { ok: true; value: number } | { ok: false; message: string };
+
+/**
+ * Lit la surface saisie dans « Surface lue dans les pièces » : espaces et « m² » ignorés, virgule ou
+ * point décimal, deux décimales au plus. Mêmes bornes que le schéma du serveur et la contrainte de la
+ * base : strictement plus de 0 m², au plus `MAX_ENTERED_SURFACE_M2`.
+ */
+export function parseSurfaceInput(raw: string): SurfaceInputResult {
+  const cleaned = raw
+    .replace(/m²|m2/gi, "")
+    .replace(/[\s\u00a0\u202f]/g, "")
+    .replace(",", ".");
+  if (cleaned === "") {
+    return { ok: false, message: "Saisissez une surface en m², par exemple 54." };
+  }
+  if (!/^\d+(?:\.\d{1,2})?$/.test(cleaned)) {
+    return {
+      ok: false,
+      message: "Saisissez une surface en m², en chiffres seulement, par exemple 54 ou 54,5.",
+    };
+  }
+  const value = Number(cleaned);
+  if (!(value > 0)) return { ok: false, message: "La surface doit être supérieure à 0 m²." };
+  if (value > MAX_ENTERED_SURFACE_M2) {
+    return {
+      ok: false,
+      message: `La surface ne peut pas dépasser ${formatSurfaceInput(MAX_ENTERED_SURFACE_M2)} m².`,
+    };
+  }
+  return { ok: true, value };
 }

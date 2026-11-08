@@ -116,6 +116,11 @@ export type CeilingHypotheses = {
   /** Remplace la marge du profil quand l'utilisateur la fixe lui-même. */
   customMarginPct?: number | null;
   surface: number | null;
+  /**
+   * La surface est celle que l'utilisateur a lue dans les pièces et saisie dans « Mon dossier »
+   * (l'annonce ne la publie pas) : elle est signalée « saisie par vous » partout où elle est citée.
+   */
+  surfaceEnteredByUser?: boolean;
   startingPrice: number | null;
   value: {
     /** Valeur du bien dans l'état moyen des ventes du secteur. */
@@ -492,7 +497,7 @@ function buildSteps(h: CeilingHypotheses, plan: CeilingPlan, value: number): Cei
 }
 
 function valueDetail(h: CeilingHypotheses): string {
-  const surface = `${Math.round(h.surface ?? 0)} m²`;
+  const surface = `${Math.round(h.surface ?? 0)} m²${h.surfaceEnteredByUser ? " (surface saisie par vous)" : ""}`;
   if (h.value.source === "saisie") return `Prix au m² que vous avez saisi, appliqué à ${surface}.`;
   const sample = h.value.sampleSize ? ` à partir de ${h.value.sampleSize} ventes comparables` : "";
   const reliability = { forte: "solide", correcte: "correcte", fragile: "fragile", saisie: "" }[

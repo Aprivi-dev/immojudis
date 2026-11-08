@@ -7,8 +7,10 @@ import {
   emptyFavoriteDossier,
   favoriteDossierStatusLabel,
   formatBidCeilingInput,
+  formatSurfaceInput,
   normalizeFavoriteDossierStatus,
   parseBidCeilingInput,
+  parseSurfaceInput,
   toFavoriteDossier,
 } from "@/lib/favorite-dossier-shared";
 import { favoriteDossierInputSchema } from "@/lib/favorite-dossier-input";
@@ -25,7 +27,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/favorites", () => ({ assertSaleFavoritesAvailable: mocks.assertFavorites }));
 
-import { getFavoriteDossier, saveFavoriteDossier } from "@/lib/favorite-dossier";
+import {
+  getFavoriteDossier,
+  getFavoriteEnteredSurface,
+  saveFavoriteDossier,
+} from "@/lib/favorite-dossier";
 
 const SALE_ID = "7d335032-e935-4550-9347-ed22b0f63449";
 const USER_ID = "user-1";
@@ -137,6 +143,59 @@ describe("parseBidCeilingInput", () => {
   });
 });
 
+describe("surface lue dans les pièces", () => {
+  it("accepte une surface de plus de 0 m² et d'au plus 10 000 m², au centième", () => {
+    expect(favoriteDossierInputSchema.parse({ saleId: SALE_ID, userSurfaceM2: 54.567 })).toEqual({
+      saleId: SALE_ID,
+      userSurfaceM2: 54.57,
+    });
+    expect(favoriteDossierInputSchema.parse({ saleId: SALE_ID, userSurfaceM2: 10_000 })).toEqual({
+      saleId: SALE_ID,
+      userSurfaceM2: 10_000,
+    });
+    expect(favoriteDossierInputSchema.parse({ saleId: SALE_ID, userSurfaceM2: null })).toEqual({
+      saleId: SALE_ID,
+      userSurfaceM2: null,
+    });
+  });
+
+  it("refuse 0, une surface négative, au-delà de 10 000 m² ou qui n'est pas un nombre", () => {
+    for (const userSurfaceM2 of [0, -1, 10_000.5, Number.POSITIVE_INFINITY, "54"]) {
+      expect(favoriteDossierInputSchema.safeParse({ saleId: SALE_ID, userSurfaceM2 }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  it("lit la saisie française et refuse ce que la base refuserait", () => {
+    expect(parseSurfaceInput("54")).toEqual({ ok: true, value: 54 });
+    expect(parseSurfaceInput(" 54,5 m² ")).toEqual({ ok: true, value: 54.5 });
+    expect(parseSurfaceInput("1 200 m2")).toEqual({ ok: true, value: 1200 });
+    expect(parseSurfaceInput("0")).toMatchObject({ ok: false });
+    expect(parseSurfaceInput("")).toMatchObject({ ok: false });
+    expect(parseSurfaceInput("-5")).toMatchObject({ ok: false });
+    expect(parseSurfaceInput("environ 50")).toMatchObject({ ok: false });
+    expect(parseSurfaceInput("10001")).toEqual({
+      ok: false,
+      message: "La surface ne peut pas dépasser 10 000 m².",
+    });
+    expect(formatSurfaceInput(54.5)).toBe("54,5");
+  });
+
+  it("lit la colonne numérique et ignore une valeur hors bornes", () => {
+    const row = {
+      sale_id: SALE_ID,
+      personal_status: null,
+      personal_status_updated_at: null,
+      bid_ceiling_eur: null,
+      bid_ceiling_saved_at: null,
+    };
+    expect(toFavoriteDossier({ ...row, user_surface_m2: "72.25" }).userSurfaceM2).toBe(72.25);
+    expect(toFavoriteDossier({ ...row, user_surface_m2: 0 }).userSurfaceM2).toBeNull();
+    expect(toFavoriteDossier(row).userSurfaceM2).toBeNull();
+  });
+});
+
 describe("toFavoriteDossier", () => {
   it("rend les valeurs absentes comme absentes", () => {
     expect(
@@ -241,6 +300,69 @@ describe("saveFavoriteDossier", () => {
     await expect(
       saveFavoriteDossier({ auth: auth(), input: { saleId: SALE_ID, personalStatus: "won" } }),
     ).rejects.toThrow("boom");
+  });
+
+  it("enregistre la surface lue dans les pièces sur la seule ligne du compte", async () => {
+    mocks.maybeSingle.mockResolvedValue({
+      data: {
+        sale_id: SALE_ID,
+        personal_status: null,
+        personal_status_updated_at: null,
+        bid_ceiling_eur: null,
+        bid_ceiling_saved_at: null,
+        user_surface_m2: "54.5",
+      },
+      error: null,
+    });
+    const response = await saveFavoriteDossier({
+      auth: auth(),
+      input: { saleId: SALE_ID, userSurfaceM2: 54.5 },
+    });
+    // Jamais le catalogue : la seule table écrite est celle des favoris du compte.
+    expect(mocks.from).toHaveBeenCalledWith("user_favorites");
+    expect(mocks.from).not.toHaveBeenCalledWith("auction_sales");
+    expect(mocks.update).toHaveBeenCalledWith({ user_surface_m2: 54.5 });
+    expect(mocks.eq).toHaveBeenCalledWith("user_id", USER_ID);
+    expect(response.dossier.userSurfaceM2).toBe(54.5);
+  });
+
+  it("relit le dossier sans la surface tant que la colonne n'est pas migrée", async () => {
+    const missing = {
+      code: "42703",
+      message: "column user_favorites.user_surface_m2 does not exist",
+    };
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: missing }).mockResolvedValueOnce({
+      data: {
+        sale_id: SALE_ID,
+        personal_status: "won",
+        personal_status_updated_at: null,
+        bid_ceiling_eur: null,
+        bid_ceiling_saved_at: null,
+      },
+      error: null,
+    });
+    const response = await getFavoriteDossier({ auth: auth(), saleId: SALE_ID });
+    expect(response.dossier).toMatchObject({ personalStatus: "won", userSurfaceM2: null });
+    expect(mocks.select).toHaveBeenLastCalledWith(expect.not.stringContaining("user_surface_m2"));
+
+    mocks.maybeSingle.mockResolvedValue({ data: null, error: missing });
+    await expect(
+      saveFavoriteDossier({ auth: auth(), input: { saleId: SALE_ID, userSurfaceM2: 60 } }),
+    ).rejects.toMatchObject({ name: "PublicApiError", status: 503 });
+  });
+
+  it("lit la surface saisie pour le calcul, et rien hors bornes ni sans colonne", async () => {
+    mocks.maybeSingle.mockResolvedValueOnce({ data: { user_surface_m2: 75 }, error: null });
+    await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).resolves.toBe(75);
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).resolves.toBeNull();
+    mocks.maybeSingle.mockResolvedValueOnce({ data: { user_surface_m2: 0 }, error: null });
+    await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).resolves.toBeNull();
+    mocks.maybeSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: "PGRST204", message: "Could not find the 'user_surface_m2' column" },
+    });
+    await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).resolves.toBeNull();
   });
 
   it("reste ouvert au compte Découverte, sans ouvrir les outils d'analyse", () => {

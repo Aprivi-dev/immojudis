@@ -13,8 +13,10 @@ import {
   FAVORITE_DOSSIER_STATUSES,
   favoriteDossierStatusLabel,
   formatBidCeilingInput,
+  formatSurfaceInput,
   normalizeFavoriteDossierStatus,
   parseBidCeilingInput,
+  parseSurfaceInput,
   type FavoriteDossierInput,
   type FavoriteDossierResponse,
 } from "@/lib/favorite-dossier-shared";
@@ -39,6 +41,7 @@ export function SaleFileCard({
   saleId,
   calculatedCeiling,
   calculationPending = false,
+  surfaceEntry = false,
   onOpenWorkspace,
 }: {
   saleId: string;
@@ -46,6 +49,11 @@ export function SaleFileCard({
   calculatedCeiling: number | null;
   /** Le calcul est ouvert à ce compte mais l'estimation de marché n'est pas encore arrivée. */
   calculationPending?: boolean;
+  /**
+   * L'annonce ne publie pas la surface bâtie et le plafond peut s'en servir : le champ « Surface lue
+   * dans les pièces » est proposé. Une surface déjà enregistrée reste affichée (et peut être retirée).
+   */
+  surfaceEntry?: boolean;
   /**
    * Compte Analyse : ouvre le dialogue du dossier de travail. « Mon dossier » en est l'unique porte
    * d'entrée ; absent pour les autres comptes (le bouton n'apparaît pas).
@@ -59,6 +67,14 @@ export function SaleFileCard({
   const ceilingHelpId = `${ceilingId}-help`;
   const ceilingErrorId = `${ceilingId}-error`;
   const ceilingInputRef = useRef<HTMLInputElement>(null);
+  const surfaceId = useId();
+  const surfaceHelpId = `${surfaceId}-help`;
+  const surfaceErrorId = `${surfaceId}-error`;
+  const surfaceInputRef = useRef<HTMLInputElement>(null);
+  /** Texte saisi dans le champ de la surface ; `null` tant qu'on n'y a pas touché. */
+  const [surfaceDraft, setSurfaceDraft] = useState<string | null>(null);
+  const [surfaceError, setSurfaceError] = useState<string | null>(null);
+  const [surfaceMessage, setSurfaceMessage] = useState("");
   const userId = user?.id ?? null;
   const dossierKey = queryKeys.favoriteDossier(userId, saleId);
   /** Texte saisi dans le champ du plafond ; `null` tant qu'on n'y a pas touché (le plafond enregistré s'affiche). */
@@ -79,6 +95,7 @@ export function SaleFileCard({
     onMutate: (changes) => {
       if (changes.personalStatus !== undefined) setStatusMessage("");
       if (changes.bidCeilingEur !== undefined) setCeilingMessage("");
+      if (changes.userSurfaceM2 !== undefined) setSurfaceMessage("");
     },
     onSuccess: (response: FavoriteDossierResponse, changes) => {
       queryClient.setQueryData(dossierKey, response);
@@ -93,6 +110,13 @@ export function SaleFileCard({
         setCeilingError(null);
         setCeilingMessage(
           changes.bidCeilingEur != null ? "Enchère plafond enregistrée" : "Enchère plafond retirée",
+        );
+      }
+      if (changes.userSurfaceM2 !== undefined) {
+        setSurfaceDraft(null);
+        setSurfaceError(null);
+        setSurfaceMessage(
+          changes.userSurfaceM2 != null ? "Surface enregistrée" : "Surface retirée",
         );
       }
     },
@@ -128,6 +152,24 @@ export function SaleFileCard({
     setCeilingDraft(formatBidCeilingInput(ceiling));
     setCeilingError(null);
     ceilingInputRef.current?.focus();
+  }
+
+  const savedSurface = dossier?.userSurfaceM2 ?? null;
+  const surfaceValue =
+    surfaceDraft ?? (savedSurface != null ? formatSurfaceInput(savedSurface) : "");
+  const showSurface = surfaceEntry || savedSurface != null;
+
+  function submitSurface(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (save.isPending) return;
+    const parsed = parseSurfaceInput(surfaceValue);
+    if (!parsed.ok) {
+      setSurfaceError(parsed.message);
+      surfaceInputRef.current?.focus();
+      return;
+    }
+    setSurfaceError(null);
+    save.mutate({ userSurfaceM2: parsed.value });
   }
 
   function submitCeiling(event: FormEvent<HTMLFormElement>) {
@@ -333,6 +375,89 @@ export function SaleFileCard({
               {ceilingMessage}
             </p>
           </div>
+
+          {showSurface ? (
+            <div className="sm:col-span-2">
+              <label htmlFor={surfaceId} className="text-sm font-semibold text-brand-navy">
+                Surface lue dans les pièces
+              </label>
+              <p className="mt-1 text-sm" data-testid="saved-surface">
+                {savedSurface != null ? (
+                  <>
+                    <strong className="tabular-nums">{formatSurfaceInput(savedSurface)} m²</strong>{" "}
+                    · saisie par vous
+                  </>
+                ) : (
+                  "L’annonce ne donne pas la surface : aucune surface saisie."
+                )}
+              </p>
+              <form onSubmit={submitSurface} noValidate className="mt-2" aria-busy={save.isPending}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <input
+                      ref={surfaceInputRef}
+                      id={surfaceId}
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="Ex. 54"
+                      value={surfaceValue}
+                      onChange={(event) => {
+                        setSurfaceDraft(event.target.value);
+                        setSurfaceError(null);
+                      }}
+                      aria-invalid={surfaceError ? true : undefined}
+                      aria-describedby={`${surfaceHelpId}${surfaceError ? ` ${surfaceErrorId}` : ""}`}
+                      className="form-input min-h-11 w-full min-w-0 tabular-nums"
+                    />
+                    <span aria-hidden className="shrink-0 text-sm text-ink-soft">
+                      m²
+                    </span>
+                  </div>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    aria-disabled={save.isPending || undefined}
+                    className="aria-disabled:cursor-wait aria-disabled:opacity-60"
+                  >
+                    Enregistrer
+                  </Button>
+                </div>
+                <p id={surfaceHelpId} className="mt-1 text-xs leading-relaxed text-ink-soft">
+                  Surface habitable ou Carrez lue dans le procès-verbal descriptif ou les
+                  diagnostics, en m² (plus de 0, 10 000 au plus). Elle sert à votre seul calcul du
+                  plafond, marquée « saisie par vous » : l’annonce n’est pas modifiée.
+                </p>
+                {surfaceError ? (
+                  <p
+                    id={surfaceErrorId}
+                    role="alert"
+                    className="mt-1 text-xs font-semibold text-red-700"
+                  >
+                    {surfaceError}
+                  </p>
+                ) : null}
+              </form>
+              {savedSurface != null ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 aria-disabled:cursor-wait aria-disabled:opacity-60"
+                  aria-disabled={save.isPending || undefined}
+                  onClick={() => {
+                    if (save.isPending) return;
+                    setSurfaceError(null);
+                    save.mutate({ userSurfaceM2: null });
+                  }}
+                >
+                  Retirer ma surface
+                </Button>
+              ) : null}
+              <p role="status" className="mt-1 min-h-4 text-xs font-semibold text-ink-soft">
+                {surfaceMessage}
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
