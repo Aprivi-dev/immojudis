@@ -27,7 +27,7 @@ export function SearchBar({ defaultValue = "" }: { defaultValue?: string }) {
       />
       <button
         type="submit"
-        className="inline-flex h-8 items-center justify-center rounded-md bg-foreground px-3 text-xs font-semibold text-white transition-colors hover:bg-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+        className="inline-flex h-8 items-center justify-center rounded-md bg-foreground px-3 text-xs font-semibold text-white transition-colors hover:bg-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Rechercher
       </button>

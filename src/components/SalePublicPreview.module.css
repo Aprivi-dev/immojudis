@@ -1384,7 +1384,7 @@
 }
 
 .page :is(a, button):focus-visible {
-  outline: 3px solid var(--gold);
+  outline: 3px solid var(--gold-soft);
   outline-offset: 2px;
 }
 
