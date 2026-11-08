@@ -79,7 +79,8 @@ import {
   fetchValuePreview,
 } from "@/lib/client-api";
 import type { MarketEstimate } from "@/lib/market.server";
-import { isDetailedMarketEstimate } from "@/lib/market-estimate-ceiling";
+import { isDetailedMarketEstimate, showsPointEstimate } from "@/lib/market-estimate-ceiling";
+import { estimateSourceNote } from "@/lib/market-estimate-display";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import { ceilingConfidence, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
 import { ceilingTermsFor, feeRegimeKeysForVenue, type FeeRegimeKey } from "@/lib/fee-regime";
@@ -738,13 +739,11 @@ function SaleDetailWorkspace({
       : null;
   const priceSummaryValue: PriceSummaryValue | null = valueGuarded
     ? null
-    : fullData && marketEstimate?.actionable && (marketEstimate.estimatedValueEur ?? 0) > 0
+    : fullData && marketEstimate && showsPointEstimate(marketEstimate)
       ? {
           kind: "amount",
-          amount: Math.round(marketEstimate.estimatedValueEur! / 1000) * 1000,
-          note: marketEstimate.sampleSize
-            ? `d’après ${marketEstimate.sampleSize} ventes comparables`
-            : "d’après des ventes comparables",
+          amount: Math.round((marketEstimate.estimatedValueEur ?? 0) / 1000) * 1000,
+          note: estimateSourceNote(marketEstimate),
           range: marketRange,
         }
       : valuePreview?.lowEur != null && valuePreview.highEur != null
@@ -754,6 +753,10 @@ function SaleDetailWorkspace({
           : (user && valuePreviewQuery.isLoading) || marketPending
             ? { kind: "pending" }
             : null;
+  // Valeur d'un bien libre : jamais placée face à la mise à prix d'un bien occupé ou d'occupation
+  // inconnue (réglette, tête « Votre analyse ») ; la case « Le prix » la libelle comme telle.
+  const comparedValue =
+    !occupancyGapWithheld && priceSummaryValue?.kind === "amount" ? priceSummaryValue.amount : null;
   const priceSummaryCeiling: PriceSummaryCeiling | null = !ceilingPromised
     ? null
     : fullData
@@ -1020,9 +1023,7 @@ function SaleDetailWorkspace({
                         ceiling={priceSummaryCeiling}
                         startLabel={startLabelText}
                         startingPrice={startingPrice}
-                        value={
-                          priceSummaryValue?.kind === "amount" ? priceSummaryValue.amount : null
-                        }
+                        value={comparedValue}
                         hypotheses={
                           heroCeiling != null ? hypothesesSummary(ceilingHypotheses) : null
                         }
@@ -1255,6 +1256,7 @@ function SaleDetailWorkspace({
                     }
                     startingPrice={startingPrice}
                     value={priceSummaryValue}
+                    valueWithheld={occupancyGapWithheld}
                     ceilingLabel={
                       <Terme terme={ceilingWording?.byOffers ? "offre-plafond" : "enchere-plafond"}>
                         {ceilingSummaryLabel}
@@ -1287,10 +1289,8 @@ function SaleDetailWorkspace({
                         startingPrice={startingPrice}
                         startLabel={startLabelText}
                         ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}
-                        value={
-                          priceSummaryValue?.kind === "amount" ? priceSummaryValue.amount : null
-                        }
-                        range={marketRange}
+                        value={comparedValue}
+                        range={occupancyGapWithheld ? null : marketRange}
                       />
                       {getMarketValuationSurfaces(displaySale).builtSurfaceEstimated ? (
                         <p className={panelStyles.surfaceCaution}>

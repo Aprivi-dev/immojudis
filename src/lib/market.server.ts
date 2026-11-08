@@ -319,9 +319,13 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
     landSurfaceMinM2: engineResult?.landSurfaceMinM2 ?? null,
     landSurfaceMaxM2: engineResult?.landSurfaceMaxM2 ?? null,
     medianPricePerM2: median,
+    // Le mélange hybride remplace `median` : la médiane des comparables reste pour l'affichage.
+    comparableMedianPricePerM2: engineResult?.medianPricePerM2 ?? null,
     p10PricePerM2: p10,
     p25PricePerM2: p25,
     p75PricePerM2: p75,
+    observedP25PricePerM2: engineResult?.observedP25PricePerM2 ?? null,
+    observedP75PricePerM2: engineResult?.observedP75PricePerM2 ?? null,
     p90PricePerM2: p90,
     minPricePerM2: engineResult?.minPricePerM2 ?? null,
     maxPricePerM2: engineResult?.maxPricePerM2 ?? null,

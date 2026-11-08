@@ -201,10 +201,12 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
           },
         ]
       : []),
+    // Bien occupé : deux faits côte à côte, sans écart ni « sous le marché » (les ventes DVF de
+    // référence sont celles de biens libres).
     {
-      title: nonBreakingUnits(`Mise à prix ${formatNumber(data.startingGapPct)} % sous le marché`),
+      title: nonBreakingUnits(`Mise à prix : ${formatNumber(data.startingPricePerM2)} €/m²`),
       detail: nonBreakingUnits(
-        `${formatNumber(data.startingPricePerM2)} €/m² contre ${formatNumber(data.medianPricePerM2)} €/m²`,
+        `médiane des ventes libres : ${formatNumber(data.medianPricePerM2)} €/m²`,
       ),
     },
     {

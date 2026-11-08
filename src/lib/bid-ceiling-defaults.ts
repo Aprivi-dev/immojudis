@@ -358,6 +358,7 @@ function valueHypothesis(
     upperAmount: p75 && surface ? Math.round(p75 * surface) : null,
     reliability: (usable?.qualityLabel as ValueReliability | undefined) ?? "fragile",
     sampleSize: usable?.effectiveSampleSize ?? usable?.sampleSize ?? null,
+    salesCount: usable && Number.isInteger(usable.sampleSize) ? usable.sampleSize : null,
     surfaceEstimated: surfaceEstimated || usable?.subjectSurfaceEstimated === true,
   };
 }

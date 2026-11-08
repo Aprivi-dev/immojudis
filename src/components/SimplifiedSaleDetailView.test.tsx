@@ -18,6 +18,7 @@ import { formatPrice } from "@/lib/format";
 const EXAMPLE_SALE_RECORDS = getExampleSaleRecords();
 import type { AuctionSale } from "@/lib/types";
 import type { MarketEstimate } from "@/lib/market.server";
+import { ceilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import type { SaleUnlockStatus } from "@/lib/sale-unlocks";
 import {
@@ -1081,7 +1082,7 @@ describe("integrated listing", () => {
     const section = within(document.getElementById("prix")!);
 
     const trio = section.getByRole("region", { name: "Le prix" });
-    expect(trio.textContent).toMatch(/Mise à prix.*Enchère plafond.*Valeur estimée/);
+    expect(trio.textContent).toMatch(/Mise à prix.*Enchère plafond.*Valeur d’un bien libre/);
     expect(section.getByTestId("price-scale")).toBeTruthy();
     // Les hypothèses sont visibles d'emblée, sans ouvrir de panneau.
     for (const name of ["Votre projet", "Niveau de prudence", "Travaux"]) {
@@ -1181,6 +1182,77 @@ describe("integrated listing", () => {
     await waitFor(() => expect(reference.textContent).toMatch(/215.000/));
     expect(within(reference).queryByRole("img")).toBeNull();
     expect(reference.textContent).toContain("Occupation du bien non précisée");
+  });
+
+  it.each([
+    ["occupied", "Bien occupé"],
+    [null, "Occupation non précisée"],
+  ] as const)(
+    "never places a free property's value against the starting price (occupancy %s)",
+    (occupancy, reason) => {
+      const sale = { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, occupancy_status: occupancy };
+      renderDetail("analysis", sale, false);
+      selectTab("Prix et plafond");
+      const trio = screen.getByRole("region", { name: "Le prix" });
+      expect(trio.textContent).toContain("Valeur d’un bien libre comparable");
+      expect(trio.textContent).toContain(
+        `${reason} : cette valeur s’appuie sur des ventes de biens libres.`,
+      );
+      expect(trio.textContent).not.toContain("Valeur estimée");
+      // La réglette garde la mise à prix et le plafond, sans la valeur ni sa fourchette.
+      const scale = screen.getByTestId("price-scale");
+      expect(scale.textContent).not.toMatch(/Valeur|Fourchette/);
+      expect(within(scale).getByRole("img").getAttribute("aria-label")).not.toMatch(
+        /valeur|fourchette/,
+      );
+      const summary = screen.getByRole("region", { name: "Synthèse de la vente" });
+      // La tête « Votre analyse » ne met plus « · valeur estimée » à côté de la mise à prix.
+      expect(summary.textContent).not.toMatch(/Mise à prix [^·]+· valeur estimée/);
+    },
+  );
+
+  it("keeps « Valeur estimée » and its marker for a vacant property", () => {
+    const sale = { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, occupancy_status: "vacant" };
+    renderDetail("analysis", sale, false);
+    selectTab("Prix et plafond");
+    const trio = screen.getByRole("region", { name: "Le prix" });
+    expect(trio.textContent).toContain("Valeur estimée");
+    expect(trio.textContent).toContain("d’après 12 ventes comparables");
+    expect(within(screen.getByTestId("price-scale")).getByText("Valeur")).toBeTruthy();
+  });
+
+  it("shows the range only, without « d’après N ventes », below the public gate", () => {
+    const thin = {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
+      sampleSize: 5,
+      effectiveSampleSize: 3.4,
+    };
+    const sale = { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, occupancy_status: "vacant" };
+    renderDetail("analysis", sale, true, false, thin);
+    selectTab("Prix et plafond");
+    const trio = screen.getByRole("region", { name: "Le prix" });
+    expect(trio.textContent).toMatch(/215.000.€.–.247.000.€/);
+    expect(trio.textContent).not.toContain("d’après");
+    expect(within(screen.getByTestId("price-scale")).queryByText("Valeur")).toBeNull();
+    selectTab("Quartier");
+    expect(screen.queryByTestId("market-sentence")).toBeNull();
+  });
+
+  it("says « des ventes comparables et un modèle statistique » for a hybrid estimate", () => {
+    const hybrid = {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
+      engineKind: "hybrid_lightgbm" as const,
+    };
+    const sale = { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, occupancy_status: "vacant" };
+    renderDetail("analysis", sale, true, false, hybrid);
+    selectTab("Prix et plafond");
+    const trio = screen.getByRole("region", { name: "Le prix" });
+    expect(trio.textContent).toContain("d’après des ventes comparables et un modèle statistique");
+    expect(trio.textContent).not.toMatch(/d’après \d+ ventes/);
+    selectTab("Quartier");
+    expect(screen.getByTestId("market-sentence").textContent).toMatch(
+      /^Valeur estimée à .+, d’après des ventes comparables et un modèle statistique\.$/,
+    );
   });
 
   it("shows Premium previews without loading analyses or mounting the works and statistics tools", async () => {
@@ -1366,25 +1438,17 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     );
   }
 
-  function renderUnlocked(sale: AuctionSale = EXAMPLE_SALE_RECORDS.bordeaux.sale) {
+  function renderUnlocked(
+    sale: AuctionSale = EXAMPLE_SALE_RECORDS.bordeaux.sale,
+    estimate: MarketEstimate = EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
+  ) {
     mocks.authUser = { id: "free-account" };
     mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
     mocks.fetchFactReliabilities.mockResolvedValue({ facts: {}, source: "legacy" });
     // An unlock receives the ceiling projection of the estimate, nothing more.
-    const { estimatedValueEur, actionable, qualityLabel, source, sourceUpdatedAt, sampleSize } =
-      EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate;
     mocks.fetchMarket.mockResolvedValue({
       status: "ready",
-      estimate: {
-        estimatedValueEur,
-        actionable,
-        qualityLabel,
-        source,
-        sourceUpdatedAt,
-        sampleSize,
-        medianPricePerM2: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate.medianPricePerM2,
-        p75PricePerM2: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate.p75PricePerM2,
-      },
+      estimate: ceilingMarketEstimate(estimate),
       computedAt: "2026-10-12T08:00:00.000Z",
     });
     return render(
@@ -1519,6 +1583,19 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     selectTab("Prix et plafond");
     expect(screen.queryByText("Perspective d’adjudication")).toBeNull();
     expect(screen.queryByText("Prévision de l’audience chargée")).toBeNull();
+  });
+
+  it("says a whole number of sales on an unlocked sale, never the effective sample (D4)", async () => {
+    const sale = { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, occupancy_status: "vacant" };
+    renderUnlocked(sale, {
+      ...EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
+      sampleSize: 9,
+      effectiveSampleSize: 5.3,
+    });
+    selectTab("Prix et plafond");
+    const trio = await screen.findByRole("region", { name: "Le prix" });
+    await waitFor(() => expect(trio.textContent).toContain("d’après 9 ventes comparables"));
+    expect(document.body.textContent).not.toMatch(/5[.,]3 ventes/);
   });
 
   it("keeps the exports, the saved reports and the Analyse-only blocks closed on an unlocked sale", () => {
