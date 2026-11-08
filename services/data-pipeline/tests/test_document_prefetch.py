@@ -158,7 +158,7 @@ def test_the_drain_waits_for_each_preparation_before_taking_the_lock(monkeypatch
     monkeypatch.setattr(
         backlog,
         "drain_sale",
-        lambda _db, candidate, _limits, _deadline: backlog.SaleOutcome(
+        lambda _db, candidate, _limits, _deadline, lock=None: backlog.SaleOutcome(
             source_url=candidate["source_url"], source_name="vench", action="processed"
         ),
     )

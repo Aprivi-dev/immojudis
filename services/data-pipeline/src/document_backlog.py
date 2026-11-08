@@ -310,6 +310,8 @@ class BacklogReport:
     outcomes: list[SaleOutcome] = field(default_factory=list)
     stop_reason: str = "candidates_exhausted"
     elapsed_seconds: float = 0.0
+    # Temps passé à attendre le verrou du catalogue, retranché de la durée évaluée par l'alerte de rendement.
+    lock_wait_seconds: float = 0.0
     prefetch: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
@@ -334,6 +336,7 @@ class BacklogReport:
         return {
             "stop_reason": self.stop_reason,
             "elapsed_seconds": round(self.elapsed_seconds, 1),
+            "lock_wait_seconds": round(self.lock_wait_seconds, 1),
             "sales_seen": len(self.outcomes),
             "sales_processed": len(processed),
             "sales_reprojected": sum(1 for item in self.outcomes if item.action == "reprojected"),
@@ -537,7 +540,27 @@ def _extracted(counts: dict[str, int]) -> int:
     return int(counts.get("extracted", 0))
 
 
-def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, deadline: float) -> SaleOutcome:
+def _ensure_held(lock: CatalogueLockHandle | None) -> None:
+    """Raise ``CatalogueLockLost`` before a write when the heartbeat of the sale's lock failed."""
+    if lock is not None:
+        lock.ensure_held()
+
+
+def drain_sale(
+    db_url: str,
+    candidate: dict[str, Any],
+    limits: BacklogLimits,
+    deadline: float,
+    *,
+    lock: CatalogueLockHandle | None = None,
+) -> SaleOutcome:
+    """Read one sale's attachments under its catalogue lock.
+
+    The lock is checked before each pass and before each projection rewrite: once its heartbeat failed,
+    nothing more is written and ``run_document_backlog`` stops before the next sale.
+    """
+    from src.catalogue_lock import CatalogueLockLost
+
     source_url = str(candidate["source_url"])
     outcome = SaleOutcome(source_url=source_url, source_name=str(candidate.get("source_name") or ""), action="skipped")
     started = time.monotonic()
@@ -550,6 +573,7 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
             return outcome
         before_facts = _fact_snapshot(sale)
         if _read_with_current_rules(sale):
+            _ensure_held(lock)
             _reproject(sale)
             outcome.action = "reprojected"
         else:
@@ -563,6 +587,7 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
             for _ in range(limits.max_passes):
                 if time.monotonic() >= deadline:
                     break
+                _ensure_held(lock)
                 job = claim_pdf_job(db_url, job_id)
                 if job is None:
                     break
@@ -602,6 +627,7 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
                 # the document projection so the rows show what was read.
                 refreshed = _fetch_sale(source_url)
                 if refreshed is not None:
+                    _ensure_held(lock)
                     _reproject(refreshed)
         after_sale = _fetch_sale(source_url)
         outcome.new_facts = new_facts(before_facts, _fact_snapshot(after_sale))
@@ -611,6 +637,12 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
         after_counts = read_document_counts(db_url, source_url)
         outcome.documents_extracted_after = _extracted(after_counts)
         outcome.documents_total = sum(after_counts.values())
+    except CatalogueLockLost as exc:
+        # Nothing more is written for this sale; the caller sees the lost lock and stops before the next one.
+        LOGGER.error("Document backlog stopped writing %s: %s", source_url, exc)
+        outcome.error = str(exc)[:300]
+        if outcome.action == "skipped":
+            outcome.action = "error"
     except Exception as exc:  # one sale never stops the drain
         LOGGER.exception("Document backlog failed for %s: %s", source_url, exc)
         outcome.error = str(exc)[:300]
@@ -664,11 +696,14 @@ def run_document_backlog(
                 last_yield = time.monotonic()
             # Never prepared and processed at the same time: the locked pass writes the same caches.
             prefetcher.wait_for(str(candidate["source_url"]))
+            waiting_since = time.monotonic()
             try:
                 # A collection may hold the lock for its whole 35-minute budget.
                 with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())) as lock:
-                    outcome = drain_sale(db_url, candidate, limits, deadline)
+                    report.lock_wait_seconds += time.monotonic() - waiting_since
+                    outcome = drain_sale(db_url, candidate, limits, deadline, lock=lock)
             except CatalogueLockTimeout as exc:
+                report.lock_wait_seconds += time.monotonic() - waiting_since
                 LOGGER.warning("Document backlog stopped: %s", exc)
                 report.stop_reason = "catalogue_lock"
                 break

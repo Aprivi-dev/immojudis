@@ -190,7 +190,12 @@ def main(argv: list[str] | None = None, *, env: Mapping[str, str] | None = None)
     secret = callback_secret(values)
     missing = [
         name
-        for name, value in (("SUPABASE_DB_URL", db_url), ("SITE_URL", site_url), ("CRON_SECRET", secret))
+        for name, value in (
+            ("SUPABASE_DB_URL", db_url),
+            ("SITE_URL", site_url),
+            # Le secret des rappels, ou à défaut CRON_SECRET (callback_secret) : le code nomme les deux.
+            ("PIPELINE_CALLBACK_SECRET_OR_CRON_SECRET", secret),
+        )
         if not value
     ]
     if missing:

@@ -684,8 +684,9 @@ rendement : ventes lues (`sales_read`), passes et passes partielles
 (`partial_passes`, `partial_pass_share`), points d'étape refusés
 (`refused_checkpoints`), durée, et chiffres de la lecture en avance
 (`prefetch`, dont `deferred_exhausted` et `errors`). Un vidage de plus de
-60 minutes qui a lu moins de 5 ventes, ou dont plus de 30 % des passes sont
-partielles, ouvre l'alerte `pipeline.documents_backlog.low_yield`
+30 minutes (attente du verrou du catalogue retranchée) qui a lu moins de
+4 ventes par heure, ou dont plus de 30 % des passes sont partielles, ouvre
+l'alerte `pipeline.documents_backlog.low_yield`
 (`src/document_backlog_yield.py`, migration `20261111131500`).
 
 Symptômes, interrupteur et retour arrière :

@@ -387,8 +387,8 @@ def test_main_exits_zero_and_warns_when_the_site_answers_badly(monkeypatch, caps
     [
         ({"SITE_URL": SITE, "CRON_SECRET": SECRET}, "missing_supabase_db_url"),
         ({"SUPABASE_DB_URL": "postgres://x", "CRON_SECRET": SECRET}, "missing_site_url"),
-        ({"SUPABASE_DB_URL": "postgres://x", "SITE_URL": SITE}, "missing_cron_secret"),
-        ({"SUPABASE_DB_URL": "postgres://x", "SITE_URL": SITE, "CRON_SECRET": "  "}, "missing_cron_secret"),
+        ({"SUPABASE_DB_URL": "postgres://x", "SITE_URL": SITE}, "missing_pipeline_callback_secret_or_cron_secret"),
+        ({"SUPABASE_DB_URL": "postgres://x", "SITE_URL": SITE, "CRON_SECRET": "  "}, "missing_pipeline_callback_secret_or_cron_secret"),
     ],
 )
 def test_main_fails_loudly_without_the_required_variables(monkeypatch, capsys, env, expected):

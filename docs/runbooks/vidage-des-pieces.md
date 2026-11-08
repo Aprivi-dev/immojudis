@@ -19,8 +19,8 @@ tâches en file) est une action du propriétaire.
 ## Symptômes
 
 - **Alerte `pipeline.documents_backlog.low_yield`** (avertissement, catégorie `import`) : un vidage de plus
-  de 60 minutes a lu moins de 5 ventes, ou plus de 30 % de ses passes sont partielles. Voir
-  « L'alerte » plus bas.
+  de 30 minutes (attente du verrou du catalogue retranchée) a lu moins de 4 ventes par heure, ou plus de
+  30 % de ses passes sont partielles. Voir « L'alerte » plus bas.
 - **Passes partielles répétées.** Dans le journal, une vente enchaîne `passes=4` avec le même
   `extracted a->a/n`, et ses tâches pdf finissent en `PDF document manifest is partial; continue the next
 bounded pass`. Une passe partielle est normale pour une vente de plus de six pièces
@@ -41,7 +41,10 @@ bounded pass`. Une passe partielle est normale pour une vente de plus de six pi�
    - `passes`, `partial_passes`, `partial_pass_share` : passes conclues sur un manifeste partiel (tâche
      remise en file avec « manifest is partial », ou remplacée après un point d'étape durable) ;
    - `refused_checkpoints` : passes conclues sur « checkpoint was not persisted » ;
-   - `elapsed_seconds`, `stop_reason` (`candidates_exhausted`, `budget`, `catalogue_lock`) ;
+   - `elapsed_seconds`, `stop_reason` (`candidates_exhausted`, `budget`, `catalogue_lock`,
+     `catalogue_lock_lost`) ;
+   - `lock_wait_seconds` : temps passé à attendre le verrou du catalogue, retranché de la durée évaluée par
+     l'alerte ;
    - `prefetch` : `workers`, `prepared`, `documents`, `read`, `cached`, `deferred_exhausted` (pièces encore
      reportées après tous les tours d'OCR de la préparation) et `errors` ;
    - `low_yield` : décision de l'alerte et résultat de l'enregistrement (`sync`).
@@ -134,15 +137,20 @@ Sur le vidage manuel suivant (résumé d'étape) :
 ## L'alerte `pipeline.documents_backlog.low_yield`
 
 - **Règle** (`src/document_backlog_yield.py`, constantes `LOW_YIELD_*`) : seul un vidage de **plus de
-  60 minutes** est évalué. L'alerte est active s'il a lu **moins de 5 ventes**, ou si **plus de 30 %** de
-  ses passes sont partielles. Un vidage plus court, dont celui de 8 minutes après chaque passage de la
-  file, ne touche pas l'alerte. Ces seuils sont supposés, à recalibrer sur les premiers vidages mesurés.
+  30 minutes**, attente du verrou du catalogue retranchée (`lock_wait_seconds`), est évalué. L'alerte est
+  active si son débit est de **moins de 4 ventes lues par heure** (`sales_read_per_hour`, sur la durée
+  évaluée), ou si **plus de 30 %** de ses passes sont partielles. Le seuil de débit vaut environ le quart
+  de la référence saine du 05/11/2026 (43 ventes en 150 minutes, environ 17 par heure) : il signale un
+  vidage qui tourne sans lire, pas un vidage simplement plus lent. Un vidage plus court, dont celui de
+  8 minutes après chaque passage de la file, ne touche pas l'alerte, pas plus qu'un vidage arrêté faute
+  d'avoir obtenu le verrou (`stop_reason` = `catalogue_lock`). Ces seuils (revue de code du 08/11/2026)
+  restent à recalibrer sur les premiers vidages mesurés.
 - **Enregistrement** : en fin de vidage, `app_private.sync_documents_backlog_low_yield_alert` (migration
   `20261111131500`), qui passe par le mécanisme commun `app_private.sync_operational_alert`. Tant que la
   migration n'est pas appliquée, le journal dit `is not deployed yet` et le vidage se termine normalement.
 - **Détail** : `select details from public.operational_alerts where alert_key =
-'pipeline.documents_backlog.low_yield';` (bilan chiffré, `reasons` : `few_sales_read`,
-  `partial_passes`, et seuils).
+'pipeline.documents_backlog.low_yield';` (bilan chiffré, durée évaluée et débit,
+  `reasons` : `low_read_rate`, `partial_passes`, et seuils).
 - **Fermeture** : un vidage long sain marque la condition levée. L'alerte se ferme au premier vidage long
   évalué au moins deux heures plus tard (hystérésis commune). Les vidages longs étant manuels, la
   fermeture peut se faire attendre. La fermer à la main est une écriture en base, décidée par le

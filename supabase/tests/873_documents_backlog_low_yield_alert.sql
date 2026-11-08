@@ -3,10 +3,11 @@
 --     service_role (appelée par le rôle de connexion du pipeline, comme withdraw_missing_source_sales) ;
 --   * elle ouvre cette seule clé, en avertissement, catégorie import, avec le détail transmis ;
 --   * elle refuse un détail qui n'est pas un objet JSON et un drapeau absent ;
---   * la fermeture suit l'hystérésis commune de deux heures.
+--   * la fermeture suit l'hystérésis commune de deux heures ;
+--   * son commentaire donne la règle du 08/11/2026 (plus de 30 minutes, attente du verrou retranchée).
 begin;
 
-select plan(9);
+select plan(10);
 
 select ok(
   (
@@ -22,6 +23,14 @@ select ok(
   'the function is security definer, with an empty search_path, and closed to the API roles'
 );
 
+select ok(
+  obj_description(
+    'app_private.sync_documents_backlog_low_yield_alert(boolean, jsonb, timestamptz)'::regprocedure,
+    'pg_proc'
+  ) like '%plus de 30 minutes (attente du verrou du catalogue retranchée)%',
+  'the comment states the evaluated duration: more than 30 minutes, lock wait excluded'
+);
+
 -- Rollback-only fixture.
 delete from public.operational_alerts where alert_key = 'pipeline.documents_backlog.low_yield';
 
@@ -29,7 +38,7 @@ select lives_ok(
   $sql$
     select app_private.sync_documents_backlog_low_yield_alert(
       true,
-      '{"sales_read": 2, "partial_pass_share": 0.6, "reasons": ["few_sales_read", "partial_passes"]}'::jsonb,
+      '{"sales_read": 2, "sales_read_per_hour": 1.0, "partial_pass_share": 0.6, "reasons": ["low_read_rate", "partial_passes"]}'::jsonb,
       statement_timestamp()
     );
   $sql$,

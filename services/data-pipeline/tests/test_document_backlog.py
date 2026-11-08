@@ -380,7 +380,7 @@ def test_step_summary_shows_the_prefetch_and_the_alert(monkeypatch, tmp_path) ->
         "alert_key": "pipeline.documents_backlog.low_yield",
         "evaluated": True,
         "active": True,
-        "reasons": ["few_sales_read"],
+        "reasons": ["low_read_rate"],
         "sync": "opened",
     }
 
@@ -388,7 +388,7 @@ def test_step_summary_shows_the_prefetch_and_the_alert(monkeypatch, tmp_path) ->
 
     text = summary_path.read_text(encoding="utf-8")
     assert "Lecture en avance : 3 processus, 10 ventes préparées, 25 pièces lues, 2 encore reportées, 1 erreurs" in text
-    assert "Alerte `pipeline.documents_backlog.low_yield` : ouverte (few_sales_read)" in text
+    assert "Alerte `pipeline.documents_backlog.low_yield` : ouverte (low_read_rate)" in text
 
 
 def test_main_records_the_yield_after_the_drain(monkeypatch, capsys) -> None:
@@ -418,7 +418,7 @@ def test_main_records_the_yield_after_the_drain(monkeypatch, capsys) -> None:
 
     printed = json.loads(capsys.readouterr().out)
     assert printed["low_yield"]["active"] is True
-    assert printed["low_yield"]["reasons"] == ["few_sales_read", "partial_passes"]
+    assert printed["low_yield"]["reasons"] == ["low_read_rate", "partial_passes"]
     assert printed["low_yield"]["sync"] == "opened"
     assert len(synced) == 1
 
@@ -481,7 +481,7 @@ def _two_candidates(monkeypatch) -> None:
     monkeypatch.setattr(
         backlog,
         "drain_sale",
-        lambda db, candidate, limits, deadline: backlog.SaleOutcome(
+        lambda db, candidate, limits, deadline, lock=None: backlog.SaleOutcome(
             source_url=candidate["source_url"], source_name="vench", action="processed"
         ),
     )
@@ -537,6 +537,127 @@ def test_a_lost_lock_stops_the_drain_before_the_next_sale(monkeypatch) -> None:
 
     assert [outcome.source_url for outcome in report.outcomes] == ["https://a"]
     assert report.stop_reason == backlog.LOCK_LOST_STOP_REASON
+
+
+def _lost_handle(*, lost: bool = False):
+    from src.catalogue_lock import CatalogueLockHandle
+
+    handle = CatalogueLockHandle("document backlog")
+    if lost:
+        handle.mark_lost()
+    return handle
+
+
+def test_a_lock_lost_before_a_pass_stops_the_sale_before_any_write(monkeypatch) -> None:
+    url = "https://example.test/lost-before"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fake = _Fake(monkeypatch, {url: [stale]}, {url: [("completed", "")]})
+    monkeypatch.setattr(backlog, "claim_pdf_job", lambda *_args: pytest.fail("no pass after a lost lock"))
+
+    outcome = backlog.drain_sale(
+        "db", {"source_url": url, "source_name": "vench"}, backlog.BacklogLimits(), 1e18, lock=_lost_handle(lost=True)
+    )
+
+    assert fake.processed == [] and fake.reprojected == []
+    assert outcome.passes == 0 and "may have been lost" in outcome.error
+
+
+def test_a_lock_lost_during_a_pass_stops_before_the_next_pass_and_the_projection(monkeypatch) -> None:
+    url = "https://example.test/lost-during"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fake = _Fake(
+        monkeypatch,
+        {url: [stale]},
+        {url: [("queued", "PDF document manifest is partial; continue the next bounded pass")]},
+    )
+    lock = _lost_handle()
+
+    def process(job, deadline):
+        fake.processed.append(job["id"])
+        lock.mark_lost()  # the heartbeat fails while the pass runs
+
+    monkeypatch.setattr(backlog, "_process_job", process)
+
+    outcome = backlog.drain_sale("db", {"source_url": url, "source_name": "vench"}, backlog.BacklogLimits(), 1e18, lock=lock)
+
+    assert fake.processed == [f"job:{url}"]  # one pass, not the four allowed
+    assert fake.reprojected == []  # the projection of a partial pass is not rewritten either
+    assert outcome.passes == 1 and "may have been lost" in outcome.error
+
+
+def test_a_lost_lock_is_checked_before_rewriting_a_current_projection(monkeypatch) -> None:
+    url = "https://example.test/lost-reproject"
+    fake = _Fake(monkeypatch, {url: [_sale(url)]}, {url: [("completed", "")]})
+    fake.current.add(url)
+
+    outcome = backlog.drain_sale(
+        "db", {"source_url": url, "source_name": "vench"}, backlog.BacklogLimits(), 1e18, lock=_lost_handle(lost=True)
+    )
+
+    assert fake.reprojected == []
+    assert outcome.action == "error"
+
+
+def test_a_lock_lost_inside_a_sale_stops_the_drain(monkeypatch) -> None:
+    url = "https://example.test/lost-run"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fake = _Fake(monkeypatch, {url: [stale]}, {url: [("completed", "")]})
+    monkeypatch.setattr(backlog, "load_settings", lambda: {"supabase_db_url": "postgres://test"})
+    monkeypatch.setattr(
+        backlog,
+        "select_backlog_candidates",
+        lambda _db, limit: [{"source_url": url, "source_name": "vench"}, {"source_url": "https://b"}],
+    )
+    monkeypatch.setattr(backlog, "_catalogue_lock", _free_lock(lost_after=1))
+
+    report = backlog.run_document_backlog(backlog.BacklogLimits(budget_seconds=600), sleep=lambda _s: None)
+
+    assert [outcome.source_url for outcome in report.outcomes] == [url]
+    assert fake.processed == []
+    assert report.stop_reason == backlog.LOCK_LOST_STOP_REASON
+
+
+def test_the_wait_for_the_lock_is_measured_for_the_yield(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from src import document_backlog_yield as yield_module
+
+    _two_candidates(monkeypatch)
+    clock = [1000.0]
+    monkeypatch.setattr(backlog, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=lambda _s: None))
+
+    @contextmanager
+    def slow_lock(db_url, wait_seconds):
+        clock[0] += 300.0  # a collection held the lock for five minutes
+        yield _lost_handle()
+
+    monkeypatch.setattr(backlog, "_catalogue_lock", slow_lock)
+
+    report = backlog.run_document_backlog(backlog.BacklogLimits(budget_seconds=3600), sleep=lambda _s: None)
+
+    assert report.lock_wait_seconds == 600.0
+    assert report.as_dict()["lock_wait_seconds"] == 600.0
+    assert "lock_wait_seconds" in yield_module.DETAIL_KEYS
+
+
+def test_a_drain_stopped_on_the_lock_wait_is_not_judged(monkeypatch) -> None:
+    from src.catalogue_lock import CatalogueLockTimeout
+    from src.document_backlog_yield import LOCK_WAIT_STOP_REASON, evaluate_low_yield
+
+    _two_candidates(monkeypatch)
+
+    @contextmanager
+    def busy(db_url, wait_seconds):
+        raise CatalogueLockTimeout("busy")
+        yield
+
+    monkeypatch.setattr(backlog, "_catalogue_lock", busy)
+
+    report = backlog.run_document_backlog(backlog.BacklogLimits(budget_seconds=600), sleep=lambda _s: None)
+    report.elapsed_seconds = 2 * 3600.0  # however long it waited
+
+    assert report.stop_reason == LOCK_WAIT_STOP_REASON
+    assert evaluate_low_yield(report.as_dict())["evaluated"] is False
 
 
 def test_a_lost_lock_fails_the_job_with_a_clear_message(monkeypatch, capsys) -> None:

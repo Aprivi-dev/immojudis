@@ -12,9 +12,11 @@ set local lock_timeout = '5s';
 --
 -- Le bilan n'existe que dans le processus Python du vidage (src/document_backlog.py) : c'est lui qui décide,
 -- avec ses constantes nommées (src/document_backlog_yield.py), et appelle cette fonction en fin de passe.
--- Règle (tests/test_document_backlog_yield.py) : un vidage de PLUS DE 60 MINUTES qui a lu moins de 5 ventes,
--- ou dont plus de 30 % des passes sont partielles. Un vidage plus court (celui de 8 minutes qui suit chaque
--- passage de la file d'enrichissement) ne mesure rien et n'appelle pas la fonction.
+-- Règle (tests/test_document_backlog_yield.py) : un vidage de PLUS DE 30 MINUTES, attente du verrou du
+-- catalogue retranchée, qui a lu moins de 4 ventes par heure (référence saine : 43 ventes en 150 minutes,
+-- environ 17 par heure), ou dont plus de 30 % des passes sont partielles. Un vidage plus court (celui de
+-- 8 minutes qui suit chaque passage de la file d'enrichissement), ou arrêté faute d'avoir obtenu le verrou du
+-- catalogue, ne mesure rien et n'appelle pas la fonction.
 --
 -- La fonction ne fait qu'enregistrer, pour cette seule clé, avec la catégorie `import` et la gravité
 -- `warning` des autres alertes pipeline.* (pipeline.enrichment.exhausted) ; elle refuse un détail qui
@@ -68,6 +70,6 @@ revoke all on function app_private.sync_documents_backlog_low_yield_alert(boolea
   from public, anon, authenticated, service_role;
 
 comment on function app_private.sync_documents_backlog_low_yield_alert(boolean, jsonb, timestamptz) is
-  'Ouvre ou referme l''alerte pipeline.documents_backlog.low_yield (avertissement, catégorie import) à la fin d''un vidage des pièces de plus de 60 minutes ; la décision et ses seuils sont dans src/document_backlog_yield.py.';
+  'Ouvre ou referme l''alerte pipeline.documents_backlog.low_yield (avertissement, catégorie import) à la fin d''un vidage des pièces de plus de 30 minutes (attente du verrou du catalogue retranchée) ; la décision et ses seuils sont dans src/document_backlog_yield.py.';
 
 commit;
