@@ -13,6 +13,7 @@ import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { UNLOCKED_SALES_PATH } from "@/lib/navigation";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import { trackProductEvent } from "@/lib/product-events";
+import type { UnlockCeilingGap } from "@/lib/bid-ceiling-gaps";
 import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-labels";
 import {
   MONTHLY_SALE_UNLOCKS,
@@ -64,6 +65,12 @@ export function SaleUnlockPanel({
     statistics: boolean;
     /** La vente est une pépite : le détail du repère (montant, prix probable) fait partie de ce qui s'ouvre. */
     pepite?: boolean;
+    /**
+     * Ce qui empêchera (ou empêche) le plafond d'être chiffré (`unlockCeilingGap`) : dit avant la
+     * confirmation, et le titre ne promet alors pas un plafond calculé. Information seulement : le
+     * déblocage est décompté de la même façon.
+     */
+    ceilingGap?: UnlockCeilingGap | null;
   };
   /** The sale was unlocked a moment ago: move the focus to the result so it is announced. */
   announce?: boolean;
@@ -71,6 +78,12 @@ export function SaleUnlockPanel({
 }) {
   const items = unlockedItemsText(opens);
   const ceilingLabel = opens.ceiling;
+  const gap = ceilingLabel ? (opens.ceilingGap ?? null) : null;
+  // « L’enchère plafond », « L’offre plafond » ; « Le plafond » quand les deux termes restent possibles.
+  const gapSubject =
+    ceilingLabel && opens.ceilingTerm
+      ? `${ceilingLabel.charAt(0).toUpperCase()}${ceilingLabel.slice(1)}`
+      : "Le plafond";
   const [step, setStep] = useState<"idle" | "confirm" | "pending">("idle");
   const [error, setError] = useState<string | null>(null);
   // A refusal (quota spent elsewhere in the meantime) only holds for the status it was given for.
@@ -116,11 +129,13 @@ export function SaleUnlockPanel({
     );
     // The result first when the sale has a ceiling: what this unlock was for, then the way to it.
     // Both terms (« enchère plafond », « offre plafond ») are feminine; « plafond » alone is not.
-    const title = !ceilingLabel
-      ? "Cette vente est débloquée"
-      : opens.ceilingTerm
-        ? `Votre ${opens.ceilingTerm} est débloquée`
-        : "Votre plafond est débloqué";
+    // Un plafond qui reste à compléter n'est pas annoncé comme débloqué : la vente l'est.
+    const title =
+      !ceilingLabel || gap
+        ? "Cette vente est débloquée"
+        : opens.ceilingTerm
+          ? `Votre ${opens.ceilingTerm} est débloquée`
+          : "Votre plafond est débloqué";
     const remaining = remainingUnlocksLine(current) ? (
       <p className="mt-2 text-sm font-medium text-brand-navy">{remainingUnlocksLine(current)}</p>
     ) : null;
@@ -146,13 +161,34 @@ export function SaleUnlockPanel({
           </h2>
           {ceilingLabel ? (
             <>
-              {/* L'ancre est dans le calcul de la fiche : le lien de section de la fiche ouvre l'onglet. */}
-              <a
-                href="#calculation"
-                className={buttonClasses({ variant: "primary", className: "mt-4" })}
-              >
-                {opens.ceilingTerm ? `Voir mon ${opens.ceilingTerm}` : "Voir mon plafond"}
-              </a>
+              {gap ? (
+                <p
+                  data-testid="unlock-ceiling-gap"
+                  className="mt-2 text-sm font-medium leading-relaxed text-brand-navy"
+                >
+                  {opens.ceilingTerm ? `Votre ${opens.ceilingTerm}` : "Votre plafond"} reste à
+                  compléter : {gap.reason}.
+                  {gap.surface
+                    ? " Saisissez dans « Mon dossier » la surface lue dans les pièces pour la calculer."
+                    : ""}
+                </p>
+              ) : null}
+              {gap?.surface ? (
+                <a
+                  href="#mon-dossier"
+                  className={buttonClasses({ variant: "primary", className: "mt-4" })}
+                >
+                  Saisir la surface lue dans les pièces
+                </a>
+              ) : gap ? null : (
+                // L'ancre est dans le calcul de la fiche : le lien de section de la fiche ouvre l'onglet.
+                <a
+                  href="#calculation"
+                  className={buttonClasses({ variant: "primary", className: "mt-4" })}
+                >
+                  {opens.ceilingTerm ? `Voir mon ${opens.ceilingTerm}` : "Voir mon plafond"}
+                </a>
+              )}
               <p className="mt-3 text-sm leading-relaxed text-ink-soft">
                 Ouvert pour cette vente, tant qu’elle est en ligne (24 mois au plus).
               </p>
@@ -283,6 +319,17 @@ export function SaleUnlockPanel({
             <p className="text-sm leading-relaxed text-brand-navy">
               {unlockConfirmationText(current)}
             </p>
+            {gap ? (
+              <p
+                data-testid="unlock-ceiling-gap"
+                className="mt-2 text-sm font-semibold leading-relaxed text-brand-navy"
+              >
+                {gapSubject} restera à compléter : {gap.reason}.
+                {gap.surface
+                  ? " Vous pourrez saisir dans « Mon dossier » la surface lue dans les pièces."
+                  : ""}
+              </p>
+            ) : null}
             {ceilingLabel ? (
               <p className="mt-2 text-sm leading-relaxed text-brand-navy">
                 Si l’annonce ne les donne pas, les frais sont estimés : vous pourrez les corriger

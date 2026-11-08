@@ -264,9 +264,11 @@ def _report(
     test_rows: int = 400,
     gap_vs_naive: dict | None = None,
     gap_vs_active: dict | None = None,
+    blend: dict | None = None,
 ) -> dict:
     active = active or {"status": "none"}
     return {
+        "blend": blend or _blend(),
         "candidate": {"median_ape_pct": candidate},
         "naive": {"gate_median_ape_pct": naive},
         "active": active,
@@ -276,6 +278,26 @@ def _report(
             "metric": "median_ape_pct",
             "vs_naive": gap_vs_naive or _gap(),
             "vs_active": (gap_vs_active or _gap()) if active.get("status") == "evaluated" else None,
+        },
+    }
+
+
+def _blend(comparables: float = 14.0, forte: float = 12.0, correcte: float = 11.5, fragile: float = 11.0) -> dict:
+    """A served-blend block as ``evaluate_served_blend`` writes it (median APE per quality tier)."""
+
+    def scores(median: float) -> dict:
+        return {"median_ape_pct": median, "p75_ape_pct": median * 2, "interval_coverage_pct": 80.0}
+
+    return {
+        "status": "evaluated",
+        "rows": 380,
+        "test_rows": 400,
+        "model_only": scores(10.0),
+        "comparables_only": scores(comparables),
+        "served_blend": {
+            "forte": {"quality_score_min": 78, "model_weight": 0.35, **scores(forte)},
+            "correcte": {"quality_score_min": 58, "model_weight": 0.45, **scores(correcte)},
+            "fragile": {"quality_score_min": 0, "model_weight": 0.6, **scores(fragile)},
         },
     }
 
@@ -469,6 +491,76 @@ def test_accuracy_and_coverage_failures_are_all_reported_accuracy_first() -> Non
     assert len(decision.reasons) == 3
     assert "naive local reference" in decision.reasons[0]
     assert "served interval" in decision.reasons[2]
+
+
+# --- served blend (D19) ----------------------------------------------------------
+
+
+def test_a_blend_no_worse_than_the_comparables_at_every_tier_can_be_activated() -> None:
+    assert decide_activation(_report(9.0, 12.0, blend=_blend(comparables=14.0)), requested=True).activate is True
+    tie = _blend(comparables=12.0, forte=12.0, correcte=12.0, fragile=12.0)
+    assert decide_activation(_report(9.0, 12.0, blend=tie), requested=True).activate is True
+
+
+@pytest.mark.parametrize("tier", ["forte", "correcte", "fragile"])
+def test_a_blend_worse_than_the_comparables_at_any_tier_is_never_activated(tier: str) -> None:
+    blend = _blend(comparables=14.0)
+    blend["served_blend"][tier]["median_ape_pct"] = 14.01
+
+    decision = decide_activation(_report(9.0, 12.0, _evaluated("v1", 10.0), blend=blend), requested=True)
+
+    assert decision.activate is False
+    assert len(decision.reasons) == 1
+    assert f"'{tier}' comparables" in decision.reasons[0]
+    assert "worse than the comparables alone (14.0%)" in decision.reasons[0]
+
+
+def test_every_tier_worse_than_the_comparables_is_reported() -> None:
+    blend = _blend(comparables=10.0, forte=11.0, correcte=12.0, fragile=13.0)
+
+    decision = decide_activation(_report(9.0, 12.0, blend=blend), requested=True)
+
+    assert [reason.split("'")[1] for reason in decision.reasons] == ["forte", "correcte", "fragile"]
+
+
+@pytest.mark.parametrize(
+    "blend",
+    [
+        None,
+        {"status": "not_evaluated", "reason": "no test sale has a cell with enough earlier sales"},
+        {"status": "evaluated", "comparables_only": {"median_ape_pct": 10.0}, "served_blend": {}},
+    ],
+)
+def test_a_blend_that_was_not_evaluated_blocks_activation(blend) -> None:
+    report = _report(9.0, 12.0)
+    report["blend"] = blend
+
+    decision = decide_activation(report, requested=True)
+
+    assert decision.activate is False
+    assert "blend" in decision.reasons[-1]
+
+
+def test_force_never_bypasses_the_served_blend_rule(tmp_path, monkeypatch) -> None:
+    metrics = vt.TrainingMetrics(500, 100, 400, 12.0, 9.0, 14.0, 80.0, 30.0, 0.8)  # passes every threshold
+    bundle = vt.ModelBundle(
+        "apartment", "v", vt.FEATURE_NAMES, {}, {}, metrics, 700, "2024-01-01", "2025-01-01",
+        report=_report(9.0, 12.0, blend=_blend(comparables=10.0, forte=9.5, correcte=9.8, fragile=10.5)),
+    )
+    monkeypatch.setattr(vt, "train_segment_model", lambda frame, **kwargs: bundle)
+    monkeypatch.setattr(vt, "write_model_bundle", lambda *a, **k: tmp_path / "bundle.json")
+    monkeypatch.setattr(vt, "write_training_report", lambda *a, **k: tmp_path / "report.json")
+
+    forced = vt.train_frame_if_eligible(
+        pd.DataFrame({"x": range(200)}),
+        segment="apartment",
+        version="v",
+        options=_ready_to_train_options(tmp_path, activate=True, force=True),
+    )
+
+    assert forced is not None and vt.bundle_is_activated(forced) is False
+    assert forced.report["promotion"]["reasons"] == vt.served_blend_reasons(forced.report["blend"])
+    assert "'fragile' comparables" in forced.report["promotion"]["reasons"][0]
 
 
 def test_interval_coverage_counts_inside_below_and_above() -> None:
@@ -765,9 +857,12 @@ def test_training_report_and_registry_metrics_carry_the_comparison(tmp_path) -> 
         "served_interval_coverage_pct": 80.0,
         "activated": True,
         "error_gap": report["error_gap"],
+        "blend": report["blend"],
     }
     summary = vt.format_step_summary([bundle])
-    assert "| apartment | 9.0% | 11.0% (v1) | 12.0% | 80.0% | 100 | yes | - |" in summary
+    assert "| apartment | 9.0% | 11.0% (v1) | 12.0% | 80.0% | 12.0% vs 14.0% | 100 | yes | - |" in summary
+    report["blend"] = {"status": "not_evaluated", "reason": "no cell"}
+    assert "| 80.0% | not evaluated | 100 |" in vt.format_step_summary([bundle])
 
 
 # --- end to end with the real stack -------------------------------------------
@@ -841,6 +936,19 @@ def test_published_model_is_refit_on_train_and_calibration_and_recalibrated_on_t
         100.0, abs=0.05
     )
     assert bundle.metrics.served_interval_coverage_pct == coverage["served_interval_pct"]
+    # The served blend is scored on the test sales that have comparables, at every quality tier.
+    blend = report["blend"]
+    assert blend["status"] == "evaluated"
+    assert blend["test_rows"] == split["test_rows"]
+    assert 0 < blend["rows"] <= split["test_rows"]
+    assert blend["model_test_mape_pct"] == bundle.metrics.test_mape_pct
+    assert set(blend["served_blend"]) == {"forte", "correcte", "fragile"}
+    for scores in (blend["model_only"], blend["comparables_only"], *blend["served_blend"].values()):
+        assert scores["median_ape_pct"] <= scores["p75_ape_pct"]
+        assert scores["interval_coverage_pct"] + scores["below_pct"] + scores["above_pct"] == pytest.approx(
+            100.0, abs=0.05
+        )
+    json.dumps(vt.published_training_metrics(bundle))  # the blend block fits in the jsonb column
 
 
 def test_artifact_carries_the_cell_statistics_needed_to_rebuild_the_features(small_models) -> None:
@@ -899,8 +1007,11 @@ def test_end_to_end_gate_with_a_weak_and_an_identical_active_model(small_models,
     # The weak active model is beaten for sure; whether the candidate is also proven better than the
     # naive reference (paired bootstrap, ~390 sales, 25-tree test models) is up to the data.
     proven_vs_naive = against_weak.report["error_gap"]["vs_naive"]["ci_high_pp"] < 0
+    blend_holds = not vt.served_blend_reasons(against_weak.report["blend"])
     assert vt.bundle_is_activated(against_weak) is (
-        proven_vs_naive and against_weak.report["candidate"]["median_ape_pct"] < against_weak.report["naive"]["gate_median_ape_pct"]
+        proven_vs_naive
+        and blend_holds
+        and against_weak.report["candidate"]["median_ape_pct"] < against_weak.report["naive"]["gate_median_ape_pct"]
     )
     if not proven_vs_naive:
         assert "naive local reference" in " ".join(against_weak.report["promotion"]["reasons"])
@@ -921,6 +1032,7 @@ def test_end_to_end_gate_with_a_weak_and_an_identical_active_model(small_models,
         < min(report["naive"]["gate_median_ape_pct"], report["active"]["median_ape_pct"])
         and gaps["vs_naive"]["ci_high_pp"] < 0
         and gaps["vs_active"]["ci_high_pp"] < 0
+        and not vt.served_blend_reasons(report["blend"])
     )
     assert vt.bundle_is_activated(against_same) is expected
     assert (tmp_path / "apartment-t3.report.json").exists()

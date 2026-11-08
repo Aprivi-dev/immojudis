@@ -47,10 +47,20 @@ def test_recorded_extraction_responses(case: dict) -> None:
 def test_recorded_reading_responses(case: dict) -> None:
     documents = reading.documents_from_manifest(CORPUS["reading_manifest"])
 
-    points = reading.validate_reading_points(case["response"]["points"], documents)
+    lot = case.get("sold_lot") or {}
+    sold_lot = reading.sold_lot_from_sale(lot.get("property_type"), lot.get("city"), lot.get("lot_selection"))
+
+    points = reading.validate_reading_points(case["response"]["points"], documents, sold_lot=sold_lot)
 
     assert [point["title"] for point in points] == case["expect_titles"]
     for point in points:
         page = " ".join(documents[int(point["document_index"]) - 1].pages[int(point["page"])].split())
         assert str(point["quote"]) in page  # a kept quote is a verbatim extract of its page
         assert "<" not in str(point["quote"]) and ">" not in str(point["quote"])
+    published = json.dumps(points, ensure_ascii=False)
+    for fragment in case.get("expect_present", []):
+        assert fragment in published
+    for fragment in case.get("expect_absent", []):
+        assert fragment not in published  # title and explanation are the model's words: checked too
+    # A stored point replays through the same checks to the same result, without a model call.
+    assert reading.revalidate_stored_points(points, documents, sold_lot=sold_lot) == points

@@ -190,7 +190,12 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
     }
     # CRON_SECRET (qui autorise aussi les routes Vercel Cron) ne part que dans l'étape d'invalidation.
     assert [name for name, step in steps.items() if "CRON_SECRET" in step.env] == ["Invalidate public cache"]
+    # Son successeur dédié aux rappels du pipeline (envoyé en priorité, CRON_SECRET en repli) : même étape seule.
+    assert [name for name, step in steps.items() if "PIPELINE_CALLBACK_SECRET" in step.env] == [
+        "Invalidate public cache"
+    ]
     invalidation = steps["Invalidate public cache"]
+    assert "PIPELINE_CALLBACK_SECRET: ${{ secrets.PIPELINE_CALLBACK_SECRET }}" in invalidation.env
     assert "CRON_SECRET: ${{ secrets.CRON_SECRET }}" in invalidation.env
     assert "SITE_URL: ${{ vars.SITE_URL || 'https://immojudis.com' }}" in invalidation.env
     assert invalidation.run.strip() == "python -m src.cache_invalidation --flush"
@@ -283,6 +288,7 @@ def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_t
     assert "python -m src.cache_invalidation --flush" in invalidation.text
     assert re.search(r"^\s+if: always\(\)$", invalidation.text, re.M)
     assert re.search(r"^\s+continue-on-error: true$", invalidation.text, re.M)
+    assert "PIPELINE_CALLBACK_SECRET: ${{ secrets.PIPELINE_CALLBACK_SECRET }}" in invalidation.text
     assert "CRON_SECRET: ${{ secrets.CRON_SECRET }}" in invalidation.text
     assert "SITE_URL: ${{ vars.SITE_URL || 'https://immojudis.com' }}" in invalidation.text
     assert "--require-hashes" in text

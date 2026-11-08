@@ -124,6 +124,69 @@ describe("indicateur de focus", () => {
       expect(forbidden.test(good), good).toBe(false);
     }
   });
+
+  /** Contour de focus en or clair (2,85:1) : classe Tailwind `focus(-visible):outline-gold`. */
+  const OUTLINE_GOLD_CLASS = /(?<![\w-])(?:focus|focus-visible):outline-gold(?![-\w])/;
+  /** Même contour dans une feuille de style : règle `:focus…` dont le contour prend `var(--gold)`. */
+  const cssGoldFocusOutlines = (source: string): string[] =>
+    [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter(
+        ([, selector, body]) =>
+          /:focus/.test(selector) && /outline(?:-color)?:[^;]*var\(--gold\)/.test(body),
+      )
+      .map(([, selector]) => selector.trim());
+
+  it("aucun composant ni feuille de style ne marque le focus avec outline-gold (2,85:1)", () => {
+    const offenders: string[] = [];
+    const walk = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          readFileSync(path, "utf8")
+            .split("\n")
+            .forEach((line, index) => {
+              if (OUTLINE_GOLD_CLASS.test(line)) offenders.push(`${path}:${index + 1}`);
+            });
+        } else if (entry.name.endsWith(".css")) {
+          for (const selector of cssGoldFocusOutlines(readFileSync(path, "utf8"))) {
+            offenders.push(`${path} ${selector}`);
+          }
+        }
+      }
+    };
+    walk(join(process.cwd(), "src"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("les motifs interdits attrapent les formes connues et laissent outline-gold-soft", () => {
+    for (const bad of [
+      "focus-visible:outline-gold",
+      "focus:outline-gold",
+      "focus-visible:outline-gold/60",
+      'className="focus-visible:outline-2 focus-visible:outline-gold"',
+    ]) {
+      expect(OUTLINE_GOLD_CLASS.test(bad), bad).toBe(true);
+    }
+    for (const good of [
+      "focus-visible:outline-gold-soft",
+      "focus:outline-gold-soft",
+      "outline-gold",
+      "hover:outline-gold",
+    ]) {
+      expect(OUTLINE_GOLD_CLASS.test(good), good).toBe(false);
+    }
+    expect(
+      cssGoldFocusOutlines(
+        ".a:focus-visible {\n  outline: 3px solid var(--gold);\n}\n@media (min-width: 1px) {\n  .b:focus { outline-color: var(--gold); }\n}",
+      ),
+    ).toEqual([".a:focus-visible", ".b:focus"]);
+    expect(
+      cssGoldFocusOutlines(
+        ".a:focus-visible { outline: 3px solid var(--gold-soft); }\n.b:hover { outline: 1px solid var(--gold); }",
+      ),
+    ).toEqual([]);
+  });
 });
 
 /** Un `rgb(r g b / a%)` posé sur un fond opaque : la couleur rendue, en hexadécimal. */
@@ -189,6 +252,20 @@ describe("bordure des champs hors .form-input (border-field-border)", () => {
     // L'ancienne bordure de 1,54:1 ne reste pas sur le champ du simulateur.
     const simulator = readFileSync(join(process.cwd(), fields[0]), "utf8");
     expect(simulator).not.toMatch(/FIELD_CLASSES =\s*"[^"]*border-line/);
+  });
+
+  it("encadre les champs de saisie de la barre de filtres en border-field-border (P14)", () => {
+    const header = readFileSync(
+      join(process.cwd(), "src/components/search/SearchHeader.tsx"),
+      "utf8",
+    );
+    // Cadre d'un champ (prix, type de bien, tri, lieu du panneau) : celui qui marque le focus de son
+    // contenu. Les boutons à texte (bordure border-line) ne sont pas concernés.
+    const fields = header.match(
+      /"[^"]*rounded-md border border-[\w-]+[^"]*focus-within:outline[^"]*"/g,
+    );
+    expect(fields?.length).toBeGreaterThanOrEqual(5);
+    for (const field of fields ?? []) expect(field).toContain("border border-field-border");
   });
 });
 

@@ -110,4 +110,44 @@ describe("MarketPriceDistribution (n° 24)", () => {
       "sur les 3 dernières années",
     );
   });
+
+  it("dit « la moitié des ventes » des quartiles observés, pas de ceux élargis faute de ventes (D5)", () => {
+    // 5 ventes : p25 et p75 retenus élargis à ±20 % de la médiane, quartiles observés plus serrés.
+    const small = estimate({
+      sampleSize: 5,
+      p25PricePerM2: 3_200,
+      p75PricePerM2: 4_800,
+      observedP25PricePerM2: 3_850,
+      observedP75PricePerM2: 4_150,
+    });
+    const text = plain(render(<MarketPriceDistribution estimate={small} />).container.textContent);
+    expect(text).toMatch(/la moitié des ventes entre 3.850 €\/m² et 4.150 €\/m²/);
+    expect(text).not.toMatch(/3.200|4.800/);
+  });
+
+  it("ne dit plus « la moitié des ventes » d'une estimation sans quartiles observés (D5)", () => {
+    const text = plain(
+      render(<MarketPriceDistribution estimate={estimate()} />).container.textContent,
+    );
+    expect(text).toMatch(/zone retenue entre 3.600 €\/m² et 4.500 €\/m²/);
+    expect(text).not.toContain("la moitié des ventes");
+  });
+
+  it("montre la médiane des comparables, pas le p50 du mélange avec le modèle (D2)", () => {
+    const hybrid = estimate({
+      engineKind: "hybrid_lightgbm",
+      medianPricePerM2: 4_300,
+      comparableMedianPricePerM2: 3_950,
+    });
+    const text = plain(render(<MarketPriceDistribution estimate={hybrid} />).container.textContent);
+    expect(text).toMatch(/médiane\s*3.950/);
+    expect(text).not.toMatch(/4.300/);
+    cleanup();
+    // Estimation hybride calculée avant que la médiane des comparables soit gardée : aucune.
+    const legacy = estimate({ engineKind: "hybrid_lightgbm", medianPricePerM2: 4_300 });
+    const legacyText = plain(
+      render(<MarketPriceDistribution estimate={legacy} />).container.textContent,
+    );
+    expect(legacyText).toContain("médiane non disponible");
+  });
 });

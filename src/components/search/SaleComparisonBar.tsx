@@ -77,7 +77,7 @@ export function SaleComparisonBar({
               <button
                 type="button"
                 onClick={onClear}
-                className="min-h-11 rounded-md px-2 text-xs font-bold text-ink-soft hover:bg-white focus-visible:outline-2 focus-visible:outline-gold"
+                className="min-h-11 rounded-md px-2 text-xs font-bold text-ink-soft hover:bg-white focus-visible:outline-2 focus-visible:outline-gold-soft"
               >
                 Effacer la sélection
               </button>
@@ -90,7 +90,7 @@ export function SaleComparisonBar({
                 setHasOpened(true);
                 setOpen(true);
               }}
-              className="min-h-11 rounded-md bg-brand-navy px-3 text-sm font-bold text-white hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded-md bg-brand-navy px-3 text-sm font-bold text-white hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-50"
             >
               {items.length === 0 && userId ? "Mes comparaisons" : `Comparer (${items.length})`}
             </button>

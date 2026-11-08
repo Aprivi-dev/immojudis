@@ -85,7 +85,7 @@ export function PhotoGallery({
       <button
         type="button"
         onClick={() => setModalIndex(0)}
-        className="absolute bottom-4 right-4 z-20 inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-lg transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+        className="absolute bottom-4 right-4 z-20 inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-lg transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         <Camera className="h-4 w-4" />
         {photos.length} photo{photos.length > 1 ? "s" : ""}
@@ -102,7 +102,7 @@ export function PhotoGallery({
             description={address}
             ariaLabel={`Afficher la vue 3D Mapbox du quartier pour ${address}`}
             icon={Navigation2}
-            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-lg transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-lg transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
           />
         </div>
       )}
@@ -136,7 +136,7 @@ function GalleryButton({
       type="button"
       onClick={() => onOpen(index)}
       className={cn(
-        "group relative block cursor-pointer overflow-hidden bg-muted text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold",
+        "group relative block cursor-pointer overflow-hidden bg-muted text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft",
         className,
       )}
       aria-label={`Ouvrir la photo ${index + 1}`}

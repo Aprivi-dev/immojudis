@@ -57,13 +57,19 @@ export function CeilingHypothesesPanel({
           suffix="€/m²"
           value={manualPricePerM2 ?? pricePerM2}
           zeroMeansEmpty
-          hint={
+          hint={[
             manualPricePerM2 != null
               ? "Votre prix remplace l’estimation Immojudis."
               : h.value.source === "absente"
                 ? "Aucune estimation exploitable : saisissez un prix de marché."
-                : "Estimation Immojudis. Modifiez-la si vous connaissez mieux le secteur."
-          }
+                : "Estimation Immojudis. Modifiez-la si vous connaissez mieux le secteur.",
+            // La surface multiplie ce prix : dire d'où elle vient quand ce n'est pas l'annonce.
+            h.surfaceEnteredByUser
+              ? `Appliqué à ${Math.round(surface)} m², surface saisie par vous dans « Mon dossier ».`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")}
           onChange={(value) => set("manualPricePerM2", value)}
         />
         <NumberField

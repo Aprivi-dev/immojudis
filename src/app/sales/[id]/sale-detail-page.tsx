@@ -20,6 +20,7 @@ import type { SaleAccessMode } from "@/lib/query-keys";
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
+import type { PublicRentalYield } from "@/lib/public-rental-yield";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 
 const loadDiscoveryView = () => import("@/components/DiscoverySaleDetailView");
@@ -82,8 +83,8 @@ type SaleDetailPageProps = {
   rentReference?: RentReference | null;
   /** Zonage « zone tendue » de la commune, lu par le serveur ; `null` : inconnu (ligne absente de la fiche). */
   housingTension?: HousingTension | null;
-  /** Rendement brut à la mise à prix de la fiche publique, calculé par le serveur (`publicRentalYield`). */
-  rentalYield?: string | null;
+  /** Rendement brut à la mise à prix de la fiche publique (ou loyer estimé s'il n'est pas significatif), calculé par le serveur (`publicRentalYield`). */
+  rentalYield?: PublicRentalYield | null;
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {

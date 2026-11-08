@@ -12,12 +12,16 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from src.document_reading import MIN_QUOTE_CHARS, grounded_quote
+from src.document_reading import grounded_quote
 from src.normalize import strip_accents
+from src.occupancy_statements import OCCUPIED_FAMILY, VACANT, is_template_clause, occupancy_from_text
 
 # A scalar field (type, rooms, occupation) is often supported by a very short quote (« Maison »,
 # « Studio T2 »): shorter than the 12 characters asked of a document-reading quote.
 SCALAR_QUOTE_MIN_CHARS = 6
+# Quote of one entry of a list field (risks, servitudes). It keeps the 12 characters it shared with the
+# document reading when that one went to 25 (D6, 08/11/2026): the extraction does not change with it.
+LIST_QUOTE_MIN_CHARS = 12
 
 _VACANT = re.compile(
     r"libre\s+de\s+(?:toute?s?\s+)?(?:occupation|occupant|locataire|location)|libre\s+d['’]occupation|"
@@ -84,9 +88,25 @@ def grounded_field_quote(context: str, evidence: Mapping[str, Any] | None, field
     return cited_excerpt(context, item)
 
 
+def _same_occupancy_family(claimed: str, read: str | None) -> bool:
+    """Free with free, or two statuses of the occupied family (occupied, rented, owner, squat)."""
+    if claimed == VACANT:
+        return read == VACANT
+    return claimed in OCCUPIED_FAMILY and read in OCCUPIED_FAMILY
+
+
 def occupancy_is_supported(context: str, status: str | None, evidence: Mapping[str, Any] | None) -> bool:
+    """The quote exists, states this status and reads as a statement about this property.
+
+    The quote must also give the same family of status with the grammar of ``occupancy_statements``
+    (#403): a template clause of the conditions of sale (« Si l'immeuble est loué, l'adjudicataire fera
+    son affaire du bail », « expulsion des occupants éventuels »), a conditional (« le bien serait
+    occupé ») or a mixed sentence give no certain status there, so they support none here either.
+    """
     excerpt = grounded_field_quote(context, evidence, "occupancy_status")
     if not excerpt or not status:
+        return False
+    if is_template_clause(excerpt) or not _same_occupancy_family(status, occupancy_from_text(excerpt).status):
         return False
     text = _normalized(excerpt)
     vacant = bool(_VACANT.search(text))
@@ -133,6 +153,6 @@ def cited_items(context: str, values: list[str], evidence: Mapping[str, Any] | N
     return [
         value
         for index, value in enumerate(values)
-        if index < len(quotes) and cited_excerpt(context, quotes[index], min_chars=MIN_QUOTE_CHARS)
+        if index < len(quotes) and cited_excerpt(context, quotes[index], min_chars=LIST_QUOTE_MIN_CHARS)
     ]
 

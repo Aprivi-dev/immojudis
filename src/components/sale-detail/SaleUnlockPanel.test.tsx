@@ -640,4 +640,118 @@ describe("SaleUnlockPanel", () => {
     );
     expect(analysis.container.textContent).toBe("");
   });
+
+  describe("ceiling that will stay to be completed (P4)", () => {
+    const opens = {
+      ceiling: "l’enchère plafond",
+      ceilingTerm: "enchère plafond",
+      statistics: false,
+      ceilingGap: { reason: "surface absente", surface: true },
+    };
+
+    it("warns before the confirmation, and only then, without changing the unlock", async () => {
+      mocks.unlock.mockResolvedValue(result);
+      const onUnlocked = vi.fn();
+      render(
+        <SaleUnlockPanel
+          saleId={saleId}
+          status={status()}
+          unlocked={false}
+          opens={opens}
+          onUnlocked={onUnlocked}
+        />,
+      );
+      expect(screen.queryByTestId("unlock-ceiling-gap")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+      const group = screen.getByRole("group", { name: "Confirmer le déblocage" });
+      const warning = screen.getByTestId("unlock-ceiling-gap");
+      expect(group.contains(warning)).toBe(true);
+      expect(warning.textContent).toBe(
+        "L’enchère plafond restera à compléter : surface absente. Vous pourrez saisir dans « Mon dossier » la surface lue dans les pièces.",
+      );
+      // The warning comes before the button that consumes the unlock.
+      const confirm = screen.getByRole("button", { name: "Confirmer le déblocage" });
+      expect(
+        warning.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      // Information only: the unlock goes through exactly as without the warning.
+      fireEvent.click(confirm);
+      await waitFor(() => expect(onUnlocked).toHaveBeenCalledWith(result));
+      expect(mocks.unlock).toHaveBeenCalledTimes(1);
+    });
+
+    it("names « le plafond » while both terms are possible, and says nothing without a ceiling", () => {
+      const both = render(
+        <SaleUnlockPanel
+          saleId={saleId}
+          status={status()}
+          unlocked={false}
+          opens={{
+            ...opens,
+            ceiling: "l’enchère plafond ou l’offre plafond",
+            ceilingTerm: null,
+            ceilingGap: { reason: "données de l’annonce contradictoires", surface: false },
+          }}
+          onUnlocked={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+      expect(screen.getByTestId("unlock-ceiling-gap").textContent).toBe(
+        "Le plafond restera à compléter : données de l’annonce contradictoires.",
+      );
+      both.unmount();
+
+      render(
+        <SaleUnlockPanel
+          saleId={saleId}
+          status={status()}
+          unlocked={false}
+          opens={{ ...opens, ceiling: null, ceilingTerm: null }}
+          onUnlocked={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Débloquer cette vente" }));
+      expect(screen.queryByTestId("unlock-ceiling-gap")).toBeNull();
+    });
+
+    it("does not title an unlocked sale « plafond débloqué » while the ceiling is not computed", () => {
+      render(
+        <SaleUnlockPanel
+          saleId={saleId}
+          status={status({ unlocked: true, used: 2, remaining: 1 })}
+          unlocked
+          opens={opens}
+          onUnlocked={vi.fn()}
+        />,
+      );
+      expect(screen.getByRole("heading", { name: "Cette vente est débloquée" })).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: /plafond est débloquée/ })).toBeNull();
+      expect(screen.getByTestId("unlock-ceiling-gap").textContent).toBe(
+        "Votre enchère plafond reste à compléter : surface absente. Saisissez dans « Mon dossier » la surface lue dans les pièces pour la calculer.",
+      );
+      expect(
+        screen
+          .getByRole("link", { name: "Saisir la surface lue dans les pièces" })
+          .getAttribute("href"),
+      ).toBe("#mon-dossier");
+      expect(screen.queryByRole("link", { name: "Voir mon enchère plafond" })).toBeNull();
+    });
+
+    it("offers no link to a calculation that a valuation conflict suspends", () => {
+      render(
+        <SaleUnlockPanel
+          saleId={saleId}
+          status={status({ unlocked: true, used: 2, remaining: 1 })}
+          unlocked
+          opens={{
+            ...opens,
+            ceilingGap: { reason: "données de l’annonce contradictoires", surface: false },
+          }}
+          onUnlocked={vi.fn()}
+        />,
+      );
+      expect(screen.getByRole("heading", { name: "Cette vente est débloquée" })).toBeTruthy();
+      expect(screen.queryByRole("link", { name: /Voir mon|Saisir la surface/ })).toBeNull();
+    });
+  });
 });

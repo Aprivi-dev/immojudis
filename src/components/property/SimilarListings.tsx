@@ -26,7 +26,7 @@ export function SimilarListings({ property }: { property: Property }) {
             <Link
               key={listing.id}
               href={`/properties/${encodeURIComponent(listing.slug)}`}
-              className="group overflow-hidden rounded-md border border-border bg-white shadow-sm transition-colors hover:border-gold/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+              className="group overflow-hidden rounded-md border border-border bg-white shadow-sm transition-colors hover:border-gold/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               <div className="aspect-[4/3] overflow-hidden bg-muted">
                 <PropertyImage

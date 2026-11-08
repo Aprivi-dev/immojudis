@@ -374,7 +374,8 @@
 .mobileBar {
   position: fixed;
   right: 0;
-  bottom: 0;
+  /* Au-dessus du bandeau des cookies tant qu'il est affiché (hauteur publiée par le bandeau). */
+  bottom: var(--cookie-banner-height, 0px);
   left: 0;
   z-index: 30;
   display: flex;

@@ -113,10 +113,17 @@ export type MarketEstimate = {
   surfaceMaxM2: number | null;
   landSurfaceMinM2?: number | null;
   landSurfaceMaxM2?: number | null;
+  /** Valeur centrale au m² ; en mode hybride, celle du mélange comparables + modèle. */
   medianPricePerM2: number | null;
+  /** Médiane pondérée des seules ventes comparables : le prix au m² « observé » affiché. */
+  comparableMedianPricePerM2?: number | null;
   p10PricePerM2?: number | null;
+  /** Quartiles retenus pour le calcul, élargis au minimum sur un petit échantillon. */
   p25PricePerM2: number | null;
   p75PricePerM2: number | null;
+  /** Quartiles pondérés des comparables avant cet élargissement, pour l'affichage. */
+  observedP25PricePerM2?: number | null;
+  observedP75PricePerM2?: number | null;
   p90PricePerM2?: number | null;
   minPricePerM2: number | null;
   maxPricePerM2: number | null;

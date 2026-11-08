@@ -14,10 +14,14 @@ import { formatDate, formatPrice, formatPricePerM2, formatStartingPrice } from "
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
-import { reportWording } from "@/lib/property-report/report-wording";
+import { reportIndicativeNotice, reportWording } from "@/lib/property-report/report-wording";
 import { RentSourceNotice } from "@/components/RentSourceNotice";
 import { reportRentReference } from "@/lib/property-report/rent-notice";
-import { formatRenovationBudgetRange } from "@/lib/property-report/serialization";
+import {
+  formatRenovationBudgetRange,
+  opportunityScoreLabel,
+} from "@/lib/property-report/serialization";
+import { rentabilityLabel } from "@/lib/profitability";
 
 type PageParams = {
   params: Promise<{ token: string }>;
@@ -94,6 +98,10 @@ export default async function SharedReportPage({ params }: PageParams) {
   const valuationLimitations = normalizeStringList(valuationAudit.limitations);
   const opportunity = asRecord(analysis.opportunity);
   const rentabilityScore = asRecord(opportunity.rentabilityScore);
+  // Libellés recalculés depuis le score : un rapport enregistré avant le 08/11/2026 porte encore
+  // « Très rentable à confirmer » ou « Très favorable » dans son instantané.
+  const opportunityScore = numberValue(opportunity.score);
+  const rentabilityScoreValue = numberValue(rentabilityScore.score);
   const acquisitionCosts = asRecord(opportunity.acquisitionCosts);
   const rentReference = reportRentReference(opportunity.rentReference);
   const legalAttentionPoints = Array.isArray(analysis.legalAttentionPoints)
@@ -173,6 +181,10 @@ export default async function SharedReportPage({ params }: PageParams) {
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
             Mis à jour le {formatDate(report.updatedAt)} · partagé le{" "}
             {report.sharedAt ? formatDate(report.sharedAt) : "date inconnue"}
+          </p>
+          {/* Le destinataire du lien n'a pas accepté les CGU : l'avertissement vient avant les chiffres. */}
+          <p className="mt-4 rounded-lg border border-info/15 bg-info/8 p-4 text-sm leading-relaxed text-info">
+            {reportIndicativeNotice(report.generatedAt)}
           </p>
         </header>
 
@@ -473,8 +485,8 @@ export default async function SharedReportPage({ params }: PageParams) {
           <SharedMetric
             label="Score d'opportunité"
             value={
-              opportunity.score != null
-                ? `${stringOrNumberValue(opportunity.score, "")}/100 · ${stringOrNumberValue(opportunity.label, "À qualifier")}`
+              opportunityScore != null
+                ? `${opportunityScore}/100 · ${opportunityScoreLabel(opportunityScore)}`
                 : "À compléter"
             }
           />
@@ -497,8 +509,8 @@ export default async function SharedReportPage({ params }: PageParams) {
           <SharedMetric
             label="Score rentabilité"
             value={
-              rentabilityScore.score != null
-                ? `${stringOrNumberValue(rentabilityScore.score, "")}/100 · ${stringOrNumberValue(rentabilityScore.label, "À qualifier")}`
+              rentabilityScoreValue != null
+                ? `${rentabilityScoreValue}/100 · ${rentabilityLabel(rentabilityScoreValue)}`
                 : "À compléter"
             }
           />

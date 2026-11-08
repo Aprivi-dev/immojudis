@@ -121,3 +121,32 @@ describe("barre du bas alignée sur la fiche visiteur (repasse n° 43)", () => {
     expect(document.querySelector(".min-\\[1024px\\]\\:hidden")).not.toBeNull();
   });
 });
+
+describe("barres du bas et bandeau des cookies (P3)", () => {
+  it("posent les deux barres sur le bandeau des cookies, pas dessous", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const file of [
+      "src/components/sale-detail/SaleOverview.module.css",
+      "src/components/SalePublicPreview.module.css",
+    ]) {
+      const css = readFileSync(file, "utf8");
+      const rule = css.slice(css.indexOf(".mobileBar {"));
+      expect(rule.slice(0, rule.indexOf("}")), file).toContain(
+        "bottom: var(--cookie-banner-height, 0px);",
+      );
+    }
+  });
+
+  it("réserve au défilement la hauteur de la barre et celle du bandeau", () => {
+    document.documentElement.style.scrollPaddingBottom = "";
+    const { unmount } = render(
+      <MobileActionBar priceLabel="Mise à prix" price={90_000} action={null} ceiling={1} />,
+    );
+    hideHeroActions();
+    expect(document.documentElement.style.scrollPaddingBottom).toBe(
+      "calc(88px + var(--cookie-banner-height, 0px))",
+    );
+    unmount();
+    expect(document.documentElement.style.scrollPaddingBottom).toBe("");
+  });
+});

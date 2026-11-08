@@ -20,6 +20,8 @@ import {
 } from "@/lib/sale-workspace-collaboration";
 
 const saleIdSchema = z.string().guid();
+// Dossier, collaborateurs et annotations sont propres au compte : aucun cache partagé.
+const PRIVATE_RESPONSE = { headers: { "cache-control": "private, no-store" } };
 
 const postSchema = z.discriminatedUnion("action", [
   z.object({
@@ -53,7 +55,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const saleId = saleIdSchema.parse(url.searchParams.get("saleId"));
     const response = await listSaleWorkspaceCollaboration({ auth, saleId });
-    return NextResponse.json(response);
+    return NextResponse.json(response, PRIVATE_RESPONSE);
   } catch (error) {
     return errorResponse(request, error, "Dossier collaboratif indisponible");
   }
@@ -65,13 +67,22 @@ export async function POST(request: Request) {
     const input = postSchema.parse(await request.json());
 
     if (input.action === "invite") {
-      return NextResponse.json(await inviteSaleWorkspaceCollaborator({ auth, input: input.data }));
+      return NextResponse.json(
+        await inviteSaleWorkspaceCollaborator({ auth, input: input.data }),
+        PRIVATE_RESPONSE,
+      );
     }
     if (input.action === "accept") {
-      return NextResponse.json(await acceptSaleWorkspaceInvitation({ auth, input: input.data }));
+      return NextResponse.json(
+        await acceptSaleWorkspaceInvitation({ auth, input: input.data }),
+        PRIVATE_RESPONSE,
+      );
     }
 
-    return NextResponse.json(await createSaleWorkspaceAnnotation({ auth, input: input.data }));
+    return NextResponse.json(
+      await createSaleWorkspaceAnnotation({ auth, input: input.data }),
+      PRIVATE_RESPONSE,
+    );
   } catch (error) {
     return errorResponse(request, error, "Action collaborative impossible");
   }
@@ -83,10 +94,16 @@ export async function PATCH(request: Request) {
     const input = patchSchema.parse(await request.json());
 
     if (input.action === "revoke") {
-      return NextResponse.json(await revokeSaleWorkspaceCollaborator({ auth, input: input.data }));
+      return NextResponse.json(
+        await revokeSaleWorkspaceCollaborator({ auth, input: input.data }),
+        PRIVATE_RESPONSE,
+      );
     }
 
-    return NextResponse.json(await updateSaleWorkspaceAnnotation({ auth, input: input.data }));
+    return NextResponse.json(
+      await updateSaleWorkspaceAnnotation({ auth, input: input.data }),
+      PRIVATE_RESPONSE,
+    );
   } catch (error) {
     return errorResponse(request, error, "Mise à jour collaborative impossible");
   }

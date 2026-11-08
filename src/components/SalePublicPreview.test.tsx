@@ -377,7 +377,7 @@ describe("SalePublicPreview", () => {
   });
 
   describe("bloc d'inscription sous le prix", () => {
-    /** L'inscription suit le prix dans la fiche de vente, après la date, le lieu et les conditions. */
+    /** L'inscription suit le prix et la date dans la fiche de vente, avant le lieu et les conditions. */
     const followsPrice = (block: HTMLElement) => {
       const price = screen.getByText(/^Mise à prix$|^Prix publié$/).closest("[class*=priceBlock]")!;
       expect(price.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -395,23 +395,39 @@ describe("SalePublicPreview", () => {
       followsPrice(block);
     });
 
-    it("se place sous la date, le lieu, le type de vente et les conditions pour enchérir", () => {
+    it("se place juste sous la date, avant le lieu, le type de vente et les conditions (P12)", () => {
       renderPreview({
         sale_venue_type: "tribunal",
         starting_price_eur: 59_000,
-        sale_date: "2026-10-20T09:00:00+02:00",
+        sale_date: "2099-03-16T09:00:00+01:00",
       });
-      // Maquette du 06/11/2026 : la liste Date / Lieu / Type de vente / Participation, puis le bouton.
+      // Panneau collant à partir de 1024 px : le bouton reste en vue sous la date d'audience ; le
+      // lieu, le type de vente et « Pour enchérir » (avocat, frais) viennent après.
       const signup = screen.getByTestId("public-signup");
       const date = screen.getByText("Date de l’audience");
       const venue = screen.getByText("Type de vente");
       const bidding = screen.getByText("Pour enchérir");
-      expect(date.compareDocumentPosition(venue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(venue.compareDocumentPosition(signup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(
-        bidding.compareDocumentPosition(signup) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
+      const lawyer = screen.getByTestId("public-lawyer-links");
+      const follows = (a: Node, b: Node) =>
+        Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(follows(date, signup)).toBe(true);
+      for (const below of [venue, bidding, lawyer]) expect(follows(signup, below)).toBe(true);
+      // Rien entre la date et l'inscription : la liste de la date est la voisine du bloc.
+      const dateList = date.closest("dl")!;
+      expect(dateList.nextElementSibling).toBe(signup);
+      // La mise en garde de l'agenda reste sous la date.
+      expect(dateList.textContent).toContain("à vérifier auprès de l’avocat poursuivant");
       expect(signup.parentElement).toBe(venue.closest("dl")?.parentElement);
+    });
+
+    it("sans date, l'inscription suit le prix, sans liste vide", () => {
+      const { container } = renderPreview({ sale_venue_type: "tribunal", sale_date: null });
+      expect(screen.queryByText("Date de l’audience")).toBeNull();
+      const signup = screen.getByTestId("public-signup");
+      expect(signup.previousElementSibling?.className).toContain("priceBlock");
+      for (const list of container.querySelectorAll("dl")) {
+        expect(list.children.length).toBeGreaterThan(0);
+      }
     });
 
     it("ajoute un second bouton sous les lignes verrouillées, vers la même destination", () => {
@@ -1352,6 +1368,24 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     }
   });
 
+  it("réserve la hauteur du sommaire collant au défilement, sans doubler l'écart des ancres (P10 a)", async () => {
+    renderFull();
+    const toc = screen.getByRole("navigation", { name: "Sommaire de la fiche" });
+    expect(toc.hasAttribute("data-sale-tabs")).toBe(true);
+    const { readFileSync } = await import("node:fs");
+    const site = readFileSync("src/styles.css", "utf8");
+    expect(site).toMatch(
+      /html:has\(\[data-sale-tabs\]\) \{\s*scroll-padding-top: var\(--sale-sticky-offset\);/,
+    );
+    expect(site).toMatch(/--sale-sticky-offset: 9rem;/);
+    // 9rem (144 px) + la marge des sections : la même place qu'avant, 150 px puis 170 px.
+    const css = readFileSync("src/components/SalePublicPreview.module.css", "utf8");
+    const margins = [...css.matchAll(/\.sec \{[^}]*scroll-margin-top: (\d+)px;/g)].map(
+      (match) => 144 + Number(match[1]),
+    );
+    expect(margins).toEqual([150, 170]);
+  });
+
   it("renumérote la suite quand une section n'a rien à dire (pas de marché local, pas d'alerte)", () => {
     renderFull({ department: null }, false);
     const links = within(
@@ -1386,7 +1420,10 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
         returnTo="/sales"
         rentReference={{ ...RENT }}
         housingTension={null}
-        rentalYield="6,1 % (de 4,6 % à 8,1 % selon la fourchette de loyer)"
+        rentalYield={{
+          kind: "yield",
+          text: "6,1 % (de 4,6 % à 8,1 % selon la fourchette de loyer)",
+        }}
         preview={
           { id: "sale-1", sale_venue_type: "tribunal", starting_price_eur: 90_000 } as AuctionSale
         }
@@ -1397,6 +1434,30 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
       "Rendement brut à la mise à prix (charges comprises) : 6,1 % (de 4,6 % à 8,1 % selon la fourchette de loyer)",
     );
     expect(market.textContent).toContain("pas une promesse de gain");
+    expect(market.textContent).not.toContain("Rendement non significatif");
+  });
+
+  it("affiche le loyer mensuel estimé à la place d'un rendement non significatif", () => {
+    render(
+      <SalePublicPreview
+        saleId="sale-1"
+        returnTo="/sales"
+        rentReference={{ ...RENT }}
+        housingTension={null}
+        rentalYield={{ kind: "rent", text: "entre 610 € et 1 040 €" }}
+        preview={
+          { id: "sale-1", sale_venue_type: "tribunal", starting_price_eur: 9_000 } as AuctionSale
+        }
+      />,
+    );
+    const market = screen.getByRole("region", { name: "Marché local" });
+    expect(plain(market.textContent)).toContain(
+      "Loyer mensuel estimé (charges comprises) : entre 610 € et 1 040 €",
+    );
+    expect(market.textContent).toContain(
+      "Rendement non significatif à la mise à prix : le prix final est souvent bien plus élevé.",
+    );
+    expect(market.textContent).not.toContain("Rendement brut à la mise à prix (charges comprises)");
   });
 
   it("donne le prix au m² d'une surface publiée, jamais d'une surface absente", () => {

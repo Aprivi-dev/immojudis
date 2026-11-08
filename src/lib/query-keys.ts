@@ -114,6 +114,10 @@ export const precomputedMarketEstimate = (
   userKey?: Id,
   mode: SaleAccessMode = "analysis",
 ) => ["precomputed-market-estimate", saleId, userKey ?? "anonymous", mode] as const;
+// Valeur de référence du plafond recalculée sur la surface que le compte a saisie dans « Mon dossier »
+// (jamais stockée au catalogue) : la surface fait partie de la clé, une nouvelle saisie relit la valeur.
+export const enteredSurfaceMarketEstimate = (saleId: string, userKey: Id, surfaceM2: number) =>
+  ["entered-surface-market-estimate", saleId, userKey ?? "anonymous", surfaceM2] as const;
 export const outcomeGraph = (saleId: string) => ["outcome-graph", saleId] as const;
 export const listingStatistics = (saleId: string, historyMonths: number, mode: "demo" | "live") =>
   ["listing-statistics", saleId, historyMonths, mode] as const;

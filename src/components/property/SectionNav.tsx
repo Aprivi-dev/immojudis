@@ -24,7 +24,7 @@ export function SectionNav({
             href={`#${section.id}`}
             aria-current={activeSection === section.id ? "true" : undefined}
             className={cn(
-              "inline-flex min-h-12 shrink-0 cursor-pointer items-center border-b-2 px-3 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-gold",
+              "inline-flex min-h-12 shrink-0 cursor-pointer items-center border-b-2 px-3 text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-gold-soft",
               activeSection === section.id
                 ? "border-gold text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",

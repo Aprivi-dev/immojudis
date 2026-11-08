@@ -39,13 +39,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.config import load_settings
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
+
+if TYPE_CHECKING:
+    from src.catalogue_lock import CatalogueLockHandle
 
 LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +65,8 @@ MAX_PASSES_LIMIT = 8
 # waiting collection takes the lock; the drain then waits for it to finish.
 LOCK_YIELD_EVERY_SECONDS = 120.0
 LOCK_YIELD_PAUSE_SECONDS = 20.0
+# The lock heartbeat failed during a sale: the drain stops before the next one and exits non-zero.
+LOCK_LOST_STOP_REASON = "catalogue_lock_lost"
 # Priority used for (re)queued PDF generations; the ordinary enqueue uses 30.
 BACKLOG_PDF_PRIORITY = 40
 ACTIONABLE_STATUSES = ("active", "unknown", "upcoming", "postponed")
@@ -249,6 +254,23 @@ returning j.id, j.source_url, j.job_type, j.status, j.priority, j.input_hash,
 
 JOB_STATE_SQL = "select status, last_error from public.auction_enrichment_jobs where id = %s"
 
+# Fins de passe comptées dans le bilan (queued_runner.py, storage/pdf_persistence_rows.py). Une passe partielle
+# laisse sa tâche en file avec PARTIAL_MANIFEST_ERROR, ou la voit remplacée après son point d'étape durable.
+PARTIAL_MANIFEST_ERROR = "pdf document manifest is partial"
+DURABLE_CHECKPOINT_SUPERSEDED = "superseded after durable pdf checkpoint"
+REFUSED_CHECKPOINT_ERROR = "pdf document checkpoint was not persisted"
+
+
+def is_partial_pass(status: str, last_error: str) -> bool:
+    error = last_error.lower()
+    return (status == "queued" and PARTIAL_MANIFEST_ERROR in error) or (
+        status == "cancelled" and DURABLE_CHECKPOINT_SUPERSEDED in error
+    )
+
+
+def is_refused_checkpoint(last_error: str) -> bool:
+    return REFUSED_CHECKPOINT_ERROR in last_error.lower()
+
 DOCUMENT_COUNTS_SQL = """
 select coalesce(extraction_status, 'pending'), count(*)
   from public.auction_documents
@@ -276,6 +298,11 @@ class SaleOutcome:
     new_facts: list[str] = field(default_factory=list)
     error: str | None = None
     seconds: float = 0.0
+    # Rendement (alerte pipeline.documents_backlog.low_yield) : passes conclues sur un manifeste partiel, points
+    # d'étape refusés, et pièces toutes lues avec les règles actuelles à la fin du vidage.
+    partial_passes: int = 0
+    refused_checkpoints: int = 0
+    read_complete: bool = False
 
 
 @dataclass
@@ -283,9 +310,16 @@ class BacklogReport:
     outcomes: list[SaleOutcome] = field(default_factory=list)
     stop_reason: str = "candidates_exhausted"
     elapsed_seconds: float = 0.0
+    # Temps passé à attendre le verrou du catalogue, retranché de la durée évaluée par l'alerte de rendement.
+    lock_wait_seconds: float = 0.0
+    prefetch: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
+        from src.document_backlog_yield import partial_pass_share
+
         processed = [item for item in self.outcomes if item.action == "processed"]
+        passes = sum(item.passes for item in self.outcomes)
+        partial_passes = sum(item.partial_passes for item in self.outcomes)
         facts: dict[str, int] = {}
         for item in self.outcomes:
             for name in item.new_facts:
@@ -302,6 +336,7 @@ class BacklogReport:
         return {
             "stop_reason": self.stop_reason,
             "elapsed_seconds": round(self.elapsed_seconds, 1),
+            "lock_wait_seconds": round(self.lock_wait_seconds, 1),
             "sales_seen": len(self.outcomes),
             "sales_processed": len(processed),
             "sales_reprojected": sum(1 for item in self.outcomes if item.action == "reprojected"),
@@ -313,6 +348,12 @@ class BacklogReport:
             "average_seconds_per_processed_sale": (
                 round(sum(item.seconds for item in processed) / len(processed), 1) if processed else 0.0
             ),
+            "sales_read": sum(1 for item in processed if item.read_complete),
+            "passes": passes,
+            "partial_passes": partial_passes,
+            "partial_pass_share": partial_pass_share(passes, partial_passes),
+            "refused_checkpoints": sum(item.refused_checkpoints for item in self.outcomes),
+            "prefetch": dict(self.prefetch),
             "facts_added": dict(sorted(facts.items())),
             "by_source": dict(sorted(by_source.items())),
         }
@@ -499,7 +540,27 @@ def _extracted(counts: dict[str, int]) -> int:
     return int(counts.get("extracted", 0))
 
 
-def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, deadline: float) -> SaleOutcome:
+def _ensure_held(lock: CatalogueLockHandle | None) -> None:
+    """Raise ``CatalogueLockLost`` before a write when the heartbeat of the sale's lock failed."""
+    if lock is not None:
+        lock.ensure_held()
+
+
+def drain_sale(
+    db_url: str,
+    candidate: dict[str, Any],
+    limits: BacklogLimits,
+    deadline: float,
+    *,
+    lock: CatalogueLockHandle | None = None,
+) -> SaleOutcome:
+    """Read one sale's attachments under its catalogue lock.
+
+    The lock is checked before each pass and before each projection rewrite: once its heartbeat failed,
+    nothing more is written and ``run_document_backlog`` stops before the next sale.
+    """
+    from src.catalogue_lock import CatalogueLockLost
+
     source_url = str(candidate["source_url"])
     outcome = SaleOutcome(source_url=source_url, source_name=str(candidate.get("source_name") or ""), action="skipped")
     started = time.monotonic()
@@ -512,6 +573,7 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
             return outcome
         before_facts = _fact_snapshot(sale)
         if _read_with_current_rules(sale):
+            _ensure_held(lock)
             _reproject(sale)
             outcome.action = "reprojected"
         else:
@@ -525,12 +587,15 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
             for _ in range(limits.max_passes):
                 if time.monotonic() >= deadline:
                     break
+                _ensure_held(lock)
                 job = claim_pdf_job(db_url, job_id)
                 if job is None:
                     break
                 outcome.passes += 1
                 _process_job(job, deadline=deadline)
                 final_status, last_error = read_job_state(db_url, job_id)
+                outcome.partial_passes += int(is_partial_pass(final_status, last_error))
+                outcome.refused_checkpoints += int(is_refused_checkpoint(last_error))
                 refreshed = _fetch_sale(source_url)
                 settled_now = _settled_documents(refreshed)
                 progressed = settled_now > settled
@@ -562,12 +627,22 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
                 # the document projection so the rows show what was read.
                 refreshed = _fetch_sale(source_url)
                 if refreshed is not None:
+                    _ensure_held(lock)
                     _reproject(refreshed)
         after_sale = _fetch_sale(source_url)
         outcome.new_facts = new_facts(before_facts, _fact_snapshot(after_sale))
+        outcome.read_complete = outcome.action == "processed" and (
+            after_sale is not None and _read_with_current_rules(after_sale)
+        )
         after_counts = read_document_counts(db_url, source_url)
         outcome.documents_extracted_after = _extracted(after_counts)
         outcome.documents_total = sum(after_counts.values())
+    except CatalogueLockLost as exc:
+        # Nothing more is written for this sale; the caller sees the lost lock and stops before the next one.
+        LOGGER.error("Document backlog stopped writing %s: %s", source_url, exc)
+        outcome.error = str(exc)[:300]
+        if outcome.action == "skipped":
+            outcome.action = "error"
     except Exception as exc:  # one sale never stops the drain
         LOGGER.exception("Document backlog failed for %s: %s", source_url, exc)
         outcome.error = str(exc)[:300]
@@ -579,11 +654,11 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
 
 
 @contextmanager
-def _catalogue_lock(db_url: str, wait_seconds: float) -> Iterator[None]:
+def _catalogue_lock(db_url: str, wait_seconds: float) -> Iterator[CatalogueLockHandle]:
     from src.catalogue_lock import catalogue_writer_lock
 
-    with catalogue_writer_lock(db_url, label="document backlog", wait_seconds=wait_seconds):
-        yield
+    with catalogue_writer_lock(db_url, label="document backlog", wait_seconds=wait_seconds) as lock:
+        yield lock
 
 
 def run_document_backlog(
@@ -604,7 +679,7 @@ def run_document_backlog(
         int(limits.budget_seconds),
         limits.max_passes,
     )
-    from src.catalogue_lock import CatalogueLockTimeout
+    from src.catalogue_lock import CatalogueLockLost, CatalogueLockTimeout
 
     # Les ventes suivantes sont téléchargées et lues hors du verrou pendant que la courante est publiée
     # (src/document_prefetch.py) : le verrou ne couvre plus que la passe, qui trouve les pages déjà lues.
@@ -621,11 +696,14 @@ def run_document_backlog(
                 last_yield = time.monotonic()
             # Never prepared and processed at the same time: the locked pass writes the same caches.
             prefetcher.wait_for(str(candidate["source_url"]))
+            waiting_since = time.monotonic()
             try:
                 # A collection may hold the lock for its whole 35-minute budget.
-                with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())):
-                    outcome = drain_sale(db_url, candidate, limits, deadline)
+                with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())) as lock:
+                    report.lock_wait_seconds += time.monotonic() - waiting_since
+                    outcome = drain_sale(db_url, candidate, limits, deadline, lock=lock)
             except CatalogueLockTimeout as exc:
+                report.lock_wait_seconds += time.monotonic() - waiting_since
                 LOGGER.warning("Document backlog stopped: %s", exc)
                 report.stop_reason = "catalogue_lock"
                 break
@@ -645,8 +723,16 @@ def run_document_backlog(
                 f" error={outcome.error}" if outcome.error else "",
                 outcome.seconds,
             )
+            # The heartbeat failed while this sale was published: the next sale must not start.
+            try:
+                lock.ensure_held()
+            except CatalogueLockLost as exc:
+                LOGGER.error("Document backlog stopped: %s", exc)
+                report.stop_reason = LOCK_LOST_STOP_REASON
+                break
     finally:
         prefetcher.close()
+    report.prefetch = dict(prefetcher.stats)
     report.elapsed_seconds = time.monotonic() - started
     return report
 
@@ -669,6 +755,24 @@ def _write_step_summary(summary: dict[str, Any]) -> None:
         f"projection réécrite {summary['sales_reprojected']}, en erreur {summary['sales_with_errors']})",
         f"- Documents lus : {summary['documents_read']}",
         f"- Temps moyen par vente traitée : {summary['average_seconds_per_processed_sale']} s",
+        f"- Ventes lues (toutes les pièces à jour) : {summary['sales_read']}",
+        f"- Passes : {summary['passes']}, dont partielles {summary['partial_passes']} "
+        f"({round(100 * summary['partial_pass_share'])} %) ; points d'étape refusés : {summary['refused_checkpoints']}",
+    ]
+    prefetch = summary.get("prefetch") or {}
+    if prefetch:
+        lines.append(
+            f"- Lecture en avance : {prefetch.get('workers', 0)} processus, {prefetch.get('prepared', 0)} ventes "
+            f"préparées, {prefetch.get('read', 0)} pièces lues, {prefetch.get('deferred_exhausted', 0)} encore "
+            f"reportées, {prefetch.get('errors', 0)} erreurs"
+        )
+    low_yield = summary.get("low_yield") or {}
+    if low_yield.get("evaluated"):
+        state = "ouverte" if low_yield.get("active") else "non déclenchée"
+        reasons = ", ".join(low_yield.get("reasons") or []) or "-"
+        lines.append(f"- Alerte `{low_yield.get('alert_key')}` : {state} ({reasons}) ; enregistrement : "
+                     f"`{low_yield.get('sync', '-')}`")
+    lines += [
         "",
         "| Source | Ventes | Documents lus | Erreurs |",
         "| --- | ---: | ---: | ---: |",
@@ -682,6 +786,28 @@ def _write_step_summary(summary: dict[str, Any]) -> None:
             handle.write("\n".join(lines) + "\n")
     except OSError as exc:
         LOGGER.warning("Could not write the GitHub step summary: %s", exc)
+
+
+def _record_yield(summary: dict[str, Any]) -> None:
+    """Bilan de rendement dans le journal, puis alerte pipeline.documents_backlog.low_yield (src.document_backlog_yield)."""
+    from src.document_backlog_yield import evaluate_low_yield, sync_low_yield_alert
+
+    LOGGER.info(
+        "Document backlog yield: %.0fs, %s sales read of %s processed, %s passes (%s partial, share %s), "
+        "%s refused checkpoints, prefetch %s",
+        summary["elapsed_seconds"],
+        summary["sales_read"],
+        summary["sales_processed"],
+        summary["passes"],
+        summary["partial_passes"],
+        summary["partial_pass_share"],
+        summary["refused_checkpoints"],
+        summary["prefetch"] or "-",
+    )
+    evaluation = evaluate_low_yield(summary)
+    db_url = str(load_settings().get("supabase_db_url") or "")
+    evaluation["sync"] = sync_low_yield_alert(db_url, summary, evaluation)
+    summary["low_yield"] = evaluation
 
 
 def _run_document_reading() -> dict[str, int] | str:
@@ -714,9 +840,20 @@ def main(argv: list[str] | None = None) -> int:
     limits = limits_from_inputs(args.max_sales, args.budget_minutes, args.max_passes)
     report = run_document_backlog(limits)
     summary = report.as_dict()
-    summary["document_reading"] = _run_document_reading()
+    lock_lost = report.stop_reason == LOCK_LOST_STOP_REASON
+    _record_yield(summary)
+    summary["document_reading"] = "skipped" if lock_lost else _run_document_reading()
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     _write_step_summary(summary)
+    if lock_lost:
+        from src.catalogue_lock import LOCK_LOST_EXIT_CODE
+
+        print(
+            "::error title=Verrou du catalogue perdu::the catalogue writer lock may have been lost "
+            "(heartbeat failed); the document backlog stopped before the next sale.",
+            flush=True,
+        )
+        return LOCK_LOST_EXIT_CODE
     return 0
 
 

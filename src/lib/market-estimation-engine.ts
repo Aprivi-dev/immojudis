@@ -67,8 +67,12 @@ export type MarketEngineResult = {
   actionable: boolean;
   medianPricePerM2: number;
   p10PricePerM2: number;
+  /** Quartiles retenus : les quartiles pondérés, élargis au minimum autour de la médiane. */
   p25PricePerM2: number;
   p75PricePerM2: number;
+  /** Quartiles pondérés avant cet élargissement : ceux que l'écran peut dire « observés ». */
+  observedP25PricePerM2: number;
+  observedP75PricePerM2: number;
   p90PricePerM2: number;
   minPricePerM2: number;
   maxPricePerM2: number;
@@ -245,11 +249,11 @@ export function analyzeMarketCandidates(input: {
   const median = Math.round(weightedQuantile(weighted, 0.5));
   const empiricalP10 = Math.round(weightedQuantile(weighted, 0.1));
   const empiricalP90 = Math.round(weightedQuantile(weighted, 0.9));
-  let p25 = Math.round(weightedQuantile(weighted, 0.25));
-  let p75 = Math.round(weightedQuantile(weighted, 0.75));
+  const observedP25 = Math.round(weightedQuantile(weighted, 0.25));
+  const observedP75 = Math.round(weightedQuantile(weighted, 0.75));
   const minimumSpread = scored.length >= 10 ? 0.08 : scored.length >= 6 ? 0.12 : 0.2;
-  p25 = Math.min(p25, Math.round(median * (1 - minimumSpread)));
-  p75 = Math.max(p75, Math.round(median * (1 + minimumSpread)));
+  const p25 = Math.min(observedP25, Math.round(median * (1 - minimumSpread)));
+  const p75 = Math.max(observedP75, Math.round(median * (1 + minimumSpread)));
   const predictionInterval = conformalPredictionInterval({
     segment: input.segment,
     median,
@@ -287,6 +291,8 @@ export function analyzeMarketCandidates(input: {
     p10PricePerM2: predictionInterval.p10PricePerM2,
     p25PricePerM2: p25,
     p75PricePerM2: p75,
+    observedP25PricePerM2: observedP25,
+    observedP75PricePerM2: observedP75,
     p90PricePerM2: predictionInterval.p90PricePerM2,
     minPricePerM2: Math.round(prices[0]),
     maxPricePerM2: Math.round(prices[prices.length - 1]),

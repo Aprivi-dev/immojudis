@@ -133,6 +133,40 @@ Sur un plan Vercel Pro, ces deux derniers crons peuvent repasser à `*/15 * * * 
 pour se rapprocher du temps réel. Les routes refusent toute requête sans
 `Authorization: Bearer $CRON_SECRET`.
 
+### Secret des rappels du pipeline (`PIPELINE_CALLBACK_SECRET`)
+
+Le pipeline (GitHub Actions) appelle `POST /api/pipeline/revalidate-sale` à la fin de chaque collecte et
+de chaque balayage des doublons (étape « Invalidate public cache » de `data-pipeline.yml` et de
+`dedupe-sweep.yml`), pour retirer du cache public les ventes qui quittent le catalogue.
+
+- Côté site (`src/lib/cron-auth.ts`) : tant que `PIPELINE_CALLBACK_SECRET` est absent de Vercel, la
+  route accepte `CRON_SECRET`. **Dès qu'il est posé, elle n'accepte plus que lui.**
+- Côté pipeline (`services/data-pipeline/src/cache_invalidation.py`) : il envoie
+  `PIPELINE_CALLBACK_SECRET` s'il le reçoit, sinon `CRON_SECRET`.
+
+Un appel refusé ne perd rien : les ventes restent dans `app_private.catalogue_invalidations` et partent
+au passage suivant, mais le cache public garde la vente retirée jusque-là. L'étape reste verte, avec
+une annotation `::warning::` dans le résumé du workflow : un refus passe donc facilement inaperçu.
+
+**Ordre de bascule**, à suivre dans cet ordre :
+
+1. **Secret GitHub** : générer une valeur neuve (`openssl rand -hex 32`, jamais la valeur de
+   `CRON_SECRET`) et la poser comme secret de dépôt `PIPELINE_CALLBACK_SECRET` (environnement
+   `Production` s'il porte les autres secrets). Sans effet tant que le code de l'étape 2 n'est pas sur
+   `main`.
+2. **Déploiement du code** : fusionner le changement qui fait lire `PIPELINE_CALLBACK_SECRET` au
+   pipeline et le passe aux deux workflows. À partir de là, le pipeline envoie la nouvelle valeur, que
+   le site refuse encore. Enchaîner donc l'étape 3 sans attendre, de préférence entre deux collectes.
+3. **Vercel** : poser la même valeur dans `PIPELINE_CALLBACK_SECRET` (Production), puis redéployer la
+   production : une variable n'est lue qu'au déploiement suivant.
+
+Vérifier ensuite que l'étape « Invalidate public cache » de la collecte suivante n'a pas d'annotation
+et que sa ligne `cache_invalidation` indique `requests_failed` à 0. `CRON_SECRET` reste nécessaire aux crons
+Vercel et au repli : ne pas le supprimer.
+
+Ne jamais poser `PIPELINE_CALLBACK_SECRET` sur Vercel avant l'étape 2 : le pipeline enverrait encore
+`CRON_SECRET`, refusé, et l'invalidation du cache échouerait à chaque passage.
+
 ### Contrôle de santé opérationnelle
 
 Le plan Vercel Hobby ne permettant qu'une exécution quotidienne, le contrôle de santé est lancé

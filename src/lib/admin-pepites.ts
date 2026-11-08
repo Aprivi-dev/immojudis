@@ -17,6 +17,7 @@ import {
   PEPITE_TARGET_RATE_MIN,
 } from "@/lib/pepite-policy";
 import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
+import type { CeilingCoverageSale } from "@/lib/admin-catalogue-quality";
 
 /**
  * Page d'administration des pépites (`/admin/pepites`) : le mode, les compteurs par type de vente, le taux de
@@ -609,4 +610,50 @@ export async function suspendAdminPepites(
   console.info(JSON.stringify({ scope: "admin.pepites", userId: auth.userId, mode: data }));
   expirePepiteCaches();
   return { mode: data === "off" || data === "shadow" || data === "on" ? data : "unknown" };
+}
+
+const COVERAGE_PAGE_SIZE = 1000;
+/** Au-delà, le catalogue en ligne a changé d'échelle (même borne que le traitement des pépites). */
+const COVERAGE_MAX_ROWS = 20_000;
+
+type CoverageRow = {
+  reason_codes: string[] | null;
+  sale: {
+    sale_venue_type: string | null;
+    sale_date: string | null;
+    estimate: { status: string | null; last_error_code: string | null } | null;
+  } | null;
+};
+
+/**
+ * P7 (panneau « Contrôles qualité » de /admin/quality) : les codes de motif des évaluations de pépite des
+ * ventes à venir, avec le type de vente et l'état de l'estimation stockée. Ni montant ni détail privé : seuls
+ * les codes (`pass:`/`fail:`) sont lus. Lecture seule, par pages, avec le client de service ; l'appelant a
+ * vérifié le rôle administrateur.
+ */
+export async function readAdminCeilingCoverageSales(): Promise<CeilingCoverageSale[]> {
+  const sales: CeilingCoverageSale[] = [];
+  for (let from = 0; from < COVERAGE_MAX_ROWS; from += COVERAGE_PAGE_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .from("auction_sale_pepites")
+      .select(
+        "sale_id,reason_codes,sale:auction_sales!auction_sale_pepites_sale_id_fkey(sale_venue_type,sale_date,estimate:auction_sale_market_estimates!auction_sale_market_estimates_auction_sale_id_fkey(status,last_error_code))",
+      )
+      .contains("reason_codes", ["pass:sale_upcoming"])
+      .order("sale_id")
+      .range(from, from + COVERAGE_PAGE_SIZE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as CoverageRow[];
+    for (const row of rows) {
+      sales.push({
+        reasonCodes: row.reason_codes ?? [],
+        venueType: row.sale?.sale_venue_type ?? null,
+        saleDate: row.sale?.sale_date ?? null,
+        estimateStatus: row.sale?.estimate?.status ?? null,
+        estimateErrorCode: row.sale?.estimate?.last_error_code ?? null,
+      });
+    }
+    if (rows.length < COVERAGE_PAGE_SIZE) break;
+  }
+  return sales;
 }

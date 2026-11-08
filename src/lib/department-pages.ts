@@ -1,5 +1,5 @@
-import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departments";
 import { departmentCode } from "@/lib/department-code";
+import { FRENCH_DEPARTMENTS } from "@/lib/departments";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
 import type { SaleVenueType } from "@/lib/types";
@@ -39,12 +39,10 @@ export function departmentSlug(name: string): string {
   return normalizeFrenchSearchText(name).replaceAll(" ", "-");
 }
 
-export const DEPARTMENTS: readonly DepartmentRef[] = FEES_SIMULATOR_DEPARTMENTS.map(
-  ({ code, name }) => {
-    const slug = departmentSlug(name);
-    return { code, name, slug, path: `${DEPARTMENT_PAGES_PATH}/${slug}` };
-  },
-);
+export const DEPARTMENTS: readonly DepartmentRef[] = FRENCH_DEPARTMENTS.map(({ code, name }) => {
+  const slug = departmentSlug(name);
+  return { code, name, slug, path: `${DEPARTMENT_PAGES_PATH}/${slug}` };
+});
 
 const BY_SLUG = new Map(DEPARTMENTS.map((department) => [department.slug, department]));
 const BY_CODE = new Map(DEPARTMENTS.map((department) => [department.code, department]));

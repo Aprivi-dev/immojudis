@@ -328,7 +328,7 @@ export const EXAMPLE_SALE = {
   has_double_glazing: true,
   investment_score: 78,
   investment_summary:
-    "Mise à prix basse face au marché local, mais occupation et travaux à vérifier avant audience.",
+    "Bien occupé : mise à prix à comparer avec prudence aux ventes de biens libres ; occupation et travaux à vérifier avant audience.",
   score_version: "demo-2026-06",
   score_confidence: 0.84,
   score_factors: [

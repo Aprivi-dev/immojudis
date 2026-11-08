@@ -17,3 +17,21 @@ def test_revalidation_persists_quality_only_changes_without_refreshing_source_ag
     report = module.revalidate_cached_displays()
     assert report['revalidated'] == report['persisted'] == 1
     assert writes == [{'refresh_last_seen': False}]
+
+
+def test_document_readings_are_revalidated_in_the_same_pass(monkeypatch):
+    from src import document_reading
+
+    calls = []
+    monkeypatch.setattr(module, 'load_settings', lambda: {'supabase_db_url': 'postgresql://test'})
+    monkeypatch.setattr(document_reading, 'revalidate_stored_readings', lambda url, limit: calls.append((url, limit)) or {'updated': 0})
+    assert module.revalidate_document_readings(50) == {'updated': 0}
+    assert calls == [('postgresql://test', 50)]
+
+    def broken(url, limit):
+        raise RuntimeError('db down')
+
+    monkeypatch.setattr(document_reading, 'revalidate_stored_readings', broken)
+    assert module.revalidate_document_readings(50) == 'error: RuntimeError'
+    monkeypatch.setattr(module, 'load_settings', lambda: {})
+    assert module.revalidate_document_readings(50).startswith('skipped')

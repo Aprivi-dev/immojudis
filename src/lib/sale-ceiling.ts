@@ -19,7 +19,11 @@ import { feeRegimeForSale, type FeeRegime, type FeeRegimeKey } from "@/lib/fee-r
 import { listingValuationConflict } from "@/lib/listing-evidence";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import type { RentReference } from "@/lib/rent-reference";
-import { getMarketValuationSurfaces } from "@/lib/surface";
+import {
+  acceptsEnteredBuiltSurface,
+  getMarketValuationSurfaces,
+  validEnteredSurface,
+} from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
 type SaleCeilingSource = {
@@ -51,6 +55,8 @@ export type SaleCeilingInputs = {
   };
   /** Surface retenue pour la valeur ; `null` quand un champ critique est bloqué. */
   surface: number | null;
+  /** `surface` est celle que l'utilisateur a lue dans les pièces (voir `withEnteredSurface`). */
+  surfaceEnteredByUser?: boolean;
 };
 
 export type SaleCeiling = SaleCeilingInputs & {
@@ -86,6 +92,27 @@ export function assessSaleCeilingInputs({
     blocked: { price, surface: surfaceBlocked, propertyType, rooms, critical },
     surface: critical ? null : getMarketValuationSurfaces(displaySale).builtSurfaceM2,
   };
+}
+
+/**
+ * Retient la surface que l'utilisateur a lue dans les pièces et saisie dans « Mon dossier », quand
+ * l'annonce ne publie pas la surface bâtie (absente ou estimée) et qu'aucun champ critique n'est
+ * bloqué. Elle ne sert qu'au calcul de ce compte : le catalogue n'est jamais modifié. Sans surface
+ * admise, les gardes sont rendues telles quelles.
+ */
+export function withEnteredSurface(
+  inputs: SaleCeilingInputs,
+  enteredSurfaceM2: number | null | undefined,
+): SaleCeilingInputs {
+  const entered = validEnteredSurface(enteredSurfaceM2);
+  if (
+    entered == null ||
+    inputs.blocked.critical ||
+    !acceptsEnteredBuiltSurface(inputs.displaySale)
+  ) {
+    return inputs;
+  }
+  return { ...inputs, surface: entered, surfaceEnteredByUser: true };
 }
 
 /**
@@ -130,6 +157,7 @@ export function computeSaleCeiling({
     choices,
     inputs.regime,
     rentReference,
+    inputs.surfaceEnteredByUser ? inputs.surface : null,
   );
   // Gardé : la surface retenue (`null` quand un champ critique est bloqué) prime. Non gardé : celle
   // des hypothèses, lue sur la vente telle quelle.

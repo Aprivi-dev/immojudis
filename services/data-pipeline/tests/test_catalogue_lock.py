@@ -16,8 +16,10 @@ from psycopg.conninfo import conninfo_to_dict
 from src import catalogue_lock, recompute_scoring
 from src.catalogue_lock import (
     CATALOGUE_WRITER_LOCK_NAME,
+    CatalogueLockLost,
     CatalogueLockTimeout,
     catalogue_writer_lock,
+    session_lock_url,
 )
 
 WORKFLOWS = Path(__file__).resolve().parents[3] / ".github" / "workflows"
@@ -152,6 +154,130 @@ def test_heartbeat_keeps_the_idle_session_alive() -> None:
         "postgresql://example/db", connect=lambda url: connection, wait_seconds=1, heartbeat_seconds=0.01
     ):
         assert beats.wait(timeout=2)
+
+
+def test_a_failed_heartbeat_flags_the_lock_as_lost_and_stops_the_next_write(caplog) -> None:
+    connection = FakeConnection([True])
+    original = connection.execute
+    failed = threading.Event()
+
+    def execute(statement, parameters=()):
+        if statement == "select 1":
+            failed.set()
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+        return original(statement, parameters)
+
+    connection.execute = execute  # type: ignore[method-assign]
+
+    with catalogue_writer_lock(
+        "postgresql://example/db",
+        label="pipeline (all)",
+        connect=lambda url: connection,
+        wait_seconds=1,
+        heartbeat_seconds=0.01,
+    ) as lock:
+        assert not lock.lost
+        assert failed.wait(timeout=2)
+        deadline = time.monotonic() + 2
+        while not lock.lost and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert lock.lost
+        assert catalogue_lock.catalogue_lock_lost()
+        with pytest.raises(CatalogueLockLost, match="pipeline \\(all\\) may have been lost"):
+            lock.ensure_held()
+        with pytest.raises(CatalogueLockLost):
+            catalogue_lock.ensure_catalogue_lock_held()
+
+    assert "the lock may have been lost" in caplog.text
+    # Once the block is left, the lost lock no longer stops anything else in the process.
+    assert not catalogue_lock.catalogue_lock_lost()
+    catalogue_lock.ensure_catalogue_lock_held()
+
+
+def test_a_healthy_lock_lets_every_write_through() -> None:
+    connection, clock = FakeConnection([True]), Clock()
+
+    with _hold(connection, clock, wait_seconds=1) as lock:
+        lock.ensure_held()
+        catalogue_lock.ensure_catalogue_lock_held()
+        assert not catalogue_lock.catalogue_lock_lost()
+
+
+# --- session connection (T3) ----------------------------------------------------
+
+
+def test_the_transaction_pooler_url_is_moved_to_the_session_port() -> None:
+    url = "postgresql://postgres.abcdef:p%40ss@aws-0-eu-west-3.pooler.supabase.com:6543/postgres?sslmode=require"
+
+    params = conninfo_to_dict(session_lock_url(url))
+
+    assert params["port"] == "5432"
+    assert params["host"] == "aws-0-eu-west-3.pooler.supabase.com"
+    assert params["user"] == "postgres.abcdef" and params["password"] == "p@ss"
+    assert params["dbname"] == "postgres" and params["sslmode"] == "require"
+
+
+def test_a_pooler_url_without_port_or_already_in_session_mode_uses_5432() -> None:
+    session = "postgresql://postgres.abcdef:secret@aws-0-eu-west-3.pooler.supabase.com:5432/postgres"
+    assert session_lock_url(session) == session
+
+    no_port = "postgresql://postgres.abcdef:secret@AWS-0-EU-WEST-3.POOLER.SUPABASE.COM/postgres"
+    assert conninfo_to_dict(session_lock_url(no_port))["port"] == "5432"
+
+    dsn = "host=aws-0-eu-west-3.pooler.supabase.com port=6543 user=postgres.abcdef dbname=postgres"
+    assert conninfo_to_dict(session_lock_url(dsn))["port"] == "5432"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql://postgres:secret@db.abcdef.supabase.co:5432/postgres",
+        "postgresql://postgres:secret@db.abcdef.supabase.co/postgres",
+        "postgresql://localhost/immojudis",
+        "postgresql://example/db",
+    ],
+)
+def test_a_direct_host_is_left_unchanged(url) -> None:
+    assert session_lock_url(url) == url
+
+
+def test_the_transaction_port_is_refused_on_any_other_host_without_leaking_the_password() -> None:
+    with pytest.raises(ValueError, match="6543") as raised:
+        session_lock_url("postgresql://postgres:very-secret@db.abcdef.supabase.co:6543/postgres")
+
+    assert "very-secret" not in str(raised.value)
+
+
+def test_the_lock_connects_through_the_session_port() -> None:
+    connection, clock = FakeConnection([True]), Clock()
+    targets: list[str] = []
+
+    def connect(target: str) -> FakeConnection:
+        targets.append(target)
+        return connection
+
+    with catalogue_writer_lock(
+        "postgresql://postgres.abcdef:secret@aws-0-eu-west-3.pooler.supabase.com:6543/postgres",
+        connect=connect,
+        sleep=clock.sleep,
+        clock=clock,
+        wait_seconds=1,
+        heartbeat_seconds=0,
+    ):
+        pass
+
+    assert [conninfo_to_dict(target)["port"] for target in targets] == ["5432"]
+
+
+def test_the_lock_refuses_a_transaction_port_before_connecting() -> None:
+    with pytest.raises(ValueError, match="6543"):
+        with catalogue_writer_lock(
+            "postgresql://postgres:secret@db.example.test:6543/postgres",
+            connect=lambda url: pytest.fail("no connection may be opened on port 6543"),
+            wait_seconds=1,
+            heartbeat_seconds=0,
+        ):
+            pytest.fail("must not run without a session lock")
 
 
 # --- real PostgreSQL ----------------------------------------------------------

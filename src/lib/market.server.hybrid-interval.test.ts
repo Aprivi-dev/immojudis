@@ -94,6 +94,11 @@ describe("fourchette de l'estimation hybride (n° 21)", () => {
     expect(estimate?.predictionInterval).toBeDefined();
     expect(estimate?.predictionInterval).not.toHaveProperty("coverageTarget");
     expect(estimate?.predictionInterval?.method).toBe("hybrid_mapie_cqr");
+    // Le p50 du mélange sert au calcul ; la médiane des comparables reste celle qu'on affiche.
+    expect(estimate?.medianPricePerM2).toBe(4_000);
+    expect(estimate?.comparableMedianPricePerM2).toBeGreaterThanOrEqual(3_600);
+    expect(estimate?.comparableMedianPricePerM2).toBeLessThanOrEqual(4_040);
+    expect(estimate?.comparableMedianPricePerM2).not.toBe(4_000);
   });
 
   it("garde la couverture cible du moteur de comparables quand aucun modèle n'est appliqué", async () => {

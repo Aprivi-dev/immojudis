@@ -622,7 +622,9 @@
   column-gap: 12px;
   padding-block: 32px;
   border-top: 1px solid var(--line);
-  scroll-margin-top: 150px;
+  /* S'ajoute au `scroll-padding-top` de `html` (9rem, sommaire `data-sale-tabs`) : 150 px en tout,
+     sous la pilule du site et le sommaire. */
+  scroll-margin-top: 6px;
 }
 
 .toc + .sec {
@@ -1382,7 +1384,7 @@
 }
 
 .page :is(a, button):focus-visible {
-  outline: 3px solid var(--gold);
+  outline: 3px solid var(--gold-soft);
   outline-offset: 2px;
 }
 
@@ -1391,6 +1393,8 @@
 .mobileBar {
   position: fixed;
   inset: auto 0 0;
+  /* Au-dessus du bandeau des cookies tant qu'il est affiché (hauteur publiée par le bandeau). */
+  bottom: var(--cookie-banner-height, 0px);
   z-index: 40;
   display: flex;
   min-height: calc(72px + env(safe-area-inset-bottom, 0px));
@@ -1516,7 +1520,8 @@
     align-items: flex-start;
     gap: 28px;
     padding-block: 48px;
-    scroll-margin-top: 170px;
+    /* 9rem de `scroll-padding-top` + 26 px : 170 px en tout. */
+    scroll-margin-top: 26px;
   }
 
   .secNumber {
@@ -1618,8 +1623,9 @@
   }
 
   /* La fiche de vente suit le défilement, sous la pilule de navigation du site. Plus haute que
-     l'écran (bande d'écart et ses mises en garde), elle défile d'elle-même : le bouton d'inscription
-     reste atteignable. */
+     l'écran (bande d'écart et ses mises en garde), elle défile d'elle-même. Le bouton d'inscription
+     suit la date de la vente (P12) : il est en vue sans faire défiler le panneau ; le lieu, les
+     conditions et les liens d'avocat et de frais viennent après. */
   .side {
     position: sticky;
     top: 96px;

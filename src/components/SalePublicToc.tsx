@@ -10,6 +10,8 @@ export type SalePublicTocItem = { id: string; number: string; label: string };
  * en avant (`aria-current`). Le serveur rend la première comme courante ; une fois monté, le
  * navigateur suit le défilement (IntersectionObserver, bande du tiers supérieur de l'écran). Sans
  * IntersectionObserver, le sommaire reste une simple liste de liens.
+ * `data-sale-tabs` dit à `html` (styles.css) de réserver aussi la hauteur du sommaire au défilement
+ * (`scroll-padding-top`) : un élément pris au clavier ne passe pas dessous (WCAG 2.4.11).
  */
 export function SalePublicToc({ items }: { items: readonly SalePublicTocItem[] }) {
   const [current, setCurrent] = useState(items[0]?.id ?? null);
@@ -35,7 +37,7 @@ export function SalePublicToc({ items }: { items: readonly SalePublicTocItem[] }
   }, [ids]);
 
   return (
-    <nav className={styles.toc} aria-label="Sommaire de la fiche">
+    <nav className={styles.toc} aria-label="Sommaire de la fiche" data-sale-tabs="">
       <ol>
         {items.map((item) => (
           <li key={item.id}>

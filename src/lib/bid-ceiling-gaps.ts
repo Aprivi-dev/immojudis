@@ -42,3 +42,48 @@ export function ceilingGap(
   }
   return { kind: "incomplete", reason: valueReason };
 }
+
+/** Ce qui empêche le plafond d'une vente débloquée d'être chiffré, dit avant et après le déblocage. */
+export type UnlockCeilingGap = {
+  /** Motif en minuscules, sans point final (« surface absente »). */
+  reason: string;
+  /** Le motif est la surface : l'utilisateur peut saisir celle qu'il a lue dans les pièces. */
+  surface: boolean;
+};
+
+export const UNLOCK_GAP_SURFACE = "surface absente";
+export const UNLOCK_GAP_CONFLICT = "données de l’annonce contradictoires";
+export const UNLOCK_GAP_REVIEW = "données de l’annonce en cours de vérification";
+
+/**
+ * Le plafond restera (ou est resté) à compléter : conflit de valorisation, champ critique bloqué
+ * par la relecture IA, surface absente (`assessSaleCeilingInputs`, après la surface saisie par
+ * l'utilisateur), puis, une fois les données de la vente lues, le motif du plan (`ceilingGap`)
+ * quand il manque une donnée. `null` : rien de connu n'empêche le calcul. Une estimation en cours
+ * (`pending`) n'est pas un manque : elle n'empêche rien.
+ *
+ * Information seulement : la règle de décompte des déblocages ne dépend pas de ce résultat.
+ */
+export function unlockCeilingGap({
+  inputs,
+  gap = null,
+  pending = false,
+}: {
+  inputs: {
+    valuationConflict: string | null;
+    blocked: { critical: boolean };
+    surface: number | null;
+  };
+  gap?: CeilingGap | null;
+  pending?: boolean;
+}): UnlockCeilingGap | null {
+  if (inputs.valuationConflict) return { reason: UNLOCK_GAP_CONFLICT, surface: false };
+  if (inputs.blocked.critical) return { reason: UNLOCK_GAP_REVIEW, surface: false };
+  if (inputs.surface == null || !(inputs.surface > 0)) {
+    return { reason: UNLOCK_GAP_SURFACE, surface: true };
+  }
+  if (pending || gap?.kind !== "incomplete" || gap.reason === "estimation en cours") return null;
+  return gap.reason === "surface manquante"
+    ? { reason: UNLOCK_GAP_SURFACE, surface: true }
+    : { reason: gap.reason, surface: false };
+}

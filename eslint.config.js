@@ -97,12 +97,5 @@ export default tseslint.config(
       ],
     },
   },
-  {
-    // Exemption connue (lot 4a, n° 77) : `department-pages.ts` lit la liste des départements dans
-    // `@/components/fees-simulator/departments`, une donnée pure que quatre composants partagent aussi.
-    // À retirer quand cette liste sera déplacée dans `src/lib` (cinq fichiers à adapter).
-    files: ["src/lib/department-pages.ts"],
-    rules: { "no-restricted-imports": "off" },
-  },
   eslintPluginPrettier,
 );

@@ -377,6 +377,32 @@ describe("investor welcome flow", () => {
       expect(screen.queryByRole("link", { name: "Passer et explorer le catalogue" })).toBeNull();
     });
 
+    it("ramène sur le plafond de la fiche d'origine, avec le secteur de la vente prérempli", async () => {
+      const sale = "/sales/4655881c-249d-4eab-beba-f2624d8a1af0";
+      render(<InvestorOnboarding returnTo={sale} initialArea="33" />);
+      expect(
+        (screen.getByLabelText("Ville, département ou région") as HTMLInputElement).value,
+      ).toBe("33");
+      fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+      fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+      expect(screen.getByText("Secteur").nextElementSibling?.textContent).toBe("Département 33");
+      expect(screen.queryByRole("button", { name: "Voir les biens" })).toBeNull();
+      // L'alerte reste possible : elle est créée, puis la personne retrouve la vente.
+      fireEvent.click(screen.getByRole("checkbox", { name: ALERT_LABEL }));
+      fireEvent.click(screen.getByRole("button", { name: "Revenir à cette vente" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalled());
+      expect(alerts.create.mock.calls[0][0]).toMatchObject({ department: "33" });
+      expect(navigate).toHaveBeenCalledWith(`${sale}#calculation`);
+    });
+
+    it("laisse le secteur vide et modifiable sans département connu de la vente", () => {
+      render(<InvestorOnboarding returnTo="/sales/4655881c-249d-4eab-beba-f2624d8a1af0" />);
+      const area = screen.getByLabelText("Ville, département ou région") as HTMLInputElement;
+      expect(area.value).toBe("");
+      fireEvent.change(area, { target: { value: "Lyon" } });
+      expect(area.value).toBe("Lyon");
+    });
+
     it("garde le lien vers le catalogue sans fiche d'origine", () => {
       render(<InvestorOnboarding />);
       expect(

@@ -32,6 +32,17 @@ export type PriceSummaryCeiling =
   | { kind: "locked"; action: ReactNode };
 
 /**
+ * Pourquoi la valeur n'est pas « estimée » pour ce bien mais celle d'un bien libre comparable : elle
+ * s'appuie sur des ventes de biens libres (règle de `market-gap.ts`).
+ */
+export const FREE_VALUE_LABEL = "Valeur d’un bien libre comparable";
+export const FREE_VALUE_REASON: Record<"occupied" | "occupancy_unknown", string> = {
+  occupied: "Bien occupé : cette valeur s’appuie sur des ventes de biens libres.",
+  occupancy_unknown:
+    "Occupation non précisée : cette valeur s’appuie sur des ventes de biens libres.",
+};
+
+/**
  * L'écart du plafond au prix de départ, dit en toutes lettres et sans conseil : « 12 500 € au-dessus
  * de la mise à prix », « 8 000 € sous la mise à prix, à ces hypothèses ».
  */
@@ -50,6 +61,7 @@ export function PriceSummaryCard({
   startLabel,
   startingPrice,
   value,
+  valueWithheld = null,
   ceilingLabel,
   ceiling,
   detailHref,
@@ -58,6 +70,8 @@ export function PriceSummaryCard({
   /** `null` : non publié, ou en cours de vérification. */
   startingPrice: number | null;
   value: PriceSummaryValue | null;
+  /** Bien occupé ou d'occupation inconnue : la valeur est dite celle d'un bien libre, avec le motif. */
+  valueWithheld?: "occupied" | "occupancy_unknown" | null;
   ceilingLabel: ReactNode;
   ceiling: PriceSummaryCeiling | null;
   /** Lien vers le calcul ou le panneau de prix ; absent quand le calcul suit juste en dessous. */
@@ -112,7 +126,7 @@ export function PriceSummaryCard({
         ) : null}
         {value ? (
           <div className={styles.tile}>
-            <dt>Valeur estimée</dt>
+            <dt>{valueWithheld ? FREE_VALUE_LABEL : "Valeur estimée"}</dt>
             <dd>
               {value.kind === "amount" ? (
                 <>
@@ -138,6 +152,9 @@ export function PriceSummaryCard({
               ) : (
                 <span className={styles.note}>Calcul…</span>
               )}
+              {valueWithheld ? (
+                <span className={styles.note}>{FREE_VALUE_REASON[valueWithheld]}</span>
+              ) : null}
             </dd>
           </div>
         ) : null}

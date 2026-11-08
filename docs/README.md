@@ -49,7 +49,8 @@ Planification et supervision :
 - Conformité : [phase 6](compliance-phase-6.md), [registre des traitements](rgpd-processing-register.md),
   [matrice de conservation](data-retention-matrix.md), [archives des textes juridiques](legal-archives/README.md).
 - Fiches de modèle : [résultats d'enchères](model-card-outcome-evaluation.md),
-  [Outcome Graph](model-card-outcome-graph.md), [statistiques de tribunal](model-card-tribunal-statistics.md).
+  [Outcome Graph](model-card-outcome-graph.md), [statistiques de tribunal](model-card-tribunal-statistics.md),
+  [valorisation LightGBM](model-card-valorisation-lightgbm.md).
 - [Fiabilité du pipeline](pipeline-reliability.md), [sécurité d'Outcome Graph](security/outcome-graph.md).
 - [Conception](design/fondations.md) et feuilles de route ([`roadmaps/`](roadmaps/)).
 

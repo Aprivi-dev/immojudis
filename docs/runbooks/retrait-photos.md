@@ -232,3 +232,109 @@ aucun fichier envoyé) : oublier l'étape 2 retarde donc la copie sans jamais la
   recopie.
 - Fichier orphelin (copie interrompue) : le pipeline tente de le retirer lui-même ; sinon il se
   repère dans le bucket par un nom absent de `sale_photos.path_640` et `path_1600`.
+
+## `sale_document_photos` : photos tirées des pièces jointes
+
+Publication maintenue par décision du propriétaire du 08/11/2026, procès-verbaux d'huissier compris.
+Les délais cibles et la preuve minimale sont ceux des sections précédentes.
+
+### Ce qui existe
+
+- `services/data-pipeline/src/pdf_photos.py` lit les pièces jointes PDF des ventes au catalogue dont
+  le type est `pv_huissier`, `cahier_conditions_vente`, `proces_verbal` ou `conditions_vente` (jamais
+  les diagnostics). Il en extrait les photos du bien, **12 au plus par vente**, ré-encodées en WebP
+  640 px et 1600 px dans le bucket public `sale-photos`, sous `documents/{sale_id}/`. Les fichiers
+  ont le même `cache-control` d'un an que les copies de `sale_photos` (voir « Caches » plus haut).
+- `public.sale_document_photos` : une ligne par photo (`status` vaut `stored` ou `withdrawn`), avec
+  `document_url`, `image_sha256`, `page_number`, `position`, `path_640`, `path_1600` et `public_url`.
+  La galerie ne lit que les lignes `stored` (`app_private.sale_document_photo_media`) : une ligne
+  passée en `withdrawn` n'est plus servie, au cache des pages près (environ 6 minutes).
+- `public.sale_document_photo_scans` : une ligne par pièce jointe examinée. Un document n'est relu
+  que s'il n'a pas de ligne, ou si sa ligne est `failed` avec des essais restants. Une ligne
+  `withdrawn` empêche donc toute relecture du document.
+- Le passage est une étape du lanceur automatique, après la file d'enrichissement
+  (`autonomous_runner.py`). Variable de dépôt `PDF_PHOTOS_ENABLED` : allumée par défaut ; à `false`,
+  plus aucun document n'est lu, mais les retraits continuent.
+- Au début de chaque passage, interrupteur éteint ou non, les lignes `withdrawn` sont supprimées (500
+  au plus par passage). Le déclencheur `sale_document_photos_enqueue_files_after_delete` met alors
+  leurs fichiers dans `sale_retention_storage_queue`, sauf un fichier qu'une autre photo `stored` de
+  la même vente utilise encore, et `/api/cron/sale-retention` les supprime.
+- **Limite** : contrairement à `sale_photos`, la ligne `withdrawn` ne reste pas. Une fois qu'elle est
+  supprimée, rien n'empêche la même image de revenir si un **autre** document de la même vente, pas
+  encore lu, la contient. Après un retrait, revérifier la vente une semaine plus tard (étape 1).
+  Pour un blocage durable par image, il faut modifier le code.
+
+### Retirer une photo de document
+
+Comme plus haut, les requêtes qui écrivent se lancent à la main, dans l'éditeur SQL Supabase (rôle
+`service_role`), par une personne habilitée. Jamais depuis un agent.
+
+1. **Retrouver la photo.** Lecture seule. L'adresse de l'image contient l'identifiant de la vente
+   (`…/sale-photos/documents/<sale_id>/<empreinte>-1600.webp`) :
+
+   ```sql
+   select p.id, p.sale_id, p.document_url, d.document_type, d.label, p.page_number, p.position,
+          p.status, p.image_sha256, p.path_640, p.path_1600, p.public_url
+   from public.sale_document_photos p
+   join public.auction_sales s on s.id = p.sale_id
+   left join public.auction_documents d
+     on d.source_url = s.source_url and d.document_url = p.document_url
+   where p.sale_id = '<sale_id>'      -- ou : p.public_url = '<adresse de l image>'
+   order by p.document_url, p.position;
+   ```
+
+2. **Garder la preuve minimale**, sans l'image : `image_sha256`, identifiant de la vente, hôte du
+   document, date de réception de la demande, date du retrait, motif et suite donnée.
+
+3. **Masquer la photo et bloquer la relecture du document.** Une seule transaction :
+
+   ```sql
+   begin;
+   update public.sale_document_photos
+      set status = 'withdrawn', updated_at = now()
+    where sale_id = '<sale_id>' and id = '<id>' and status = 'stored';
+   -- Le document n'est plus relu, même s'il était en échec avec des essais restants.
+   update public.sale_document_photo_scans
+      set status = 'withdrawn', reason = 'manual_withdrawal', updated_at = now()
+    where sale_id = '<sale_id>' and document_url = '<document_url>';
+   commit;
+   ```
+
+   Pour toutes les photos d'un document, remplacer `and id = '<id>'` par
+   `and document_url = '<document_url>'` dans le premier `update`.
+
+4. **Supprimer les fichiers.** Le prochain passage de l'étape s'en charge. Pour une demande urgente,
+   ne pas l'attendre et supprimer la ligne : le déclencheur met ses fichiers en file.
+
+   ```sql
+   delete from public.sale_document_photos where id = '<id>' and status = 'withdrawn';
+   ```
+
+5. **Vérifier**, après le passage du cron (5 minutes) :
+   - `select count(*) from public.sale_document_photos where id = '<id>';` renvoie 0 ;
+   - `select object_path from public.sale_retention_storage_queue where bucket = 'sale-photos' and object_path like 'documents/<sale_id>/%';`
+     ne renvoie plus rien (sinon, lire le dernier appel de `/api/cron/sale-retention`) ;
+   - l'ancienne `public_url` répond 404 (voir « Caches » plus haut pour le CDN et les navigateurs) ;
+   - `select app_private.sale_document_photo_media(null, '<sale_id>');` ne contient plus l'adresse.
+
+6. **Répondre** au demandeur dans le délai cible, sans joindre l'image.
+
+### Retirer les photos de documents d'une source
+
+- `select public.set_catalogue_source_withdrawal('<source>', true, '<motif>')` : à chaque passage,
+  même interrupteur éteint, le pipeline supprime les photos des ventes dont toutes les sources sont
+  retirées et celles dont le document est sur un hôte de la source retirée (`SOURCE_HOSTS` de
+  `source_withdrawal.py`). Il passe aussi leurs documents en `withdrawn` dans
+  `sale_document_photo_scans`, pour qu'ils ne soient plus relus.
+- Pour un hôte absent de `SOURCE_HOSTS`, utiliser l'étape 3 en remplaçant, dans les deux `update`,
+  le filtre par `split_part(split_part(document_url, '://', 2), '/', 1) = '<hôte>'` (en gardant
+  `status = 'stored'` dans le premier), puis l'étape 4 avec le même filtre et `status = 'withdrawn'`.
+- Pour arrêter toute nouvelle extraction : passer `PDF_PHOTOS_ENABLED` à `false`. Les photos déjà
+  publiées restent en place.
+
+### Ce qui part tout seul
+
+- Vente purgée : ses photos partent en cascade et leurs fichiers entrent dans la file de rétention.
+- Document retiré de l'annonce par la source : quand l'interrupteur est allumé, chaque passage
+  supprime ses photos, 300 au plus par passage, ainsi que sa ligne d'examen. S'il réapparaît, il est
+  relu.

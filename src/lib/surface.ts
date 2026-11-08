@@ -125,6 +125,30 @@ export function getMarketValuationSurfaces(sale: SurfaceSaleLike): MarketValuati
   };
 }
 
+/** Bornes d'une surface saisie par l'utilisateur (« Surface lue dans les pièces »), en m². */
+export const MAX_ENTERED_SURFACE_M2 = 10_000;
+
+/**
+ * Surface saisie par l'utilisateur, si elle est admise : un nombre fini, strictement positif et d'au
+ * plus `MAX_ENTERED_SURFACE_M2`. Sinon `null` (la valeur est ignorée).
+ */
+export function validEnteredSurface(value: number | null | undefined): number | null {
+  return value != null && Number.isFinite(value) && value > 0 && value <= MAX_ENTERED_SURFACE_M2
+    ? value
+    : null;
+}
+
+/**
+ * L'annonce ne publie pas la surface bâtie (absente, ou seulement estimée d'après le type et les
+ * pièces) : une surface lue par l'utilisateur dans les pièces du dossier peut la remplacer dans SON
+ * calcul. Jamais pour un terrain nu, dont la valeur ne repose pas sur une surface bâtie.
+ */
+export function acceptsEnteredBuiltSurface(sale: SurfaceSaleLike): boolean {
+  if (isLandOnlySurface(sale)) return false;
+  const surfaces = getMarketValuationSurfaces(sale);
+  return surfaces.builtSurfaceM2 == null || surfaces.builtSurfaceEstimated;
+}
+
 function estimateBuiltSurface(
   sale: SurfaceSaleLike,
 ): { value: number; assumption: string; uncertaintyPct: number } | null {

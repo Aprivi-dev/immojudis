@@ -41,6 +41,8 @@ MAX_ROUNDS_PER_DOCUMENT = 6
 # with one sale ahead per worker the processes sat idle while the locked pass waited. The queue is only file
 # names and a deadline; the work it holds is what the locked pass would have done anyway.
 LOOKAHEAD_PER_WORKER = 4
+# Totals reported by the drain (``DocumentPrefetcher.stats``, besides ``workers``).
+PREFETCH_STAT_KEYS = ("prepared", "documents", "read", "cached", "deferred_exhausted", "errors")
 
 
 def prefetch_workers_from_env() -> int:
@@ -76,7 +78,14 @@ def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[s
     from src.storage.supabase_client import fetch_sale_for_data_refresh
 
     started = time.monotonic()
-    result: dict[str, Any] = {"source_url": source_url, "documents": 0, "read": 0, "cached": 0, "error": None}
+    result: dict[str, Any] = {
+        "source_url": source_url,
+        "documents": 0,
+        "read": 0,
+        "cached": 0,
+        "deferred_exhausted": 0,
+        "error": None,
+    }
     with pdf_deadline_scope(started + max(0.0, remaining_seconds)):
         try:
             sale = fetch_sale_for_data_refresh(source_url)
@@ -108,6 +117,9 @@ def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[s
                         continue
                     result["read"] += 1
                     break
+                else:
+                    # Still deferred after every round: the locked pass reads the rest. Counted in the drain report.
+                    result["deferred_exhausted"] += 1
         except Exception as exc:  # preparation is best effort: the locked pass reads what is missing
             result["error"] = f"{type(exc).__name__}: {exc}"[:300]
     result["seconds"] = round(time.monotonic() - started, 1)
@@ -164,6 +176,9 @@ class DocumentPrefetcher:
         self._futures: dict[str, Future] = {}
         self._next = 0
         self.prepared = 0
+        # Totals for the drain report: a silent preparation (deferred for good, failed) used to leave no trace.
+        self.stats: dict[str, int] = dict.fromkeys(PREFETCH_STAT_KEYS, 0)
+        self.stats["workers"] = workers
         self._executor: Executor | None = None
         if workers > 0 and self._urls:
             factory = executor_factory or _process_executor
@@ -193,12 +208,26 @@ class DocumentPrefetcher:
                 outcome = future.result(timeout=max(0.0, self._deadline - self._clock()))
             except FutureTimeout:
                 LOGGER.warning("Document prefetch still running for %s at the deadline", source_url)
+                self.stats["errors"] += 1
             except Exception as exc:  # noqa: BLE001 - a broken worker never stops the drain
                 LOGGER.warning("Document prefetch failed for %s: %s", source_url, exc)
+                self.stats["errors"] += 1
             else:
                 self.prepared += 1
+                self._count(outcome)
                 LOGGER.info("Document prefetch %s", outcome)
         self._schedule()
+
+    def _count(self, outcome: object) -> None:
+        self.stats["prepared"] += 1
+        if not isinstance(outcome, dict):
+            return
+        for key in ("documents", "read", "cached", "deferred_exhausted"):
+            value = outcome.get(key)
+            if isinstance(value, int):
+                self.stats[key] += value
+        if outcome.get("error"):
+            self.stats["errors"] += 1
 
     def close(self) -> None:
         if self._executor is not None:

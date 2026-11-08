@@ -11,7 +11,11 @@ import {
   type MarketEstimateErrorCode,
 } from "@/lib/market.server";
 import { assertPublicationVisibleSaleRow } from "@/lib/sale-publication-guard";
-import { getMarketValuationSurfaces } from "@/lib/surface";
+import {
+  acceptsEnteredBuiltSurface,
+  getMarketValuationSurfaces,
+  validEnteredSurface,
+} from "@/lib/surface";
 
 type StoredEstimateRow = Database["public"]["Tables"]["auction_sale_market_estimates"]["Row"];
 type StoredEstimateUpdate = Database["public"]["Tables"]["auction_sale_market_estimates"]["Update"];
@@ -231,6 +235,36 @@ export async function refreshSaleValuationOnDemand(
   await enqueueSaleValuation(saleId, { now });
   await runSaleValuationPrecomputeForSale(saleId, now);
   return getStoredSaleMarketContext(saleId);
+}
+
+/**
+ * Valeur de référence d'une vente calculée sur la surface que l'utilisateur a lue dans les pièces
+ * (« Mon dossier »), quand l'annonce ne publie pas la surface bâtie. Rien n'est écrit : ni
+ * l'estimation stockée de la vente (`auction_sale_market_estimates`), ni le journal des estimations
+ * (`valuation_estimates`, pas d'audit), ni le catalogue. Cette valeur ne sert qu'au plafond de ce
+ * compte. `null` : la vente publie déjà sa surface (ou c'est un terrain nu), ou la surface est hors
+ * bornes.
+ */
+export async function estimateSaleValueWithEnteredSurface(
+  saleId: string,
+  enteredSurfaceM2: number,
+): Promise<MarketContext | null> {
+  const surface = validEnteredSurface(enteredSurfaceM2);
+  if (surface == null) return null;
+  const { data: sale, error } = await supabaseAdmin
+    .from("auction_sales")
+    .select(SALE_INPUT_SELECT)
+    .eq("id", saleId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!sale || !acceptsEnteredBuiltSurface(sale)) return null;
+  return getMarketEstimate({
+    ...buildSaleValuationInput(sale),
+    surfaceM2: surface,
+    surfaceEstimated: false,
+    surfaceAssumption: null,
+    surfaceUncertaintyPct: null,
+  });
 }
 
 export async function runSaleValuationPrecomputeBatch({

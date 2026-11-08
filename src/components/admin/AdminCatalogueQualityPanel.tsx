@@ -2,7 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
-import type { AdminCatalogueQualityView } from "@/lib/admin-catalogue-quality";
+import type {
+  AdminCatalogueQualityView,
+  CeilingCoverageView,
+  CrossSourceDuplicatesView,
+} from "@/lib/admin-catalogue-quality";
 import { authHeaders, readJson } from "@/lib/client-api-core";
 
 // Vert sous le seuil, rouge au-dessus ; neutre pour une tendance ou une mesure absente.
@@ -91,6 +95,8 @@ export function AdminCatalogueQualityPanel() {
           </div>
         </>
       ) : null}
+      {view ? <CeilingCoverage coverage={view.ceilingCoverage ?? null} /> : null}
+      {view ? <CrossSourceDuplicates duplicates={view.crossSourceDuplicates ?? null} /> : null}
       {view ? (
         <div className="mt-4">
           <h3 className="text-sm font-semibold text-brand-navy">Alertes qualité ouvertes</h3>
@@ -109,5 +115,95 @@ export function AdminCatalogueQualityPanel() {
         </div>
       ) : null}
     </AdminPanel>
+  );
+}
+
+/**
+ * Part des ventes à venir dont l'enchère plafond est calculable, par type de vente, avec le motif d'échec le plus
+ * fréquent (P7), à côté de la part des logements sans surface suivie par la sentinelle.
+ */
+function CeilingCoverage({ coverage }: { coverage: CeilingCoverageView | null }) {
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-semibold text-brand-navy">
+        Enchère plafond calculable (ventes à venir)
+      </h3>
+      {coverage ? (
+        <>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[40rem] text-left text-sm">
+              <caption className="sr-only">
+                Part des ventes à venir dont le plafond est calculable
+              </caption>
+              <thead className="text-xs font-semibold text-brand-navy/62">
+                <tr>
+                  <th>Type de vente</th>
+                  <th>Ventes à venir</th>
+                  <th>Plafond calculable</th>
+                  <th>Motif d’échec principal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-brand-navy/10">
+                {[...coverage.rows, coverage.total].map((row) => (
+                  <tr key={row.key} className={row.key === "total" ? "font-semibold" : undefined}>
+                    <th scope="row" className="py-2 pr-3 font-medium text-foreground">
+                      {row.label}
+                    </th>
+                    <td className="py-2 pr-3 tabular-nums">{row.upcoming}</td>
+                    <td className="py-2 pr-3 tabular-nums">{row.computable}</td>
+                    <td className="py-2 text-brand-navy/70">{row.mainFailure ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-1 text-xs text-brand-navy/62">{coverage.note}</p>
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-brand-navy/70">
+          Mesure indisponible : aucune évaluation de vente à venir lue.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Doublons entre sources encore au catalogue (D12) : affichage seulement, la fusion reste coupée. */
+function CrossSourceDuplicates({ duplicates }: { duplicates: CrossSourceDuplicatesView | null }) {
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-semibold text-brand-navy">Doublons entre sources</h3>
+      {duplicates ? (
+        <>
+          <p className="mt-1 text-sm">
+            <span className="tabular-nums">{duplicates.groups}</span> groupes,{" "}
+            <span className="tabular-nums">{duplicates.lines}</span> lignes concernées ·{" "}
+            <span className="text-brand-navy/70">{duplicates.threshold}</span>{" "}
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs ${TONES[duplicates.state] ?? "bg-brand-navy/[0.06]"}`}
+            >
+              {duplicates.stateLabel}
+            </span>
+          </p>
+          <p className="mt-1 text-sm">
+            Groupes à trois sources ou plus :{" "}
+            <span className="tabular-nums">{duplicates.threeSourceGroups}</span>
+          </p>
+          {duplicates.threeSourceExamples.length > 0 ? (
+            <ul className="mt-1 list-disc pl-5 text-xs text-brand-navy/70">
+              {duplicates.threeSourceExamples.map((example) => (
+                <li key={example}>{example}</li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="mt-1 text-xs text-brand-navy/62">{duplicates.note}</p>
+        </>
+      ) : (
+        <p className="mt-1 text-sm text-brand-navy/70">
+          Mesure indisponible : la fonction de lecture n’est pas encore déployée et l’alerte ne
+          s’est jamais ouverte.
+        </p>
+      )}
+    </div>
   );
 }

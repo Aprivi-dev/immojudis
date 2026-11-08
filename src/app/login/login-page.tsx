@@ -144,8 +144,8 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
     case "fiche":
       return {
         signup: launchOffer
-          ? `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai, il ouvre aussi les analyses de l’offre Analyse.`
-          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec ${MONTHLY_UNLOCKS_TEXT} pour ouvrir le détail d’une vente (contenu selon la vente).`,
+          ? `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant les ${ANALYSIS_TRIAL_DAYS} jours d’essai, il ouvre aussi votre plafond pour cette vente (enchère ou offre), frais estimés compris, et les analyses de l’offre Analyse (contenu selon la vente).`
+          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec ${MONTHLY_UNLOCKS_TEXT} : un déblocage ouvre votre plafond pour cette vente (enchère ou offre), frais estimés compris (contenu selon la vente).`,
         login: "Connectez-vous pour consulter cette vente.",
       };
     case "exemple":

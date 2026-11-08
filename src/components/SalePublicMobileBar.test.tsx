@@ -4,6 +4,9 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalePublicMobileBar } from "./SalePublicMobileBar";
 
+/** La hauteur de la barre, plus celle du bandeau des cookies quand il est affiché (P3). */
+const BAR_SCROLL_PADDING = "calc(88px + var(--cookie-banner-height, 0px))";
+
 type Callback = (
   entries: Array<{ isIntersecting: boolean; boundingClientRect: { top: number } }>,
 ) => void;
@@ -80,7 +83,7 @@ describe("barre du bas de la fiche visiteur", () => {
     act(() =>
       observers[0].callback([{ isIntersecting: false, boundingClientRect: { top: -400 } }]),
     );
-    expect(document.documentElement.style.scrollPaddingBottom).toBe("88px");
+    expect(document.documentElement.style.scrollPaddingBottom).toBe(BAR_SCROLL_PADDING);
 
     act(() => observers[0].callback([{ isIntersecting: true, boundingClientRect: { top: 200 } }]));
     expect(document.documentElement.style.scrollPaddingBottom).toBe("12px");
@@ -96,6 +99,6 @@ describe("barre du bas de la fiche visiteur", () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     renderBar();
     expect(screen.getByTestId("public-mobile-bar")).toBeTruthy();
-    expect(document.documentElement.style.scrollPaddingBottom).toBe("88px");
+    expect(document.documentElement.style.scrollPaddingBottom).toBe(BAR_SCROLL_PADDING);
   });
 });

@@ -17,6 +17,7 @@ from src import listing_minimum, retention_tombstones, source_withdrawal
 from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
+from src.catalogue_lock import catalogue_lock_lost, ensure_catalogue_lock_held
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.collection_evidence import identity as collection_identity
 from src.collection_evidence import record_items, record_sale_decisions
@@ -508,6 +509,10 @@ def _publish_progressive_batch(run: _PipelineRun, rows: list[dict[str, object]])
     write already is in ``publish_factual_batch``. Letting the error through used to end the whole source scrape,
     losing the pages it had already read.
     """
+    if catalogue_lock_lost():
+        # Never write without the lock; the main thread stops the run at its next publication.
+        LOGGER.error("Progressive publication skipped: the catalogue writer lock may have been lost")
+        return
     try:
         _hydrate_run_payloads(run, rows)
         # Its evidence writes (``record_items``, ``record_source_checks``, decisions) are not covered by the
@@ -739,6 +744,8 @@ def _prepare_and_publish_early(run: _PipelineRun) -> None:
         admitted = admit_sales(batch, lambda group, **kw: record_sale_decisions(run_id, group, **kw))
         record_sale_decisions(run_id, admitted, decision="admitted")
         if options.upsert and admitted:
+            # Outside the try below: a lost lock ends the run instead of being logged as a failed batch.
+            ensure_catalogue_lock_held()
             started = time.perf_counter()
             try:
                 run.early_upserted += (published := retention_tombstones.publish_batch(admitted, upsert_sales_to_supabase, run_id, record_sale_decisions, errors, run.app_ready)).count
@@ -1042,6 +1049,7 @@ def _publish_run(run: _PipelineRun) -> None:
     app_ready = run.app_ready
     llm_stats = run.llm_stats
     if options.upsert:
+        ensure_catalogue_lock_held()
         try:
             started = time.perf_counter()
             final_sales = _sales_changed_since_publication(app_ready, run.early_publication_fingerprints)
@@ -2231,8 +2239,14 @@ if __name__ == "__main__":
     if pipeline_options.upsert:
         # Writers of the catalogue (this pipeline, the queue worker, the manual
         # recompute) serialise on a database lock instead of a GitHub group.
-        from src.catalogue_lock import catalogue_writer_lock
+        from src.catalogue_lock import LOCK_LOST_EXIT_CODE, CatalogueLockLost, catalogue_writer_lock
 
-        with catalogue_writer_lock(label=f"pipeline ({pipeline_options.source})"):
-            sys.exit(run_from_options(pipeline_options))
+        try:
+            with catalogue_writer_lock(label=f"pipeline ({pipeline_options.source})"):
+                exit_code = run_from_options(pipeline_options)
+        except CatalogueLockLost as exc:
+            LOGGER.error("Collection stopped: %s", exc)
+            print(f"::error title=Verrou du catalogue perdu::{exc}", flush=True)
+            sys.exit(LOCK_LOST_EXIT_CODE)
+        sys.exit(exit_code)
     sys.exit(run_from_options(pipeline_options))

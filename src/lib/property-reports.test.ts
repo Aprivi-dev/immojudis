@@ -114,6 +114,7 @@ describe("property report sharing", () => {
       title: "Rapport Bordeaux",
       report_kind: "opportunity",
       report_snapshot: {
+        generatedAt: "2026-07-06T09:30:00.000Z",
         plan: "analyse",
         sale: { city: "Bordeaux", startingPrice: 120000 },
         analysis: { documentsCount: 4 },
@@ -147,6 +148,7 @@ describe("property report sharing", () => {
     expect(report).toMatchObject({
       id: "report-1",
       title: "Rapport Bordeaux",
+      generatedAt: "2026-07-06T09:30:00.000Z",
       plan: "analyse",
       sale: { city: "Bordeaux", startingPrice: 120000 },
       analysis: { documentsCount: 4 },
@@ -194,6 +196,8 @@ describe("property report sharing", () => {
 
     it("keeps the allow-listed notices of an open regime", () => {
       const report = buildPublicSharedPropertyReport(row({}), ["tribunal", "notary_online"]);
+      // Instantané sans date de calcul : le rapport partagé donne son avertissement sans date.
+      expect(report.generatedAt).toBeNull();
       expect(report.ceiling).toMatchObject({
         available: true,
         maxBid: 120000,
@@ -681,7 +685,7 @@ describe("property report sharing", () => {
     expect(opportunity).toMatchObject({
       score: 78,
       scoreConfidencePct: 84,
-      label: "À étudier en priorité",
+      label: "Score moyen (hypothèses à confirmer)",
       startingPricePerM2: 1_500,
       estimatedMarketValue: 160_000,
       estimatedMarketLow: 116_000,

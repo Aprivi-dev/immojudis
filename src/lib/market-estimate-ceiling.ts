@@ -1,3 +1,4 @@
+import { passesPublicEstimateGate } from "@/lib/market-estimate-display";
 import type { MarketContext, MarketEstimate } from "@/lib/market-server/types";
 
 /**
@@ -7,12 +8,14 @@ import type { MarketContext, MarketEstimate } from "@/lib/market-server/types";
  *
  * Every field below is read by `buildCeilingHypotheses` / the ceiling engine or displayed next to
  * the ceiling (value, source, date, reliability, number of sales behind it). The ceiling treats fewer
- * than 8 sales as fragile, so one sample size is kept: the projection sends the effective one in
- * `sampleSize` and leaves `effectiveSampleSize` out.
+ * than 8 sales as fragile and reads the effective sample size for that; the page says how many sales
+ * there are with `sampleSize`, the real (whole) count. `engineKind` and `publicGatePassed` decide how
+ * the value is worded next to the starting price (`market-estimate-display.ts`).
  */
 export type CeilingMarketEstimate = Pick<
   MarketEstimate,
   | "source"
+  | "engineKind"
   | "sourceUpdatedAt"
   | "subjectSurfaceEstimated"
   | "estimatedValueEur"
@@ -22,7 +25,10 @@ export type CeilingMarketEstimate = Pick<
   | "effectiveSampleSize"
   | "medianPricePerM2"
   | "p75PricePerM2"
->;
+> & {
+  /** The estimate passes the public gate (`passesPublicEstimateGate`): a point value may be shown. */
+  publicGatePassed?: boolean;
+};
 
 export type CeilingMarketContext = Omit<MarketContext, "estimate"> & {
   estimate: CeilingMarketEstimate | null;
@@ -40,17 +46,30 @@ export function isDetailedMarketEstimate(
   return estimate != null && "recentTransactions" in estimate;
 }
 
+/** A point value (« Valeur estimée à … ») only for an estimate that passes the public gate. */
+export function showsPointEstimate(estimate: SaleMarketEstimate | null | undefined): boolean {
+  if (estimate == null) return false;
+  return isDetailedMarketEstimate(estimate)
+    ? passesPublicEstimateGate(estimate)
+    : estimate.publicGatePassed === true;
+}
+
 export function ceilingMarketEstimate(estimate: MarketEstimate): CeilingMarketEstimate {
   return {
     source: estimate.source,
+    engineKind: estimate.engineKind ?? "comparable_ensemble",
     sourceUpdatedAt: estimate.sourceUpdatedAt ?? null,
     subjectSurfaceEstimated: estimate.subjectSurfaceEstimated === true,
     estimatedValueEur: estimate.estimatedValueEur ?? null,
     actionable: estimate.actionable === true,
     qualityLabel: estimate.qualityLabel,
-    sampleSize: estimate.effectiveSampleSize ?? estimate.sampleSize,
+    sampleSize: estimate.sampleSize,
+    ...(estimate.effectiveSampleSize != null
+      ? { effectiveSampleSize: estimate.effectiveSampleSize }
+      : {}),
     medianPricePerM2: estimate.medianPricePerM2,
     p75PricePerM2: estimate.p75PricePerM2,
+    publicGatePassed: passesPublicEstimateGate(estimate),
   };
 }
 

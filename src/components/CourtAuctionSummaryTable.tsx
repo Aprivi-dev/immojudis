@@ -79,7 +79,7 @@ export function CourtAuctionSummaryTable() {
           role="region"
           tabIndex={0}
           aria-label="Médianes par tribunal, défilement horizontal"
-          className="mt-4 overflow-x-auto outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-gold"
+          className="mt-4 overflow-x-auto outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-gold-soft"
         >
           <table className="w-full min-w-[640px] text-left text-sm">
             <caption className="sr-only">

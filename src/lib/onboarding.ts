@@ -5,6 +5,12 @@ import type { SalesSearchUrlRecord } from "@/lib/search/search-url-state";
 /** Paramètre de `/bienvenue` qui porte la fiche à retrouver après la première recherche. */
 export const ONBOARDING_RETURN_PARAM = "retour";
 
+/**
+ * Ancre du plafond sur la fiche : le calcul quand il est ouvert ; sinon la fiche mène au bloc le plus
+ * proche, puis à la section « Prix et plafond » (`revealAnchor`).
+ */
+export const SALE_CEILING_ANCHOR = "calculation";
+
 const SALE_DETAIL_PATH = /^\/sales\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})$/i;
 const RETURN_BASE = "http://immojudis.local";
 

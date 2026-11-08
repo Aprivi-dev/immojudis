@@ -1,5 +1,6 @@
 import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.server";
 import { formatDate, formatPrice, formatPricePerM2, formatSurface } from "@/lib/format";
+import { observedMedianPricePerM2 } from "@/lib/market-estimate-display";
 
 const fmt = (value: number) => formatPrice(Math.round(value || 0));
 const ppm2 = (value: number | null | undefined) => formatPricePerM2(value);
@@ -58,10 +59,13 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
   }
   const min = estimate.minPricePerM2 ?? estimate.p25PricePerM2 ?? 0;
   const max = estimate.maxPricePerM2 ?? estimate.p75PricePerM2 ?? 0;
-  const p25 = estimate.p25PricePerM2 ?? min;
-  const p75 = estimate.p75PricePerM2 ?? max;
-  // Pas de médiane fabriquée : le milieu de p25 et p75 n'est pas une médiane.
-  const median = estimate.medianPricePerM2 ?? null;
+  // Les quartiles observés quand l'estimation les garde : p25 et p75 sont élargis de force sur un
+  // petit échantillon, et ne sont alors plus ceux de « la moitié des ventes ».
+  const observed = estimate.observedP25PricePerM2 != null && estimate.observedP75PricePerM2 != null;
+  const p25 = (observed ? estimate.observedP25PricePerM2 : estimate.p25PricePerM2) ?? min;
+  const p75 = (observed ? estimate.observedP75PricePerM2 : estimate.p75PricePerM2) ?? max;
+  // Pas de médiane fabriquée : ni le milieu de p25 et p75, ni le p50 du mélange avec le modèle.
+  const median = observedMedianPricePerM2(estimate);
   const span = Math.max(1, max - min);
   const pos = (v: number) => `${Math.min(100, Math.max(0, ((v - min) / span) * 100))}%`;
 
@@ -106,7 +110,7 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
       <div className="mt-2 flex justify-between text-[11px] tabular-nums text-muted-foreground">
         <span>min {ppm2(min)}</span>
         <span>
-          la moitié des ventes entre {ppm2(p25)} et {ppm2(p75)}
+          {observed ? "la moitié des ventes" : "zone retenue"} entre {ppm2(p25)} et {ppm2(p75)}
         </span>
         <span>max {ppm2(max)}</span>
       </div>

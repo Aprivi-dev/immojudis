@@ -40,7 +40,9 @@ _EVIDENCE_PATTERNS = {
     "surface_m2": r"91,4",
     "rooms_count": r"pi[eè]ces?",
     "bedrooms_count": r"chambres?",
-    "occupancy_status": r"loué|locati|bail",
+    # The sentence that states the status (« Bien loué »), not one that only mentions a rental
+    # (« avec occupation locative indiquée ») : the grammar of #403 reads no status there (D7).
+    "occupancy_status": r"loué|bail",
 }
 
 

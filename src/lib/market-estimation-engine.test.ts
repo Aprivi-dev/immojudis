@@ -121,6 +121,10 @@ describe("market estimation engine", () => {
     expect(result?.medianPricePerM2).toBeGreaterThanOrEqual(195);
     expect(result?.medianPricePerM2).toBeLessThanOrEqual(220);
     expect(result?.comparables.every((item) => item.primarySurfaceM2 >= 700)).toBe(true);
+    // Sous 6 ventes, p25 et p75 sont élargis à ±20 % de la médiane ; les quartiles observés non.
+    expect(result!.p25PricePerM2).toBeLessThan(result!.observedP25PricePerM2);
+    expect(result!.p75PricePerM2).toBeGreaterThan(result!.observedP75PricePerM2);
+    expect(result!.observedP25PricePerM2).toBeGreaterThanOrEqual(195);
   });
 
   it("uses both built and land similarity for houses when enough evidence exists", () => {

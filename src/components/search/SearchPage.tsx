@@ -14,21 +14,13 @@ import { useCreateAlert } from "@/hooks/use-create-alert";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
-import {
-  fetchAccessPlan,
-  fetchDpeExplorer,
-  exportSalesCsv,
-  fetchNotificationPreferences,
-  fetchSalesAiReviewProjections,
-  fetchSalesStatistics,
-} from "@/lib/client-api";
-import { getAlerts, getSaleById } from "@/lib/queries";
+import { exportSalesCsv, fetchAccessPlan } from "@/lib/client-api";
 import { applyPhotoMirrors, isPhotoMirrorEnabled, mirrorsFromSales } from "@/lib/photo-mirror";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
-import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
+import type { AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import {
   DEFAULT_SEARCH_LIMIT,
   applyClientSearchFilters,
@@ -100,17 +92,16 @@ import { ResultsHelp } from "./ResultsHelp";
 import { SalesCatalogueHead } from "./SalesCatalogueHead";
 import { SearchResultsList } from "./SearchResults";
 import { FEW_RESULTS_ALERT_THRESHOLD, SectorAlertPrompt } from "./SectorAlertPrompt";
+import { useSearchAccountData, useSearchStatisticsData } from "./use-search-account-data";
 import { SaleComparisonBar } from "./SaleComparisonBar";
 import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
 import type { FollowedCardData } from "./FollowedSalesSummary";
 import {
   SearchDraft,
-  buildSearchStatistics,
   downloadBlob,
   draftToSearch,
   emptySearchDraft,
   historyModeForDraftChange,
-  searchStatisticsFromServer,
   searchToDraft,
   stableUrlRecord,
   type HistoryMode,
@@ -250,6 +241,8 @@ export function SearchPage({
   const [exportingCsv, setExportingCsv] = useState(false);
   const [dpeExplorerOpen, setDpeExplorerOpen] = useState(false);
   const [statisticsOpen, setStatisticsOpen] = useState(false);
+  // Fenêtre de création d'alerte ouverte au moins une fois (lecture de l'usage de l'alerte gratuite).
+  const [alertDialogOpened, setAlertDialogOpened] = useState(false);
   const [draft, setDraft] = useState<SearchDraft>(() => searchToDraft(search));
   const latestSearchDraftRef = useRef<SearchDraft>(searchToDraft(search));
   const firstSearchDraftSync = useRef(true);
@@ -642,19 +635,8 @@ export function SearchPage({
   );
   const mappablePointsTotal = mappableSales.length;
 
-  // The map projection is intentionally lightweight. Fetch the complete row
-  // only after an authenticated user selects a sale that is actually present
-  // in the current map result set. Hovering, preview mode, and a hidden map
-  // never trigger this request.
   const selectedMapSaleId =
     selectedSaleId && mapSales.some((sale) => sale.id === selectedSaleId) ? selectedSaleId : null;
-  const { data: selectedMapSaleDetail, isFetching: selectedMapSaleDetailLoading } = useQuery({
-    queryKey: queryKeys.salesMapDetail(comparisonScope, selectedMapSaleId),
-    queryFn: () => getSaleById(selectedMapSaleId!, { discovery: isDiscovery }),
-    enabled: Boolean(catalogReady && user && mapVisible && selectedMapSaleId && comparisonScope),
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
 
   const mapListFollowsViewport = false;
   const displayedSales = filteredSales;
@@ -662,32 +644,25 @@ export function SearchPage({
     () => [...new Set([...displayedSales, ...mapSales].map((sale) => sale.id).filter(Boolean))],
     [displayedSales, mapSales],
   );
-  const { data: aiReviewData, isError: aiReviewError } = useQuery({
-    queryKey: queryKeys.salesAiReview(user?.id ?? "anonymous", aiReviewSaleIds),
-    queryFn: () => fetchSalesAiReviewProjections(aiReviewSaleIds),
-    // Discovery rows already use the public redacted view. The AI review
-    // endpoint reads Analyse-only projections and must not blank valid public
-    // city, price or date values for free users.
-    enabled: Boolean(
-      user && !authLoading && !listIsPublic && !isDiscovery && aiReviewSaleIds.length,
-    ),
-    staleTime: 5 * 60_000,
-    retry: false,
+  // Lectures réservées aux comptes connectés : relecture IA, vente choisie sur la carte, alertes.
+  const account = useSearchAccountData({
+    userId: user?.id ?? null,
+    authLoading,
+    aiReviewSaleIds,
+    aiReviewEnabled: !listIsPublic && !isDiscovery,
+    accessScope: comparisonScope,
+    discovery: isDiscovery,
+    selectedMapSaleId,
+    selectedMapSaleEnabled: catalogReady && mapVisible,
+    savedAlertsEnabled: alertDialogOpened && entitlementsData?.plan.hasAnalysisAccess === false,
   });
-  const aiReviewBySaleId = useMemo(() => {
-    const grouped: Record<string, AiReviewProjectionReadModel[]> = {};
-    for (const projection of aiReviewData?.projections ?? []) {
-      if (!projection.auction_sale_id) continue;
-      (grouped[projection.auction_sale_id] ??= []).push(projection);
-    }
-    return grouped;
-  }, [aiReviewData]);
+  const aiReviewBySaleId = account.aiReviewBySaleId;
   const aiReviewStatus: AiReviewRequestStatus =
     !user || listIsPublic || isDiscovery || aiReviewSaleIds.length === 0
       ? "disabled"
-      : aiReviewError
+      : account.aiReviewError
         ? "error"
-        : aiReviewData
+        : account.aiReviewReady
           ? "ready"
           : "loading";
   // Abonné de l'offre Analyse : bandeau « Votre suivi », ligne « Mon dossier » des ventes suivies et
@@ -773,76 +748,27 @@ export function SearchPage({
   const listHasError = Boolean(error) && !pageOutOfRange && rawSales.length === 0;
   const titleTotal = listCountLoading || listHasError ? null : (totalCount ?? null);
   const totalPages = searchTotalPages(totalCount, pageSize);
-  const localSearchStatistics = useMemo(
-    () => buildSearchStatistics(displayedSales),
-    [displayedSales],
-  );
   const statisticsLocked =
     isPreview || entitlementsData?.plan.features.salesStatistics !== "included";
   const dpeLocked = isPreview || entitlementsData?.plan.features.dpeExplorer !== "included";
   const csvExportLocked =
     isPreview || entitlementsData?.plan.features.salesCsvExport !== "included";
-  const { data: notificationPreferences } = useQuery({
-    queryKey: queryKeys.notificationPreferences(user?.id ?? "anonymous"),
-    queryFn: fetchNotificationPreferences,
-    enabled: Boolean(user) && !authLoading,
-    staleTime: 60_000,
-    retry: false,
-  });
-  const emailRecapEnabled = notificationPreferences?.preferences.alertEmailEnabled === true;
-  // Alerte gratuite : l'usage (« 0/1 utilisée ») n'est lu qu'à l'ouverture de la fenêtre de création,
-  // pour un compte qui n'a pas l'offre Analyse. Même clé que la page « Mes alertes ».
-  const [alertDialogOpened, setAlertDialogOpened] = useState(false);
-  const { data: savedAlerts } = useQuery({
-    queryKey: queryKeys.savedAlerts(user?.id ?? "anonymous"),
-    queryFn: () => getAlerts(user!.id),
-    enabled:
-      alertDialogOpened &&
-      Boolean(user) &&
-      !authLoading &&
-      entitlementsData?.plan.hasAnalysisAccess === false,
-    staleTime: 30_000,
-    retry: false,
-  });
+  const { emailRecapEnabled, savedAlerts } = account;
   const freeAlertUsage = savedAlerts
     ? { used: savedAlerts.filter((alert) => alert.is_active).length, limit: FREE_ALERT_LIMIT }
     : null;
   const openAlertDialog = useCallback(() => setAlertDialogOpened(true), []);
-  const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
-    queryKey: queryKeys.salesStatistics(searchKeySignature),
-    queryFn: () => fetchSalesStatistics({ search }),
-    enabled: statisticsOpen && !statisticsLocked && !authLoading && Boolean(user),
-    retry: false,
-    staleTime: 2 * 60_000,
-  });
-  const searchStatistics = useMemo(
-    () =>
-      salesStatisticsData
-        ? searchStatisticsFromServer(salesStatisticsData.summary)
-        : localSearchStatistics,
-    [localSearchStatistics, salesStatisticsData],
-  );
-  const statisticsLoading =
-    isInitialLoading || (!statisticsLocked && salesStatisticsLoading && !salesStatisticsData);
-  const {
-    data: dpeExplorerData,
-    error: dpeExplorerError,
-    isFetching: dpeExplorerLoading,
-    refetch: refetchDpeExplorer,
-  } = useQuery({
-    queryKey: queryKeys.dpeExplorer(searchKeySignature),
-    queryFn: () =>
-      fetchDpeExplorer({
-        department: search.department,
-        city: search.city,
-        propertyType: search.homeTypes?.length === 1 ? search.homeTypes[0] : undefined,
-        dpeClasses: search.dpeClasses,
-        includeMap: true,
-        limit: 80,
-      }),
-    enabled: dpeExplorerOpen && !dpeLocked,
-    retry: false,
-    staleTime: 5 * 60_000,
+  // « Repères sur cette recherche » : repères du serveur et explorateur DPE pour les comptes qui y ont droit.
+  const statisticsData = useSearchStatisticsData({
+    search,
+    searchKeySignature,
+    sales: displayedSales,
+    statisticsOpen,
+    statisticsLocked,
+    dpeExplorerOpen,
+    dpeLocked,
+    signedIn: Boolean(user) && !authLoading,
+    initialLoading: isInitialLoading,
   });
 
   const updateSearch = useCallback(
@@ -1029,8 +955,10 @@ export function SearchPage({
     hoveredSaleId,
     selectedSaleId,
     selectedSaleDetail:
-      selectedMapSaleDetail?.id === selectedMapSaleId ? selectedMapSaleDetail : null,
-    selectedSaleDetailLoading: Boolean(selectedMapSaleId && selectedMapSaleDetailLoading),
+      account.selectedMapSaleDetail?.id === selectedMapSaleId
+        ? account.selectedMapSaleDetail
+        : null,
+    selectedSaleDetailLoading: Boolean(selectedMapSaleId && account.selectedMapSaleDetailLoading),
     isLoading: isInitialLoading || isMapLoading || isMapFetching,
     searchAsMove: !isPreview && Boolean(search.searchAsMove),
     preview: listIsPublic,
@@ -1387,18 +1315,18 @@ export function SearchPage({
               </summary>
               {statisticsOpen ? (
                 <LazySearchStatisticsPanel
-                  statistics={searchStatistics}
+                  statistics={statisticsData.statistics}
                   locked={statisticsLocked}
                   signedIn={Boolean(user)}
                   dpeLocked={dpeLocked}
-                  loading={entitlementsLoading || statisticsLoading}
-                  dpeExplorer={dpeExplorerData}
-                  dpeExplorerLoading={dpeExplorerLoading}
-                  dpeExplorerError={dpeExplorerError ? userMessage(dpeExplorerError) : null}
+                  loading={entitlementsLoading || statisticsData.loading}
+                  dpeExplorer={statisticsData.dpeExplorer}
+                  dpeExplorerLoading={statisticsData.dpeExplorerLoading}
+                  dpeExplorerError={statisticsData.dpeExplorerError}
                   dpeExplorerRequested={dpeExplorerOpen}
                   onLoadDpeExplorer={() => {
                     setDpeExplorerOpen(true);
-                    if (dpeExplorerOpen) void refetchDpeExplorer();
+                    if (dpeExplorerOpen) void statisticsData.refetchDpeExplorer();
                   }}
                 />
               ) : null}

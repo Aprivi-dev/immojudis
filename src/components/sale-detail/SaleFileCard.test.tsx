@@ -424,6 +424,85 @@ describe("SaleFileCard (Mon dossier)", () => {
     });
   });
 
+  describe("surface lue dans les pièces (P8)", () => {
+    function renderWithSurface(surfaceEntry: boolean) {
+      return render(
+        <QueryClientProvider
+          client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+        >
+          <SaleFileCard saleId={SALE_ID} calculatedCeiling={null} surfaceEntry={surfaceEntry} />
+        </QueryClientProvider>,
+      );
+    }
+
+    it("n'apparaît pas quand l'annonce publie la surface", async () => {
+      mocks.fetchDossier.mockResolvedValue(followed());
+      renderWithSurface(false);
+      expect(await screen.findByLabelText("Mon statut")).toBeTruthy();
+      expect(screen.queryByLabelText("Surface lue dans les pièces")).toBeNull();
+    });
+
+    it("enregistre la surface saisie et l'affiche « saisie par vous »", async () => {
+      mocks.fetchDossier.mockResolvedValue(followed());
+      mocks.saveDossier.mockResolvedValue(followed({ userSurfaceM2: 54.5 }));
+      renderWithSurface(true);
+
+      const input = (await screen.findByLabelText(
+        "Surface lue dans les pièces",
+      )) as HTMLInputElement;
+      expect(input.getAttribute("inputmode")).toBe("decimal");
+      // Sur mobile comme ailleurs : la zone de saisie garde 44 px de haut.
+      expect(input.className).toContain("min-h-11");
+      fireEvent.change(input, { target: { value: "54,5 m²" } });
+      fireEvent.submit(input.closest("form")!);
+
+      await waitFor(() =>
+        expect(mocks.saveDossier).toHaveBeenCalledWith({
+          data: { saleId: SALE_ID, userSurfaceM2: 54.5 },
+        }),
+      );
+      expect((await screen.findByTestId("saved-surface")).textContent).toMatch(
+        /54,5 m²\s·\ssaisie par vous/,
+      );
+      expect(screen.getByText(/l’annonce n’est pas modifiée/)).toBeTruthy();
+    });
+
+    it("refuse 0 et plus de 10 000 m², avec l'erreur reliée au champ", async () => {
+      mocks.fetchDossier.mockResolvedValue(followed());
+      renderWithSurface(true);
+
+      const input = (await screen.findByLabelText(
+        "Surface lue dans les pièces",
+      )) as HTMLInputElement;
+      for (const [typed, message] of [
+        ["0", /supérieure à 0 m²/],
+        ["10001", /ne peut pas dépasser/],
+        ["environ 50", /en chiffres seulement/],
+      ] as const) {
+        fireEvent.change(input, { target: { value: typed } });
+        fireEvent.submit(input.closest("form")!);
+        const alert = await screen.findByRole("alert");
+        expect(alert.textContent).toMatch(message);
+        expect(input.getAttribute("aria-describedby")).toContain(alert.id);
+      }
+      expect(mocks.saveDossier).not.toHaveBeenCalled();
+    });
+
+    it("garde une surface déjà saisie visible, et la retire", async () => {
+      mocks.fetchDossier.mockResolvedValue(followed({ userSurfaceM2: 80 }));
+      mocks.saveDossier.mockResolvedValue(followed());
+      renderWithSurface(false);
+
+      expect((await screen.findByTestId("saved-surface")).textContent).toMatch(/80 m²/);
+      fireEvent.click(screen.getByRole("button", { name: "Retirer ma surface" }));
+      await waitFor(() =>
+        expect(mocks.saveDossier).toHaveBeenCalledWith({
+          data: { saleId: SALE_ID, userSurfaceM2: null },
+        }),
+      );
+    });
+  });
+
   it("propose de réessayer quand le dossier ne se charge pas", async () => {
     mocks.fetchDossier.mockRejectedValueOnce(new Error("Dossier indisponible pour le moment."));
     mocks.fetchDossier.mockResolvedValueOnce(followed());

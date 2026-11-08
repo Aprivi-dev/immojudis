@@ -25,7 +25,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const saleId = saleIdSchema.parse(url.searchParams.get("saleId"));
     const response = await getSaleWorkspace({ auth, saleId });
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: { "cache-control": "private, no-store" },
+    });
   } catch (error) {
     return apiRouteError(error, request, "sale-workspace", {
       fallbackMessage: "Dossier de suivi indisponible",
@@ -44,7 +46,9 @@ export async function PUT(request: Request) {
     );
     const input = saleWorkspaceInputSchema.parse(await request.json());
     const response = await upsertSaleWorkspace({ auth, input });
-    return NextResponse.json(response);
+    return NextResponse.json(response, {
+      headers: { "cache-control": "private, no-store" },
+    });
   } catch (error) {
     return apiRouteError(error, request, "sale-workspace", {
       fallbackMessage: "Dossier de suivi impossible",
