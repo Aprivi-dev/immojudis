@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { AppSaleRow } from "@/lib/property-reports";
-import { appSaleRowToAuctionSale } from "./serialization";
+import { rentabilityLabel } from "@/lib/profitability";
+import { appSaleRowToAuctionSale, opportunityScoreLabel } from "./serialization";
+
+describe("opportunityScoreLabel", () => {
+  it("reprend les paliers et les mots neutres du score de rentabilité (P5, J1)", () => {
+    for (const score of [100, 80, 79, 65, 64, 50, 49, 0]) {
+      expect(opportunityScoreLabel(score)).toBe(rentabilityLabel(score));
+    }
+    expect(opportunityScoreLabel(70)).toBe("Score moyen (hypothèses à confirmer)");
+    expect(opportunityScoreLabel(null)).toBe("À compléter");
+  });
+});
 
 describe("appSaleRowToAuctionSale", () => {
   it("retire le nom des particuliers des textes qui entrent dans un rapport partagé", () => {

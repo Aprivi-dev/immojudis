@@ -628,11 +628,17 @@ function addMarketMarginFactor(
   return delta;
 }
 
-function rentabilityLabel(score: number): string {
-  if (score >= 80) return "Très rentable à confirmer";
-  if (score >= 65) return "Rendement attractif";
-  if (score >= 50) return "Équilibre à travailler";
-  return "Rentabilité fragile";
+/**
+ * Libellé d'un score sur 100 (rentabilité, opportunité du rapport). Il qualifie le score, jamais le
+ * bien : aucun mot qui promette un gain (« rentable », « attractif », « favorable »), décision du
+ * 18/10/2026 appliquée le 08/11/2026 (P5, J1). Le rapport partagé et le PDF le recalculent depuis le
+ * score, pour qu'un rapport enregistré avant ne garde pas l'ancien libellé.
+ */
+export function rentabilityLabel(score: number): string {
+  if (score >= 80) return "Score élevé (hypothèses à confirmer)";
+  if (score >= 65) return "Score moyen (hypothèses à confirmer)";
+  if (score >= 50) return "Score à travailler (hypothèses à confirmer)";
+  return "Score faible (hypothèses à confirmer)";
 }
 
 function rentabilityConfidencePct({
