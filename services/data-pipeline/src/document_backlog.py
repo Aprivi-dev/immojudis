@@ -254,6 +254,23 @@ returning j.id, j.source_url, j.job_type, j.status, j.priority, j.input_hash,
 
 JOB_STATE_SQL = "select status, last_error from public.auction_enrichment_jobs where id = %s"
 
+# Fins de passe comptées dans le bilan (queued_runner.py, storage/pdf_persistence_rows.py). Une passe partielle
+# laisse sa tâche en file avec PARTIAL_MANIFEST_ERROR, ou la voit remplacée après son point d'étape durable.
+PARTIAL_MANIFEST_ERROR = "pdf document manifest is partial"
+DURABLE_CHECKPOINT_SUPERSEDED = "superseded after durable pdf checkpoint"
+REFUSED_CHECKPOINT_ERROR = "pdf document checkpoint was not persisted"
+
+
+def is_partial_pass(status: str, last_error: str) -> bool:
+    error = last_error.lower()
+    return (status == "queued" and PARTIAL_MANIFEST_ERROR in error) or (
+        status == "cancelled" and DURABLE_CHECKPOINT_SUPERSEDED in error
+    )
+
+
+def is_refused_checkpoint(last_error: str) -> bool:
+    return REFUSED_CHECKPOINT_ERROR in last_error.lower()
+
 DOCUMENT_COUNTS_SQL = """
 select coalesce(extraction_status, 'pending'), count(*)
   from public.auction_documents
@@ -281,6 +298,11 @@ class SaleOutcome:
     new_facts: list[str] = field(default_factory=list)
     error: str | None = None
     seconds: float = 0.0
+    # Rendement (alerte pipeline.documents_backlog.low_yield) : passes conclues sur un manifeste partiel, points
+    # d'étape refusés, et pièces toutes lues avec les règles actuelles à la fin du vidage.
+    partial_passes: int = 0
+    refused_checkpoints: int = 0
+    read_complete: bool = False
 
 
 @dataclass
@@ -288,9 +310,14 @@ class BacklogReport:
     outcomes: list[SaleOutcome] = field(default_factory=list)
     stop_reason: str = "candidates_exhausted"
     elapsed_seconds: float = 0.0
+    prefetch: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
+        from src.document_backlog_yield import partial_pass_share
+
         processed = [item for item in self.outcomes if item.action == "processed"]
+        passes = sum(item.passes for item in self.outcomes)
+        partial_passes = sum(item.partial_passes for item in self.outcomes)
         facts: dict[str, int] = {}
         for item in self.outcomes:
             for name in item.new_facts:
@@ -318,6 +345,12 @@ class BacklogReport:
             "average_seconds_per_processed_sale": (
                 round(sum(item.seconds for item in processed) / len(processed), 1) if processed else 0.0
             ),
+            "sales_read": sum(1 for item in processed if item.read_complete),
+            "passes": passes,
+            "partial_passes": partial_passes,
+            "partial_pass_share": partial_pass_share(passes, partial_passes),
+            "refused_checkpoints": sum(item.refused_checkpoints for item in self.outcomes),
+            "prefetch": dict(self.prefetch),
             "facts_added": dict(sorted(facts.items())),
             "by_source": dict(sorted(by_source.items())),
         }
@@ -536,6 +569,8 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
                 outcome.passes += 1
                 _process_job(job, deadline=deadline)
                 final_status, last_error = read_job_state(db_url, job_id)
+                outcome.partial_passes += int(is_partial_pass(final_status, last_error))
+                outcome.refused_checkpoints += int(is_refused_checkpoint(last_error))
                 refreshed = _fetch_sale(source_url)
                 settled_now = _settled_documents(refreshed)
                 progressed = settled_now > settled
@@ -570,6 +605,9 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
                     _reproject(refreshed)
         after_sale = _fetch_sale(source_url)
         outcome.new_facts = new_facts(before_facts, _fact_snapshot(after_sale))
+        outcome.read_complete = outcome.action == "processed" and (
+            after_sale is not None and _read_with_current_rules(after_sale)
+        )
         after_counts = read_document_counts(db_url, source_url)
         outcome.documents_extracted_after = _extracted(after_counts)
         outcome.documents_total = sum(after_counts.values())
@@ -659,6 +697,7 @@ def run_document_backlog(
                 break
     finally:
         prefetcher.close()
+    report.prefetch = dict(prefetcher.stats)
     report.elapsed_seconds = time.monotonic() - started
     return report
 
@@ -681,6 +720,24 @@ def _write_step_summary(summary: dict[str, Any]) -> None:
         f"projection réécrite {summary['sales_reprojected']}, en erreur {summary['sales_with_errors']})",
         f"- Documents lus : {summary['documents_read']}",
         f"- Temps moyen par vente traitée : {summary['average_seconds_per_processed_sale']} s",
+        f"- Ventes lues (toutes les pièces à jour) : {summary['sales_read']}",
+        f"- Passes : {summary['passes']}, dont partielles {summary['partial_passes']} "
+        f"({round(100 * summary['partial_pass_share'])} %) ; points d'étape refusés : {summary['refused_checkpoints']}",
+    ]
+    prefetch = summary.get("prefetch") or {}
+    if prefetch:
+        lines.append(
+            f"- Lecture en avance : {prefetch.get('workers', 0)} processus, {prefetch.get('prepared', 0)} ventes "
+            f"préparées, {prefetch.get('read', 0)} pièces lues, {prefetch.get('deferred_exhausted', 0)} encore "
+            f"reportées, {prefetch.get('errors', 0)} erreurs"
+        )
+    low_yield = summary.get("low_yield") or {}
+    if low_yield.get("evaluated"):
+        state = "ouverte" if low_yield.get("active") else "non déclenchée"
+        reasons = ", ".join(low_yield.get("reasons") or []) or "-"
+        lines.append(f"- Alerte `{low_yield.get('alert_key')}` : {state} ({reasons}) ; enregistrement : "
+                     f"`{low_yield.get('sync', '-')}`")
+    lines += [
         "",
         "| Source | Ventes | Documents lus | Erreurs |",
         "| --- | ---: | ---: | ---: |",
@@ -694,6 +751,28 @@ def _write_step_summary(summary: dict[str, Any]) -> None:
             handle.write("\n".join(lines) + "\n")
     except OSError as exc:
         LOGGER.warning("Could not write the GitHub step summary: %s", exc)
+
+
+def _record_yield(summary: dict[str, Any]) -> None:
+    """Bilan de rendement dans le journal, puis alerte pipeline.documents_backlog.low_yield (src.document_backlog_yield)."""
+    from src.document_backlog_yield import evaluate_low_yield, sync_low_yield_alert
+
+    LOGGER.info(
+        "Document backlog yield: %.0fs, %s sales read of %s processed, %s passes (%s partial, share %s), "
+        "%s refused checkpoints, prefetch %s",
+        summary["elapsed_seconds"],
+        summary["sales_read"],
+        summary["sales_processed"],
+        summary["passes"],
+        summary["partial_passes"],
+        summary["partial_pass_share"],
+        summary["refused_checkpoints"],
+        summary["prefetch"] or "-",
+    )
+    evaluation = evaluate_low_yield(summary)
+    db_url = str(load_settings().get("supabase_db_url") or "")
+    evaluation["sync"] = sync_low_yield_alert(db_url, summary, evaluation)
+    summary["low_yield"] = evaluation
 
 
 def _run_document_reading() -> dict[str, int] | str:
@@ -727,6 +806,7 @@ def main(argv: list[str] | None = None) -> int:
     report = run_document_backlog(limits)
     summary = report.as_dict()
     lock_lost = report.stop_reason == LOCK_LOST_STOP_REASON
+    _record_yield(summary)
     summary["document_reading"] = "skipped" if lock_lost else _run_document_reading()
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     _write_step_summary(summary)

@@ -631,7 +631,7 @@ elle devient `sale_date` si elle est unique et à venir.
 
 ### Vider le stock de pièces jointes
 
-Le mode manuel « documents_backlog » du workflow _Immojudis Data Pipeline_
+Le mode manuel « documents*backlog » du workflow \_Immojudis Data Pipeline*
 (`workflow_dispatch`) ne fait que la lecture des pièces jointes :
 
 ```bash
@@ -647,9 +647,51 @@ python -m src.document_backlog --max-sales 200 --budget-minutes 120 --max-passes
   code normal de la file (robots.txt, délai par hôte, OCR, points de reprise) ;
 - six documents par passage (et 120 s d’OCR par document), passages enchaînés
   jusqu’à `--max-passes` (4 par défaut) par vente ;
+- une passe qui réécrit la vente (point d'étape durable, manifeste re-clé) voit
+  sa tâche remplacée par une nouvelle génération (« Superseded by a newer input
+  revision » ou « superseded after durable PDF checkpoint ») : le vidage remet
+  en file cette génération et la suit, dans la limite de `--max-passes`. Une
+  annulation pour une autre raison (annonce retirée) termine la vente ;
 - les erreurs restent sur le job et le manifeste documentaire de la vente ;
+- une pièce trop lourde au téléchargement (au-delà de `PDF_MAX_DOWNLOAD_MB`,
+  50 Mo dans le workflow) est un échec définitif (`document_too_large`), comme
+  une 404 : elle est consignée inutilisable et n'empêche plus la vente d'être
+  lue ;
 - une vente dont les documents sont déjà à jour voit seulement sa projection
   `auction_documents` réécrite.
+
+Le verrou d'écriture du catalogue est pris **vente par vente**, et seulement
+pour les passes qui publient. Pendant ce temps, les ventes suivantes sont
+**lues en avance, hors du verrou** (`src/document_prefetch.py`) : des processus
+à part téléchargent leurs pièces dans le cache local et lisent leurs pages,
+sans aucune écriture en base. La passe sous verrou reste seule à écrire et
+trouve les pages déjà lues. Quatre ventes d'avance par processus ; une vente
+n'est jamais préparée et traitée en même temps ; chaque processus multiplie le
+délai par hôte par le nombre de processus. La préparation ne restaure que le
+cache de pages, jamais le manifeste local de la vente.
+
+```bash
+# Nombre de processus de lecture en avance : 3 par défaut, 0 la coupe, 6 au plus.
+DOCUMENT_BACKLOG_PREFETCH_WORKERS=3
+```
+
+Dans le workflow, la valeur vient de la variable de dépôt
+`DOCUMENT_BACKLOG_PREFETCH_WORKERS` (3 si elle est absente, `0` pour couper sans
+commit). Les tests la mettent à 0.
+
+En fin de vidage, le résumé d'étape et le journal donnent le bilan de
+rendement : ventes lues (`sales_read`), passes et passes partielles
+(`partial_passes`, `partial_pass_share`), points d'étape refusés
+(`refused_checkpoints`), durée, et chiffres de la lecture en avance
+(`prefetch`, dont `deferred_exhausted` et `errors`). Un vidage de plus de
+60 minutes qui a lu moins de 5 ventes, ou dont plus de 30 % des passes sont
+partielles, ouvre l'alerte `pipeline.documents_backlog.low_yield`
+(`src/document_backlog_yield.py`, migration `20261111131500`).
+
+Symptômes, interrupteur et retour arrière :
+[`docs/runbooks/vidage-des-pieces.md`](../../docs/runbooks/vidage-des-pieces.md).
+Incident du 04/11/2026 (boucle « manifest is partial ») :
+[post-mortem](../../docs/audits/2026-11-04-post-mortem-vidage-pieces.md).
 
 `auction_documents` reprend désormais document par document le texte déjà
 persisté dans `auction_extractions` (statut `verified`) quand le cache local

@@ -140,6 +140,7 @@ def test_partial_manifest_is_continued_then_completed(monkeypatch) -> None:
     assert (outcome.documents_extracted_before, outcome.documents_extracted_after) == (0, 2)
     assert fake.reprojected == []  # a completed job already published the sale
     assert outcome.error is None
+    assert (outcome.partial_passes, outcome.refused_checkpoints) == (1, 0)
 
 
 def test_a_superseded_pass_is_followed_to_the_newer_generation(monkeypatch) -> None:
@@ -183,6 +184,61 @@ def test_failed_pass_without_progress_is_recorded_and_republished(monkeypatch) -
     assert outcome.passes == 1
     assert outcome.error.startswith("Document extraction incomplete")
     assert fake.reprojected == [url]
+    assert (outcome.partial_passes, outcome.refused_checkpoints, outcome.read_complete) == (0, 0, False)
+
+
+def test_partial_passes_and_refused_checkpoints_are_counted_for_the_yield(monkeypatch) -> None:
+    # 04/11/2026 : passes « manifest is partial » sans lire de pièce, et points d'étape refusés.
+    url = "https://example.test/yield"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fake = _Fake(
+        monkeypatch,
+        {url: [stale, stale, stale, stale, _sale(url)]},
+        {
+            url: [
+                ("queued", "PDF document manifest is partial; continue the next bounded pass"),
+                ("cancelled", "superseded after durable PDF checkpoint"),
+                ("failed", "PDF document checkpoint was not persisted; retry required: revision moved"),
+            ]
+        },
+    )
+    monkeypatch.setattr(backlog, "_settled_documents", lambda sale: 0)
+
+    outcome = backlog.drain_sale("db", {"source_url": url, "source_name": "vench"}, backlog.BacklogLimits(), 1e18)
+
+    assert outcome.passes == 3
+    assert fake.processed == [f"job:{url}"] * 3
+    assert (outcome.partial_passes, outcome.refused_checkpoints) == (2, 1)
+    assert outcome.read_complete is False
+
+
+def test_a_sale_is_read_when_its_documents_end_current(monkeypatch) -> None:
+    url = "https://example.test/read"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fake = _Fake(monkeypatch, {url: [stale, stale, _sale(url)]}, {url: [("completed", "")]})
+    fake.current.add(url)
+
+    outcome = backlog.drain_sale("db", {"source_url": url, "source_name": "vench"}, backlog.BacklogLimits(), 1e18)
+
+    assert outcome.action == "processed" and outcome.read_complete is True
+
+
+def test_the_report_carries_the_yield_figures() -> None:
+    report = backlog.BacklogReport(
+        outcomes=[
+            backlog.SaleOutcome("a", "vench", "processed", passes=3, partial_passes=2, read_complete=True),
+            backlog.SaleOutcome("b", "vench", "processed", passes=1, refused_checkpoints=1),
+            backlog.SaleOutcome("c", "vench", "reprojected"),
+        ],
+        prefetch={"workers": 3, "prepared": 2, "deferred_exhausted": 1, "errors": 0},
+    )
+
+    summary = report.as_dict()
+
+    assert (summary["sales_read"], summary["passes"], summary["partial_passes"]) == (1, 4, 2)
+    assert summary["partial_pass_share"] == 0.5
+    assert summary["refused_checkpoints"] == 1
+    assert summary["prefetch"]["deferred_exhausted"] == 1
 
 
 def test_current_documents_only_rewrite_the_projection(monkeypatch) -> None:
@@ -310,6 +366,61 @@ def test_step_summary_is_written_in_french(monkeypatch, tmp_path) -> None:
     assert "Documents lus : 3" in text
     assert "| avoventes | 1 | 3 | 0 |" in text
     assert "occupancy_status (1)" in text
+    assert "Ventes lues (toutes les pièces à jour) : 0" in text
+    assert "Passes : 0, dont partielles 0 (0 %) ; points d'étape refusés : 0" in text
+
+
+def test_step_summary_shows_the_prefetch_and_the_alert(monkeypatch, tmp_path) -> None:
+    summary_path = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_path))
+    summary = backlog.BacklogReport(
+        prefetch={"workers": 3, "prepared": 10, "read": 25, "deferred_exhausted": 2, "errors": 1}
+    ).as_dict()
+    summary["low_yield"] = {
+        "alert_key": "pipeline.documents_backlog.low_yield",
+        "evaluated": True,
+        "active": True,
+        "reasons": ["few_sales_read"],
+        "sync": "opened",
+    }
+
+    backlog._write_step_summary(summary)
+
+    text = summary_path.read_text(encoding="utf-8")
+    assert "Lecture en avance : 3 processus, 10 ventes préparées, 25 pièces lues, 2 encore reportées, 1 erreurs" in text
+    assert "Alerte `pipeline.documents_backlog.low_yield` : ouverte (few_sales_read)" in text
+
+
+def test_main_records_the_yield_after_the_drain(monkeypatch, capsys) -> None:
+    import json
+
+    from src import document_backlog_yield as yield_module
+
+    synced: list[dict] = []
+    monkeypatch.setattr(backlog, "load_settings", lambda: {"supabase_db_url": "postgres://test"})
+    monkeypatch.setattr(
+        backlog,
+        "run_document_backlog",
+        lambda limits: backlog.BacklogReport(
+            outcomes=[backlog.SaleOutcome("a", "vench", "processed", passes=2, partial_passes=2)],
+            elapsed_seconds=2 * 3600,
+        ),
+    )
+    monkeypatch.setattr(backlog, "_run_document_reading", lambda: "disabled")
+    monkeypatch.setattr(
+        yield_module,
+        "sync_low_yield_alert",
+        lambda db_url, summary, evaluation: synced.append(evaluation) or "opened",
+    )
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+    assert backlog.main([]) == 0
+
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["low_yield"]["active"] is True
+    assert printed["low_yield"]["reasons"] == ["few_sales_read", "partial_passes"]
+    assert printed["low_yield"]["sync"] == "opened"
+    assert len(synced) == 1
 
 
 def test_queue_batch_accepts_pre_claimed_jobs_without_claiming(monkeypatch) -> None:

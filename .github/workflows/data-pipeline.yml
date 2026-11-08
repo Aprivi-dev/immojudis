@@ -155,7 +155,10 @@ jobs:
       # Lecture des pièces en avance (src/document_prefetch.py), coupée le 04/11/2026 puis remise le 05/11/2026 :
       # la boucle « manifest is partial » venait de la revalidation HTTP jamais soldée (corrigée par #421).
       # Mesure de référence sans elle (05/11/2026, 12:48-15:21) : 43 ventes traitées sur 80 candidates en 150 min.
-      DOCUMENT_BACKLOG_PREFETCH_WORKERS: 3
+      # Variable de dépôt DOCUMENT_BACKLOG_PREFETCH_WORKERS : 3 si absente, « 0 » la coupe sans commit (une chaîne
+      # non vide n'est jamais remplacée par le défaut) ; bornée à 0-6 par src/document_prefetch.py.
+      # Procédure : docs/runbooks/vidage-des-pieces.md.
+      DOCUMENT_BACKLOG_PREFETCH_WORKERS: ${{ vars.DOCUMENT_BACKLOG_PREFETCH_WORKERS || '3' }}
       # Vench publishes a 416-page, 9.6 MB descriptive report. OCR remains
       # limited per pass and document downloads stay capped at 50 MB.
       PDF_MAX_TOTAL_PAGES: 500
