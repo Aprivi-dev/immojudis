@@ -16,7 +16,9 @@ export async function PUT(request: Request) {
       "Espace de suivi réservé à l’offre Analyse.",
     );
     const input = professionalPilotSaveSchema.parse(await request.json());
-    return NextResponse.json(await saveProfessionalPilot({ auth, input }));
+    return NextResponse.json(await saveProfessionalPilot({ auth, input }), {
+      headers: { "cache-control": "private, no-store" },
+    });
   } catch (error) {
     return apiRouteError(error, request, "sale-workspace.professional-pilot", {
       fallbackMessage: "Enregistrement impossible",
