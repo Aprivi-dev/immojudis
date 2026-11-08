@@ -76,7 +76,7 @@ import {
   saleLocation,
   shareIsExpired,
 } from "./property-report/serialization";
-import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
+import { asRecord, numberValue, stringOrNumberValue, stringValue } from "@/lib/guards";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
 export type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 export type SavedReportRow = Database["public"]["Tables"]["saved_property_reports"]["Row"];
@@ -235,6 +235,8 @@ export type PublicSharedPropertyReport = {
   title: string;
   reportKind: SavedReportRow["report_kind"];
   updatedAt: string;
+  /** Date de calcul de l'analyse (`report_snapshot.generatedAt`) ; `null` : rapport sans cette date. */
+  generatedAt: string | null;
   sharedAt: string | null;
   expiresAt: string | null;
   viewCount: number;
@@ -795,6 +797,7 @@ export function buildPublicSharedPropertyReport(
     title: redactPersonalText(report.title),
     reportKind: report.report_kind,
     updatedAt: report.updated_at,
+    generatedAt: stringValue(snapshot.generatedAt) ?? stringValue(traceability.generatedAt),
     sharedAt: report.shared_at,
     expiresAt: report.share_expires_at,
     viewCount: report.share_view_count,

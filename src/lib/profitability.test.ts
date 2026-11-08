@@ -11,8 +11,26 @@ import {
   DMTO_TABLE_DATE,
   DMTO_TEMPORARY_INCREASE_END,
   registrationRateForDepartment,
+  rentabilityLabel,
   WORKS_SCENARIOS,
 } from "./profitability";
+
+describe("libellés des scores (P5, J1)", () => {
+  it("qualifie le score par palier, sans mot qui promette un gain", () => {
+    expect([80, 79, 65, 64, 50, 49, 0].map(rentabilityLabel)).toEqual([
+      "Score élevé (hypothèses à confirmer)",
+      "Score moyen (hypothèses à confirmer)",
+      "Score moyen (hypothèses à confirmer)",
+      "Score à travailler (hypothèses à confirmer)",
+      "Score à travailler (hypothèses à confirmer)",
+      "Score faible (hypothèses à confirmer)",
+      "Score faible (hypothèses à confirmer)",
+    ]);
+    for (const score of [100, 80, 65, 50, 10]) {
+      expect(rentabilityLabel(score)).not.toMatch(/rentab|attracti|favorab|priorit/i);
+    }
+  });
+});
 
 describe("estimateWorksBudget", () => {
   it("exposes the three reference prices per square metre", () => {
@@ -175,7 +193,7 @@ describe("computeRentabilityScore", () => {
 
     expect(result.available).toBe(true);
     expect(result.score).toBeGreaterThanOrEqual(80);
-    expect(result.label).toBe("Très rentable à confirmer");
+    expect(result.label).toBe("Score élevé (hypothèses à confirmer)");
     expect(result.rentSource).toBe("manual");
     expect(result.grossYieldPct).toBeGreaterThan(result.netYieldPct ?? 0);
     expect(result.cashflowMonthly).not.toBeNull();

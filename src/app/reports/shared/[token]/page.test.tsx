@@ -290,6 +290,60 @@ describe("shared report evidence", () => {
   });
 });
 
+describe("shared report notice and score labels (P5, J1)", () => {
+  async function noticeMarkup(report: Record<string, unknown>) {
+    mocks.report.mockResolvedValue({
+      title: "Rapport",
+      updatedAt: "2026-11-01T10:00:00.000Z",
+      generatedAt: null,
+      sharedAt: null,
+      sale: {},
+      analysis: {},
+      sourceTrace: [],
+      limitations: [],
+      ceiling: { available: false, maxBid: null },
+      ...report,
+    });
+    return renderToStaticMarkup(
+      await SharedReportPage({ params: Promise.resolve({ token: "test" }) }),
+    );
+  }
+
+  it("opens with the dated notice, before any figure", async () => {
+    const html = await noticeMarkup({ generatedAt: "2026-10-02T10:00:00.000Z" });
+    const notice =
+      "Rapport indicatif calculé automatiquement le 02 octobre 2026. Ni conseil, ni recommandation d’enchérir, ni garantie de prix ou de rendement. Vérifiez les pièces officielles avec votre avocat.";
+    expect(html).toContain(notice);
+    expect(html.indexOf(notice)).toBeLessThan(html.indexOf("Localisation"));
+    expect(html.indexOf(notice)).toBeLessThan(html.indexOf("</header>"));
+  });
+
+  it("gives the notice without a date when the report has no calculation date", async () => {
+    for (const generatedAt of [null, undefined, "pas une date"]) {
+      const html = await noticeMarkup({ generatedAt });
+      expect(html).toContain(
+        "Rapport indicatif calculé automatiquement. Ni conseil, ni recommandation d’enchérir",
+      );
+      expect(html).not.toContain("Date à confirmer");
+    }
+  });
+
+  it("derives neutral labels from the scores of a report saved with the old wording", async () => {
+    const html = await noticeMarkup({
+      analysis: {
+        opportunity: {
+          score: 84,
+          label: "Très favorable",
+          rentabilityScore: { score: 66, label: "Rendement attractif" },
+        },
+      },
+    });
+    expect(html).toContain("84/100 · Score élevé (hypothèses à confirmer)");
+    expect(html).toContain("66/100 · Score moyen (hypothèses à confirmer)");
+    expect(html).not.toMatch(/Très favorable|Rendement attractif|Très rentable/);
+  });
+});
+
 describe("shared report rent source", () => {
   async function rentMarkup(rentReference: unknown) {
     mocks.report.mockResolvedValue({

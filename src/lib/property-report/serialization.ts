@@ -18,6 +18,7 @@ import {
 } from "../property-reports";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 import { redactPersonalText, redactSaleTexts } from "@/lib/personal-data-filter";
+import { rentabilityLabel } from "@/lib/profitability";
 export function pdfWatermarkForPlan(plan: PlanEntitlements): string | null {
   return plan.features.pdfExport === "limited" ? "VERSION DECOUVERTE - EXTRAIT LIMITE" : null;
 }
@@ -111,12 +112,10 @@ export function deriveOpportunityScore({
   return clampScore(Math.round(score));
 }
 
+/** Libellé du score d'opportunité : les mêmes paliers et les mêmes mots que le score de rentabilité. */
 export function opportunityScoreLabel(score: number | null): string {
   if (score == null) return "À compléter";
-  if (score >= 80) return "Très favorable";
-  if (score >= 65) return "À étudier en priorité";
-  if (score >= 50) return "À analyser";
-  return "Prudence renforcée";
+  return rentabilityLabel(score);
 }
 
 export function opportunitySummary({

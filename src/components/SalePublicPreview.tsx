@@ -64,6 +64,7 @@ import {
 import { tribunalCodePagePath } from "@/lib/tribunal-code-path";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
+import type { PublicRentalYield } from "@/lib/public-rental-yield";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
@@ -343,8 +344,8 @@ export function SalePublicPreview({
   /** Loyer de la commune (carte ANIL) et zonage tendu, lus par le serveur : section « Marché local ». */
   rentReference?: RentReference | null;
   housingTension?: HousingTension | null;
-  /** Rendement brut à la mise à prix, calculé par le serveur (`publicRentalYield`) ; absent : aucun. */
-  rentalYield?: string | null;
+  /** Rendement brut à la mise à prix (ou loyer estimé s'il n'est pas significatif), calculé par le serveur (`publicRentalYield`) ; absent : aucun. */
+  rentalYield?: PublicRentalYield | null;
   /**
    * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
    * pour ce visiteur, la page dit qu'elle vérifie son compte au lieu de proposer d'en créer un.
