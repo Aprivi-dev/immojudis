@@ -304,6 +304,67 @@ def test_main_reports_counters_without_the_secret(monkeypatch, capsys):
     assert "::warning" not in out
 
 
+CALLBACK_SECRET = "pipeline-callback-secret-value"
+
+
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"PIPELINE_CALLBACK_SECRET": CALLBACK_SECRET, "CRON_SECRET": SECRET}, CALLBACK_SECRET),
+        ({"PIPELINE_CALLBACK_SECRET": f"  {CALLBACK_SECRET}\n"}, CALLBACK_SECRET),
+        ({"CRON_SECRET": SECRET}, SECRET),
+        ({"PIPELINE_CALLBACK_SECRET": "  ", "CRON_SECRET": SECRET}, SECRET),
+        ({}, ""),
+    ],
+)
+def test_the_callback_secret_comes_first_and_cron_secret_is_the_fallback(env, expected):
+    assert cache_invalidation.callback_secret(env) == expected
+
+
+def test_main_sends_the_pipeline_callback_secret_when_it_is_set(monkeypatch, capsys):
+    db = FakeDb([(1, _uuid(1))])
+    poster = Poster(200)
+    monkeypatch.setattr(
+        cache_invalidation,
+        "flush",
+        lambda **kwargs: flush(**kwargs, connect=lambda _url: db, post=poster),
+    )
+
+    code = main(
+        ["--flush"],
+        env={
+            "SUPABASE_DB_URL": "postgres://x",
+            "SITE_URL": SITE,
+            "PIPELINE_CALLBACK_SECRET": CALLBACK_SECRET,
+            "CRON_SECRET": SECRET,
+        },
+    )
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert [secret for _url, _ids, secret in poster.calls] == [CALLBACK_SECRET]
+    assert CALLBACK_SECRET not in out and SECRET not in out
+
+
+def test_main_runs_with_the_pipeline_callback_secret_alone(monkeypatch, capsys):
+    db = FakeDb([(1, _uuid(1))])
+    poster = Poster(200)
+    monkeypatch.setattr(
+        cache_invalidation,
+        "flush",
+        lambda **kwargs: flush(**kwargs, connect=lambda _url: db, post=poster),
+    )
+
+    code = main(
+        ["--flush"],
+        env={"SUPABASE_DB_URL": "postgres://x", "SITE_URL": SITE, "PIPELINE_CALLBACK_SECRET": CALLBACK_SECRET},
+    )
+
+    assert code == 0
+    assert [secret for _url, _ids, secret in poster.calls] == [CALLBACK_SECRET]
+    assert "::error" not in capsys.readouterr().out
+
+
 def test_main_exits_zero_and_warns_when_the_site_answers_badly(monkeypatch, capsys):
     db = FakeDb([(1, _uuid(1))])
     monkeypatch.setattr(

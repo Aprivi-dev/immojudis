@@ -8,12 +8,12 @@ l'identifiant d'une vente dans ``app_private.catalogue_invalidations`` quand ell
 modification : aucun chemin d'écriture ne peut l'oublier, et rien n'est lu avant le COMMIT.
 
 Ce module vide cette boîte d'envoi. Il est lancé à la fin de chaque collecte planifiée, dans une étape
-dédiée de ``data-pipeline.yml`` (la seule avec ``CRON_SECRET``) :
+dédiée de ``data-pipeline.yml`` (la seule avec ``PIPELINE_CALLBACK_SECRET`` et ``CRON_SECRET``) :
 
 * lit au plus ``BATCH_SIZE`` (100) lignes à la fois, ``for update skip locked`` : deux passages qui se
   chevauchent ne se marchent pas dessus ;
-* ``POST {SITE_URL}/api/pipeline/revalidate-sale`` avec ``Authorization: Bearer $CRON_SECRET`` et les
-  identifiants distincts du lot ; 10 s au plus, aucune redirection suivie (le secret ne part pas ailleurs) ;
+* ``POST {SITE_URL}/api/pipeline/revalidate-sale`` avec ``Authorization: Bearer $PIPELINE_CALLBACK_SECRET``
+  (à défaut ``$CRON_SECRET``, voir ``callback_secret``) et les identifiants distincts du lot ; 10 s au plus, aucune redirection suivie (le secret ne part pas ailleurs) ;
 * ne supprime les lignes que sur une réponse 2xx. Sur toute autre réponse (ou une erreur réseau), le lot
   reste en place, le passage s'arrête (inutile d'insister auprès d'un site qui répond mal) et le suivant
   reprend ;
@@ -21,7 +21,7 @@ dédiée de ``data-pipeline.yml`` (la seule avec ``CRON_SECRET``) :
 * ne lève jamais. Une panne passagère (site, base) sort avec le code 0 : une invalidation en échec ne doit pas
   faire échouer la collecte (le cache expire de toute façon en quelques minutes), elle est visible dans les
   compteurs journalisés et dans une annotation ``::warning::``. Une configuration absente ou invalide
-  (``SITE_URL``, ``CRON_SECRET``, ``SUPABASE_DB_URL``) sort avec le code 1 et une annotation ``::error::`` :
+  (``SITE_URL``, ni ``PIPELINE_CALLBACK_SECRET`` ni ``CRON_SECRET``, ``SUPABASE_DB_URL``) sort avec le code 1 et une annotation ``::error::`` :
   l'étape est rouge (le travail reste vert, ``continue-on-error``) au lieu de sauter en silence.
 
 Ne journalise jamais le secret, ni l'URL de connexion.
@@ -169,6 +169,16 @@ def flush(
     return summary
 
 
+def callback_secret(values: Mapping[str, str]) -> str:
+    """Le secret des rappels du pipeline : ``PIPELINE_CALLBACK_SECRET``, à défaut ``CRON_SECRET``.
+
+    Dès que ``PIPELINE_CALLBACK_SECRET`` est posé sur Vercel, ``/api/pipeline/revalidate-sale`` n'accepte plus
+    que lui (``src/lib/cron-auth.ts``) ; le repli sur ``CRON_SECRET`` couvre la transition. Ordre de bascule :
+    docs/vercel_setup.md, « Secret des rappels du pipeline ».
+    """
+    return (values.get("PIPELINE_CALLBACK_SECRET") or "").strip() or (values.get("CRON_SECRET") or "").strip()
+
+
 def main(argv: list[str] | None = None, *, env: Mapping[str, str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Invalidation du cache public après un retrait de vente.")
     parser.add_argument("--flush", action="store_true", required=True, help="vider la boîte d'envoi")
@@ -177,7 +187,7 @@ def main(argv: list[str] | None = None, *, env: Mapping[str, str] | None = None)
 
     db_url = (values.get("SUPABASE_DB_URL") or "").strip()
     site_url = (values.get("SITE_URL") or "").strip()
-    secret = (values.get("CRON_SECRET") or "").strip()
+    secret = callback_secret(values)
     missing = [
         name
         for name, value in (("SUPABASE_DB_URL", db_url), ("SITE_URL", site_url), ("CRON_SECRET", secret))
@@ -200,7 +210,8 @@ def _emit(summary: FlushSummary) -> int:
         # L'étape devient rouge (le travail reste vert : continue-on-error), avec une annotation d'erreur.
         print(
             f"::error title=Invalidate public cache::cache NON invalidé ({summary.skipped}) : "
-            "renseigner la variable de dépôt SITE_URL et les secrets SUPABASE_DB_URL et CRON_SECRET ; "
+            "renseigner la variable de dépôt SITE_URL et les secrets SUPABASE_DB_URL et "
+            "PIPELINE_CALLBACK_SECRET (à défaut CRON_SECRET) ; "
             "les lignes restent dans app_private.catalogue_invalidations pour le prochain passage",
             flush=True,
         )
