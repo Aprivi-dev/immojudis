@@ -389,7 +389,7 @@ describe("investor welcome flow", () => {
       expect(screen.queryByRole("button", { name: "Voir les biens" })).toBeNull();
       // L'alerte reste possible : elle est créée, puis la personne retrouve la vente.
       fireEvent.click(screen.getByRole("checkbox", { name: ALERT_LABEL }));
-      fireEvent.click(screen.getByRole("button", { name: "Voir le plafond de cette vente" }));
+      fireEvent.click(screen.getByRole("button", { name: "Revenir à cette vente" }));
       await waitFor(() => expect(navigate).toHaveBeenCalled());
       expect(alerts.create.mock.calls[0][0]).toMatchObject({ department: "33" });
       expect(navigate).toHaveBeenCalledWith(`${sale}#calculation`);
