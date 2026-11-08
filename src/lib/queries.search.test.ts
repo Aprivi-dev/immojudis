@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { getSaleMapPoints, getSales, getSalesForSearch } from "./queries";
+import {
+  getSaleMapPoints,
+  getSaleRowsByIds,
+  getSales,
+  getSalesForCompleteSearch,
+  getSalesForSearch,
+} from "./queries";
 
 describe("Supabase sale search query", () => {
   it.each([false, true])(
@@ -100,18 +106,48 @@ describe("Supabase sale search query", () => {
     ]);
   });
 
-  it("ne lit le palier d'une recherche complète que si la carte l'affiche", async () => {
-    const withTier = new QueryRecorder();
-    await getSales({}, 24, "date_asc", 0, {
-      client: { from: () => withTier } as never,
-      completenessTier: true,
+  it("balayage des filtres avancés : colonnes légères, même ordre que la recherche", async () => {
+    const builder = new QueryRecorder();
+    await getSalesForCompleteSearch({ ids: ["a", "b"] }, 100, "score_desc", 200, {
+      client: { from: () => builder } as never,
     });
-    const without = new QueryRecorder();
-    await getSales({}, 24, "date_asc", 0, { client: { from: () => without } as never });
-    const selected = (builder: QueryRecorder) =>
-      String(builder.calls.find((call) => call[0] === "select")?.[1]);
-    expect(selected(withTier).split(",")).toContain("completeness_tier");
-    expect(selected(without).split(",")).not.toContain("completeness_tier");
+    const columns = String(builder.calls.find((call) => call[0] === "select")?.[1]).split(",");
+    expect(columns).toContain("investment_score");
+    expect(columns).toContain("visit_dates");
+    for (const heavy of ["media", "source_blocks", "documents_rich", "source_blocks_by_source"])
+      expect(columns).not.toContain(heavy);
+    expect(builder.calls).toContainEqual(["range", 200, 299]);
+    expect(builder.calls).toContainEqual(["in", "id", ["a", "b"]]);
+    expect(orderCalls(builder)).toEqual([
+      ["coordinates_rank", { ascending: true }],
+      ["investment_score", { ascending: false, nullsFirst: false }],
+      ["id", { ascending: true }],
+    ]);
+  });
+
+  it.each([
+    ["card", ["media", "completeness_tier", "risks"], ["source_blocks"]],
+    ["detail", ["source_blocks", "documents_rich", "description"], ["media"]],
+  ] as const)("relit les colonnes « %s » par identifiants", async (kind, present, absent) => {
+    const client = new QueryClient([[{ id: "a" }]]);
+    const rows = await getSaleRowsByIds(["a"], kind, { client: client as never });
+    expect(rows.map((row) => row.id)).toEqual(["a"]);
+    const columns = String(
+      client.builders[0].calls.find((call) => call[0] === "select")?.[1],
+    ).split(",");
+    for (const column of present) expect(columns).toContain(column);
+    for (const column of absent) expect(columns).not.toContain(column);
+    expect(client.builders[0].calls).toContainEqual(["in", "id", ["a"]]);
+  });
+
+  it("la seconde lecture d'une recherche Analyse ne renvoie pas la liste d'identifiants", async () => {
+    const client = new QueryClient([[{ id: "p1" }], [{ id: "p1" }]]);
+    await getSalesForSearch({ ids: ["p1", "p2"] }, 24, "score_desc", 0, {
+      client: client as never,
+    });
+    expect(client.builders[0].calls).toContainEqual(["in", "id", ["p1", "p2"]]);
+    const secondIn = client.builders[1].calls.filter((call) => call[0] === "in");
+    expect(secondIn).toEqual([["in", "id", ["p1"]]]);
   });
 
   describe("base sans la colonne completeness_tier (migration pas encore appliquée)", () => {
@@ -153,12 +189,19 @@ describe("Supabase sale search query", () => {
       expect(selected(client.builders[2])).not.toContain("completeness_tier");
     });
 
-    it("relance une recherche complète qui lisait le palier", async () => {
+    it("relance le balayage des filtres avancés sans ce tri", async () => {
       const client = new QueryClient([[], [{ id: "s" }]], [missingTier]);
-      await getSales({}, 24, "date_asc", 0, {
+      const rows = await getSalesForCompleteSearch({}, 100, "completeness_desc", 0, {
         client: client as never,
-        completenessTier: true,
       });
+      expect(rows.map((row) => row.id)).toEqual(["s"]);
+      expect(client.builders).toHaveLength(2);
+      expect(orderCalls(client.builders[1]).flat().join()).not.toContain("completeness_tier");
+    });
+
+    it("relit les colonnes de la carte de résultat sans le palier", async () => {
+      const client = new QueryClient([[], [{ id: "s" }]], [missingTier]);
+      await getSaleRowsByIds(["s"], "card", { client: client as never });
       expect(client.builders).toHaveLength(2);
       expect(selected(client.builders[0])).toContain("completeness_tier");
       expect(selected(client.builders[1])).not.toContain("completeness_tier");
