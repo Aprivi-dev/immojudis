@@ -30,7 +30,9 @@ from typing import Any
 
 from src.config import load_settings
 from src.dpe_reading_guard import checked_energy_point, is_energy_point
+from src.enrichment.display_evidence import PUBLIC_EMAIL, PUBLIC_LINK, PUBLIC_PHONE
 from src.normalize import clean_text, strip_accents
+from src.occupancy_statements import CERTAIN_STATUSES, occupancy_from_text
 from src.personal_data import redact_personal_text
 
 LOGGER = logging.getLogger(__name__)
@@ -42,7 +44,8 @@ MAX_PROMPT_CHARS = 45_000
 MAX_PAGE_CHARS = 2_500
 MAX_POINTS = 14
 MAX_QUOTE_CHARS = 320
-MIN_QUOTE_CHARS = 12
+# 25 since 08/11/2026 (D6): a shorter quote (« au plafond ») proves nothing on its own.
+MIN_QUOTE_CHARS = 25
 MAX_TITLE_CHARS = 100
 MAX_DOCUMENT_LABEL_CHARS = 120
 MAX_DOCUMENT_TYPE_CHARS = 40
@@ -328,8 +331,85 @@ def _bounded_text(value: object, maximum: int) -> str | None:
     return text if len(text) <= maximum else text[: maximum - 1].rstrip() + "…"
 
 
+_CONTACT_PATTERNS = (PUBLIC_LINK, PUBLIC_EMAIL, PUBLIC_PHONE)
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?…])\s+")
+# A figure as written in French text: « 3 000 », « 1 200,50 », « 10,5 », « 2026 ».
+_FIGURE = re.compile(
+    r"(?<![0-9])[0-9]{1,3}(?:[ \u00a0\u202f.][0-9]{3})+(?:,[0-9]+)?(?![0-9])|[0-9]+(?:[.,][0-9]+)?"
+)
+_DIGIT_RUN = re.compile(r"[0-9]+")
+
+
+def _has_contact(text: str) -> bool:
+    return any(pattern.search(text) for pattern in _CONTACT_PATTERNS)
+
+
+def _figure_key(raw: str) -> str:
+    """« 3 000 », « 3.000 » and « 3000 » give the same key; « 10,50 » and « 10.5 » too."""
+    text = re.sub(r"[ \u00a0\u202f]", "", raw)
+    if re.fullmatch(r"[0-9]{1,3}(?:\.[0-9]{3})+(?:,[0-9]+)?", text):
+        text = text.replace(".", "")
+    whole, _, decimals = text.replace(",", ".").partition(".")
+    whole, decimals = whole.lstrip("0") or "0", decimals.rstrip("0")
+    return f"{whole}.{decimals}" if decimals else whole
+
+
+def page_figures(page_text: str) -> set[str]:
+    """Every figure of a page, read whole (« 3 000 ») and digit run by digit run (« 3 », « 000 »)."""
+    found = {_figure_key(match.group()) for match in _FIGURE.finditer(page_text)}
+    return found | {_figure_key(match.group()) for match in _DIGIT_RUN.finditer(page_text)}
+
+
+def _scrubbed_title(title: str | None) -> str | None:
+    """The model's title without link, email or phone number (the rest of the title is kept)."""
+    if not title:
+        return None
+    for pattern in _CONTACT_PATTERNS:
+        title = pattern.sub(" ", title)
+    return clean_text(re.sub(r"\s+", " ", title).strip(" ,;:-–—")) or None
+
+
+def _checked_explanation(explanation: str | None, page_text: str) -> str | None:
+    """The model's explanation without the sentences that carry a contact or an unproven figure.
+
+    Same principle as ``dpe_reading_guard.checked_energy_point``: the point and its quote stay, what
+    the model wrote without proof goes. A figure is proven when the page that holds the quote writes
+    it (« 1 200 € » of rent on a page that gives no rent is removed with its sentence).
+    """
+    if not explanation:
+        return None
+    figures = page_figures(page_text)
+    kept = [
+        sentence
+        for sentence in _SENTENCE_BREAK.split(explanation)
+        if sentence.strip()
+        and not _has_contact(sentence)
+        and all(_figure_key(match.group()) in figures for match in _FIGURE.finditer(sentence))
+    ]
+    return clean_text(" ".join(kept)) or None
+
+
+def occupancy_text_contradicts_quote(title: str | None, explanation: str | None, quote: str) -> bool:
+    """The title or explanation states an occupation that the quote, read by the same grammar, denies.
+
+    « Bien libre à la vente » over « Le logement est occupé par un locataire »: the quote gives a certain
+    status, the model's words give one too, and together they no longer agree (``occupancy_statements``).
+    A quote with no certain status, or a title that states none, is not a contradiction.
+    """
+    if occupancy_from_text(quote).status not in CERTAIN_STATUSES:
+        return False
+    if occupancy_from_text(title, explanation).status is None:
+        return False
+    return occupancy_from_text(quote, title, explanation).status not in CERTAIN_STATUSES
+
+
 def validate_reading_points(raw_points: object, documents: Sequence[ReadingDocument]) -> list[dict[str, object]]:
-    """Keep only well-formed points whose quote is found in the cited document."""
+    """Keep only well-formed points whose quote is found in the cited document.
+
+    The title and explanation written by the model are checked too: no link, email or phone number,
+    no figure that the page does not write, and an occupation point whose words contradict its own
+    quote is dropped. The same checks replay on stored points (:func:`revalidate_stored_points`).
+    """
     if not isinstance(raw_points, list):
         return []
     by_ref = {doc.ref: doc for doc in documents}
@@ -342,7 +422,7 @@ def validate_reading_points(raw_points: object, documents: Sequence[ReadingDocum
             continue
         theme = str(raw.get("theme") or "").strip()
         importance = str(raw.get("importance") or "info").strip()
-        title = _bounded_text(raw.get("title"), MAX_TITLE_CHARS)
+        title = _scrubbed_title(_bounded_text(raw.get("title"), MAX_TITLE_CHARS))
         explanation = _bounded_text(raw.get("explanation"), MAX_EXPLANATION_CHARS)
         quote = raw.get("quote")
         doc = by_ref.get(str(raw.get("document") or "").strip().upper())
@@ -367,6 +447,9 @@ def validate_reading_points(raw_points: object, documents: Sequence[ReadingDocum
                 break
         if not found_page or not excerpt:
             continue
+        explanation = _checked_explanation(explanation, doc.pages[found_page])
+        if theme == "occupation" and occupancy_text_contradicts_quote(title, explanation, excerpt):
+            continue
         key = (doc.ref, found_page, excerpt.casefold()[:80])
         if key in seen:
             continue
@@ -379,15 +462,36 @@ def validate_reading_points(raw_points: object, documents: Sequence[ReadingDocum
             "quote": excerpt[:MAX_QUOTE_CHARS],
             "document_index": doc.index,
             "page": found_page,
-            "page_corrected": found_page != cited_page,
+            # A stored point replayed by revalidate_stored_points keeps its flags.
+            "page_corrected": found_page != cited_page or raw.get("page_corrected") is True,
         }
         if is_energy_point(point):
             # A DPE class must be proven by its own page (dpe_reading_guard).
             point = checked_energy_point(point, doc.pages[found_page])
+        if raw.get("energy_class_corrected") is True:
+            point["energy_class_corrected"] = True
         points.append(point)
     rank = {name: position for position, name in enumerate(IMPORTANCE)}
     points.sort(key=lambda point: rank[str(point["importance"])])
     return points
+
+
+def revalidate_stored_points(points: object, documents: Sequence[ReadingDocument]) -> list[dict[str, object]]:
+    """Stored points checked again with the current rules, without calling the model.
+
+    ``documents`` are the filtered pages the points were read from (:func:`filtered_for_model`). A
+    stored point carries its quote, document and page: it goes back through
+    :func:`validate_reading_points` as if the model had just written it.
+    """
+    raw_points = [
+        {
+            **point,
+            "document": f"D{point.get('document_index')}",
+        }
+        for point in (points if isinstance(points, list) else [])
+        if isinstance(point, Mapping)
+    ]
+    return validate_reading_points(raw_points, documents)
 
 
 def _counts_as_attempt(exc: BaseException) -> bool:
@@ -434,13 +538,13 @@ def read_sale_documents(
     return ReadingResult("completed", points, input_truncated=truncated, model=model)
 
 
-def input_fingerprint(manifest: object) -> str:
+def input_fingerprint(manifest: object, *, version: str = DOCUMENT_READING_VERSION) -> str:
     """Stable digest of the persisted page texts and the reading version."""
     pages = [
         (doc.label, doc.url, doc.document_type, sorted(doc.pages.items()))
         for doc in documents_from_manifest(manifest)
     ]
-    payload = json.dumps([DOCUMENT_READING_VERSION, pages], ensure_ascii=False, sort_keys=True)
+    payload = json.dumps([version, pages], ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -514,6 +618,37 @@ on conflict (sale_id) do update set
 """
 
 TOUCH_SQL = "update public.auction_document_readings set updated_at = now() where sale_id = %s"
+
+# Stored readings replayed through the current checks (revalidate_stored_readings): completed, with
+# points, for a sale still on sale, with the page texts they were read from.
+REVALIDATION_SQL = """
+select reading.sale_id, reading.prompt_version, reading.input_fingerprint, reading.points, latest.result
+  from public.auction_document_readings reading
+  join public.auction_sales sale on sale.id = reading.sale_id
+  join lateral (
+    select extraction.result
+      from public.auction_extractions extraction
+     where extraction.source_url = sale.source_url
+       and extraction.provider = 'pdf_text'
+       and jsonb_typeof(extraction.result) = 'array'
+     order by extraction.updated_at desc
+     limit 1
+  ) latest on true
+ where reading.status = 'completed'
+   and jsonb_typeof(reading.points) = 'array'
+   and jsonb_array_length(reading.points) > 0
+   and sale.status in ('upcoming', 'unknown', 'postponed')
+   and (sale.sale_date is null or sale.sale_date >= now())
+ order by sale.sale_date nulls last, reading.sale_id
+ limit %s
+"""
+
+# Only the points change. updated_at stays: it tells CANDIDATES_SQL whether a newer page text came in
+# since the reading, and a revalidation must not hide that text from the next reading.
+REVALIDATED_POINTS_SQL = """
+update public.auction_document_readings set points = %s::jsonb
+ where sale_id = %s and input_fingerprint = %s and status = 'completed'
+"""
 
 
 def _connect(db_url: str) -> Any:
@@ -614,6 +749,33 @@ def run_document_readings(
             len(result.points),
             len(documents),
         )
+    return counts
+
+
+def revalidate_stored_readings(db_url: str, *, limit: int) -> dict[str, int]:
+    """Replay the stored points of up to ``limit`` readings through the current checks. No model call.
+
+    A reading whose page texts changed since it was written is left alone: the next reading redoes it.
+    """
+    counts = {"selected": 0, "unchanged": 0, "updated": 0, "points_removed": 0, "stale_text": 0}
+    with _connect(db_url) as connection:
+        rows = connection.execute(REVALIDATION_SQL, (int(limit),)).fetchall()
+    counts["selected"] = len(rows)
+    for sale_id, version, fingerprint, points, manifest in rows:
+        if input_fingerprint(manifest, version=str(version)) != fingerprint:
+            counts["stale_text"] += 1
+            continue
+        stored = points if isinstance(points, list) else []
+        kept = revalidate_stored_points(stored, filtered_for_model(documents_from_manifest(manifest)))
+        if kept == stored:
+            counts["unchanged"] += 1
+            continue
+        with _connect(db_url) as connection:
+            connection.execute(
+                REVALIDATED_POINTS_SQL, (json.dumps(kept, ensure_ascii=False), sale_id, fingerprint)
+            )
+        counts["updated"] += 1
+        counts["points_removed"] += len(stored) - len(kept)
     return counts
 
 

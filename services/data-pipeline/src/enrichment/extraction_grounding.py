@@ -12,13 +12,16 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from src.document_reading import MIN_QUOTE_CHARS, grounded_quote
+from src.document_reading import grounded_quote
 from src.normalize import strip_accents
 from src.occupancy_statements import OCCUPIED_FAMILY, VACANT, is_template_clause, occupancy_from_text
 
 # A scalar field (type, rooms, occupation) is often supported by a very short quote (« Maison »,
 # « Studio T2 »): shorter than the 12 characters asked of a document-reading quote.
 SCALAR_QUOTE_MIN_CHARS = 6
+# Quote of one entry of a list field (risks, servitudes). It keeps the 12 characters it shared with the
+# document reading when that one went to 25 (D6, 08/11/2026): the extraction does not change with it.
+LIST_QUOTE_MIN_CHARS = 12
 
 _VACANT = re.compile(
     r"libre\s+de\s+(?:toute?s?\s+)?(?:occupation|occupant|locataire|location)|libre\s+d['’]occupation|"
@@ -150,6 +153,6 @@ def cited_items(context: str, values: list[str], evidence: Mapping[str, Any] | N
     return [
         value
         for index, value in enumerate(values)
-        if index < len(quotes) and cited_excerpt(context, quotes[index], min_chars=MIN_QUOTE_CHARS)
+        if index < len(quotes) and cited_excerpt(context, quotes[index], min_chars=LIST_QUOTE_MIN_CHARS)
     ]
 

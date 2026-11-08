@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -369,3 +370,141 @@ def test_names_are_filtered_before_the_model_reads_and_quotes_are_checked_on_the
     assert "DUPONT" not in str(reading._documents_payload(documents))
     # The fingerprint is still computed on the stored pages: no dossier is read again.
     assert reading.input_fingerprint(NAMED_MANIFEST) == reading.input_fingerprint(NAMED_MANIFEST)
+
+
+# D6 (08/11/2026): the title and explanation written by the model are checked too.
+RENTED_PAGE = (
+    "Le logement est occupé par un locataire qui déclare payer un loyer mensuel de 650 euros. "
+    "Le bail a été signé le 1er mars 2019. Les frais préalables sont estimés à 3 000 euros."
+)
+RENTED_MANIFEST = [{"label": "PV", "document_type": "pv_huissier", "pages": [{"page": 1, "text": RENTED_PAGE}]}]
+
+
+def _point(**fields: object) -> dict[str, object]:
+    return {"theme": "occupation", "importance": "alerte", "document": "D1", "page": 1, **fields}
+
+
+def test_occupation_title_agreeing_with_its_quote_is_kept_with_its_figures() -> None:
+    documents = reading.documents_from_manifest(RENTED_MANIFEST)
+    [point] = reading.validate_reading_points(
+        [
+            _point(
+                title="Bien loué",
+                explanation="Loyer de 650 € par mois. Frais préalables de 3000 euros, bail de 2019.",
+                quote="occupé par un locataire qui déclare payer un loyer mensuel de 650 euros",
+            )
+        ],
+        documents,
+    )
+    assert point["title"] == "Bien loué"
+    assert point["explanation"] == "Loyer de 650 € par mois. Frais préalables de 3000 euros, bail de 2019."
+
+
+def test_quotes_need_25_characters() -> None:
+    documents = reading.documents_from_manifest(RENTED_MANIFEST)
+    quotes = ["un loyer mensuel de 650 e", "un loyer mensuel de 650"]  # 25 characters, then 23
+    assert [len(quote) for quote in quotes] == [25, 23]
+    kept = reading.validate_reading_points(
+        [_point(theme="autre", title=f"Point {n}", quote=quote) for n, quote in enumerate(quotes)], documents
+    )
+    assert [point["title"] for point in kept] == ["Point 0"]
+    assert reading.validate_reading_points([_point(title="Court", quote="un locataire")], documents) == []
+
+
+def test_figures_of_the_explanation_must_be_written_in_the_page() -> None:
+    documents = reading.documents_from_manifest(RENTED_MANIFEST)
+    [point] = reading.validate_reading_points(
+        [
+            _point(
+                theme="conditions_vente",
+                title="Frais préalables",
+                explanation="Les frais sont estimés à 3 000 €. Prévoir aussi 12 500 € de travaux. À vérifier.",
+                quote="Les frais préalables sont estimés à 3 000 euros",
+            )
+        ],
+        documents,
+    )
+    assert point["explanation"] == "Les frais sont estimés à 3 000 €. À vérifier."
+    assert reading.page_figures("1 200,50 € le 3.000") >= {"1200.5", "3000", "1", "200", "50"}
+
+
+def test_contacts_are_removed_from_title_and_explanation() -> None:
+    documents = reading.documents_from_manifest(RENTED_MANIFEST)
+    [point] = reading.validate_reading_points(
+        [
+            _point(
+                title="Locataire en place, écrire à gestion@example.test",
+                explanation="Appelez le 06 12 34 56 78. Voir www.example.test. Le bail continue après la vente.",
+                quote="occupé par un locataire qui déclare payer un loyer mensuel",
+            )
+        ],
+        documents,
+    )
+    assert point["title"] == "Locataire en place, écrire à"
+    assert point["explanation"] == "Le bail continue après la vente."
+
+
+def test_occupation_point_whose_words_contradict_its_quote_is_dropped() -> None:
+    documents = reading.documents_from_manifest(RENTED_MANIFEST)
+    quote = "Le logement est occupé par un locataire"
+    assert reading.validate_reading_points([_point(title="Bien libre", quote=quote)], documents) == []
+    contrary = _point(title="Libération", explanation="Le bien sera vendu libre de toute occupation.", quote=quote)
+    assert reading.validate_reading_points([contrary], documents) == []
+    # Words that state no status are no contradiction; another theme is not read as occupation.
+    assert len(reading.validate_reading_points([_point(title="Situation locative", quote=quote)], documents)) == 1
+    other_theme = _point(theme="juridique", title="Bien libre", quote=quote)
+    assert len(reading.validate_reading_points([other_theme], documents)) == 1
+
+
+def _stored(title: str, quote: str, explanation: str | None = None, **extra: object) -> dict[str, object]:
+    return {
+        "theme": "occupation",
+        "importance": "info",
+        "title": title,
+        "explanation": explanation,
+        "quote": quote,
+        "document_index": 1,
+        "page": 1,
+        "page_corrected": False,
+        **extra,
+    }
+
+
+def test_stored_points_are_revalidated_without_a_model_call(monkeypatch) -> None:
+    v2_fingerprint = reading.input_fingerprint(RENTED_MANIFEST, version="document_reading_v2")
+    stored = [
+        _stored(
+            "Bien loué",
+            "occupé par un locataire qui déclare payer un loyer mensuel de 650 euros",
+            "Un loyer de 650 euros.",
+            importance="alerte",
+            page_corrected=True,
+        ),
+        _stored("Bien libre à la vente", "Le logement est occupé par un locataire", "Loyer de 1 200 €."),
+        _stored("Contact", "Les frais préalables sont estimés à 3 000 euros", "Appelez le 06 12 34 56 78.", theme="autre"),
+        _stored("Citation courte", "un locataire", theme="etat_travaux"),
+    ]
+    rows = [
+        ("sale-1", "document_reading_v2", v2_fingerprint, stored, RENTED_MANIFEST),
+        ("sale-2", "document_reading_v2", "texte-changé-depuis", stored, RENTED_MANIFEST),
+        ("sale-3", "document_reading_v2", v2_fingerprint, stored[:1], RENTED_MANIFEST),
+    ]
+    executed: list[tuple[str, tuple]] = []
+
+    class FakeConnection:
+        def execute(self, statement, params=()):
+            executed.append((statement, params))
+            return SimpleNamespace(fetchall=lambda: rows)
+
+    monkeypatch.setattr(reading, "_connect", lambda _url: nullcontext(FakeConnection()))
+    counts = reading.revalidate_stored_readings("postgresql://test", limit=10)
+
+    assert counts == {"selected": 3, "unchanged": 1, "updated": 1, "points_removed": 2, "stale_text": 1}
+    [(statement, params)] = [(sql, values) for sql, values in executed if sql.lstrip().startswith("update")]
+    assert "updated_at" not in statement  # a newer page text must still bring the reading back
+    assert params[1:] == ("sale-1", v2_fingerprint)
+    kept = json.loads(params[0])
+    assert [point["title"] for point in kept] == ["Bien loué", "Contact"]
+    assert kept[0]["page_corrected"] is True
+    assert kept[1]["explanation"] is None
+    assert "limit %s" in reading.REVALIDATION_SQL and "reading.status = 'completed'" in reading.REVALIDATION_SQL

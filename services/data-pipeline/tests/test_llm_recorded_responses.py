@@ -54,3 +54,10 @@ def test_recorded_reading_responses(case: dict) -> None:
         page = " ".join(documents[int(point["document_index"]) - 1].pages[int(point["page"])].split())
         assert str(point["quote"]) in page  # a kept quote is a verbatim extract of its page
         assert "<" not in str(point["quote"]) and ">" not in str(point["quote"])
+    published = json.dumps(points, ensure_ascii=False)
+    for fragment in case.get("expect_present", []):
+        assert fragment in published
+    for fragment in case.get("expect_absent", []):
+        assert fragment not in published  # title and explanation are the model's words: checked too
+    # A stored point replays through the same checks to the same result, without a model call.
+    assert reading.revalidate_stored_points(points, documents) == points
