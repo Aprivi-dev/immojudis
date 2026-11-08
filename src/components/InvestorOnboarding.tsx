@@ -345,7 +345,7 @@ export function InvestorOnboarding({
                 ? "Création de l’alerte…"
                 : step === steps.length - 1
                   ? returnTo
-                    ? "Voir le plafond de cette vente"
+                    ? "Revenir à cette vente"
                     : "Voir les biens"
                   : "Continuer"}
             </Button>

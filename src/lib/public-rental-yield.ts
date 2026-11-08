@@ -53,7 +53,7 @@ export const PUBLIC_MONTHLY_RENT_LABEL = "Loyer mensuel estimé (charges compris
 
 /** Mention qui accompagne le loyer affiché à la place d'un rendement non significatif. */
 export const PUBLIC_YIELD_NOT_SIGNIFICANT_NOTE =
-  "Rendement non significatif à la mise à prix : le prix final sera plus élevé.";
+  "Rendement non significatif à la mise à prix : le prix final est souvent bien plus élevé.";
 
 /**
  * Ce que la section « Marché local » affiche : le rendement brut à la mise à prix (`yield`) ou, quand

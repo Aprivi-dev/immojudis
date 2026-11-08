@@ -184,7 +184,8 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
 
   const facts: Array<{ title: string; detail: string; warn?: boolean }> = [
     {
-      title: `Estimation ${formatPrice(data.value)}`,
+      // Bien occupé : la valeur estimée est celle d'un bien libre comparable (ventes DVF).
+      title: `Valeur d’un bien libre comparable : ${formatPrice(data.value)}`,
       detail: `Fourchette ${formatPrice(data.valueLow)} à ${formatPrice(data.valueHigh)}${data.estimateQuality ? `, fiabilité ${data.estimateQuality}` : ""}`,
     },
     {
@@ -206,7 +207,7 @@ export function HomeTryExample({ data }: { data: ExampleVerdictData }) {
     {
       title: nonBreakingUnits(`Mise à prix : ${formatNumber(data.startingPricePerM2)} €/m²`),
       detail: nonBreakingUnits(
-        `médiane des ventes libres : ${formatNumber(data.medianPricePerM2)} €/m²`,
+        `médiane des ventes de biens libres : ${formatNumber(data.medianPricePerM2)} €/m²`,
       ),
     },
     {
