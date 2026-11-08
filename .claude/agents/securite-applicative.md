@@ -61,8 +61,8 @@ locaux, puis tu proposes le correctif le plus simple qui rend la bonne pratique 
    prompt, email).
 3. **Vérifications locales** : `npm run test:security-invariants`, les tests ciblés
    (`npx vitest run src/app/api/error-message-leaks.test.ts
-   src/lib/server-only-boundary.test.ts src/app/api/rate-limited-routes.test.ts
-   src/app/api/critical-routes.test.ts`), `npm run check:secrets` si Docker est
+src/lib/server-only-boundary.test.ts src/app/api/rate-limited-routes.test.ts
+src/app/api/critical-routes.test.ts`), `npm run check:secrets` si Docker est
    disponible, `npm audit --omit=dev` en lecture (jamais `npm audit fix`).
    `npm ci` d'abord si `node_modules/` est absent.
 
@@ -163,11 +163,11 @@ code est un constat. Puis vérifie :
   chaque durée de la matrice a sa purge, son échec est visible, `llm_cache` et pièces
   téléchargées sont couverts.
 - Tests : `npx vitest run src/lib/personal-data-filter.test.ts
-  src/lib/privacy-erasure.test.ts src/lib/document-reading-redaction.test.ts
-  src/lib/audience-opt-out.test.ts` ; côté Python, depuis `services/data-pipeline/` avec
+src/lib/privacy-erasure.test.ts src/lib/document-reading-redaction.test.ts
+src/lib/audience-opt-out.test.ts` ; côté Python, depuis `services/data-pipeline/` avec
   un environnement virtuel dans le scratchpad, `python -m pytest -q
-  tests/test_personal_data.py tests/test_redact_personal_data.py
-  tests/test_retention_tombstones.py`.
+tests/test_personal_data.py tests/test_redact_personal_data.py
+tests/test_retention_tombstones.py`.
 
 Ne t'appuie jamais sur un seul outil automatique : les failles d'autorisation et de
 logique métier ne se voient qu'à la lecture. Un correctif proposé est accompagné du test

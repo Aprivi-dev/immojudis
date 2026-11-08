@@ -39,17 +39,17 @@ Adaptés le 19/10/2026 de [msitarzewski/agency-agents](https://github.com/msitar
 (licence MIT, voir `docs/equipe/licences/agency-agents-MIT.txt`). Ils analysent et proposent ;
 comme le reste de l'équipe, ils ne modifient aucun fichier et n'écrivent jamais en base.
 
-| Domaine                | Agents                                                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Domaine                | Agents                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Architecture et base   | `architecte-logiciel`, `expert-postgres`, `archeologue-code` (dont documentation périmée), `testeur-api` (dont API publique v1) |
-| Exploitation           | `devops-ci`, `fiabilite-sre` (supervision, tâches planifiées et gestion des incidents)                                       |
-| Sécurité               | `securite-applicative` (dont données personnelles côté technique et défauts typiques du code écrit par des agents)           |
-| IA, modèles, chiffres  | `prompts-llm`, `qa-modeles`, `statisticien` (dont marché local DVF et graphiques)                                            |
-| Carte et géographie    | `carte-web` (technique et lisibilité de la carte), `donnees-geographiques` (géocodage et contrôle des positions)              |
-| Utilisateurs et design | `audit-accessibilite`, `optimisation-interface`, `gardien-marque`, `synthese-recherche`                                      |
-| Produit et mesure      | `analyste-indicateurs` (dont expériences et mesures avant / après)                                                           |
-| Paiements et prix      | `paiements-stripe`, `analyste-prix`                                                                                          |
-| Croissance             | `directeur-marketing` (dont canaux, offre de lancement et acquisition), `strategie-email`                                    |
+| Exploitation           | `devops-ci`, `fiabilite-sre` (supervision, tâches planifiées et gestion des incidents)                                          |
+| Sécurité               | `securite-applicative` (dont données personnelles côté technique et défauts typiques du code écrit par des agents)              |
+| IA, modèles, chiffres  | `prompts-llm`, `qa-modeles`, `statisticien` (dont marché local DVF et graphiques)                                               |
+| Carte et géographie    | `carte-web` (technique et lisibilité de la carte), `donnees-geographiques` (géocodage et contrôle des positions)                |
+| Utilisateurs et design | `audit-accessibilite`, `optimisation-interface`, `gardien-marque`, `synthese-recherche`                                         |
+| Produit et mesure      | `analyste-indicateurs` (dont expériences et mesures avant / après)                                                              |
+| Paiements et prix      | `paiements-stripe`, `analyste-prix`                                                                                             |
+| Croissance             | `directeur-marketing` (dont canaux, offre de lancement et acquisition), `strategie-email`                                       |
 
 `optimisation-interface` (ajouté le 31/10/2026, écrit pour Immojudis) optimise chaque écran et
 composant à partir de captures mesurées ; il complète `ux-designer` (parcours) et
@@ -88,13 +88,11 @@ Un agent retiré se restaure depuis l'historique git quand son sujet redevient a
 Chaque agent choisit son modèle dans son en-tête (`model:`). Répartition décidée le 06/11/2026 :
 
 - **`opus`** pour les agents de jugement : stratégie et arbitrages, sécurité et argent, code et
-  contenus produits, synthèse de sources. Ce sont `directeur-marketing`, `strategie-entreprise`,
-  `chef-de-produit`, `product-explorer`, `croissance`, `offres-acquisition`, `analyste-prix`,
-  `strategie-email`, `architecte-logiciel`, `securite-applicative`, `juridique-rgpd`,
-  `code-reviewer`, `developpeur`, `redacteur-contenu`, `audit-code-ia`, `archeologue-code`,
-  `expert-postgres`, `paiements-stripe`, `statisticien`, `analyste-spatial`, `qa-modeles`,
-  `prompts-llm`, `ux-designer`, `recherche-utilisateurs`, `parcours-persona`,
-  `synthese-recherche`, `veille-concurrentielle` et `gestion-incidents` ;
+  contenus produits, synthèse de sources. Ce sont `directeur-marketing`, `product-explorer`,
+  `analyste-prix`, `strategie-email`, `architecte-logiciel`, `securite-applicative`,
+  `juridique-rgpd`, `code-reviewer`, `developpeur`, `redacteur-contenu`, `archeologue-code`,
+  `expert-postgres`, `paiements-stripe`, `statisticien`, `qa-modeles`, `prompts-llm`,
+  `ux-designer`, `synthese-recherche` et `veille-concurrentielle` ;
 - **`sonnet`** pour les autres, qui appliquent une liste de contrôles bien définie (audits
   techniques, tests, cohérence, brouillons sur un format connu). Ils coûtent moins cher.
 

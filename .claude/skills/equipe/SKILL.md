@@ -37,17 +37,17 @@ Adaptés le 19/10/2026 de [msitarzewski/agency-agents](https://github.com/msitar
 (licence MIT, voir `docs/equipe/licences/agency-agents-MIT.txt`). Ils analysent et proposent ;
 comme le reste de l'équipe, ils ne modifient aucun fichier et n'écrivent jamais en base.
 
-| Domaine                | Agents                                                                                                                       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Domaine                | Agents                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Architecture et base   | `architecte-logiciel`, `expert-postgres`, `archeologue-code` (dont documentation périmée), `testeur-api` (dont API publique v1) |
-| Exploitation           | `devops-ci`, `fiabilite-sre` (supervision, tâches planifiées et gestion des incidents)                                       |
-| Sécurité               | `securite-applicative` (dont données personnelles côté technique et défauts typiques du code écrit par des agents)           |
-| IA, modèles, chiffres  | `prompts-llm`, `qa-modeles`, `statisticien` (dont marché local DVF et graphiques)                                            |
-| Carte et géographie    | `carte-web` (technique et lisibilité de la carte), `donnees-geographiques` (géocodage et contrôle des positions)              |
-| Utilisateurs et design | `audit-accessibilite`, `optimisation-interface`, `gardien-marque`, `synthese-recherche`                                      |
-| Produit et mesure      | `analyste-indicateurs` (dont expériences et mesures avant / après)                                                           |
-| Paiements et prix      | `paiements-stripe`, `analyste-prix`                                                                                          |
-| Croissance             | `directeur-marketing` (dont canaux, offre de lancement et acquisition), `strategie-email`                                    |
+| Exploitation           | `devops-ci`, `fiabilite-sre` (supervision, tâches planifiées et gestion des incidents)                                          |
+| Sécurité               | `securite-applicative` (dont données personnelles côté technique et défauts typiques du code écrit par des agents)              |
+| IA, modèles, chiffres  | `prompts-llm`, `qa-modeles`, `statisticien` (dont marché local DVF et graphiques)                                               |
+| Carte et géographie    | `carte-web` (technique et lisibilité de la carte), `donnees-geographiques` (géocodage et contrôle des positions)                |
+| Utilisateurs et design | `audit-accessibilite`, `optimisation-interface`, `gardien-marque`, `synthese-recherche`                                         |
+| Produit et mesure      | `analyste-indicateurs` (dont expériences et mesures avant / après)                                                              |
+| Paiements et prix      | `paiements-stripe`, `analyste-prix`                                                                                             |
+| Croissance             | `directeur-marketing` (dont canaux, offre de lancement et acquisition), `strategie-email`                                       |
 
 `optimisation-interface` (ajouté le 31/10/2026, écrit pour Immojudis) optimise chaque écran et
 composant à partir de captures mesurées ; il complète `ux-designer` (parcours) et

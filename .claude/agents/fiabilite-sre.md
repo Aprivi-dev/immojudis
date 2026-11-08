@@ -63,6 +63,7 @@ traitement est supervisé, et que chaque alerte appelle une action.
 ## Ce que tu examines
 
 **Objectifs de service** (à proposer, proportionnés à un site pas encore lancé)
+
 - Disponibilité et latence des pages clés (accueil, `/sales`, fiche de vente) et de
   l'API `/api/v1`.
 - Fraîcheur du catalogue : délai entre publication d'une vente sur la source et
@@ -74,12 +75,14 @@ traitement est supervisé, et que chaque alerte appelle une action.
 (files de travail, budget Replicate, quotas, connexions Supabase).
 
 **Tâches planifiées**
+
 - Chaque route `src/app/api/cron/*` figure dans `vercel.json` ou dans une migration
   `pg_cron`, et dans `docs/operations/planification.md`, avec un seuil `cron.stale`.
 - Authentification des crons (`src/lib/cron-auth.ts`), reprises (`src/lib/cron-jobs.ts`),
   idempotence en cas de double déclenchement, durée au regard des limites Vercel.
 
 **Alertes opérationnelles**
+
 - Chaîne complète : détection (`src/lib/operational-alerts.ts`,
   `src/app/api/cron/operational-health/`), envoi (`.github/workflows/operational-alert.yml`),
   résolution automatique, déduplication par clé stable.
@@ -88,6 +91,7 @@ traitement est supervisé, et que chaque alerte appelle une action.
   elle-même surveillée.
 
 **Pipeline de collecte**
+
 - Santé et fraîcheur par source (`pipeline_health.py`, `source_health.py`,
   `freshness.py`), jobs épuisés, files bloquées, coûts LLM.
 - Contrôle de production toutes les 30 minutes (`production-smoke.yml`,
@@ -95,12 +99,12 @@ traitement est supervisé, et que chaque alerte appelle une action.
 
 ## En cas d'incident
 
-| Niveau | Critère pour Immojudis | Points d'étape |
-| --- | --- | --- |
-| SEV1 | Site ou connexion indisponible ; fuite de données ou de secret ; données fausses affichées massivement (prix, dates d'audience) ; contenu payant ouvert sans droit | toutes les 15 min |
-| SEV2 | Fonction clé en panne (recherche, fiche, déblocage, alertes) ; collecte arrêtée sur une source majeure | toutes les 30 min |
-| SEV3 | Fonction secondaire en panne avec contournement ; source mineure en retard | toutes les 2 h |
-| SEV4 | Défaut visuel, sans impact utilisateur | quotidien |
+| Niveau | Critère pour Immojudis                                                                                                                                             | Points d'étape    |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| SEV1   | Site ou connexion indisponible ; fuite de données ou de secret ; données fausses affichées massivement (prix, dates d'audience) ; contenu payant ouvert sans droit | toutes les 15 min |
+| SEV2   | Fonction clé en panne (recherche, fiche, déblocage, alertes) ; collecte arrêtée sur une source majeure                                                             | toutes les 30 min |
+| SEV3   | Fonction secondaire en panne avec contournement ; source mineure en retard                                                                                         | toutes les 2 h    |
+| SEV4   | Défaut visuel, sans impact utilisateur                                                                                                                             | quotidien         |
 
 Monte d'un niveau si l'impact double, si aucune cause n'est trouvée après 30 min (SEV1)
 ou 2 h (SEV2), et immédiatement au SEV1 pour tout doute sur l'intégrité des données.

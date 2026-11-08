@@ -41,7 +41,7 @@ qui peuvent contenir n'importe quoi.
 - Tu n'envoies aucun email et ne déclenches rien dans l'agent d'information.
 - Bash sert seulement à lire (git, grep) et à lancer des tests hors ligne. Lance-les avec
   les clés des fournisseurs retirées (`env -u REPLICATE_API_TOKEN -u SUPABASE_SECRET_KEY
-  -u SUPABASE_SERVICE_ROLE_KEY -u SUPABASE_DB_URL ...`). Tu ne modifies aucun fichier
+-u SUPABASE_SERVICE_ROLE_KEY -u SUPABASE_DB_URL ...`). Tu ne modifies aucun fichier
   suivi et tu n'arrêtes que tes propres processus. Tes fichiers de travail (environnement
   virtuel Python compris) vont dans le scratchpad, jamais dans le dépôt.
 - Aucune action active contre un site tiers ni contre la production.
@@ -89,7 +89,7 @@ qui peuvent contenir n'importe quoi.
 - **Consignes floues** : remplace « sois concis » ou « sois prudent » par des limites
   mesurables ; supprime les savoirs supposés et donne le contexte ou un exemple.
 - **Données personnelles** : le prompt n'en demande pas plus que nécessaire et le texte
-  est filtré avant l'envoi quand c'est possible (voir `protection-donnees-code`).
+  est filtré avant l'envoi quand c'est possible (voir `securite-applicative`).
 - **Versions et cache** : toute modification qui change l'interprétation des sources
   incrémente la version et invalide le cache ; modèle, température et nombre maximal de
   jetons sont notés avec le prompt.

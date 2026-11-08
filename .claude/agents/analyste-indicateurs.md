@@ -107,6 +107,7 @@ sans test. Pas de test A/B sur un prix ni sur une mention légale.
   avant de l'affirmer) : les variations passent par des variables d'environnement ou du
   code. Toute affectation à une variante reste sans cookie ni identifiant de personne (et
   jamais fondée sur les cookies `_ga`), ou passe par `juridique-rgpd`.
+
 1. **Hypothèse**, fixée avant le lancement : problème observé, changement, effet attendu
    chiffré, une métrique principale définie précisément (source, période, population), des
    garde-fous (erreurs, vitesse, désinscriptions, plaintes) et le seuil de décision.
