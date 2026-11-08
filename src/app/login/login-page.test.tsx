@@ -479,7 +479,7 @@ describe("login page", () => {
     mocks.search = { mode: "investor", reason: "fiche" };
     const { unmount } = render(<LoginPage />);
     expect(screen.getByTestId("login-reason").textContent).toBe(
-      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec 3 déblocages par mois : un déblocage ouvre votre enchère plafond pour cette vente, frais compris (contenu selon la vente).",
+      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, avec 3 déblocages par mois : un déblocage ouvre votre plafond pour cette vente (enchère ou offre), frais estimés compris (contenu selon la vente).",
     );
     // Formule sobre du plafond, en attendant l'arbitrage sur « l'enchère à ne pas dépasser ».
     expect(screen.getByTestId("login-reason").textContent).not.toContain("ne pas dépasser");
@@ -613,7 +613,7 @@ describe("login page", () => {
     const { unmount } = render(<LoginPage />);
     expect(screen.getByTestId("login-reason").textContent).toContain("pendant les 7 jours d’essai");
     expect(screen.getByTestId("login-reason").textContent).toContain(
-      "votre enchère plafond pour cette vente, frais compris",
+      "votre plafond pour cette vente (enchère ou offre), frais estimés compris",
     );
     expect(screen.getByTestId("login-reason").textContent).not.toContain("3 en détail");
     unmount();

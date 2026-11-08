@@ -97,5 +97,5 @@ export function reportWording(regimeKey: unknown): ReportWording {
 export function reportIndicativeNotice(calculatedAt: string | null | undefined): string {
   const date = calculatedAt ? new Date(calculatedAt) : null;
   const when = date && !Number.isNaN(date.getTime()) ? ` le ${formatDate(calculatedAt)}` : "";
-  return `Rapport indicatif calculé automatiquement${when}. Ni conseil, ni recommandation d’enchérir, ni garantie de prix ou de rendement. Vérifiez les pièces officielles avec votre avocat.`;
+  return `Rapport indicatif calculé automatiquement${when}. Ni conseil, ni recommandation d’enchérir ou de faire une offre, ni garantie de prix ou de rendement. Vérifiez les pièces officielles avec votre conseil (avocat ou notaire).`;
 }

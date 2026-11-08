@@ -312,7 +312,7 @@ describe("shared report notice and score labels (P5, J1)", () => {
   it("opens with the dated notice, before any figure", async () => {
     const html = await noticeMarkup({ generatedAt: "2026-10-02T10:00:00.000Z" });
     const notice =
-      "Rapport indicatif calculé automatiquement le 02 octobre 2026. Ni conseil, ni recommandation d’enchérir, ni garantie de prix ou de rendement. Vérifiez les pièces officielles avec votre avocat.";
+      "Rapport indicatif calculé automatiquement le 02 octobre 2026. Ni conseil, ni recommandation d’enchérir ou de faire une offre, ni garantie de prix ou de rendement. Vérifiez les pièces officielles avec votre conseil (avocat ou notaire).";
     expect(html).toContain(notice);
     expect(html.indexOf(notice)).toBeLessThan(html.indexOf("Localisation"));
     expect(html.indexOf(notice)).toBeLessThan(html.indexOf("</header>"));
@@ -322,7 +322,7 @@ describe("shared report notice and score labels (P5, J1)", () => {
     for (const generatedAt of [null, undefined, "pas une date"]) {
       const html = await noticeMarkup({ generatedAt });
       expect(html).toContain(
-        "Rapport indicatif calculé automatiquement. Ni conseil, ni recommandation d’enchérir",
+        "Rapport indicatif calculé automatiquement. Ni conseil, ni recommandation d’enchérir ou de faire une offre, ni garantie de prix ou de rendement. Vérifiez les pièces officielles avec votre conseil (avocat ou notaire).",
       );
       expect(html).not.toContain("Date à confirmer");
     }

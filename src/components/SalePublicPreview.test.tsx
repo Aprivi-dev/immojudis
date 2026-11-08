@@ -1455,7 +1455,7 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
       "Loyer mensuel estimé (charges comprises) : entre 610 € et 1 040 €",
     );
     expect(market.textContent).toContain(
-      "Rendement non significatif à la mise à prix : le prix final sera plus élevé.",
+      "Rendement non significatif à la mise à prix : le prix final est souvent bien plus élevé.",
     );
     expect(market.textContent).not.toContain("Rendement brut à la mise à prix (charges comprises)");
   });

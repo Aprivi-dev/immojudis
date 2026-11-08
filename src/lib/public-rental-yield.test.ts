@@ -11,6 +11,7 @@ import {
 import { estimateSaleGrossYieldRange } from "@/lib/geo";
 import {
   PUBLIC_YIELD_LABEL,
+  PUBLIC_YIELD_NOT_SIGNIFICANT_NOTE,
   PUBLIC_YIELD_SIGNIFICANCE_MAX_PCT,
   publicRentalYield,
   publicRentalYieldFromRange,
@@ -75,6 +76,12 @@ describe("rendement à la mise à prix invraisemblable (P6)", () => {
 
   it("fixe le seuil à 15 %", () => {
     expect(PUBLIC_YIELD_SIGNIFICANCE_MAX_PCT).toBe(15);
+  });
+
+  it("dit que le prix final est souvent bien plus élevé, sans le promettre", () => {
+    expect(PUBLIC_YIELD_NOT_SIGNIFICANT_NOTE).toBe(
+      "Rendement non significatif à la mise à prix : le prix final est souvent bien plus élevé.",
+    );
   });
 
   it("garde le rendement sous le seuil et au seuil exactement", () => {
