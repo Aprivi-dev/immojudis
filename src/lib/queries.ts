@@ -7,6 +7,8 @@ import {
   ALERT_EVALUATION_COLUMNS,
   DETAIL_VIEW,
   SALE_LIST_COLUMNS,
+  SEARCH_DETAIL_COLUMNS,
+  SEARCH_SCAN_COLUMNS,
   UNLOCKED_VIEW,
 } from "./sale-views";
 import { assertCloudConfigured } from "./query-configuration";
@@ -81,9 +83,6 @@ export const SALE_CARD_COLUMNS = SALE_CARD_COLUMN_NAMES.join(",");
 const SALE_CARD_COLUMNS_WITHOUT_TIER = SALE_CARD_COLUMN_NAMES.filter(
   (column) => column !== "completeness_tier",
 ).join(",");
-
-/** Colonnes d'une ligne de recherche complète, avec le palier de complétude de la carte. */
-const SALE_LIST_COLUMNS_WITH_TIER = `${SALE_LIST_COLUMNS},completeness_tier`;
 
 const SALE_PREVIEW_COLUMNS = [
   "id",
@@ -372,8 +371,6 @@ export async function getSales(
     preview?: boolean;
     discovery?: boolean;
     client?: SupabaseReader;
-    /** Also read `completeness_tier`, for result cards that show the « bien renseignée » badge. */
-    completenessTier?: boolean;
   } = {},
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
@@ -397,15 +394,10 @@ export async function getSales(
 
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
   return withCompletenessTierFallback(async (withTier) => {
-    let q = applySearchOrder(
-      db
-        .from(catalogView)
-        .select(
-          options.completenessTier && withTier ? SALE_LIST_COLUMNS_WITH_TIER : SALE_LIST_COLUMNS,
-        ),
-      sort,
-      withTier,
-    ).range(offset, offset + limit - 1);
+    let q = applySearchOrder(db.from(catalogView).select(SALE_LIST_COLUMNS), sort, withTier).range(
+      offset,
+      offset + limit - 1,
+    );
 
     q = applyAuthenticatedSaleFilters(q, filters);
 
@@ -448,6 +440,62 @@ export async function getSaleAlertDetails(
   return fetchSaleRowsByIds(options.client, SEARCH_VIEW, ALERT_DETAIL_COLUMNS, {}, ids);
 }
 
+/**
+ * Une page du balayage complet des filtres avancés de `/sales` : mêmes filtres et même tri que la
+ * recherche, mais seulement les colonnes légères que ces filtres lisent (`SEARCH_SCAN_COLUMNS`). Les
+ * colonnes lourdes se relisent ensuite par identifiants, pour peu de ventes (`getSaleRowsByIds`).
+ */
+export async function getSalesForCompleteSearch(
+  filters: SaleFilters,
+  limit: number,
+  sort: SortKey,
+  offset: number,
+  options: { discovery?: boolean; client?: SupabaseReader } = {},
+): Promise<AuctionSale[]> {
+  if (!options.client && !assertCloudConfigured()) return [];
+  const db = options.client ?? (await getSupabase());
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
+  return withCompletenessTierFallback(async (withTier) => {
+    let q = applySearchOrder(
+      db.from(catalogView).select(SEARCH_SCAN_COLUMNS),
+      sort,
+      withTier,
+    ).range(offset, offset + limit - 1);
+    q = applyAuthenticatedSaleFilters(q, filters);
+    const { data, error } = await q;
+    if (error) throw error;
+    return saleRows(data);
+  });
+}
+
+/**
+ * Colonnes complémentaires de ventes déjà retenues, lues par lots de 100 identifiants dans la vue de
+ * recherche du compte : `card` pour la carte de résultat (photos, pastilles), `detail` pour les filtres
+ * qui lisent les blocs des sources, les pièces ou les descriptions. L'ordre rendu n'est pas garanti.
+ */
+export async function getSaleRowsByIds(
+  ids: string[],
+  columns: "card" | "detail",
+  options: { discovery?: boolean; client?: SupabaseReader } = {},
+): Promise<AuctionSale[]> {
+  if (!ids.length) return [];
+  if (!options.client && !assertCloudConfigured()) return [];
+  const db = options.client ?? (await getSupabase());
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
+  if (columns === "detail") {
+    return fetchSaleRowsByIds(db, catalogView, SEARCH_DETAIL_COLUMNS, {}, ids);
+  }
+  return withCompletenessTierFallback((withTier) =>
+    fetchSaleRowsByIds(
+      db,
+      catalogView,
+      withTier ? SALE_CARD_COLUMNS : SALE_CARD_COLUMNS_WITHOUT_TIER,
+      {},
+      ids,
+    ),
+  );
+}
+
 export async function getSalesForSearch(
   filters: SaleFilters = {},
   limit = 100,
@@ -479,7 +527,15 @@ export async function getSalesForSearch(
         withTier,
       );
       if (ids.length === 0) return [];
-      const rows = await fetchSaleRowsByIds(db, catalogView, cardColumns, filters, ids);
+      // Les identifiants lus sont déjà dans la liste `filters.ids` : on ne la renvoie pas une seconde fois
+      // dans l'URL (jusqu'à 100 identifiants pour « Pépites seulement »).
+      const rows = await fetchSaleRowsByIds(
+        db,
+        catalogView,
+        cardColumns,
+        { ...filters, ids: undefined },
+        ids,
+      );
       return orderSalesByIds(rows, ids);
     }
 

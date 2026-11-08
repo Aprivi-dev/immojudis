@@ -122,3 +122,26 @@ export const ALERT_EVALUATION_COLUMNS = SALE_LIST_COLUMN_NAMES.filter(
   (column) => !ALERT_SKIPPED_COLUMN_NAMES.has(column),
 ).join(",");
 export const ALERT_DETAIL_COLUMNS = ["id", ...ALERT_DETAIL_COLUMN_NAMES].join(",");
+
+/**
+ * Balayage complet des filtres avancés de `/sales` (prix au m², rendement, DPE, visites…) : les
+ * colonnes lues pour TOUTES les ventes de la recherche. Ce sont celles des alertes : une page de 100
+ * ventes avec toutes les colonnes de la liste prenait environ 5,6 s dans la base (mesure du 08/11/2026,
+ * `pg_stat_statements`), une page de colonnes légères moins de 0,2 s. Les photos et la pastille de la
+ * carte de résultat ne sont relues que pour la page affichée (`SALE_CARD_COLUMNS` dans `queries.ts`).
+ */
+export const SEARCH_SCAN_COLUMNS = ALERT_EVALUATION_COLUMNS;
+
+/**
+ * Colonnes lourdes que seuls certains filtres avancés lisent (DPE et visites : blocs des sources et
+ * pièces ; recherche de texte : descriptions). Relues par lots d'identifiants, seulement pour les
+ * ventes que les autres critères retiennent déjà.
+ */
+export const SEARCH_DETAIL_COLUMNS = [
+  "id",
+  ...ALERT_DETAIL_COLUMN_NAMES,
+  "description",
+  "source_description",
+  "llm_display_description",
+  "about_description",
+].join(",");

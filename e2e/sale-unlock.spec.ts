@@ -87,6 +87,18 @@ const status = (used: number, overrides: Partial<Status> = {}): Status => ({
   ...overrides,
 });
 
+/**
+ * Titre de la carte une fois la vente débloquée. L'estimation de marché répond 503 dans ces tests : tant que
+ * ses nouvelles tentatives automatiques durent, le plafond n'est pas déclaré incomplet (« Votre enchère
+ * plafond est débloquée ») ; ensuite il l'est (« Cette vente est débloquée », point P4). Le basculement
+ * dépend de la vitesse de la machine, les deux titres disent que le déblocage a réussi.
+ */
+function unlockedHeading(page: Page) {
+  return page.getByRole("heading", {
+    name: /^(Votre enchère plafond|Cette vente) est débloquée$/,
+  });
+}
+
 type Reply = { status: number; json: unknown };
 
 async function setup(
@@ -272,9 +284,7 @@ test("un double clic sur « Confirmer le déblocage » ne consomme qu'un débloc
   await expect(confirmButton(page)).toBeFocused();
   await confirmButton(page).dblclick();
 
-  await expect(
-    page.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
-  ).toBeVisible();
+  await expect(unlockedHeading(page)).toBeVisible();
   await expect(page.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeVisible();
   expect(counters.post).toBe(1);
 });
@@ -295,9 +305,7 @@ test("après le déblocage, la fiche reste affichée avec un bandeau pendant la 
   await expect(banner).toBeVisible();
   // Pas d'écran blanc ni de squelette plein écran : la fiche est toujours là.
   await expect(page.getByRole("status", { name: "Chargement de la fiche" })).toHaveCount(0);
-  await expect(
-    page.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
-  ).toBeVisible();
+  await expect(unlockedHeading(page)).toBeVisible();
   await expect(banner).toBeHidden();
   await expect(page.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeVisible();
 });
@@ -322,9 +330,7 @@ test("si la relecture échoue après le déblocage : bandeau « conservé », «
 
   await alert.getByRole("button", { name: "Réessayer" }).click();
   await expect(alert).toBeHidden();
-  await expect(
-    page.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
-  ).toBeVisible();
+  await expect(unlockedHeading(page)).toBeVisible();
   expect(counters.post).toBe(1);
 });
 
@@ -449,9 +455,7 @@ for (const [name, reply, message] of [
 
     await expect(page.getByRole("alert").filter({ hasText: message })).toBeVisible();
     // Rien n'est consommé ni affiché comme débloqué : le compte peut réessayer.
-    await expect(
-      page.getByRole("heading", { name: "Votre enchère plafond est débloquée" }),
-    ).toHaveCount(0);
+    await expect(unlockedHeading(page)).toHaveCount(0);
     await expect(unlockButton(page)).toBeVisible();
     expect(counters.post).toBe(1);
   });

@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints, rpc } = vi.hoisted(() => ({
-  getSales: vi.fn(),
+const {
+  getSalesForCompleteSearch: getSales,
+  getSaleRowsByIds,
+  getSalesCount,
+  getSalesForSearch,
+  getSaleMapPoints,
+  rpc,
+} = vi.hoisted(() => ({
+  getSalesForCompleteSearch: vi.fn(),
+  getSaleRowsByIds: vi.fn(),
   getSalesCount: vi.fn(),
   getSalesForSearch: vi.fn(),
   getSaleMapPoints: vi.fn(),
@@ -13,7 +21,8 @@ vi.mock("@/integrations/supabase/client", () => ({
 }));
 
 vi.mock("@/lib/queries", () => ({
-  getSales,
+  getSalesForCompleteSearch: getSales,
+  getSaleRowsByIds,
   getSalesForSearch,
   getSalesCount,
   getSaleMapPoints,
@@ -32,6 +41,11 @@ import {
   fetchSearchPhotoMirrors,
   fetchSearchResults,
 } from "./search-service";
+
+// Colonnes de la carte de résultat relues pour la page d'un balayage : aucune par défaut.
+beforeEach(() => {
+  getSaleRowsByIds.mockReset().mockResolvedValue([]);
+});
 
 describe("public preview search service", () => {
   const PHOTO = "https://www.licitor.com/photos/maison.jpg";
@@ -563,7 +577,6 @@ describe("complete scan for advanced filters", () => {
     expect(getSalesCount).toHaveBeenCalledWith(expect.anything(), { discovery: false });
     expect(getSales).toHaveBeenCalledWith(expect.anything(), 100, expect.anything(), 300, {
       discovery: false,
-      completenessTier: true,
     });
   });
 
@@ -587,5 +600,90 @@ describe("complete scan for advanced filters", () => {
     await expect(fetchSearchResults({ search, preview: false })).rejects.toThrow(
       "lecture impossible",
     );
+  });
+});
+
+describe("balayage : colonnes légères, colonnes lourdes relues pour peu de ventes", () => {
+  const row = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    property_type: "apartment",
+    starting_price_eur: 50_000,
+    app_surface_m2: 100,
+    app_surface_kind: "habitable",
+    ...extra,
+  });
+
+  beforeEach(() => {
+    getSales.mockReset();
+    getSalesCount.mockReset();
+  });
+
+  it("relit les colonnes de la carte de résultat pour la seule page affichée", async () => {
+    const rows = Array.from({ length: 60 }, (_, index) => row(`sale-${index}`));
+    getSales.mockImplementation(async (_f, limit: number, _s, offset: number) =>
+      rows.slice(offset, offset + limit),
+    );
+    getSalesCount.mockResolvedValue(60);
+    getSaleRowsByIds.mockImplementation(async (ids: string[]) =>
+      ids.map((id) => ({ id, media: [{ type: "image", url: `https://x.test/${id}.jpg` }] })),
+    );
+
+    const page = await fetchSearchResults({
+      search: { maxPricePerM2: 1000, page: 2, limit: 24 },
+      preview: false,
+    });
+
+    expect(page.map((sale) => sale.id)).toEqual(rows.slice(24, 48).map((sale) => sale.id));
+    expect(page[0]).toMatchObject({ starting_price_eur: 50_000, media: [{ type: "image" }] });
+    expect(getSaleRowsByIds).toHaveBeenCalledTimes(1);
+    expect(getSaleRowsByIds).toHaveBeenCalledWith(
+      rows.slice(24, 48).map((sale) => sale.id),
+      "card",
+      { discovery: false },
+    );
+  });
+
+  it("DPE : les blocs des sources ne sont relus que pour les ventes retenues par les autres critères", async () => {
+    getSales.mockResolvedValue([
+      row("cher", { starting_price_eur: 900_000 }),
+      row("dpe-a"),
+      row("dpe-g"),
+    ]);
+    getSalesCount.mockResolvedValue(3);
+    getSaleRowsByIds.mockImplementation(async (ids: string[], columns: string) =>
+      columns === "detail"
+        ? ids.map((id) => ({ id, source_blocks: { dpe: id === "dpe-a" ? "A" : "G" } }))
+        : [],
+    );
+
+    const found = await fetchSearchResults({
+      search: { maxPricePerM2: 1000, dpeClasses: ["A"] },
+      preview: false,
+    });
+
+    expect(found.map((sale) => sale.id)).toEqual(["dpe-a"]);
+    expect(getSaleRowsByIds).toHaveBeenCalledWith(["dpe-a", "dpe-g"], "detail", {
+      discovery: false,
+    });
+  });
+
+  it.each([{ minYield: 1 }, { saleType: "notary" as const, maxPricePerM2: 1000 }])(
+    "rendement ou type de vente : relit les blocs des sources (régime de frais, procédure) %o",
+    async (search) => {
+      getSales.mockResolvedValue([row("a")]);
+      getSalesCount.mockResolvedValue(1);
+      await fetchSearchCount({ search, preview: false });
+      expect(getSaleRowsByIds).toHaveBeenCalledWith(["a"], "detail", { discovery: false });
+    },
+  );
+
+  it("sans critère de DPE, de visite ni de texte, aucune colonne lourde n'est relue", async () => {
+    getSales.mockResolvedValue([row("a"), row("b", { starting_price_eur: 900_000 })]);
+    getSalesCount.mockResolvedValue(2);
+
+    const count = await fetchSearchCount({ search: { maxPricePerM2: 1000 }, preview: false });
+
+    expect(count).toBe(1);
+    expect(getSaleRowsByIds).not.toHaveBeenCalled();
   });
 });

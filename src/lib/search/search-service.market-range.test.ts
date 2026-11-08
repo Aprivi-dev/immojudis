@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getSales: vi.fn(),
+  getSaleRowsByIds: vi.fn(),
   getSalesCount: vi.fn(),
   underRange: vi.fn(),
 }));
 
 vi.mock("@/lib/queries", () => ({
-  getSales: mocks.getSales,
+  getSalesForCompleteSearch: mocks.getSales,
+  getSaleRowsByIds: mocks.getSaleRowsByIds,
   getSalesCount: mocks.getSalesCount,
   getSalesForSearch: vi.fn(),
   getSaleMapPoints: vi.fn(),
@@ -31,6 +33,7 @@ const complete = (id: string, extra: Record<string, unknown> = {}) => ({
 describe("filtres « sous la fourchette » et « sans point à vérifier » : balayage complet", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.getSaleRowsByIds.mockResolvedValue([]);
     mocks.getSalesCount.mockResolvedValue(4);
     mocks.getSales.mockResolvedValue([
       complete("under"),
