@@ -10,9 +10,11 @@ Les lignes de tests/fixtures/licitor_lignes_stockees_lots_numerotes.json sont le
 
 import copy
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+import time_machine
 
 from src.admission import (
     LICITOR_MULTI_LOT_QUARANTINE,
@@ -31,6 +33,11 @@ from src.storage.sale_row_builders import _property_rows_for_sales
 FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "licitor_lignes_stockees_lots_numerotes.json").read_text(encoding="utf-8")
 )
+
+
+# Le recalcul reproduit date du 03/11/2026 : le lot incertain de 110285 se vendait le 09/11/2026 à 14h. Sans
+# horloge figée, ces tests virent à « expired » une fois la vente passée.
+RECOMPUTE_DAY = time_machine.travel(datetime(2026, 11, 3, 13, 10, tzinfo=UTC), tick=False)
 
 
 def _row(row_id: str) -> dict:
@@ -78,6 +85,7 @@ def test_the_dependencies_lot_no_longer_carries_the_house_surface() -> None:
     assert sale.title != "Maison 141 m²"
 
 
+@RECOMPUTE_DAY
 def test_an_uncertain_lot_without_price_or_surface_is_written_hidden_instead_of_skipped() -> None:
     sale = _recomputed_sale_from_storage_row(_row("c2976bcb-a681-45b7-a63e-1d60c5174b77"))
 
@@ -91,6 +99,7 @@ def test_an_uncertain_lot_without_price_or_surface_is_written_hidden_instead_of_
     assert rows[0]["raw_payload"]["publication_quarantine"] == LICITOR_MULTI_LOT_QUARANTINE
 
 
+@RECOMPUTE_DAY
 def test_upsert_keeps_the_hidden_rewrite_and_still_drops_a_new_sale_without_price(monkeypatch) -> None:
     uncertain = _recomputed_sale_from_storage_row(_row("c2976bcb-a681-45b7-a63e-1d60c5174b77"))
     new_card = AuctionSale(source_name="licitor", source_url="https://www.licitor.com/annonce/1/2/3/x/y/z/w/1.html",
