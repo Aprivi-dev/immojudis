@@ -15,7 +15,13 @@ client Replicate du pipeline, avec ses réservations et son budget (horaire et q
 Plafond dur : ``--max-calls`` prédictions au total (une relance « JSON invalide » compte), et ``--budget-minutes``
 de durée. Au-delà, l'essai s'arrête proprement et rend le rapport des ventes déjà traitées.
 
-Rapport Markdown sur la sortie standard et dans ``$GITHUB_STEP_SUMMARY`` s'il existe.
+Quand le budget HORAIRE partagé avec le pipeline est épuisé, l'essai attend (par pas de ``HOURLY_WAIT_SECONDS``)
+puis relance le même morceau, jusqu'à ``--budget-minutes`` ; un refus du budget quotidien l'arrête.
+
+Rapport Markdown sur la sortie standard et dans ``$GITHUB_STEP_SUMMARY`` s'il existe. Avec ``--details``, le
+contenu des faits stockés et de l'essai de chaque vente comparée suit le rapport sur la sortie standard seulement
+(une ligne ``FACT_DETAIL {json}`` par vente, dans un groupe replié du journal), pour une comparaison point par
+point. Ces faits sont ceux que le pipeline stocke (noms de personnes déjà filtrés).
 
     python -m scripts.fact_chunk_trial --sales 10 --chunk-chars 25000 --max-tokens 8192 --max-calls 120
 """
@@ -23,6 +29,7 @@ Rapport Markdown sur la sortie standard et dans ``$GITHUB_STEP_SUMMARY`` s'il ex
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -71,6 +78,8 @@ TRIAL_STAGE = "facts_trial"
 TRIAL_REASON = "fact_chunk_trial"
 # A response is counted as cut by the output cap when it used (almost) all of it.
 TRUNCATION_RATIO = 0.98
+# Wait between two attempts when the shared hourly request budget is exhausted.
+HOURLY_WAIT_SECONDS = 300
 
 SCALAR_FIELDS = ("property_type", "surface_m2", "rooms_count", "bedrooms_count", "occupancy_status")
 LIST_FIELDS = ("legal_risks", "physical_risks", "servitudes", "investment_facts", "contradictions")
@@ -228,6 +237,7 @@ class TrialOptions:
     max_tokens: int = DEFAULT_MAX_TOKENS
     max_calls: int = DEFAULT_MAX_CALLS
     budget_minutes: float = DEFAULT_BUDGET_MINUTES
+    details: bool = False
 
 
 @dataclass
@@ -245,6 +255,9 @@ class SaleResult:
     skipped: str | None = None
     stored: dict[str, Any] = field(default_factory=dict)
     trial: dict[str, Any] | None = None
+    stored_items: dict[str, Any] = field(default_factory=dict)
+    trial_items: dict[str, Any] | None = None
+    budget_waits: int = 0
 
 
 @dataclass
@@ -292,6 +305,24 @@ def fact_summary(payload: Mapping[str, Any] | None) -> dict[str, Any]:
     return summary
 
 
+def fact_items(payload: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Content of a fact extraction for a point-by-point comparison: scalar fields, lists and asset lists."""
+    payload = payload if isinstance(payload, Mapping) else {}
+    items: dict[str, Any] = {name: payload.get(name) for name in SCALAR_FIELDS}
+    for name in LIST_FIELDS:
+        value = payload.get(name)
+        items[name] = value if isinstance(value, list) else []
+    assets = payload.get("assets")
+    assets = [asset for asset in assets if isinstance(asset, Mapping)] if isinstance(assets, list) else []
+    for name in ASSET_FIELDS:
+        items[f"assets.{name}"] = [item for asset in assets for item in (asset.get(name) or [])]
+    return items
+
+
+def _hourly_budget_refusal(exc: Exception) -> bool:
+    return isinstance(exc, PipelineBudgetExhausted) and "hourly" in str(exc).casefold()
+
+
 def sale_from_row(values: Mapping[str, Any]) -> AuctionSale:
     data = {name: values.get(name) for name in SALE_COLUMNS if values.get(name) is not None}
     # psycopg returns the uuid column as uuid.UUID; the model keeps ids as text.
@@ -325,6 +356,7 @@ def trial_sale(
     settings: Mapping[str, Any],
     deadline: float,
     clock: Callable[[], float],
+    sleep: Callable[[float], None] = time.sleep,
 ) -> tuple[SaleResult, str | None]:
     """Extract one sale again with the trial chunk size. Returns the result and a stop reason, if any."""
     values = dict(zip((*SALE_COLUMNS, "pdf_result"), row, strict=True))
@@ -335,6 +367,7 @@ def trial_sale(
         source_url=str(values.get("source_url") or ""),
         stored_chunks=int(coverage.get("total_chunks") or 0) if isinstance(coverage, dict) else 0,
         stored=fact_summary(raw_payload.get("llm_fact_extraction")),
+        stored_items=fact_items(raw_payload.get("llm_fact_extraction")),
     )
     try:
         sale = sale_from_row(values)
@@ -381,7 +414,10 @@ def trial_sale(
     usage_start = len(client.usage)
     extractions: list[LLMExtraction] = []
     stop_reason: str | None = None
-    for index, context in enumerate(chunks, start=1):
+    index = 0
+    while index < len(chunks):
+        context = chunks[index]
+        index += 1
         if clock() >= deadline:
             stop_reason = f"durée maximale de {options.budget_minutes:g} min atteinte"
             break
@@ -391,13 +427,22 @@ def trial_sale(
             ):
                 raw = client.generate_json(SYSTEM_PROMPT, build_user_prompt(_provider_safe_text(context)))
             extractions.append(_validated_llm_extraction(raw))
+        except PipelineBudgetExhausted as exc:
+            remaining = deadline - clock()
+            if not _hourly_budget_refusal(exc) or remaining <= HOURLY_WAIT_SECONDS:
+                stop_reason = f"budget refusé : {str(exc)[:200]}"
+                break
+            # The hourly window shared with the pipeline frees up: try the same chunk again later.
+            result.budget_waits += 1
+            sleep(HOURLY_WAIT_SECONDS)
+            index -= 1
         except CallCapReached as exc:
             stop_reason = str(exc)
             break
         except (LLMRequestDeterministicCooldown, LLMRequestTransportAmbiguous) as exc:
             result.failures["fournisseur"] += 1
             result.errors.append(f"morceau {index}/{len(chunks)} : {str(exc)[:200]}")
-        except (PipelineBudgetExhausted, LLMTaskDeadlineExceeded) as exc:
+        except LLMTaskDeadlineExceeded as exc:
             stop_reason = f"budget refusé : {str(exc)[:200]}"
             break
         except Exception as exc:  # noqa: BLE001 - a failed chunk is a measured outcome of the trial
@@ -406,7 +451,9 @@ def trial_sale(
     result.usage = list(client.usage[usage_start:])
     result.complete = len(extractions) == len(chunks)
     if result.complete:
-        result.trial = fact_summary(_merge_llm_extractions(extractions).model_dump(mode="json"))
+        merged = _merge_llm_extractions(extractions).model_dump(mode="json")
+        result.trial = fact_summary(merged)
+        result.trial_items = fact_items(merged)
     return result, stop_reason
 
 
@@ -417,6 +464,7 @@ def run_trial(
     options: TrialOptions,
     settings: Mapping[str, Any] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> TrialReport:
     """Select the sales, extract them again and compare. Reads only; never writes to the database."""
     settings = load_settings() if settings is None else settings
@@ -448,7 +496,7 @@ def run_trial(
         if row is None:
             continue
         result, stop_reason = trial_sale(
-            row, client, options=options, settings=settings, deadline=deadline, clock=clock
+            row, client, options=options, settings=settings, deadline=deadline, clock=clock, sleep=sleep
         )
         report.stop_reason = stop_reason
         if result.skipped == "non traitée":
@@ -493,6 +541,8 @@ def render_report(report: TrialReport) -> str:
         f"{report.candidates} ; retenues : {len(report.selected)} ; traitées : {len(results)} ; "
         f"comparées (extraction complète) : {len(compared)}.",
         f"- Arrêt : {report.stop_reason or 'aucun (essai complet)'}.",
+        f"- Attentes du budget horaire (pas de {HOURLY_WAIT_SECONDS // 60} min) : "
+        f"{sum(result.budget_waits for result in results)}.",
     ]
     if report.not_processed:
         lines.append(f"- Non traitées : {', '.join(f'`{sale_id}`' for sale_id in report.not_processed)}.")
@@ -577,6 +627,23 @@ def render_report(report: TrialReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+def render_details(report: TrialReport) -> str:
+    """One ``FACT_DETAIL {json}`` line per compared sale (stored and trial facts), in a folded log group."""
+    lines = [
+        json.dumps(
+            {"sale_id": result.sale_id, "stored": result.stored_items, "trial": result.trial_items},
+            ensure_ascii=False,
+            default=str,
+            sort_keys=True,
+        )
+        for result in report.results
+        if result.trial_items is not None
+    ]
+    if not lines:
+        return ""
+    return "::group::Détail des faits\n" + "".join(f"FACT_DETAIL {line}\n" for line in lines) + "::endgroup::\n"
+
+
 def _fmt_cost(values: Sequence[Decimal | None]) -> str:
     known = [value for value in values if value is not None]
     if not known:
@@ -601,7 +668,8 @@ def parse_args(argv: Sequence[str] | None = None) -> TrialOptions:
     parser.add_argument("--chunk-chars", type=_bounded_int(3000, 60_000), default=DEFAULT_CHUNK_CHARS)
     parser.add_argument("--max-tokens", type=_bounded_int(512, 16_384), default=DEFAULT_MAX_TOKENS)
     parser.add_argument("--max-calls", type=_bounded_int(1, 500), default=DEFAULT_MAX_CALLS)
-    parser.add_argument("--budget-minutes", type=_bounded_int(1, 180), default=DEFAULT_BUDGET_MINUTES)
+    parser.add_argument("--budget-minutes", type=_bounded_int(1, 170), default=DEFAULT_BUDGET_MINUTES)
+    parser.add_argument("--details", action="store_true", help="print stored and trial facts of compared sales")
     args = parser.parse_args(argv)
     return TrialOptions(
         sales=args.sales,
@@ -609,6 +677,7 @@ def parse_args(argv: Sequence[str] | None = None) -> TrialOptions:
         max_tokens=args.max_tokens,
         max_calls=args.max_calls,
         budget_minutes=args.budget_minutes,
+        details=args.details,
     )
 
 
@@ -641,6 +710,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         connection.close()
     publish(render_report(report))
+    if options.details:
+        # Standard output only: the step summary keeps the counts.
+        sys.stdout.write(render_details(report))
     return 0
 
 
