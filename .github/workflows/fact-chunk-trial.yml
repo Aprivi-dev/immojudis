@@ -5,7 +5,9 @@ name: Fact chunk trial
 # grands et compare au résultat stocké (services/data-pipeline/scripts/fact_chunk_trial.py). Lecture seule sur la
 # base : aucune vente ni aucun cache n'est écrit. Les appels au modèle passent par le client Replicate du pipeline :
 # ils sont réservés et notés dans llm_usage_events (étape « facts_trial ») et partagent les budgets horaire
-# (REPLICATE_MAX_CALLS_PER_HOUR) et quotidien du pipeline. Rapport dans le résumé de l'exécution.
+# (REPLICATE_MAX_CALLS_PER_HOUR) et quotidien du pipeline ; quand le budget horaire est épuisé, l'essai attend
+# qu'il se libère (jusqu'à budget_minutes). Rapport dans le résumé de l'exécution ; détail des faits stockés et
+# de l'essai, vente par vente, dans le journal de l'étape (groupe « Détail des faits »).
 on:
   workflow_dispatch:
     inputs:
@@ -29,6 +31,11 @@ on:
         required: false
         default: "120"
         type: string
+      budget_minutes:
+        description: "Minutes after which no new call is started, waits for the hourly budget included (1-170)"
+        required: false
+        default: "60"
+        type: string
 
 permissions:
   contents: read
@@ -44,8 +51,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     name: Compare fact chunk sizes
     runs-on: ubuntu-24.04
-    # The script stops starting calls after 60 minutes (--budget-minutes) and then writes its report.
-    timeout-minutes: 75
+    # The script stops starting calls after budget_minutes (at most 170) and then writes its report.
+    timeout-minutes: 185
     defaults:
       run:
         working-directory: services/data-pipeline
@@ -92,10 +99,12 @@ jobs:
           TRIAL_CHUNK_CHARS: ${{ inputs.chunk_chars }}
           TRIAL_MAX_TOKENS: ${{ inputs.max_tokens }}
           TRIAL_MAX_CALLS: ${{ inputs.max_calls }}
+          TRIAL_BUDGET_MINUTES: ${{ inputs.budget_minutes }}
         run: >
           python -m scripts.fact_chunk_trial
           --sales "$TRIAL_SALES"
           --chunk-chars "$TRIAL_CHUNK_CHARS"
           --max-tokens "$TRIAL_MAX_TOKENS"
           --max-calls "$TRIAL_MAX_CALLS"
-          --budget-minutes 60
+          --budget-minutes "$TRIAL_BUDGET_MINUTES"
+          --details
