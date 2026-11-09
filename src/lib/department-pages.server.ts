@@ -25,7 +25,7 @@ import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
  * ces pages sont donc ceux de la liste publique, à l'identifiant près.
  */
 export const DEPARTMENT_CATALOGUE_REVALIDATE_SECONDS = 3_600;
-const DEPARTMENT_CATALOGUE_CACHE_TAG = "department-pages";
+export const DEPARTMENT_CATALOGUE_CACHE_TAG = "department-pages";
 
 /** La fonction publique refuse plus de 100 lignes par page et un décalage supérieur à 10 000. */
 const PAGE_SIZE = 100;
