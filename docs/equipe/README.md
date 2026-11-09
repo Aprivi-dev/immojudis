@@ -120,7 +120,9 @@ Aucun agent n'écrit dans la base de production. Trois protections dans `.claude
   erreur du script ou entrée illisible bloque ;
 - `.claude/hooks/bloquer-ecriture-supabase.mjs` : bloque pour tous les agents les outils MCP
   Supabase qui écrivent (`apply_migration`, `deploy_edge_function`, branches, projets…) : passer
-  par une migration et la CI ;
+  par une migration et la CI. Seule exception (09/11/2026) : la base de test des déploiements
+  Preview (branche « outcome-statistics-staging »), où sont permis `rebase_branch` et
+  `apply_migration`, jamais la production ;
 - `mcp__github__actions_run_trigger` et `mcp__github__merge_pull_request` ne sont plus
   pré-autorisés : ils demandent une confirmation.
 
