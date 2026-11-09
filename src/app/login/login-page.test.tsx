@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   search: {} as { mode?: "investor" | "professional"; redirect?: string; reason?: string },
   launch: { active: false, pending: false },
+  checkoutOpen: false as boolean | null,
   replace: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
@@ -15,6 +16,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
 vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => mocks.launch }));
+vi.mock("@/hooks/use-analysis-checkout-open", () => ({
+  useAnalysisCheckoutOpen: () => mocks.checkoutOpen,
+}));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: null, profile: null, loading: false }),
 }));
@@ -46,6 +50,7 @@ function fillName(first = "Claire", last = "Martin") {
 beforeEach(() => {
   mocks.search = {};
   mocks.launch = { active: false, pending: false };
+  mocks.checkoutOpen = false;
   vi.clearAllMocks();
 });
 afterEach(cleanup);
@@ -639,6 +644,29 @@ describe("login page", () => {
       "Créez votre compte gratuit. L’offre Analyse n’est pas encore ouverte à la souscription : vous pourrez demander à être prévenu de son ouverture.",
     );
     expect(screen.getByTestId("login-reason").textContent).not.toContain("quand vous le souhaitez");
+  });
+
+  it("motif « offre » : invite à souscrire quand la garde d'ouverture du paiement est ouverte", () => {
+    mocks.search = { mode: "investor", reason: "offre" };
+    mocks.checkoutOpen = true;
+    const open = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit, puis souscrivez à l’offre Analyse depuis la page Offres (59\u00a0€\u00a0TTC / mois, résiliable à tout moment).",
+    );
+    expect(open.container.textContent).toContain(
+      "(59\u00a0€\u00a0TTC / mois, résiliable à tout moment).",
+    );
+    expect(open.container.textContent).not.toContain("pas encore");
+    open.unmount();
+
+    // Garde encore inconnue : ni « pas encore ouverte », ni invitation à acheter.
+    mocks.checkoutOpen = null;
+    const unknown = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit, sans carte bancaire, pour découvrir l’offre Analyse.",
+    );
+    expect(unknown.container.textContent).not.toContain("pas encore");
+    expect(unknown.container.textContent).not.toContain("souscrivez");
   });
 
   it("colonne d'accueil : le tarif prévu remplace « sur abonnement résiliable »", () => {

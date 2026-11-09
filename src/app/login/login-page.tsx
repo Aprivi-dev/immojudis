@@ -19,6 +19,7 @@ import { Badge, buttonClasses, Card, Notice, PageTitle } from "@/components/ui/p
 import { toast } from "@/lib/toast";
 import { LAWYER_CONTACT_HREF, SPONSORED_LABEL } from "@/lib/lawyer-placement-label";
 import { useAuth } from "@/hooks/use-auth";
+import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import {
@@ -92,7 +93,15 @@ const RESEND_COOLDOWN_SECONDS = 30;
  * (export compris) ; sans lui, l'export reste réservé à l'offre Analyse et le texte ne promet pas plus
  * que le produit. Le texte de connexion ne promet rien : l'essai d'un compte existant peut être fini.
  */
-function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string; login: string } {
+/**
+ * `checkoutOpen` : la garde d'ouverture du paiement (`useAnalysisCheckoutOpen`). `null` tant qu'elle
+ * n'est pas connue : aucun texte n'affirme alors que l'offre est fermée, ni qu'elle s'achète.
+ */
+function reasonCopy(
+  reason: LoginReason,
+  launchOffer: boolean,
+  checkoutOpen: boolean | null,
+): { signup: string; login: string } {
   switch (reason) {
     case "alerte":
       return {
@@ -123,7 +132,11 @@ function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string
           }
         : {
             signup:
-              "Créez votre compte gratuit. L’offre Analyse n’est pas encore ouverte à la souscription : vous pourrez demander à être prévenu de son ouverture.",
+              checkoutOpen === true
+                ? `Créez votre compte gratuit, puis souscrivez à l’offre Analyse depuis la page Offres (${nonBreakingUnits(resolveAnalysisOfferLabel())}, résiliable à tout moment).`
+                : checkoutOpen === false
+                  ? "Créez votre compte gratuit. L’offre Analyse n’est pas encore ouverte à la souscription : vous pourrez demander à être prévenu de son ouverture."
+                  : "Créez votre compte gratuit, sans carte bancaire, pour découvrir l’offre Analyse.",
             login: "Connectez-vous pour découvrir l'offre Analyse.",
           };
     case "ouverture":
@@ -205,6 +218,7 @@ const modeCopy: Record<
 export function LoginPage() {
   const { user, profile, loading } = useAuth();
   const launchOffer = useLaunchOffer().active;
+  const checkoutOpen = useAnalysisCheckoutOpen();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -516,8 +530,12 @@ export function LoginPage() {
                   <>
                     Découverte ouvre gratuitement le catalogue, avec {MONTHLY_UNLOCKS_TEXT} (
                     {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes, avec les
-                    comparables, les alertes quotidiennes et les exports (tarif prévu :{" "}
-                    {nonBreakingUnits(resolveAnalysisOfferLabel())}, pas encore souscriptible).
+                    comparables, les alertes quotidiennes et les exports
+                    {checkoutOpen === true
+                      ? ` (${nonBreakingUnits(resolveAnalysisOfferLabel())}, résiliable à tout moment).`
+                      : checkoutOpen === false
+                        ? ` (tarif prévu : ${nonBreakingUnits(resolveAnalysisOfferLabel())}, pas encore souscriptible).`
+                        : "."}
                   </>
                 )}{" "}
                 Les professionnels déposent et suivent leurs annonces dans leur espace.
@@ -646,8 +664,8 @@ export function LoginPage() {
                   className="mt-5 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
                 >
                   {isSignup
-                    ? reasonCopy(reason, launchOffer).signup
-                    : reasonCopy(reason, launchOffer).login}
+                    ? reasonCopy(reason, launchOffer, checkoutOpen).signup
+                    : reasonCopy(reason, launchOffer, checkoutOpen).login}
                 </p>
               ) : null}
 
