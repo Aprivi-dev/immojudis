@@ -4,7 +4,9 @@ import { getSaleProcedure, saleVenueLabel } from "./sale-procedure";
 import { formatDate, formatPrice, formatSurface, propertyTypeLabel } from "./format";
 import { listingOccupation, listingValuationConflict, listingSaleStatus } from "./listing-evidence";
 import { saleSession, saleWindow } from "./sale-window";
-import { listingDate } from "./sale-listing";
+import { listingDate, listingVisits } from "./sale-listing";
+import { extractDpe } from "./dpe";
+import { landSurface, roomsPhrase, saleAmenities } from "./public-sale-description";
 
 function clean(value: string | null | undefined): string | null {
   const text = value?.trim();
@@ -49,12 +51,20 @@ export function buildStructuredDescription(sale: AuctionSale, now = new Date()):
   const withdrawn = ["cancelled", "canceled", "postponed"].includes(sale.status ?? "");
   const past = status?.startsWith("Date de vente passée") ?? false;
   const occupation = listingOccupation(sale);
+  const surfaceLabel = valuationConflict ? "surface à vérifier" : saleSurfaceLabel(sale);
+  const land = valuationConflict ? null : landSurface(sale);
   const facts = [
     valuationConflict ? "type de bien à confirmer" : propertyTypeLabel(sale.property_type),
-    valuationConflict ? "surface à vérifier" : saleSurfaceLabel(sale),
-    sale.rooms_count ? `${sale.rooms_count} pièce${sale.rooms_count > 1 ? "s" : ""}` : null,
+    surfaceLabel,
+    roomsPhrase(sale),
+    // Le terrain n'est ajouté que s'il n'est pas déjà la surface retenue (« terrain 400 m² »).
+    land && !surfaceLabel?.startsWith("terrain") ? `terrain de ${land}` : null,
     ["Non renseignée", "À confirmer"].includes(occupation) ? null : occupation,
   ].filter((fact): fact is string => Boolean(fact && fact !== "Non renseigné"));
+  const amenities = saleAmenities(sale).map((item) => item.charAt(0).toLowerCase() + item.slice(1));
+  const dpe = extractDpe(sale).class;
+  // Visites : seulement pour une vente encore à venir, et au plus trois créneaux.
+  const visits = withdrawn || past ? [] : listingVisits(sale).slice(0, 3);
 
   return [
     `Ce bien${location ? ` situé à ${location}` : ""}${withdrawn || past ? " figure dans un dossier de vente" : " est proposé à la vente"}${price}.`,
@@ -76,6 +86,9 @@ export function buildStructuredDescription(sale: AuctionSale, now = new Date()):
     facts.length
       ? `Les informations disponibles indiquent : ${facts.join(", ")}.`
       : "Les caractéristiques détaillées restent à vérifier dans les pièces du dossier.",
+    amenities.length ? `Équipements mentionnés : ${amenities.join(", ")}.` : "",
+    dpe ? `Diagnostic de performance énergétique : classe ${dpe}.` : "",
+    visits.length ? `Visites annoncées : ${visits.join(" ; ")}.` : "",
   ]
     .filter(Boolean)
     .join(" ");

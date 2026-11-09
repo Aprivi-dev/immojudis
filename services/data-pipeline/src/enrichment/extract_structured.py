@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, llm_display_enabled, load_settings
 from src.encheres_publiques_guard import (
     EncheresPubliquesAccessNotAuthorized,
     require_encheres_publiques_sale_access,
@@ -577,6 +577,10 @@ def enrich_sale_with_llm(
         sale.raw_payload.pop("source_description", None)
 
     extraction_mode = extraction_mode or str(settings.get("llm_extraction_mode") or "display_description")
+    display_enabled = llm_display_enabled(settings)
+    if extraction_mode == "display_description" and not display_enabled:
+        # Synthèse coupée : rien à rédiger, aucun appel au modèle.
+        return stats
     if extraction_mode == "display_description":
         contexts = [load_llm_context_for_sale(sale, max_chars=int(settings["llm_pdf_max_chars"]))]
     else:
@@ -862,7 +866,7 @@ def enrich_sale_with_llm(
     )
 
     display_cache_hit = False
-    if extraction_mode in {"structured_then_display", "full"}:
+    if display_enabled and extraction_mode in {"structured_then_display", "full"}:
         display_context = _build_validated_display_context(
             sale,
             extraction,
@@ -948,7 +952,9 @@ def enrich_sale_with_llm(
     )
     sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
     sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
-    sale.raw_payload["llm_cache_hit"] = bool(cache_hits == len(fact_contexts) and display_cache_hit)
+    sale.raw_payload["llm_cache_hit"] = bool(
+        cache_hits == len(fact_contexts) and (display_cache_hit or not display_enabled)
+    )
     if not stats.errors:
         # Keep the legacy sale-scoped artifact for existing consumers.  The
         # stage-specific files above are authoritative for cost avoidance.

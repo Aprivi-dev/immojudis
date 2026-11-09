@@ -154,3 +154,61 @@ it("does not call the inherited surface of a commercial building habitable", () 
   expect(text).toContain("surface renseignée");
   expect(text).not.toContain("surface habitable");
 });
+
+describe("description construite à partir des faits (sans synthèse rédigée par le modèle)", () => {
+  const future = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+
+  it("dit les pièces et chambres, le terrain, les équipements, le DPE et les visites annoncées", () => {
+    const text = buildStructuredDescription(
+      sale({
+        city: "Pau",
+        department: "64",
+        property_type: "house",
+        status: "upcoming",
+        sale_date: future,
+        starting_price_eur: 120_000,
+        app_surface_m2: 95,
+        land_surface_m2: 400,
+        rooms_count: 4,
+        bedrooms_count: 3,
+        has_garden: true,
+        has_garage: true,
+        source_blocks: { dpe: "D" },
+        visit_dates: ["12/12/2099 à 14h00"],
+      }),
+    );
+    expect(text).toContain("4 pièces dont 3 chambres");
+    expect(text).toContain("terrain de 400 m²");
+    expect(text).toContain("Équipements mentionnés : jardin, garage.");
+    expect(text).toContain("Diagnostic de performance énergétique : classe D.");
+    expect(text).toContain("Visites annoncées : ");
+  });
+
+  it("ne répète pas le terrain quand il est déjà la surface retenue, et ne dit rien de ce que l'annonce tait", () => {
+    const text = buildStructuredDescription(
+      sale({
+        city: "Pau",
+        property_type: "land",
+        status: "upcoming",
+        sale_date: future,
+        land_surface_m2: 800,
+      }),
+    );
+    expect(text.match(/terrain/g)).toHaveLength(1);
+    expect(text).not.toContain("Équipements mentionnés");
+    expect(text).not.toContain("Diagnostic de performance énergétique");
+    expect(text).not.toContain("Visites annoncées");
+  });
+
+  it("n'annonce pas de visite pour une vente passée ou retirée", () => {
+    const text = buildStructuredDescription(
+      sale({
+        city: "Pau",
+        status: "cancelled",
+        sale_date: future,
+        visit_dates: ["12/12/2099 à 14h00"],
+      }),
+    );
+    expect(text).not.toContain("Visites annoncées");
+  });
+});

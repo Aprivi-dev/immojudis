@@ -24,6 +24,7 @@ from src.collection_evidence import record_items, record_sale_decisions
 from src.config import (
     EncheresPubliquesAccessNotAuthorized,
     encheres_publiques_access_enabled,
+    llm_display_enabled,
     load_settings,
     require_encheres_publiques_access,
 )
@@ -2057,7 +2058,7 @@ def _needs_llm_display_description_refresh(
     *,
     prompt_version: str | None = None,
 ) -> bool:
-    if not _sale_has_llm_context(sale):
+    if not llm_display_enabled() or not _sale_has_llm_context(sale):
         return False
     display_description = clean_payload_text(sale.raw_payload.get("llm_display_description"))
     if not display_description:

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from src.admission import is_expired
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
-from src.config import PDF_TEXTS_DIR, EncheresPubliquesAccessNotAuthorized, load_settings
+from src.config import PDF_TEXTS_DIR, EncheresPubliquesAccessNotAuthorized, llm_display_enabled, load_settings
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
@@ -756,7 +756,7 @@ def run_enrichment_queue_batch(
                 # inline Qwen call. If the final upsert already persisted the
                 # current synthesis, completing that job without another paid
                 # prediction prevents duplicate Replicate spend.
-                description_current = bool(sale.raw_payload.get("llm_display_description")) and not sale.raw_payload.get("source_content_changed") and not _needs_llm_display_description_refresh(
+                description_current = not llm_display_enabled(settings) or bool(sale.raw_payload.get("llm_display_description")) and not sale.raw_payload.get("source_content_changed") and not _needs_llm_display_description_refresh(
                     sale,
                     prompt_version=prompt_version,
                 )
@@ -852,7 +852,7 @@ def run_enrichment_queue_batch(
                                 else "LLM extraction incomplete"
                             )
                             raise RuntimeError(detail)
-                        if not sale.raw_payload.get("llm_display_description") or _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
+                        if llm_display_enabled(settings) and (not sale.raw_payload.get("llm_display_description") or _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)):
                             raise RuntimeError("Missing or stale display description")
                         if fact_extraction_planned and not (sale.raw_payload.get("llm_fact_coverage") or {}).get("complete"):
                             raise RuntimeError("Fact extraction coverage incomplete")
