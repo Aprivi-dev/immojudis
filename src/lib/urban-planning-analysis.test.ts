@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
-import { buildUrbanPlanningAnalysis } from "@/lib/urban-planning-analysis";
+import {
+  buildUrbanPlanningAnalysis,
+  isPrimaryUrbanPlanningSignal,
+} from "@/lib/urban-planning-analysis";
 import type { SaleDocumentRich, SaleRisk } from "@/lib/types";
 
 describe("urban planning analysis", () => {
@@ -158,6 +161,40 @@ describe("urban planning analysis", () => {
       status: "documented",
       source: "Cahier des conditions · page 14",
     });
+  });
+
+  it("ignores signals built from the pipeline's risk notes", () => {
+    const riskNote = {
+      signalKey: "zoning_risk",
+      signalKind: "zoning",
+      label: "Urbanisme / PLU",
+      status: "documented",
+      priority: "medium",
+      sourceName: "Notes de risques",
+      sourceKind: "risk",
+      documentUrl: null,
+      documentLabel: null,
+      documentType: null,
+      pageNumber: null,
+      excerpt:
+        "Risques physiques: risk_type: natural_risk; description: Risques naturels : inondation",
+      action: null,
+      confidence: 0.64,
+    } as const;
+
+    expect(isPrimaryUrbanPlanningSignal(riskNote)).toBe(false);
+    const analysis = buildUrbanPlanningAnalysis({
+      sale: {
+        ...EXAMPLE_SALE,
+        description: "Maison avec cour.",
+        source_blocks: null,
+        source_blocks_by_source: null,
+      },
+      documents: [],
+      risks: [],
+      structuredSignals: [riskNote],
+    });
+    expect(analysis.items.some((item) => item.key === "structured_zoning_risk")).toBe(false);
   });
 
   it("keeps missing planning data explicit when no signal is present", () => {

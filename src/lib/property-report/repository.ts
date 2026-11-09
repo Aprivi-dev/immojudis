@@ -181,7 +181,11 @@ export async function getUrbanPlanningSignals(
     return [];
   }
 
-  return (data ?? []).map(urbanPlanningSignalRowToAnalysis);
+  // Rows built from `risk_notes` (the pipeline's own risk summary, no longer a source) stay hidden until
+  // the pipeline rewrites the sale's signals.
+  return (data ?? [])
+    .map(urbanPlanningSignalRowToAnalysis)
+    .filter((signal) => signal.sourceKind !== "risk");
 }
 
 export function urbanPlanningSignalRowToAnalysis(
