@@ -30,7 +30,9 @@ vi.mock("react", async () => {
   return { ...actual, cache: <T extends (...args: never[]) => unknown>(fn: T) => fn };
 });
 
+import { DEPARTMENT_CATALOGUE_CACHE_TAG } from "@/lib/department-pages.server";
 import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
+import { SITEMAP_CACHE_TAG } from "@/lib/public-sitemap.server";
 import { PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG } from "@/lib/public-tribunal-activity.server";
 import { TRIBUNAL_SALES_CACHE_TAG } from "@/lib/tribunal-pages.server";
 import { HEARINGS_CACHE_TAG } from "@/lib/upcoming-hearings.server";
@@ -144,8 +146,8 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     // Pages 2 et 3 du catalogue : leurs variantes statiques sont expirées avec la première.
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/sales/defaut/[page]", "page");
     expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/sales");
-    expect(mocks.revalidateTag).toHaveBeenCalledTimes(5);
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(6);
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(7);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(9);
   });
 
   it("also expires the tribunal pages and the upcoming hearings, once per call", async () => {
@@ -175,6 +177,27 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     ]);
   });
 
+  it("also expires the department pages and the sitemaps, once per call", async () => {
+    // Un département ou un tribunal passé sous le seuil de trois ventes est en `noindex` : il ne doit
+    // pas rester annoncé par `/sitemap.xml`, ni une vente retirée par `/sales/sitemap/<n>.xml`.
+    const response = await POST(request({ saleIds: [ID, OTHER_ID] }, `Bearer ${SECRET}`));
+    expect(response.status).toBe(200);
+    expect(DEPARTMENT_CATALOGUE_CACHE_TAG).toBe("department-pages");
+    expect(SITEMAP_CACHE_TAG).toBe("public-sitemap");
+    for (const tag of [DEPARTMENT_CATALOGUE_CACHE_TAG, SITEMAP_CACHE_TAG]) {
+      expect(mocks.revalidateTag.mock.calls.filter(([name]) => name === tag)).toEqual([
+        [tag, { expire: 0 }],
+      ]);
+    }
+    for (const call of [
+      ["/ventes-encheres-immobilieres"],
+      ["/ventes-encheres-immobilieres/[departement]", "page"],
+      ["/sitemap.xml"],
+    ]) {
+      expect(mocks.revalidatePath.mock.calls.filter(([path]) => path === call[0])).toEqual([call]);
+    }
+  });
+
   it("expires the catalogue once per call, however many sales are withdrawn or changed", async () => {
     const response = await POST(request({ saleIds: [ID, OTHER_ID, ID] }, `Bearer ${SECRET}`));
     expect(response.status).toBe(200);
@@ -187,9 +210,10 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     );
     expect(defaultPages).toHaveLength(1);
     // Two sales: two tags and two pages for them, plus the catalogue (first page and page variants),
-    // the tribunal pages and the hearings, the court activity and the court directory.
-    expect(mocks.revalidateTag).toHaveBeenCalledTimes(6);
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(7);
+    // the tribunal pages and the hearings, the court activity and the court directory, the department
+    // pages and the sitemaps.
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(8);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(10);
   });
 
   it("expires several sales once each", async () => {
@@ -198,10 +222,11 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(await response.json()).toMatchObject({
       revalidated: [`sale-${ID}`, `sale-${OTHER_ID}`],
     });
-    // Two sales, plus the catalogue, the tribunal pages, the hearings and the court activity.
+    // Two sales, plus the catalogue, the tribunal pages, the hearings, the court activity, the
+    // department catalogue and the sales sitemap.
     expect(mocks.revalidateTag).toHaveBeenCalledWith(`sale-${ID}`, { expire: 0 });
     expect(mocks.revalidateTag).toHaveBeenCalledWith(`sale-${OTHER_ID}`, { expire: 0 });
-    expect(mocks.revalidateTag).toHaveBeenCalledTimes(6);
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(8);
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/sales/${OTHER_ID}`);
   });
 

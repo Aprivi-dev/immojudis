@@ -7,6 +7,11 @@ const mocks = vi.hoisted(() => ({
   loadDepartments: vi.fn(),
   loadHearings: vi.fn(),
   loadDirectory: vi.fn(),
+  loadTribunalSales: vi.fn(),
+}));
+
+vi.mock("@/lib/tribunal-pages.server", () => ({
+  tryLoadTribunalSales: mocks.loadTribunalSales,
 }));
 
 vi.mock("@/lib/department-pages.server", () => ({
@@ -43,6 +48,15 @@ function court(searchName: string, upcomingCount: number, code = searchName.toLo
     houseCount: 0,
     apartmentCount: 0,
     otherCount: 0,
+  };
+}
+
+/** Liste lue par la page d'un tribunal : `received` lignes, dont `listed` après les doublons. */
+function tribunalSales(received: number, listed = received) {
+  return {
+    status: "ok",
+    received,
+    sales: Array.from({ length: listed }, (_, index) => ({ id: `sale-${index}` })),
   };
 }
 
@@ -83,6 +97,8 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
     });
     mocks.loadDirectory.mockResolvedValue({ status: "error" });
     mocks.loadHearings.mockResolvedValue(soon(3));
+    // Par défaut, aucune vente en double : la page compte comme l'activité.
+    mocks.loadTribunalSales.mockReset().mockImplementation(async () => tribunalSales(0));
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
   afterEach(() => {
@@ -95,6 +111,26 @@ describe("sitemap.xml : pages des tribunaux et des audiences", () => {
     expect(list).toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-bobigny");
     expect(list).toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-nantes");
     expect(list).not.toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-brest");
+  });
+
+  it("n'annonce pas un tribunal qui n'atteint trois ventes qu'avec un doublon (sa page est en noindex)", async () => {
+    // Nantes : trois lignes, dont deux fois la même vente. Sa page en compte deux.
+    mocks.loadTribunalSales.mockImplementation(async (code: string) =>
+      code === "justice_tj_1_114" ? tribunalSales(3, 2) : tribunalSales(0),
+    );
+    const list = await urls();
+    expect(list).toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-bobigny");
+    expect(list).not.toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-nantes");
+    // Seuls les tribunaux au-dessus du seuil sont relus, et une seule fois chacun.
+    expect(mocks.loadTribunalSales.mock.calls.map(([code]) => code).sort()).toEqual([
+      "justice_tj_1_114",
+      "justice_tj_1_93",
+    ]);
+  });
+
+  it("garde un tribunal dont la liste n'a pu être lue, comme le fait sa page", async () => {
+    mocks.loadTribunalSales.mockResolvedValue({ status: "error" });
+    expect(await urls()).toContain("https://immojudis.com/tribunaux/tribunal-judiciaire-nantes");
   });
 
   it("n'a qu'une adresse par tribunal : l'adresse lisible, jamais celle par code", async () => {
