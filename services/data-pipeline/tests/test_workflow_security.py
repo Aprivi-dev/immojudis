@@ -216,12 +216,13 @@ def test_fact_chunk_trial_is_manual_bounded_and_leaves_the_production_chunk_size
 
     assert [job.name for job in jobs] == ["trial"]
     assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
-    for name in ("sales", "chunk_chars", "max_tokens", "max_calls"):
+    for name in ("sales", "chunk_chars", "max_tokens", "max_calls", "budget_minutes"):
         assert re.search(rf"^      {name}:\n        description:", text, re.M), name
     assert re.search(r"^  group: immojudis-fact-chunk-trial$", text, re.M)
     assert re.search(r"^  cancel-in-progress: false$", text, re.M)
     timeout = re.search(r"^    timeout-minutes: (\d+)$", text, re.M)
-    assert timeout and int(timeout.group(1)) <= 90
+    # The script starts no call after --budget-minutes (at most 170), then writes its report.
+    assert timeout and int(timeout.group(1)) <= 185
     _assert_main_only_without_persisted_credentials(text)
     assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
     # The database URL (reads, request reservations) and the Replicate token only, on the script step alone.

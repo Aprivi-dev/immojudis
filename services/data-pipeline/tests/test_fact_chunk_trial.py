@@ -14,6 +14,7 @@ from src.enrichment import extract_structured as extraction
 from src.enrichment import llm_client
 from src.enrichment.llm_client import ReplicateClient
 from src.pdf_enrichment import sale_storage_id
+from src.pipeline_usage import PipelineBudgetExhausted
 from tests.test_fact_fingerprint_chunk_size import _long_document_sale
 
 STORED_FACTS = {
@@ -285,3 +286,69 @@ def test_sale_from_row_accepts_the_uuid_returned_by_psycopg(tmp_path: Path, monk
     values["id"] = sale_id
     sale = trial.sale_from_row(values)
     assert sale.id == str(sale_id)
+
+
+def test_trial_waits_for_the_hourly_budget_and_retries_the_same_chunk(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = _stored_rows(tmp_path, monkeypatch, ("sale-a",))
+    hourly = PipelineBudgetExhausted("Hourly LLM request budget exhausted")
+    client = FakeTrialClient([hourly, hourly, dict(STORED_FACTS), {}])
+    waits: list[float] = []
+
+    report = trial.run_trial(
+        FakeConnection(rows),
+        client,
+        options=trial.TrialOptions(sales=1, chunk_chars=25_000),
+        settings=_settings(),
+        clock=lambda: 0.0,
+        sleep=waits.append,
+    )
+
+    result = report.results[0]
+    assert waits == [trial.HOURLY_WAIT_SECONDS] * 2 and result.budget_waits == 2
+    assert result.complete and report.stop_reason is None
+    assert result.trial_items is not None and result.trial_items["legal_risks"] == ["Hypothèque inscrite"]
+    assert "Attentes du budget horaire (pas de 5 min) : 2." in trial.render_report(report)
+
+
+def test_trial_stops_on_the_daily_budget_or_when_no_time_is_left_to_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = _stored_rows(tmp_path, monkeypatch, ("sale-a",))
+    for error, now in (
+        (PipelineBudgetExhausted("Daily LLM request budget exhausted"), 0.0),
+        (PipelineBudgetExhausted("Hourly LLM request budget exhausted"), 60 * 60 - trial.HOURLY_WAIT_SECONDS),
+    ):
+        waits: list[float] = []
+        # The deadline is set at 0 (60 min later); every later reading of the clock returns ``now``.
+        ticks = iter([0.0])
+        report = trial.run_trial(
+            FakeConnection(rows),
+            FakeTrialClient([error]),
+            options=trial.TrialOptions(sales=1, budget_minutes=60),
+            settings=_settings(),
+            clock=lambda now=now, ticks=ticks: next(ticks, now),
+            sleep=waits.append,
+        )
+        assert waits == []
+        assert report.stop_reason is not None and report.stop_reason.startswith("budget refusé")
+
+
+def test_details_list_stored_and_trial_facts_of_compared_sales(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = _stored_rows(tmp_path, monkeypatch, ("sale-a",))
+    answer = {**STORED_FACTS, "legal_risks": ["Hypothèque inscrite", "Bail en cours"]}
+    report = trial.run_trial(
+        FakeConnection(rows), FakeTrialClient([answer, {}]), options=trial.TrialOptions(sales=1), settings=_settings()
+    )
+
+    lines = trial.render_details(report).splitlines()
+    assert lines[0] == "::group::Détail des faits" and lines[-1] == "::endgroup::"
+    detail = json.loads(lines[1].removeprefix("FACT_DETAIL "))
+    assert detail["sale_id"] == "sale-a"
+    assert detail["stored"]["legal_risks"] == ["Hypothèque inscrite"]
+    assert detail["trial"]["legal_risks"] == ["Hypothèque inscrite", "Bail en cours"]
+    assert set(detail["trial"]) >= {"servitudes", "investment_facts", "assets.explicit_surfaces", "surface_m2"}
+    assert trial.parse_args(["--details"]).details is True
