@@ -144,3 +144,23 @@
   cursor: progress;
   opacity: 0.6;
 }
+
+.highlights {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.highlights h3 {
+  color: var(--brand-navy);
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.highlightList {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}

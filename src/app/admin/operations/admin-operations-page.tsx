@@ -33,14 +33,8 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import type { AdminRunRequest } from "@/lib/admin-run-actions";
 import { collectionTransportNote } from "@/lib/admin-source-collection";
-import type {
-  AdminDashboardRunsData,
-  AdminScrollSource,
-  AiDescriptionDashboardStats,
-  AuctionRun,
-} from "@/lib/admin.server";
+import type { AdminDashboardRunsData, AdminScrollSource, AuctionRun } from "@/lib/admin.server";
 import {
-  fetchAdminDashboardAi,
   fetchAdminDashboardCounts,
   fetchAdminDashboardRuns,
   startAdminScrollRequest,
@@ -50,8 +44,7 @@ type OperationsTab = "collections" | "enrichment" | "documents" | "alerts";
 
 /**
  * Vue « Opérations ». Chaque bloc ne charge que ce qu'il affiche : les runs (rapide, relus toutes
- * les 10 s tant qu'un run est actif), la couverture IA (lecture de toutes les synthèses, hors de
- * l'onglet Documents) et les comptages de tables (onglet Documents seulement).
+ * les 10 s tant qu'un run est actif) et les comptages de tables (onglet Documents seulement).
  */
 export function AdminOperationsPage() {
   const { user } = useAuth();
@@ -69,13 +62,6 @@ export function AdminOperationsPage() {
     retry: 1,
     refetchInterval: (query) =>
       query.state.data?.stats.queuedRuns || query.state.data?.stats.runningRuns ? 10_000 : 60_000,
-  });
-  const aiQuery = useQuery({
-    queryKey: ["admin-dashboard", "ai"],
-    queryFn: fetchAdminDashboardAi,
-    staleTime: 60_000,
-    retry: 1,
-    enabled: activeTab !== "documents",
   });
   const countsQuery = useQuery({
     queryKey: ["admin-dashboard", "counts"],
@@ -153,10 +139,6 @@ export function AdminOperationsPage() {
       <AdminOperations
         data={data}
         isLoading={runsQuery.isLoading}
-        ai={{
-          stats: aiQuery.data?.aiDescriptions,
-          status: aiQuery.error ? "error" : aiQuery.data ? "ready" : "loading",
-        }}
         counts={countsQuery.data?.counts}
         countsError={countsQuery.error}
         source={source}
@@ -180,15 +162,9 @@ export function AdminOperationsPage() {
   );
 }
 
-type AiState = {
-  stats?: AiDescriptionDashboardStats;
-  status: "ready" | "loading" | "error";
-};
-
 function AdminOperations({
   data,
   isLoading,
-  ai,
   counts,
   countsError,
   source,
@@ -208,7 +184,6 @@ function AdminOperations({
 }: {
   data?: AdminDashboardRunsData;
   isLoading: boolean;
-  ai: AiState;
   counts?: { documents: number; extractions: number };
   countsError: unknown;
   source: AdminScrollSource;
@@ -226,12 +201,6 @@ function AdminOperations({
   backfillPending: boolean;
   onBackfill: () => void;
 }) {
-  const aiDescriptions = ai.stats;
-  const remaining = aiDescriptions?.backfillRemaining ?? 0;
-  const progress = aiDescriptions?.activeOrUpcoming
-    ? Math.round((aiDescriptions.ready / aiDescriptions.activeOrUpcoming) * 100)
-    : 0;
-
   return (
     <div className="space-y-4">
       <div className="grid gap-3 xl:grid-cols-[1fr_25rem]">
@@ -346,10 +315,6 @@ function AdminOperations({
             />
           </div>
           <AiBackfillPanel
-            aiDescriptions={aiDescriptions}
-            status={ai.status}
-            remaining={remaining}
-            progress={progress}
             backfillLimit={backfillLimit}
             setBackfillLimit={setBackfillLimit}
             pending={backfillPending}
@@ -367,15 +332,10 @@ function AdminOperations({
 
       {activeTab === "enrichment" ? (
         <AiBackfillPanel
-          aiDescriptions={aiDescriptions}
-          status={ai.status}
-          remaining={remaining}
-          progress={progress}
           backfillLimit={backfillLimit}
           setBackfillLimit={setBackfillLimit}
           pending={backfillPending}
           onBackfill={onBackfill}
-          expanded
         />
       ) : null}
 
@@ -421,10 +381,6 @@ function AdminOperations({
               label="Runs échoués récents"
               value={data?.stats.failedRuns ?? null}
               danger={(data?.stats.failedRuns ?? 0) > 0}
-            />
-            <PipelineStat
-              label="Synthèses IA à traiter"
-              value={aiDescriptions?.backfillRemaining ?? null}
             />
           </div>
         </AdminPanel>

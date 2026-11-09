@@ -4,16 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  AdminDashboardAiData,
-  AdminDashboardCountsData,
-  AdminDashboardRunsData,
-} from "@/lib/admin.server";
+import type { AdminDashboardCountsData, AdminDashboardRunsData } from "@/lib/admin.server";
 import { AdminOperationsPage } from "./admin-operations-page";
 
 const mocks = vi.hoisted(() => ({
   fetchRuns: vi.fn(),
-  fetchAi: vi.fn(),
   fetchCounts: vi.fn(),
   startScroll: vi.fn(),
 }));
@@ -62,7 +57,6 @@ vi.mock("@/hooks/use-auth", () => ({
 
 vi.mock("@/lib/client-api", () => ({
   fetchAdminDashboardRuns: mocks.fetchRuns,
-  fetchAdminDashboardAi: mocks.fetchAi,
   fetchAdminDashboardCounts: mocks.fetchCounts,
   startAdminScrollRequest: mocks.startScroll,
 }));
@@ -90,19 +84,6 @@ const RUNS: AdminDashboardRunsData = {
   ],
 };
 
-const aiData = (backfillRemaining: number): AdminDashboardAiData => ({
-  checkedAt: "2026-09-19T08:00:00.000Z",
-  aiDescriptions: {
-    expectedPromptVersion: "v1",
-    total: 10,
-    activeOrUpcoming: 10,
-    ready: 10 - backfillRemaining,
-    missing: 0,
-    promptVersionMismatch: 0,
-    backfillRemaining,
-  },
-});
-
 const COUNTS: AdminDashboardCountsData = {
   checkedAt: "2026-09-19T08:00:00.000Z",
   counts: {
@@ -117,7 +98,6 @@ const COUNTS: AdminDashboardCountsData = {
 
 beforeEach(() => {
   mocks.fetchRuns.mockResolvedValue(RUNS);
-  mocks.fetchAi.mockResolvedValue(aiData(0));
   mocks.fetchCounts.mockResolvedValue(COUNTS);
   mocks.startScroll.mockResolvedValue({ message: "Traitement demandé", run: RUNS.runs[0] });
 });
@@ -139,38 +119,33 @@ function renderOperations() {
 }
 
 describe("AdminOperationsPage", () => {
-  it("loads runs and AI coverage, but not the table counts until the Documents tab", async () => {
+  it("loads runs, but not the table counts until the Documents tab", async () => {
     renderOperations();
     await screen.findByRole("heading", { name: "Lancer une collecte" });
-    await waitFor(() => expect(mocks.fetchAi).toHaveBeenCalledTimes(1));
-    expect(mocks.fetchRuns).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.fetchRuns).toHaveBeenCalledTimes(1));
     expect(mocks.fetchCounts).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Documents" }));
     expect(await screen.findByText("Documents indexés")).toBeTruthy();
     await waitFor(() => expect(mocks.fetchCounts).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("8")).toBeTruthy();
-    expect(mocks.fetchAi).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the runs while the slow AI coverage is still being computed", async () => {
-    mocks.fetchAi.mockReturnValue(new Promise(() => {}));
+  it("no longer shows the AI summary coverage, which the pipeline stopped producing", async () => {
     renderOperations();
 
     expect(await screen.findByRole("button", { name: "Relancer" })).toBeTruthy();
-    expect(screen.getByText("Calcul de la couverture IA en cours…")).toBeTruthy();
+    expect(screen.queryByText(/couverture IA/i)).toBeNull();
+    expect(screen.queryByLabelText(/des synthèses prêtes/)).toBeNull();
+    expect(screen.queryByText(/annonces? à traiter/)).toBeNull();
     const launch = screen.getByRole("button", { name: "Lancer le backfill" });
-    expect((launch as HTMLButtonElement).disabled).toBe(true);
-  });
+    expect((launch as HTMLButtonElement).disabled).toBe(false);
 
-  it("keeps the runs usable when the AI coverage fails", async () => {
-    mocks.fetchAi.mockRejectedValue(new Error("délai dépassé"));
-    renderOperations();
-
-    expect(
-      await screen.findByText("Couverture IA indisponible pour le moment.", {}, { timeout: 5_000 }),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Relancer" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Enrichissement IA" }));
+    expect(screen.queryByText(/Version attendue/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Alertes" }));
+    expect(screen.getByText("Runs échoués récents")).toBeTruthy();
+    expect(screen.queryByText("Synthèses IA à traiter")).toBeNull();
   });
 
   it("refreshes the active dashboard queries from the section toolbar", async () => {
@@ -233,10 +208,8 @@ describe("AdminOperationsPage", () => {
   });
 
   it("only launches enrichment with a valid integer batch size", async () => {
-    mocks.fetchAi.mockResolvedValue(aiData(5));
     renderOperations();
     const limit = await screen.findByRole("spinbutton", { name: "Taille du lot" });
-    await screen.findByText("5 annonces à traiter");
     const launch = screen.getByRole("button", { name: "Lancer le backfill" });
     for (const value of ["", "0", "2.5", "101"]) {
       fireEvent.change(limit, { target: { value } });

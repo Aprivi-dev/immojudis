@@ -8,6 +8,7 @@ import { listingSaleStatus } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
 import { PepiteViewTracker } from "@/components/sale-detail/PepiteViewTracker";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import { DocumentReadingHighlights } from "@/components/sale-detail/DocumentReadingSection";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
 import {
   SaleUnlockOfferProvider,
@@ -1041,6 +1042,12 @@ function SaleDetailWorkspace({
                   sale={displaySale}
                   aiReviewProjections={resolvedAiReviewProjections}
                   aiReviewStatus={aiReviewStatus}
+                />
+                <DocumentReadingHighlights
+                  saleId={sale.id}
+                  enabled={!publicDemo && !authLoading && Boolean(user)}
+                  access={access}
+                  userKey={user?.id}
                 />
                 {isTribunalSale && guide.visible && !listingSaleStatus(displaySale) ? (
                   <FirstAuctionGuide

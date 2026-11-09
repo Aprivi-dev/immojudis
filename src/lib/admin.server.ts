@@ -3,13 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
-import {
-  AdminRouteTimeoutError,
-  adminDeadlineSignal,
-  throwIfAdminDeadlineExceeded,
-} from "@/lib/admin-route-deadline";
 import { serverEnv } from "@/lib/env";
-import { EXPECTED_DISPLAY_QUALITY_VERSION, EXPECTED_LLM_PROMPT_VERSION } from "@/lib/llm-versions";
 
 const SCROLL_SOURCES = [
   "all",
@@ -63,16 +57,6 @@ export type AuctionRun = {
   errors: JsonObject;
 };
 
-export type AiDescriptionDashboardStats = {
-  expectedPromptVersion: string;
-  total: number;
-  activeOrUpcoming: number;
-  ready: number;
-  missing: number;
-  promptVersionMismatch: number;
-  backfillRemaining: number;
-};
-
 export type AdminDashboardData = {
   checkedAt: string;
   adminEmail: string;
@@ -92,17 +76,16 @@ export type AdminDashboardData = {
     queuedRuns: number;
     runningRuns: number;
     failedRuns: number;
-    aiDescriptions: AiDescriptionDashboardStats;
   };
   runs: AuctionRun[];
 };
 
 /**
  * Le tableau de bord est découpé en sections pour que chaque vue admin ne calcule que ce qu'elle
- * affiche : `runs` (rapide : 25 derniers runs, état du runner), `ai` (lecture de toutes les
- * synthèses IA : la partie coûteuse) et `counts` (comptages exacts de six tables).
+ * affiche : `runs` (rapide : 25 derniers runs, état du runner) et `counts` (comptages exacts de
+ * six tables).
  */
-export const ADMIN_DASHBOARD_SECTIONS = ["runs", "ai", "counts"] as const;
+export const ADMIN_DASHBOARD_SECTIONS = ["runs", "counts"] as const;
 export type AdminDashboardSection = (typeof ADMIN_DASHBOARD_SECTIONS)[number];
 export const adminDashboardQuerySchema = z
   .object({ section: z.enum(ADMIN_DASHBOARD_SECTIONS).optional() })
@@ -114,11 +97,6 @@ export type AdminDashboardRunsData = {
   runner: AdminDashboardData["runner"];
   stats: Pick<AdminDashboardData["stats"], "queuedRuns" | "runningRuns" | "failedRuns">;
   runs: AuctionRun[];
-};
-
-export type AdminDashboardAiData = {
-  checkedAt: string;
-  aiDescriptions: AiDescriptionDashboardStats;
 };
 
 export type AdminDashboardCountsData = {
@@ -203,23 +181,12 @@ type AuctionRunRow = {
   errors?: unknown;
 };
 
-type AuctionSaleAiDescriptionRow = {
-  status?: string | null;
-  llm_display_description?: unknown;
-  llm_prompt_version?: unknown;
-  llm_display_quality_version?: unknown;
-  llm_display_status?: unknown;
-};
-
 type PipelineControlRow = {
   enabled?: boolean | null;
 };
 
 const RUN_COLUMNS =
   "id,status,source,use_llm,started_at,finished_at,summary,errors,created_at,updated_at";
-const AI_DESCRIPTION_COLUMNS =
-  "status,llm_display_description:raw_payload->llm_display_description,llm_prompt_version:raw_payload->llm_prompt_version,llm_display_quality_version:raw_payload->llm_display_quality_version,llm_display_status:raw_payload->llm_display_status";
-const AI_DESCRIPTION_PAGE_SIZE = 1000;
 
 function getAdminClient(): AdminClient {
   return supabaseAdmin as unknown as AdminClient;
@@ -288,127 +255,6 @@ async function countRows(table: string): Promise<number> {
 
 function statusCount(runs: AuctionRun[], status: string): number {
   return runs.filter((run) => run.status === status).length;
-}
-
-function cleanPayloadText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function isActiveOrUpcomingStatus(status: unknown): boolean {
-  return status === "active" || status === "upcoming";
-}
-
-export function buildAiDescriptionDashboardStats(
-  rows: AuctionSaleAiDescriptionRow[],
-  expectedPromptVersion = EXPECTED_LLM_PROMPT_VERSION,
-): AiDescriptionDashboardStats {
-  let activeOrUpcoming = 0;
-  let ready = 0;
-  let missing = 0;
-  let promptVersionMismatch = 0;
-
-  for (const row of rows) {
-    if (!isActiveOrUpcomingStatus(row.status)) continue;
-    activeOrUpcoming += 1;
-    const displayDescription = cleanPayloadText(row.llm_display_description);
-    const promptVersion = cleanPayloadText(row.llm_prompt_version);
-    if (!displayDescription) {
-      missing += 1;
-    }
-    if (promptVersion !== expectedPromptVersion) {
-      promptVersionMismatch += 1;
-    }
-    if (
-      displayDescription &&
-      displayDescription.length >= 80 &&
-      promptVersion === expectedPromptVersion &&
-      row.llm_display_quality_version === EXPECTED_DISPLAY_QUALITY_VERSION &&
-      ["accepted", "fallback"].includes(String(row.llm_display_status))
-    ) {
-      ready += 1;
-    }
-  }
-
-  return {
-    expectedPromptVersion,
-    total: rows.length,
-    activeOrUpcoming,
-    ready,
-    missing,
-    promptVersionMismatch,
-    backfillRemaining: activeOrUpcoming - ready,
-  };
-}
-
-export async function readAiDescriptionStats(
-  admin: AdminClient,
-): Promise<AiDescriptionDashboardStats> {
-  const rows: AuctionSaleAiDescriptionRow[] = [];
-
-  for (let from = 0; ; from += AI_DESCRIPTION_PAGE_SIZE) {
-    // Arrête la lecture de tout le catalogue dès que la route a répondu 504.
-    throwIfAdminDeadlineExceeded();
-    const to = from + AI_DESCRIPTION_PAGE_SIZE - 1;
-    const result = await admin
-      .from<AuctionSaleAiDescriptionRow>("auction_sales")
-      .select(AI_DESCRIPTION_COLUMNS)
-      .order("id", { ascending: true })
-      .range(from, to);
-
-    if (result.error) {
-      throw new Error(result.error.message ?? "Impossible de lire les synthèses IA.");
-    }
-
-    const page = result.data ?? [];
-    rows.push(...page);
-
-    if (page.length < AI_DESCRIPTION_PAGE_SIZE) {
-      return buildAiDescriptionDashboardStats(rows);
-    }
-  }
-}
-
-/**
- * La lecture des synthèses IA parcourt `raw_payload` de toutes les ventes (≈ 100 Mo compressés au
- * 10 octobre 2026). Le tableau de bord la redemandait toutes les 10 s tant qu'un run était actif ;
- * plusieurs onglets ouverts empilaient alors des lectures complètes. Le résultat est donc gardé
- * 60 s et les appels simultanés partagent une seule lecture.
- */
-const AI_STATS_TTL_MS = 60_000;
-let aiStatsCache: { expiresAt: number; value: AiDescriptionDashboardStats } | null = null;
-let aiStatsInflight: Promise<AiDescriptionDashboardStats> | null = null;
-
-export function resetAiDescriptionStatsCache(): void {
-  aiStatsCache = null;
-  aiStatsInflight = null;
-}
-
-export async function readAiDescriptionStatsCached(
-  admin: AdminClient,
-  now: () => number = Date.now,
-): Promise<AiDescriptionDashboardStats> {
-  if (aiStatsCache && aiStatsCache.expiresAt > now()) return aiStatsCache.value;
-  for (let attempt = 0; ; attempt += 1) {
-    const inflight =
-      aiStatsInflight ??
-      (aiStatsInflight = readAiDescriptionStats(admin)
-        .then((value) => {
-          aiStatsCache = { expiresAt: now() + AI_STATS_TTL_MS, value };
-          return value;
-        })
-        .finally(() => {
-          aiStatsInflight = null;
-        }));
-    try {
-      return await inflight;
-    } catch (error) {
-      // La lecture partagée a été interrompue par le délai d'une autre requête : on la relance
-      // une fois pour cette requête-ci, qui dispose encore de son propre délai.
-      const abortedByOtherRequest =
-        error instanceof AdminRouteTimeoutError && !adminDeadlineSignal()?.aborted;
-      if (!abortedByOtherRequest || attempt >= 1) throw error;
-    }
-  }
 }
 
 function scrollWebhookUrl(): string | null {
@@ -590,28 +436,20 @@ export async function getAdminDashboardSection(
 ): Promise<AdminDashboardRunsData>;
 export async function getAdminDashboardSection(
   authToken: string,
-  section: "ai",
-): Promise<AdminDashboardAiData>;
-export async function getAdminDashboardSection(
-  authToken: string,
   section: "counts",
 ): Promise<AdminDashboardCountsData>;
 export async function getAdminDashboardSection(
   authToken: string,
   section: AdminDashboardSection,
-): Promise<AdminDashboardRunsData | AdminDashboardAiData | AdminDashboardCountsData>;
+): Promise<AdminDashboardRunsData | AdminDashboardCountsData>;
 export async function getAdminDashboardSection(
   authToken: string,
   section: AdminDashboardSection,
-): Promise<AdminDashboardRunsData | AdminDashboardAiData | AdminDashboardCountsData> {
+): Promise<AdminDashboardRunsData | AdminDashboardCountsData> {
   const context = await requireSupabaseAuthContext(authToken);
   const adminUser = await assertAdminContext(context as AdminContext);
   const admin = getAdminClient();
   if (section === "runs") return readRunsSection(admin, adminUser.email);
-  if (section === "ai") {
-    const aiDescriptions = await readAiDescriptionStatsCached(admin);
-    return { checkedAt: new Date().toISOString(), aiDescriptions };
-  }
   return readCountsSection();
 }
 
@@ -620,16 +458,15 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
   const context = await requireSupabaseAuthContext(authToken);
   const adminUser = await assertAdminContext(context as AdminContext);
   const admin = getAdminClient();
-  const [runsData, countsData, aiDescriptions] = await Promise.all([
+  const [runsData, countsData] = await Promise.all([
     readRunsSection(admin, adminUser.email),
     readCountsSection(),
-    readAiDescriptionStatsCached(admin),
   ]);
   return {
     checkedAt: runsData.checkedAt,
     adminEmail: runsData.adminEmail,
     runner: runsData.runner,
-    stats: { ...countsData.counts, ...runsData.stats, aiDescriptions },
+    stats: { ...countsData.counts, ...runsData.stats },
     runs: runsData.runs,
   };
 }

@@ -33,7 +33,6 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
-import { resetAiDescriptionStatsCache } from "@/lib/admin.server";
 import { GET } from "./route";
 
 const get = (query = "") =>
@@ -46,7 +45,6 @@ const get = (query = "") =>
 describe("GET /api/admin/dashboard?section=", () => {
   beforeEach(() => {
     mocks.tables.length = 0;
-    resetAiDescriptionStatsCache();
     mocks.auth.mockResolvedValue({ isAdmin: true, claims: { email: "admin@example.test" } });
   });
 
@@ -86,15 +84,6 @@ describe("GET /api/admin/dashboard?section=", () => {
     );
   });
 
-  it("section=ai reads the sales once, then serves the 60 s cache", async () => {
-    const first = await get("?section=ai");
-    expect(first.status).toBe(200);
-    expect((await first.json()).aiDescriptions).toMatchObject({ total: 0, activeOrUpcoming: 0 });
-    expect(mocks.tables).toEqual(["auction_sales"]);
-    await get("?section=ai");
-    expect(mocks.tables).toEqual(["auction_sales"]);
-  });
-
   it("without a section keeps the historical full payload", async () => {
     const response = await get();
     expect(response.status).toBe(200);
@@ -103,11 +92,12 @@ describe("GET /api/admin/dashboard?section=", () => {
       sales: 7,
       queuedRuns: 1,
       failedRuns: 1,
-      aiDescriptions: { total: 0 },
     });
+    // La couverture des synthèses IA (plus produites par le pipeline) n'est plus calculée.
+    expect(body.stats).not.toHaveProperty("aiDescriptions");
   });
 
-  it.each(["?section=everything", "?section=", "?foo=bar"])(
+  it.each(["?section=everything", "?section=", "?foo=bar", "?section=ai"])(
     "rejects %s with 400 before any database read",
     async (query) => {
       const response = await get(query);
@@ -118,7 +108,7 @@ describe("GET /api/admin/dashboard?section=", () => {
 
   it("never computes a section for a non-admin", async () => {
     mocks.auth.mockResolvedValue({ isAdmin: false, claims: {} });
-    const response = await get("?section=ai");
+    const response = await get("?section=counts");
     expect(response.status).toBe(403);
     expect(mocks.tables).toEqual([]);
   });

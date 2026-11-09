@@ -134,6 +134,9 @@ jobs:
       LLM_PROMPT_VERSION: auction_llm_v10_structured_display
       LLM_FACT_PROMPT_VERSION: auction_facts_v1
       LLM_DISPLAY_PROMPT_VERSION: auction_display_v10_canonical_facts
+      # Synthèse rédigée par le modèle coupée le 09/11/2026 : le site affiche la description construite
+      # à partir des faits vérifiés. « true » la rétablit.
+      LLM_DISPLAY_ENABLED: "false"
       LLM_FACT_CHUNK_CHARS: 10000
       LLM_FACT_MAX_CHUNKS: 3
       LLM_DISPLAY_CONTEXT_CHARS: 8000

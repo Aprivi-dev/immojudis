@@ -1,6 +1,5 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
 import type {
-  AdminDashboardAiData,
   AdminDashboardCountsData,
   AdminDashboardRunsData,
   AdminDashboardSection,
@@ -43,7 +42,7 @@ import type {
 
 /**
  * Chaque vue admin ne demande que la section du tableau de bord qu'elle affiche : `runs` est
- * rapide, `ai` lit toutes les synthèses IA, `counts` fait six comptages exacts.
+ * rapide, `counts` fait six comptages exacts.
  */
 async function fetchAdminDashboardSection<T>(section: AdminDashboardSection): Promise<T> {
   const response = await fetch(`/api/admin/dashboard?section=${section}`, {
@@ -56,10 +55,6 @@ async function fetchAdminDashboardSection<T>(section: AdminDashboardSection): Pr
 
 export function fetchAdminDashboardRuns(): Promise<AdminDashboardRunsData> {
   return fetchAdminDashboardSection<AdminDashboardRunsData>("runs");
-}
-
-export function fetchAdminDashboardAi(): Promise<AdminDashboardAiData> {
-  return fetchAdminDashboardSection<AdminDashboardAiData>("ai");
 }
 
 export function fetchAdminDashboardCounts(): Promise<AdminDashboardCountsData> {

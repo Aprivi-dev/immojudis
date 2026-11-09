@@ -74,7 +74,7 @@ export function AdminQualityPage() {
           les 500 premières ventes classées par date pour garder l’écran réactif.
         </p>
 
-        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <QualityMetric
             icon={<Database />}
             label="Ventes"
@@ -84,11 +84,6 @@ export function AdminQualityPage() {
             icon={<FileText />}
             label="Avec documents"
             value={qualityQuery.isLoading ? "…" : pct(metrics.withDocs, metrics.total)}
-          />
-          <QualityMetric
-            icon={<Sparkles />}
-            label="Synthèse IA"
-            value={qualityQuery.isLoading ? "…" : pct(metrics.withAiDescription, metrics.total)}
           />
           <QualityMetric
             icon={<Activity />}
@@ -111,10 +106,6 @@ export function AdminQualityPage() {
               Points à surveiller
             </div>
             <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-              <QualityLine
-                label="Synthèse IA publique"
-                value={pct(metrics.withAiDescription, metrics.total)}
-              />
               <QualityLine
                 label="Surface exploitable"
                 value={pct(metrics.withSurface, metrics.total)}
@@ -169,14 +160,13 @@ export function AdminQualityPage() {
               </p>
             </div>
             <span className="text-xs text-muted-foreground">
-              IA, GPS, surface, documents, occupation et confiance score
+              GPS, surface, documents, occupation et confiance score
             </span>
           </div>
           <div className="mt-4 overflow-x-auto rounded-lg border border-brand-navy/10">
-            <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(7,0.7fr)] gap-3 border-b border-brand-navy/10 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(6,0.7fr)] gap-3 border-b border-brand-navy/10 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <span>Source</span>
               <span>Annonces</span>
-              <span>IA</span>
               <span>Surface</span>
               <span>GPS</span>
               <span>Docs</span>
@@ -338,7 +328,6 @@ function WeakSaleLine({ sale }: { sale: DataQualityPrioritySale }) {
 type SourceQuality = {
   name: string;
   total: number;
-  withAiDescription: number;
   withSurface: number;
   withGps: number;
   withDocs: number;
@@ -349,7 +338,7 @@ type SourceQuality = {
 
 function SourceQualityLine({ source }: { source: SourceQuality }) {
   return (
-    <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(7,0.7fr)] gap-3 px-3 py-3 text-sm">
+    <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(6,0.7fr)] gap-3 px-3 py-3 text-sm">
       <span className="min-w-0">
         <span className="block truncate font-medium text-foreground">{source.name}</span>
         <span className="text-xs text-muted-foreground">
@@ -357,7 +346,6 @@ function SourceQualityLine({ source }: { source: SourceQuality }) {
         </span>
       </span>
       <span className="tabular-nums text-muted-foreground">{source.total}</span>
-      <QualityPill value={pct(source.withAiDescription, source.total)} />
       <QualityPill value={pct(source.withSurface, source.total)} />
       <QualityPill value={pct(source.withGps, source.total)} />
       <QualityPill value={pct(source.withDocs, source.total)} />
@@ -387,7 +375,6 @@ function buildQualityMetrics(report: DataQualityReport | undefined) {
     [...(report?.fields ?? []), ...(report?.capabilities ?? [])].find((item) => item.key === key);
   return {
     total: report?.sampleSize ?? 0,
-    withAiDescription: metric("ai_description")?.count ?? 0,
     withDocs: metric("documents")?.count ?? 0,
     withRichDocs: report?.richDocumentsCount ?? 0,
     withSurface: metric("surface")?.count ?? 0,
@@ -407,7 +394,6 @@ function sourceCoverageToQuality(source: DataQualitySourceCoverage): SourceQuali
   return {
     name: source.source,
     total: source.count,
-    withAiDescription: source.count - source.missingAiDescription,
     withSurface: source.count - source.missingSurface,
     withGps: source.count - source.missingLocation,
     withDocs: source.count - source.missingDocuments,

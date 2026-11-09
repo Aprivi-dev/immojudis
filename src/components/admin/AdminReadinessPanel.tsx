@@ -77,14 +77,6 @@ export function AdminReadinessPanel() {
               }
             />
             <DiagnosticLine
-              label="Synthèses IA"
-              value={
-                readiness?.aiDescriptions
-                  ? formatAiCoverage(readiness.aiDescriptions)
-                  : "Chargement"
-              }
-            />
-            <DiagnosticLine
               label="Contrôle santé"
               value={
                 readiness?.operations.lastHealthRunAt
@@ -243,15 +235,6 @@ async function copyWebhookUrl(url: string) {
   } catch {
     toast.error("Copie impossible.");
   }
-}
-
-function formatAiCoverage(
-  aiDescriptions: NonNullable<Awaited<ReturnType<typeof fetchAdminReadiness>>>["aiDescriptions"],
-): string {
-  if (aiDescriptions.activeUpcomingCount == null || aiDescriptions.coveredCurrentCount == null) {
-    return "Non vérifié";
-  }
-  return `${aiDescriptions.coveredCurrentCount}/${aiDescriptions.activeUpcomingCount}`;
 }
 
 function formatOperationalSlo(

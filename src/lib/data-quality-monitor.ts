@@ -52,7 +52,6 @@ export const DATA_QUALITY_SALE_COLUMNS = [
   "primary_source",
   "source_urls",
   "source_blocks",
-  "llm_display_description",
   "lawyer_name",
   "lawyer_contact",
   "status",
@@ -87,7 +86,6 @@ export type DataQualitySourceCoverage = {
   missingSurface: number;
   missingDocuments: number;
   missingRichDocuments: number;
-  missingAiDescription: number;
   missingOccupation: number;
   missingConfidence: number;
   averageConfidencePct: number | null;
@@ -223,7 +221,6 @@ function buildPrioritySales(sales: AuctionSale[]): DataQualityPrioritySale[] {
     .map((sale) => {
       const flags: string[] = [];
       if ((sale.score_confidence ?? 0) < 0.55) flags.push("confiance faible");
-      if (!sale.llm_display_description?.trim()) flags.push("synthèse IA absente");
       if (!sale.documents_rich?.length) {
         flags.push(hasDocuments(sale) ? "documents non enrichis" : "documents manquants");
       }
@@ -264,18 +261,6 @@ function buildFieldMetrics(sales: AuctionSale[]): DataQualityMetric[] {
         "Rapprocher l'annonce, les pièces et le référentiel officiel avant de publier une qualification définitive.",
       warningPct: 90,
       healthyPct: 98,
-    }),
-    metric({
-      key: "ai_description",
-      label: "Synthèse IA publique",
-      sales,
-      predicate: hasAiDisplayDescription,
-      productImpact:
-        "Conditionne la clarté des fiches annonces : aucune description brute source ne doit remplacer la synthèse IA.",
-      nextAction:
-        "Relancer l'enrichissement LLM display_description pour les annonces sans llm_display_description.",
-      warningPct: 95,
-      healthyPct: 99,
     }),
     metric({
       key: "location",
@@ -468,7 +453,6 @@ function buildSourceCoverage(sales: AuctionSale[]): DataQualitySourceCoverage[] 
       missingRichDocuments: items.filter(
         (sale) => !Array.isArray(sale.documents_rich) || sale.documents_rich.length === 0,
       ).length,
-      missingAiDescription: items.filter((sale) => !hasAiDisplayDescription(sale)).length,
       missingOccupation: items.filter(
         (sale) => !sale.occupancy_status || sale.occupancy_status === "unknown",
       ).length,
@@ -615,14 +599,9 @@ function hasVerifiedSaleProcedure(sale: AuctionSale): boolean {
   );
 }
 
-function hasAiDisplayDescription(sale: AuctionSale): boolean {
-  return Boolean(sale.llm_display_description?.trim());
-}
-
 function isWeakSale(sale: AuctionSale): boolean {
   return (
     (sale.score_confidence ?? 0) < 0.55 ||
-    !hasAiDisplayDescription(sale) ||
     !hasSurface(sale) ||
     !hasDocuments(sale) ||
     !sale.occupancy_status ||

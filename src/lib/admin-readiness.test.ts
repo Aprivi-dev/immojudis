@@ -1,9 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  aiDescriptionItem,
   buildEnvironmentReadiness,
+  getAdminOperationalReadiness,
   operationalHealthItem,
 } from "@/lib/admin-readiness";
+
+vi.mock("@/integrations/supabase/auth-middleware", () => ({
+  requireSupabaseAuthContext: vi.fn().mockResolvedValue({ isAdmin: true }),
+}));
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("admin readiness", () => {
   it("marks commercial launch blockers when Stripe envs are missing", () => {
@@ -88,43 +96,20 @@ describe("admin readiness", () => {
     expect(items.every((item) => item.status === "ready")).toBe(true);
   });
 
-  it("blocks launch readiness when active sales miss current AI descriptions", () => {
-    expect(
-      aiDescriptionItem({
-        status: "blocked",
-        promptVersion: "auction_llm_v10_structured_display",
-        activeUpcomingCount: 149,
-        coveredCurrentCount: 145,
-        missingCurrentCount: 4,
-        missingSourceCount: 1,
-        recentFailureCount: 2,
-        detail:
-          "4/149 annonces n'ont pas de synthèse IA courante ; 1 sans description source exploitable ; 2 en quarantaine après échec récent.",
-      }),
-    ).toMatchObject({
-      key: "pipeline.ai_description_coverage",
-      area: "pipeline",
-      status: "blocked",
-      action: expect.stringContaining("backfill IA"),
-    });
-  });
+  it("no longer audits the AI summary coverage, which the pipeline stopped producing", async () => {
+    for (const name of ["SUPABASE_DB_URL", "POSTGRES_URL_NON_POOLING", "POSTGRES_URL"]) {
+      vi.stubEnv(name, "");
+    }
 
-  it("does not require an action when every active sale has a current AI description", () => {
-    expect(
-      aiDescriptionItem({
-        status: "ready",
-        promptVersion: "auction_llm_v10_structured_display",
-        activeUpcomingCount: 149,
-        coveredCurrentCount: 149,
-        missingCurrentCount: 0,
-        missingSourceCount: 0,
-        recentFailureCount: 0,
-        detail: "149/149 annonces actives ou à venir ont une synthèse IA.",
-      }),
-    ).toMatchObject({
-      status: "ready",
-      action: null,
-    });
+    const readiness = await getAdminOperationalReadiness("admin-jwt");
+
+    expect(readiness).not.toHaveProperty("aiDescriptions");
+    expect(readiness.items.map((item) => item.key)).not.toContain(
+      "pipeline.ai_description_coverage",
+    );
+    expect(readiness.items.map((item) => item.key)).toEqual(
+      expect.arrayContaining(["database.migrations", "operations.health"]),
+    );
   });
 
   it("turns a failed external delivery into an operator action", () => {

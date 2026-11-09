@@ -294,15 +294,13 @@ test.describe("admin configuration", () => {
     expect([...new Set(state.adminRequests)]).toEqual(["/api/admin/dashboard"]);
   });
 
-  test("loads the AI coverage after the runs and the table counts only on the Documents tab", async ({
-    page,
-  }) => {
+  test("loads the runs, and the table counts only on the Documents tab", async ({ page }) => {
     const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "succeeded" });
     await page.goto("/admin/operations");
 
-    await expect(page.getByText("5 annonces à traiter")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeVisible();
     expect(state.dashboardSections).toContain("runs");
-    expect(state.dashboardSections).toContain("ai");
+    expect(state.dashboardSections).not.toContain("ai");
     expect(state.dashboardSections).not.toContain("counts");
 
     await page.getByRole("button", { name: "Documents", exact: true }).click();
@@ -484,10 +482,6 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     if (path === "/api/admin/dashboard") {
       const section = url.searchParams.get("section") ?? "all";
       state.dashboardSections.push(section);
-      if (section === "ai") {
-        await route.fulfill({ status: 200, json: dashboardAiPayload(options.runSource) });
-        return;
-      }
       if (section === "counts") {
         await route.fulfill({ status: 200, json: dashboardCountsPayload() });
         return;
@@ -631,21 +625,6 @@ function dashboardRunsPayload(runSource?: string, runStatus = "failed") {
   };
 }
 
-function dashboardAiPayload(runSource?: string) {
-  return {
-    checkedAt: "2026-09-19T10:00:00.000Z",
-    aiDescriptions: {
-      expectedPromptVersion: "auction_llm_v10_structured_display",
-      total: 12,
-      activeOrUpcoming: 12,
-      ready: runSource ? 7 : 12,
-      missing: runSource ? 5 : 0,
-      promptVersionMismatch: 0,
-      backfillRemaining: runSource ? 5 : 0,
-    },
-  };
-}
-
 function dashboardCountsPayload() {
   return {
     checkedAt: "2026-09-19T10:00:00.000Z",
@@ -670,16 +649,6 @@ function readinessPayload() {
       expectedLatestVersion: "20260820144541",
       latestAppliedVersion: "20260820144541",
       appliedCount: 1,
-      detail: "CI",
-    },
-    aiDescriptions: {
-      status: "ready",
-      promptVersion: "auction_llm_v10_structured_display",
-      activeUpcomingCount: 12,
-      coveredCurrentCount: 12,
-      missingCurrentCount: 0,
-      missingSourceCount: 0,
-      recentFailureCount: 0,
       detail: "CI",
     },
     operations: {

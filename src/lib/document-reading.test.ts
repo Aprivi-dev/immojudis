@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  readingHighlights,
   documentPageHref,
   documentReadingTeaser,
   groupReadingPoints,
@@ -97,5 +98,33 @@ describe("document reading", () => {
       ["occupation", 2],
       ["conditions_vente", 1],
     ]);
+  });
+});
+
+describe("readingHighlights", () => {
+  const point = (title: string, importance: "alerte" | "attention" | "info") => ({
+    theme: "autre" as const,
+    importance,
+    title,
+    explanation: null,
+    quote: "citation",
+    page: 1,
+    document: null,
+  });
+
+  it("garde les trois points les plus importants, dans l'ordre de la lecture à importance égale", () => {
+    const points = [
+      point("info 1", "info"),
+      point("attention 1", "attention"),
+      point("alerte 1", "alerte"),
+      point("attention 2", "attention"),
+      point("alerte 2", "alerte"),
+    ];
+    expect(readingHighlights(points).map((p) => p.title)).toEqual([
+      "alerte 1",
+      "alerte 2",
+      "attention 1",
+    ]);
+    expect(readingHighlights([])).toEqual([]);
   });
 });

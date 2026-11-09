@@ -44,6 +44,15 @@ def encheres_publiques_access_enabled(settings: Mapping[str, object]) -> bool:
     )
 
 
+def llm_display_enabled(settings: Mapping[str, object] | None = None) -> bool:
+    """Vrai si la synthèse rédigée par le modèle est encore produite (``LLM_DISPLAY_ENABLED``)."""
+    value = (settings if settings is not None else load_settings()).get("llm_display_enabled")
+    if value is None:
+        # Réglages partiels (tests, appels qui composent leur propre dictionnaire) : la variable fait foi.
+        return os.getenv("LLM_DISPLAY_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def require_encheres_publiques_access(settings: Mapping[str, object]) -> None:
     """Fail closed before constructing a client for Encheres Publiques."""
 
@@ -262,6 +271,11 @@ def load_settings() -> dict[str, str | float | None]:
         "llm_display_prompt_version": os.getenv(
             "LLM_DISPLAY_PROMPT_VERSION", DEFAULT_LLM_DISPLAY_PROMPT_VERSION
         ),
+        # Synthèse rédigée par le modèle (``llm_display_description``) : coupée le 09/11/2026. Le site
+        # n'affiche plus que la description construite à partir des faits vérifiés ; la passe coûtait
+        # environ 30 % des appels au modèle. « true » la rétablit (aucune donnée n'a été supprimée).
+        "llm_display_enabled": os.getenv("LLM_DISPLAY_ENABLED", "false").lower()
+        in {"1", "true", "yes", "on"},
         "llm_extraction_mode": os.getenv(
             "LLM_EXTRACTION_MODE", DEFAULT_LLM_EXTRACTION_MODE
         ).lower(),

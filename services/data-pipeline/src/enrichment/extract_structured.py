@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, llm_display_enabled, load_settings
 from src.encheres_publiques_guard import (
     EncheresPubliquesAccessNotAuthorized,
     require_encheres_publiques_sale_access,
@@ -577,6 +577,10 @@ def enrich_sale_with_llm(
         sale.raw_payload.pop("source_description", None)
 
     extraction_mode = extraction_mode or str(settings.get("llm_extraction_mode") or "display_description")
+    display_enabled = llm_display_enabled(settings)
+    if extraction_mode == "display_description" and not display_enabled:
+        # Synthèse coupée : rien à rédiger, aucun appel au modèle.
+        return stats
     if extraction_mode == "display_description":
         contexts = [load_llm_context_for_sale(sale, max_chars=int(settings["llm_pdf_max_chars"]))]
     else:
@@ -862,7 +866,7 @@ def enrich_sale_with_llm(
     )
 
     display_cache_hit = False
-    if extraction_mode in {"structured_then_display", "full"}:
+    if display_enabled and extraction_mode in {"structured_then_display", "full"}:
         display_context = _build_validated_display_context(
             sale,
             extraction,
@@ -948,7 +952,9 @@ def enrich_sale_with_llm(
     )
     sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
     sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
-    sale.raw_payload["llm_cache_hit"] = bool(cache_hits == len(fact_contexts) and display_cache_hit)
+    sale.raw_payload["llm_cache_hit"] = bool(
+        cache_hits == len(fact_contexts) and (display_cache_hit or not display_enabled)
+    )
     if not stats.errors:
         # Keep the legacy sale-scoped artifact for existing consumers.  The
         # stage-specific files above are authoritative for cost avoidance.
@@ -2623,84 +2629,86 @@ def _apply_extraction_to_sale(
         ):
             sale.property_type = extraction.property_type
 
-    display_description = repair_generated_display(
-        strip_filler_sentences(_normalize_display_description(extraction.display_description)), reference_sale.model_dump()
-    )
-    display_check = verify_display_claims(
-        display_description or "", "\n".join(filter(None, (extract_source_description(sale), context))),
-        reference_sale.model_dump(),
-    )
-    sale.raw_payload["llm_display_evidence_check"] = display_check
-    _log_display_rejection(sale, display_check, "generated")
-    if (display_description and confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE
-            and not sale.raw_payload.get("operator_land_surface_conflict")
-            and not display_check["issues"]):
-        sale.raw_payload["llm_display_status"] = "accepted"
-        sale.raw_payload["llm_display_prompt_version"] = str(
-            load_settings().get("llm_display_prompt_version") or prompt_version or ""
+    # Synthèse coupée (LLM_DISPLAY_ENABLED) : aucun texte écrit et aucun rejet compté, les faits restent publiés.
+    if llm_display_enabled():
+        display_description = repair_generated_display(
+            strip_filler_sentences(_normalize_display_description(extraction.display_description)), reference_sale.model_dump()
         )
-        sale.raw_payload["llm_display_description"] = display_description
-        sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
-    else:
-        sale.raw_payload["llm_display_status"] = "rejected"
-        fallback_display_description = _fallback_display_description(
-            reference_sale if display_check["issues"] else sale,
-            LLMExtraction() if display_check["issues"] else extraction,
-            context,
+        display_check = verify_display_claims(
+            display_description or "", "\n".join(filter(None, (extract_source_description(sale), context))),
+            reference_sale.model_dump(),
         )
-        if fallback_display_description:
-            sale.raw_payload["llm_display_status"] = "fallback"
+        sale.raw_payload["llm_display_evidence_check"] = display_check
+        _log_display_rejection(sale, display_check, "generated")
+        if (display_description and confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE
+                and not sale.raw_payload.get("operator_land_surface_conflict")
+                and not display_check["issues"]):
+            sale.raw_payload["llm_display_status"] = "accepted"
             sale.raw_payload["llm_display_prompt_version"] = str(
                 load_settings().get("llm_display_prompt_version") or prompt_version or ""
             )
-            sale.raw_payload["llm_display_description"] = (fallback_display_description + " Surface du terrain à clarifier entre les champs de la source."
-                                                               if sale.raw_payload.get("operator_land_surface_conflict") else fallback_display_description)
-            sale.raw_payload["llm_display_description_word_count"] = len(fallback_display_description.split())
-
-    # Revalidate cached generations too; do not certify stale text on rejection.
-    if sale.raw_payload["llm_display_status"] == "rejected":
-        sale.raw_payload.pop("llm_display_description", None)
-    checked_display, source_quotes = preserve_source_constraints(
-        sale.raw_payload.get("llm_display_description"), extract_source_description(sale),
-        max_chars=DISPLAY_DESCRIPTION_MAX_CHARS, max_words=DISPLAY_DESCRIPTION_MAX_WORDS,
-        extra_quotes=sale.raw_payload.get("source_display_constraints"),
-    )
-    sale.raw_payload["llm_display_source_constraints"] = source_quotes
-    sale.raw_payload.pop("llm_display_quality_version", None)
-    if checked_display:
-        final_display_check = verify_display_claims(
-            checked_display,
-            "\n".join(filter(None, (extract_source_description(sale), context))),
-            sale.model_dump(),
-        )
-        if final_display_check["issues"]:
-            # Source quotations are appended after the first display check. A
-            # hostile quote must not turn an otherwise safe fallback into
-            # public prose containing a link, contact detail or instruction.
-            sale.raw_payload["llm_display_evidence_check"] = final_display_check
-            sale.raw_payload["llm_display_status"] = "rejected"
-            _log_display_rejection(sale, final_display_check, "with_source_quotes")
-            checked_display = None
-    if checked_display:
-        sale.raw_payload["llm_display_description"] = checked_display
-        sale.raw_payload["llm_display_description_word_count"] = len(checked_display.split())
-        if len(checked_display.strip()) >= DISPLAY_MIN_CHARS:
-            sale.raw_payload["llm_display_quality_version"] = DISPLAY_QUALITY_VERSION
-            if model_name:
-                # Persist the exact model used by a paid or cache-backed
-                # synthesis. Operational refreshes may reuse this result only
-                # while the configured model remains unchanged.
-                sale.raw_payload["llm_display_model"] = model_name
+            sale.raw_payload["llm_display_description"] = display_description
+            sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
         else:
+            sale.raw_payload["llm_display_status"] = "rejected"
+            fallback_display_description = _fallback_display_description(
+                reference_sale if display_check["issues"] else sale,
+                LLMExtraction() if display_check["issues"] else extraction,
+                context,
+            )
+            if fallback_display_description:
+                sale.raw_payload["llm_display_status"] = "fallback"
+                sale.raw_payload["llm_display_prompt_version"] = str(
+                    load_settings().get("llm_display_prompt_version") or prompt_version or ""
+                )
+                sale.raw_payload["llm_display_description"] = (fallback_display_description + " Surface du terrain à clarifier entre les champs de la source."
+                                                                   if sale.raw_payload.get("operator_land_surface_conflict") else fallback_display_description)
+                sale.raw_payload["llm_display_description_word_count"] = len(fallback_display_description.split())
+
+        # Revalidate cached generations too; do not certify stale text on rejection.
+        if sale.raw_payload["llm_display_status"] == "rejected":
+            sale.raw_payload.pop("llm_display_description", None)
+        checked_display, source_quotes = preserve_source_constraints(
+            sale.raw_payload.get("llm_display_description"), extract_source_description(sale),
+            max_chars=DISPLAY_DESCRIPTION_MAX_CHARS, max_words=DISPLAY_DESCRIPTION_MAX_WORDS,
+            extra_quotes=sale.raw_payload.get("source_display_constraints"),
+        )
+        sale.raw_payload["llm_display_source_constraints"] = source_quotes
+        sale.raw_payload.pop("llm_display_quality_version", None)
+        if checked_display:
+            final_display_check = verify_display_claims(
+                checked_display,
+                "\n".join(filter(None, (extract_source_description(sale), context))),
+                sale.model_dump(),
+            )
+            if final_display_check["issues"]:
+                # Source quotations are appended after the first display check. A
+                # hostile quote must not turn an otherwise safe fallback into
+                # public prose containing a link, contact detail or instruction.
+                sale.raw_payload["llm_display_evidence_check"] = final_display_check
+                sale.raw_payload["llm_display_status"] = "rejected"
+                _log_display_rejection(sale, final_display_check, "with_source_quotes")
+                checked_display = None
+        if checked_display:
+            sale.raw_payload["llm_display_description"] = checked_display
+            sale.raw_payload["llm_display_description_word_count"] = len(checked_display.split())
+            if len(checked_display.strip()) >= DISPLAY_MIN_CHARS:
+                sale.raw_payload["llm_display_quality_version"] = DISPLAY_QUALITY_VERSION
+                if model_name:
+                    # Persist the exact model used by a paid or cache-backed
+                    # synthesis. Operational refreshes may reuse this result only
+                    # while the configured model remains unchanged.
+                    sale.raw_payload["llm_display_model"] = model_name
+            else:
+                sale.raw_payload.pop("llm_display_model", None)
+        else:
+            sale.raw_payload["llm_display_status"] = "rejected"
+            sale.raw_payload.pop("llm_display_description", None)
+            sale.raw_payload.pop("llm_display_description_word_count", None)
             sale.raw_payload.pop("llm_display_model", None)
-    else:
-        sale.raw_payload["llm_display_status"] = "rejected"
-        sale.raw_payload.pop("llm_display_description", None)
-        sale.raw_payload.pop("llm_display_description_word_count", None)
-        sale.raw_payload.pop("llm_display_model", None)
-        stats.errors += 1
-        stats.error_messages.append("Display quality rejected: no summary preserving source constraints within budget")
-    _record_rejected_display_output(sale, extraction.display_description)
+            stats.errors += 1
+            stats.error_messages.append("Display quality rejected: no summary preserving source constraints within budget")
+        _record_rejected_display_output(sale, extraction.display_description)
 
     risk_notes = _format_risk_notes(extraction, context)
     if risk_notes:

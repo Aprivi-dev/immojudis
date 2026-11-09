@@ -36,7 +36,7 @@ from src.asset_normalization import (
     extract_risk_occurrences_from_text,
 )
 from src.catalogue_readiness import apply_catalogue_readiness
-from src.config import LLM_EXTRACTIONS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
+from src.config import LLM_EXTRACTIONS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, llm_display_enabled, load_settings
 from src.court_competence import tribunal_reference_rows
 from src.enrichment.display_quality import has_current_display
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
@@ -453,7 +453,7 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
             # A failed document keeps the same retry budget across daily scans.
             kinds.append(("pdf", pdf_enrichment_input_hash_for_sale(sale, settings), 30))
         if (not _has_current_llm_description(sale.raw_payload, prompt_version) or sale.raw_payload.get(
-                "source_content_changed")) and not display_job_block_reason(sale):
+                "source_content_changed")) and llm_display_enabled(settings) and not display_job_block_reason(sale):
             kinds.append(("display_description", revision, 20))
         if needs_fact_extraction(sale):
             kinds.append(("fact_extraction", revision, 25))
@@ -3032,7 +3032,7 @@ def _fetch_dedupe_candidate_sales(
 
 def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -> bool:
     settings = load_settings()
-    return has_current_display(
+    return not llm_display_enabled(settings) or has_current_display(
         raw_payload,
         prompt_version,
         str(settings.get("llm_display_prompt_version") or "") or None,

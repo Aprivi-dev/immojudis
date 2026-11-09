@@ -814,6 +814,8 @@ REPLICATE_THINKING_LEVEL=low
 LLM_PROMPT_VERSION=auction_llm_v10_structured_display
 LLM_FACT_PROMPT_VERSION=auction_facts_v1
 LLM_DISPLAY_PROMPT_VERSION=auction_display_v10_canonical_facts
+# Synthèse rédigée par le modèle : coupée depuis le 09/11/2026 (le site ne l'affiche plus)
+LLM_DISPLAY_ENABLED=false
 LLM_EXTRACTION_MODE=structured_then_display
 LLM_PDF_MAX_CHARS=12000
 LLM_FACT_CHUNK_CHARS=12000

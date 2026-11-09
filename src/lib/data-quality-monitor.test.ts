@@ -28,7 +28,6 @@ describe("data quality monitor", () => {
         "documents",
         "documents_rich",
         "source_blocks",
-        "llm_display_description",
         "status",
         "updated_at",
       ]),
@@ -40,6 +39,7 @@ describe("data quality monitor", () => {
       "source_presence",
       "description",
       "source_description",
+      "llm_display_description",
       "about_description",
       "visit_dates",
       "media",
@@ -230,17 +230,13 @@ describe("data quality monitor", () => {
       pct: 100,
       status: "healthy",
     });
-    expect(metric(report.fields, "ai_description")).toMatchObject({
-      pct: 100,
-      status: "healthy",
-    });
     expect(metric(report.fields, "sale_procedure")).toMatchObject({
       pct: 100,
       status: "healthy",
     });
     expect(report.sourceCoverage).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ source: "avoventes", count: 1, missingAiDescription: 0 }),
+        expect.objectContaining({ source: "avoventes", count: 1 }),
         expect.objectContaining({ source: "info_encheres", count: 1 }),
       ]),
     );
@@ -281,8 +277,29 @@ describe("data quality monitor", () => {
       missingLocation: 1,
       missingSurface: 1,
       missingDocuments: 1,
-      missingAiDescription: 1,
     });
+  });
+
+  it("no longer tracks the AI display summary, which the pipeline stopped producing", () => {
+    const report = buildDataQualityReport({
+      sales: [
+        saleFixture({
+          id: "sale-without-ai-summary",
+          llm_display_description: null,
+          about_description: null,
+          score_confidence: 0.8,
+          occupancy_status: "vacant",
+        }),
+      ],
+      runs: [{ status: "succeeded", finished_at: "2026-07-06T06:00:00.000Z" }],
+      now: NOW,
+    });
+
+    expect(report.fields.map((field) => field.key)).not.toContain("ai_description");
+    expect(report.priorityGaps.map((gap) => gap.key)).not.toContain("ai_description");
+    expect(report.sourceCoverage[0]).not.toHaveProperty("missingAiDescription");
+    expect(report.sourceCoverage[0].weakCount).toBe(0);
+    expect(report.prioritySales).toEqual([]);
   });
 });
 
