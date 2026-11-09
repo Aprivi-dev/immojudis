@@ -83,3 +83,15 @@ def test_urban_planning_signals_use_source_payload_as_to_verify_fallback() -> No
     assert zoning["source_kind"] == "source_payload"
     assert zoning["source_name"] == "Données source"
     assert zoning["signal_key"] == build_urban_planning_signal_rows(sale)[0]["signal_key"]
+
+
+def test_risk_notes_are_not_an_urban_planning_source() -> None:
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://example.test/vente-risques",
+        risk_notes=(
+            "Risques physiques: risk_type: natural_risk; description: Risques naturels : inondation; "
+            "evidence: quote: zone inondable | Servitudes: description: servitude de passage"
+        ),
+    )
+    assert build_urban_planning_signal_rows(sale) == []

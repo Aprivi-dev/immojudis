@@ -216,7 +216,8 @@ def _collect_text_candidates(
     _add_candidate(candidates, sale.title, "Titre annonce", "sale_text", confidence=0.5)
     _add_candidate(candidates, sale.description, "Description annonce", "sale_text", confidence=0.55)
     _add_candidate(candidates, sale.raw_text, "Texte source", "sale_text", confidence=0.55)
-    _add_candidate(candidates, sale.risk_notes, "Notes de risques", "risk", confidence=0.64)
+    # Not ``risk_notes``: it is the pipeline's own risk summary (machine fields, quotes from several pieces),
+    # so its excerpt read as raw text under an urban planning label. The pieces themselves are read below.
 
     for document in sale.documents:
         if not isinstance(document, dict):
