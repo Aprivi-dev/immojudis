@@ -83,6 +83,10 @@ UNUSABLE_SOURCE_DESCRIPTION_RE = re.compile(
 )
 FACT_FAILURE_STAGE = "facts_failure"
 FACT_FAILURE_RETRY_HOURS = 24
+# Découpage FIXE sur lequel porte l'empreinte des faits d'une vente (``llm_fact_input_key`` et l'agrégat
+# par vente) : la taille des morceaux en production au 09/11/2026. Il ne suit pas LLM_FACT_CHUNK_CHARS (la
+# taille envoyée au modèle), sinon changer cette taille rendrait périmées toutes les ventes déjà extraites.
+FACT_FINGERPRINT_CHUNK_CHARS = 10000
 _MISSING = object()
 # The legacy sale-scoped aggregate (``_load_legacy_extraction``) is keyed with the extraction mode
 # and display prompt version of the removed display synthesis. Their last production values stay
@@ -490,10 +494,16 @@ def enrich_sale_with_llm(
     # paid-call budget for this invocation, not a coverage limit.  The
     # planner below skips cached chunks and spends the budget on the next
     # uncached chunks, so later passes can make forward progress.
-    contexts = load_llm_fact_context_chunks_for_sale(
-        sale,
-        chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000),
-        max_chunks=0,
+    # The fingerprint is read first: the model chunks below record the coverage diagnostics.
+    chunk_chars = int(settings.get("llm_fact_chunk_chars") or 12000)
+    fingerprint_chunks = load_llm_fact_context_chunks_for_sale(
+        sale, chunk_chars=FACT_FINGERPRINT_CHUNK_CHARS, max_chunks=0
+    )
+    fingerprint_context = "\n\n".join(context for context in fingerprint_chunks if context)
+    contexts = (
+        fingerprint_chunks
+        if chunk_chars == FACT_FINGERPRINT_CHUNK_CHARS
+        else load_llm_fact_context_chunks_for_sale(sale, chunk_chars=chunk_chars, max_chunks=0)
     )
     fact_contexts = [context for context in contexts if context]
     if not fact_contexts:
@@ -511,12 +521,12 @@ def enrich_sale_with_llm(
         stats.error_messages.append("Fact context truncated by the configured chunk budget")
     full_evidence_context = "\n\n".join(fact_contexts)
     fact_prompt_version = str(settings.get("llm_fact_prompt_version") or prompt_version)
-    fact_input_key = _fact_input_cache_key(full_evidence_context, model_name, fact_prompt_version)
+    fact_input_key = _fact_input_cache_key(fingerprint_context, model_name, fact_prompt_version)
     legacy_entry = (
         _load_legacy_extraction(
             sale,
             output_dir,
-            full_evidence_context,
+            fingerprint_context,
             model_name,
             prompt_version,
             fact_prompt_version,
@@ -678,7 +688,7 @@ def enrich_sale_with_llm(
             f"{fact_prompt_version}:{LEGACY_DISPLAY_PROMPT_VERSION}"
         )
         legacy_cache_key = _llm_cache_key(
-            full_evidence_context,
+            fingerprint_context,
             model_name,
             prompt_version=legacy_prompt_version,
         )
@@ -709,15 +719,12 @@ def load_llm_fact_context_chunks_for_sale(
     """
 
     chunk_chars = max(3000, chunk_chars)
-    sections = _all_source_fact_sections(sale)
     pdf_path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     try:
         pdf_payload = json.loads(pdf_path.read_text(encoding="utf-8")) if pdf_path.exists() else []
     except (OSError, json.JSONDecodeError):
         pdf_payload = []
-    if isinstance(pdf_payload, list):
-        sections.extend(_all_pdf_fact_sections(pdf_payload))
-    chunks = _pack_fact_sections(sections, chunk_chars=chunk_chars)
+    chunks = _pack_fact_sections(fact_sections_for_sale(sale, pdf_payload), chunk_chars=chunk_chars)
     total_chunks = len(chunks)
     if max_chunks > 0:
         chunks = chunks[:max_chunks]
@@ -728,6 +735,17 @@ def load_llm_fact_context_chunks_for_sale(
         "chunk_chars": chunk_chars,
     }
     return chunks
+
+
+def fact_sections_for_sale(sale: AuctionSale, pdf_payload: Any) -> list[str]:
+    """Sections of the fact input: the listing blocks, then every page of ``pdf_payload``.
+
+    ``pdf_payload`` has the shape of the PDF text cache (and of the persisted ``pdf_text`` extraction).
+    """
+    sections = _all_source_fact_sections(sale)
+    if isinstance(pdf_payload, list):
+        sections.extend(_all_pdf_fact_sections(pdf_payload))
+    return sections
 
 
 def has_current_fact_analysis(
@@ -768,9 +786,10 @@ def has_current_fact_analysis(
 
     previous_context_coverage = raw_payload.get("llm_fact_context_coverage", _MISSING)
     try:
+        # Fixed split, not LLM_FACT_CHUNK_CHARS: a new model chunk size keeps stored fingerprints valid.
         contexts = load_llm_fact_context_chunks_for_sale(
             sale,
-            chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000),
+            chunk_chars=FACT_FINGERPRINT_CHUNK_CHARS,
             max_chunks=0,
         )
     finally:

@@ -870,7 +870,12 @@ Dans le mode factuel optionnel, la passe couvre toutes les pages extraites. `LLM
 limite la taille d'un segment, tandis que `LLM_FACT_MAX_CHUNKS=0` signifie
 qu'aucune page n'est volontairement écartée. Les métriques `llm_fact_context_coverage` et
 `llm_fact_coverage` signalent explicitement toute troncature ou tout segment en
-échec.
+échec. L'empreinte des faits d'une vente (`llm_fact_input_key`) est calculée sur un découpage fixe de
+10 000 caractères (`FACT_FINGERPRINT_CHUNK_CHARS`), quelle que soit `LLM_FACT_CHUNK_CHARS` : changer la
+taille des segments ne rend pas périmées les ventes déjà extraites (seuls les segments en cache changent de
+clé). `REPLICATE_FACT_MAX_TOKENS` plafonne la sortie d'un segment ; il doit monter (8192) avec des segments
+plus longs. Avant de changer la taille en production, le workflow « Fact chunk trial »
+(`scripts/fact_chunk_trial.py`, lecture seule) compare une autre taille aux faits stockés.
 
 Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiable. Il complète surtout les champs absents : `surface_m2`, `rooms_count`, `bedrooms_count`, `occupancy_status`, certains risques, `summary` et `raw_payload.llm_extraction`.
 

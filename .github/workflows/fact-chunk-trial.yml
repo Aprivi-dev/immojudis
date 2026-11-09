@@ -1,0 +1,101 @@
+name: Fact chunk trial
+
+# Essai de qualité AVANT de changer la taille des morceaux de faits en production (LLM_FACT_CHUNK_CHARS reste
+# 10000 dans data-pipeline.yml) : relance l'extraction des faits de quelques ventes à venir avec des morceaux plus
+# grands et compare au résultat stocké (services/data-pipeline/scripts/fact_chunk_trial.py). Lecture seule sur la
+# base : aucune vente ni aucun cache n'est écrit. Les appels au modèle passent par le client Replicate du pipeline :
+# ils sont réservés et notés dans llm_usage_events (étape « facts_trial ») et partagent les budgets horaire
+# (REPLICATE_MAX_CALLS_PER_HOUR) et quotidien du pipeline. Rapport dans le résumé de l'exécution.
+on:
+  workflow_dispatch:
+    inputs:
+      sales:
+        description: "Upcoming sales with complete facts to extract again (1-50)"
+        required: false
+        default: "10"
+        type: string
+      chunk_chars:
+        description: "Characters per chunk sent to the model (production: 10000)"
+        required: false
+        default: "25000"
+        type: string
+      max_tokens:
+        description: "Output token cap per chunk, REPLICATE_FACT_MAX_TOKENS (production: 4096)"
+        required: false
+        default: "8192"
+        type: string
+      max_calls:
+        description: "Hard cap on model calls for the whole trial (1-500)"
+        required: false
+        default: "120"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-fact-chunk-trial
+  cancel-in-progress: false
+
+jobs:
+  trial:
+    # Receives SUPABASE_DB_URL: only the code of `main` may run with it (a dispatch from another branch would run
+    # that branch's code with the production secret).
+    if: github.ref == 'refs/heads/main'
+    name: Compare fact chunk sizes
+    runs-on: ubuntu-24.04
+    # The script stops starting calls after 60 minutes (--budget-minutes) and then writes its report.
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Same model and Replicate settings as data-pipeline.yml (the chunk size and output cap come from the inputs).
+      REPLICATE_MODEL: qwen/qwen3-7-plus
+      REPLICATE_MIN_INTERVAL_SECONDS: 11
+      REPLICATE_WAIT_SECONDS: 60
+      REPLICATE_MAX_RETRIES: 2
+      REPLICATE_MAX_CALLS_PER_HOUR: 60
+      REPLICATE_RETRY_BACKOFF_SECONDS: 30
+      REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
+      REPLICATE_TEMPERATURE: 0.1
+      REPLICATE_MAX_TOKENS: 512
+      LLM_PROMPT_VERSION: auction_llm_v10_structured_display
+      LLM_FACT_PROMPT_VERSION: auction_facts_v1
+      LLM_ENABLED: true
+      LLM_PROVIDER: replicate
+      # Same Encheres Publiques gate as the pipeline: its sales are skipped unless both variables allow them.
+      ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
+      ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Run the read-only chunk trial
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          TRIAL_SALES: ${{ inputs.sales }}
+          TRIAL_CHUNK_CHARS: ${{ inputs.chunk_chars }}
+          TRIAL_MAX_TOKENS: ${{ inputs.max_tokens }}
+          TRIAL_MAX_CALLS: ${{ inputs.max_calls }}
+        run: >
+          python -m scripts.fact_chunk_trial
+          --sales "$TRIAL_SALES"
+          --chunk-chars "$TRIAL_CHUNK_CHARS"
+          --max-tokens "$TRIAL_MAX_TOKENS"
+          --max-calls "$TRIAL_MAX_CALLS"
+          --budget-minutes 60
