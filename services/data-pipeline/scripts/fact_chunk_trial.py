@@ -294,6 +294,9 @@ def fact_summary(payload: Mapping[str, Any] | None) -> dict[str, Any]:
 
 def sale_from_row(values: Mapping[str, Any]) -> AuctionSale:
     data = {name: values.get(name) for name in SALE_COLUMNS if values.get(name) is not None}
+    # psycopg returns the uuid column as uuid.UUID; the model keeps ids as text.
+    if "id" in data:
+        data["id"] = str(data["id"])
     # Only the URLs and labels of the documents matter here; the model types every value as text.
     documents = data.get("documents")
     data["documents"] = [

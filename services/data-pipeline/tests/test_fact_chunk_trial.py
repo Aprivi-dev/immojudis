@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -275,3 +276,12 @@ def test_options_are_bounded() -> None:
     with pytest.raises(SystemExit):
         trial.parse_args(["--max-calls", "0"])
     assert trial.parse_args([]) == trial.TrialOptions()
+
+
+def test_sale_from_row_accepts_the_uuid_returned_by_psycopg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sale_id = uuid.UUID("af8649b4-0000-4000-8000-000000000001")
+    row = _stored_rows(tmp_path, monkeypatch, ("sale-a",))["sale-a"]
+    values = dict(zip((*trial.SALE_COLUMNS, "pdf_result"), row, strict=True))
+    values["id"] = sale_id
+    sale = trial.sale_from_row(values)
+    assert sale.id == str(sale_id)
