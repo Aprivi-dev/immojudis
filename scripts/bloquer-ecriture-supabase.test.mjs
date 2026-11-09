@@ -66,6 +66,56 @@ describe("blocage des outils Supabase qui écrivent", () => {
     expect(result.status).toBe(2);
   });
 
+  const call = (toolName, toolInput) =>
+    spawnSync("/bin/sh", ["-c", command], {
+      input: JSON.stringify({ tool_name: toolName, tool_input: toolInput }),
+      encoding: "utf8",
+      cwd: "/",
+      env: { CLAUDE_PROJECT_DIR: root, PATH: dirname(process.execPath) },
+    });
+  const PRODUCTION = "sgpakxtyvenlpeihuucm";
+  const STAGING = "sxhxzhogzccpdjxpgzuk";
+  const STAGING_BRANCH = "43b9dfd2-d530-408d-a7eb-b21b2bc9914f";
+  const MIGRATION = { name: "x", query: "select 1" };
+
+  it("laisse passer la base de test seule : mise à niveau de sa branche, migration sur son projet", () => {
+    expect(call("mcp__Supabase__rebase_branch", { branch_id: STAGING_BRANCH }).status).toBe(0);
+    expect(
+      call("mcp__Supabase__apply_migration", { ...MIGRATION, project_id: STAGING }).status,
+    ).toBe(0);
+  });
+
+  it("bloque toujours la production et toute autre cible", () => {
+    for (const [tool, input] of [
+      ["mcp__Supabase__apply_migration", { ...MIGRATION, project_id: PRODUCTION }],
+      ["mcp__Supabase__apply_migration", { ...MIGRATION, project_id: "autreprojet" }],
+      ["mcp__Supabase__apply_migration", MIGRATION],
+      ["mcp__Supabase__rebase_branch", { branch_id: "e1ba937e-1edf-4781-b69d-e5e396ce283f" }],
+      ["mcp__Supabase__rebase_branch", {}],
+    ]) {
+      const result = call(tool, input);
+      expect(result.status, `${tool} ${JSON.stringify(input)}`).toBe(2);
+      expect(result.stderr).toContain("interdit : aucun agent n'écrit dans la base");
+    }
+  });
+
+  it("bloque les autres outils d'écriture, même sur la base de test", () => {
+    for (const tool of WRITE_TOOLS.filter(
+      (name) => !name.endsWith("__apply_migration") && !name.endsWith("__rebase_branch"),
+    )) {
+      expect(call(tool, { project_id: STAGING, branch_id: STAGING_BRANCH }).status, tool).toBe(2);
+    }
+  });
+
+  it("bloque une entrée illisible", () => {
+    const result = spawnSync(
+      process.execPath,
+      [resolve(root, ".claude/hooks/bloquer-ecriture-supabase.mjs")],
+      { input: "{pas du json", encoding: "utf8", cwd: "/" },
+    );
+    expect(result.status).toBe(2);
+  });
+
   it("bloque aussi quand node est introuvable (`|| exit 2`)", () => {
     expect(command).toMatch(/\|\| exit 2$/);
     expect(run({ PATH: "/nonexistent" }).status).toBe(2);
