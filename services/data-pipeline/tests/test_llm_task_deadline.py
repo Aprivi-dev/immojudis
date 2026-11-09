@@ -67,7 +67,8 @@ def test_deadline_stops_before_request_reservation(monkeypatch: pytest.MonkeyPat
 
 
 def test_post_timeout_is_recomputed_after_payload_preparation(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _client()
+    # Attente courte : il reste assez de temps (50 s) pour lire la réponse d'une attente de 10 s.
+    client = _client(wait_seconds=10)
     now = [10.0]
     captured: dict[str, object] = {}
     monkeypatch.setattr(llm_task_deadline.time, "monotonic", lambda: now[0])
@@ -133,7 +134,8 @@ def test_deadline_stops_cadence_without_reserving_or_posting(monkeypatch: pytest
 
 
 def test_deadline_stops_before_rate_limit_retry(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _client(max_retries=2, retry_backoff_seconds=10, retry_max_sleep_seconds=10)
+    # Délai court : le premier envoi part encore, c'est la relance qui doit s'arrêter.
+    client = _client(max_retries=2, retry_backoff_seconds=10, retry_max_sleep_seconds=10, timeout_seconds=4)
     now = [100.0]
     provider_calls = 0
     reservation_calls = 0
@@ -187,7 +189,8 @@ def test_deadline_stops_before_rate_limit_retry(monkeypatch: pytest.MonkeyPatch)
 def test_transport_error_at_cutoff_keeps_reservation_ambiguous(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client = _client()
+    # Délai très court (0,5 s) : l'envoi part encore à 1 s de l'échéance, c'est le transport qui échoue.
+    client = _client(timeout_seconds=0.5)
     now = [99.0]
     provider_calls = 0
     reservation_calls = 0
@@ -373,3 +376,37 @@ def test_fact_checkpoint_survives_deadline_before_next_chunk(
         extraction.enrich_sale_with_llm(_sale(), client=CheckpointClient(), output_dir=tmp_path)
 
     assert len(list((tmp_path / "chunks").glob("*.json"))) == 1
+
+
+@pytest.mark.parametrize(("remaining", "sent"), [(89.0, False), (91.0, True)])
+def test_no_prediction_sent_without_time_to_read_its_answer(
+    monkeypatch: pytest.MonkeyPatch, remaining: float, sent: bool
+) -> None:
+    """Une prédiction lancée sans le temps de lire sa réponse était facturée puis rejouée (09/11/2026)."""
+    client = _client(wait_seconds=60, timeout_seconds=180)
+    reservations: list[object] = []
+    posts: list[object] = []
+    monkeypatch.setattr(llm_task_deadline.time, "monotonic", lambda: 1000.0)
+    monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: reservations.append(kwargs) or "r-1")
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
+    monkeypatch.setattr(llm_client, "record_llm_request", lambda *args, **kwargs: None)
+
+    def post(*args: object, **kwargs: object) -> httpx.Response:
+        posts.append(kwargs)
+        return httpx.Response(
+            201,
+            json={"id": "p-1", "status": "starting", "urls": {"get": "https://api.replicate.com/v1/predictions/p-1"}},
+            request=httpx.Request("POST", "https://api.replicate.com/v1/predictions"),
+        )
+
+    monkeypatch.setattr(llm_client.httpx, "post", post)
+    with llm_task_deadline.llm_task_deadline_scope(1000.0 + remaining):
+        if sent:
+            client._post_with_retries("https://api.replicate.com/v1/predictions", {}, {"input": {"prompt": "p"}})
+        else:
+            with pytest.raises(llm_task_deadline.LLMTaskDeadlineExceeded, match="too close to the deadline"):
+                client._post_with_retries("https://api.replicate.com/v1/predictions", {}, {"input": {"prompt": "p"}})
+    # Rien n'est réservé ni envoyé quand le temps manque : le morceau repart au passage suivant, sans frais.
+    assert bool(reservations) is sent
+    assert bool(posts) is sent
+

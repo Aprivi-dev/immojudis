@@ -45,7 +45,7 @@ def wrap_untrusted_source_context(context_text: str) -> str:
 PERSONAL_DATA_EXTRACTION_RULE = (
     "Règles données personnelles :\n"
     "- Dans les champs rédigés (occupancy_details, legal_risks, physical_risks, servitudes, works_needed, "
-    "summary, investor_notes, statement, reasoning, answer), ne reproduis jamais le nom, la date de "
+    "summary, statement), ne reproduis jamais le nom, la date de "
     "naissance ni l'adresse personnelle d'une personne physique (débiteur, saisi, propriétaire, occupant, "
     "locataire, héritier, créancier personne physique). Écris « le saisi », « l'occupant », « le locataire », "
     "« le propriétaire », « le créancier ».\n"
@@ -85,9 +85,6 @@ def build_user_prompt(context_text: str) -> str:
         "- Si une valeur semble venir d'un tableau de diagnostics, d'un DPE, d'une page, d'un article ou d'un numéro de lot, ne l'utilise pas.\n"
         "- Ne convertis pas les ares/centiares en m² sauf si le document donne explicitement une surface en m².\n"
         "- Les champs texte doivent rester courts et citer les mots utiles du document quand c'est possible.\n\n"
-        "Séparation des responsabilités :\n"
-        "- Cette passe extrait uniquement des faits. Laisse display_description à null.\n"
-        "- Une seconde passe rédigera la synthèse à partir des faits validés.\n\n"
         "Règles surfaces :\n"
         "- surface_m2 doit représenter la surface principale du bien, pas une surface de terrain, garage, cave, dépendance, local annexe ou piscine.\n"
         "- Pour un appartement, privilégie une surface loi Carrez explicitement mentionnée.\n"
@@ -139,13 +136,10 @@ def build_user_prompt(context_text: str) -> str:
         "- investment_facts doit lister uniquement des faits vérifiables utiles à l'investisseur.\n"
         "- Chaque fait doit avoir status confirmé, infirmé ou incertain.\n"
         "- contradictions doit signaler les conflits entre annonce, PV, CCV, diagnostics ou autres pièces.\n"
-        "- analysis_questions doit répondre aux questions métier clés : occupation, surface, travaux, diagnostics, servitudes, liquidité.\n"
-        "- scoring_guidance doit expliquer l'impact probable sur le scoring, sans inventer de prix de marché.\n"
         "- Un mot isolé comme plomb, travaux ou servitude ne suffit jamais : explique le contexte exact.\n\n"
         "Schéma JSON attendu, sans markdown et sans commentaire :\n"
         "{\n"
         '  "property_type": "apartment|house|building|land|commercial|parking|mixed|other|unknown|null",\n'
-        '  "display_description": null,\n'
         '  "surface_m2": 0.0,\n'
         '  "assets": [\n'
         '    {\n'
@@ -171,7 +165,6 @@ def build_user_prompt(context_text: str) -> str:
         '  "servitudes": [],\n'
         '  "works_needed": null,\n'
         '  "summary": null,\n'
-        '  "investor_notes": null,\n'
         '  "confidence": {\n'
         '    "property_type": 0.0,\n'
         '    "surface_m2": 0.0,\n'
@@ -182,7 +175,6 @@ def build_user_prompt(context_text: str) -> str:
         '    "physical_risks": 0.0,\n'
         '    "copropriete": 0.0,\n'
         '    "servitudes": 0.0,\n'
-        '    "display_description": 0.0,\n'
         '    "summary": 0.0\n'
         "  },\n"
         '  "evidence": {\n'
@@ -200,12 +192,6 @@ def build_user_prompt(context_text: str) -> str:
         "  ],\n"
         '  "contradictions": [\n'
         '    {"field": null, "statement": null, "sources": [], "quote": null, "document_label": null, "page_number": null, "confidence": 0.0}\n'
-        "  ],\n"
-        '  "analysis_questions": [\n'
-        '    {"question": null, "answer": null, "status": "answered|to_verify|unknown", "quote": null, "document_label": null, "page_number": null}\n'
-        "  ],\n"
-        '  "scoring_guidance": [\n'
-        '    {"axis": "financial_attractiveness|asset_quality|legal_security|liquidity_resale|analysis_confidence", "impact": "positive|negative|neutral|uncertain", "reasoning": null, "quote": null, "document_label": null, "page_number": null}\n'
         "  ]\n"
         "}\n\n"
         "Texte fourni :\n"
