@@ -2,7 +2,7 @@ import hashlib
 import json
 import os
 from contextlib import nullcontext
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +11,6 @@ import httpx
 import pytest
 
 from src.court_competence import CompetentCourtAssignment
-from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.reviewed_aliases import registry_from_rows
@@ -829,57 +828,6 @@ def test_fetch_known_sale_details_raises_instead_of_returning_partial_data(monke
         supabase_client.fetch_known_sale_details()
 
 
-def test_enriched_hashes_require_current_llm_description_when_requested(monkeypatch) -> None:
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-
-    class Response:
-        is_error = False
-
-        def json(self):
-            return [
-                {
-                    "content_hash": "hash-current",
-                    "raw_payload": {
-                        "llm_display_description": "Synthèse IA prête. " * 5,
-                        "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
-                        "llm_display_status": "accepted",
-                        "llm_prompt_version": "auction_llm_v5",
-                    },
-                },
-                {
-                    "content_hash": "hash-missing",
-                    "raw_payload": {
-                        "source_description": "Description brute.",
-                    },
-                },
-                {
-                    "content_hash": "hash-stale",
-                    "raw_payload": {
-                        "llm_display_description": "Ancienne synthèse.",
-                        "llm_prompt_version": "auction_llm_v4",
-                    },
-                },
-            ]
-
-    def fake_get(endpoint, params, headers, timeout):
-        assert endpoint == "https://supabase.test/rest/v1/auction_sales"
-        assert params["select"] == "content_hash,raw_payload"
-        assert params["score_version"] == "not.is.null"
-        return Response()
-
-    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
-
-    assert supabase_client.fetch_enriched_content_hashes(
-        ["hash-current", "hash-missing", "hash-stale"],
-        require_llm_description=True,
-        prompt_version="auction_llm_v5",
-    ) == {"hash-current"}
-
-
 def test_enriched_hashes_use_compact_postgres_projection(monkeypatch) -> None:
     monkeypatch.setattr(
         supabase_client,
@@ -895,17 +843,8 @@ def test_enriched_hashes_use_compact_postgres_projection(monkeypatch) -> None:
     class Cursor:
         def fetchall(self):
             return [
-                (
-                    "hash-current",
-                    {"coverage_status": "source_only"},
-                    "Synthèse IA prête et suffisamment longue pour être publiée sur la fiche. " * 2,
-                    DISPLAY_QUALITY_VERSION,
-                    "accepted",
-                    "auction_llm_v5",
-                    "display-v1",
-                    "provider/model",
-                ),
-                ("hash-missing", None, None, None, None, None, None, None),
+                ("hash-current", {"coverage_status": "source_only"}),
+                ("hash-missing", None),
             ]
 
     class Database:
@@ -922,12 +861,11 @@ def test_enriched_hashes_use_compact_postgres_projection(monkeypatch) -> None:
 
     assert supabase_client.fetch_enriched_content_hashes(
         ["hash-current", "hash-missing"],
-        require_llm_description=True,
         require_document_analysis=True,
-        prompt_version="auction_llm_v5",
     ) == {"hash-current"}
     query = str(captured["query"])
     assert "raw_payload->'document_analysis'" in query
+    assert "llm_display" not in query
     assert "raw_payload,\n" not in query
     assert set(captured["params"][0]) == {"hash-current", "hash-missing"}
 
@@ -952,7 +890,6 @@ def test_enriched_hashes_keep_legacy_score_only_mode(monkeypatch) -> None:
 
     assert supabase_client.fetch_enriched_content_hashes(
         ["hash-current", "hash-missing"],
-        require_llm_description=False,
     ) == {"hash-current", "hash-missing"}
 
 
@@ -1071,98 +1008,6 @@ def test_enriched_hashes_require_successful_document_analysis_when_requested(mon
         ],
         require_document_analysis=True,
     ) == {"hash-extracted", "hash-source-only", "hash-policy-blocked-current"}
-
-
-def test_fetch_sales_needing_llm_descriptions_filters_current_rows(monkeypatch) -> None:
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    captured: dict[str, object] = {}
-
-    class Response:
-        is_error = False
-
-        def json(self):
-            return [
-                {
-                    "source_name": "avoventes", "starting_price_eur": 10000,
-                    "surface_m2": 80,
-                    "source_url": "https://example.test/current",
-                    "status": "upcoming",
-                    "raw_payload": {
-                        "llm_display_description": "Synthèse courante. " * 5,
-                        "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
-                        "llm_display_status": "accepted",
-                        "llm_prompt_version": "auction_llm_v6_display",
-                    },
-                },
-                {
-                    "source_name": "notaires",
-                    "surface_m2": 80,
-                    "source_url": "https://example.test/missing",
-                    "status": "upcoming",
-                    "title": "Maison 85 m²",
-                    "raw_payload": {"source_blocks": {"description": "Maison avec jardin."}},
-                },
-                {
-                    "source_name": "encheres_publiques",
-                    "surface_m2": 80,
-                    "source_url": "https://example.test/stale",
-                    "status": "active",
-                    "title": "Appartement",
-                    "raw_payload": {
-                        "llm_display_description": "Ancienne synthèse.",
-                        "llm_prompt_version": "auction_llm_v5",
-                    },
-                },
-                {
-                    "source_name": "notaires",
-                    "surface_m2": 80,
-                    "source_url": "https://example.test/recent-failure",
-                    "status": "upcoming",
-                    "title": "Maison en échec récent",
-                    "raw_payload": {
-                        "source_blocks": {"description": "Maison."},
-                        "llm_display_error_at": datetime.now(UTC).isoformat(),
-                        "llm_display_error_prompt_version": "auction_llm_v6_display",
-                    },
-                },
-                {
-                    "source_name": "notaires",
-                    "surface_m2": 80,
-                    "source_url": "https://example.test/old-failure",
-                    "status": "upcoming",
-                    "title": "Maison en ancien échec",
-                    "raw_payload": {
-                        "source_blocks": {"description": "Maison."},
-                        "llm_display_error_at": (datetime.now(UTC) - timedelta(hours=25)).isoformat(),
-                        "llm_display_error_prompt_version": "auction_llm_v6_display",
-                    },
-                },
-            ]
-
-    def fake_get(endpoint, params, headers, timeout):
-        captured["endpoint"] = endpoint
-        captured["params"] = params
-        return Response()
-
-    monkeypatch.setattr(supabase_client.httpx, "get", fake_get)
-
-    sales = supabase_client.fetch_sales_needing_llm_descriptions(
-        limit=10,
-        prompt_version="auction_llm_v6_display",
-        statuses=("active", "upcoming"),
-    )
-
-    assert captured["endpoint"] == "https://supabase.test/rest/v1/auction_sales"
-    assert captured["params"]["status"] == 'in.("active","upcoming")'
-    assert [sale.source_url for sale in sales] == [
-        "https://example.test/missing",
-        "https://example.test/stale",
-        "https://example.test/old-failure",
-    ]
 
 
 def test_legacy_vench_cleanup_does_not_delete_existing_rows(monkeypatch):

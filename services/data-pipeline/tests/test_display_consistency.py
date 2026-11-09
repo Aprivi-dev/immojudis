@@ -1,7 +1,8 @@
 """Public syntheses that contradicted the canonical facts (production audit of 03/11/2026).
 
 Every text below was published on immojudis before this guard; the sale id
-prefix is given for each. Field values are those of the sale in production.
+prefix is given for each. Field values are those of the sale in production. The
+same checks now guard the model's summary before it replaces a description.
 """
 
 from datetime import UTC, date, datetime
@@ -9,14 +10,9 @@ from decimal import Decimal
 
 import pytest
 
-from src.config import load_settings
 from src.enrichment import display_consistency
-from src.enrichment.display_consistency import repair_generated_display
 from src.enrichment.display_evidence import verify_display_claims
-from src.enrichment.display_facts import canonical_facts_block, sale_nature
-from src.enrichment.display_quality import preserve_source_constraints
-from src.enrichment.extract_structured import apply_cached_llm_extraction_to_sale
-from src.models import AuctionSale
+from src.enrichment.display_facts import sale_nature
 
 AGORASTORE_LISTING = (
     "Ensemble Immobilier Pouilly En Auxois Avec Logements Et Dépendances. Surface cadastrale: 2830 m². "
@@ -277,7 +273,7 @@ def test_tender_is_not_invented_for_a_judicial_sale():
 # --- Tense, jargon, pasted citations ----------------------------------------------------------
 
 
-def test_past_participle_before_a_coming_sale_is_rejected_then_repaired():
+def test_past_participle_before_a_coming_sale_is_rejected():
     # ab1426da (avoventes), sale on 19/11/2026.
     text = "Appartement à Antony (92160) vendu le 19/11/2026 au prix de 90 000 €. Le bien est occupé."
     fields = {
@@ -287,9 +283,8 @@ def test_past_participle_before_a_coming_sale_is_rejected_then_repaired():
         "sale_date": datetime(2026, 11, 19, 13, 30, tzinfo=UTC),
     }
     assert "past_tense_future_sale" in codes(text, "", **fields)
-    repaired = repair_generated_display(text, fields)
-    assert repaired == "Appartement à Antony (92160) proposé le 19/11/2026 au prix de 90 000 €. Le bien est occupé."
-    assert not codes(repaired, "", **fields)
+    proposed = "Appartement à Antony (92160) proposé le 19/11/2026 au prix de 90 000 €. Le bien est occupé."
+    assert not codes(proposed, "", **fields)
 
 
 def test_past_participle_after_the_sale_date_is_correct(monkeypatch):
@@ -300,41 +295,6 @@ def test_past_participle_after_the_sale_date_is_correct(monkeypatch):
 def test_future_and_present_passive_are_not_flagged():
     assert not codes("Maison qui sera vendue le 27/11/2026.", "Vente le 27/11/2026.")
     assert not codes("Il est vendu libre de toute occupation le 03/12/2026.", "Vente le 03/12/2026.")
-
-
-@pytest.mark.parametrize(
-    "sale_id,text,expected",
-    [
-        (
-            "48a12a89",  # encheres_immobilieres, sale on 10/12/2026.
-            "Appartement à Auribeau-Sur-Siagne (06810) vendu lors d'une vente judiciaire aux enchères (TJ Grasse) le "
-            "10/12/2026, avec une mise à prix de 830 000 €. La surface retenue est de 115,95 m² (bâtie ou de plancher). "
-            "Le bien comprend une terrasse et une piscine. L'occupation n'est pas précisée dans les faits canoniques.",
-            "Appartement à Auribeau-Sur-Siagne (06810) proposé lors d'une vente judiciaire aux enchères (TJ Grasse) le "
-            "10/12/2026, avec une mise à prix de 830 000 €. La surface est de 115,95 m² (bâtie ou de plancher). "
-            "Le bien comprend une terrasse et une piscine.",
-        ),
-        (
-            "aa42290d",  # cessions_etat: an absence sentence about points no field holds.
-            "Terrain de 1805 m² situé à Saint-Aubin-du-Cormier (35). Le bien est un terrain nu classé en zones "
-            "urbaines. Aucune information n'est fournie concernant l'occupation, le DPE ou le GES.",
-            "Terrain de 1805 m² situé à Saint-Aubin-du-Cormier (35). Le bien est un terrain nu classé en zones urbaines.",
-        ),
-        (
-            "0f73b680",  # notaires
-            "Maison mitoyenne située à Toulon (Var). L'occupation actuelle n'est pas précisée dans les éléments fournis.",
-            "Maison mitoyenne située à Toulon (Var).",
-        ),
-        (
-            "9c977501",  # cessions_etat: the citation shape the pipeline appends, written by the model itself.
-            "Maison située à Bourg-en-Bresse (01). La performance énergétique est classée G. Source : « L’entrée se "
-            "fait par la parcelle AE 178, sur laquelle se trouve un petit transformateur EDF. »",
-            "Maison située à Bourg-en-Bresse (01). La performance énergétique est classée G.",
-        ),
-    ],
-)
-def test_wording_repairs_keep_every_fact(sale_id, text, expected):
-    assert repair_generated_display(text, {}) == expected, sale_id
 
 
 @pytest.mark.parametrize(
@@ -349,11 +309,9 @@ def test_internal_jargon_is_never_public(text):
     assert "internal_jargon" in codes(text, "")
 
 
-def test_contradicted_absence_is_still_rejected_rather_than_dropped():
-    # The surface is known: the model ignored the canonical facts, so the text is not repaired.
+def test_contradicted_absence_is_rejected():
     text = "Maison à Revel. La surface n'est pas précisée."
     fields = {"surface_m2": Decimal("120")}
-    assert repair_generated_display(text, fields) == text
     assert "absence_claim_contradicted" in codes(text, "", **fields)
 
 
@@ -420,100 +378,3 @@ def test_contradicted_absence_is_still_rejected_rather_than_dropped():
 )
 def test_consistent_published_syntheses_still_pass(sale_id, text, fields):
     assert not display_consistency.consistency_issues(text, text, fields), sale_id
-    assert repair_generated_display(text, fields) == text.replace("surface retenue", "surface")
-
-
-# --- Canonical facts and source quotations ----------------------------------------------------
-
-
-def test_canonical_facts_give_no_room_count_for_land():
-    sale = AuctionSale(
-        source_name="cessions_etat",
-        source_url="https://example.test/pessines",
-        property_type="land",
-        city="Pessines",
-        land_surface_m2=Decimal("27044"),
-        rooms_count=1,
-    )
-    block = canonical_facts_block(sale)
-    assert "Pièces" not in block and "27044 m²" in block
-
-
-def test_a_quotation_never_replaces_the_whole_synthesis():
-    # 3d55bf36 (published as a lone « Source : « VENTE AUX ENCHERES PUBLIQUES : MAISON … » »).
-    source = (
-        "VENTE AUX ENCHERES PUBLIQUES : MAISON d’HABITATION AVEC GARAGE Et 1/5 indivis d’une parcelle à usage de "
-        "passage commun Sur la Commune de PIEUSSE (11300) – Cadastré Section AD N° 63 d'une contenance de 10 a 01 ca "
-        + "et 1/5 indivis sur la parcelle AD n° 67 " * 12
-        + "."
-    )
-    narrative = "Maison à Pieusse (11300) proposée lors d'une vente judiciaire aux enchères le 01/12/2026."
-    text, quotes = preserve_source_constraints(narrative, source, max_chars=850, max_words=125)
-    assert quotes and text is None
-
-
-def test_cached_synthesis_with_a_foreign_surface_falls_back_to_the_canonical_template():
-    # 4a791649 (avoventes) revalidated without any AI call.
-    text = (
-        "Appartement situé à Saint-Denis (93200). La vente est prévue le 10/11/2026 pour un prix de 20 000 €. "
-        "Le bien dispose d'une surface de 19,27 m², comprenant 3 pièces, 2 chambres et 1 salle d'eau."
-    )
-    source = "Bâtiment F : UN LOGEMENT de 19,27 m2. Appartement de 138,98 m², 3 pièces, 2 chambres."
-    sale = AuctionSale(
-        source_name="avoventes",
-        source_url="https://example.test/saint-denis",
-        property_type="apartment",
-        city="Saint-Denis",
-        postal_code="93200",
-        surface_m2=Decimal("138.98"),
-        rooms_count=3,
-        bedrooms_count=2,
-        starting_price_eur=Decimal("20000"),
-        sale_date=datetime(2026, 11, 10, 13, tzinfo=UTC),
-        description=source,
-        raw_payload={
-            "llm_prompt_version": "v1",
-            "llm_display_prompt_version": str(load_settings()["llm_display_prompt_version"]),
-            "description": source,
-            "llm_display_description": text,
-            "llm_display_status": "accepted",
-            "llm_extraction": {"display_description": text},
-        },
-    )
-    assert apply_cached_llm_extraction_to_sale(sale, prompt_version="v1")
-    published = sale.raw_payload["llm_display_description"]
-    assert sale.raw_payload["llm_display_status"] == "fallback"
-    assert "19,27" not in published and "138,98 m²" in published
-    assert sale.raw_payload["rejected_display_description"]["issue_codes"] == ["area_contradicts_canonical"]
-
-
-def test_cached_synthesis_with_repairable_wording_stays_accepted():
-    # ab1426da (avoventes): only the tense was wrong.
-    text = (
-        "Appartement à Antony (92160) vendu le 19/11/2026 au prix de 90 000 €. La surface retenue est de 69,1 m². "
-        "Le bien comprend 2 chambres. Le bien est occupé."
-    )
-    sale = AuctionSale(
-        source_name="avoventes",
-        source_url="https://example.test/antony",
-        property_type="apartment",
-        city="Antony",
-        postal_code="92160",
-        surface_m2=Decimal("69.1"),
-        bedrooms_count=2,
-        occupancy_status="occupied",
-        starting_price_eur=Decimal("90000"),
-        sale_date=datetime(2026, 11, 19, 13, 30, tzinfo=UTC),
-        description="Appartement de 69,1 m², 2 chambres, occupé.",
-        raw_payload={
-            "llm_prompt_version": "v1",
-            "llm_display_prompt_version": str(load_settings()["llm_display_prompt_version"]),
-            "llm_extraction": {"display_description": text},
-        },
-    )
-    apply_cached_llm_extraction_to_sale(sale, prompt_version="v1")
-    assert sale.raw_payload["llm_display_status"] == "accepted"
-    assert sale.raw_payload["llm_display_description"] == (
-        "Appartement à Antony (92160) proposé le 19/11/2026 au prix de 90 000 €. La surface est de 69,1 m². "
-        "Le bien comprend 2 chambres. Le bien est occupé."
-    )

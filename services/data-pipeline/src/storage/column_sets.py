@@ -159,18 +159,6 @@ JUDICIAL_SALE_COLUMNS = (
 )
 
 
-LLM_BACKFILL_SALE_SELECT = ",".join(
-    (
-        "id",
-        *UPSERT_COLUMNS,
-        "first_seen_at",
-        "last_seen_at",
-        "created_at",
-        "updated_at",
-    )
-)
-
-
 DEDUPLICATION_SALE_SELECT = ",".join(
     (
         "id",

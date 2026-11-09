@@ -2,49 +2,25 @@ import hashlib
 import json
 import shutil
 import time
-from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pymupdf
 import pytest
 
-from src import main, pdf_enrichment, pipeline_health, queued_runner
+from src import pdf_enrichment, pipeline_health, queued_runner
 from src.enrichment import extract_structured as extraction
 from src.models import AuctionSale
 
 
-def test_backfill_commits_before_next_result_even_if_interrupted(monkeypatch):
-    monkeypatch.delenv("GITHUB_ENV", raising=False)
-    sales = [AuctionSale(source_name="avoventes", source_url=f'https://example.test/{i}', description='Maison à Bordeaux.', starting_price_eur=10000, last_seen_at=datetime(2026, 1, 1, tzinfo=UTC)) for i in range(2)]
-    stored = []
-    monkeypatch.setattr(main, 'fetch_sales_needing_llm_descriptions', lambda **kw: sales)
-    monkeypatch.setattr(main, 'create_run_in_supabase', lambda *a, **kw: 'run')
-    monkeypatch.setattr(main, 'update_run_progress_in_supabase', lambda *a: None)
-    monkeypatch.setattr(main, 'create_llm_client', lambda: object())
-    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda *a, **kw: None)
-    monkeypatch.setattr(main, 'upsert_sales_to_supabase', lambda rows, **kw: stored.append((rows[0].source_url, kw, rows[0].last_seen_at)) or 1)
-    def enrich(sale, **kw):
-        sale.raw_payload.update(llm_display_description='Maison à Bordeaux.', llm_prompt_version=main.load_settings()['llm_prompt_version'])
-        return main.LLMEnrichmentStats(analyzed=1, valid_json=1)
-    monkeypatch.setattr(main, 'enrich_sale_with_llm', enrich)
-    def interrupted(futures):
-        yield next(iter(futures))
-        raise KeyboardInterrupt()
-    monkeypatch.setattr(main, 'as_completed', interrupted)
-    with pytest.raises(KeyboardInterrupt):
-        main.run_llm_description_backfill(main.PipelineOptions(llm_backfill=True))
-    assert stored == [(sales[0].source_url, {'refresh_last_seen': False}, datetime(2026, 1, 1, tzinfo=UTC))]
-
-
-@pytest.mark.parametrize('error_count,coverage,description', [(1, True, 'Résumé'), (0, False, 'Résumé'), (0, True, '')])
-def test_worker_never_completes_partial_fact_job(monkeypatch, error_count, coverage, description):
+@pytest.mark.parametrize('error_count,coverage', [(1, True), (0, False)])
+def test_worker_never_completes_partial_fact_job(monkeypatch, error_count, coverage):
     sale = AuctionSale(source_name="avoventes", source_url='https://example.test/a', description='Maison')
     finished = []
     monkeypatch.setattr(queued_runner, 'claim_auction_enrichment_jobs_from_supabase', lambda **kw: [{'id': 'job', 'source_url': sale.source_url, 'job_type': 'fact_extraction'}])
     monkeypatch.setattr(queued_runner, 'fetch_sale_for_data_refresh', lambda _: sale)
     monkeypatch.setattr(queued_runner, 'create_llm_client', lambda: object())
     def enrich(*a, **kw):
-        sale.raw_payload.update(llm_display_description=description, llm_prompt_version=queued_runner.load_settings()['llm_prompt_version'], llm_fact_coverage={'complete': coverage})
+        sale.raw_payload.update(llm_prompt_version=queued_runner.load_settings()['llm_prompt_version'], llm_fact_coverage={'complete': coverage})
         return SimpleNamespace(valid_json=1, errors=error_count, unavailable=False, error_messages=['partial'] if error_count else [])
     monkeypatch.setattr(queued_runner, 'enrich_sale_with_llm', enrich)
     monkeypatch.setattr(queued_runner, 'upsert_sales_to_supabase', lambda *a, **kw: pytest.fail('Partial data must not complete publication'))
@@ -57,7 +33,6 @@ def test_failed_chunk_is_retried_without_paying_for_successful_chunk(tmp_path, m
     monkeypatch.setenv('LLM_ENABLED', 'true')
     monkeypatch.setenv('INCREMENTAL_ENRICHMENT', 'true')
     monkeypatch.setattr(extraction, 'load_llm_fact_context_chunks_for_sale', lambda *a, **kw: ['chunk-A', 'chunk-B'])
-    monkeypatch.setattr(extraction, 'load_llm_context_for_sale', lambda *a, **kw: 'Maison')
     calls = []
     class Client:
         model = 'test'
@@ -68,15 +43,15 @@ def test_failed_chunk_is_retried_without_paying_for_successful_chunk(tmp_path, m
             calls.append(prompt)
             if 'chunk-B' in prompt and self.failing:
                 raise ValueError('transient')
-            return {'display_description': 'Maison décrite par les pièces.'}
+            return {}
     client = Client()
     sale = AuctionSale(source_name="avoventes", source_url='https://example.test/chunks', description='Maison')
-    first = extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode='structured_then_display')
+    first = extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
     assert first.errors == 1
     assert sale.raw_payload['llm_fact_coverage']['complete'] is False
     assert not list(tmp_path.glob('*.json'))
     client.failing = False
-    second = extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode='structured_then_display')
+    second = extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
     assert second.errors == 0
     assert sale.raw_payload['llm_fact_coverage']['complete'] is True
     assert sum('chunk-A' in prompt for prompt in calls) == 1
@@ -802,9 +777,8 @@ def test_truncated_fact_context_cannot_be_cached_as_complete(tmp_path, monkeypat
         sale.raw_payload['llm_fact_context_coverage'] = {'complete': False}
         return ['Only the first page']
     monkeypatch.setattr(extraction, 'load_llm_fact_context_chunks_for_sale', contexts)
-    monkeypatch.setattr(extraction, 'load_llm_context_for_sale', lambda *a, **kw: 'Maison')
-    client = SimpleNamespace(model='test', is_available=lambda: True, generate_json=lambda *a: {'display_description': 'Maison décrite.'})
-    stats = extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode='structured_then_display')
+    client = SimpleNamespace(model='test', is_available=lambda: True, generate_json=lambda *a: {})
+    stats = extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
     assert stats.errors > 0
     assert not sale.raw_payload['llm_fact_coverage']['complete']
     assert not list(tmp_path.glob('*.json'))
@@ -829,13 +803,11 @@ def test_register_run_exports_only_valid_uuid(tmp_path, monkeypatch):
         register_run("bad\nINJECTED=value")
 
 
-@pytest.mark.parametrize('mode,fail_at', [('display_description', 1), ('structured_then_display', 1), ('structured_then_display', 2)])
-def test_budget_exhaustion_reaches_queue_without_becoming_extraction_failure(tmp_path, monkeypatch, mode, fail_at):
+def test_budget_exhaustion_reaches_queue_without_becoming_extraction_failure(tmp_path, monkeypatch):
     from src.pipeline_usage import PipelineBudgetExhausted
 
     monkeypatch.setenv('LLM_ENABLED', 'true')
     monkeypatch.setattr(extraction, 'load_llm_fact_context_chunks_for_sale', lambda *a, **kw: ['chunk-A'])
-    monkeypatch.setattr(extraction, 'load_llm_context_for_sale', lambda *a, **kw: 'Maison')
 
     class Client:
         model = 'budget-test'
@@ -846,13 +818,11 @@ def test_budget_exhaustion_reaches_queue_without_becoming_extraction_failure(tmp
 
         def generate_json(self, *args):
             self.calls += 1
-            if self.calls == fail_at:
-                raise PipelineBudgetExhausted('Daily AI budget exhausted')
-            return {'display_description': 'Maison décrite par les pièces.'}
+            raise PipelineBudgetExhausted('Daily AI budget exhausted')
 
     sale = AuctionSale(source_name='licitor', source_url='https://example.test/budget', description='Maison')
     client = Client()
     with pytest.raises(PipelineBudgetExhausted):
-        extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode=mode)
-    assert client.calls == fail_at
+        extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
+    assert client.calls == 1
     assert not list(tmp_path.glob('*.json'))

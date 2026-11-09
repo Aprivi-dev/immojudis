@@ -8,11 +8,9 @@ sale, leaked the prompt's vocabulary (« faits canoniques ») or put an area
 after « au prix de ». The existing check accepted every number found anywhere
 in the evidence; the rules below compare the text with the structured fields.
 
-* ``repair_generated_display`` rewrites what can be fixed without changing a
-  fact: past participle before a future date, sentences made of internal
-  jargon, of a missing-information remark or of a citation pasted by the model.
-* ``consistency_issues`` rejects the rest. A rejected text is never published:
-  the caller falls back to the deterministic template.
+``consistency_issues`` reports these errors; the evidence check
+(``display_evidence``) then refuses the text. It now guards the model's summary
+before it replaces a sale's description.
 
 Text between « » is a verbatim source quotation appended by the pipeline and is
 left out of these rules, as in ``display_semantics``.
@@ -27,7 +25,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from src.enrichment.display_facts import known_offer_amounts, sale_listing_text, sale_nature
-from src.enrichment.display_semantics import ABSENCE, ABSENCE_TOPICS, CLAUSE_SPLIT, absence_issues
 
 PARIS = ZoneInfo("Europe/Paris")
 NUMBER = r"(?<![\w.,+])\d+(?:[   ]\d{3})*(?:[.,]\d+)?"
@@ -133,10 +130,6 @@ INTERNAL_JARGON = re.compile(
     r"|\b[a-z]+(?:_[a-z0-9]+)+\b|\bdonnées\s+structurées\b|\bcontexte\s+fourni\b"
     r"|\b(?:éléments|données|documents)\s+fournis\b|\binformations\s+fournies\b|\bUNTRUSTED\b|\bSOURCE\s+DATA\b",
     re.I,
-)
-PASTED_CITATION = re.compile(r"\s*\bSources?\s*:\s*(?:«[^»]*»\s*)+\.?|\s*\bSources?\s*:[^.!?]*[.!?]?\s*$", re.I)
-RETAINED_SURFACE = re.compile(
-    r"(\bsurfaces?(?:\s+(?:habitable|loi\s+carrez|carrez|principale|totale))?)\s+retenues?\b", re.I
 )
 CANONICAL_SECTION = re.compile(
     r"\[FAITS CANONIQUES\].*?(?=\[(?!FAITS CANONIQUES)[A-ZÉ][A-ZÉ0-9 _/-]+\]|$)"
@@ -391,40 +384,3 @@ def consistency_issues(text: str, evidence: str, fields: dict[str, Any]) -> list
         *({"code": "internal_jargon", "claim": match.group()} for match in INTERNAL_JARGON.finditer(prose)),
     ]
 
-
-def _is_missing_data_remark(sentence: str) -> bool:
-    """« Aucune information n'est fournie concernant l'occupation » — and no figure to lose with it."""
-    if re.search(r"\d", sentence):
-        return False
-    return any(
-        ABSENCE.search(clause) and any(topic.search(clause) for topic in ABSENCE_TOPICS.values())
-        for clause in CLAUSE_SPLIT.split(sentence)
-    )
-
-
-def repair_generated_display(text: str | None, fields: dict[str, Any]) -> str | None:
-    """Fix the model's wording without touching a fact; the checks then run on the result.
-
-    * « vendu le 19/11/2026 » for a coming sale becomes « proposé le 19/11/2026 »;
-    * « surface retenue » (the prompt's label) becomes « surface »;
-    * a sentence with internal jargon, or one that only says a point is missing
-      (a point the canonical facts do not hold either), is dropped;
-    * a citation pasted by the model (« Source : … ») is dropped: the pipeline
-      appends the verbatim source constraints itself.
-    """
-    if not text:
-        return text
-    today = _today()
-    text = PASTED_CITATION.sub(" ", text)
-    kept = []
-    for sentence in _sentences(text):
-        if INTERNAL_JARGON.search(sentence):
-            continue
-        if _is_missing_data_remark(sentence) and not absence_issues(sentence, fields):
-            continue
-        for match in reversed(_past_tense_claims(sentence, today)):
-            if not match["aux"]:
-                word = ("Proposé" if match.group()[0].isupper() else "proposé") + (match["suffix"] or "")
-                sentence = sentence[: match.start()] + word + sentence[match.end() :]
-        kept.append(RETAINED_SURFACE.sub(r"\1", sentence))
-    return " ".join(kept).strip() or None

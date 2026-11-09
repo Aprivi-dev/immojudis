@@ -26,7 +26,6 @@ def test_complete_pdf_proof_rotates_failed_dependents_once(monkeypatch):
     settings = {
         "llm_prompt_version": "test-prompt",
         "llm_fact_prompt_version": "test-fact-prompt",
-        "llm_display_prompt_version": "test-display-prompt",
         "replicate_model": "test-model",
     }
     monkeypatch.setattr(storage, "load_settings", lambda: settings)
@@ -68,9 +67,9 @@ def test_complete_pdf_proof_rotates_failed_dependents_once(monkeypatch):
     old_hashes = {
         row["job_type"]: row["input_hash"]
         for row in rows
-        if row["job_type"] in {"fact_extraction", "display_description"}
+        if row["job_type"] == "fact_extraction"
     }
-    assert set(old_hashes) == {"fact_extraction", "display_description"}
+    assert set(old_hashes) == {"fact_extraction"}
 
     checked_at = datetime.now(UTC).isoformat()
     sale.raw_payload["document_analysis"] = {
@@ -137,7 +136,6 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
     settings = {
         "llm_prompt_version": "test-prompt",
         "llm_fact_prompt_version": "test-fact-prompt",
-        "llm_display_prompt_version": "test-display-prompt",
         "replicate_model": "test-model",
     }
     monkeypatch.setattr(storage, "load_settings", lambda: settings)
@@ -208,9 +206,9 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
     old_hashes = {
         row["job_type"]: row["input_hash"]
         for row in rows
-        if row["job_type"] in {"fact_extraction", "display_description"}
+        if row["job_type"] == "fact_extraction"
     }
-    assert set(old_hashes) == {"fact_extraction", "display_description"}
+    assert set(old_hashes) == {"fact_extraction"}
 
     documents = [
         {**sale.documents[0], "file_path": str(tmp_path / "pv.pdf")},
@@ -266,12 +264,12 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
     assert fresh_hashes.keys() == old_hashes.keys()
     assert all(fresh_hashes[key] != old_hashes[key] for key in old_hashes)
 
-    # Timestamp refreshes and a second enqueue keep the same two dependent
+    # Timestamp refreshes and a second enqueue keep the same dependent
     # identities; the terminal empty document is not included in the proof.
     sale.raw_payload["document_analysis"]["checked_at"] = datetime.now(UTC).isoformat()
     sale.raw_payload["document_analysis"]["cache_proof"]["verified_at"] = datetime.now(UTC).isoformat()
     storage._enqueue_due_enrichment([sale], "unused", "unused")
-    assert len(rows) == 4
+    assert len(rows) == 2
     assert {
         (row["job_type"], row["input_hash"])
         for row in rows
@@ -288,7 +286,6 @@ def test_writer_marker_generation_is_idempotent_and_claims_only_new_revision(mon
     settings = {
         "llm_prompt_version": "test-prompt",
         "llm_fact_prompt_version": "test-fact-prompt",
-        "llm_display_prompt_version": "test-display-prompt",
         "replicate_model": "test-model",
     }
     monkeypatch.setattr(storage, "load_settings", lambda: settings)
@@ -311,12 +308,7 @@ def test_writer_marker_generation_is_idempotent_and_claims_only_new_revision(mon
                 "last_successful_check_at": "2026-09-29T08:00:00+00:00",
                 "documents_extracted": 0,
             },
-            "llm_display_description": "Description de test suffisamment longue pour satisfaire le contrôle de qualité affiché.",
-            "llm_display_quality_version": "display_quality_20261103_v5",
-            "llm_display_status": "accepted",
             "llm_prompt_version": settings["llm_prompt_version"],
-            "llm_display_prompt_version": settings["llm_display_prompt_version"],
-            "llm_display_model": settings["replicate_model"],
         }
     )
 
@@ -401,7 +393,7 @@ def test_writer_marker_generation_is_idempotent_and_claims_only_new_revision(mon
             db.rollback()
 
 
-def test_complete_pdf_write_rotates_exhausted_fact_and_display_jobs(monkeypatch, tmp_path):
+def test_complete_pdf_write_rotates_exhausted_fact_jobs(monkeypatch, tmp_path):
     """A complete same-byte PDF proof creates fresh dependent queue rows."""
 
     db_url = os.getenv("PIPELINE_TEST_DB_URL")
@@ -411,7 +403,6 @@ def test_complete_pdf_write_rotates_exhausted_fact_and_display_jobs(monkeypatch,
     settings = {
         "llm_prompt_version": "test-prompt",
         "llm_fact_prompt_version": "test-fact-prompt",
-        "llm_display_prompt_version": "test-display-prompt",
         "replicate_model": "test-model",
     }
     monkeypatch.setattr(storage, "load_settings", lambda: settings)
@@ -494,14 +485,14 @@ def test_complete_pdf_write_rotates_exhausted_fact_and_display_jobs(monkeypatch,
                        where source_url=%s and job_type=%s""",
                     (source_url, job_type),
                 ).fetchone()[0]
-                for job_type in ("fact_extraction", "display_description")
+                for job_type in ("fact_extraction",)
             }
-            assert set(old_hashes) == {"fact_extraction", "display_description"}
+            assert set(old_hashes) == {"fact_extraction"}
             db.execute(
                 """update auction_enrichment_jobs
                    set status='failed', attempt_count=max_attempts,
                        last_error='legacy exhausted', created_at=now()-interval '1 minute'
-                   where source_url=%s and job_type in ('fact_extraction','display_description')""",
+                   where source_url=%s and job_type='fact_extraction'""",
                 (source_url,),
             )
 

@@ -31,7 +31,7 @@ export function AdminReadinessPanel() {
           <h2 className="mt-3 font-display text-2xl">Activation commerciale</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             Vérifie les prérequis de l'offre payante : Stripe, webhook, crons, pipeline data,
-            synthèses IA, migrations et accès manuel admin.
+            migrations et accès manuel admin.
           </p>
         </div>
         <button

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from src.admission import is_expired
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
-from src.config import PDF_TEXTS_DIR, EncheresPubliquesAccessNotAuthorized, llm_display_enabled, load_settings
+from src.config import PDF_TEXTS_DIR, EncheresPubliquesAccessNotAuthorized, load_settings
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
@@ -21,8 +21,7 @@ from src.enrichment.extract_structured import (
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import cancel_provider_output_refusal_jobs, create_llm_client
-from src.enrichment.operational_display import refresh_operational_display
-from src.freshness import document_fingerprint, documents_are_current
+from src.freshness import document_fingerprint, documents_are_current, settle_source_change_without_documents
 from src.geocode import geocode_sale, sale_needs_position
 from src.information_agent_evidence import run_information_agent_evidence_batch
 from src.llm_requests import (
@@ -34,8 +33,6 @@ from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_sco
 from src.main import (
     SOURCE_NAMES,
     PipelineOptions,
-    _needs_llm_display_description_refresh,
-    run_llm_description_backfill,
     run_pipeline,
 )
 from src.pdf_enrichment import (
@@ -86,7 +83,6 @@ _postgres_connect = connect
 
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
-LLM_BACKFILL_SOURCE = "llm-description-backfill"
 SOURCE_DETAIL_FAMILY = "source_detail"
 ENRICHMENT_FAMILY = "enrichment"
 # Keep a bounded general-enrichment lane even while source-detail is larger.
@@ -226,16 +222,6 @@ def main() -> int:
                     f"Marked past sales: {cleaned}. Marked stale runs failed: {stale_failed}."
                 )
                 return 0
-        if settings.get("pipeline_idle_llm_backfill_enabled"):
-            backfill_result = run_llm_description_backfill(
-                PipelineOptions(
-                    llm_backfill=True,
-                    upsert=True,
-                    limit=int(settings["pipeline_llm_backfill_max_targets"]),
-                )
-            )
-            if backfill_result != 0:
-                return backfill_result
         cleaned = mark_past_sales_in_supabase()
         print(
             f"No queued Immojudis data run found. "
@@ -251,18 +237,6 @@ def main() -> int:
     if not run_id:
         print("Queued run has no id; skipping.")
         return 1
-
-    if source == LLM_BACKFILL_SOURCE:
-        print(f"Running queued Immojudis LLM description backfill: {run_id}")
-        return run_llm_description_backfill(
-            PipelineOptions(
-                llm_backfill=True,
-                use_llm=True,
-                upsert=True,
-                run_id=run_id,
-                limit=_queued_backfill_limit(run),
-            )
-        )
 
     if source not in VALID_SOURCES:
         message = f"Invalid queued source: {source}"
@@ -291,18 +265,6 @@ def main() -> int:
             {"runner": [str(exc)]},
         )
         return 1
-
-
-def _queued_backfill_limit(run: dict[str, object]) -> int | None:
-    summary = run.get("summary")
-    if not isinstance(summary, dict):
-        return None
-    value = summary.get("limit")
-    if isinstance(value, int):
-        return max(1, min(100, value))
-    if isinstance(value, str) and value.strip().isdigit():
-        return max(1, min(100, int(value)))
-    return None
 
 
 def run_data_refresh_request(request: dict[str, object]) -> int:
@@ -627,10 +589,18 @@ def run_enrichment_queue_batch(
         if source_url:
             jobs_by_sale[source_url].append(job)
 
-    prompt_version = str(settings.get("llm_prompt_version") or "")
     llm_client = None
 
     for source_url, sale_jobs in jobs_by_sale.items():
+        # The AI display synthesis was removed: a job left in the queue ends without any call.
+        display_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "display_description"]
+        if display_jobs:
+            for job in display_jobs:
+                _finish_job(job, succeeded=True)
+            mark_enrichment_jobs_terminal(display_jobs)
+            sale_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") != "display_description"]
+            if not sale_jobs:
+                continue
         try:
             sale = fetch_sale_for_data_refresh(source_url)
         except Exception as exc:
@@ -691,7 +661,7 @@ def run_enrichment_queue_batch(
                 _finish_job(job, succeeded=True)
             mark_enrichment_jobs_terminal(sale_jobs)
             continue
-        if job_types & {"fact_extraction", "display_description"} and settings.get("llm_enabled", True) is False:
+        if "fact_extraction" in job_types and settings.get("llm_enabled", True) is False:
             for job in sale_jobs:
                 _finish_job(
                     job,
@@ -750,16 +720,8 @@ def run_enrichment_queue_batch(
                         "PDF document manifest is partial; continue the next bounded pass"
                     )
                 pdf_stage_error = False
-            if job_types & {"fact_extraction", "display_description"}:
-                refresh_operational_display(sale)
-                # The early scan upsert enqueues a safety-net job before the
-                # inline Qwen call. If the final upsert already persisted the
-                # current synthesis, completing that job without another paid
-                # prediction prevents duplicate Replicate spend.
-                description_current = not llm_display_enabled(settings) or bool(sale.raw_payload.get("llm_display_description")) and not sale.raw_payload.get("source_content_changed") and not _needs_llm_display_description_refresh(
-                    sale,
-                    prompt_version=prompt_version,
-                )
+            if "fact_extraction" in job_types:
+                settle_source_change_without_documents(sale)
                 fact_extraction_planned = (
                     "fact_extraction" in job_types or needs_fact_extraction(sale)
                 )
@@ -776,7 +738,7 @@ def run_enrichment_queue_batch(
                 # A fact pass cannot build a trustworthy context until the PDF
                 # worker has populated the document cache.  When the PDF job
                 # is in this claim it is handled above; otherwise return the
-                # fact/display claim to the queue without spending its retry.
+                # fact claim to the queue without spending its retry.
                 # This avoids turning a worker ordering race into a growing retry-exhausted backlog.
                 terminal_pdf_evidence = facts_needed and _pdf_evidence_is_terminal_for_facts(sale)
                 missing_pdf_prerequisite = (
@@ -801,8 +763,7 @@ def run_enrichment_queue_batch(
                             "Fact extraction deferred: PDF document manifest is still partial", PARTIAL_MANIFEST_DEFERRAL
                         )
                     # A terminal/missing PDF prerequisite cannot advance on
-                    # the next wake-up. Keep that fact pass visible for review
-                    # while allowing an independent display job to proceed.
+                    # the next wake-up. Keep that fact pass visible for review.
                     fact_jobs = [job for job in sale_jobs if job.get("job_type") == "fact_extraction"]
                     for job in fact_jobs:
                         _finish_job(
@@ -826,25 +787,18 @@ def run_enrichment_queue_batch(
                     job_types = {str(job.get("job_type") or "") for job in sale_jobs}
                     fact_extraction_planned = False
                     facts_current = True
-                # Fact cancellation can leave a PDF-only claim. Do not let
-                # the original outer branch turn that claim into an
-                # unintended display LLM call just because its description is
-                # absent. A display job that remains in the filtered group
-                # still takes the normal independent path.
-                if job_types & {"fact_extraction", "display_description"}:
+                # Fact cancellation can leave a PDF-only claim: no LLM call then.
+                if "fact_extraction" in job_types:
                     facts_needed = fact_extraction_planned and not facts_current
-                    if not description_current or facts_needed:
+                    if facts_needed:
                         if llm_client is None:
                             llm_client = create_llm_client()
                         with llm_request_context(
                             source_url=source_url,
                             job_id=str(sale_jobs[0]["id"]),
-                            reason="new_fact_evidence" if facts_needed else "missing_or_stale_display",
+                            reason="new_fact_evidence",
                         ):
-                            llm_stats = enrich_sale_with_llm(
-                                sale, client=llm_client,
-                                extraction_mode="structured_then_display" if facts_needed else "display_description",
-                            )
+                            llm_stats = enrich_sale_with_llm(sale, client=llm_client)
                         if llm_stats.unavailable or not llm_stats.valid_json or getattr(llm_stats, "errors", 0):
                             detail = (
                                 llm_stats.error_messages[-1]
@@ -852,11 +806,9 @@ def run_enrichment_queue_batch(
                                 else "LLM extraction incomplete"
                             )
                             raise RuntimeError(detail)
-                        if llm_display_enabled(settings) and (not sale.raw_payload.get("llm_display_description") or _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)):
-                            raise RuntimeError("Missing or stale display description")
                         if fact_extraction_planned and not (sale.raw_payload.get("llm_fact_coverage") or {}).get("complete"):
                             raise RuntimeError("Fact extraction coverage incomplete")
-            if "display_description" in job_types or "fact_extraction" in job_types:
+            if "fact_extraction" in job_types:
                 sale.raw_payload.pop("source_content_changed", None)
                 sale.raw_payload.pop("source_content_change_reason", None)
                 sale.raw_payload.pop("source_operational_changed", None)

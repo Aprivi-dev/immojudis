@@ -130,7 +130,6 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
     config.pipeline.githubToken,
     config.pipeline.webhookUrl,
   );
-  const replicateToken = config.replicateApiToken;
   const externalAlertChannel = firstFilled(config.alerts.webhookUrl, config.pipeline.githubToken);
   const legalStatus = legalConfigurationStatus(env);
 
@@ -204,23 +203,11 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       label: "Déclenchement pipeline",
       status: instantPipelineDispatch ? "ready" : "blocked",
       detail: instantPipelineDispatch
-        ? "L'admin peut déclencher immédiatement le workflow de collecte/backfill."
-        : "Aucun runner de collecte n'est configuré : l'admin ne peut pas lancer de collecte ou de backfill.",
+        ? "L'admin peut déclencher immédiatement le workflow de collecte."
+        : "Aucun runner de collecte n'est configuré : l'admin ne peut pas lancer de collecte.",
       action: instantPipelineDispatch
         ? null
         : "Configurer GITHUB_SCROLL_TOKEN ou SCROLL_WEBHOOK_URL pour un lancement immédiat.",
-    },
-    {
-      key: "pipeline.llm_backfill",
-      area: "pipeline",
-      label: "Backfill synthèses IA",
-      status: replicateToken ? "ready" : "warning",
-      detail: replicateToken
-        ? "Un token Replicate est lisible côté runtime pour les synthèses IA."
-        : "Le token Replicate n'est pas lisible côté Vercel; vérifier aussi le secret GitHub Actions REPLICATE_API_TOKEN.",
-      action: replicateToken
-        ? null
-        : "Configurer REPLICATE_API_TOKEN dans l'environnement du runner qui exécute le backfill.",
     },
     {
       key: "operations.external_alerts",

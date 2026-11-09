@@ -15,17 +15,9 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, llm_display_enabled, load_settings
-from src.encheres_publiques_guard import (
-    EncheresPubliquesAccessNotAuthorized,
-    require_encheres_publiques_sale_access,
-)
-from src.enrichment.display_consistency import repair_generated_display
+from src.config import LLM_EXTRACTIONS_DIR, PDF_TEXTS_DIR, load_settings
+from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.display_evidence import verify_display_claims
-from src.enrichment.display_facts import canonical_facts_block
-from src.enrichment.display_fallback import build_fallback_display_description
-from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VERSION, preserve_source_constraints
-from src.enrichment.display_semantics import strip_filler_sentences
 from src.enrichment.extraction_grounding import (
     bedrooms_count_is_supported,
     cited_items,
@@ -41,10 +33,8 @@ from src.enrichment.llm_client import (
     repair_json_payload,
 )
 from src.enrichment.prompts import (
-    DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
     PROMPT_SAFETY_VERSION,
     SYSTEM_PROMPT,
-    build_display_description_prompt,
     build_user_prompt,
 )
 from src.enrichment.surface_reasoning import (
@@ -64,88 +54,6 @@ from src.personal_data import redact_personal_data, redact_personal_text
 from src.pipeline_usage import PINNED_MODEL, PipelineBudgetExhausted
 
 LOGGER = logging.getLogger(__name__)
-LLM_CONTEXT_KEYWORDS = (
-    "surface",
-    "superficie",
-    "contenance",
-    "occupation",
-    "occupé",
-    "occupe",
-    "libre",
-    "bail",
-    "locataire",
-    "copropriété",
-    "copropriete",
-    "servitude",
-    "diagnostics",
-    "diagnostic",
-    "amiante",
-    "plomb",
-    "termites",
-    "dpe",
-    "travaux",
-    "désignation",
-    "designation",
-    "lots",
-    "mise à prix",
-    "mise a prix",
-    "pièce",
-    "pièces",
-    "piece",
-    "pieces",
-    "composition",
-    "comprenant",
-    "comprend",
-    "composé",
-    "compose",
-    "se compose",
-    "distribution",
-    "désignation",
-    "designation",
-    "rez-de-chaussée",
-    "rez de chaussée",
-    "etage",
-    "étage",
-    "séjour",
-    "sejour",
-    "salon",
-    "salle à manger",
-    "salle a manger",
-    "pièce principale",
-    "piece principale",
-    "type deux",
-    "type trois",
-    "type quatre",
-    "type cinq",
-    "f1",
-    "f2",
-    "f3",
-    "f4",
-    "f5",
-    "chambre",
-    "chambres",
-    "studio",
-    "t1",
-    "t2",
-    "t3",
-    "t4",
-    "t5",
-)
-PRIORITY_DOCUMENT_TYPES = {
-    "pv_descriptif",
-    "pv_huissier",
-    "pv_notaire",
-    "proces_verbal",
-    "diagnostics_techniques",
-    "cahier_conditions",
-    "cahier_conditions_vente",
-    "conditions_vente",
-    "annonce_vente",
-}
-PRIORITY_LABEL_PATTERNS = re.compile(
-    r"pv|pvd|descriptif|cahier|conditions\s+de\s+vente|ccv",
-    re.I,
-)
 PDF_TEXT_ENRICHMENT_MARKER = "--- PDF TEXT ENRICHMENT ---"
 SOURCE_DESCRIPTION_KEYS = (
     "source_description",
@@ -173,15 +81,14 @@ UNUSABLE_SOURCE_DESCRIPTION_RE = re.compile(
     r"pour\s+consulter\s+l['’]int[ée]gralit[ée]|vous\s+devez\s+[êe]tre\s+abonn[ée]",
     re.I,
 )
-DISPLAY_DESCRIPTION_MAX_WORDS = 125
-DISPLAY_DESCRIPTION_MAX_CHARS = 850
-DISPLAY_DESCRIPTION_MIN_CONFIDENCE = 0.55
 FACT_FAILURE_STAGE = "facts_failure"
-# An empty or refused display answer is not paid for again on the same input for a day.
-DISPLAY_REFUSED_STAGE = "display_refused"
 FACT_FAILURE_RETRY_HOURS = 24
 _MISSING = object()
-REJECTED_DISPLAY_MAX_CHARS = 2000
+# The legacy sale-scoped aggregate (``_load_legacy_extraction``) is keyed with the extraction mode
+# and display prompt version of the removed display synthesis. Their last production values stay
+# in the key so that existing aggregates remain readable.
+LEGACY_EXTRACTION_MODE = "structured_then_display"
+LEGACY_DISPLAY_PROMPT_VERSION = "auction_display_v10_canonical_facts"
 
 PropertyType = Literal[
     "apartment",
@@ -553,7 +460,6 @@ def enrich_sale_with_llm(
     sale: AuctionSale,
     client: ReplicateClient | None = None,
     output_dir: Path = LLM_EXTRACTIONS_DIR,
-    extraction_mode: str | None = None,
 ) -> LLMEnrichmentStats:
     stats = LLMEnrichmentStats()
     settings = load_settings()
@@ -576,27 +482,19 @@ def enrich_sale_with_llm(
     else:
         sale.raw_payload.pop("source_description", None)
 
-    extraction_mode = extraction_mode or str(settings.get("llm_extraction_mode") or "display_description")
-    display_enabled = llm_display_enabled(settings)
-    if extraction_mode == "display_description" and not display_enabled:
-        # Synthèse coupée : rien à rédiger, aucun appel au modèle.
+    if sale.documents and not _has_pdf_fact_cache(sale):
+        stats.errors += 1
+        stats.error_messages.append("Fact extraction deferred: PDF text cache is missing or incomplete")
         return stats
-    if extraction_mode == "display_description":
-        contexts = [load_llm_context_for_sale(sale, max_chars=int(settings["llm_pdf_max_chars"]))]
-    else:
-        if sale.documents and not _has_pdf_fact_cache(sale):
-            stats.errors += 1
-            stats.error_messages.append("Fact extraction deferred: PDF text cache is missing or incomplete")
-            return stats
-        # Always inspect the complete input set.  ``llm_fact_max_chunks`` is a
-        # paid-call budget for this invocation, not a coverage limit.  The
-        # planner below skips cached chunks and spends the budget on the next
-        # uncached chunks, so later passes can make forward progress.
-        contexts = load_llm_fact_context_chunks_for_sale(
-            sale,
-            chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000),
-            max_chunks=0,
-        )
+    # Always inspect the complete input set.  ``llm_fact_max_chunks`` is a
+    # paid-call budget for this invocation, not a coverage limit.  The
+    # planner below skips cached chunks and spends the budget on the next
+    # uncached chunks, so later passes can make forward progress.
+    contexts = load_llm_fact_context_chunks_for_sale(
+        sale,
+        chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000),
+        max_chunks=0,
+    )
     fact_contexts = [context for context in contexts if context]
     if not fact_contexts:
         return stats
@@ -605,109 +503,6 @@ def enrich_sale_with_llm(
     model_name = str(getattr(client, "model", "") or settings.get("replicate_model") or "")
     prompt_version = str(settings["llm_prompt_version"])
     incremental = bool(settings.get("incremental_enrichment"))
-
-    # Display synthesis is a separate stage.  Its key contains only the exact
-    # display context, model and display prompt/quality versions, so a facts
-    # cache hit never masquerades as a display cache hit (and vice versa).
-    if extraction_mode == "display_description":
-        display_context = "\n\n".join(fact_contexts)
-        retained_facts = _validated_extraction_payload(sale.raw_payload.get("llm_fact_extraction"))
-        if retained_facts is not None and has_current_fact_analysis(sale):
-            # A fresh runner may have lost the local PDF text while validated
-            # facts remain current in the database. Keep documentary risks and
-            # occupation qualifiers in the synthesis without paying for facts
-            # again. This builder omits prior narrative/financial summaries and
-            # supplies the current sale price/date explicitly.
-            display_context = _build_validated_display_context(
-                sale, retained_facts, fallback_context=display_context,
-            )
-        display_prompt_version = str(settings.get("llm_display_prompt_version") or prompt_version)
-        display_key = _display_cache_key(display_context, model_name, display_prompt_version)
-        # The key above already hashes the filtered text; what leaves for the provider, and what
-        # the model's citations are checked against, is that same filtered text.
-        display_context = _provider_safe_text(display_context)
-        display_extraction = (
-            _load_display_cache(display_key, output_dir, model_name, incremental)
-            if incremental
-            else None
-        )
-        if display_extraction is not None:
-            stats.analyzed = 1
-            stats.valid_json = 1
-            _apply_extraction_to_sale(
-                sale,
-                display_extraction,
-                stats,
-                display_context,
-                prompt_version=prompt_version,
-                model_name=model_name,
-            )
-            sale.raw_payload["llm_extraction"] = display_extraction.model_dump(mode="json")
-            sale.raw_payload["llm_cache_hit"] = True
-            return stats
-        refused_until = _load_fact_failure_retry_after(display_key, DISPLAY_REFUSED_STAGE)
-        if refused_until is None and not client.is_available():
-            stats.unavailable = True
-            return stats
-        stats.analyzed = 1
-        try:
-            if refused_until is None:
-                with _llm_request_context(sale, stage="display", reason="cache_miss"):
-                    raw = client.generate_json(
-                        DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
-                        build_display_description_prompt(display_context),
-                    )
-            else:
-                raw = {}  # refused on this exact input less than a day ago: deterministic fallback
-            extraction = _validated_llm_extraction(raw)
-            sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
-            if not _normalize_display_description(extraction.display_description):
-                stats.errors += 1
-                stats.error_messages.append("Model returned an empty display description; derived fallback only")
-                if refused_until is None:
-                    _save_fact_failure_marker(
-                        display_key,
-                        model=model_name,
-                        error=ValueError("empty display description"),
-                        stage=DISPLAY_REFUSED_STAGE,
-                    )
-            elif incremental:
-                _save_display_cache(display_key, extraction, output_dir, model_name)
-        except PipelineBudgetExhausted:
-            raise
-        except LLMTaskDeadlineExceeded:
-            raise
-        except LLMProviderOutputRefused:
-            raise
-        except Exception as exc:
-            LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)
-            stats.errors += 1
-            stats.error_messages.append(_llm_error_message(sale, exc))
-            return stats
-
-        stats.valid_json += 1
-        _apply_extraction_to_sale(
-            sale,
-            extraction,
-            stats,
-            display_context,
-            prompt_version=prompt_version,
-            model_name=model_name,
-        )
-        if not stats.errors:
-            _save_extraction(
-                sale,
-                extraction,
-                output_dir,
-                cache_key=display_key,
-                model=model_name,
-                prompt_version=display_prompt_version,
-            )
-        sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
-        sale.raw_payload["llm_cache_hit"] = False
-        if stats.errors:
-            sale.raw_payload.pop("llm_prompt_version", None)
-        return stats
 
     context_coverage = sale.raw_payload.get("llm_fact_context_coverage") or {}
     context_complete = context_coverage.get("complete") is not False
@@ -723,7 +518,6 @@ def enrich_sale_with_llm(
             output_dir,
             full_evidence_context,
             model_name,
-            extraction_mode,
             prompt_version,
             fact_prompt_version,
         )
@@ -832,7 +626,7 @@ def enrich_sale_with_llm(
             retry_after=blocked_failure_retry_after,
         )
     if not complete:
-        # Do not apply partial facts or synthesize a fallback display.  A
+        # Do not apply partial facts.  A
         # bounded pass is deferred without consuming a queue retry whenever it
         # checkpointed at least one new chunk; failed chunks remain uncached
         # and are retried on the next pass.
@@ -865,82 +659,6 @@ def enrich_sale_with_llm(
         fact_prompt_version=fact_prompt_version,
     )
 
-    display_cache_hit = False
-    if display_enabled and extraction_mode in {"structured_then_display", "full"}:
-        display_context = _build_validated_display_context(
-            sale,
-            extraction,
-            fallback_context=load_llm_context_for_sale(
-                sale,
-                max_chars=int(settings.get("llm_display_context_chars") or 12000),
-            ),
-        )
-        display_prompt_version = str(settings.get("llm_display_prompt_version") or prompt_version)
-        display_key = _display_cache_key(display_context, model_name, display_prompt_version)
-        display_context = _provider_safe_text(display_context)
-        display_extraction = None
-        if (
-            legacy_entry is not None
-            and legacy_entry[1].endswith(f":{display_prompt_version}")
-            and _normalize_display_description(legacy_entry[0].display_description)
-        ):
-            # The legacy aggregate is accepted only when its own metadata
-            # proves the display prompt is still current.  Promote that exact
-            # result into the stage-specific cache for future workers.
-            display_extraction = legacy_entry[0]
-            if incremental:
-                _save_display_cache(display_key, display_extraction, output_dir, model_name)
-        elif incremental:
-            display_extraction = _load_display_cache(display_key, output_dir, model_name, incremental)
-        if display_extraction is not None:
-            display_cache_hit = True
-            extraction.display_description = display_extraction.display_description
-            if "display_description" in display_extraction.confidence:
-                extraction.confidence["display_description"] = display_extraction.confidence[
-                    "display_description"
-                ]
-            sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
-        else:
-            refused_until = _load_fact_failure_retry_after(display_key, DISPLAY_REFUSED_STAGE)
-            if refused_until is None and not client.is_available():
-                stats.unavailable = True
-                return stats
-            try:
-                if refused_until is not None:
-                    raise ValueError("Display synthesis refused on this exact input; deterministic fallback only")
-                with _llm_request_context(sale, stage="display", reason="cache_miss"):
-                    display_raw = client.generate_json(
-                        DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
-                        build_display_description_prompt(display_context),
-                    )
-                display_extraction = _validated_llm_extraction(display_raw)
-                if not _normalize_display_description(display_extraction.display_description):
-                    _save_fact_failure_marker(
-                        display_key,
-                        model=model_name,
-                        error=ValueError("empty display description"),
-                        stage=DISPLAY_REFUSED_STAGE,
-                    )
-                    raise ValueError("Model returned an empty display description")
-                extraction.display_description = display_extraction.display_description
-                if "display_description" in display_extraction.confidence:
-                    extraction.confidence["display_description"] = display_extraction.confidence[
-                        "display_description"
-                    ]
-                sale.raw_payload["llm_display_prompt_version"] = display_prompt_version
-                if incremental:
-                    _save_display_cache(display_key, display_extraction, output_dir, model_name)
-            except PipelineBudgetExhausted:
-                raise
-            except LLMTaskDeadlineExceeded:
-                raise
-            except LLMProviderOutputRefused:
-                raise
-            except Exception as exc:
-                LOGGER.warning("LLM display synthesis failed for %s: %s", sale.source_url, exc)
-                stats.errors += 1
-                stats.error_messages.append(_llm_error_message(sale, exc))
-
     stats.valid_json += 1
     _apply_extraction_to_sale(
         sale,
@@ -948,19 +666,16 @@ def enrich_sale_with_llm(
         stats,
         _provider_safe_text(full_evidence_context),
         prompt_version=prompt_version,
-        model_name=model_name,
     )
     sale.raw_payload["llm_extraction"] = extraction.model_dump(mode="json")
     sale.raw_payload["llm_fact_extraction"] = extraction.model_dump(mode="json")
-    sale.raw_payload["llm_cache_hit"] = bool(
-        cache_hits == len(fact_contexts) and (display_cache_hit or not display_enabled)
-    )
+    sale.raw_payload["llm_cache_hit"] = cache_hits == len(fact_contexts)
     if not stats.errors:
         # Keep the legacy sale-scoped artifact for existing consumers.  The
         # stage-specific files above are authoritative for cost avoidance.
         legacy_prompt_version = (
-            f"{prompt_version}:{extraction_mode}:{SURFACE_REASONING_VERSION}:complete_v2:"
-            f"{fact_prompt_version}:{settings.get('llm_display_prompt_version')}"
+            f"{prompt_version}:{LEGACY_EXTRACTION_MODE}:{SURFACE_REASONING_VERSION}:complete_v2:"
+            f"{fact_prompt_version}:{LEGACY_DISPLAY_PROMPT_VERSION}"
         )
         legacy_cache_key = _llm_cache_key(
             full_evidence_context,
@@ -978,129 +693,6 @@ def enrich_sale_with_llm(
     if stats.errors:
         sale.raw_payload.pop("llm_prompt_version", None)
     return stats
-
-
-def apply_cached_llm_extraction_to_sale(sale: AuctionSale, *, prompt_version: str | None = None) -> bool:
-    """Re-apply an LLM payload already stored in raw_payload.
-
-    This is intentionally network-free. It lets a pipeline version that adds a
-    new public display field populate it from a previously validated extraction
-    without re-downloading PDFs or calling Replicate again. The stored
-    extraction must already carry the current prompt/display contract. This
-    function is a revalidation step, not a way to certify an unversioned or
-    stale generation by stamping it with the current metadata.
-    """
-    settings = load_settings()
-    try:
-        require_encheres_publiques_sale_access(
-            source_name=sale.source_name,
-            source_url=sale.source_url,
-            source_urls=sale.source_urls,
-            documents=sale.documents,
-            settings=settings,
-        )
-    except EncheresPubliquesAccessNotAuthorized:
-        # Cache revalidation is deliberately boolean: an unauthorized EP row
-        # is skipped by the caller and must not break the ordinary pipeline.
-        return False
-
-    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else None
-    if not isinstance(raw_payload, dict):
-        return False
-    if raw_payload.get("source_content_changed") or (raw_payload.get("llm_fact_coverage") or {}).get("complete") is False:
-        return False
-    if not _cached_extraction_matches_current_contract(raw_payload, prompt_version):
-        return False
-    payload = raw_payload.get("llm_extraction")
-    if not isinstance(payload, dict):
-        return False
-    try:
-        extraction = _validated_llm_extraction(payload)
-    except Exception:
-        return False
-
-    before = clean_text(sale.raw_payload.get("llm_display_description"))
-    stats = LLMEnrichmentStats()
-    _apply_extraction_to_sale(
-        sale,
-        extraction,
-        stats,
-        context=_provider_safe_text(_full_fact_context(sale, settings)),
-        prompt_version=prompt_version,
-    )
-    after = clean_text(sale.raw_payload.get("llm_display_description"))
-    return bool(after and after != before)
-
-
-def _full_fact_context(sale: AuctionSale, settings: dict[str, Any]) -> str:
-    """Whole text the facts were read from (all fragments), not only its first characters.
-
-    The citations of a stored extraction are checked against it; a quote taken from a later
-    fragment would otherwise be refused. The coverage marker the loader writes is put back.
-    """
-    previous = sale.raw_payload.get("llm_fact_context_coverage", _MISSING)
-    try:
-        chunks = load_llm_fact_context_chunks_for_sale(
-            sale, chunk_chars=int(settings.get("llm_fact_chunk_chars") or 12000), max_chunks=0
-        )
-    finally:
-        if previous is _MISSING:
-            sale.raw_payload.pop("llm_fact_context_coverage", None)
-        else:
-            sale.raw_payload["llm_fact_context_coverage"] = previous
-    return "\n\n".join(chunk for chunk in chunks if chunk) or load_llm_context_for_sale(sale) or ""
-
-
-def _cached_extraction_matches_current_contract(
-    raw_payload: dict[str, Any], prompt_version: str | None,
-) -> bool:
-    """Check cache provenance before any cached extraction can mutate a sale."""
-    settings = load_settings()
-    expected_prompt_version = str(
-        prompt_version if prompt_version is not None else settings.get("llm_prompt_version") or ""
-    )
-    expected_display_prompt_version = str(
-        settings.get("llm_display_prompt_version") or expected_prompt_version
-    )
-    if expected_prompt_version and raw_payload.get("llm_prompt_version") != expected_prompt_version:
-        return False
-    if expected_display_prompt_version and raw_payload.get("llm_display_prompt_version") != expected_display_prompt_version:
-        return False
-
-    # Model provenance was added after the first display generations. Preserve
-    # those rows for compatibility, but never reuse a row that explicitly says
-    # it was produced by a different configured provider model.
-    current_model = str(settings.get("replicate_model") or "")
-    cached_model = raw_payload.get("llm_display_model")
-    if current_model and cached_model not in (None, "") and cached_model != current_model:
-        return False
-    return True
-
-
-def load_pdf_text_for_sale(sale: AuctionSale, max_chars: int = 12000) -> str | None:
-    path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
-    if not path.exists():
-        return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        return None
-    return build_reduced_pdf_context(payload, max_chars=max_chars)
-
-
-def load_llm_context_for_sale(sale: AuctionSale, max_chars: int = 12000) -> str | None:
-    source_context = build_source_page_context(sale, max_chars=min(6000, max(1500, max_chars // 3)))
-    pdf_budget = max(2000, max_chars - len(source_context or "") - 2)
-    pdf_context = load_pdf_text_for_sale(sale, max_chars=pdf_budget)
-    if source_context or pdf_context:
-        return _join_unique_sections(
-            [section for section in (source_context, pdf_context) if section],
-            max_chars=max_chars,
-        )
-
-    raw_text = clean_text(sale.raw_text)
-    if not raw_text:
-        return None
-    return f"[ANNONCE SOURCE]\n{raw_text[:max_chars]}"
 
 
 def load_llm_fact_context_chunks_for_sale(
@@ -1205,9 +797,7 @@ def needs_fact_extraction(sale: AuctionSale) -> bool:
     """Return whether current documentary evidence requires a fact pass.
 
     This is the single selection predicate shared by publication, queue and
-    inline scan paths. Keeping it content-aware prevents a lightweight display
-    call immediately before the queue performs the authoritative fact pass and
-    final display synthesis.
+    inline scan paths.
     """
 
     raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
@@ -1224,8 +814,7 @@ def needs_fact_extraction(sale: AuctionSale) -> bool:
     # the documentary facts (risks, copropriété, works, investment facts, and
     # page-level conflicts) were analysed. Once PDF evidence exists, schedule
     # one authoritative fact pass until its content-addressed manifest is
-    # current. The old gap-only predicate silently routed these rows through
-    # display synthesis and never extracted the remaining facts.
+    # current.
     return True
 
 
@@ -1349,30 +938,6 @@ def _unique_fact_sections(sections: list[str]) -> list[str]:
     return unique
 
 
-def build_source_page_context(sale: AuctionSale, max_chars: int = 5000) -> str | None:
-    # Canonical facts come first so that truncation never drops them.
-    sections: list[str] = [canonical_facts_block(sale)]
-    payloads = _source_payloads_for_sale(sale)
-    primary_raw_text = _source_raw_text_without_pdf(
-        payloads[0].get("raw_text") if payloads else None
-    ) or _source_raw_text_without_pdf(sale.raw_text)
-    if primary_raw_text:
-        sections.append(f"[ANNONCE SOURCE]\n{primary_raw_text}")
-
-    metadata = _source_metadata_section(sale)
-    if metadata:
-        sections.append(metadata)
-
-    for index, payload in enumerate(payloads):
-        sections.extend(_source_payload_sections(payload, sale, include_raw_text=not (index == 0 and primary_raw_text)))
-
-    raw_text = _source_raw_text_without_pdf(sale.raw_text)
-    if raw_text and not primary_raw_text:
-        sections.append(f"[ANNONCE SOURCE - TEXTE COLLECTE]\n{raw_text}")
-
-    return _join_unique_sections(sections, max_chars=max_chars)
-
-
 def extract_source_description(sale: AuctionSale) -> str | None:
     source_block_candidates: list[str] = []
     for payload in _source_payloads_for_sale(sale):
@@ -1450,54 +1015,6 @@ def _usable_source_description(value: str | None) -> str | None:
     if UNUSABLE_SOURCE_DESCRIPTION_RE.search(text):
         return None
     return text[:2500]
-
-
-def build_reduced_pdf_context(
-    pdf_texts: list[dict[str, Any]],
-    max_chars: int = 12000,
-    first_page_chars: int = 2500,
-    window_chars: int = 900,
-) -> str | None:
-    max_chars = max(2000, max_chars)
-    sections: list[str] = []
-
-    for item in _priority_documents(pdf_texts):
-        sections.extend(_document_page_sections(item, first_page_chars=first_page_chars, priority=True))
-
-    for item in pdf_texts:
-        pages = item.get("pages") if isinstance(item, dict) else None
-        if isinstance(pages, list) and pages:
-            label = clean_text(item.get("label")) or "document"
-            document_type = clean_text(item.get("document_type")) or "pdf"
-            for page in pages:
-                if not isinstance(page, dict):
-                    continue
-                text = clean_text(page.get("text"))
-                if not text:
-                    continue
-                page_number = page.get("page")
-                for window in _keyword_windows(text, window_chars=window_chars):
-                    sections.append(f"[EXTRAIT - {label} - {document_type} - page {page_number}]\n{window}")
-        else:
-            text = clean_text(item.get("text"))
-            if not text:
-                continue
-            label = clean_text(item.get("label")) or "document"
-            document_type = clean_text(item.get("document_type")) or "pdf"
-            for window in _keyword_windows(text, window_chars=window_chars):
-                sections.append(f"[EXTRAIT - {label} - {document_type}]\n{window}")
-
-    reduced = _join_unique_sections(sections, max_chars=max_chars)
-    if reduced:
-        return reduced
-
-    fallback_sections = []
-    for item in pdf_texts:
-        text = clean_text(item.get("text"))
-        if text:
-            label = clean_text(item.get("label")) or "document"
-            fallback_sections.append(f"[{label}]\n{text[:first_page_chars]}")
-    return _join_unique_sections(fallback_sections, max_chars=max_chars)
 
 
 def _source_metadata_section(sale: AuctionSale) -> str | None:
@@ -1657,7 +1174,6 @@ def _load_legacy_extraction(
     output_dir: Path,
     context: str,
     model: str,
-    extraction_mode: str,
     prompt_version: str,
     fact_prompt_version: str,
 ) -> tuple[LLMExtraction, str] | None:
@@ -1673,7 +1189,7 @@ def _load_legacy_extraction(
         return None
     cached_prompt_version = clean_text(cache.get("prompt_version"))
     expected_prefix = (
-        f"{prompt_version}:{extraction_mode}:{SURFACE_REASONING_VERSION}:complete_v2:"
+        f"{prompt_version}:{LEGACY_EXTRACTION_MODE}:{SURFACE_REASONING_VERSION}:complete_v2:"
         f"{fact_prompt_version}:"
     )
     if cached_prompt_version.startswith(expected_prefix):
@@ -1681,11 +1197,10 @@ def _load_legacy_extraction(
     else:
         # The pre-stage-split writer stored only the base prompt version in
         # metadata while hashing the complete versioned string.  Reconstruct
-        # that exact key to promote compatible old artifacts without trusting
-        # their generated display text after a prompt-version change.
+        # that exact key to promote compatible old artifacts.
         key_prompt_version = (
-            f"{prompt_version}:{extraction_mode}:{SURFACE_REASONING_VERSION}:complete_v2:"
-            f"{fact_prompt_version}:{load_settings().get('llm_display_prompt_version')}"
+            f"{prompt_version}:{LEGACY_EXTRACTION_MODE}:{SURFACE_REASONING_VERSION}:complete_v2:"
+            f"{fact_prompt_version}:{LEGACY_DISPLAY_PROMPT_VERSION}"
         )
         if cached_prompt_version != prompt_version:
             return None
@@ -1738,15 +1253,6 @@ def _fact_input_cache_key(context: str, model: str, prompt_version: str) -> str:
         redact_personal_text(context) or "",
         model,
         f"facts_input_v1:{prompt_version}:{SURFACE_REASONING_VERSION}",
-    )
-
-
-def _display_cache_key(context: str, model: str, prompt_version: str) -> str:
-    # Voir `_fact_chunk_cache_key` : le contexte est normalisé avant d'être haché.
-    return _llm_cache_key(
-        redact_personal_text(context) or "",
-        model,
-        f"display_v1:{prompt_version}:{DISPLAY_QUALITY_VERSION}",
     )
 
 
@@ -1892,45 +1398,6 @@ def _save_fact_chunk(
     payload = redact_personal_data(extraction.model_dump(mode="json"))
     _atomic_json(local_path, payload)
     _save_durable_cache(cache_key, payload, stage="facts", model=model)
-
-
-def _load_display_cache(
-    cache_key: str,
-    output_dir: Path,
-    model: str,
-    incremental: bool,
-) -> LLMExtraction | None:
-    if not incremental:
-        return None
-    local_path = output_dir / "display" / f"{cache_key}.json"
-    local_payload = _read_json_mapping(local_path) if local_path.exists() else None
-    local_extraction = _validated_extraction_payload(local_payload)
-    if local_extraction is not None and _normalize_display_description(local_extraction.display_description):
-        _save_durable_cache(
-            cache_key,
-            local_extraction.model_dump(mode="json"),
-            stage="display",
-            model=model,
-        )
-        return local_extraction
-
-    durable_payload = _load_durable_cache(cache_key, stage="display")
-    durable_extraction = _validated_extraction_payload(durable_payload)
-    if durable_extraction is None or not _normalize_display_description(durable_extraction.display_description):
-        return None
-    _atomic_json(local_path, durable_extraction.model_dump(mode="json"))
-    return durable_extraction
-
-
-def _save_display_cache(
-    cache_key: str,
-    extraction: LLMExtraction,
-    output_dir: Path,
-    model: str,
-) -> None:
-    payload = redact_personal_data(extraction.model_dump(mode="json"))
-    _atomic_json(output_dir / "display" / f"{cache_key}.json", payload)
-    _save_durable_cache(cache_key, payload, stage="display", model=model)
 
 
 def _llm_request_context(sale: AuctionSale, *, stage: str, reason: str):
@@ -2496,50 +1963,12 @@ def _dedupe_json_values(values: list[Any]) -> list[Any]:
     return unique
 
 
-def _build_validated_display_context(
-    sale: AuctionSale,
-    extraction: LLMExtraction,
-    *,
-    fallback_context: str | None,
-) -> str:
-    # Canonical sale values prevail over the extraction (see FAITS CANONIQUES).
-    facts = {
-        "property_type": sale.property_type or extraction.property_type,
-        "rooms_count": sale.rooms_count or extraction.rooms_count,
-        "bedrooms_count": sale.bedrooms_count or extraction.bedrooms_count,
-        "starting_price_eur": (
-            str(sale.starting_price_eur) if sale.starting_price_eur is not None else None
-        ),
-        "sale_date": sale.sale_date.isoformat() if sale.sale_date is not None else None,
-        "adjudication_price_eur": (
-            str(sale.adjudication_price_eur) if sale.adjudication_price_eur is not None else None
-        ),
-        "occupancy_status": (
-            sale.occupancy_status if sale.occupancy_status not in (None, "unknown") else extraction.occupancy_status
-        ),
-        "occupancy_details": extraction.occupancy_details,
-        "assets": [asset.model_dump(mode="json") for asset in extraction.assets],
-        "legal_risks": extraction.legal_risks,
-        "physical_risks": extraction.physical_risks,
-        "servitudes": extraction.servitudes,
-        "works_needed": extraction.works_needed,
-        "contradictions": extraction.contradictions,
-    }
-    canonical = canonical_facts_block(sale)
-    sections = [canonical, "[FAITS STRUCTURES A VALIDER POUR AFFICHAGE]\n" + json.dumps(facts, ensure_ascii=False)]
-    if fallback_context:
-        # The source context already starts with the same (flattened) block.
-        sections.append(fallback_context.replace(re.sub(r"\s+", " ", canonical), "").strip())
-    return "\n\n".join(section for section in sections if section)
-
-
 def _apply_extraction_to_sale(
     sale: AuctionSale,
     extraction: LLMExtraction,
     stats: LLMEnrichmentStats,
     context: str = "",
     prompt_version: str | None = None,
-    model_name: str | None = None,
 ) -> None:
     reference_sale = sale.model_copy()
     confidence = extraction.confidence
@@ -2629,96 +2058,14 @@ def _apply_extraction_to_sale(
         ):
             sale.property_type = extraction.property_type
 
-    # Synthèse coupée (LLM_DISPLAY_ENABLED) : aucun texte écrit et aucun rejet compté, les faits restent publiés.
-    if llm_display_enabled():
-        display_description = repair_generated_display(
-            strip_filler_sentences(_normalize_display_description(extraction.display_description)), reference_sale.model_dump()
-        )
-        display_check = verify_display_claims(
-            display_description or "", "\n".join(filter(None, (extract_source_description(sale), context))),
-            reference_sale.model_dump(),
-        )
-        sale.raw_payload["llm_display_evidence_check"] = display_check
-        _log_display_rejection(sale, display_check, "generated")
-        if (display_description and confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE
-                and not sale.raw_payload.get("operator_land_surface_conflict")
-                and not display_check["issues"]):
-            sale.raw_payload["llm_display_status"] = "accepted"
-            sale.raw_payload["llm_display_prompt_version"] = str(
-                load_settings().get("llm_display_prompt_version") or prompt_version or ""
-            )
-            sale.raw_payload["llm_display_description"] = display_description
-            sale.raw_payload["llm_display_description_word_count"] = len(display_description.split())
-        else:
-            sale.raw_payload["llm_display_status"] = "rejected"
-            fallback_display_description = _fallback_display_description(
-                reference_sale if display_check["issues"] else sale,
-                LLMExtraction() if display_check["issues"] else extraction,
-                context,
-            )
-            if fallback_display_description:
-                sale.raw_payload["llm_display_status"] = "fallback"
-                sale.raw_payload["llm_display_prompt_version"] = str(
-                    load_settings().get("llm_display_prompt_version") or prompt_version or ""
-                )
-                sale.raw_payload["llm_display_description"] = (fallback_display_description + " Surface du terrain à clarifier entre les champs de la source."
-                                                                   if sale.raw_payload.get("operator_land_surface_conflict") else fallback_display_description)
-                sale.raw_payload["llm_display_description_word_count"] = len(fallback_display_description.split())
-
-        # Revalidate cached generations too; do not certify stale text on rejection.
-        if sale.raw_payload["llm_display_status"] == "rejected":
-            sale.raw_payload.pop("llm_display_description", None)
-        checked_display, source_quotes = preserve_source_constraints(
-            sale.raw_payload.get("llm_display_description"), extract_source_description(sale),
-            max_chars=DISPLAY_DESCRIPTION_MAX_CHARS, max_words=DISPLAY_DESCRIPTION_MAX_WORDS,
-            extra_quotes=sale.raw_payload.get("source_display_constraints"),
-        )
-        sale.raw_payload["llm_display_source_constraints"] = source_quotes
-        sale.raw_payload.pop("llm_display_quality_version", None)
-        if checked_display:
-            final_display_check = verify_display_claims(
-                checked_display,
-                "\n".join(filter(None, (extract_source_description(sale), context))),
-                sale.model_dump(),
-            )
-            if final_display_check["issues"]:
-                # Source quotations are appended after the first display check. A
-                # hostile quote must not turn an otherwise safe fallback into
-                # public prose containing a link, contact detail or instruction.
-                sale.raw_payload["llm_display_evidence_check"] = final_display_check
-                sale.raw_payload["llm_display_status"] = "rejected"
-                _log_display_rejection(sale, final_display_check, "with_source_quotes")
-                checked_display = None
-        if checked_display:
-            sale.raw_payload["llm_display_description"] = checked_display
-            sale.raw_payload["llm_display_description_word_count"] = len(checked_display.split())
-            if len(checked_display.strip()) >= DISPLAY_MIN_CHARS:
-                sale.raw_payload["llm_display_quality_version"] = DISPLAY_QUALITY_VERSION
-                if model_name:
-                    # Persist the exact model used by a paid or cache-backed
-                    # synthesis. Operational refreshes may reuse this result only
-                    # while the configured model remains unchanged.
-                    sale.raw_payload["llm_display_model"] = model_name
-            else:
-                sale.raw_payload.pop("llm_display_model", None)
-        else:
-            sale.raw_payload["llm_display_status"] = "rejected"
-            sale.raw_payload.pop("llm_display_description", None)
-            sale.raw_payload.pop("llm_display_description_word_count", None)
-            sale.raw_payload.pop("llm_display_model", None)
-            stats.errors += 1
-            stats.error_messages.append("Display quality rejected: no summary preserving source constraints within budget")
-        _record_rejected_display_output(sale, extraction.display_description)
-
     risk_notes = _format_risk_notes(extraction, context)
     if risk_notes:
         sale.risk_notes = clean_text(" | ".join(filter(None, [sale.risk_notes, risk_notes])))
         stats.risks_detected += 1
 
     if extraction.summary and _is_better_summary(sale.description, extraction.summary):
-        # The legacy summary also reaches the public fiche when the dedicated
-        # display description is absent. Apply the same evidence and public
-        # content checks before replacing the source description.
+        # The summary reaches the public fiche as the description. Apply the
+        # evidence and public content checks before replacing the source one.
         summary_check = verify_display_claims(
             extraction.summary,
             "\n".join(filter(None, (extract_source_description(reference_sale), context))),
@@ -2732,30 +2079,6 @@ def _apply_extraction_to_sale(
     due_diligence = _due_diligence_payload(extraction)
     if due_diligence:
         sale.raw_payload["llm_due_diligence"] = due_diligence
-
-
-def _record_rejected_display_output(sale: AuctionSale, generated: str | None) -> None:
-    """Keep the model's own text, privately, whenever it is not the published one.
-
-    Only the fallback used to survive a rejection, so a refused generation
-    could not be reviewed. The text is capped and stays in ``raw_payload``.
-    """
-    text = clean_text(generated)
-    if not text or sale.raw_payload.get("llm_display_status") == "accepted":
-        sale.raw_payload.pop("rejected_display_description", None)
-        return
-    previous = sale.raw_payload.get("rejected_display_description")
-    if isinstance(previous, dict) and previous.get("text") == text[:REJECTED_DISPLAY_MAX_CHARS]:
-        return  # a cached replay must not rewrite the row
-    check = sale.raw_payload.get("llm_display_evidence_check")
-    issues = check.get("issues") if isinstance(check, dict) else None
-    sale.raw_payload["rejected_display_description"] = {
-        "text": text[:REJECTED_DISPLAY_MAX_CHARS],
-        "truncated": len(text) > REJECTED_DISPLAY_MAX_CHARS,
-        "status": sale.raw_payload.get("llm_display_status"),
-        "issue_codes": sorted({str(issue.get("code")) for issue in issues or [] if isinstance(issue, dict)}),
-        "recorded_at": datetime.now(UTC).isoformat(),
-    }
 
 
 def _log_display_rejection(sale: AuctionSale, check: dict[str, Any], stage: str) -> None:
@@ -2799,7 +2122,7 @@ def _format_risk_notes(extraction: LLMExtraction, context: str) -> str | None:
     ``risk_notes`` is read back as evidence by the analyses, so free model text has no place in it:
     the investor notes stay out, and every other entry needs a verified citation. ``works_needed``
     is out as well: the prompt asks for no quote for it (changing the prompt means a new version),
-    so it cannot be verified. It stays in the extraction and in the deterministic display fallback.
+    so it cannot be verified. It stays in the extraction.
     """
     parts = []
     for label, field_name, values in (
@@ -2811,33 +2134,6 @@ def _format_risk_notes(extraction: LLMExtraction, context: str) -> str | None:
         if cited:
             parts.append(f"{label}: " + "; ".join(cited))
     return " | ".join(parts) if parts else None
-
-
-def _normalize_display_description(value: str | None) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    text = re.sub(r"^(?:description|synthèse|synthese)\s*:\s*", "", text, flags=re.I).strip()
-    words = text.split()
-    if len(words) > DISPLAY_DESCRIPTION_MAX_WORDS:
-        text = " ".join(words[:DISPLAY_DESCRIPTION_MAX_WORDS]).rstrip(" ,;:")
-        if not re.search(r"[.!?]$", text):
-            text += "."
-    if len(text) > DISPLAY_DESCRIPTION_MAX_CHARS:
-        truncated = text[:DISPLAY_DESCRIPTION_MAX_CHARS].rsplit(" ", 1)[0].rstrip(" ,;:")
-        text = truncated if truncated else text[:DISPLAY_DESCRIPTION_MAX_CHARS].rstrip(" ,;:")
-        if not re.search(r"[.!?]$", text):
-            text += "."
-    return clean_text(text)
-
-
-def _fallback_display_description(sale: AuctionSale, extraction: LLMExtraction, context: str = "") -> str | None:
-    """Deterministic public text; the content rules live in ``display_fallback``."""
-    source_text = extract_source_description(sale)
-    text = build_fallback_display_description(
-        sale, extraction, source_text=source_text, evidence="\n".join(filter(None, (source_text, context))),
-    )
-    return _normalize_display_description(text)
 
 
 def _due_diligence_payload(extraction: LLMExtraction) -> dict[str, Any]:
@@ -2889,93 +2185,6 @@ def _stringify_llm_value(value: Any) -> str | None:
     if isinstance(value, list):
         return clean_text("; ".join(filter(None, (_stringify_llm_value(item) for item in value))))
     return clean_text(str(value))
-
-
-def _priority_documents(pdf_texts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    priority = []
-    for item in pdf_texts:
-        document_type = str(item.get("document_type") or "")
-        label = str(item.get("label") or "")
-        if document_type in PRIORITY_DOCUMENT_TYPES or PRIORITY_LABEL_PATTERNS.search(label):
-            priority.append(item)
-    return priority
-
-
-def _document_page_sections(item: dict[str, Any], *, first_page_chars: int, priority: bool) -> list[str]:
-    label = clean_text(item.get("label")) or "document"
-    document_type = clean_text(item.get("document_type")) or "pdf"
-    prefix = "PRIORITE" if priority else "DOCUMENT"
-    pages = item.get("pages")
-    sections: list[str] = []
-    if isinstance(pages, list) and pages:
-        for page in pages[:3]:
-            if not isinstance(page, dict):
-                continue
-            text = clean_text(page.get("text"))
-            if not text:
-                continue
-            page_number = page.get("page")
-            method = clean_text(page.get("method")) or "extraction"
-            sections.append(f"[{prefix} - {label} - {document_type} - page {page_number} - {method}]\n{text[:first_page_chars]}")
-        return sections
-    text = clean_text(item.get("text"))
-    return [f"[{prefix} - {label} - {document_type}]\n{text[:first_page_chars]}"] if text else []
-
-
-def _keyword_windows(text: str, window_chars: int) -> list[str]:
-    lowered = text.lower()
-    half = window_chars // 2
-
-    # Collect a [left, right] span around each keyword hit.
-    spans: list[tuple[int, int]] = []
-    for keyword in LLM_CONTEXT_KEYWORDS:
-        start = 0
-        while True:
-            index = lowered.find(keyword, start)
-            if index == -1:
-                break
-            spans.append((max(0, index - half), min(len(text), index + half)))
-            start = index + len(keyword)
-
-    if not spans:
-        return []
-
-    # Merge overlapping/adjacent spans so the same characters are not emitted
-    # several times (dense legal PDFs produce heavily overlapping windows). This
-    # keeps exactly the union of the previous windows — no information dropped,
-    # only duplicated overlap removed.
-    spans.sort()
-    merged: list[list[int]] = [list(spans[0])]
-    for left, right in spans[1:]:
-        if left <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], right)
-        else:
-            merged.append([left, right])
-
-    return [text[left:right].strip() for left, right in merged]
-
-
-def _join_unique_sections(sections: list[str], max_chars: int) -> str | None:
-    unique: list[str] = []
-    seen: set[str] = set()
-    total = 0
-    for section in sections:
-        normalized = re.sub(r"\s+", " ", section).strip()
-        # Page headers are often identical for hundreds of characters. A
-        # prefix fingerprint therefore discarded later pages with distinct
-        # facts. Hash the complete normalized section instead.
-        fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-        if not normalized or fingerprint in seen:
-            continue
-        if total + len(normalized) + 2 > max_chars:
-            remaining = max_chars - total - 2
-            if remaining > 120:
-                unique.append(normalized[:remaining])
-            break
-        seen.add(fingerprint)
-        unique.append(normalized)
-        total += len(normalized) + 2
-    return "\n\n".join(unique) if unique else None
 
 
 def _evidence_quote(evidence: dict[str, Any], field: str) -> str | None:

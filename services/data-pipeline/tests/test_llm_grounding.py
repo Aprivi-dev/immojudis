@@ -15,7 +15,6 @@ from src.enrichment.extract_structured import (
     enrich_sale_with_llm,
 )
 from src.enrichment.extraction_grounding import occupancy_is_supported
-from src.enrichment.prompts import DISPLAY_DESCRIPTION_SYSTEM_PROMPT
 from src.models import AuctionSale
 
 NAME = "DUPONT"
@@ -36,11 +35,6 @@ class RecordingClient:
 
     def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
         self.requests.append((system_prompt, user_prompt))
-        if system_prompt == DISPLAY_DESCRIPTION_SYSTEM_PROMPT:
-            return {
-                "display_description": "Maison à Bordeaux occupée suivant bail, surface habitable de 91,4 m².",
-                "confidence": {"display_description": 0.9},
-            }
         # The model repeats what it was given, including a name that slipped through.
         return {
             "occupancy_status": "rented",
@@ -62,7 +56,6 @@ def test_names_reach_neither_the_provider_nor_the_durable_cache(
         return [CONTEXT_WITH_NAME]
 
     monkeypatch.setattr(extraction, "load_llm_fact_context_chunks_for_sale", load_contexts)
-    monkeypatch.setattr(extraction, "load_llm_context_for_sale", lambda *_a, **_kw: CONTEXT_WITH_NAME)
     cached: list[tuple[str, dict, str]] = []
     monkeypatch.setattr(
         extraction,
@@ -72,12 +65,12 @@ def test_names_reach_neither_the_provider_nor_the_durable_cache(
     sale = AuctionSale(source_name="test", source_url="https://example.test/sale", raw_text="Maison à Bordeaux.")
     client = RecordingClient()
 
-    enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode="structured_then_display")
+    enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
 
-    assert len(client.requests) == 2  # facts, then display
+    assert len(client.requests) == 1  # the fact pass only
     assert all(NAME not in system + user for system, user in client.requests)
     assert any("un occupant" in user for _system, user in client.requests)
-    assert {stage for _key, _payload, stage in cached} >= {"facts", "display"}
+    assert {stage for _key, _payload, stage in cached} >= {"facts"}
     assert all(NAME not in repr(payload) for _key, payload, _stage in cached)
     assert all(NAME not in path.read_text(encoding="utf-8") for path in tmp_path.rglob("*.json"))
     # The cache keys were already computed on the filtered text: they do not move.
@@ -86,7 +79,6 @@ def test_names_reach_neither_the_provider_nor_the_durable_cache(
 
 
 def _fact_version() -> str:
-    from src.config import load_settings
 
     settings = load_settings()
     return str(settings.get("llm_fact_prompt_version") or settings["llm_prompt_version"])
@@ -400,65 +392,3 @@ def test_empty_risk_entries_take_their_citation_with_them() -> None:
     sale = AuctionSale(source_name="test", source_url="https://example.test/sale")
     extraction._apply_extraction_to_sale(sale, parsed, LLMEnrichmentStats(), CONTEXT)
     assert sale.risk_notes == "Risques juridiques: bail en cours"
-
-
-def test_cached_reapplication_checks_quotes_against_every_fragment(monkeypatch: pytest.MonkeyPatch) -> None:
-    late = "Le bien est loué suivant bail conclu en 2019."
-    chunks = ["Premier fragment sans intérêt. " * 400, late]
-    monkeypatch.setattr(extraction, "load_llm_fact_context_chunks_for_sale", lambda *_a, **_kw: chunks)
-    monkeypatch.setattr(extraction, "load_llm_context_for_sale", lambda *_a, **_kw: chunks[0][:12000])
-    settings = load_settings()
-    sale = AuctionSale(source_name="test", source_url="https://example.test/sale")
-    sale.raw_payload["llm_fact_context_coverage"] = {"complete": True}
-    seen: list[str] = []
-    monkeypatch.setattr(
-        extraction,
-        "_apply_extraction_to_sale",
-        lambda _sale, _extraction, _stats, context="", **_kw: seen.append(context),
-    )
-    sale.raw_payload.update(
-        llm_prompt_version=str(settings["llm_prompt_version"]),
-        llm_display_prompt_version=str(settings.get("llm_display_prompt_version") or settings["llm_prompt_version"]),
-        llm_extraction={"occupancy_status": "rented"},
-    )
-
-    extraction.apply_cached_llm_extraction_to_sale(sale)
-
-    assert seen and late in seen[0]
-    assert sale.raw_payload["llm_fact_context_coverage"] == {"complete": True}
-
-
-def test_refused_display_is_not_paid_for_again_on_the_same_input(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("LLM_ENABLED", "true")
-    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
-    context = "Maison à Bordeaux. Le bien est occupé suivant bail."
-    monkeypatch.setattr(extraction, "load_llm_context_for_sale", lambda *_a, **_kw: context)
-    store: dict[tuple[str, str], dict] = {}
-    monkeypatch.setattr(extraction, "load_cached_result", lambda key, *, stage: store.get((key, stage)))
-    monkeypatch.setattr(
-        extraction,
-        "save_cached_result",
-        lambda key, payload, *, stage, model: store.update({(key, stage): payload}),
-    )
-
-    class RefusingClient:
-        model = "test-model"
-        calls = 0
-
-        def is_available(self) -> bool:
-            return True
-
-        def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
-            self.calls += 1
-            return {"display_description": None}
-
-    client = RefusingClient()
-    for _ in range(2):
-        sale = AuctionSale(source_name="test", source_url="https://example.test/sale", raw_text=context)
-        enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode="display_description")
-
-    assert client.calls == 1
-    assert {stage for _key, stage in store} == {"display_refused"}
-    assert sale.raw_payload["llm_display_status"] in {"fallback", "rejected"}

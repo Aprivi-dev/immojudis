@@ -1,11 +1,9 @@
 """Reduced fixtures from public pages inspected on 2026-09-11."""
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.enrichment.display_fallback import _format_surface_value
 from src.normalize import normalize_sale
 from src.sources import avoventes, cessions_etat, info_encheres, petites_affiches, vench
 
@@ -238,11 +236,6 @@ def test_avoventes_description_is_the_lot_not_nearby_comparables():
     assert "51,10" in raw["raw_text"]
 
 
-@pytest.mark.parametrize("value,expected", [("140", "140"), ("120", "120"), ("51.10", "51,1"), ("1E+3", "1000")])
-def test_fallback_surface_never_uses_scientific_notation(value, expected):
-    assert _format_surface_value(Decimal(value)) == expected
-
-
 def test_known_media_cannot_restore_icons_after_a_fresh_detail():
     from src.main import _preserve_known_enrichment_payloads
     sale = {"source_url": "u", "source_detail_status": "complete", "source_images": []}
@@ -290,18 +283,6 @@ def test_old_extractor_version_requires_a_new_source_read():
     from src.freshness import detail_is_fresh
     assert not detail_is_fresh({"raw_payload": {"source_checks": {"u": {
         "checked_at": datetime.now(UTC).isoformat(), "extractor_version": "old"}}}}, "u")
-
-
-def test_quality_distinguishes_model_description_from_fallback():
-    from src.enrichment.extract_structured import LLMEnrichmentStats
-    from src.pdf_enrichment import PdfEnrichmentStats
-    from src.quality import build_quality_report
-    sales = [normalize_sale({"source_url": "https://example.fr/" + status,
-                            "llm_display_status": status}) for status in ["accepted", "fallback", "rejected"]]
-    report = build_quality_report(sales, PdfEnrichmentStats(), LLMEnrichmentStats())
-    assert report["llm_display_accepted"] == 1
-    assert report["llm_display_fallback"] == 1
-    assert report["llm_display_rejected"] == 1
 
 
 def test_agrasc_operator_enrichment_preserves_identity_and_closing_date():

@@ -63,8 +63,8 @@ select is(
     from public.auction_enrichment_jobs
     where source_url = 'https://example.test/surface-reasoning-queue'
   ),
-  1,
-  'fact extraction is queued once and includes the subsequent display synthesis'
+  0,
+  'a sale without documents queues no enrichment job (display synthesis retired, migration 20261112110000)'
 );
 
 update public.auction_sales

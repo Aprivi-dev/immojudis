@@ -89,7 +89,7 @@ def cancel_provider_output_refusal_jobs(
 
     Only an owned LLM claim may be cancelled.  A non-LLM claim is deferred so
     a PDF or other checkpoint is never declared complete merely because a
-    later display request was refused.  A lost lease or finish error remains
+    later fact request was refused.  A lost lease or finish error remains
     pending for its owner/finalizer; it is never converted into a retryable
     failure by this handler.
     """
@@ -98,7 +98,7 @@ def cancel_provider_output_refusal_jobs(
     deferred_jobs: list[dict[str, object]] = []
     for job in jobs:
         job_type = str(job.get("job_type") or "")
-        if job_type not in {"fact_extraction", "display_description"}:
+        if job_type != "fact_extraction":
             deferred_jobs.append(job)
             continue
         try:
@@ -209,8 +209,8 @@ class ReplicateClient:
             raise LLMClientUnavailable("REPLICATE_API_TOKEN is missing")
         last_error: Exception | None = None
         prompt = _user_prompt_for_model(str(self.model), system_prompt, user_prompt)
-        attempts = 1 if _is_display_description_prompt(system_prompt) or not _allow_json_retry else 2
-        request_kind = "display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction"
+        attempts = 2 if _allow_json_retry else 1
+        request_kind = "fact_extraction"
         for attempt in range(attempts):
             ensure_llm_task_deadline("starting LLM generation")
             prediction: dict[str, Any] | None = None
@@ -226,7 +226,7 @@ class ReplicateClient:
                 parsed = parse_json_response(raw_response)
                 self._record_usage(
                     prediction,
-                    request_kind="display_description" if _is_display_description_prompt(system_prompt) else "fact_extraction",
+                    request_kind=request_kind,
                     attempt_number=attempt + 1,
                     prompt_chars=len(prompt),
                     system_prompt_chars=len(system_prompt),
@@ -255,13 +255,6 @@ class ReplicateClient:
                     raise
                 if not isinstance(exc, ValueError):
                     raise
-                fallback = (
-                    _display_description_payload_from_text(system_prompt, raw_response or "")
-                    if raw_response is not None
-                    else None
-                )
-                if fallback is not None:
-                    return fallback
                 last_error = exc
                 if attempt + 1 >= attempts:
                     break
@@ -468,15 +461,7 @@ class ReplicateClient:
         ensure_llm_task_deadline("creating Replicate prediction")
         metadata_token = _REQUEST_METADATA.set(
             {
-                "request_kind": (
-                    "vision_analysis"
-                    if image_inputs
-                    else (
-                        "display_description"
-                        if _is_display_description_prompt(system_prompt or "")
-                        else "fact_extraction"
-                    )
-                ),
+                "request_kind": "vision_analysis" if image_inputs else "fact_extraction",
                 "prompt_chars": len(prompt),
                 "system_prompt_chars": len(system_prompt or ""),
                 "image_count": len(image_inputs or ()),
@@ -1159,25 +1144,6 @@ def _parse_escaped_json_response(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _display_description_payload_from_text(system_prompt: str, raw_response: str) -> dict[str, Any] | None:
-    if not _is_display_description_prompt(system_prompt):
-        return None
-    text = _display_description_text_from_jsonish(raw_response) or _plain_display_description_text(raw_response)
-    if text:
-        # No confidence is invented for a recovered text: the evidence checks that every generated
-        # description goes through are the only gate.
-        return {"display_description": text}
-    if _is_unfinished_display_response(raw_response):
-        # Truncated, unclosed or introduced by a preamble: not published, and the empty description
-        # sends the sale to the deterministic fallback instead of failing the whole enrichment.
-        return {"display_description": None}
-    return None
-
-
-def _is_display_description_prompt(system_prompt: str) -> bool:
-    return "MODE SYNTHESE STRICTE" in system_prompt.upper()
-
-
 def _is_fact_extraction_prompt(system_prompt: str) -> bool:
     return "MODE EXTRACTION STRICTE" in system_prompt.upper()
 
@@ -1250,91 +1216,6 @@ def _request_key_for_payload(model: str, payload: dict[str, Any]) -> str:
         default=str,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def _display_description_text_from_jsonish(raw_response: str) -> str | None:
-    candidates = [raw_response.strip()]
-    if candidates[0].startswith('"') and candidates[0].endswith('"'):
-        try:
-            decoded = json.loads(candidates[0])
-        except json.JSONDecodeError:
-            decoded = None
-        if isinstance(decoded, str):
-            candidates.append(decoded)
-    if '\\"' in candidates[0]:
-        candidates.append(candidates[0].replace('\\"', '"'))
-
-    for candidate in candidates:
-        # The string must be closed: a value cut off by the output limit is not a synthesis.
-        match = re.search(
-            r'"display_description"\s*:\s*"(?P<value>.*?)(?:"\s*(?:[,}]|$))',
-            candidate,
-            re.S,
-        )
-        if not match:
-            continue
-        value = _decode_json_string_fragment(match.group("value"))
-        text = _clean_display_description_candidate(value)
-        if text and _has_final_punctuation(text):
-            return text
-    return None
-
-
-_DISPLAY_FINAL_PUNCTUATION = (".", "!", "?", "…")
-_DISPLAY_PREAMBLE_RE = re.compile(
-    r"^\s*(?:voici|voil[aà]|ci-dessous|bien s[uû]r|certainement|d['’]accord|here\s+is|sure)\b",
-    re.I,
-)
-
-
-def _has_final_punctuation(text: str) -> bool:
-    return text.rstrip().endswith(_DISPLAY_FINAL_PUNCTUATION)
-
-
-def _is_unfinished_display_response(raw_response: str) -> bool:
-    """A display answer that carried a text but is cut off, unclosed or preceded by a preamble."""
-    if '"display_description"' in raw_response or '\\"display_description\\"' in raw_response:
-        return True
-    text = raw_response.strip()
-    if not text or "{" in text or "}" in text:
-        return False
-    return len(text.split()) >= 8 and (
-        _DISPLAY_PREAMBLE_RE.match(text) is not None or not _has_final_punctuation(text.rstrip("`\"' \n"))
-    )
-
-
-def _decode_json_string_fragment(value: str) -> str:
-    try:
-        decoded = json.loads(f'"{value}"')
-    except json.JSONDecodeError:
-        return value.replace('\\"', '"')
-    return decoded if isinstance(decoded, str) else value
-
-
-def _plain_display_description_text(raw_response: str) -> str | None:
-    text = raw_response.strip()
-    if not text:
-        return None
-    if "{" in text or "}" in text:
-        return None
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:text|markdown)?", "", text, flags=re.I).strip()
-        text = re.sub(r"```$", "", text).strip()
-    if _DISPLAY_PREAMBLE_RE.match(text):
-        return None
-    cleaned = _clean_display_description_candidate(text)
-    return cleaned if cleaned and _has_final_punctuation(cleaned) else None
-
-
-def _clean_display_description_candidate(text: str) -> str | None:
-    text = re.sub(r"^\s*(?:display_description|synth[eè]se|description)\s*:\s*", "", text, flags=re.I)
-    text = re.sub(r"\s+", " ", text).strip(" \t\r\n\"'")
-    lowered = text.lower()
-    if any(marker in lowered for marker in ("objet json", "json valide", "je ne peux", "désolé", "desole")):
-        return None
-    if len(text.split()) < 8:
-        return None
-    return text
 
 
 def _response_excerpt(text: str, max_chars: int = 180) -> str:

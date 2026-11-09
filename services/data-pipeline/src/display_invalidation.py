@@ -1,4 +1,7 @@
-"""Decide when a source capture really invalidates the AI display synthesis.
+"""Decide when a source capture really invalidates the analysis of a sale.
+
+The rules were written for the AI display synthesis (removed since); they now
+decide which source changes discard the document facts.
 
 Production showed the synthesis being erased in a loop: a collection run reads
 the list card merged with the detail page, while the recurring ``source_detail``
@@ -12,9 +15,8 @@ The rules below:
 * fingerprint only the facts that change the text (normalised text, documents,
   surfaces, rooms, occupancy, property type, city, procedure);
 * compare a capture only with the previous capture of the same kind;
-* separate a major documentary change (surfaces, occupancy, property type,
-  documents), which removes the old text, from an ordinary one, which keeps it
-  visible with the ``stale`` status while it is regenerated.
+* tell an operational change (price, date, status), which keeps the facts,
+  from a documentary one, which discards them.
 """
 
 from __future__ import annotations
@@ -24,7 +26,6 @@ import json
 import re
 import unicodedata
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from typing import Any
 
 from src.normalize import (
@@ -34,8 +35,6 @@ from src.normalize import (
     normalize_occupancy_status,
     normalize_sale_property_type,
 )
-
-STALE_DISPLAY_STATUS = "stale"
 
 # Outcomes of ``classify_source_change``.
 OPERATIONAL_CHANGE = "operational"
@@ -214,27 +213,3 @@ def merge_capture_fingerprints(old_check: Mapping[str, Any], kind: str, fingerpr
     merged[kind] = fingerprints
     return merged
 
-
-def count_display_invalidation(
-    old_check: Mapping[str, Any], *, invalidated: bool, now: datetime | None = None
-) -> dict[str, Any] | None:
-    """Daily counter of source invalidations, kept on the source check."""
-    today = (now or datetime.now(UTC)).astimezone(UTC).date().isoformat()
-    previous = old_check.get("display_invalidations")
-    count = 0
-    if isinstance(previous, Mapping) and previous.get("day") == today:
-        try:
-            count = max(int(previous.get("count") or 0), 0)
-        except (TypeError, ValueError):
-            count = 0
-    if invalidated:
-        count += 1
-    return {"day": today, "count": count} if count else None
-
-
-def keep_display_as_stale(payload: dict) -> bool:
-    """Keep the published synthesis visible while a regeneration is queued."""
-    if not clean_text(payload.get("llm_display_description")):
-        return False
-    payload["llm_display_status"] = STALE_DISPLAY_STATUS
-    return True

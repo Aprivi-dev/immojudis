@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from src.enrichment.prompts import build_display_description_prompt, build_user_prompt
+from src.enrichment.prompts import build_user_prompt
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.personal_data import (
@@ -171,16 +171,12 @@ def test_normalized_tables_and_risk_excerpts_are_redacted() -> None:
 
 
 def test_prompts_forbid_reproducing_personal_data() -> None:
-    display = build_display_description_prompt("[FAITS CANONIQUES]\n- NATURE_VENTE : vente judiciaire.")
     extraction = build_user_prompt("Annonce : appartement occupé.")
-    for prompt in (display, extraction):
-        folded = prompt.casefold()
-        assert "nom, la date de naissance" in folded
-        assert "adresse personnelle" in folded
-        for role in ("le saisi", "l'occupant", "le locataire"):
-            assert role in folded
-    assert "Interdits (liste noire)" in display
-    assert display.index("Interdits (liste noire)") < display.index("adresse personnelle")
+    folded = extraction.casefold()
+    assert "nom, la date de naissance" in folded
+    assert "adresse personnelle" in folded
+    for role in ("le saisi", "l'occupant", "le locataire"):
+        assert role in folded
     assert "occupancy_details" in extraction[extraction.index("Règles données personnelles") :][:400]
 
 
@@ -194,16 +190,16 @@ def test_fact_input_key_does_not_depend_on_personal_names() -> None:
     assert _fact_input_cache_key(raw, "model", "v1") != _fact_input_cache_key(other, "model", "v1")
 
 
-def test_fact_chunk_and_display_keys_do_not_depend_on_personal_names() -> None:
-    from src.enrichment.extract_structured import _display_cache_key, _fact_chunk_cache_key
+def test_fact_chunk_keys_do_not_depend_on_personal_names() -> None:
+    from src.enrichment.extract_structured import _fact_chunk_cache_key
 
     raw = "[ANNONCE]\nAppartement occupé par Monsieur Pierre DUPONT suivant bail, né le 3 mai 1950 à Lyon."
     stored = "[ANNONCE]\nAppartement occupé par un occupant suivant bail."
     other = "[ANNONCE]\nAppartement libre."
-    for key in (_fact_chunk_cache_key, _display_cache_key):
-        assert key(raw, "model", "v1") == key(stored, "model", "v1")
-        assert key(raw, "model", "v1") != key(other, "model", "v1")
-        assert key(stored, "model", "v1") != key(stored, "model", "v2")
+    key = _fact_chunk_cache_key
+    assert key(raw, "model", "v1") == key(stored, "model", "v1")
+    assert key(raw, "model", "v1") != key(other, "model", "v1")
+    assert key(stored, "model", "v1") != key(stored, "model", "v2")
 
 
 # Linéarité plutôt qu'un plafond absolu : un temps fixe (0,2 s) dépend de la machine et de sa charge, alors qu'un

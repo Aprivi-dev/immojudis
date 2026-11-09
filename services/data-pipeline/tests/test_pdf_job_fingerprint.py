@@ -8,7 +8,6 @@ from src.storage import supabase_client as storage
 SETTINGS = {
     "llm_prompt_version": "display-v1",
     "llm_fact_prompt_version": "fact-v1",
-    "llm_display_prompt_version": "display-v1",
     "replicate_model": "model-v1",
 }
 SOURCE_URL = "https://example.test/pdf-fingerprint"
@@ -54,7 +53,6 @@ def test_pdf_hash_ignores_source_checks_and_llm_settings() -> None:
         **SETTINGS,
         "llm_prompt_version": "display-v2",
         "llm_fact_prompt_version": "fact-v2",
-        "llm_display_prompt_version": "display-v2",
         "replicate_model": "model-v2",
     }
 
@@ -98,7 +96,6 @@ def test_enqueue_uses_pdf_hash_constructor(monkeypatch) -> None:
     rows = []
     monkeypatch.setattr(storage, "load_settings", lambda: SETTINGS)
     monkeypatch.setattr(storage, "documents_are_current", lambda _sale: False)
-    monkeypatch.setattr(storage, "_has_current_llm_description", lambda *_args: True)
     monkeypatch.setattr(
         "src.enrichment.extract_structured.needs_fact_extraction",
         lambda _sale: False,

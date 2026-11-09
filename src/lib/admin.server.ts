@@ -20,21 +20,11 @@ const SCROLL_SOURCES = [
 const startScrollSchema = z
   .object({
     source: z.enum(SCROLL_SOURCES).default("all"),
-    mode: z.enum(["collect", "llm_backfill"]).default("collect"),
+    mode: z.enum(["collect"]).default("collect"),
     limit: z.coerce.number().int().min(1).max(100).optional(),
   })
-  .strict()
-  .superRefine((data, ctx) => {
-    if (data.mode === "llm_backfill" && data.source !== "all") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["source"],
-        message: "Le backfill LLM doit cibler la source all.",
-      });
-    }
-  });
+  .strict();
 const AUTOMATIC_LLM_ENRICHMENT = true;
-const LLM_BACKFILL_SOURCE = "llm-description-backfill";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -42,7 +32,7 @@ type RunnerMode = "github_actions" | "webhook" | "queue_worker";
 export type RunnerStatus = "active" | "suspended" | "unknown";
 
 export type AdminScrollSource = (typeof SCROLL_SOURCES)[number];
-export type AdminScrollMode = "collect" | "llm_backfill";
+export type AdminScrollMode = "collect";
 
 export type AuctionRun = {
   id: string;
@@ -364,7 +354,6 @@ async function dispatchGitHubActionsRun(
       inputs: {
         run_id: run.id,
         source: input.source,
-        llm_backfill: String(input.mode === "llm_backfill"),
         ...(input.limit ? { limit: String(input.limit) } : {}),
       },
     }),
@@ -506,7 +495,7 @@ export async function startAdminScroll(
     .from<AuctionRunRow>("auction_runs")
     .insert({
       status: "queued",
-      source: data.mode === "llm_backfill" ? LLM_BACKFILL_SOURCE : data.source,
+      source: data.source,
       use_llm: AUTOMATIC_LLM_ENRICHMENT,
       summary: initialSummary,
       errors: {},

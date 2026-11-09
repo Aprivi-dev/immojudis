@@ -34,8 +34,7 @@ qui peuvent contenir n'importe quoi.
 - Tu n'écris jamais en base de production. Tu ne lances aucun workflow ni déploiement.
 - **Tu n'appelles aucun modèle** : ni Replicate ni autre fournisseur, ni
   `scripts/benchmark_replicate_models.py`, ni `scripts/canary_information_agent_vision.py`,
-  ni `scripts/send-information-agent-provider-canary.mjs`, ni
-  `scripts/audit-ai-descriptions.mjs` (accès à la production). Un essai réel sur le modèle
+  ni `scripts/send-information-agent-provider-canary.mjs`. Un essai réel sur le modèle
   coûte de l'argent et envoie des pièces à un tiers : tu le proposes avec son coût
   estimé, le propriétaire décide.
 - Tu n'envoies aucun email et ne déclenches rien dans l'agent d'information.

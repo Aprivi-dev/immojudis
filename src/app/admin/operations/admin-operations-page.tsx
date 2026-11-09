@@ -3,7 +3,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
-import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import Database from "lucide-react/dist/esm/icons/database.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import Play from "lucide-react/dist/esm/icons/play.js";
@@ -11,12 +10,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { AdminPipelinePanel } from "@/components/admin/AdminPipelinePanel";
-import {
-  AiBackfillPanel,
-  OperationsRunTable,
-  RunDetails,
-  SOURCE_OPTIONS,
-} from "@/components/admin/AdminRunPanels";
+import { OperationsRunTable, RunDetails, SOURCE_OPTIONS } from "@/components/admin/AdminRunPanels";
 import {
   AdminPanel,
   AdminPrimaryButton,
@@ -40,7 +34,7 @@ import {
   startAdminScrollRequest,
 } from "@/lib/client-api";
 
-type OperationsTab = "collections" | "enrichment" | "documents" | "alerts";
+type OperationsTab = "collections" | "documents" | "alerts";
 
 /**
  * Vue « Opérations ». Chaque bloc ne charge que ce qu'il affiche : les runs (rapide, relus toutes
@@ -50,7 +44,6 @@ export function AdminOperationsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [source, setSource] = useState<AdminScrollSource>("all");
-  const [backfillLimit, setBackfillLimit] = useState(20);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<OperationsTab>("collections");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -81,20 +74,6 @@ export function AdminOperationsPage() {
     },
     onError: async (err) => {
       toast.error(err instanceof Error ? err.message : "Impossible de lancer la collecte");
-      await queryClient.invalidateQueries({ queryKey: ["admin-dashboard", "runs"] });
-    },
-  });
-  const backfillMutation = useMutation({
-    mutationFn: () =>
-      startAdminScrollRequest({
-        data: { source: "all", mode: "llm_backfill", limit: backfillLimit },
-      }),
-    onSuccess: async (result) => {
-      toast.success(result.message);
-      await queryClient.invalidateQueries({ queryKey: ["admin-dashboard", "runs"] });
-    },
-    onError: async (err) => {
-      toast.error(err instanceof Error ? err.message : "Impossible de lancer le backfill IA");
       await queryClient.invalidateQueries({ queryKey: ["admin-dashboard", "runs"] });
     },
   });
@@ -148,15 +127,11 @@ export function AdminOperationsPage() {
         runs={filteredRuns}
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        backfillLimit={backfillLimit}
-        setBackfillLimit={setBackfillLimit}
         startMutationPending={startMutation.isPending}
         onStart={(requestedSource) =>
           startMutation.mutate({ source: requestedSource ?? source, mode: "collect" })
         }
         onRestart={(request) => startMutation.mutate(request)}
-        backfillPending={backfillMutation.isPending}
-        onBackfill={() => backfillMutation.mutate()}
       />
     </AdminShell>
   );
@@ -174,13 +149,9 @@ function AdminOperations({
   runs,
   activeTab,
   onTabChange,
-  backfillLimit,
-  setBackfillLimit,
   startMutationPending,
   onStart,
   onRestart,
-  backfillPending,
-  onBackfill,
 }: {
   data?: AdminDashboardRunsData;
   isLoading: boolean;
@@ -193,20 +164,16 @@ function AdminOperations({
   runs: AuctionRun[];
   activeTab: OperationsTab;
   onTabChange: (tab: OperationsTab) => void;
-  backfillLimit: number;
-  setBackfillLimit: (value: number) => void;
   startMutationPending: boolean;
   onStart: (source?: AdminScrollSource) => void;
   onRestart: (request: AdminRunRequest) => void;
-  backfillPending: boolean;
-  onBackfill: () => void;
 }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 xl:grid-cols-[1fr_25rem]">
         <AdminPanel className="p-5">
           <AdminSectionHeading title="Lancer une collecte" />
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto_auto] lg:items-end">
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
             <label className="grid gap-2 text-sm font-medium text-brand-navy">
               Source
               <select
@@ -221,12 +188,6 @@ function AdminOperations({
                 ))}
               </select>
             </label>
-            <div className="flex h-11 items-center gap-3 text-sm text-brand-navy/75">
-              <span className="grid size-5 place-items-center rounded bg-gold-soft text-white">
-                <CheckCircle className="size-3.5" />
-              </span>
-              Synthèse IA automatique
-            </div>
             <AdminPrimaryButton disabled={startMutationPending} onClick={() => onStart()}>
               {startMutationPending ? (
                 <RefreshCw className="size-4 animate-spin" />
@@ -274,7 +235,6 @@ function AdminOperations({
         {(
           [
             ["collections", "Collectes"],
-            ["enrichment", "Enrichissement IA"],
             ["documents", "Documents"],
             ["alerts", "Alertes"],
           ] as Array<[OperationsTab, string]>
@@ -311,15 +271,9 @@ function AdminOperations({
             <RunDetails
               run={selectedRun}
               onRestart={onRestart}
-              restartPending={startMutationPending || backfillPending}
+              restartPending={startMutationPending}
             />
           </div>
-          <AiBackfillPanel
-            backfillLimit={backfillLimit}
-            setBackfillLimit={setBackfillLimit}
-            pending={backfillPending}
-            onBackfill={onBackfill}
-          />
           {(data?.stats.failedRuns ?? 0) > 0 ? (
             <div className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
               <AlertTriangle className="size-5 shrink-0" />
@@ -328,15 +282,6 @@ function AdminOperations({
             </div>
           ) : null}
         </>
-      ) : null}
-
-      {activeTab === "enrichment" ? (
-        <AiBackfillPanel
-          backfillLimit={backfillLimit}
-          setBackfillLimit={setBackfillLimit}
-          pending={backfillPending}
-          onBackfill={onBackfill}
-        />
       ) : null}
 
       {activeTab === "documents" ? (

@@ -1,13 +1,12 @@
-"""The AI synthesis must not be erased by the list-card / detail-page alternation.
+"""The analysis must not be discarded by the list-card / detail-page alternation.
 
 Production (12/10/2026): description, raw_text, title, address and coordinates
 flipped back and forth between a collection capture (list card merged with the
 detail page, with a daily « J - N » countdown) and the recurring source_detail
-capture (detail page alone). Each flip invalidated and erased the synthesis.
+capture (detail page alone). Each flip invalidated the analysis of the sale.
 """
 
 from copy import deepcopy
-from datetime import UTC, datetime
 
 from src.config import load_settings
 from src.dedupe import _merge_into
@@ -16,13 +15,10 @@ from src.display_invalidation import (
     CONTENT_CHANGE_KEEP_DISPLAY,
     OPERATIONAL_CHANGE,
     capture_kind,
-    count_display_invalidation,
     normalize_display_text,
 )
-from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION, has_current_display
 from src.freshness import record_source_checks
 from src.models import AuctionSale
-from src.pipeline_health import summarize_display_invalidations
 
 URL = "https://www.vench.fr/vente-166341-lot-1-de-la-vente-un-appartement-toulon.html"
 SYNTHESIS = "Appartement de trois pièces au sixième étage à Toulon, occupé, vendu aux enchères. " * 2
@@ -79,6 +75,7 @@ def _detail_job_capture() -> dict:
 
 
 def _with_synthesis(payload: dict) -> dict:
+    """A stored row with complete facts and a former AI synthesis (still present in the database)."""
     settings = load_settings()
     payload = deepcopy(payload)
     for key in ("source_content_changed", "source_content_change_reason", "source_operational_changed"):
@@ -86,10 +83,7 @@ def _with_synthesis(payload: dict) -> dict:
     payload.update(
         llm_display_description=SYNTHESIS,
         llm_display_status="accepted",
-        llm_display_quality_version=DISPLAY_QUALITY_VERSION,
         llm_prompt_version=settings["llm_prompt_version"],
-        llm_display_prompt_version=settings["llm_display_prompt_version"],
-        llm_display_model=settings["replicate_model"],
         llm_fact_coverage={"complete": True},
         llm_fact_input_key="proof",
     )
@@ -102,10 +96,7 @@ def _capture(raw: dict, stored: dict, *, capture: str = "collection") -> dict:
     for key in (
         "llm_display_description",
         "llm_display_status",
-        "llm_display_quality_version",
         "llm_prompt_version",
-        "llm_display_prompt_version",
-        "llm_display_model",
         "llm_fact_coverage",
         "llm_fact_input_key",
         "source_content_changed",
@@ -122,9 +113,8 @@ def _both_kinds_recorded() -> dict:
     return _with_synthesis(second)
 
 
-def test_alternating_list_and_detail_captures_keep_the_synthesis_current():
+def test_alternating_list_and_detail_captures_keep_the_analysis_current():
     stored = _both_kinds_recorded()
-    invalidations_before = stored["source_checks"][URL]["display_invalidations"]
     captures = [
         (_collection_capture(3), "collection"),
         (_detail_job_capture(), "source_detail"),
@@ -136,10 +126,9 @@ def test_alternating_list_and_detail_captures_keep_the_synthesis_current():
         result = _capture(raw, stored, capture=capture)
         assert result["source_checks"][URL]["fingerprint"] != stored["source_checks"][URL]["fingerprint"]
         assert "source_content_changed" not in result
-        assert result["llm_display_description"] == SYNTHESIS
-        assert result["llm_display_status"] == "accepted"
-        assert has_current_display(result)
-        assert result["source_checks"][URL]["display_invalidations"] == invalidations_before
+        assert result["llm_fact_coverage"] == {"complete": True}
+        assert result["llm_fact_input_key"] == "proof"
+        assert "display_invalidations" not in result["source_checks"][URL]
         stored = _with_synthesis(result)
     assert set(stored["source_checks"][URL]["capture_fingerprints"]) == {
         "listing+complete",
@@ -164,12 +153,12 @@ def test_non_textual_fields_and_countdown_do_not_invalidate():
     result = _capture(raw, stored)
     assert result["source_checks"][URL]["fingerprint"] != stored["source_checks"][URL]["fingerprint"]
     assert "source_content_changed" not in result
-    assert result["llm_display_status"] == "accepted"
+    assert result["llm_fact_coverage"] == {"complete": True}
 
 
-def test_newly_extracted_lawyer_does_not_requeue_the_display_text():
+def test_newly_extracted_lawyer_does_not_invalidate_the_analysis():
     # Extraction de l'avocat poursuivant (Vench, Petites Affiches) : nom, contact et blocs source « avocat »
-    # apparaissent sur des fiches déjà publiées. Leur capture de même nature est déjà connue : le texte reste courant.
+    # apparaissent sur des fiches déjà publiées. Leur capture de même nature est déjà connue : l'analyse reste courante.
     stored = _with_synthesis(_capture(_collection_capture(), {}))
     raw = _collection_capture()
     raw.update(
@@ -184,28 +173,24 @@ def test_newly_extracted_lawyer_does_not_requeue_the_display_text():
     before, after = stored["source_checks"][URL], result["source_checks"][URL]
 
     assert "source_content_changed" not in result
-    assert result["llm_display_status"] == "accepted"
-    assert has_current_display(result)
-    assert after["display_invalidations"] == before["display_invalidations"]
+    assert result["llm_fact_coverage"] == {"complete": True}
     # L'empreinte de preuve, elle, change : elle pilote le manifeste des faits LLM (voir docs/pipeline-reliability.md).
     assert after["evidence_fingerprint"] != before["evidence_fingerprint"]
     assert after["capture_fingerprints"] == before["capture_fingerprints"]
 
 
-def test_ordinary_text_change_keeps_the_old_text_as_stale_and_requeues():
+def test_ordinary_text_change_discards_the_facts_and_the_former_synthesis():
     stored = _with_synthesis(_capture(_collection_capture(), {}))
-    before = stored["source_checks"][URL]["display_invalidations"]["count"]
     raw = _collection_capture()
     raw["raw_text"] += " Balcon donnant sur cour."
     result = _capture(raw, stored)
     assert result["source_content_changed"] is True
     assert result["source_content_change_reason"] == "source_content_changed"
-    assert result["llm_display_description"] == SYNTHESIS
-    assert result["llm_display_status"] == "stale"
-    assert not has_current_display(result)
     assert "llm_fact_coverage" not in result
+    assert "llm_fact_input_key" not in result
+    assert "llm_display_description" not in result
     assert "superseded_analysis" not in result
-    assert result["source_checks"][URL]["display_invalidations"]["count"] == before + 1
+    assert "display_invalidations" not in result["source_checks"][URL]
 
 
 def test_major_documentary_change_removes_the_text():
@@ -219,9 +204,10 @@ def test_major_documentary_change_removes_the_text():
     for change in changes:
         stored = _with_synthesis(_capture(_collection_capture(), {}))
         result = _capture({**_collection_capture(), **change}, stored)
-        assert result["llm_display_status"] == "pending", change
+        assert result["source_content_changed"] is True, change
+        assert "llm_fact_coverage" not in result, change
         assert "llm_display_description" not in result, change
-        assert result["superseded_analysis"]["description"] == SYNTHESIS, change
+        assert "superseded_analysis" not in result, change
 
 
 def test_price_change_keeps_the_operational_path_and_price_in_prose_erases():
@@ -230,23 +216,22 @@ def test_price_change_keeps_the_operational_path_and_price_in_prose_erases():
     raw["starting_price_eur"] = 25000
     result = _capture(raw, stored)
     assert result["source_operational_changed"] is True
-    assert result["superseded_analysis"]["reason"] == "source_operational_changed"
-    assert result["superseded_analysis"]["operational_refreshable"] is True
+    assert "superseded_analysis" not in result
+    assert "llm_display_description" not in result
     assert result["llm_fact_coverage"] == {"complete": True}
 
     raw["raw_text"] = raw["raw_text"].replace("31 500.00", "25 000.00")
     result = _capture(raw, stored)
     assert "source_operational_changed" not in result
-    assert "llm_display_description" not in result
-    assert result["llm_display_status"] == "pending"
+    assert "llm_fact_coverage" not in result
 
 
-def test_first_detail_job_after_deploy_never_erases_on_kind_switch_alone():
+def test_first_detail_job_after_deploy_invalidates_once_on_kind_switch():
     stored = _with_synthesis(_capture(_collection_capture(), {}))
     result = _capture(_detail_job_capture(), stored, capture="source_detail")
-    # Different kind, same major facts: at most one regeneration, text kept.
-    assert result["llm_display_status"] == "stale"
-    assert result["llm_display_description"] == SYNTHESIS
+    # Different kind, same major facts: one documentary invalidation, then the kinds are compared separately.
+    assert result["source_content_changed"] is True
+    assert result["source_content_change_reason"] == "source_content_changed"
     assert result["source_checks"][URL]["capture_kind"] == "detail_page+complete"
 
 
@@ -260,42 +245,17 @@ def test_capture_kind_and_text_normalisation():
     assert CONTENT_CHANGE_ERASE_DISPLAY != CONTENT_CHANGE_KEEP_DISPLAY != OPERATIONAL_CHANGE
 
 
-def test_invalidation_counter_is_daily():
-    morning = datetime(2026, 10, 12, 8, tzinfo=UTC)
-    first = count_display_invalidation({}, invalidated=True, now=morning)
-    assert first == {"day": "2026-10-12", "count": 1}
-    second = count_display_invalidation({"display_invalidations": first}, invalidated=True, now=morning)
-    assert second == {"day": "2026-10-12", "count": 2}
-    assert count_display_invalidation({"display_invalidations": second}, invalidated=False, now=morning) == second
-    next_day = datetime(2026, 10, 13, 1, tzinfo=UTC)
-    assert count_display_invalidation({"display_invalidations": second}, invalidated=False, now=next_day) is None
-
-
-def test_health_summary_of_invalidations_per_sale():
-    assert summarize_display_invalidations([1, 4, None, 3]) == {
-        "sales": 3,
-        "invalidations": 8,
-        "per_sale_avg": 2.67,
-        "per_sale_max": 4,
-        "sales_with_3_or_more": 2,
-    }
-    assert summarize_display_invalidations([])["per_sale_avg"] == 0
-
-
-def test_cross_source_merge_keeps_a_stale_text_and_erases_on_major_change():
+def test_cross_source_merge_of_a_new_change_erases_the_former_synthesis():
     def sale(url: str, payload: dict) -> AuctionSale:
         return AuctionSale(source_name="vench", source_url=url, raw_payload=deepcopy(payload))
 
     canonical = {"llm_display_description": SYNTHESIS, "llm_display_status": "accepted", "llm_prompt_version": "v"}
-    stale = sale("https://example.test/b", {"source_content_changed": True, "llm_display_status": "stale"})
-    merged = _merge_into(sale(URL, canonical), stale, confidence="source_url")
-    assert merged.raw_payload["llm_display_description"] == SYNTHESIS
-    assert merged.raw_payload["llm_display_status"] == "stale"
-
-    pending = sale("https://example.test/b", {"source_content_changed": True, "llm_display_status": "pending"})
-    merged = _merge_into(sale(URL, canonical), pending, confidence="source_url")
-    assert "llm_display_description" not in merged.raw_payload
-    assert merged.raw_payload["llm_display_status"] == "pending"
+    for status in ("stale", "pending"):
+        incoming = sale("https://example.test/b", {"source_content_changed": True, "llm_display_status": status})
+        merged = _merge_into(sale(URL, canonical), incoming, confidence="source_url")
+        assert "llm_display_description" not in merged.raw_payload, status
+        assert merged.raw_payload["llm_display_status"] == "pending", status
+        assert merged.raw_payload["source_content_changed"] is True, status
 
 
 def test_relative_deadlines_do_not_change_the_display_fingerprint() -> None:

@@ -35,21 +35,13 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
         "PIPELINE_ENRICH_WORKERS",
         "PIPELINE_PDF_MAX_TARGETS",
         "PIPELINE_LLM_MAX_TARGETS",
-        "PIPELINE_LLM_BACKFILL_MAX_TARGETS",
-        "PIPELINE_LLM_BACKFILL_PROGRESS_EVERY",
         "PIPELINE_LLM_WORKERS",
-        "PIPELINE_LLM_FAILURE_COOLDOWN_HOURS",
-        "PIPELINE_IDLE_LLM_BACKFILL_ENABLED",
         "PIPELINE_ENRICHMENT_QUEUE_ENABLED",
         "PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE",
         "LLM_PROMPT_VERSION",
         "LLM_FACT_PROMPT_VERSION",
-        "LLM_DISPLAY_PROMPT_VERSION",
-        "LLM_EXTRACTION_MODE",
-        "LLM_PDF_MAX_CHARS",
         "LLM_FACT_CHUNK_CHARS",
         "LLM_FACT_MAX_CHUNKS",
-        "LLM_DISPLAY_CONTEXT_CHARS",
         "PDF_OCR_ENABLED",
         "PDF_OCR_DOCUMENT_BUDGET_SECONDS",
         "PDF_DOCLING_ENABLED",
@@ -71,20 +63,12 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["pipeline_llm_workers"] == 1
     assert settings["pipeline_pdf_max_targets"] == 10
     assert settings["pipeline_llm_max_targets"] == 20
-    assert settings["pipeline_llm_backfill_max_targets"] == 20
-    assert settings["pipeline_llm_backfill_progress_every"] == 5
-    assert settings["pipeline_llm_failure_cooldown_hours"] == 24
-    assert settings["pipeline_idle_llm_backfill_enabled"] is False
     assert settings["pipeline_enrichment_queue_enabled"] is True
     assert settings["pipeline_enrichment_queue_batch_size"] == 10
     assert settings["llm_prompt_version"] == "auction_llm_v10_structured_display"
     assert settings["llm_fact_prompt_version"] == "auction_facts_v1"
-    assert settings["llm_display_prompt_version"] == "auction_display_v10_canonical_facts"
-    assert settings["llm_extraction_mode"] == "structured_then_display"
-    assert settings["llm_pdf_max_chars"] == 12000
     assert settings["llm_fact_chunk_chars"] == 12000
     assert settings["llm_fact_max_chunks"] == 0
-    assert settings["llm_display_context_chars"] == 12000
     assert settings["pdf_ocr_enabled"] is False
     assert settings["pdf_ocr_document_budget_seconds"] == 120
     assert settings["pdf_docling_enabled"] is False

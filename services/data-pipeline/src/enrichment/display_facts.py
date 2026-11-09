@@ -1,8 +1,4 @@
-"""Canonical facts and sale nature for the public display synthesis.
-
-The display prompt receives these values in a ``[FAITS CANONIQUES]`` block at
-the top of its context, and the display checks use the same helpers so that
-the prompt and the verification never disagree on what is known.
+"""Sale nature and known amounts used by the public text checks (``display_evidence``).
 
 Every helper accepts either an ``AuctionSale`` or the ``model_dump()`` mapping
 that ``verify_display_claims`` receives.
@@ -13,13 +9,10 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from src.extraction_profiles import build_procedure_profile
-
-CANONICAL_FACTS_HEADER = "[FAITS CANONIQUES]"
 
 PROPERTY_TYPE_LABELS = {
     "apartment": "appartement",
@@ -29,19 +22,6 @@ PROPERTY_TYPE_LABELS = {
     "commercial": "local commercial",
     "parking": "stationnement",
     "mixed": "ensemble mixte",
-}
-OCCUPANCY_LABELS = {
-    "vacant": "libre",
-    "occupied": "occupé",
-    "rented": "loué",
-    "owner_occupied": "occupé par le propriétaire",
-    "squatted": "occupé sans droit ni titre",
-}
-SURFACE_KIND_LABELS = {
-    "carrez": "loi Carrez",
-    "habitable": "habitable",
-    "land": "terrain",
-    "built": "bâtie ou de plancher",
 }
 JUDICIAL_FRAMEWORKS = {"judicial_seizure", "judicial_partition", "insolvency", "judicial"}
 NON_JUDICIAL_SOURCES = {"notaires", "cessions_etat", "agrasc"}
@@ -227,35 +207,6 @@ def _decimal(value: Any) -> Decimal | None:
     return number if number.is_finite() and number > 0 else None
 
 
-def format_area(value: Any) -> str | None:
-    number = _decimal(value)
-    if number is None:
-        return None
-    text = format(number.quantize(Decimal("0.01")).normalize(), "f")
-    return f"{text.replace('.', ',')} m²"
-
-
-def format_money(value: Any) -> str | None:
-    number = _decimal(value)
-    if number is None:
-        return None
-    whole = number.quantize(Decimal("1"))
-    if whole != number:
-        return f"{number.quantize(Decimal('0.01')):,.2f} €".replace(",", " ").replace(".", ",")
-    return f"{int(whole):,} €".replace(",", " ")
-
-
-def format_sale_date(value: Any) -> str | None:
-    if isinstance(value, str):
-        try:
-            value = datetime.fromisoformat(value)
-        except ValueError:
-            return None
-    if isinstance(value, datetime):
-        value = value.date()
-    return value.strftime("%d/%m/%Y") if isinstance(value, date) else None
-
-
 def known_offer_amounts(sale: Any) -> list[Decimal]:
     """Starting price plus offer/price amounts structured from the source."""
     payload = _payload(sale)
@@ -290,104 +241,3 @@ def energy_classes(sale: Any) -> tuple[str | None, str | None]:
             return dpe, ges
     return None, None
 
-
-def _retained_surface(sale: Any) -> tuple[str, str] | None:
-    app_surface = format_area(_value(sale, "app_surface_m2"))
-    if app_surface:
-        kind = SURFACE_KIND_LABELS.get(_fold(_value(sale, "app_surface_kind")), "principale")
-        return app_surface, kind
-    surface = format_area(_value(sale, "surface_m2"))
-    if not surface:
-        return None
-    for field, kind in (("carrez_surface_m2", "loi Carrez"), ("habitable_surface_m2", "habitable")):
-        if _decimal(_value(sale, field)) == _decimal(_value(sale, "surface_m2")):
-            return surface, kind
-    if _fold(_value(sale, "property_type")) == "land":
-        return surface, "terrain"
-    return surface, "principale"
-
-
-def _annexes(sale: Any) -> list[str]:
-    annexes = [
-        label
-        for field, label in (
-            ("has_garden", "jardin"),
-            ("has_terrace", "terrasse"),
-            ("has_garage", "garage"),
-            ("has_pool", "piscine"),
-        )
-        if _value(sale, field) is True
-    ]
-    parking = _value(sale, "parking_count")
-    if isinstance(parking, int) and parking > 0 and not (parking == 1 and "garage" in annexes):
-        annexes.append(f"{parking} stationnement{'s' if parking > 1 else ''}")
-    return annexes
-
-
-def canonical_display_facts(sale: Any) -> list[tuple[str, str]]:
-    """Known facts, in the order the synthesis presents them."""
-    facts: list[tuple[str, str]] = []
-    nature = sale_nature(sale)
-    facts.append(
-        (
-            "NATURE_VENTE",
-            nature.label or "non déterminée : ne qualifie pas la nature de la vente",
-        )
-    )
-    property_type = PROPERTY_TYPE_LABELS.get(_fold(_value(sale, "property_type")))
-    if property_type:
-        facts.append(("Type de bien", property_type))
-    city = str(_value(sale, "city") or "").strip()
-    postal_code = str(_value(sale, "postal_code") or _value(sale, "department") or "").strip()
-    if city:
-        facts.append(("Commune", f"{city} ({postal_code})" if postal_code else city))
-    sale_date = format_sale_date(_value(sale, "sale_date"))
-    if sale_date:
-        facts.append(("Date de vente", sale_date))
-    amounts = known_offer_amounts(sale)
-    if amounts:
-        facts.append((nature.price_label, format_money(amounts[0]) or ""))
-    retained = _retained_surface(sale)
-    if retained:
-        facts.append(("Surface retenue", f"{retained[0]} ({retained[1]})"))
-    retained_value = retained[0] if retained else None
-    for field, label in (
-        ("habitable_surface_m2", "Surface habitable"),
-        ("carrez_surface_m2", "Surface loi Carrez"),
-        ("land_surface_m2", "Surface du terrain"),
-    ):
-        value = format_area(_value(sale, field))
-        if value and value != retained_value:
-            facts.append((label, value))
-    # A plot of land has no rooms: a count there comes from another lot or a cabin.
-    land = _fold(_value(sale, "property_type")) == "land"
-    for field, label in (
-        ("rooms_count", "Pièces"),
-        ("bedrooms_count", "Chambres"),
-        ("bathrooms_count", "Salles d'eau ou de bain"),
-    ):
-        value = None if land else _value(sale, field)
-        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-            facts.append((label, str(value)))
-    annexes = _annexes(sale)
-    if annexes:
-        facts.append(("Annexes", ", ".join(annexes)))
-    dpe, ges = energy_classes(sale)
-    if dpe:
-        facts.append(("DPE", f"classe {dpe}"))
-    if ges:
-        facts.append(("GES", f"classe {ges}"))
-    occupancy = OCCUPANCY_LABELS.get(_fold(_value(sale, "occupancy_status")))
-    if occupancy:
-        facts.append(("Occupation", occupancy))
-    return [(label, value) for label, value in facts if value]
-
-
-def canonical_facts_block(sale: Any) -> str:
-    """The block placed first in every display context.
-
-    Items end with a full stop so the block stays readable once the context
-    builder flattens whitespace.
-    """
-    lines = [f"- {label} : {value}." for label, value in canonical_display_facts(sale)]
-    return "\n".join([CANONICAL_FACTS_HEADER, *lines])

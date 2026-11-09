@@ -24,28 +24,30 @@ from src.collection_evidence import record_items, record_sale_decisions
 from src.config import (
     EncheresPubliquesAccessNotAuthorized,
     encheres_publiques_access_enabled,
-    llm_display_enabled,
     load_settings,
     require_encheres_publiques_access,
 )
 from src.dedupe import merge_duplicate_sales
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
-from src.enrichment.display_quality import has_current_display
 from src.enrichment.extract_structured import (
     LLMEnrichmentStats,
-    apply_cached_llm_extraction_to_sale,
     enrich_sale_with_llm,
     extract_source_description,
     has_current_fact_analysis,
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
-from src.enrichment.operational_display import refresh_operational_display
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
 from src.extraction_profiles import attach_source_property_features
-from src.freshness import detail_is_fresh, document_list_changed, documents_are_current, record_source_checks
+from src.freshness import (
+    detail_is_fresh,
+    document_list_changed,
+    documents_are_current,
+    record_source_checks,
+    settle_source_change_without_documents,
+)
 from src.geocode import geocode_sale, locate_sale_by_cadastre
 from src.image_validation import filter_raw_image_url, warm_image_validations
 from src.information_sufficiency import (
@@ -110,7 +112,6 @@ from src.storage.supabase_client import (
     delete_vench_sales_without_surface_in_supabase,
     fetch_enriched_content_hashes,
     fetch_known_sale_details,
-    fetch_sales_needing_llm_descriptions,
     finish_run_in_supabase,
     mark_past_sales_in_supabase,
     reconcile_duplicate_sales_in_supabase,
@@ -139,12 +140,6 @@ SOURCE_NAMES = (
     "agrasc",
     "encheres_immobilieres",
     "notaires",
-)
-LLM_DISPLAY_FAILURE_KEYS = (
-    "llm_display_error_at",
-    "llm_display_error_prompt_version",
-    "llm_display_error_message",
-    "llm_display_error_count",
 )
 
 KNOWN_UNCHANGED_BACKFILL_FIELDS = (
@@ -303,8 +298,6 @@ class PipelineOptions:
     upsert: bool = True
     limit: int | None = None
     run_id: str | None = None
-    llm_backfill: bool = False
-    llm_backfill_statuses: tuple[str, ...] = ("active", "upcoming")
 
 
 class CollectionIncompleteError(RuntimeError):
@@ -342,7 +335,6 @@ class _PipelineRun:
     normalized_observations: list[AuctionSale] = field(default_factory=list)
     canonical_sales: list[AuctionSale] = field(default_factory=list)
     enriched_hashes: set[str] = field(default_factory=set)
-    current_llm_description_hashes: set[str] = field(default_factory=set)
     # Enrichment.
     pdf_stats: PdfEnrichmentStats = field(default_factory=PdfEnrichmentStats)
     llm_stats: LLMEnrichmentStats = field(default_factory=LLMEnrichmentStats)
@@ -358,7 +350,6 @@ class _PipelineRun:
     lifecycle_stats: SaleLifecycleStats = field(default_factory=SaleLifecycleStats)
     expired_before_enrichment: list[AuctionSale] = field(default_factory=list)
     enrichment_sales: list[AuctionSale] = field(default_factory=list)
-    cached_llm_display_refreshed: int = 0
     prompt_version: str = ""
     pdf_targets: list[AuctionSale] = field(default_factory=list)
     llm_targets: list[AuctionSale] = field(default_factory=list)
@@ -669,30 +660,19 @@ def _lookup_incremental_hashes(run: _PipelineRun) -> None:
     # les champs récemment collectés (avocat, visites, images, source_blocks,
     # corrections de géocodage) arrivent jusqu'au read model.
     enriched_hashes: set[str] = set()
-    current_llm_description_hashes: set[str] = set()
-    if settings["incremental_enrichment"] and options.upsert and (options.heavy_enrichment or options.use_llm):
+    if settings["incremental_enrichment"] and options.upsert and options.heavy_enrichment:
         content_hashes = [sale.content_hash for sale in run.canonical_sales if sale.content_hash]
-        if options.heavy_enrichment:
-            enriched_hashes = fetch_enriched_content_hashes(
-                content_hashes,
-                require_llm_description=False,
-                require_document_analysis=True,
-            )
-        if options.use_llm:
-            current_llm_description_hashes = fetch_enriched_content_hashes(
-                content_hashes,
-                require_llm_description=True,
-                prompt_version=str(settings["llm_prompt_version"]),
-            )
+        enriched_hashes = fetch_enriched_content_hashes(
+            content_hashes,
+            require_document_analysis=True,
+        )
         if enriched_hashes:
             LOGGER.info(
                 "Incrémental : %s content_hash déjà enrichis; OCR/LLM seront sautés mais les lignes seront republiées",
                 len(enriched_hashes),
             )
         timings["incremental_enriched_hashes"] = len(enriched_hashes)
-        timings["incremental_current_llm_hashes"] = len(current_llm_description_hashes)
     run.enriched_hashes = enriched_hashes
-    run.current_llm_description_hashes = current_llm_description_hashes
 
 
 def _prepare_and_publish_early(run: _PipelineRun) -> None:
@@ -781,11 +761,10 @@ def _select_enrichment_scope(run: _PipelineRun) -> None:
     enrichment_sales = run.enrichment_sales
     timings["enrichment_unauthorized_skipped"] = skipped_unauthorized
 
-    # The public description is a lightweight product requirement of every
-    # authorized scan. PDF/OCR can be disabled independently with
-    # --no-heavy-enrichment; only --no-llm explicitly disables the Replicate
-    # synthesis. Keep client creation after the source gate so a scan made up
-    # entirely of unauthorized EP rows never opens an AI client.
+    # PDF/OCR can be disabled independently with --no-heavy-enrichment; only
+    # --no-llm disables the Replicate fact pass. Keep client creation after the
+    # source gate so a scan made up entirely of unauthorized EP rows never
+    # opens an AI client.
     if options.use_llm and enrichment_sales:
         try:
             run.llm_client = create_llm_client()
@@ -793,32 +772,17 @@ def _select_enrichment_scope(run: _PipelineRun) -> None:
             LOGGER.warning("LLM client unavailable: %s", exc)
             run.llm_stats.unavailable = True
 
-    cached_llm_display_refreshed = 0
-
     run.prompt_version = str(settings["llm_prompt_version"])
-    prompt_version = run.prompt_version
     if options.use_llm:
         for sale in enrichment_sales:
-            if refresh_operational_display(sale):
-                cached_llm_display_refreshed += 1
-                continue
-            if _needs_llm_display_description_refresh(
-                sale,
-                prompt_version=prompt_version,
-            ) and apply_cached_llm_extraction_to_sale(
-                sale,
-                prompt_version=prompt_version,
-            ):
-                cached_llm_display_refreshed += 1
-    run.cached_llm_display_refreshed = cached_llm_display_refreshed
-    timings["llm_display_from_cached_extraction"] = cached_llm_display_refreshed
+            settle_source_change_without_documents(sale)
 
     pdf_targets = (
         [
             sale
             for sale in enrichment_sales
             if _needs_structured_heavy_enrichment(sale)
-            and not _heavy_enrichment_already_current(sale, run.enriched_hashes, use_llm=False)
+            and not _heavy_enrichment_already_current(sale, run.enriched_hashes)
         ]
         if options.heavy_enrichment
         else []
@@ -831,8 +795,7 @@ def _select_enrichment_scope(run: _PipelineRun) -> None:
     print(
         "Pipeline enrichment targets: "
         f"app_ready={len(run.app_ready)}, pdf_targets={len(pdf_targets)}, "
-        f"pdf_deferred={timings['pdf_targets_deferred']}, "
-        f"cached_llm_display_refreshed={cached_llm_display_refreshed}",
+        f"pdf_deferred={timings['pdf_targets_deferred']}",
         flush=True,
     )
 
@@ -867,12 +830,11 @@ def _enrich_pdf_documents(run: _PipelineRun) -> None:
 
 
 def _enrich_with_llm(run: _PipelineRun) -> None:
-    """Stage 11, phase 2: LLM extraction and display descriptions (network), high concurrency."""
+    """Stage 11, phase 2: LLM fact extraction (network), high concurrency."""
     options = run.options
     settings = run.settings
     errors = run.errors
     timings = run.timings
-    prompt_version = run.prompt_version
     llm_stats = run.llm_stats
     llm_client = run.llm_client
     # ── Phase 2 : LLM Replicate (réseau) — forte concurrence ─────────────────
@@ -882,19 +844,9 @@ def _enrich_with_llm(run: _PipelineRun) -> None:
             sale
             for sale in run.enrichment_sales
             if _can_use_paid_llm(sale)
-            and (
-                needs_fact_extraction(sale)
-                or (
-                    _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
-                    and not _llm_description_already_current(sale, run.current_llm_description_hashes)
-                )
-            )
+            and needs_fact_extraction(sale)
             and sale.source_url not in run.failed_urls
-            and not (
-                options.upsert
-                and settings.get("pipeline_enrichment_queue_enabled")
-                and needs_fact_extraction(sale)
-            )
+            and not (options.upsert and settings.get("pipeline_enrichment_queue_enabled"))
         ]
         if options.use_llm
         else []
@@ -913,16 +865,7 @@ def _enrich_with_llm(run: _PipelineRun) -> None:
     if options.use_llm and llm_client is not None and llm_targets:
         with ThreadPoolExecutor(max_workers=run.llm_workers) as executor:
             futures = {
-                executor.submit(
-                    enrich_sale_with_llm,
-                    sale,
-                    client=llm_client,
-                    extraction_mode=(
-                        "structured_then_display"
-                        if needs_fact_extraction(sale)
-                        else "display_description"
-                    ),
-                ): sale
+                executor.submit(enrich_sale_with_llm, sale, client=llm_client): sale
                 for sale in llm_targets
             }
             for future in as_completed(futures):
@@ -937,12 +880,10 @@ def _enrich_with_llm(run: _PipelineRun) -> None:
                 if sale_llm_stats.error_messages:
                     source_name = str(sale.source_name or sale.primary_source or "unknown")
                     errors.setdefault(source_name, []).extend(sale_llm_stats.error_messages)
-                    _mark_llm_description_failure(sale, sale_llm_stats, prompt_version=prompt_version)
-                elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
+                else:
                     sale.raw_payload.pop("source_content_changed", None)
                     sale.raw_payload.pop("source_content_change_reason", None)
                     sale.raw_payload.pop("source_operational_changed", None)
-                    _clear_llm_description_failure(sale)
                 if options.upsert:
                     try:
                         _checkpoint_enrichment(sale)
@@ -1184,200 +1125,11 @@ def _print_run_summary(run: _PipelineRun) -> None:
         print(annotation)
 
 
-def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
-    options = options or PipelineOptions(llm_backfill=True)
-    settings = load_settings()
-    if not options.use_llm:
-        print("LLM description backfill skipped: --no-llm was provided.")
-        return 0
-
-    limit = options.limit or int(settings["pipeline_llm_backfill_max_targets"])
-    prompt_version = str(settings["llm_prompt_version"])
-    timings: dict[str, float] = {}
-    errors: dict[str, list[str]] = {"llm_backfill": []}
-
-    started = time.perf_counter()
-    sales = fetch_sales_needing_llm_descriptions(
-        limit=limit,
-        prompt_version=prompt_version,
-        statuses=options.llm_backfill_statuses,
-    )
-    sales = [sale for sale in sales if publication_rejection(sale) is None]
-    sales, skipped_unauthorized = _filter_unauthorized_encheres_publiques_sales(sales, settings)
-    timings["fetch_seconds"] = round(time.perf_counter() - started, 2)
-    if not sales:
-        summary = {
-            "mode": "llm_description_backfill",
-            "limit": limit,
-            "selected": 0,
-            "processed": 0,
-            "updated": 0,
-            "prompt_version": prompt_version,
-            "statuses": list(options.llm_backfill_statuses),
-            "skipped_unauthorized": skipped_unauthorized,
-            "timings": timings,
-        }
-        if options.upsert:
-            finish_run_in_supabase(options.run_id, "succeeded", summary, errors)
-        print("LLM description backfill summary")
-        print("- selected: 0")
-        print(f"- skipped_unauthorized: {skipped_unauthorized}")
-        print("- updated: 0")
-        return 0
-
-    run_id = create_run_in_supabase("llm-description-backfill", True, run_id=options.run_id) if options.upsert else None
-    register_run(run_id)
-    completed = 0
-    persisted_urls: set[str] = set()
-    progress_summary = _llm_backfill_progress_summary(
-        selected=len(sales),
-        completed=completed,
-        llm_stats=LLMEnrichmentStats(),
-        failed_sales=[],
-        limit=limit,
-        prompt_version=prompt_version,
-        statuses=options.llm_backfill_statuses,
-        timings=timings,
-        phase="starting",
-    )
-    if options.upsert:
-        update_run_progress_in_supabase(run_id, progress_summary, errors)
-
-    try:
-        llm_client = create_llm_client()
-    except LLMClientUnavailable as exc:
-        errors["llm_backfill"].append(str(exc))
-        if options.upsert:
-            finish_run_in_supabase(
-                run_id,
-                "failed",
-                {"mode": "llm_description_backfill", "limit": limit},
-                errors,
-            )
-        print(f"LLM description backfill failed: {exc}")
-        return 1
-
-    workers = max(1, int(settings["pipeline_llm_workers"]))
-    progress_every = max(1, int(settings.get("pipeline_llm_backfill_progress_every") or 5))
-    llm_stats = LLMEnrichmentStats()
-    failed_sales: list[AuctionSale] = []
-    started = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(enrich_sale_with_llm, sale, client=llm_client): sale for sale in sales}
-        for future in as_completed(futures):
-            sale = futures[future]
-            completed += 1
-            try:
-                sale_stats = future.result()
-            except Exception as exc:
-                LOGGER.exception("LLM description backfill failed for %s: %s", sale.source_url, exc)
-                errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
-                if options.upsert and _should_update_llm_backfill_progress(
-                    completed,
-                    total=len(sales),
-                    every=progress_every,
-                ):
-                    update_run_progress_in_supabase(
-                        run_id,
-                        _llm_backfill_progress_summary(
-                            selected=len(sales),
-                            completed=completed,
-                            llm_stats=llm_stats,
-                            failed_sales=failed_sales,
-                            limit=limit,
-                            prompt_version=prompt_version,
-                            statuses=options.llm_backfill_statuses,
-                            timings=timings,
-                            phase="llm",
-                        ),
-                        errors,
-                    )
-                continue
-            _add_llm_stats(llm_stats, sale_stats)
-            if sale_stats.error_messages:
-                errors.setdefault(str(sale.source_name or sale.primary_source or "unknown"), []).extend(
-                    sale_stats.error_messages
-                )
-                if _mark_llm_description_failure(sale, sale_stats, prompt_version=prompt_version):
-                    failed_sales.append(sale)
-            elif not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
-                _clear_llm_description_failure(sale)
-            if options.upsert:
-                if _checkpoint_enrichment(sale):
-                    persisted_urls.add(sale.source_url)
-            if options.upsert and _should_update_llm_backfill_progress(
-                completed,
-                total=len(sales),
-                every=progress_every,
-            ):
-                update_run_progress_in_supabase(
-                    run_id,
-                    _llm_backfill_progress_summary(
-                        selected=len(sales),
-                        completed=completed,
-                        llm_stats=llm_stats,
-                        failed_sales=failed_sales,
-                        limit=limit,
-                        prompt_version=prompt_version,
-                        statuses=options.llm_backfill_statuses,
-                        timings=timings,
-                        phase="llm",
-                    ),
-                    errors,
-                )
-    timings["llm_seconds"] = round(time.perf_counter() - started, 2)
-
-    updated_sales = [
-        sale for sale in sales if not _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
-    ]
-    upserted = len(persisted_urls)
-    upsert_candidates = [sale for sale in _unique_sales_by_source_url([*updated_sales, *failed_sales])
-                         if sale.source_url not in persisted_urls]
-    if options.upsert and upsert_candidates:
-        started = time.perf_counter()
-        upserted += upsert_sales_to_supabase(upsert_candidates, refresh_last_seen=False)
-        timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
-
-    summary = {
-        "mode": "llm_description_backfill",
-        "limit": limit,
-        "selected": len(sales),
-        "completed": completed,
-        "processed": llm_stats.analyzed,
-        "valid_json": llm_stats.valid_json,
-        "updated": len(updated_sales),
-        "failed_marked": len(failed_sales),
-        "upserted": upserted,
-        "prompt_version": prompt_version,
-        "statuses": list(options.llm_backfill_statuses),
-        "skipped_unauthorized": skipped_unauthorized,
-        "timings": timings,
-        "llm_errors": llm_stats.errors,
-        "llm_unavailable": llm_stats.unavailable,
-    }
-    if options.upsert:
-        status = "failed" if llm_stats.unavailable or any(errors.values()) else "succeeded"
-        finish_run_in_supabase(run_id, status, summary, errors)
-
-    print("LLM description backfill summary")
-    print(f"- selected: {len(sales)}")
-    print(f"- processed: {llm_stats.analyzed}")
-    print(f"- valid_json: {llm_stats.valid_json}")
-    print(f"- updated: {len(updated_sales)}")
-    print(f"- failed_marked: {len(failed_sales)}")
-    print(f"- upserted: {upserted}")
-    print(f"- skipped_unauthorized: {skipped_unauthorized}")
-    for key, value in timings.items():
-        print(f"- timing_{key}: {value}")
-    print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
-    return 1 if llm_stats.unavailable or any(errors.values()) else 0
-
-
 def _filter_unauthorized_encheres_publiques_sales(
     sales: list[AuctionSale],
     settings: dict[str, object],
 ) -> tuple[list[AuctionSale], int]:
-    """Skip EP rows before cached or paid LLM backfill work begins."""
+    """Skip EP rows before any paid LLM work begins."""
 
     authorized: list[AuctionSale] = []
     skipped = 0
@@ -1392,7 +1144,7 @@ def _filter_unauthorized_encheres_publiques_sales(
             )
         except EncheresPubliquesAccessNotAuthorized as exc:
             skipped += 1
-            LOGGER.info("Skipping unauthorized Encheres Publiques backfill sale %s: %s", sale.source_url, exc)
+            LOGGER.info("Skipping unauthorized Encheres Publiques sale %s: %s", sale.source_url, exc)
             continue
         authorized.append(sale)
     return authorized, skipped
@@ -1407,84 +1159,6 @@ def _checkpoint_enrichment(sale: AuctionSale) -> bool:
         LOGGER.info("Skipped superseded enrichment checkpoint for %s", sale.source_url)
         return False
     return True
-
-
-def _should_update_llm_backfill_progress(completed: int, *, total: int, every: int) -> bool:
-    if completed <= 0:
-        return False
-    if completed >= total:
-        return True
-    return completed % max(1, every) == 0
-
-
-def _llm_backfill_progress_summary(
-    *,
-    selected: int,
-    completed: int,
-    llm_stats: LLMEnrichmentStats,
-    failed_sales: list[AuctionSale],
-    limit: int,
-    prompt_version: str,
-    statuses: tuple[str, ...],
-    timings: dict[str, float],
-    phase: str,
-) -> dict[str, object]:
-    return {
-        "mode": "llm_description_backfill",
-        "limit": limit,
-        "phase": phase,
-        "selected": selected,
-        "completed": completed,
-        "processed": llm_stats.analyzed,
-        "valid_json": llm_stats.valid_json,
-        "failed_marked": len(failed_sales),
-        "prompt_version": prompt_version,
-        "statuses": list(statuses),
-        "timings": timings,
-        "llm_errors": llm_stats.errors,
-        "llm_unavailable": llm_stats.unavailable,
-        "last_progress_at": datetime.now(UTC).isoformat(),
-    }
-
-
-def _mark_llm_description_failure(
-    sale: AuctionSale,
-    stats: LLMEnrichmentStats,
-    *,
-    prompt_version: str,
-) -> bool:
-    if not stats.error_messages:
-        return False
-    if not isinstance(sale.raw_payload, dict):
-        sale.raw_payload = {}
-    previous_count = sale.raw_payload.get("llm_display_error_count")
-    try:
-        count = int(previous_count or 0)
-    except (TypeError, ValueError):
-        count = 0
-    sale.raw_payload["llm_display_error_at"] = datetime.now(UTC).isoformat()
-    sale.raw_payload["llm_display_error_prompt_version"] = prompt_version
-    sale.raw_payload["llm_display_error_message"] = stats.error_messages[-1][:500]
-    sale.raw_payload["llm_display_error_count"] = count + 1
-    return True
-
-
-def _clear_llm_description_failure(sale: AuctionSale) -> None:
-    if not isinstance(sale.raw_payload, dict):
-        return
-    for key in LLM_DISPLAY_FAILURE_KEYS:
-        sale.raw_payload.pop(key, None)
-
-
-def _unique_sales_by_source_url(sales: list[AuctionSale]) -> list[AuctionSale]:
-    seen: set[str] = set()
-    unique: list[AuctionSale] = []
-    for sale in sales:
-        if sale.source_url in seen:
-            continue
-        seen.add(sale.source_url)
-        unique.append(sale)
-    return unique
 
 
 def _known_source_urls_from_raw_sales(raw_sales: list[dict[str, object]]) -> list[str]:
@@ -1884,19 +1558,8 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     apply_catalogue_readiness(sale)
 
 
-def _needs_heavy_enrichment(
-    sale: AuctionSale,
-    *,
-    use_llm: bool = True,
-    prompt_version: str | None = None,
-) -> bool:
-    if use_llm and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
-        return True
-    return _needs_structured_heavy_enrichment(sale)
-
-
 def _can_use_paid_llm(sale: AuctionSale) -> bool:
-    """Do not pay for a description until deterministic enrichment made the row publishable."""
+    """Do not pay for a fact pass until deterministic enrichment made the row publishable."""
 
     return publication_rejection(sale) is None
 
@@ -1923,27 +1586,10 @@ def _needs_structured_heavy_enrichment(sale: AuctionSale) -> bool:
     return not (has_surface and has_type and has_occupancy and not needs_rooms)
 
 
-def _heavy_enrichment_already_current(
-    sale: AuctionSale,
-    enriched_hashes: set[str],
-    *,
-    use_llm: bool = True,
-    prompt_version: str | None = None,
-) -> bool:
+def _heavy_enrichment_already_current(sale: AuctionSale, enriched_hashes: set[str]) -> bool:
     if sale.documents and (sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION or not documents_are_current(sale)):
         return False
-    if not sale.content_hash or sale.content_hash not in enriched_hashes:
-        return False
-    if use_llm and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version):
-        return False
-    return True
-
-
-def _llm_description_already_current(
-    sale: AuctionSale,
-    current_llm_description_hashes: set[str],
-) -> bool:
-    return bool(not sale.raw_payload.get("source_content_changed") and sale.content_hash and sale.content_hash in current_llm_description_hashes)
+    return bool(sale.content_hash and sale.content_hash in enriched_hashes)
 
 
 def _limit_llm_targets(
@@ -2053,59 +1699,6 @@ def _llm_target_priority_key(sale: AuctionSale) -> tuple[int, str, str]:
     return (status_rank, sale_date, sale.source_url)
 
 
-def _needs_llm_display_description_refresh(
-    sale: AuctionSale,
-    *,
-    prompt_version: str | None = None,
-) -> bool:
-    if not llm_display_enabled() or not _sale_has_llm_context(sale):
-        return False
-    display_description = clean_payload_text(sale.raw_payload.get("llm_display_description"))
-    if not display_description:
-        return True
-    settings = load_settings()
-    current_prompt_version = clean_payload_text(
-        prompt_version if prompt_version is not None else settings.get("llm_prompt_version")
-    )
-    current_display_prompt_version = clean_payload_text(settings.get("llm_display_prompt_version"))
-    current_model = clean_payload_text(settings.get("replicate_model"))
-    return not has_current_display(
-        sale.raw_payload,
-        current_prompt_version,
-        current_display_prompt_version,
-        current_model,
-    )
-
-
-def _sale_has_llm_context(sale: AuctionSale) -> bool:
-    if extract_source_description(sale):
-        return True
-    if sale.documents:
-        return True
-    if any(
-        clean_payload_text(value)
-        for value in (
-            sale.raw_text,
-            sale.description,
-            sale.title,
-            sale.city,
-            sale.address,
-            sale.property_type,
-            sale.occupancy_status,
-            sale.risk_notes,
-        )
-    ):
-        return True
-    if any((sale.surface_m2, sale.app_surface_m2, sale.rooms_count, sale.bedrooms_count)):
-        return True
-    blocks = sale.raw_payload.get("source_blocks") if isinstance(sale.raw_payload, dict) else None
-    return isinstance(blocks, dict) and any(clean_payload_text(value) for value in blocks.values())
-
-
-def clean_payload_text(value: object | None) -> str | None:
-    return value.strip() if isinstance(value, str) and value.strip() else None
-
-
 def _merge_pdf_stats(total: PdfEnrichmentStats, item: PdfEnrichmentStats) -> None:
     total.downloaded += item.downloaded
     total.errors += item.errors
@@ -2181,10 +1774,7 @@ def _sale_publication_fingerprint(sale: AuctionSale) -> str:
 
 
 def run_from_options(options: PipelineOptions | None = None) -> int:
-    options = options or PipelineOptions()
-    if options.llm_backfill:
-        return run_llm_description_backfill(options)
-    return run_pipeline(options)
+    return run_pipeline(options or PipelineOptions())
 
 
 def parse_args(argv: list[str] | None = None) -> PipelineOptions:
@@ -2195,8 +1785,8 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
         "--no-heavy-enrichment",
         action="store_true",
         help=(
-            "Publie les annonces sans PDF/OCR lourd. La synthèse Qwen courte reste active; "
-            "ajoutez --no-llm pour la désactiver explicitement."
+            "Publie les annonces sans PDF/OCR lourd. Ajoutez --no-llm pour désactiver aussi "
+            "l'extraction des faits par le modèle."
         ),
     )
     parser.add_argument("--no-upsert", action="store_true", help="N'écrit pas dans Supabase.")
@@ -2206,16 +1796,6 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
         default=None,
         help="Reprend une ligne auction_runs existante, par exemple une demande créée depuis l'admin.",
     )
-    parser.add_argument(
-        "--backfill-llm-descriptions",
-        action="store_true",
-        help="Traite des annonces Supabase existantes sans synthèse IA publique, sans relancer le scrape.",
-    )
-    parser.add_argument(
-        "--backfill-statuses",
-        default="active,upcoming",
-        help="Statuts ciblés par --backfill-llm-descriptions, séparés par des virgules.",
-    )
     args = parser.parse_args(argv)
     return PipelineOptions(
         source=args.source,
@@ -2224,8 +1804,6 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
         upsert=not args.no_upsert,
         limit=args.limit,
         run_id=args.run_id,
-        llm_backfill=args.backfill_llm_descriptions,
-        llm_backfill_statuses=tuple(part.strip() for part in args.backfill_statuses.split(",") if part.strip()),
     )
 
 

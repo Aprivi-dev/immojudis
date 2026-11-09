@@ -181,7 +181,6 @@ PIPELINE_ENRICH_WORKERS=2
 PIPELINE_PDF_WORKERS=2
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=0
-PIPELINE_LLM_BACKFILL_MAX_TARGETS=10
 DEDUPE_RECONCILE_ENABLED=false
 DEDUPE_RECONCILE_MAX_ROWS=20000
 DEDUPE_RECONCILE_MAX_MERGES=100
@@ -216,16 +215,7 @@ comptes (favoris, notes, alertes, rapports…) des lignes supprimées passent à
 base (migration `20261028110000`), qui garde aussi la correspondance ancien identifiant → fiche conservée
 (redirection 308 de `/sales/<ancien id>`).
 
-Pour résorber progressivement les annonces déjà en base sans synthèse IA
-publique, lancer un backfill borné. Il ne relance pas le scraping et cible par
-défaut les ventes `active` et `upcoming` :
-
-```bash
-python -m src.main --backfill-llm-descriptions
-python -m src.main --backfill-llm-descriptions --limit 20 --backfill-statuses active,upcoming
-```
-
-Le backfill manuel reste disponible depuis l'admin ou `workflow_dispatch`. La file documentaire est consommée uniquement sur lancement manuel, sans backfill idle.
+La file documentaire est consommée uniquement sur lancement manuel.
 
 ### Backfill des claims historiques
 
@@ -781,8 +771,10 @@ SUPABASE_DB_URL=… SITE_URL=https://immojudis.com CRON_SECRET=… python -m src
 
 ## Enrichissement LLM Replicate
 
-Le module `src/enrichment/` utilise Replicate pour rédiger la synthèse publique
-des biens pendant le scan qui les collecte. Le modèle par défaut est
+Le module `src/enrichment/` utilise Replicate pour extraire les faits des annonces
+et de leurs pièces. La synthèse rédigée par le modèle (`llm_display_description`)
+a été retirée : la fiche affiche une description construite à partir des faits
+vérifiés. Les textes déjà en base restent lus, aucun n'est plus produit. Le modèle par défaut est
 `qwen/qwen3-7-plus`. Il a réussi les six cas synthétiques du comparatif du
 21 septembre 2026 avec un coût estimé inférieur à celui de l'ancien Qwen2.
 Les plafonds du pipeline réservent le coût maximal avant chaque appel autonome.
@@ -813,50 +805,30 @@ REPLICATE_DYNAMIC_THINKING=false
 REPLICATE_THINKING_LEVEL=low
 LLM_PROMPT_VERSION=auction_llm_v10_structured_display
 LLM_FACT_PROMPT_VERSION=auction_facts_v1
-LLM_DISPLAY_PROMPT_VERSION=auction_display_v10_canonical_facts
-# Synthèse rédigée par le modèle : coupée depuis le 09/11/2026 (le site ne l'affiche plus)
-LLM_DISPLAY_ENABLED=false
-LLM_EXTRACTION_MODE=structured_then_display
-LLM_PDF_MAX_CHARS=12000
 LLM_FACT_CHUNK_CHARS=12000
 LLM_FACT_MAX_CHUNKS=0
-LLM_DISPLAY_CONTEXT_CHARS=12000
 INCREMENTAL_ENRICHMENT=true
 PDF_DOCLING_FAST_TIMEOUT_SECONDS=60
 PDF_MAX_DOCUMENTS_PER_SALE=6
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=0
-PIPELINE_LLM_BACKFILL_MAX_TARGETS=20
 ```
 
-`PIPELINE_IDLE_LLM_BACKFILL_ENABLED` vaut `false` par défaut : les anciennes
-annonces ne sont donc pas régénérées automatiquement. Pour lancer un backfill
-historique, il faut utiliser explicitement `python -m src.main
---backfill-llm-descriptions`. Le worker manuel utilise
-`python -m src.queued_runner --enrichment-only` et la file d’enrichissement
-reste indépendante de ce backfill global.
+Le worker manuel utilise `python -m src.queued_runner --enrichment-only`.
 
 Le provider Replicate appelle l'API HTTP officielle avec `Authorization: Bearer $REPLICATE_API_TOKEN` et l'endpoint `/v1/models/{owner}/{model}/predictions`.
 Pour Gemini via Replicate, le client envoie le prompt système dans `system_instruction` et limite la réponse à du JSON validé ensuite par Pydantic.
 Les erreurs temporaires Replicate, dont `429 Too Many Requests`, sont retentées avec backoff exponentiel et un délai minimal entre appels pour éviter les rafales en fin de run.
 Les textes PDF et les extractions LLM sont mis en cache par empreinte de document/contexte. Le run suivant réutilise les résultats inchangés, limite les documents transmis aux plus utiles et applique un timeout Docling plus court sur les PDF signés ou très lourds avant fallback.
 
-Le mode courant `display_description` effectue un seul appel court par bien :
-il rédige uniquement la synthèse publique à partir des blocs collectés sur la
-fiche source et du texte documentaire déjà disponible. `PIPELINE_LLM_MAX_TARGETS=0`
-désactive le plafond de sélection : chaque bien éligible sans synthèse courante
-est donc traité avant la publication finale du scan. `--no-llm` reste le seul
-moyen explicite de désactiver cette étape.
-
-Le mode `structured_then_display` reste disponible pour une campagne
-d'extraction factuelle complète. Il analyse alors les blocs et pages en
-segments traçables avant une seconde passe de rédaction, mais il est plus long
-et plus coûteux que le mode utilisé par les scans ordinaires.
+L'extraction des faits analyse les blocs et pages en segments traçables.
+`PIPELINE_LLM_MAX_TARGETS=0` désactive le plafond de sélection d'une collecte ;
+`--no-llm` désactive l'étape.
 
 Le budget `LLM_FACT_MAX_CHUNKS` limite désormais les **nouveaux blocs** analysés
 par passage. Les blocs déjà analysés sont réutilisés et les suivants sont repris
-au passage suivant, sans consommer les tentatives d'échec de la file. La synthèse
-n'est rédigée qu'après une couverture complète. Une information absente dans un
+au passage suivant, sans consommer les tentatives d'échec de la file. Les faits
+ne sont appliqués qu'après une couverture complète. Une information absente dans un
 document analysé reste inconnue ; elle ne justifie pas une nouvelle analyse du
 même contenu.
 
@@ -865,9 +837,8 @@ par empreinte de contenu et par étape, en complément du cache local. Une panne
 du cache distant reporte le travail au lieu de provoquer de nouveaux appels IA.
 Les réservations de budget sont atomiques et les appels sont rattachés à leur
 annonce, étape et motif. Une réponse réseau ambiguë ne déclenche pas une nouvelle
-prédiction immédiatement. Les synthèses conservent leur plafond de 512 tokens ;
-l'extraction structurée dispose d'un plafond distinct de 4096 tokens afin de
-pouvoir terminer son JSON.
+prédiction immédiatement. L'extraction structurée dispose d'un plafond de
+4096 tokens afin de pouvoir terminer son JSON.
 
 Chaque pièce ou lot est extrait séparément avec valeur, catégorie, document,
 page et citation. Le LLM ne réalise pas l'addition : le module déterministe
@@ -879,15 +850,12 @@ incomplète reste marquée `partial` et les contradictions sont conservées au
 lieu d'être masquées.
 
 Le résultat détaillé est stocké dans `raw_payload.surface_analysis`, puis dans
-`auction_surface_measurements` et `auction_surface_derivations`. La synthèse
-d'affichage reste dans `raw_payload.llm_display_description`. Les réponses LLM
+`auction_surface_measurements` et `auction_surface_derivations`. Les réponses LLM
 doivent être du JSON validé par Pydantic, puis sont sauvegardées dans
 `data/processed/llm_extractions/{sale_id}.json`.
 
-Le mode `--backfill-llm-descriptions` traite les annonces déjà présentes dans
-Supabase qui n'ont pas encore de synthèse publique courante. Son volume est
-borné par `PIPELINE_LLM_BACKFILL_MAX_TARGETS` ou `--limit`. La file `auction_enrichment_jobs` est consommée uniquement sur lancement manuel. Lors d'une collecte
-manuelle, la synthèse Qwen reste produite directement dans le scan courant.
+La file `auction_enrichment_jobs` est consommée uniquement sur lancement manuel.
+Une tâche `display_description` restée en file se termine sans appel au modèle.
 
 Les migrations `20260819105011_add_structured_surface_reasoning_queue.sql` et
 `20260820144541_use_qwen2_7b_scan_descriptions.sql` doivent être appliquées
@@ -896,12 +864,11 @@ RLS explicitement : seules les lectures abonnées passent par
 `has_analysis_access()`, tandis que la file et sa fonction de claim restent
 réservées au `service_role`.
 
-Un cache évite de rappeler Replicate quand le triplet `modèle + versions de prompts + contexte factuel complet` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions. Une annonce déjà publiée avec une ancienne version de prompt est réenrichie afin de régénérer la description d'affichage. À chaque collecte avec LLM actif, le skip incrémental exige désormais `raw_payload.llm_display_description` et `raw_payload.llm_prompt_version = LLM_PROMPT_VERSION` : une annonce scorée mais sans synthèse IA publique repasse donc automatiquement dans l'enrichissement.
+Un cache évite de rappeler Replicate quand le triplet `modèle + versions de prompts + contexte factuel complet` n'a pas changé. Cela limite le coût, accélère les relances et stabilise les extractions.
 
 Dans le mode factuel optionnel, la passe couvre toutes les pages extraites. `LLM_FACT_CHUNK_CHARS`
 limite la taille d'un segment, tandis que `LLM_FACT_MAX_CHUNKS=0` signifie
-qu'aucune page n'est volontairement écartée. La passe d'affichage utilise un
-contexte consolidé plus court. Les métriques `llm_fact_context_coverage` et
+qu'aucune page n'est volontairement écartée. Les métriques `llm_fact_context_coverage` et
 `llm_fact_coverage` signalent explicitement toute troncature ou tout segment en
 échec.
 

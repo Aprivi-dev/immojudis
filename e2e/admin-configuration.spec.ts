@@ -91,10 +91,10 @@ test.describe("admin configuration", () => {
     expect(state.controlPayloads).toEqual([]);
   });
 
-  test("launches a selected source and an integer AI batch, and preserves restart mode", async ({
+  test("launches a selected source and restarts a collection in collect mode", async ({
     page,
   }, testInfo) => {
-    const state = await prepareAdminPage(page, { runSource: "llm-description-backfill" });
+    const state = await prepareAdminPage(page, { runSource: "avoventes" });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("/admin/operations");
@@ -107,15 +107,12 @@ test.describe("admin configuration", () => {
     await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Relancer", exact: true }).click();
     await expect.poll(() => state.scrollPayloads.length).toBe(2);
-    expect(state.scrollPayloads[1]).toEqual({ source: "all", mode: "llm_backfill", limit: 7 });
-    await page.getByRole("button", { name: "Enrichissement IA", exact: true }).click();
-    const batch = page.getByRole("spinbutton", { name: "Taille du lot" });
-    await batch.fill("2.5");
-    await expect(page.getByRole("button", { name: "Lancer le backfill" })).toBeDisabled();
-    await batch.fill("4");
-    await page.getByRole("button", { name: "Lancer le backfill" }).click();
-    await expect.poll(() => state.scrollPayloads.length).toBe(3);
-    expect(state.scrollPayloads[2]).toEqual({ source: "all", mode: "llm_backfill", limit: 4 });
+    expect(state.scrollPayloads[1]).toEqual({ source: "avoventes", mode: "collect" });
+    // The AI description backfill was removed: neither its tab nor its launcher remain.
+    await expect(page.getByRole("button", { name: "Enrichissement IA", exact: true })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole("button", { name: "Lancer le backfill" })).toHaveCount(0);
     expect(errors).toEqual([]);
     expect(await page.locator("[data-nextjs-dialog], .vite-error-overlay").count()).toBe(0);
     await page.screenshot({
@@ -614,10 +611,7 @@ function dashboardRunsPayload(runSource?: string, runStatus = "failed") {
             finishedAt: "2026-09-19T10:02:00Z",
             createdAt: "2026-09-19T10:00:00Z",
             updatedAt: "2026-09-19T10:02:00Z",
-            summary: {
-              mode: runSource === "llm-description-backfill" ? "llm_backfill" : "collect",
-              limit: 7,
-            },
+            summary: { mode: "collect", limit: 7 },
             errors: {},
           },
         ]

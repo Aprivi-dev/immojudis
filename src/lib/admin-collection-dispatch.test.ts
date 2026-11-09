@@ -90,14 +90,16 @@ describe("manual collection includes cloud sources in the existing workflow", ()
       expect(result.dispatched).toBe(true);
       expect(fetch).toHaveBeenCalledTimes(1);
       const [, options] = vi.mocked(fetch).mock.calls[0];
-      expect(JSON.parse(String(options?.body))).toMatchObject({
+      const body = JSON.parse(String(options?.body));
+      expect(body).toMatchObject({
         ref: "main",
         inputs: {
           source,
           run_id: "run-test",
-          llm_backfill: "false",
         },
       });
+      // The workflow no longer declares the AI description backfill input: sending it would be refused.
+      expect(body.inputs).not.toHaveProperty("llm_backfill");
       expect(mocks.insert).toHaveBeenCalledTimes(1);
     },
   );
@@ -160,30 +162,14 @@ describe("manual collection includes cloud sources in the existing workflow", ()
     expect(updateQuery?.eq).toHaveBeenNthCalledWith(2, "status", "queued");
   });
 
-  it("dispatches an AI description backfill with its dedicated run source and limit", async () => {
-    const result = await startAdminScroll("admin-token", {
-      source: "all",
-      mode: "llm_backfill",
-      limit: 7,
-    });
-
-    expect(result.dispatched).toBe(true);
-    expect(mocks.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ source: "llm-description-backfill", use_llm: true }),
-    );
-    const [, options] = vi.mocked(fetch).mock.calls[0];
-    expect(JSON.parse(String(options?.body))).toMatchObject({
-      inputs: { source: "all", llm_backfill: "true", limit: "7", run_id: "run-test" },
-    });
-  });
-
-  it("rejects an AI description backfill scoped to a source the worker ignores", async () => {
+  it("refuses the removed AI description backfill mode", async () => {
     await expect(
       startAdminScroll("admin-token", {
-        source: "avoventes",
+        source: "all",
         mode: "llm_backfill",
+        limit: 7,
       }),
-    ).rejects.toThrow("backfill LLM doit cibler la source all");
+    ).rejects.toThrow();
     expect(mocks.insert).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });

@@ -266,20 +266,14 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
             if is_new_source_change(incoming, current):
                 current["source_content_changed"] = True
                 current["source_content_changed_at"] = incoming.get("source_content_changed_at")
-                # A non-major source change marks the text stale instead of
-                # erasing it (see display_invalidation); serve it until rebuilt.
-                if incoming.get("llm_display_status") == "stale" and current.get("llm_display_description"):
-                    current["llm_display_status"] = "stale"
-                else:
-                    current["llm_display_status"] = "pending"
-                    current.pop("llm_display_description", None)
-                    current.pop("llm_prompt_version", None)
+                current["llm_display_status"] = "pending"
+                current.pop("llm_display_description", None)
+                current.pop("llm_prompt_version", None)
                 current.pop("document_facts_version", None)
             # Invalidation metadata is part of the revision contract.  A
             # second collector can carry an operational refresh on top of a
             # documentary invalidation; dropping these markers here would
-            # make the merged row look eligible for a deterministic refresh
-            # (or enqueue a new LLM pass without the previous provenance).
+            # enqueue a new LLM pass without the previous provenance.
             if incoming.get("source_operational_changed"):
                 current["source_operational_changed"] = True
             incoming_reason = incoming.get("source_content_change_reason")
@@ -294,16 +288,6 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
                 )
             ):
                 current["source_content_change_reason"] = incoming_reason
-            # A prior documentary marker with an unknown or documentary
-            # reason is deliberately retained.  An operational second source
-            # must not turn that pending/unknown invalidation into a
-            # refreshable one merely by replacing its superseded payload.
-            if incoming.get("superseded_analysis") is not None and (
-                not previous_content_changed
-                or current_reason == "source_operational_changed"
-                or not current.get("superseded_analysis")
-            ):
-                current["superseded_analysis"] = deepcopy(incoming["superseded_analysis"])
             current.setdefault("merged_sources", [])
             summary = _observation_summary(source, slim_payload=True)
             current["merged_sources"] = _with_merged_source(current["merged_sources"], summary)

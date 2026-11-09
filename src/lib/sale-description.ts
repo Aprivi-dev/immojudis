@@ -8,31 +8,6 @@ import { listingDate, listingVisits } from "./sale-listing";
 import { extractDpe } from "./dpe";
 import { landSurface, roomsPhrase, saleAmenities } from "./public-sale-description";
 
-function clean(value: string | null | undefined): string | null {
-  const text = value?.trim();
-  return text ? text : null;
-}
-
-export function getSaleAiDescription(sale: AuctionSale): string | null {
-  return clean(sale.llm_display_description);
-}
-
-function getSaleFallbackDescription(sale: AuctionSale): string | null {
-  return clean(sale.about_description) ?? clean(sale.source_description) ?? clean(sale.description);
-}
-
-export function getSaleDisplayDescription(sale: AuctionSale): string {
-  return (
-    getSaleAiDescription(sale) ??
-    getSaleFallbackDescription(sale) ??
-    buildStructuredDescription(sale)
-  );
-}
-
-export function hasSaleAiDescription(sale: AuctionSale): boolean {
-  return getSaleAiDescription(sale) !== null;
-}
-
 export function buildStructuredDescription(sale: AuctionSale, now = new Date()): string {
   const location = [sale.city, sale.department].filter(Boolean).join(", ");
   const procedure = getSaleProcedure(sale);

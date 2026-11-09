@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -11,7 +10,6 @@ import pytest
 from src.config import load_settings
 from src.enrichment import extract_structured as extraction
 from src.enrichment.extract_structured import LLMEnrichmentDeferred, enrich_sale_with_llm
-from src.enrichment.prompts import DISPLAY_DESCRIPTION_SYSTEM_PROMPT
 from src.models import AuctionSale
 from src.pdf_enrichment import sale_storage_id
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
@@ -29,14 +27,6 @@ class FakeClient:
 
     def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
         self.calls.append((system_prompt, user_prompt))
-        if system_prompt == DISPLAY_DESCRIPTION_SYSTEM_PROMPT:
-            return {
-                "display_description": (
-                    "Maison à Bordeaux décrite dans les documents disponibles, avec les "
-                    "informations restantes à vérifier."
-                ),
-                "confidence": {"display_description": 0.9},
-            }
         # A valid empty extraction is still a successful analysis and must be
         # checkpointed so its absence is not paid for repeatedly.
         return {}
@@ -60,14 +50,13 @@ def _patch_contexts(monkeypatch: pytest.MonkeyPatch, contexts: list[str]) -> Non
         return list(contexts)
 
     monkeypatch.setattr(extraction, "load_llm_fact_context_chunks_for_sale", load_contexts)
-    monkeypatch.setattr(extraction, "load_llm_context_for_sale", lambda *_a, **_kw: "Maison à Bordeaux.")
 
 
 def _fact_calls(client: FakeClient) -> list[tuple[str, str]]:
-    return [call for call in client.calls if call[0] != DISPLAY_DESCRIPTION_SYSTEM_PROMPT]
+    return [call for call in client.calls if call[0] == extraction.SYSTEM_PROMPT]
 
 
-def test_fact_budget_progresses_to_uncached_chunks_before_display(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fact_budget_progresses_to_uncached_chunks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_ENABLED", "true")
     monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
     monkeypatch.setenv("LLM_FACT_MAX_CHUNKS", "2")
@@ -81,12 +70,11 @@ def test_fact_budget_progresses_to_uncached_chunks_before_display(tmp_path: Path
             sale,
             client=client,
             output_dir=tmp_path,
-            extraction_mode="structured_then_display",
         )
 
     assert deferred.value.progress_made is True
     assert len(_fact_calls(client)) == 2
-    assert not [call for call in client.calls if call[0] == DISPLAY_DESCRIPTION_SYSTEM_PROMPT]
+    assert len(client.calls) == 2
     assert "llm_display_description" not in sale.raw_payload
     assert len(list((tmp_path / "chunks").glob("*.json"))) == 2
 
@@ -94,14 +82,14 @@ def test_fact_budget_progresses_to_uncached_chunks_before_display(tmp_path: Path
         sale,
         client=client,
         output_dir=tmp_path,
-        extraction_mode="structured_then_display",
     )
 
     assert second.errors == 0
     assert sale.raw_payload["llm_fact_coverage"]["complete"] is True
-    assert sale.raw_payload["llm_display_description"]
+    # Only fact passes: the AI display synthesis was removed.
+    assert "llm_display_description" not in sale.raw_payload
     assert len(_fact_calls(client)) == 4
-    assert len([call for call in client.calls if call[0] == DISPLAY_DESCRIPTION_SYSTEM_PROMPT]) == 1
+    assert len(client.calls) == 4
 
 
 def test_validated_absence_is_cached_as_a_successful_fact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,8 +100,8 @@ def test_validated_absence_is_cached_as_a_successful_fact(tmp_path: Path, monkey
     sale = _sale()
     client = FakeClient()
 
-    first = enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode="facts")
-    second = enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode="facts")
+    first = enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
+    second = enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
 
     assert first.errors == 0
     assert second.errors == 0
@@ -160,7 +148,6 @@ def test_deterministic_fact_failure_is_cooled_down_without_repaying_the_chunk(
         _sale(),
         client=first_client,
         output_dir=tmp_path,
-        extraction_mode="facts",
     )
 
     assert first.errors == 1
@@ -176,7 +163,6 @@ def test_deterministic_fact_failure_is_cooled_down_without_repaying_the_chunk(
             _sale(),
             client=second_client,
             output_dir=tmp_path / "fresh-runner",
-            extraction_mode="facts",
         )
 
     assert second_client.calls == []
@@ -188,7 +174,6 @@ def test_deterministic_fact_failure_is_cooled_down_without_repaying_the_chunk(
         _sale(),
         client=third_client,
         output_dir=tmp_path / "expired",
-        extraction_mode="facts",
     )
 
     assert third.errors == 0
@@ -219,59 +204,10 @@ def test_provider_fact_failure_is_not_memoized(
         _sale(),
         client=ProviderFailureClient(),
         output_dir=tmp_path,
-        extraction_mode="facts",
     )
 
     assert stats.errors == 1
     assert extraction.FACT_FAILURE_STAGE not in saved_stages
-
-
-def test_display_cache_version_does_not_invalidate_fact_chunks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LLM_ENABLED", "true")
-    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
-    monkeypatch.setenv("LLM_FACT_MAX_CHUNKS", "0")
-    _patch_contexts(monkeypatch, ["chunk-A"])
-    sale = _sale()
-    client = FakeClient()
-
-    enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode="structured_then_display")
-    assert len(_fact_calls(client)) == 1
-    assert len([call for call in client.calls if call[0] == DISPLAY_DESCRIPTION_SYSTEM_PROMPT]) == 1
-
-    monkeypatch.setenv("LLM_DISPLAY_PROMPT_VERSION", "display-test-next")
-    second = enrich_sale_with_llm(
-        sale,
-        client=client,
-        output_dir=tmp_path,
-        extraction_mode="structured_then_display",
-    )
-
-    assert second.errors == 0
-    assert len(_fact_calls(client)) == 1
-    assert len([call for call in client.calls if call[0] == DISPLAY_DESCRIPTION_SYSTEM_PROMPT]) == 2
-
-
-def test_display_extraction_persists_provider_model_not_settings_fallback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("LLM_ENABLED", "true")
-    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
-    monkeypatch.setenv("REPLICATE_MODEL", "settings/model-alias")
-    _patch_contexts(monkeypatch, ["chunk-A"])
-    sale = _sale()
-    client = FakeClient()  # The provider client reports the model it will use.
-
-    stats = enrich_sale_with_llm(
-        sale,
-        client=client,
-        output_dir=tmp_path,
-        extraction_mode="display_description",
-    )
-
-    assert stats.errors == 0
-    assert sale.raw_payload["llm_display_model"] == client.model
-    artifact = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
-    assert artifact["_cache"]["model"] == client.model
 
 
 def test_durable_empty_fact_result_is_reused_without_provider_call(
@@ -286,7 +222,7 @@ def test_durable_empty_fact_result_is_reused_without_provider_call(
     sale = _sale()
     client = FakeClient()
 
-    stats = enrich_sale_with_llm(sale, client=client, output_dir=tmp_path, extraction_mode="facts")
+    stats = enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
 
     assert stats.errors == 0
     assert stats.valid_json == 1
@@ -474,13 +410,12 @@ def test_disabled_incremental_cache_processes_all_chunks_in_one_pass(
         sale,
         client=client,
         output_dir=tmp_path,
-        extraction_mode="structured_then_display",
     )
 
     assert stats.errors == 0
     assert sale.raw_payload["llm_fact_coverage"]["complete"] is True
     assert len(_fact_calls(client)) == 3
-    assert len([call for call in client.calls if call[0] == DISPLAY_DESCRIPTION_SYSTEM_PROMPT]) == 1
+    assert len(client.calls) == 3
 
 
 def test_cached_chunk_is_merged_in_original_input_order(
@@ -502,49 +437,12 @@ def test_cached_chunk_is_merged_in_original_input_order(
     class OrderedClient(FakeClient):
         def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
             self.calls.append((system_prompt, user_prompt))
-            if system_prompt == DISPLAY_DESCRIPTION_SYSTEM_PROMPT:
-                return {}
             if "chunk-A" in user_prompt:
                 return {"summary": "first"}
             return {"summary": "third"}
 
     sale = _sale()
-    stats = enrich_sale_with_llm(sale, client=OrderedClient(), output_dir=tmp_path, extraction_mode="facts")
+    stats = enrich_sale_with_llm(sale, client=OrderedClient(), output_dir=tmp_path)
 
     assert stats.errors == 0
     assert sale.raw_payload["llm_fact_extraction"]["summary"] == "first"
-
-
-def test_display_only_keeps_verified_pdf_facts_after_local_cache_loss(tmp_path, monkeypatch):
-    sale = _document_sale(tmp_path, monkeypatch)
-    sale.raw_payload["llm_fact_extraction"] = {
-        "servitudes": ["Passage imposé par le document"],
-        "occupancy_details": "Bail contesté par le propriétaire",
-        "summary": "Ancienne mise à prix 999999 euros",
-    }
-    (tmp_path / f"{sale_storage_id(sale)}.json").unlink()
-    assert extraction.has_current_fact_analysis(sale)
-    client = FakeClient()
-    extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path / "llm",
-                                   extraction_mode="display_description")
-    assert len(client.calls) == 1
-    prompt = client.calls[0][1]
-    assert "Passage imposé" in prompt and "Bail contesté" in prompt
-    assert "999999" not in prompt
-
-
-def test_display_context_uses_current_sale_financial_values() -> None:
-    sale = _sale()
-    sale.starting_price_eur = Decimal("125000")
-    sale.adjudication_price_eur = Decimal("130000")
-    sale.sale_date = datetime(2026, 9, 19, 10, 30, tzinfo=UTC)
-
-    context = extraction._build_validated_display_context(
-        sale,
-        extraction.LLMExtraction(investor_notes="old cached narrative"),
-        fallback_context=None,
-    )
-
-    assert '"starting_price_eur": "125000"' in context
-    assert '"adjudication_price_eur": "130000"' in context
-    assert '"sale_date": "2026-09-19T10:30:00+00:00"' in context
