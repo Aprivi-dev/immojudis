@@ -109,5 +109,6 @@ def test_authorized_cross_source_ep_alias_reaches_provider(
     stats = extraction.enrich_sale_with_llm(sale, client=client, output_dir=tmp_path)
 
     assert client.calls == 1
-    assert contexts == ["loaded"]
+    # The fixed fingerprint split (10 000), then the model chunks (12 000 when the setting is absent).
+    assert contexts == ["loaded", "loaded"]
     assert stats.valid_json == 1

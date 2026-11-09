@@ -158,6 +158,7 @@ def test_secrets_are_never_in_the_environment_of_pip_and_apt_steps(path: Path) -
         "photo-mirror-backfill.yml",
         "apply-supabase-migrations.yml",
         "check-pending-supabase-migrations.yml",
+        "fact-chunk-trial.yml",
     ],
 )
 def test_pipeline_workflows_keep_secrets_out_of_the_job_environment(name: str) -> None:
@@ -207,6 +208,35 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
     assert [name for name, step in benchmark.items() if SECRET.search(step.env)] == [
         "Compare existing and candidate models"
     ]
+
+
+def test_fact_chunk_trial_is_manual_bounded_and_leaves_the_production_chunk_size() -> None:
+    text = (WORKFLOWS / "fact-chunk-trial.yml").read_text(encoding="utf-8")
+    jobs = parse_jobs(text)
+
+    assert [job.name for job in jobs] == ["trial"]
+    assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
+    for name in ("sales", "chunk_chars", "max_tokens", "max_calls"):
+        assert re.search(rf"^      {name}:\n        description:", text, re.M), name
+    assert re.search(r"^  group: immojudis-fact-chunk-trial$", text, re.M)
+    assert re.search(r"^  cancel-in-progress: false$", text, re.M)
+    timeout = re.search(r"^    timeout-minutes: (\d+)$", text, re.M)
+    assert timeout and int(timeout.group(1)) <= 90
+    _assert_main_only_without_persisted_credentials(text)
+    assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
+    # The database URL (reads, request reservations) and the Replicate token only, on the script step alone.
+    steps = {step.name: step for step in jobs[0].steps}
+    assert [name for name, step in steps.items() if SECRET.search(step.env)] == ["Run the read-only chunk trial"]
+    trial = steps["Run the read-only chunk trial"]
+    assert set(re.findall(r"secrets\.([A-Z_]+)", trial.env)) == {"SUPABASE_DB_URL", "REPLICATE_API_TOKEN"}
+    assert "python -m scripts.fact_chunk_trial" in trial.run and "${{" not in trial.run
+    # Same model and request budget as the pipeline.
+    pipeline_env = parse_jobs((WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8"))[0].env
+    for setting in ("REPLICATE_MODEL", "REPLICATE_MAX_CALLS_PER_HOUR", "LLM_FACT_PROMPT_VERSION", "LLM_PROMPT_VERSION"):
+        value = re.search(rf"^      {setting}: (.+)$", pipeline_env, re.M)
+        assert value and f"{setting}: {value.group(1)}" in jobs[0].env, setting
+    # The trial comes before any change: production keeps 10 000-character chunks.
+    assert re.search(r"^      LLM_FACT_CHUNK_CHARS: 10000$", pipeline_env, re.M)
 
 
 def test_recompute_secrets_reach_only_the_recompute_steps() -> None:

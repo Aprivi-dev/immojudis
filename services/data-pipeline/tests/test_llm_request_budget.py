@@ -577,6 +577,31 @@ def test_fact_extraction_uses_separate_output_cap() -> None:
     assert payload["max_tokens"] == 4096
 
 
+def test_fact_output_cap_follows_replicate_fact_max_tokens(monkeypatch) -> None:
+    # Larger fact chunks need a higher output cap (8192): the setting reaches the payload and the reservation.
+    monkeypatch.setenv("REPLICATE_FACT_MAX_TOKENS", "8192")
+    monkeypatch.setenv("REPLICATE_MAX_TOKENS", "512")
+    client = ReplicateClient(api_token="token", model="qwen/qwen3-7-plus", min_interval_seconds=0, max_retries=1)
+    payload = {"input": client._input_payload("facts", system_prompt=SYSTEM_PROMPT)}
+    ceilings: list[int] = []
+
+    def reserve(model: str, **kwargs: int) -> None:
+        ceilings.append(kwargs["output_token_ceiling"])
+        raise RuntimeError("stop before the POST")
+
+    monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: None)
+    monkeypatch.setattr(llm_client, "reserve_prediction", reserve)
+    monkeypatch.setattr(llm_client, "release_llm_request", lambda *args, **kwargs: None)
+    monkeypatch.setattr(llm_client.httpx, "post", lambda *args, **kwargs: pytest.fail("no POST"))
+
+    with pytest.raises(RuntimeError, match="stop before the POST"):
+        client._post_with_retries("https://api.replicate.com/v1/predictions", headers={}, payload=payload)
+
+    assert payload["input"]["max_tokens"] == 8192
+    assert ceilings == [8192]
+    assert client._input_payload("résumé", system_prompt="Autre consigne")["max_tokens"] == 512
+
+
 def test_request_key_is_stable_for_same_model_and_payload() -> None:
     first = llm_client._request_key_for_payload("owner/model:v1", {"input": {"prompt": "same"}})
     second = llm_client._request_key_for_payload("owner/model:v1", {"input": {"prompt": "same"}})
