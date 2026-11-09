@@ -40,7 +40,6 @@ export type {
 
 export {
   fetchAdminDashboardRuns,
-  fetchAdminDashboardAi,
   fetchAdminDashboardCounts,
   fetchAdminDataQuality,
   fetchAdminPublicationRequests,

@@ -531,16 +531,6 @@ function readinessPayload() {
       appliedCount: 10,
       detail: "CI",
     },
-    aiDescriptions: {
-      status: "ready",
-      promptVersion: "auction_llm_v10_structured_display",
-      activeUpcomingCount: 1,
-      coveredCurrentCount: 1,
-      missingCurrentCount: 0,
-      missingSourceCount: 0,
-      recentFailureCount: 0,
-      detail: "CI",
-    },
     operations: {
       status: "ready",
       schedulerActive: true,
