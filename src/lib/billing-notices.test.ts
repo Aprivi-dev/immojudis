@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCancellationConfirmationMessage,
+  buildPaymentActionRequiredMessage,
   buildPaymentFailedMessage,
   buildTrialEndingMessage,
 } from "./billing-notices";
@@ -92,5 +93,41 @@ describe("buildTrialEndingMessage", () => {
     expect(message.text).toContain("droit de rétractation de 14 jours");
     expect(message.text).toContain("https://immojudis.com/mes-droits");
     expect(message.html).toContain('href="https://immojudis.com/compte"');
+  });
+});
+
+describe("buildPaymentActionRequiredMessage", () => {
+  const base = {
+    from: "Immojudis <alertes@immojudis.com>",
+    to: "abonne@example.test",
+    appUrl: "https://immojudis.com",
+  };
+
+  it("links to the Stripe payment page and explains the bank confirmation", () => {
+    const message = buildPaymentActionRequiredMessage({
+      ...base,
+      hostedInvoiceUrl: "https://invoice.stripe.com/i/acct_1/live_1",
+    });
+    expect(message.subject).toBe("Confirmez le paiement de votre abonnement Immojudis");
+    expect(message.text).toContain("3-D Secure");
+    expect(message.text).toContain("Montant de l’abonnement : 59 € TTC / mois");
+    expect(message.text).toContain(
+      "Confirmer mon paiement : https://invoice.stripe.com/i/acct_1/live_1",
+    );
+    expect(message.text).toContain("reste ouvert 7 jours");
+    expect(message.html).toContain('href="https://invoice.stripe.com/i/acct_1/live_1"');
+    expect(message.html).toContain("Confirmer mon paiement");
+  });
+
+  it("falls back to the account page for a missing or foreign link", () => {
+    for (const hostedInvoiceUrl of [
+      null,
+      "https://evil.example/pay",
+      "http://invoice.stripe.com/x",
+    ]) {
+      const message = buildPaymentActionRequiredMessage({ ...base, hostedInvoiceUrl });
+      expect(message.text).toContain("Confirmer mon paiement : https://immojudis.com/compte");
+      expect(message.html).not.toContain("evil.example");
+    }
   });
 });
