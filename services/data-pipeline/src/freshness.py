@@ -7,16 +7,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from src.display_invalidation import (
-    CONTENT_CHANGE_KEEP_DISPLAY,
     OPERATIONAL_CHANGE,
     capture_fingerprints,
     capture_kind,
     classify_source_change,
-    count_display_invalidation,
-    keep_display_as_stale,
     merge_capture_fingerprints,
 )
-from src.enrichment.display_quality import has_current_display
 from src.normalize import clean_text
 
 SOURCE_EXTRACTION_VERSION = "source_extraction_20260913_v3"
@@ -155,14 +151,11 @@ def record_source_checks(raw_sales: list, known: dict, *, capture: str = "collec
         change = None
         if old.get("fingerprint") != fingerprint:
             change = classify_source_change(old, kind, fingerprints, evidence_fingerprint)
-        invalidations = count_display_invalidation(old, invalidated=change is not None)
-        if invalidations:
-            check["display_invalidations"] = invalidations
         payload["source_checks"][url] = check
         if change == OPERATIONAL_CHANGE:
             invalidate_analysis(payload, "source_operational_changed", preserve_facts=True)
         elif change is not None:
-            invalidate_analysis(payload, "source_content_changed", keep_display=change == CONTENT_CHANGE_KEEP_DISPLAY)
+            invalidate_analysis(payload, "source_content_changed")
         if change is not None:
             payload["source_content_changed_at"] = check["checked_at"]
 
@@ -422,74 +415,39 @@ _FACT_KEYS = (
 )
 
 
-def invalidate_analysis(
-    payload: dict, reason: str, *, preserve_facts: bool = False, keep_display: bool = False,
-) -> None:
-    """Retain dated evidence, never publish the superseded synthesis as current.
+def settle_source_change_without_documents(sale: Any) -> bool:
+    """Clear the source-change flags of a sale without documents.
 
-    ``keep_display`` (a documentary change that is not major) keeps the text
-    visible with the ``stale`` status while its regeneration is queued; the
-    LLM facts are still discarded. A major change or a price/date change
-    removes the text as before.
+    Such a sale gets no fact pass that would clear them, so they would stay set (analysis shown as
+    pending forever).
     """
+    payload = getattr(sale, "raw_payload", None)
+    if getattr(sale, "documents", None) or not isinstance(payload, dict) or not payload.get("source_content_changed"):
+        return False
+    for key in ("source_content_changed", "source_content_change_reason", "source_operational_changed"):
+        payload.pop(key, None)
+    return True
+
+
+def invalidate_analysis(payload: dict, reason: str, *, preserve_facts: bool = False) -> None:
+    """Retain dated evidence; drop the analysis (and any former AI synthesis) the change made obsolete."""
     previous_content_changed = bool(payload.get("source_content_changed"))
-    # A reason without its queue flag is a stale marker from a caller that
-    # already consumed the previous invalidation. Do not let it make the next
-    # operational revision look documentary.
-    previous_content_reason = payload.get("source_content_change_reason") if previous_content_changed else None
     payload["source_content_changed"] = True
     if preserve_facts:
         payload["source_operational_changed"] = True
         # An operational-only refresh uses source_content_changed as the
         # queue-visible invalidation flag. Keep its origin explicit so a
-        # later successful deterministic refresh cannot clear a documentary
-        # invalidation that was already pending.
+        # documentary invalidation that was already pending is not taken for
+        # an operational one.
         if not previous_content_changed:
             payload["source_content_change_reason"] = reason
     else:
         payload.pop("source_operational_changed", None)
         payload["source_content_change_reason"] = reason
-    if keep_display and not preserve_facts and keep_display_as_stale(payload):
-        for key in ("llm_extraction", "llm_due_diligence", "investment_analysis", *_FACT_KEYS):
-            payload.pop(key, None)
-        return
-    if payload.get("llm_display_description"):
-        fact_manifest = payload.get("llm_fact_context_manifest")
-        previous_model = payload.get("llm_display_model")
-        if not previous_model and isinstance(fact_manifest, dict):
-            # Older structured runs did not persist a display-stage model, but
-            # their validated fact manifest was produced by the same model
-            # contract. Reuse that evidence when it is available; rows with
-            # no model provenance remain enrichment-required.
-            previous_model = fact_manifest.get("model")
-        display_refreshable = bool(
-            reason == "source_operational_changed"
-            and not (
-                previous_content_changed
-                and previous_content_reason != "source_operational_changed"
-            )
-            and has_current_display(payload)
-            and payload.get("llm_prompt_version")
-            and payload.get("llm_display_prompt_version")
-            and previous_model
-        )
-        payload["superseded_analysis"] = {
-            "description": payload.pop("llm_display_description"),
-            "prompt_version": payload.get("llm_prompt_version"),
-            "display_prompt_version": payload.get("llm_display_prompt_version"),
-            "model": previous_model,
-            "quality_version": payload.get("llm_display_quality_version"),
-            "status": payload.get("llm_display_status"),
-            "operational_refreshable": display_refreshable,
-            "source_content_changed_before": previous_content_changed,
-            "source_content_change_reason_before": previous_content_reason,
-            "superseded_at": datetime.now(UTC).isoformat(),
-            "reason": reason,
-        }
     payload["llm_display_status"] = "pending"
     keys = [
         "llm_prompt_version", "llm_extraction", "llm_due_diligence", "investment_analysis",
-        "llm_display_prompt_version", "llm_display_model", "llm_display_quality_version",
+        "llm_display_description", "llm_display_prompt_version", "llm_display_model", "llm_display_quality_version",
         "llm_display_origin", "llm_display_description_word_count", "llm_display_source_constraints",
         "llm_display_evidence_check",
     ]

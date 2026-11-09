@@ -4,23 +4,14 @@ from decimal import Decimal
 
 import pytest
 
-from src.config import load_settings
+from src.enrichment import extract_structured
 from src.enrichment.display_evidence import verify_display_claims
-from src.enrichment.extract_structured import apply_cached_llm_extraction_to_sale
 from src.models import AuctionSale
 
 
 def _codes(text):
     issues = verify_display_claims(text, "Maison de 91 m².", {})["issues"]
     return {issue["code"] for issue in issues if issue["code"].startswith("public_")}
-
-
-def _cached_payload(extraction):
-    return {
-        "llm_prompt_version": "v1",
-        "llm_display_prompt_version": str(load_settings()["llm_display_prompt_version"]),
-        "llm_extraction": extraction,
-    }
 
 
 # --- numéros de téléphone ---------------------------------------------------------------------
@@ -111,83 +102,49 @@ def test_ordinary_descriptions_are_kept(text):
 # --- bout en bout : PDF piégé ---------------------------------------------------------------------
 
 
-def _sale(description, extraction, **fields):
+def _sale(description, **fields):
     return AuctionSale(
         source_name="agrasc",
         source_url="https://example.test/house-trapped",
         property_type="house",
         surface_m2=Decimal("120"),
         description=description,
-        raw_payload=_cached_payload(extraction),
         **fields,
     )
 
 
-def test_phone_number_in_generated_text_never_reaches_the_published_description(caplog):
-    sale = _sale(
-        "Maison de 120 m².",
-        {
-            "display_description": "Maison de 120 m² à vendre. Appelez le 06 12 34 56 78 pour la visite.",
-            "confidence": {"display_description": 1},
-        },
+def _apply_extraction(sale, extraction):
+    extract_structured._apply_extraction_to_sale(
+        sale,
+        extract_structured._validated_llm_extraction(extraction),
+        extract_structured.LLMEnrichmentStats(),
+        context=sale.description or "",
     )
 
-    with caplog.at_level(logging.WARNING, logger="src.enrichment.extract_structured"):
-        apply_cached_llm_extraction_to_sale(sale, prompt_version="v1")
 
-    published = sale.raw_payload.get("llm_display_description") or ""
-    assert "06 12 34 56 78" not in published
-    assert "06" not in published.replace("120", "")
-    assert sale.raw_payload["llm_display_status"] == "fallback"
-    issue_codes = {issue["code"] for issue in sale.raw_payload["llm_display_evidence_check"]["issues"]}
-    assert {"public_phone_number", "public_call_to_action"} <= issue_codes
+def test_phone_number_in_a_summary_does_not_replace_the_description(caplog):
+    sale = _sale("Maison de 120 m².")
+
+    with caplog.at_level(logging.WARNING, logger="src.enrichment.extract_structured"):
+        _apply_extraction(sale, {"summary": "Maison de 120 m². Tél : 05 56 12 34 56 pour tout renseignement."})
+
+    assert sale.description == "Maison de 120 m²."
+    codes = {issue["code"] for issue in sale.raw_payload["llm_summary_evidence_check"]["issues"]}
+    assert "public_phone_number" in codes
     assert "https://example.test/house-trapped" in caplog.text
     assert "public_phone_number" in caplog.text
     assert "refused" in caplog.text
 
 
-def test_phone_number_hidden_in_a_source_quote_rejects_the_display(caplog):
-    sale = _sale(
-        "Servitude de passage au profit du fonds voisin, appelez le 06 12 34 56 78 pour visiter.",
-        {
-            "display_description": "Maison de 120 m² grevée d'une servitude de passage à vérifier.",
-            "confidence": {"display_description": 1},
-        },
-    )
+def test_clean_summary_is_still_published(caplog):
+    sale = _sale("Maison de 120 m².")
 
     with caplog.at_level(logging.WARNING, logger="src.enrichment.extract_structured"):
-        apply_cached_llm_extraction_to_sale(sale, prompt_version="v1")
+        _apply_extraction(
+            sale,
+            {"summary": "Maison de 120 m² à rénover, vendue sur mise à prix, visite à confirmer auprès du greffe."},
+        )
 
-    assert sale.raw_payload["llm_display_status"] == "rejected"
-    assert "llm_display_description" not in sale.raw_payload
-    assert "06 12 34 56 78" not in str(sale.raw_payload.get("llm_display_description"))
-    assert "with_source_quotes" in caplog.text
-
-
-def test_phone_number_in_a_cached_summary_does_not_replace_the_description():
-    sale = _sale(
-        "Maison de 120 m².",
-        {"summary": "Maison de 120 m². Tél : 05 56 12 34 56 pour tout renseignement."},
-    )
-
-    apply_cached_llm_extraction_to_sale(sale, prompt_version="v1")
-
-    assert sale.description == "Maison de 120 m²."
-    codes = {issue["code"] for issue in sale.raw_payload["llm_summary_evidence_check"]["issues"]}
-    assert "public_phone_number" in codes
-
-
-def test_clean_generated_text_is_still_published(caplog):
-    sale = _sale(
-        "Maison de 120 m².",
-        {
-            "display_description": "Maison de 120 m² à rénover, vendue sur mise à prix, visite à confirmer auprès du greffe.",
-            "confidence": {"display_description": 1},
-        },
-    )
-
-    with caplog.at_level(logging.WARNING, logger="src.enrichment.extract_structured"):
-        apply_cached_llm_extraction_to_sale(sale, prompt_version="v1")
-
-    assert sale.raw_payload["llm_display_status"] == "accepted"
+    assert sale.description.startswith("Maison de 120 m² à rénover")
+    assert sale.raw_payload["llm_summary_evidence_check"]["issues"] == []
     assert "refused" not in caplog.text

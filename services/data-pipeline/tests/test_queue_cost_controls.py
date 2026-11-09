@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 from src import queued_runner
-from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.llm_requests import LLMRequestDeterministicCooldown
 from src.models import AuctionSale
 
@@ -12,11 +11,7 @@ def _queue(monkeypatch):
         source_name="avoventes", source_url="https://example.test/covered",
         description="Appartement sans indication fiable de surface ou d'occupation.",
         raw_payload={
-            "llm_display_description": "Appartement décrit dans les documents de vente. Les informations absentes restent à vérifier auprès de la source.",
-            "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
-            "llm_display_status": "accepted",
             "llm_prompt_version": settings["llm_prompt_version"],
-            "llm_display_prompt_version": settings["llm_display_prompt_version"],
             "llm_fact_coverage": {"complete": True},
         },
     )
@@ -43,49 +38,21 @@ def test_covered_missing_fields_do_not_trigger_another_fact_call(monkeypatch):
     assert len(finished) == 2 and all(row["succeeded"] for row in finished)
 
 
-def test_stale_display_with_current_facts_only_generates_display(monkeypatch):
+def test_planned_facts_are_extracted_once_without_a_display_pass(monkeypatch):
     sale, _, finished = _queue(monkeypatch)
-    sale.raw_payload.pop("llm_display_description")
-    monkeypatch.setattr(queued_runner, "has_current_fact_analysis", lambda _: True)
-    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
-    modes = []
-    def enrich(current, **kwargs):
-        modes.append(kwargs["extraction_mode"])
-        current.raw_payload["llm_display_description"] = "Appartement décrit dans les documents de vente. Les informations absentes restent à vérifier auprès de la source."
-        return SimpleNamespace(valid_json=1, errors=0, unavailable=False)
-    monkeypatch.setattr(queued_runner, "enrich_sale_with_llm", enrich)
-    queued_runner.run_enrichment_queue_batch(limit=1)
-    assert modes == ["display_description"]
-    assert finished[0]["succeeded"] is True
-
-
-def test_display_job_with_planned_facts_generates_only_final_description(monkeypatch):
-    sale, jobs, finished = _queue(monkeypatch)
-    jobs.clear()
-    jobs.append({
-        "id": "00000000-0000-0000-0000-000000000003",
-        "source_url": sale.source_url,
-        "job_type": "display_description",
-        "attempt_count": 1,
-    })
     sale.raw_payload["document_analysis"] = {"documents_extracted": 1}
     monkeypatch.setattr(queued_runner, "has_current_fact_analysis", lambda _: False)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
-    modes = []
+    calls = []
 
     def enrich(current, **kwargs):
-        modes.append(kwargs["extraction_mode"])
-        current.raw_payload.update(
-            {
-                "llm_display_description": "Description finale fondée sur les faits. " * 3,
-                "llm_fact_coverage": {"complete": True},
-            }
-        )
+        calls.append(kwargs)
+        current.raw_payload["llm_fact_coverage"] = {"complete": True}
         return SimpleNamespace(valid_json=1, errors=0, unavailable=False)
 
     monkeypatch.setattr(queued_runner, "enrich_sale_with_llm", enrich)
     assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
-    assert modes == ["structured_then_display"]
+    assert len(calls) == 1 and "extraction_mode" not in calls[0]
     assert finished[0]["succeeded"] is True
 
 
@@ -96,11 +63,7 @@ def test_deterministic_cooldown_defers_only_its_sale_and_keeps_batch_progress(mo
             source_name="avoventes",
             source_url=f"https://example.test/{suffix}",
             starting_price_eur=100_000,
-            raw_payload={
-                "llm_prompt_version": settings["llm_prompt_version"],
-                "llm_display_prompt_version": settings["llm_display_prompt_version"],
-                "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
-            },
+            raw_payload={"llm_prompt_version": settings["llm_prompt_version"]},
         )
         for suffix in ("blocked", "healthy")
     }
@@ -108,7 +71,7 @@ def test_deterministic_cooldown_defers_only_its_sale_and_keeps_batch_progress(mo
         {
             "id": f"00000000-0000-0000-0000-00000000000{index}",
             "source_url": sale.source_url,
-            "job_type": "display_description",
+            "job_type": "fact_extraction",
             "attempt_count": 1,
         }
         for index, sale in enumerate(sales.values(), start=4)
@@ -137,7 +100,7 @@ def test_deterministic_cooldown_defers_only_its_sale_and_keeps_batch_progress(mo
     def enrich(sale, **_kwargs):
         if sale.source_url.endswith("/blocked"):
             raise LLMRequestDeterministicCooldown("deterministic request key blocked")
-        sale.raw_payload["llm_display_description"] = "Description finale vérifiée. " * 5
+        sale.raw_payload["llm_fact_coverage"] = {"complete": True}
         return SimpleNamespace(valid_json=1, errors=0, unavailable=False)
 
     monkeypatch.setattr(queued_runner, "enrich_sale_with_llm", enrich)

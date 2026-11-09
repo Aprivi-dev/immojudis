@@ -1,4 +1,6 @@
-"""Synthèse descriptive : faits canoniques, nature de la vente et contrôles de rédaction.
+"""Contrôles de rédaction des textes publics (nature de la vente, absences, occupation, remplissage).
+
+Ils gardent le résumé du modèle avant qu'il ne remplace la description d'une vente.
 
 Les fixtures reprennent les cas réels de l'audit du 11/10/2026 (identifiants
 abrégés en commentaire).
@@ -9,11 +11,8 @@ from decimal import Decimal
 
 import pytest
 
-from src.config import load_settings
-from src.enrichment import extract_structured as extraction
 from src.enrichment.display_evidence import verify_display_claims
-from src.enrichment.display_facts import canonical_facts_block, sale_nature
-from src.enrichment.prompts import DISPLAY_DESCRIPTION_SYSTEM_PROMPT, build_display_description_prompt
+from src.enrichment.display_facts import sale_nature
 from src.models import AuctionSale
 
 
@@ -121,83 +120,6 @@ def _nogent() -> AuctionSale:  # notaires f9151f97, immo-interactif
 def test_sale_nature_follows_source_and_procedure(sale, code):
     assert sale_nature(sale).code == code
     assert sale_nature(sale.model_dump()).code == code
-
-
-# --- faits canoniques et contexte -----------------------------------------------------------------
-
-
-def test_canonical_block_lists_known_facts_with_nature_and_price_wording():
-    block = canonical_facts_block(_nogent())
-
-    assert block.startswith("[FAITS CANONIQUES]")
-    assert "NATURE_VENTE : vente notariale interactive" in block
-    assert "Date de vente : 30/10/2026." in block
-    assert "Première offre possible : 58 800 €." in block
-    assert "Surface retenue : 76,72 m² (principale)." in block
-    assert "Pièces : 5." in block and "Chambres : 3." in block
-    assert "DPE : classe G." in block and "GES : classe G." in block
-    assert "Occupation : libre." in block
-    assert "judiciaire" not in block
-
-    fixed_price = canonical_facts_block(_seyssuel())
-    assert "NATURE_VENTE : vente au prix, sans enchères." in fixed_price
-    assert "- Prix : 150 000 €." in fixed_price
-    assert "Mise à prix" not in fixed_price
-
-
-def test_occupied_status_is_never_qualified_in_the_canonical_block():
-    block = canonical_facts_block(_montpellier())
-
-    assert "Occupation : occupé." in block
-    assert "propriétaire" not in block and "loué" not in block
-
-
-def test_validated_display_context_starts_with_canonical_facts_that_prevail():
-    sale = _toulouse()
-    fallback = extraction._join_unique_sections([canonical_facts_block(sale), "[ANNONCE SOURCE]\nTexte."], 5000)
-
-    context = extraction._build_validated_display_context(
-        sale,
-        extraction.LLMExtraction(rooms_count=3, property_type="house"),
-        fallback_context=fallback,
-    )
-
-    assert context.startswith("[FAITS CANONIQUES]")
-    assert context.count("NATURE_VENTE") == 1
-    assert '"rooms_count": 5' in context
-    assert '"property_type": "building"' in context
-    assert "[ANNONCE SOURCE]" in context
-
-
-# --- prompt ---------------------------------------------------------------------------------------
-
-
-def test_display_prompt_forbids_absences_filler_and_wrong_sale_nature():
-    prompt = build_display_description_prompt("[FAITS CANONIQUES]\n- NATURE_VENTE : vente au prix.")
-
-    assert "mentionne sobrement" not in prompt
-    for expected in (
-        "[FAITS CANONIQUES]",
-        "NATURE_VENTE",
-        "Ne jamais écrire ce qui manque",
-        "pour une vente au prix, écris « prix »",
-        "« Occupé » ne devient jamais « occupé par le propriétaire »",
-        "Interdits (liste noire)",
-        "surenchère",
-        "annonce non officielle",
-        "se rapprocher de",
-        "Vise 50 à 100 mots",
-        "2 à 4 phrases",
-        '"display_description"',
-        '"confidence": {"display_description": 0.0}',
-    ):
-        assert expected.casefold() in prompt.casefold(), expected
-    assert "FAITS CANONIQUES" in DISPLAY_DESCRIPTION_SYSTEM_PROMPT
-    assert "NATURE_VENTE" in DISPLAY_DESCRIPTION_SYSTEM_PROMPT
-
-
-def test_display_prompt_version_was_bumped():
-    assert load_settings()["llm_display_prompt_version"] == "auction_display_v10_canonical_facts"
 
 
 # --- absence_claim_contradicted -------------------------------------------------------------------
@@ -347,43 +269,3 @@ def test_structured_first_offer_supports_the_amount():
     )
 
     assert "unsupported_money" not in _codes("Première offre possible : 54 500 €.", sale)
-
-
-# --- bout en bout ---------------------------------------------------------------------------------
-
-
-def test_false_absence_in_a_cached_synthesis_falls_back_instead_of_being_published():
-    sale = _toulouse()
-    sale.raw_payload = {
-        "llm_prompt_version": "v1",
-        "llm_display_prompt_version": str(load_settings()["llm_display_prompt_version"]),
-        "llm_extraction": {
-            "display_description": (
-                "Immeuble de bureaux à Toulouse, cédé par l'État. La date de vente et la surface "
-                "ne sont pas précisées, ce qui limite l'analyse du bien."
-            ),
-            "confidence": {"display_description": 0.9},
-        },
-    }
-
-    extraction.apply_cached_llm_extraction_to_sale(sale, prompt_version="v1")
-
-    assert sale.raw_payload["llm_display_status"] != "accepted"
-    codes = {issue["code"] for issue in sale.raw_payload["llm_display_evidence_check"]["issues"]}
-    assert "absence_claim_contradicted" in codes
-    assert "pas précisées" not in str(sale.raw_payload.get("llm_display_description"))
-
-
-def test_a_filler_sentence_is_dropped_and_the_factual_ones_are_kept() -> None:
-    from src.enrichment.display_semantics import strip_filler_sentences
-
-    text = (
-        "Appartement de 46 m² à Mantes-la-Jolie, vendu aux enchères le 20/11/2026. "
-        "Les enchères doivent être portées par un avocat inscrit au barreau. "
-        "Le lot 1 est loué."
-    )
-
-    assert strip_filler_sentences(text) == (
-        "Appartement de 46 m² à Mantes-la-Jolie, vendu aux enchères le 20/11/2026. Le lot 1 est loué."
-    )
-    assert strip_filler_sentences(None) is None

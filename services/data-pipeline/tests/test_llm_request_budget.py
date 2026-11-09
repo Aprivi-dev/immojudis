@@ -476,9 +476,9 @@ def test_provider_output_refusal_is_typed_and_does_not_retry(monkeypatch) -> Non
     monkeypatch.setattr(llm_client.httpx, "post", provider_post)
 
     with pytest.raises(llm_client.LLMProviderOutputRefused) as refusal:
-        client.generate_json("MODE SYNTHESE STRICTE", "source text")
+        client.generate_json("MODE EXTRACTION STRICTE", "source text")
 
-    assert refusal.value.request_kind == "display_description"
+    assert refusal.value.request_kind == "fact_extraction"
     assert provider_calls == 1
     assert [item["status"] for item in telemetry] == ["reserved", "failed"]
     assert all("inappropriate content" not in str(item) for item in telemetry)
@@ -493,7 +493,7 @@ def test_unrelated_http400_terminal_error_stays_generic() -> None:
 
 def test_provider_refusal_multi_job_requires_cas_confirmation() -> None:
     jobs = [
-        {"id": "job-display", "job_type": "display_description"},
+        {"id": "job-facts", "job_type": "fact_extraction"},
         {"id": "job-pdf", "job_type": "pdf"},
     ]
     finished: list[tuple[str, dict[str, object]]] = []
@@ -505,13 +505,13 @@ def test_provider_refusal_multi_job_requires_cas_confirmation() -> None:
         return str(job["id"]) == "job-pdf"
 
     assert cancel_provider_output_refusal_jobs(
-        LLMProviderOutputRefused(request_kind="display_description"),
+        LLMProviderOutputRefused(request_kind="fact_extraction"),
         jobs,
         finish_job=finish_job,
         mark_terminal=terminal.append,
         defer_jobs=deferred.append,
     ) is True
-    assert [job_id for job_id, _ in finished] == ["job-display"]
+    assert [job_id for job_id, _ in finished] == ["job-facts"]
     assert finished[0][1]["cancelled"] is True
     assert deferred == [[jobs[1]]]
     assert terminal == []
@@ -519,7 +519,7 @@ def test_provider_refusal_multi_job_requires_cas_confirmation() -> None:
 
 def test_provider_refusal_continues_after_finish_exception() -> None:
     jobs = [
-        {"id": "job-lost", "job_type": "display_description"},
+        {"id": "job-lost", "job_type": "fact_extraction"},
         {"id": "job-facts", "job_type": "fact_extraction"},
         {"id": "job-pdf", "job_type": "pdf"},
     ]

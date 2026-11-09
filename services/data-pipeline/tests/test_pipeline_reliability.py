@@ -26,7 +26,7 @@ from src.sources.common import PaginationCoverage
 from src.storage import supabase_client as storage
 
 
-def test_queued_display_revision_is_rekeyed_without_cancelling_the_old_row():
+def test_queued_fact_revision_is_rekeyed_without_cancelling_the_old_row():
     calls = []
 
     class Connection:
@@ -35,18 +35,18 @@ def test_queued_display_revision_is_rekeyed_without_cancelling_the_old_row():
             if query.startswith("savepoint") or query.startswith("release savepoint"):
                 return SimpleNamespace(fetchall=lambda: [])
             return SimpleNamespace(
-                fetchall=lambda: [("sale-1", "display_description", "pipeline_v2:new")]
+                fetchall=lambda: [("sale-1", "fact_extraction", "pipeline_v2:new")]
             )
 
     jobs = [{
         "source_url": "https://example.test/sale-1",
-        "job_type": "display_description",
+        "job_type": "fact_extraction",
         "input_hash": "pipeline_v2:new",
         "priority": 20,
     }]
 
     assert storage._coalesce_queued_display_revisions(Connection(), jobs) == {
-        ("sale-1", "display_description", "pipeline_v2:new")
+        ("sale-1", "fact_extraction", "pipeline_v2:new")
     }
     query = next(query for query, _params in calls if query.startswith("with incoming"))
     assert "for update skip locked" in query
@@ -57,7 +57,7 @@ def test_queued_display_revision_is_rekeyed_without_cancelling_the_old_row():
     params = next(params for query, params in calls if query.startswith("with incoming"))
     assert params == (
         "https://example.test/sale-1",
-        "display_description",
+        "fact_extraction",
         "pipeline_v2:new",
         20,
     )
@@ -87,7 +87,7 @@ def test_queued_fact_revision_is_rekeyed_too_so_it_keeps_its_age():
     assert params == ("https://example.test/sale-1", "fact_extraction", "pipeline_v2:new", 25)
 
 
-def test_queued_display_revision_race_rolls_back_to_savepoint():
+def test_queued_fact_revision_race_rolls_back_to_savepoint():
     statements = []
 
     class Connection:
@@ -99,7 +99,7 @@ def test_queued_display_revision_race_rolls_back_to_savepoint():
 
     jobs = [{
         "source_url": "https://example.test/race",
-        "job_type": "display_description",
+        "job_type": "fact_extraction",
         "input_hash": "pipeline_v2:new",
         "priority": 20,
     }]
@@ -113,7 +113,7 @@ def test_queued_display_revision_race_rolls_back_to_savepoint():
     ]
 
 
-def test_queued_display_revision_reraises_non_unique_errors_after_savepoint_cleanup():
+def test_queued_fact_revision_reraises_non_unique_errors_after_savepoint_cleanup():
     statements = []
 
     class Connection:
@@ -125,7 +125,7 @@ def test_queued_display_revision_reraises_non_unique_errors_after_savepoint_clea
 
     jobs = [{
         "source_url": "https://example.test/error",
-        "job_type": "display_description",
+        "job_type": "fact_extraction",
         "input_hash": "pipeline_v2:new",
         "priority": 20,
     }]
@@ -140,7 +140,7 @@ def test_queued_display_revision_reraises_non_unique_errors_after_savepoint_clea
     ]
 
 
-def test_queued_display_revision_concurrent_postgres_claim_does_not_abort_transaction():
+def test_queued_fact_revision_concurrent_postgres_claim_does_not_abort_transaction():
     """Exercise SKIP LOCKED with two real publication transactions when supplied."""
     url = os.getenv("PIPELINE_TEST_DB_URL")
     if not url:
@@ -205,7 +205,7 @@ def test_queued_display_revision_concurrent_postgres_claim_does_not_abort_transa
         db.execute(
             "insert into public.auction_enrichment_jobs "
             "(source_url,job_type,input_hash,status,priority) "
-            "values (%s,'display_description','pipeline_v2:old','queued',20)",
+            "values (%s,'fact_extraction','pipeline_v2:old','queued',20)",
             (source_url,),
         )
 
@@ -221,7 +221,7 @@ def test_queued_display_revision_concurrent_postgres_claim_does_not_abort_transa
                     db,
                     [{
                         "source_url": source_url,
-                        "job_type": "display_description",
+                        "job_type": "fact_extraction",
                         "input_hash": input_hash,
                         "priority": 20,
                     }],
@@ -270,7 +270,7 @@ def test_source_check_expires_and_content_change_invalidates_enrichment():
     assert "document_facts_version" not in changed
     assert 'llm_display_description' not in changed
     assert changed['llm_display_status'] == 'pending'
-    assert changed['superseded_analysis']['description'] == 'Ancienne analyse : bien libre'
+    assert 'superseded_analysis' not in changed
     known[raw["source_url"]]["raw_payload"]["source_checks"][raw["source_url"]]["checked_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
     assert not detail_is_fresh(known[raw["source_url"]], raw["source_url"])
 
@@ -700,7 +700,7 @@ def test_missing_surface_queues_fact_extraction_after_documents(monkeypatch):
     sale = normalize_sale({"source_name": "avoventes", "source_url": "https://example.test/a", "sale_date": "2099-01-01"})
     sale.raw_payload["document_analysis"] = {"documents_extracted": 1}
     storage._enqueue_due_enrichment([sale], "url", "key")
-    assert {row["job_type"] for row in rows} == {"fact_extraction", "display_description"}
+    assert {row["job_type"] for row in rows} == {"fact_extraction"}
 
 
 def test_failed_pdf_retains_same_retry_identity_across_scans(monkeypatch):
@@ -957,7 +957,8 @@ def test_changed_bytes_without_local_cache_invalidate_facts_before_ocr():
     assert sale.raw_payload.get("llm_display_description")
     _invalidate_replaced_document_facts(sale, [{"url": "https://example.test/pv.pdf", "sha256": "new"}])
     assert not sale.raw_payload.get("llm_display_description")
-    assert sale.raw_payload["superseded_analysis"]["reason"] == "document_bytes_changed"
+    assert sale.raw_payload["source_content_change_reason"] == "document_bytes_changed"
+    assert "superseded_analysis" not in sale.raw_payload
     assert sale.surface_m2 is None
     assert sale.starting_price_eur == Decimal(100000)
 
@@ -969,4 +970,4 @@ def test_unknown_date_still_queues_document_enrichment(monkeypatch):
                            "documents": [{"url": "https://example.test/pv.pdf"}]})
     sale.status = "unknown"
     storage._enqueue_due_enrichment([sale], "url", "key")
-    assert {row["job_type"] for row in rows} == {"pdf", "display_description"}
+    assert {row["job_type"] for row in rows} == {"pdf"}

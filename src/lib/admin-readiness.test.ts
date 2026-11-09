@@ -43,9 +43,8 @@ describe("admin readiness", () => {
       status: "blocked",
       detail: expect.not.stringContaining("en file"),
     });
-    expect(items.find((item) => item.key === "pipeline.llm_backfill")).toMatchObject({
-      status: "warning",
-    });
+    // The AI description backfill was removed: no readiness check for it any more.
+    expect(items.find((item) => item.key === "pipeline.llm_backfill")).toBeUndefined();
     expect(items.find((item) => item.key === "operations.external_alerts")).toMatchObject({
       status: "blocked",
     });

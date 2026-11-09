@@ -20,8 +20,6 @@ DEFAULT_USER_AGENT = "ImmojudisBot/1.0 (+https://immojudis.com/contact)"
 DEFAULT_REPLICATE_MODEL = "qwen/qwen3-7-plus"
 DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display"
 DEFAULT_LLM_FACT_PROMPT_VERSION = "auction_facts_v1"
-DEFAULT_LLM_DISPLAY_PROMPT_VERSION = "auction_display_v10_canonical_facts"
-DEFAULT_LLM_EXTRACTION_MODE = "structured_then_display"
 DEFAULT_REPLICATE_WAIT_SECONDS = 60
 MAX_REPLICATE_WAIT_SECONDS = 60
 
@@ -42,15 +40,6 @@ def encheres_publiques_access_enabled(settings: Mapping[str, object]) -> bool:
         settings.get("enable_encheres_publiques_benchmark") is True
         and settings.get("encheres_publiques_access_authorized") is True
     )
-
-
-def llm_display_enabled(settings: Mapping[str, object] | None = None) -> bool:
-    """Vrai si la synthèse rédigée par le modèle est encore produite (``LLM_DISPLAY_ENABLED``)."""
-    value = (settings if settings is not None else load_settings()).get("llm_display_enabled")
-    if value is None:
-        # Réglages partiels (tests, appels qui composent leur propre dictionnaire) : la variable fait foi.
-        return os.getenv("LLM_DISPLAY_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
-    return bool(value)
 
 
 def require_encheres_publiques_access(settings: Mapping[str, object]) -> None:
@@ -230,23 +219,9 @@ def load_settings() -> dict[str, str | float | None]:
         # On sépare donc le LLM des workers PDF pour éviter les boucles de 429.
         "pipeline_llm_workers": max(1, int(os.getenv("PIPELINE_LLM_WORKERS", "1"))),
         "pipeline_pdf_max_targets": max(0, int(os.getenv("PIPELINE_PDF_MAX_TARGETS", "10"))),
-        # 0 means every eligible sale collected by the scan is summarized in
-        # that same run. The explicit backfill limit remains separately bounded.
+        # 0 means every eligible sale collected by the scan is analysed in
+        # that same run.
         "pipeline_llm_max_targets": max(0, int(os.getenv("PIPELINE_LLM_MAX_TARGETS", "20"))),
-        "pipeline_llm_backfill_max_targets": max(
-            1,
-            int(os.getenv("PIPELINE_LLM_BACKFILL_MAX_TARGETS", os.getenv("PIPELINE_LLM_MAX_TARGETS", "20"))),
-        ),
-        "pipeline_llm_backfill_progress_every": max(
-            1,
-            int(os.getenv("PIPELINE_LLM_BACKFILL_PROGRESS_EVERY", "5")),
-        ),
-        "pipeline_llm_failure_cooldown_hours": max(
-            0,
-            float(os.getenv("PIPELINE_LLM_FAILURE_COOLDOWN_HOURS", "24")),
-        ),
-        "pipeline_idle_llm_backfill_enabled": os.getenv("PIPELINE_IDLE_LLM_BACKFILL_ENABLED", "false").lower()
-        in {"1", "true", "yes", "on"},
         "pipeline_enrichment_queue_enabled": os.getenv("PIPELINE_ENRICHMENT_QUEUE_ENABLED", "true").lower()
         in {"1", "true", "yes", "on"},
         "pipeline_enrichment_queue_batch_size": max(
@@ -268,22 +243,9 @@ def load_settings() -> dict[str, str | float | None]:
         "llm_fact_prompt_version": os.getenv(
             "LLM_FACT_PROMPT_VERSION", DEFAULT_LLM_FACT_PROMPT_VERSION
         ),
-        "llm_display_prompt_version": os.getenv(
-            "LLM_DISPLAY_PROMPT_VERSION", DEFAULT_LLM_DISPLAY_PROMPT_VERSION
-        ),
-        # Synthèse rédigée par le modèle (``llm_display_description``) : coupée le 09/11/2026. Le site
-        # n'affiche plus que la description construite à partir des faits vérifiés ; la passe coûtait
-        # environ 30 % des appels au modèle. « true » la rétablit (aucune donnée n'a été supprimée).
-        "llm_display_enabled": os.getenv("LLM_DISPLAY_ENABLED", "false").lower()
-        in {"1", "true", "yes", "on"},
-        "llm_extraction_mode": os.getenv(
-            "LLM_EXTRACTION_MODE", DEFAULT_LLM_EXTRACTION_MODE
-        ).lower(),
-        "llm_pdf_max_chars": int(os.getenv("LLM_PDF_MAX_CHARS", "12000")),
         "llm_fact_chunk_chars": max(3000, int(os.getenv("LLM_FACT_CHUNK_CHARS", "12000"))),
         # 0 means every collected source block and extracted PDF page is analyzed.
         "llm_fact_max_chunks": max(0, int(os.getenv("LLM_FACT_MAX_CHUNKS", "0"))),
-        "llm_display_context_chars": max(4000, int(os.getenv("LLM_DISPLAY_CONTEXT_CHARS", "12000"))),
         "incremental_enrichment": os.getenv("INCREMENTAL_ENRICHMENT", "true").lower()
         in {"1", "true", "yes", "on"},
         # Désactivé par défaut (comme le workflow) : le balayage supprime des lignes publiées.

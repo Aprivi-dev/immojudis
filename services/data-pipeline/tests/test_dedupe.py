@@ -190,16 +190,10 @@ def test_dedupe_preserves_invalidation_markers_from_secondary_source() -> None:
         source_name="licitor",
     )
     primary.raw_payload["llm_display_description"] = "Ancienne synthèse à remplacer."
-    marker = {
-        "description": "Ancienne synthèse à remplacer.",
-        "reason": "source_operational_changed",
-        "operational_refreshable": True,
-    }
     secondary.raw_payload.update(
         source_content_changed=True,
         source_operational_changed=True,
         source_content_change_reason="source_operational_changed",
-        superseded_analysis=marker,
     )
 
     result = dedupe_sales([primary, secondary])
@@ -209,7 +203,6 @@ def test_dedupe_preserves_invalidation_markers_from_secondary_source() -> None:
     assert payload["source_content_changed"] is True
     assert payload["source_operational_changed"] is True
     assert payload["source_content_change_reason"] == "source_operational_changed"
-    assert payload["superseded_analysis"] == marker
     assert "llm_display_description" not in payload
     assert payload["llm_display_status"] == "pending"
 

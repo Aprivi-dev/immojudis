@@ -8,7 +8,6 @@ from types import SimpleNamespace
 import pytest
 
 from src import pdf_enrichment
-from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.enrichment.llm_client import LLMProviderOutputRefused
 from src.freshness import document_fingerprint
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_remaining
@@ -54,7 +53,7 @@ def test_queued_runner_cleans_past_sales_without_queued_run(monkeypatch, capsys)
     monkeypatch.setattr(
         queued_runner,
         "load_settings",
-        lambda: {"pipeline_idle_llm_backfill_enabled": False, "pipeline_llm_backfill_max_targets": 20},
+        lambda: {},
     )
     monkeypatch.setattr(queued_runner, "mark_past_sales_in_supabase", lambda: 3)
 
@@ -64,64 +63,32 @@ def test_queued_runner_cleans_past_sales_without_queued_run(monkeypatch, capsys)
     assert "Marked stale runs failed: 2" in output
 
 
-def test_queued_runner_can_backfill_llm_descriptions_when_idle(monkeypatch) -> None:
-    captured = {}
-
-    monkeypatch.setattr(queued_runner, "fail_stale_running_runs_in_supabase", lambda: 0)
-    monkeypatch.setattr(queued_runner, "fetch_next_queued_run_from_supabase", lambda: None)
-    monkeypatch.setattr(queued_runner, "fetch_next_data_refresh_request_from_supabase", lambda: None)
-    monkeypatch.setattr(
-        queued_runner,
-        "load_settings",
-        lambda: {"pipeline_idle_llm_backfill_enabled": True, "pipeline_llm_backfill_max_targets": 7},
-    )
-    monkeypatch.setattr(queued_runner, "mark_past_sales_in_supabase", lambda: 0)
-
-    def fake_backfill(options):
-        captured["llm_backfill"] = options.llm_backfill
-        captured["limit"] = options.limit
-        captured["upsert"] = options.upsert
-        return 0
-
-    monkeypatch.setattr(queued_runner, "run_llm_description_backfill", fake_backfill)
-
-    assert queued_runner.main() == 0
-    assert captured == {"llm_backfill": True, "limit": 7, "upsert": True}
-
-
-def test_queued_runner_processes_queued_llm_backfill_run(monkeypatch, capsys) -> None:
-    captured = {}
+def test_queued_runner_refuses_a_leftover_llm_description_backfill_run(monkeypatch, capsys) -> None:
+    finished: list[tuple[object, ...]] = []
 
     monkeypatch.setattr(queued_runner, "fail_stale_running_runs_in_supabase", lambda: 0)
     monkeypatch.setattr(
         queued_runner,
         "fetch_next_queued_run_from_supabase",
-        lambda: {
-            "id": "run-backfill",
-            "source": "llm-description-backfill",
-            "summary": {"limit": 11},
-        },
+        lambda: {"id": "run-backfill", "source": "llm-description-backfill", "summary": {"limit": 11}},
     )
     monkeypatch.setattr(queued_runner, "fetch_next_data_refresh_request_from_supabase", lambda: None)
-    monkeypatch.setattr(queued_runner, "mark_past_sales_in_supabase", lambda: 0)
+    monkeypatch.setattr(queued_runner, "finish_run_in_supabase", lambda *args: finished.append(args))
+    monkeypatch.setattr(
+        queued_runner,
+        "run_pipeline",
+        lambda *args, **kwargs: pytest.fail("the removed AI description backfill must not start a run"),
+    )
 
-    def fake_backfill(options):
-        captured["run_id"] = options.run_id
-        captured["llm_backfill"] = options.llm_backfill
-        captured["use_llm"] = options.use_llm
-        captured["limit"] = options.limit
-        return 0
-
-    monkeypatch.setattr(queued_runner, "run_llm_description_backfill", fake_backfill)
-
-    assert queued_runner.main() == 0
-    assert captured == {
-        "run_id": "run-backfill",
-        "llm_backfill": True,
-        "use_llm": True,
-        "limit": 11,
-    }
-    assert "LLM description backfill" in capsys.readouterr().out
+    assert queued_runner.main() == 1
+    assert finished == [
+        (
+            "run-backfill",
+            "failed",
+            {"runner": "github_actions_queue"},
+            {"runner": ["Invalid queued source: llm-description-backfill"]},
+        )
+    ]
 
 
 def test_queued_runner_defaults_missing_llm_flag_to_automatic(monkeypatch, capsys) -> None:
@@ -264,8 +231,8 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
     monkeypatch.setattr(
         queued_runner,
         "enrich_sale_with_llm",
-        lambda current, client, **kwargs: calls.append("facts_then_display")
-            or current.raw_payload.update({"llm_display_description": "Description vérifiée. " * 5, "llm_display_quality_version": DISPLAY_QUALITY_VERSION, "llm_display_status": "accepted", "llm_prompt_version": queued_runner.load_settings()["llm_prompt_version"], "llm_display_prompt_version": "auction_display_v10_canonical_facts", "llm_fact_coverage": {"complete": True}})
+        lambda current, client, **kwargs: calls.append("facts")
+            or current.raw_payload.update({"llm_prompt_version": queued_runner.load_settings()["llm_prompt_version"], "llm_fact_coverage": {"complete": True}})
         or SimpleNamespace(unavailable=False, valid_json=1, error_messages=[]),
     )
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: calls.append("geocode"))
@@ -282,7 +249,7 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
     )
 
     assert queued_runner.run_enrichment_queue_batch(limit=10) == 2
-    assert calls == ["pdf", "facts_then_display", "geocode", "normalize", "upsert"]
+    assert calls == ["pdf", "facts", "geocode", "normalize", "upsert"]
     assert finished == [("job-pdf", True, None), ("job-facts", True, None)]
 
 
@@ -318,7 +285,7 @@ def test_enrichment_queue_defers_unauthorized_encheres_publiques_before_side_eff
             "attempt_count": 2,
             "locked_at": "2026-09-30T08:00:00+00:00",
         }
-        for job_type in ("pdf", "fact_extraction", "display_description", "fact_claims")
+        for job_type in ("pdf", "fact_extraction", "fact_claims")
     ]
     deferred: list[tuple[list[dict[str, object]], BaseException]] = []
     finished: list[tuple[object, dict[str, object]]] = []
@@ -347,7 +314,7 @@ def test_enrichment_queue_defers_unauthorized_encheres_publiques_before_side_eff
     for name in (
         "restore_persisted_pdf_progress_for_sale",
         "enrich_sale_from_pdfs",
-        "refresh_operational_display",
+        "settle_source_change_without_documents",
         "create_llm_client",
         "enrich_sale_with_llm",
         "geocode_sale",
@@ -371,7 +338,7 @@ def test_enrichment_queue_defers_unauthorized_encheres_publiques_before_side_eff
     assert finished == []
     assert [job["id"] for job in deferred[0][0]] == [job["id"] for job in jobs]
     assert "access authorization required" in str(deferred[0][1]).lower()
-    assert [job["attempt_count"] for job in deferred[0][0]] == [2, 2, 2, 2]
+    assert [job["attempt_count"] for job in deferred[0][0]] == [2, 2, 2]
 
 
 def test_enrichment_queue_defers_ep_redirect_without_consuming_pdf_retry(monkeypatch) -> None:
@@ -397,7 +364,7 @@ def test_enrichment_queue_defers_ep_redirect_without_consuming_pdf_retry(monkeyp
             "attempt_count": 3,
             "locked_at": "2026-09-30T08:00:00+00:00",
         }
-        for job_type in ("pdf", "fact_extraction", "display_description")
+        for job_type in ("pdf", "fact_extraction")
     ]
     deferred: list[tuple[list[dict[str, object]], BaseException]] = []
     finished: list[tuple[object, dict[str, object]]] = []
@@ -445,7 +412,7 @@ def test_enrichment_queue_defers_ep_redirect_without_consuming_pdf_retry(monkeyp
         ),
     )
     for name in (
-        "refresh_operational_display",
+        "settle_source_change_without_documents",
         "create_llm_client",
         "enrich_sale_with_llm",
         "upsert_sales_to_supabase",
@@ -466,7 +433,7 @@ def test_enrichment_queue_defers_ep_redirect_without_consuming_pdf_retry(monkeyp
     assert deferred[0][0] == jobs
     assert isinstance(deferred[0][1], queued_runner.QueueJobDeferred)
     assert "access authorization required" in str(deferred[0][1]).lower()
-    assert [job["attempt_count"] for job in deferred[0][0]] == [3, 3, 3]
+    assert [job["attempt_count"] for job in deferred[0][0]] == [3, 3]
 
 
 def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_missing(monkeypatch) -> None:
@@ -477,12 +444,7 @@ def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_miss
             "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
         }
     )
-    sale.raw_payload.update(
-        {
-            "llm_display_description": "Description documentaire déjà vérifiée. " * 5,
-            "source_content_changed": False,
-        }
-    )
+    sale.raw_payload.update({"source_content_changed": False})
     finished: list[tuple[str, bool, str | None]] = []
 
     monkeypatch.setattr(
@@ -491,12 +453,11 @@ def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_miss
         lambda limit: [{"id": "job-facts", "source_url": sale.source_url, "job_type": "fact_extraction"}],
     )
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda current: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda current: None)
     monkeypatch.setattr(queued_runner, "needs_fact_extraction", lambda current: True)
     monkeypatch.setattr(queued_runner, "has_current_fact_analysis", lambda current: True)
     monkeypatch.setattr(queued_runner, "documents_are_current", lambda current: False)
     monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda source_url: False)
-    monkeypatch.setattr(queued_runner, "_needs_llm_display_description_refresh", lambda *args, **kwargs: False)
     monkeypatch.setattr(
         queued_runner,
         "create_llm_client",
@@ -551,7 +512,7 @@ def test_enrichment_queue_cancels_preexisting_terminal_pdf_fact_job_without_llm(
         lambda limit: [{"id": "job-facts", "source_url": sale.source_url, "job_type": "fact_extraction"}],
     )
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda current: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda current: None)
     monkeypatch.setattr(
         queued_runner,
         "create_llm_client",
@@ -571,7 +532,7 @@ def test_enrichment_queue_cancels_preexisting_terminal_pdf_fact_job_without_llm(
     ]
 
 
-def test_enrichment_queue_cancels_terminal_facts_but_keeps_display_independent(monkeypatch) -> None:
+def test_enrichment_queue_cancels_terminal_facts_and_completes_the_pdf_job(monkeypatch) -> None:
     sale = normalize_sale(
         {
             "source_name": "licitor",
@@ -614,7 +575,7 @@ def test_enrichment_queue_cancels_terminal_facts_but_keeps_display_independent(m
         return SimpleNamespace(errors=0)
 
     monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", terminal_pdf)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda current: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda current: None)
     monkeypatch.setattr(
         queued_runner,
         "create_llm_client",
@@ -730,13 +691,13 @@ def test_enrichment_queue_marks_every_sale_job_failed_on_extraction_error(monkey
 
     assert queued_runner.run_enrichment_queue_batch(limit=10) == 2
     assert finished == [
+        ("job-display", True, None),
         ("job-facts", False, "invalid structured response"),
-        ("job-display", False, "invalid structured response"),
     ]
 
 
 def test_enrichment_queue_cancels_provider_refusal_without_mutating_sale(monkeypatch) -> None:
-    previous_display = "Synthèse validée avant cette nouvelle tentative. " * 3
+    previous_display = "Synthèse validée avant la suppression de la synthèse IA. " * 3
     sale = normalize_sale(
         {
             "source_name": "avoventes",
@@ -747,13 +708,12 @@ def test_enrichment_queue_cancels_provider_refusal_without_mutating_sale(monkeyp
         {
             "llm_display_description": previous_display,
             "llm_display_status": "accepted",
-            "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
         }
     )
     job = {
-        "id": "job-display-refused",
+        "id": "job-facts-refused",
         "source_url": sale.source_url,
-        "job_type": "display_description",
+        "job_type": "fact_extraction",
         "attempt_count": 1,
         "locked_at": "2026-10-01T00:00:00+00:00",
     }
@@ -766,7 +726,7 @@ def test_enrichment_queue_cancels_provider_refusal_without_mutating_sale(monkeyp
         queued_runner,
         "enrich_sale_with_llm",
         lambda current, client, **kwargs: (_ for _ in ()).throw(
-            LLMProviderOutputRefused(request_kind="display_description")
+            LLMProviderOutputRefused(request_kind="fact_extraction")
         ),
     )
     monkeypatch.setattr(
@@ -783,7 +743,7 @@ def test_enrichment_queue_cancels_provider_refusal_without_mutating_sale(monkeyp
     assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
     assert finished == [
         (
-            "job-display-refused",
+            "job-facts-refused",
             {
                 "succeeded": False,
                 "cancelled": True,
@@ -797,50 +757,22 @@ def test_enrichment_queue_cancels_provider_refusal_without_mutating_sale(monkeyp
     assert "inappropriate content" not in str(finished)
 
 
-def test_enrichment_queue_does_not_pay_twice_for_scan_description(monkeypatch) -> None:
-    prompt_version = "auction_llm_v10_structured_display"
-    sale = AuctionSale(
-        source_name="avoventes",
-        source_url="https://example.test/already-summarized",
-        description="Appartement de 42 m² situé à Bordeaux.",
-            raw_payload={
-                "llm_display_description": "Appartement de 42 m² situé à Bordeaux. " * 3,
-                "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
-                "llm_display_status": "accepted",
-                "llm_prompt_version": prompt_version,
-                "llm_display_prompt_version": "auction_display_v10_canonical_facts",
-            },
-    )
+def test_enrichment_queue_ends_a_leftover_display_job_without_any_call(monkeypatch) -> None:
     finished: list[tuple[str, bool, str | None]] = []
 
     monkeypatch.setattr(
         queued_runner,
         "claim_auction_enrichment_jobs_from_supabase",
         lambda limit: [
-            {
-                "id": "job-display",
-                "source_url": sale.source_url,
-                "job_type": "display_description",
-            }
+            {"id": "job-display", "source_url": "https://example.test/leftover-display", "job_type": "display_description"}
         ],
     )
-    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
-    monkeypatch.setattr(
-        queued_runner,
-        "load_settings",
-        lambda: {
-            "llm_extraction_mode": "display_description",
-            "llm_prompt_version": prompt_version,
-        },
-    )
-    monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
-    monkeypatch.setattr(
-        queued_runner,
-        "enrich_sale_with_llm",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Replicate must not be called twice")),
-    )
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: current)
-    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
+    for name in ("fetch_sale_for_data_refresh", "create_llm_client", "enrich_sale_with_llm", "upsert_sales_to_supabase"):
+        monkeypatch.setattr(
+            queued_runner,
+            name,
+            lambda *args, _name=name, **kwargs: pytest.fail(f"a leftover display job must not call {_name}"),
+        )
     monkeypatch.setattr(
         queued_runner,
         "finish_auction_enrichment_job_in_supabase",
@@ -920,13 +852,7 @@ def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(mo
         description="Maison libre de toute occupation.",
         latitude=44.84,
         longitude=-0.57,
-        raw_payload={
-            "llm_display_description": "Description finale vérifiée. " * 5,
-            "llm_display_quality_version": DISPLAY_QUALITY_VERSION,
-            "llm_display_status": "accepted",
-            "llm_prompt_version": prompt_version,
-            "llm_display_prompt_version": "auction_display_v10_canonical_facts",
-        },
+        raw_payload={"llm_prompt_version": prompt_version},
     )
     finished: list[tuple[str, bool, str | None]] = []
     replay_kwargs: list[dict[str, object]] = []
@@ -959,7 +885,7 @@ def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(mo
     monkeypatch.setattr(
         queued_runner,
         "enrich_sale_with_llm",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("display is already current")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no LLM call for these jobs")),
     )
     monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
     monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
@@ -973,8 +899,8 @@ def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(mo
 
     assert queued_runner.run_enrichment_queue_batch(limit=2) == 2
     assert finished == [
-        ("job-fact-claims", False, "claim replay unavailable"),
         ("job-display", True, None),
+        ("job-fact-claims", False, "claim replay unavailable"),
     ]
     assert replay_kwargs == [{"snapshot": fact_claim_snapshot}]
 
@@ -1355,7 +1281,7 @@ def test_worker_budget_breaker_uses_real_batch_and_keeps_detail_claims(monkeypat
     general_job = {
         "id": "general-budget-job",
         "source_url": sale.source_url,
-        "job_type": "display_description",
+        "job_type": "fact_extraction",
         "attempt_count": 2,
         "locked_at": "2026-09-30T08:00:00+00:00",
     }
@@ -1395,7 +1321,7 @@ def test_worker_budget_breaker_uses_real_batch_and_keeps_detail_claims(monkeypat
     monkeypatch.setattr(queued_runner, "claim_auction_enrichment_jobs_family_from_supabase", claim)
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
     monkeypatch.setattr(queued_runner, "needs_fact_extraction", lambda _: False)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
     monkeypatch.setattr(
@@ -1808,7 +1734,7 @@ def test_non_budget_deferrals_do_not_open_general_breaker(monkeypatch, error_fac
     )
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
     monkeypatch.setattr(
         queued_runner,
@@ -1879,7 +1805,7 @@ def test_fact_job_waits_for_pdf_cache_without_consuming_attempt(monkeypatch) -> 
     )
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
     monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: True)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: (_ for _ in ()).throw(AssertionError()))
     monkeypatch.setattr(
@@ -1940,7 +1866,7 @@ def test_fact_job_stops_waiting_when_pdf_prerequisite_is_terminal(monkeypatch) -
     )
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
     monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: False)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: (_ for _ in ()).throw(AssertionError()))
     monkeypatch.setattr(
@@ -2000,7 +1926,7 @@ def test_fact_job_with_partial_pdf_manifest_is_deferred_without_llm(monkeypatch)
     )
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
     monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: True)
     monkeypatch.setattr(
         queued_runner,
@@ -2070,7 +1996,7 @@ def test_fact_job_with_current_exhausted_pdf_failure_is_reviewed_without_llm(mon
         "pdf_enrichment_input_hash_for_sale",
         lambda *_args, **_kwargs: "pipeline_v2:current",
     )
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
     monkeypatch.setattr(
         queued_runner,
         "read_pdf_job_states_for_sale",
@@ -2357,7 +2283,7 @@ def test_shared_pdf_and_fact_claim_defers_fact_attempt_after_pdf_failure(monkeyp
     )
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
 
     def failed_pdf(current_sale):
         current_sale.raw_payload["document_analysis"] = {
@@ -2433,10 +2359,10 @@ def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> 
         "attempt_count": 2,
         "locked_at": "2026-09-13T08:00:00+00:00",
     }
-    display_job = {
-        "id": "job-display",
+    llm_job = {
+        "id": "job-facts",
         "source_url": sale.source_url,
-        "job_type": "display_description",
+        "job_type": "fact_extraction",
         "attempt_count": 1,
         "locked_at": "2026-09-13T08:00:00+00:00",
     }
@@ -2446,12 +2372,12 @@ def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> 
     monkeypatch.setattr(
         queued_runner,
         "claim_auction_enrichment_jobs_family_from_supabase",
-        lambda *, family, limit: [fact_job, display_job],
+        lambda *, family, limit: [fact_job, llm_job],
     )
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
     monkeypatch.setattr(queued_runner, "retry_fact_claims_to_supabase", lambda _: 1)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: object())
     monkeypatch.setattr(
         queued_runner,
@@ -2477,7 +2403,7 @@ def test_general_budget_does_not_defer_completed_fact_claim_job(monkeypatch) -> 
         limit=2, family=queued_runner.ENRICHMENT_FAMILY
     ) == 2
     assert len(deferred) == 1
-    assert deferred[0][0] == [display_job]
+    assert deferred[0][0] == [llm_job]
     assert isinstance(deferred[0][1], PipelineBudgetExhausted)
     assert finished == [("job-fact-claims", True, None)]
 
@@ -2580,13 +2506,6 @@ def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) ->
             "attempt_count": 2,
             "locked_at": "2026-09-30T08:00:00+00:00",
         },
-        {
-            "id": "job-display-no-progress",
-            "source_url": sale.source_url,
-            "job_type": "display_description",
-            "attempt_count": 1,
-            "locked_at": "2026-09-30T08:00:00+00:00",
-        },
     ]
     deferred = []
     finished = []
@@ -2620,9 +2539,9 @@ def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) ->
     )
 
     assert queued_runner.run_enrichment_queue_batch(
-        limit=3, family=queued_runner.ENRICHMENT_FAMILY
-    ) == 3
-    assert [job["id"] for job in deferred[0][0]] == [jobs[1]["id"], jobs[2]["id"]]
+        limit=2, family=queued_runner.ENRICHMENT_FAMILY
+    ) == 2
+    assert [job["id"] for job in deferred[0][0]] == [jobs[1]["id"]]
     assert isinstance(deferred[0][1], QueueJobDeferred)
     assert [job_id for job_id, _kwargs in finished] == [jobs[0]["id"]]
     assert finished[0][1]["succeeded"] is False
@@ -2685,7 +2604,7 @@ def test_llm_deadline_defers_all_owned_claims_and_stops_the_batch(monkeypatch) -
         for url in ('https://example.test/llm-deadline-1', 'https://example.test/llm-deadline-2')
     }
     jobs = [
-        {'id': f'job-llm-deadline-{index}', 'source_url': url, 'job_type': 'display_description',
+        {'id': f'job-llm-deadline-{index}', 'source_url': url, 'job_type': 'fact_extraction',
          'attempt_count': 2, 'locked_at': '2026-09-30T08:00:00+00:00'}
         for index, url in enumerate(sales, 1)
     ]
@@ -2703,7 +2622,7 @@ def test_llm_deadline_defers_all_owned_claims_and_stops_the_batch(monkeypatch) -
         queued_runner, 'fetch_sale_for_data_refresh',
         lambda url: fetched.append(url) or sales[url],
     )
-    monkeypatch.setattr(queued_runner, 'refresh_operational_display', lambda _: None)
+    monkeypatch.setattr(queued_runner, 'settle_source_change_without_documents', lambda _: None)
     monkeypatch.setattr(queued_runner, 'create_llm_client', lambda: object())
 
     def expire(sale, **kwargs):
@@ -2841,7 +2760,7 @@ def test_partial_manifest_without_an_advancing_pdf_job_waits_six_hours(monkeypat
     monkeypatch.setattr(queued_runner, "claim_auction_enrichment_jobs_family_from_supabase", lambda *, family, limit: [job])
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"llm_prompt_version": "test"})
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _: sale)
-    monkeypatch.setattr(queued_runner, "refresh_operational_display", lambda _: None)
+    monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _: None)
     monkeypatch.setattr(queued_runner, "has_eligible_pdf_job_for_sale", lambda _: False)
     monkeypatch.setattr(queued_runner, "_pdf_failure_reached_retry_cap", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(queued_runner, "create_llm_client", lambda: pytest.fail("partial PDF evidence must not invoke the LLM"))

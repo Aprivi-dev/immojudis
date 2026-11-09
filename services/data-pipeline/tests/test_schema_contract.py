@@ -39,7 +39,6 @@ from src.storage import column_sets
 from src.storage.column_sets import (
     DEDUPLICATION_SALE_SELECT,
     JUDICIAL_SALE_COLUMNS,
-    LLM_BACKFILL_SALE_SELECT,
     PROPERTY_COLUMNS,
     UPSERT_COLUMNS,
 )
@@ -107,7 +106,6 @@ def test_every_json_column_is_one_of_the_written_columns() -> None:
 def test_the_selects_are_built_from_the_upsert_columns() -> None:
     expected = {*SELECT_EXTRA_COLUMNS, *UPSERT_COLUMNS}
 
-    assert set(LLM_BACKFILL_SALE_SELECT.split(",")) == expected
     assert set(DEDUPLICATION_SALE_SELECT.split(",")) == expected
 
 
@@ -347,7 +345,6 @@ def test_every_column_of_column_sets_exists_in_the_migrated_table(schema, consta
 @pytest.mark.schema_contract
 def test_the_select_projections_only_name_existing_columns(schema) -> None:
     for name, projection in (
-        ("LLM_BACKFILL_SALE_SELECT", LLM_BACKFILL_SALE_SELECT),
         ("DEDUPLICATION_SALE_SELECT", DEDUPLICATION_SALE_SELECT),
     ):
         missing = [column for column in projection.split(",") if column not in schema["auction_sales"]]
