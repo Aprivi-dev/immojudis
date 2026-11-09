@@ -6,9 +6,25 @@ l'agent `qualite-donnees`. Un crochet qui sort en code 2 bloque l'appel d'outil.
 | Script                          | Outils visés                                                                                                                                                                                                                                  | Effet                                                                                                                                                       |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `supabase-lecture-seule.mjs`    | `mcp__Supabase__execute_sql`                                                                                                                                                                                                                  | N'autorise que SELECT / WITH / EXPLAIN sans mot-clé d'écriture et dont chaque appel de fonction figure dans une liste blanche de fonctions de lecture pure. |
-| `bloquer-ecriture-supabase.mjs` | `apply_migration`, `deploy_edge_function`, `create_edge_function_secret`, `create_branch`, `delete_branch`, `merge_branch`, `reset_branch`, `rebase_branch`, `create_project`, `pause_project`, `restore_project` (préfixe `mcp__Supabase__`) | Bloque toujours : « interdit : aucun agent n'écrit dans la base ; passez par une migration et la CI ».                                                      |
+| `bloquer-ecriture-supabase.mjs` | `apply_migration`, `deploy_edge_function`, `create_edge_function_secret`, `create_branch`, `delete_branch`, `merge_branch`, `reset_branch`, `rebase_branch`, `create_project`, `pause_project`, `restore_project` (préfixe `mcp__Supabase__`) | Bloque avec « interdit : aucun agent n'écrit dans la base ; passez par une migration et la CI ». Seule exception : la base de test (voir plus bas).         |
 
 Tests : `scripts/supabase-lecture-seule.test.mjs` et `scripts/bloquer-ecriture-supabase.test.mjs`.
+
+## Exception : la base de test
+
+Décision du propriétaire du 09/11/2026. La branche Supabase « outcome-statistics-staging » (projet
+`sxhxzhogzccpdjxpgzuk`, branche `43b9dfd2-d530-408d-a7eb-b21b2bc9914f`) sert de base aux déploiements
+Preview pour la recette des paiements (`docs/runbooks/ouverture-paiements.md`). Sur elle seule, un agent
+peut :
+
+- `rebase_branch` de cette branche : applique les migrations déjà passées en production ;
+- `apply_migration` sur ce projet : une migration du dépôt qui n'est pas encore en production.
+
+Tout le reste reste bloqué : la production (`sgpakxtyvenlpeihuucm`) quel que soit l'outil, toute autre
+branche ou projet, et sur la base de test elle-même les outils de branches, de projets, de fonctions edge et
+de secrets. L'appel est autorisé seulement si l'entrée JSON du crochet nomme exactement cette cible ; une
+entrée illisible ou un champ manquant bloque. Pour changer de base de test, modifier les constantes de
+`bloquer-ecriture-supabase.mjs` et son test.
 
 ## Échec fermé
 
