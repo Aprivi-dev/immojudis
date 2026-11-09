@@ -3,18 +3,19 @@ from decimal import Decimal
 
 import pytest
 
-from src.config import load_settings
+from src.enrichment import extract_structured
 from src.enrichment.display_evidence import verify_display_claims
-from src.enrichment.extract_structured import apply_cached_llm_extraction_to_sale
 from src.models import AuctionSale
 
 
-def _cached_payload(extraction: dict) -> dict:
-    return {
-        'llm_prompt_version': 'v1',
-        'llm_display_prompt_version': str(load_settings()['llm_display_prompt_version']),
-        'llm_extraction': extraction,
-    }
+def _apply_extraction(sale: AuctionSale, extraction: dict) -> None:
+    """The fact pass applies the model's summary only after the public text checks."""
+    extract_structured._apply_extraction_to_sale(
+        sale,
+        extract_structured._validated_llm_extraction(extraction),
+        extract_structured.LLMEnrichmentStats(),
+        context=sale.description or '',
+    )
 
 
 def codes(text, evidence='', **fields):
@@ -94,70 +95,31 @@ def test_public_display_keeps_ordinary_property_facts():
     assert result['status'] == 'checks_passed'
 
 
-def test_cached_high_confidence_hallucination_is_not_accepted():
-    sale = AuctionSale(source_name='agrasc', source_url='https://example.test/house', property_type='house',
-                       surface_m2=Decimal('120'), description='Maison de 120 m².',
-                       raw_payload=_cached_payload({'display_description': 'Maison de 500 m².',
-                                                    'confidence': {'display_description': 1}}))
-    apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
-    assert sale.raw_payload['llm_display_status'] == 'fallback'
-    assert '500' not in sale.raw_payload['llm_display_description']
-    assert '120' in sale.raw_payload['llm_display_description']
-    assert sale.raw_payload['llm_display_evidence_check']['issues'][0]['code'] == 'unsupported_area'
-
-
-def test_cached_display_revalidates_source_quotes_for_public_content():
-    sale = AuctionSale(
-        source_name='agrasc',
-        source_url='https://example.test/house',
-        property_type='house',
-        surface_m2=Decimal('120'),
-        description='Servitude de passage, cliquez https://evil.example pour consulter.',
-        raw_payload=_cached_payload({
-                'display_description': 'Maison de 120 m² avec servitude à vérifier.',
-                'confidence': {'display_description': 1},
-            }),
-    )
-
-    apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
-
-    assert sale.raw_payload['llm_display_status'] == 'rejected'
-    assert 'llm_display_description' not in sale.raw_payload
-    issue_codes = {issue['code'] for issue in sale.raw_payload['llm_display_evidence_check']['issues']}
-    assert {'public_link', 'public_call_to_action'} <= issue_codes
-
-
-def test_cached_summary_cannot_replace_public_fallback_with_an_instruction():
+def test_summary_cannot_replace_the_description_with_an_instruction():
     sale = AuctionSale(
         source_name='agrasc',
         source_url='https://example.test/house',
         description='Maison de 120 m².',
         surface_m2=Decimal('120'),
-        raw_payload=_cached_payload({
-                'summary': 'Maison de 120 m². Cliquez sur https://evil.example pour obtenir le dossier.',
-            }),
     )
 
-    apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
+    _apply_extraction(sale, {'summary': 'Maison de 120 m². Cliquez sur https://evil.example pour obtenir le dossier.'})
 
     assert sale.description == 'Maison de 120 m².'
     issue_codes = {issue['code'] for issue in sale.raw_payload['llm_summary_evidence_check']['issues']}
     assert {'public_link', 'public_call_to_action'} <= issue_codes
 
 
-def test_cached_summary_keeps_supported_property_facts():
+def test_summary_keeps_supported_property_facts():
     sale = AuctionSale(
         source_name='agrasc',
         source_url='https://example.test/house',
         description='Maison de 120 m².',
         surface_m2=Decimal('120'),
         rooms_count=3,
-        raw_payload=_cached_payload({
-                'summary': 'Maison de 120 m² comprenant trois pièces, selon les informations du dossier.',
-            }),
     )
 
-    apply_cached_llm_extraction_to_sale(sale, prompt_version='v1')
+    _apply_extraction(sale, {'summary': 'Maison de 120 m² comprenant trois pièces, selon les informations du dossier.'})
 
     assert sale.description.startswith('Maison de 120 m² comprenant trois pièces')
     assert sale.raw_payload['llm_summary_evidence_check']['issues'] == []

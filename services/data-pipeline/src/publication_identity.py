@@ -339,8 +339,7 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
                 # The primary row already carries a documentary (or
                 # unexplained) invalidation.  Keep that conservative reason
                 # while clearing any stale facts through the same documentary
-                # invalidation contract; the operational collector must not
-                # make it eligible for deterministic display refresh.
+                # invalidation contract.
                 invalidate_analysis(
                     result.raw_payload,
                     previous_reason or 'source_revision_changed',
@@ -351,7 +350,6 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
                     result.raw_payload,
                     'source_operational_changed' if incoming_is_operational else 'source_revision_changed',
                     preserve_facts=incoming_is_operational,
-                    keep_display=incoming.raw_payload.get('llm_display_status') == 'stale',
                 )
     ensure_room_bedroom_consistency(result, existing, incoming)
     reason = quarantine_reason(incoming)

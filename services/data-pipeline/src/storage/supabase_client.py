@@ -36,9 +36,8 @@ from src.asset_normalization import (
     extract_risk_occurrences_from_text,
 )
 from src.catalogue_readiness import apply_catalogue_readiness
-from src.config import LLM_EXTRACTIONS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, llm_display_enabled, load_settings
+from src.config import LLM_EXTRACTIONS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.court_competence import tribunal_reference_rows
-from src.enrichment.display_quality import has_current_display
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
 from src.merge_guards import MAX_MERGES_PER_PASS, merges_cap, require_merge_trigger
@@ -64,7 +63,6 @@ from src.stage_watchdog import track_stage
 from src.storage import internal_contacts
 from src.storage.column_sets import (
     JUDICIAL_SALE_COLUMNS,  # noqa: F401  (re-exported)
-    LLM_BACKFILL_SALE_SELECT,
     POSTGRES_JSON_COLUMNS,
     PROPERTY_COLUMNS,  # noqa: F401  (re-exported)
     UPSERT_COLUMNS,
@@ -336,7 +334,7 @@ def _coalesce_queued_display_revisions(
     connection: Any,
     jobs: list[dict[str, object]],
 ) -> set[tuple[str, str, str]]:
-    """Re-key one queued display or fact job instead of creating a superseded row.
+    """Re-key one queued fact job instead of creating a superseded row.
 
     A source refresh can arrive while an older revision is still queued; cancelling it on every
     refresh lets the queue spend its capacity cancelling work. Re-key only queued jobs, never
@@ -348,7 +346,7 @@ def _coalesce_queued_display_revisions(
     candidates: dict[tuple[str, str], dict[str, object]] = {}
     for job in jobs:
         job_type = str(job.get("job_type") or "")
-        if job_type not in {"display_description", "fact_extraction"}:
+        if job_type != "fact_extraction":
             continue
         source_url = str(job.get("source_url") or "")
         input_hash = str(job.get("input_hash") or "")
@@ -433,11 +431,9 @@ def _coalesce_queued_display_revisions(
 
 
 def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> None:
-    from src.admission import display_job_block_reason  # past, removed or quarantined: no AI synthesis job
     from src.enrichment.extract_structured import needs_fact_extraction
 
     settings = load_settings()
-    prompt_version = str(settings.get("llm_prompt_version") or "")
     jobs = []
     for sale in sales:
         if sale.status not in {"active", "unknown", "upcoming", "postponed"} or quarantine_reason(sale):
@@ -452,9 +448,6 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
         if sale.documents and not documents_current:
             # A failed document keeps the same retry budget across daily scans.
             kinds.append(("pdf", pdf_enrichment_input_hash_for_sale(sale, settings), 30))
-        if (not _has_current_llm_description(sale.raw_payload, prompt_version) or sale.raw_payload.get(
-                "source_content_changed")) and llm_display_enabled(settings) and not display_job_block_reason(sale):
-            kinds.append(("display_description", revision, 20))
         if needs_fact_extraction(sale):
             kinds.append(("fact_extraction", revision, 25))
         for kind, fingerprint, priority in kinds:
@@ -555,7 +548,7 @@ def _write_sale_revisions(
     written_at: datetime | None = None,
 ) -> int:
     """Write all catalogue tables inside the caller's admission/version boundary."""
-    from src.enrichment.operational_display import refresh_operational_display
+    from src.freshness import settle_source_change_without_documents
     from src.publication_identity import ensure_room_bedroom_consistency
 
     url = settings["supabase_url"]
@@ -563,17 +556,8 @@ def _write_sale_revisions(
     now = (written_at or datetime.now(UTC)).isoformat()
     payload = []
     for sale in sales:
-        # Source collectors can observe a price/date/status-only revision after
-        # the early publication pass. Resolve that revision at the write
-        # boundary so the persisted row and the enqueue decision see the same
-        # current display, and so a paid display job is not created first.
-        try:
-            refresh_operational_display(sale, settings=settings)
-        except Exception:
-            # A deterministic refresh is an optimization, never a reason to
-            # lose the source revision. Leave the invalidation flags intact so
-            # the normal enrichment queue reconciles it.
-            LOGGER.exception("Operational display refresh failed for %s", sale.source_url)
+        # A sale without documents gets no fact pass to clear its source-change flags.
+        settle_source_change_without_documents(sale)
         # Normalization can happen after identity resolution (for example in
         # a detail/enrichment path).  Recheck the SQL invariant immediately
         # before serializing the parent row so a contradictory pair is stored
@@ -2692,18 +2676,14 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
 def fetch_enriched_content_hashes(
     content_hashes: list[str],
     *,
-    require_llm_description: bool = False,
     require_document_analysis: bool = False,
-    prompt_version: str | None = None,
 ) -> set[str]:
     """Return the subset of content_hashes already present and enriched in DB.
 
     Used for incremental runs: an unchanged listing (same content_hash) that was
     already scored does not need to be re-downloaded / re-OCR'd / re-sent to the
     LLM. We require score_version IS NOT NULL so partially-failed rows are
-    re-processed. When LLM descriptions are required, a row is only considered
-    current if the public display summary exists and was produced with the
-    current prompt version.
+    re-processed.
     """
     settings = load_settings()
     url = settings["supabase_url"]
@@ -2723,13 +2703,7 @@ def fetch_enriched_content_hashes(
                     rows = db.execute(
                         """
                         select content_hash,
-                               raw_payload->'document_analysis' as document_analysis,
-                               raw_payload->>'llm_display_description' as llm_display_description,
-                               raw_payload->>'llm_display_quality_version' as llm_display_quality_version,
-                               raw_payload->>'llm_display_status' as llm_display_status,
-                               raw_payload->>'llm_prompt_version' as llm_prompt_version,
-                               raw_payload->>'llm_display_prompt_version' as llm_display_prompt_version,
-                               raw_payload->>'llm_display_model' as llm_display_model
+                               raw_payload->'document_analysis' as document_analysis
                         from public.auction_sales
                         where content_hash = any(%s::text[])
                           and score_version is not null
@@ -2737,30 +2711,11 @@ def fetch_enriched_content_hashes(
                         (batch,),
                     ).fetchall()
                     for row in rows:
-                        if not isinstance(row, (list, tuple)) or len(row) != 8:
+                        if not isinstance(row, (list, tuple)) or len(row) != 2:
                             raise RuntimeError("Malformed compact enriched-hash PostgreSQL row")
-                        value = row[0]
-                        compact_payload = {
-                            key: payload
-                            for key, payload in zip(
-                                (
-                                    "document_analysis",
-                                    "llm_display_description",
-                                    "llm_display_quality_version",
-                                    "llm_display_status",
-                                    "llm_prompt_version",
-                                    "llm_display_prompt_version",
-                                    "llm_display_model",
-                                ),
-                                row[1:],
-                                strict=True,
-                            )
-                            if payload is not None
-                        }
-                        if value and (
-                            (not require_llm_description or _has_current_llm_description(compact_payload, prompt_version))
-                            and (not require_document_analysis or _has_current_document_analysis(compact_payload))
-                        ):
+                        value, document_analysis = row
+                        compact_payload = {} if document_analysis is None else {"document_analysis": document_analysis}
+                        if value and (not require_document_analysis or _has_current_document_analysis(compact_payload)):
                             found.add(str(value))
             return found
         except Exception as exc:
@@ -2792,92 +2747,12 @@ def fetch_enriched_content_hashes(
             for row in response.json():
                 value = row.get("content_hash")
                 if value and (
-                    (not require_llm_description or _has_current_llm_description(row.get("raw_payload"), prompt_version))
-                    and (not require_document_analysis or _has_current_document_analysis(row.get("raw_payload")))
+                    not require_document_analysis or _has_current_document_analysis(row.get("raw_payload"))
                 ):
                     found.add(str(value))
         except httpx.HTTPError as exc:
             LOGGER.warning("Enriched-hash lookup failed: %s", exc)
     return found
-
-
-def fetch_sales_needing_llm_descriptions(
-    *,
-    limit: int,
-    prompt_version: str,
-    statuses: tuple[str, ...] = ("active", "upcoming"),
-) -> list[AuctionSale]:
-    """Fetch existing DB rows whose public LLM description needs backfill.
-
-    Regular scrape runs only see listings collected during that run. This helper
-    lets a bounded worker gradually cover older active/upcoming rows without
-    making the main scrape run longer.
-    """
-    from src.enrichment.extract_structured import needs_fact_extraction
-
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key or limit <= 0:
-        return []
-
-    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-    page_size = max(50, min(250, limit * 4))
-    selected: list[AuctionSale] = []
-    offset = 0
-    failure_cooldown_hours = float(settings.get("pipeline_llm_failure_cooldown_hours") or 24)
-
-    while len(selected) < limit:
-        params: dict[str, str] = {
-            "select": LLM_BACKFILL_SALE_SELECT,
-            "order": "sale_date.asc.nullslast,updated_at.desc.nullslast",
-            "limit": str(page_size),
-            "offset": str(offset),
-        }
-        if statuses:
-            params["status"] = _postgrest_in_filter(list(statuses))
-
-        try:
-            response = httpx.get(
-                endpoint,
-                params=params,
-                headers=_rest_headers(str(key), prefer="count=none"),
-                timeout=POSTGREST_TIMEOUT,
-            )
-        except httpx.HTTPError as exc:
-            LOGGER.warning("LLM backfill sale fetch failed: %s", exc)
-            break
-        if response.is_error:
-            LOGGER.warning("LLM backfill sale fetch failed (%s): %s", response.status_code, response.text[:300])
-            break
-
-        rows = response.json()
-        if not rows:
-            break
-        for row in rows:
-            if _has_current_llm_description(row.get("raw_payload"), prompt_version):
-                continue
-            if _has_recent_llm_description_failure(
-                row.get("raw_payload"),
-                prompt_version=prompt_version,
-                cooldown_hours=failure_cooldown_hours,
-            ):
-                continue
-            sale = _auction_sale_from_row(row)
-            if (
-                sale is not None
-                and has_price_or_surface(sale)
-                and not is_expired(sale)
-                and not needs_fact_extraction(sale)
-            ):
-                selected.append(sale)
-            if len(selected) >= limit:
-                break
-        if len(rows) < page_size:
-            break
-        offset += page_size
-
-    return selected[:limit]
 
 
 def _auction_sale_from_row(row: dict[str, Any]) -> AuctionSale | None:
@@ -3028,38 +2903,6 @@ def _fetch_dedupe_candidate_sales(
         scan=scan,
     )
     return [sale for sale in map(_auction_sale_from_row, rows) if sale is not None]
-
-
-def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -> bool:
-    settings = load_settings()
-    return not llm_display_enabled(settings) or has_current_display(
-        raw_payload,
-        prompt_version,
-        str(settings.get("llm_display_prompt_version") or "") or None,
-        str(settings.get("replicate_model") or "") or None,
-    )
-
-
-def _has_recent_llm_description_failure(
-    raw_payload: Any,
-    *,
-    prompt_version: str,
-    cooldown_hours: float,
-) -> bool:
-    if cooldown_hours <= 0 or not isinstance(raw_payload, dict):
-        return False
-    if raw_payload.get("llm_display_error_prompt_version") != prompt_version:
-        return False
-    error_at = raw_payload.get("llm_display_error_at")
-    if not isinstance(error_at, str) or not error_at.strip():
-        return False
-    try:
-        parsed = datetime.fromisoformat(error_at.replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return datetime.now(UTC) - parsed.astimezone(UTC) < timedelta(hours=cooldown_hours)
 
 
 KNOWN_SALE_DETAIL_PAGE_SIZE = 100

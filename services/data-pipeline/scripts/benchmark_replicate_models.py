@@ -17,12 +17,7 @@ from typing import Any
 from src.config import load_settings
 from src.enrichment.extract_structured import LLMExtraction
 from src.enrichment.llm_client import ReplicateClient
-from src.enrichment.prompts import (
-    DISPLAY_DESCRIPTION_SYSTEM_PROMPT,
-    SYSTEM_PROMPT,
-    build_display_description_prompt,
-    build_user_prompt,
-)
+from src.enrichment.prompts import SYSTEM_PROMPT, build_user_prompt
 from src.pipeline_usage import PINNED_MODEL, _prediction_cost
 
 DEFAULT_MODELS = (PINNED_MODEL, "qwen/qwen3-7-plus", "google/gemini-2.5-flash")
@@ -34,43 +29,6 @@ LONG_DOCUMENT_BACKGROUND = "\n".join(
     for number in range(1, 32)
 )
 CASES = (
-    {
-        "id": "apartment_display",
-        "stage": "display",
-        "context": (
-            "Annonce source : vente aux enchères judiciaires à Rouen le 15 novembre 2026. "
-            "Mise à prix 68 000 €. Lot 1 : appartement comprenant séjour, cuisine et deux chambres, "
-            "surface loi Carrez 60,37 m², surface au sol 62,34 m². "
-            "Lot 7 : cave, surface au sol 57,06 m², surface Carrez nulle. "
-            "Le procès-verbal indique que le logement est occupé, sans autre précision. "
-            "Aucune surface habitable n'est certifiée."
-        ),
-        "required": ("60,37", "cave"),
-        "forbidden": ("119,40", "libre de toute occupation", "surface habitable de 60,37"),
-    },
-    {
-        "id": "two_lots_display",
-        "stage": "display",
-        "context": (
-            "Vente judiciaire à Vidauban le 22 octobre 2026 : deux lots distincts. "
-            "Lot A : appartement, surface Carrez 51,82 m², mise à prix 24 000 €. "
-            "Lot B : appartement, surface Carrez 42,90 m², mise à prix 30 000 €. "
-            "L'occupation de chaque lot est inconnue. Ne pas agréger prix ou surfaces."
-        ),
-        "required": ("deux lots",),
-        "forbidden": ("94,72", "54 000", "sont libres", "sont loués"),
-    },
-    {
-        "id": "sparse_display",
-        "stage": "display",
-        "context": (
-            "Annonce source : vente immobilière judiciaire d'un appartement à Lille. "
-            "La surface, l'occupation, les annexes, la date de vente et la mise à prix "
-            "ne sont pas indiquées dans le document disponible."
-        ),
-        "required": ("appartement", "lille"),
-        "forbidden": ("est libre", "est occupé", "m²", "mise à prix de"),
-    },
     {
         "id": "apartment_facts",
         "stage": "facts",
@@ -127,21 +85,6 @@ class BenchmarkClient(ReplicateClient):
 
 def _evaluate(case: dict[str, Any], response: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     failures: list[str] = []
-    if case["stage"] == "display":
-        paragraph = response.get("display_description")
-        if not isinstance(paragraph, str) or not paragraph.strip():
-            return ["missing description"], {}
-        normalized = paragraph.lower().replace(".", ",").replace("\u202f", " ")
-        for phrase in case["required"]:
-            if phrase not in normalized:
-                failures.append(f"missing: {phrase}")
-        for phrase in case["forbidden"]:
-            if phrase in normalized:
-                failures.append(f"unsupported: {phrase}")
-        if "\n" in paragraph or len(paragraph) > 850:
-            failures.append("display format/length")
-        return failures, {"description": paragraph}
-
     extraction = LLMExtraction.model_validate(response)
     observed: dict[str, Any] = {}
     for field, expected in case["expected"].items():
@@ -178,12 +121,8 @@ def run(models: list[str], output: Path) -> dict[str, Any]:
 
     results: list[dict[str, Any]] = []
     for case in CASES:
-        system_prompt = DISPLAY_DESCRIPTION_SYSTEM_PROMPT if case["stage"] == "display" else SYSTEM_PROMPT
-        user_prompt = (
-            build_display_description_prompt(case["context"])
-            if case["stage"] == "display"
-            else build_user_prompt(case["context"])
-        )
+        system_prompt = SYSTEM_PROMPT
+        user_prompt = build_user_prompt(case["context"])
         for model in models:
             client = BenchmarkClient(
                 api_token=os.environ["REPLICATE_API_TOKEN"],

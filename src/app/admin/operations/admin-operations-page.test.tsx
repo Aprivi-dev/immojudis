@@ -131,18 +131,16 @@ describe("AdminOperationsPage", () => {
     expect(await screen.findByText("8")).toBeTruthy();
   });
 
-  it("no longer shows the AI summary coverage, which the pipeline stopped producing", async () => {
+  it("shows neither the AI summary coverage nor its backfill, both removed from the pipeline", async () => {
     renderOperations();
 
     expect(await screen.findByRole("button", { name: "Relancer" })).toBeTruthy();
     expect(screen.queryByText(/couverture IA/i)).toBeNull();
     expect(screen.queryByLabelText(/des synthèses prêtes/)).toBeNull();
     expect(screen.queryByText(/annonces? à traiter/)).toBeNull();
-    const launch = screen.getByRole("button", { name: "Lancer le backfill" });
-    expect((launch as HTMLButtonElement).disabled).toBe(false);
-
-    fireEvent.click(screen.getByRole("button", { name: "Enrichissement IA" }));
-    expect(screen.queryByText(/Version attendue/)).toBeNull();
+    expect(screen.queryByText(/Synthèse IA/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Lancer le backfill" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Enrichissement IA" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Alertes" }));
     expect(screen.getByText("Runs échoués récents")).toBeTruthy();
     expect(screen.queryByText("Synthèses IA à traiter")).toBeNull();
@@ -165,30 +163,6 @@ describe("AdminOperationsPage", () => {
     await waitFor(() => expect(mocks.fetchRuns).toHaveBeenCalledTimes(2));
   });
 
-  it.each(["llm_backfill", "llm_description_backfill"])(
-    "restarts an AI enrichment (%s) with its original batch size",
-    async (mode) => {
-      mocks.fetchRuns.mockResolvedValue({
-        ...RUNS,
-        runs: [
-          {
-            ...RUNS.runs[0],
-            source: "llm-description-backfill",
-            status: "failed",
-            summary: { mode, limit: 7 },
-          },
-        ],
-      });
-      renderOperations();
-      fireEvent.click(await screen.findByRole("button", { name: "Relancer" }));
-      await waitFor(() =>
-        expect(mocks.startScroll).toHaveBeenCalledWith({
-          data: { source: "all", mode: "llm_backfill", limit: 7 },
-        }),
-      );
-    },
-  );
-
   it.each([
     ["running", "avoventes"],
     ["queued", "all"],
@@ -207,22 +181,25 @@ describe("AdminOperationsPage", () => {
     expect(mocks.startScroll).not.toHaveBeenCalled();
   });
 
-  it("only launches enrichment with a valid integer batch size", async () => {
-    renderOperations();
-    const limit = await screen.findByRole("spinbutton", { name: "Taille du lot" });
-    const launch = screen.getByRole("button", { name: "Lancer le backfill" });
-    for (const value of ["", "0", "2.5", "101"]) {
-      fireEvent.change(limit, { target: { value } });
-      expect((launch as HTMLButtonElement).disabled).toBe(true);
-      fireEvent.click(launch);
-    }
-    expect(mocks.startScroll).not.toHaveBeenCalled();
-    fireEvent.change(limit, { target: { value: "3" } });
-    fireEvent.click(launch);
-    await waitFor(() =>
-      expect(mocks.startScroll).toHaveBeenCalledWith({
-        data: { source: "all", mode: "llm_backfill", limit: 3 },
-      }),
-    );
-  });
+  it.each(["llm_backfill", "llm_description_backfill"])(
+    "never restarts a former AI description backfill (%s)",
+    async (mode) => {
+      mocks.fetchRuns.mockResolvedValue({
+        ...RUNS,
+        runs: [
+          {
+            ...RUNS.runs[0],
+            source: "llm-description-backfill",
+            status: "failed",
+            summary: { mode, limit: 7 },
+          },
+        ],
+      });
+      renderOperations();
+      const restart = await screen.findByRole("button", { name: "Relancer" });
+      expect((restart as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(restart);
+      expect(mocks.startScroll).not.toHaveBeenCalled();
+    },
+  );
 });

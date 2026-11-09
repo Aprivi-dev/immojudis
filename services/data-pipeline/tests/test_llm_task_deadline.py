@@ -346,31 +346,6 @@ def _sale() -> AuctionSale:
     )
 
 
-def test_extract_structured_rethrows_deadline_in_display_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("LLM_ENABLED", "true")
-    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
-    monkeypatch.setattr(extraction, "load_llm_context_for_sale", lambda *_a, **_kw: "context")
-
-    class DeadlineClient:
-        model = "test-model"
-
-        def is_available(self) -> bool:
-            return True
-
-        def generate_json(self, system_prompt: str, user_prompt: str) -> dict[str, object]:
-            raise llm_task_deadline.LLMTaskDeadlineExceeded("display request")
-
-    with pytest.raises(llm_task_deadline.LLMTaskDeadlineExceeded, match="display request"):
-        extraction.enrich_sale_with_llm(
-            _sale(),
-            client=DeadlineClient(),
-            output_dir=tmp_path,
-            extraction_mode="display_description",
-        )
-
-
 def test_fact_checkpoint_survives_deadline_before_next_chunk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -395,11 +370,6 @@ def test_fact_checkpoint_survives_deadline_before_next_chunk(
             raise llm_task_deadline.LLMTaskDeadlineExceeded("second fact chunk")
 
     with pytest.raises(llm_task_deadline.LLMTaskDeadlineExceeded, match="second fact chunk"):
-        extraction.enrich_sale_with_llm(
-            _sale(),
-            client=CheckpointClient(),
-            output_dir=tmp_path,
-            extraction_mode="facts",
-        )
+        extraction.enrich_sale_with_llm(_sale(), client=CheckpointClient(), output_dir=tmp_path)
 
     assert len(list((tmp_path / "chunks").glob("*.json"))) == 1

@@ -9,7 +9,6 @@ from threading import Lock
 import pytest
 
 from src.config import EncheresPubliquesAccessNotAuthorized
-from src.enrichment.display_quality import DISPLAY_QUALITY_VERSION
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
 from src.sources.common import ScrapeResult
@@ -44,7 +43,7 @@ def _disable_real_expired_sale_cleanup(monkeypatch) -> None:
     )
 
 
-def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
+def test_structured_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
     monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), "llm_prompt_version": "auction_llm_v5"})
     sale = AuctionSale(
         source_name="avoventes",
@@ -56,14 +55,7 @@ def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
         raw_text="Appartement libre de 42 m2.",
     )
 
-    assert main._needs_heavy_enrichment(sale, use_llm=False) is False
-    assert main._needs_heavy_enrichment(sale, use_llm=True) is True
-    sale.raw_payload["llm_display_description"] = "Appartement libre de 42 m2. " * 4
-    assert main._needs_heavy_enrichment(sale, use_llm=True) is True
-    sale.raw_payload["llm_display_quality_version"] = DISPLAY_QUALITY_VERSION
-    sale.raw_payload["llm_display_status"] = "accepted"
-    sale.raw_payload["llm_prompt_version"] = "auction_llm_v5"
-    assert main._needs_heavy_enrichment(sale, use_llm=True) is False
+    assert main._needs_structured_heavy_enrichment(sale) is False
 
 
 def test_known_source_urls_from_raw_sales_includes_primary_and_aliases() -> None:
@@ -348,18 +340,18 @@ def test_document_facts_version_forces_one_time_pdf_reanalysis(tmp_path, monkeyp
     )
 
     assert main._needs_structured_heavy_enrichment(sale) is True
-    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}) is False
 
     sale.raw_payload["document_facts_version"] = "document_facts_v1_starting_price"
 
     assert main._needs_structured_heavy_enrichment(sale) is True
-    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}) is False
 
     sale.raw_payload["document_facts_version"] = main.DOCUMENT_FACTS_VERSION
     _materialize_current_pdf_proof(sale, tmp_path, monkeypatch)
 
     assert main._needs_structured_heavy_enrichment(sale) is False
-    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}) is True
 
 
 def test_heavy_current_rechecks_documents_after_policy_blocked_incremental_hit() -> None:
@@ -389,37 +381,11 @@ def test_heavy_current_rechecks_documents_after_policy_blocked_incremental_hit()
         },
     )
 
-    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is True
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}) is True
 
     sale.documents.append({"label": "CCV", "url": "https://www.licitor.com/data/pub/media/ccv.pdf"})
 
-    assert main._heavy_enrichment_already_current(sale, {"known-content"}, use_llm=False) is False
-
-
-def test_heavy_enrichment_does_not_skip_stale_llm_description(monkeypatch) -> None:
-    monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), "llm_prompt_version": "auction_llm_v5"})
-    sale = AuctionSale(
-        source_name="avoventes",
-        source_url="https://example.test/vente-stale",
-        property_type="apartment",
-        app_surface_m2=Decimal("42"),
-        occupancy_status="vacant",
-        rooms_count=2,
-        raw_text="Appartement libre de 42 m2.",
-        content_hash="same-content",
-        raw_payload={
-            "llm_display_description": "Ancienne synthèse. " * 5,
-            "llm_prompt_version": "auction_llm_v4",
-        },
-    )
-
-    assert main._needs_heavy_enrichment(sale, use_llm=True) is True
-    assert main._heavy_enrichment_already_current(sale, {"same-content"}, use_llm=True) is False
-
-    sale.raw_payload["llm_display_quality_version"] = DISPLAY_QUALITY_VERSION
-    sale.raw_payload["llm_display_status"] = "accepted"
-    sale.raw_payload["llm_prompt_version"] = "auction_llm_v5"
-    assert main._heavy_enrichment_already_current(sale, {"same-content"}, use_llm=True) is True
+    assert main._heavy_enrichment_already_current(sale, {"known-content"}) is False
 
 
 def test_merge_pdf_stats_deduplicates_policy_blocked_urls() -> None:
@@ -463,7 +429,7 @@ def test_merge_pdf_stats_deduplicates_permanent_document_failures() -> None:
     ]
 
 
-def test_needs_heavy_enrichment_keeps_incomplete_sale() -> None:
+def test_structured_heavy_enrichment_keeps_incomplete_sale() -> None:
     sale = AuctionSale(
         source_name="avoventes",
         source_url="https://example.test/vente",
@@ -471,7 +437,7 @@ def test_needs_heavy_enrichment_keeps_incomplete_sale() -> None:
         documents=[{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
     )
 
-    assert main._needs_heavy_enrichment(sale) is True
+    assert main._needs_structured_heavy_enrichment(sale) is True
 
 
 def test_pdf_target_limit_prioritizes_missing_surface_with_official_documents() -> None:
@@ -1219,7 +1185,7 @@ def test_incremental_skip_only_skips_heavy_enrichment_not_publication(
     assert calls.count("upsert") == 2
 
 
-def test_pipeline_generates_llm_description_when_heavy_enrichment_is_disabled(monkeypatch) -> None:
+def test_pipeline_makes_no_llm_call_without_fact_evidence(monkeypatch) -> None:
     calls: list[str] = []
     settings = _settings()
     settings["incremental_enrichment"] = True
@@ -1239,12 +1205,7 @@ def test_pipeline_generates_llm_description_when_heavy_enrichment_is_disabled(mo
     monkeypatch.setattr(main, "fetch_known_sale_details", lambda: {})
     monkeypatch.setattr(main, "scrape_avoventes_aquitaine_result", lambda known=None: ScrapeResult([raw], []))
 
-    def fake_fetch(hashes, **kwargs):
-        if kwargs.get("require_llm_description"):
-            return set()
-        return set(hashes)
-
-    monkeypatch.setattr(main, "fetch_enriched_content_hashes", fake_fetch)
+    monkeypatch.setattr(main, "fetch_enriched_content_hashes", lambda hashes, **kwargs: set(hashes))
     monkeypatch.setattr(main, "geocode_sale", lambda sale: sale)
     monkeypatch.setattr(main, "fill_tribunal", lambda sale: None)
     monkeypatch.setattr(main, "normalize_asset_features", lambda sale: sale)
@@ -1273,11 +1234,11 @@ def test_pipeline_generates_llm_description_when_heavy_enrichment_is_disabled(mo
         )
         == 0
     )
-    assert "pdf" not in calls
-    assert calls == ["llm"]
+    # No document facts to extract and no AI synthesis any more: the model is not called.
+    assert calls == []
 
 
-def test_pipeline_requires_current_llm_description_for_incremental_skip(monkeypatch) -> None:
+def test_pipeline_incremental_skip_requires_only_the_document_analysis(monkeypatch) -> None:
     captured: dict[str, object] = {}
     settings = _settings()
     settings["incremental_enrichment"] = True
@@ -1308,26 +1269,7 @@ def test_pipeline_requires_current_llm_description_for_incremental_skip(monkeypa
     monkeypatch.setattr(main, "fetch_enriched_content_hashes", fake_fetch)
 
     assert main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=True, upsert=True)) == 0
-    assert captured["kwargs"] == {
-        "require_llm_description": True,
-        "prompt_version": "auction_llm_v5",
-    }
-
-
-def test_parse_args_can_select_llm_description_backfill() -> None:
-    options = main.parse_args(
-        [
-            "--backfill-llm-descriptions",
-            "--limit",
-            "7",
-            "--backfill-statuses",
-            "active,upcoming,unknown",
-        ]
-    )
-
-    assert options.llm_backfill is True
-    assert options.limit == 7
-    assert options.llm_backfill_statuses == ("active", "upcoming", "unknown")
+    assert captured["kwargs"] == {"require_document_analysis": True}
 
 
 def test_unpublishable_sale_cannot_use_paid_llm() -> None:
@@ -1344,128 +1286,6 @@ def test_unpublishable_sale_cannot_use_paid_llm() -> None:
 
     assert main._can_use_paid_llm(missing_price_and_surface) is False
     assert main._can_use_paid_llm(publishable) is True
-
-
-def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
-    settings = _settings()
-    settings.update(
-        {
-            "pipeline_llm_backfill_max_targets": 2,
-            "pipeline_enrich_workers": 1,
-            "pipeline_llm_workers": 1,
-            "pipeline_llm_backfill_progress_every": 5,
-            "llm_prompt_version": "auction_llm_v6_display",
-        }
-    )
-    stale = AuctionSale(
-        source_name="notaires",
-        starting_price_eur=10000,
-        source_url="https://example.test/stale",
-        title="Maison 85 m²",
-        raw_payload={"source_blocks": {"description": "Maison avec jardin."}},
-    )
-    failed = AuctionSale(
-        source_name="notaires",
-        starting_price_eur=10000,
-        source_url="https://example.test/failed",
-        title="Appartement",
-        raw_payload={"source_blocks": {"description": "Appartement."}},
-    )
-    calls: list[str] = []
-    progress_summaries: list[dict[str, object]] = []
-    finish_summaries: list[dict[str, object]] = []
-
-    monkeypatch.setattr(main, "load_settings", lambda: settings)
-    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-backfill")
-    monkeypatch.setattr(
-        main,
-        "finish_run_in_supabase",
-        lambda *args, **kwargs: (calls.append("finish"), finish_summaries.append(args[2])),
-    )
-    monkeypatch.setattr(
-        main,
-        "update_run_progress_in_supabase",
-        lambda run_id, summary, errors=None: (
-            calls.append(f"progress:{summary['completed']}"),
-            progress_summaries.append(summary),
-        ),
-    )
-    monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **kwargs: [stale, failed])
-    monkeypatch.setattr(main, "create_llm_client", lambda: object())
-
-    def fake_enrich(sale, client=None):
-        calls.append(f"llm:{sale.source_url.rsplit('/', 1)[-1]}")
-        if sale is stale:
-            stats = main.LLMEnrichmentStats(analyzed=1, valid_json=1)
-            sale.raw_payload["llm_display_description"] = "Maison avec jardin proche du centre."
-            sale.raw_payload["llm_prompt_version"] = "auction_llm_v6_display"
-        else:
-            stats = main.LLMEnrichmentStats(
-                analyzed=1,
-                errors=1,
-                error_messages=["LLM extraction failed [notaires] https://example.test/failed"],
-            )
-        return stats
-
-    monkeypatch.setattr(main, "enrich_sale_with_llm", fake_enrich)
-
-    def fake_upsert(sales: list[AuctionSale], *, refresh_last_seen: bool) -> int:
-        assert refresh_last_seen is False
-        calls.append(f"upsert:{len(sales)}")
-        assert len(sales) == 1
-        return len(sales)
-
-    monkeypatch.setattr(main, "upsert_sales_to_supabase", fake_upsert)
-
-    assert (
-        main.run_llm_description_backfill(
-            main.PipelineOptions(llm_backfill=True, upsert=True, limit=7)
-        )
-        == 1
-    )
-    assert calls.count("upsert:1") == 2
-    assert calls[-1] == "finish"
-    assert failed.raw_payload["llm_display_error_count"] == 1
-    assert progress_summaries
-    assert all(summary["limit"] == 7 for summary in progress_summaries)
-    assert finish_summaries[-1]["limit"] == 7
-
-
-def test_run_llm_description_backfill_persists_limit_when_no_sales(monkeypatch) -> None:
-    settings = {**_settings(), "pipeline_llm_backfill_max_targets": 20}
-    finished: list[dict[str, object]] = []
-
-    monkeypatch.setattr(main, "load_settings", lambda: settings)
-    monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **_: [])
-    monkeypatch.setattr(
-        main,
-        "finish_run_in_supabase",
-        lambda run_id, status, summary, errors: finished.append(summary),
-    )
-
-    assert (
-        main.run_llm_description_backfill(
-            main.PipelineOptions(llm_backfill=True, upsert=True, limit=7, run_id="run-backfill")
-        )
-        == 0
-    )
-    assert len(finished) == 1
-    assert finished[0]["mode"] == "llm_description_backfill"
-    assert finished[0]["limit"] == 7
-    assert finished[0]["selected"] == 0
-    assert finished[0]["processed"] == 0
-    assert finished[0]["updated"] == 0
-    assert finished[0]["prompt_version"] == settings["llm_prompt_version"]
-    assert finished[0]["statuses"] == ["active", "upcoming"]
-    assert finished[0]["skipped_unauthorized"] == 0
-
-
-def test_llm_backfill_progress_is_batched() -> None:
-    assert main._should_update_llm_backfill_progress(0, total=20, every=5) is False
-    assert main._should_update_llm_backfill_progress(4, total=20, every=5) is False
-    assert main._should_update_llm_backfill_progress(5, total=20, every=5) is True
-    assert main._should_update_llm_backfill_progress(19, total=20, every=5) is False
-    assert main._should_update_llm_backfill_progress(20, total=20, every=5) is True
 
 
 def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
@@ -1948,8 +1768,6 @@ def _settings() -> dict[str, object]:
         "pipeline_pdf_workers": 1,
         "pipeline_enrich_workers": 1,
         "pipeline_llm_workers": 1,
-        "pipeline_llm_backfill_progress_every": 5,
-        "pipeline_llm_failure_cooldown_hours": 24,
         "pipeline_pdf_max_targets": 0,
         "pipeline_llm_max_targets": 0,
         "enable_licitor_benchmark": False,

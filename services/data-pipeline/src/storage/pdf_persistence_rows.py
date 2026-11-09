@@ -14,6 +14,9 @@ from src.storage.pdf_checkpoint_rules import _is_sha256
 PDF_EXTRACTION_PROVIDER = "pdf_text"
 PDF_EXTRACTION_MODEL = "docling+pymupdf+tesseract"
 PDF_EXTRACTION_SCHEMA_VERSION = "pdf_text_v2_page_level"
+# Last version of the removed display synthesis prompt. It stays in the revision hash so that
+# removing the synthesis does not give every queued fact job a new revision.
+RETIRED_DISPLAY_PROMPT_VERSION = "auction_display_v10_canonical_facts"
 
 
 def _fresh_complete_pdf_fingerprint(sale: AuctionSale, *, documents_current: bool) -> str | None:
@@ -140,7 +143,7 @@ def _enrichment_revision_for_sale(
         str(settings.get("llm_prompt_version") or ""),
         str(settings.get("replicate_model") or ""),
         settings.get("llm_fact_prompt_version"),
-        settings.get("llm_display_prompt_version"),
+        RETIRED_DISPLAY_PROMPT_VERSION,
         sorted(
             (url, check.get("fingerprint"))
             for url, check in checks.items()

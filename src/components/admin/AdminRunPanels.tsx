@@ -1,7 +1,6 @@
 "use client";
 
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
-import Bot from "lucide-react/dist/esm/icons/bot.js";
 import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
@@ -291,50 +290,5 @@ function RunSummaryNumber({ value, label }: { value: string; label: string }) {
       <strong className="block text-xl tabular-nums text-brand-navy">{value}</strong>
       <span className="mt-1 block text-xs text-brand-navy/55">{label}</span>
     </span>
-  );
-}
-
-export function AiBackfillPanel({
-  backfillLimit,
-  setBackfillLimit,
-  pending,
-  onBackfill,
-}: {
-  backfillLimit: number;
-  setBackfillLimit: (value: number) => void;
-  pending: boolean;
-  onBackfill: () => void;
-}) {
-  const validLimit = Number.isInteger(backfillLimit) && backfillLimit >= 1 && backfillLimit <= 100;
-  return (
-    <AdminPanel className="p-5">
-      <AdminSectionHeading title="Synthèses IA manquantes" />
-      <div className="mt-5 flex flex-wrap items-end gap-5">
-        <label className="grid gap-2 text-sm font-medium text-brand-navy">
-          Taille du lot
-          <input
-            type="number"
-            min={1}
-            max={100}
-            step={1}
-            required
-            value={Number.isNaN(backfillLimit) ? "" : backfillLimit}
-            aria-invalid={!validLimit}
-            onChange={(event) => setBackfillLimit(event.target.valueAsNumber)}
-            className="h-11 w-32 rounded-lg border border-brand-navy/18 bg-white px-3 text-sm outline-none focus:border-gold"
-          />
-          {!validLimit ? <span role="alert">Saisissez un entier de 1 à 100.</span> : null}
-        </label>
-        <button
-          type="button"
-          disabled={pending || !validLimit}
-          onClick={onBackfill}
-          className="admin-button-secondary"
-        >
-          {pending ? <RefreshCw className="size-4 animate-spin" /> : <Bot className="size-4" />}
-          Lancer le backfill
-        </button>
-      </div>
-    </AdminPanel>
   );
 }
