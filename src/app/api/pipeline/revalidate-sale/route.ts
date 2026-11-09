@@ -3,8 +3,11 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { pipelineCallbackAuthorized } from "@/lib/cron-auth";
+import { DEPARTMENT_PAGES_PATH } from "@/lib/department-pages";
+import { DEPARTMENT_CATALOGUE_CACHE_TAG } from "@/lib/department-pages.server";
 import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
 import { publicSaleCacheTag } from "@/lib/public-sale.server";
+import { SITEMAP_CACHE_TAG } from "@/lib/public-sitemap.server";
 import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG } from "@/lib/public-tribunal-activity.server";
 import { resolveRequestId } from "@/lib/request-id";
@@ -46,7 +49,12 @@ const bodySchema = z.union([
  * `tribunal-pages`), the court directory (`/tribunaux`) with the court activity it reads (data cache
  * tagged `public-tribunal-activity`, whose counts change with the sales) and the upcoming hearings
  * (`/audiences-a-venir`, tagged `upcoming-hearings`).
- * A withdrawn sale must leave them as soon as it leaves its own page. And the catalogue pages: the
+ * A withdrawn sale must leave them as soon as it leaves its own page. Same for the department pages
+ * (`/ventes-encheres-immobilieres` and its pages, data cache tagged `department-pages`) and for the
+ * sitemaps: the sales list (`public-sitemap` tag, read by `/sales/sitemap/<n>.xml`) and `/sitemap.xml`,
+ * whose courts and departments follow the same thresholds as their `robots` tag. Without them a
+ * withdrawn sale stayed listed (a 404 in the sitemap) and a page that fell under its threshold
+ * stayed announced while already `noindex`, which the Search Console reports. And the catalogue pages: the
  * `public-catalogue` data-cache tag (first page, 5 minutes) and the static page that serves the
  * bare `/sales`. A sale that is withdrawn, cancelled or changed must leave `/sales` as soon as it
  * leaves its own page, not 5 to 10 minutes later. The pipeline must therefore announce those
@@ -120,6 +128,17 @@ export async function POST(request: Request) {
   // jusqu'à une heure après la purge des pages.
   revalidateTag(PUBLIC_TRIBUNAL_ACTIVITY_CACHE_TAG, { expire: 0 });
   revalidatePath(TRIBUNAL_PAGES_PATH);
+  // Pages des départements : le catalogue qu'elles partagent avec le sitemap (une heure de cache) et
+  // les pages elles-mêmes. Le prochain visiteur paie une lecture complète du catalogue, une fois par
+  // appel : le prix pour qu'une vente retirée ne fasse plus compter un département au-dessus du seuil.
+  revalidateTag(DEPARTMENT_CATALOGUE_CACHE_TAG, { expire: 0 });
+  revalidatePath(DEPARTMENT_PAGES_PATH);
+  revalidatePath(`${DEPARTMENT_PAGES_PATH}/[departement]`, "page");
+  // Sitemaps : la liste des ventes (lue à chaque demande de `/sales/sitemap/<n>.xml`, mise en cache une
+  // heure) et `/sitemap.xml` (ISR, une heure), qui suit les seuils des tribunaux et des départements.
+  // Reconstruits à la prochaine visite d'un robot, pas maintenant.
+  revalidateTag(SITEMAP_CACHE_TAG, { expire: 0 });
+  revalidatePath("/sitemap.xml");
   // One GET on the public `/sales` and its static pages 2 and 3 (the proxy rewrites them to the
   // variants just expired) and on the hearings, after the response: it cannot call this route back.
   after(async () =>
