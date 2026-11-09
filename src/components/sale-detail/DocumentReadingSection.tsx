@@ -9,6 +9,7 @@ import {
   DOCUMENT_READING_THEMES,
   documentPageHref,
   groupReadingPoints,
+  readingHighlights,
   type DocumentReadingResponse,
 } from "@/lib/document-reading";
 import styles from "./DocumentReadingSection.module.css";
@@ -16,6 +17,83 @@ import { UnlockCallToAction } from "./UnlockCallToAction";
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count > 1 ? "s" : ""}`;
+}
+
+type ReadingQueryArgs = {
+  saleId: string;
+  enabled: boolean;
+  access: SaleAccessMode;
+  userKey: string | null;
+};
+
+/** Une seule lecture par vente et par compte, partagée par l'encart de tête et la section des pièces. */
+function useDocumentReading({ saleId, enabled, access, userKey }: ReadingQueryArgs) {
+  return useQuery<DocumentReadingResponse>({
+    queryKey: queryKeys.documentReading(saleId, access, userKey),
+    queryFn: () => fetchDocumentReading(saleId),
+    enabled,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+}
+
+/**
+ * « Ce que disent les pièces », sous la description de la fiche : les trois points les plus importants
+ * de la lecture des pièces, chacun renvoyant à sa citation dans la section 05. Un compte gratuit n'en
+ * voit que le nombre, comme dans la section. Rien tant que la lecture n'a pas de point à montrer.
+ */
+export function DocumentReadingHighlights({
+  saleId,
+  enabled,
+  access = "discovery",
+  userKey = null,
+}: {
+  saleId: string;
+  enabled: boolean;
+  access?: SaleAccessMode;
+  userKey?: string | null;
+}) {
+  const { data } = useDocumentReading({ saleId, enabled, access, userKey });
+  if (!enabled || !data) return null;
+  if (data.access === "teaser") {
+    if (!data.pointCount) return null;
+    return (
+      <aside className={styles.highlights} aria-labelledby="reading-highlights-title">
+        <h3 id="reading-highlights-title">Ce que disent les pièces</h3>
+        <p className={styles.lead}>
+          {plural(data.pointCount, "point")} relevé{data.pointCount > 1 ? "s" : ""} dans les pièces
+          {data.alertCount ? `, dont ${data.alertCount} à vérifier en priorité` : ""}.{" "}
+          <a href="#pieces" className={styles.cta}>
+            Voir la lecture des pièces
+          </a>
+        </p>
+      </aside>
+    );
+  }
+  if (data.status !== "completed" || !data.points.length) return null;
+  return (
+    <aside className={styles.highlights} aria-labelledby="reading-highlights-title">
+      <h3 id="reading-highlights-title">Ce que disent les pièces</h3>
+      <ul className={styles.highlightList}>
+        {readingHighlights(data.points).map((point, index) => (
+          <li key={index} className={styles.pointHeader}>
+            <span className={`${styles.badge} ${styles[point.importance]}`}>
+              {DOCUMENT_READING_IMPORTANCE[point.importance]}
+            </span>
+            <span className={styles.pointTitle}>{point.title}</span>
+            <span className={styles.source}>
+              {point.document?.label ?? "Pièce du dossier"}, page {point.page}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <a href="#pieces" className={styles.cta}>
+        {data.points.length > 3
+          ? `Voir les ${data.points.length} points et leurs citations`
+          : "Voir les citations dans les pièces"}
+      </a>
+    </aside>
+  );
 }
 
 /**
@@ -36,13 +114,7 @@ export function DocumentReadingSection({
   /** The signed-in account, so that a cached reading never crosses accounts. */
   userKey?: string | null;
 }) {
-  const query = useQuery<DocumentReadingResponse>({
-    queryKey: queryKeys.documentReading(saleId, access, userKey),
-    queryFn: () => fetchDocumentReading(saleId),
-    enabled,
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
+  const query = useDocumentReading({ saleId, enabled, access, userKey });
   if (!enabled) return null;
   // Trois états visibles avant la lecture, à hauteur réservée : chargement, erreur (avec
   // « Réessayer ») et pièces non lisibles. Aucun ne dépend de ce que le compte a le droit de lire :

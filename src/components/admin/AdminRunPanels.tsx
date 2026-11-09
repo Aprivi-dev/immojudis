@@ -10,7 +10,6 @@ import { AdminPanel, AdminPrimaryButton, AdminSectionHeading } from "@/component
 import {
   errorCount,
   formatDateTime,
-  formatInteger,
   runDuration,
   shortId,
   summaryNumber,
@@ -18,11 +17,7 @@ import {
 import { StatusPill } from "@/components/admin/admin-ui";
 import { adminRunRestartRequest, type AdminRunRequest } from "@/lib/admin-run-actions";
 import { collectionSourceResults } from "@/lib/admin-source-collection";
-import type {
-  AdminScrollSource,
-  AiDescriptionDashboardStats,
-  AuctionRun,
-} from "@/lib/admin.server";
+import type { AdminScrollSource, AuctionRun } from "@/lib/admin.server";
 
 export const SOURCE_OPTIONS: Array<{ value: AdminScrollSource; label: string }> = [
   { value: "all", label: "Toutes les sources" },
@@ -300,64 +295,21 @@ function RunSummaryNumber({ value, label }: { value: string; label: string }) {
 }
 
 export function AiBackfillPanel({
-  aiDescriptions,
-  remaining,
-  progress,
   backfillLimit,
   setBackfillLimit,
   pending,
   onBackfill,
-  expanded = false,
-  status = "ready",
 }: {
-  aiDescriptions?: AiDescriptionDashboardStats;
-  remaining: number;
-  progress: number;
   backfillLimit: number;
   setBackfillLimit: (value: number) => void;
   pending: boolean;
   onBackfill: () => void;
-  expanded?: boolean;
-  /** La couverture IA se calcule à part (lecture de toutes les ventes) : état de cette lecture. */
-  status?: "ready" | "loading" | "error";
 }) {
   const validLimit = Number.isInteger(backfillLimit) && backfillLimit >= 1 && backfillLimit <= 100;
   return (
     <AdminPanel className="p-5">
-      <AdminSectionHeading
-        title="Synthèses IA manquantes"
-        description={
-          expanded
-            ? `Version attendue : ${aiDescriptions?.expectedPromptVersion ?? "chargement…"}`
-            : undefined
-        }
-      />
-      <div className="mt-5 grid gap-5 md:grid-cols-[auto_1fr_auto_auto] md:items-center">
-        <div
-          className="grid size-20 place-items-center rounded-full text-lg font-semibold text-brand-navy"
-          style={{
-            background: `radial-gradient(circle closest-side, white 78%, transparent 80% 100%), conic-gradient(#216ac0 ${progress}%, #e6edf5 0)`,
-          }}
-          aria-label={`${progress}% des synthèses prêtes`}
-        >
-          {progress}%
-        </div>
-        <div>
-          <strong className="text-2xl tabular-nums text-brand-navy">
-            {formatInteger(aiDescriptions?.ready ?? 0)} /{" "}
-            {formatInteger(aiDescriptions?.activeOrUpcoming ?? 0)}
-          </strong>
-          <p
-            className="mt-1 text-sm text-brand-navy/62"
-            role={status === "ready" ? undefined : "status"}
-          >
-            {status === "loading"
-              ? "Calcul de la couverture IA en cours…"
-              : status === "error"
-                ? "Couverture IA indisponible pour le moment."
-                : `${remaining} annonce${remaining > 1 ? "s" : ""} à traiter`}
-          </p>
-        </div>
+      <AdminSectionHeading title="Synthèses IA manquantes" />
+      <div className="mt-5 flex flex-wrap items-end gap-5">
         <label className="grid gap-2 text-sm font-medium text-brand-navy">
           Taille du lot
           <input
@@ -375,9 +327,9 @@ export function AiBackfillPanel({
         </label>
         <button
           type="button"
-          disabled={pending || status !== "ready" || remaining === 0 || !validLimit}
+          disabled={pending || !validLimit}
           onClick={onBackfill}
-          className="admin-button-secondary md:self-end"
+          className="admin-button-secondary"
         >
           {pending ? <RefreshCw className="size-4 animate-spin" /> : <Bot className="size-4" />}
           Lancer le backfill

@@ -103,4 +103,41 @@ describe("AdminQualityPage error recovery", () => {
     expect(mocks.sales).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+  it("no longer shows the AI summary coverage, which the pipeline stopped producing", async () => {
+    mocks.quality.mockResolvedValue({
+      ...emptyReport,
+      sampleSize: 4,
+      sourceCoverage: [
+        {
+          source: "avoventes",
+          count: 4,
+          sharePct: 100,
+          missingLocation: 0,
+          missingSurface: 1,
+          missingDocuments: 0,
+          missingRichDocuments: 0,
+          missingOccupation: 2,
+          missingConfidence: 0,
+          averageConfidencePct: 80,
+          weakCount: 2,
+        },
+      ],
+    });
+    mocks.valuation.mockResolvedValue({
+      runtime: { status: "healthy", estimates: 0, driftSignals: [] },
+      activeModels: [],
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}
+      >
+        <AdminQualityPage />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("avoventes")).toBeTruthy();
+    expect(screen.getByText("2 dossiers à reprendre")).toBeTruthy();
+    expect(screen.getByText("Surface exploitable")).toBeTruthy();
+    expect(screen.queryByText(/Synthèse IA/)).toBeNull();
+    expect(screen.queryByText("IA", { exact: true })).toBeNull();
+  });
 });

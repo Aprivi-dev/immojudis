@@ -150,6 +150,28 @@ export function documentPageHref(url: string | null, page: number): string | nul
 }
 
 /** Points grouped by theme, themes in the order of their most important point. */
+const IMPORTANCE_ORDER: Record<DocumentReadingImportance, number> = {
+  alerte: 0,
+  attention: 1,
+  info: 2,
+};
+
+/**
+ * Les points à montrer en tête de fiche : les plus importants d'abord (« à vérifier en priorité »,
+ * puis « à prendre en compte », puis « bon à savoir »), dans l'ordre de la lecture à importance égale.
+ */
+export function readingHighlights(points: DocumentReadingPoint[], max = 3): DocumentReadingPoint[] {
+  return points
+    .map((point, index) => ({ point, index }))
+    .sort(
+      (a, b) =>
+        IMPORTANCE_ORDER[a.point.importance] - IMPORTANCE_ORDER[b.point.importance] ||
+        a.index - b.index,
+    )
+    .slice(0, max)
+    .map(({ point }) => point);
+}
+
 export function groupReadingPoints(
   points: DocumentReadingPoint[],
 ): Array<{ theme: DocumentReadingTheme; points: DocumentReadingPoint[] }> {

@@ -117,3 +117,16 @@ def merge_trigger_present(monkeypatch):
 def _no_document_prefetch_processes(monkeypatch):
     """Le vidage des pièces prépare les ventes suivantes dans des processus à part : jamais dans les tests."""
     monkeypatch.setenv("DOCUMENT_BACKLOG_PREFETCH_WORKERS", "0")
+
+
+@pytest.fixture(autouse=True)
+def _llm_display_synthesis_enabled(monkeypatch, request):
+    """La synthèse rédigée (``LLM_DISPLAY_ENABLED``) est coupée en production depuis le 09/11/2026.
+
+    Son code reste en place tant qu'il n'est pas retiré : les tests existants l'exercent donc activée.
+    Les tests de l'interrupteur coupé portent le marqueur ``llm_display_disabled``.
+    """
+    if request.node.get_closest_marker("llm_display_disabled"):
+        monkeypatch.setenv("LLM_DISPLAY_ENABLED", "false")
+    else:
+        monkeypatch.setenv("LLM_DISPLAY_ENABLED", "true")

@@ -8,6 +8,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "schema_contract: colonnes écrites par le pipeline contre le schéma migré (SCHEMA_CONTRACT_DB_URL, job « Supabase migrations + pgTAP »)",
+    "llm_display_disabled: synthèse rédigée coupée (LLM_DISPLAY_ENABLED=false, réglage de production)",
 ]
 # Le contrat de schéma ne tourne que dans le job de migrations : `pytest -m schema_contract` l'y sélectionne.
 addopts = "-m 'not schema_contract'"

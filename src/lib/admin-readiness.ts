@@ -6,7 +6,6 @@ import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { firstFilled, serverEnv } from "@/lib/env";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
-import { EXPECTED_LLM_PROMPT_VERSION } from "@/lib/llm-versions";
 import { resolveExpectedLatestMigrationVersion } from "@/lib/migration-manifest";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
@@ -34,17 +33,6 @@ export type MigrationReadiness = {
   expectedLatestVersion: string;
   latestAppliedVersion: string | null;
   appliedCount: number | null;
-  detail: string;
-};
-
-export type AiDescriptionReadiness = {
-  status: ReadinessStatus;
-  promptVersion: string;
-  activeUpcomingCount: number | null;
-  coveredCurrentCount: number | null;
-  missingCurrentCount: number | null;
-  missingSourceCount: number | null;
-  recentFailureCount: number | null;
   detail: string;
 };
 
@@ -81,7 +69,6 @@ export type AdminOperationalReadinessResponse = {
   status: ReadinessStatus;
   items: ReadinessItem[];
   migrations: MigrationReadiness;
-  aiDescriptions: AiDescriptionReadiness;
   operations: OperationalHealthReadiness;
   webhookUrl: string | null;
 };
@@ -114,17 +101,11 @@ export async function getAdminOperationalReadiness(
 ): Promise<AdminOperationalReadinessResponse> {
   await assertAdminAuth(authToken);
   const envItems = buildEnvironmentReadiness(process.env);
-  const [migrations, aiDescriptions, operations] = await Promise.all([
+  const [migrations, operations] = await Promise.all([
     readMigrationReadiness(process.env),
-    readAiDescriptionReadiness(process.env),
     readOperationalHealthReadiness(process.env),
   ]);
-  const items = [
-    ...envItems,
-    migrationItem(migrations),
-    aiDescriptionItem(aiDescriptions),
-    operationalHealthItem(operations),
-  ];
+  const items = [...envItems, migrationItem(migrations), operationalHealthItem(operations)];
   const origin = resolveSiteOrigin(process.env);
 
   return {
@@ -132,7 +113,6 @@ export async function getAdminOperationalReadiness(
     status: overallStatus(items),
     items,
     migrations,
-    aiDescriptions,
     operations,
     webhookUrl: origin ? `${origin}/api/stripe/webhook` : null,
   };
@@ -326,116 +306,6 @@ async function readMigrationReadiness(
   }
 }
 
-async function readAiDescriptionReadiness(
-  env: Pick<NodeJS.ProcessEnv, string>,
-): Promise<AiDescriptionReadiness> {
-  const dbUrl = databaseUrl(env);
-  const promptVersion = serverEnv(env).llmPromptVersion ?? EXPECTED_LLM_PROMPT_VERSION;
-
-  if (!dbUrl) {
-    return {
-      status: "warning",
-      promptVersion,
-      activeUpcomingCount: null,
-      coveredCurrentCount: null,
-      missingCurrentCount: null,
-      missingSourceCount: null,
-      recentFailureCount: null,
-      detail: "Impossible de vérifier la couverture IA sans URL Postgres lisible au runtime.",
-    };
-  }
-
-  const sql = postgres(dbUrl, {
-    max: 1,
-    // Une base injoignable ne doit pas immobiliser la route jusqu'au délai de 30 s.
-    connect_timeout: 8,
-    ssl: env.POSTGRES_SSL === "disable" ? false : "require",
-  });
-
-  try {
-    const [coverage] = await sql<AiCoverageRow[]>`
-      with scoped as (
-        select
-          description,
-          raw_text,
-          raw_payload,
-          nullif(raw_payload->>'llm_display_description', '') as display_description,
-          raw_payload->>'llm_prompt_version' as prompt_version,
-          nullif(raw_payload->>'llm_display_error_at', '') as error_at,
-          raw_payload->>'llm_display_error_prompt_version' as error_prompt_version
-        from public.auction_sales
-        where status in ('active', 'upcoming')
-      ),
-      classified as (
-        select
-          *,
-          coalesce(
-            display_description is not null
-              and prompt_version = ${promptVersion},
-            false
-          ) as covered_current,
-          nullif(description, '') is null
-            and nullif(raw_text, '') is null
-            and nullif(raw_payload->>'source_description', '') is null as missing_source,
-          error_prompt_version = ${promptVersion}
-            and error_at is not null
-            and error_at::timestamptz > now() - interval '24 hours' as recent_failure
-        from scoped
-      )
-      select
-        count(*)::int as active_upcoming_count,
-        count(*) filter (where covered_current)::int as covered_current_count,
-        count(*) filter (where not covered_current)::int as missing_current_count,
-        count(*) filter (where missing_source)::int as missing_source_count,
-        count(*) filter (where recent_failure)::int as recent_failure_count
-      from classified
-    `;
-
-    const activeUpcomingCount = coverage?.active_upcoming_count ?? 0;
-    const coveredCurrentCount = coverage?.covered_current_count ?? 0;
-    const missingCurrentCount = coverage?.missing_current_count ?? 0;
-    const missingSourceCount = coverage?.missing_source_count ?? 0;
-    const recentFailureCount = coverage?.recent_failure_count ?? 0;
-    const status: ReadinessStatus =
-      activeUpcomingCount === 0 ? "warning" : missingCurrentCount === 0 ? "ready" : "blocked";
-
-    return {
-      status,
-      promptVersion,
-      activeUpcomingCount,
-      coveredCurrentCount,
-      missingCurrentCount,
-      missingSourceCount,
-      recentFailureCount,
-      detail: aiDescriptionDetail({
-        status,
-        activeUpcomingCount,
-        coveredCurrentCount,
-        missingCurrentCount,
-        missingSourceCount,
-        recentFailureCount,
-        promptVersion,
-      }),
-    };
-  } catch (error) {
-    return {
-      status: "warning",
-      promptVersion,
-      activeUpcomingCount: null,
-      coveredCurrentCount: null,
-      missingCurrentCount: null,
-      missingSourceCount: null,
-      recentFailureCount: null,
-      detail:
-        error instanceof Error
-          ? `Vérification synthèses IA impossible: ${error.message}`
-          : "Vérification synthèses IA impossible.",
-    };
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
-}
-
 async function readOperationalHealthReadiness(
   env: Pick<NodeJS.ProcessEnv, string>,
 ): Promise<OperationalHealthReadiness> {
@@ -599,24 +469,6 @@ function migrationItem(migrations: MigrationReadiness): ReadinessItem {
   };
 }
 
-export function aiDescriptionItem(readiness: AiDescriptionReadiness): ReadinessItem {
-  return {
-    key: "pipeline.ai_description_coverage",
-    area: "pipeline",
-    label: "Couverture synthèses IA",
-    status: readiness.status,
-    detail: readiness.detail,
-    action:
-      readiness.status === "ready"
-        ? null
-        : readiness.activeUpcomingCount == null
-          ? "Configurer SUPABASE_DB_URL ou POSTGRES_URL_NON_POOLING pour auditer la couverture."
-          : readiness.missingCurrentCount && readiness.missingCurrentCount > 0
-            ? "Lancer un backfill IA depuis l'admin ou GitHub Actions, puis vérifier les erreurs récentes."
-            : "Vérifier qu'il existe des annonces actives ou à venir à auditer.",
-  };
-}
-
 export function operationalHealthItem(readiness: OperationalHealthReadiness): ReadinessItem {
   return {
     key: "operations.health",
@@ -636,45 +488,6 @@ export function operationalHealthItem(readiness: OperationalHealthReadiness): Re
               ? "Analyser les exécutions en échec sur 30 jours et confirmer le retour au SLO."
               : "Vérifier le scheduler Supabase et la dernière exécution du contrôle de santé.",
   };
-}
-
-type AiCoverageRow = {
-  active_upcoming_count: number;
-  covered_current_count: number;
-  missing_current_count: number;
-  missing_source_count: number;
-  recent_failure_count: number;
-};
-
-function aiDescriptionDetail({
-  status,
-  activeUpcomingCount,
-  coveredCurrentCount,
-  missingCurrentCount,
-  missingSourceCount,
-  recentFailureCount,
-  promptVersion,
-}: {
-  status: ReadinessStatus;
-  activeUpcomingCount: number;
-  coveredCurrentCount: number;
-  missingCurrentCount: number;
-  missingSourceCount: number;
-  recentFailureCount: number;
-  promptVersion: string;
-}): string {
-  if (activeUpcomingCount === 0) {
-    return `Aucune annonce active ou à venir à auditer pour ${promptVersion}.`;
-  }
-  if (status === "ready") {
-    return `${coveredCurrentCount}/${activeUpcomingCount} annonces actives ou à venir ont une synthèse IA au prompt ${promptVersion}.`;
-  }
-  const details = [
-    `${missingCurrentCount}/${activeUpcomingCount} annonces n'ont pas de synthèse IA courante`,
-    missingSourceCount ? `${missingSourceCount} sans description source exploitable` : null,
-    recentFailureCount ? `${recentFailureCount} en quarantaine après échec récent` : null,
-  ].filter(Boolean);
-  return `${details.join(" ; ")}.`;
 }
 
 function databaseUrl(env: Pick<NodeJS.ProcessEnv, string>): string | null {
