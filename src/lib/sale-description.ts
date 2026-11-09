@@ -57,8 +57,10 @@ export function buildStructuredDescription(sale: AuctionSale, now = new Date()):
     valuationConflict ? "type de bien à confirmer" : propertyTypeLabel(sale.property_type),
     surfaceLabel,
     roomsPhrase(sale),
-    // Le terrain n'est ajouté que s'il n'est pas déjà la surface retenue (« terrain 400 m² »).
-    land && !surfaceLabel?.startsWith("terrain") ? `terrain de ${land}` : null,
+    // Le terrain n'est ajouté que s'il n'est pas déjà la surface du bien (terrain à bâtir, « terrain 400 m² »).
+    land && sale.property_type !== "land" && !surfaceLabel?.startsWith("terrain")
+      ? `terrain de ${land}`
+      : null,
     ["Non renseignée", "À confirmer"].includes(occupation) ? null : occupation,
   ].filter((fact): fact is string => Boolean(fact && fact !== "Non renseigné"));
   const amenities = saleAmenities(sale).map((item) => item.charAt(0).toLowerCase() + item.slice(1));

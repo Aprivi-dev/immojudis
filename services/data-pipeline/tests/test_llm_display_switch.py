@@ -73,3 +73,65 @@ def test_mode_display_sans_appel_au_modele(monkeypatch):
 
     assert stats.analyzed == 0
     assert "llm_display_description" not in sale.raw_payload
+
+
+def _structured_pass(monkeypatch, tmp_path, description):
+    from src.enrichment.prompts import DISPLAY_DESCRIPTION_SYSTEM_PROMPT
+    from src.models import AuctionSale
+    from tests.test_llm_cost_cache import FakeClient, _fact_calls, _patch_contexts
+
+    monkeypatch.setenv("LLM_ENABLED", "true")
+    monkeypatch.setenv("INCREMENTAL_ENRICHMENT", "true")
+    _patch_contexts(monkeypatch, ["chunk-A"])
+    sale = AuctionSale(
+        source_name="test",
+        source_url="https://example.test/sale",
+        raw_text="Maison à Bordeaux.",
+        description=description,
+        city="Bordeaux",
+        property_type="house",
+    )
+    client = FakeClient()
+    stats = extract_structured.enrich_sale_with_llm(
+        sale, client=client, output_dir=tmp_path, extraction_mode="structured_then_display"
+    )
+    display_calls = [call for call in client.calls if call[0] == DISPLAY_DESCRIPTION_SYSTEM_PROMPT]
+    return sale, stats, display_calls, _fact_calls(client)
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Maison à Bordeaux avec jardin.",
+        # Contrainte de source trop longue pour une synthèse : rejetée quand la synthèse était produite.
+        "Maison à Bordeaux. Le bien est grevé d'une servitude "
+        + " ".join(["de passage au profit du fonds voisin cadastré"] * 40)
+        + ".",
+    ],
+)
+def test_passe_des_faits_sans_synthese_ni_rejet(monkeypatch, tmp_path, description):
+    sale, stats, display_calls, fact_calls = _structured_pass(monkeypatch, tmp_path, description)
+
+    assert display_calls == []
+    assert fact_calls
+    assert stats.errors == 0, stats.error_messages
+    assert "llm_display_description" not in sale.raw_payload
+    assert "llm_display_status" not in sale.raw_payload
+
+
+def test_drapeau_de_changement_retire_sans_piece():
+    from src.enrichment.operational_display import refresh_operational_display
+
+    sale = _sale(
+        raw_payload={"source_content_changed": True, "source_content_change_reason": "source_description_changed"}
+    )
+    assert refresh_operational_display(sale) is False
+    assert "source_content_changed" not in sale.raw_payload
+
+    with_documents = _sale(
+        documents=["https://example.test/cahier.pdf"],
+        raw_payload={"source_content_changed": True, "source_content_change_reason": "source_description_changed"},
+    )
+    refresh_operational_display(with_documents)
+    # Une vente avec pièces garde le drapeau : la passe des faits le retirera.
+    assert with_documents.raw_payload["source_content_changed"] is True

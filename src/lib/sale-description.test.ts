@@ -195,6 +195,17 @@ describe("description construite à partir des faits (sans synthèse rédigée p
       }),
     );
     expect(text.match(/terrain/g)).toHaveLength(1);
+    const withRetainedSurface = buildStructuredDescription(
+      sale({
+        city: "Pau",
+        property_type: "land",
+        status: "upcoming",
+        sale_date: future,
+        app_surface_m2: 800,
+        land_surface_m2: 800,
+      }),
+    );
+    expect(withRetainedSurface).not.toContain("terrain de 800");
     expect(text).not.toContain("Équipements mentionnés");
     expect(text).not.toContain("Diagnostic de performance énergétique");
     expect(text).not.toContain("Visites annoncées");

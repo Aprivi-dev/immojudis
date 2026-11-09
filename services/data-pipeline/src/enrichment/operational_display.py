@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from src.config import load_settings
+from src.config import llm_display_enabled, load_settings
 from src.enrichment.display_fallback import (
     PROPERTY_TYPE_DISPLAY_LABELS,
     fallback_asset_details,
@@ -74,6 +74,13 @@ def refresh_operational_display(
 ) -> bool:
     """Use current structured facts only; fall back to normal validation if unsafe."""
     payload = sale.raw_payload
+    settings = settings or load_settings()
+    if not llm_display_enabled(settings) and not sale.documents and payload.get("source_content_changed"):
+        # Synthèse coupée : une vente sans pièce n'aura ni tâche display ni passe des faits pour retirer le
+        # drapeau du changement de source, qui resterait posé (analyse « en attente » pour toujours).
+        for key in ("source_content_changed", "source_content_change_reason", "source_operational_changed"):
+            payload.pop(key, None)
+        return False
     if not payload.get("source_operational_changed") or payload.get("operator_land_surface_conflict"):
         return False
     previous = payload.get("superseded_analysis")
@@ -91,7 +98,6 @@ def refresh_operational_display(
         "source_operational_changed",
     }:
         return False
-    settings = settings or load_settings()
     if any(
         previous.get(previous_key) != str(settings.get(current_key) or "")
         for previous_key, current_key in (
