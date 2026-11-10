@@ -323,7 +323,7 @@ describe("BillingActions", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Souscrire à Analyse" }));
     expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(screen.getByText("Abonnement immédiat")).toBeTruthy();
+    expect(screen.getByText("Abonnement mensuel, sans engagement de durée")).toBeTruthy();
     expect(screen.getByText(/Carte bancaire requise\./)).toBeTruthy();
   });
 

@@ -86,7 +86,9 @@ describe("/offres : rendu serveur", () => {
 
   it("souscription ouverte : le prix est dit sans la mention de tarif prévu", () => {
     const { markup, text } = render({ trialOpen: true, subscriptionOpen: true });
-    expect(text).toContain("Analyse coûte 59 € TTC / mois, résiliable à tout moment.");
+    expect(text).toContain(
+      "Analyse est un abonnement à 59 € TTC / mois, prélevé automatiquement chaque mois jusqu’à résiliation, résiliable à tout moment.",
+    );
     expect(markup).not.toContain('data-testid="price-note"');
     expect(text).not.toContain("pas encore souscriptible");
   });

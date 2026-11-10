@@ -94,7 +94,7 @@ describe("versions précédentes archivées", () => {
     },
   );
 
-  it.each(["legal", "privacy"] as const)(
+  it.each(["terms", "legal", "privacy"] as const)(
     "garde aussi l'archive des versions plus anciennes (%s), à l'empreinte déclarée",
     (document) => {
       for (const earlier of PREVIOUS_LEGAL_DOCUMENTS[document].earlier) {
@@ -107,10 +107,11 @@ describe("versions précédentes archivées", () => {
     },
   );
 
-  it("ancre les versions courantes à l'empreinte du fichier qui les porte (politique, mentions légales)", () => {
+  it("ancre les versions courantes à l'empreinte du fichier qui les porte (politique, mentions légales, CGU)", () => {
     for (const [document, file] of [
       ["privacy", "src/routes/privacy.tsx"],
       ["legal", "src/routes/legal.tsx"],
+      ["terms", "src/routes/conditions-generales.tsx"],
     ] as const) {
       const digest = createHash("sha256")
         .update(readFileSync(resolve(file)))

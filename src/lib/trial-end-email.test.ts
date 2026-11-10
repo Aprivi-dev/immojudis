@@ -4,7 +4,10 @@ import { LAUNCH_OFFER_END_NEEDS_ANALYSIS, LAUNCH_OFFER_END_STAYS } from "./launc
 import {
   buildTrialEndMessage,
   TRIAL_END_NO_CHARGE_TEXT,
+  TRIAL_END_OFFER_LABEL,
+  TRIAL_END_OFFER_TEXT,
   TRIAL_END_OPENING_LABEL,
+  TRIAL_END_OPENING_TEXT,
   trialEndDayLabel,
   trialEndSubject,
 } from "./trial-end-email";
@@ -13,7 +16,7 @@ const env = { EMAIL_UNSUBSCRIBE_SECRET: "secret-de-test" };
 const userId = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 const now = new Date("2026-11-09T12:30:00Z");
 
-function build(overrides: { internal?: boolean; endsAt?: string } = {}) {
+function build(overrides: { internal?: boolean; endsAt?: string; checkoutOpen?: boolean } = {}) {
   return buildTrialEndMessage({
     userId,
     endsAt: overrides.endsAt ?? "2026-11-11T08:00:00Z",
@@ -23,6 +26,7 @@ function build(overrides: { internal?: boolean; endsAt?: string } = {}) {
     internal: overrides.internal,
     now,
     env,
+    checkoutOpen: overrides.checkoutOpen,
   });
 }
 
@@ -40,6 +44,28 @@ describe("trialEndDayLabel et trialEndSubject", () => {
       "Votre essai gratuit de l’offre Analyse se termine le 14 novembre 2026",
     );
     expect(trialEndSubject("2026-11-14T08:00:00Z", true)).toMatch(/^\[Test interne\] Votre essai/);
+  });
+});
+
+describe("buildTrialEndMessage : garde d'ouverture du paiement (C12)", () => {
+  it("paiement fermé (par défaut, sans configuration Stripe) : la liste d'attente", async () => {
+    const message = await build();
+    expect(message.text).toContain(TRIAL_END_OPENING_TEXT);
+    expect(message.text).toContain(`${TRIAL_END_OPENING_LABEL} : https://immojudis.test/offres`);
+    expect(message.text).not.toContain(TRIAL_END_OFFER_TEXT);
+  });
+
+  it("paiement ouvert : la page Offres, plus de « prévenu de son ouverture »", async () => {
+    const message = await build({ checkoutOpen: true });
+    for (const body of [message.text, message.html.replace(/<[^>]+>/g, " ")]) {
+      expect(body).toContain(TRIAL_END_OFFER_TEXT);
+      expect(body).toContain(TRIAL_END_OFFER_LABEL);
+      expect(body).not.toContain("prévenu de son ouverture");
+      expect(body).not.toContain(TRIAL_END_OPENING_LABEL);
+      // Toujours aucun prix dans ce message.
+      expect(body).not.toMatch(/\d+[\s\u00a0]?€/);
+    }
+    expect(message.html).toContain('href="https://immojudis.test/offres"');
   });
 });
 

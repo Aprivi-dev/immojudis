@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { listingSaleStatus } from "@/lib/listing-evidence";
+import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { useAuth } from "@/hooks/use-auth";
 import { PepiteViewTracker } from "@/components/sale-detail/PepiteViewTracker";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
@@ -305,6 +306,21 @@ export function UnlockedSaleDetailView({
       pepiteKnown={pepiteKnown}
       access="unlocked"
     />
+  );
+}
+
+/**
+ * Plafond verrouillé d'un visiteur (C12, 08/11) : « choisissez l’offre Analyse » seulement quand la garde
+ * d'ouverture du paiement le permet ; sinon (fermée ou encore inconnue), le déblocage gratuit seul. Composant
+ * à part pour que la lecture de l'offre ne parte que pour un visiteur.
+ */
+function VisitorCeilingSignupAction({ signupHref }: { signupHref: string }) {
+  const checkoutOpen = useAnalysisCheckoutOpen();
+  return (
+    <>
+      <Link href={signupHref}>Créez un compte gratuit</Link>, puis débloquez la vente
+      {checkoutOpen === true ? " ou choisissez l’offre Analyse" : null}
+    </>
   );
 }
 
@@ -782,12 +798,7 @@ function SaleDetailWorkspace({
       : signupHref
         ? {
             kind: "locked",
-            action: (
-              <>
-                <Link href={signupHref}>Créez un compte gratuit</Link>, puis débloquez la vente ou
-                choisissez l’offre Analyse
-              </>
-            ),
+            action: <VisitorCeilingSignupAction signupHref={signupHref} />,
           }
         : {
             kind: "locked",

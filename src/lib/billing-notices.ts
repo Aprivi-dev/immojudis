@@ -163,6 +163,126 @@ export async function sendPaymentFailedNotice({
   }
 }
 
+/** Lien de paiement Stripe accepté dans l'email 3-D Secure ; tout autre lien renvoie vers « Mon compte ». */
+function isStripeHostedInvoiceUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "invoice.stripe.com";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 3-D Secure au renouvellement (bloquant C10 du 08/11) : la banque demande au client de confirmer le
+ * prélèvement mensuel. Sans action de sa part, le paiement échoue et l'accès finit par être suspendu.
+ * Le lien mène à la page de paiement hébergée par Stripe (`hosted_invoice_url`), qui ouvre la
+ * confirmation de la banque ; à défaut, à « Mon compte ».
+ */
+export function buildPaymentActionRequiredMessage({
+  from,
+  to,
+  appUrl,
+  hostedInvoiceUrl,
+  priceLabel = resolveAnalysisOfferLabel(),
+}: {
+  from: string;
+  to: string;
+  appUrl: string;
+  /** Page de paiement Stripe de la facture en attente (`invoice.hosted_invoice_url`). */
+  hostedInvoiceUrl?: string | null;
+  /** Public price of the subscription, e.g. « 59 € TTC / mois ». */
+  priceLabel?: string;
+}): ResendEmailMessage {
+  const accountUrl = `${appUrl}/compte`;
+  const confirmUrl = isStripeHostedInvoiceUrl(hostedInvoiceUrl) ? hostedInvoiceUrl : accountUrl;
+  const reason =
+    "Votre banque demande une confirmation (3-D Secure) pour le renouvellement de votre abonnement Immojudis Analyse. Tant qu’elle n’est pas donnée, le paiement reste en attente.";
+  const amount = `Montant de l’abonnement : ${priceLabel}.`;
+  const how =
+    "Le lien ci-dessous ouvre la page de paiement sécurisée de Stripe, notre prestataire de paiement ; votre banque vous y demande de confirmer, comme lors de votre souscription.";
+  const grace = `Votre accès Analyse reste ouvert ${PAST_DUE_GRACE_DAYS} jours à compter de la fin de la période payée ; passé ce délai sans paiement, l’accès est suspendu. Votre compte Découverte et vos données restent accessibles.`;
+  const cancel =
+    "Si vous ne souhaitez pas poursuivre, vous pouvez résilier à tout moment depuis la page « Mon compte », bouton « Résilier mon abonnement ».";
+  const subject = "Confirmez le paiement de votre abonnement Immojudis";
+  const lines = [
+    "Bonjour,",
+    "",
+    reason,
+    amount,
+    "",
+    how,
+    `Confirmer mon paiement : ${confirmUrl}`,
+    "",
+    grace,
+    cancel,
+    "",
+    "Cordialement,",
+    "L’équipe Immojudis",
+  ];
+  return {
+    from,
+    to,
+    subject,
+    text: lines.join("\n"),
+    html: billingEmail({
+      title: subject,
+      preheader:
+        "Votre banque demande une confirmation pour le renouvellement de votre abonnement.",
+      content: [
+        emailParagraph("Bonjour,"),
+        emailParagraph(`${escapeHtml(reason)} ${escapeHtml(amount)}`),
+        emailParagraph(escapeHtml(how)),
+        emailButton(confirmUrl, "Confirmer mon paiement"),
+        emailParagraph(`${escapeHtml(grace)} ${escapeHtml(cancel)}`),
+        SIGNATURE,
+      ],
+    }),
+  };
+}
+
+/**
+ * Ask a subscriber to confirm a renewal their bank holds for 3-D Secure. One email per invoice (the
+ * Resend idempotency key absorbs a replayed event); a delivery problem never fails the webhook.
+ */
+export async function sendPaymentActionRequiredNotice({
+  userId,
+  invoiceId,
+  hostedInvoiceUrl,
+}: {
+  userId: string;
+  invoiceId: string;
+  hostedInvoiceUrl?: string | null;
+}): Promise<"sent" | "skipped" | "failed"> {
+  const config = resolveTransactionalEmailConfig();
+  if (!config.configured || !config.apiKey || !config.from || !config.appUrl) return "skipped";
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (error) throw error;
+    const recipient = data.user?.email?.trim();
+    if (!recipient) return "skipped";
+    await sendTrackedEmail({
+      apiKey: config.apiKey,
+      idempotencyKey: `immojudis-payment-action-required-${invoiceId}`,
+      templateKey: "payment_action_required",
+      userId,
+      fetchImpl: fetch,
+      message: buildPaymentActionRequiredMessage({
+        from: config.from,
+        to: recipient,
+        appUrl: config.appUrl,
+        hostedInvoiceUrl,
+      }),
+      category: "billing",
+    });
+    return "sent";
+  } catch (error) {
+    console.error("[billing] payment action required notice failed", error);
+    return "failed";
+  }
+}
+
 export function buildTrialEndingMessage({
   from,
   to,

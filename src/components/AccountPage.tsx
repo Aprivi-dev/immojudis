@@ -174,7 +174,13 @@ export function AccountPage() {
                 : "Chargement…"}
             </strong>
             {plan?.hasAnalysisAccess && periodEnd && !launchOffer ? (
-              <> · accès jusqu’au {periodEnd}</>
+              hasLiveStripeSubscription(plan?.billing, plan?.currentPeriodEnd) && !pastDue ? (
+                // Abonnement mensuel : la date est l'échéance (prochain prélèvement, ou fin si
+                // l'abonnement est résilié), pas la fin d'un accès à durée fixe.
+                <> · abonnement mensuel, prochaine échéance le {periodEnd}</>
+              ) : (
+                <> · accès jusqu’au {periodEnd}</>
+              )
             ) : null}
           </p>
         )}

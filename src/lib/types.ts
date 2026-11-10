@@ -248,6 +248,11 @@ export type UserAlert = {
   dpe_classes: string[];
   require_house_with_land: boolean;
   alert_frequency: "instant" | "daily" | "weekly";
+  /**
+   * Repassage automatique en hebdomadaire à la fin de l'essai (C1) : l'alerte redevient quotidienne
+   * quand le compte retrouve un droit Analyse durable. Absent si la migration n'est pas appliquée.
+   */
+  frequency_downgraded_at?: string | null;
   last_evaluated_at: string | null;
   last_match_count: number;
   advanced_criteria: Record<string, unknown>;

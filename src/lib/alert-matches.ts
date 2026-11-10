@@ -18,7 +18,7 @@ import type { RentLookup } from "@/lib/rent-reference";
 import { createRentLookupSession, type RentLookupSession } from "@/lib/rent-reference.server";
 import { marketGapWithheldReason } from "@/lib/market-gap-band";
 import { listPepiteSaleIds, type PepiteIdsClient } from "@/lib/pepite-sale-ids";
-import { featureIncluded } from "@/lib/plans";
+import { featureIncluded, hasStandingAnalysisAccess } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSaleAlertDetails, getSalesForAlertEvaluation } from "@/lib/queries";
 import { systemAuthForUser } from "@/lib/system-auth";
@@ -298,6 +298,7 @@ export async function evaluateUserAlertMatches({
   }
 
   const discovery = !plan.hasAnalysisAccess;
+  const standingAnalysis = hasStandingAnalysisAccess(plan);
   const evaluatedAt = new Date().toISOString();
   const activeAlerts = await getActiveUserAlerts(auth);
   // Compte Découverte : une seule alerte aux critères publics. Une alerte quotidienne (créée pendant l'essai)
@@ -366,7 +367,7 @@ export async function evaluateUserAlertMatches({
         rentSession,
       });
       if (persist) {
-        await persistAlertEvaluation({ entry, auth, evaluatedAt, discovery });
+        await persistAlertEvaluation({ entry, auth, evaluatedAt, discovery, standingAnalysis });
       }
     } catch (error) {
       failures.push(recordAlertFailure({ userId: auth.userId, alert, error }));
@@ -572,11 +573,14 @@ async function persistAlertEvaluation({
   auth,
   evaluatedAt,
   discovery,
+  standingAnalysis = false,
 }: {
   entry: AlertEvaluationEntry;
   auth: SupabaseAuthContext;
   evaluatedAt: string;
   discovery: boolean;
+  /** Droit Analyse durable (abonnement, premium, administrateur ; jamais la seule offre de lancement). */
+  standingAnalysis?: boolean;
 }): Promise<void> {
   const { alert, matches, rows } = entry;
   // Un compte Découverte n'a que le récapitulatif hebdomadaire : ses notifications le suivent, même si l'alerte
@@ -647,14 +651,33 @@ async function persistAlertEvaluation({
   // 20261017110000) refuse TOUTE modification d'une alerte gratuite qui n'est pas hebdomadaire, y compris cette
   // date d'évaluation ; sans la réécriture, l'alerte échouerait à chaque passage. Même règle que la migration du
   // 17/10/2026, qui a fait passer en hebdomadaire les alertes gratuites quotidiennes existantes.
+  //
+  // C1 : la réécriture est marquée (`frequency_downgraded_at`) pour être défaite à la souscription : la première
+  // évaluation d'un compte au droit Analyse durable remet l'alerte en quotidien. Un choix de fréquence fait
+  // ensuite par la personne efface le marqueur (déclencheur de la migration 20261113100000). Sans la colonne
+  // (migration pas encore appliquée), `select("*")` ne renvoie pas la clé : rien n'est écrit dans ce champ.
+  const markerSupported = "frequency_downgraded_at" in alert;
+  const downgrade = discovery && alert.alert_frequency !== "weekly";
+  const restoreDaily =
+    markerSupported &&
+    !discovery &&
+    standingAnalysis &&
+    alert.alert_frequency === "weekly" &&
+    Boolean(alert.frequency_downgraded_at);
   const { error } = await auth.supabase
     .from("user_alerts")
     .update({
       last_evaluated_at: evaluatedAt,
       last_match_count: matches.length,
-      ...(discovery && alert.alert_frequency !== "weekly"
-        ? { alert_frequency: "weekly" as const }
+      ...(downgrade
+        ? {
+            alert_frequency: "weekly" as const,
+            ...(markerSupported && alert.alert_frequency === "daily"
+              ? { frequency_downgraded_at: evaluatedAt }
+              : {}),
+          }
         : {}),
+      ...(restoreDaily ? { alert_frequency: "daily" as const, frequency_downgraded_at: null } : {}),
     })
     .eq("id", alert.id)
     .eq("user_id", auth.userId);

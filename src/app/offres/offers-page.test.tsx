@@ -128,7 +128,11 @@ describe("page Offres", () => {
 
   it("n'ajoute jamais d'essai avec carte au paiement : abonnement mensuel, ou tarif prévu", async () => {
     const open = render(<OffersPage />);
-    expect(await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./)).toBeTruthy();
+    expect(
+      await screen.findByText(
+        /Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation\. Sans engagement/,
+      ),
+    ).toBeTruthy();
     expect(open.container.textContent).not.toMatch(/avec carte bancaire/);
     cleanup();
 
@@ -141,7 +145,7 @@ describe("page Offres", () => {
     expect(
       await screen.findByText(/Tarif prévu : 59 € TTC \/ mois\. Pas encore souscriptible\./),
     ).toBeTruthy();
-    expect(screen.queryByText(/Abonnement mensuel, résiliable/)).toBeNull();
+    expect(screen.queryByText(/Abonnement mensuel prélevé automatiquement/)).toBeNull();
   });
 
   it("n'annonce aucun essai tant que l'offre est en chargement ou en erreur", async () => {
@@ -186,7 +190,9 @@ describe("page Offres", () => {
 
   it("lit l'offre une seule fois et la partage avec le bouton de paiement", async () => {
     render(<OffersPage />);
-    await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./);
+    await screen.findByText(
+      /Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation\. Sans engagement/,
+    );
     expect(mocks.offer).toHaveBeenCalledTimes(1);
     const props = mocks.billingActionsProps.mock.calls.at(-1)?.[0] as {
       offerSource: { offer: { status: string }; reload: () => void };
@@ -213,7 +219,11 @@ describe("page Offres", () => {
       offerSource: { reload: () => void };
     };
     act(() => props.offerSource.reload());
-    expect(await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./)).toBeTruthy();
+    expect(
+      await screen.findByText(
+        /Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation\. Sans engagement/,
+      ),
+    ).toBeTruthy();
     expect(mocks.offer).toHaveBeenCalledTimes(2);
   });
 
@@ -308,7 +318,7 @@ describe("page Offres", () => {
     const { container } = render(<OffersPage />);
     await screen.findByText(/Tarif prévu : 59 € TTC \/ mois\. Pas encore souscriptible\./);
     expect(container.textContent).toContain("Analyse : tarif prévu 59 € TTC / mois, pas encore");
-    expect(container.textContent).not.toContain("Analyse coûte");
+    expect(container.textContent).not.toContain("Analyse est un abonnement");
     expect(screen.queryByTestId("launch-offer-banner")).toBeNull();
   });
 
@@ -338,7 +348,9 @@ describe("page Offres", () => {
 
   it("souscription ouverte : ni note de tarif prévu ni préfixe dans la FAQ", async () => {
     const { container } = render(<OffersPage />);
-    await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./);
+    await screen.findByText(
+      /Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation\. Sans engagement/,
+    );
     expect(screen.queryByTestId("price-note")).toBeNull();
     expect(container.textContent).not.toContain("Quand l’abonnement sera ouvert");
   });
@@ -419,7 +431,9 @@ describe("page Offres", () => {
     expect(panel.textContent).toContain(
       "Offerte pendant 7 jours à l’inscription, sans carte bancaire.",
     );
-    expect(await within(panel).findByText(/Abonnement mensuel, résiliable/)).toBeTruthy();
+    expect(
+      await within(panel).findByText(/Abonnement mensuel prélevé automatiquement/),
+    ).toBeTruthy();
     expect(within(panel).getByRole("link", { name: "Commencer l’essai gratuit" })).toBeTruthy();
   });
 
@@ -621,21 +635,23 @@ describe("page Offres", () => {
     expect(label?.className).toContain("break-words");
   });
 
-  it("rendu serveur : ne dit pas « Analyse coûte » tant que l'état de l'offre n'est pas lu", () => {
+  it("rendu serveur : ne dit pas « Analyse est un abonnement » tant que l'état de l'offre n'est pas lu", () => {
     // Pas d'effet côté serveur : l'état de l'offre de lancement et de la souscription est inconnu.
     mocks.launch.mockReturnValue({ active: false, pending: true });
     const html = renderToStaticMarkup(<OffersPage />);
-    expect(html).not.toMatch(/Analyse coûte/);
+    expect(html).not.toMatch(/Analyse est un abonnement/);
     expect(html).not.toMatch(/résiliable à tout moment/);
     expect(html).toContain("Les conditions de souscription s’affichent une fois l’offre chargée.");
     expect(html).not.toContain("launch-offer-free-note");
   });
 
-  it("annonce « Analyse coûte » seulement quand la souscription est lue ouverte", async () => {
+  it("annonce « Analyse est un abonnement » seulement quand la souscription est lue ouverte", async () => {
     render(<OffersPage />);
-    expect(screen.queryByText(/Analyse coûte/)).toBeNull();
+    expect(screen.queryByText(/Analyse est un abonnement/)).toBeNull();
     expect(
-      await screen.findByText(/Analyse coûte 59 € TTC \/ mois, résiliable à tout moment/),
+      await screen.findByText(
+        /Analyse est un abonnement à 59 € TTC \/ mois, prélevé automatiquement chaque mois/,
+      ),
     ).toBeTruthy();
   });
 
@@ -644,7 +660,7 @@ describe("page Offres", () => {
     mocks.offer.mockResolvedValue({ configured: false, trialAvailable: false, label: "59 €" });
     const { container } = render(<OffersPage />);
     await screen.findByTestId("price-note");
-    expect(container.textContent).not.toMatch(/Analyse coûte/);
+    expect(container.textContent).not.toMatch(/Analyse est un abonnement/);
     expect(container.textContent).toContain(
       "Analyse : tarif prévu 59 € TTC / mois, pas encore souscriptible. Elle est offerte pendant 7 jours à l’inscription, sans carte bancaire.",
     );
@@ -662,7 +678,9 @@ describe("page Offres", () => {
 
   it("hors offre de lancement, aucune mention de l'offre de lancement dans la carte ni le comparatif", async () => {
     render(<OffersPage />);
-    await screen.findByText(/Abonnement mensuel, résiliable à tout moment\./);
+    await screen.findByText(
+      /Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation\. Sans engagement/,
+    );
     expect(screen.queryByTestId("launch-offer-free-note")).toBeNull();
     expect(screen.queryByTestId("launch-offer-comparison-note")).toBeNull();
   });

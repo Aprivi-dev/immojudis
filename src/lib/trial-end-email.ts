@@ -8,12 +8,14 @@ import {
   LAUNCH_OFFER_END_STAYS,
 } from "@/lib/launch-offer-end-lists";
 import { LAUNCH_OFFER_DATA_TEXT } from "@/lib/launch-offer";
+import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 
 /**
  * Email unique de fin d'essai gratuit, à J+5 après la confirmation de l'adresse (l'essai dure 7 jours).
  * Sans pression : ce qui reste gratuit, ce qui se ferme, le fait que rien ne devient payant, et un seul
- * lien, « Être prévenu de l'ouverture » (la liste d'attente de l'offre Analyse, avec son propre
- * consentement). Ni compte à rebours, ni remise, ni appel à s'abonner.
+ * lien : « Être prévenu de l'ouverture » (la liste d'attente de l'offre Analyse, avec son propre
+ * consentement) tant que le paiement est fermé, « Voir l'offre Analyse » une fois ouvert. Ni compte à
+ * rebours, ni remise, ni appel pressant à s'abonner.
  *
  * Mêmes listes que le bloc « fin de l'essai » de /compte (`launch-offer-end-lists.ts`) : le message ne
  * peut pas promettre autre chose que l'écran. Lien de désinscription signé (portée `launch-offer-end`,
@@ -24,6 +26,17 @@ import { LAUNCH_OFFER_DATA_TEXT } from "@/lib/launch-offer";
  */
 
 export const TRIAL_END_OPENING_LABEL = "Être prévenu de l’ouverture";
+
+/**
+ * Dernière phrase du message selon la garde d'ouverture du paiement (C12, 08/11 :
+ * `analysisCheckoutReadiness`). Fermée : la liste d'attente. Ouverte : la page Offres, sans prix ni appel
+ * pressant, puisque l'offre se souscrit déjà.
+ */
+export const TRIAL_END_OPENING_TEXT =
+  "Si l’offre Analyse vous intéresse, vous pouvez demander à être prévenu de son ouverture :";
+export const TRIAL_END_OFFER_TEXT =
+  "Si l’offre Analyse vous intéresse, elle est ouverte à la souscription sur la page Offres :";
+export const TRIAL_END_OFFER_LABEL = "Voir l’offre Analyse";
 
 /** La phrase qui rassure, reprise des CGV et de la page Offres : rien ne se déclenche tout seul. */
 export const TRIAL_END_NO_CHARGE_TEXT =
@@ -56,6 +69,7 @@ export async function buildTrialEndMessage({
   internal = false,
   now = new Date(),
   env,
+  checkoutOpen,
 }: {
   userId: string;
   /** Fin de l'essai du compte (ISO), déjà lue en base (`app_private.signup_trial_ends_at`). */
@@ -67,7 +81,12 @@ export async function buildTrialEndMessage({
   internal?: boolean;
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
+  /** Garde d'ouverture du paiement ; par défaut, `analysisCheckoutReadiness` lue sur `env`. */
+  checkoutOpen?: boolean;
 }): Promise<ResendEmailMessage & { unsubscribeUrl: string }> {
+  const open = checkoutOpen ?? analysisCheckoutReadiness(env ?? process.env).open;
+  const openingText = open ? TRIAL_END_OFFER_TEXT : TRIAL_END_OPENING_TEXT;
+  const openingLabel = open ? TRIAL_END_OFFER_LABEL : TRIAL_END_OPENING_LABEL;
   const endsOnLabel = trialEndDayLabel(endsAt);
   const unsubscribeUrl = `${appUrl}/api/notification-preferences/unsubscribe?token=${encodeURIComponent(
     createUnsubscribeToken({ userId, scope: { kind: "launch-offer-end" }, now, env }),
@@ -82,7 +101,8 @@ export async function buildTrialEndMessage({
     dataText: LAUNCH_OFFER_DATA_TEXT,
     noChargeText: TRIAL_END_NO_CHARGE_TEXT,
     openingUrl,
-    openingLabel: TRIAL_END_OPENING_LABEL,
+    openingText,
+    openingLabel,
     settingsUrl,
     unsubscribeUrl,
     internal,
@@ -107,8 +127,8 @@ export async function buildTrialEndMessage({
     TRIAL_END_NO_CHARGE_TEXT,
     LAUNCH_OFFER_DATA_TEXT,
     "",
-    "Si l’offre Analyse vous intéresse, vous pouvez demander à être prévenu de son ouverture :",
-    `${TRIAL_END_OPENING_LABEL} : ${openingUrl}`,
+    openingText,
+    `${openingLabel} : ${openingUrl}`,
     "",
     "Vous recevez ce message parce que votre compte Immojudis est en essai gratuit. Une seule fois, pour cet essai.",
     `Mon compte : ${settingsUrl}`,

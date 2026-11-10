@@ -25,7 +25,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * Amount to give back, in cents, for one paid period.
  * Nothing is refundable before a charge exists, and the result never exceeds
- * what remains of the charge.
+ * what remains of the charge. What was already refunded on the charge counts
+ * toward the amount due (C9, 08/11): a withdrawal run twice tops up to the
+ * prorata at most, it never pays the prorata a second time.
  */
 export function computeWithdrawalRefundCents({
   chargedCents,
@@ -42,7 +44,8 @@ export function computeWithdrawalRefundCents({
   requestedAt: Date;
   mode: "prorata" | "full";
 }): number {
-  const refundable = Math.max(0, chargedCents - Math.max(0, alreadyRefundedCents));
+  const alreadyRefunded = Math.max(0, alreadyRefundedCents);
+  const refundable = Math.max(0, chargedCents - alreadyRefunded);
   if (refundable === 0) return 0;
   if (mode === "full") return refundable;
 
@@ -53,8 +56,12 @@ export function computeWithdrawalRefundCents({
   const providedDays = Math.ceil(elapsedMs / DAY_MS);
   const periodDays = Math.ceil(periodMs / DAY_MS);
   const remainingShare = Math.max(0, (periodDays - providedDays) / periodDays);
-  return Math.min(refundable, Math.floor(chargedCents * remainingShare));
+  const dueCents = Math.floor(chargedCents * remainingShare);
+  return Math.min(refundable, Math.max(0, dueCents - alreadyRefunded));
 }
+
+/** Metadata key that ties a Stripe refund to the withdrawal request that issued it. */
+const WITHDRAWAL_REQUEST_METADATA_KEY = "withdrawal_request_id";
 
 export type ContractWithdrawalResult = {
   request: PrivacyRequestAdminSummary;
@@ -124,7 +131,21 @@ export async function executeContractWithdrawal({
       limit: 5,
     });
     const charge = charges.data.find((candidate) => candidate.paid && !candidate.refunded);
-    if (charge && periodStart && periodEnd) {
+    // C9 : une rétractation relancée (clôture de la demande en échec, double clic, nouvel essai le
+    // lendemain quand la clé d'idempotence Stripe a expiré) ne rembourse pas une seconde fois.
+    const previousRefund = charge
+      ? (await stripe.refunds.list({ charge: charge.id, limit: 100 })).data.find(
+          (refund) =>
+            refund.status !== "failed" &&
+            refund.status !== "canceled" &&
+            refund.metadata?.[WITHDRAWAL_REQUEST_METADATA_KEY] === request.id,
+        )
+      : undefined;
+    if (previousRefund) {
+      notes.push(
+        `Remboursement ${previousRefund.id} déjà émis pour cette rétractation (${previousRefund.amount} centimes) : aucun nouveau remboursement.`,
+      );
+    } else if (charge && periodStart && periodEnd) {
       const amount = computeWithdrawalRefundCents({
         chargedCents: charge.amount,
         alreadyRefundedCents: charge.amount_refunded,
@@ -135,7 +156,14 @@ export async function executeContractWithdrawal({
       });
       if (amount > 0) {
         await stripe.refunds.create(
-          { charge: charge.id, amount, metadata: { reason: "contract_withdrawal" } },
+          {
+            charge: charge.id,
+            amount,
+            metadata: {
+              reason: "contract_withdrawal",
+              [WITHDRAWAL_REQUEST_METADATA_KEY]: request.id,
+            },
+          },
           { idempotencyKey: `immojudis-withdrawal-${request.id}` },
         );
         refundedCents = amount;
