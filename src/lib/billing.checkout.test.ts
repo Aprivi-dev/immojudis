@@ -43,7 +43,11 @@ vi.mock("@/lib/commercial-acceptance", () => ({
   sendCommercialConfirmation: vi.fn(),
 }));
 
-import { createPlanCheckoutSession, stripeCustomerIdempotencyKey } from "@/lib/billing";
+import {
+  createPlanCheckoutSession,
+  stripeCustomerIdempotencyKey,
+  VAT_EXEMPTION_INVOICE_MENTION,
+} from "@/lib/billing";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER_ID = "cus_shared";
@@ -140,6 +144,10 @@ describe("createPlanCheckoutSession customer reservation", () => {
     expect(mocks.customersCreate).toHaveBeenCalledTimes(1);
     expect(mocks.customersCreate.mock.calls[0]?.[1]).toEqual({
       idempotencyKey: stripeCustomerIdempotencyKey(USER_ID),
+    });
+    // Franchise en base de TVA : la mention légale figure en pied de chaque facture du client.
+    expect(mocks.customersCreate.mock.calls[0]?.[0]).toMatchObject({
+      invoice_settings: { footer: VAT_EXEMPTION_INVOICE_MENTION },
     });
     expect(mocks.events[0]).toMatch(/^reserve:/);
     expect(mocks.events.indexOf("customer:create")).toBeGreaterThan(0);

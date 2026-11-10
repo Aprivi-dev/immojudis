@@ -112,8 +112,8 @@ export function HomeOffers({
               </p>
             ) : checkoutOpen === true ? (
               <p className={styles.planFinePrint}>
-                Abonnement mensuel, résiliable depuis votre compte. Tarif et conditions sur la page
-                Offres.
+                Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation,
+                résiliable depuis votre compte. Tarif et conditions sur la page Offres.
               </p>
             ) : checkoutOpen === false ? (
               <p className={styles.planFinePrint}>Abonnement bientôt disponible.</p>

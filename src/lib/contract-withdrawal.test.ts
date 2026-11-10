@@ -73,6 +73,38 @@ describe("computeWithdrawalRefundCents", () => {
     ).toBe(0);
   });
 
+  it("counts what was already refunded toward the prorata (C9: no second prorata on a retry)", () => {
+    const requestedAt = new Date("2026-10-04T00:00:00.000Z"); // 3 days provided, 27 left
+    const first = computeWithdrawalRefundCents({ ...base, requestedAt, mode: "prorata" });
+    expect(first).toBe(2_610);
+    // Same request run again (same day or later): nothing more is due.
+    expect(
+      computeWithdrawalRefundCents({
+        ...base,
+        alreadyRefundedCents: first,
+        requestedAt,
+        mode: "prorata",
+      }),
+    ).toBe(0);
+    expect(
+      computeWithdrawalRefundCents({
+        ...base,
+        alreadyRefundedCents: first,
+        requestedAt: new Date("2026-10-06T00:00:00.000Z"),
+        mode: "prorata",
+      }),
+    ).toBe(0);
+    // An earlier partial refund is topped up to the prorata, not added to it.
+    expect(
+      computeWithdrawalRefundCents({
+        ...base,
+        alreadyRefundedCents: 1_000,
+        requestedAt,
+        mode: "prorata",
+      }),
+    ).toBe(1_610);
+  });
+
   it("refunds nothing when no charge was made (trial) or the period is invalid", () => {
     expect(
       computeWithdrawalRefundCents({

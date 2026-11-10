@@ -27,6 +27,8 @@ export type TrialEndEmailProps = {
   /** « Rien ne devient payant automatiquement… » */
   noChargeText: string;
   openingUrl: string;
+  /** Phrase qui précède le lien : liste d'attente (paiement fermé) ou page Offres (ouvert). */
+  openingText: string;
   openingLabel: string;
   settingsUrl: string;
   unsubscribeUrl: string;
@@ -57,6 +59,7 @@ export function buildTrialEndEmailHtml({
   dataText,
   noChargeText,
   openingUrl,
+  openingText,
   openingLabel,
   settingsUrl,
   unsubscribeUrl,
@@ -100,10 +103,9 @@ export function buildTrialEndEmailHtml({
       emailParagraph(`<strong>${e(noChargeText)}</strong>`, { tone: "navy" }) +
         emailParagraph(e(dataText), { tone: "navy" }),
     ),
-    emailParagraph(
-      `${e("Si l’offre Analyse vous intéresse, vous pouvez demander à être prévenu de son ouverture :")} ${emailLink(openingUrl, e(openingLabel))}.`,
-      { marginBottom: 0 },
-    ),
+    emailParagraph(`${e(openingText)} ${emailLink(openingUrl, e(openingLabel))}.`, {
+      marginBottom: 0,
+    }),
   ].join("");
 
   return emailLayout({

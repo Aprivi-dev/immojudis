@@ -123,10 +123,11 @@ export function TermsPage() {
               selon les tribunaux, les biens et les pièces disponibles ; elle est indiquée sur
               chaque fiche. L’abonnement est conclu pour une durée indéterminée et facturé chaque
               mois. Vous pouvez le résilier à tout moment, sans frais ni préavis ; la résiliation
-              prend effet à la fin de la période mensuelle en cours. L’abonnement ne comprend pas de
-              période d’essai : l’essai gratuit est proposé à l’inscription, sans carte bancaire
-              (article 13). Le tarif applicable est présenté avant la confirmation de la
-              souscription.
+              prend effet à la fin de la période mensuelle en cours. Le prix est prélevé
+              automatiquement à la souscription, puis chaque mois à la même date, jusqu’à la
+              résiliation. L’abonnement ne comprend pas de période d’essai : l’essai gratuit est
+              proposé à l’inscription, sans carte bancaire (article 13). Le tarif applicable est
+              présenté avant la confirmation de la souscription.
             </p>
             <p className="mt-3">
               Lorsqu’il est attribué à une vente, le repère « Pépite » est visible par tous. Il est
@@ -166,11 +167,11 @@ export function TermsPage() {
 
           <TermsSection title="4. Prix et paiement">
             <p>
-              Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}. La souscription n’est
-              pas encore ouverte. Le montant TTC et la périodicité sont précisés dans le
-              récapitulatif avant toute souscription. Stripe prélève ce montant à la souscription,
-              puis à chaque échéance tant que l’abonnement n’est pas résilié. Immojudis ne reçoit ni
-              ne conserve le numéro complet de la carte.
+              Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}. Ce prix est un prix
+              final : TVA non applicable, art. 293 B du CGI. Le montant et la périodicité sont
+              précisés dans le récapitulatif avant toute souscription. Stripe prélève ce montant à
+              la souscription, puis à chaque échéance tant que l’abonnement n’est pas résilié.
+              Immojudis ne reçoit ni ne conserve le numéro complet de la carte.
             </p>
             <p className="mt-3">
               En cas d’échec de paiement, Stripe retente le prélèvement. Votre accès Analyse reste
@@ -365,8 +366,8 @@ export function TermsPage() {
               automatique et sans suppression des données. Vos données (favoris, alertes, rapports
               enregistrés) restent conservées tant que votre compte existe et dans les durées de la
               politique de confidentialité ; elles redeviennent accessibles avec l’offre Analyse.
-              Pour conserver l’offre Analyse, il faudra y souscrire (articles 3 et 4) une fois la
-              souscription ouverte : aucun abonnement ne commence sans confirmation dans Stripe.
+              Pour conserver l’offre Analyse, il faut y souscrire (articles 3 et 4) : aucun
+              abonnement ne commence sans confirmation dans Stripe.
             </p>
             <p className="mt-3">
               Cet essai remplace l’offre de lancement à compter du 25 octobre 2026. Les comptes qui

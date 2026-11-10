@@ -12,6 +12,8 @@ const state = vi.hoisted(() => ({
   salesDetails: {} as Record<string, Row>,
   detailCalls: [] as string[][],
   updates: [] as Row[],
+  /** Accès Analyse venu de la seule offre de lancement (pas un droit durable). */
+  launchOffer: false,
   upserts: [] as Row[][],
   /** Alertes dont l'écriture des correspondances échoue (erreur PostgREST, pas une Error). */
   failingAlerts: new Set<string>(),
@@ -167,7 +169,11 @@ vi.mock("@/lib/system-auth", () => ({
   }),
 }));
 vi.mock("@/lib/entitlements.server", () => ({
-  resolvePlanEntitlements: async () => ({ plan: "analyse", hasAnalysisAccess: !state.discovery }),
+  resolvePlanEntitlements: async () => ({
+    plan: "analyse",
+    hasAnalysisAccess: !state.discovery,
+    ...(state.launchOffer ? { launchOffer: true } : {}),
+  }),
 }));
 vi.mock("@/lib/queries", () => ({
   getSalesForAlertEvaluation: async (
@@ -277,6 +283,7 @@ describe("smart alert batch", () => {
     state.rpcCalls = [];
     state.tablesRead = [];
     state.discovery = false;
+    state.launchOffer = false;
     state.existingNotifications = [];
     state.notificationReads = [];
     rents.calls = [];
@@ -500,6 +507,75 @@ describe("smart alert batch", () => {
     expect(notified.frequencies).toEqual(["weekly"]);
     expect(state.updates).toHaveLength(1);
     expect(state.updates[0]).not.toHaveProperty("alert_frequency");
+  });
+
+  describe("retour en quotidien à la souscription (C1)", () => {
+    it("marque l'alerte quotidienne repassée en hebdomadaire à la fin de l'essai", async () => {
+      state.discovery = true;
+      state.userAlerts = [
+        alertRow(1, { department: "33", alert_frequency: "daily", frequency_downgraded_at: null }),
+      ];
+      state.salesPool = [{ id: "sale-33", department: "33" }];
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(state.updates).toEqual([
+        expect.objectContaining({
+          id: "alert-1",
+          alert_frequency: "weekly",
+          frequency_downgraded_at: expect.any(String),
+        }),
+      ]);
+    });
+
+    it("remet en quotidien l'alerte marquée d'un compte abonné", async () => {
+      state.userAlerts = [
+        alertRow(1, {
+          department: "33",
+          alert_frequency: "weekly",
+          frequency_downgraded_at: "2026-11-01T06:00:00.000Z",
+        }),
+      ];
+      state.salesPool = [{ id: "sale-33", department: "33" }];
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(state.updates).toEqual([
+        expect.objectContaining({
+          id: "alert-1",
+          alert_frequency: "daily",
+          frequency_downgraded_at: null,
+        }),
+      ]);
+    });
+
+    it("ne touche pas une alerte hebdomadaire choisie par la personne (sans marqueur)", async () => {
+      state.userAlerts = [
+        alertRow(1, { department: "33", alert_frequency: "weekly", frequency_downgraded_at: null }),
+      ];
+      state.salesPool = [{ id: "sale-33", department: "33" }];
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(state.updates[0]).not.toHaveProperty("alert_frequency");
+      expect(state.updates[0]).not.toHaveProperty("frequency_downgraded_at");
+    });
+
+    it("attend un droit durable : la seule offre de lancement ne remet pas le quotidien", async () => {
+      state.launchOffer = true;
+      state.userAlerts = [
+        alertRow(1, {
+          department: "33",
+          alert_frequency: "weekly",
+          frequency_downgraded_at: "2026-11-01T06:00:00.000Z",
+        }),
+      ];
+      state.salesPool = [{ id: "sale-33", department: "33" }];
+
+      await runSmartAlertEvaluationBatch();
+
+      expect(state.updates[0]).not.toHaveProperty("alert_frequency");
+    });
   });
 
   it("garde quotidienne l'alerte d'un compte Analyse", async () => {

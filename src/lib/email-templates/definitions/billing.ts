@@ -35,6 +35,34 @@ const paymentFailed: EmailTemplateDefinition = {
   },
 };
 
+const paymentActionRequired: EmailTemplateDefinition = {
+  key: "payment_action_required",
+  label: "Paiement à confirmer (3-D Secure)",
+  description:
+    "La banque demande une confirmation 3-D Secure pour le renouvellement de l’abonnement Analyse.",
+  category: "billing",
+  sender: "TRANSACTIONAL_EMAIL_FROM",
+  level: "editable",
+  async sample() {
+    const { buildPaymentActionRequiredMessage } = await import("@/lib/billing-notices");
+    return [
+      variantFromMessage(
+        "hosted-invoice",
+        "Lien vers la page de paiement Stripe",
+        buildPaymentActionRequiredMessage({
+          ...common,
+          hostedInvoiceUrl: "https://invoice.stripe.com/i/acct_exemple/test_exemple",
+        }),
+      ),
+      variantFromMessage(
+        "account-fallback",
+        "Sans lien Stripe (renvoi vers Mon compte)",
+        buildPaymentActionRequiredMessage(common),
+      ),
+    ];
+  },
+};
+
 const trialEnding: EmailTemplateDefinition = {
   key: "trial_ending",
   label: "Fin de l’essai de l’abonnement",
@@ -104,6 +132,7 @@ const commercialConfirmation: EmailTemplateDefinition = {
 
 export const BILLING_EMAIL_TEMPLATES: readonly EmailTemplateDefinition[] = [
   paymentFailed,
+  paymentActionRequired,
   trialEnding,
   cancellation,
   commercialConfirmation,

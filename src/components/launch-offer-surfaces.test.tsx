@@ -146,7 +146,7 @@ describe("carte Analyse de l'accueil", () => {
     render(<HomeOffers />);
     expect(analysisCard().textContent).toContain("Découvrir Analyse");
     expect(analysisCard().textContent).toContain(
-      "Abonnement mensuel, résiliable depuis votre compte.",
+      "Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation, résiliable depuis votre compte.",
     );
     expect(analysisCard().textContent).not.toMatch(/carte bancaire/);
   });
@@ -339,7 +339,7 @@ describe("page Mon compte", () => {
       },
     });
     renderPage();
-    await screen.findByText(/accès jusqu’au 1 décembre 2026/);
+    await screen.findByText(/abonnement mensuel, prochaine échéance le 1 décembre 2026/);
     expect(screen.queryByTestId("account-offer-end")).toBeNull();
   });
 
@@ -354,7 +354,9 @@ describe("page Mon compte", () => {
       },
     });
     renderPage();
-    expect(await screen.findByText(/accès jusqu’au 1 décembre 2026/)).toBeTruthy();
+    expect(
+      await screen.findByText(/abonnement mensuel, prochaine échéance le 1 décembre 2026/),
+    ).toBeTruthy();
     expect(screen.getByText(/portail sécurisé Stripe/)).toBeTruthy();
     expect(screen.queryByTestId("account-launch-offer")).toBeNull();
   });
