@@ -67,6 +67,27 @@ describe("EmailHistoryPanel", () => {
     });
   });
 
+  it("affiche la précision d'un rebond passager à côté de son état, en texte", async () => {
+    mocks.history.mockResolvedValue({
+      rows: [
+        {
+          ...sentPage(null).rows[0],
+          status: {
+            text: "Rebond passager",
+            tone: "warn",
+            detail: "souvent une réponse automatique d’absence ; l’adresse reste utilisable",
+          },
+        },
+      ],
+      next: null,
+    });
+    renderPanel();
+    expect(await screen.findByText("Rebond passager")).toBeTruthy();
+    expect(
+      screen.getByText("souvent une réponse automatique d’absence ; l’adresse reste utilisable"),
+    ).toBeTruthy();
+  });
+
   it("charge la page suivante avec le curseur du serveur", async () => {
     mocks.history
       .mockResolvedValueOnce(sentPage("curseur-1"))

@@ -20,10 +20,16 @@ const GO_VARIABLE_EXAMPLES: Record<string, string> = {
   ".Token": "123456",
 };
 
+/** `{{ .Variable }}`, ou `{{ .Variable | urlquery }}` (lien en clair des gabarits), encodé comme Go. */
 export function fillGoVariables(html: string): string {
-  return html.replace(/\{\{\s*(\.[A-Za-z]+)\s*\}\}/g, (match, name: string) => {
-    return GO_VARIABLE_EXAMPLES[name] ?? match;
-  });
+  return html.replace(
+    /\{\{\s*(\.[A-Za-z]+)(\s*\|\s*urlquery)?\s*\}\}/g,
+    (match, name: string, urlquery: string | undefined) => {
+      const example = GO_VARIABLE_EXAMPLES[name];
+      if (example === undefined) return match;
+      return urlquery ? encodeURIComponent(example) : example;
+    },
+  );
 }
 
 const DESCRIPTIONS: Record<string, string> = {

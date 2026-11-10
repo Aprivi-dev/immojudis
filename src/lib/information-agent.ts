@@ -2,6 +2,8 @@ import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { ADMIN_PAGE_SIZE, adminPageMeta } from "@/lib/admin-pagination";
+import { loadDeliveryLog } from "@/lib/information-agent/delivery-log-reader";
+import { missionDeliveryState } from "@/lib/information-agent/delivery-state";
 import { recordManualMissionReply } from "@/lib/information-agent/manual-reply";
 import {
   cancelMission,
@@ -144,14 +146,21 @@ export async function listAdminInformationAgentMissions({
   const { data, error, count } = await query;
   if (error) throw error;
   const rows = data ?? [];
-  const saleTitles = await loadSaleTitles(
-    rows.flatMap((mission) => (mission.sale_id ? [mission.sale_id] : [])),
-  );
+  const [saleTitles, deliveryLog] = await Promise.all([
+    loadSaleTitles(rows.flatMap((mission) => (mission.sale_id ? [mission.sale_id] : []))),
+    loadDeliveryLog(
+      rows.flatMap((mission) => (mission.provider_message_id ? [mission.provider_message_id] : [])),
+    ),
+  ]);
   return {
     ok: true,
     missions: rows.map((row) => ({
       ...missionFromRow(row),
       saleTitle: row.sale_id ? (saleTitles.get(row.sale_id) ?? null) : null,
+      deliveryState: missionDeliveryState(
+        row,
+        row.provider_message_id ? deliveryLog.get(row.provider_message_id) : undefined,
+      ),
     })),
     facts: await listFactsForCases(
       rows.flatMap((mission) => (mission.case_id ? [mission.case_id] : [])),

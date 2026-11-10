@@ -68,6 +68,7 @@ function sentRow(index: number, overrides: Record<string, unknown> = {}) {
     to_address: "alice@example.test",
     subject: "Vos alertes",
     status: "sent",
+    bounce_type: null,
     resend_email_id: `re_FACTICE_${index}`,
     ...overrides,
   };
@@ -227,6 +228,98 @@ describe("listEmailHistory : envoyés", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("distingue le rebond passager (transient, casse indifférente) du rebond définitif ou inconnu", async () => {
+    state.results.email_send_log = {
+      data: [
+        sentRow(1, { status: "bounced", bounce_type: "transient" }),
+        sentRow(2, { status: "bounced", bounce_type: "Transient" }),
+        sentRow(3, { status: "bounced", bounce_type: "Permanent" }),
+        sentRow(4, { status: "bounced", bounce_type: null }),
+        sentRow(5, { status: "bounced", bounce_type: "Undetermined" }),
+        sentRow(6, { status: "delivered", bounce_type: "transient" }),
+        sentRow(7, { status: "failed" }),
+      ],
+      error: null,
+    };
+    const list = await listEmailHistory({
+      adminUserId: ADMIN,
+      box: "sent",
+      cursor: null,
+      address: null,
+    });
+    const passager = {
+      text: "Rebond passager",
+      tone: "warn",
+      detail: "souvent une réponse automatique d’absence ; l’adresse reste utilisable",
+    };
+    expect(list.rows.map((row) => row.status)).toEqual([
+      passager,
+      passager,
+      { text: "Rebond", tone: "bad" },
+      { text: "Rebond", tone: "bad" },
+      { text: "Rebond", tone: "bad" },
+      { text: "Remis", tone: "ok" },
+      { text: "Échec", tone: "bad" },
+    ]);
+    const select = state.calls[0].calls.find(([method]) => method === "select");
+    expect(String(select?.[1][0])).toContain("bounce_type");
+  });
+
+  it("présente les emails de compte de Supabase Auth (unknown, objet d'un gabarit) en « Compte »", async () => {
+    state.results.email_send_log = {
+      data: [
+        sentRow(1, {
+          template_key: "unknown",
+          subject: "Confirmez votre adresse email pour accéder à Immojudis",
+        }),
+        sentRow(2, {
+          template_key: "unknown",
+          subject: "Réinitialisation de votre mot de passe Immojudis",
+        }),
+        sentRow(3, { template_key: "unknown", subject: "Autre outil" }),
+        // Un gabarit d'Immojudis garde son libellé, même avec un objet d'authentification.
+        sentRow(4, { subject: "Confirmez votre adresse email pour accéder à Immojudis" }),
+      ],
+      error: null,
+    };
+    const list = await listEmailHistory({
+      adminUserId: ADMIN,
+      box: "sent",
+      cursor: null,
+      address: null,
+    });
+    expect(list.rows.map((row) => row.tag)).toEqual([
+      "Compte · Confirmation d’inscription",
+      "Compte · Réinitialisation du mot de passe",
+      "unknown",
+      "Alerte de recherche",
+    ]);
+  });
+
+  it("« Actualiser » ne lit jamais chez Resend un email de compte de Supabase Auth", async () => {
+    state.results.email_send_log = {
+      data: [
+        sentRow(1, {
+          template_key: "unknown",
+          subject: "Confirmez votre adresse email pour accéder à Immojudis",
+        }),
+      ],
+      error: null,
+    };
+    const fetchImpl = vi.fn();
+    await listEmailHistory({
+      adminUserId: ADMIN,
+      box: "sent",
+      cursor: null,
+      address: null,
+      refresh: true,
+      now: NOW,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(recordEmailDeliveryEvent).not.toHaveBeenCalled();
+  });
+
   it("« Actualiser » ignore les ouvertures et les clics", async () => {
     state.results.email_send_log = { data: [sentRow(1), sentRow(2)], error: null };
     let call = 0;
@@ -315,6 +408,7 @@ describe("readEmailMessage", () => {
     to_address: "alice@example.test",
     subject: "Vos alertes",
     status: "delivered",
+    bounce_type: null,
     resend_email_id: "re_FACTICE_1",
   };
 
@@ -441,6 +535,36 @@ describe("readEmailMessage", () => {
       body: "Email non émis par Immojudis : contenu non affiché.",
     });
     // La consultation reste tracée.
+    expect(state.inserts).toHaveLength(1);
+  });
+
+  it("présente un email de compte de Supabase Auth sans jamais lire ni afficher son contenu", async () => {
+    state.results.email_send_log = {
+      data: {
+        ...logRow,
+        template_key: "unknown",
+        category: "unknown",
+        subject: "Confirmez votre adresse email pour accéder à Immojudis",
+        status: "bounced",
+        bounce_type: "transient",
+      },
+      error: null,
+    };
+    const fetchImpl = vi.fn();
+    const message = await readEmailMessage({
+      adminUserId: ADMIN,
+      id: `log:${ID}`,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(message).toMatchObject({
+      kind: "note",
+      body: "Email de compte envoyé par le service d’authentification : contenu non affiché.",
+      attachments: [],
+    });
+    expect(message?.lines[1]).toContain(
+      "· Compte · Confirmation d’inscription · Rebond passager (souvent une réponse automatique d’absence ; l’adresse reste utilisable)",
+    );
     expect(state.inserts).toHaveLength(1);
   });
 
