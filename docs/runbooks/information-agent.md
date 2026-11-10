@@ -108,41 +108,80 @@ barrière : la publication automatique restera contrôlée par ces conditions st
 ## Moteur « publier ou relire » : simulation, modes et arrêt d’urgence (étape 3, 10/11/2026)
 
 **État à la livraison : mode « Arrêt ». Aucun chemin ne publie.** Le moteur décide, la décision est
-journalisée et affichée, rien n’est écrit sur une fiche. Le noyau `app_private.apply_information_agent_fact`
-n’est appelé qu’avec `'admin'` (invariant `information-agent-no-automatic-publication-path` de
-`scripts/check-security-invariants.mjs`, qui refuse aussi un auteur variable), et le pont vers
-`auction_fact_claims` refuse toujours `'auto'`. La fonction de publication automatique viendra à l’étape 6.
+journalisée et affichée, rien n’est écrit sur une fiche. Trois barrières :
+
+- en base, la contrainte `information_agent_fact_publications_auto_locked` (`actor_kind <> 'auto'`) du
+  journal des publications : le noyau `app_private.apply_information_agent_fact` y écrit dans la même
+  transaction que la fiche, donc un appel avec `'auto'` échoue en entier et n’écrit rien (test pgTAP 880) ;
+- le pont vers `auction_fact_claims` refuse toujours `'auto'` ;
+- l’invariant `information-agent-no-automatic-publication-path` de `scripts/check-security-invariants.mjs` :
+  tout appel du noyau dans une migration passe le littéral `'admin'` (identifiants entre guillemets compris),
+  aucun SQL dynamique (`execute`) ne contient son nom, même partiel, aucun code de `src/` ni du pipeline ne le
+  nomme, seul `src/lib/admin-information-agent.ts` appelle `review_information_agent_fact_candidate`, et
+  les deux verrous ne sont ni retirés, ni renommés, ni emportés avec leur table.
+
+La fonction de publication automatique viendra à l’étape 6, qui devra lever ces verrous explicitement.
 
 - **Moteur** (`src/lib/information-agent/auto-publication-policy.ts`, module pur, version
-  `auto_publication_v1`). Pour un fait candidat, il rend « aurait été publié » ou « relecture » avec toutes
-  les raisons de refus. Il applique la règle ci-dessus et les conditions du compte-rendu du 10/11/2026 :
-  réponse par e-mail (ni portail, ni import manuel), expéditeur = adresse contactée, DKIM **et** DMARC à
-  « pass », reçue moins de 30 jours après l’envoi du dossier, dossier adressé à l’avocat poursuivant
-  (`recipient_kind = source_lawyer`, seul destinataire auquel la fiche attribue la valeur) ; fait du corps
-  du message (sans `evidence_asset_id`) ; accord des règles et de l’IA v3 ou suivante, aucun autre candidat
-  du même message pour la même clé ; aucun motif de phrase ou de lot, réponse traitée sans motif de
-  relecture ; champ de la liste fermée, **vide** sur la fiche, valeur plausible pour le type de bien
-  (bornes par type ; type inconnu : relecture) ; ni « ne pas publier » (ni « ne pas diffuser »,
-  « confidentiel »…), ni civilité suivie d’un nom (« M. Martin », « les époux Leroy » ; « Maître » et
-  « Me » exceptés), ni consigne adressée à un modèle. **Échec fermé** : une donnée absente ou illisible
-  (message, dossier, vente, métadonnées, journal) donne « relecture », motif « données manquantes ou
-  illisibles », et la lecture en échec est signalée dans le journal serveur
+  `auto_publication_v1` ; détecteurs de texte dans `auto-publication-text.ts`). Pour un fait candidat, il
+  rend « aurait été publié » ou « relecture » avec toutes les raisons de refus. Il applique la règle
+  ci-dessus et les conditions du compte-rendu du 10/11/2026 :
+  - réponse par e-mail (ni portail, ni import manuel), expéditeur = adresse contactée, DKIM **et** DMARC à
+    « pass », reçue moins de 30 jours après l’envoi du dossier ;
+  - dossier adressé à l’avocat poursuivant (`recipient_kind = source_lawyer`, seul destinataire auquel la
+    fiche attribue la valeur) et **toujours au statut `replied`** ;
+  - aucun message entrant postérieur du même dossier en relecture, en cours de traitement, opposé ou qui
+    demande de ne pas publier (motif « message postérieur ») ; aucune autre information en attente pour la
+    même vente et le même champ avec une autre valeur (un « erratum : 48 m² » renvoie en relecture) ;
+  - fait du corps du message lu par les règles (sans `evidence_asset_id`) ; un fait lu par l’IA seule dans le
+    corps (pièce `email_body`) a son propre motif, distinct de « pièce jointe » ;
+  - accord des règles et de l’IA v3 ou suivante, aucun autre candidat du même message pour la même clé ;
+  - aucun motif de phrase ou de lot, réponse traitée sans motif de relecture ;
+  - champ de la liste fermée, **vide** sur la fiche, valeur plausible pour le type de bien (bornes par type ;
+    type inconnu : relecture). Pour la surface, « vide » suit la règle d’affichage de la fiche
+    (`getRecordedSurface` : surface retenue, habitable, Carrez) et la surface de l’annonce : aucune de ces
+    colonnes ne doit porter de valeur ;
+  - dans l’objet **et** le corps : ni demande de ne pas publier (logique fermée : négation proche de
+    « publi », « diffus », « divulg », « autoris », « en ligne », « rendre public », « faire état », ou
+    « confidentiel », « interne » seuls ; « politique de confidentialité » et « internet » ne comptent pas),
+    ni civilité suivie d’un nom (casse indifférente : « M DUPONT », « Mr Martin », « famille Leroy »,
+    « monsieur martin » ; « Maître », « Me », « Madame, Monsieur, » et « Monsieur le Président » exceptés), ni
+    consigne adressée à un modèle. Une mention de confidentialité dans une signature d’avocat envoie donc la
+    réponse en relecture : la simulation le mesurera.
+
+  **Échec fermé** : une donnée absente ou illisible (message, dossier, vente, métadonnées, journal), ou une
+  lecture qui atteint le plafond de 1 000 lignes de PostgREST (peut-être tronquée), donne « relecture »,
+  motif « données manquantes ou illisibles », et la lecture est signalée dans le journal serveur
   (`information_agent.auto_publication`).
+
 - **Liste fermée** : surface (`surface_m2`), surface du terrain (`land_surface_m2`), nombre de pièces
   (`rooms_count`). Définie à un seul endroit (`AUTO_PUBLICATION_ELIGIBLE_FIELDS`) ; la contrainte du journal
-  qui interdit « aurait été publié » pour tout autre champ est comparée à cette liste par un test.
+  qui interdit « aurait été publié » pour tout autre champ est comparée à cette liste par un test. Les motifs
+  sont eux aussi une liste fermée en base (`reasons <@ array[…]`), comparée à `AUTO_PUBLICATION_REASON_LABELS`
+  par un test.
 - **Plafonds**, appliqués dès la simulation (raison « plafond atteint ») : 10 informations par jour (heure
-  de Paris) et 2 par dossier. Un champ déjà « rempli » en simulation par un autre fait de la même vente ne
-  l’est pas une seconde fois. Les décisions déjà au journal comptent.
+  de Paris, début du jour calculé au décalage de minuit, juste les jours de changement d’heure) et 2 par
+  dossier. Un fait dont la dernière décision « aurait été publié » date d’un jour antérieur est traité comme
+  publié ce jour-là : il sort du lot, il a compté dans le plafond de son jour, il compte dans celui de son
+  dossier et son champ est rempli. Un champ déjà « rempli » en simulation par un autre fait de la même vente
+  ne l’est pas une seconde fois. **À faire à l’étape 6** : ces plafonds sont calculés en TypeScript à partir du
+  journal ; avant le mode automatique, ils devront être tenus en base, de façon atomique, sous verrou (deux
+  passes simultanées ne doivent jamais les dépasser).
 - **Quand.** Seulement en mode « Simulation » : à chaque passe des réponses (`/api/cron/information-agent-inbound`,
-  toutes les 2 minutes), après la file et le déclenchement de l’analyse, le moteur examine les faits en
-  attente ou en conflit reçus depuis 45 jours (500 au plus par passe) et inscrit la décision quand elle
-  change (une décision identique à la dernière n’est pas réécrite ; la lecture par l’IA, qui arrive après,
-  ajoute donc une ligne). Un échec de la passe de simulation ne bloque pas la passe des réponses, mais fait
-  échouer le cron (signalé dans la supervision des crons). En mode « Arrêt », rien n’est lu, calculé ni
-  affiché.
+  toutes les 2 minutes), après la file et le déclenchement de l’analyse. Le moteur lit les faits **en
+  attente** d’un champ de la liste fermée reçus depuis 45 jours (500 au plus par passe), lit leurs dernières
+  décisions en une requête, et n’appelle la RPC d’écriture que si l’issue, les motifs ou la version changent.
+  L’écriture est bornée à 60 secondes par passe et s’arrête après trois échecs consécutifs du même code.
+  Les autres faits (hors liste, en conflit) s’affichent « relecture » sans écriture au journal. Un échec de la
+  passe ne bloque pas la passe des réponses, mais fait échouer le cron (signalé dans la supervision des
+  crons). En mode « Arrêt », rien n’est lu, calculé ni affiché.
+- **Ordre de déploiement.** Le code peut partir avant la migration `20261115100000` : tant que la table des
+  réglages n’existe pas, la passe rend `not_installed` dans le résumé du cron, sans échec ; l’onglet Réponses
+  n’affiche rien. Toute autre erreur reste un échec.
 - **Affichage.** Onglet Réponses : à côté de chaque information, « Simulation : aurait été publié » ou
-  « Simulation : relecture (raisons en clair) », ou « décision pas encore calculée ». Rien en mode arrêt.
+  « Simulation : relecture (raisons en clair) », ou « décision pas encore calculée ». Une lecture du journal
+  impossible ou tronquée affiche « Simulation de la publication automatique indisponible ». Rien en mode
+  arrêt.
 - **Réglage** (onglet Réglages, panneau « Publication automatique des informations reçues ») : « Arrêt »,
   « Simulation », et « Automatique (verrouillé) », avec les conditions du déverrouillage : textes
   juridiques publiés, AIPD signée, validation des huit points par un avocat, jeu d’évaluation à zéro
@@ -150,17 +189,21 @@ n’est appelé qu’avec `'admin'` (invariant `information-agent-no-automatic-p
   serveur, refus de la RPC (`55000`) et contrainte `information_agent_auto_publication_settings_auto_locked`
   de la table (seule une migration de l’étape 6 pourra la retirer ; l’invariant de sécurité échoue sinon).
 - **Changement de mode** : réservé à un administrateur (RPC `set_information_agent_auto_publication_mode`,
-  jeton de l’administrateur, `is_admin`), tracé dans `information_agent_auto_publication_mode_changes`
-  (qui, quand, ancien et nouveau mode, arrêt d’urgence ou non), en ajout seul.
+  jeton de l’administrateur, `is_admin` ; le rôle de service est refusé), tracé dans
+  `information_agent_auto_publication_mode_changes` (qui, quand, ancien et nouveau mode, arrêt d’urgence ou
+  non), en ajout seul. **À trancher à l’étape 5** : durée de conservation de l’identifiant de
+  l’administrateur dans cette trace (aucune purge codée).
 - **Arrêt d’urgence** : bouton « Arrêt d’urgence » (RPC `stop_information_agent_auto_publication`), un
-  geste, toujours permis, sans motif. Effet immédiat : la RPC d’écriture des décisions relit le mode sous
-  verrou partagé et n’écrit plus rien dès que le mode n’est plus « simulation », même au milieu d’une passe.
+  geste, toujours permis, sans motif, affiché même si la lecture du réglage échoue. Effet immédiat : la RPC
+  d’écriture des décisions relit le mode sous verrou partagé et n’écrit plus rien dès que le mode n’est plus
+  « simulation », même au milieu d’une passe.
 - **Journal** `information_agent_auto_publication_decisions` : fait, dossier, vente, clé, issue, codes de
-  motifs, version de la règle, date. Ni adresse, ni extrait, ni texte issu du message (les motifs sont des
-  codes contrôlés par contrainte). Ajout seul (déclencheur : ni modification, ni suppression, ni vidage,
-  même par le propriétaire), RLS sans politique, lecture par le serveur seulement, écriture par la seule RPC
-  de service `record_information_agent_auto_publication_decision`. Il suit la vente (seule suppression
-  admise). Migration `20261115100000`, tests pgTAP `880`.
+  motifs, version de la règle, date. Ni adresse, ni extrait, ni texte issu du message (motifs en liste fermée).
+  Ajout seul (déclencheur : ni modification, ni suppression, ni vidage, même par le propriétaire), RLS sans
+  politique, lecture par le serveur seulement, écriture par la seule RPC de service
+  `record_information_agent_auto_publication_decision` (un fait ou une vente disparus depuis la lecture : rien
+  n’est écrit, sans erreur). Il suit la vente (seule suppression admise). Migration `20261115100000`, tests
+  pgTAP `880`.
 
 ## Contenu de l’e-mail
 

@@ -6,7 +6,9 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   mode: vi.fn(),
   latest: vi.fn(),
+  NotInstalled: class NotInstalled extends Error {},
 }));
+const NotInstalled = mocks.NotInstalled;
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.from, rpc: vi.fn() },
@@ -15,6 +17,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/information-agent/auto-publication-store", () => ({
+  AutoPublicationNotInstalledError: mocks.NotInstalled,
   loadAutoPublicationMode: mocks.mode,
   loadLatestAutoPublicationDecisions: mocks.latest,
 }));
@@ -127,12 +130,23 @@ describe("réglage de la publication automatique", () => {
 });
 
 describe("annotations de l'onglet Réponses", () => {
+  const pending = (id: string, fact_key = "surface_m2") => ({ id, fact_key, status: "pending" });
+
   it("mode arrêt : rien n'est lu ni affiché", async () => {
-    expect(await loadAutoPublicationReviewAnnotations(["fact-1"])).toEqual({ mode: "off" });
+    expect(await loadAutoPublicationReviewAnnotations([pending("fact-1")])).toEqual({
+      mode: "off",
+    });
     expect(mocks.latest).not.toHaveBeenCalled();
   });
 
-  it("simulation : décision et raisons en clair", async () => {
+  it("migration absente : rien n'est affiché, sans erreur", async () => {
+    mocks.mode.mockRejectedValue(new NotInstalled());
+    expect(await loadAutoPublicationReviewAnnotations([pending("fact-1")])).toEqual({
+      mode: "off",
+    });
+  });
+
+  it("simulation : décision du journal et raisons en clair ; hors liste et conflits sans journal", async () => {
     mocks.mode.mockResolvedValue("simulation");
     mocks.latest.mockResolvedValue(
       new Map([
@@ -156,10 +170,22 @@ describe("annotations de l'onglet Réponses", () => {
         ],
       ]),
     );
-    expect(await loadAutoPublicationReviewAnnotations(["fact-1", "fact-2"])).toEqual({
+    const annotations = await loadAutoPublicationReviewAnnotations([
+      pending("fact-1"),
+      pending("fact-2"),
+      pending("fact-3", "occupancy_status"),
+      { id: "fact-4", fact_key: "rooms_count", status: "conflict" },
+    ]);
+    expect(mocks.latest).toHaveBeenCalledWith(["fact-1", "fact-2"]);
+    expect(annotations).toEqual({
       mode: "simulation",
       decisions: {
-        "fact-1": { outcome: "would_publish", label: "Aurait été publié", reasons: [] },
+        "fact-1": {
+          outcome: "would_publish",
+          label: "Aurait été publié",
+          reasons: [],
+          recorded: true,
+        },
         "fact-2": {
           outcome: "review",
           label: "Relecture",
@@ -167,15 +193,31 @@ describe("annotations de l'onglet Réponses", () => {
             "plafond atteint : 10 informations par jour",
             "information tirée d’une pièce jointe, pas du corps du message",
           ],
+          recorded: true,
+        },
+        "fact-3": {
+          outcome: "review",
+          label: "Relecture (hors liste)",
+          reasons: ["champ hors de la liste fermée (surface, terrain, nombre de pièces)"],
+          recorded: false,
+        },
+        "fact-4": {
+          outcome: "review",
+          label: "Relecture",
+          reasons: ["information en conflit avec la fiche ou déjà traitée"],
+          recorded: false,
         },
       },
     });
   });
 
-  it("une lecture impossible est signalée, la liste des réponses reste affichée", async () => {
+  it("une lecture impossible ou tronquée est signalée, la liste des réponses reste affichée", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    mocks.mode.mockRejectedValue(Object.assign(new Error("boom"), { code: "PGRST000" }));
-    expect(await loadAutoPublicationReviewAnnotations(["fact-1"])).toEqual({ mode: "unavailable" });
+    mocks.mode.mockResolvedValue("simulation");
+    mocks.latest.mockRejectedValue(Object.assign(new Error("tronqué"), { code: "PGRST000" }));
+    expect(await loadAutoPublicationReviewAnnotations([pending("fact-1")])).toEqual({
+      mode: "unavailable",
+    });
     expect(error).toHaveBeenCalledWith(expect.stringContaining("PGRST000"));
     error.mockRestore();
   });

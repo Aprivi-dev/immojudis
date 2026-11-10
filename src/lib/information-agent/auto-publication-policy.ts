@@ -1,4 +1,11 @@
 import { detectPossiblePromptInjection } from "@/lib/information-agent-inbound/prompt-injection";
+import {
+  mentionsDoNotPublish,
+  namesPrivatePerson,
+} from "@/lib/information-agent/auto-publication-text";
+import { getRecordedSurface } from "@/lib/surface";
+
+export { mentionsDoNotPublish, namesPrivatePerson };
 
 /**
  * Moteur de décision « publier ou relire » des informations extraites d'une réponse (étape 3 du plan
@@ -6,15 +13,18 @@ import { detectPossiblePromptInjection } from "@/lib/information-agent-inbound/p
  * référence n'intervient pas : seules comptent les dates de l'envoi et de la réception).
  *
  * À cette étape, la décision n'est qu'une SIMULATION : elle est journalisée et affichée, jamais appliquée.
- * Aucun chemin ne publie (`app_private.apply_information_agent_fact` n'est appelé qu'avec 'admin').
+ * Aucun chemin ne publie (`app_private.apply_information_agent_fact` n'est appelé qu'avec 'admin', et la
+ * base refuse toute publication 'auto').
  *
  * Règle appliquée (toutes les conditions sont requises, voir `docs/runbooks/information-agent.md`) :
  * réponse e-mail de l'adresse contactée, DKIM et DMARC « pass », moins de 30 jours après l'envoi, dossier
- * adressé à l'avocat poursuivant ; information du corps du message (jamais d'une pièce jointe) ; règles et IA
- * (version 3 ou suivante) d'accord sans motif, aucune autre valeur pour ce champ dans la réponse ; aucun
- * motif de relecture (phrase, lot, réponse) ; champ de la liste fermée, vide sur la fiche, valeur plausible
- * pour le type de bien ; ni « ne pas publier », ni nom de particulier, ni soupçon de manipulation ; plafonds
- * par jour et par dossier. Toute donnée manquante ou illisible donne « relecture » (échec fermé).
+ * adressé à l'avocat poursuivant et toujours au statut « répondu » ; information du corps du message lue
+ * par les règles (jamais d'une pièce jointe) ; règles et IA (version 3 ou suivante) d'accord sans motif,
+ * aucune autre valeur pour ce champ ni dans la réponse ni dans une autre information en attente pour la
+ * vente ; aucun message postérieur du dossier en relecture ou qui demande de ne pas publier ; aucun motif
+ * de relecture (phrase, lot, réponse) ; champ de la liste fermée, vide sur la fiche, valeur plausible pour
+ * le type de bien ; ni « ne pas publier », ni nom de particulier, ni soupçon de manipulation (objet et
+ * corps) ; plafonds par jour et par dossier. Toute donnée manquante ou illisible donne « relecture ».
  */
 
 /** Version de la règle, inscrite au journal avec chaque décision. */
@@ -51,7 +61,10 @@ const REPLY_WINDOW_MS = AUTO_PUBLICATION_REPLY_WINDOW_DAYS * 24 * 60 * 60 * 1000
 /** Version minimale de la lecture par l'IA (`semantic_evidence_vN`). */
 const MIN_SEMANTIC_VERSION = 3;
 
-/** Motifs de refus du moteur : codes du journal et libellés affichés dans l'onglet Réponses. */
+/**
+ * Motifs de refus du moteur : codes du journal et libellés affichés dans l'onglet Réponses. La contrainte
+ * `information_agent_auto_publication_decisions_reasons_check` porte la même liste (test de concordance).
+ */
 export const AUTO_PUBLICATION_REASON_LABELS = {
   input_unreadable: "données manquantes ou illisibles : relecture par précaution",
   field_not_eligible: "champ hors de la liste fermée (surface, terrain, nombre de pièces)",
@@ -61,10 +74,17 @@ export const AUTO_PUBLICATION_REASON_LABELS = {
   sender_not_authenticated: "authentification DKIM et DMARC incomplète",
   reply_outside_window: "réponse reçue hors du délai de 30 jours après l’envoi",
   recipient_not_lawyer: "dossier adressé à un autre destinataire que l’avocat poursuivant",
+  case_not_replied:
+    "le dossier n’est plus au statut « répondu » (relecture, opposition ou clôture)",
   attachment_source: "information tirée d’une pièce jointe, pas du corps du message",
+  semantic_only_body:
+    "information lue par l’IA seule dans le corps du message, sans accord des règles",
   semantic_not_confirmed:
     "l’IA n’a pas confirmé la valeur (lecture absente, ancienne ou en désaccord)",
   other_value_in_reply: "la réponse contient une autre valeur pour ce champ",
+  other_value_for_sale: "une autre information en attente propose une autre valeur pour ce champ",
+  later_message_in_case:
+    "un message postérieur du dossier est en relecture, en cours de traitement ou demande de ne pas publier",
   statement_review_reason: "motif de relecture sur la phrase ou le lot",
   reply_in_review: "la réponse entière est en relecture ou n’est pas entièrement traitée",
   possible_manipulation: "soupçon de manipulation (consignes adressées à un modèle)",
@@ -83,12 +103,21 @@ export type AutoPublicationDecision =
   | { outcome: "would_publish"; reasons: [] }
   | { outcome: "review"; reasons: AutoPublicationReason[] };
 
+/** Un message entrant du même dossier, reçu après celui du fait. */
+export type AutoPublicationLaterMessage = {
+  subject: string | null;
+  bodyText: string | null;
+  metadata: unknown;
+};
+
 /** Données lues pour un fait candidat. `null` : la donnée n'a pas pu être lue (échec fermé). */
 export type AutoPublicationInput = {
   candidate: {
     factKey: string;
     status: string;
     evidenceAssetId: string | null;
+    /** Nature de la pièce du fait (`email_body` : corps du message relu par l'IA) ; null si illisible. */
+    evidenceKind?: string | null;
     reviewedBy: string | null;
     proposedValue: unknown;
     metadata: unknown;
@@ -100,16 +129,26 @@ export type AutoPublicationInput = {
     bodyText: string | null;
     metadata: unknown;
   } | null;
-  informationCase: { sentAt: string | null; recipientKind: string | null } | null;
+  informationCase: {
+    sentAt: string | null;
+    recipientKind: string | null;
+    status: string | null;
+  } | null;
   sale: {
     propertyType: string | null;
     surfaceM2: number | null;
     appSurfaceM2: number | null;
+    habitableSurfaceM2: number | null;
+    carrezSurfaceM2: number | null;
     landSurfaceM2: number | null;
     roomsCount: number | null;
   } | null;
   /** Nombre d'autres candidats du même message pour la même clé (toute provenance, tout statut). */
   otherCandidatesForKey: number | null;
+  /** Nombre d'autres candidats en attente pour la même vente et la même clé, avec une autre valeur. */
+  otherValuesForSale: number | null;
+  /** Messages entrants du dossier reçus après celui du fait. */
+  laterMessages: AutoPublicationLaterMessage[] | null;
   /** Un autre fait a déjà « rempli » ce champ de la vente dans la simulation. */
   fieldFilledInSimulation: boolean | null;
   /** Une lecture annexe a échoué (journal, vente…) : relecture, motif `input_unreadable`. */
@@ -144,18 +183,6 @@ const PLAUSIBLE_RANGES: Record<AutoPublicationEligibleField, Record<string, [num
   },
 };
 
-/** « Ne pas publier » et variantes (diffuser, divulguer, confidentiel). */
-const DO_NOT_PUBLISH_RE =
-  /\b(?:ne\s+(?:(?:pas|jamais|plus)\s+)?(?:(?:le|la|les|l['’]|cette|ces|cet|cela|ça|rien)\s*)?(?:publier|diffuser|divulguer|communiquer|mettre\s+en\s+ligne)|ne\s+(?:le\s+|la\s+|les\s+)?(?:publiez|diffusez|divulguez|communiquez|mettez)\s+(?:pas|rien|jamais)|pas\s+(?:de|pour)\s+(?:publication|diffusion)|non\s+(?:publiable|diffusable|communicable)|(?:strictement\s+)?confidentiel(?:le)?s?|sous\s+le\s+sceau\s+du\s+secret|off\s+the\s+record)\b/iu;
-
-/**
- * Nom d'un particulier : civilité suivie d'un nom propre (« M. Martin », « Madame Durand », « les époux
- * Leroy », « consorts X »). « Maître » et « Me » ne comptent pas (l'avocat signe), ni « Madame, Monsieur, »
- * ni « Monsieur le Président ». Un faux positif coûte une relecture, jamais une publication.
- */
-const PRIVATE_PERSON_RE =
-  /(?:^|[^\p{L}])(?:M\.|MM\.|Mme|Mmes|Mlle|Mlles|Monsieur|Madame|Mademoiselle|[EeÉé]poux|[Cc]onsorts|[Vv]euve|[Ss]uccession|[Ii]ndivision|[Hh][ée]ritiers)\s+(?:de\s+|du\s+|d['’])?\p{Lu}[\p{L}'’-]+/u;
-
 /** Version de la lecture par l'IA (`semantic_evidence_v3` → 3), ou null si illisible. */
 function semanticVersion(method: unknown): number | null {
   if (typeof method !== "string") return null;
@@ -189,14 +216,6 @@ export function isAutoPublicationEligibleField(key: string): key is AutoPublicat
   return (AUTO_PUBLICATION_ELIGIBLE_FIELDS as readonly string[]).includes(key);
 }
 
-export function mentionsDoNotPublish(text: string): boolean {
-  return DO_NOT_PUBLISH_RE.test(text.normalize("NFKC"));
-}
-
-export function namesPrivatePerson(text: string): boolean {
-  return PRIVATE_PERSON_RE.test(text.normalize("NFKC"));
-}
-
 /** Valeur plausible pour le type de bien (bornes incluses, nombre de pièces entier). */
 export function isPlausibleValue(
   field: AutoPublicationEligibleField,
@@ -210,11 +229,41 @@ export function isPlausibleValue(
   return value >= range[0] && value <= range[1];
 }
 
-function fieldIsEmpty(field: AutoPublicationEligibleField, sale: AutoPublicationInput["sale"]) {
-  if (!sale) return false;
-  if (field === "surface_m2") return sale.surfaceM2 == null && sale.appSurfaceM2 == null;
+/**
+ * Champ vide sur la fiche. Surface : aucune des colonnes que la fiche peut afficher (règle d'affichage
+ * `getRecordedSurface` : surface retenue, habitable, Carrez) ni la surface de l'annonce, et aucune valeur,
+ * même nulle ou négative, dans ces colonnes.
+ */
+function fieldIsEmpty(
+  field: AutoPublicationEligibleField,
+  sale: NonNullable<AutoPublicationInput["sale"]>,
+): boolean {
+  if (field === "surface_m2") {
+    return (
+      getRecordedSurface({
+        app_surface_m2: sale.appSurfaceM2,
+        habitable_surface_m2: sale.habitableSurfaceM2,
+        carrez_surface_m2: sale.carrezSurfaceM2,
+      }) == null &&
+      [sale.surfaceM2, sale.appSurfaceM2, sale.habitableSurfaceM2, sale.carrezSurfaceM2].every(
+        (value) => value == null,
+      )
+    );
+  }
   if (field === "land_surface_m2") return sale.landSurfaceM2 == null;
   return sale.roomsCount == null;
+}
+
+/** Un message reçu proprement : traité sans motif, ou réponse automatique ignorée. */
+function processedCleanly(metadata: unknown): boolean {
+  const processing = record(record(metadata)?.inbound_processing);
+  if (!processing) return false;
+  if (processing.status === "completed") return processing.reason == null;
+  return processing.status === "ignored" && processing.reason === "auto_reply";
+}
+
+function textOf(parts: Array<string | null>): string {
+  return parts.filter((part): part is string => typeof part === "string").join("\n");
 }
 
 /**
@@ -257,15 +306,14 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
     if (!processing || processing.status !== "completed" || processing.reason != null) {
       reasons.add("reply_in_review");
     }
-    const text = [message.subject, message.bodyText];
     if (typeof message.bodyText !== "string") {
       reasons.add("input_unreadable");
     } else {
-      if (text.some((part) => typeof part === "string" && detectPossiblePromptInjection(part))) {
-        reasons.add("possible_manipulation");
-      }
-      if (mentionsDoNotPublish(message.bodyText)) reasons.add("do_not_publish_requested");
-      if (namesPrivatePerson(message.bodyText)) reasons.add("private_person_named");
+      // Objet et corps : une consigne, une demande de ne pas publier ou un nom peut être dans l'objet.
+      const text = textOf([message.subject, message.bodyText]);
+      if (detectPossiblePromptInjection(text)) reasons.add("possible_manipulation");
+      if (mentionsDoNotPublish(text)) reasons.add("do_not_publish_requested");
+      if (namesPrivatePerson(text)) reasons.add("private_person_named");
     }
   }
   const receivedAt = timestamp(message?.receivedAt);
@@ -278,9 +326,29 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
   if (informationCase && informationCase.recipientKind !== "source_lawyer") {
     reasons.add("recipient_not_lawyer");
   }
+  if (informationCase && informationCase.status !== "replied") reasons.add("case_not_replied");
 
-  // 2. Corps du message, jamais une pièce jointe.
-  if (candidate.evidenceAssetId !== null) reasons.add("attachment_source");
+  // Messages postérieurs du dossier : en relecture, en cours, opposés ou qui demandent de ne pas publier.
+  if (input.laterMessages === null) {
+    reasons.add("input_unreadable");
+  } else if (
+    input.laterMessages.some(
+      (later) =>
+        !processedCleanly(later.metadata) ||
+        record(later.metadata)?.admin_handled_action === "record_opposition" ||
+        record(later.metadata)?.admin_handled_action === "wrong_recipient" ||
+        mentionsDoNotPublish(textOf([later.subject, later.bodyText])),
+    )
+  ) {
+    reasons.add("later_message_in_case");
+  }
+
+  // 2. Corps du message lu par les règles, jamais une pièce jointe ni l'IA seule.
+  if (candidate.evidenceAssetId !== null) {
+    if (candidate.evidenceKind === "email_body") reasons.add("semantic_only_body");
+    else if (candidate.evidenceKind == null) reasons.add("input_unreadable");
+    else reasons.add("attachment_source");
+  }
 
   // 3. Règles et IA d'accord, aucune autre valeur pour ce champ.
   const metadata = record(candidate.metadata);
@@ -307,6 +375,8 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
   }
   if (input.otherCandidatesForKey === null) reasons.add("input_unreadable");
   else if (input.otherCandidatesForKey > 0) reasons.add("other_value_in_reply");
+  if (input.otherValuesForSale === null) reasons.add("input_unreadable");
+  else if (input.otherValuesForSale > 0) reasons.add("other_value_for_sale");
 
   // 6. Champ vide sur la fiche, valeur plausible pour le type de bien.
   const value = proposedNumber(candidate.proposedValue);
@@ -333,12 +403,17 @@ export type AutoPublicationPlanItem = {
   input: AutoPublicationInput;
 };
 
+/**
+ * État de la simulation hors du lot à décider. Un fait déjà « publié » en simulation un jour antérieur
+ * (dernière décision « aurait été publié » avant aujourd'hui, heure de Paris) sort du lot : il a été compté
+ * dans le plafond de son jour, il compte dans celui de son dossier et son champ est rempli.
+ */
 export type AutoPublicationCounters = {
-  /** Faits distincts publiés (ou qui l'auraient été) aujourd'hui, heure de Paris, hors faits du lot. */
+  /** Faits hors du lot « publiés » aujourd'hui (heure de Paris). */
   today: number;
-  /** Même décompte par dossier, toutes dates. */
+  /** Faits hors du lot « publiés », par dossier, toutes dates. */
   byCase: ReadonlyMap<string, number>;
-  /** Champs déjà remplis dans la simulation, clé `vente:champ`. */
+  /** Champs déjà remplis par un fait hors du lot, clé `vente:champ`. */
   filled: ReadonlySet<string>;
 };
 

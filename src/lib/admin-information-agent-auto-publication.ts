@@ -8,10 +8,13 @@ import {
   AUTO_PUBLICATION_ELIGIBLE_FIELDS,
   AUTO_PUBLICATION_MODES,
   autoPublicationReasonLabels,
+  isAutoPublicationEligibleField,
   type AutoPublicationEligibleField,
   type AutoPublicationMode,
+  type AutoPublicationReason,
 } from "@/lib/information-agent/auto-publication-policy";
 import {
+  AutoPublicationNotInstalledError,
   loadAutoPublicationMode,
   loadLatestAutoPublicationDecisions,
 } from "@/lib/information-agent/auto-publication-store";
@@ -130,12 +133,16 @@ export type AutoPublicationReviewDecision = {
   outcome: "would_publish" | "review";
   label: string;
   reasons: string[];
+  /** Faux : décision déduite à l'affichage (hors liste, déjà traitée), jamais écrite au journal. */
+  recorded: boolean;
 };
 
 /**
- * Annotations de l'onglet Réponses. Arrêt : rien n'est lu ni affiché. Simulation : dernière décision de
- * chaque fait, motifs en clair ; un fait sans décision n'a pas encore été examiné. Lecture impossible :
- * « unavailable » (signalé dans le journal serveur), la liste des réponses reste affichée.
+ * Annotations de l'onglet Réponses. Arrêt (ou migration absente) : rien n'est lu ni affiché. Simulation :
+ * dernière décision du journal de chaque fait en attente d'un champ de la liste fermée ; les autres faits
+ * sont « relecture » sans écriture au journal (hors liste, en conflit ou déjà traités) ; un fait sans
+ * décision n'a pas encore été examiné. Lecture impossible ou tronquée : « unavailable » (signalé dans le
+ * journal serveur), la liste des réponses reste affichée.
  */
 export type AutoPublicationReviewAnnotations =
   | { mode: "off" }
@@ -143,23 +150,35 @@ export type AutoPublicationReviewAnnotations =
   | { mode: "simulation"; decisions: Record<string, AutoPublicationReviewDecision> };
 
 export async function loadAutoPublicationReviewAnnotations(
-  factIds: string[],
+  facts: Array<{ id: string; fact_key: string; status: string }>,
 ): Promise<AutoPublicationReviewAnnotations> {
   try {
     const mode = await loadAutoPublicationMode();
     if (mode === "off") return { mode: "off" };
     if (mode !== "simulation") return { mode: "unavailable" };
-    const latest = await loadLatestAutoPublicationDecisions(factIds);
     const decisions: Record<string, AutoPublicationReviewDecision> = {};
+    const engineFacts: string[] = [];
+    for (const fact of facts) {
+      if (!isAutoPublicationEligibleField(fact.fact_key)) {
+        decisions[fact.id] = staticReview("field_not_eligible");
+      } else if (fact.status !== "pending") {
+        decisions[fact.id] = staticReview("candidate_not_pending");
+      } else {
+        engineFacts.push(fact.id);
+      }
+    }
+    const latest = await loadLatestAutoPublicationDecisions(engineFacts);
     for (const [factId, decision] of latest) {
       decisions[factId] = {
         outcome: decision.outcome,
         label: decision.outcome === "would_publish" ? "Aurait été publié" : "Relecture",
         reasons: autoPublicationReasonLabels(decision.reasons),
+        recorded: true,
       };
     }
     return { mode: "simulation", decisions };
   } catch (error) {
+    if (error instanceof AutoPublicationNotInstalledError) return { mode: "off" };
     console.error(
       JSON.stringify({
         scope: "admin.auto_publication.review",
@@ -169,4 +188,13 @@ export async function loadAutoPublicationReviewAnnotations(
     );
     return { mode: "unavailable" };
   }
+}
+
+function staticReview(reason: AutoPublicationReason): AutoPublicationReviewDecision {
+  return {
+    outcome: "review",
+    label: reason === "field_not_eligible" ? "Relecture (hors liste)" : "Relecture",
+    reasons: autoPublicationReasonLabels([reason]),
+    recorded: false,
+  };
 }

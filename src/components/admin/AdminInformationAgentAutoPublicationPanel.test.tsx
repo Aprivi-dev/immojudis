@@ -86,11 +86,31 @@ describe("AdminInformationAgentAutoPublicationPanel", () => {
   });
 });
 
+describe("AdminInformationAgentAutoPublicationPanel : arrêt d'urgence sans lecture", () => {
+  it("garde l'arrêt d'urgence affiché et utilisable quand la lecture du réglage échoue", async () => {
+    mocks.fetch.mockRejectedValue(new Error("Réglage illisible"));
+    mocks.run.mockResolvedValueOnce(view());
+    renderPanel();
+    expect(await screen.findByText(/Réglage indisponible/)).toBeTruthy();
+    const stop = screen.getByRole("button", { name: "Arrêt d’urgence" }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    fireEvent.click(stop);
+    await waitFor(() =>
+      expect(mocks.run).toHaveBeenCalledWith({ action: "emergency_stop" }, expect.anything()),
+    );
+  });
+});
+
 describe("AutoPublicationDecisionNote", () => {
   it("affiche « aurait été publié » ou « relecture » avec les raisons en clair", () => {
     render(
       <AutoPublicationDecisionNote
-        decision={{ outcome: "would_publish", label: "Aurait été publié", reasons: [] }}
+        decision={{
+          outcome: "would_publish",
+          label: "Aurait été publié",
+          reasons: [],
+          recorded: true,
+        }}
       />,
     );
     expect(screen.getByText("Simulation : aurait été publié.")).toBeTruthy();
@@ -101,6 +121,7 @@ describe("AutoPublicationDecisionNote", () => {
           outcome: "review",
           label: "Relecture",
           reasons: ["plafond atteint : 10 informations par jour"],
+          recorded: true,
         }}
       />,
     );

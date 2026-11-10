@@ -220,7 +220,7 @@ export async function listAdminInformationAgentReview(
   if (extractionsError) throw extractionsError;
 
   // Simulation du moteur « publier ou relire » : rien en mode arrêt.
-  const autoPublication = await loadAutoPublicationReviewAnnotations(facts.map((fact) => fact.id));
+  const autoPublication = await loadAutoPublicationReviewAnnotations(facts);
 
   return {
     cases: cases ?? [],

@@ -5,10 +5,11 @@ set local lock_timeout = '5s';
 -- Agent d'information, étape 3 du plan d'enrichissement (propositions 6 et 7, validées le 10/11/2026) :
 -- moteur de décision « publier ou relire » en SIMULATION seulement, réglage à trois modes, journal, verrous.
 --
--- AUCUN CHEMIN NE PUBLIE. Cette migration ne touche ni à app_private.apply_information_agent_fact, ni au pont
--- vers auction_fact_claims (qui refuse toujours actor_kind = 'auto'), ni à public.auction_sales. Le moteur est
--- en TypeScript (src/lib/information-agent/auto-publication-policy.ts) ; la base garde le réglage, le
--- journal des décisions et la trace des changements de mode.
+-- AUCUN CHEMIN NE PUBLIE. Cette migration ne redéfinit ni app_private.apply_information_agent_fact, ni le pont
+-- vers auction_fact_claims (qui refuse toujours actor_kind = 'auto'), et n'écrit pas dans public.auction_sales.
+-- Elle VERROUILLE en plus la publication automatique en base (point 5). Le moteur est en TypeScript
+-- (src/lib/information-agent/auto-publication-policy.ts) ; la base garde le réglage, le journal des décisions
+-- et la trace des changements de mode.
 --
 --   1. public.information_agent_auto_publication_settings : ligne unique, mode 'off' (défaut), 'simulation'
 --      ou 'auto'. Le mode 'auto' est VERROUILLÉ par la contrainte
@@ -25,16 +26,34 @@ set local lock_timeout = '5s';
 --   4. RPC d'administration (is_admin, jeton de l'administrateur) : set_information_agent_auto_publication_mode
 --      (refuse 'auto') et stop_information_agent_auto_publication (arrêt d'urgence, toujours permis).
 --      RPC de service : record_information_agent_auto_publication_decision, qui n'écrit qu'en mode
---      'simulation' (le mode est relu sous verrou partagé : après un arrêt, plus rien n'est écrit).
+--      'simulation' (le mode est relu sous verrou partagé : après un arrêt, plus rien n'est écrit). Un fait ou
+--      une vente disparus entre la lecture et l'écriture rendent faux (rien n'est écrit), sans erreur.
+--   5. Verrou de la publication automatique : la contrainte information_agent_fact_publications_auto_locked
+--      (actor_kind <> 'auto') sur le journal des publications. Le noyau y écrit dans la même transaction que la
+--      fiche : un appel du noyau avec 'auto' échoue donc en entier et n'écrit rien. Seule une migration de
+--      l'étape 6 pourra la retirer (l'invariant de sécurité échoue sinon).
 --
--- Aucune ligne existante n'est modifiée.
+-- Aucune ligne existante n'est modifiée (le journal des publications ne contient que des lignes 'admin').
 --
--- Retour arrière (aucune donnée à reprendre ; le journal n'est qu'une trace de simulation) : dans une
--- transaction, supprimer les fonctions public.record_information_agent_auto_publication_decision(uuid, text,
--- text, text[], text), public.set_information_agent_auto_publication_mode(text),
--- public.stop_information_agent_auto_publication(), puis les trois tables, puis
--- app_private.information_agent_auto_publication_append_only(). Déployer d'abord le code de l'application qui ne les lit plus (sans la table des
--- réglages, la simulation s'arrête : le code lit alors le mode comme une erreur et ne décide rien).
+-- Ordre de déploiement : le code de l'application peut partir AVANT la migration (Vercel déploie main sans
+-- l'attendre). Tant que la table des réglages n'existe pas, la passe de simulation rend « not_installed » dans
+-- le résumé du cron des réponses, sans échec ; l'onglet Réponses n'affiche rien ; le panneau des réglages
+-- affiche « Réglage indisponible ». Appliquer ensuite la migration ; le mode reste « off ».
+--
+-- Retour arrière (aucune donnée à reprendre ; le journal n'est qu'une trace de simulation) :
+--   1. dans le code : retirer l'appel de la passe de simulation du cron des réponses, le panneau, la route
+--      /api/admin/information-agent/auto-publication, les entrées de src/integrations/supabase/types.ts et
+--      l'invariant information-agent-no-automatic-publication-path de scripts/check-security-invariants.mjs ;
+--      retirer de supabase/tests/441_function_privileges.sql les deux entrées
+--      set_information_agent_auto_publication_mode(text) et stop_information_agent_auto_publication() ;
+--   2. dans une transaction (begin ; set local lock_timeout = '5s' ; … ; notify pgrst, 'reload schema' ;
+--      commit) : supprimer public.record_information_agent_auto_publication_decision(uuid, text, text, text[],
+--      text), public.set_information_agent_auto_publication_mode(text) et
+--      public.stop_information_agent_auto_publication(), puis les trois tables, puis
+--      app_private.information_agent_auto_publication_append_only() et
+--      app_private.information_agent_auto_publication_decisions_append_only().
+--   La contrainte information_agent_fact_publications_auto_locked est GARDÉE au retour arrière : elle ne
+--   bloque aucun chemin existant et protège contre une publication automatique.
 
 -- 1. Réglage ---------------------------------------------------------------------------------------------------
 create table if not exists public.information_agent_auto_publication_settings (
@@ -99,12 +118,22 @@ create table if not exists public.information_agent_auto_publication_decisions (
   sale_id uuid not null references public.auction_sales(id) on delete cascade,
   fact_key text not null check (fact_key ~ '^[a-z0-9_]{1,64}$'),
   outcome text not null check (outcome in ('would_publish', 'review')),
-  -- Codes de motifs seulement (snake_case) : aucun texte libre, aucune adresse.
+  -- Codes de motifs d'une liste fermée (même liste que AUTO_PUBLICATION_REASON_LABELS, test de
+  -- concordance) : aucun texte libre, aucune adresse.
   reasons text[] not null default '{}'::text[],
   constraint information_agent_auto_publication_decisions_reasons_check check (
     cardinality(reasons) <= 32
-    and array_to_string(reasons, ',') ~ '^([a-z0-9_]{1,64}(,[a-z0-9_]{1,64})*)?$'
     and array_position(reasons, null) is null
+    and reasons <@ array[
+      'input_unreadable', 'field_not_eligible', 'candidate_not_pending', 'not_email_reply',
+      'sender_not_contacted_address', 'sender_not_authenticated', 'reply_outside_window',
+      'recipient_not_lawyer', 'case_not_replied', 'attachment_source', 'semantic_only_body',
+      'semantic_not_confirmed', 'other_value_in_reply', 'other_value_for_sale',
+      'later_message_in_case', 'statement_review_reason', 'reply_in_review', 'possible_manipulation',
+      'do_not_publish_requested', 'private_person_named', 'field_not_empty',
+      'field_already_filled_in_simulation', 'implausible_value', 'daily_cap_reached',
+      'case_cap_reached'
+    ]::text[]
   ),
   constraint information_agent_auto_publication_decisions_outcome_check check (
     (outcome = 'would_publish') = (cardinality(reasons) = 0)
@@ -135,8 +164,9 @@ revoke all on table public.information_agent_auto_publication_decisions
 -- Lecture serveur seulement ; l'écriture passe par la RPC de service, qui contrôle le mode.
 grant select on table public.information_agent_auto_publication_decisions to service_role;
 
--- Ajout seul (journal et trace) : ni modification, ni suppression, ni vidage. Exception unique : une décision
--- dont la vente a été supprimée (purge des ventes) peut partir.
+-- Ajout seul (journal et trace) : ni modification, ni suppression, ni vidage. Deux fonctions : la trace des
+-- modes et les vidages refusent toujours (pas de ligne OLD à lire) ; le journal des décisions laisse partir
+-- une ligne dont la vente vient d'être supprimée (suppression en cascade), et rien d'autre.
 create or replace function app_private.information_agent_auto_publication_append_only()
 returns trigger
 language plpgsql
@@ -144,12 +174,6 @@ security definer
 set search_path = ''
 as $$
 begin
-  if tg_op = 'DELETE'
-    and tg_table_name = 'information_agent_auto_publication_decisions'
-    and not exists (select 1 from public.auction_sales sale where sale.id = old.sale_id)
-  then
-    return old;
-  end if;
   raise exception using errcode = '55000',
     message = 'Le journal de la publication automatique est en ajout seul.';
 end;
@@ -158,11 +182,31 @@ $$;
 revoke all on function app_private.information_agent_auto_publication_append_only()
   from public, anon, authenticated, service_role;
 
+create or replace function app_private.information_agent_auto_publication_decisions_append_only()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE' then
+    if not exists (select 1 from public.auction_sales sale where sale.id = old.sale_id) then
+      return old;
+    end if;
+  end if;
+  raise exception using errcode = '55000',
+    message = 'Le journal de la publication automatique est en ajout seul.';
+end;
+$$;
+
+revoke all on function app_private.information_agent_auto_publication_decisions_append_only()
+  from public, anon, authenticated, service_role;
+
 drop trigger if exists information_agent_auto_publication_decisions_append_only
   on public.information_agent_auto_publication_decisions;
 create trigger information_agent_auto_publication_decisions_append_only
   before update or delete on public.information_agent_auto_publication_decisions
-  for each row execute function app_private.information_agent_auto_publication_append_only();
+  for each row execute function app_private.information_agent_auto_publication_decisions_append_only();
 
 drop trigger if exists information_agent_auto_publication_decisions_no_truncate
   on public.information_agent_auto_publication_decisions;
@@ -312,7 +356,8 @@ begin
   from public.information_agent_fact_candidates fact
   where fact.id = p_fact_id;
   if v_fact.id is null then
-    raise exception using errcode = 'P0002', message = 'Information agent fact not found.';
+    -- Fait purgé ou supprimé avec sa vente depuis la lecture : rien à écrire.
+    return false;
   end if;
   if v_fact.fact_key is distinct from p_fact_key then
     raise exception using errcode = '22023', message = 'The decision does not match the fact key.';
@@ -334,12 +379,17 @@ begin
     return false;
   end if;
 
-  insert into public.information_agent_auto_publication_decisions (
-    mode, policy_version, fact_id, case_id, sale_id, fact_key, outcome, reasons
-  ) values (
-    'simulation', p_policy_version, v_fact.id, v_fact.case_id, v_fact.sale_id, v_fact.fact_key,
-    p_outcome, v_reasons
-  );
+  begin
+    insert into public.information_agent_auto_publication_decisions (
+      mode, policy_version, fact_id, case_id, sale_id, fact_key, outcome, reasons
+    ) values (
+      'simulation', p_policy_version, v_fact.id, v_fact.case_id, v_fact.sale_id, v_fact.fact_key,
+      p_outcome, v_reasons
+    );
+  exception when foreign_key_violation then
+    -- Vente supprimée entre la lecture et l'écriture : rien à écrire.
+    return false;
+  end;
   return true;
 end;
 $$;
@@ -348,6 +398,13 @@ revoke all on function public.record_information_agent_auto_publication_decision
   from public, anon, authenticated;
 grant execute on function public.record_information_agent_auto_publication_decision(uuid, text, text, text[], text)
   to service_role;
+
+-- 6. Verrou de la publication automatique ------------------------------------------------------------------
+-- Le noyau app_private.apply_information_agent_fact accepte encore 'auto' dans ses paramètres (étape 2) ; il
+-- écrit la ligne de ce journal dans la même transaction que la fiche. Cette contrainte rend donc toute
+-- publication 'auto' impossible, quel que soit l'appelant, sans recopier le noyau.
+alter table public.information_agent_fact_publications
+  add constraint information_agent_fact_publications_auto_locked check (actor_kind <> 'auto');
 
 notify pgrst, 'reload schema';
 

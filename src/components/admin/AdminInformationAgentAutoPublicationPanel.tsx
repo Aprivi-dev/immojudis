@@ -40,9 +40,18 @@ export function AdminInformationAgentAutoPublicationPanel() {
       <h2 id="auto-publication-title" className="font-semibold">
         Publication automatique des informations reçues
       </h2>
+      {/* Toujours affiché, même si la lecture du réglage échoue : l'arrêt ne dépend que du serveur. */}
+      <button
+        type="button"
+        className="admin-button-primary mt-3"
+        disabled={run.isPending || view?.mode === "off"}
+        onClick={() => run.mutate({ action: "emergency_stop" })}
+      >
+        Arrêt d’urgence
+      </button>
       {query.error ? (
         <p role="alert" className="mt-2 text-sm text-danger">
-          Réglage indisponible.
+          Réglage indisponible. L’arrêt d’urgence reste possible.
         </p>
       ) : null}
       {view ? (
@@ -78,14 +87,6 @@ export function AdminInformationAgentAutoPublicationPanel() {
               aria-describedby="auto-publication-lock"
             >
               Automatique (verrouillé)
-            </button>
-            <button
-              type="button"
-              className="admin-button-primary"
-              disabled={run.isPending || view.mode === "off"}
-              onClick={() => run.mutate({ action: "emergency_stop" })}
-            >
-              Arrêt d’urgence
             </button>
           </div>
           <div id="auto-publication-lock" className="text-brand-navy/70">
