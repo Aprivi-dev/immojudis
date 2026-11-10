@@ -11,6 +11,9 @@ import type { Json } from "@/integrations/supabase/types";
  * - `bounced_temporary` : rebond passager, rien ne change pour la vente (Resend peut retenter).
  * - `complained` : plainte, l'adresse est déjà en opposition (registre des contacts).
  *
+ * `bounce_type` garde le type brut du fournisseur à côté de l'état (onglet Envois : « Rebond passager »
+ * seulement pour « transient ») ; aucune décision ne le lit.
+ *
  * Ni le statut du dossier ni celui de la mission ne changent : le message est bien parti. Le journal des
  * envois (`email_send_log`) garde le détail de chaque évènement de livraison.
  */
@@ -25,10 +28,12 @@ export async function markInformationAgentCaseDelivery({
   emailId,
   status,
   at,
+  bounceType,
 }: {
   emailId: string | null | undefined;
   status: CaseDeliveryStatus;
   at: string;
+  bounceType?: string;
 }): Promise<number> {
   const id = emailId?.trim();
   if (!id) return 0;
@@ -56,7 +61,12 @@ export async function markInformationAgentCaseDelivery({
       }
       const { error: updateError } = await supabaseAdmin
         .from(table)
-        .update({ metadata: { ...metadata, delivery: { status, at } } as Json })
+        .update({
+          metadata: {
+            ...metadata,
+            delivery: { status, at, ...(bounceType ? { bounce_type: bounceType } : {}) },
+          } as Json,
+        })
         .eq("id", row.id);
       if (updateError) throw updateError;
       marked += 1;

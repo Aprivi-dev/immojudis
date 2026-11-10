@@ -129,6 +129,8 @@ describe("AdminInformationAgentMissionsList (onglet Envois)", () => {
       "bounced_temporary",
       "complained",
       "delayed",
+      "failed",
+      "bounced_temporary_unconfirmed",
       null,
       undefined,
     ];
@@ -149,7 +151,9 @@ describe("AdminInformationAgentMissionsList (onglet Envois)", () => {
     expect(remis.className).toContain("text-success");
     expect(remis.closest("p")?.textContent).toMatch(/^Envoyée · Remis · /);
     expect(screen.getByText("Rebond").className).toContain("text-danger");
-    expect(screen.getByText("Rebond passager").className).toContain("text-warning");
+    for (const passager of screen.getAllByText("Rebond passager")) {
+      expect(passager.className).toContain("text-warning");
+    }
     expect(
       screen.getByText(
         "Rebond passager : souvent une réponse automatique d’absence ; l’adresse reste utilisable",
@@ -157,6 +161,10 @@ describe("AdminInformationAgentMissionsList (onglet Envois)", () => {
     ).toBeTruthy();
     expect(screen.getByText("Plainte").className).toContain("text-danger");
     expect(screen.getByText("Différé")).toBeTruthy();
+    expect(screen.getByText("Échec").className).toContain("text-danger");
+    // Rebond passager d'avant la conservation du type : sans la précision « l'adresse reste utilisable ».
+    expect(screen.getAllByText("Rebond passager")).toHaveLength(2);
+    expect(screen.getAllByText(/l’adresse reste utilisable/)).toHaveLength(1);
     // Sans information : l'état de la mission et la date seulement.
     const lines = screen.getAllByText(/^Envoyée ·/).map((line) => line.textContent ?? "");
     expect(lines.filter((line) => /^Envoyée · \d/.test(line))).toHaveLength(2);

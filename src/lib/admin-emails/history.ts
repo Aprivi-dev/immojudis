@@ -56,7 +56,6 @@ const dateFormat = new Intl.DateTimeFormat("fr-FR", {
 const formatDate = (iso: string) => dateFormat.format(new Date(iso));
 
 const SENT_STATUS: NonNullable<HistoryRow["status"]> = { text: "Envoyé", tone: "neutral" };
-const FAILED_STATUS: NonNullable<HistoryRow["status"]> = { text: "Échec", tone: "bad" };
 
 /**
  * État d'une ligne du journal. Un rebond dont `bounce_type` vaut « transient » (casse indifférente) est un
@@ -64,8 +63,7 @@ const FAILED_STATUS: NonNullable<HistoryRow["status"]> = { text: "Échec", tone:
  */
 function sentStatus(row: { status: string; bounce_type: string | null }) {
   const state = deliveryStateOfLog(row.status, row.bounce_type);
-  if (state) return EMAIL_DELIVERY_LABELS[state];
-  return row.status === "failed" ? FAILED_STATUS : SENT_STATUS;
+  return state ? EMAIL_DELIVERY_LABELS[state] : SENT_STATUS;
 }
 
 const FAILURES: Record<ResendFailure | "expired", string> = {
@@ -92,7 +90,9 @@ const AUTH_EMAIL_LABELS: Record<AuthEmailTemplateId, string> = {
 
 /**
  * Email de compte de Supabase Auth : il arrive au journal par le webhook seulement, donc en `unknown`.
- * Reconnu à l'affichage par l'objet exact d'un gabarit d'authentification ; sinon `null`.
+ * Reconnu à l'affichage par l'objet exact d'un gabarit d'authentification ; sinon `null`. La
+ * reconnaissance repose sur l'objet seul : si l'objet est modifié dans Supabase sans l'être dans
+ * `auth-email-templates.ts`, la ligne retombe sur « unknown ».
  */
 function authEmailLabel(row: { template_key: string; subject: string }): string | null {
   if (row.template_key !== "unknown") return null;

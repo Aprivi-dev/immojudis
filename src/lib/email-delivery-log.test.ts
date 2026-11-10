@@ -99,8 +99,11 @@ describe("la suppression durable ne dépend jamais du journal des envois", () =>
   });
 
   it("n'est lu pour l'agent d'information que par la liste des missions, pour l'affichage", () => {
-    const importers = walk("src").filter((file) =>
-      /information-agent\/delivery-log-reader"/.test(codeOf(file)),
+    // Le nom du module, quel que soit le chemin (alias, `./`, `../`) et le type de guillemets.
+    const reader = path.join("src", "lib", "information-agent", "delivery-log-reader.ts");
+    const importers = walk("src").filter(
+      (file) =>
+        file !== reader && /["'`][^"'`]*delivery-log-reader(?:\.[jt]s)?["'`]/.test(codeOf(file)),
     );
     expect(importers).toEqual([path.join("src", "lib", "information-agent.ts")]);
     const facade = codeOf(path.join("src", "lib", "information-agent.ts"));
@@ -131,6 +134,10 @@ describe("la suppression durable ne dépend jamais du journal des envois", () =>
     ];
     for (const file of decisionFiles) {
       expect(codeOf(file), file).not.toMatch(/email_send_log|record_email_send/);
+      // Ni l'état de remise affiché dans l'onglet Envois, ni sa lecture.
+      expect(codeOf(file), file).not.toMatch(
+        /\b(?:loadDeliveryLog|missionDeliveryState|deliveryState)\b/,
+      );
     }
   });
 
