@@ -885,6 +885,11 @@ $$;`;
       "with actor 'auto'",
     ],
     [
+      "un appel non qualifié (search_path)",
+      "return apply_information_agent_fact(p_fact_id, 'auto', null, 'v1');",
+      "with actor 'auto'",
+    ],
+    [
       "'admin' caché dans un argument imbriqué",
       "return app_private.apply_information_agent_fact(coalesce(p_fact_id, 'admin'), p_kind, null, 'v1');",
       "with actor p_kind",

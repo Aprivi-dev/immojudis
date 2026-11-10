@@ -146,28 +146,19 @@ describe("annotations de l'onglet Réponses", () => {
     });
   });
 
-  it("simulation : décision du journal et raisons en clair ; hors liste et conflits sans journal", async () => {
+  it("simulation : décision du journal datée, même pour un fait déjà traité ; sinon relecture sans journal", async () => {
     mocks.mode.mockResolvedValue("simulation");
+    const row = (outcome: string, reasons: string[]) => ({
+      outcome,
+      reasons,
+      decidedAt: "2026-11-20T09:00:00.000Z",
+      policyVersion: "auto_publication_v1",
+    });
     mocks.latest.mockResolvedValue(
       new Map([
-        [
-          "fact-1",
-          {
-            outcome: "would_publish",
-            reasons: [],
-            decidedAt: "x",
-            policyVersion: "auto_publication_v1",
-          },
-        ],
-        [
-          "fact-2",
-          {
-            outcome: "review",
-            reasons: ["daily_cap_reached", "attachment_source"],
-            decidedAt: "x",
-            policyVersion: "auto_publication_v1",
-          },
-        ],
+        ["fact-1", row("would_publish", [])],
+        ["fact-2", row("review", ["daily_cap_reached", "attachment_source"])],
+        ["fact-5", row("would_publish", [])],
       ]),
     );
     const annotations = await loadAutoPublicationReviewAnnotations([
@@ -175,8 +166,9 @@ describe("annotations de l'onglet Réponses", () => {
       pending("fact-2"),
       pending("fact-3", "occupancy_status"),
       { id: "fact-4", fact_key: "rooms_count", status: "conflict" },
+      { id: "fact-5", fact_key: "surface_m2", status: "accepted" },
     ]);
-    expect(mocks.latest).toHaveBeenCalledWith(["fact-1", "fact-2"]);
+    expect(mocks.latest).toHaveBeenCalledWith(["fact-1", "fact-2", "fact-4", "fact-5"]);
     expect(annotations).toEqual({
       mode: "simulation",
       decisions: {
@@ -185,6 +177,7 @@ describe("annotations de l'onglet Réponses", () => {
           label: "Aurait été publié",
           reasons: [],
           recorded: true,
+          decidedAt: "2026-11-20T09:00:00.000Z",
         },
         "fact-2": {
           outcome: "review",
@@ -194,18 +187,29 @@ describe("annotations de l'onglet Réponses", () => {
             "information tirée d’une pièce jointe, pas du corps du message",
           ],
           recorded: true,
+          decidedAt: "2026-11-20T09:00:00.000Z",
         },
         "fact-3": {
           outcome: "review",
           label: "Relecture (hors liste)",
           reasons: ["champ hors de la liste fermée (surface, terrain, nombre de pièces)"],
           recorded: false,
+          decidedAt: null,
         },
         "fact-4": {
           outcome: "review",
           label: "Relecture",
           reasons: ["information en conflit avec la fiche ou déjà traitée"],
           recorded: false,
+          decidedAt: null,
+        },
+        // Déjà acceptée par un administrateur : la décision du journal reste affichée.
+        "fact-5": {
+          outcome: "would_publish",
+          label: "Aurait été publié",
+          reasons: [],
+          recorded: true,
+          decidedAt: "2026-11-20T09:00:00.000Z",
         },
       },
     });

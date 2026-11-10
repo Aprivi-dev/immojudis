@@ -2070,7 +2070,9 @@ function functionSignature(schema, name, argumentText) {
     return { args: [...args, current.trim()], end: text.length };
   };
 
-  const core = /app_private\s*\.\s*apply_information_agent_fact\s*\(/gi;
+  // Appel qualifié (`app_private.`, ou tout autre schéma) ou non qualifié (résolu par le search_path).
+  const core =
+    /(?:(?<![\w.])[a-z_][a-z0-9_]*\s*\.\s*|(?<![\w.]))apply_information_agent_fact\s*\(/gi;
   // Nom du noyau, même partiel ; seule la fonction d'opposition par identité, sans rapport, partage le préfixe.
   const corePrefix = /apply_information_agent_(?!identity_opposition\b)/i;
   for (const [name, sql] of all) {

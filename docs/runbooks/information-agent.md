@@ -141,18 +141,44 @@ La fonction de publication automatique viendra à l’étape 6, qui devra lever 
     type inconnu : relecture). Pour la surface, « vide » suit la règle d’affichage de la fiche
     (`getRecordedSurface` : surface retenue, habitable, Carrez) et la surface de l’annonce : aucune de ces
     colonnes ne doit porter de valeur ;
-  - dans l’objet **et** le corps : ni demande de ne pas publier (logique fermée : négation proche de
-    « publi », « diffus », « divulg », « autoris », « en ligne », « rendre public », « faire état », ou
-    « confidentiel », « interne » seuls ; « politique de confidentialité » et « internet » ne comptent pas),
-    ni civilité suivie d’un nom (casse indifférente : « M DUPONT », « Mr Martin », « famille Leroy »,
-    « monsieur martin » ; « Maître », « Me », « Madame, Monsieur, » et « Monsieur le Président » exceptés), ni
-    consigne adressée à un modèle. Une mention de confidentialité dans une signature d’avocat envoie donc la
-    réponse en relecture : la simulation le mesurera.
+  - dans l’objet **et** le corps : ni demande de ne pas publier, ni nom de particulier, ni consigne
+    adressée à un modèle (voir « Limites des détecteurs de texte » ci-dessous) ;
+  - pour la surface du terrain, « vide » suit aussi la règle d’affichage : un terrain nu dont la fiche
+    affiche la surface retenue comme surface du terrain (`getDisplaySurface`, `app_surface_kind` ou
+    `surface_scope` à « land ») n’a pas un terrain vide.
 
-  **Échec fermé** : une donnée absente ou illisible (message, dossier, vente, métadonnées, journal), ou une
-  lecture qui atteint le plafond de 1 000 lignes de PostgREST (peut-être tronquée), donne « relecture »,
-  motif « données manquantes ou illisibles », et la lecture est signalée dans le journal serveur
-  (`information_agent.auto_publication`).
+  **Limites des détecteurs de texte** (`auto-publication-text.ts`). Ce sont des motifs : ils ne peuvent pas
+  être exhaustifs et ne sont qu’une première ligne. Avant tout mode automatique (étape 6), il faudra un
+  signal de la lecture par l’IA (« la réponse demande-t-elle de ne pas publier ? ») et une famille « ne pas
+  publier » dans le jeu d’évaluation (étape 4). Ce qu’ils voient aujourd’hui, en logique fermée (un faux
+  positif ne coûte qu’une relecture) :
+  - « ne pas publier » : négation proche d’une racine de publication ou de communication (publier,
+    diffuser, divulguer, communiquer, partager, reprendre, reproduire, relayer, afficher, faire figurer,
+    utiliser, share, disclose, post, publish, « en ligne », « rendre public », « faire état ») ; refus proche
+    d’une de ces racines, sans négation (refuser, s’opposer, interdire, s’abstenir, retirer, embargo,
+    secret, discrétion) ; « confidentiel », « confidential », « secret », « embargo », « discret » seuls ;
+    « interne » seulement avec « usage », « strictement », « document », « note » ou « diffusion » ;
+    « off the record », « pour votre information uniquement », « à votre usage », « strictement
+    personnel », « gardez-la pour vous ». Lettres isolées (« N e p a s p u b l i e r »), césures
+    (« pub-lier ») et chiffres à la place de lettres (« C0NFIDENTIEL ») sont recollés avant la recherche.
+    Une mention de confidentialité ou de secret professionnel dans une signature d’avocat envoie donc la
+    réponse en relecture : la simulation le mesurera ;
+  - nom de particulier : civilité (casse indifférente, « M. », « M », « Mr », « Mme », « famille »,
+    « époux »…) suivie d’un nom, y compris en minuscules après « M. », « Mme » ou une civilité en toutes
+    lettres, et sans espace après le point (« M.Martin ») ; rôle (débiteur, saisi, locataire, occupant,
+    propriétaire, vendeur) suivi d’un prénom et d’un nom en majuscule initiale (« le locataire Jean
+    Dupont »). Exceptions : « Maître », « Me », « Madame, Monsieur, », « Monsieur le Président ». Une raison
+    sociale de deux mots en majuscule initiale après « propriétaire » part en relecture, ce qui est
+    acceptable ; un nom sans civilité ni rôle (« Jean Dupont » seul) n’est pas vu.
+
+  **Échec fermé** : une donnée du fait absente ou illisible (message, messages postérieurs, dossier, vente,
+  autres valeurs, pièce, métadonnées) donne « relecture », motif « données manquantes ou illisibles », et
+  la lecture est signalée dans le journal serveur (`information_agent.auto_publication`). Chaque lecture
+  demande le total exact (`count: "exact"`) : une lecture dont le total dépasse les lignes reçues (plafond
+  `max-rows` de PostgREST, inconnu en production) est tronquée, donc illisible. Une lecture d’**état global**
+  illisible ou tronquée (mode, liste des faits, dernières décisions, compteurs des plafonds) arrête la passe
+  en échec **sans rien écrire** : écrire « relecture » pour tous les faits déferait le gel et gonflerait le
+  journal.
 
 - **Liste fermée** : surface (`surface_m2`), surface du terrain (`land_surface_m2`), nombre de pièces
   (`rooms_count`). Définie à un seul endroit (`AUTO_PUBLICATION_ELIGIBLE_FIELDS`) ; la contrainte du journal
@@ -164,22 +190,27 @@ La fonction de publication automatique viendra à l’étape 6, qui devra lever 
   dossier. Un fait dont la dernière décision « aurait été publié » date d’un jour antérieur est traité comme
   publié ce jour-là : il sort du lot, il a compté dans le plafond de son jour, il compte dans celui de son
   dossier et son champ est rempli. Un champ déjà « rempli » en simulation par un autre fait de la même vente
-  ne l’est pas une seconde fois. **À faire à l’étape 6** : ces plafonds sont calculés en TypeScript à partir du
+  ne l’est pas une seconde fois. **La simulation ne fige un fait qu’à partir du lendemain** : un « aurait été
+  publié » de 9 h peut repasser en « relecture » à 10 h le même jour (message postérieur, autre valeur),
+  alors qu’en mode automatique il serait déjà publié. Les chiffres du jour sont donc un peu optimistes. **À faire à l’étape 6** : ces plafonds sont calculés en TypeScript à partir du
   journal ; avant le mode automatique, ils devront être tenus en base, de façon atomique, sous verrou (deux
   passes simultanées ne doivent jamais les dépasser).
 - **Quand.** Seulement en mode « Simulation » : à chaque passe des réponses (`/api/cron/information-agent-inbound`,
   toutes les 2 minutes), après la file et le déclenchement de l’analyse. Le moteur lit les faits **en
   attente** d’un champ de la liste fermée reçus depuis 45 jours (500 au plus par passe), lit leurs dernières
   décisions en une requête, et n’appelle la RPC d’écriture que si l’issue, les motifs ou la version changent.
-  L’écriture est bornée à 60 secondes par passe et s’arrête après trois échecs consécutifs du même code.
+  L’écriture est bornée à 60 secondes par passe (statut `time_limit_reached` dans le résumé du cron, sans
+  échec ; la suite attend la passe suivante) et s’arrête après trois échecs consécutifs du même code. Deux
+  messages reçus à la même seconde sont départagés par leur date d’écriture puis leur identifiant.
   Les autres faits (hors liste, en conflit) s’affichent « relecture » sans écriture au journal. Un échec de la
   passe ne bloque pas la passe des réponses, mais fait échouer le cron (signalé dans la supervision des
   crons). En mode « Arrêt », rien n’est lu, calculé ni affiché.
 - **Ordre de déploiement.** Le code peut partir avant la migration `20261115100000` : tant que la table des
   réglages n’existe pas, la passe rend `not_installed` dans le résumé du cron, sans échec ; l’onglet Réponses
   n’affiche rien. Toute autre erreur reste un échec.
-- **Affichage.** Onglet Réponses : à côté de chaque information, « Simulation : aurait été publié » ou
-  « Simulation : relecture (raisons en clair) », ou « décision pas encore calculée ». Une lecture du journal
+- **Affichage.** Onglet Réponses : à côté de chaque information, « Simulation : aurait été publié, le
+  JJ/MM/AAAA à HH:MM » ou « Simulation : relecture, le … (raisons en clair) », ou « décision pas encore
+  calculée ». Une information déjà traitée garde sa dernière décision du journal quand elle en a une. Une lecture du journal
   impossible ou tronquée affiche « Simulation de la publication automatique indisponible ». Rien en mode
   arrêt.
 - **Réglage** (onglet Réglages, panneau « Publication automatique des informations reçues ») : « Arrêt »,

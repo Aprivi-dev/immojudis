@@ -110,10 +110,11 @@ describe("AutoPublicationDecisionNote", () => {
           label: "Aurait été publié",
           reasons: [],
           recorded: true,
+          decidedAt: "2026-11-20T09:00:00.000Z",
         }}
       />,
     );
-    expect(screen.getByText("Simulation : aurait été publié.")).toBeTruthy();
+    expect(screen.getByText("Simulation : aurait été publié, le 20/11/2026 à 10:00.")).toBeTruthy();
     cleanup();
     render(
       <AutoPublicationDecisionNote
@@ -122,6 +123,7 @@ describe("AutoPublicationDecisionNote", () => {
           label: "Relecture",
           reasons: ["plafond atteint : 10 informations par jour"],
           recorded: true,
+          decidedAt: null,
         }}
       />,
     );

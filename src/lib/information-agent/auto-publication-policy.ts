@@ -3,7 +3,7 @@ import {
   mentionsDoNotPublish,
   namesPrivatePerson,
 } from "@/lib/information-agent/auto-publication-text";
-import { getRecordedSurface } from "@/lib/surface";
+import { getDisplaySurface, getRecordedSurface } from "@/lib/surface";
 
 export { mentionsDoNotPublish, namesPrivatePerson };
 
@@ -140,6 +140,9 @@ export type AutoPublicationInput = {
     appSurfaceM2: number | null;
     habitableSurfaceM2: number | null;
     carrezSurfaceM2: number | null;
+    /** Nature de la surface retenue et périmètre (« land » : surface du terrain, voir `isLandOnlySurface`). */
+    appSurfaceKind: string | null;
+    surfaceScope: string | null;
     landSurfaceM2: number | null;
     roomsCount: number | null;
   } | null;
@@ -250,7 +253,23 @@ function fieldIsEmpty(
       )
     );
   }
-  if (field === "land_surface_m2") return sale.landSurfaceM2 == null;
+  if (field === "land_surface_m2") {
+    // Terrain nu : la fiche affiche la surface retenue comme surface du terrain quand celle du terrain
+    // manque (règle d'affichage `getDisplaySurface`) ; le champ n'est alors pas vide.
+    return (
+      sale.landSurfaceM2 == null &&
+      getDisplaySurface({
+        property_type: sale.propertyType,
+        app_surface_m2: sale.appSurfaceM2,
+        app_surface_kind: sale.appSurfaceKind,
+        surface_scope: sale.surfaceScope,
+        habitable_surface_m2: sale.habitableSurfaceM2,
+        carrez_surface_m2: sale.carrezSurfaceM2,
+        land_surface_m2: sale.landSurfaceM2,
+        rooms_count: sale.roomsCount,
+      }).kind !== "land"
+    );
+  }
   return sale.roomsCount == null;
 }
 
