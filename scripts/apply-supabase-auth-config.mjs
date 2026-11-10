@@ -79,6 +79,7 @@ const MAX_DIFF_COLUMNS = 160;
 export const ALLOWED_VARIABLES = new Set([
   "{{ .TokenHash }}",
   "{{ .RedirectTo }}",
+  "{{ .RedirectTo | urlquery }}",
   "{{ .ConfirmationURL }}",
   "{{ .Email }}",
   "{{ .NewEmail }}",

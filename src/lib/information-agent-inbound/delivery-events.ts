@@ -131,6 +131,8 @@ export async function processDeliveryEvent(
     emailId: string | null;
     status: "bounced" | "bounced_temporary" | "complained";
     at: string;
+    /** Type brut du rebond chez le fournisseur, conservé pour l'affichage seulement. */
+    bounceType?: string;
   }) => Promise<unknown>,
 ): Promise<InformationAgentInboundResult> {
   const action = deliveryActionOf(event, informationAgentSenderAddress(env));
@@ -140,6 +142,12 @@ export async function processDeliveryEvent(
     if (action.kind === "bounce") await recordInboundContactBounce(email, action.status, action.at);
     else await recordInboundContactOptOut(email, action.at);
   }
+  // Type brut du rebond (« Transient », « Permanent », …), pour l'affichage seulement : la décision
+  // ci-dessus reste celle de `bounceStatusOf`.
+  const rawBounceType =
+    action.kind === "bounce" ? (event as EmailBouncedEvent).data.bounce?.type : undefined;
+  const bounceType =
+    typeof rawBounceType === "string" ? rawBounceType.trim().slice(0, 40) : undefined;
   await markDelivery?.({
     emailId: event.data.email_id ?? null,
     status:
@@ -149,6 +157,7 @@ export async function processDeliveryEvent(
           ? "bounced"
           : "bounced_temporary",
     at: action.at,
+    ...(bounceType ? { bounceType } : {}),
   });
   console.warn(
     JSON.stringify({

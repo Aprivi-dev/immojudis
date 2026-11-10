@@ -1,3 +1,9 @@
+import {
+  EMAIL_DELIVERY_LABELS,
+  type EmailDeliveryLabel,
+  type EmailDeliveryState,
+} from "@/lib/email-delivery-status";
+
 /** Libellés et règles partagés par l'éditeur de message (À contacter) et la liste des envois. */
 
 /** Un brouillon ou un échec se reprend et se modifie ; tout autre statut s'ouvre en lecture seule. */
@@ -21,3 +27,18 @@ export function missionStatusLabel(status: string): string {
     }[status] ?? status
   );
 }
+
+/** État de remise d'une mission envoyée (« Remis », « Rebond passager »…), ou `null` sans information. */
+export function missionDeliveryLabel(
+  state: EmailDeliveryState | null | undefined,
+): EmailDeliveryLabel | null {
+  return state ? EMAIL_DELIVERY_LABELS[state] : null;
+}
+
+/** Couleur du texte de l'état de remise ; le texte suffit à le lire (jamais la couleur seule). */
+export const MISSION_DELIVERY_TONE_CLASS: Record<EmailDeliveryLabel["tone"], string> = {
+  ok: "text-success",
+  bad: "text-danger",
+  warn: "text-warning",
+  neutral: "text-brand-navy/60",
+};

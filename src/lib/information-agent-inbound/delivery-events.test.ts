@@ -234,13 +234,29 @@ describe("processDeliveryEvent : état de remise du dossier", () => {
       emailId: "email-1",
       status: "bounced",
       at: "2026-10-23T10:00:00.000Z",
+      bounceType: "Permanent",
     });
+  });
+
+  it("transmet le type brut du rebond pour l'affichage, sans changer la décision", async () => {
+    const mark = vi.fn(async () => 1);
+    await processDeliveryEvent(bounced(" Undetermined "), ENV, mark);
+    expect(mark).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "bounced_temporary", bounceType: "Undetermined" }),
+    );
+    mark.mockClear();
+    await processDeliveryEvent(complained(), ENV, mark);
+    expect(mark.mock.calls[0]).toEqual([
+      expect.not.objectContaining({ bounceType: expect.anything() }),
+    ]);
   });
 
   it("note un rebond passager sans le compter comme rebond du dossier", async () => {
     const mark = vi.fn(async () => 1);
     await processDeliveryEvent(bounced("Transient"), ENV, mark);
-    expect(mark).toHaveBeenCalledWith(expect.objectContaining({ status: "bounced_temporary" }));
+    expect(mark).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "bounced_temporary", bounceType: "Transient" }),
+    );
   });
 
   it("note une plainte, et ignore les messages d'un autre expéditeur", async () => {

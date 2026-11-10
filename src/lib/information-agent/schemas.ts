@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Database } from "@/integrations/supabase/types";
 import { adminPageQueryShape } from "@/lib/admin-page-query";
+import type { EmailDeliveryState } from "@/lib/email-delivery-status";
 import type { AdminPageMeta } from "@/lib/admin-pagination";
 import type { InformationAgentInventoryItem } from "@/lib/information-agent-inventory";
 import {
@@ -121,6 +122,11 @@ export type InformationAgentMission = {
   updatedAt: string;
   /** Titre de la vente, renseigné par la liste admin seulement (jamais par l'e-mail ni le dépôt). */
   saleTitle?: string | null;
+  /**
+   * État de remise du message envoyé (remis, rebond, plainte…), renseigné par la liste admin seulement ;
+   * `null` : mission non envoyée ou information absente (journal des envois purgé après 90 jours).
+   */
+  deliveryState?: EmailDeliveryState | null;
   /** `court_registry_fallback` : le destinataire est le greffe du tribunal (aucun avocat trouvé), pas un avocat. */
   recipientOrigin?: typeof INFORMATION_AGENT_COURT_REGISTRY_FALLBACK | null;
 };

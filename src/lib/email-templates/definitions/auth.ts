@@ -20,10 +20,27 @@ const GO_VARIABLE_EXAMPLES: Record<string, string> = {
   ".Token": "123456",
 };
 
+/**
+ * `url.QueryEscape` de Go, que `urlquery` applique : tout sauf `A-Z a-z 0-9 - _ . ~` est encodé en `%XX`
+ * (majuscules, octets UTF-8), l'espace devient `+`. `encodeURIComponent` laisse `! ' ( ) *` et écrit
+ * l'espace `%20` : on corrige ces deux écarts.
+ */
+export function goQueryEscape(value: string): string {
+  return encodeURIComponent(value)
+    .replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%20/g, "+");
+}
+
+/** `{{ .Variable }}`, ou `{{ .Variable | urlquery }}` (lien en clair des gabarits), encodé comme Go. */
 export function fillGoVariables(html: string): string {
-  return html.replace(/\{\{\s*(\.[A-Za-z]+)\s*\}\}/g, (match, name: string) => {
-    return GO_VARIABLE_EXAMPLES[name] ?? match;
-  });
+  return html.replace(
+    /\{\{\s*(\.[A-Za-z]+)(\s*\|\s*urlquery)?\s*\}\}/g,
+    (match, name: string, urlquery: string | undefined) => {
+      const example = GO_VARIABLE_EXAMPLES[name];
+      if (example === undefined) return match;
+      return urlquery ? goQueryEscape(example) : example;
+    },
+  );
 }
 
 const DESCRIPTIONS: Record<string, string> = {
