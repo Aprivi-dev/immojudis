@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   AUTH_EMAIL_TEMPLATES,
   authEmailLink,
+  authEmailVisibleLink,
   buildAuthEmailTemplate,
   type AuthEmailLinkVariant,
 } from "./auth-email-templates";
@@ -35,6 +36,7 @@ const VARIANTS = Object.keys(DIRECTORIES) as AuthEmailLinkVariant[];
 const ALLOWED_VARIABLES = new Set([
   "{{ .TokenHash }}",
   "{{ .RedirectTo }}",
+  "{{ .RedirectTo | urlquery }}",
   "{{ .ConfirmationURL }}",
   "{{ .Email }}",
   "{{ .NewEmail }}",
@@ -218,9 +220,29 @@ describe("gabarits des emails d'authentification Supabase", () => {
         expect(html, definition.id).toContain(`href="${href}"`);
         expect(html).not.toContain("ConfirmationURL");
         expect(html).not.toContain("/auth/v1/verify");
-        // Lien de repli affiché en clair : le même, coupé n'importe où.
-        expect(html).toContain(`>${href}</span>`);
+        // Lien de repli affiché en clair : le même, adresse de retour encodée par `urlquery` (dans le
+        // texte, `html/template` ne l'encode pas : un « & » coupait le lien copié).
+        const visible = href.replace(
+          "redirect_to={{ .RedirectTo }}",
+          "redirect_to={{ .RedirectTo | urlquery }}",
+        );
+        expect(html).toContain(`>${visible}</span>`);
+        expect(html).not.toContain(`>${href}</span>`);
       }
+    });
+
+    it("le lien en clair ne diffère du bouton que par l'encodage de l'adresse de retour", () => {
+      expect(authEmailVisibleLink("token-hash", "signup")).toBe(
+        "https://immojudis.com/auth/confirmer?token_hash={{ .TokenHash }}&type=signup&redirect_to={{ .RedirectTo | urlquery }}",
+      );
+      expect(authEmailVisibleLink("confirmation-url", "signup")).toBe("{{ .ConfirmationURL }}");
+      // Rendu de Go simulé : `urlquery` (QueryEscape) encode « : / ? = & » comme encodeURIComponent.
+      const redirectTo = "https://immojudis.com/sales?department=74&type=maison";
+      const url = authEmailVisibleLink("token-hash", "signup")
+        .replace("{{ .TokenHash }}", "9f2c3d4e5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f")
+        .replace("{{ .RedirectTo | urlquery }}", encodeURIComponent(redirectTo));
+      expect(new URL(url).searchParams.get("redirect_to")).toBe(redirectTo);
+      expect(parseAuthLink(new URL(url).search)?.redirectTo).toBe(redirectTo);
     });
 
     it("aucun gabarit n'emploie {{ .SiteURL }} ni ne produit « //auth » (SiteURL porte une barre finale)", () => {

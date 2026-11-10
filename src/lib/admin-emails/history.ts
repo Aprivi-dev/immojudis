@@ -1,6 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { AUTH_EMAIL_TEMPLATES, type AuthEmailTemplateId } from "@/lib/auth-email-templates";
 import { recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
+import { deliveryStateOfLog, EMAIL_DELIVERY_LABELS } from "@/lib/email-delivery-status";
 import { EMAIL_TEMPLATES } from "@/lib/email-templates/registry";
 import { readResendApiKey } from "./env";
 import { maskActionLinks, toInertEmailDocument } from "./link-masking";
@@ -33,7 +35,8 @@ export type HistoryRow = {
   who: string;
   subject: string;
   tag: string;
-  status?: { text: string; tone: "ok" | "bad" | "warn" | "neutral" };
+  /** `detail` : précision courte affichée à côté de l'état (rebond passager). */
+  status?: { text: string; tone: "ok" | "bad" | "warn" | "neutral"; detail?: string };
 };
 export type HistoryList = { rows: HistoryRow[]; next: string | null; note?: string };
 export type HistoryMessage = {
@@ -52,14 +55,16 @@ const dateFormat = new Intl.DateTimeFormat("fr-FR", {
 });
 const formatDate = (iso: string) => dateFormat.format(new Date(iso));
 
-const STATUSES: Record<string, NonNullable<HistoryRow["status"]>> = {
-  sent: { text: "Envoyé", tone: "neutral" },
-  delivered: { text: "Remis", tone: "ok" },
-  delayed: { text: "Différé", tone: "warn" },
-  bounced: { text: "Rebond", tone: "bad" },
-  complained: { text: "Plainte", tone: "bad" },
-  failed: { text: "Échec", tone: "bad" },
-};
+const SENT_STATUS: NonNullable<HistoryRow["status"]> = { text: "Envoyé", tone: "neutral" };
+
+/**
+ * État d'une ligne du journal. Un rebond dont `bounce_type` vaut « transient » (casse indifférente) est un
+ * « Rebond passager », orange ; un rebond définitif ou de type inconnu reste un « Rebond » rouge.
+ */
+function sentStatus(row: { status: string; bounce_type: string | null }) {
+  const state = deliveryStateOfLog(row.status, row.bounce_type);
+  return state ? EMAIL_DELIVERY_LABELS[state] : SENT_STATUS;
+}
 
 const FAILURES: Record<ResendFailure | "expired", string> = {
   not_configured: "RESEND_API_KEY n’est pas renseignée : Resend n’a pas été interrogé.",
@@ -72,6 +77,31 @@ const FAILURES: Record<ResendFailure | "expired", string> = {
 
 const templateLabel = (key: string) =>
   EMAIL_TEMPLATES.find((template) => template.key === key)?.label ?? key;
+
+/** Libellés des emails de compte envoyés par Supabase Auth (SMTP de Resend), par gabarit. */
+const AUTH_EMAIL_LABELS: Record<AuthEmailTemplateId, string> = {
+  confirmation: "Confirmation d’inscription",
+  recovery: "Réinitialisation du mot de passe",
+  email_change: "Changement d’adresse email",
+  invite: "Invitation",
+  magic_link: "Lien de connexion",
+  reauthentication: "Code de confirmation",
+};
+
+/**
+ * Email de compte de Supabase Auth : il arrive au journal par le webhook seulement, donc en `unknown`.
+ * Reconnu à l'affichage par l'objet exact d'un gabarit d'authentification ; sinon `null`. La
+ * reconnaissance repose sur l'objet seul : si l'objet est modifié dans Supabase sans l'être dans
+ * `auth-email-templates.ts`, la ligne retombe sur « unknown ».
+ */
+function authEmailLabel(row: { template_key: string; subject: string }): string | null {
+  if (row.template_key !== "unknown") return null;
+  const definition = AUTH_EMAIL_TEMPLATES.find((template) => template.subject === row.subject);
+  return definition ? `Compte · ${AUTH_EMAIL_LABELS[definition.id]}` : null;
+}
+
+const rowLabel = (row: { template_key: string; subject: string }) =>
+  authEmailLabel(row) ?? templateLabel(row.template_key);
 
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CURSOR_PATTERN = /^(\d{4}-\d{2}-\d{2}T[0-9:.]+(?:Z|[+-]\d{2}:\d{2}))\|([0-9a-f-]{36})$/i;
@@ -127,13 +157,14 @@ type SentRow = {
   to_address: string;
   subject: string;
   status: string;
+  bounce_type: string | null;
   resend_email_id: string | null;
 };
 
 async function readSent(cursor: { at: string; id: string } | null, address: string | null) {
   let query = supabaseAdmin
     .from("email_send_log")
-    .select("id,created_at,template_key,to_address,subject,status,resend_email_id")
+    .select("id,created_at,template_key,to_address,subject,status,bounce_type,resend_email_id")
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(HISTORY_PAGE_SIZE + 1);
@@ -244,8 +275,8 @@ export async function listEmailHistory({
       at: formatDate(row.created_at),
       who: row.to_address || "adresse inconnue",
       subject: row.subject || "(sans objet)",
-      tag: templateLabel(row.template_key),
-      status: STATUSES[row.status] ?? STATUSES.sent,
+      tag: rowLabel(row),
+      status: sentStatus(row),
     })),
     next: rows.length > HISTORY_PAGE_SIZE ? cursorOf(page[page.length - 1]) : null,
     ...(note ? { note } : {}),
@@ -332,22 +363,31 @@ export async function readEmailMessage({
 
   const { data: row, error } = await supabaseAdmin
     .from("email_send_log")
-    .select("id,created_at,template_key,category,to_address,subject,status,resend_email_id")
+    .select(
+      "id,created_at,template_key,category,to_address,subject,status,bounce_type,resend_email_id",
+    )
     .eq("id", rowId)
     .maybeSingle();
   if (error) throw error;
   if (!row) return null;
   await traceAccess(adminUserId, "admin.email.view", { targetId: rowId });
+  const status = sentStatus(row);
   const lines = [
     `À : ${row.to_address}`,
-    `Envoyé le ${formatDate(row.created_at)} · ${templateLabel(row.template_key)} · ${(STATUSES[row.status] ?? STATUSES.sent).text}`,
+    `Envoyé le ${formatDate(row.created_at)} · ${rowLabel(row)} · ${status.text}${status.detail ? ` (${status.detail})` : ""}`,
   ];
   const base = { title: row.subject || "(sans objet)", lines, attachments: [] as string[] };
 
   // Ligne sans gabarit : email venu d'un autre outil du même compte Resend (par exemple le SMTP de Supabase Auth,
   // dont les messages portent des codes à usage unique). Son contenu n'est jamais lu chez Resend.
   if (row.template_key === "unknown") {
-    return { ...base, kind: "note", body: "Email non émis par Immojudis : contenu non affiché." };
+    return {
+      ...base,
+      kind: "note",
+      body: authEmailLabel(row)
+        ? "Email de compte envoyé par le service d’authentification : contenu non affiché."
+        : "Email non émis par Immojudis : contenu non affiché.",
+    };
   }
 
   // Envois de l'agent d'information : le texte est celui du dossier (information_agent_messages).

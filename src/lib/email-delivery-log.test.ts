@@ -92,8 +92,31 @@ describe("la suppression durable ne dépend jamais du journal des envois", () =>
       path.join("src", "lib", "privacy-requests.ts"),
       path.join("src", "lib", "information-agent-professional-rights.ts"),
       path.join("src", "lib", "admin-emails", "history.ts"),
+      // Affichage de l'état de remise dans l'onglet Envois de l'agent (voir le test suivant).
+      path.join("src", "lib", "information-agent", "delivery-log-reader.ts"),
     ];
     for (const file of readers) expect(allowed, file).toContain(file);
+  });
+
+  it("n'est lu pour l'agent d'information que par la liste des missions, pour l'affichage", () => {
+    // Le nom du module, quel que soit le chemin (alias, `./`, `../`) et le type de guillemets.
+    const reader = path.join("src", "lib", "information-agent", "delivery-log-reader.ts");
+    const importers = walk("src").filter(
+      (file) =>
+        file !== reader && /["'`][^"'`]*delivery-log-reader(?:\.[jt]s)?["'`]/.test(codeOf(file)),
+    );
+    expect(importers).toEqual([path.join("src", "lib", "information-agent.ts")]);
+    const facade = codeOf(path.join("src", "lib", "information-agent.ts"));
+    const uses = facade.match(/\bloadDeliveryLog\s*\(/g) ?? [];
+    expect(uses).toHaveLength(1);
+    const list = facade.slice(
+      facade.indexOf("export async function listAdminInformationAgentMissions("),
+      facade.indexOf(
+        "\n}\n",
+        facade.indexOf("export async function listAdminInformationAgentMissions("),
+      ),
+    );
+    expect(list).toMatch(/\bloadDeliveryLog\s*\(/);
   });
 
   it("n'apparaît ni dans les webhooks, ni dans les retraits de consentement, ni dans le registre des contacts", () => {
@@ -111,6 +134,10 @@ describe("la suppression durable ne dépend jamais du journal des envois", () =>
     ];
     for (const file of decisionFiles) {
       expect(codeOf(file), file).not.toMatch(/email_send_log|record_email_send/);
+      // Ni l'état de remise affiché dans l'onglet Envois, ni sa lecture.
+      expect(codeOf(file), file).not.toMatch(
+        /\b(?:loadDeliveryLog|missionDeliveryState|deliveryState)\b/,
+      );
     }
   });
 

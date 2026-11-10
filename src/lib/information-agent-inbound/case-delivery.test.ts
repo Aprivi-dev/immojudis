@@ -102,6 +102,26 @@ describe("état de remise du dossier et de la mission", () => {
     expect(db.updates.map((update) => update.table)).toEqual(["information_agent_cases"]);
   });
 
+  it("garde le type brut du rebond à côté de l'état, et rien sans type", async () => {
+    await markInformationAgentCaseDelivery({
+      emailId: "email-9",
+      status: "bounced_temporary",
+      at: "2026-11-02T10:00:00.000Z",
+      bounceType: "Transient",
+    });
+    expect(db.updates[1]).toEqual({
+      table: "information_agent_missions",
+      id: "mission-1",
+      metadata: {
+        delivery: {
+          status: "bounced_temporary",
+          at: "2026-11-02T10:00:00.000Z",
+          bounce_type: "Transient",
+        },
+      },
+    });
+  });
+
   it("ne fait rien sans identifiant de message", async () => {
     expect(
       await markInformationAgentCaseDelivery({ emailId: " ", status: "bounced", at: "x" }),

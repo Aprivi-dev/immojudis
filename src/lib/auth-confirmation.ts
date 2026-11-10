@@ -8,9 +8,12 @@ import { decodeURIComponentSafe as decodeOnce } from "@/lib/safe-decode-uri";
  *
  *   https://immojudis.com/auth/confirmer?token_hash={{ .TokenHash }}&type=signup&redirect_to={{ .RedirectTo }}
  *
- * `redirect_to` est le DERNIER paramètre : `{{ .RedirectTo }}` n'est pas garanti encodé (il peut porter
- * lui-même un `?` ou un `&`), tout ce qui suit `redirect_to=` lui appartient. Module pur, sans
- * dépendance : il est testé sans navigateur.
+ * `redirect_to` est le DERNIER paramètre et tout ce qui suit `redirect_to=` lui appartient. Deux formes
+ * arrivent, toutes deux encodées par `html/template` de Go : le bouton (`href`, espace en `%20`, « + »
+ * littéral en `%2B`) et le lien copié (`{{ .RedirectTo | urlquery }}`, espace en `+`, « + » littéral en
+ * `%2B`). Aucune ne contient de « + » littéral : `+` se relit donc comme une espace, puis la valeur est
+ * décodée UNE fois. Les liens reçus avant l'encodage du lien copié (adresse en clair, `?` ou `&` compris)
+ * restent lisibles. Module pur, sans dépendance : il est testé sans navigateur.
  */
 
 /** Types de lien admis (`EmailOtpType` de Supabase, moins `email` : aucun gabarit n'en émet). */
@@ -54,7 +57,12 @@ export function parseAuthLink(search: string): AuthLink | null {
   const tokenHash = params.get("token_hash");
   const type = params.get("type");
   if (!tokenHash || !TOKEN_HASH_PATTERN.test(tokenHash) || !isAuthLinkType(type)) return null;
-  return { tokenHash, type, redirectTo: redirectRaw ? decodeOnce(redirectRaw) : null };
+  // `+` = espace (forme `urlquery` du lien copié), puis un seul décodage.
+  return {
+    tokenHash,
+    type,
+    redirectTo: redirectRaw ? decodeOnce(redirectRaw.replace(/\+/g, "%20")) : null,
+  };
 }
 
 /**
