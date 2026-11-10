@@ -105,5 +105,9 @@ describe("information-agent inbound queue cron", () => {
 
     expect(response.status).toBe(500);
     expect(mocks.dispatchPendingInformationAgentEvidence).toHaveBeenCalledTimes(1);
+    // Le résultat du déclenchement reste visible quand la passe échoue.
+    expect((await response.json()).error).toBe(
+      "Inbound queue failed for 1 message(s); evidence dispatch: not_pending.",
+    );
   });
 });

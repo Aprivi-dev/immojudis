@@ -10,7 +10,14 @@ export async function GET(request: Request) {
     // Lance l'analyse par l'IA sans attendre l'horaire GitHub ; ne lève jamais (voir le module).
     const evidenceDispatch = await dispatchPendingInformationAgentEvidence();
     if (Number(result.failed) > 0) {
-      throw new Error(`Inbound queue failed for ${result.failed} message(s).`);
+      // Le résumé est perdu quand la passe échoue : le résultat du déclenchement reste dans le message.
+      const dispatch =
+        evidenceDispatch.status === "failed"
+          ? `${evidenceDispatch.status} (${evidenceDispatch.reason})`
+          : evidenceDispatch.status;
+      throw new Error(
+        `Inbound queue failed for ${result.failed} message(s); evidence dispatch: ${dispatch}.`,
+      );
     }
     return { ...result, evidenceDispatch };
   });

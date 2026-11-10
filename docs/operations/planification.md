@@ -442,10 +442,17 @@ Les horaires GitHub n'étant pas tenus (4 à 11 heures entre deux passages obser
 - au plus une fois par tranche de 10 minutes alignée sur l'horloge, tenue en base par le limiteur global
   (`consume_ip_rate_limit`, compteur `global.information-agent.evidence-dispatch`). Deux déclenchements de part et
   d'autre d'une limite de tranche peuvent être séparés de 2 minutes seulement ; le plafond reste de 6 par heure ;
+- disjoncteur : au plus 24 déclenchements par jour (UTC, compteur
+  `global.information-agent.evidence-dispatch.daily`). Le plafond de 3 essais d'une analyse n'augmente qu'à sa
+  prise en charge par le worker : un workflow qui échoue avant (installation, secret) la laisserait prenable ;
+- quand la plus ancienne analyse prenable attend depuis plus de 2 heures, plus aucun déclenchement : la passe
+  rend le statut `stalled` (avec l'attente en minutes) dans son résumé, et seul l'horaire GitHub continue ;
+- un jeton absent n'est tracé qu'une fois par tranche de 10 minutes (statut `token_missing`) ;
 - toujours sur `main` (le workflow refuse toute autre branche), avec le jeton du pipeline (`GITHUB_SCROLL_TOKEN` ou
   ses équivalents), sans nouveau secret ;
 - un échec (jeton absent, refus de GitHub, coupure, base indisponible) ne fait jamais échouer la passe : il est
-  rendu dans le résumé de l'exécution (`evidenceDispatch`) et tracé avec son étape ou son statut HTTP seulement.
+  rendu dans le résumé de l'exécution (`evidenceDispatch`, ou dans le message d'erreur quand la passe échoue)
+  et tracé avec son étape ou son statut HTTP seulement.
   L'horaire GitHub de 30 minutes reste le filet.
 
 Délai visé entre la réception et l'analyse : quelques minutes (passe des réponses, puis démarrage du workflow).
