@@ -1922,6 +1922,94 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Agent d'information, publication des faits (20261114100000) : le journal des publications
+// (`public.information_agent_fact_publications`) est réservé au serveur en lecture seule (RLS activée,
+// aucune politique, tout retiré à public, anon, authenticated et service_role, puis seulement SELECT pour
+// service_role : aucune écriture, modification ni suppression par l'API) ; le noyau de publication
+// (`app_private.apply_information_agent_fact`) est SECURITY DEFINER à search_path vide et n'est exécutable par
+// aucun rôle de l'API (seule la RPC administrateur l'appelle). Toute migration qui ouvrirait l'un des deux
+// échoue ici.
+{
+  const stripSql = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const all = [...migrationSources].map(([name, source]) => [name, stripSql(source)]);
+  const allSql = all.map(([, sql]) => sql).join("\n");
+  const table = "public\\.information_agent_fact_publications";
+  if (new RegExp(`create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?${table}\\b`, "i").test(allSql)) {
+    if (
+      !new RegExp(`alter\\s+table\\s+${table}\\s+enable\\s+row\\s+level\\s+security`, "i").test(
+        allSql,
+      )
+    ) {
+      failures.push(
+        "public.information_agent_fact_publications does not enable row level security",
+      );
+    }
+    if (
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+table\\s+${table}\\s+from\\s+public,\\s*anon,\\s*authenticated,\\s*service_role`,
+        "i",
+      ).test(allSql)
+    ) {
+      failures.push(
+        "public.information_agent_fact_publications is not closed to public, anon, authenticated and service_role",
+      );
+    }
+    for (const [name, sql] of all) {
+      if (new RegExp(`create\\s+policy[^;]*\\b${table}\\b`, "i").test(sql)) {
+        failures.push(`${name} opens public.information_agent_fact_publications with a policy`);
+      }
+      for (const statement of sql.split(";")) {
+        if (!/^\s*grant\s/i.test(statement) || !new RegExp(`\\b${table}\\b`, "i").test(statement)) {
+          continue;
+        }
+        const privileges = statement.replace(/\bon\b[\s\S]*$/i, "");
+        const roles = statement
+          .replace(/^[\s\S]*?\bto\b/i, "")
+          .replace(/\bpublic\.[a-z0-9_]+/gi, "");
+        if (
+          !/^\s*grant\s+select\s*$/i.test(privileges) ||
+          /\b(?:anon|authenticated|public)\b/i.test(roles)
+        ) {
+          failures.push(
+            `${name} grants more than SELECT to service_role on public.information_agent_fact_publications`,
+          );
+        }
+      }
+    }
+  }
+  const coreName = "app_private.apply_information_agent_fact";
+  const core = coreName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const definitions = [
+    ...allSql.matchAll(
+      new RegExp(
+        `create\\s+or\\s+replace\\s+function\\s+${core}\\s*\\(([\\s\\S]*?)\\bas\\s+\\$`,
+        "gi",
+      ),
+    ),
+  ];
+  if (definitions.length) {
+    const header = definitions.at(-1)[1];
+    if (!/security\s+definer/i.test(header) || !/set\s+search_path\s*=\s*''/i.test(header)) {
+      failures.push(`${coreName} is not a SECURITY DEFINER function with an empty search_path`);
+    }
+    if (
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+function\\s+${core}\\s*\\([^)]*\\)\\s+from\\s+public,\\s*anon,\\s*authenticated,\\s*service_role`,
+        "i",
+      ).test(allSql)
+    ) {
+      failures.push(
+        "app_private.apply_information_agent_fact is executable by public, anon, authenticated or service_role",
+      );
+    }
+    for (const [name, sql] of all) {
+      if (new RegExp(`grant\\s+(?:execute|all)\\s+on\\s+function\\s+${core}\\b`, "i").test(sql)) {
+        failures.push(`${name} grants app_private.apply_information_agent_fact to an API role`);
+      }
+    }
+  }
+}
+
 // Journal central des emails (module « Emails », lots 3 et 4, 01/11/2026) : deux tables réservées à
 // service_role (RLS activée, aucune politique, aucun droit pour public, anon ni authenticated), des fonctions
 // SECURITY DEFINER à search_path vide jamais exécutables par les rôles du navigateur, et un journal qui ne
@@ -2065,6 +2153,7 @@ console.log(
       "admin-signups-asserts-admin-first",
       "signup-trial-end-ignores-user-metadata",
       "email-send-log-service-role-only-and-no-body",
+      "information-agent-publication-journal-and-core-service-only",
     ],
   }),
 );

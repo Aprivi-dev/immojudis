@@ -48,6 +48,8 @@ const PEPITE_SALE_ID = "77000000-0000-4000-8000-000000000002";
 const NOTARY_SALE_ID = "77000000-0000-4000-8000-000000000003";
 const PAST_SALE_ID = "77000000-0000-4000-8000-000000000004";
 const STATE_SALE_ID = "77000000-0000-4000-8000-000000000005";
+/** A court sale whose surface and starting price were sent by the prosecuting lawyer. */
+const LAWYER_SALE_ID = "77000000-0000-4000-8000-000000000006";
 const SALES = {
   [SALE.id]: SALE,
   [PEPITE_SALE_ID]: {
@@ -89,6 +91,24 @@ const SALES = {
     tribunal_name: null,
     tribunal_city: null,
   },
+  [LAWYER_SALE_ID]: {
+    ...SALE,
+    id: LAWYER_SALE_ID,
+    city: "Rennes",
+    department: "35",
+    app_surface_m2: 54,
+    starting_price_eur: 95000,
+    tribunal_name: "Tribunal judiciaire de Rennes",
+    tribunal_city: "Rennes",
+  },
+};
+
+/** Values of the listing sent by the prosecuting lawyer (key, reception day, mode): one sale only. */
+const LAWYER_FACT_SOURCES = {
+  [LAWYER_SALE_ID]: [
+    { fact_key: "starting_price_eur", received_on: "2026-11-12", publication_mode: "manual" },
+    { fact_key: "surface_m2", received_on: "2026-11-12", publication_mode: "manual" },
+  ],
 };
 
 function json(body, status = 200) {
@@ -120,6 +140,9 @@ globalThis.fetch = async function e2eFetch(input, init) {
     return json(body.p_sale_id === PEPITE_SALE_ID);
   // The source name of the public page (an enrichment, like the band): none in the E2E build.
   if (pathname.endsWith("/rpc/get_public_sale_source_name")) return json(null);
+  // The values sent by the prosecuting lawyer (an enrichment): none, except for the sale above.
+  if (pathname.endsWith("/rpc/get_public_sale_lawyer_fact_sources"))
+    return json(LAWYER_FACT_SOURCES[body.p_sale_id] ?? []);
   // No source withdrawn (the default state): without this answer the lookup waits for a DNS error.
   if (pathname.endsWith("/rpc/get_withdrawn_catalogue_sources")) return json([]);
   // Everything else (the catalogue search…) keeps failing as it did before

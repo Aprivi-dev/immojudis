@@ -32,6 +32,7 @@ import {
   type PublicListingSource,
 } from "@/lib/listing-public-information";
 import styles from "./ListingDataCoverage.module.css";
+import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
 import type { AuctionSale } from "@/lib/types";
 import { asRecordOrNull } from "@/lib/guards";
 
@@ -331,6 +332,8 @@ function statusBadgeLabel(fact: PublicListingFact): string | null {
 }
 
 function factActionLabel(fact: PublicListingFact): string | null {
+  // Valeur transmise par l'avocat poursuivant : jamais présentée comme venant de l'annonce.
+  if (fact.lawyerSource) return "Origine de l’information";
   if (fact.sources.length > 0) {
     if (fact.status === "estimated") return "Voir l’origine";
     if (fact.status === "conflict") return "Comparer les sources";
@@ -438,7 +441,7 @@ function SourceDialog({ fact, onOpenChange, returnFocusRef }: SourceDialogProps)
                 );
               })}
             </div>
-          ) : (
+          ) : fact.lawyerSource ? null : (
             <p className={styles.noSource}>
               Aucune source détaillée n’est rattachée à cette information pour le moment.
             </p>
@@ -539,6 +542,7 @@ function PublicInformationSection({
             ) : (
               <>
                 <p className={styles.factValue}>{factValue(fact)}</p>
+                <LawyerFactSourceNote items={[{ label: "", source: fact.lawyerSource ?? null }]} />
                 <div className={styles.factMeta}>
                   <PublicListingFactSource fact={fact} />
                 </div>
