@@ -4,7 +4,12 @@ import { fetchPublicSaleSummary, SALE_ID_PATTERN } from "@/lib/public-sale-summa
 import { withPhotoMirror, type PhotoMirrorClient } from "@/lib/photo-mirror";
 import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
-import { fetchLawyerFactSources, withLawyerFactSources } from "@/lib/lawyer-fact-sources";
+import {
+  fetchLawyerFactSources,
+  warnLawyerFactSourcesFailure,
+  withLawyerFactSources,
+  type LawyerFactSource,
+} from "@/lib/lawyer-fact-sources";
 import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
 import type { AuctionSale } from "@/lib/types";
 
@@ -105,15 +110,11 @@ async function readPublicSale(
 ): Promise<PublicSaleLookup> {
   // Le contenu d'une source retirée (photo d'une vente fusionnée) ne sort pas, y compris côté serveur.
   await loadWithdrawnSources(client);
-  // Valeurs transmises par l'avocat poursuivant : lues avec le résumé (la fiche seule les lit).
-  const [summary, lawyerSources] = await Promise.all([
-    fetchPublicSaleSummary(client, id, { withIndexability: true }),
-    fetchLawyerFactSources(client, id),
-  ]);
+  const summary = await fetchPublicSaleSummary(client, id, { withIndexability: true });
   if (summary.kind === "found") {
     return {
       status: "found",
-      sale: withLawyerFactSources(summary.sale, lawyerSources),
+      sale: summary.sale,
       ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
     };
   }
@@ -165,8 +166,38 @@ export const lookupPublicSale = cache(async (id: string): Promise<PublicSaleLook
   // dépassé ne reste pas cinq minutes. Seules les 3 premières photos affichées sont cherchées, et
   // les copies trouvées ont leur propre cache (photo-mirror.server.ts). Jamais bloquant ni visible.
   const mirrorClient = client as unknown as PhotoMirrorClient;
-  const sale = await withPhotoMirror(lookup.sale, mirrorClient, {
-    fetchMirrors: cachedPhotoMirrorFetcher(mirrorClient),
-  });
+  const [mirrored, lawyerSources] = await Promise.all([
+    withPhotoMirror(lookup.sale, mirrorClient, {
+      fetchMirrors: cachedPhotoMirrorFetcher(mirrorClient),
+    }),
+    cachedLawyerFactSources(client, normalizedId),
+  ]);
+  const sale = withLawyerFactSources(mirrored, lawyerSources);
   return sale === lookup.sale ? lookup : { ...lookup, sale };
 });
+
+/**
+ * Valeurs de la fiche transmises par l'avocat poursuivant : lues seulement pour une vente trouvée (ni pour
+ * un identifiant absent ni pour un identifiant fusionné), avec le même cache et les mêmes étiquettes que la
+ * vente. Une lecture en échec n'est jamais mise en cache comme « aucune mention » : l'erreur traverse le
+ * cache (qui ne garde pas les erreurs), elle est tracée avec son code seul et la page s'affiche sans
+ * mention ; la lecture suivante réessaie.
+ */
+async function cachedLawyerFactSources(
+  client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
+  id: string,
+): Promise<LawyerFactSource[]> {
+  try {
+    return await unstable_cache(
+      () => fetchLawyerFactSources(client, id),
+      ["public-sale-lawyer-fact-sources", id],
+      {
+        tags: [publicSaleCacheTag(id), PUBLIC_SALES_CACHE_TAG],
+        revalidate: PUBLIC_SALE_REVALIDATE_SECONDS,
+      },
+    )();
+  } catch (error) {
+    warnLawyerFactSourcesFailure(error);
+    return [];
+  }
+}

@@ -1620,35 +1620,60 @@ describe("source « avocat poursuivant » sur la fiche publique", () => {
     property_type: "apartment",
     app_surface_m2: 54,
     rooms_count: 3,
+    bedrooms_count: 2,
     starting_price_eur: 95_000,
     sale_date: "2099-01-20T08:30:00+00:00",
   };
+  const manual = (key: NonNullable<AuctionSale["lawyer_fact_sources"]>[number]["key"]) => ({
+    key,
+    receivedOn: "2026-11-12",
+    mode: "manual" as const,
+  });
 
-  it("dit la source à côté de chaque valeur transmise, et seulement là", () => {
+  it("dit une seule mention pour les valeurs voisines du bloc « Le bien », en les nommant", () => {
     renderPreview({
       ...facts,
-      lawyer_fact_sources: [
-        { key: "surface_m2", receivedOn: "2026-11-12", mode: "manual" },
-        { key: "starting_price_eur", receivedOn: "2026-11-12", mode: "manual" },
-      ],
+      lawyer_fact_sources: [manual("surface_m2"), manual("rooms_count")],
     });
-    const mentions = screen.getAllByTestId("lawyer-fact-source");
-    expect(mentions.map((mention) => mention.textContent)).toEqual([MENTION, MENTION]);
-    // Surface : dans la valeur ; pièces : rien.
-    const surface = screen.getByText("Surface").closest("div");
-    expect(within(surface!).getByTestId("lawyer-fact-source")).toBeTruthy();
-    const rooms = screen.getByText("Pièces").closest("div");
-    expect(within(rooms!).queryByTestId("lawyer-fact-source")).toBeNull();
+    const mentions = screen.getAllByTestId("lawyer-fact-source").map((node) => node.textContent);
+    expect(mentions).toEqual([
+      "Surface et nombre de pièces (sans les chambres) : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-les dans le cahier des conditions de vente.",
+    ]);
+  });
+
+  it("dit le texte validé sous la mise à prix, et borne la date au jour", () => {
+    renderPreview({
+      ...facts,
+      lawyer_fact_sources: [manual("starting_price_eur"), manual("sale_date")],
+    });
+    const mentions = screen.getAllByTestId("lawyer-fact-source").map((node) => node.textContent);
+    expect(mentions).toContain(MENTION);
+    expect(mentions).toContain(
+      "Jour de la vente (sans l’heure) : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    );
   });
 
   it("dit « extraite automatiquement » pour une publication automatique", () => {
     renderPreview({
       ...facts,
-      lawyer_fact_sources: [{ key: "rooms_count", receivedOn: "2026-11-13", mode: "auto" }],
+      lawyer_fact_sources: [{ key: "starting_price_eur", receivedOn: "2026-11-13", mode: "auto" }],
     });
     expect(screen.getByTestId("lawyer-fact-source").textContent).toBe(
       "Information transmise par l’avocat poursuivant le 13/11/2026, extraite automatiquement, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
     );
+  });
+
+  it("attribue la surface d'une vente « terrain seul » au terrain transmis", () => {
+    renderPreview({
+      ...facts,
+      property_type: "land",
+      app_surface_m2: 1_200,
+      land_surface_m2: 1_200,
+      rooms_count: null,
+      bedrooms_count: null,
+      lawyer_fact_sources: [manual("land_surface_m2")],
+    });
+    expect(screen.getByTestId("lawyer-fact-source").textContent).toMatch(/^Surface : information/);
   });
 
   it("ne dit rien sans réponse de l'avocat", () => {
@@ -1660,11 +1685,12 @@ describe("source « avocat poursuivant » sur la fiche publique", () => {
     const { container } = renderPreview({
       ...facts,
       lawyer_fact_sources: [
-        { key: "property_type", receivedOn: "2026-11-12", mode: "manual" },
-        { key: "sale_date", receivedOn: "2026-11-12", mode: "manual" },
+        manual("property_type"),
+        manual("sale_date"),
+        manual("starting_price_eur"),
       ],
     });
-    expect(screen.getAllByTestId("lawyer-fact-source")).toHaveLength(2);
+    expect(screen.getAllByTestId("lawyer-fact-source")).toHaveLength(3);
     const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
     expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
   });

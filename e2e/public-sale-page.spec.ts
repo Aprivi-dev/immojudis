@@ -96,16 +96,23 @@ test.describe("ventes aux profils variés", () => {
   test("une valeur transmise par l'avocat poursuivant le dit à côté de la valeur", async ({
     page,
   }) => {
+    // Le plus petit écran visé : 320 px de large, sur tous les projets (bureau comme mobile).
+    await page.setViewportSize({ width: 320, height: 800 });
     await mockBrowser(page);
     await openSale(page, ids.lawyer);
     const mentions = page.getByTestId("lawyer-fact-source");
-    // Mise à prix et surface, dans le HTML du serveur (sans attendre le navigateur).
+    // Mise à prix (texte validé, sous le montant) et surface (une mention pour le bloc « Le bien », qui
+    // nomme la valeur), dans le HTML du serveur, sans attendre le navigateur.
     await expect(mentions).toHaveCount(2);
+    await expect(mentions.nth(0)).toHaveText(
+      "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    );
+    await expect(mentions.nth(1)).toHaveText(
+      "Surface : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    );
     for (const mention of await mentions.all()) {
+      await mention.scrollIntoViewIfNeeded();
       await expect(mention).toBeVisible();
-      await expect(mention).toHaveText(
-        "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
-      );
     }
     await expectNoHorizontalOverflow(page);
   });

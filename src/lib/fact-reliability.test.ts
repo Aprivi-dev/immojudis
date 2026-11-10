@@ -45,55 +45,6 @@ describe("fact reliability", () => {
     expect(presentation.detail).toContain("trace de source");
   });
 
-  it("presents a value sent by the prosecuting lawyer as not verified, with its source", () => {
-    const lawyerSale = sale({
-      lawyer_fact_sources: [
-        { key: "starting_price_eur", receivedOn: "2026-11-12", mode: "manual" },
-        { key: "surface_m2", receivedOn: "2026-11-12", mode: "auto" },
-      ],
-    });
-    // The accepted claim written by the review makes the internal status « observed ».
-    const facts = getFactReliabilitiesFromClaims(lawyerSale, [
-      {
-        field_key: "sale.starting_price_eur",
-        fact_status: "accepted",
-        value_jsonb: 95_000,
-        captured_at: "2026-11-12T09:00:00Z",
-      },
-      {
-        field_key: "property.surface_m2",
-        fact_status: "accepted",
-        value_jsonb: 68,
-        captured_at: "2026-11-12T09:00:00Z",
-      },
-    ]);
-    expect(facts.starting_price_eur.status).toBe("observed");
-
-    const price = getFactPresentation(lawyerSale, "starting_price_eur", null, facts);
-    expect(price).toMatchObject({ kind: "reported", label: "Non vérifié" });
-    expect(price.detail).toBe(
-      "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
-    );
-    const surface = getFactPresentation(lawyerSale, "surface", null, facts);
-    expect(surface.kind).toBe("reported");
-    expect(surface.detail).toContain("extraite automatiquement");
-
-    // The internal reliability is unchanged, and a fact without a lawyer source stays documented.
-    expect(facts.starting_price_eur.status).toBe("observed");
-    const withoutSource = getFactPresentation(sale(), "starting_price_eur", null, facts);
-    expect(withoutSource.kind).toBe("documented");
-  });
-
-  it("never turns a conflict or a reservation into a lawyer mention", () => {
-    const lawyerSale = sale({
-      lawyer_fact_sources: [{ key: "sale_date", receivedOn: "2026-11-12", mode: "manual" }],
-    });
-    const facts = getFactReliabilitiesFromClaims(lawyerSale, [
-      { field_key: "sale_date", fact_status: "conflicted", captured_at: null },
-    ]);
-    expect(getFactPresentation(lawyerSale, "sale_date", null, facts).kind).toBe("conflict");
-  });
-
   it("presents derived values and concrete reservations separately", () => {
     const estimated = getFactPresentation(
       sale({

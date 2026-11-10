@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   hint: false,
   lawyerSources: [] as Array<{ key: string; receivedOn: string; mode: string }>,
+  lawyerReads: [] as string[],
 }));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
@@ -39,7 +40,10 @@ vi.mock("@/lib/client-api", () => ({
 }));
 vi.mock("@/lib/queries", () => ({ getSaleById: mocks.sale, getSalePreviewById: mocks.preview }));
 vi.mock("@/lib/sale-lawyer-fact-sources.client", () => ({
-  getSaleLawyerFactSources: async () => mocks.lawyerSources,
+  getSaleLawyerFactSources: async (id: string) => {
+    mocks.lawyerReads.push(id);
+    return mocks.lawyerSources;
+  },
 }));
 vi.mock("@/components/DiscoverySaleDetailView", () => ({
   DiscoverySaleDetailView: ({
@@ -105,6 +109,7 @@ afterEach(() => {
   mocks.authErrorKind = null;
   mocks.hint = false;
   mocks.lawyerSources = [];
+  mocks.lawyerReads = [];
 });
 describe("listing access resolution", () => {
   it("restores a deep-link anchor after asynchronous access and listing resolution", async () => {
@@ -156,7 +161,35 @@ describe("listing access resolution", () => {
       </QueryClientProvider>,
     );
     await screen.findByText("Analyse premium");
-    expect(screen.getByTestId("lawyer-sources").textContent).toBe("1");
+    await waitFor(() => expect(screen.getByTestId("lawyer-sources").textContent).toBe("1"));
+    // Une seule lecture pour la vente, même si la fiche gratuite a été lue pendant la vérification des droits.
+    expect(mocks.lawyerReads).toEqual(["sale"]);
+  });
+
+  it("does not read the lawyer values of a sale it did not find, nor those the server already sent", async () => {
+    mocks.authenticated = false;
+    mocks.preview.mockResolvedValue(null);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const missing = render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith("sale"));
+    await screen.findByText(/Connectez-vous pour vérifier/);
+    expect(mocks.lawyerReads).toEqual([]);
+    missing.unmount();
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } }}
+        />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Aperçu public");
+    expect(mocks.lawyerReads).toEqual([]);
   });
 
   it("does not reuse a preview belonging to another listing", async () => {
