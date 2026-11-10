@@ -62,6 +62,14 @@ const REPLY_WINDOW_MS = AUTO_PUBLICATION_REPLY_WINDOW_DAYS * 24 * 60 * 60 * 1000
 const MIN_SEMANTIC_VERSION = 3;
 
 /**
+ * Taille maximale (objet et corps réunis, en caractères) d'un texte analysé par les détecteurs. Au-delà,
+ * le texte n'est ni analysé ni tronqué en silence : la décision est « relecture », motif `input_unreadable`.
+ * Les détecteurs restent linéaires (test de durée sur 100 000 caractères hostiles) ; ce plafond borne en
+ * plus le temps de la passe des réponses.
+ */
+export const AUTO_PUBLICATION_MAX_ANALYZED_TEXT_CHARS = 200_000;
+
+/**
  * Motifs de refus du moteur : codes du journal et libellés affichés dans l'onglet Réponses. La contrainte
  * `information_agent_auto_publication_decisions_reasons_check` porte la même liste (test de concordance).
  */
@@ -330,9 +338,13 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
     } else {
       // Objet et corps : une consigne, une demande de ne pas publier ou un nom peut être dans l'objet.
       const text = textOf([message.subject, message.bodyText]);
-      if (detectPossiblePromptInjection(text)) reasons.add("possible_manipulation");
-      if (mentionsDoNotPublish(text)) reasons.add("do_not_publish_requested");
-      if (namesPrivatePerson(text)) reasons.add("private_person_named");
+      if (text.length > AUTO_PUBLICATION_MAX_ANALYZED_TEXT_CHARS) {
+        reasons.add("input_unreadable");
+      } else {
+        if (detectPossiblePromptInjection(text)) reasons.add("possible_manipulation");
+        if (mentionsDoNotPublish(text)) reasons.add("do_not_publish_requested");
+        if (namesPrivatePerson(text)) reasons.add("private_person_named");
+      }
     }
   }
   const receivedAt = timestamp(message?.receivedAt);
@@ -348,7 +360,13 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
   if (informationCase && informationCase.status !== "replied") reasons.add("case_not_replied");
 
   // Messages postérieurs du dossier : en relecture, en cours, opposés ou qui demandent de ne pas publier.
-  if (input.laterMessages === null) {
+  if (
+    input.laterMessages === null ||
+    input.laterMessages.some(
+      (later) =>
+        textOf([later.subject, later.bodyText]).length > AUTO_PUBLICATION_MAX_ANALYZED_TEXT_CHARS,
+    )
+  ) {
     reasons.add("input_unreadable");
   } else if (
     input.laterMessages.some(
