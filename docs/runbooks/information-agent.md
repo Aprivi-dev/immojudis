@@ -105,6 +105,63 @@ antérieure) ne sont **jamais** éligibles. Une information issue d’une pièce
 détecteur de consignes adressées à un modèle est un signal qui envoie la réponse en relecture, pas une
 barrière : la publication automatique restera contrôlée par ces conditions structurelles.
 
+## Moteur « publier ou relire » : simulation, modes et arrêt d’urgence (étape 3, 10/11/2026)
+
+**État à la livraison : mode « Arrêt ». Aucun chemin ne publie.** Le moteur décide, la décision est
+journalisée et affichée, rien n’est écrit sur une fiche. Le noyau `app_private.apply_information_agent_fact`
+n’est appelé qu’avec `'admin'` (invariant `information-agent-no-automatic-publication-path` de
+`scripts/check-security-invariants.mjs`, qui refuse aussi un auteur variable), et le pont vers
+`auction_fact_claims` refuse toujours `'auto'`. La fonction de publication automatique viendra à l’étape 6.
+
+- **Moteur** (`src/lib/information-agent/auto-publication-policy.ts`, module pur, version
+  `auto_publication_v1`). Pour un fait candidat, il rend « aurait été publié » ou « relecture » avec toutes
+  les raisons de refus. Il applique la règle ci-dessus et les conditions du compte-rendu du 10/11/2026 :
+  réponse par e-mail (ni portail, ni import manuel), expéditeur = adresse contactée, DKIM **et** DMARC à
+  « pass », reçue moins de 30 jours après l’envoi du dossier, dossier adressé à l’avocat poursuivant
+  (`recipient_kind = source_lawyer`, seul destinataire auquel la fiche attribue la valeur) ; fait du corps
+  du message (sans `evidence_asset_id`) ; accord des règles et de l’IA v3 ou suivante, aucun autre candidat
+  du même message pour la même clé ; aucun motif de phrase ou de lot, réponse traitée sans motif de
+  relecture ; champ de la liste fermée, **vide** sur la fiche, valeur plausible pour le type de bien
+  (bornes par type ; type inconnu : relecture) ; ni « ne pas publier » (ni « ne pas diffuser »,
+  « confidentiel »…), ni civilité suivie d’un nom (« M. Martin », « les époux Leroy » ; « Maître » et
+  « Me » exceptés), ni consigne adressée à un modèle. **Échec fermé** : une donnée absente ou illisible
+  (message, dossier, vente, métadonnées, journal) donne « relecture », motif « données manquantes ou
+  illisibles », et la lecture en échec est signalée dans le journal serveur
+  (`information_agent.auto_publication`).
+- **Liste fermée** : surface (`surface_m2`), surface du terrain (`land_surface_m2`), nombre de pièces
+  (`rooms_count`). Définie à un seul endroit (`AUTO_PUBLICATION_ELIGIBLE_FIELDS`) ; la contrainte du journal
+  qui interdit « aurait été publié » pour tout autre champ est comparée à cette liste par un test.
+- **Plafonds**, appliqués dès la simulation (raison « plafond atteint ») : 10 informations par jour (heure
+  de Paris) et 2 par dossier. Un champ déjà « rempli » en simulation par un autre fait de la même vente ne
+  l’est pas une seconde fois. Les décisions déjà au journal comptent.
+- **Quand.** Seulement en mode « Simulation » : à chaque passe des réponses (`/api/cron/information-agent-inbound`,
+  toutes les 2 minutes), après la file et le déclenchement de l’analyse, le moteur examine les faits en
+  attente ou en conflit reçus depuis 45 jours (500 au plus par passe) et inscrit la décision quand elle
+  change (une décision identique à la dernière n’est pas réécrite ; la lecture par l’IA, qui arrive après,
+  ajoute donc une ligne). Un échec de la passe de simulation ne bloque pas la passe des réponses, mais fait
+  échouer le cron (signalé dans la supervision des crons). En mode « Arrêt », rien n’est lu, calculé ni
+  affiché.
+- **Affichage.** Onglet Réponses : à côté de chaque information, « Simulation : aurait été publié » ou
+  « Simulation : relecture (raisons en clair) », ou « décision pas encore calculée ». Rien en mode arrêt.
+- **Réglage** (onglet Réglages, panneau « Publication automatique des informations reçues ») : « Arrêt »,
+  « Simulation », et « Automatique (verrouillé) », avec les conditions du déverrouillage : textes
+  juridiques publiés, AIPD signée, validation des huit points par un avocat, jeu d’évaluation à zéro
+  publication fausse, simulation concluante. Le mode automatique ne peut pas être enregistré : refus du
+  serveur, refus de la RPC (`55000`) et contrainte `information_agent_auto_publication_settings_auto_locked`
+  de la table (seule une migration de l’étape 6 pourra la retirer ; l’invariant de sécurité échoue sinon).
+- **Changement de mode** : réservé à un administrateur (RPC `set_information_agent_auto_publication_mode`,
+  jeton de l’administrateur, `is_admin`), tracé dans `information_agent_auto_publication_mode_changes`
+  (qui, quand, ancien et nouveau mode, arrêt d’urgence ou non), en ajout seul.
+- **Arrêt d’urgence** : bouton « Arrêt d’urgence » (RPC `stop_information_agent_auto_publication`), un
+  geste, toujours permis, sans motif. Effet immédiat : la RPC d’écriture des décisions relit le mode sous
+  verrou partagé et n’écrit plus rien dès que le mode n’est plus « simulation », même au milieu d’une passe.
+- **Journal** `information_agent_auto_publication_decisions` : fait, dossier, vente, clé, issue, codes de
+  motifs, version de la règle, date. Ni adresse, ni extrait, ni texte issu du message (les motifs sont des
+  codes contrôlés par contrainte). Ajout seul (déclencheur : ni modification, ni suppression, ni vidage,
+  même par le propriétaire), RLS sans politique, lecture par le serveur seulement, écriture par la seule RPC
+  de service `record_information_agent_auto_publication_decision`. Il suit la vente (seule suppression
+  admise). Migration `20261115100000`, tests pgTAP `880`.
+
 ## Contenu de l’e-mail
 
 - Signature : « L’équipe Immojudis », ou « Prénom Nom / Pour l’équipe Immojudis » quand `INFORMATION_AGENT_SIGNATURE_NAME` est renseignée (modifiable dans le brouillon).

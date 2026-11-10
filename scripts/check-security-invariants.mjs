@@ -2010,6 +2010,118 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Agent d'information, étape 3 (20261115100000) : AUCUN chemin ne publie automatiquement.
+// 1. Tout appel du noyau `app_private.apply_information_agent_fact` dans une migration passe le littéral
+//    'admin' comme type d'auteur : ni 'auto', ni une variable qui pourrait le valoir. Ouvrir la publication
+//    automatique (étape 6) exige de changer cet invariant, explicitement.
+// 2. Aucun code de l'application ni du pipeline ne nomme le noyau.
+// 3. Le verrou du mode automatique (`information_agent_auto_publication_settings_auto_locked`) existe et
+//    n'est retiré par aucune migration.
+// 4. Le journal des décisions est réservé au serveur en lecture seule : RLS, aucune politique, tout retiré
+//    aux rôles de l'API, SELECT seul pour service_role.
+{
+  const stripSql = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  const all = [...migrationSources].map(([name, source]) => [name, stripSql(source)]);
+  const allSql = all.map(([, sql]) => sql).join("\n");
+  for (const [name, sql] of all) {
+    for (const match of sql.matchAll(/app_private\.apply_information_agent_fact\s*\(/gi)) {
+      const before = sql.slice(Math.max(0, match.index - 40), match.index);
+      if (/\bfunction\s+$/i.test(before)) continue;
+      let depth = 1;
+      let end = match.index + match[0].length;
+      while (end < sql.length && depth > 0) {
+        if (sql[end] === "(") depth += 1;
+        else if (sql[end] === ")") depth -= 1;
+        end += 1;
+      }
+      const args = sql.slice(match.index + match[0].length, end - 1);
+      // Signature seule (revoke, comment, regprocedure) : uniquement des types.
+      if (/^\s*uuid\s*,\s*text\s*,\s*uuid\s*,\s*text\s*$/i.test(args)) continue;
+      const actor = args.split(",")[1]?.trim();
+      if (actor !== "'admin'") {
+        failures.push(
+          `${name} calls app_private.apply_information_agent_fact with actor ${actor ?? "(none)"}: only the literal 'admin' is allowed (no automatic publication path)`,
+        );
+      }
+    }
+  }
+  const codeRoots = ["../src/", "../services/data-pipeline/src/"];
+  for (const root of codeRoots) {
+    let entries = [];
+    try {
+      entries = await readdir(new URL(root, import.meta.url), { recursive: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const name = String(entry);
+      if (!/\.(?:ts|tsx|mjs|cjs|js|py)$/.test(name)) continue;
+      if (/\.test\.[cm]?[jt]sx?$/.test(name) || /(?:^|\/)test_[^/]*\.py$/.test(name)) continue;
+      const source = await readFile(new URL(`${root}${name}`, import.meta.url), "utf8");
+      if (
+        /\bapply_information_agent_fact\b/.test(
+          source.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g, ""),
+        )
+      ) {
+        failures.push(
+          `${root.replace("../", "")}${name} names app_private.apply_information_agent_fact: only the administrator RPC may call the publication core`,
+        );
+      }
+    }
+  }
+  const lock = "information_agent_auto_publication_settings_auto_locked";
+  if (
+    !new RegExp(`constraint\\s+${lock}\\s+check\\s*\\(\\s*mode\\s*<>\\s*'auto'\\s*\\)`, "i").test(
+      allSql,
+    )
+  ) {
+    failures.push(`the auto publication mode lock (${lock}) is missing`);
+  }
+  for (const [name, sql] of all) {
+    if (new RegExp(`drop\\s+constraint\\s+(?:if\\s+exists\\s+)?${lock}\\b`, "i").test(sql)) {
+      failures.push(`${name} drops the auto publication mode lock (${lock})`);
+    }
+  }
+  const decisions = "public\\.information_agent_auto_publication_decisions";
+  if (
+    new RegExp(`create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?${decisions}\\b`, "i").test(allSql)
+  ) {
+    if (
+      !new RegExp(`alter\\s+table\\s+${decisions}\\s+enable\\s+row\\s+level\\s+security`, "i").test(
+        allSql,
+      ) ||
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+table\\s+${decisions}\\s+from\\s+public,\\s*anon,\\s*authenticated,\\s*service_role`,
+        "i",
+      ).test(allSql)
+    ) {
+      failures.push(
+        "public.information_agent_auto_publication_decisions is not closed to the API roles (RLS and revoke all)",
+      );
+    }
+    for (const [name, sql] of all) {
+      if (new RegExp(`create\\s+policy[^;]*\\b${decisions}\\b`, "i").test(sql)) {
+        failures.push(
+          `${name} opens public.information_agent_auto_publication_decisions with a policy`,
+        );
+      }
+      for (const statement of sql.split(";")) {
+        if (
+          !/^\s*grant\s/i.test(statement) ||
+          !new RegExp(`\\b${decisions}\\b`, "i").test(statement)
+        ) {
+          continue;
+        }
+        if (!/^\s*grant\s+select\s+on\b/i.test(statement)) {
+          failures.push(
+            `${name} grants more than SELECT on public.information_agent_auto_publication_decisions (append-only journal written by its RPC)`,
+          );
+        }
+      }
+    }
+  }
+}
+
 // Journal central des emails (module « Emails », lots 3 et 4, 01/11/2026) : deux tables réservées à
 // service_role (RLS activée, aucune politique, aucun droit pour public, anon ni authenticated), des fonctions
 // SECURITY DEFINER à search_path vide jamais exécutables par les rôles du navigateur, et un journal qui ne
@@ -2154,6 +2266,7 @@ console.log(
       "signup-trial-end-ignores-user-metadata",
       "email-send-log-service-role-only-and-no-body",
       "information-agent-publication-journal-and-core-service-only",
+      "information-agent-no-automatic-publication-path",
     ],
   }),
 );

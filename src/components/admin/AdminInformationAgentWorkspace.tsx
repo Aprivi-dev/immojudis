@@ -8,6 +8,7 @@ import {
 import { AdminCatalogueReadinessSettings } from "@/components/admin/AdminCatalogueReadinessSettings";
 import { AdminAuctionFactClaimReviewPanel } from "@/components/admin/AdminAuctionFactClaimReviewPanel";
 import { AdminInformationAgentAutopilotPanel } from "@/components/admin/AdminInformationAgentAutopilotPanel";
+import { AdminInformationAgentAutoPublicationPanel } from "@/components/admin/AdminInformationAgentAutoPublicationPanel";
 import { AdminInformationAgentMissionsList } from "@/components/admin/AdminInformationAgentMissionsList";
 import {
   AdminInformationAgentMissionsPanel,
@@ -189,6 +190,7 @@ export function AdminInformationAgentWorkspace() {
       {panel(
         "reglages",
         <>
+          <AdminInformationAgentAutoPublicationPanel />
           <AdminInformationAgentTemplatePanel />
           <AdminCatalogueReadinessSettings />
         </>,
