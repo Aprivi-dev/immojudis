@@ -426,8 +426,9 @@ export function BillingActions({
               {trialAvailable
                 ? "Premier prélèvement à la fin de l’essai, puis chaque mois à la même date. "
                 : "Premier prélèvement à la souscription, puis chaque mois à la même date. "}
-              La résiliation empêche le renouvellement suivant ; l’accès reste ouvert jusqu’à la fin
-              de la période payée. Stripe affiche le montant et la périodicité avant confirmation.
+              Résiliable à tout moment depuis Mon compte : la résiliation empêche le prélèvement
+              suivant et l’accès reste ouvert jusqu’à la fin de la période payée. Stripe affiche le
+              montant et la périodicité avant confirmation.
             </p>
           </div>
 

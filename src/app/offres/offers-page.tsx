@@ -17,11 +17,8 @@ import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
-import {
-  ANALYSIS_TRIAL_DAYS,
-  analysisSubscriptionTerms,
-  resolveAnalysisOfferLabel,
-} from "@/lib/analysis-offer";
+import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { analysisSubscriptionTerms } from "@/lib/analysis-subscription-terms";
 import { useAuth } from "@/hooks/use-auth";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";

@@ -37,11 +37,8 @@ import {
   type LoginReason,
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import {
-  ANALYSIS_TRIAL_DAYS,
-  analysisSubscriptionTerms,
-  resolveAnalysisOfferLabel,
-} from "@/lib/analysis-offer";
+import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { analysisSubscriptionTerms } from "@/lib/analysis-subscription-terms";
 import {
   LAUNCH_OFFER_DURATION_TEXT,
   LAUNCH_OFFER_SIGNUP_LINE,
