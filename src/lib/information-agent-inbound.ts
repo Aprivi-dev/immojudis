@@ -86,6 +86,7 @@ import {
   detectWrongRecipientSignal,
 } from "@/lib/information-agent-inbound/reply-intent";
 import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
+import { detectPossiblePromptInjection } from "@/lib/information-agent-inbound/prompt-injection";
 import { isAutomaticReply, replyMentionsLot } from "@/lib/information-agent-inbound/reply-signals";
 
 export {
@@ -477,14 +478,19 @@ async function ingestReceivedEmail({
     subject: received.subject,
   });
   // Motif de relecture : l'expéditeur d'abord, puis le contenu (vocabulaire d'une plainte ou d'une
-  // opposition sans demande explicite : aucune opposition n'est enregistrée, un humain lit).
+  // opposition sans demande explicite : aucune opposition n'est enregistrée, un humain lit). Une consigne
+  // adressée à un modèle (« ignore les consignes… ») envoie toute la réponse en relecture : aucune
+  // information n'en est extraite, ni par les règles ni par l'IA.
   const reviewReason =
     inboundReviewReason({
       senderMatches,
       senderAuthentication,
     }) ??
     (detectPossibleInformationAgentContactOptOut(bodyText) ? "possible_opposition" : null) ??
-    wrongRecipientReviewReason(bodyText, senderAuthentication.status === "pass");
+    wrongRecipientReviewReason(bodyText, senderAuthentication.status === "pass") ??
+    (detectPossiblePromptInjection(received.subject) || detectPossiblePromptInjection(bodyText)
+      ? "possible_prompt_injection"
+      : null);
   const contactOptOut = Boolean(
     senderEmail &&
     senderMatches &&
