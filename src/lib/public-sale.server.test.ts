@@ -81,6 +81,100 @@ describe("public sale lookup", () => {
     expect(result.status).toBe("found");
   });
 
+  it("joins the values sent by the prosecuting lawyer, read alongside the summary", async () => {
+    const supabase = {
+      rpc: vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_summary"
+            ? { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null }
+            : fn === "get_public_sale_lawyer_fact_sources"
+              ? {
+                  data: [
+                    {
+                      fact_key: "starting_price_eur",
+                      received_on: "2026-11-12",
+                      publication_mode: "manual",
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: null, error: { code: "PGRST202" } },
+        ),
+      ),
+      from: vi.fn(),
+    };
+    mocks.client.mockReturnValue(supabase);
+    const result = await lookupPublicSale(ID);
+    if (result.status !== "found") throw new Error("expected a found sale");
+    expect(result.sale.lawyer_fact_sources).toEqual([
+      { key: "starting_price_eur", receivedOn: "2026-11-12", mode: "manual" },
+    ]);
+
+    // Without a value from the lawyer (or with the function missing), the sale is unchanged.
+    mocks.store.clear();
+    mocks.client.mockReturnValue(
+      client({ rpc: { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null } }),
+    );
+    const plain = await lookupPublicSale(ID);
+    if (plain.status !== "found") throw new Error("expected a found sale");
+    expect(plain.sale).not.toHaveProperty("lawyer_fact_sources");
+  });
+
+  it("never caches a failed read of the lawyer values as « no mention », and traces its code only", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let lawyer: { data: unknown; error: unknown } = {
+      data: null,
+      error: { code: "57014", message: "canceling statement due to statement timeout" },
+    };
+    const supabase = {
+      rpc: vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_summary"
+            ? { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null }
+            : fn === "get_public_sale_lawyer_fact_sources"
+              ? lawyer
+              : { data: null, error: { code: "PGRST202" } },
+        ),
+      ),
+      from: vi.fn(),
+    };
+    mocks.client.mockReturnValue(supabase);
+
+    const failed = await lookupPublicSale(ID);
+    if (failed.status !== "found") throw new Error("expected a found sale");
+    expect(failed.sale).not.toHaveProperty("lawyer_fact_sources");
+    const traces = warn.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(traces).toContainEqual({
+      scope: "public-sale-lawyer-fact-sources",
+      level: "warn",
+      event: "rpc_failed",
+      code: "57014",
+    });
+    expect(JSON.stringify(traces)).not.toContain("statement timeout");
+
+    // The next lookup reads again (the failure was not stored), the sale itself comes from the cache.
+    lawyer = {
+      data: [
+        { fact_key: "starting_price_eur", received_on: "2026-11-12", publication_mode: "manual" },
+      ],
+      error: null,
+    };
+    const retried = await lookupPublicSale(ID);
+    if (retried.status !== "found") throw new Error("expected a found sale");
+    expect(retried.sale.lawyer_fact_sources).toHaveLength(1);
+    expect(summaryReads(supabase)).toBe(1);
+    warn.mockRestore();
+  });
+
+  it("does not read the lawyer values of a sale that is not public", async () => {
+    const supabase = client({ rpc: { data: [], error: null } });
+    mocks.client.mockReturnValue(supabase);
+    expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
+    expect(
+      supabase.rpc.mock.calls.filter(([fn]) => fn === "get_public_sale_lawyer_fact_sources"),
+    ).toHaveLength(0);
+  });
+
   it("answers missing for an unknown sale and for a malformed identifier", async () => {
     mocks.client.mockReturnValue(client({ rpc: { data: [], error: null } }));
     expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
@@ -339,8 +433,16 @@ describe("public sale lookup", () => {
       mocks.client.mockReturnValue(client({ rpc: { data: [row], error: null } }));
       await lookupPublicSale(ID.toUpperCase());
       expect(publicSaleCacheTag(ID.toUpperCase())).toBe(`sale-${ID}`);
-      expect([...mocks.store.values()][0].tags).toEqual([`sale-${ID}`, "public-sales"]);
-      expect(mocks.revalidateSeconds).toEqual([3600]);
+      // Two entries since the lawyer values have their own cache (20261114100000): the sale and those
+      // values, both tagged sale-<id> and public-sales, both revalidated after the same window.
+      expect([...mocks.store.keys()]).toEqual([
+        `public-sale-lookup/${ID}`,
+        `public-sale-lawyer-fact-sources/${ID}`,
+      ]);
+      for (const entry of mocks.store.values()) {
+        expect(entry.tags).toEqual([`sale-${ID}`, "public-sales"]);
+      }
+      expect(mocks.revalidateSeconds).toEqual([3600, 3600]);
       expect(PUBLIC_SALE_REVALIDATE_SECONDS).toBe(3600);
     });
 

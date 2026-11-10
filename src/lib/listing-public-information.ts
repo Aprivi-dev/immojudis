@@ -13,6 +13,12 @@ import {
   type ListingCompletenessResult,
 } from "@/lib/listing-completeness";
 import type { FactReliabilityMap, KeyFact } from "@/lib/fact-reliability";
+import {
+  lawyerFactMention,
+  lawyerSourceForDisplayedValue,
+  type LawyerDisplayedValue,
+  type LawyerFactSource,
+} from "@/lib/lawyer-fact-sources";
 import type { AuctionSale } from "@/lib/types";
 
 export type PublicListingSource = {
@@ -31,6 +37,21 @@ export type PublicListingFact = {
   status: "sourced" | "reported" | "estimated" | "missing" | "conflict";
   explanation: string;
   sources: PublicListingSource[];
+  /**
+   * La valeur affichée a été transmise par l'avocat poursuivant : elle n'est ni « sourcée » ni rattachée
+   * à l'annonce (aucune source de l'annonce n'est montrée pour elle), et l'explication est la mention.
+   */
+  lawyerSource?: LawyerFactSource;
+};
+
+/** Faits de ce bloc qui peuvent venir d'une réponse de l'avocat poursuivant. */
+const LAWYER_DISPLAYED_VALUES: Partial<Record<string, LawyerDisplayedValue>> = {
+  property_type: "property_type",
+  surface: "surface",
+  rooms_count: "rooms_count",
+  occupancy_status: "occupancy_status",
+  starting_price_eur: "starting_price_eur",
+  sale_date: "sale_date",
 };
 
 export type PublicListingSection = {
@@ -586,6 +607,28 @@ export function getListingPublicInformation(
         });
     const publicSources = blocked || status === "missing" ? [] : sources;
     const normalizedValue = blocked || status === "missing" ? null : displayValue;
+    const lawyerValue = LAWYER_DISPLAYED_VALUES[definition.id];
+    const lawyerSource =
+      lawyerValue && (status === "sourced" || status === "reported")
+        ? lawyerSourceForDisplayedValue(sale, lawyerValue, {
+            blocked: blocked || normalizedValue == null,
+            surface: isFiniteNumber(value) ? value : null,
+            displayedDate: typeof value === "string" ? value : null,
+          })
+        : null;
+    if (lawyerSource) {
+      return [
+        {
+          id: definition.id,
+          label: publicLabel(definition, sale),
+          value: normalizedValue,
+          status: "reported" as const,
+          explanation: lawyerFactMention(lawyerSource),
+          sources: [],
+          lawyerSource,
+        } satisfies PublicListingFact,
+      ];
+    }
     return [
       {
         id: definition.id,

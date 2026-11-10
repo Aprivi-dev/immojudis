@@ -460,3 +460,35 @@ describe("getListingPublicInformation", () => {
     });
   });
 });
+
+describe("valeurs transmises par l'avocat poursuivant", () => {
+  const manual = (key: NonNullable<AuctionSale["lawyer_fact_sources"]>[number]["key"]) => ({
+    key,
+    receivedOn: "2026-11-12",
+    mode: "manual" as const,
+  });
+
+  it("présente la valeur comme transmise par l'avocat, jamais rattachée à l'annonce", () => {
+    const result = getListingPublicInformation(
+      sale({ lawyer_fact_sources: [manual("rooms_count"), manual("starting_price_eur")] }),
+    );
+    expect(item(result, "rooms_count")).toMatchObject({
+      status: "reported",
+      sources: [],
+      lawyerSource: manual("rooms_count"),
+      explanation:
+        "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    });
+    expect(item(result, "starting_price_eur")).toMatchObject({
+      status: "reported",
+      sources: [],
+      lawyerSource: manual("starting_price_eur"),
+    });
+    expect(item(result, "bedrooms_count")?.lawyerSource).toBeUndefined();
+  });
+
+  it("ne change rien sans réponse de l'avocat", () => {
+    const result = getListingPublicInformation(sale());
+    expect(result.items.some((fact) => fact.lawyerSource)).toBe(false);
+  });
+});
