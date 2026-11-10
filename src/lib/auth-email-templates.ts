@@ -27,8 +27,8 @@ import {
  * - `confirmation-url` (retour arrière) : `{{ .ConfirmationURL }}`, le lien de vérification de Supabase,
  *   qui fonctionne sans la page.
  *
- * Variables Go de Supabase employées : `.TokenHash`, `.RedirectTo`, `.ConfirmationURL`, `.Email`,
- * `.NewEmail`, `.Token`. Aucun contenu commercial.
+ * Variables Go de Supabase employées : `.TokenHash`, `.RedirectTo` (et `.RedirectTo | urlquery` dans le
+ * lien affiché en clair), `.ConfirmationURL`, `.Email`, `.NewEmail`, `.Token`. Aucun contenu commercial.
  */
 
 export type AuthEmailTemplateId =
@@ -154,6 +154,24 @@ export function authEmailLink(
     : "{{ .ConfirmationURL }}";
 }
 
+/**
+ * Lien de repli affiché en clair sous le bouton. Supabase rend les gabarits avec `html/template` de Go :
+ * dans l'attribut `href`, l'adresse de retour est encodée d'office, mais pas dans le texte visible, où un
+ * « & » de `{{ .RedirectTo }}` coupait le lien copié. `urlquery` l'encode ici (fonction prédéfinie de Go,
+ * admise en dernière position d'un pipeline par `html/template`). Le `href` du bouton ne change pas.
+ */
+export function authEmailVisibleLink(
+  variant: AuthEmailLinkVariant,
+  type: NonNullable<AuthEmailTemplateDefinition["button"]>["type"],
+): string {
+  return variant === "token-hash"
+    ? authEmailLink(variant, type).replace(
+        "redirect_to={{ .RedirectTo }}",
+        "redirect_to={{ .RedirectTo | urlquery }}",
+      )
+    : authEmailLink(variant, type);
+}
+
 /** Un gabarit complet, prêt à coller dans le tableau de bord Supabase. */
 export function buildAuthEmailTemplate(
   definition: AuthEmailTemplateDefinition,
@@ -181,7 +199,7 @@ export function buildAuthEmailTemplate(
         marginBottom: 4,
       }),
       emailParagraph(
-        `<span class="ej-link" style="color:${EMAIL_COLORS.goldText};font-family:Consolas, Menlo, 'Courier New', monospace;font-size:13px;line-height:19px;word-break:break-all;overflow-wrap:anywhere;">${e(href)}</span>`,
+        `<span class="ej-link" style="color:${EMAIL_COLORS.goldText};font-family:Consolas, Menlo, 'Courier New', monospace;font-size:13px;line-height:19px;word-break:break-all;overflow-wrap:anywhere;">${e(authEmailVisibleLink(variant, definition.button.type))}</span>`,
         { tone: "muted", size: "caption", marginBottom: 16 },
       ),
     );
