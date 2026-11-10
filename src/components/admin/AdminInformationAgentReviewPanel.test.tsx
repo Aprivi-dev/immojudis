@@ -70,6 +70,41 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
   });
 
+  it("shows why an AI-read fact is doubtful before an admin accepts it", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "surface_m2",
+          display_value: "65 m²",
+          confidence: 0.9,
+          extraction_method: "semantic_evidence_v3",
+          evidence_asset_id: null,
+          evidence_excerpt: "la surface habitable serait d'environ 65 m²",
+          metadata: { review_reasons: ["hedged_statement", "value_range"] },
+        },
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", recipient_email: "a@example.test" }],
+      assets: [],
+      extractions: [],
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByText(
+        "Information douteuse, à vérifier avant de l’accepter : valeur au conditionnel, approximative ou rapportée d’une autre source ; fourchette de valeurs.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("shows where each fact comes from (email, portal or manual import)", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [

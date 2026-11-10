@@ -736,7 +736,7 @@ def test_worker_persists_optional_semantic_facts_as_pending_with_provenance(monk
     monkeypatch.setattr(
         evidence,
         "run_configured_semantic_analysis",
-        lambda pages, settings: SemanticAnalysis("completed", [semantic_fact], model="fixture-model"),
+        lambda pages, settings, **_kwargs: SemanticAnalysis("completed", [semantic_fact], model="fixture-model"),
     )
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
         evidence._process_job(client, "https://local.example.test", "fixture-key", job)
@@ -746,7 +746,7 @@ def test_worker_persists_optional_semantic_facts_as_pending_with_provenance(monk
     )
     candidates = json.loads(candidate_request.content)
     address = next(row for row in candidates if row["fact_key"] == "address")
-    assert address["extraction_method"] == "semantic_evidence_v2"
+    assert address["extraction_method"] == "semantic_evidence_v3"
     assert address["status"] == "pending"
     assert address["source_page"] == 1
     finish_payload = json.loads(
@@ -917,3 +917,143 @@ def test_same_fact_from_two_assets_keeps_asset_provenance() -> None:
         == "message_id,fact_key,evidence_asset_id,source_page,display_value"
         for request in requests
     )
+
+
+def test_worker_checks_the_lot_and_keeps_review_reasons_on_semantic_candidates(monkeypatch) -> None:
+    """Lecture sémantique réelle (modèle simulé) : autre lot rejeté, fait douteux gardé avec son motif."""
+    from src.enrichment import llm_client
+
+    content = (
+        "Lot 2 : appartement de 54 m². Lot 3 : appartement de 80 m². "
+        "Le lot 2 comprendrait 3 pièces au total."
+    ).encode()
+    job = {
+        "id": "extraction-lot",
+        "asset_id": "asset-lot",
+        "case_id": "case-a",
+        "message_id": "message-a",
+        "sale_id": "sale-a",
+        "attempts": 1,
+    }
+    asset = {
+        "id": "asset-lot",
+        "case_id": "case-a",
+        "message_id": "message-a",
+        "sale_id": "sale-a",
+        "storage_bucket": "information-agent-evidence",
+        "storage_path": "case-a/message-a/reponse.txt",
+        "original_filename": "reponse.txt",
+        "mime_type": "text/plain",
+        "size_bytes": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+
+    class FakeClient:
+        model = "fixture-model"
+        fact_max_tokens = 1_024
+        max_retries = 0
+
+        def generate_json(self, _system: str, _user: str):
+            raise AssertionError("one attempt only")
+
+        def generate_json_once(self, _system: str, _user: str):
+            return {
+                "facts": [
+                    {
+                        "fact_key": "surface_m2",
+                        "proposed_value": {"value": 54},
+                        "evidence_excerpt": "Lot 2 : appartement de 54 m²",
+                        "source_page": 1,
+                        "confidence": 0.9,
+                    },
+                    {
+                        "fact_key": "surface_m2",
+                        "proposed_value": {"value": 80},
+                        "evidence_excerpt": "Lot 3 : appartement de 80 m²",
+                        "source_page": 1,
+                        "confidence": 0.9,
+                    },
+                    {
+                        "fact_key": "rooms_count",
+                        "proposed_value": {"value": 3},
+                        "evidence_excerpt": "Le lot 2 comprendrait 3 pièces au total",
+                        "source_page": 1,
+                        "confidence": 0.9,
+                    },
+                ]
+            }
+
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = request.url.path
+        if path.endswith("/information_agent_evidence_assets"):
+            return httpx.Response(200, json=[asset])
+        if path.endswith("/information-agent-evidence/case-a/message-a/reponse.txt"):
+            return httpx.Response(200, content=content)
+        if path.endswith("/information_agent_cases") and request.method == "GET":
+            return httpx.Response(200, json=[{"status": "replied"}])
+        if path.endswith("/auction_sales") and "quality_flags" in request.url.params["select"]:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "quality_flags": ["multi_lot_sale"],
+                        "source_lot_selection": {"status": "selected", "lot_number": 2, "lot_count": 3},
+                    }
+                ],
+            )
+        if path.endswith("/auction_sales"):
+            return httpx.Response(200, json=[{}])
+        if path.endswith("/information_agent_fact_candidates"):
+            return httpx.Response(201, json=[])
+        if path.endswith("/information_agent_evidence_extractions"):
+            return httpx.Response(204)
+        if path.endswith("/information_agent_cases"):
+            return httpx.Response(204)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    monkeypatch.setattr(
+        evidence,
+        "load_settings",
+        lambda: {
+            "information_agent_evidence_ocr_enabled": False,
+            "information_agent_evidence_semantic_enabled": True,
+        },
+    )
+    monkeypatch.setattr(llm_client, "create_llm_client", lambda: FakeClient())
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        evidence._process_job(client, "https://local.example.test", "fixture-key", job)
+
+    lot_request = next(
+        request
+        for request in requests
+        if request.url.path.endswith("/auction_sales") and "quality_flags" in request.url.params["select"]
+    )
+    assert lot_request.url.params["select"] == "quality_flags,source_lot_selection:raw_payload->source_lot_selection"
+    assert lot_request.url.params["id"] == "eq.sale-a"
+    finish_payload = json.loads(
+        next(
+            request.content
+            for request in requests
+            if request.method == "PATCH" and request.url.path.endswith("/information_agent_evidence_extractions")
+        )
+    )
+    assert finish_payload["metadata"]["semantic"]["status"] == "completed"
+    semantic = {
+        (fact["fact_key"], fact["proposed_value"]["value"]): fact
+        for fact in finish_payload["extracted_facts"]
+        if fact["extraction_method"] == "semantic_evidence_v3"
+    }
+    # Autre lot (lot 3 sur une vente du lot 2) : rejeté. Le lot de la vente : fait net.
+    assert ("surface_m2", 80) not in semantic
+    assert "review_reasons" not in semantic[("surface_m2", 54)]
+    candidate_request = next(
+        request
+        for request in requests
+        if request.method == "POST" and request.url.path.endswith("/information_agent_fact_candidates")
+    )
+    candidates = {row["fact_key"]: row for row in json.loads(candidate_request.content)}
+    # Fait au conditionnel : candidat en relecture avec son motif, même si une règle a lu la même valeur.
+    assert candidates["rooms_count"]["metadata"]["review_reasons"] == ["hedged_statement"]

@@ -28,8 +28,10 @@ from src.information_agent_semantic import (
     PhotoSemanticAnalysis,
     SemanticAnalysis,
     SemanticFact,
+    SemanticLotContext,
     run_configured_photo_analysis,
     run_configured_semantic_analysis,
+    semantic_lot_context,
 )
 from src.normalize import clean_text
 from src.pdf_enrichment import classify_document_type
@@ -87,12 +89,14 @@ class EvidenceFact:
     source_page: int
     unit: str | None = None
     extraction_method: str = "document_ocr_v1"
+    # Motifs de relecture posés par la lecture sémantique (`SEMANTIC_REVIEW_REASONS`).
+    review_reasons: tuple[str, ...] = ()
 
     def as_json(self) -> dict[str, object]:
         proposed_value: dict[str, object] = {"value": self.value}
         if self.unit:
             proposed_value["unit"] = self.unit
-        return {
+        payload: dict[str, object] = {
             "fact_key": self.fact_key,
             "proposed_value": proposed_value,
             "display_value": self.display_value,
@@ -101,6 +105,9 @@ class EvidenceFact:
             "source_page": self.source_page,
             "extraction_method": self.extraction_method,
         }
+        if self.review_reasons:
+            payload["review_reasons"] = list(self.review_reasons)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -617,6 +624,7 @@ def _merge_semantic_facts(
             confidence=fact.confidence,
             source_page=fact.source_page,
             extraction_method=fact.extraction_method,
+            review_reasons=fact.review_reasons,
         )
         for fact in semantic_facts
     ]
@@ -1037,7 +1045,13 @@ def _deduplicate_facts(facts: list[EvidenceFact]) -> list[EvidenceFact]:
         key = (fact.fact_key, str(fact.value).strip().lower())
         current = unique.get(key)
         if current is None or fact.confidence > current.confidence:
-            unique[key] = fact
+            kept = fact
+        else:
+            kept = current
+        # Un motif de relecture posé sur l'une des occurrences reste sur le fait gardé : la même valeur
+        # trouvée ailleurs ne la rend pas nette.
+        reasons = tuple(dict.fromkeys([*(current.review_reasons if current else ()), *fact.review_reasons]))
+        unique[key] = replace(kept, review_reasons=reasons) if reasons != kept.review_reasons else kept
     return list(unique.values())[:30]
 
 
@@ -1123,9 +1137,11 @@ def _process_job(
             declared_mime_type=str(asset.get("mime_type") or ""),
             ocr_enabled=_evidence_ocr_enabled(settings),
         )
+        sale_id = str(job.get("sale_id") or "")
         semantic_analysis = run_configured_semantic_analysis(
             _semantic_pages_from_analysis(analysis),
             settings,
+            lot_context_loader=lambda: _fetch_sale_lot_context(client, base_url, key, sale_id),
         )
         analysis = _merge_semantic_facts(analysis, semantic_analysis.facts)
         analysis = _append_semantic_failure_summary(analysis, semantic_analysis)
@@ -1250,6 +1266,29 @@ def _fetch_sale(client: httpx.Client, base_url: str, key: str, sale_id: str) -> 
     return rows[0] if isinstance(rows, list) and rows else {}
 
 
+def _fetch_sale_lot_context(
+    client: httpx.Client,
+    base_url: str,
+    key: str,
+    sale_id: str,
+) -> SemanticLotContext:
+    """Lots de la vente, pour que la lecture sémantique contrôle le lot dont parle chaque phrase."""
+    response = client.get(
+        f"{base_url}/rest/v1/auction_sales",
+        headers=_headers(key),
+        params={
+            "select": "quality_flags,source_lot_selection:raw_payload->source_lot_selection",
+            "id": f"eq.{sale_id}",
+            "limit": "1",
+        },
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        raise RuntimeError("Information-agent sale not found")
+    return semantic_lot_context(rows[0].get("quality_flags"), rows[0].get("source_lot_selection"))
+
+
 def _fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: str) -> str:
     if not case_id:
         return ""
@@ -1343,6 +1382,8 @@ def _insert_fact_candidates(
                 "metadata": {
                     "processor_version": PROCESSOR_VERSION,
                     "content_trust": "untrusted_external_evidence",
+                    # Fait douteux gardé pour la relecture : jamais un fait net (motif affiché à l'administrateur).
+                    **({"review_reasons": list(fact.review_reasons)} if fact.review_reasons else {}),
                 },
             }
         )
