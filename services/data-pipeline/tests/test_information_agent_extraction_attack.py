@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from src.information_agent_semantic import semantic_lot_context, validate_semantic_facts
+from src.information_agent_semantic import contains_prompt_injection, semantic_lot_context, validate_semantic_facts
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "information_agent_extraction_attack.json").read_text("utf-8"))
 LOTS = {"sold_lot_2_of_3": semantic_lot_context(["multi_lot_sale"], {"status": "selected", "lot_number": 2, "lot_count": 3})}
@@ -47,3 +47,8 @@ def test_attack_case_is_never_a_false_clear_fact(case: dict) -> None:
 def test_attack_suite_counts() -> None:
     assert len(FIXTURE["facts"]) == 44
     assert len(FIXTURE["injection"]) == 20
+
+
+@pytest.mark.parametrize("case", FIXTURE["injection"], ids=[case["id"] for case in FIXTURE["injection"]])
+def test_injection_case(case: dict) -> None:
+    assert contains_prompt_injection(case["text"]) is case["expected"], case["id"]
