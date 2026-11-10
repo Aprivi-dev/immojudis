@@ -25,10 +25,11 @@ const CANDIDATE_WINDOW_DAYS = 45;
 const PAGE_SIZE = 100;
 const MAX_CANDIDATES_PER_PASS = 500;
 /**
- * Plafond de lignes rendu par PostgREST (`max-rows`, 1000 par défaut). Une lecture qui l'atteint est
- * peut-être tronquée : elle est traitée comme illisible (relecture), jamais comme complète.
+ * Lignes demandées par lecture. Le plafond réel du serveur (`max-rows` de PostgREST) n'est pas connu : chaque
+ * lecture demande le total exact (`count: "exact"`) et une lecture dont le total dépasse les lignes reçues
+ * est tronquée, donc traitée comme illisible, jamais comme complète.
  */
-export const AUTO_PUBLICATION_MAX_ROWS = 1000;
+export const AUTO_PUBLICATION_REQUEST_ROWS = 1000;
 /** Temps maximal d'écriture des décisions dans une passe (le cron des réponses dure au plus 300 s). */
 const PASS_TIME_BUDGET_MS = 60_000;
 /** La boucle d'écriture s'arrête après ce nombre d'échecs consécutifs du même code. */
@@ -40,6 +41,15 @@ const NOT_INSTALLED_CODES = new Set(["PGRST205", "PGRST202", "42P01", "42883"]);
 export class AutoPublicationNotInstalledError extends Error {
   constructor() {
     super("Publication automatique non installée (migration 20261115100000 absente).");
+  }
+}
+
+/** Échec d'une lecture d'état global : la passe s'arrête sans rien écrire (code seul, sans détail). */
+export class AutoPublicationPassError extends Error {
+  readonly code: string;
+  constructor(code: string) {
+    super(`Passe de simulation arrêtée sans écriture : ${code}.`);
+    this.code = code;
   }
 }
 
@@ -55,7 +65,8 @@ export type AutoPublicationSimulationResult =
   /** Code déployé avant la migration : rien n'est fait, le cron ne doit pas échouer. */
   | { status: "not_installed" }
   | {
-      status: "done";
+      /** `time_limit_reached` : la limite de temps a arrêté l'écriture (visible, pas un échec). */
+      status: "done" | "time_limit_reached";
       /** Faits ouverts lus (en attente, champ de la liste fermée). */
       examined: number;
       /** Faits déjà « publiés » en simulation un jour antérieur : sortis du lot. */
@@ -129,22 +140,27 @@ function chunks<T>(values: T[], size = PAGE_SIZE): T[][] {
 async function readInChunks<T>(
   stage: string,
   ids: string[],
-  read: (ids: string[]) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  read: (ids: string[]) => PromiseLike<{ data: T[] | null; error: unknown; count?: number | null }>,
 ): Promise<T[] | null> {
   const rows: T[] = [];
   for (const part of chunks([...new Set(ids)])) {
-    const { data, error } = await read(part);
+    const { data, error, count } = await read(part);
     if (error) {
       logFailure(stage, error);
       return null;
     }
-    if ((data ?? []).length >= AUTO_PUBLICATION_MAX_ROWS) {
+    if (isTruncated(data, count)) {
       logFailure(stage, { code: "truncated" });
       return null;
     }
     rows.push(...(data ?? []));
   }
   return rows;
+}
+
+/** Lecture tronquée : total inconnu, ou total supérieur aux lignes reçues. */
+function isTruncated(data: unknown[] | null, count: number | null | undefined): boolean {
+  return typeof count !== "number" || count > (data ?? []).length;
 }
 
 type CandidateRow = {
@@ -166,11 +182,15 @@ async function loadOpenCandidates(
 ): Promise<{ rows: CandidateRow[]; truncated: boolean }> {
   const since = new Date(now.getTime() - CANDIDATE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const rows: CandidateRow[] = [];
-  for (let offset = 0; offset < MAX_CANDIDATES_PER_PASS; offset += PAGE_SIZE) {
-    const { data, error } = await supabaseAdmin
+  let total = 0;
+  while (rows.length < MAX_CANDIDATES_PER_PASS) {
+    // La page suivante part de ce qui est déjà lu : un serveur qui rend moins que demandé ne fait rien sauter.
+    const offset = rows.length;
+    const { data, error, count } = await supabaseAdmin
       .from("information_agent_fact_candidates")
       .select(
         "id,case_id,message_id,sale_id,fact_key,status,evidence_asset_id,reviewed_by,proposed_value,metadata",
+        { count: "exact" },
       )
       .eq("status", "pending")
       .in("fact_key", [...AUTO_PUBLICATION_ELIGIBLE_FIELDS])
@@ -179,10 +199,15 @@ async function loadOpenCandidates(
       .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (error) throw error;
+    if (typeof count !== "number") {
+      throw Object.assign(new Error("Total des faits ouverts inconnu."), { code: "count_missing" });
+    }
+    total = count;
     rows.push(...((data ?? []) as CandidateRow[]));
-    if ((data ?? []).length < PAGE_SIZE) return { rows, truncated: false };
+    // Fin de liste : tout le total est lu (une page plus courte que demandé ne suffit pas à le dire).
+    if (rows.length >= total || !(data ?? []).length) break;
   }
-  return { rows, truncated: true };
+  return { rows, truncated: rows.length < total };
 }
 
 /** Dernière décision de chaque fait demandé, ou `null` si la lecture a échoué ou a été tronquée. */
@@ -192,11 +217,11 @@ async function readLatestDecisions(
   const rows = await readInChunks("latest_decisions", factIds, (ids) =>
     supabaseAdmin
       .from("information_agent_auto_publication_decisions")
-      .select("id,fact_id,outcome,reasons,decided_at,policy_version")
+      .select("id,fact_id,outcome,reasons,decided_at,policy_version", { count: "exact" })
       .in("fact_id", ids)
       .order("decided_at", { ascending: false })
       .order("id", { ascending: false })
-      .limit(AUTO_PUBLICATION_MAX_ROWS),
+      .limit(AUTO_PUBLICATION_REQUEST_ROWS),
   );
   if (!rows) return null;
   const latest = new Map<string, AutoPublicationDecisionRow>();
@@ -225,19 +250,23 @@ async function loadCounters(
   plan: CandidateRow[],
 ): Promise<AutoPublicationCounters | null> {
   const inPlan = new Set(plan.map((row) => row.id));
-  const { data: todayRows, error: todayError } = await supabaseAdmin
+  const {
+    data: todayRows,
+    error: todayError,
+    count: todayCount,
+  } = await supabaseAdmin
     .from("information_agent_auto_publication_decisions")
-    .select("id,fact_id")
+    .select("id,fact_id", { count: "exact" })
     .eq("outcome", "would_publish")
     .gte("decided_at", startOfParisDay(now).toISOString())
     .order("decided_at", { ascending: false })
     .order("id", { ascending: false })
-    .limit(AUTO_PUBLICATION_MAX_ROWS);
+    .limit(AUTO_PUBLICATION_REQUEST_ROWS);
   if (todayError) {
     logFailure("counters_today", todayError);
     return null;
   }
-  if ((todayRows ?? []).length >= AUTO_PUBLICATION_MAX_ROWS) {
+  if (isTruncated(todayRows, todayCount)) {
     logFailure("counters_today", { code: "truncated" });
     return null;
   }
@@ -247,11 +276,11 @@ async function loadCounters(
     (ids) =>
       supabaseAdmin
         .from("information_agent_auto_publication_decisions")
-        .select("id,fact_id,case_id")
+        .select("id,fact_id,case_id", { count: "exact" })
         .eq("outcome", "would_publish")
         .in("case_id", ids)
         .order("id", { ascending: true })
-        .limit(AUTO_PUBLICATION_MAX_ROWS),
+        .limit(AUTO_PUBLICATION_REQUEST_ROWS),
   );
   const saleRows = await readInChunks(
     "counters_sale",
@@ -259,11 +288,11 @@ async function loadCounters(
     (ids) =>
       supabaseAdmin
         .from("information_agent_auto_publication_decisions")
-        .select("id,fact_id,sale_id,fact_key")
+        .select("id,fact_id,sale_id,fact_key", { count: "exact" })
         .eq("outcome", "would_publish")
         .in("sale_id", ids)
         .order("id", { ascending: true })
-        .limit(AUTO_PUBLICATION_MAX_ROWS),
+        .limit(AUTO_PUBLICATION_REQUEST_ROWS),
   );
   if (!caseRows || !saleRows) return null;
   const today = new Set((todayRows ?? []).map((row) => row.fact_id).filter((id) => !inPlan.has(id)))
@@ -300,6 +329,20 @@ function receivedTime(message: MessageRow): number {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
+/**
+ * `other` est reçu après `own` : date de réception, puis date d'écriture, puis identifiant (deux messages
+ * reçus à la même seconde sont départagés, jamais ignorés). Une date illisible compte comme postérieure.
+ */
+function receivedAfter(other: MessageRow, own: MessageRow): boolean {
+  const [a, b] = [receivedTime(other), receivedTime(own)];
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return true;
+  if (a !== b) return a > b;
+  const [c, d] = [Date.parse(other.created_at), Date.parse(own.created_at)];
+  if (!Number.isFinite(c) || !Number.isFinite(d)) return true;
+  if (c !== d) return c > d;
+  return other.id > own.id;
+}
+
 function sameValue(left: unknown, right: unknown): boolean {
   const a = proposedNumber(left);
   const b = proposedNumber(right);
@@ -316,49 +359,52 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
     readInChunks<MessageRow>("messages", caseIds, (ids) =>
       supabaseAdmin
         .from("information_agent_messages")
-        .select("id,case_id,direction,received_at,created_at,subject,body_text,metadata")
+        .select("id,case_id,direction,received_at,created_at,subject,body_text,metadata", {
+          count: "exact",
+        })
         .in("case_id", ids)
         .eq("direction", "inbound")
         .order("created_at", { ascending: true })
         .order("id", { ascending: true })
-        .limit(AUTO_PUBLICATION_MAX_ROWS),
+        .limit(AUTO_PUBLICATION_REQUEST_ROWS),
     ),
     readInChunks("cases", caseIds, (ids) =>
       supabaseAdmin
         .from("information_agent_cases")
-        .select("id,sent_at,recipient_kind,status")
+        .select("id,sent_at,recipient_kind,status", { count: "exact" })
         .in("id", ids)
         .order("id", { ascending: true })
-        .limit(AUTO_PUBLICATION_MAX_ROWS),
+        .limit(AUTO_PUBLICATION_REQUEST_ROWS),
     ),
     readInChunks("sales", saleIds, (ids) =>
       supabaseAdmin
         .from("auction_sales")
         .select(
-          "id,property_type,surface_m2,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,rooms_count",
+          "id,property_type,surface_m2,app_surface_m2,app_surface_kind,surface_scope,habitable_surface_m2,carrez_surface_m2,land_surface_m2,rooms_count",
+          { count: "exact" },
         )
         .in("id", ids)
         .order("id", { ascending: true })
-        .limit(AUTO_PUBLICATION_MAX_ROWS),
+        .limit(AUTO_PUBLICATION_REQUEST_ROWS),
     ),
     // Toutes les valeurs proposées pour les champs éligibles de ces ventes (tout statut, toute provenance).
     readInChunks("related_candidates", saleIds, (ids) =>
       supabaseAdmin
         .from("information_agent_fact_candidates")
-        .select("id,message_id,sale_id,fact_key,status,proposed_value")
+        .select("id,message_id,sale_id,fact_key,status,proposed_value", { count: "exact" })
         .in("sale_id", ids)
         .in("fact_key", eligible)
         .order("id", { ascending: true })
-        .limit(AUTO_PUBLICATION_MAX_ROWS),
+        .limit(AUTO_PUBLICATION_REQUEST_ROWS),
     ),
     assetIds.length
       ? readInChunks("assets", assetIds, (ids) =>
           supabaseAdmin
             .from("information_agent_evidence_assets")
-            .select("id,metadata")
+            .select("id,metadata", { count: "exact" })
             .in("id", ids)
             .order("id", { ascending: true })
-            .limit(AUTO_PUBLICATION_MAX_ROWS),
+            .limit(AUTO_PUBLICATION_REQUEST_ROWS),
         )
       : Promise.resolve([]),
   ]);
@@ -376,14 +422,13 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
       asset?.metadata && typeof asset.metadata === "object" && !Array.isArray(asset.metadata)
         ? (asset.metadata as Record<string, unknown>)
         : null;
-    const ownTime = message ? receivedTime(message) : Number.NaN;
     const laterMessages =
-      messages && message && Number.isFinite(ownTime)
+      messages && message
         ? messages.filter(
             (other) =>
               other.case_id === row.case_id &&
               other.id !== message.id &&
-              !(receivedTime(other) <= ownTime),
+              receivedAfter(other, message),
           )
         : null;
     return {
@@ -429,6 +474,8 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
               surfaceM2: sale.surface_m2,
               appSurfaceM2: sale.app_surface_m2,
               habitableSurfaceM2: sale.habitable_surface_m2,
+              appSurfaceKind: sale.app_surface_kind,
+              surfaceScope: sale.surface_scope,
               carrezSurfaceM2: sale.carrez_surface_m2,
               landSurfaceM2: sale.land_surface_m2,
               roomsCount: sale.rooms_count,
@@ -485,10 +532,12 @@ function sameDecision(
 /**
  * Passe de simulation : en mode « simulation » seulement, décide pour chaque fait en attente d'un champ de
  * la liste fermée reçu depuis 45 jours, et inscrit la décision au journal quand elle change. Hors
- * simulation : rien n'est lu ni calculé. Une lecture de contexte qui échoue ou atteint le plafond de lignes
- * donne « relecture » (motif `input_unreadable`) et est signalée ; la lecture du mode ou de la liste des
- * faits qui échoue lève une erreur ; une table absente (migration pas encore appliquée) rend
- * `not_installed`.
+ * simulation : rien n'est lu ni calculé. Une lecture du contexte d'un fait (message, dossier, vente, autres
+ * valeurs, pièce) qui échoue ou est tronquée donne « relecture » (motif `input_unreadable`) pour ce fait et
+ * est signalée. Une lecture d'état global (mode, liste des faits, dernières décisions, compteurs) qui
+ * échoue ou est tronquée arrête la passe en échec SANS RIEN ÉCRIRE : une telle relecture défèrait le gel
+ * des faits et gonflerait le journal. Une table absente (migration pas encore appliquée) rend
+ * `not_installed`. Une passe arrêtée par sa limite de temps rend `time_limit_reached`.
  */
 export async function runAutoPublicationSimulation({
   now = new Date(),
@@ -513,9 +562,10 @@ export async function runAutoPublicationSimulation({
   const latest = candidates.length
     ? await readLatestDecisions(candidates.map((row) => row.id))
     : new Map<string, AutoPublicationDecisionRow>();
+  if (!latest) throw new AutoPublicationPassError("decisions_unreadable");
   const todayStart = startOfParisDay(now).getTime();
   const frozen = new Set(
-    [...(latest ?? [])]
+    [...latest]
       .filter(([, decision]) => {
         const at = Date.parse(decision.decidedAt);
         return decision.outcome === "would_publish" && Number.isFinite(at) && at < todayStart;
@@ -523,12 +573,15 @@ export async function runAutoPublicationSimulation({
       .map(([factId]) => factId),
   );
   const plan = candidates.filter((row) => !frozen.has(row.id));
+  // Plafonds et champs remplis : état global, lu avant le contexte des faits ; illisible, rien n'est écrit.
+  const counters = plan.length
+    ? await loadCounters(now, plan)
+    : { today: 0, byCase: new Map<string, number>(), filled: new Set<string>() };
+  if (!counters) throw new AutoPublicationPassError("counters_unreadable");
   const items = plan.length ? await buildPlanItems(plan) : [];
-  // Sans les dernières décisions, ni les faits figés ni les plafonds ne sont sûrs : tout en relecture.
-  const counters = plan.length && latest ? await loadCounters(now, plan) : null;
 
-  const result = {
-    status: "done" as const,
+  const result: Extract<AutoPublicationSimulationResult, { examined: number }> = {
+    status: "done",
     examined: candidates.length,
     frozen: frozen.size,
     recorded: 0,
@@ -549,12 +602,13 @@ export async function runAutoPublicationSimulation({
     if ((decision.reasons as readonly string[]).includes("input_unreadable")) {
       result.unreadable += 1;
     }
-    if (sameDecision(latest?.get(item.factId), decision.outcome, decision.reasons)) {
+    if (sameDecision(latest.get(item.factId), decision.outcome, decision.reasons)) {
       result.unchanged += 1;
       continue;
     }
     if (clock() - started > timeBudgetMs) {
       result.timedOut = true;
+      result.status = "time_limit_reached";
       break;
     }
     const { data, error } = await supabaseAdmin.rpc(

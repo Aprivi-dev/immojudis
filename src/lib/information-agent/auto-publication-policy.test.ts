@@ -54,6 +54,8 @@ function cleanInput(overrides: Partial<AutoPublicationInput> = {}): AutoPublicat
       appSurfaceM2: null,
       habitableSurfaceM2: null,
       carrezSurfaceM2: null,
+      appSurfaceKind: null,
+      surfaceScope: null,
       landSurfaceM2: null,
       roomsCount: null,
     },
@@ -288,6 +290,25 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
     ["surface habitable connue", withSale({ habitableSurfaceM2: 52 }), "field_not_empty"],
     ["surface Carrez connue", withSale({ carrezSurfaceM2: 51.5 }), "field_not_empty"],
     ["surface Carrez à zéro", withSale({ carrezSurfaceM2: 0 }), "field_not_empty"],
+    // Terrain nu : la fiche affiche la surface retenue comme surface du terrain (règle getDisplaySurface).
+    ...(
+      [
+        ["terrain nu (type)", { propertyType: "land" }],
+        ["surface retenue de nature terrain", { propertyType: "house", appSurfaceKind: "land" }],
+        ["surface retenue de périmètre terrain", { propertyType: "house", surfaceScope: "land" }],
+      ] as const
+    ).map(([label, patch]): [string, AutoPublicationInput, string] => [
+      label,
+      cleanInput({
+        candidate: {
+          ...cleanInput().candidate,
+          factKey: "land_surface_m2",
+          proposedValue: { value: 800 },
+        },
+        sale: { ...cleanInput().sale!, appSurfaceM2: 500, ...patch },
+      }),
+      "field_not_empty",
+    ]),
     // Corps du message lu par l'IA seule : libellé exact, pas « pièce jointe ».
     [
       "corps lu par l'IA seule",
@@ -426,6 +447,31 @@ describe("détecteurs du texte de la réponse", () => {
     "Sans publication SVP",
     "Please do not publish",
     "CONFIDENTIEL",
+    "Je refuse que cette information soit publiée",
+    "Je m'oppose à toute publication",
+    "Je m'oppose à la diffusion de ces éléments",
+    "Interdiction de publier",
+    "Publication interdite",
+    "Diffusion interdite",
+    "Merci de ne pas communiquer ces éléments",
+    "Merci de ne pas reprendre ces informations",
+    "Merci de ne pas la faire figurer sur votre site",
+    "Merci de vous abstenir de toute publication",
+    "Merci de garder cette information pour vous",
+    "Pour votre information uniquement",
+    "Strictement personnel",
+    "Information couverte par le secret professionnel",
+    "Merci de rester discret",
+    "Information sous embargo jusqu'à l'audience",
+    "confidential",
+    "do not disclose",
+    "Do NOT share this",
+    "please don't post this",
+    "Off the record",
+    "N e p a s p u b l i e r",
+    "C0NFIDENTIEL",
+    "Merci de ne pas pub-lier",
+    "Note interne",
   ])("« ne pas publier » : %s", (text) => {
     expect(mentionsDoNotPublish(text)).toBe(true);
     expect(
@@ -437,6 +483,9 @@ describe("détecteurs du texte de la réponse", () => {
     "La surface est de 54 m². Bonne réception.",
     "Voir notre politique de confidentialité sur notre site internet.",
     "La vente est publique, à l'audience du tribunal.",
+    "Le règlement interne de la copropriété est joint.",
+    "Une autorisation d'urbanisme a été délivrée en 2019.",
+    "Je reste à votre disposition pour vous transmettre le cahier des conditions de vente.",
   ])("pas de « ne pas publier » : %s", (text) => {
     expect(mentionsDoNotPublish(text)).toBe(false);
   });
@@ -452,6 +501,14 @@ describe("détecteurs du texte de la réponse", () => {
     "Occupé par MME Martin.",
     "la famille Leroy occupe les lieux",
     "occupé par monsieur martin",
+    "Occupé par M. martin.",
+    "Occupé par Mr. martin.",
+    "Occupé par Mme martin.",
+    "Occupé par M.Martin.",
+    "débiteur saisi : Pierre Durand",
+    "le locataire Jean Dupont",
+    "le débiteur, Jean Martin, occupe les lieux",
+    "l'occupant actuel Paul Bernard",
   ])("nom de particulier : %s", (text) => {
     expect(namesPrivatePerson(text)).toBe(true);
   });
@@ -463,6 +520,11 @@ describe("détecteurs du texte de la réponse", () => {
     "Monsieur le Président du tribunal a fixé l'audience.",
     "Madame Monsieur,\nVoici la surface.",
     "La surface est de 54 m² et la façade de 12 m de long.",
+    "le locataire a quitté les lieux",
+    // Raison sociale dont le deuxième mot est en minuscule : rien ne se déclenche (deux mots en majuscule
+    // initiale partiraient en relecture, ce qui est acceptable).
+    "le propriétaire Immobilière du Nord",
+    "Mme la juge a fixé l'audience.",
   ])("pas de particulier : %s", (text) => {
     expect(namesPrivatePerson(text)).toBe(false);
   });
@@ -605,16 +667,17 @@ describe("verrous figés", () => {
   });
 
   it("la contrainte du journal porte exactement la liste des motifs (concordance TypeScript et SQL)", () => {
-    const sql = readFileSync(
-      join(
-        process.cwd(),
-        "supabase",
-        "migrations",
-        "20261115100000_information_agent_auto_publication_simulation.sql",
-      ),
-      "utf8",
-    );
-    const list = /reasons\s*<@\s*array\[([^\]]*)\]/i.exec(sql)?.[1];
+    const migrations = join(process.cwd(), "supabase", "migrations");
+    const definitions = readdirSync(migrations)
+      .filter((name) => name.endsWith(".sql"))
+      .sort()
+      .flatMap((name) => [
+        ...readFileSync(join(migrations, name), "utf8").matchAll(
+          /information_agent_auto_publication_decisions_reasons_check\s+check\s*\([\s\S]*?reasons\s*<@\s*array\[([^\]]*)\]/gi,
+        ),
+      ]);
+    expect(definitions.length).toBeGreaterThan(0);
+    const list = definitions.at(-1)![1];
     expect(list).toBeDefined();
     expect([...list!.matchAll(/'([a-z0-9_]+)'/g)].map((match) => match[1])).toEqual(
       Object.keys(AUTO_PUBLICATION_REASON_LABELS),

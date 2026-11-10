@@ -7,7 +7,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import {
-  AUTO_PUBLICATION_MAX_ROWS,
+  AutoPublicationPassError,
   loadLatestAutoPublicationDecisions,
   runAutoPublicationSimulation,
   runAutoPublicationSimulationForCron,
@@ -16,12 +16,15 @@ import {
 type Row = Record<string, unknown>;
 
 /**
- * Faux client PostgREST en mémoire : il honore `eq`, `in`, `gte`, `order`, `range` et `limit`, et plafonne
- * toute réponse à 1000 lignes comme `max-rows`. Une table peut être forcée en erreur.
+ * Faux client PostgREST en mémoire : il honore `eq`, `in`, `gte`, `order`, `range` et `limit`, plafonne
+ * toute réponse à `maxRows` lignes comme `max-rows` (valeur inconnue en production : les tests la baissent),
+ * et rend le total exact demandé par `count: "exact"`. Une table peut être forcée en erreur, éventuellement
+ * pour les seules requêtes qui portent un filtre donné.
  */
 let db: Record<string, Row[]>;
-let failures: Record<string, { code: string }>;
+let failures: Record<string, { code: string; whenFilter?: string }>;
 let queries: Array<{ table: string; filters: string[] }>;
+let maxRows: number;
 
 function query(table: string) {
   const filters: Array<(row: Row) => boolean> = [];
@@ -30,10 +33,15 @@ function query(table: string) {
   let from = 0;
   let to = Number.POSITIVE_INFINITY;
   let limit = Number.POSITIVE_INFINITY;
+  let counted = false;
   const run = () => {
     queries.push({ table, filters: described });
-    if (failures[table]) return { data: null, error: failures[table] };
+    const failure = failures[table];
+    if (failure && (!failure.whenFilter || described.includes(failure.whenFilter))) {
+      return { data: null, error: { code: failure.code }, count: null };
+    }
     let rows = (db[table] ?? []).filter((row) => filters.every((filter) => filter(row)));
+    const total = rows.length;
     rows = [...rows].sort((left, right) => {
       for (const [column, ascending] of orders) {
         const a = String(left[column] ?? "");
@@ -43,11 +51,14 @@ function query(table: string) {
       return 0;
     });
     rows = rows.slice(from, Math.min(to + 1, rows.length));
-    rows = rows.slice(0, Math.min(limit, AUTO_PUBLICATION_MAX_ROWS));
-    return { data: rows, error: null };
+    rows = rows.slice(0, Math.min(limit, maxRows));
+    return { data: rows, error: null, count: counted ? total : null };
   };
   const chain: Record<string, unknown> = {
-    select: () => chain,
+    select: (_columns: string, options?: { count?: string }) => {
+      counted = options?.count === "exact";
+      return chain;
+    },
     eq: (column: string, value: unknown) => {
       described.push(`eq:${column}`);
       filters.push((row) => row[column] === value);
@@ -163,6 +174,7 @@ beforeEach(() => {
   sequence = 0;
   queries = [];
   failures = {};
+  maxRows = 1000;
   db = {
     information_agent_auto_publication_settings: [{ singleton: true, mode: "simulation" }],
     information_agent_fact_candidates: [],
@@ -263,9 +275,10 @@ describe("passe de simulation : lecture filtrée", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("une lecture qui atteint le plafond de lignes est illisible : relecture, signalée", async () => {
+  it("une lecture dont le total dépasse les lignes reçues est tronquée : relecture, signalée", async () => {
+    maxRows = 300;
     const { saleId, messageId } = seedCleanFact();
-    for (let index = 0; index < AUTO_PUBLICATION_MAX_ROWS; index += 1) {
+    for (let index = 0; index < 300; index += 1) {
       db.information_agent_fact_candidates!.push({
         id: `noise-${String(index).padStart(5, "0")}`,
         case_id: "case-noise",
@@ -435,7 +448,7 @@ describe("passe de simulation : écriture bornée", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(3);
   });
 
-  it("s'arrête quand le temps de la passe est épuisé", async () => {
+  it("s'arrête quand le temps de la passe est épuisé, avec un statut explicite", async () => {
     for (let index = 0; index < 3; index += 1) seedCleanFact();
     let ticks = 0;
     const result = await runAutoPublicationSimulation({
@@ -443,7 +456,7 @@ describe("passe de simulation : écriture bornée", () => {
       timeBudgetMs: 10,
       clock: () => (ticks++ < 2 ? 0 : 1_000),
     });
-    expect(result).toMatchObject({ timedOut: true });
+    expect(result).toMatchObject({ status: "time_limit_reached", timedOut: true });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
   });
 });
@@ -468,7 +481,8 @@ describe("dernières décisions pour l'affichage", () => {
   });
 
   it("une lecture tronquée est une erreur, jamais « pas encore calculée »", async () => {
-    for (let index = 0; index < AUTO_PUBLICATION_MAX_ROWS; index += 1) {
+    maxRows = 300;
+    for (let index = 0; index < 301; index += 1) {
       decision({
         fact_id: "fact-a",
         outcome: "review",
@@ -479,5 +493,171 @@ describe("dernières décisions pour l'affichage", () => {
     await expect(loadLatestAutoPublicationDecisions(["fact-a", "fact-b"])).rejects.toThrow(
       /tronqué/,
     );
+  });
+});
+
+describe("passe de simulation : état global illisible", () => {
+  it("dernières décisions illisibles : échec sans rien écrire (le gel n'est pas défait)", async () => {
+    const old = seedCleanFact();
+    decision({
+      fact_id: old.factId,
+      case_id: old.caseId,
+      sale_id: old.saleId,
+      fact_key: "surface_m2",
+      outcome: "would_publish",
+      reasons: [],
+      decided_at: "2026-11-19T15:00:00Z",
+    });
+    failures.information_agent_auto_publication_decisions = {
+      code: "57014",
+      whenFilter: "in:fact_id",
+    };
+    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toBeInstanceOf(
+      AutoPublicationPassError,
+    );
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(await runAutoPublicationSimulationForCron()).toEqual({
+      status: "failed",
+      code: "decisions_unreadable",
+    });
+  });
+
+  it("dernières décisions tronquées : échec sans rien écrire", async () => {
+    maxRows = 300;
+    const { factId, caseId, saleId } = seedCleanFact();
+    for (let index = 0; index < 301; index += 1) {
+      decision({
+        fact_id: factId,
+        case_id: caseId,
+        sale_id: saleId,
+        fact_key: "surface_m2",
+        outcome: "review",
+        reasons: ["field_not_empty"],
+        decided_at: `2026-11-19T08:00:00.${String(index).padStart(3, "0")}Z`,
+      });
+    }
+    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toMatchObject({
+      code: "decisions_unreadable",
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("compteurs illisibles : échec sans rien écrire", async () => {
+    seedCleanFact();
+    failures.information_agent_auto_publication_decisions = {
+      code: "57014",
+      whenFilter: "eq:outcome",
+    };
+    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toMatchObject({
+      code: "counters_unreadable",
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("passe de simulation : branchements prouvés", () => {
+  it("le compteur par dossier compte les faits figés : un troisième fait sort en plafond du dossier", async () => {
+    const first = seedCleanFact({ factKey: "surface_m2", value: 90 });
+    for (const [factKey, id] of [
+      ["surface_m2", first.factId],
+      ["land_surface_m2", "fact-land"],
+    ] as const) {
+      if (factKey === "land_surface_m2") {
+        db.information_agent_fact_candidates!.push({
+          ...db.information_agent_fact_candidates!.find((row) => row.id === first.factId)!,
+          id,
+          fact_key: factKey,
+          proposed_value: { value: 600 },
+          created_at: "2026-11-19T10:01:00Z",
+        });
+      }
+      decision({
+        fact_id: id,
+        case_id: first.caseId,
+        sale_id: first.saleId,
+        fact_key: factKey,
+        outcome: "would_publish",
+        reasons: [],
+        decided_at: "2026-11-18T15:00:00Z",
+      });
+    }
+    db.information_agent_fact_candidates!.push({
+      ...db.information_agent_fact_candidates!.find((row) => row.id === first.factId)!,
+      id: "fact-rooms",
+      fact_key: "rooms_count",
+      proposed_value: { value: 4 },
+      created_at: "2026-11-19T10:02:00Z",
+    });
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ frozen: 2 });
+    expect(recorded()).toEqual([
+      expect.objectContaining({
+        p_fact_id: "fact-rooms",
+        p_outcome: "review",
+        p_reasons: ["case_cap_reached"],
+      }),
+    ]);
+  });
+
+  it("les messages postérieurs du dossier sont transmis au moteur", async () => {
+    const { caseId, factId } = seedCleanFact();
+    db.information_agent_messages!.push({
+      id: "message-later",
+      case_id: caseId,
+      direction: "inbound",
+      received_at: "2026-11-19T12:00:00Z",
+      created_at: "2026-11-19T12:00:00Z",
+      subject: "Re: demande",
+      body_text: "Finalement, ne publiez pas cette surface.",
+      metadata: { inbound_processing: { status: "completed" } },
+    });
+    await runAutoPublicationSimulation({ now: NOW });
+    expect(recorded().find((args) => args.p_fact_id === factId)).toMatchObject({
+      p_outcome: "review",
+      p_reasons: expect.arrayContaining(["later_message_in_case"]),
+    });
+  });
+
+  it("un message reçu à la même seconde, écrit après, compte comme postérieur", async () => {
+    const { caseId, factId } = seedCleanFact();
+    db.information_agent_messages!.push({
+      id: "message-same-second",
+      case_id: caseId,
+      direction: "inbound",
+      received_at: "2026-11-19T09:00:00Z",
+      created_at: "2026-11-19T09:00:01Z",
+      subject: "Re: demande",
+      body_text: "Ne publiez pas, merci.",
+      metadata: { inbound_processing: { status: "completed" } },
+    });
+    await runAutoPublicationSimulation({ now: NOW });
+    expect(recorded().find((args) => args.p_fact_id === factId)).toMatchObject({
+      p_reasons: expect.arrayContaining(["later_message_in_case"]),
+    });
+  });
+
+  it("les faits voisins ne sont lus que pour les champs de la liste fermée", async () => {
+    seedCleanFact();
+    await runAutoPublicationSimulation({ now: NOW });
+    const related = queries.filter(
+      (item) =>
+        item.table === "information_agent_fact_candidates" && item.filters.includes("in:sale_id"),
+    );
+    expect(related.length).toBeGreaterThan(0);
+    for (const item of related) expect(item.filters).toContain("in:fact_key");
+    const open = queries.filter(
+      (item) =>
+        item.table === "information_agent_fact_candidates" && item.filters.includes("eq:status"),
+    );
+    for (const item of open) expect(item.filters).toContain("in:fact_key");
+  });
+
+  it("une pagination plus courte que demandé (plafond serveur bas) ne fait sauter aucun fait", async () => {
+    maxRows = 30;
+    for (let index = 0; index < 70; index += 1) {
+      seedCleanFact({ createdAt: `2026-11-19T10:${String(index % 60).padStart(2, "0")}:00Z` });
+    }
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ examined: 70, truncated: false });
   });
 });

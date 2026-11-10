@@ -152,4 +152,52 @@ describe("information-agent inbound queue cron", () => {
       "Auto-publication simulation failed: 1 decision(s) not recorded.",
     );
   });
+
+  it("une passe arrêtée par sa limite de temps est visible dans le résumé, sans échec du cron", async () => {
+    mocks.runInformationAgentInboundQueue.mockResolvedValueOnce({
+      claimed: 0,
+      completed: 0,
+      reviewed: 0,
+      ignored: 0,
+      failed: 0,
+    });
+    mocks.dispatchPendingInformationAgentEvidence.mockResolvedValueOnce({ status: "not_pending" });
+    const timeLimited = {
+      status: "time_limit_reached",
+      examined: 400,
+      frozen: 0,
+      recorded: 120,
+      unchanged: 0,
+      wouldPublish: 10,
+      review: 110,
+      unreadable: 0,
+      recordFailed: 0,
+      truncated: false,
+      timedOut: true,
+      stoppedOnRepeatedError: false,
+    };
+    mocks.runAutoPublicationSimulationForCron.mockResolvedValueOnce(timeLimited);
+
+    const response = await GET(new Request("https://example.test/cron"));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).result.autoPublication).toEqual(timeLimited);
+  });
+
+  it("migration absente : « not_installed » dans le résumé, sans échec du cron", async () => {
+    mocks.runInformationAgentInboundQueue.mockResolvedValueOnce({
+      claimed: 0,
+      completed: 0,
+      reviewed: 0,
+      ignored: 0,
+      failed: 0,
+    });
+    mocks.dispatchPendingInformationAgentEvidence.mockResolvedValueOnce({ status: "not_pending" });
+    mocks.runAutoPublicationSimulationForCron.mockResolvedValueOnce({ status: "not_installed" });
+
+    const response = await GET(new Request("https://example.test/cron"));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).result.autoPublication).toEqual({ status: "not_installed" });
+  });
 });

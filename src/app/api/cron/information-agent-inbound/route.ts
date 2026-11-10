@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     }
     if (
       autoPublication.status === "failed" ||
-      (autoPublication.status === "done" && autoPublication.recordFailed > 0)
+      ("recordFailed" in autoPublication && autoPublication.recordFailed > 0)
     ) {
       throw new Error(
         `Auto-publication simulation failed: ${
