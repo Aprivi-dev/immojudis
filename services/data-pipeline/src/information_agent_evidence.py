@@ -29,6 +29,7 @@ from src.information_agent_semantic import (
     SemanticAnalysis,
     SemanticFact,
     SemanticLotContext,
+    contains_prompt_injection,
     run_configured_photo_analysis,
     run_configured_semantic_analysis,
     semantic_lot_context,
@@ -647,6 +648,16 @@ def _append_photo_summary(
     return replace(analysis, summary=(base + suffix)[:4_000])
 
 
+def _withhold_facts_for_prompt_injection(analysis: EvidenceAnalysis) -> EvidenceAnalysis:
+    """Retire tous les faits d'une pièce dont le texte s'adresse à un modèle et le dit dans le résumé."""
+    base = analysis.summary or "Pièce jointe reçue."
+    suffix = (
+        " Consignes adressées à une IA repérées dans le texte : aucune information extraite, "
+        "vérification manuelle nécessaire."
+    )
+    return replace(analysis, facts=[], summary=(base + suffix)[:4_000])
+
+
 def _append_semantic_failure_summary(
     analysis: EvidenceAnalysis,
     semantic_analysis: SemanticAnalysis,
@@ -1137,6 +1148,10 @@ def _process_job(
             declared_mime_type=str(asset.get("mime_type") or ""),
             ocr_enabled=_evidence_ocr_enabled(settings),
         )
+        # Consigne adressée à un modèle dans le texte de la pièce : aucun fait (ni règle ni IA), relecture.
+        prompt_injection = contains_prompt_injection(analysis.extracted_text)
+        if prompt_injection:
+            analysis = _withhold_facts_for_prompt_injection(analysis)
         sale_id = str(job.get("sale_id") or "")
         semantic_analysis = run_configured_semantic_analysis(
             _semantic_pages_from_analysis(analysis),

@@ -351,6 +351,49 @@ _INVISIBLE_RE = re.compile(
 )
 
 
+# --- Consignes adressées à un modèle ------------------------------------------------------------------
+# Même liste que `src/lib/information-agent-inbound/prompt-injection.ts`. Un texte qui en contient ne donne
+# aucun fait : le modèle n'est pas appelé, le validateur refuse tout, la pièce part en relecture humaine.
+# « Selon les instructions du juge », « le système de chauffage », « j'ignore les consignes » ne comptent pas.
+_IGNORE_ORDER_RE = re.compile(
+    r"\b(?:ignor(?:e|es|ez|er)|oubli(?:e|es|ez|er)|ne\s+(?:tiens|tenez)\s+pas\s+compte)\s+(?:de\s+|des\s+|d['’])?"
+    r"(?:toutes?\s+)?(?:les\s+|tes\s+|vos\s+|ces\s+|ses\s+|leurs\s+)?"
+    r"(?:consignes|instructions|r[èe]gles|directives|indications)\b",
+    re.IGNORECASE,
+)
+_SUBJECT_BEFORE_RE = re.compile(r"\b(?:j['’]|je|n['’]|on|il|elle|ils|elles|nous)\s*$", re.IGNORECASE)
+PROMPT_INJECTION_RE = re.compile(
+    r"\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:the\s+|your\s+)?"
+    r"(?:previous\s+|prior\s+|above\s+|earlier\s+|preceding\s+)?(?:instructions|prompts?|rules|directions)\b|"
+    r"(?:^|[\n\r>\"'«(\[{.!?;])\s*(?:system|assistant|developer)\s*:|"
+    r"\btu\s+es\s+(?:maintenant\s+)?(?:un|une)\s+(?:mod[èe]le|ia|intelligence\s+artificielle|assistant|chatbot|llm)\b|"
+    r"(?:\bvous\s+[êe]tes\s+(?:maintenant\s+)?(?:un|une)\s+|\ben\s+tant\s+qu['’]|\ben\s+tant\s+que\s+)"
+    r"(?:mod[èe]le\s+de\s+langage|ia|intelligence\s+artificielle|llm|chatbot)\b|"
+    r"\byou\s+are\s+(?:now\s+)?(?:an?\s+)?(?:ai|assistant|language\s+model|llm|chatbot)\b|"
+    r"\b(?:nouvelles?\s+(?:consignes|instructions)|new\s+instructions)\s*:|"
+    r"<\s*/?\s*(?:untrusted-evidence|untrusted-ocr|page\s+number|system|instructions?|prompt)\b|"
+    r"<\|(?:im_start|im_end|system|assistant|user)\|>|\[/?INST\]|<</?SYS>>",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def contains_prompt_injection(text: object) -> bool:
+    """Le texte (brut, avant tout filtrage) contient-il une consigne adressée à un modèle ?"""
+    if not isinstance(text, str) or not text:
+        return False
+    visible = _INVISIBLE_RE.sub("", text)
+    if PROMPT_INJECTION_RE.search(visible):
+        return True
+    return any(
+        not _SUBJECT_BEFORE_RE.search(visible[max(0, match.start() - 12) : match.start()])
+        for match in _IGNORE_ORDER_RE.finditer(visible)
+    )
+
+
+def _pages_contain_prompt_injection(pages: Sequence[Mapping[str, object]]) -> bool:
+    return any(contains_prompt_injection(page.get("text")) for page in pages if isinstance(page, Mapping))
+
+
 def redact_text_for_model(text: object) -> str:
     """Retire noms, signatures, téléphones et adresses email d'un texte avant l'envoi au modèle.
 
@@ -437,6 +480,9 @@ def analyze_semantic_evidence(
     """
     if not enabled:
         return SemanticAnalysis("disabled", [], model=model)
+    if _pages_contain_prompt_injection(pages):
+        # Aucun appel du modèle : le texte part en relecture humaine sans proposition.
+        return SemanticAnalysis("skipped", [], error_code="PROMPT_INJECTION_SUSPECTED", model=model)
     user_prompt, input_truncated = build_semantic_user_prompt(pages)
     if "(no readable text)" in user_prompt:
         return SemanticAnalysis("skipped", [], input_truncated=input_truncated, model=model)
@@ -488,6 +534,9 @@ def validate_semantic_facts(
     a clear fact.
     """
     if not isinstance(raw_facts, list):
+        return []
+    # Un texte qui donne des consignes à un modèle ne donne aucun fait, quels qu'ils soient.
+    if _pages_contain_prompt_injection(pages):
         return []
     page_texts: dict[int, str] = {}
     for page in pages:
@@ -1378,6 +1427,7 @@ __all__ = [
     "analyze_semantic_evidence",
     "build_photo_user_prompt",
     "build_semantic_user_prompt",
+    "contains_prompt_injection",
     "image_bytes_to_data_url",
     "run_configured_photo_analysis",
     "run_configured_semantic_analysis",
