@@ -148,6 +148,8 @@ describe("panneau du pilote (serveur)", () => {
       label: "Envois aujourd’hui (manuels inclus)",
       value: "0 sur 5",
     });
+    // Repris tel quel par le bandeau de synthèse de l'écran : même chiffre que le premier compteur.
+    expect(view.sentToday).toBe("0 sur 5");
     expect(view.readiness.ready).toBe(false);
   });
 

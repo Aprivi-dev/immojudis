@@ -1,5 +1,9 @@
 import Eye from "lucide-react/dist/esm/icons/eye.js";
+import type { ReactNode } from "react";
 import type { InformationAgentPreviewResponse } from "@/lib/information-agent";
+
+/** Début du motif de blocage rendu par l'aperçu quand l'adresse n'a aucune origine connue. */
+const ORIGIN_UNKNOWN_BLOCKER = "Origine de l’adresse inconnue";
 
 /**
  * Aperçu exact de l'e-mail avant l'envoi : expéditeur, destinataire, objet, origine de l'adresse (avec le lien
@@ -11,13 +15,22 @@ export function AdminInformationAgentPreviewPanel({
   loading,
   disabled,
   onShow,
+  originField,
 }: {
   preview: InformationAgentPreviewResponse | null;
   current: boolean;
   loading: boolean;
   disabled: boolean;
   onShow: () => void;
+  /**
+   * Champ « Page publique où figure l'adresse », placé juste sous les motifs de blocage : quand
+   * l'aperçu signale une origine inconnue, il est mis en évidence à l'endroit où le message se lit.
+   */
+  originField?: ReactNode;
 }) {
+  const originRequired = Boolean(
+    preview?.blockers.some((blocker) => blocker.startsWith(ORIGIN_UNKNOWN_BLOCKER)),
+  );
   return (
     <section aria-label="Aperçu de l’e-mail" className="rounded-lg border bg-white p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -36,23 +49,39 @@ export function AdminInformationAgentPreviewPanel({
         <p className="mt-2 text-xs text-brand-navy/60">
           L’envoi n’est possible qu’après l’affichage de l’aperçu exact du message.
         </p>
-      ) : (
-        <>
-          {!current ? (
-            <p role="status" className="mt-2 text-xs text-amber-900">
-              Le message a été modifié depuis cet aperçu : affichez-le de nouveau avant l’envoi.
+      ) : null}
+      {preview && !current ? (
+        <p role="status" className="mt-2 text-xs text-amber-900">
+          Le message a été modifié depuis cet aperçu : affichez-le de nouveau avant l’envoi.
+        </p>
+      ) : null}
+      {preview?.blockers.length ? (
+        <ul
+          role="alert"
+          className="mt-2 list-inside list-disc rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+        >
+          {preview.blockers.map((blocker) => (
+            <li key={blocker}>{blocker}</li>
+          ))}
+        </ul>
+      ) : null}
+      {originField ? (
+        <div
+          data-origin-required={originRequired ? "true" : undefined}
+          className={
+            originRequired ? "mt-2 rounded-lg border-2 border-warning bg-warning-tint p-3" : "mt-2"
+          }
+        >
+          {originRequired ? (
+            <p className="mb-1 text-xs font-semibold text-warning">
+              À renseigner avant l’envoi, puis actualisez l’aperçu.
             </p>
           ) : null}
-          {preview.blockers.length ? (
-            <ul
-              role="alert"
-              className="mt-2 list-inside list-disc rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800"
-            >
-              {preview.blockers.map((blocker) => (
-                <li key={blocker}>{blocker}</li>
-              ))}
-            </ul>
-          ) : null}
+          {originField}
+        </div>
+      ) : null}
+      {preview ? (
+        <>
           <dl className="mt-2 grid gap-1 text-xs text-brand-navy/75">
             <div>
               <dt className="inline font-medium">De : </dt>
@@ -123,7 +152,7 @@ export function AdminInformationAgentPreviewPanel({
             l’envoi ; tout le reste est identique au message qui partira.
           </p>
         </>
-      )}
+      ) : null}
     </section>
   );
 }

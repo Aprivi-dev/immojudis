@@ -15,6 +15,8 @@ export type AutopilotView = {
   /** Raison d'un arrêt automatique ou d'une pause, déjà rédigée ; null sinon. */
   notice: { tone: "alert" | "warn"; text: string } | null;
   counters: Array<{ label: string; value: string }>;
+  /** Envois du jour (manuels inclus) rapportés au plafond, par exemple « 3 sur 10 » : bandeau de synthèse. */
+  sentToday: string;
   settings: {
     actingAdminId: string | null;
     capTotalOverride: number | null;
@@ -117,6 +119,7 @@ export function buildAutopilotView({
     mode: settings.mode,
     modeLabel: MODE_LABELS[settings.mode],
     notice,
+    sentToday: `${stats.sentTodayTotal} sur ${caps.dayCap}`,
     counters: [
       {
         label: "Envois aujourd’hui (manuels inclus)",
