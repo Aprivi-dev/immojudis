@@ -402,7 +402,7 @@ export function AdminInformationAgentReviewPanel() {
                     ) : null}
                     <FactProvenance source={factSourcesByMessageId.get(fact.message_id)} />
                     {factReviewReasons(fact.metadata).length ? (
-                      <p className="mt-2 text-xs font-medium text-amber-900">
+                      <p className="mt-2 text-xs font-medium text-warning">
                         Information douteuse, à vérifier avant de l’accepter :{" "}
                         {factReviewReasons(fact.metadata).join(" ; ")}.
                       </p>
