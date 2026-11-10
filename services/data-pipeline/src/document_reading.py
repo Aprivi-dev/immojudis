@@ -389,6 +389,8 @@ class ReadingProfile:
     prompt_chars: int
     max_output_tokens: int
     select_pages: Callable[[Sequence[ReadingDocument], int], tuple[dict[int, list[int]], bool]]
+    # Says whether a verified quote must be left out whatever the model made of it (None: no such rule).
+    rejects_quote: Callable[[str], bool] | None = None
 
 
 PRODUCTION_PROFILE = ReadingProfile(
@@ -559,7 +561,9 @@ def validate_reading_points(
     *,
     sold_lot: SoldLot | None = None,
     max_points: int = MAX_POINTS,
+    rejects_quote: Callable[[str], bool] | None = None,
     rejections: dict[str, int] | None = None,
+    rejected_points: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     """Keep only well-formed points whose quote is found in the cited document.
 
@@ -571,12 +575,20 @@ def validate_reading_points(
     quote names another lot of the sale and not this one, is dropped. Without one, the « lot » answer
     is ignored: a one-lot sale or an uncertain lot reads as before v3.
 
-    ``rejections``, when given, counts the dropped points by reason (a diagnostic for the trials).
+    ``rejections``, when given, counts the dropped points by reason and ``rejected_points`` keeps what the
+    model wrote for each of them (diagnostics for the trials).
     """
 
-    def reject(reason: str) -> None:
+    def reject(reason: str, raw: object = None) -> None:
         if rejections is not None:
             rejections[reason] = rejections.get(reason, 0) + 1
+        if rejected_points is not None and isinstance(raw, Mapping):
+            rejected_points.append(
+                {
+                    "reason": reason,
+                    **{name: str(raw.get(name))[:200] for name in ("theme", "importance", "title", "document", "page", "quote")},
+                }
+            )
 
     if not isinstance(raw_points, list):
         return []
@@ -589,7 +601,7 @@ def validate_reading_points(
                 rejections["over_cap"] = rejections.get("over_cap", 0) + len(raw_points) - position
             break
         if not isinstance(raw, Mapping):
-            reject("malformed")
+            reject("missing_field")
             continue
         theme = str(raw.get("theme") or "").strip()
         importance = str(raw.get("importance") or "info").strip()
@@ -598,13 +610,16 @@ def validate_reading_points(
         quote = raw.get("quote")
         doc = by_ref.get(str(raw.get("document") or "").strip().upper())
         if theme not in THEMES or not title or not isinstance(quote, str) or doc is None:
-            reject("malformed")
+            reject(
+                "unknown_theme" if theme not in THEMES else "unknown_document" if doc is None else "missing_field",
+                raw,
+            )
             continue
         if sold_lot is not None and str(raw.get("lot") or "").strip() == "autre_lot":
-            reject("other_lot")
+            reject("other_lot", raw)
             continue
         if len(quote) > MAX_QUOTE_CHARS * 2:
-            reject("quote_too_long")
+            reject("quote_too_long", raw)
             continue
         try:
             cited_page = int(raw.get("page") or 0)
@@ -622,18 +637,21 @@ def validate_reading_points(
                 found_page = number
                 break
         if not found_page or not excerpt:
-            reject("quote_not_found")
+            reject("quote_not_found", raw)
             continue
         if sold_lot is not None and names_another_lot(excerpt, sold_lot):
-            reject("other_lot")
+            reject("other_lot", raw)
+            continue
+        if rejects_quote is not None and rejects_quote(excerpt):
+            reject("standard_clause", raw)
             continue
         explanation = _checked_explanation(explanation, doc.pages[found_page])
         if theme == "occupation" and occupancy_text_contradicts_quote(title, explanation, excerpt):
-            reject("occupation_contradiction")
+            reject("occupation_contradiction", raw)
             continue
         key = (doc.ref, found_page, excerpt.casefold()[:80])
         if key in seen:
-            reject("duplicate")
+            reject("duplicate", raw)
             continue
         seen.add(key)
         point: dict[str, object] = {
@@ -698,6 +716,7 @@ def read_sale_documents(
     sold_lot: SoldLot | None = None,
     profile: ReadingProfile = PRODUCTION_PROFILE,
     rejections: dict[str, int] | None = None,
+    rejected_points: list[dict[str, object]] | None = None,
 ) -> ReadingResult:
     if not documents:
         return ReadingResult("no_text", model=model)
@@ -722,7 +741,13 @@ def read_sale_documents(
     if not isinstance(payload, Mapping):
         return ReadingResult("failed", input_truncated=truncated, error_code="READING_OUTPUT_INVALID", model=model)
     points = validate_reading_points(
-        payload.get("points"), documents, sold_lot=sold_lot, max_points=profile.max_points, rejections=rejections
+        payload.get("points"),
+        documents,
+        sold_lot=sold_lot,
+        max_points=profile.max_points,
+        rejects_quote=profile.rejects_quote,
+        rejections=rejections,
+        rejected_points=rejected_points,
     )
     return ReadingResult("completed", points, input_truncated=truncated, model=model)
 
