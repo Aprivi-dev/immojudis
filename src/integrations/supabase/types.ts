@@ -7521,6 +7521,7 @@ export type Database = {
           previous_provenance: Json;
           previous_values: Json;
           published_at: string;
+          recipient_kind: string;
           response_received_at: string | null;
           sale_id: string;
         };
@@ -7535,6 +7536,7 @@ export type Database = {
           previous_provenance?: Json;
           previous_values?: Json;
           published_at?: string;
+          recipient_kind: string;
           response_received_at?: string | null;
           sale_id: string;
         };
@@ -7549,6 +7551,7 @@ export type Database = {
           previous_provenance?: Json;
           previous_values?: Json;
           published_at?: string;
+          recipient_kind?: string;
           response_received_at?: string | null;
           sale_id?: string;
         };
