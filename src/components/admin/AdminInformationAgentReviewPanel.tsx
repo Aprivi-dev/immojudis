@@ -401,6 +401,12 @@ export function AdminInformationAgentReviewPanel() {
                       </p>
                     ) : null}
                     <FactProvenance source={factSourcesByMessageId.get(fact.message_id)} />
+                    {factReviewReasons(fact.metadata).length ? (
+                      <p className="mt-2 text-xs font-medium text-amber-900">
+                        Information douteuse, à vérifier avant de l’accepter :{" "}
+                        {factReviewReasons(fact.metadata).join(" ; ")}.
+                      </p>
+                    ) : null}
                     {isLotUnidentified(fact.metadata) ? (
                       <p className="mt-2 text-xs font-medium text-amber-900">
                         Vente à plusieurs lots : la réponse ne cite aucun lot. Rattachez cette
@@ -768,6 +774,30 @@ const PROCESSING_REASON_LABELS: Record<string, string> = {
   case_closed: "dossier clos",
   case_closed_during_processing: "dossier clos pendant le traitement",
 };
+
+/**
+ * Motifs posés par la lecture par l'IA sur une information douteuse mais utile (mêmes codes que
+ * `SEMANTIC_REVIEW_REASONS` dans `services/data-pipeline/src/information_agent_semantic.py`).
+ */
+const FACT_REVIEW_REASON_LABELS: Record<string, string> = {
+  short_citation: "citation de moins de 25 caractères",
+  hedged_statement: "valeur au conditionnel, approximative ou rapportée d’une autre source",
+  pending_verification: "phrase « à vérifier », « à confirmer » ou « sous réserve »",
+  value_range: "fourchette de valeurs",
+  corrected_or_stale_value: "valeur corrigée ou périmée dans la phrase",
+  postponement: "renvoi ou report mentionné dans la phrase",
+  lot_unidentified: "vente à plusieurs lots : la phrase ne nomme aucun lot",
+  lot_unverified: "la phrase nomme un lot que l’on ne peut pas rapprocher de la vente",
+};
+
+function factReviewReasons(metadata: unknown): string[] {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+  const reasons = (metadata as Record<string, unknown>).review_reasons;
+  if (!Array.isArray(reasons)) return [];
+  return reasons
+    .filter((reason): reason is string => typeof reason === "string")
+    .map((reason) => FACT_REVIEW_REASON_LABELS[reason] ?? reason);
+}
 
 function isLotUnidentified(metadata: unknown): boolean {
   return (

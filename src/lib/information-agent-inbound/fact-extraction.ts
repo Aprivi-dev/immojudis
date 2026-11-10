@@ -8,12 +8,14 @@ import {
 import { unicodeWordBoundaries } from "@/lib/information-agent-inbound/unicode-boundaries";
 
 /**
- * Occupation d'un temps révolu : « était loué », « ancien locataire », « bail résilié ». Ce n'est pas l'état actuel : « Le bien était loué mais il est désormais libre » ne
- * donne pas « loué ». Les passages sont blanchis (même longueur) avant la recherche des formules
- * d'occupation, pour que les positions des extraits restent justes.
+ * Occupation d'un temps révolu : « était loué », « était libre », « ancien locataire », « bail résilié ». Ce n'est
+ * pas l'état actuel : « Le bien était loué mais il est désormais libre » ne donne pas « loué ». Même chose pour
+ * le futur et le conditionnel (« sera libre », « serait loué ») : une annonce ou une supposition, pas un état.
+ * Les passages sont blanchis (même longueur) avant la recherche des formules d'occupation, pour que les
+ * positions des extraits restent justes.
  */
 const PAST_OCCUPANCY = unicodeWordBoundaries(
-  /\b(?:(?:était|étaient|fut|furent|a\s+été|ont\s+été|avait|avaient|anciennement|précédemment|auparavant)\s+(?:[^.!?\n]{0,40}?\s)?(?:lou[ée]e?s?|occup[ée]e?s?|squatt[ée]e?s?)|ancien(?:ne)?s?\s+(?:locataires?|occupants?)|bail\s+(?:r[ée]sili[ée]|expir[ée]|termin[ée]|[ée]chu))(?![\p{L}\p{N}])/giu,
+  /\b(?:(?:était|étaient|fut|furent|a\s+été|ont\s+été|avait|avaient|anciennement|précédemment|auparavant|sera|seront|serait|seraient)\s+(?:[^.!?\n]{0,40}?\s)??(?:lou[ée]e?s?|occup[ée]e?s?|squatt[ée]e?s?|libres?|vacants?|inoccup[ée]e?s?)|ancien(?:ne)?s?\s+(?:locataires?|occupants?)|bail\s+(?:r[ée]sili[ée]|expir[ée]|termin[ée]|[ée]chu))(?![\p{L}\p{N}])/giu,
 );
 
 function withoutPastOccupancy(text: string): string {
@@ -97,7 +99,7 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
   const occupancyText = withoutPastOccupancy(normalized);
   const occupancyPatterns: Array<[RegExp, string, string]> = [
     [
-      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?occup[ée]e?s?\s+par\s+(?:le|la|les)\s+propri[ée]taire(?:s)?\b/iu,
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?occup[ée]e?s?\s+par\s+(?:le|la|les)\s+propri[ée]taire(?:s)?\b/iu,
       "owner_occupied",
       "Bien occupé par le propriétaire",
     ],
@@ -120,17 +122,17 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
       "Bien loué",
     ],
     [
-      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?libres?(?![\p{L}\p{N}])/iu,
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?libres?(?![\p{L}\p{N}])/iu,
       "vacant",
       "Bien libre",
     ],
     [
-      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?lou[ée]e?s?(?![\p{L}\p{N}])/iu,
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?lou[ée]e?s?(?![\p{L}\p{N}])/iu,
       "rented",
       "Bien loué",
     ],
     [
-      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?occup[ée]e?s?(?![\p{L}\p{N}])/iu,
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?occup[ée]e?s?(?![\p{L}\p{N}])/iu,
       "occupied",
       "Bien occupé",
     ],
