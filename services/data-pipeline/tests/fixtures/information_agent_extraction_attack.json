@@ -600,7 +600,12 @@
    "id": "R07_visite_date_vente",
    "text": "Visite le 12/12/2026. Vente prévue le 15 janvier 2027.",
    "lot": null,
-   "ts_clear": []
+   "ts_clear": [
+    [
+     "sale_date",
+     "2027-01-15"
+    ]
+   ]
   },
   {
    "id": "R08_a_verifier_phrase_voisine",

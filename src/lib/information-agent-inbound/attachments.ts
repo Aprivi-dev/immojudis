@@ -13,7 +13,10 @@ import {
 import {
   conflictsWithSale,
   type ExtractedInformationAgentFact,
+  factSourceAnchor,
 } from "@/lib/information-agent-inbound/fact-extraction";
+import { reviewLot, type LotContext } from "@/lib/information-agent-inbound/review-signals";
+import type { ReviewReason } from "@/lib/information-agent-review-reasons";
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 40 * 1024 * 1024;
@@ -467,25 +470,52 @@ export async function persistFactCandidates({
   const { data: sale, error: saleError } = await supabaseAdmin
     .from("auction_sales")
     .select(
-      "surface_m2,app_surface_m2,land_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur,property_type,address",
+      "surface_m2,app_surface_m2,land_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur,property_type,address,quality_flags,source_lot_selection:raw_payload->source_lot_selection",
     )
     .eq("id", sharedCase.sale_id)
     .single();
   if (saleError) throw saleError;
 
-  // Jeton de bail du traitement entrant (retiré par la base) et marque « lot non identifié ».
-  const candidateMetadata = () =>
-    leaseId || lotUnidentified
+  // Lot de chaque fait, maintenant que la vente est connue : un autre lot nommé écarte le fait, un lot
+  // non nommé ou invérifiable le laisse en relecture (mêmes règles que la lecture par l'IA).
+  const lotContext = saleLotContext(sale.quality_flags, sale.source_lot_selection);
+  const reviewedFacts: Array<{ fact: ExtractedInformationAgentFact; reasons: ReviewReason[] }> = [];
+  for (const fact of facts) {
+    const anchor = factSourceAnchor(fact);
+    const lot = anchor
+      ? reviewLot(anchor.text, [anchor.start, anchor.end], lotContext)
+      : {
+          rejected: false,
+          reasons: lotContext.multiLot ? (["lot_unidentified"] as ReviewReason[]) : [],
+        };
+    if (lot.rejected) continue;
+    reviewedFacts.push({
+      fact,
+      reasons: [
+        ...new Set<ReviewReason>([
+          ...(fact.reviewReasons ?? []),
+          ...lot.reasons,
+          ...(lotUnidentified ? (["lot_unidentified"] as ReviewReason[]) : []),
+        ]),
+      ],
+    });
+  }
+
+  // Jeton de bail du traitement entrant (retiré par la base), marque « lot non identifié » (affichage
+  // historique) et motifs de relecture (`review_reasons`, jamais un fait net).
+  const candidateMetadata = (reasons: ReviewReason[] = []) =>
+    leaseId || lotUnidentified || reasons.length
       ? {
           metadata: {
             ...(leaseId ? { inbound_lease_id: leaseId, inbound_message_id: messageId } : {}),
             ...(lotUnidentified ? { lot_unidentified: true } : {}),
+            ...(reasons.length ? { review_reasons: reasons } : {}),
           },
         }
       : {};
 
   const rows: Database["public"]["Tables"]["information_agent_fact_candidates"]["Insert"][] = [
-    ...facts.map((fact) => ({
+    ...reviewedFacts.map(({ fact, reasons }) => ({
       case_id: sharedCase.id,
       message_id: messageId,
       sale_id: sharedCase.sale_id,
@@ -495,7 +525,7 @@ export async function persistFactCandidates({
       evidence_excerpt: fact.evidenceExcerpt,
       confidence: fact.confidence,
       status: conflictsWithSale(fact, sale) ? ("conflict" as const) : ("pending" as const),
-      ...candidateMetadata(),
+      ...candidateMetadata(reasons),
     })),
     ...assets.map((asset) => ({
       case_id: sharedCase.id,
@@ -508,7 +538,7 @@ export async function persistFactCandidates({
       evidence_excerpt: null,
       confidence: 1,
       status: "pending" as const,
-      ...candidateMetadata(),
+      ...candidateMetadata(lotUnidentified ? ["lot_unidentified"] : []),
     })),
   ];
   if (!rows.length) return;
@@ -518,6 +548,33 @@ export async function persistFactCandidates({
     ignoreDuplicates: true,
   });
   if (error) throw error;
+}
+
+/** Lots de la vente (`quality_flags`, `raw_payload.source_lot_selection`), comme `semantic_lot_context`. */
+export function saleLotContext(qualityFlags: unknown, lotSelection: unknown): LotContext {
+  let soldLot: LotContext["soldLot"] = null;
+  if (
+    lotSelection &&
+    typeof lotSelection === "object" &&
+    !Array.isArray(lotSelection) &&
+    (lotSelection as Record<string, unknown>).status === "selected"
+  ) {
+    const selection = lotSelection as Record<string, unknown>;
+    const number = Number(selection.lot_number);
+    const rawCount = selection.lot_count;
+    const lotCount = rawCount == null || rawCount === "" ? null : Number(rawCount);
+    const countValid = lotCount == null || (Number.isInteger(lotCount) && lotCount >= 2);
+    if (
+      Number.isInteger(number) &&
+      number >= 1 &&
+      countValid &&
+      (lotCount == null || number <= lotCount)
+    ) {
+      soldLot = { number, lotCount };
+    }
+  }
+  const flags = Array.isArray(qualityFlags) ? qualityFlags : [];
+  return { multiLot: flags.includes("multi_lot_sale") || soldLot != null, soldLot };
 }
 
 function normalizeRawMimeType(value: string | null): string {
