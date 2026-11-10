@@ -47,15 +47,19 @@ function cleanInput(overrides: Partial<AutoPublicationInput> = {}): AutoPublicat
         inbound_processing: { status: "completed" },
       },
     },
-    informationCase: { sentAt: SENT_AT, recipientKind: "source_lawyer" },
+    informationCase: { sentAt: SENT_AT, recipientKind: "source_lawyer", status: "replied" },
     sale: {
       propertyType: "apartment",
       surfaceM2: null,
       appSurfaceM2: null,
+      habitableSurfaceM2: null,
+      carrezSurfaceM2: null,
       landSurfaceM2: null,
       roomsCount: null,
     },
     otherCandidatesForKey: 0,
+    otherValuesForSale: 0,
+    laterMessages: [],
     fieldFilledInSimulation: false,
     ...overrides,
   };
@@ -159,11 +163,17 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
     ],
     [
       "dossier adressé à un greffe ou un notaire",
-      cleanInput({ informationCase: { sentAt: SENT_AT, recipientKind: "source_contact" } }),
+      cleanInput({
+        informationCase: { sentAt: SENT_AT, recipientKind: "source_contact", status: "replied" },
+      }),
       "recipient_not_lawyer",
     ],
     // 2. Pièce jointe.
-    ["pièce jointe", withCandidate({ evidenceAssetId: "asset-1" }), "attachment_source"],
+    [
+      "pièce jointe",
+      withCandidate({ evidenceAssetId: "asset-1", evidenceKind: "attachment" }),
+      "attachment_source",
+    ],
     // 3. Accord des règles et de l'IA, valeur unique.
     ["IA absente", withCandidate({ metadata: {} }), "semantic_not_confirmed"],
     [
@@ -274,6 +284,74 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
       cleanInput({ fieldFilledInSimulation: true }),
       "field_already_filled_in_simulation",
     ],
+    // Surface affichée par la fiche : surface retenue, habitable ou Carrez (règle getRecordedSurface).
+    ["surface habitable connue", withSale({ habitableSurfaceM2: 52 }), "field_not_empty"],
+    ["surface Carrez connue", withSale({ carrezSurfaceM2: 51.5 }), "field_not_empty"],
+    ["surface Carrez à zéro", withSale({ carrezSurfaceM2: 0 }), "field_not_empty"],
+    // Corps du message lu par l'IA seule : libellé exact, pas « pièce jointe ».
+    [
+      "corps lu par l'IA seule",
+      withCandidate({ evidenceAssetId: "asset-body", evidenceKind: "email_body" }),
+      "semantic_only_body",
+    ],
+    // Dossier et messages postérieurs.
+    [
+      "dossier repassé en relecture",
+      cleanInput({
+        informationCase: { sentAt: SENT_AT, recipientKind: "source_lawyer", status: "review" },
+      }),
+      "case_not_replied",
+    ],
+    [
+      "opposition reçue ensuite",
+      cleanInput({
+        laterMessages: [
+          {
+            subject: "Re: demande",
+            bodyText: "Merci de ne plus me contacter.",
+            metadata: { inbound_processing: { status: "review", reason: "contact_opposed" } },
+          },
+        ],
+      }),
+      "later_message_in_case",
+    ],
+    [
+      "« finalement, ne publiez pas » dans un message traité",
+      cleanInput({
+        laterMessages: [
+          {
+            subject: "Re: demande",
+            bodyText: "Finalement, ne publiez pas cette surface.",
+            metadata: { inbound_processing: { status: "completed" } },
+          },
+        ],
+      }),
+      "later_message_in_case",
+    ],
+    [
+      "message postérieur encore en traitement",
+      cleanInput({
+        laterMessages: [
+          { subject: null, bodyText: null, metadata: { inbound_processing: { status: "queued" } } },
+        ],
+      }),
+      "later_message_in_case",
+    ],
+    [
+      "valeur contradictoire dans un second message",
+      cleanInput({ otherValuesForSale: 1 }),
+      "other_value_for_sale",
+    ],
+    [
+      "« ne pas publier » dans l'objet",
+      withMessage({ subject: "CONFIDENTIEL" }),
+      "do_not_publish_requested",
+    ],
+    [
+      "particulier nommé dans l'objet",
+      withMessage({ subject: "Vente Mme Martin" }),
+      "private_person_named",
+    ],
   ];
 
   it.each(cases)("%s", (_label, input, reason) => {
@@ -293,11 +371,19 @@ describe("moteur : échec fermé sur une donnée manquante ou illisible", () => 
     ["dossier illisible", cleanInput({ informationCase: null })],
     [
       "date d'envoi absente",
-      cleanInput({ informationCase: { sentAt: null, recipientKind: "source_lawyer" } }),
+      cleanInput({
+        informationCase: { sentAt: null, recipientKind: "source_lawyer", status: "replied" },
+      }),
     ],
     ["vente illisible", cleanInput({ sale: null })],
     ["métadonnées du fait illisibles", withCandidate({ metadata: null })],
     ["autres candidats illisibles", cleanInput({ otherCandidatesForKey: null })],
+    ["autres valeurs de la vente illisibles", cleanInput({ otherValuesForSale: null })],
+    ["messages postérieurs illisibles", cleanInput({ laterMessages: null })],
+    [
+      "nature de la pièce illisible",
+      withCandidate({ evidenceAssetId: "asset-1", evidenceKind: null }),
+    ],
     ["journal illisible", cleanInput({ fieldFilledInSimulation: null })],
     ["lecture annexe en échec", cleanInput({ readFailed: true })],
   ])("%s : relecture, motif input_unreadable", (_label, input) => {
@@ -328,12 +414,31 @@ describe("détecteurs du texte de la réponse", () => {
     "Information strictement confidentielle.",
     "Pas de publication s'il vous plaît.",
     "Je vous prie de ne rien diffuser.",
+    "Je ne souhaite pas que ces informations soient publiées",
+    "Cette information ne doit pas être publiée",
+    "Ces éléments ne doivent pas être diffusés",
+    "Information à usage strictement interne",
+    "Je n'autorise pas la diffusion",
+    "Je n’autorise pas la diffusion",
+    "Merci de ne pas en faire état publiquement",
+    "Merci de ne pas la rendre publique",
+    "Merci de ne pas mettre cette surface en ligne",
+    "Sans publication SVP",
+    "Please do not publish",
+    "CONFIDENTIEL",
   ])("« ne pas publier » : %s", (text) => {
     expect(mentionsDoNotPublish(text)).toBe(true);
+    expect(
+      decideAutoPublication(withMessage({ bodyText: `La surface est de 54 m². ${text}` })).reasons,
+    ).toContain("do_not_publish_requested");
   });
 
-  it("ne voit pas « ne pas publier » dans une réponse ordinaire", () => {
-    expect(mentionsDoNotPublish("La surface est de 54 m². Bonne réception.")).toBe(false);
+  it.each([
+    "La surface est de 54 m². Bonne réception.",
+    "Voir notre politique de confidentialité sur notre site internet.",
+    "La vente est publique, à l'audience du tribunal.",
+  ])("pas de « ne pas publier » : %s", (text) => {
+    expect(mentionsDoNotPublish(text)).toBe(false);
   });
 
   it.each([
@@ -342,6 +447,11 @@ describe("détecteurs du texte de la réponse", () => {
     "Les époux Leroy occupent les lieux.",
     "Succession Bernard.",
     "Mme de Villiers a quitté les lieux.",
+    "Occupé par M DUPONT.",
+    "Occupé par Mr Martin.",
+    "Occupé par MME Martin.",
+    "la famille Leroy occupe les lieux",
+    "occupé par monsieur martin",
   ])("nom de particulier : %s", (text) => {
     expect(namesPrivatePerson(text)).toBe(true);
   });
@@ -351,6 +461,8 @@ describe("détecteurs du texte de la réponse", () => {
     "Bien cordialement,\nMaître Dupont",
     "Me Martin, avocat au barreau de Bordeaux.",
     "Monsieur le Président du tribunal a fixé l'audience.",
+    "Madame Monsieur,\nVoici la surface.",
+    "La surface est de 54 m² et la façade de 12 m de long.",
   ])("pas de particulier : %s", (text) => {
     expect(namesPrivatePerson(text)).toBe(false);
   });
@@ -490,6 +602,23 @@ describe("verrous figés", () => {
       /constraint information_agent_auto_publication_settings_auto_locked check \(mode <> 'auto'\)/,
     );
     expect(sql).toMatch(/mode text not null default 'off'/);
+  });
+
+  it("la contrainte du journal porte exactement la liste des motifs (concordance TypeScript et SQL)", () => {
+    const sql = readFileSync(
+      join(
+        process.cwd(),
+        "supabase",
+        "migrations",
+        "20261115100000_information_agent_auto_publication_simulation.sql",
+      ),
+      "utf8",
+    );
+    const list = /reasons\s*<@\s*array\[([^\]]*)\]/i.exec(sql)?.[1];
+    expect(list).toBeDefined();
+    expect([...list!.matchAll(/'([a-z0-9_]+)'/g)].map((match) => match[1])).toEqual(
+      Object.keys(AUTO_PUBLICATION_REASON_LABELS),
+    );
   });
 
   it("chaque motif a un libellé, au format accepté par le journal", () => {

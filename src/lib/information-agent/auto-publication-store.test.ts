@@ -7,155 +7,477 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import {
+  AUTO_PUBLICATION_MAX_ROWS,
+  loadLatestAutoPublicationDecisions,
   runAutoPublicationSimulation,
   runAutoPublicationSimulationForCron,
 } from "./auto-publication-store";
 
-type Result = { data: unknown; error: unknown };
+type Row = Record<string, unknown>;
 
-/** Faux client : chaque table rend la réponse configurée, quelle que soit la requête. */
-let tables: Record<string, Result>;
+/**
+ * Faux client PostgREST en mémoire : il honore `eq`, `in`, `gte`, `order`, `range` et `limit`, et plafonne
+ * toute réponse à 1000 lignes comme `max-rows`. Une table peut être forcée en erreur.
+ */
+let db: Record<string, Row[]>;
+let failures: Record<string, { code: string }>;
+let queries: Array<{ table: string; filters: string[] }>;
 
 function query(table: string) {
-  const chain: Record<string, unknown> = {};
-  for (const name of ["select", "eq", "in", "gte", "order", "range", "limit"]) {
-    chain[name] = () => chain;
-  }
-  chain.maybeSingle = () => Promise.resolve(tables[`${table}:single`] ?? tables[table]);
-  chain.then = (resolve: (value: unknown) => unknown) =>
-    Promise.resolve(tables[table] ?? { data: [], error: null }).then(resolve);
+  const filters: Array<(row: Row) => boolean> = [];
+  const described: string[] = [];
+  const orders: Array<[string, boolean]> = [];
+  let from = 0;
+  let to = Number.POSITIVE_INFINITY;
+  let limit = Number.POSITIVE_INFINITY;
+  const run = () => {
+    queries.push({ table, filters: described });
+    if (failures[table]) return { data: null, error: failures[table] };
+    let rows = (db[table] ?? []).filter((row) => filters.every((filter) => filter(row)));
+    rows = [...rows].sort((left, right) => {
+      for (const [column, ascending] of orders) {
+        const a = String(left[column] ?? "");
+        const b = String(right[column] ?? "");
+        if (a !== b) return (a < b ? -1 : 1) * (ascending ? 1 : -1);
+      }
+      return 0;
+    });
+    rows = rows.slice(from, Math.min(to + 1, rows.length));
+    rows = rows.slice(0, Math.min(limit, AUTO_PUBLICATION_MAX_ROWS));
+    return { data: rows, error: null };
+  };
+  const chain: Record<string, unknown> = {
+    select: () => chain,
+    eq: (column: string, value: unknown) => {
+      described.push(`eq:${column}`);
+      filters.push((row) => row[column] === value);
+      return chain;
+    },
+    in: (column: string, values: unknown[]) => {
+      described.push(`in:${column}`);
+      filters.push((row) => values.includes(row[column]));
+      return chain;
+    },
+    gte: (column: string, value: string) => {
+      described.push(`gte:${column}`);
+      filters.push((row) => String(row[column]) >= value);
+      return chain;
+    },
+    order: (column: string, options?: { ascending?: boolean }) => {
+      orders.push([column, options?.ascending ?? true]);
+      return chain;
+    },
+    range: (start: number, end: number) => {
+      from = start;
+      to = end;
+      return chain;
+    },
+    limit: (count: number) => {
+      limit = count;
+      return chain;
+    },
+    maybeSingle: () => {
+      const result = run();
+      return Promise.resolve({ data: result.data?.[0] ?? null, error: result.error });
+    },
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve(run()).then(resolve),
+  };
   return chain;
 }
 
-const FACT = {
-  id: "fact-1",
-  case_id: "case-1",
-  message_id: "message-1",
-  sale_id: "sale-1",
-  fact_key: "surface_m2",
-  status: "pending",
-  evidence_asset_id: null,
-  reviewed_by: null,
-  proposed_value: { value: 54 },
-  metadata: { semantic_agreement: true, semantic_extraction_method: "semantic_evidence_v3" },
-};
+const NOW = new Date("2026-11-20T12:00:00Z");
+let sequence = 0;
+
+function uuid(prefix: string) {
+  sequence += 1;
+  return `${prefix}-${String(sequence).padStart(6, "0")}`;
+}
+
+/** Un dossier « propre » : vente vide, dossier répondu, message authentifié, fait net. */
+function seedCleanFact({
+  factKey = "surface_m2",
+  value = 54,
+  createdAt = "2026-11-19T10:00:00Z",
+}: { factKey?: string; value?: number; createdAt?: string } = {}) {
+  const saleId = uuid("sale");
+  const caseId = uuid("case");
+  const messageId = uuid("message");
+  const factId = uuid("fact");
+  db.auction_sales!.push({
+    id: saleId,
+    property_type: "house",
+    surface_m2: null,
+    app_surface_m2: null,
+    habitable_surface_m2: null,
+    carrez_surface_m2: null,
+    land_surface_m2: null,
+    rooms_count: null,
+  });
+  db.information_agent_cases!.push({
+    id: caseId,
+    sent_at: "2026-11-18T09:00:00Z",
+    recipient_kind: "source_lawyer",
+    status: "replied",
+  });
+  db.information_agent_messages!.push({
+    id: messageId,
+    case_id: caseId,
+    direction: "inbound",
+    received_at: "2026-11-19T09:00:00Z",
+    created_at: "2026-11-19T09:00:00Z",
+    subject: "Re: demande",
+    body_text: "La surface habitable est de 54 m².",
+    metadata: {
+      imported_manually: false,
+      sender_matches_recipient: true,
+      sender_authentication: { dkim: "pass", dmarc: "pass" },
+      inbound_processing: { status: "completed" },
+    },
+  });
+  db.information_agent_fact_candidates!.push({
+    id: factId,
+    case_id: caseId,
+    message_id: messageId,
+    sale_id: saleId,
+    fact_key: factKey,
+    status: "pending",
+    evidence_asset_id: null,
+    reviewed_by: null,
+    proposed_value: { value },
+    metadata: { semantic_agreement: true, semantic_extraction_method: "semantic_evidence_v3" },
+    created_at: createdAt,
+  });
+  return { saleId, caseId, messageId, factId };
+}
+
+function decision(row: Row) {
+  db.information_agent_auto_publication_decisions!.push({
+    id: uuid("decision"),
+    policy_version: "auto_publication_v1",
+    ...row,
+  });
+}
 
 beforeEach(() => {
   vi.resetAllMocks();
+  sequence = 0;
+  queries = [];
+  failures = {};
+  db = {
+    information_agent_auto_publication_settings: [{ singleton: true, mode: "simulation" }],
+    information_agent_fact_candidates: [],
+    information_agent_messages: [],
+    information_agent_cases: [],
+    auction_sales: [],
+    information_agent_evidence_assets: [],
+    information_agent_auto_publication_decisions: [],
+  };
   mocks.from.mockImplementation(query);
   mocks.rpc.mockResolvedValue({ data: true, error: null });
-  tables = {
-    "information_agent_auto_publication_settings:single": {
-      data: { mode: "simulation" },
-      error: null,
-    },
-    information_agent_fact_candidates: { data: [FACT], error: null },
-    information_agent_messages: {
-      data: [
-        {
-          id: "message-1",
-          direction: "inbound",
-          received_at: "2026-11-03T10:00:00.000Z",
-          subject: "Re: demande",
-          body_text: "La surface habitable est de 54 m².",
-          metadata: {
-            imported_manually: false,
-            sender_matches_recipient: true,
-            sender_authentication: { dkim: "pass", dmarc: "pass" },
-            inbound_processing: { status: "completed" },
-          },
-        },
-      ],
-      error: null,
-    },
-    information_agent_cases: {
-      data: [
-        { id: "case-1", sent_at: "2026-11-01T09:00:00.000Z", recipient_kind: "source_lawyer" },
-      ],
-      error: null,
-    },
-    auction_sales: {
-      data: [
-        {
-          id: "sale-1",
-          property_type: "apartment",
-          surface_m2: null,
-          app_surface_m2: null,
-          land_surface_m2: null,
-          rooms_count: null,
-        },
-      ],
-      error: null,
-    },
-    information_agent_auto_publication_decisions: { data: [], error: null },
-  };
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
-describe("passe de simulation", () => {
+function recorded() {
+  return mocks.rpc.mock.calls.map(([, args]) => args as Record<string, unknown>);
+}
+
+describe("passe de simulation : modes", () => {
   it("mode arrêt : rien n'est lu ni calculé", async () => {
-    tables["information_agent_auto_publication_settings:single"] = {
-      data: { mode: "off" },
-      error: null,
-    };
-    expect(await runAutoPublicationSimulation()).toEqual({ status: "inactive", mode: "off" });
-    expect(mocks.from).toHaveBeenCalledTimes(1);
-    expect(mocks.rpc).not.toHaveBeenCalled();
-  });
-
-  it("un réglage illisible lève une erreur (le cron la signale)", async () => {
-    tables["information_agent_auto_publication_settings:single"] = { data: null, error: null };
-    await expect(runAutoPublicationSimulation()).rejects.toThrow(/absent ou illisible/);
-    expect(mocks.rpc).not.toHaveBeenCalled();
-  });
-
-  it("simulation : la décision est inscrite au journal par la RPC de service, rien d'autre n'est écrit", async () => {
-    const result = await runAutoPublicationSimulation({ now: new Date("2026-11-03T12:00:00Z") });
-    expect(result).toMatchObject({ status: "done", examined: 1, recorded: 1, wouldPublish: 1 });
-    expect(mocks.rpc).toHaveBeenCalledTimes(1);
-    expect(mocks.rpc).toHaveBeenCalledWith("record_information_agent_auto_publication_decision", {
-      p_fact_id: "fact-1",
-      p_fact_key: "surface_m2",
-      p_outcome: "would_publish",
-      p_reasons: [],
-      p_policy_version: "auto_publication_v1",
+    db.information_agent_auto_publication_settings = [{ singleton: true, mode: "off" }];
+    expect(await runAutoPublicationSimulation({ now: NOW })).toEqual({
+      status: "inactive",
+      mode: "off",
     });
+    expect(queries.map((item) => item.table)).toEqual([
+      "information_agent_auto_publication_settings",
+    ]);
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("une lecture de contexte en échec donne « relecture » et est signalée", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    tables.auction_sales = { data: null, error: { code: "57014" } };
-    const result = await runAutoPublicationSimulation({ now: new Date("2026-11-03T12:00:00Z") });
-    expect(result).toMatchObject({ status: "done", wouldPublish: 0, review: 1, unreadable: 1 });
-    expect(mocks.rpc).toHaveBeenCalledWith(
-      "record_information_agent_auto_publication_decision",
-      expect.objectContaining({
-        p_outcome: "review",
-        p_reasons: expect.arrayContaining(["input_unreadable"]),
-      }),
-    );
-    expect(error).toHaveBeenCalledWith(expect.stringContaining("57014"));
-    error.mockRestore();
+  it("migration absente : « not_installed », sans échec du cron", async () => {
+    failures.information_agent_auto_publication_settings = { code: "PGRST205" };
+    expect(await runAutoPublicationSimulation({ now: NOW })).toEqual({ status: "not_installed" });
+    expect(await runAutoPublicationSimulationForCron()).toEqual({ status: "not_installed" });
   });
 
-  it("pour le cron, un échec de la passe est rendu avec son seul code et signalé", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    tables["information_agent_auto_publication_settings:single"] = {
-      data: null,
-      error: { code: "PGRST301", message: "détail interne" },
-    };
+  it("toute autre erreur du réglage est un échec, avec son seul code", async () => {
+    failures.information_agent_auto_publication_settings = { code: "PGRST301" };
+    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toMatchObject({
+      code: "PGRST301",
+    });
     expect(await runAutoPublicationSimulationForCron()).toEqual({
       status: "failed",
       code: "PGRST301",
     });
-    expect(error).toHaveBeenCalledWith(expect.stringContaining("PGRST301"));
-    error.mockRestore();
   });
 
-  it("une décision non écrite est comptée pour faire échouer le cron", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("un réglage illisible lève une erreur", async () => {
+    db.information_agent_auto_publication_settings = [];
+    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toThrow(/absent ou illisible/);
+  });
+});
+
+describe("passe de simulation : lecture filtrée", () => {
+  it("ne lit que les faits en attente des champs de la liste fermée, et inscrit la décision", async () => {
+    const { factId } = seedCleanFact();
+    const other = seedCleanFact();
+    db.information_agent_fact_candidates!.find((row) => row.id === other.factId)!.status =
+      "conflict";
+    const occupancy = seedCleanFact({ factKey: "occupancy_status" });
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ status: "done", examined: 1, recorded: 1, wouldPublish: 1 });
+    expect(recorded()).toEqual([
+      {
+        p_fact_id: factId,
+        p_fact_key: "surface_m2",
+        p_outcome: "would_publish",
+        p_reasons: [],
+        p_policy_version: "auto_publication_v1",
+      },
+    ]);
+    expect(recorded().some((args) => args.p_fact_id === occupancy.factId)).toBe(false);
+  });
+
+  it("pagine au-delà de 100 faits", async () => {
+    for (let index = 0; index < 150; index += 1) {
+      seedCleanFact({ createdAt: `2026-11-19T10:${String(index % 60).padStart(2, "0")}:00Z` });
+    }
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ status: "done", examined: 150, truncated: false });
+    expect(mocks.rpc).toHaveBeenCalledTimes(150);
+  });
+
+  it("une décision identique à la dernière du journal n'est pas réécrite", async () => {
+    const { factId, caseId, saleId } = seedCleanFact();
+    decision({
+      fact_id: factId,
+      case_id: caseId,
+      sale_id: saleId,
+      fact_key: "surface_m2",
+      outcome: "would_publish",
+      reasons: [],
+      decided_at: "2026-11-20T08:00:00Z",
+    });
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ unchanged: 1, recorded: 0 });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("une lecture qui atteint le plafond de lignes est illisible : relecture, signalée", async () => {
+    const { saleId, messageId } = seedCleanFact();
+    for (let index = 0; index < AUTO_PUBLICATION_MAX_ROWS; index += 1) {
+      db.information_agent_fact_candidates!.push({
+        id: `noise-${String(index).padStart(5, "0")}`,
+        case_id: "case-noise",
+        message_id: messageId === "x" ? "y" : `noise-message-${index}`,
+        sale_id: saleId,
+        fact_key: "rooms_count",
+        status: "rejected",
+        proposed_value: { value: 3 },
+        created_at: "2026-01-01T00:00:00Z",
+      });
+    }
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ wouldPublish: 0, unreadable: 1 });
+    expect(recorded()[0]).toMatchObject({
+      p_outcome: "review",
+      p_reasons: expect.arrayContaining(["input_unreadable"]),
+    });
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("truncated"));
+  });
+
+  it("une valeur contradictoire dans un second message du dossier renvoie en relecture", async () => {
+    const { saleId, caseId, factId } = seedCleanFact();
+    db.information_agent_messages!.push({
+      id: "message-erratum",
+      case_id: caseId,
+      direction: "inbound",
+      received_at: "2026-11-19T11:00:00Z",
+      created_at: "2026-11-19T11:00:00Z",
+      subject: "Erratum",
+      body_text: "Erratum : 48 m².",
+      metadata: { inbound_processing: { status: "completed" } },
+    });
+    db.information_agent_fact_candidates!.push({
+      id: "fact-erratum",
+      case_id: caseId,
+      message_id: "message-erratum",
+      sale_id: saleId,
+      fact_key: "surface_m2",
+      status: "pending",
+      evidence_asset_id: null,
+      reviewed_by: null,
+      proposed_value: { value: 48 },
+      metadata: {},
+      created_at: "2026-11-19T11:00:00Z",
+    });
+    await runAutoPublicationSimulation({ now: NOW });
+    expect(recorded().find((args) => args.p_fact_id === factId)).toMatchObject({
+      p_outcome: "review",
+      p_reasons: expect.arrayContaining(["other_value_for_sale"]),
+    });
+  });
+
+  it("le corps lu par l'IA seule porte son propre motif, pas « pièce jointe »", async () => {
+    const { factId } = seedCleanFact();
+    db.information_agent_fact_candidates!.find((row) => row.id === factId)!.evidence_asset_id =
+      "asset-body";
+    db.information_agent_evidence_assets!.push({
+      id: "asset-body",
+      metadata: { evidence_kind: "email_body" },
+    });
+    await runAutoPublicationSimulation({ now: NOW });
+    const reasons = recorded()[0]!.p_reasons as string[];
+    expect(reasons).toContain("semantic_only_body");
+    expect(reasons).not.toContain("attachment_source");
+  });
+
+  it("une lecture de contexte en échec donne « relecture » et est signalée", async () => {
+    seedCleanFact();
+    failures.auction_sales = { code: "57014" };
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ status: "done", wouldPublish: 0, review: 1, unreadable: 1 });
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("57014"));
+  });
+});
+
+describe("passe de simulation : plafonds", () => {
+  it("un fait « publié » un jour antérieur sort du lot : il ne pèse pas sur le plafond du jour", async () => {
+    for (let index = 0; index < 10; index += 1) {
+      const old = seedCleanFact();
+      decision({
+        fact_id: old.factId,
+        case_id: old.caseId,
+        sale_id: old.saleId,
+        fact_key: "surface_m2",
+        outcome: "would_publish",
+        reasons: [],
+        decided_at: "2026-11-19T15:00:00Z",
+      });
+    }
+    seedCleanFact();
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ examined: 11, frozen: 10, wouldPublish: 1, recorded: 1 });
+  });
+
+  it("le champ d'un fait « publié » un jour antérieur reste rempli, et son dossier compte", async () => {
+    const first = seedCleanFact();
+    decision({
+      fact_id: first.factId,
+      case_id: first.caseId,
+      sale_id: first.saleId,
+      fact_key: "surface_m2",
+      outcome: "would_publish",
+      reasons: [],
+      decided_at: "2026-11-18T15:00:00Z",
+    });
+    // Second fait, même vente et même champ, dans un autre message du même dossier.
+    db.information_agent_messages!.push({
+      id: "message-2",
+      case_id: first.caseId,
+      direction: "inbound",
+      received_at: "2026-11-19T08:00:00Z",
+      created_at: "2026-11-19T08:00:00Z",
+      subject: "Re",
+      body_text: "54 m².",
+      metadata: {
+        imported_manually: false,
+        sender_matches_recipient: true,
+        sender_authentication: { dkim: "pass", dmarc: "pass" },
+        inbound_processing: { status: "completed" },
+      },
+    });
+    db.information_agent_fact_candidates!.push({
+      id: "fact-2",
+      case_id: first.caseId,
+      message_id: "message-2",
+      sale_id: first.saleId,
+      fact_key: "surface_m2",
+      status: "pending",
+      evidence_asset_id: null,
+      reviewed_by: null,
+      proposed_value: { value: 54 },
+      metadata: { semantic_agreement: true, semantic_extraction_method: "semantic_evidence_v3" },
+      created_at: "2026-11-19T08:00:00Z",
+    });
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ frozen: 1 });
+    expect(recorded().find((args) => args.p_fact_id === "fact-2")).toMatchObject({
+      p_outcome: "review",
+      p_reasons: expect.arrayContaining(["field_already_filled_in_simulation"]),
+    });
+  });
+
+  it("le plafond du jour compte les faits « publiés » aujourd'hui hors du lot", async () => {
+    for (let index = 0; index < 10; index += 1) {
+      decision({
+        fact_id: `published-${index}`,
+        case_id: `case-x-${index}`,
+        sale_id: `sale-x-${index}`,
+        fact_key: "surface_m2",
+        outcome: "would_publish",
+        reasons: [],
+        decided_at: "2026-11-20T08:00:00Z",
+      });
+    }
+    seedCleanFact();
+    await runAutoPublicationSimulation({ now: NOW });
+    expect(recorded()[0]).toMatchObject({ p_outcome: "review", p_reasons: ["daily_cap_reached"] });
+  });
+});
+
+describe("passe de simulation : écriture bornée", () => {
+  it("s'arrête après trois échecs consécutifs du même code", async () => {
+    for (let index = 0; index < 5; index += 1) seedCleanFact();
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "23514" } });
-    const result = await runAutoPublicationSimulation({ now: new Date("2026-11-03T12:00:00Z") });
-    expect(result).toMatchObject({ status: "done", recorded: 0, recordFailed: 1 });
-    error.mockRestore();
+    const result = await runAutoPublicationSimulation({ now: NOW });
+    expect(result).toMatchObject({ recordFailed: 3, stoppedOnRepeatedError: true });
+    expect(mocks.rpc).toHaveBeenCalledTimes(3);
+  });
+
+  it("s'arrête quand le temps de la passe est épuisé", async () => {
+    for (let index = 0; index < 3; index += 1) seedCleanFact();
+    let ticks = 0;
+    const result = await runAutoPublicationSimulation({
+      now: NOW,
+      timeBudgetMs: 10,
+      clock: () => (ticks++ < 2 ? 0 : 1_000),
+    });
+    expect(result).toMatchObject({ timedOut: true });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dernières décisions pour l'affichage", () => {
+  it("rend la plus récente de chaque fait", async () => {
+    decision({
+      fact_id: "fact-a",
+      outcome: "review",
+      reasons: ["field_not_empty"],
+      decided_at: "2026-11-19T08:00:00Z",
+    });
+    decision({
+      fact_id: "fact-a",
+      outcome: "would_publish",
+      reasons: [],
+      decided_at: "2026-11-20T08:00:00Z",
+    });
+    const latest = await loadLatestAutoPublicationDecisions(["fact-a", "fact-b"]);
+    expect(latest.get("fact-a")).toMatchObject({ outcome: "would_publish" });
+    expect(latest.has("fact-b")).toBe(false);
+  });
+
+  it("une lecture tronquée est une erreur, jamais « pas encore calculée »", async () => {
+    for (let index = 0; index < AUTO_PUBLICATION_MAX_ROWS; index += 1) {
+      decision({
+        fact_id: "fact-a",
+        outcome: "review",
+        reasons: ["field_not_empty"],
+        decided_at: `2026-11-19T08:00:00.${String(index).padStart(3, "0")}Z`,
+      });
+    }
+    await expect(loadLatestAutoPublicationDecisions(["fact-a", "fact-b"])).rejects.toThrow(
+      /tronqué/,
+    );
   });
 });
