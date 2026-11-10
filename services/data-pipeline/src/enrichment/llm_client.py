@@ -26,6 +26,7 @@ from src.llm_requests import (
 from src.llm_task_deadline import (
     LLMTaskDeadlineExceeded,
     ensure_llm_task_deadline,
+    llm_answer_time_required,
     llm_task_bounded_timeout,
     llm_task_deadline_remaining,
 )
@@ -524,9 +525,11 @@ class ReplicateClient:
             # Une prédiction envoyée sans le temps d'en lire la réponse (« Prefer: wait » plus une marge) est
             # abandonnée par délai de lecture alors que Replicate la calcule et la facture, puis rejouée au
             # passage suivant : 216 fois en 30 jours (09/11/2026), dont 167 payées deux fois. On la reporte.
+            # Seulement quand l'échéance borne tout un passage (require_answer_time) : celle d'un appel
+            # unique (lecture des pièces, 90 s) est son budget entier et le refuserait à chaque fois.
             remaining = llm_task_deadline_remaining()
             needed = min(float(self.timeout_seconds or 180), float(self.wait_seconds or 60) + 30)
-            if remaining is not None and remaining < needed:
+            if llm_answer_time_required() and remaining is not None and remaining < needed:
                 raise LLMTaskDeadlineExceeded("starting a Replicate prediction too close to the deadline", remaining=remaining)
             reservation_id = reserve_llm_request(
                 provider="replicate",
