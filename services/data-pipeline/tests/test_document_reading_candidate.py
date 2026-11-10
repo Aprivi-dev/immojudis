@@ -7,6 +7,7 @@ from src.document_reading import PRODUCTION_PROFILE, ReadingDocument, build_read
 from src.document_reading_candidate import (
     CANDIDATE_PROFILES,
     CANDIDATE_VERSION,
+    is_standard_clause,
     page_relevance,
     select_pages_by_relevance,
 )
@@ -131,5 +132,36 @@ def test_the_point_cap_follows_the_profile_and_rejections_are_counted() -> None:
     kept = validate_reading_points(raw, documents, max_points=18, rejections=rejections)
 
     assert len(kept) == 18
-    assert rejections == {"malformed": 1, "quote_not_found": 1, "over_cap": 2}
+    assert rejections == {"unknown_theme": 1, "quote_not_found": 1, "over_cap": 2}
     assert len(validate_reading_points(raw, documents)) == reading.MAX_POINTS
+
+
+def test_a_verified_quote_of_the_standard_conditions_is_left_out_by_the_candidate_only() -> None:
+    clause = "En vertu des dispositions de l’article 1649 du Code civil, l'acquéreur ne bénéficiera d'aucune garantie."
+    lease = "Les lieux sont loués suivant bail commercial en date du 3 février 2012, loyer de 829,38 € par trimestre."
+    documents = [_doc(1, "cahier_conditions_vente", {1: clause + " " + lease})]
+    raw = [
+        {"theme": "juridique", "title": "Vices cachés", "document": "D1", "page": 1, "quote": clause},
+        {"theme": "occupation", "title": "Bail commercial", "document": "D1", "page": 1, "quote": lease},
+    ]
+
+    assert is_standard_clause(clause) and not is_standard_clause(lease)
+    assert not is_standard_clause("Mise à prix de 18 000 € avec possibilité de baisse de moitié à défaut d'enchères")
+    rejections: dict[str, int] = {}
+    rejected: list[dict[str, object]] = []
+    kept = validate_reading_points(
+        raw, documents, rejects_quote=CANDIDATE_PROFILES["v4"].rejects_quote, rejections=rejections,
+        rejected_points=rejected,
+    )
+
+    assert [point["title"] for point in kept] == ["Bail commercial"]
+    assert rejections == {"standard_clause": 1} and rejected[0]["title"] == "Vices cachés"
+    # Production keeps its behaviour: no such rule in the v3 profile.
+    assert PRODUCTION_PROFILE.rejects_quote is None and len(validate_reading_points(raw, documents)) == 2
+
+
+def test_the_candidate_prompt_names_the_exact_theme_of_each_category() -> None:
+    prompt = CANDIDATE_PROFILES["v4"].system_prompt
+    for theme in reading.THEMES:
+        assert f"- [{theme}] " in prompt, theme
+    assert "copie l'extrait caractère pour caractère" in prompt

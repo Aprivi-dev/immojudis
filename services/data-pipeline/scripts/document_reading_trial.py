@@ -1,10 +1,11 @@
 """Essai de qualité : lecture des pièces avec une version candidate, comparée à la lecture stockée.
 
 La lecture des pièces (``src/document_reading.py``) est ce que l'abonné voit point par point. Cet essai relit
-les pièces de quelques ventes à venir avec les profils candidats de ``src/document_reading_candidate.py``
-(« v4 » : même coût que la production ; « v4_wide » : deux fois plus de texte lu) et rend, pour chaque vente,
-les points stockés, les points de chaque profil et les listes de l'extraction des faits (ce que les mêmes pièces
-contiennent selon l'autre lecture), pour une comparaison point par point.
+les pièces de quelques ventes à venir avec le profil de production (« v3 », le témoin : même modèle, même jour)
+et les profils candidats de ``src/document_reading_candidate.py`` (« v4 » : même coût que la production ;
+« v4_wide » : deux fois plus de texte lu). Il rend, pour chaque vente, les points stockés, les points gardés et
+rejetés de chaque profil et les listes de l'extraction des faits (ce que les mêmes pièces contiennent selon
+l'autre lecture), pour une comparaison point par point.
 
 LECTURE SEULE sur la base : la connexion est ouverte en lecture seule (``read_only``) ; aucune lecture n'est
 écrite. Seuls les appels au modèle passent par le client Replicate du pipeline, avec ses réservations et son
@@ -17,7 +18,7 @@ Rapport Markdown sur la sortie standard et dans ``$GITHUB_STEP_SUMMARY`` ; le d�
 ``READING_DETAIL {json}`` par vente) suit sur la sortie standard seulement. Tous les textes du détail passent
 par le filtre des noms de personnes.
 
-    python -m scripts.document_reading_trial --sales 10 --profiles v4,v4_wide --max-calls 40
+    python -m scripts.document_reading_trial --sales 10 --profiles v3,v4,v4_wide --max-calls 40
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from scripts.fact_chunk_trial import (  # noqa: E402
 )
 from src.config import load_settings  # noqa: E402
 from src.document_reading import (  # noqa: E402
+    PRODUCTION_PROFILE,
     ReadingProfile,
     documents_from_manifest,
     filtered_for_model,
@@ -61,6 +63,8 @@ from src.document_reading_candidate import CANDIDATE_PROFILES  # noqa: E402
 from src.llm_requests import llm_request_context  # noqa: E402
 from src.personal_data import redact_personal_text  # noqa: E402
 
+# « v3 » is the control: the production profile read today, next to the candidates.
+PROFILES: dict[str, ReadingProfile] = {"v3": PRODUCTION_PROFILE, **CANDIDATE_PROFILES}
 DEFAULT_SALES = 10
 DEFAULT_MAX_CALLS = 40
 DEFAULT_BUDGET_MINUTES = 90
@@ -118,7 +122,7 @@ select sale.id::text, sale.source_url, sale.property_type, sale.city,
 @dataclass
 class TrialOptions:
     sales: int = DEFAULT_SALES
-    profiles: tuple[str, ...] = tuple(CANDIDATE_PROFILES)
+    profiles: tuple[str, ...] = tuple(PROFILES)
     sale_prefixes: tuple[str, ...] = ()
     max_calls: int = DEFAULT_MAX_CALLS
     budget_minutes: float = DEFAULT_BUDGET_MINUTES
@@ -134,6 +138,7 @@ class ProfileResult:
     raw_points: int = 0
     points: list[dict[str, object]] = field(default_factory=list)
     rejections: dict[str, int] = field(default_factory=dict)
+    rejected: list[dict[str, object]] = field(default_factory=list)
     usage: list[CallUsage] = field(default_factory=list)
     output_cut: bool = False
     budget_waits: int = 0
@@ -247,6 +252,7 @@ def trial_profile(
         usage_start = len(client.usage)
         client.max_tokens = profile.max_output_tokens  # type: ignore[attr-defined]
         rejections: dict[str, int] = {}
+        rejected: list[dict[str, object]] = []
         with llm_request_context(source_url=source_url, sale_id=sale_id, stage=TRIAL_STAGE, reason=TRIAL_REASON):
             reading = read_sale_documents(
                 documents,
@@ -255,6 +261,7 @@ def trial_profile(
                 sold_lot=sold_lot,
                 profile=profile,
                 rejections=rejections,
+                rejected_points=rejected,
             )
         result.usage.extend(client.usage[usage_start:])
         error = last_error[-1] if last_error else None
@@ -271,6 +278,8 @@ def trial_profile(
         result.raw_points = raw_counts[-1] if raw_counts else 0
         result.points = point_texts(reading.points)
         result.rejections = rejections
+        # What the model wrote for each dropped point (it read filtered pages; filtered again for safety).
+        result.rejected = [{name: _safe(value) for name, value in point.items()} for point in rejected]
         result.output_cut = any(
             call.output_tokens is not None and call.output_tokens >= profile.max_output_tokens * TRUNCATION_RATIO
             for call in result.usage
@@ -331,7 +340,7 @@ def run_trial(
                 break
             profile_result, stop = trial_profile(
                 name,
-                CANDIDATE_PROFILES[name],
+                PROFILES[name],
                 documents,
                 client,
                 sale_id=sale_id,
@@ -427,7 +436,12 @@ def render_details(report: TrialReport) -> str:
                 "facts": result.facts,
                 "stored": {"version": result.stored_version, "points": result.stored_points},
                 "trials": {
-                    name: {"status": trial.status, "truncated": trial.truncated, "points": trial.points}
+                    name: {
+                        "status": trial.status,
+                        "truncated": trial.truncated,
+                        "points": trial.points,
+                        "rejected": trial.rejected,
+                    }
                     for name, trial in result.profiles.items()
                 },
             },
@@ -459,7 +473,7 @@ def parse_args(argv: Sequence[str] | None = None) -> TrialOptions:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--sales", type=_bounded_int(1, 30), default=DEFAULT_SALES)
     parser.add_argument(
-        "--profiles", type=_names(tuple(CANDIDATE_PROFILES), r"[a-z0-9_]+"), default=tuple(CANDIDATE_PROFILES)
+        "--profiles", type=_names(tuple(PROFILES), r"[a-z0-9_]+"), default=tuple(PROFILES)
     )
     parser.add_argument(
         "--sale-prefixes",

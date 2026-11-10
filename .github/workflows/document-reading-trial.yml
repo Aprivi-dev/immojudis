@@ -23,9 +23,9 @@ on:
         default: ""
         type: string
       profiles:
-        description: "Candidate profiles, comma separated (v4: same cost; v4_wide: twice the text read)"
+        description: "Profiles, comma separated (v3: production, the control; v4: same cost; v4_wide: twice the text)"
         required: false
-        default: "v4,v4_wide"
+        default: "v3,v4,v4_wide"
         type: string
       max_calls:
         description: "Hard cap on model calls for the whole trial (1-120)"
