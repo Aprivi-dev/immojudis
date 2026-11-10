@@ -1,18 +1,24 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
 import Copy from "lucide-react/dist/esm/icons/copy.js";
 import MailCheck from "lucide-react/dist/esm/icons/mail-check.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { toast } from "@/lib/toast";
 import type { InformationRequestSelection } from "@/components/admin/AdminCatalogueReadinessPanel";
 import { AdminInformationAgentPreviewPanel as PreviewPanel } from "@/components/admin/AdminInformationAgentPreviewPanel";
-import { AdminPagination } from "@/components/admin/AdminPagination";
-import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
+import {
+  missionsQuery as missionsQueryOptions,
+  MISSIONS_QUERY_KEY as QUERY_KEY,
+} from "@/components/admin/information-agent-queries";
+import {
+  isMissionEditable,
+  missionStatusLabel,
+} from "@/components/admin/information-agent-missions-ui";
+import { ADMIN_PAGE_MAX_LIMIT } from "@/lib/admin-pagination";
 import {
   createAdminInformationAgentMission,
   fetchAdminInformationAgentMissions,
@@ -32,10 +38,8 @@ import {
   INFORMATION_AGENT_QUESTIONS,
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
-import { saleDetailPath } from "@/lib/navigation";
 import { formatAdminDateTime as formatDateTime } from "@/lib/admin-date-format";
 
-const QUERY_KEY = ["admin-information-agent-missions"] as const;
 const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as const;
 
 type EditedMissionDraft = {
@@ -49,30 +53,37 @@ type EditedMissionDraft = {
 
 type ShownPreview = { key: string; response: InformationAgentPreviewResponse };
 
+/** Demande d'ouverture d'une mission depuis la liste des envois ; `nonce` distingue deux demandes. */
+export type OpenMissionRequest = { mission: InformationAgentMission; nonce: number };
+
+/**
+ * Éditeur de l'onglet « À contacter » : préparation du brouillon, relecture, aperçu et envoi. Le
+ * composant reste monté quand on change d'onglet (l'espace de travail le masque) : le brouillon en
+ * cours d'édition n'est jamais perdu. `active` suspend les requêtes périodiques tant qu'il est masqué.
+ */
 export function AdminInformationAgentMissionsPanel({
   selection,
   onClose,
+  openRequest = null,
+  active = true,
 }: {
   selection: InformationRequestSelection | null;
   onClose: () => void;
+  openRequest?: OpenMissionRequest | null;
+  active?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [listOffset, setListOffset] = useState(0);
-  const missionsQuery = useQuery({
-    queryKey: [...QUERY_KEY, listOffset],
-    queryFn: () =>
-      fetchAdminInformationAgentMissions({ offset: listOffset, limit: ADMIN_PAGE_SIZE }),
-    placeholderData: keepPreviousData,
-    staleTime: 30_000,
-  });
+  // Première page seulement : elle sert à retrouver un brouillon existant de la vente ; la liste
+  // paginée des envois a sa propre requête (même clé à la page 0, donc une seule réponse partagée).
+  const missionsQuery = useQuery(missionsQueryOptions(0));
   const sourceRefreshQuery = useQuery({
     queryKey: [...SOURCE_REFRESH_QUERY_KEY, selection?.saleId],
     queryFn: () => fetchAdminSourceRefreshStatus(selection!.saleId),
-    enabled: Boolean(selection?.saleId),
+    enabled: Boolean(selection?.saleId) && active,
     staleTime: 3_000,
     refetchInterval: (query) => {
       const status = query.state.data?.request?.status;
-      return status === "queued" || status === "running" ? 5_000 : false;
+      return active && (status === "queued" || status === "running") ? 5_000 : false;
     },
   });
   const [recipientName, setRecipientName] = useState("");
@@ -105,19 +116,6 @@ export function AdminInformationAgentMissionsPanel({
     // (ancienne version de l'API) compte comme une liste complète.
     if (missionsQuery.data) {
       missionsTotalRef.current = missionsQuery.data.total ?? missionsQuery.data.missions.length;
-    }
-    if (
-      missionsQuery.data &&
-      !missionsQuery.data.missions.length &&
-      missionsQuery.data.offset > 0
-    ) {
-      setListOffset(
-        adminClampOffset(
-          missionsQuery.data.offset,
-          missionsQuery.data.limit,
-          missionsQuery.data.total,
-        ),
-      );
     }
   }, [missionsQuery.data]);
 
@@ -408,17 +406,19 @@ export function AdminInformationAgentMissionsPanel({
                 ? "Cochez la confirmation de relecture pour activer l’envoi."
                 : null;
 
-  const resumeMission = (mission: InformationAgentMission) => {
-    // A pending automatic preparation for the queue must never overwrite a
-    // mission selected from the history list.
+  // Ouverture demandée depuis la liste des envois (autre onglet). Une préparation automatique de la
+  // file encore en cours ne doit jamais écraser la mission choisie dans l'historique.
+  const handledOpenNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!openRequest || handledOpenNonceRef.current === openRequest.nonce) return;
+    handledOpenNonceRef.current = openRequest.nonce;
     selectionRef.current = null;
-    onClose();
     setDraftError(null);
-    hydrateMission(mission);
-    // La liste est sous le formulaire : sans ce déplacement, l'ouverture ne se voit pas.
+    hydrateMission(openRequest.mission);
+    // Le formulaire était masqué ou hors écran : sans ce déplacement, l'ouverture ne se voit pas.
     composerSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     composerHeadingRef.current?.focus({ preventScroll: true });
-  };
+  }, [openRequest, hydrateMission]);
   const closeComposer = () => {
     selectionRef.current = null;
     activeMissionRef.current = null;
@@ -673,14 +673,6 @@ export function AdminInformationAgentMissionsPanel({
                 message avant l’envoi ; le contenu saisi n’est pas réécrit automatiquement.
               </p>
             ) : null}
-            {isMissionEditable(activeMission.status) ? (
-              <Field
-                label="Page publique où figure l’adresse (si elle ne vient pas de l’annonce)"
-                value={recipientOriginUrl}
-                onChange={handleOriginChange}
-                type="url"
-              />
-            ) : null}
             <p className="text-xs text-brand-navy/65">
               Le mail envoyé ajoutera une adresse de réponse propre au dossier, un lien privé de
               dépôt sans compte, l’origine de l’adresse avec le lien de l’annonce et un lien de
@@ -714,6 +706,15 @@ export function AdminInformationAgentMissionsPanel({
                   subject.trim().length < 3 ||
                   bodyText.trim().length < 20
                 }
+                originField={
+                  <Field
+                    id={ORIGIN_FIELD_ID}
+                    label="Page publique où figure l’adresse (si elle ne vient pas de l’annonce)"
+                    value={recipientOriginUrl}
+                    onChange={handleOriginChange}
+                    type="url"
+                  />
+                }
               />
             ) : null}
             {selection ? (
@@ -721,11 +722,12 @@ export function AdminInformationAgentMissionsPanel({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-sky-950">
-                      Actualiser la source si nécessaire
+                      Actualiser la source (facultatif)
                     </p>
                     <p className="mt-1 max-w-2xl text-xs leading-5 text-sky-950/70">
-                      Le brouillon est déjà disponible. Une actualisation relira l’URL exacte de
-                      l’annonce et permettra une régénération explicite après contrôle.
+                      Facultatif, et sans rapport avec l’origine de l’adresse du destinataire. Cela
+                      relit l’annonce pour mettre la fiche à jour ; le brouillon ne change que si
+                      vous le régénérez.
                     </p>
                   </div>
                   <button
@@ -887,85 +889,14 @@ export function AdminInformationAgentMissionsPanel({
           ) : null}
         </div>
       ) : null}
-
-      <div className="p-5">
-        <h3 className="text-sm font-semibold">Missions récentes</h3>
-        {missionsQuery.isPending ? (
-          <p className="mt-3 text-sm text-brand-navy/55">Chargement…</p>
-        ) : missionsQuery.error ? (
-          <p role="alert" className="mt-3 text-sm text-red-700">
-            {missionsQuery.error instanceof Error
-              ? missionsQuery.error.message
-              : "Missions indisponibles"}
-          </p>
-        ) : missionsQuery.data?.missions.length ? (
-          <div className="mt-3 divide-y rounded-lg border">
-            {missionsQuery.data.missions.map((mission) => (
-              <div
-                key={mission.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 text-sm"
-              >
-                <div className="min-w-0">
-                  {mission.saleId ? (
-                    <p className="truncate font-medium">
-                      <Link
-                        href={saleDetailPath(mission.saleId)}
-                        className="underline-offset-2 hover:underline"
-                      >
-                        {mission.saleTitle || "Annonce sans titre"}
-                      </Link>
-                    </p>
-                  ) : null}
-                  <p
-                    className={`truncate ${mission.saleId ? "text-xs text-brand-navy/70" : "font-medium"}`}
-                  >
-                    {mission.recipientEmail}
-                  </p>
-                  <p className="mt-0.5 text-xs text-brand-navy/50">
-                    {missionStatusLabel(mission.status)} · {formatDateTime(mission.updatedAt)}
-                  </p>
-                  {mission.status === "failed" && mission.failureReason ? (
-                    <p
-                      className={`mt-0.5 line-clamp-2 text-xs ${
-                        mission.sendOutcome === "unverified" ? "text-amber-900" : "text-red-800"
-                      }`}
-                    >
-                      {mission.sendOutcome === "unverified" ? "À vérifier : " : ""}
-                      {mission.failureReason}
-                    </p>
-                  ) : null}
-                </div>
-                {/* Un brouillon ou un échec se reprend ; tout autre statut s'ouvre en lecture seule
-                    (seul le formulaire de réponse consignée reste actif pour envoyée / répondue). */}
-                <button
-                  type="button"
-                  className="admin-button-secondary"
-                  onClick={() => resumeMission(mission)}
-                >
-                  {isMissionEditable(mission.status) ? "Reprendre" : "Ouvrir"}
-                </button>
-              </div>
-            ))}
-            <AdminPagination
-              label="missions récentes"
-              offset={missionsQuery.data.offset ?? 0}
-              limit={missionsQuery.data.limit ?? ADMIN_PAGE_SIZE}
-              total={missionsQuery.data.total ?? missionsQuery.data.missions.length}
-              shown={missionsQuery.data.missions.length}
-              busy={missionsQuery.isFetching}
-              onOffsetChange={setListOffset}
-              className="!px-3"
-            />
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-brand-navy/55">Aucune mission.</p>
-        )}
-      </div>
     </section>
   );
 }
 
+const ORIGIN_FIELD_ID = "information-agent-origin-url";
+
 function Field({
+  id,
   label,
   value,
   onChange,
@@ -973,6 +904,7 @@ function Field({
   required = false,
   readOnly = false,
 }: {
+  id?: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -984,6 +916,7 @@ function Field({
     <label className="block text-xs font-medium">
       {label}
       <input
+        id={id}
         type={type}
         required={required}
         readOnly={readOnly}
@@ -1144,32 +1077,11 @@ function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function isMissionEditable(status: string): boolean {
-  return status === "draft" || status === "failed";
-}
-
 const STALE_DRAFT_DAYS = 3;
 
 function isStaleDraft(createdAt: string, now = Date.now()): boolean {
   const created = Date.parse(createdAt);
   return Number.isFinite(created) && now - created > STALE_DRAFT_DAYS * 24 * 60 * 60 * 1000;
-}
-
-function missionStatusLabel(status: string): string {
-  return (
-    {
-      draft: "Brouillon",
-      subscribed: "Rattachée au dossier",
-      approved: "Validée",
-      sending: "Envoi en cours",
-      sent: "Envoyée",
-      replied: "Réponse reçue",
-      review: "À vérifier",
-      completed: "Terminée",
-      failed: "Échec",
-      cancelled: "Annulée",
-    }[status] ?? status
-  );
 }
 
 function SourceRefreshStatus({

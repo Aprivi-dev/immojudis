@@ -28,6 +28,10 @@ type AgentMockState = {
   reviewAssetRights: "authorized" | "restricted";
   sourceRefresh: Record<string, unknown>;
   template: Record<string, unknown>;
+  /** Messages non rattachés simulés (nombre) ; leur texte ne contient jamais d'adresse du bandeau. */
+  unroutedTotal: number;
+  /** Aperçu qui signale « Origine de l'adresse inconnue » (aucune page publique citée). */
+  originUnknown: boolean;
   /** Taille simulée des listes longues (pagination 50 par page) ; null = une seule ligne. */
   longListTotal: number | null;
   /** Décalages (offset) demandés à chaque liste paginée, dans l'ordre. */
@@ -40,10 +44,9 @@ test.describe("admin information agent", () => {
   }) => {
     const state = await prepareAdminInformationAgentPage(page);
 
-    await page.goto("/admin/agent-ia");
+    await page.goto("/admin/agent-ia?onglet=a-contacter");
     await expect(page.getByRole("heading", { name: "Agent IA", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Demandes d’informations" })).toBeVisible();
-    await expect(page.getByText("Aucune mission.", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Ouvrir le message" }).click();
     await expect(page.getByRole("heading", { name: /Brouillon pour/ })).toBeVisible();
@@ -101,6 +104,10 @@ test.describe("admin information agent", () => {
     await expect(page.getByText("Envoyée", { exact: true })).toBeVisible();
     await expect(toastMessage(page, "Demande envoyée.", { exact: true })).toBeVisible();
 
+    // L'onglet « Envois » liste la demande envoyée avec son état.
+    await page.getByRole("tab", { name: "Envois" }).click();
+    await expect(page.getByText(/^Envoyée · /)).toBeVisible();
+
     const refreshRequest = state.events.find(
       (event) =>
         event.path === "/api/admin/information-agent/source-refresh" && event.method === "POST",
@@ -130,9 +137,13 @@ test.describe("admin information agent", () => {
   }) => {
     const state = await prepareAdminInformationAgentPage(page);
 
-    await page.goto("/admin/agent-ia");
+    await page.goto("/admin/agent-ia?onglet=pilote");
     await expect(page.getByRole("heading", { name: "Pilote automatique" })).toBeVisible();
     await expect(page.getByText("Éteint", { exact: true }).first()).toBeVisible();
+    // Le bandeau de synthèse dit la même chose, en un mot.
+    await expect(
+      page.getByRole("region", { name: "Synthèse de l’agent" }).getByText("Arrêté"),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
     // Changer de mode exige un motif : rien ne part sans.
     await expect(page.getByRole("button", { name: "Réel", exact: true })).toBeDisabled();
@@ -148,7 +159,7 @@ test.describe("admin information agent", () => {
   }) => {
     const state = await prepareAdminInformationAgentPage(page);
 
-    await page.goto("/admin/agent-ia");
+    await page.goto("/admin/agent-ia?onglet=reponses");
     await expect(page.getByRole("heading", { name: "Informations à contrôler" })).toBeVisible();
     const reviewPanel = page
       .locator("section")
@@ -215,27 +226,31 @@ test.describe("admin information agent", () => {
     const state = await prepareAdminInformationAgentPage(page);
     state.longListTotal = 120;
 
-    await page.goto("/admin/agent-ia");
+    await page.goto("/admin/agent-ia?onglet=a-contacter");
     const lists = [
       {
+        tab: "À contacter",
         nav: "Pagination — file d’enrichissement",
         first: "Dossier à reprendre 49",
         next: "Dossier à reprendre 50",
         offsets: state.requestedOffsets.catalogue,
       },
       {
+        tab: "Envois",
         nav: "Pagination — missions récentes",
         first: "mission49@example.test",
         next: "mission50@example.test",
         offsets: state.requestedOffsets.missions,
       },
       {
+        tab: "Réponses",
         nav: "Pagination — faits à vérifier",
         first: "Vente à vérifier 49",
         next: "Vente à vérifier 50",
         offsets: state.requestedOffsets.claims,
       },
       {
+        tab: "Réponses",
         nav: "Pagination — réponses et informations à contrôler",
         first: "Valeur à contrôler 49",
         next: "Valeur à contrôler 50",
@@ -244,6 +259,7 @@ test.describe("admin information agent", () => {
     ];
 
     for (const list of lists) {
+      await page.getByRole("tab", { name: new RegExp(`^${list.tab}`) }).click();
       const nav = page.getByRole("navigation", { name: list.nav });
       await expect(nav).toContainText("1–50 sur 120 · page 1 sur 3");
       await expect(page.getByText(list.first, { exact: true })).toBeVisible();
@@ -266,7 +282,7 @@ test.describe("admin information agent", () => {
   test("requires preview and a saved draft before publishing a template", async ({ page }) => {
     const state = await prepareAdminInformationAgentPage(page);
 
-    await page.goto("/admin/agent-ia");
+    await page.goto("/admin/agent-ia?onglet=reglages");
     await expect(page.getByRole("heading", { name: "Template de prise de contact" })).toBeVisible();
     const name = page.getByRole("textbox", { name: "Nom interne du modèle" });
     await name.fill("Version E2E contrôlée");
@@ -317,6 +333,177 @@ test.describe("admin information agent", () => {
     });
     expect(state.unexpectedRequests).toEqual([]);
   });
+
+  test("walks through the five tabs with the summary banner and counters", async ({ page }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+    state.unroutedTotal = 2;
+
+    // Sans ?onglet=, une réponse à relire ou un message non rattaché ouvre « Réponses ».
+    await page.goto("/admin/agent-ia");
+    const tabs = page.getByRole("tablist", { name: "Rubriques de l’agent" });
+    await expect(tabs.getByRole("tab", { name: /^Réponses/, selected: true })).toBeVisible();
+    // 1 réponse à relire + 2 messages non rattachés ; 1 fiche à contacter.
+    await expect(tabs.getByRole("tab", { name: "Réponses (3)" })).toBeVisible();
+    await expect(tabs.getByRole("tab", { name: "À contacter (1)" })).toBeVisible();
+    const banner = page.getByRole("region", { name: "Synthèse de l’agent" });
+    await expect(banner).toContainText("Arrêté");
+    await expect(banner).toContainText("0 sur 5");
+    await expect(banner.locator("dd").nth(2)).toHaveText("1");
+    await expect(banner.locator("dd").nth(3)).toHaveText("2");
+    expect(await banner.innerText()).not.toContain("@");
+    // Ordre des panneaux : réponses à relire, faits à valider, messages non rattachés.
+    const headings = page.getByRole("tabpanel", { name: /^Réponses/ }).getByRole("heading", {
+      level: 2,
+    });
+    await expect(
+      headings.filter({
+        hasText: /Informations à contrôler|Faits à vérifier|Messages non rattachés/,
+      }),
+    ).toHaveText(["Informations à contrôler", "Faits à vérifier", "Messages non rattachés"]);
+
+    await tabs.getByRole("tab", { name: /^Envois/ }).click();
+    await expect(page).toHaveURL(/onglet=envois/);
+    await expect(page.getByRole("heading", { name: "Missions récentes" })).toBeVisible();
+    await expect(page.getByText("Aucune mission.", { exact: true })).toBeVisible();
+
+    await tabs.getByRole("tab", { name: "Pilote" }).click();
+    await expect(page.getByRole("heading", { name: "Pilote automatique" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Suivi des envois et de la réception" }),
+    ).toBeVisible();
+
+    await tabs.getByRole("tab", { name: "Réglages" }).click();
+    await expect(page.getByRole("heading", { name: "Template de prise de contact" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Seuil de maturité du catalogue" }),
+    ).toBeVisible();
+
+    await tabs.getByRole("tab", { name: /^À contacter/ }).click();
+    await expect(page.getByRole("heading", { name: "File d’enrichissement" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Seuil de maturité du catalogue" }),
+    ).toBeHidden();
+    await expect(banner).toBeVisible();
+
+    // Navigation au clavier : flèche droite, focus suivi, adresse mise à jour.
+    await tabs.getByRole("tab", { name: /^À contacter/ }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(tabs.getByRole("tab", { name: /^Envois/ })).toBeFocused();
+    await expect(tabs.getByRole("tab", { name: /^Envois/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
+  test("keeps a draft and a template being edited when switching tabs, and reopens a draft from Envois", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+
+    await page.goto("/admin/agent-ia?onglet=a-contacter");
+    await page.getByRole("button", { name: "Ouvrir le message" }).click();
+    const message = page.getByRole("textbox", { name: "Message", exact: true });
+    await expect(message).toContainText("vérifier avec vous quelques points");
+    await message.fill("Message en cours de rédaction, conservé d’un onglet à l’autre.");
+
+    await page.getByRole("tab", { name: "Réglages" }).click();
+    await page.getByRole("textbox", { name: "Nom interne du modèle" }).fill("Gabarit en cours");
+
+    await page.getByRole("tab", { name: "Pilote" }).click();
+    await page.getByRole("tab", { name: /^À contacter/ }).click();
+    await expect(message).toHaveValue(
+      "Message en cours de rédaction, conservé d’un onglet à l’autre.",
+    );
+    await page.getByRole("tab", { name: "Réglages" }).click();
+    await expect(page.getByRole("textbox", { name: "Nom interne du modèle" })).toHaveValue(
+      "Gabarit en cours",
+    );
+    // Un seul brouillon préparé : changer d'onglet ne relance rien.
+    expect(state.events.filter((event) => event.path.endsWith("/missions/prepare"))).toHaveLength(
+      1,
+    );
+
+    // Depuis « Envois », « Reprendre » ramène à « À contacter » avec la fiche chargée.
+    await page.getByRole("tab", { name: "Envois" }).click();
+    await expect(page.getByText(/^Brouillon · /)).toBeVisible();
+    await page.getByRole("button", { name: "Reprendre" }).click();
+    await expect(page.getByRole("tab", { name: /^À contacter/, selected: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Brouillon pour/ })).toBeVisible();
+    await expect(page).toHaveURL(/onglet=a-contacter/);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
+  test("shows the address origin field right under the unknown-origin message", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+    state.originUnknown = true;
+
+    await page.goto("/admin/agent-ia?onglet=a-contacter");
+    await page.getByRole("button", { name: "Ouvrir le message" }).click();
+    const preview = page.getByRole("region", { name: "Aperçu de l’e-mail" });
+    const alert = preview.getByRole("alert");
+    await expect(alert).toContainText("Origine de l’adresse inconnue");
+    const origin = preview.getByRole("textbox", { name: /Page publique où figure l’adresse/ });
+    await expect(origin).toBeVisible();
+    // Juste sous le message : le champ est le suivant dans le bloc, et il prend le focus.
+    const alertBox = await alert.boundingBox();
+    const originBox = await origin.boundingBox();
+    expect(originBox!.y).toBeGreaterThan(alertBox!.y + alertBox!.height - 1);
+    expect(originBox!.y - (alertBox!.y + alertBox!.height)).toBeLessThan(120);
+    await origin.focus();
+    await expect(origin).toBeFocused();
+    await expect(page.getByRole("button", { name: "Valider et envoyer" })).toBeDisabled();
+
+    // L'encadré « source » dit qu'il est facultatif et sans rapport avec l'origine de l'adresse.
+    await expect(page.getByText("Actualiser la source (facultatif)")).toBeVisible();
+    await expect(page.getByText(/sans rapport avec l’origine de l’adresse/)).toBeVisible();
+
+    await origin.fill("https://annuaire.example.test/reviewed-contact");
+    await page.getByRole("button", { name: "Afficher l’aperçu" }).click();
+    await expect(alert).toHaveCount(0);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
+  test("captures every tab on desktop and mobile when CAPTURE_DIR is set", async ({
+    page,
+  }, testInfo) => {
+    const dir = process.env.CAPTURE_DIR;
+    test.skip(!dir || testInfo.project.name !== "desktop-chromium", "captures à la demande");
+    const state = await prepareAdminInformationAgentPage(page);
+    state.unroutedTotal = 2;
+
+    for (const [label, size] of [
+      ["bureau-1440", { width: 1440, height: 900 }],
+      ["mobile-390", { width: 390, height: 844 }],
+    ] as const) {
+      await page.setViewportSize(size);
+      for (const [id, tabName] of [
+        ["a-contacter", /^À contacter/],
+        ["envois", /^Envois/],
+        ["reponses", /^Réponses/],
+        ["pilote", /^Pilote/],
+        ["reglages", /^Réglages/],
+      ] as const) {
+        await page.goto(`/admin/agent-ia?onglet=${id}`);
+        await expect(page.getByRole("tab", { name: tabName, selected: true })).toBeVisible();
+        await expect(page.getByRole("region", { name: "Synthèse de l’agent" })).toContainText(
+          "Arrêté",
+        );
+        await page.waitForLoadState("networkidle");
+        await page.screenshot({ path: `${dir}/${label}-${id}.png`, fullPage: true });
+      }
+    }
+    // Éditeur ouvert avec le champ d'origine sous l'erreur.
+    state.originUnknown = true;
+    await page.goto("/admin/agent-ia?onglet=a-contacter");
+    await page.getByRole("button", { name: "Ouvrir le message" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Origine de l’adresse" })).toBeVisible();
+    await page.screenshot({ path: `${dir}/mobile-390-a-contacter-origine.png`, fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.screenshot({ path: `${dir}/bureau-1440-a-contacter-origine.png`, fullPage: true });
+  });
 });
 
 async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockState> {
@@ -330,6 +517,8 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     reviewAssetRights: "restricted",
     sourceRefresh: sourceRefreshFixture(null),
     template: templateFixture(),
+    unroutedTotal: 0,
+    originUnknown: false,
     longListTotal: null,
     requestedOffsets: { claims: [], missions: [], review: [], catalogue: [] },
   };
@@ -462,6 +651,7 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
           preview: previewFixture(
             String(state.mission.recipientEmail),
             String(state.mission.subject),
+            state.originUnknown,
           ),
           previewError: null,
           reused: false,
@@ -470,10 +660,16 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       return;
     }
     if (path === "/api/admin/information-agent/missions/preview" && method === "POST") {
-      const input = payload as { recipientEmail: string; subject: string };
+      const input = payload as {
+        recipientEmail: string;
+        subject: string;
+        recipientOriginUrl?: string | null;
+      };
+      // Origine inconnue tant que l'administrateur n'a pas cité de page publique.
+      const unknownOrigin = state.originUnknown && !input.recipientOriginUrl;
       await route.fulfill({
         status: 200,
-        json: previewFixture(input.recipientEmail, input.subject),
+        json: previewFixture(input.recipientEmail, input.subject, unknownOrigin),
       });
       return;
     }
@@ -527,11 +723,19 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       });
       return;
     }
-    // Messages reçus sans dossier ouvert : liste vide, ces parcours ne les utilisent pas.
+    // Messages reçus sans dossier ouvert : vide par défaut (`state.unroutedTotal`).
     if (path === "/api/admin/information-agent/unrouted" && method === "GET") {
       await route.fulfill({
         status: 200,
-        json: { messages: [], offset: 0, limit: 50, total: 0, hasMore: false },
+        json: {
+          messages: Array.from({ length: state.unroutedTotal }, (_, index) =>
+            unroutedMessageFixture(index),
+          ),
+          offset: 0,
+          limit: 50,
+          total: state.unroutedTotal,
+          hasMore: false,
+        },
       });
       return;
     }
@@ -616,7 +820,10 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
   return state;
 }
 
-function previewFixture(recipientEmail: string, subject: string) {
+const ORIGIN_UNKNOWN_MESSAGE =
+  "Origine de l’adresse inconnue : elle ne figure pas dans l’annonce de cette vente. Indiquez la page publique où vous l’avez trouvée avant l’envoi.";
+
+function previewFixture(recipientEmail: string, subject: string, unknownOrigin = false) {
   return {
     ok: true,
     preview: {
@@ -627,14 +834,34 @@ function previewFixture(recipientEmail: string, subject: string) {
       html: "<p>Aperçu exact</p>",
       text: "Aperçu exact",
     },
-    blockers: [],
-    addressOrigin: {
-      text: "Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique (https://annuaire.example.test/reviewed-contact), le 14/10/2026.",
-      url: "https://annuaire.example.test/reviewed-contact",
-      automated: false,
-      known: true,
-    },
-    fingerprint: "e".repeat(64),
+    blockers: unknownOrigin ? [ORIGIN_UNKNOWN_MESSAGE] : [],
+    addressOrigin: unknownOrigin
+      ? { text: ORIGIN_UNKNOWN_MESSAGE, url: null, automated: false, known: false }
+      : {
+          text: "Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique (https://annuaire.example.test/reviewed-contact), le 14/10/2026.",
+          url: "https://annuaire.example.test/reviewed-contact",
+          automated: false,
+          known: true,
+        },
+    fingerprint: unknownOrigin ? null : "e".repeat(64),
+  };
+}
+
+function unroutedMessageFixture(index: number) {
+  return {
+    id: `00000000-0000-4000-8000-${String(900 + index).padStart(12, "0")}`,
+    provider_email_id: `provider-e2e-${index}`,
+    sender: "Cabinet inconnu <inconnu@example.test>",
+    sender_email: "inconnu@example.test",
+    subject: `Message sans dossier ${index}`,
+    received_at: "2026-10-04T11:00:00.000Z",
+    excerpt: "Texte du message non rattaché.",
+    reason: "case_not_open",
+    sender_known: false,
+    sender_authentication: "pass",
+    attachment_count: 0,
+    opposition_recorded: false,
+    created_at: "2026-10-04T11:00:01.000Z",
   };
 }
 
@@ -643,6 +870,7 @@ function autopilotFixture() {
     mode: "off",
     modeLabel: "Éteint",
     notice: null,
+    sentToday: "0 sur 5",
     counters: [{ label: "Envois aujourd’hui (manuels inclus)", value: "0 sur 5" }],
     settings: {
       actingAdminId: null,
