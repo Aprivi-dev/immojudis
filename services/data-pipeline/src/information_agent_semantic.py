@@ -16,15 +16,16 @@ import os
 import re
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
-from src.document_reading import (
-    MIN_QUOTE_CHARS,
-    SoldLot,
-    names_another_lot,
-    sale_lot_numbers_named,
-    sold_lot_from_sale,
+from src.document_reading import MIN_QUOTE_CHARS, sold_lot_from_sale
+from src.information_agent_review_signals import (
+    REVIEW_REASON_LABELS,
+    ROOMS_FOLLOW_RE,
+    LotContext,
+    area_category,
+    review_statement,
 )
 from src.normalize import clean_text
 from src.personal_data import redact_personal_text
@@ -44,9 +45,6 @@ SEMANTIC_PROCESSOR_VERSION = "semantic_evidence_v3"
 # Comme la lecture des documents (`document_reading.MIN_QUOTE_CHARS`) : une citation plus courte ne prouve
 # rien seule. Elle n'est pas jetée, mais part en relecture avec le motif `short_citation`.
 MIN_SEMANTIC_EXCERPT_CHARS = MIN_QUOTE_CHARS
-# Une page sans ponctuation (PDF, OCR) ne fait pas une seule « phrase » : la phrase lue autour de la
-# citation est bornée à ce nombre de caractères de chaque côté.
-MAX_SENTENCE_CONTEXT_CHARS = 240
 MAX_VISION_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_PHOTO_DESCRIPTION_CHARS = 800
 MAX_PHOTO_OBSERVATIONS = 8
@@ -61,20 +59,10 @@ UNCERTAIN_EVIDENCE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Motifs de relecture d'un fait douteux mais utile (même liste, avec libellés, dans
-# `src/components/admin/AdminInformationAgentReviewPanel.tsx`). Un fait qui en porte un arrive en relecture
-# avec son motif et n'est jamais un fait net. Une erreur de catégorie (date de visite prise pour la date de
-# vente, GES pris pour le DPE, autre lot nommé, mot composé) est rejetée, comme une citation incertaine.
-SEMANTIC_REVIEW_REASONS: dict[str, str] = {
-    "short_citation": "citation de moins de 25 caractères",
-    "hedged_statement": "valeur au conditionnel, approximative ou rapportée d'une autre source",
-    "pending_verification": "phrase « à vérifier », « à confirmer » ou « sous réserve »",
-    "value_range": "fourchette de valeurs",
-    "corrected_or_stale_value": "valeur corrigée ou périmée dans la phrase",
-    "postponement": "renvoi ou report mentionné dans la phrase",
-    "lot_unidentified": "vente à plusieurs lots : la phrase ne nomme aucun lot",
-    "lot_unverified": "la phrase nomme un lot que l'on ne peut pas rapprocher de la vente",
-}
+# Motifs de relecture d'un fait douteux mais utile : liste commune avec les règles TypeScript et l'onglet
+# Réponses (`information_agent_review_signals.REVIEW_REASON_LABELS`). Un fait qui en porte un arrive en
+# relecture avec son motif et n'est jamais un fait net ; une erreur de catégorie est rejetée.
+SEMANTIC_REVIEW_REASONS: dict[str, str] = REVIEW_REASON_LABELS
 
 # Keep this set synchronized with the fact_key check on
 # information_agent_fact_candidates. Attachments themselves are persisted as
@@ -203,17 +191,8 @@ class SemanticFact:
         return payload
 
 
-@dataclass(frozen=True)
-class SemanticLotContext:
-    """Lots de la vente du dossier, pour contrôler le lot dont parle une phrase.
-
-    ``multi_lot`` : l'annonce compte plusieurs lots (drapeau ``multi_lot_sale`` ou lot désigné).
-    ``sold_lot`` : le lot vendu, quand l'annonce le désigne avec certitude (``source_lot_selection``).
-    Sans contexte (``None``), le lot de la vente est inconnu : une phrase qui nomme un lot part en relecture.
-    """
-
-    multi_lot: bool
-    sold_lot: SoldLot | None = None
+# Lots de la vente du dossier (``multi_lot`` et ``sold_lot``), pour contrôler le lot dont parle une phrase.
+SemanticLotContext = LotContext
 
 
 def semantic_lot_context(quality_flags: object, lot_selection: object) -> SemanticLotContext:
@@ -417,6 +396,13 @@ def redact_text_for_model(text: object) -> str:
     return _CIVILITY_NAME_RE.sub("[nom retiré]", result)
 
 
+def _model_text_lines(value: object) -> str:
+    """Comme :func:`_model_text`, retours à la ligne gardés (une puce ou une ligne sert de phrase)."""
+    redacted = redact_text_for_model(value)
+    lines = (clean_text(line) or "" for line in redacted.split("\n"))
+    return "\n".join(line for line in lines if line)
+
+
 def _model_text(value: object) -> str:
     """Texte d'une page tel que le modèle le reçoit et que les citations sont vérifiées."""
     return clean_text(redact_text_for_model(value)) or ""
@@ -544,12 +530,13 @@ def validate_semantic_facts(
             page_number = int(page.get("page") or 1)
         except (TypeError, ValueError):
             continue
-        # Les citations sont vérifiées contre le texte tel que le modèle l'a reçu (sans noms).
-        text = _model_text(page.get("text"))
+        # Les citations sont vérifiées contre le texte tel que le modèle l'a reçu (sans noms), lignes
+        # gardées : une puce ou une ligne est une phrase.
+        text = _model_text_lines(page.get("text"))
         if text:
             page_texts[max(1, page_number)] = text
     facts: list[SemanticFact] = []
-    seen: set[tuple[str, str, int]] = set()
+    positions: dict[tuple[str, str, int], int] = {}
     for raw in raw_facts:
         if len(facts) >= MAX_SEMANTIC_FACTS or not isinstance(raw, Mapping):
             break
@@ -557,9 +544,14 @@ def validate_semantic_facts(
         if fact is None:
             continue
         key = (fact.fact_key, str(fact.value).casefold(), fact.source_page)
-        if key in seen:
+        if key in positions:
+            # Même valeur citée deux fois : les motifs de chaque citation restent sur le fait gardé.
+            kept = facts[positions[key]]
+            merged = tuple(dict.fromkeys([*kept.review_reasons, *fact.review_reasons]))
+            if merged != kept.review_reasons:
+                facts[positions[key]] = replace(kept, review_reasons=merged)
             continue
-        seen.add(key)
+        positions[key] = len(facts)
         facts.append(fact)
     return facts
 
@@ -599,12 +591,17 @@ def _validate_fact(
     # champ (mise à prix et non consignation, bien non loué, surface du logement et non du terrain…).
     if not _value_is_coherent(fact_key, value, evidence_excerpt):
         return None
-    # La phrase entière, et pas seulement la citation choisie par le modèle : une erreur de catégorie
-    # est rejetée, un doute garde le fait en relecture avec son motif.
-    sentence = _sentence_around(source_text, span)
-    if _sentence_category_error(fact_key, sentence, lot_context):
+    # Position de la valeur dans la page : pour une surface ou des pièces, le nombre qui en parle vraiment
+    # (pas une annexe, pas le terrain, pas des pièces jointes).
+    anchor = _value_anchor(source_text, span, fact_key, value)
+    if anchor is None:
         return None
-    review_reasons = _sentence_review_reasons(fact_key, sentence, evidence_excerpt, source_text, lot_context)
+    # La phrase entière (et ses voisines), pas seulement la citation choisie par le modèle : une erreur de
+    # catégorie ou une négation est rejetée, un doute garde le fait en relecture avec son motif.
+    review = review_statement(source_text, anchor, fact_key, lot_context)
+    if review.rejected:
+        return None
+    review_reasons = review.reasons
     # The provider cannot choose a presentation that disagrees with the value
     # persisted as a pending candidate. Recompute it after validation.
     display = _display_value(fact_key, value)
@@ -627,84 +624,6 @@ def _validate_fact(
     )
 
 
-# --- Phrase entière autour de la citation -----------------------------------------------------------
-# Abréviations après lesquelles un point ne termine pas la phrase (« env. 65 m² », « n. 3 », « M. »).
-_ABBREVIATIONS_BEFORE_PERIOD = frozenset(
-    {"env", "approx", "cf", "n", "no", "art", "m", "me", "mme", "mm", "st", "ste", "av", "bd", "p", "pp", "ch", "ref", "réf", "etc", "ex"}
-)
-_SENTENCE_END_RE = re.compile(r"[.!?…]+")
-
-
-def _sentence_around(text: str, span: tuple[int, int]) -> str:
-    """Phrase qui contient la citation : du point qui la précède au point qui la suit.
-
-    Un point entre deux chiffres (« 65.5 ») ou après une abréviation (« env. ») ne termine pas une phrase.
-    Sans ponctuation, la phrase est bornée à ``MAX_SENTENCE_CONTEXT_CHARS`` de chaque côté de la citation.
-    """
-    start, end = span
-    lower = max(0, start - MAX_SENTENCE_CONTEXT_CHARS)
-    upper = min(len(text), end + MAX_SENTENCE_CONTEXT_CHARS)
-    sentence_start = lower
-    sentence_end = upper
-    for match in _SENTENCE_END_RE.finditer(text, lower, upper):
-        if not _ends_sentence(text, match):
-            continue
-        if match.end() <= start:
-            sentence_start = match.end()
-        elif match.start() >= end:
-            sentence_end = match.end()
-            break
-    return clean_text(text[sentence_start:sentence_end]) or ""
-
-
-def _ends_sentence(text: str, match: re.Match[str]) -> bool:
-    if match.group(0) != ".":
-        return True
-    before = text[match.start() - 1] if match.start() > 0 else ""
-    after = text[match.end()] if match.end() < len(text) else ""
-    if before.isdigit() and after.isdigit():
-        return False
-    if after and not after.isspace():
-        return False
-    word = re.search(r"([^\W\d_]+)$", text[max(0, match.start() - 12) : match.start()])
-    return not (word and word.group(1).casefold() in _ABBREVIATIONS_BEFORE_PERIOD)
-
-
-_HEDGE_RE = re.compile(
-    r"\b(?:serai(?:t|ent)|pourrai(?:t|ent)|devrai(?:t|ent)|semblerai(?:t|ent)|semblent|semble|environ|"
-    r"approximativement|approximative(?:ment)?|approx|a\s+priori|probablement|vraisemblablement|apparemment|"
-    r"selon|d['’]apr[èe]s|aux\s+alentours|plus\s+ou\s+moins)\b|\benv\.|~|≈|"
-    # Tout conditionnel (« aurait », « comprendrait », « mesureraient ») ; quelques imparfaits en « -rait »
-    # (« ouvrait ») passent aussi en relecture, ce qui ne coûte qu'une relecture.
-    r"\b[^\W\d_]{2,}(?:rait|raient)\b",
-    re.IGNORECASE,
-)
-_PENDING_VERIFICATION_RE = re.compile(
-    r"\b(?:sous\s+r[ée]serve|[àa]\s+(?:v[ée]rifier|confirmer|pr[ée]ciser)|non\s+(?:confirm|v[ée]rifi)\w*)",
-    re.IGNORECASE,
-)
-_AMOUNT = r"\d[\d\s.,]*(?:\s*(?:m\s?[²2]|m[èe]tres?\s+carr[ée]s?|€|euros?|pi[èe]ces?))?"
-_RANGE_RE = re.compile(
-    rf"\bentre\s+{_AMOUNT}\s+et\s+\d|"
-    # « de 60 à 70 m² », mais pas « de 65 m² à 5 minutes de la gare ».
-    rf"\bde\s+{_AMOUNT}\s+[àa]\s+\d[\d\s.,]*(?!\s*(?:min|minutes?|km|kilom[èe]tres?|h\b|heures?|pas\b))"
-    r"|"
-    r"\d\s*(?:-|–|/|[àa])\s*\d+(?:[.,]\d+)?\s*(?:m\s?[²2]|€|pi[èe]ces?)(?!\w)",
-    re.IGNORECASE,
-)
-_CORRECTION_RE = re.compile(
-    r"\b(?:initialement|anciennement|pr[ée]c[ée]demment|ramen[ée]e?s?|baiss[ée]e?s?|abaiss[ée]e?s?|"
-    r"r[ée]duite?s?\s+[àa]|rectifi[ée]e?s?|corrig[ée]e?s?|au\s+lieu\s+de|erron[ée]e?s?|par\s+erreur)\b",
-    re.IGNORECASE,
-)
-_POSTPONEMENT_RE = re.compile(
-    r"\b(?:renvoy[ée]e?s?|renvoi|report[ée]e?s?|report|ajourn[ée]e?s?|d[ée]cal[ée]e?s?|"
-    r"remise?s?\s+(?:[àa]|au)\s+(?:une\s+)?(?:date|audience|plus\s+tard|\d))\b",
-    re.IGNORECASE,
-)
-_SALE_EVENT_CUE_RE = re.compile(r"\b(?:vente|audience|adjudication|adjug[ée]e?)\b", re.IGNORECASE)
-_VISIT_WORD_RE = re.compile(r"\bvisit(?:e|es|er|eurs?)\b", re.IGNORECASE)
-_GES_RE = re.compile(r"\bGES\b|gaz\s+[àa]\s+effet\s+de\s+serre|[ée]missions?\s+de\s+(?:co2|gaz)", re.IGNORECASE)
 _ENERGY_LABEL_CUE = (
     r"(?:dpe|diagnostic\s+de\s+performance\s+[ée]nerg[ée]tique|classe\s+(?:[ée]nerg[ée]tique|[ée]nergie|dpe)|"
     r"[ée]tiquette\s+[ée]nerg[ée]tique|performance\s+[ée]nerg[ée]tique)"
@@ -720,74 +639,6 @@ def _energy_grade_is_adjacent(grade: str, text: str) -> bool:
         rf"[«\"'(]?\s*(?-i:{re.escape(grade)})(?![A-Za-z])"
     )
     return re.search(pattern, text, re.IGNORECASE) is not None
-
-
-def _sentence_lots(sentence: str, lot_context: SemanticLotContext | None) -> set[int]:
-    highest = (lot_context.sold_lot.lot_count if lot_context and lot_context.sold_lot else None) or 9
-    return {number for number in sale_lot_numbers_named(sentence) if 1 <= number <= highest}
-
-
-def _sentence_category_error(
-    fact_key: str,
-    sentence: str,
-    lot_context: SemanticLotContext | None,
-) -> bool:
-    """Erreur de catégorie, rejetée : la phrase parle d'autre chose que de ce champ de cette vente."""
-    if lot_context and lot_context.sold_lot and names_another_lot(sentence, lot_context.sold_lot):
-        return True
-    if fact_key == "sale_date":
-        # Une date de vente est annoncée comme telle, et ni une visite ni un renvoi ne la donnent.
-        return (
-            _SALE_EVENT_CUE_RE.search(sentence) is None
-            or _VISIT_WORD_RE.search(sentence) is not None
-            or _POSTPONEMENT_RE.search(sentence) is not None
-        )
-    if fact_key == "energy_diagnostics":
-        return _GES_RE.search(sentence) is not None
-    return False
-
-
-def _sentence_review_reasons(
-    fact_key: str,
-    sentence: str,
-    excerpt: str,
-    page_text: str,
-    lot_context: SemanticLotContext | None,
-) -> tuple[str, ...]:
-    """Doutes qui gardent le fait en relecture : jamais un fait net, mais utile à un relecteur."""
-    reasons: list[str] = []
-    if len(excerpt) < MIN_SEMANTIC_EXCERPT_CHARS:
-        reasons.append("short_citation")
-    if _HEDGE_RE.search(sentence):
-        reasons.append("hedged_statement")
-    if _PENDING_VERIFICATION_RE.search(sentence):
-        reasons.append("pending_verification")
-    # Des horaires de visite (« de 10 h à 12 h ») ne sont pas une fourchette de valeurs.
-    if fact_key not in {"visit_information", "sale_date"} and _RANGE_RE.search(sentence):
-        reasons.append("value_range")
-    if _CORRECTION_RE.search(sentence):
-        reasons.append("corrected_or_stale_value")
-    if fact_key != "sale_date" and _POSTPONEMENT_RE.search(sentence):
-        reasons.append("postponement")
-    named = _sentence_lots(sentence, lot_context)
-    several_lots_in_text = len(_sentence_lots(page_text, lot_context)) > 1
-    if lot_context is None:
-        # Lot de la vente inconnu : un lot nommé ne se rapproche de rien.
-        if named:
-            reasons.append("lot_unverified")
-        elif several_lots_in_text:
-            reasons.append("lot_unidentified")
-    elif lot_context.sold_lot is not None:
-        # L'autre lot nommé est déjà rejeté ; reste la phrase qui n'en nomme aucun.
-        if not named:
-            reasons.append("lot_unidentified")
-    elif lot_context.multi_lot:
-        reasons.append("lot_unverified" if named else "lot_unidentified")
-    elif named - {1}:
-        reasons.append("lot_unverified")
-    elif several_lots_in_text:
-        reasons.append("lot_unidentified")
-    return tuple(reasons)
 
 
 def _validated_value(fact_key: str, proposed_value: object) -> str | int | float | None:
@@ -904,11 +755,6 @@ _NOT_PRICE_CUE_RE = re.compile(
     re.IGNORECASE,
 )
 _AREA_UNIT_RE = re.compile(r"\s*(?:m\s?[²2]|m[èe]tres?\s+carr[ée]s?)(?![\w])", re.IGNORECASE)
-_LAND_CUE_RE = re.compile(r"terrain|parcelle|jardin|cadastr|contenance|emprise|foncier", re.IGNORECASE)
-_DWELLING_CUE_RE = re.compile(
-    r"habitable|carrez|logement|appartement|b[âa]ti|plancher|utile|int[ée]rieur|surface\s+totale", re.IGNORECASE
-)
-_ROOMS_FOLLOW_RE = re.compile(r"\s*(?:pi[èe]ces?|p\b)", re.IGNORECASE)
 _NEGATION_BEFORE_RE = re.compile(
     r"(?:\bnon\b|\bpas\b|\bn['’]est\s+plus\b|\bn['’]étant\b|\bsans\b|\baucun(?:e)?\b|\bplus\s+de\b|"
     r"\blibre\s+de\s+toute?\b)[^.;:!?]{0,30}$",
@@ -942,6 +788,43 @@ _VISIT_CUE_RE = re.compile(
 _URL_OR_CONTACT_RE = re.compile(
     r"https?://|www\.|\b[\w-]+\.(?:fr|com|net|org|eu|io|info)\b/?|@|\[(?:email|téléphone|signature|nom)\s", re.IGNORECASE
 )
+
+
+def _area_fits(fact_key: str, category: str | None) -> bool:
+    if fact_key == "land_surface_m2":
+        return category == "land"
+    return category in {"dwelling", None}
+
+
+_SOURCE_NUMBER_RE = re.compile(r"(?<![\w.,])\d{1,3}(?:[ .\u202f\u00a0]\d{3})+(?:[.,]\d+)?(?![\w])|(?<![\w.,])\d+(?:[.,]\d+)?(?![\w])")
+
+
+def _value_anchor(
+    source: str,
+    span: tuple[int, int],
+    fact_key: str,
+    value: str | int | float,
+) -> tuple[int, int] | None:
+    """Position (début, fin) dans la page du nombre qui porte la valeur, ou de la citation (clé non numérique).
+
+    Surface : suivi de m², ni terrain ni annexe (ou terrain pour ``land_surface_m2``), d'après le repère le
+    plus proche dans la page. Pièces : suivi de « pièces » qui ne sont ni jointes, ni d'eau, ni demandées.
+    """
+    if fact_key not in {"surface_m2", "land_surface_m2", "rooms_count", "starting_price_eur"}:
+        return span
+    for match in _SOURCE_NUMBER_RE.finditer(source, span[0], span[1]):
+        parsed = _parse_number(match.group(0))
+        if parsed is None or not math.isclose(parsed, float(value), rel_tol=0, abs_tol=0.0001):
+            continue
+        if fact_key in {"surface_m2", "land_surface_m2"}:
+            if not _AREA_UNIT_RE.match(source, match.end()):
+                continue
+            if not _area_fits(fact_key, area_category(source, match.start(), match.end())):
+                continue
+        elif fact_key == "rooms_count" and not ROOMS_FOLLOW_RE.match(source, match.end()):
+            continue
+        return match.start(), match.end()
+    return None
 
 
 def _number_matches(value: float, text: str) -> list[re.Match[str]]:
@@ -1009,22 +892,15 @@ def _value_is_coherent(fact_key: str, value: str | int | float, evidence_excerpt
         return False
     if fact_key in {"surface_m2", "land_surface_m2"}:
         compact = _compacted(excerpt)
-        for match in _number_matches(float(value), excerpt):
-            if not _AREA_UNIT_RE.match(compact, match.end()):
-                continue
-            window = compact[max(0, match.start() - 80) : match.start()]
-            land = _LAND_CUE_RE.search(window) is not None
-            dwelling = _DWELLING_CUE_RE.search(window) is not None
-            if fact_key == "land_surface_m2":
-                if land:
-                    return True
-            elif not land or dwelling:
-                return True
-        return False
+        return any(
+            _AREA_UNIT_RE.match(compact, match.end())
+            and _area_fits(fact_key, area_category(compact, match.start(), match.end()))
+            for match in _number_matches(float(value), excerpt)
+        )
     if fact_key == "rooms_count":
         number = int(value)
         compact = _compacted(excerpt)
-        return any(_ROOMS_FOLLOW_RE.match(compact, match.end()) for match in _number_matches(float(number), excerpt))
+        return any(ROOMS_FOLLOW_RE.match(compact, match.end()) for match in _number_matches(float(number), excerpt))
     if fact_key == "occupancy_status":
         return _occupancy_is_coherent(str(value), excerpt)
     if fact_key == "visit_information":

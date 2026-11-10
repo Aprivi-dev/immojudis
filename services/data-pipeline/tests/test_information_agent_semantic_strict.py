@@ -163,13 +163,13 @@ def test_nominal_surface_of_the_sold_lot_on_a_multi_lot_sale() -> None:
 
 def test_the_whole_sentence_is_read_not_only_the_quote_chosen_by_the_model() -> None:
     text = "Selon le diagnostiqueur, la surface habitable est de 87 m²."
-    assert _outcome("surface_m2", 87, "la surface habitable est de 87 m²", text) == ("hedged_statement",)
+    assert _outcome("surface_m2", 87, "la surface habitable est de 87 m²", text) == ("reported_or_comparison",)
     # Un doute dans la phrase voisine ne compte pas.
     other = "La surface habitable est de 87 m². Le jardin serait clos de murs."
     assert _outcome("surface_m2", 87, "La surface habitable est de 87 m²", other) == NET
     # « env. » ne termine pas la phrase.
     abbreviation = "La surface habitable est d'env. 65 m² au total."
-    assert _outcome("surface_m2", 65, "65 m² au total", abbreviation) == ("short_citation", "hedged_statement")
+    assert _outcome("surface_m2", 65, "65 m² au total", abbreviation) == ("hedged_statement",)
     # Un point décimal ne termine pas la phrase.
     decimal = "D'après le métrage, la surface habitable est de 65.5 m² environ."
     assert "hedged_statement" in _outcome("surface_m2", 65.5, "la surface habitable est de 65.5 m²", decimal)
@@ -180,7 +180,7 @@ def test_the_whole_sentence_is_read_not_only_the_quote_chosen_by_the_model() -> 
     [
         ("Sous réserve du métrage, la surface habitable est de 87 m².", "pending_verification"),
         ("La surface habitable est de 87 m², à confirmer par le géomètre.", "pending_verification"),
-        ("Il pourrait s'agir d'une erreur, mais la surface habitable est de 87 m².", "hedged_statement"),
+        ("Il pourrait s'agir d'une erreur, mais la surface habitable est de 87 m².", "corrected_or_stale_value"),
         ("Anciennement de 90 m², la surface habitable est de 87 m².", "corrected_or_stale_value"),
         ("Après rectification, la surface habitable est de 87 m² (ramenée).", "corrected_or_stale_value"),
     ],
@@ -201,8 +201,10 @@ def test_a_distance_after_a_surface_is_not_a_range() -> None:
     assert _outcome("surface_m2", 65, "Appartement de 65 m² à 5 minutes de la gare.") == NET
 
 
-def test_short_quote_goes_to_review_with_its_reason() -> None:
+def test_short_statement_goes_to_review_but_a_short_quote_in_a_full_sentence_does_not() -> None:
+    # La longueur minimale porte sur la phrase, pas sur la citation choisie par le modèle.
     assert _outcome("surface_m2", 87, "87 m²", "Surface : 87 m².") == ("short_citation",)
+    assert _outcome("rooms_count", 3, "comprend 3 pièces", "L'appartement du deuxième étage comprend 3 pièces.") == NET
 
 
 def test_lot_rules_with_the_sale_context() -> None:
