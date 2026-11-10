@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,16 @@ ASBESTOS = "La toiture est en plaques de fibrociment contenant de l'amiante."
 OCCUPIED = "Le logement est occupé par sa propriétaire, Madame Claire DURAND, et sa famille."
 SALE_A = "aaaaaaaa-0000-4000-8000-000000000001"
 SALE_B = "bbbbbbbb-0000-4000-8000-000000000002"
+# The profiles of the module as shipped, before the fixture below adds a candidate.
+SHIPPED_PROFILES = dict(trial.PROFILES)
+# A candidate next to the production profile: another prompt, fewer points, a smaller output cap.
+NARROW = replace(trial.PRODUCTION_PROFILE, version="document_reading_v5", system_prompt="Consigne candidate.",
+                 max_points=14, max_output_tokens=3_000)
+
+
+@pytest.fixture(autouse=True)
+def _one_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(trial, "PROFILES", {"production": trial.PRODUCTION_PROFILE, "narrow": NARROW})
 
 
 def _manifest() -> list[dict[str, Any]]:
@@ -108,20 +119,22 @@ def test_trial_reads_each_sale_with_each_profile_and_never_writes() -> None:
     connection = FakeConnection({SALE_A: _row(SALE_A), SALE_B: _row(SALE_B)})
     client = FakeClient([_points(), _points(), _points(), RuntimeError("provider down")])
 
-    report = trial.run_trial(connection, client, options=trial.TrialOptions(sales=5, profiles=("v4", "v4_wide")))
+    report = trial.run_trial(connection, client, options=trial.TrialOptions(sales=5, profiles=("narrow", "production")))
 
     assert all(statement.lstrip().lower().startswith("select") for statement in connection.statements)
     assert connection.rollbacks >= 2 and client.calls_made == 4
     first, second = report.results
     assert (first.documents, first.pages, first.stored_version, first.stored_truncated) == (1, 2, "document_reading_v2", True)
-    v4 = first.profiles["v4"]
-    assert (v4.status, v4.raw_points, len(v4.points), v4.rejections) == ("completed", 2, 1, {"quote_not_found": 1})
-    assert v4.points[0]["title"] == "Amiante en toiture" and v4.pages_read == 2 and not v4.truncated
-    assert second.profiles["v4_wide"].status == "failed" and second.profiles["v4_wide"].error == "RuntimeError"
+    narrow = first.profiles["narrow"]
+    assert (narrow.status, narrow.raw_points, len(narrow.points), narrow.rejections) == (
+        "completed", 2, 1, {"quote_not_found": 1},
+    )
+    assert narrow.points[0]["title"] == "Amiante en toiture" and narrow.pages_read == 2 and not narrow.truncated
+    assert second.profiles["production"].status == "failed" and second.profiles["production"].error == "RuntimeError"
     # Each profile is sent with its own prompt and output cap.
     assert [(prompt[0], prompt[2]) for prompt in client.prompts[:2]] == [
-        (trial.CANDIDATE_PROFILES["v4"].system_prompt, 3_000),
-        (trial.CANDIDATE_PROFILES["v4_wide"].system_prompt, 4_000),
+        ("Consigne candidate.", 3_000),
+        (trial.PRODUCTION_PROFILE.system_prompt, 4_000),
     ]
     # The model reads filtered pages: no private name reaches it.
     assert all("DURAND" not in prompt[1] for prompt in client.prompts)
@@ -129,12 +142,12 @@ def test_trial_reads_each_sale_with_each_profile_and_never_writes() -> None:
     markdown = trial.render_report(report)
     assert "| `aaaaaaaa` | 1 / 2 | 1 (0) tronquée | 2 | 2 → 1 (0) | quote_not_found 1 |" in markdown
     assert "failed (RuntimeError)" in markdown
-    assert "- v4 : 2 lecture(s) sur 2 ; 2 points gardés sur 4 rendus" in markdown
+    assert "- narrow : 2 lecture(s) sur 2 ; 2 points gardés sur 4 rendus" in markdown
 
 
 def test_details_carry_facts_stored_and_trial_points_without_private_names() -> None:
     connection = FakeConnection({SALE_A: _row(SALE_A)})
-    report = trial.run_trial(connection, FakeClient([_points()]), options=trial.TrialOptions(profiles=("v4",)))
+    report = trial.run_trial(connection, FakeClient([_points()]), options=trial.TrialOptions(profiles=("narrow",)))
 
     lines = trial.render_details(report).splitlines()
     assert lines[0] == "::group::Détail des lectures" and lines[-1] == "::endgroup::"
@@ -144,34 +157,28 @@ def test_details_carry_facts_stored_and_trial_points_without_private_names() -> 
     assert detail["facts"]["physical_risks"] == ["risk_type: asbestos; description: Toiture amiantée"]
     assert len(detail["facts"]["investment_facts"]) == 2 and detail["facts"]["legal_risks"] == []
     assert detail["stored"]["version"] == "document_reading_v2" and len(detail["stored"]["points"]) == 1
-    assert detail["trials"]["v4"]["points"][0]["quote"] == ASBESTOS
+    assert detail["trials"]["narrow"]["points"][0]["quote"] == ASBESTOS
     # The dropped point is shown with its reason and what the model wrote.
-    assert detail["trials"]["v4"]["rejected"] == [{
+    assert detail["trials"]["narrow"]["rejected"] == [{
         "reason": "quote_not_found", "theme": "conditions_vente", "importance": "info", "title": "Inventé",
         "document": "D1", "page": "1", "quote": "Cette phrase ne figure dans aucune page du dossier.",
     }]
 
 
-def test_the_production_profile_is_read_as_a_control() -> None:
-    connection = FakeConnection({SALE_A: _row(SALE_A)})
-    client = FakeClient([_points(), _points()])
-
-    report = trial.run_trial(connection, client, options=trial.TrialOptions(profiles=("v3", "v4")))
-
-    assert list(report.results[0].profiles) == ["v3", "v4"]
-    assert client.prompts[0][0] == trial.PRODUCTION_PROFILE.system_prompt
-    assert trial.PROFILES["v3"] is trial.PRODUCTION_PROFILE and tuple(trial.PROFILES) == ("v3", "v4", "v4_wide")
+def test_the_production_profile_is_the_control_and_the_only_profile_without_a_candidate() -> None:
+    assert SHIPPED_PROFILES == {"production": trial.PRODUCTION_PROFILE}
+    assert trial.CANDIDATE_PROFILES == {}
 
 
 def test_sale_prefixes_select_the_sales_and_the_call_cap_stops_the_trial() -> None:
     connection = FakeConnection({SALE_A: _row(SALE_A), SALE_B: _row(SALE_B)})
     client = FakeClient([_points()])
-    options = trial.TrialOptions(sale_prefixes=("bbbbbbbb",), max_calls=1, profiles=("v4", "v4_wide"))
+    options = trial.TrialOptions(sale_prefixes=("bbbbbbbb",), max_calls=1, profiles=("narrow", "production"))
 
     report = trial.run_trial(connection, client, options=options)
 
     assert report.selected == [SALE_B] and client.calls_made == 1
-    assert list(report.results[0].profiles) == ["v4"]
+    assert list(report.results[0].profiles) == ["narrow"]
     assert report.stop_reason == "plafond de 1 appels atteint"
 
 
@@ -181,10 +188,10 @@ def test_trial_waits_for_the_hourly_budget_then_reads_the_same_sale_again() -> N
     client = FakeClient([hourly, _points()])
     waits: list[float] = []
 
-    report = trial.run_trial(connection, client, options=trial.TrialOptions(profiles=("v4",)),
+    report = trial.run_trial(connection, client, options=trial.TrialOptions(profiles=("narrow",)),
                              clock=lambda: 0.0, sleep=waits.append)
 
-    result = report.results[0].profiles["v4"]
+    result = report.results[0].profiles["narrow"]
     assert waits == [trial.HOURLY_WAIT_SECONDS] and result.budget_waits == 1
     assert result.status == "completed" and report.stop_reason is None
 
@@ -194,7 +201,7 @@ def test_a_daily_budget_refusal_stops_the_trial() -> None:
     client = FakeClient([PipelineBudgetExhausted("Daily LLM request budget exhausted")])
     waits: list[float] = []
 
-    report = trial.run_trial(connection, client, options=trial.TrialOptions(profiles=("v4",)),
+    report = trial.run_trial(connection, client, options=trial.TrialOptions(profiles=("narrow",)),
                              clock=lambda: 0.0, sleep=waits.append)
 
     assert waits == [] and len(report.results) == 1
@@ -206,8 +213,8 @@ def test_options_are_bounded() -> None:
                  ["--max-calls", "0"], ["--sales", "99"]):
         with pytest.raises(SystemExit):
             trial.parse_args(argv)
-    options = trial.parse_args(["--profiles", "v4", "--sale-prefixes", "af8649b4,75b07f3b"])
-    assert options.profiles == ("v4",) and options.sale_prefixes == ("af8649b4", "75b07f3b")
+    options = trial.parse_args(["--profiles", "production", "--sale-prefixes", "af8649b4,75b07f3b"])
+    assert options.profiles == ("production",) and options.sale_prefixes == ("af8649b4", "75b07f3b")
     assert trial.parse_args([]) == trial.TrialOptions()
 
 
