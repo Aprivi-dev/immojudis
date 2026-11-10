@@ -10,7 +10,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(51);
+select plan(52);
 
 -- Structure et droits -------------------------------------------------------------------------------------------
 select has_table('public', 'information_agent_auto_publication_settings', 'the settings table exists');
@@ -414,6 +414,11 @@ insert into public.information_agent_auto_publication_decisions (
   'simulation', 'auto_publication_v1', '88000000-5000-4000-8000-0000000000f2',
   '88000000-3000-4000-8000-0000000000f2', '88000000-1000-4000-8000-000000000002', 'surface_m2',
   'review', array['field_not_empty']
+);
+-- Une vente ne se supprime qu'avec son pont vers l'Outcome Graph (même préparation que le test 372).
+select lives_ok(
+  $$select * from public.bridge_auction_sales_to_outcome_graph()$$,
+  'the deletion fixture has the required Outcome Graph bridge'
 );
 select lives_ok(
   $$delete from public.auction_sales where id = '88000000-1000-4000-8000-000000000002'$$,

@@ -135,7 +135,9 @@ create table if not exists public.information_agent_auto_publication_decisions (
       'case_cap_reached'
     ]::text[]
   ),
-  constraint information_agent_auto_publication_decisions_outcome_check check (
+  -- Nom distinct de « <table>_outcome_check », attribué d'office à la contrainte de la colonne outcome, et
+  -- d'au plus 63 caractères (au-delà, PostgreSQL le tronque).
+  constraint information_agent_auto_publication_decisions_outcome_reasons check (
     (outcome = 'would_publish') = (cardinality(reasons) = 0)
   ),
   -- Liste fermée des champs éligibles : même liste que AUTO_PUBLICATION_ELIGIBLE_FIELDS (test de concordance).

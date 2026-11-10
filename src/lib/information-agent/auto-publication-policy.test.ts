@@ -622,6 +622,40 @@ describe("plafonds, appliqués dès la simulation", () => {
   });
 });
 
+describe("noms des contraintes de la migration 20261115100000", () => {
+  it("aucun nom explicite ne dépasse 63 caractères ni ne reprend le nom donné d'office à une contrainte de colonne", () => {
+    const sql = readFileSync(
+      join(
+        process.cwd(),
+        "supabase",
+        "migrations",
+        "20261115100000_information_agent_auto_publication_simulation.sql",
+      ),
+      "utf8",
+    ).replace(/--[^\n]*/g, "");
+    const tables = [
+      ...sql.matchAll(/create table if not exists public\.([a-z0-9_]+) \(([\s\S]*?)\n\);/g),
+    ];
+    expect(tables.length).toBe(3);
+    for (const [, table, body] of tables) {
+      // PostgreSQL nomme d'office la contrainte d'une colonne « <table>_<colonne>_check ».
+      const automatic = [...body!.matchAll(/^\s+([a-z0-9_]+) [^\n]*?\bcheck \(/gm)]
+        .filter(([line]) => !/^\s+constraint /.test(line))
+        .map(([, column]) => `${table}_${column}_check`);
+      const explicit = [...body!.matchAll(/constraint ([a-z0-9_]+) check/g)].map(
+        ([, name]) => name!,
+      );
+      expect(explicit.length).toBeGreaterThan(0);
+      for (const name of explicit) {
+        expect(name.length).toBeLessThanOrEqual(63);
+        expect(automatic).not.toContain(name);
+      }
+    }
+    const added = [...sql.matchAll(/add constraint ([a-z0-9_]+)/g)].map(([, name]) => name!);
+    for (const name of added) expect(name.length).toBeLessThanOrEqual(63);
+  });
+});
+
 describe("verrous figés", () => {
   it("la liste fermée des champs éligibles est surface, terrain et nombre de pièces", () => {
     expect([...AUTO_PUBLICATION_ELIGIBLE_FIELDS]).toEqual([
