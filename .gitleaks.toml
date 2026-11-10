@@ -14,6 +14,8 @@ paths = [
 '''(?:^|/)e2e/admin-information-agent\.spec\.ts''',
 '''(?:^|/)services/data-pipeline/src/information_agent_semantic\.py''',
 '''(?:^|/)services/data-pipeline/tests/test_fact_claims\.py''',
+'''(?:^|/)src/components/sale-detail/ListingCharacteristics\.test\.tsx''',
+'''(?:^|/)src/components/sale-detail/ListingCharacteristics\.tsx''',
 '''(?:^|/)src/components/sale-detail/SaleListing\.test\.tsx''',
 '''(?:^|/)src/lib/auction-fact-claims\.test\.ts''',
 '''(?:^|/)src/lib/fact-reliability\.test\.ts''',
@@ -24,9 +26,12 @@ paths = [
 '''(?:^|/)supabase/migrations/20260825131944_analyze_information_agent_evidence\.sql''',
 '''(?:^|/)supabase/migrations/20260920144219_deterministic_information_agent_llm_request_guards\.sql''',
 '''(?:^|/)supabase/migrations/20260928200000_information_agent_fact_claim_bridge\.sql''',
+'''(?:^|/)supabase/migrations/20261114100000_information_agent_publication_core\.sql''',
 '''(?:^|/)supabase/tests/370_auction_fact_claims\.sql''',
 '''(?:^|/)supabase/tests/383_ai_review_projection_guard\.sql''',
 '''(?:^|/)supabase/tests/872_catalogue_quality_sentinel\.sql''',
+'''(?:^|/)supabase/tests/878_information_agent_publication_core\.sql''',
+'''(?:^|/)supabase/tests/879_public_sale_lawyer_fact_sources\.sql''',
 ]
 regexes = [
 '''^property\.(?:surface_m2|carrez_surface_m2|land_surface_m2)$''',
