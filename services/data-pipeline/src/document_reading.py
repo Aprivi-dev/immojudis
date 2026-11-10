@@ -375,6 +375,32 @@ def select_pages(documents: Sequence[ReadingDocument], budget: int = MAX_PROMPT_
     return {index: sorted(pages) for index, pages in selected.items()}, True
 
 
+@dataclass(frozen=True)
+class ReadingProfile:
+    """What one version of the reading sends to the model and accepts back.
+
+    Production reads with :data:`PRODUCTION_PROFILE`. A candidate version (``document_reading_candidate``)
+    is tried read-only against stored readings (``scripts/document_reading_trial.py``) before it replaces it.
+    """
+
+    version: str
+    system_prompt: str
+    max_points: int
+    prompt_chars: int
+    max_output_tokens: int
+    select_pages: Callable[[Sequence[ReadingDocument], int], tuple[dict[int, list[int]], bool]]
+
+
+PRODUCTION_PROFILE = ReadingProfile(
+    version=DOCUMENT_READING_VERSION,
+    system_prompt=SYSTEM_PROMPT,
+    max_points=MAX_POINTS,
+    prompt_chars=MAX_PROMPT_CHARS,
+    max_output_tokens=READING_MAX_OUTPUT_TOKENS,
+    select_pages=select_pages,
+)
+
+
 def _prompt_attribute(value: str, maximum: int) -> str:
     """Third-party label or type, safe inside a quoted attribute of our delimiters.
 
@@ -385,8 +411,12 @@ def _prompt_attribute(value: str, maximum: int) -> str:
     return text[:maximum].rstrip()
 
 
-def build_reading_prompt(documents: Sequence[ReadingDocument], sold_lot: SoldLot | None = None) -> tuple[str, bool]:
-    selected, truncated = select_pages(documents)
+def build_reading_prompt(
+    documents: Sequence[ReadingDocument],
+    sold_lot: SoldLot | None = None,
+    profile: ReadingProfile = PRODUCTION_PROFILE,
+) -> tuple[str, bool]:
+    selected, truncated = profile.select_pages(documents, profile.prompt_chars)
     sections: list[str] = []
     for doc in documents:
         numbers = selected.get(doc.index)
@@ -524,7 +554,12 @@ def occupancy_text_contradicts_quote(title: str | None, explanation: str | None,
 
 
 def validate_reading_points(
-    raw_points: object, documents: Sequence[ReadingDocument], *, sold_lot: SoldLot | None = None
+    raw_points: object,
+    documents: Sequence[ReadingDocument],
+    *,
+    sold_lot: SoldLot | None = None,
+    max_points: int = MAX_POINTS,
+    rejections: dict[str, int] | None = None,
 ) -> list[dict[str, object]]:
     """Keep only well-formed points whose quote is found in the cited document.
 
@@ -535,16 +570,26 @@ def validate_reading_points(
     With a designated lot (multi-lot listing), a point the model places on another lot, or whose
     quote names another lot of the sale and not this one, is dropped. Without one, the « lot » answer
     is ignored: a one-lot sale or an uncertain lot reads as before v3.
+
+    ``rejections``, when given, counts the dropped points by reason (a diagnostic for the trials).
     """
+
+    def reject(reason: str) -> None:
+        if rejections is not None:
+            rejections[reason] = rejections.get(reason, 0) + 1
+
     if not isinstance(raw_points, list):
         return []
     by_ref = {doc.ref: doc for doc in documents}
     points: list[dict[str, object]] = []
     seen: set[tuple[str, int, str]] = set()
-    for raw in raw_points:
-        if len(points) >= MAX_POINTS:
+    for position, raw in enumerate(raw_points):
+        if len(points) >= max_points:
+            if rejections is not None:
+                rejections["over_cap"] = rejections.get("over_cap", 0) + len(raw_points) - position
             break
         if not isinstance(raw, Mapping):
+            reject("malformed")
             continue
         theme = str(raw.get("theme") or "").strip()
         importance = str(raw.get("importance") or "info").strip()
@@ -553,10 +598,13 @@ def validate_reading_points(
         quote = raw.get("quote")
         doc = by_ref.get(str(raw.get("document") or "").strip().upper())
         if theme not in THEMES or not title or not isinstance(quote, str) or doc is None:
+            reject("malformed")
             continue
         if sold_lot is not None and str(raw.get("lot") or "").strip() == "autre_lot":
+            reject("other_lot")
             continue
         if len(quote) > MAX_QUOTE_CHARS * 2:
+            reject("quote_too_long")
             continue
         try:
             cited_page = int(raw.get("page") or 0)
@@ -574,14 +622,18 @@ def validate_reading_points(
                 found_page = number
                 break
         if not found_page or not excerpt:
+            reject("quote_not_found")
             continue
         if sold_lot is not None and names_another_lot(excerpt, sold_lot):
+            reject("other_lot")
             continue
         explanation = _checked_explanation(explanation, doc.pages[found_page])
         if theme == "occupation" and occupancy_text_contradicts_quote(title, explanation, excerpt):
+            reject("occupation_contradiction")
             continue
         key = (doc.ref, found_page, excerpt.casefold()[:80])
         if key in seen:
+            reject("duplicate")
             continue
         seen.add(key)
         point: dict[str, object] = {
@@ -644,18 +696,20 @@ def read_sale_documents(
     generate_json: Callable[[str, str], Mapping[str, object]] | None,
     model: str | None = None,
     sold_lot: SoldLot | None = None,
+    profile: ReadingProfile = PRODUCTION_PROFILE,
+    rejections: dict[str, int] | None = None,
 ) -> ReadingResult:
     if not documents:
         return ReadingResult("no_text", model=model)
     if generate_json is None:
         return ReadingResult("unavailable", error_code="READING_PROVIDER_NOT_CONFIGURED", model=model)
     documents = filtered_for_model(documents)
-    prompt, truncated = build_reading_prompt(documents, sold_lot)
+    prompt, truncated = build_reading_prompt(documents, sold_lot, profile)
     try:
         from src.llm_task_deadline import llm_task_deadline_scope
 
         with llm_task_deadline_scope(time.monotonic() + READING_TIMEOUT_SECONDS):
-            payload = generate_json(SYSTEM_PROMPT, prompt)
+            payload = generate_json(profile.system_prompt, prompt)
     except Exception as exc:  # provider, budget or transport failure: retried on a later run
         LOGGER.warning("Document reading failed: %s", type(exc).__name__)
         return ReadingResult(
@@ -667,7 +721,9 @@ def read_sale_documents(
         )
     if not isinstance(payload, Mapping):
         return ReadingResult("failed", input_truncated=truncated, error_code="READING_OUTPUT_INVALID", model=model)
-    points = validate_reading_points(payload.get("points"), documents, sold_lot=sold_lot)
+    points = validate_reading_points(
+        payload.get("points"), documents, sold_lot=sold_lot, max_points=profile.max_points, rejections=rejections
+    )
     return ReadingResult("completed", points, input_truncated=truncated, model=model)
 
 
