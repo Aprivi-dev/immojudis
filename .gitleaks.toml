@@ -13,6 +13,7 @@ paths = [
 '''(?:^|/)docs/audits/information-agent-mail-2026-10-04/release\.patch''',
 '''(?:^|/)e2e/admin-information-agent\.spec\.ts''',
 '''(?:^|/)services/data-pipeline/src/information_agent_semantic\.py''',
+'''(?:^|/)services/data-pipeline/tests/fixtures/information_agent_extraction_attack\.json''',
 '''(?:^|/)services/data-pipeline/tests/test_fact_claims\.py''',
 '''(?:^|/)src/components/sale-detail/ListingCharacteristics\.test\.tsx''',
 '''(?:^|/)src/components/sale-detail/ListingCharacteristics\.tsx''',
