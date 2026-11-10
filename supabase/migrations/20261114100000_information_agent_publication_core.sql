@@ -11,8 +11,10 @@ set local lock_timeout = '5s';
 --      * une ligne au journal public.information_agent_fact_publications, dans la même transaction :
 --        valeurs précédentes des colonnes modifiées, leur provenance précédente, nouvelles valeurs,
 --        auteur réel (admin aujourd'hui), version de politique (nulle pour admin), date de réception ;
---      * publication_mode (« manual » aujourd'hui) et received_at dans
---        raw_payload.information_agent_verified_facts[clé].
+--      * publication_mode (« manual » aujourd'hui), received_at et recipient_kind (destinataire du
+--        dossier : source_lawyer, source_contact ou manual_professional) dans
+--        raw_payload.information_agent_verified_facts[clé] et au journal : le dossier peut être purgé,
+--        la nature du destinataire doit rester connue pour attribuer la valeur.
 --    Le noyau n'est exécutable par aucun rôle de l'API (ni anon, ni authenticated, ni service_role) :
 --    seule la RPC administrateur, SECURITY DEFINER, l'appelle, avec 'admin'. Aucun chemin n'écrit
 --    'auto' : la valeur est prévue par la contrainte du journal pour une étape ultérieure.
@@ -25,12 +27,27 @@ set local lock_timeout = '5s';
 -- 4. Projection publique minimale de la source « avocat poursuivant » (proposition 5) :
 --    public.get_public_sale_lawyer_fact_sources(vente) rend, pour une vente du catalogue public, la clé,
 --    la date de réception (jour, heure de Paris) et le mode de publication des valeurs transmises par
---    l'avocat poursuivant ET encore affichées telles quelles. Jamais la valeur, l'extrait, l'expéditeur,
+--    l'avocat poursuivant ET encore affichées telles quelles. Seulement quand le dossier visait l'avocat
+--    poursuivant (recipient_kind = 'source_lawyer') : une réponse d'un greffe, d'un notaire ou d'un
+--    autre professionnel n'est jamais attribuée à l'avocat. Jamais la valeur, l'extrait, l'expéditeur,
 --    l'objet ni l'identifiant du fait. raw_payload reste caché ; aucune vue publique ne change.
 --
 -- Aucune donnée existante n'est réécrite : les faits acceptés avant cette migration n'ont ni ligne de
--- journal ni publication_mode ; la projection publique les traite comme « manual » et retrouve leur date
--- de réception par le message, tant qu'il est conservé.
+-- journal, ni publication_mode, ni recipient_kind ; la projection publique les traite comme « manual »,
+-- lit le destinataire et la date de réception dans le dossier et le message tant qu'ils sont conservés,
+-- et ne rend rien sinon (échec fermé).
+--
+-- Retour arrière de cette migration (aucune donnée à reprendre) : dans une transaction,
+--   1. recréer public.review_information_agent_fact_candidate dans sa définition de 20260920144219
+--      (lignes 10 à 286), en remplaçant « on conflict (document_url) » par
+--      « on conflict (source_url, document_url) » (comme l'a fait 20261003091424) ;
+--   2. recréer app_private.bridge_accepted_information_agent_fact_claim dans sa définition de
+--      20260928200000 ;
+--   3. supprimer public.get_public_sale_lawyer_fact_sources(uuid),
+--      app_private.get_public_sale_lawyer_fact_sources(uuid) et
+--      app_private.apply_information_agent_fact(uuid, text, uuid, text) ;
+--   4. garder la table public.information_agent_fact_publications (trace des publications faites).
+-- Déployer d'abord le code de l'application qui ne lit plus la projection (il tolère son absence).
 
 -- Journal des publications ---------------------------------------------------------------------------------------
 -- Une ligne par publication. Aucune adresse email, aucun extrait de message, aucun texte libre issu du
@@ -56,6 +73,10 @@ create table if not exists public.information_agent_fact_publications (
     policy_version is null or char_length(btrim(policy_version)) between 1 and 64
   ),
   response_received_at timestamptz,
+  -- Nature du destinataire du dossier au moment de la publication (le dossier peut être purgé).
+  recipient_kind text not null check (
+    recipient_kind in ('source_lawyer', 'source_contact', 'manual_professional')
+  ),
   published_at timestamptz not null default statement_timestamp(),
   constraint information_agent_fact_publications_actor_check check (
     (actor_kind = 'admin' and policy_version is null)
@@ -67,6 +88,10 @@ create index if not exists information_agent_fact_publications_sale_idx
   on public.information_agent_fact_publications (sale_id, published_at desc);
 create index if not exists information_agent_fact_publications_fact_idx
   on public.information_agent_fact_publications (fact_id, published_at desc);
+-- Suppression d'un compte administrateur : actor_id passe à nul (on delete set null), sans parcours.
+create index if not exists information_agent_fact_publications_actor_idx
+  on public.information_agent_fact_publications (actor_id)
+  where actor_id is not null;
 
 alter table public.information_agent_fact_publications enable row level security;
 revoke all on table public.information_agent_fact_publications
@@ -105,6 +130,7 @@ declare
   v_publication_mode text;
   v_policy_version text := nullif(btrim(p_policy_version), '');
   v_received_at timestamptz;
+  v_recipient_kind text;
   v_previous_fact jsonb;
   v_previous_values jsonb := '{}'::jsonb;
   v_previous_provenance jsonb := '{}'::jsonb;
@@ -179,6 +205,14 @@ begin
   into v_received_at
   from public.information_agent_messages message
   where message.id = v_fact.message_id;
+
+  -- Destinataire du dossier : seul « source_lawyer » est l'avocat poursuivant.
+  select case_row.recipient_kind into v_recipient_kind
+  from public.information_agent_cases case_row
+  where case_row.id = v_fact.case_id;
+  if v_recipient_kind is null then
+    raise exception using errcode = 'P0002', message = 'Information agent case not found.';
+  end if;
 
   select * into v_sale
   from public.auction_sales sale where sale.id = v_fact.sale_id
@@ -327,15 +361,11 @@ begin
     select extraction.document_kind into v_document_kind
     from public.information_agent_evidence_extractions extraction
     where extraction.asset_id = v_fact.evidence_asset_id;
-    -- Ligne de pièce remplacée, s'il y en avait une à la même adresse (colonnes que l'upsert modifie).
+    -- Pièce remplacée, s'il y en avait une à la même adresse : son type et son chemin seulement (ni nom
+    -- de fichier d'origine, ni contenu brut).
     select jsonb_build_object('auction_documents', jsonb_build_object(
-      'label', document.label,
       'document_type', document.document_type,
-      'file_path', document.file_path,
-      'sha256', document.sha256,
-      'download_status', document.download_status,
-      'extraction_status', document.extraction_status,
-      'raw_payload', document.raw_payload
+      'file_path', document.file_path
     ))
     into v_previous_values
     from public.auction_documents document
@@ -399,7 +429,8 @@ begin
                 'reviewed_at', case when p_actor_kind = 'admin' then v_now end,
                 'source', 'professional_email',
                 'publication_mode', v_publication_mode,
-                'received_at', v_received_at
+                'received_at', v_received_at,
+                'recipient_kind', v_recipient_kind
               )
             )
         )
@@ -446,10 +477,10 @@ begin
 
   insert into public.information_agent_fact_publications (
     fact_id, sale_id, fact_key, previous_values, previous_provenance, new_values,
-    actor_kind, actor_id, policy_version, response_received_at, published_at
+    actor_kind, actor_id, policy_version, response_received_at, recipient_kind, published_at
   ) values (
     v_fact.id, v_fact.sale_id, v_fact.fact_key, v_previous_values, v_previous_provenance,
-    v_new_values, p_actor_kind, p_actor_id, v_policy_version, v_received_at, v_now
+    v_new_values, p_actor_kind, p_actor_id, v_policy_version, v_received_at, v_recipient_kind, v_now
   );
 
   return jsonb_build_object(
@@ -802,6 +833,7 @@ as $function$
     select
       s.id as sale_id,
       s.app_surface_m2,
+      s.surface_source,
       s.land_surface_m2,
       s.rooms_count,
       s.occupancy_status,
@@ -811,6 +843,7 @@ as $function$
       entry.key as fact_key,
       nullif(btrim(entry.value #>> '{value,value}'), '') as value_text,
       coalesce(entry.value->>'publication_mode', 'manual') as publication_mode,
+      entry.value->>'recipient_kind' as payload_recipient_kind,
       case
         when entry.value->>'received_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}'
           then (entry.value->>'received_at')::timestamptz
@@ -842,13 +875,15 @@ as $function$
         entries.payload_received_at,
         message.received_at,
         case when message.direction = 'inbound' then message.created_at end
-      ) as received_at
+      ) as received_at,
+      coalesce(entries.payload_recipient_kind, case_row.recipient_kind) as recipient_kind
     from entries
     left join public.information_agent_fact_candidates fact
       on fact.id = entries.fact_id
       and fact.sale_id = entries.sale_id
       and fact.status = 'accepted'
     left join public.information_agent_messages message on message.id = fact.message_id
+    left join public.information_agent_cases case_row on case_row.id = fact.case_id
   )
   select
     dated.fact_key,
@@ -856,11 +891,16 @@ as $function$
     dated.publication_mode
   from dated
   where dated.received_at is not null
+    -- Seule une réponse à un dossier adressé à l'avocat poursuivant lui est attribuée ; sans cette
+    -- information (dossier purgé d'un fait antérieur à la migration), aucune mention.
+    and dated.recipient_kind = 'source_lawyer'
     and dated.publication_mode in ('manual', 'auto')
     and dated.value_text is not null
     and case dated.fact_key
       when 'surface_m2' then
-        dated.app_surface_m2 = case
+        -- La même valeur réécrite depuis l'annonce change la provenance : plus de mention.
+        dated.surface_source = 'information_agent_verified'
+        and dated.app_surface_m2 = case
           when dated.value_text ~ '^[0-9]{1,9}([.][0-9]{1,4})?$' then dated.value_text::numeric
         end
       when 'land_surface_m2' then

@@ -823,3 +823,38 @@ $function$;
     expect(result.stderr).toContain("signup_trial_ends_at reads user metadata");
   });
 });
+
+describe("invariants de sécurité : journal et noyau de publication de l'agent d'information", () => {
+  it("refuse une écriture accordée au rôle de service sur le journal", () => {
+    const result = runInvariants({
+      "99990101000000_publication_journal_insert.sql":
+        "grant insert, update on table public.information_agent_fact_publications to service_role;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "grants more than SELECT to service_role on public.information_agent_fact_publications",
+    );
+  });
+
+  it("refuse une politique qui ouvrirait le journal", () => {
+    const result = runInvariants({
+      "99990101000000_publication_journal_policy.sql":
+        "create policy journal_read on public.information_agent_fact_publications for select to authenticated using (true);",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "opens public.information_agent_fact_publications with a policy",
+    );
+  });
+
+  it("refuse un noyau de publication exécutable par un rôle de l'API", () => {
+    const result = runInvariants({
+      "99990101000000_publication_core_grant.sql":
+        "grant execute on function app_private.apply_information_agent_fact(uuid, text, uuid, text) to service_role;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "grants app_private.apply_information_agent_fact to an API role",
+    );
+  });
+});
