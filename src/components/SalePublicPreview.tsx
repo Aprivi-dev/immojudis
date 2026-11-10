@@ -23,6 +23,8 @@ import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
+import { LawyerFactSourceNote } from "@/components/sale-detail/LawyerFactSourceNote";
+import { lawyerFactSource } from "@/lib/lawyer-fact-sources";
 import { isPastSaleDay } from "@/lib/sale-countdown";
 import { formatPrice, formatPricePerM2 } from "@/lib/format";
 import {
@@ -406,12 +408,20 @@ export function SalePublicPreview({
     <dl className={styles.facts}>
       <div className={styles.fact}>
         <dt>Type de bien</dt>
-        <dd>{seoPropertyLabel(preview.property_type)}</dd>
+        <dd>
+          {seoPropertyLabel(preview.property_type)}
+          {preview.property_type ? (
+            <LawyerFactSourceNote source={lawyerFactSource(preview, "property_type")} />
+          ) : null}
+        </dd>
       </div>
       {surface ? (
         <div className={styles.fact}>
           <dt>Surface</dt>
-          <dd className={styles.num}>{surface}</dd>
+          <dd className={styles.num}>
+            {surface}
+            <LawyerFactSourceNote source={lawyerFactSource(preview, "surface_m2")} />
+          </dd>
         </div>
       ) : null}
       {rooms ? (
@@ -420,6 +430,7 @@ export function SalePublicPreview({
           <dd className={styles.num}>
             {rooms}
             {bedrooms ? ` · ${bedrooms} chambre${bedrooms > 1 ? "s" : ""}` : ""}
+            <LawyerFactSourceNote source={lawyerFactSource(preview, "rooms_count")} />
           </dd>
         </div>
       ) : null}
@@ -446,6 +457,7 @@ export function SalePublicPreview({
             </>
           ) : null}
         </span>
+        <LawyerFactSourceNote source={lawyerFactSource(preview, "sale_date")} />
         {pastDate ? (
           <span className={styles.pastDate} data-testid="past-sale-date">
             Date de vente passée
@@ -556,6 +568,9 @@ export function SalePublicPreview({
         <p className={styles.price}>
           {price ? formatPrice(preview.starting_price_eur) : "À confirmer"}
         </p>
+        {price ? (
+          <LawyerFactSourceNote source={lawyerFactSource(preview, "starting_price_eur")} />
+        ) : null}
         <p className={styles.priceNote}>
           {state
             ? "Vérifiez les conditions et frais dans l'annonce officielle"

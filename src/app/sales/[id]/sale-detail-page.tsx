@@ -12,6 +12,8 @@ import { hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
+import { withLawyerFactSources } from "@/lib/lawyer-fact-sources";
+import { getSaleLawyerFactSources } from "@/lib/sale-lawyer-fact-sources.client";
 import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
@@ -60,14 +62,20 @@ async function loadSaleDetailRouteData(
   id: string,
   options: { discovery?: boolean; unlocked?: boolean; authenticated: boolean },
 ): Promise<SaleDetailRouteData> {
+  // Valeurs transmises par l'avocat poursuivant : lues en même temps que la fiche, jamais en échec.
+  const lawyerSources = getSaleLawyerFactSources(id);
   let sale = options.authenticated
     ? await getSaleById(id, { discovery: options.discovery, unlocked: options.unlocked })
     : null;
   // A sale that leaves the catalogue between the unlock check and this read is no longer served
   // by the full view: fall back to the free one rather than to a missing page.
   if (!sale && options.unlocked) sale = await getSaleById(id, { discovery: true });
-  if (sale) return { sale, preview: null };
-  return { sale: null, preview: await getSalePreviewById(id) };
+  if (sale) return { sale: withLawyerFactSources(sale, await lawyerSources), preview: null };
+  const preview = await getSalePreviewById(id);
+  return {
+    sale: null,
+    preview: preview && withLawyerFactSources(preview, await lawyerSources),
+  };
 }
 
 type SaleDetailPageProps = {

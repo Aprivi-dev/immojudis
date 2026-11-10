@@ -4,6 +4,7 @@ import { fetchPublicSaleSummary, SALE_ID_PATTERN } from "@/lib/public-sale-summa
 import { withPhotoMirror, type PhotoMirrorClient } from "@/lib/photo-mirror";
 import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { fetchLawyerFactSources, withLawyerFactSources } from "@/lib/lawyer-fact-sources";
 import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
 import type { AuctionSale } from "@/lib/types";
 
@@ -104,11 +105,15 @@ async function readPublicSale(
 ): Promise<PublicSaleLookup> {
   // Le contenu d'une source retirée (photo d'une vente fusionnée) ne sort pas, y compris côté serveur.
   await loadWithdrawnSources(client);
-  const summary = await fetchPublicSaleSummary(client, id, { withIndexability: true });
+  // Valeurs transmises par l'avocat poursuivant : lues avec le résumé (la fiche seule les lit).
+  const [summary, lawyerSources] = await Promise.all([
+    fetchPublicSaleSummary(client, id, { withIndexability: true }),
+    fetchLawyerFactSources(client, id),
+  ]);
   if (summary.kind === "found") {
     return {
       status: "found",
-      sale: summary.sale,
+      sale: withLawyerFactSources(summary.sale, lawyerSources),
       ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
     };
   }

@@ -81,6 +81,45 @@ describe("public sale lookup", () => {
     expect(result.status).toBe("found");
   });
 
+  it("joins the values sent by the prosecuting lawyer, read alongside the summary", async () => {
+    const supabase = {
+      rpc: vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_summary"
+            ? { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null }
+            : fn === "get_public_sale_lawyer_fact_sources"
+              ? {
+                  data: [
+                    {
+                      fact_key: "starting_price_eur",
+                      received_on: "2026-11-12",
+                      publication_mode: "manual",
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: null, error: { code: "PGRST202" } },
+        ),
+      ),
+      from: vi.fn(),
+    };
+    mocks.client.mockReturnValue(supabase);
+    const result = await lookupPublicSale(ID);
+    if (result.status !== "found") throw new Error("expected a found sale");
+    expect(result.sale.lawyer_fact_sources).toEqual([
+      { key: "starting_price_eur", receivedOn: "2026-11-12", mode: "manual" },
+    ]);
+
+    // Without a value from the lawyer (or with the function missing), the sale is unchanged.
+    mocks.store.clear();
+    mocks.client.mockReturnValue(
+      client({ rpc: { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null } }),
+    );
+    const plain = await lookupPublicSale(ID);
+    if (plain.status !== "found") throw new Error("expected a found sale");
+    expect(plain.sale).not.toHaveProperty("lawyer_fact_sources");
+  });
+
   it("answers missing for an unknown sale and for a malformed identifier", async () => {
     mocks.client.mockReturnValue(client({ rpc: { data: [], error: null } }));
     expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });

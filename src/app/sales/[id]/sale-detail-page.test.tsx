@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   authErrorKind: null as "expired" | "unavailable" | null,
   retry: vi.fn(),
   hint: false,
+  lawyerSources: [] as Array<{ key: string; receivedOn: string; mode: string }>,
 }));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
@@ -37,6 +38,9 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleUnlockStatus: mocks.unlockStatus,
 }));
 vi.mock("@/lib/queries", () => ({ getSaleById: mocks.sale, getSalePreviewById: mocks.preview }));
+vi.mock("@/lib/sale-lawyer-fact-sources.client", () => ({
+  getSaleLawyerFactSources: async () => mocks.lawyerSources,
+}));
 vi.mock("@/components/DiscoverySaleDetailView", () => ({
   DiscoverySaleDetailView: ({
     unlockStatus,
@@ -61,7 +65,7 @@ vi.mock("@/components/DiscoverySaleDetailView", () => ({
 }));
 vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   UnlockedSaleDetailView: () => <div>Vente débloquée</div>,
-  AnalysisSaleDetailView: () => (
+  AnalysisSaleDetailView: ({ sale }: { sale: { lawyer_fact_sources?: unknown[] } }) => (
     <div
       id="proofs"
       ref={(node) => {
@@ -69,6 +73,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
       }}
     >
       Analyse premium
+      <span data-testid="lawyer-sources">{sale.lawyer_fact_sources?.length ?? 0}</span>
     </div>
   ),
 }));
@@ -99,6 +104,7 @@ afterEach(() => {
   mocks.authError = null;
   mocks.authErrorKind = null;
   mocks.hint = false;
+  mocks.lawyerSources = [];
 });
 describe("listing access resolution", () => {
   it("restores a deep-link anchor after asynchronous access and listing resolution", async () => {
@@ -136,6 +142,21 @@ describe("listing access resolution", () => {
     view.rerender(content());
     await screen.findByText("Analyse premium");
     expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
+  });
+
+  it("joins the values sent by the prosecuting lawyer to the listing it reads", async () => {
+    mocks.authenticated = true;
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+    mocks.lawyerSources = [{ key: "surface_m2", receivedOn: "2026-11-12", mode: "manual" }];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Analyse premium");
+    expect(screen.getByTestId("lawyer-sources").textContent).toBe("1");
   });
 
   it("does not reuse a preview belonging to another listing", async () => {

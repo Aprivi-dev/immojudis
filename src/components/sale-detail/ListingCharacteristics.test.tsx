@@ -153,4 +153,39 @@ describe("ListingCharacteristics", () => {
     const { container } = render(<ListingCharacteristics sale={sale(null)} />);
     expect(container.innerHTML).toBe("");
   });
+
+  it("names each value sent by the prosecuting lawyer, only when the value is shown", () => {
+    render(
+      <ListingCharacteristics
+        sale={
+          {
+            ...sale({ caracteristiques_bien: BLOCK }),
+            land_surface_m2: 16246,
+            rooms_count: null,
+            lawyer_fact_sources: [
+              { key: "land_surface_m2", receivedOn: "2026-11-12", mode: "manual" },
+              { key: "rooms_count", receivedOn: "2026-11-12", mode: "manual" },
+            ],
+          } as AuctionSale
+        }
+      />,
+    );
+    const list = screen.getByRole("list", {
+      name: "Informations transmises par l’avocat poursuivant",
+    });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Terrain : Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    ]);
+  });
+
+  it("says nothing about the lawyer without a transmitted value", () => {
+    render(<ListingCharacteristics sale={sale({ caracteristiques_bien: BLOCK })} />);
+    expect(
+      screen.queryByRole("list", { name: "Informations transmises par l’avocat poursuivant" }),
+    ).toBeNull();
+  });
 });

@@ -56,6 +56,8 @@ import type { AuctionSale } from "@/lib/types";
 import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import styles from "./SaleListing.module.css";
 import { PublicListingFactSource } from "./ListingDataCoverage";
+import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
+import { lawyerFactSource } from "@/lib/lawyer-fact-sources";
 import {
   getFactPresentation,
   getFactReliabilityForDisplay,
@@ -243,9 +245,32 @@ export function ListingOverview({
   const publicDateFact = dateReview.blocked ? null : publicFactsById.get("sale_date");
   const occupancyMissing =
     getFactPresentation(sale, "occupancy_status", undefined, factReliabilities).kind === "missing";
+  // Origine « avocat poursuivant » : seulement à côté d'une valeur affichée telle qu'elle a été transmise
+  // (ni valeur en cours de vérification, ni date tirée des modalités de vente au lieu de la date de vente).
+  const lawyerPrice =
+    price != null && !priceReview.blocked ? lawyerFactSource(sale, "starting_price_eur") : null;
+  const lawyerDate =
+    hasVisibleEvent && eventDate === sale.sale_date ? lawyerFactSource(sale, "sale_date") : null;
+  const lawyerOccupancy =
+    !occupancyMissing && !occupancyReview.blocked
+      ? lawyerFactSource(sale, "occupancy_status")
+      : null;
   return (
     <section className={styles.overview} aria-label="Synthèse de la vente">
       {lead}
+      {lead ? (
+        // Avec le panneau d'analyse, la mise à prix est dans ce panneau : la mention la nomme.
+        <LawyerFactSourceNote
+          source={lawyerPrice}
+          label={
+            state
+              ? "Prix publié"
+              : ceilingWording?.byOffers
+                ? "Première offre possible"
+                : "Mise à prix"
+          }
+        />
+      ) : null}
       {!lead && (notary || state) ? (
         <div className={styles.procedureLead}>
           <p className={styles.procedureLeadEyebrow}>
@@ -289,6 +314,7 @@ export function ListingOverview({
               {price == null ? "Non renseigné" : formatPrice(price)}
             </AiReviewField>
           </p>
+          <LawyerFactSourceNote source={lawyerPrice} />
           <p className={styles.muted}>
             {state
               ? "Conditions et frais à vérifier dans l'annonce officielle"
@@ -322,6 +348,7 @@ export function ListingOverview({
                 </AiReviewField>
                 {publicDateFact ? <PublicListingFactSource fact={publicDateFact} compact /> : null}
               </span>
+              <LawyerFactSourceNote source={lawyerDate} />
               {saleStatus ? (
                 <span role="status" className={styles.summaryNote}>
                   {saleStatus}
@@ -376,6 +403,7 @@ export function ListingOverview({
                 <PublicListingFactSource fact={publicOccupancyFact} compact />
               ) : null}
             </span>
+            <LawyerFactSourceNote source={lawyerOccupancy} />
           </dd>
         </div>
       </dl>
