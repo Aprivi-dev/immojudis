@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
@@ -62,20 +62,14 @@ async function loadSaleDetailRouteData(
   id: string,
   options: { discovery?: boolean; unlocked?: boolean; authenticated: boolean },
 ): Promise<SaleDetailRouteData> {
-  // Valeurs transmises par l'avocat poursuivant : lues en même temps que la fiche, jamais en échec.
-  const lawyerSources = getSaleLawyerFactSources(id);
   let sale = options.authenticated
     ? await getSaleById(id, { discovery: options.discovery, unlocked: options.unlocked })
     : null;
   // A sale that leaves the catalogue between the unlock check and this read is no longer served
   // by the full view: fall back to the free one rather than to a missing page.
   if (!sale && options.unlocked) sale = await getSaleById(id, { discovery: true });
-  if (sale) return { sale: withLawyerFactSources(sale, await lawyerSources), preview: null };
-  const preview = await getSalePreviewById(id);
-  return {
-    sale: null,
-    preview: preview && withLawyerFactSources(preview, await lawyerSources),
-  };
+  if (sale) return { sale, preview: null };
+  return { sale: null, preview: await getSalePreviewById(id) };
 }
 
 type SaleDetailPageProps = {
@@ -221,8 +215,32 @@ function SaleDetailContent({
           queryKeys.saleDetail(id, sessionKey, "discovery"),
         )?.sale ?? null)
       : null;
-  const sale = data?.sale ?? null;
-  const preview = data?.preview ?? null;
+  const loadedSale = data?.sale ?? null;
+  const loadedPreview = data?.preview ?? null;
+  // Valeurs transmises par l'avocat poursuivant : une lecture par vente, quel que soit le mode d'accès
+  // (pas une de plus pendant que les droits sont vérifiés), seulement pour une vente trouvée. La fiche
+  // publique rendue par le serveur les porte déjà. Une lecture en échec reste une erreur de la requête
+  // (relue plus tard), jamais un « aucune mention » gardé en cache ; la fiche s'affiche sans mention.
+  const loadedListing = loadedSale ?? loadedPreview;
+  const lawyerSourcesQuery = useQuery({
+    queryKey: ["sale-lawyer-fact-sources", id],
+    queryFn: () => getSaleLawyerFactSources(id),
+    enabled:
+      loadedListing != null &&
+      loadedListing !== initialData?.preview &&
+      loadedListing !== initialData?.sale,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const lawyerSources = lawyerSourcesQuery.data;
+  const sale = useMemo(
+    () => loadedSale && withLawyerFactSources(loadedSale, lawyerSources),
+    [loadedSale, lawyerSources],
+  );
+  const preview = useMemo(
+    () => loadedPreview && withLawyerFactSources(loadedPreview, lawyerSources),
+    [loadedPreview, lawyerSources],
+  );
   // The listing may already be in the cache (read while the rights were being checked): it only
   // counts as viewed once it can be displayed.
   const displayable = !authLoading && accessReady;

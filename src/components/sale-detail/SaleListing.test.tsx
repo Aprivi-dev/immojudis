@@ -631,63 +631,124 @@ describe("SaleDetailHeading", () => {
   });
 });
 
-describe("source « avocat poursuivant » dans la synthèse", () => {
+describe("source « avocat poursuivant » sur la fiche des comptes", () => {
   const MENTION =
     "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.";
-  const sources = [
-    { key: "starting_price_eur" as const, receivedOn: "2026-11-12", mode: "manual" as const },
-    { key: "occupancy_status" as const, receivedOn: "2026-11-12", mode: "manual" as const },
-    { key: "sale_date" as const, receivedOn: "2026-11-12", mode: "manual" as const },
-  ];
-
-  it("dit la source sous la mise à prix, la date et l'occupation transmises", () => {
-    render(
-      <ListingOverview
-        sale={item({ sale_date: "2099-06-15T09:30:00+02:00", lawyer_fact_sources: sources })}
-      />,
-    );
-    const mentions = screen.getAllByTestId("lawyer-fact-source");
-    expect(mentions.map((mention) => mention.textContent)).toEqual([MENTION, MENTION, MENTION]);
-    const occupancy = screen.getByText("Occupation").closest("div");
-    expect(within(occupancy!).getByTestId("lawyer-fact-source")).toBeTruthy();
+  const DAY =
+    "Jour de la vente (sans l’heure) : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.";
+  const manual = (key: NonNullable<AuctionSale["lawyer_fact_sources"]>[number]["key"]) => ({
+    key,
+    receivedOn: "2026-11-12",
+    mode: "manual" as const,
   });
+  const future = "2099-06-15T09:30:00+02:00";
+  const mentions = () =>
+    screen.queryAllByTestId("lawyer-fact-source").map((node) => node.textContent);
+  const blockedPrice: AiReviewProjectionReadModel = {
+    auction_sale_id: "sale-1",
+    field_key: "sale.starting_price_eur",
+    review_state: "unverified",
+    citation_status: "unverified",
+    is_publishable: false,
+    source_name: "Avoventes",
+    source_url: "https://avoventes.fr/vente/1",
+  };
 
-  it("ne dit rien à côté d'une valeur en cours de vérification", () => {
-    const blocked: AiReviewProjectionReadModel[] = [
-      {
-        auction_sale_id: "sale-1",
-        field_key: "sale.starting_price_eur",
-        review_state: "unverified",
-        citation_status: "unverified",
-        is_publishable: false,
-        source_name: "Avoventes",
-        source_url: "https://avoventes.fr/vente/1",
-      },
-    ];
+  it("dit la source sous la mise à prix et l'occupation, et borne la date au jour", () => {
     render(
       <ListingOverview
         sale={item({
-          sale_date: "2099-06-15T09:30:00+02:00",
-          lawyer_fact_sources: [sources[0]],
+          sale_date: future,
+          lawyer_fact_sources: [
+            manual("starting_price_eur"),
+            manual("sale_date"),
+            manual("occupancy_status"),
+          ],
         })}
-        aiReviewProjections={blocked}
       />,
     );
-    expect(screen.queryByTestId("lawyer-fact-source")).toBeNull();
+    expect(mentions()).toEqual([MENTION, DAY, MENTION]);
+    const occupancy = screen.getByText("Occupation").closest("div");
+    expect(within(occupancy!).getByTestId("lawyer-fact-source")).toBeTruthy();
+    // Les icônes de source ne présentent jamais ces valeurs comme venant de l'annonce.
+    expect(screen.queryByRole("button", { name: /annonce/i })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /Origine de l’information/ })).toHaveLength(3);
   });
 
-  it("nomme la mise à prix quand le panneau d'analyse la remplace", () => {
+  it("ne dit rien à côté d'une mise à prix en cours de vérification", () => {
     render(
       <ListingOverview
-        sale={item({ lawyer_fact_sources: [sources[0]] })}
+        sale={item({ sale_date: future, lawyer_fact_sources: [manual("starting_price_eur")] })}
+        aiReviewProjections={[blockedPrice]}
+      />,
+    );
+    expect(mentions()).toEqual([]);
+  });
+
+  it("ne couvre pas une date tirée des modalités de vente", () => {
+    render(
+      <ListingOverview
+        sale={item({
+          sale_date: future,
+          sale_procedure: {
+            sale_window: { opens_at: "2099-06-14T08:00:00Z", closes_at: "2099-06-15T08:00:00Z" },
+          },
+          lawyer_fact_sources: [manual("sale_date")],
+        })}
+      />,
+    );
+    expect(mentions()).toEqual([]);
+  });
+
+  it.each([
+    [{}, "Mise à prix"],
+    [{ ceilingWording: { label: "Offre plafond", byOffers: true } }, "Première offre possible"],
+  ])("nomme le montant quand le panneau d'analyse le remplace (%#)", (props, label) => {
+    render(
+      <ListingOverview
+        sale={item({ lawyer_fact_sources: [manual("starting_price_eur")] })}
+        lead={<div>Votre analyse</div>}
+        {...props}
+      />,
+    );
+    expect(mentions()[0]).toBe(
+      `${label} : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.`,
+    );
+  });
+
+  it("nomme le prix publié d'une cession de l'État dans le panneau d'analyse", () => {
+    render(
+      <ListingOverview
+        sale={item({
+          sale_venue_type: "state",
+          sale_procedure: null,
+          source_blocks: null,
+          lawyer_fact_sources: [manual("starting_price_eur")],
+        })}
         lead={<div>Votre analyse</div>}
       />,
     );
-    expect(screen.getByTestId("lawyer-fact-source").textContent).toBe(`Mise à prix : ${MENTION}`);
+    expect(mentions()[0]).toMatch(/^Prix publié : information transmise/);
   });
 
-  it("ne dit rien sans réponse de l'avocat", () => {
-    render(<ListingOverview sale={item({ sale_date: "2099-06-15T09:30:00+02:00" })} />);
-    expect(screen.queryByTestId("lawyer-fact-source")).toBeNull();
+  it("dit sous le titre l'origine du type de bien et de la surface qu'il montre", () => {
+    render(
+      <SaleDetailHeading
+        sale={item({ lawyer_fact_sources: [manual("property_type"), manual("surface_m2")] })}
+      />,
+    );
+    expect(mentions()).toEqual([
+      "Type de bien et surface : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-les dans le cahier des conditions de vente.",
+    ]);
+  });
+
+  it("ne dit rien sous le titre de la page d'exemple ni sans réponse de l'avocat", () => {
+    const demo = render(
+      <SaleDetailHeading sale={item({ lawyer_fact_sources: [manual("surface_m2")] })} publicDemo />,
+    );
+    expect(mentions()).toEqual([]);
+    demo.unmount();
+    render(<ListingOverview sale={item({ sale_date: future })} />);
+    expect(mentions()).toEqual([]);
   });
 });

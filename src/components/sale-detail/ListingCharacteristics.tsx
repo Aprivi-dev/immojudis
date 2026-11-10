@@ -4,21 +4,7 @@ import {
   stateListingStatus,
   type CharacteristicItem,
 } from "@/lib/property-characteristics";
-import { lawyerFactSource, type LawyerFactKey } from "@/lib/lawyer-fact-sources";
-import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
 import styles from "./ListingCharacteristics.module.css";
-
-/** Valeurs de ce bloc qui peuvent venir d'une réponse de l'avocat poursuivant, quand elles sont renseignées. */
-const LAWYER_CHARACTERISTICS: ReadonlyArray<{
-  key: LawyerFactKey;
-  label: string;
-  shown: (sale: AuctionSale) => boolean;
-}> = [
-  { key: "property_type", label: "Type de bien", shown: (sale) => Boolean(sale.property_type) },
-  { key: "surface_m2", label: "Surface", shown: (sale) => (sale.app_surface_m2 ?? 0) > 0 },
-  { key: "land_surface_m2", label: "Terrain", shown: (sale) => (sale.land_surface_m2 ?? 0) > 0 },
-  { key: "rooms_count", label: "Pièces", shown: (sale) => (sale.rooms_count ?? 0) > 0 },
-];
 
 function Facts({ items }: { items: CharacteristicItem[] }) {
   return (
@@ -43,10 +29,6 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
   if (!model) return null;
   const listing = stateListingStatus(sale);
   const [primaryGroup, ...otherGroups] = model.groups;
-  const lawyerSources = LAWYER_CHARACTERISTICS.flatMap((item) => {
-    const source = item.shown(sale) ? lawyerFactSource(sale, item.key) : null;
-    return source ? [{ ...item, source }] : [];
-  });
   const sourceLabel =
     model.origin !== "source"
       ? null
@@ -66,18 +48,6 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
         </h2>
         {sourceLabel ? <p className={styles.note}>{sourceLabel}</p> : null}
       </div>
-      {lawyerSources.length ? (
-        <ul
-          className={styles.lawyerSources}
-          aria-label="Informations transmises par l’avocat poursuivant"
-        >
-          {lawyerSources.map((item) => (
-            <li key={item.key}>
-              <LawyerFactSourceNote source={item.source} label={item.label} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
 
       {model.nature.length || model.category || listing || model.procedure?.method ? (
         <ul className={styles.badges} aria-label="Nature et procédure">
