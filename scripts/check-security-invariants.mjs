@@ -1977,7 +1977,8 @@ function functionSignature(schema, name, argumentText) {
       }
     }
   }
-  const core = "app_private\\.apply_information_agent_fact";
+  const coreName = "app_private.apply_information_agent_fact";
+  const core = coreName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const definitions = [
     ...allSql.matchAll(
       new RegExp(
@@ -1989,9 +1990,7 @@ function functionSignature(schema, name, argumentText) {
   if (definitions.length) {
     const header = definitions.at(-1)[1];
     if (!/security\s+definer/i.test(header) || !/set\s+search_path\s*=\s*''/i.test(header)) {
-      failures.push(
-        `${core.replace("\\", "")} is not a SECURITY DEFINER function with an empty search_path`,
-      );
+      failures.push(`${coreName} is not a SECURITY DEFINER function with an empty search_path`);
     }
     if (
       !new RegExp(
