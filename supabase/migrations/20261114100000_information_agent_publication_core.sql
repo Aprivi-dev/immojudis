@@ -22,9 +22,15 @@ set local lock_timeout = '5s';
 -- 3. Le pont vers auction_fact_claims (20260928200000) lit le type d'auteur au journal : pour 'admin'
 --    (ou sans ligne de journal), le résultat est identique à aujourd'hui ; pour 'auto', il refuse la
 --    transaction tant qu'une provenance de claim n'est pas définie (étape ultérieure).
+-- 4. Projection publique minimale de la source « avocat poursuivant » (proposition 5) :
+--    public.get_public_sale_lawyer_fact_sources(vente) rend, pour une vente du catalogue public, la clé,
+--    la date de réception (jour, heure de Paris) et le mode de publication des valeurs transmises par
+--    l'avocat poursuivant ET encore affichées telles quelles. Jamais la valeur, l'extrait, l'expéditeur,
+--    l'objet ni l'identifiant du fait. raw_payload reste caché ; aucune vue publique ne change.
 --
 -- Aucune donnée existante n'est réécrite : les faits acceptés avant cette migration n'ont ni ligne de
--- journal ni publication_mode.
+-- journal ni publication_mode ; la projection publique les traite comme « manual » et retrouve leur date
+-- de réception par le message, tant qu'il est conservé.
 
 -- Journal des publications ---------------------------------------------------------------------------------------
 -- Une ligne par publication. Aucune adresse email, aucun extrait de message, aucun texte libre issu du
@@ -779,6 +785,128 @@ $function$;
 
 revoke all on function app_private.bridge_accepted_information_agent_fact_claim()
 from public, anon, authenticated;
+
+-- Projection publique de la source « avocat poursuivant » -----------------------------------------------------
+-- Une ligne par clé affichée sur la fiche dont la valeur actuelle est encore celle transmise. La date est
+-- celle de la réception de la réponse (raw_payload pour les publications de cette étape, sinon le
+-- message s'il est encore conservé) ; sans date connue, pas de ligne. Les conversions sont gardées par
+-- des CASE : une valeur mal formée dans raw_payload ne fait jamais échouer la lecture.
+create or replace function app_private.get_public_sale_lawyer_fact_sources(p_sale_id uuid)
+returns table (fact_key text, received_on date, publication_mode text)
+language sql
+stable
+security definer
+set search_path = ''
+as $function$
+  with entries as (
+    select
+      s.id as sale_id,
+      s.app_surface_m2,
+      s.land_surface_m2,
+      s.rooms_count,
+      s.occupancy_status,
+      s.starting_price_eur,
+      s.sale_date,
+      s.property_type,
+      entry.key as fact_key,
+      nullif(btrim(entry.value #>> '{value,value}'), '') as value_text,
+      coalesce(entry.value->>'publication_mode', 'manual') as publication_mode,
+      case
+        when entry.value->>'received_at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}'
+          then (entry.value->>'received_at')::timestamptz
+      end as payload_received_at,
+      case
+        when entry.value->>'fact_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          then (entry.value->>'fact_id')::uuid
+      end as fact_id
+    from public.auction_sales s
+    cross join lateral jsonb_each(
+      case
+        when jsonb_typeof(s.raw_payload->'information_agent_verified_facts') = 'object'
+          then s.raw_payload->'information_agent_verified_facts'
+        else '{}'::jsonb
+      end
+    ) entry
+    where s.id = p_sale_id
+      and app_private.auction_sale_is_publicly_visible(s.id)
+      and jsonb_typeof(entry.value) = 'object'
+      and entry.key in (
+        'surface_m2', 'land_surface_m2', 'rooms_count', 'occupancy_status',
+        'starting_price_eur', 'sale_date', 'property_type'
+      )
+  ),
+  dated as (
+    select
+      entries.*,
+      coalesce(
+        entries.payload_received_at,
+        message.received_at,
+        case when message.direction = 'inbound' then message.created_at end
+      ) as received_at
+    from entries
+    left join public.information_agent_fact_candidates fact
+      on fact.id = entries.fact_id
+      and fact.sale_id = entries.sale_id
+      and fact.status = 'accepted'
+    left join public.information_agent_messages message on message.id = fact.message_id
+  )
+  select
+    dated.fact_key,
+    (dated.received_at at time zone 'Europe/Paris')::date as received_on,
+    dated.publication_mode
+  from dated
+  where dated.received_at is not null
+    and dated.publication_mode in ('manual', 'auto')
+    and dated.value_text is not null
+    and case dated.fact_key
+      when 'surface_m2' then
+        dated.app_surface_m2 = case
+          when dated.value_text ~ '^[0-9]{1,9}([.][0-9]{1,4})?$' then dated.value_text::numeric
+        end
+      when 'land_surface_m2' then
+        dated.land_surface_m2 = case
+          when dated.value_text ~ '^[0-9]{1,9}([.][0-9]{1,4})?$' then dated.value_text::numeric
+        end
+      when 'rooms_count' then
+        dated.rooms_count = case
+          when dated.value_text ~ '^[0-9]{1,3}$' then dated.value_text::integer
+        end
+      when 'occupancy_status' then dated.occupancy_status = dated.value_text
+      when 'starting_price_eur' then
+        dated.starting_price_eur = case
+          when dated.value_text ~ '^[0-9]{1,10}([.][0-9]{1,2})?$' then dated.value_text::numeric
+        end
+      when 'sale_date' then
+        dated.sale_date::date = case
+          when dated.value_text ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then dated.value_text::date
+        end
+      when 'property_type' then dated.property_type = dated.value_text
+      else false
+    end
+  order by dated.fact_key;
+$function$;
+
+revoke all on function app_private.get_public_sale_lawyer_fact_sources(uuid)
+  from public, anon, authenticated;
+grant execute on function app_private.get_public_sale_lawyer_fact_sources(uuid)
+  to anon, authenticated, service_role;
+
+create or replace function public.get_public_sale_lawyer_fact_sources(p_sale_id uuid)
+returns table (fact_key text, received_on date, publication_mode text)
+language sql
+stable
+set search_path = ''
+as $function$
+  select source.fact_key, source.received_on, source.publication_mode
+  from app_private.get_public_sale_lawyer_fact_sources(p_sale_id) source;
+$function$;
+
+revoke all on function public.get_public_sale_lawyer_fact_sources(uuid) from public;
+grant execute on function public.get_public_sale_lawyer_fact_sources(uuid)
+  to anon, authenticated, service_role;
+
+comment on function public.get_public_sale_lawyer_fact_sources(uuid) is
+  'Clés de la fiche publique dont la valeur affichée a été transmise par l''avocat poursuivant : clé, jour de réception, mode de publication. Ni valeur, ni extrait, ni expéditeur, ni objet, ni identifiant de fait.';
 
 notify pgrst, 'reload schema';
 

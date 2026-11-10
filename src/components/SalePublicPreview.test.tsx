@@ -1611,3 +1611,61 @@ describe("fiche publique en dossier numéroté (maquette du 06/11/2026)", () => 
     expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
   });
 });
+
+describe("source « avocat poursuivant » sur la fiche publique", () => {
+  const MENTION =
+    "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.";
+  const facts = {
+    sale_venue_type: "tribunal" as SaleVenueType,
+    property_type: "apartment",
+    app_surface_m2: 54,
+    rooms_count: 3,
+    starting_price_eur: 95_000,
+    sale_date: "2099-01-20T08:30:00+00:00",
+  };
+
+  it("dit la source à côté de chaque valeur transmise, et seulement là", () => {
+    renderPreview({
+      ...facts,
+      lawyer_fact_sources: [
+        { key: "surface_m2", receivedOn: "2026-11-12", mode: "manual" },
+        { key: "starting_price_eur", receivedOn: "2026-11-12", mode: "manual" },
+      ],
+    });
+    const mentions = screen.getAllByTestId("lawyer-fact-source");
+    expect(mentions.map((mention) => mention.textContent)).toEqual([MENTION, MENTION]);
+    // Surface : dans la valeur ; pièces : rien.
+    const surface = screen.getByText("Surface").closest("div");
+    expect(within(surface!).getByTestId("lawyer-fact-source")).toBeTruthy();
+    const rooms = screen.getByText("Pièces").closest("div");
+    expect(within(rooms!).queryByTestId("lawyer-fact-source")).toBeNull();
+  });
+
+  it("dit « extraite automatiquement » pour une publication automatique", () => {
+    renderPreview({
+      ...facts,
+      lawyer_fact_sources: [{ key: "rooms_count", receivedOn: "2026-11-13", mode: "auto" }],
+    });
+    expect(screen.getByTestId("lawyer-fact-source").textContent).toBe(
+      "Information transmise par l’avocat poursuivant le 13/11/2026, extraite automatiquement, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    );
+  });
+
+  it("ne dit rien sans réponse de l'avocat", () => {
+    renderPreview(facts);
+    expect(screen.queryByTestId("lawyer-fact-source")).toBeNull();
+  });
+
+  it("reste accessible avec les mentions", async () => {
+    const { container } = renderPreview({
+      ...facts,
+      lawyer_fact_sources: [
+        { key: "property_type", receivedOn: "2026-11-12", mode: "manual" },
+        { key: "sale_date", receivedOn: "2026-11-12", mode: "manual" },
+      ],
+    });
+    expect(screen.getAllByTestId("lawyer-fact-source")).toHaveLength(2);
+    const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
+    expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
+  });
+});

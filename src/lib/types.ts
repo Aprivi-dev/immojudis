@@ -45,6 +45,12 @@ export type AuctionSale = {
    * only when it is one of the known sources. Absent otherwise.
    */
   source_label?: string | null;
+  /**
+   * Keys whose displayed value was sent by the prosecuting lawyer, still unchanged
+   * (`get_public_sale_lawyer_fact_sources`): key, reception day and publication mode only. Absent when
+   * there is none.
+   */
+  lawyer_fact_sources?: LawyerFactSource[];
   source_checks?: Record<string, { checked_at?: string }> | null;
   source_conflicts?: Array<{
     field?: string;
@@ -413,4 +419,25 @@ export type RiskEvidenceJson = SaleEvidenceRef & {
   question?: string | null;
   decision?: string | null;
   confidence_note?: string | null;
+};
+
+/** Keys of the listing whose displayed value may come from a reply of the prosecuting lawyer. */
+export type LawyerFactKey =
+  | "surface_m2"
+  | "land_surface_m2"
+  | "rooms_count"
+  | "occupancy_status"
+  | "starting_price_eur"
+  | "sale_date"
+  | "property_type";
+
+/**
+ * Public projection of one such value (`get_public_sale_lawyer_fact_sources`): the key, the day the reply
+ * was received (`YYYY-MM-DD`, Paris time) and how it was published (`manual`: accepted by an
+ * administrator; `auto`: automatic publication, a later step). Never the value, the message or the fact id.
+ */
+export type LawyerFactSource = {
+  key: LawyerFactKey;
+  receivedOn: string;
+  mode: "manual" | "auto";
 };

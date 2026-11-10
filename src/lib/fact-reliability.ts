@@ -1,4 +1,9 @@
 import { getDisplaySurface } from "@/lib/surface";
+import {
+  lawyerFactMention,
+  lawyerFactSource,
+  type LawyerFactSource,
+} from "@/lib/lawyer-fact-sources";
 import { saleTimeConflict } from "@/lib/listing-evidence";
 import type { AuctionSale } from "@/lib/types";
 
@@ -429,11 +434,33 @@ export function getFactPresentation(
   const fact = getFactReliabilityForDisplay(sale, field, displayedValue, facts);
   const presentationFact = factForPresentation(sale, field, displayedValue, fact);
   const kind = factPresentationKind(presentationFact);
+  // Une valeur transmise par l'avocat poursuivant a une trace (sa claim acceptée), mais Immojudis ne l'a
+  // pas vérifiée : elle se présente « Non vérifié », avec la mention de sa source, jamais « Documenté ».
+  const lawyerSource = kind === "documented" ? lawyerSourceForFact(sale, field) : null;
+  if (lawyerSource) {
+    return {
+      kind: "reported",
+      label: FACT_PRESENTATION_LABELS.reported,
+      detail: lawyerFactMention(lawyerSource),
+    };
+  }
   return {
     kind,
     label: FACT_PRESENTATION_LABELS[kind],
     detail: factPresentationDetail(presentationFact, kind),
   };
+}
+
+/** La source « avocat poursuivant » de la valeur affichée pour ce fait (la surface suit sa portée). */
+function lawyerSourceForFact(sale: AuctionSale, field: KeyFact): LawyerFactSource | null {
+  if (field === "surface") {
+    const kind = displaySurfaceClaimKind(sale);
+    if (kind === "land") return lawyerFactSource(sale, "land_surface_m2");
+    return kind === "built" && getDisplaySurface(sale).kind === "recorded"
+      ? lawyerFactSource(sale, "surface_m2")
+      : null;
+  }
+  return lawyerFactSource(sale, field);
 }
 
 const CLAIM_FIELD_ALIASES: Record<KeyFact, ReadonlySet<string>> = {

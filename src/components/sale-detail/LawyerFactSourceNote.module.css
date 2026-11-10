@@ -1,0 +1,11 @@
+/* Mention « Information transmise par l'avocat poursuivant… » sous une valeur de la fiche. Texte
+   courant (ni couleur seule, ni icône seule), lisible sur mobile : il passe à la ligne librement. */
+.mention {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--ink-soft);
+  font-size: var(--text-caption);
+  font-weight: 400;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}

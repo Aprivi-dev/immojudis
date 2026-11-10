@@ -630,3 +630,64 @@ describe("SaleDetailHeading", () => {
     expect(screen.getByText("Annonce exemple · données fictives")).toBeTruthy();
   });
 });
+
+describe("source « avocat poursuivant » dans la synthèse", () => {
+  const MENTION =
+    "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.";
+  const sources = [
+    { key: "starting_price_eur" as const, receivedOn: "2026-11-12", mode: "manual" as const },
+    { key: "occupancy_status" as const, receivedOn: "2026-11-12", mode: "manual" as const },
+    { key: "sale_date" as const, receivedOn: "2026-11-12", mode: "manual" as const },
+  ];
+
+  it("dit la source sous la mise à prix, la date et l'occupation transmises", () => {
+    render(
+      <ListingOverview
+        sale={item({ sale_date: "2099-06-15T09:30:00+02:00", lawyer_fact_sources: sources })}
+      />,
+    );
+    const mentions = screen.getAllByTestId("lawyer-fact-source");
+    expect(mentions.map((mention) => mention.textContent)).toEqual([MENTION, MENTION, MENTION]);
+    const occupancy = screen.getByText("Occupation").closest("div");
+    expect(within(occupancy!).getByTestId("lawyer-fact-source")).toBeTruthy();
+  });
+
+  it("ne dit rien à côté d'une valeur en cours de vérification", () => {
+    const blocked: AiReviewProjectionReadModel[] = [
+      {
+        auction_sale_id: "sale-1",
+        field_key: "sale.starting_price_eur",
+        review_state: "unverified",
+        citation_status: "unverified",
+        is_publishable: false,
+        source_name: "Avoventes",
+        source_url: "https://avoventes.fr/vente/1",
+      },
+    ];
+    render(
+      <ListingOverview
+        sale={item({
+          sale_date: "2099-06-15T09:30:00+02:00",
+          lawyer_fact_sources: [sources[0]],
+        })}
+        aiReviewProjections={blocked}
+      />,
+    );
+    expect(screen.queryByTestId("lawyer-fact-source")).toBeNull();
+  });
+
+  it("nomme la mise à prix quand le panneau d'analyse la remplace", () => {
+    render(
+      <ListingOverview
+        sale={item({ lawyer_fact_sources: [sources[0]] })}
+        lead={<div>Votre analyse</div>}
+      />,
+    );
+    expect(screen.getByTestId("lawyer-fact-source").textContent).toBe(`Mise à prix : ${MENTION}`);
+  });
+
+  it("ne dit rien sans réponse de l'avocat", () => {
+    render(<ListingOverview sale={item({ sale_date: "2099-06-15T09:30:00+02:00" })} />);
+    expect(screen.queryByTestId("lawyer-fact-source")).toBeNull();
+  });
+});
