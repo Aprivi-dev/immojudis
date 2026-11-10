@@ -1055,7 +1055,16 @@ def _deduplicate_facts(facts: list[EvidenceFact]) -> list[EvidenceFact]:
     for fact in facts:
         key = (fact.fact_key, str(fact.value).strip().lower())
         current = unique.get(key)
-        if current is None or fact.confidence > current.confidence:
+        # La lecture par l'IA l'emporte sur les règles pour la même valeur (elle porte le contrôle de la
+        # phrase) ; sinon, la confiance la plus haute.
+        if current is None or (
+            fact.extraction_method.startswith("semantic") != current.extraction_method.startswith("semantic")
+            and fact.extraction_method.startswith("semantic")
+        ):
+            kept = fact
+        elif current.extraction_method.startswith("semantic") and not fact.extraction_method.startswith("semantic"):
+            kept = current
+        elif fact.confidence > current.confidence:
             kept = fact
         else:
             kept = current
@@ -1190,7 +1199,7 @@ def _process_job(
             case_status = _fetch_case_status(client, base_url, key, str(job.get("case_id") or ""))
             if case_status in FACT_CANDIDATE_CASE_STATUSES:
                 sale = _fetch_sale(client, base_url, key, str(job.get("sale_id") or ""))
-                existing_body_values: set[tuple[str, str]] = set()
+                existing_body_values: dict[tuple[str, str], dict[str, Any]] = {}
                 asset_metadata = asset.get("metadata")
                 if (
                     isinstance(asset_metadata, dict)
@@ -1324,7 +1333,7 @@ def _fetch_existing_message_fact_values(
     base_url: str,
     key: str,
     message_id: str,
-) -> set[tuple[str, str]]:
+) -> dict[tuple[str, str], dict[str, Any]]:
     """Return body-level facts already persisted by the inbound worker.
 
     Inbound text facts intentionally have no ``evidence_asset_id``. The
@@ -1333,14 +1342,17 @@ def _fetch_existing_message_fact_values(
     provenance for the identical value. A failed read is allowed to abort the
     extraction job; inserting a duplicate would be harder to repair and
     would make replay behavior depend on request ordering.
+
+    The rows are returned so that a semantic reading of the same value completes the existing row
+    (review reasons, agreement marker) instead of being dropped with its review reasons.
     """
     if not message_id:
-        return set()
+        return {}
     response = client.get(
         f"{base_url}/rest/v1/information_agent_fact_candidates",
         headers=_headers(key),
         params={
-            "select": "fact_key,proposed_value,evidence_asset_id",
+            "select": "id,fact_key,proposed_value,evidence_asset_id,metadata",
             "message_id": f"eq.{message_id}",
             "evidence_asset_id": "is.null",
             "limit": "1000",
@@ -1350,7 +1362,7 @@ def _fetch_existing_message_fact_values(
     rows = response.json()
     if not isinstance(rows, list):
         raise RuntimeError("Invalid existing information-agent facts response")
-    values: set[tuple[str, str]] = set()
+    values: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, dict) or row.get("evidence_asset_id") is not None:
             continue
@@ -1360,7 +1372,7 @@ def _fetch_existing_message_fact_values(
             continue
         if isinstance(proposed_value, dict):
             proposed_value = proposed_value.get("value")
-        values.add((fact_key, _fact_value_key(proposed_value)))
+        values[(fact_key, _fact_value_key(proposed_value))] = row
     return values
 
 
@@ -1372,11 +1384,16 @@ def _insert_fact_candidates(
     facts: list[EvidenceFact],
     sale: dict[str, Any],
     *,
-    skip_values: set[tuple[str, str]] | None = None,
+    skip_values: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> None:
     payload = []
     for fact in _candidate_facts_for_insertion(facts):
-        if skip_values and (fact.fact_key, _fact_value_key(fact.value)) in skip_values:
+        existing = skip_values.get((fact.fact_key, _fact_value_key(fact.value))) if skip_values else None
+        if existing is not None:
+            # Valeur déjà proposée par les règles du corps du message : la lecture par l'IA complète cette
+            # ligne (motifs, accord) au lieu de disparaître avec ses motifs.
+            if _is_semantic(fact):
+                _complete_rules_candidate(client, base_url, key, existing, fact)
             continue
         item = fact.as_json()
         payload.append(
@@ -1398,7 +1415,7 @@ def _insert_fact_candidates(
                     "processor_version": PROCESSOR_VERSION,
                     "content_trust": "untrusted_external_evidence",
                     # Fait douteux gardé pour la relecture : jamais un fait net (motif affiché à l'administrateur).
-                    **({"review_reasons": list(fact.review_reasons)} if fact.review_reasons else {}),
+                    **({"review_reasons": list(reasons)} if (reasons := _candidate_review_reasons(fact)) else {}),
                 },
             }
         )
@@ -1409,6 +1426,49 @@ def _insert_fact_candidates(
         headers={**_headers(key), "Prefer": "resolution=ignore-duplicates,return=minimal"},
         params={"on_conflict": "message_id,fact_key,evidence_asset_id,source_page,display_value"},
         content=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+    )
+    response.raise_for_status()
+
+
+def _is_semantic(fact: EvidenceFact) -> bool:
+    return fact.extraction_method.startswith("semantic")
+
+
+def _candidate_review_reasons(fact: EvidenceFact) -> tuple[str, ...]:
+    """Motifs du candidat : ceux de la lecture, plus `rules_only_attachment` pour un fait lu par les règles
+    Python seules (pièce jointe ou corps relu par le worker) : jamais un fait net sans l'IA."""
+    if _is_semantic(fact):
+        return fact.review_reasons
+    return tuple(dict.fromkeys([*fact.review_reasons, "rules_only_attachment"]))
+
+
+def _complete_rules_candidate(
+    client: httpx.Client,
+    base_url: str,
+    key: str,
+    existing: dict[str, Any],
+    fact: EvidenceFact,
+) -> None:
+    """Fusionne les motifs de la lecture par l'IA dans la ligne des règles, et marque l'accord sans motif."""
+    candidate_id = str(existing.get("id") or "")
+    if not candidate_id:
+        return
+    metadata = existing.get("metadata") if isinstance(existing.get("metadata"), dict) else {}
+    previous = metadata.get("review_reasons") if isinstance(metadata.get("review_reasons"), list) else []
+    reasons = list(dict.fromkeys([*(str(reason) for reason in previous), *fact.review_reasons]))
+    updated = {
+        **metadata,
+        "semantic_extraction_method": fact.extraction_method,
+        "semantic_agreement": not fact.review_reasons,
+        **({"review_reasons": reasons} if reasons else {}),
+    }
+    if updated == metadata:
+        return
+    response = client.patch(
+        f"{base_url}/rest/v1/information_agent_fact_candidates",
+        headers={**_headers(key), "Prefer": "return=minimal"},
+        params={"id": f"eq.{candidate_id}", "status": "in.(pending,conflict)"},
+        content=json.dumps({"metadata": updated}, ensure_ascii=False).encode("utf-8"),
     )
     response.raise_for_status()
 
