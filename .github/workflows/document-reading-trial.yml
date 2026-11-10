@@ -1,8 +1,8 @@
 name: Document reading trial
 
-# Essai de qualité AVANT de changer la lecture des pièces en production (document_reading_v3 reste la version lue
-# par le pipeline) : relit les pièces de quelques ventes à venir avec les profils candidats de
-# services/data-pipeline/src/document_reading_candidate.py et les compare à la lecture stockée et aux listes de
+# Essai de qualité AVANT de changer la lecture des pièces en production : relit les pièces de quelques ventes à
+# venir avec le profil de production (le témoin) et les profils candidats de
+# services/data-pipeline/src/document_reading_candidate.py, et les compare à la lecture stockée et aux listes de
 # l'extraction des faits (services/data-pipeline/scripts/document_reading_trial.py). Lecture seule sur la base :
 # aucune lecture n'est écrite. Les appels au modèle passent par le client Replicate du pipeline : ils sont
 # réservés et notés dans llm_usage_events (étape « reading_trial ») et partagent les budgets horaire
@@ -23,9 +23,9 @@ on:
         default: ""
         type: string
       profiles:
-        description: "Profiles, comma separated (v3: production, the control; v4: same cost; v4_wide: twice the text)"
+        description: "Profiles, comma separated: production (the control) and the names of the candidates under trial"
         required: false
-        default: "v3,v4,v4_wide"
+        default: "production"
         type: string
       max_calls:
         description: "Hard cap on model calls for the whole trial (1-120)"

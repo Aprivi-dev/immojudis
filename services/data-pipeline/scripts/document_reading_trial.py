@@ -1,11 +1,10 @@
-"""Essai de qualité : lecture des pièces avec une version candidate, comparée à la lecture stockée.
+"""Essai de qualité : lecture des pièces avec une version candidate, comparée à celle de production.
 
 La lecture des pièces (``src/document_reading.py``) est ce que l'abonné voit point par point. Cet essai relit
-les pièces de quelques ventes à venir avec le profil de production (« v3 », le témoin : même modèle, même jour)
-et les profils candidats de ``src/document_reading_candidate.py`` (« v4 » : même coût que la production ;
-« v4_wide » : deux fois plus de texte lu). Il rend, pour chaque vente, les points stockés, les points gardés et
-rejetés de chaque profil et les listes de l'extraction des faits (ce que les mêmes pièces contiennent selon
-l'autre lecture), pour une comparaison point par point.
+les pièces de quelques ventes à venir avec le profil de production (« production », le témoin : même modèle,
+même jour) et les profils candidats de ``src/document_reading_candidate.py``. Il rend, pour chaque vente, les
+points stockés, les points gardés et rejetés de chaque profil et les listes de l'extraction des faits (ce que
+les mêmes pièces contiennent selon l'autre lecture), pour une comparaison point par point.
 
 LECTURE SEULE sur la base : la connexion est ouverte en lecture seule (``read_only``) ; aucune lecture n'est
 écrite. Seuls les appels au modèle passent par le client Replicate du pipeline, avec ses réservations et son
@@ -18,7 +17,7 @@ Rapport Markdown sur la sortie standard et dans ``$GITHUB_STEP_SUMMARY`` ; le d�
 ``READING_DETAIL {json}`` par vente) suit sur la sortie standard seulement. Tous les textes du détail passent
 par le filtre des noms de personnes.
 
-    python -m scripts.document_reading_trial --sales 10 --profiles v3,v4,v4_wide --max-calls 40
+    python -m scripts.document_reading_trial --sales 10 --max-calls 40
 """
 
 from __future__ import annotations
@@ -63,8 +62,8 @@ from src.document_reading_candidate import CANDIDATE_PROFILES  # noqa: E402
 from src.llm_requests import llm_request_context  # noqa: E402
 from src.personal_data import redact_personal_text  # noqa: E402
 
-# « v3 » is the control: the production profile read today, next to the candidates.
-PROFILES: dict[str, ReadingProfile] = {"v3": PRODUCTION_PROFILE, **CANDIDATE_PROFILES}
+# « production » is the control: the production profile read today, next to the candidates.
+PROFILES: dict[str, ReadingProfile] = {"production": PRODUCTION_PROFILE, **CANDIDATE_PROFILES}
 DEFAULT_SALES = 10
 DEFAULT_MAX_CALLS = 40
 DEFAULT_BUDGET_MINUTES = 90
@@ -122,7 +121,7 @@ select sale.id::text, sale.source_url, sale.property_type, sale.city,
 @dataclass
 class TrialOptions:
     sales: int = DEFAULT_SALES
-    profiles: tuple[str, ...] = tuple(PROFILES)
+    profiles: tuple[str, ...] = field(default_factory=lambda: tuple(PROFILES))
     sale_prefixes: tuple[str, ...] = ()
     max_calls: int = DEFAULT_MAX_CALLS
     budget_minutes: float = DEFAULT_BUDGET_MINUTES

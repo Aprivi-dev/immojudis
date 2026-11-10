@@ -108,7 +108,7 @@ def test_failed_readings_come_back_only_when_their_backoff_has_elapsed():
             db.rollback()
 
 
-def test_v3_reads_again_only_the_v2_readings_whose_lot_is_designated():
+def test_v4_reads_again_every_reading_of_an_earlier_version():
     url = os.getenv("PIPELINE_TEST_DB_URL")
     if not url:
         pytest.skip("Requires disposable PostgreSQL")
@@ -123,6 +123,8 @@ def test_v3_reads_again_only_the_v2_readings_whose_lot_is_designated():
             add_sale(db, "v2-failed-due", status="failed", attempts=1, generated_hours_ago=13,
                      version="document_reading_v2")
             add_sale(db, "v1", status="completed", version="document_reading_v1")
+            add_sale(db, "v3", status="completed", version="document_reading_v3")
+            add_sale(db, "current", status="completed")
             for source_url, selection in (
                 ("v2-ambiguous-lot", {"status": "ambiguous", "lot_count": 2}),
                 ("v2-designated-lot", {"status": "selected", "lot_number": 2, "lot_count": 2}),
@@ -135,7 +137,11 @@ def test_v3_reads_again_only_the_v2_readings_whose_lot_is_designated():
             db.execute("update auction_extractions set updated_at = now() + interval '1 minute' "
                        "where source_url = 'v2-new-text'")
 
-            assert set(candidates(db)) == {"never-read", "v2-designated-lot", "v2-new-text", "v2-failed-due", "v1"}
+            # Every earlier version is read again (the v3 exception for a v2 reading without lot is gone).
+            assert set(candidates(db)) == {
+                "never-read", "v2-without-lot", "v2-ambiguous-lot", "v2-designated-lot", "v2-new-text",
+                "v2-failed-due", "v1", "v3",
+            }
         finally:
             db.rollback()
 
