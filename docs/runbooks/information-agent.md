@@ -67,6 +67,44 @@ Mise à jour : 23 octobre 2026 (renvois et variables). Écran : **Admin › Agen
 - **Réglages et journal.** Panneau « Pilote automatique » (Admin › Agent IA) : interrupteur à trois états, motif obligatoire, arrêt d’urgence toujours permis, journal en ajout seul (`information_agent_autopilot_events`, sans adresse, 5 ans, purge dédiée `purge_information_agent_autopilot` appelée par `runDataRetention`).
 - **Interdits.** Les adresses, réponses et silences collectés ne servent jamais à la mise en avant payante, au classement d’avocats ni à la mise en relation.
 
+## Motifs de relecture des informations extraites et règle d’éligibilité (10/11/2026)
+
+Chaque information extraite d’une réponse est lue dans sa phrase, par les règles TypeScript
+(`src/lib/information-agent-inbound/review-signals.ts`) comme par la lecture par l’IA
+(`services/data-pipeline/src/information_agent_review_signals.py`). Une erreur de catégorie ou une négation
+(« n’est pas de 65 m² », autre lot que le lot vendu, terrain pris pour le logement, annexe, « pièces jointes »,
+date de visite ou de renvoi prise pour la date de vente, GES pris pour le DPE) écarte l’information. Un doute
+la garde, avec ses motifs dans `metadata.review_reasons` du candidat : conditionnel ou approximation, valeur
+rapportée ou comparée, réserve dans la phrase ou une voisine, fourchette, correction, renvoi, question, lot
+non nommé ou invérifiable, phrase de moins de 25 caractères, fait lu par les règles Python seules
+(`rules_only_attachment`). La liste des codes et de leurs libellés est unique
+(`src/lib/information-agent-review-reasons.ts`, `REVIEW_REASON_LABELS` côté Python) et figée par un test ; les
+libellés s’affichent dans l’onglet Réponses. Les cas d’attaque de la relecture du 10/11/2026 sont des tests
+permanents (`services/data-pipeline/tests/fixtures/information_agent_extraction_attack.json`).
+
+Quand la lecture par l’IA trouve la même valeur qu’une ligne déjà écrite par les règles du corps du message,
+elle complète cette ligne : ses motifs y sont fusionnés et `metadata.semantic_agreement` vaut `true` si elle
+n’en a aucun (`false` sinon), avec `metadata.semantic_extraction_method`.
+
+**Règle que le futur moteur de décision devra appliquer** (une information n’est « nette » que si tout est
+vrai) :
+
+1. une ligne des règles du corps du message (sans `evidence_asset_id`) porte la valeur, sans aucun motif dans
+   `metadata.review_reasons` ni `metadata.lot_unidentified` ;
+2. la lecture par l’IA, version `semantic_evidence_v3` ou suivante, a lu la même valeur sans motif :
+   `metadata.semantic_agreement = true` et `metadata.semantic_extraction_method` commence par
+   `semantic_evidence_v` avec un numéro de version d’au moins 3 ;
+3. aucun autre lot que celui de la vente n’est nommé pour cette information (aucun motif de lot) ;
+4. le message ne contient aucune autre valeur pour cette clé (aucun autre candidat du même message et de la
+   même clé, quelle que soit sa provenance) ;
+5. le candidat n’est pas en `conflict`, et la réponse n’a aucun motif de relecture du traitement entrant
+   (`inbound_processing.reason`).
+
+Les candidats écrits avant la version 3 (sans `semantic_agreement`, ou méthode `semantic_evidence_v2` ou
+antérieure) ne sont **jamais** éligibles. Une information issue d’une pièce jointe ne l’est pas non plus. Le
+détecteur de consignes adressées à un modèle est un signal qui envoie la réponse en relecture, pas une
+barrière : la publication automatique restera contrôlée par ces conditions structurelles.
+
 ## Contenu de l’e-mail
 
 - Signature : « L’équipe Immojudis », ou « Prénom Nom / Pour l’équipe Immojudis » quand `INFORMATION_AGENT_SIGNATURE_NAME` est renseignée (modifiable dans le brouillon).

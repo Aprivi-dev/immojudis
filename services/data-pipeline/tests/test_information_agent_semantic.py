@@ -81,12 +81,12 @@ def test_semantic_facts_require_supported_key_and_grounded_page_excerpt() -> Non
     assert fact.fact_key == "surface_m2"
     assert fact.source_page == 2
     assert fact.evidence_excerpt == "Surface habitable : 87 m²"
-    assert fact.extraction_method == "semantic_evidence_v2"
+    assert fact.extraction_method == "semantic_evidence_v3"
     assert "MODE EXTRACTION STRICTE" in captured["system"]
     assert "<untrusted-evidence>" in captured["user"]
     assert "not in the source" not in captured["user"]
     assert result.metadata() == {
-        "processor_version": "semantic_evidence_v2",
+        "processor_version": "semantic_evidence_v3",
         "status": "completed",
         "input_truncated": False,
         "review_required": True,

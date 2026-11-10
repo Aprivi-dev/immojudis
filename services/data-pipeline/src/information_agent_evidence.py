@@ -22,14 +22,24 @@ import pymupdf as fitz
 
 from src.config import load_settings
 from src.image_dimensions import _isobmff_dimensions, _jpeg_dimensions, _webp_dimensions
+from src.information_agent_fact_candidates import (
+    PROCESSOR_VERSION,
+    candidate_facts_for_insertion,
+    conflicts_with_sale,
+    fetch_existing_message_fact_values,
+    insert_fact_candidates,
+    rest_headers,
+)
 from src.information_agent_semantic import (
     MAX_VISION_IMAGE_BYTES,
-    UNCERTAIN_EVIDENCE_RE,
     PhotoSemanticAnalysis,
     SemanticAnalysis,
     SemanticFact,
+    SemanticLotContext,
+    contains_prompt_injection,
     run_configured_photo_analysis,
     run_configured_semantic_analysis,
+    semantic_lot_context,
 )
 from src.normalize import clean_text
 from src.pdf_enrichment import classify_document_type
@@ -53,19 +63,11 @@ PDF_OCR_TOTAL_TIMEOUT_SECONDS = 30
 PDF_OCR_LANGUAGE = "fra+eng"
 IMAGE_OCR_TIMEOUT_SECONDS = 20
 HEIF_CONVERT_TIMEOUT_SECONDS = 20
-PROCESSOR_VERSION = "evidence_v1"
 _SEMANTIC_PAGE_RE = re.compile(
     r"^--- page (?P<page>\d+) ---\n(?P<text>.*?)(?=\n\n--- page \d+ ---\n|\Z)",
     re.MULTILINE | re.DOTALL,
 )
 FACT_CANDIDATE_CASE_STATUSES = frozenset({"sending", "sent", "replied", "review"})
-MIN_FACT_CANDIDATE_CONFIDENCE = 0.5
-_UNCERTAIN_FACT_VALUE_RE = re.compile(
-    r"\b(?:non\s+(?:communiqu(?:e|ée)|pr[eé]cis(?:e|ée)|renseign(?:e|ée)|disponible)|"
-    r"(?:a|à)\s+confirmer|inconnu(?:e)?|ind[eé]termin(?:e|ée)|"
-    r"sans\s+information|n/?a|nc)\b",
-    re.IGNORECASE,
-)
 SUPPORTED_MIME_TYPES = {
     "application/pdf",
     "image/jpeg",
@@ -87,12 +89,14 @@ class EvidenceFact:
     source_page: int
     unit: str | None = None
     extraction_method: str = "document_ocr_v1"
+    # Motifs de relecture posés par la lecture sémantique (`SEMANTIC_REVIEW_REASONS`).
+    review_reasons: tuple[str, ...] = ()
 
     def as_json(self) -> dict[str, object]:
         proposed_value: dict[str, object] = {"value": self.value}
         if self.unit:
             proposed_value["unit"] = self.unit
-        return {
+        payload: dict[str, object] = {
             "fact_key": self.fact_key,
             "proposed_value": proposed_value,
             "display_value": self.display_value,
@@ -101,6 +105,9 @@ class EvidenceFact:
             "source_page": self.source_page,
             "extraction_method": self.extraction_method,
         }
+        if self.review_reasons:
+            payload["review_reasons"] = list(self.review_reasons)
+        return payload
 
 
 @dataclass(frozen=True)
@@ -617,6 +624,7 @@ def _merge_semantic_facts(
             confidence=fact.confidence,
             source_page=fact.source_page,
             extraction_method=fact.extraction_method,
+            review_reasons=fact.review_reasons,
         )
         for fact in semantic_facts
     ]
@@ -637,6 +645,16 @@ def _append_photo_summary(
     base = analysis.summary or "Photographie reçue."
     suffix = f" Observation visuelle à revoir : {photo_analysis.description[:800]}"
     return replace(analysis, summary=(base + suffix)[:4_000])
+
+
+def _withhold_facts_for_prompt_injection(analysis: EvidenceAnalysis) -> EvidenceAnalysis:
+    """Retire tous les faits d'une pièce dont le texte s'adresse à un modèle et le dit dans le résumé."""
+    base = analysis.summary or "Pièce jointe reçue."
+    suffix = (
+        " Consignes adressées à une IA repérées dans le texte : aucune information extraite, "
+        "vérification manuelle nécessaire."
+    )
+    return replace(analysis, facts=[], summary=(base + suffix)[:4_000])
 
 
 def _append_semantic_failure_summary(
@@ -1036,8 +1054,23 @@ def _deduplicate_facts(facts: list[EvidenceFact]) -> list[EvidenceFact]:
     for fact in facts:
         key = (fact.fact_key, str(fact.value).strip().lower())
         current = unique.get(key)
-        if current is None or fact.confidence > current.confidence:
-            unique[key] = fact
+        # La lecture par l'IA l'emporte sur les règles pour la même valeur (elle porte le contrôle de la
+        # phrase) ; sinon, la confiance la plus haute.
+        if current is None or (
+            fact.extraction_method.startswith("semantic") != current.extraction_method.startswith("semantic")
+            and fact.extraction_method.startswith("semantic")
+        ):
+            kept = fact
+        elif current.extraction_method.startswith("semantic") and not fact.extraction_method.startswith("semantic"):
+            kept = current
+        elif fact.confidence > current.confidence:
+            kept = fact
+        else:
+            kept = current
+        # Un motif de relecture posé sur l'une des occurrences reste sur le fait gardé : la même valeur
+        # trouvée ailleurs ne la rend pas nette.
+        reasons = tuple(dict.fromkeys([*(current.review_reasons if current else ()), *fact.review_reasons]))
+        unique[key] = replace(kept, review_reasons=reasons) if reasons != kept.review_reasons else kept
     return list(unique.values())[:30]
 
 
@@ -1123,9 +1156,15 @@ def _process_job(
             declared_mime_type=str(asset.get("mime_type") or ""),
             ocr_enabled=_evidence_ocr_enabled(settings),
         )
+        # Consigne adressée à un modèle dans le texte de la pièce : aucun fait (ni règle ni IA), relecture.
+        prompt_injection = contains_prompt_injection(analysis.extracted_text)
+        if prompt_injection:
+            analysis = _withhold_facts_for_prompt_injection(analysis)
+        sale_id = str(job.get("sale_id") or "")
         semantic_analysis = run_configured_semantic_analysis(
             _semantic_pages_from_analysis(analysis),
             settings,
+            lot_context_loader=lambda: _fetch_sale_lot_context(client, base_url, key, sale_id),
         )
         analysis = _merge_semantic_facts(analysis, semantic_analysis.facts)
         analysis = _append_semantic_failure_summary(analysis, semantic_analysis)
@@ -1159,7 +1198,7 @@ def _process_job(
             case_status = _fetch_case_status(client, base_url, key, str(job.get("case_id") or ""))
             if case_status in FACT_CANDIDATE_CASE_STATUSES:
                 sale = _fetch_sale(client, base_url, key, str(job.get("sale_id") or ""))
-                existing_body_values: set[tuple[str, str]] = set()
+                existing_body_values: dict[tuple[str, str], dict[str, Any]] = {}
                 asset_metadata = asset.get("metadata")
                 if (
                     isinstance(asset_metadata, dict)
@@ -1235,6 +1274,15 @@ def _download_asset(client: httpx.Client, base_url: str, key: str, asset: dict[s
     return content
 
 
+# Noms historiques du worker (tests et appelants) : la création des candidats vit dans
+# `information_agent_fact_candidates`.
+_headers = rest_headers
+_fetch_existing_message_fact_values = fetch_existing_message_fact_values
+_insert_fact_candidates = insert_fact_candidates
+_candidate_facts_for_insertion = candidate_facts_for_insertion
+_conflicts_with_sale = conflicts_with_sale
+
+
 def _fetch_sale(client: httpx.Client, base_url: str, key: str, sale_id: str) -> dict[str, Any]:
     response = client.get(
         f"{base_url}/rest/v1/auction_sales",
@@ -1250,6 +1298,29 @@ def _fetch_sale(client: httpx.Client, base_url: str, key: str, sale_id: str) -> 
     return rows[0] if isinstance(rows, list) and rows else {}
 
 
+def _fetch_sale_lot_context(
+    client: httpx.Client,
+    base_url: str,
+    key: str,
+    sale_id: str,
+) -> SemanticLotContext:
+    """Lots de la vente, pour que la lecture sémantique contrôle le lot dont parle chaque phrase."""
+    response = client.get(
+        f"{base_url}/rest/v1/auction_sales",
+        headers=_headers(key),
+        params={
+            "select": "quality_flags,source_lot_selection:raw_payload->source_lot_selection",
+            "id": f"eq.{sale_id}",
+            "limit": "1",
+        },
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list) or not rows or not isinstance(rows[0], dict):
+        raise RuntimeError("Information-agent sale not found")
+    return semantic_lot_context(rows[0].get("quality_flags"), rows[0].get("source_lot_selection"))
+
+
 def _fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: str) -> str:
     if not case_id:
         return ""
@@ -1263,169 +1334,6 @@ def _fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: s
     if not isinstance(rows, list) or not rows:
         raise RuntimeError("Information-agent case not found")
     return str(rows[0].get("status") or "")
-
-
-def _fetch_existing_message_fact_values(
-    client: httpx.Client,
-    base_url: str,
-    key: str,
-    message_id: str,
-) -> set[tuple[str, str]]:
-    """Return body-level facts already persisted by the inbound worker.
-
-    Inbound text facts intentionally have no ``evidence_asset_id``. The
-    evidence worker subsequently processes the same body as a private text
-    asset, so it must not create a second candidate with attachment
-    provenance for the identical value. A failed read is allowed to abort the
-    extraction job; inserting a duplicate would be harder to repair and
-    would make replay behavior depend on request ordering.
-    """
-    if not message_id:
-        return set()
-    response = client.get(
-        f"{base_url}/rest/v1/information_agent_fact_candidates",
-        headers=_headers(key),
-        params={
-            "select": "fact_key,proposed_value,evidence_asset_id",
-            "message_id": f"eq.{message_id}",
-            "evidence_asset_id": "is.null",
-            "limit": "1000",
-        },
-    )
-    response.raise_for_status()
-    rows = response.json()
-    if not isinstance(rows, list):
-        raise RuntimeError("Invalid existing information-agent facts response")
-    values: set[tuple[str, str]] = set()
-    for row in rows:
-        if not isinstance(row, dict) or row.get("evidence_asset_id") is not None:
-            continue
-        fact_key = str(row.get("fact_key") or "").strip()
-        proposed_value = row.get("proposed_value")
-        if not fact_key:
-            continue
-        if isinstance(proposed_value, dict):
-            proposed_value = proposed_value.get("value")
-        values.add((fact_key, _fact_value_key(proposed_value)))
-    return values
-
-
-def _insert_fact_candidates(
-    client: httpx.Client,
-    base_url: str,
-    key: str,
-    job: dict[str, Any],
-    facts: list[EvidenceFact],
-    sale: dict[str, Any],
-    *,
-    skip_values: set[tuple[str, str]] | None = None,
-) -> None:
-    payload = []
-    for fact in _candidate_facts_for_insertion(facts):
-        if skip_values and (fact.fact_key, _fact_value_key(fact.value)) in skip_values:
-            continue
-        item = fact.as_json()
-        payload.append(
-            {
-                "case_id": job["case_id"],
-                "message_id": job["message_id"],
-                "sale_id": job["sale_id"],
-                "evidence_asset_id": job["asset_id"],
-                "fact_key": fact.fact_key,
-                "proposed_value": item["proposed_value"],
-                "display_value": fact.display_value[:500],
-                "evidence_excerpt": fact.evidence_excerpt[:2000],
-                "confidence": fact.confidence,
-                "extraction_method": fact.extraction_method,
-                "source_page": fact.source_page,
-                "source_locator": f"page:{fact.source_page}",
-                "status": "conflict" if _conflicts_with_sale(fact, sale) else "pending",
-                "metadata": {
-                    "processor_version": PROCESSOR_VERSION,
-                    "content_trust": "untrusted_external_evidence",
-                },
-            }
-        )
-    if not payload:
-        return
-    response = client.post(
-        f"{base_url}/rest/v1/information_agent_fact_candidates",
-        headers={**_headers(key), "Prefer": "resolution=ignore-duplicates,return=minimal"},
-        params={"on_conflict": "message_id,fact_key,evidence_asset_id,source_page,display_value"},
-        content=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-    )
-    response.raise_for_status()
-
-
-def _candidate_facts_for_insertion(facts: list[EvidenceFact]) -> list[EvidenceFact]:
-    """Keep only facts that are sufficiently clear to become review rows.
-
-    The extraction record retains every grounded observation for auditability,
-    but a candidate must not silently select one of two values found in the
-    same reply. Unknown/placeholder values and low-confidence semantic
-    proposals are likewise retained only in the extraction evidence. This
-    keeps the admin queue from presenting an arbitrary answer as the proposed
-    value while preserving the original text for human review.
-    """
-    values_by_key: dict[str, set[str]] = {}
-    for fact in facts:
-        values_by_key.setdefault(fact.fact_key, set()).add(_fact_value_key(fact.value))
-    ambiguous_keys = {fact_key for fact_key, values in values_by_key.items() if len(values) > 1}
-    return [
-        fact
-        for fact in facts
-        if fact.fact_key not in ambiguous_keys
-        and fact.confidence >= MIN_FACT_CANDIDATE_CONFIDENCE
-        and not _uncertain_fact_value(fact.value)
-        and not _uncertain_evidence_excerpt(fact.evidence_excerpt)
-    ]
-
-
-def _uncertain_fact_value(value: object) -> bool:
-    if not isinstance(value, str):
-        return False
-    normalized = clean_text(value) or ""
-    return bool(_UNCERTAIN_FACT_VALUE_RE.search(normalized))
-
-
-def _uncertain_evidence_excerpt(value: object) -> bool:
-    if not isinstance(value, str):
-        return False
-    return UNCERTAIN_EVIDENCE_RE.search(value) is not None
-
-
-def _fact_value_key(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)) and math.isfinite(float(value)):
-        return f"{float(value):.12g}"
-    return (clean_text(value) or str(value or "")).strip().casefold()
-
-
-def _conflicts_with_sale(fact: EvidenceFact, sale: dict[str, Any]) -> bool:
-    if fact.fact_key == "surface_m2":
-        existing = sale.get("app_surface_m2")
-        if existing is None:
-            existing = sale.get("surface_m2")
-    else:
-        existing = sale.get(fact.fact_key)
-    if existing is None or fact.fact_key in {"visit_information", "energy_diagnostics"}:
-        return False
-    if isinstance(existing, (int, float)) and isinstance(fact.value, (int, float)):
-        tolerance = 0.5 if fact.fact_key in {"surface_m2", "land_surface_m2"} else 0.01
-        return abs(float(existing) - float(fact.value)) > tolerance
-    if fact.fact_key == "sale_date":
-        return str(existing)[:10] != str(fact.value)[:10]
-    if fact.fact_key == "property_type":
-        return str(existing).strip().casefold() != str(fact.value).strip().casefold()
-    if fact.fact_key == "address":
-        return _normalize_comparable_text(existing) != _normalize_comparable_text(fact.value)
-    return str(existing).strip().lower() != str(fact.value).strip().lower()
-
-
-def _normalize_comparable_text(value: object) -> str:
-    text = clean_text(value) or ""
-    return " ".join(text.casefold().split())
 
 
 def _finish_job(
@@ -1531,15 +1439,6 @@ def _mark_case_for_review(client: httpx.Client, base_url: str, key: str, case_id
         json={"status": "review"},
     )
     response.raise_for_status()
-
-
-def _headers(key: str) -> dict[str, str]:
-    return {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
 
 
 def _run_pdf_ocr_child(argv: list[str]) -> int:

@@ -278,7 +278,8 @@ describe("information agent inbound parsing", () => {
 
   it("keeps contradictory values out of automatic candidate extraction", () => {
     const facts = extractInformationAgentFacts(
-      "La surface était 80 m², finalement 84 m². L'ancien plan comptait 3 pièces, le nouveau 4 pièces. Le bien était libre mais le logement est loué.",
+      // « était libre » est un état révolu (blanchi) : la contradiction d'occupation est au présent.
+      "La surface était 80 m², finalement 84 m². L'ancien plan comptait 3 pièces, le nouveau 4 pièces. Le bien est libre mais le logement est loué.",
     );
     expect(facts).toEqual([]);
   });
