@@ -258,6 +258,21 @@ describe("occupation : le présent, pas le passé", () => {
     expect(occupancy("L'ancien locataire est parti, bail résilié.")).toEqual([]);
   });
 
+  it("« était libre » est un état révolu comme « était loué »", () => {
+    expect(occupancy("Le bien était libre.")).toEqual([]);
+    expect(occupancy("Le logement était vacant l'an dernier.")).toEqual([]);
+    expect(occupancy("Le bien était libre mais le logement est loué.")).toEqual(["rented"]);
+  });
+
+  it("le futur et le conditionnel ne donnent aucun état", () => {
+    expect(occupancy("Le bien sera libre.")).toEqual([]);
+    expect(occupancy("Le bien sera libre au 1er janvier 2027.")).toEqual([]);
+    expect(occupancy("Le logement serait loué.")).toEqual([]);
+    expect(occupancy("Le bien serait occupé par un locataire.")).toEqual([]);
+    expect(occupancy("L'appartement sera vacant à la vente.")).toEqual([]);
+    expect(occupancy("Les lots seraient occupés.")).toEqual([]);
+  });
+
   it("l'état actuel reste lu", () => {
     expect(occupancy("Le bien est loué jusqu'au 30 juin 2026.")).toEqual(["rented"]);
     expect(occupancy("Le bien est loué.")).toEqual(["rented"]);

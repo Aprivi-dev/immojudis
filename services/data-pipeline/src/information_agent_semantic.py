@@ -15,10 +15,19 @@ import math
 import os
 import re
 import time
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
+from src.document_reading import MIN_QUOTE_CHARS, sold_lot_from_sale
+from src.information_agent_review_signals import (
+    REVIEW_REASON_LABELS,
+    ROOMS_FOLLOW_RE,
+    LotContext,
+    area_category,
+    review_statement,
+)
 from src.normalize import clean_text
 from src.personal_data import redact_personal_text
 
@@ -29,7 +38,14 @@ MAX_SEMANTIC_EXCERPT_CHARS = 500
 MAX_SEMANTIC_DISPLAY_CHARS = 500
 SEMANTIC_TIMEOUT_SECONDS = 25
 SEMANTIC_MAX_OUTPUT_TOKENS = 1_024
-SEMANTIC_PROCESSOR_VERSION = "semantic_evidence_v2"
+# v3 (10/11/2026) : contrôle de la phrase entière qui contient la citation (conditionnel, approximation,
+# source tierce, fourchette, valeur corrigée, renvoi), citation d'au moins 25 caractères, contrôle du lot,
+# date de vente distinguée d'une date de visite ou de renvoi, DPE distingué du GES, type de bien non déduit
+# d'un mot composé. Seule l'étiquette change : aucune réanalyse n'est déclenchée par ce numéro.
+SEMANTIC_PROCESSOR_VERSION = "semantic_evidence_v3"
+# Comme la lecture des documents (`document_reading.MIN_QUOTE_CHARS`) : une citation plus courte ne prouve
+# rien seule. Elle n'est pas jetée, mais part en relecture avec le motif `short_citation`.
+MIN_SEMANTIC_EXCERPT_CHARS = MIN_QUOTE_CHARS
 MAX_VISION_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_PHOTO_DESCRIPTION_CHARS = 800
 MAX_PHOTO_OBSERVATIONS = 8
@@ -43,6 +59,11 @@ UNCERTAIN_EVIDENCE_RE = re.compile(
     r"inconnu(?:e)?|ind[eé]termin(?:e|ée)|incertain(?:e)?|sous\s+r[eé]serve|n/?a|nc)\b",
     re.IGNORECASE,
 )
+
+# Motifs de relecture d'un fait douteux mais utile : liste commune avec les règles TypeScript et l'onglet
+# Réponses (`information_agent_review_signals.REVIEW_REASON_LABELS`). Un fait qui en porte un arrive en
+# relecture avec son motif et n'est jamais un fait net ; une erreur de catégorie est rejetée.
+SEMANTIC_REVIEW_REASONS: dict[str, str] = REVIEW_REASON_LABELS
 
 # Keep this set synchronized with the fact_key check on
 # information_agent_fact_candidates. Attachments themselves are persisted as
@@ -152,9 +173,12 @@ class SemanticFact:
     confidence: float
     source_page: int
     extraction_method: str = SEMANTIC_PROCESSOR_VERSION
+    # Motifs de relecture (codes de `SEMANTIC_REVIEW_REASONS`) : un fait qui en porte un reste utile à un
+    # relecteur mais n'est jamais un fait net (voir `_validate_fact`).
+    review_reasons: tuple[str, ...] = ()
 
     def as_json(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "fact_key": self.fact_key,
             "proposed_value": {"value": self.value},
             "display_value": self.display_value,
@@ -163,6 +187,20 @@ class SemanticFact:
             "source_page": self.source_page,
             "extraction_method": self.extraction_method,
         }
+        if self.review_reasons:
+            payload["review_reasons"] = list(self.review_reasons)
+        return payload
+
+
+# Lots de la vente du dossier (``multi_lot`` et ``sold_lot``), pour contrôler le lot dont parle une phrase.
+SemanticLotContext = LotContext
+
+
+def semantic_lot_context(quality_flags: object, lot_selection: object) -> SemanticLotContext:
+    """Contexte de lot d'une vente (colonnes ``quality_flags`` et ``raw_payload.source_lot_selection``)."""
+    sold_lot = sold_lot_from_sale(None, None, lot_selection)
+    flags = quality_flags if isinstance(quality_flags, list) else []
+    return SemanticLotContext(multi_lot="multi_lot_sale" in flags or sold_lot is not None, sold_lot=sold_lot)
 
 
 @dataclass(frozen=True)
@@ -293,6 +331,90 @@ _INVISIBLE_RE = re.compile(
 )
 
 
+# --- Consignes adressées à un modèle ------------------------------------------------------------------
+# Même liste et mêmes normalisations que `src/lib/information-agent-inbound/prompt-injection.ts`. Un texte qui
+# en contient ne donne aucun fait : le modèle n'est pas appelé, le validateur refuse tout, la pièce part en
+# relecture humaine. C'est un SIGNAL, pas une barrière : la publication automatique restera contrôlée par des
+# conditions structurelles (voir `docs/runbooks/information-agent.md`).
+# Ne comptent pas : « selon les instructions du juge », « le système de chauffage », « j'ignore les
+# consignes », « ignorer les indications de mon précédent courriel », une signature « Assistant : Paul Martin ».
+_ORDER_NOUNS = (
+    r"(?:(?:consignes|instructions|directives)\b(?!\s+(?:de|du|d['’]|dans)\s+(?:mon|ma|notre|le|la)\s+"
+    r"(?:pr[ée]c[ée]dent|dernier|derni[èe]re)\w*\s+(?:message|courriel|mail|e-mail|email|envoi|r[ée]ponse))|"
+    r"(?:r[èe]gles|indications)\s+(?:pr[ée]c[ée]dentes|ci-dessus|ant[ée]rieures|du\s+syst[èe]me|de\s+ce\s+prompt|"
+    r"qui\s+pr[ée]c[èe]dent))"
+)
+_IGNORE_ORDER_RE = re.compile(
+    r"\b(?:ignor(?:e|es|ez|er)|oubli(?:e|es|ez|er)|ne\s+(?:tiens|tenez)\s+pas\s+compte)\s+(?:de\s+|des\s+|d['’])?"
+    r"(?:toutes?\s+)?(?:les\s+|tes\s+|vos\s+|ces\s+|ses\s+|leurs\s+)?" + _ORDER_NOUNS,
+    re.IGNORECASE,
+)
+_SUBJECT_BEFORE_RE = re.compile(r"\b(?:j['’]|je|n['’]|on|il|elle|ils|elles|nous)\s*$", re.IGNORECASE)
+_ENGLISH_GAP = r"[\s.,;:!-]+"
+PROMPT_INJECTION_RE = re.compile(
+    r"\b(?:ignor(?:e|es|ez|er)|oubli(?:e|es|ez|er))\s+tout\s+ce\s+qui\s+(?:pr[ée]c[èe]de|est\s+(?:au-dessus|ci-dessus|plus\s+haut))|"
+    rf"\b(?:ignore|disregard|forget){_ENGLISH_GAP}(?:(?:all|any){_ENGLISH_GAP})?(?:(?:the|your){_ENGLISH_GAP})?"
+    rf"(?:(?:previous|prior|above|earlier|preceding){_ENGLISH_GAP})?(?:instructions|prompts?|rules|directions)\b|"
+    r"\b(?:ignore|disregard|forget)\s+(?:everything|anything|all)\s+(?:above|before|prior|previous|earlier)\b|"
+    r"(?:^|[\n\r>\"'«(\[{.!?;])\s*(?:system|developer)\s*:|"
+    r"\br[ôo]le\s*:\s*(?:system|syst[èe]me|assistant|developer|d[ée]veloppeur)\b|"
+    r"\bsystem\s+prompt\b|"
+    r"\btu\s+es\s+(?:maintenant\s+)?(?:un|une)\s+(?:mod[èe]le|ia|intelligence\s+artificielle|assistant|chatbot|llm)\b|"
+    r"(?:\bvous\s+[êe]tes\s+(?:maintenant\s+)?(?:un|une)\s+|\ben\s+tant\s+qu['’]|\ben\s+tant\s+que\s+)"
+    r"(?:mod[èe]le\s+de\s+langage|ia|intelligence\s+artificielle|llm|chatbot)\b|"
+    r"\byou\s+are\s+(?:now\s+)?(?:an?\s+)?(?:ai|assistant|language\s+model|llm|chatbot)\b|"
+    r"\b(?:act|behave)\s+as\b|\bpretend\s+(?:to\s+be|you\s+are)\b|"
+    r"\b(?:nouvelles?\s+(?:consignes?|instructions?)|new\s+instructions?)\s*:|"
+    r"(?:^|\n)[ \t]*\#{1,6}[ \t]*(?:instructions?|system|prompt|r[ôo]le|consignes?)\b|"
+    r"<\s*/?\s*(?:untrusted[-_\s]?(?:evidence|ocr)|page\s+number|system|instructions?|prompt)\b|"
+    r"<\|(?:im_start|im_end|system|assistant|user)\|>|\[/?INST\]|<</?SYS>>",
+    re.IGNORECASE | re.MULTILINE,
+)
+# « assistant: » seul sur sa ligne ou suivi d'une consigne en minuscule (sensible à la casse).
+_ASSISTANT_ROLE_RE = re.compile(
+    r"(?:^|[\n\r>\"'«(\[{.!?;])[ \t]*(?:[Aa]ssistant|ASSISTANT)[ \t]*:[ \t]*(?:$|(?=[a-zà-ÿ0-9\"'«<\[]))",
+    re.MULTILINE,
+)
+_HOMOGLYPHS = str.maketrans(
+    {
+        "а": "a", "в": "b", "е": "e", "к": "k", "м": "m", "н": "h", "о": "o", "р": "p", "с": "c", "т": "t",
+        "у": "y", "х": "x", "і": "i", "ї": "i", "ј": "j", "ѕ": "s", "ԁ": "d", "ԛ": "q", "ԝ": "w", "ɡ": "g",
+        "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T",
+        "Х": "X", "І": "I", "Ј": "J", "Ѕ": "S", "α": "a", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ο": "o",
+        "ρ": "p", "τ": "t", "υ": "u", "χ": "x", "Α": "A", "Ε": "E", "Ι": "I", "Κ": "K", "Ν": "N", "Ο": "O",
+        "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+    }
+)
+_SPACED_LETTERS_RE = re.compile(r"(?<![^\W\d_])(?:[^\W\d_][ \t]{1,2}){3,}[^\W\d_](?![^\W\d_])")
+
+
+def normalize_for_prompt_injection(text: str) -> str:
+    """Texte tel que le détecteur le lit : invisibles retirés, NFKC, homoglyphes ramenés à l'ASCII."""
+    return unicodedata.normalize("NFKC", _INVISIBLE_RE.sub("", text)).translate(_HOMOGLYPHS)
+
+
+def _has_injection(text: str) -> bool:
+    if PROMPT_INJECTION_RE.search(text) or _ASSISTANT_ROLE_RE.search(text):
+        return True
+    return any(
+        not _SUBJECT_BEFORE_RE.search(text[max(0, match.start() - 12) : match.start()])
+        for match in _IGNORE_ORDER_RE.finditer(text)
+    )
+
+
+def contains_prompt_injection(text: object) -> bool:
+    """Le texte (brut, avant tout filtrage) contient-il une consigne adressée à un modèle ?"""
+    if not isinstance(text, str) or not text:
+        return False
+    normalized = normalize_for_prompt_injection(text)
+    joined = _SPACED_LETTERS_RE.sub(lambda match: re.sub(r"[ \t]", "", match.group(0)), normalized)
+    return _has_injection(normalized) or (joined != normalized and _has_injection(joined))
+
+
+def _pages_contain_prompt_injection(pages: Sequence[Mapping[str, object]]) -> bool:
+    return any(contains_prompt_injection(page.get("text")) for page in pages if isinstance(page, Mapping))
+
+
 def redact_text_for_model(text: object) -> str:
     """Retire noms, signatures, téléphones et adresses email d'un texte avant l'envoi au modèle.
 
@@ -314,6 +436,13 @@ def redact_text_for_model(text: object) -> str:
     result = _PHONE_RE.sub("[téléphone retiré]", result)
     result = redact_personal_text(result) or ""
     return _CIVILITY_NAME_RE.sub("[nom retiré]", result)
+
+
+def _model_text_lines(value: object) -> str:
+    """Comme :func:`_model_text`, retours à la ligne gardés (une puce ou une ligne sert de phrase)."""
+    redacted = redact_text_for_model(value)
+    lines = (clean_text(line) or "" for line in redacted.split("\n"))
+    return "\n".join(line for line in lines if line)
 
 
 def _model_text(value: object) -> str:
@@ -369,6 +498,7 @@ def analyze_semantic_evidence(
     enabled: bool = True,
     model: str | None = None,
     timeout_seconds: float = SEMANTIC_TIMEOUT_SECONDS,
+    lot_context: SemanticLotContext | None = None,
 ) -> SemanticAnalysis:
     """Run and validate an optional text-only semantic pass.
 
@@ -378,6 +508,9 @@ def analyze_semantic_evidence(
     """
     if not enabled:
         return SemanticAnalysis("disabled", [], model=model)
+    if _pages_contain_prompt_injection(pages):
+        # Aucun appel du modèle : le texte part en relecture humaine sans proposition.
+        return SemanticAnalysis("skipped", [], error_code="PROMPT_INJECTION_SUSPECTED", model=model)
     user_prompt, input_truncated = build_semantic_user_prompt(pages)
     if "(no readable text)" in user_prompt:
         return SemanticAnalysis("skipped", [], input_truncated=input_truncated, model=model)
@@ -413,16 +546,25 @@ def analyze_semantic_evidence(
             error_code="SEMANTIC_OUTPUT_INVALID",
             model=model,
         )
-    facts = validate_semantic_facts(payload.get("facts"), pages)
+    facts = validate_semantic_facts(payload.get("facts"), pages, lot_context=lot_context)
     return SemanticAnalysis("completed", facts, input_truncated=input_truncated, model=model)
 
 
 def validate_semantic_facts(
     raw_facts: object,
     pages: Sequence[Mapping[str, object]],
+    *,
+    lot_context: SemanticLotContext | None = None,
 ) -> list[SemanticFact]:
-    """Keep only supported, bounded facts with a citation in the source."""
+    """Keep only supported, bounded facts with a citation in the source.
+
+    A kept fact may carry ``review_reasons``: it then goes to human review with that reason and is never
+    a clear fact.
+    """
     if not isinstance(raw_facts, list):
+        return []
+    # Un texte qui donne des consignes à un modèle ne donne aucun fait, quels qu'ils soient.
+    if _pages_contain_prompt_injection(pages):
         return []
     page_texts: dict[int, str] = {}
     for page in pages:
@@ -430,27 +572,37 @@ def validate_semantic_facts(
             page_number = int(page.get("page") or 1)
         except (TypeError, ValueError):
             continue
-        # Les citations sont vérifiées contre le texte tel que le modèle l'a reçu (sans noms).
-        text = _model_text(page.get("text"))
+        # Les citations sont vérifiées contre le texte tel que le modèle l'a reçu (sans noms), lignes
+        # gardées : une puce ou une ligne est une phrase.
+        text = _model_text_lines(page.get("text"))
         if text:
             page_texts[max(1, page_number)] = text
     facts: list[SemanticFact] = []
-    seen: set[tuple[str, str, int]] = set()
+    positions: dict[tuple[str, str, int], int] = {}
     for raw in raw_facts:
         if len(facts) >= MAX_SEMANTIC_FACTS or not isinstance(raw, Mapping):
             break
-        fact = _validate_fact(raw, page_texts)
+        fact = _validate_fact(raw, page_texts, lot_context)
         if fact is None:
             continue
         key = (fact.fact_key, str(fact.value).casefold(), fact.source_page)
-        if key in seen:
+        if key in positions:
+            # Même valeur citée deux fois : les motifs de chaque citation restent sur le fait gardé.
+            kept = facts[positions[key]]
+            merged = tuple(dict.fromkeys([*kept.review_reasons, *fact.review_reasons]))
+            if merged != kept.review_reasons:
+                facts[positions[key]] = replace(kept, review_reasons=merged)
             continue
-        seen.add(key)
+        positions[key] = len(facts)
         facts.append(fact)
     return facts
 
 
-def _validate_fact(raw: Mapping[str, object], page_texts: Mapping[int, str]) -> SemanticFact | None:
+def _validate_fact(
+    raw: Mapping[str, object],
+    page_texts: Mapping[int, str],
+    lot_context: SemanticLotContext | None = None,
+) -> SemanticFact | None:
     fact_key = str(raw.get("fact_key") or "").strip()
     if fact_key not in SUPPORTED_SEMANTIC_FACT_KEYS:
         return None
@@ -464,8 +616,11 @@ def _validate_fact(raw: Mapping[str, object], page_texts: Mapping[int, str]) -> 
     raw_excerpt = clean_text(raw.get("evidence_excerpt")) or ""
     if not raw_excerpt or len(raw_excerpt) > MAX_SEMANTIC_EXCERPT_CHARS:
         return None
-    evidence_excerpt = _grounded_excerpt(source_text, raw_excerpt)
-    if evidence_excerpt is None:
+    span = _grounded_span(source_text, raw_excerpt)
+    if span is None:
+        return None
+    evidence_excerpt = clean_text(source_text[span[0] : span[1]])
+    if not evidence_excerpt:
         return None
     if UNCERTAIN_EVIDENCE_RE.search(evidence_excerpt):
         return None
@@ -478,6 +633,17 @@ def _validate_fact(raw: Mapping[str, object], page_texts: Mapping[int, str]) -> 
     # champ (mise à prix et non consignation, bien non loué, surface du logement et non du terrain…).
     if not _value_is_coherent(fact_key, value, evidence_excerpt):
         return None
+    # Position de la valeur dans la page : pour une surface ou des pièces, le nombre qui en parle vraiment
+    # (pas une annexe, pas le terrain, pas des pièces jointes).
+    anchor = _value_anchor(source_text, span, fact_key, value)
+    if anchor is None:
+        return None
+    # La phrase entière (et ses voisines), pas seulement la citation choisie par le modèle : une erreur de
+    # catégorie ou une négation est rejetée, un doute garde le fait en relecture avec son motif.
+    review = review_statement(source_text, anchor, fact_key, lot_context)
+    if review.rejected:
+        return None
+    review_reasons = review.reasons
     # The provider cannot choose a presentation that disagrees with the value
     # persisted as a pending candidate. Recompute it after validation.
     display = _display_value(fact_key, value)
@@ -489,7 +655,32 @@ def _validate_fact(raw: Mapping[str, object], page_texts: Mapping[int, str]) -> 
         return None
     if not math.isfinite(confidence) or not 0 <= confidence <= 1:
         return None
-    return SemanticFact(fact_key, value, display, evidence_excerpt, confidence, source_page)
+    return SemanticFact(
+        fact_key,
+        value,
+        display,
+        evidence_excerpt,
+        confidence,
+        source_page,
+        review_reasons=review_reasons,
+    )
+
+
+_ENERGY_LABEL_CUE = (
+    r"(?:dpe|diagnostic\s+de\s+performance\s+[ée]nerg[ée]tique|classe\s+(?:[ée]nerg[ée]tique|[ée]nergie|dpe)|"
+    r"[ée]tiquette\s+[ée]nerg[ée]tique|performance\s+[ée]nerg[ée]tique)"
+)
+_ENERGY_CONNECTOR = r"(?:\s*[:=\-–]\s*|\s+)"
+_ENERGY_LINK_WORDS = r"(?:est|de|en|la|le|classe|class[ée]e?|lettre|[ée]tiquette|note)"
+
+
+def _energy_grade_is_adjacent(grade: str, text: str) -> bool:
+    """La lettre suit directement « DPE » ou « classe énergie » (« DPE : classe E », « DPE E »)."""
+    pattern = (
+        rf"{_ENERGY_LABEL_CUE}(?:{_ENERGY_CONNECTOR}{_ENERGY_LINK_WORDS}){{0,3}}{_ENERGY_CONNECTOR}?"
+        rf"[«\"'(]?\s*(?-i:{re.escape(grade)})(?![A-Za-z])"
+    )
+    return re.search(pattern, text, re.IGNORECASE) is not None
 
 
 def _validated_value(fact_key: str, proposed_value: object) -> str | int | float | None:
@@ -606,11 +797,6 @@ _NOT_PRICE_CUE_RE = re.compile(
     re.IGNORECASE,
 )
 _AREA_UNIT_RE = re.compile(r"\s*(?:m\s?[²2]|m[èe]tres?\s+carr[ée]s?)(?![\w])", re.IGNORECASE)
-_LAND_CUE_RE = re.compile(r"terrain|parcelle|jardin|cadastr|contenance|emprise|foncier", re.IGNORECASE)
-_DWELLING_CUE_RE = re.compile(
-    r"habitable|carrez|logement|appartement|b[âa]ti|plancher|utile|int[ée]rieur|surface\s+totale", re.IGNORECASE
-)
-_ROOMS_FOLLOW_RE = re.compile(r"\s*(?:pi[èe]ces?|p\b)", re.IGNORECASE)
 _NEGATION_BEFORE_RE = re.compile(
     r"(?:\bnon\b|\bpas\b|\bn['’]est\s+plus\b|\bn['’]étant\b|\bsans\b|\baucun(?:e)?\b|\bplus\s+de\b|"
     r"\blibre\s+de\s+toute?\b)[^.;:!?]{0,30}$",
@@ -644,6 +830,43 @@ _VISIT_CUE_RE = re.compile(
 _URL_OR_CONTACT_RE = re.compile(
     r"https?://|www\.|\b[\w-]+\.(?:fr|com|net|org|eu|io|info)\b/?|@|\[(?:email|téléphone|signature|nom)\s", re.IGNORECASE
 )
+
+
+def _area_fits(fact_key: str, category: str | None) -> bool:
+    if fact_key == "land_surface_m2":
+        return category == "land"
+    return category in {"dwelling", None}
+
+
+_SOURCE_NUMBER_RE = re.compile(r"(?<![\w.,])\d{1,3}(?:[ .\u202f\u00a0]\d{3})+(?:[.,]\d+)?(?![\w])|(?<![\w.,])\d+(?:[.,]\d+)?(?![\w])")
+
+
+def _value_anchor(
+    source: str,
+    span: tuple[int, int],
+    fact_key: str,
+    value: str | int | float,
+) -> tuple[int, int] | None:
+    """Position (début, fin) dans la page du nombre qui porte la valeur, ou de la citation (clé non numérique).
+
+    Surface : suivi de m², ni terrain ni annexe (ou terrain pour ``land_surface_m2``), d'après le repère le
+    plus proche dans la page. Pièces : suivi de « pièces » qui ne sont ni jointes, ni d'eau, ni demandées.
+    """
+    if fact_key not in {"surface_m2", "land_surface_m2", "rooms_count", "starting_price_eur"}:
+        return span
+    for match in _SOURCE_NUMBER_RE.finditer(source, span[0], span[1]):
+        parsed = _parse_number(match.group(0))
+        if parsed is None or not math.isclose(parsed, float(value), rel_tol=0, abs_tol=0.0001):
+            continue
+        if fact_key in {"surface_m2", "land_surface_m2"}:
+            if not _AREA_UNIT_RE.match(source, match.end()):
+                continue
+            if not _area_fits(fact_key, area_category(source, match.start(), match.end())):
+                continue
+        elif fact_key == "rooms_count" and not ROOMS_FOLLOW_RE.match(source, match.end()):
+            continue
+        return match.start(), match.end()
+    return None
 
 
 def _number_matches(value: float, text: str) -> list[re.Match[str]]:
@@ -711,22 +934,15 @@ def _value_is_coherent(fact_key: str, value: str | int | float, evidence_excerpt
         return False
     if fact_key in {"surface_m2", "land_surface_m2"}:
         compact = _compacted(excerpt)
-        for match in _number_matches(float(value), excerpt):
-            if not _AREA_UNIT_RE.match(compact, match.end()):
-                continue
-            window = compact[max(0, match.start() - 80) : match.start()]
-            land = _LAND_CUE_RE.search(window) is not None
-            dwelling = _DWELLING_CUE_RE.search(window) is not None
-            if fact_key == "land_surface_m2":
-                if land:
-                    return True
-            elif not land or dwelling:
-                return True
-        return False
+        return any(
+            _AREA_UNIT_RE.match(compact, match.end())
+            and _area_fits(fact_key, area_category(compact, match.start(), match.end()))
+            for match in _number_matches(float(value), excerpt)
+        )
     if fact_key == "rooms_count":
         number = int(value)
         compact = _compacted(excerpt)
-        return any(_ROOMS_FOLLOW_RE.match(compact, match.end()) for match in _number_matches(float(number), excerpt))
+        return any(ROOMS_FOLLOW_RE.match(compact, match.end()) for match in _number_matches(float(number), excerpt))
     if fact_key == "occupancy_status":
         return _occupancy_is_coherent(str(value), excerpt)
     if fact_key == "visit_information":
@@ -734,7 +950,55 @@ def _value_is_coherent(fact_key: str, value: str | int | float, evidence_excerpt
         if _URL_OR_CONTACT_RE.search(text) or _PHONE_RE.search(text):
             return False
         return _VISIT_CUE_RE.search(text) is not None or _VISIT_CUE_RE.search(excerpt) is not None
+    if fact_key == "energy_diagnostics":
+        return _energy_grade_is_adjacent(str(value), excerpt)
+    if fact_key == "property_type":
+        return _property_type_is_coherent(str(value), excerpt)
     return True
+
+
+_PROPERTY_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
+    "house": ("maison", "villa", "pavillon"),
+    "apartment": ("appartement", "studio", "duplex", "triplex"),
+    "building": ("immeuble", "bâtiment", "batiment"),
+    "commercial": ("commercial", "commerce", "boutique", "local"),
+    "mixed": ("mixte", "ensemble immobilier"),
+    "land": ("terrain", "parcelle"),
+    "parking": ("parking", "garage", "stationnement"),
+    "other": ("autre", "autres"),
+}
+# « local à vélos », « garage à vélos », « local de rangement », « local technique » : le mot désigne une
+# partie ou une annexe, pas le bien. Les compléments qui décrivent le bien restent permis (« maison à
+# rénover », « terrain à bâtir », « local à usage commercial »).
+_COMPOUND_COMPLEMENT_RE = re.compile(
+    r"\s+(?:(?:[àa]|pour)\s+(?!usage\b|b[âa]tir\b|r[ée]nover\b|restaurer\b|r[ée]habiliter\b|[ée]tages?\b|"
+    r"colombages\b|vendre\b|l['’]usage\b|destination\b|\d)[^\W\d_]|"
+    r"(?:de|d['’]|des|du)\s*(?:rangement|stockage|m[ée]nage|entretien|service|poubelles?|v[ée]los?|ordures|"
+    r"chaufferie|compteurs?|gardien|concierge|jardin|piscine|cave)\b|"
+    r"(?:technique|techniques|commun|communs|annexe|poubelles?|v[ée]los?)\b)",
+    re.IGNORECASE,
+)
+# « local » seul ne dit pas que le bien est un local commercial ou professionnel.
+_LOCAL_QUALIFIER_RE = re.compile(
+    r"\s+(?:commercial|professionnel|d['’]activit[ée]s?|[àa]\s+usage\s+(?:commercial|professionnel|"
+    r"d['’]activit[ée]s?|de\s+(?:bureaux?|commerce))|de\s+commerce|mixte)\b",
+    re.IGNORECASE,
+)
+
+
+def _property_type_is_coherent(value: str, excerpt: str) -> bool:
+    """Le type vient d'un mot qui désigne le bien, pas d'un mot composé (« local à vélos »)."""
+    aliases = _PROPERTY_TYPE_ALIASES.get(value)
+    if not aliases:
+        return False
+    for alias in aliases:
+        for match in re.finditer(rf"(?<!\w){re.escape(alias)}(?!\w)", excerpt, re.IGNORECASE):
+            if _COMPOUND_COMPLEMENT_RE.match(excerpt, match.end()):
+                continue
+            if alias == "local" and not _LOCAL_QUALIFIER_RE.match(excerpt, match.end()):
+                continue
+            return True
+    return False
 
 
 _FRENCH_MONTHS = {
@@ -832,7 +1096,8 @@ def _numeric_value_in_text(value: float, text: str) -> bool:
     return False
 
 
-def _grounded_excerpt(source: str, candidate: str) -> str | None:
+def _grounded_span(source: str, candidate: str) -> tuple[int, int] | None:
+    """Position (début, fin) de la citation dans le texte source, espaces et casse ignorés."""
     source_normalized, source_offsets = _normalized_with_offsets(source)
     candidate_normalized = _normalized(candidate)
     if not candidate_normalized:
@@ -842,7 +1107,7 @@ def _grounded_excerpt(source: str, candidate: str) -> str | None:
         return None
     start = source_offsets[position]
     end = source_offsets[position + len(candidate_normalized) - 1] + 1
-    return clean_text(source[start:end])
+    return start, end
 
 
 def _normalized(value: str) -> str:
@@ -873,6 +1138,8 @@ def _normalized_with_offsets(value: str) -> tuple[str, list[int]]:
 def run_configured_semantic_analysis(
     pages: Sequence[Mapping[str, object]],
     settings: Mapping[str, object],
+    *,
+    lot_context_loader: Callable[[], SemanticLotContext | None] | None = None,
 ) -> SemanticAnalysis:
     """Use the existing text provider only when explicitly enabled.
 
@@ -887,6 +1154,8 @@ def run_configured_semantic_analysis(
     try:
         from src.enrichment.llm_client import create_llm_client
 
+        # Lu avant l'appel du modèle : s'il est illisible, rien n'est payé et aucun fait n'est proposé.
+        lot_context = lot_context_loader() if lot_context_loader else None
         client = create_llm_client()
         # Keep this optional pass materially below the existing fact extraction
         # ceiling; the regular provider reservation still records the call.
@@ -898,6 +1167,7 @@ def run_configured_semantic_analysis(
             generate_json=generate_json,
             enabled=True,
             model=str(client.model or "") or None,
+            lot_context=lot_context,
         )
     except Exception:
         return SemanticAnalysis("unavailable", [], error_code="SEMANTIC_PROVIDER_NOT_CONFIGURED")
@@ -1068,13 +1338,17 @@ __all__ = [
     "PhotoObservation",
     "PhotoSemanticAnalysis",
     "SemanticAnalysis",
+    "SEMANTIC_REVIEW_REASONS",
     "SemanticFact",
+    "SemanticLotContext",
     "analyze_photo_evidence",
     "analyze_semantic_evidence",
     "build_photo_user_prompt",
     "build_semantic_user_prompt",
+    "contains_prompt_injection",
     "image_bytes_to_data_url",
     "run_configured_photo_analysis",
     "run_configured_semantic_analysis",
+    "semantic_lot_context",
     "validate_semantic_facts",
 ]

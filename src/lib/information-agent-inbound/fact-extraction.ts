@@ -6,14 +6,18 @@ import {
   replyTextForExtraction,
 } from "@/lib/information-agent-inbound/text";
 import { unicodeWordBoundaries } from "@/lib/information-agent-inbound/unicode-boundaries";
+import { reviewStatement } from "@/lib/information-agent-inbound/review-signals";
+import type { ReviewReason } from "@/lib/information-agent-review-reasons";
 
 /**
- * Occupation d'un temps révolu : « était loué », « ancien locataire », « bail résilié ». Ce n'est pas l'état actuel : « Le bien était loué mais il est désormais libre » ne
- * donne pas « loué ». Les passages sont blanchis (même longueur) avant la recherche des formules
- * d'occupation, pour que les positions des extraits restent justes.
+ * Occupation d'un temps révolu : « était loué », « était libre », « ancien locataire », « bail résilié ». Ce n'est
+ * pas l'état actuel : « Le bien était loué mais il est désormais libre » ne donne pas « loué ». Même chose pour
+ * le futur et le conditionnel (« sera libre », « serait loué ») : une annonce ou une supposition, pas un état.
+ * Les passages sont blanchis (même longueur) avant la recherche des formules d'occupation, pour que les
+ * positions des extraits restent justes.
  */
 const PAST_OCCUPANCY = unicodeWordBoundaries(
-  /\b(?:(?:était|étaient|fut|furent|a\s+été|ont\s+été|avait|avaient|anciennement|précédemment|auparavant)\s+(?:[^.!?\n]{0,40}?\s)?(?:lou[ée]e?s?|occup[ée]e?s?|squatt[ée]e?s?)|ancien(?:ne)?s?\s+(?:locataires?|occupants?)|bail\s+(?:r[ée]sili[ée]|expir[ée]|termin[ée]|[ée]chu))(?![\p{L}\p{N}])/giu,
+  /\b(?:(?:était|étaient|fut|furent|a\s+été|ont\s+été|avait|avaient|anciennement|précédemment|auparavant|sera|seront|serait|seraient)\s+(?:[^.!?\n]{0,40}?\s)??(?:lou[ée]e?s?|occup[ée]e?s?|squatt[ée]e?s?|libres?|vacants?|inoccup[ée]e?s?)|ancien(?:ne)?s?\s+(?:locataires?|occupants?)|bail\s+(?:r[ée]sili[ée]|expir[ée]|termin[ée]|[ée]chu))(?![\p{L}\p{N}])/giu,
 );
 
 function withoutPastOccupancy(text: string): string {
@@ -36,22 +40,80 @@ export type ExtractedInformationAgentFact = {
   displayValue: string;
   evidenceExcerpt: string;
   confidence: number;
+  /**
+   * Motifs de relecture (mêmes codes que la lecture par l'IA) : présent seulement quand la phrase porte un
+   * doute. Un fait qui en a un n'est jamais net.
+   */
+  reviewReasons?: ReviewReason[];
 };
+
+/** Position de la valeur dans le texte lu, pour le contrôle du lot fait quand la vente est connue. */
+export type FactSourceAnchor = { text: string; start: number; end: number };
+const FACT_SOURCE_ANCHORS = new WeakMap<ExtractedInformationAgentFact, FactSourceAnchor>();
+
+export function factSourceAnchor(fact: ExtractedInformationAgentFact): FactSourceAnchor | null {
+  return FACT_SOURCE_ANCHORS.get(fact) ?? null;
+}
+
+const SOURCE_NUMBER_RE =
+  /(?<![\p{L}\p{N}_.,])(?:\d{1,3}(?:[ .\u00a0\u202f]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(?![\p{L}\p{N}_])/gu;
+
+/** Position du nombre qui vaut `value`, à partir de `from` (repli : `from`). */
+function numberAnchor(text: string, from: number, value: number): [number, number] {
+  const window = text.slice(from, Math.min(text.length, from + 160));
+  for (const match of window.matchAll(SOURCE_NUMBER_RE)) {
+    const parsed = Number(
+      match[0].replace(/[ .\u00a0\u202f](?=\d{3}(?:\D|$))/gu, "").replace(",", "."),
+    );
+    if (Number.isFinite(parsed) && Math.abs(parsed - value) < 0.0001) {
+      const start = from + (match.index ?? 0);
+      return [start, start + match[0].length];
+    }
+  }
+  return [from, Math.min(text.length, from + 1)];
+}
+
+/**
+ * Lit chaque fait dans sa phrase (`reviewStatement`) : une négation de la valeur l'écarte, un doute lui
+ * donne des motifs de relecture. Le lot est contrôlé plus tard, avec le contexte de la vente.
+ */
+function reviewExtractedFacts(
+  text: string,
+  located: Array<{ fact: ExtractedInformationAgentFact; anchor: [number, number] }>,
+): ExtractedInformationAgentFact[] {
+  const kept: ExtractedInformationAgentFact[] = [];
+  for (const { fact, anchor } of located) {
+    const review = reviewStatement(text, anchor, fact.factKey, { checkLot: false });
+    if (review.rejected) continue;
+    const reviewed = review.reasons.length ? { ...fact, reviewReasons: review.reasons } : fact;
+    FACT_SOURCE_ANCHORS.set(reviewed, { text, start: anchor[0], end: anchor[1] });
+    kept.push(reviewed);
+  }
+  return kept;
+}
 
 export function extractInformationAgentFacts(bodyText: string): ExtractedInformationAgentFact[] {
   const normalized = replyTextForExtraction(bodyText).replace(/\u00a0/g, " ");
-  const facts: ExtractedInformationAgentFact[] = [];
+  const located: Array<{ fact: ExtractedInformationAgentFact; anchor: [number, number] }> = [];
+  const facts = {
+    push(fact: ExtractedInformationAgentFact, anchor: [number, number]) {
+      located.push({ fact, anchor });
+    },
+  };
   const surfaceObservation = extractSurfaceObservation(normalized);
   if (surfaceObservation) {
     const { value, index, label } = surfaceObservation;
     if (value > 0 && value <= 1000000 && !hasAmbiguousCorrectionNear(normalized, index)) {
-      facts.push({
-        factKey: "surface_m2",
-        proposedValue: { value, unit: "m2" },
-        displayValue: `${label ? `${label} : ` : ""}${value.toLocaleString("fr-FR")} m²`,
-        evidenceExcerpt: excerptAround(normalized, index),
-        confidence: label ? 0.88 : 0.7,
-      });
+      facts.push(
+        {
+          factKey: "surface_m2",
+          proposedValue: { value, unit: "m2" },
+          displayValue: `${label ? `${label} : ` : ""}${value.toLocaleString("fr-FR")} m²`,
+          evidenceExcerpt: excerptAround(normalized, index),
+          confidence: label ? 0.88 : 0.7,
+        },
+        numberAnchor(normalized, index, value),
+      );
     }
   }
 
@@ -60,19 +122,22 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     landSurfaceObservation &&
     !hasAmbiguousCorrectionNear(normalized, landSurfaceObservation.index)
   ) {
-    facts.push({
-      factKey: "land_surface_m2",
-      proposedValue: { value: landSurfaceObservation.value, unit: "m2" },
-      displayValue: `Terrain : ${landSurfaceObservation.value.toLocaleString("fr-FR")} m²`,
-      evidenceExcerpt: excerptAround(normalized, landSurfaceObservation.index),
-      confidence: 0.88,
-    });
+    facts.push(
+      {
+        factKey: "land_surface_m2",
+        proposedValue: { value: landSurfaceObservation.value, unit: "m2" },
+        displayValue: `Terrain : ${landSurfaceObservation.value.toLocaleString("fr-FR")} m²`,
+        evidenceExcerpt: excerptAround(normalized, landSurfaceObservation.index),
+        confidence: 0.88,
+      },
+      numberAnchor(normalized, landSurfaceObservation.index, landSurfaceObservation.value),
+    );
   }
 
   // « 3 pièces jointes », « 2 pièces du dossier » : des documents, pas des pièces du logement.
   const roomsMatches = [
     ...normalized.matchAll(
-      /(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b(?!\s+(?:jointes?|justificatives?|annexes?|demand[ée]es|compl[ée]mentaires|d['’]identit[ée]|du\s+dossier|de\s+(?:la\s+)?proc[ée]dure))/gi,
+      /(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b(?!\s+(?:jointes?|justificatives?|annexes?|demand[ée]es|compl[ée]mentaires|d['’]identit[ée]|d['’]eau|du\s+dossier|de\s+(?:la\s+)?proc[ée]dure|[àa]\s+conviction|n[ée]cessaires|requises|transmises|envoy[ée]es))/gi,
     ),
   ];
   const roomValues = new Set(roomsMatches.map((match) => Number(match[1])));
@@ -84,20 +149,23 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
       value <= 100 &&
       !hasAmbiguousCorrectionNear(normalized, roomsMatch.index ?? 0)
     ) {
-      facts.push({
-        factKey: "rooms_count",
-        proposedValue: { value },
-        displayValue: `${value} pièce${value > 1 ? "s" : ""}`,
-        evidenceExcerpt: excerptAround(normalized, roomsMatch.index ?? 0),
-        confidence: 0.86,
-      });
+      facts.push(
+        {
+          factKey: "rooms_count",
+          proposedValue: { value },
+          displayValue: `${value} pièce${value > 1 ? "s" : ""}`,
+          evidenceExcerpt: excerptAround(normalized, roomsMatch.index ?? 0),
+          confidence: 0.86,
+        },
+        [roomsMatch.index ?? 0, (roomsMatch.index ?? 0) + (roomsMatch[1]?.length ?? 1)],
+      );
     }
   }
 
   const occupancyText = withoutPastOccupancy(normalized);
   const occupancyPatterns: Array<[RegExp, string, string]> = [
     [
-      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?occup[ée]e?s?\s+par\s+(?:le|la|les)\s+propri[ée]taire(?:s)?\b/iu,
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?occup[ée]e?s?\s+par\s+(?:le|la|les)\s+propri[ée]taire(?:s)?\b/iu,
       "owner_occupied",
       "Bien occupé par le propriétaire",
     ],
@@ -120,17 +188,17 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
       "Bien loué",
     ],
     [
-      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?libres?(?![\p{L}\p{N}])/iu,
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?libres?(?![\p{L}\p{N}])/iu,
       "vacant",
       "Bien libre",
     ],
     [
-      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?lou[ée]e?s?(?![\p{L}\p{N}])/iu,
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?lou[ée]e?s?(?![\p{L}\p{N}])/iu,
       "rented",
       "Bien loué",
     ],
     [
-      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était|sera|serait)\s+)?occup[ée]e?s?(?![\p{L}\p{N}])/iu,
+      /\b(?:bien|logement|maison|appartement)\s+(?:(?:est|était)\s+)?occup[ée]e?s?(?![\p{L}\p{N}])/iu,
       "occupied",
       "Bien occupé",
     ],
@@ -154,13 +222,16 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
         !hasAmbiguousCorrectionNear(normalized, match.index ?? 0) &&
         !hasNegatedValueNear(occupancyText, match.index ?? 0)
       ) {
-        facts.push({
-          factKey: "occupancy_status",
-          proposedValue: { value },
-          displayValue: label,
-          evidenceExcerpt: excerptAround(normalized, match.index ?? 0),
-          confidence: 0.82,
-        });
+        facts.push(
+          {
+            factKey: "occupancy_status",
+            proposedValue: { value },
+            displayValue: label,
+            evidenceExcerpt: excerptAround(normalized, match.index ?? 0),
+            confidence: 0.82,
+          },
+          [match.index ?? 0, (match.index ?? 0) + match[0].length],
+        );
       }
       break;
     }
@@ -168,46 +239,58 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
 
   const visitObservation = extractVisitObservation(normalized);
   if (visitObservation) {
-    facts.push({
-      factKey: "visit_information",
-      proposedValue: { value: visitObservation.value },
-      displayValue: visitObservation.value,
-      evidenceExcerpt: visitObservation.evidenceExcerpt,
-      confidence: 0.72,
-    });
+    facts.push(
+      {
+        factKey: "visit_information",
+        proposedValue: { value: visitObservation.value },
+        displayValue: visitObservation.value,
+        evidenceExcerpt: visitObservation.evidenceExcerpt,
+        confidence: 0.72,
+      },
+      [visitObservation.index, visitObservation.index + 1],
+    );
   }
 
   const diagnosticObservation = extractEnergyDiagnosticObservation(normalized);
   if (diagnosticObservation) {
-    facts.push({
-      factKey: "energy_diagnostics",
-      proposedValue: { value: diagnosticObservation.value },
-      displayValue: diagnosticObservation.value,
-      evidenceExcerpt: diagnosticObservation.evidenceExcerpt,
-      confidence: 0.88,
-    });
+    facts.push(
+      {
+        factKey: "energy_diagnostics",
+        proposedValue: { value: diagnosticObservation.value },
+        displayValue: diagnosticObservation.value,
+        evidenceExcerpt: diagnosticObservation.evidenceExcerpt,
+        confidence: 0.88,
+      },
+      [diagnosticObservation.index, diagnosticObservation.index + 1],
+    );
   }
 
   const propertyTypeObservation = extractPropertyTypeObservation(normalized);
   if (propertyTypeObservation) {
-    facts.push({
-      factKey: "property_type",
-      proposedValue: { value: propertyTypeObservation.value },
-      displayValue: propertyTypeObservation.displayValue,
-      evidenceExcerpt: propertyTypeObservation.evidenceExcerpt,
-      confidence: 0.84,
-    });
+    facts.push(
+      {
+        factKey: "property_type",
+        proposedValue: { value: propertyTypeObservation.value },
+        displayValue: propertyTypeObservation.displayValue,
+        evidenceExcerpt: propertyTypeObservation.evidenceExcerpt,
+        confidence: 0.84,
+      },
+      [propertyTypeObservation.index, propertyTypeObservation.index + 1],
+    );
   }
 
   const addressObservation = extractAddressObservation(normalized);
   if (addressObservation) {
-    facts.push({
-      factKey: "address",
-      proposedValue: { value: addressObservation.value },
-      displayValue: addressObservation.value,
-      evidenceExcerpt: addressObservation.evidenceExcerpt,
-      confidence: 0.8,
-    });
+    facts.push(
+      {
+        factKey: "address",
+        proposedValue: { value: addressObservation.value },
+        displayValue: addressObservation.value,
+        evidenceExcerpt: addressObservation.evidenceExcerpt,
+        confidence: 0.8,
+      },
+      [addressObservation.index, addressObservation.index + 1],
+    );
   }
 
   const saleDateObservations = extractLabeledSaleDates(normalized);
@@ -216,13 +299,16 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     if (values.size === 1) {
       const observation = saleDateObservations[0];
       if (observation && !hasAmbiguousCorrectionNear(normalized, observation.index)) {
-        facts.push({
-          factKey: "sale_date",
-          proposedValue: { value: observation.value },
-          displayValue: formatFrenchDate(observation.value),
-          evidenceExcerpt: excerptAround(normalized, observation.index),
-          confidence: 0.94,
-        });
+        facts.push(
+          {
+            factKey: "sale_date",
+            proposedValue: { value: observation.value },
+            displayValue: formatFrenchDate(observation.value),
+            evidenceExcerpt: excerptAround(normalized, observation.index),
+            confidence: 0.94,
+          },
+          [observation.index, observation.index + 10],
+        );
       }
     }
   }
@@ -233,17 +319,20 @@ export function extractInformationAgentFacts(bodyText: string): ExtractedInforma
     if (values.size === 1) {
       const observation = startingPriceObservations[0];
       if (observation && !hasAmbiguousCorrectionNear(normalized, observation.index)) {
-        facts.push({
-          factKey: "starting_price_eur",
-          proposedValue: { value: observation.value, unit: "EUR" },
-          displayValue: `${observation.value.toLocaleString("fr-FR")} €`,
-          evidenceExcerpt: excerptAround(normalized, observation.index),
-          confidence: 0.95,
-        });
+        facts.push(
+          {
+            factKey: "starting_price_eur",
+            proposedValue: { value: observation.value, unit: "EUR" },
+            displayValue: `${observation.value.toLocaleString("fr-FR")} €`,
+            evidenceExcerpt: excerptAround(normalized, observation.index),
+            confidence: 0.95,
+          },
+          numberAnchor(normalized, observation.index, observation.value),
+        );
       }
     }
   }
-  return facts;
+  return reviewExtractedFacts(normalized, located);
 }
 
 type SurfaceObservation = { value: number; index: number; label: string | null };
@@ -360,9 +449,11 @@ function isLandSurfaceContext(text: string, index: number): boolean {
   return /\b(?:terrain|parcelle|contenance)\b/i.test(text.slice(Math.max(0, index - 70), index));
 }
 
-function extractVisitObservation(text: string): { value: string; evidenceExcerpt: string } | null {
+function extractVisitObservation(
+  text: string,
+): { value: string; evidenceExcerpt: string; index: number } | null {
   const pattern = /\bvisites?\b/giu;
-  const observations: Array<{ value: string; evidenceExcerpt: string }> = [];
+  const observations: Array<{ value: string; evidenceExcerpt: string; index: number }> = [];
   for (const match of text.matchAll(pattern)) {
     const start = match.index ?? 0;
     const source = text.slice(start, Math.min(text.length, start + 240));
@@ -412,6 +503,7 @@ function extractVisitObservation(text: string): { value: string; evidenceExcerpt
     observations.push({
       value: value.slice(0, 500),
       evidenceExcerpt: excerptAround(text, match.index ?? 0),
+      index: match.index ?? 0,
     });
   }
   const unique = new Map(
@@ -428,10 +520,10 @@ function hasVisitSignal(value: string): boolean {
 
 function extractEnergyDiagnosticObservation(
   text: string,
-): { value: string; evidenceExcerpt: string } | null {
+): { value: string; evidenceExcerpt: string; index: number } | null {
   const diagnosticPattern =
     /\b(?:DPE|diagnostic\s+de\s+performance\s+[ée]nerg[ée]tique)\b[^\n.]{0,180}/giu;
-  const observations: Array<{ value: string; evidenceExcerpt: string }> = [];
+  const observations: Array<{ value: string; evidenceExcerpt: string; index: number }> = [];
   for (const match of text.matchAll(diagnosticPattern)) {
     const segment = normalizeWhitespace(match[0] ?? "");
     if (containsUncertainQualifier(segment)) continue;
@@ -447,6 +539,7 @@ function extractEnergyDiagnosticObservation(
     observations.push({
       value: value.slice(0, 500),
       evidenceExcerpt: excerptAround(text, match.index ?? 0),
+      index: match.index ?? 0,
     });
   }
   const unique = new Map(
@@ -492,8 +585,13 @@ const PROPERTY_TYPE_OBSERVATIONS: Array<{
 
 function extractPropertyTypeObservation(
   text: string,
-): { value: string; displayValue: string; evidenceExcerpt: string } | null {
-  const observations: Array<{ value: string; displayValue: string; evidenceExcerpt: string }> = [];
+): { value: string; displayValue: string; evidenceExcerpt: string; index: number } | null {
+  const observations: Array<{
+    value: string;
+    displayValue: string;
+    evidenceExcerpt: string;
+    index: number;
+  }> = [];
   for (const item of PROPERTY_TYPE_OBSERVATIONS) {
     const match = item.pattern.exec(text);
     if (!match) continue;
@@ -502,6 +600,7 @@ function extractPropertyTypeObservation(
       value: item.value,
       displayValue: item.displayValue,
       evidenceExcerpt: excerptAround(text, match.index ?? 0),
+      index: match.index ?? 0,
     });
   }
   const unique = new Map(observations.map((observation) => [observation.value, observation]));
@@ -524,7 +623,7 @@ function hasExplicitPropertyTypeContext(text: string, index: number, length: num
 
 function extractAddressObservation(
   text: string,
-): { value: string; evidenceExcerpt: string } | null {
+): { value: string; evidenceExcerpt: string; index: number } | null {
   // « Adresse : » seul n'est lu qu'en début de ligne et avant la formule de politesse : après, c'est
   // le plus souvent la signature du cabinet. Une adresse email n'est jamais une adresse du bien.
   const body =
@@ -533,7 +632,7 @@ function extractAddressObservation(
     )[0] ?? text;
   const pattern =
     /(?:(?:^|\n)\s*adresse\s*(?=:)|\b(?:adresse\s+(?:du\s+bien|de\s+l['’]immeuble|du\s+logement|du\s+lot|de\s+la\s+maison|de\s+l['’]appartement)|(?:le\s+bien\s+(?:est\s+)?)?sis(?:e)?|(?:le\s+bien\s+(?:est\s+)?)situ[ée]e?(?:\s+(?:au|à|a))?)\b)\s*[:-]?\s*([^\n]{5,180})/giu;
-  const observations: Array<{ value: string; evidenceExcerpt: string }> = [];
+  const observations: Array<{ value: string; evidenceExcerpt: string; index: number }> = [];
   for (const match of body.matchAll(pattern)) {
     const value = normalizeWhitespace(match[1] ?? "")
       .replace(/[.,;]+$/, "")
@@ -547,6 +646,7 @@ function extractAddressObservation(
     observations.push({
       value: value.slice(0, 180),
       evidenceExcerpt: excerptAround(body, match.index ?? 0),
+      index: match.index ?? 0,
     });
   }
   const unique = new Map(

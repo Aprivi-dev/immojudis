@@ -24,6 +24,7 @@ import {
 } from "@/lib/client-api";
 import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
 import { asRecordOrNull as recordValue } from "@/lib/guards";
+import { reviewReasonLabels } from "@/lib/information-agent-review-reasons";
 
 const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"]);
 
@@ -401,6 +402,12 @@ export function AdminInformationAgentReviewPanel() {
                       </p>
                     ) : null}
                     <FactProvenance source={factSourcesByMessageId.get(fact.message_id)} />
+                    {reviewReasonLabels(fact.metadata).length ? (
+                      <p className="mt-2 text-xs font-medium text-warning">
+                        Information douteuse, à vérifier avant de l’accepter :{" "}
+                        {reviewReasonLabels(fact.metadata).join(" ; ")}.
+                      </p>
+                    ) : null}
                     {isLotUnidentified(fact.metadata) ? (
                       <p className="mt-2 text-xs font-medium text-amber-900">
                         Vente à plusieurs lots : la réponse ne cite aucun lot. Rattachez cette
@@ -765,6 +772,8 @@ const PROCESSING_REASON_LABELS: Record<string, string> = {
     "possible demande de ne plus être contacté : à lire avant toute relance, aucune opposition enregistrée",
   unidentified_lot_review: "vente à plusieurs lots : lot non identifié dans la réponse",
   ambiguous_reply_review: "réponse ambiguë à relire",
+  possible_prompt_injection:
+    "consignes adressées à une IA repérées dans le message : aucune information extraite, à lire par un humain",
   case_closed: "dossier clos",
   case_closed_during_processing: "dossier clos pendant le traitement",
 };
