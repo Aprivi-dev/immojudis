@@ -56,6 +56,8 @@ import type { AuctionSale } from "@/lib/types";
 import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import styles from "./SaleListing.module.css";
 import { PublicListingFactSource } from "./ListingDataCoverage";
+import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
+import { LAWYER_DAY_LABEL, lawyerSourceForDisplayedValue } from "@/lib/lawyer-fact-sources";
 import {
   getFactPresentation,
   getFactReliabilityForDisplay,
@@ -243,9 +245,30 @@ export function ListingOverview({
   const publicDateFact = dateReview.blocked ? null : publicFactsById.get("sale_date");
   const occupancyMissing =
     getFactPresentation(sale, "occupancy_status", undefined, factReliabilities).kind === "missing";
+  // Valeurs transmises par l'avocat poursuivant (règle partagée avec la fiche publique) : jamais à côté
+  // d'une valeur en cours de vérification ni d'une date tirée des modalités de vente.
+  const lawyerPrice = lawyerSourceForDisplayedValue(sale, "starting_price_eur", {
+    blocked: priceReview.blocked,
+  });
+  const lawyerDate = lawyerSourceForDisplayedValue(sale, "sale_date", {
+    blocked: dateReview.blocked || !hasVisibleEvent,
+    displayedDate: eventDate,
+  });
+  const lawyerOccupancy = lawyerSourceForDisplayedValue(sale, "occupancy_status", {
+    blocked: occupancyReview.blocked || occupancyMissing,
+  });
+  const startLabel = state
+    ? "Prix publié"
+    : ceilingWording?.byOffers
+      ? "Première offre possible"
+      : "Mise à prix";
   return (
     <section className={styles.overview} aria-label="Synthèse de la vente">
       {lead}
+      {lead ? (
+        // Avec le panneau d'analyse, le montant est dans ce panneau : la mention le nomme.
+        <LawyerFactSourceNote items={[{ label: startLabel, source: lawyerPrice }]} />
+      ) : null}
       {!lead && (notary || state) ? (
         <div className={styles.procedureLead}>
           <p className={styles.procedureLeadEyebrow}>
@@ -289,6 +312,7 @@ export function ListingOverview({
               {price == null ? "Non renseigné" : formatPrice(price)}
             </AiReviewField>
           </p>
+          <LawyerFactSourceNote items={[{ label: "", source: lawyerPrice }]} />
           <p className={styles.muted}>
             {state
               ? "Conditions et frais à vérifier dans l'annonce officielle"
@@ -322,6 +346,7 @@ export function ListingOverview({
                 </AiReviewField>
                 {publicDateFact ? <PublicListingFactSource fact={publicDateFact} compact /> : null}
               </span>
+              <LawyerFactSourceNote items={[{ label: LAWYER_DAY_LABEL, source: lawyerDate }]} />
               {saleStatus ? (
                 <span role="status" className={styles.summaryNote}>
                   {saleStatus}
@@ -376,6 +401,7 @@ export function ListingOverview({
                 <PublicListingFactSource fact={publicOccupancyFact} compact />
               ) : null}
             </span>
+            <LawyerFactSourceNote items={[{ label: "", source: lawyerOccupancy }]} />
           </dd>
         </div>
       </dl>
@@ -467,6 +493,23 @@ export function SaleDetailHeading({
       : `Type de bien à confirmer à ${sale.city}`
     : nonBreakingUnits(saleShortHeading(shown));
   const subtitle = saleHeadingSubtitle(shown, { withDate: !review("sale.sale_date") });
+  // Le titre montre le type de bien et la surface des colonnes de la vente : leur origine « avocat
+  // poursuivant » est dite sous le titre (la date de la ligne l'est dans la synthèse, sans l'heure).
+  const lawyerHeadingItems = publicDemo
+    ? []
+    : [
+        {
+          label: "Type de bien",
+          source: lawyerSourceForDisplayedValue(sale, "property_type", { blocked: typeBlocked }),
+        },
+        {
+          label: "Surface",
+          source: lawyerSourceForDisplayedValue(sale, "surface", {
+            blocked: Boolean(surfaceBlocked),
+            surface: shown.app_surface_m2,
+          }),
+        },
+      ];
   const address = showAddress && !cityBlocked ? listingAddress(sale) : "";
   return (
     <header className={styles.pageHeading}>
@@ -490,6 +533,7 @@ export function SaleDetailHeading({
           <span className="tabular-nums"> · Réf. {saleReference(sale.id)}</span>
         ) : null}
       </p>
+      <LawyerFactSourceNote items={lawyerHeadingItems} />
     </header>
   );
 }

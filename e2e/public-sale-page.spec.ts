@@ -2,9 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { pepiteCriteriaPayload, pepiteCriteriaViews } from "@/lib/sale-pepite-view";
 
 /**
- * Fiche publique d'une vente (visiteur sans compte) : cinq ventes aux profils variés, servies par le
- * préchargement `e2e/support/server-fetch-mock.cjs` côté serveur, et le repère « Pépite » dont la
- * lecture des critères répond d'abord 200 puis 503.
+ * Fiche publique d'une vente (visiteur sans compte) : six ventes aux profils variés (dont une aux
+ * valeurs transmises par l'avocat poursuivant), servies par le préchargement
+ * `e2e/support/server-fetch-mock.cjs` côté serveur, et le repère « Pépite » dont la lecture des
+ * critères répond d'abord 200 puis 503.
  */
 
 const ids = {
@@ -13,6 +14,7 @@ const ids = {
   notary: "77000000-0000-4000-8000-000000000003",
   past: "77000000-0000-4000-8000-000000000004",
   state: "77000000-0000-4000-8000-000000000005",
+  lawyer: "77000000-0000-4000-8000-000000000006",
 };
 
 const criteria = pepiteCriteriaPayload(
@@ -87,6 +89,32 @@ test.describe("ventes aux profils variés", () => {
     await openSale(page, ids.tribunal);
     await expect(page.getByTestId("pepite-badge")).toHaveCount(0);
     await expect(page.locator("#pepite")).toHaveCount(0);
+    // Aucune valeur transmise par l'avocat poursuivant : aucune mention.
+    await expect(page.getByTestId("lawyer-fact-source")).toHaveCount(0);
+  });
+
+  test("une valeur transmise par l'avocat poursuivant le dit à côté de la valeur", async ({
+    page,
+  }) => {
+    // Le plus petit écran visé : 320 px de large, sur tous les projets (bureau comme mobile).
+    await page.setViewportSize({ width: 320, height: 800 });
+    await mockBrowser(page);
+    await openSale(page, ids.lawyer);
+    const mentions = page.getByTestId("lawyer-fact-source");
+    // Mise à prix (texte validé, sous le montant) et surface (une mention pour le bloc « Le bien », qui
+    // nomme la valeur), dans le HTML du serveur, sans attendre le navigateur.
+    await expect(mentions).toHaveCount(2);
+    await expect(mentions.nth(0)).toHaveText(
+      "Information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    );
+    await expect(mentions.nth(1)).toHaveText(
+      "Surface : information transmise par l’avocat poursuivant le 12/11/2026, non vérifiée par Immojudis. Vérifiez-la dans le cahier des conditions de vente.",
+    );
+    for (const mention of await mentions.all()) {
+      await mention.scrollIntoViewIfNeeded();
+      await expect(mention).toBeVisible();
+    }
+    await expectNoHorizontalOverflow(page);
   });
 });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
@@ -12,6 +12,8 @@ import { hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
+import { withLawyerFactSources } from "@/lib/lawyer-fact-sources";
+import { getSaleLawyerFactSources } from "@/lib/sale-lawyer-fact-sources.client";
 import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
@@ -213,8 +215,32 @@ function SaleDetailContent({
           queryKeys.saleDetail(id, sessionKey, "discovery"),
         )?.sale ?? null)
       : null;
-  const sale = data?.sale ?? null;
-  const preview = data?.preview ?? null;
+  const loadedSale = data?.sale ?? null;
+  const loadedPreview = data?.preview ?? null;
+  // Valeurs transmises par l'avocat poursuivant : une lecture par vente, quel que soit le mode d'accès
+  // (pas une de plus pendant que les droits sont vérifiés), seulement pour une vente trouvée. La fiche
+  // publique rendue par le serveur les porte déjà. Une lecture en échec reste une erreur de la requête
+  // (relue plus tard), jamais un « aucune mention » gardé en cache ; la fiche s'affiche sans mention.
+  const loadedListing = loadedSale ?? loadedPreview;
+  const lawyerSourcesQuery = useQuery({
+    queryKey: ["sale-lawyer-fact-sources", id],
+    queryFn: () => getSaleLawyerFactSources(id),
+    enabled:
+      loadedListing != null &&
+      loadedListing !== initialData?.preview &&
+      loadedListing !== initialData?.sale,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  const lawyerSources = lawyerSourcesQuery.data;
+  const sale = useMemo(
+    () => loadedSale && withLawyerFactSources(loadedSale, lawyerSources),
+    [loadedSale, lawyerSources],
+  );
+  const preview = useMemo(
+    () => loadedPreview && withLawyerFactSources(loadedPreview, lawyerSources),
+    [loadedPreview, lawyerSources],
+  );
   // The listing may already be in the cache (read while the rights were being checked): it only
   // counts as viewed once it can be displayed.
   const displayable = !authLoading && accessReady;

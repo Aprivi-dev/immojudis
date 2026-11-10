@@ -7509,6 +7509,111 @@ export type Database = {
         };
         Relationships: [];
       };
+      information_agent_fact_publications: {
+        Row: {
+          actor_id: string | null;
+          actor_kind: string;
+          fact_id: string;
+          fact_key: string;
+          id: string;
+          new_values: Json;
+          policy_version: string | null;
+          previous_provenance: Json;
+          previous_values: Json;
+          published_at: string;
+          recipient_kind: string;
+          response_received_at: string | null;
+          sale_id: string;
+        };
+        Insert: {
+          actor_id?: string | null;
+          actor_kind: string;
+          fact_id: string;
+          fact_key: string;
+          id?: string;
+          new_values?: Json;
+          policy_version?: string | null;
+          previous_provenance?: Json;
+          previous_values?: Json;
+          published_at?: string;
+          recipient_kind: string;
+          response_received_at?: string | null;
+          sale_id: string;
+        };
+        Update: {
+          actor_id?: string | null;
+          actor_kind?: string;
+          fact_id?: string;
+          fact_key?: string;
+          id?: string;
+          new_values?: Json;
+          policy_version?: string | null;
+          previous_provenance?: Json;
+          previous_values?: Json;
+          published_at?: string;
+          recipient_kind?: string;
+          response_received_at?: string | null;
+          sale_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_fact_publications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_fact_publications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_fact_publications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_fact_publications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_fact_publications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_fact_publications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_fact_publications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_fact_publications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       information_agent_inbound_jobs: {
         Row: {
           attachment_link_expires_at: string;
@@ -15669,6 +15774,14 @@ export type Database = {
       get_public_sale_indexability: {
         Args: { p_sale_id: string };
         Returns: boolean;
+      };
+      get_public_sale_lawyer_fact_sources: {
+        Args: { p_sale_id: string };
+        Returns: {
+          fact_key: string;
+          publication_mode: string;
+          received_on: string;
+        }[];
       };
       get_public_sale_market_gap_band: {
         Args: { p_sale_id: string };

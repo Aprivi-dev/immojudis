@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { createClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchLawyerFactSources } from "./lawyer-fact-sources";
 import { fetchPublicSaleSummary } from "./public-sale-summary";
 import { loadWithdrawnSources, resetWithdrawnSources } from "./withdrawn-sources";
 
@@ -82,6 +83,17 @@ describe("E2E server fetch mock", () => {
       starting_price_eur: null,
     });
     expect(await read(SALE_ID)).not.toHaveProperty("pepite");
+    expect(await read("77000000-0000-4000-8000-000000000006")).toMatchObject({ city: "Rennes" });
+    expect(network).not.toHaveBeenCalled();
+  });
+
+  it("answers the values sent by the prosecuting lawyer, read with the summary by readPublicSale", async () => {
+    const supabase = client();
+    expect(await fetchLawyerFactSources(supabase, "77000000-0000-4000-8000-000000000006")).toEqual([
+      { key: "starting_price_eur", receivedOn: "2026-11-12", mode: "manual" },
+      { key: "surface_m2", receivedOn: "2026-11-12", mode: "manual" },
+    ]);
+    expect(await fetchLawyerFactSources(supabase, SALE_ID)).toEqual([]);
     expect(network).not.toHaveBeenCalled();
   });
 

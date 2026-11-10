@@ -23,6 +23,12 @@ import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
+import { LawyerFactSourceNote } from "@/components/sale-detail/LawyerFactSourceNote";
+import {
+  LAWYER_DAY_LABEL,
+  LAWYER_ROOMS_LABEL,
+  lawyerSourceForDisplayedValue,
+} from "@/lib/lawyer-fact-sources";
 import { isPastSaleDay } from "@/lib/sale-countdown";
 import { formatPrice, formatPricePerM2 } from "@/lib/format";
 import {
@@ -402,34 +408,52 @@ export function SalePublicPreview({
   const rooms = preview.rooms_count != null && preview.rooms_count > 0 ? preview.rooms_count : null;
   const bedrooms =
     preview.bedrooms_count != null && preview.bedrooms_count > 0 ? preview.bedrooms_count : null;
+  // Valeurs transmises par l'avocat poursuivant (même règle que la fiche des comptes) : une mention par
+  // bloc, qui nomme les valeurs, plutôt que la même phrase sous chaque demi-colonne.
+  const lawyerPropertyItems = [
+    { label: "Type de bien", source: lawyerSourceForDisplayedValue(preview, "property_type") },
+    {
+      label: "Surface",
+      source: lawyerSourceForDisplayedValue(preview, "surface", {
+        surface: preview.app_surface_m2,
+      }),
+    },
+    {
+      label: LAWYER_ROOMS_LABEL,
+      source: lawyerSourceForDisplayedValue(preview, "rooms_count", { blocked: rooms == null }),
+    },
+  ];
   const propertyFacts = (
-    <dl className={styles.facts}>
-      <div className={styles.fact}>
-        <dt>Type de bien</dt>
-        <dd>{seoPropertyLabel(preview.property_type)}</dd>
-      </div>
-      {surface ? (
+    <>
+      <dl className={styles.facts}>
         <div className={styles.fact}>
-          <dt>Surface</dt>
-          <dd className={styles.num}>{surface}</dd>
+          <dt>Type de bien</dt>
+          <dd>{seoPropertyLabel(preview.property_type)}</dd>
         </div>
-      ) : null}
-      {rooms ? (
-        <div className={styles.fact}>
-          <dt>Pièces</dt>
-          <dd className={styles.num}>
-            {rooms}
-            {bedrooms ? ` · ${bedrooms} chambre${bedrooms > 1 ? "s" : ""}` : ""}
-          </dd>
-        </div>
-      ) : null}
-      {place ? (
-        <div className={styles.fact}>
-          <dt>Lieu</dt>
-          <dd>{place}</dd>
-        </div>
-      ) : null}
-    </dl>
+        {surface ? (
+          <div className={styles.fact}>
+            <dt>Surface</dt>
+            <dd className={styles.num}>{surface}</dd>
+          </div>
+        ) : null}
+        {rooms ? (
+          <div className={styles.fact}>
+            <dt>Pièces</dt>
+            <dd className={styles.num}>
+              {rooms}
+              {bedrooms ? ` · ${bedrooms} chambre${bedrooms > 1 ? "s" : ""}` : ""}
+            </dd>
+          </div>
+        ) : null}
+        {place ? (
+          <div className={styles.fact}>
+            <dt>Lieu</dt>
+            <dd>{place}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <LawyerFactSourceNote items={lawyerPropertyItems} />
+    </>
   );
   // Date de la vente, sous la mise à prix ; l'inscription la suit (P12 : le bouton reste en vue dans
   // le panneau collant, à partir de 1024 px). La mise en garde de l'agenda reste sous la date.
@@ -446,6 +470,14 @@ export function SalePublicPreview({
             </>
           ) : null}
         </span>
+        <LawyerFactSourceNote
+          items={[
+            {
+              label: LAWYER_DAY_LABEL,
+              source: lawyerSourceForDisplayedValue(preview, "sale_date"),
+            },
+          ]}
+        />
         {pastDate ? (
           <span className={styles.pastDate} data-testid="past-sale-date">
             Date de vente passée
@@ -556,6 +588,11 @@ export function SalePublicPreview({
         <p className={styles.price}>
           {price ? formatPrice(preview.starting_price_eur) : "À confirmer"}
         </p>
+        <LawyerFactSourceNote
+          items={[
+            { label: "", source: lawyerSourceForDisplayedValue(preview, "starting_price_eur") },
+          ]}
+        />
         <p className={styles.priceNote}>
           {state
             ? "Vérifiez les conditions et frais dans l'annonce officielle"
