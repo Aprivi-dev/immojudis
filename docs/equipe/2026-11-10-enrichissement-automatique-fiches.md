@@ -179,3 +179,27 @@ rédigés au moment de la proposition 9.
 - La fiabilité des résultats d'authentification transmis par Resend dans le cas d'un transfert d'email.
 - La durée réelle de l'analyse par message une fois déclenchée à la demande.
 - L'effet d'une opposition reçue après publication : aujourd'hui elle bloque les contacts mais ne retire rien.
+
+---
+
+## 8. Validation et exécution
+
+**Validation du propriétaire (10/11/2026).** « Je valide l'ensemble de tes propositions. Il faut qu'on ait un outil
+ultra opérationnel sans faille qui soit capable d'enrichir correctement nos annonces. » Les 13 propositions sont
+validées. Les propositions 12 et 13 restent soumises à leur condition : une simulation sans erreur.
+
+**Ordre d'exécution.**
+
+| Étape | Propositions | Contenu                                                                           | Migration |
+| ----- | ------------ | --------------------------------------------------------------------------------- | --------- |
+| 1     | 1, 2, 3      | Analyse déclenchée à la réception, extraction durcie, détection des manipulations | Non       |
+| 2     | 4, 5         | Noyau de publication avec valeur précédente et auteur réel, source sur la fiche   | Oui       |
+| 3     | 6, 7         | Moteur de décision en simulation, réglages, journal, verrous                      | Oui       |
+| 4     | 8            | Jeu d'évaluation de 200 réponses fictives, essai réel du modèle (plafond 5 USD)   | Non       |
+| 5     | 9            | Textes juridiques et AIPD, préparés puis publiés avec l'activation                | Non       |
+| 6     | 10, 11       | Retour arrière, retrait, « ne pas publier », mode automatique verrouillé          | Oui       |
+| 7     | 12, 13       | Occupation, visites et DPE, selon les résultats de la simulation                  | À voir    |
+
+Le mode automatique reste verrouillé tant que ne sont pas réunis : les textes publiés, l'AIPD mise à jour et
+signée, la validation des huit points par un avocat, le jeu d'évaluation à zéro publication fausse et une période
+de simulation concluante.
