@@ -28,8 +28,9 @@ select ok(
     position(
       'on conflict (source_url, document_url)'
       in lower(
+        -- Depuis 20261114100000, l'écriture de la pièce est faite par le noyau de publication.
         pg_get_functiondef(
-          'public.review_information_agent_fact_candidate(uuid,uuid,text,text)'::regprocedure
+          'app_private.apply_information_agent_fact(uuid,text,uuid,text)'::regprocedure
         )
       )
     ) > 0,
