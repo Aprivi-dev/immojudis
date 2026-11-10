@@ -224,6 +224,142 @@ describe("admin information request authorization", () => {
     expect((await response.json()).missions[0]).toMatchObject({ id: "a", saleTitle: null });
   });
 
+  it("adds the delivery state of sent missions, read from the send log in one grouped query", async () => {
+    mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
+    const missionRow = (id: string, provider_message_id: string | null, metadata = {}) => ({
+      id,
+      case_id: null,
+      sale_id: null,
+      status: provider_message_id ? "sent" : "draft",
+      recipient_kind: "source_lawyer",
+      recipient_name: null,
+      recipient_email: "contact@example.test",
+      subject: "Demande",
+      body_text: "Bonjour",
+      question_keys: [],
+      missing_information: [],
+      metadata,
+      provider_message_id,
+      failure_reason: null,
+      approved_at: null,
+      sent_at: null,
+      replied_at: null,
+      created_at: "2026-10-01T10:00:00.000Z",
+      updated_at: "2026-10-01T10:00:00.000Z",
+    });
+    const logCalls: Array<[string, unknown[]]> = [];
+    const chainFor = (result: unknown, calls?: Array<[string, unknown[]]>) => {
+      const chain: Record<string, unknown> = {
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+      };
+      for (const method of ["select", "eq", "order", "range", "in"]) {
+        chain[method] = (...args: unknown[]) => {
+          calls?.push([method, args]);
+          return chain;
+        };
+      }
+      return chain;
+    };
+    mocks.from.mockImplementation((table: string) =>
+      table === "email_send_log"
+        ? chainFor(
+            {
+              data: [
+                { resend_email_id: "re_1", status: "delivered", bounce_type: null },
+                { resend_email_id: "re_2", status: "bounced", bounce_type: "transient" },
+                { resend_email_id: "re_3", status: "bounced", bounce_type: "Permanent" },
+              ],
+              error: null,
+            },
+            logCalls,
+          )
+        : chainFor({
+            data: [
+              missionRow("a", "re_1"),
+              missionRow("b", "re_2"),
+              missionRow("c", "re_3"),
+              // Journal purgé : le rebond noté sur la mission reste lisible.
+              missionRow("d", "re_4", { delivery: { status: "complained", at: "x" } }),
+              missionRow("e", "re_5"),
+              missionRow("f", null),
+            ],
+            error: null,
+            count: 6,
+          }),
+    );
+
+    const response = await GET(request("GET"));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(
+      body.missions.map((mission: { id: string; deliveryState: string | null }) => [
+        mission.id,
+        mission.deliveryState,
+      ]),
+    ).toEqual([
+      ["a", "delivered"],
+      ["b", "bounced_temporary"],
+      ["c", "bounced"],
+      ["d", "complained"],
+      ["e", null],
+      ["f", null],
+    ]);
+    expect(mocks.from.mock.calls.filter(([table]) => table === "email_send_log")).toHaveLength(1);
+    expect(logCalls).toEqual([
+      ["select", ["resend_email_id,status,bounce_type"]],
+      ["in", ["resend_email_id", ["re_1", "re_2", "re_3", "re_4", "re_5"]]],
+    ]);
+  });
+
+  it("still lists the missions when the send log cannot be read", async () => {
+    mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const chainFor = (result: unknown) => {
+      const chain: Record<string, unknown> = {
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+      };
+      for (const method of ["select", "eq", "order", "range", "in"]) chain[method] = () => chain;
+      return chain;
+    };
+    mocks.from.mockImplementation((table: string) =>
+      table === "email_send_log"
+        ? chainFor({ data: null, error: { code: "57014", message: "timeout" } })
+        : chainFor({
+            data: [
+              {
+                id: "a",
+                case_id: null,
+                sale_id: null,
+                status: "sent",
+                recipient_kind: "source_lawyer",
+                recipient_name: null,
+                recipient_email: "contact@example.test",
+                subject: "Demande",
+                body_text: "Bonjour",
+                question_keys: [],
+                missing_information: [],
+                metadata: {},
+                provider_message_id: "re_1",
+                failure_reason: null,
+                approved_at: null,
+                sent_at: null,
+                replied_at: null,
+                created_at: "2026-10-01T10:00:00.000Z",
+                updated_at: "2026-10-01T10:00:00.000Z",
+              },
+            ],
+            error: null,
+            count: 1,
+          }),
+    );
+
+    const response = await GET(request("GET"));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).missions[0]).toMatchObject({ id: "a", deliveryState: null });
+  });
+
   it("denies visitors before loading a sale or a mission", async () => {
     expect((await POST(request("POST", { saleId }, false))).status).toBe(401);
     expect(mocks.auth).not.toHaveBeenCalled();

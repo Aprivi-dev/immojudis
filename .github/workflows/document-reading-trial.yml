@@ -1,0 +1,110 @@
+name: Document reading trial
+
+# Essai de qualité AVANT de changer la lecture des pièces en production : relit les pièces de quelques ventes à
+# venir avec le profil de production (le témoin) et les profils candidats de
+# services/data-pipeline/src/document_reading_candidate.py, et les compare à la lecture stockée et aux listes de
+# l'extraction des faits (services/data-pipeline/scripts/document_reading_trial.py). Lecture seule sur la base :
+# aucune lecture n'est écrite. Les appels au modèle passent par le client Replicate du pipeline : ils sont
+# réservés et notés dans llm_usage_events (étape « reading_trial ») et partagent les budgets horaire
+# (REPLICATE_MAX_CALLS_PER_HOUR) et quotidien du pipeline ; quand le budget horaire est épuisé, l'essai attend
+# qu'il se libère (jusqu'à budget_minutes). Rapport dans le résumé de l'exécution ; détail des points, vente par
+# vente, dans le journal de l'étape (groupe « Détail des lectures », noms de personnes filtrés).
+on:
+  workflow_dispatch:
+    inputs:
+      sales:
+        description: "Upcoming sales to read again when sale_prefixes is empty (1-30)"
+        required: false
+        default: "10"
+        type: string
+      sale_prefixes:
+        description: "First 8 characters of the sale ids to read, comma separated (optional)"
+        required: false
+        default: ""
+        type: string
+      profiles:
+        description: "Profiles, comma separated: production (the control) and the names of the candidates under trial"
+        required: false
+        default: "production"
+        type: string
+      max_calls:
+        description: "Hard cap on model calls for the whole trial (1-120)"
+        required: false
+        default: "40"
+        type: string
+      budget_minutes:
+        description: "Minutes after which no new call is started, waits for the hourly budget included (1-170)"
+        required: false
+        default: "90"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-document-reading-trial
+  cancel-in-progress: false
+
+jobs:
+  trial:
+    # Receives SUPABASE_DB_URL: only the code of `main` may run with it (a dispatch from another branch would run
+    # that branch's code with the production secret).
+    if: github.ref == 'refs/heads/main'
+    name: Compare document readings
+    runs-on: ubuntu-24.04
+    # The script stops starting calls after budget_minutes (at most 170) and then writes its report.
+    timeout-minutes: 185
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Same model and Replicate settings as data-pipeline.yml (each profile sets its own output cap).
+      REPLICATE_MODEL: qwen/qwen3-7-plus
+      REPLICATE_MIN_INTERVAL_SECONDS: 11
+      REPLICATE_WAIT_SECONDS: 60
+      REPLICATE_MAX_RETRIES: 2
+      REPLICATE_MAX_CALLS_PER_HOUR: 60
+      REPLICATE_RETRY_BACKOFF_SECONDS: 30
+      REPLICATE_RETRY_MAX_SLEEP_SECONDS: 60
+      REPLICATE_TEMPERATURE: 0.1
+      REPLICATE_MAX_TOKENS: 512
+      LLM_PROMPT_VERSION: auction_llm_v10_structured_display
+      LLM_FACT_PROMPT_VERSION: auction_facts_v1
+      LLM_ENABLED: true
+      LLM_PROVIDER: replicate
+      # Same Encheres Publiques gate as the pipeline: its sales are skipped unless both variables allow them.
+      ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
+      ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Run the read-only reading trial
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          TRIAL_SALES: ${{ inputs.sales }}
+          TRIAL_SALE_PREFIXES: ${{ inputs.sale_prefixes }}
+          TRIAL_PROFILES: ${{ inputs.profiles }}
+          TRIAL_MAX_CALLS: ${{ inputs.max_calls }}
+          TRIAL_BUDGET_MINUTES: ${{ inputs.budget_minutes }}
+        run: >
+          python -m scripts.document_reading_trial
+          --sales "$TRIAL_SALES"
+          --sale-prefixes "$TRIAL_SALE_PREFIXES"
+          --profiles "$TRIAL_PROFILES"
+          --max-calls "$TRIAL_MAX_CALLS"
+          --budget-minutes "$TRIAL_BUDGET_MINUTES"

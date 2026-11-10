@@ -39,6 +39,38 @@ describe("parseAuthLink", () => {
     expect(parsed?.redirectTo).toBe("https://immojudis.com/bienvenue?retour=/sales/12&etape=2");
   });
 
+  it("relit à l'identique le bouton et le lien copié, « + » littéral et espace compris", () => {
+    // Sorties de html/template (Go 1.24) pour RedirectTo = "https://immojudis.com/sales?q=a+b c&type=maison"
+    // et "https://immojudis.com/vente/é?x=%2F&y=1+1" : `href` du bouton, puis lien copié (`urlquery`).
+    const cases = [
+      [
+        "https://immojudis.com/sales?q=a+b c&type=maison",
+        "https%3a%2f%2fimmojudis.com%2fsales%3fq%3da%2bb%20c%26type%3dmaison",
+        "https%3A%2F%2Fimmojudis.com%2Fsales%3Fq%3Da%2Bb+c%26type%3Dmaison",
+      ],
+      [
+        "https://immojudis.com/vente/é?x=%2F&y=1+1",
+        "https%3a%2f%2fimmojudis.com%2fvente%2f%c3%a9%3fx%3d%252F%26y%3d1%2b1",
+        "https%3A%2F%2Fimmojudis.com%2Fvente%2F%C3%A9%3Fx%3D%252F%26y%3D1%2B1",
+      ],
+    ];
+    for (const [redirectTo, button, copied] of cases) {
+      for (const encoded of [button, copied]) {
+        const parsed = parseAuthLink(`?token_hash=${HASH}&type=signup&redirect_to=${encoded}`);
+        expect(parsed?.redirectTo, encoded).toBe(redirectTo);
+      }
+    }
+    // Un seul décodage, et le filtre de même site s'applique toujours.
+    const foreign = parseAuthLink(
+      `?token_hash=${HASH}&type=signup&redirect_to=${"https%3A%2F%2Fevil.example%2F%3Fa%3Db+c"}`,
+    );
+    expect(foreign?.redirectTo).toBe("https://evil.example/?a=b c");
+    expect(postConfirmationPath(foreign!, ORIGIN)).toBe("/bienvenue");
+    expect(
+      parseAuthLink(`?token_hash=${HASH}&type=signup&redirect_to=%252Fsales`)?.redirectTo,
+    ).toBe("%2Fsales");
+  });
+
   it("accepte l'absence d'adresse de retour et un encodage invalide", () => {
     expect(parseAuthLink(`?token_hash=${HASH}&type=recovery`)?.redirectTo).toBeNull();
     expect(parseAuthLink(`?token_hash=${HASH}&type=recovery&redirect_to=`)?.redirectTo).toBeNull();

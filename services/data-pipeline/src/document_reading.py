@@ -10,10 +10,15 @@ quote reaches a subscriber.
 
 Results go to ``public.auction_document_readings`` (service role only); the web
 app serves them to Analyse members. A reading is redone only when the persisted
-text or the prompt version changes (a completed v2 reading only when the lot sold is
-designated); a failed one is retried with a growing delay (12 h, 24 h, 72 h) and
-abandoned at the fourth failure on the same text. A failed attempt never replaces a
-completed reading, and a refused LLM budget ends the run.
+text or the prompt version changes; a failed one is retried with a growing delay
+(12 h, 24 h, 72 h) and abandoned at the fourth failure on the same text. A failed
+attempt never replaces a completed reading, and a refused LLM budget ends the run.
+
+A dossier longer than the text budget is not read in priority order of its pieces: the
+budget is shared between them, most relevant pages first (:func:`select_pages`), and a
+verified quote of the standard conditions of sale is left out (:func:`is_standard_clause`).
+A new version of the reading is tried read-only before it replaces this one
+(``scripts/document_reading_trial.py``, profiles of ``document_reading_candidate``).
 """
 
 from __future__ import annotations
@@ -44,13 +49,17 @@ LOGGER = logging.getLogger(__name__)
 # boilerplate clauses of the conditions of sale.
 # v3 (08/11/2026, D8): the lot sold is named in the prompt of a multi-lot listing, each point says
 # which lot it is about, quotes of 25 characters at least.
-DOCUMENT_READING_VERSION = "document_reading_v3"
-# A completed v2 reading is read again in v3 only when the listing designates the lot sold: without a lot,
-# v3 changes nothing that revalidate_stored_points does not already apply without a model call (D8).
-LOT_ONLY_PREVIOUS_VERSION = "document_reading_v2"
-MAX_PROMPT_CHARS = 45_000
+# v4 (10/11/2026): the text budget is shared between the pieces by relevance and doubled, the prompt asks for
+# what is proper to the property (diagnostics results, flood zone, leases and rents, servitudes, lots),
+# standard clauses of the conditions of sale are left out, 18 points. Trial of 10/11/2026 on 12 sales, same
+# day: 96 verified points against 83 for v3, 9 standard « conditions de vente » points against 19, 3 alerts
+# lost to an unverified quote against 11 (scripts/document_reading_trial.py, run 42787966020).
+DOCUMENT_READING_VERSION = "document_reading_v4"
+# Readings of these versions were hashed without the lot sold (it joined the fingerprint in v3).
+VERSIONS_HASHED_WITHOUT_LOT = frozenset({"document_reading_v1", "document_reading_v2"})
+MAX_PROMPT_CHARS = 90_000
 MAX_PAGE_CHARS = 2_500
-MAX_POINTS = 14
+MAX_POINTS = 18
 MAX_QUOTE_CHARS = 320
 # 25 since 08/11/2026 (D6): a shorter quote (« au plafond ») proves nothing on its own.
 MIN_QUOTE_CHARS = 25
@@ -58,7 +67,7 @@ MAX_TITLE_CHARS = 100
 MAX_DOCUMENT_LABEL_CHARS = 120
 MAX_DOCUMENT_TYPE_CHARS = 40
 MAX_EXPLANATION_CHARS = 320
-READING_MAX_OUTPUT_TOKENS = 3_000
+READING_MAX_OUTPUT_TOKENS = 4_000
 READING_TIMEOUT_SECONDS = 90
 
 THEMES: dict[str, str] = {
@@ -73,45 +82,117 @@ THEMES: dict[str, str] = {
 }
 IMPORTANCE = ("alerte", "attention", "info")
 
-# What is read first when the dossier is longer than the prompt budget: the
-# on-site report and the conditions of sale carry most buyer risks.
+# Order in which the pieces share the text budget of a long dossier: the on-site report and the conditions of
+# sale carry most buyer risks. A lease is rare and decisive; a land registry extract is long and seldom says
+# anything of the property's condition (types measured on the upcoming sales of 10/11/2026).
 _DOCUMENT_PRIORITY = {
     "pv_huissier": 0,
     "proces_verbal": 0,
     "pv_notaire": 0,
     "cahier_conditions_vente": 1,
     "conditions_vente": 1,
+    "bail": 1,
     "diagnostics_techniques": 2,
     "dpe": 2,
     "reglement_copropriete": 3,
     "proces_verbal_ag": 3,
     "urbanisme": 3,
     "annonce_vente": 4,
+    "procedure_saisie": 4,
+    "cadastre": 5,
 }
-_KEYWORDS = re.compile(
-    r"occup|libre|locat|bail|loyer|expuls|squat|"
-    r"travaux|sinistre|humidit|infiltr|fissur|toiture|vetuste|degrad|insalubr|peril|"
-    r"amiante|plomb|termite|merule|dpe|energ|electri|gaz|assainissement|"
+_DEFAULT_PRIORITY = 3
+# What a buyer loses by not reading the page: one point per distinct term found.
+_RISK_TERMS = re.compile(
+    r"occup|locat|bail|loyer|expuls|squat|depot de garantie|"
+    r"sinistre|humidit|moisissur|infiltr|fissur|lezard|degat des eaux|toiture|vetuste|degrad|effondr|"
+    r"insalubr|peril|hors d'usage|hors service|non conforme|anomalie|devis|travaux|"
+    r"amiante|plomb|termite|merule|electri|gaz|assainissement|classe energ|dpe|"
     r"copropri|syndic|charges|impaye|appel de fonds|"
-    r"servitude|urbanism|preemption|alignement|zonage|"
-    r"consignation|frais|emoluments|surenchere|delai|jouissance|garantie|"
-    r"conclusion|synthese|presence|absence|anomalie|classe",
+    r"servitude|preemption|safer|emplacement reserve|monument historique|alignement|"
+    r"inond|submersion|plan de prevention|mouvement de terrain|"
+    r"superficie|carrez|surface habitable|contenance|lot n|"
+    r"droit de preference|interessement|plus-value|arrete"
 )
+# Wording of the national standard conditions of sale, the same in every dossier.
+_STANDARD_CLAUSE_TERMS = re.compile(
+    r"surenchere|reiteration des encheres|folle enchere|sequestre|emoluments|consignation|"
+    r"purge des inscriptions|distribution du prix|paiement provisionnel|election de domicile|"
+    r"frais de poursuites|droits de mutation|avocat postulant|caducite"
+)
+STANDARD_CLAUSE_PAGE_TERMS = 3
+# Sentences of those standard conditions that the readings quoted most (trial of 10/11/2026: the model still
+# returned them despite the instruction). A point whose verified quote holds one of them is left out.
+_STANDARD_CLAUSE_QUOTES = re.compile(
+    r"vices caches|article 1649|"
+    r"sur les quittances de l'avocat poursuivant|"
+    r"delai de deux mois a compter de la vente definitive|"
+    r"caution bancaire irrevocable|cheque de banque redige a l'ordre|se fait remettre par son mandant|"
+    r"purgent de plein droit|purger les inscriptions|"
+    r"si l'immeuble est loue, par la perception|"
+    r"en sus et sans diminution de son prix, aux differents locataires|"
+    r"servitudes passives|"
+    r"surenchere|reiteration des encheres"
+)
+
+
+def is_standard_clause(quote: str) -> bool:
+    """Whether the quote is a sentence of the standard conditions of sale, the same in every dossier."""
+    folded = strip_accents(quote).lower().replace("’", "'")
+    return bool(_STANDARD_CLAUSE_QUOTES.search(re.sub(r"\s+", " ", folded)))
+
+
+# Pages per round: the on-site report (48 pages on average) describes the property itself, the diagnostics
+# (40 pages) carry one result per diagnostic; the other pieces get one page per round.
+_PAGES_PER_ROUND = {0: 3, 2: 2}
+_CONTEXT_PRIORITIES = (0, 1)
+# A listing or a land registry page needs two distinct terms to count as relevant.
+_LOW_PRIORITY = 4
+_LOW_PRIORITY_MIN_RELEVANCE = 2
 
 SYSTEM_PROMPT = (
     "Tu aides un acheteur particulier à préparer une vente immobilière aux enchères. "
-    "Tu lis les pièces du dossier fournies entre balises et tu relèves les points qu'il doit "
-    "connaître avant d'enchérir : occupation, état et travaux, diagnostics, copropriété, "
-    "urbanisme et servitudes, conditions de la vente, points juridiques.\n"
+    "Tu lis les pièces du dossier fournies entre balises et tu relèves ce qui est PROPRE À CE BIEN et "
+    "qu'il doit connaître avant d'enchérir.\n"
+    "À chercher dans toutes les pièces (procès-verbal, cahier des conditions de vente, diagnostics, "
+    "état des risques, annexes), par ordre d'importance. Le mot entre crochets est la valeur exacte de "
+    "\"theme\" pour ces points :\n"
+    "- [occupation] qui occupe, bail (type, date, durée), loyer, dépôt de garantie, procédure d'expulsion ;\n"
+    "- [diagnostics] résultat de chaque diagnostic (amiante, plomb, termites, électricité, gaz, "
+    "assainissement, DPE), travaux obligatoires et délais ;\n"
+    "- [etat_travaux] désordres constatés (fissures, infiltrations, dégât des eaux, installation hors "
+    "d'usage), travaux en cours ou imposés, devis chiffrés ;\n"
+    "- [urbanisme_servitudes] zone inondable ou plan de prévention qui vise la parcelle, emplacement "
+    "réservé, droit de préemption (commune, SAFER, locataire), monument historique, servitudes propres "
+    "au bien (passage, réseaux, vue) ;\n"
+    "- [juridique] arrêté de péril ou d'insalubrité, procédures en cours, clauses écrites pour ce bien "
+    "(intéressement sur la plus-value, droit de préférence) ;\n"
+    "- [copropriete] charges, impayés, travaux votés, procédures ;\n"
+    "- [autre] consistance : composition, surfaces (Carrez, habitable, terrain), lots vendus, écart "
+    "entre deux pièces ;\n"
+    "- [conditions_vente] seulement ce qui est propre à cette vente : mise à prix de chaque lot, baisse "
+    "possible de la mise à prix, visite obligatoire.\n"
     "Règles strictes :\n"
     "- Chaque point cite un extrait copié MOT POUR MOT depuis une page (25 à 300 caractères), "
     "avec le numéro du document (D1, D2…) et le numéro de page indiqués dans les balises.\n"
+    "- Les pages sont souvent numérisées : copie l'extrait caractère pour caractère, tel qu'il apparaît, "
+    "avec ses fautes, ses mots coupés et ses caractères étranges. Ne corrige rien, ne complète rien, ne "
+    "raccorde pas deux passages. Un extrait corrigé ou recomposé est rejeté et le point est perdu : "
+    "préfère un extrait court et exact.\n"
+    "- \"theme\" prend uniquement l'une des huit valeurs entre crochets ci-dessus ; \"document\" "
+    "s'écrit D1, D2… sans autre texte.\n"
     "- N'invente rien, ne déduis pas de chiffre absent du texte, n'écris aucun conseil juridique "
     "personnalisé. Si une information manque, ne la mentionne pas.\n"
-    "- Ignore les clauses types qui ne disent rien de ce bien (« si l'immeuble est loué… »).\n"
-    "- Une clause générale du cahier des conditions de vente (garanties, frais, paiement, "
-    "formalités) n'est jamais une alerte : ne la relève que si elle dit quelque chose de "
-    "particulier à ce bien.\n"
+    "- Quand le texte donne un chiffre (montant, surface, date, durée, pourcentage), choisis l'extrait "
+    "qui contient ce chiffre.\n"
+    "- Ne relève JAMAIS une clause type du cahier des conditions de vente, identique dans toutes les "
+    "ventes : frais et émoluments en sus, délai de paiement du prix, consignation, surenchère, absence "
+    "de garantie des vices cachés, « l'acquéreur souffrira les servitudes », purge des hypothèques, "
+    "subrogation, baux « s'il en existe ». Chaque place prise par une clause type est une information "
+    "utile perdue.\n"
+    "- Un niveau de risque général de la commune (sismicité, radon, retrait-gonflement des argiles) "
+    "n'est un point que s'il est fort ou s'il impose une obligation à l'acheteur.\n"
+    "- Un seul point par sujet : ne répète pas la même information tirée de deux pages.\n"
     "- Classe DPE : n'indique une lettre (A à G) que si elle est écrite pour ce logement. "
     "L'échelle imprimée (A … G, « logement extrêmement performant / peu performant ») n'est pas "
     "le résultat : ne t'en sers jamais pour déduire une classe.\n"
@@ -343,36 +424,94 @@ def filtered_for_model(documents: Sequence[ReadingDocument]) -> list[ReadingDocu
     ]
 
 
-def _page_score(text: str) -> int:
-    return len(_KEYWORDS.findall(strip_accents(text[:MAX_PAGE_CHARS]).lower()))
+def _priority(document: ReadingDocument) -> int:
+    return _DOCUMENT_PRIORITY.get(document.document_type, _DEFAULT_PRIORITY)
 
 
-def select_pages(documents: Sequence[ReadingDocument], budget: int = MAX_PROMPT_CHARS) -> tuple[dict[int, list[int]], bool]:
+def page_relevance(text: str) -> int:
+    """Distinct buyer-risk terms on the page; zero for a page of standard clauses."""
+    folded = strip_accents(text[:MAX_PAGE_CHARS]).lower()
+    if len(set(_STANDARD_CLAUSE_TERMS.findall(folded))) >= STANDARD_CLAUSE_PAGE_TERMS:
+        return 0
+    return len(set(_RISK_TERMS.findall(folded)))
+
+
+def select_pages(
+    documents: Sequence[ReadingDocument], budget: int = MAX_PROMPT_CHARS
+) -> tuple[dict[int, list[int]], bool]:
     """Pages sent to the model per document, within the character budget.
 
-    Short dossiers are read in full. Longer ones keep, document by document in
-    priority order, the first page and then the pages that mention buyer risks.
+    Short dossiers are read in full. Longer ones are shared between the pieces instead of being
+    spent in priority order: the first page of the report, of the conditions of sale and of a lease (they
+    say what is sold), then, round after round and piece after piece, each piece's most relevant unread
+    pages (three for the report, two for the diagnostics, one for the others). Pages without any buyer-risk
+    term, and pages of standard clauses, only fill what is left.
     """
     total = sum(min(len(text), MAX_PAGE_CHARS) for doc in documents for text in doc.pages.values())
     if total <= budget:
         return {doc.index: sorted(doc.pages) for doc in documents}, False
-    candidates: list[tuple[int, int, int, int, int]] = []
-    for doc in documents:
-        priority = _DOCUMENT_PRIORITY.get(doc.document_type, 3)
-        for number, text in doc.pages.items():
-            first = 0 if number == min(doc.pages) else 1
-            candidates.append((first, priority, -_page_score(text), number, doc.index))
-    candidates.sort()
+
+    ordered = sorted(documents, key=lambda doc: (_priority(doc), doc.index))
+    queue: list[tuple[int, int]] = []
+    relevant: dict[int, list[int]] = {}
+    leftovers: dict[int, list[int]] = {}
+    for doc in ordered:
+        scores = {number: page_relevance(text) for number, text in doc.pages.items()}
+        first = min(doc.pages)
+        pinned = _priority(doc) in _CONTEXT_PRIORITIES
+        if pinned:
+            queue.append((doc.index, first))
+        rest = [number for number in doc.pages if not (pinned and number == first)]
+        threshold = _LOW_PRIORITY_MIN_RELEVANCE if _priority(doc) >= _LOW_PRIORITY else 1
+        relevant[doc.index] = sorted((n for n in rest if scores[n] >= threshold), key=lambda n: (-scores[n], n))
+        leftovers[doc.index] = sorted(n for n in rest if scores[n] < threshold)
+    for pool in (relevant, leftovers):
+        while any(pool.values()):
+            for doc in ordered:
+                share = _PAGES_PER_ROUND.get(_priority(doc), 1)
+                for _ in range(share):
+                    if pool[doc.index]:
+                        queue.append((doc.index, pool[doc.index].pop(0)))
+
+    by_index = {doc.index: doc for doc in documents}
     remaining = budget
     selected: dict[int, list[int]] = {}
-    for _first, _priority, _score, number, doc_index in candidates:
-        doc = documents[doc_index - 1]
-        size = min(len(doc.pages[number]), MAX_PAGE_CHARS)
+    for doc_index, number in queue:
+        size = min(len(by_index[doc_index].pages[number]), MAX_PAGE_CHARS)
         if size > remaining:
             continue
         remaining -= size
         selected.setdefault(doc_index, []).append(number)
     return {index: sorted(pages) for index, pages in selected.items()}, True
+
+
+@dataclass(frozen=True)
+class ReadingProfile:
+    """What one version of the reading sends to the model and accepts back.
+
+    Production reads with :data:`PRODUCTION_PROFILE`. A candidate version (``document_reading_candidate``)
+    is tried read-only against stored readings (``scripts/document_reading_trial.py``) before it replaces it.
+    """
+
+    version: str
+    system_prompt: str
+    max_points: int
+    prompt_chars: int
+    max_output_tokens: int
+    select_pages: Callable[[Sequence[ReadingDocument], int], tuple[dict[int, list[int]], bool]]
+    # Says whether a verified quote must be left out whatever the model made of it (None: no such rule).
+    rejects_quote: Callable[[str], bool] | None = None
+
+
+PRODUCTION_PROFILE = ReadingProfile(
+    version=DOCUMENT_READING_VERSION,
+    system_prompt=SYSTEM_PROMPT,
+    max_points=MAX_POINTS,
+    prompt_chars=MAX_PROMPT_CHARS,
+    max_output_tokens=READING_MAX_OUTPUT_TOKENS,
+    select_pages=select_pages,
+    rejects_quote=is_standard_clause,
+)
 
 
 def _prompt_attribute(value: str, maximum: int) -> str:
@@ -385,8 +524,12 @@ def _prompt_attribute(value: str, maximum: int) -> str:
     return text[:maximum].rstrip()
 
 
-def build_reading_prompt(documents: Sequence[ReadingDocument], sold_lot: SoldLot | None = None) -> tuple[str, bool]:
-    selected, truncated = select_pages(documents)
+def build_reading_prompt(
+    documents: Sequence[ReadingDocument],
+    sold_lot: SoldLot | None = None,
+    profile: ReadingProfile = PRODUCTION_PROFILE,
+) -> tuple[str, bool]:
+    selected, truncated = profile.select_pages(documents, profile.prompt_chars)
     sections: list[str] = []
     for doc in documents:
         numbers = selected.get(doc.index)
@@ -442,6 +585,22 @@ def grounded_quote(page_text: str, quote: str, *, min_chars: int = MIN_QUOTE_CHA
     start = offsets[position]
     end = offsets[position + len(candidate) - 1] + 1
     return clean_text(page_text[start:end])
+
+
+# What a model writes between two passages it joins in one quote: « […] », « (...) », « … », « ... ».
+_QUOTE_BREAK = re.compile(r"\s*(?:\[\s*(?:\.{3}|…)\s*\]|\(\s*(?:\.{3}|…)\s*\)|\.{3,}|…)\s*")
+
+
+def quote_candidates(quote: str) -> list[str]:
+    """The quote, then its passages when the model joined several with an ellipsis, longest first.
+
+    Trial of 10/11/2026: most points lost to an unverified quote were two true passages joined by « [...] »
+    (11 alerts out of 83 points). Each passage is still searched word for word; the first one found becomes
+    the quote shown.
+    """
+    parts = [part.strip() for part in _QUOTE_BREAK.split(quote)]
+    passages = sorted((part for part in parts if len(part) >= MIN_QUOTE_CHARS), key=len, reverse=True)
+    return [quote, *passages] if len(parts) > 1 else [quote]
 
 
 def _bounded_text(value: object, maximum: int) -> str | None:
@@ -524,7 +683,14 @@ def occupancy_text_contradicts_quote(title: str | None, explanation: str | None,
 
 
 def validate_reading_points(
-    raw_points: object, documents: Sequence[ReadingDocument], *, sold_lot: SoldLot | None = None
+    raw_points: object,
+    documents: Sequence[ReadingDocument],
+    *,
+    sold_lot: SoldLot | None = None,
+    max_points: int = MAX_POINTS,
+    rejects_quote: Callable[[str], bool] | None = None,
+    rejections: dict[str, int] | None = None,
+    rejected_points: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     """Keep only well-formed points whose quote is found in the cited document.
 
@@ -535,16 +701,34 @@ def validate_reading_points(
     With a designated lot (multi-lot listing), a point the model places on another lot, or whose
     quote names another lot of the sale and not this one, is dropped. Without one, the « lot » answer
     is ignored: a one-lot sale or an uncertain lot reads as before v3.
+
+    ``rejections``, when given, counts the dropped points by reason and ``rejected_points`` keeps what the
+    model wrote for each of them (diagnostics for the trials).
     """
+
+    def reject(reason: str, raw: object = None) -> None:
+        if rejections is not None:
+            rejections[reason] = rejections.get(reason, 0) + 1
+        if rejected_points is not None and isinstance(raw, Mapping):
+            rejected_points.append(
+                {
+                    "reason": reason,
+                    **{name: str(raw.get(name))[:200] for name in ("theme", "importance", "title", "document", "page", "quote")},
+                }
+            )
+
     if not isinstance(raw_points, list):
         return []
     by_ref = {doc.ref: doc for doc in documents}
     points: list[dict[str, object]] = []
     seen: set[tuple[str, int, str]] = set()
-    for raw in raw_points:
-        if len(points) >= MAX_POINTS:
+    for position, raw in enumerate(raw_points):
+        if len(points) >= max_points:
+            if rejections is not None:
+                rejections["over_cap"] = rejections.get("over_cap", 0) + len(raw_points) - position
             break
         if not isinstance(raw, Mapping):
+            reject("missing_field")
             continue
         theme = str(raw.get("theme") or "").strip()
         importance = str(raw.get("importance") or "info").strip()
@@ -553,10 +737,17 @@ def validate_reading_points(
         quote = raw.get("quote")
         doc = by_ref.get(str(raw.get("document") or "").strip().upper())
         if theme not in THEMES or not title or not isinstance(quote, str) or doc is None:
+            reject(
+                "unknown_theme" if theme not in THEMES else "unknown_document" if doc is None else "missing_field",
+                raw,
+            )
             continue
         if sold_lot is not None and str(raw.get("lot") or "").strip() == "autre_lot":
+            reject("other_lot", raw)
             continue
-        if len(quote) > MAX_QUOTE_CHARS * 2:
+        candidates = [text for text in quote_candidates(quote) if len(text) <= MAX_QUOTE_CHARS * 2]
+        if not candidates:
+            reject("quote_too_long", raw)
             continue
         try:
             cited_page = int(raw.get("page") or 0)
@@ -568,20 +759,30 @@ def validate_reading_points(
             number for number in sorted(doc.pages) if number != cited_page
         ]
         found_page, excerpt = None, None
-        for number in order:
-            excerpt = grounded_quote(doc.pages[number], quote)
-            if excerpt:
-                found_page = number
+        for candidate in candidates:
+            for number in order:
+                excerpt = grounded_quote(doc.pages[number], candidate)
+                if excerpt:
+                    found_page = number
+                    break
+            if found_page:
                 break
         if not found_page or not excerpt:
+            reject("quote_not_found", raw)
             continue
         if sold_lot is not None and names_another_lot(excerpt, sold_lot):
+            reject("other_lot", raw)
+            continue
+        if rejects_quote is not None and rejects_quote(excerpt):
+            reject("standard_clause", raw)
             continue
         explanation = _checked_explanation(explanation, doc.pages[found_page])
         if theme == "occupation" and occupancy_text_contradicts_quote(title, explanation, excerpt):
+            reject("occupation_contradiction", raw)
             continue
         key = (doc.ref, found_page, excerpt.casefold()[:80])
         if key in seen:
+            reject("duplicate", raw)
             continue
         seen.add(key)
         point: dict[str, object] = {
@@ -644,18 +845,21 @@ def read_sale_documents(
     generate_json: Callable[[str, str], Mapping[str, object]] | None,
     model: str | None = None,
     sold_lot: SoldLot | None = None,
+    profile: ReadingProfile = PRODUCTION_PROFILE,
+    rejections: dict[str, int] | None = None,
+    rejected_points: list[dict[str, object]] | None = None,
 ) -> ReadingResult:
     if not documents:
         return ReadingResult("no_text", model=model)
     if generate_json is None:
         return ReadingResult("unavailable", error_code="READING_PROVIDER_NOT_CONFIGURED", model=model)
     documents = filtered_for_model(documents)
-    prompt, truncated = build_reading_prompt(documents, sold_lot)
+    prompt, truncated = build_reading_prompt(documents, sold_lot, profile)
     try:
         from src.llm_task_deadline import llm_task_deadline_scope
 
         with llm_task_deadline_scope(time.monotonic() + READING_TIMEOUT_SECONDS):
-            payload = generate_json(SYSTEM_PROMPT, prompt)
+            payload = generate_json(profile.system_prompt, prompt)
     except Exception as exc:  # provider, budget or transport failure: retried on a later run
         LOGGER.warning("Document reading failed: %s", type(exc).__name__)
         return ReadingResult(
@@ -667,7 +871,15 @@ def read_sale_documents(
         )
     if not isinstance(payload, Mapping):
         return ReadingResult("failed", input_truncated=truncated, error_code="READING_OUTPUT_INVALID", model=model)
-    points = validate_reading_points(payload.get("points"), documents, sold_lot=sold_lot)
+    points = validate_reading_points(
+        payload.get("points"),
+        documents,
+        sold_lot=sold_lot,
+        max_points=profile.max_points,
+        rejects_quote=profile.rejects_quote,
+        rejections=rejections,
+        rejected_points=rejected_points,
+    )
     return ReadingResult("completed", points, input_truncated=truncated, model=model)
 
 
@@ -705,17 +917,6 @@ def _retry_due_sql() -> str:
 _RETRY_DUE_SQL = _retry_due_sql()
 
 
-def kept_without_v3(previous_version: object, previous_status: object, lot_selection: object) -> bool:
-    """A completed v2 reading of a sale whose listing designates no lot: v3 would read it the same way.
-
-    Same rule as ``CANDIDATES_SQL`` (``source_lot_selection.status = 'selected'``), so that a sale it lets
-    through because its text changed is read again, and one it lets through for a rewritten but identical
-    text keeps its reading.
-    """
-    designated = isinstance(lot_selection, Mapping) and lot_selection.get("status") == "selected"
-    return previous_status == "completed" and previous_version == LOT_ONLY_PREVIOUS_VERSION and not designated
-
-
 CANDIDATES_SQL = f"""
 select sale.id, sale.source_url, latest.result, reading.input_fingerprint,
        reading.status, coalesce(reading.attempt_count, 0), coalesce({_RETRY_DUE_SQL}, false),
@@ -740,16 +941,8 @@ select sale.id, sale.source_url, latest.result, reading.input_fingerprint,
    )
    and (
      reading.sale_id is null
-     or (
-       reading.prompt_version <> %s
-       -- D8 : la v3 ne change rien à une lecture v2 réussie d'une vente sans lot désigné (la règle des
-       -- citations de 25 caractères lui est appliquée sans appel par revalidate_stored_points).
-       and not (
-         reading.status = 'completed'
-         and reading.prompt_version = '{LOT_ONLY_PREVIOUS_VERSION}'
-         and coalesce(sale.raw_payload -> 'source_lot_selection' ->> 'status', '') <> 'selected'
-       )
-     )
+     -- Toute lecture d'une version antérieure est refaite (v4 : autre choix des pages, autre consigne).
+     or reading.prompt_version <> %s
      or {_RETRY_DUE_SQL}
      or reading.updated_at < (
        select max(extraction.updated_at) from public.auction_extractions extraction
@@ -863,16 +1056,12 @@ def run_document_readings(
     generate_json, model = generator if generator is not None else _llm_generator()
     for row in rows:
         (sale_id, source_url, manifest, previous_fingerprint, previous_status, previous_attempts, retry_due,
-         property_type, city, lot_selection, previous_version) = row
+         property_type, city, lot_selection, _previous_version) = row
         if time.monotonic() - started >= budget_seconds:
             break
         sold_lot = sold_lot_from_sale(property_type, city, lot_selection)
         fingerprint = input_fingerprint(manifest, sold_lot=sold_lot)
         same_input = fingerprint == previous_fingerprint
-        if not same_input and kept_without_v3(previous_version, previous_status, lot_selection):
-            # Candidate because its extraction was rewritten: the v2 reading stands while its text is the same
-            # (same rule as CANDIDATES_SQL).
-            same_input = input_fingerprint(manifest, version=str(previous_version)) == previous_fingerprint
         # A failed reading on the same text is read again only when its back-off
         # has elapsed and attempts remain; otherwise it waits for a new text.
         if same_input and not (previous_status == "failed" and retry_due):
@@ -951,7 +1140,7 @@ def revalidate_stored_readings(db_url: str, *, limit: int) -> dict[str, int]:
     for sale_id, version, fingerprint, points, manifest, property_type, city, lot_selection in rows:
         sold_lot = sold_lot_from_sale(property_type, city, lot_selection)
         # Readings before v3 were hashed without the lot.
-        hashed_lot = sold_lot if version == DOCUMENT_READING_VERSION else None
+        hashed_lot = None if str(version) in VERSIONS_HASHED_WITHOUT_LOT else sold_lot
         if input_fingerprint(manifest, version=str(version), sold_lot=hashed_lot) != fingerprint:
             counts["stale_text"] += 1
             continue

@@ -126,8 +126,10 @@ sans `sender_email` ni `sender_name`.
 
 ## Sécurité du lien `/auth/confirmer`
 
-- **`{{ .RedirectTo }}` est inséré brut** dans les gabarits : le dépôt n'a pas de preuve que les gabarits
-  de Supabase acceptent un filtre d'échappement (`urlquery`, `html`), donc aucun n'est utilisé. La page
+- **`{{ .RedirectTo }}` est inséré brut** dans le `href` du bouton (`html/template` de Go l'y encode
+  d'office). Dans le lien affiché en clair, où il ne l'est pas, il passe par `{{ .RedirectTo | urlquery }}`
+  (contrôle local du 10/11/2026 : les six gabarits s'analysent et s'exécutent avec `html/template` de
+  Go 1.24, le `href` du bouton est inchangé). La page
   compense : `redirect_to` est le dernier paramètre (tout ce qui suit lui appartient, encodé ou non) et
   n'est suivi que s'il est une page du site, une fois normalisé (`sameSitePath` : pas de `//`, de `/\`,
   d'autre origine ni de retour vers la page elle-même). Tout le reste mène à `/bienvenue`.

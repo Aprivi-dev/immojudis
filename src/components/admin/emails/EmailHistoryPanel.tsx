@@ -91,6 +91,9 @@ export function EmailHistoryPanel() {
                     <span className="text-xs text-brand-navy/62">{row.at}</span>
                     <strong className="break-all">{row.who}</strong>
                     {row.status ? <Pill tone={row.status.tone}>{row.status.text}</Pill> : null}
+                    {row.status?.detail ? (
+                      <span className="text-xs text-brand-navy/62">{row.status.detail}</span>
+                    ) : null}
                   </span>
                   <span>{row.subject}</span>
                   <span className="text-xs text-brand-navy/62">{row.tag}</span>

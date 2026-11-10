@@ -400,7 +400,7 @@ def test_no_prediction_sent_without_time_to_read_its_answer(
         )
 
     monkeypatch.setattr(llm_client.httpx, "post", post)
-    with llm_task_deadline.llm_task_deadline_scope(1000.0 + remaining):
+    with llm_task_deadline.llm_task_deadline_scope(1000.0 + remaining, require_answer_time=True):
         if sent:
             client._post_with_retries("https://api.replicate.com/v1/predictions", {}, {"input": {"prompt": "p"}})
         else:
@@ -410,3 +410,42 @@ def test_no_prediction_sent_without_time_to_read_its_answer(
     assert bool(reservations) is sent
     assert bool(posts) is sent
 
+
+
+@pytest.mark.parametrize("budget", [90.0, 25.0])
+def test_a_single_call_budget_does_not_refuse_its_own_call(monkeypatch: pytest.MonkeyPatch, budget: float) -> None:
+    """L'échéance d'un appel unique (lecture des pièces : 90 s ; agent d'information : 25 s) est son budget entier.
+
+    Du 09 au 10/11/2026, la règle ci-dessus s'appliquait à toute échéance : chaque lecture des pièces était
+    refusée avant d'être envoyée (LLMTaskDeadlineExceeded) et aucune n'aboutissait.
+    """
+    client = _client(wait_seconds=60, timeout_seconds=180)
+    posts: list[object] = []
+    monkeypatch.setattr(llm_task_deadline.time, "monotonic", lambda: 1000.0)
+    monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "r-1")
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
+    monkeypatch.setattr(llm_client, "record_llm_request", lambda *args, **kwargs: None)
+
+    def post(*args: object, **kwargs: object) -> httpx.Response:
+        posts.append(kwargs)
+        return httpx.Response(
+            201,
+            json={"id": "p-1", "status": "starting", "urls": {"get": "https://api.replicate.com/v1/predictions/p-1"}},
+            request=httpx.Request("POST", "https://api.replicate.com/v1/predictions"),
+        )
+
+    monkeypatch.setattr(llm_client.httpx, "post", post)
+    with llm_task_deadline.llm_task_deadline_scope(1000.0 + budget):
+        assert llm_task_deadline.llm_answer_time_required() is False
+        client._post_with_retries("https://api.replicate.com/v1/predictions", {}, {"input": {"prompt": "p"}})
+
+    assert len(posts) == 1
+
+
+def test_a_single_call_scope_inside_a_pass_scope_follows_its_own_rule() -> None:
+    with llm_task_deadline.llm_task_deadline_scope(2000.0, require_answer_time=True):
+        assert llm_task_deadline.llm_answer_time_required() is True
+        with llm_task_deadline.llm_task_deadline_scope(1090.0):
+            assert llm_task_deadline.llm_answer_time_required() is False
+        assert llm_task_deadline.llm_answer_time_required() is True
+    assert llm_task_deadline.llm_answer_time_required() is False

@@ -1047,7 +1047,7 @@ def _run_enrichment_queue_batch_with_deadline(
     with (
         pdf_deadline_scope(pdf_deadline),
         source_task_deadline_scope(pdf_deadline),
-        llm_task_deadline_scope(pdf_deadline),
+        llm_task_deadline_scope(pdf_deadline, require_answer_time=True),
     ):
         return run_enrichment_queue_batch(
             limit=limit,
