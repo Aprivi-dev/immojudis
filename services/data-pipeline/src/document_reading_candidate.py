@@ -51,6 +51,25 @@ _STANDARD_CLAUSE_TERMS = re.compile(
     r"frais de poursuites|droits de mutation|avocat postulant|caducite"
 )
 STANDARD_CLAUSE_PAGE_TERMS = 3
+# Sentences of those standard conditions that the readings quoted most (trial of 10/11/2026: the model still
+# returned them despite the instruction). A point whose verified quote holds one of them is left out.
+_STANDARD_CLAUSE_QUOTES = re.compile(
+    r"vices caches|article 1649|"
+    r"sur les quittances de l'avocat poursuivant|"
+    r"delai de deux mois a compter de la vente definitive|"
+    r"caution bancaire irrevocable|cheque de banque redige a l'ordre|se fait remettre par son mandant|"
+    r"purgent de plein droit|purger les inscriptions|"
+    r"si l'immeuble est loue, par la perception|"
+    r"en sus et sans diminution de son prix, aux differents locataires|"
+    r"servitudes passives|"
+    r"surenchere|reiteration des encheres"
+)
+
+
+def is_standard_clause(quote: str) -> bool:
+    """Whether the quote is a sentence of the standard conditions of sale, the same in every dossier."""
+    folded = strip_accents(quote).lower().replace("’", "'")
+    return bool(_STANDARD_CLAUSE_QUOTES.search(re.sub(r"\s+", " ", folded)))
 # Types the v3 table does not rank (measured on the upcoming sales of 10/11/2026: a lease is rare and decisive,
 # a land registry extract is long and seldom says anything of the property's condition).
 _PRIORITY = {**_DOCUMENT_PRIORITY, "bail": 1, "procedure_saisie": 4, "cadastre": 5}
@@ -131,24 +150,32 @@ def system_prompt_v4(max_points: int) -> str:
         "Tu lis les pièces du dossier fournies entre balises et tu relèves ce qui est PROPRE À CE BIEN et "
         "qu'il doit connaître avant d'enchérir.\n"
         "À chercher dans toutes les pièces (procès-verbal, cahier des conditions de vente, diagnostics, "
-        "état des risques, annexes), par ordre d'importance :\n"
-        "- occupation : qui occupe, bail (type, date, durée), loyer, dépôt de garantie, procédure d'expulsion ;\n"
-        "- diagnostics : résultat de chaque diagnostic (amiante, plomb, termites, électricité, gaz, "
+        "état des risques, annexes), par ordre d'importance. Le mot entre crochets est la valeur exacte de "
+        "\"theme\" pour ces points :\n"
+        "- [occupation] qui occupe, bail (type, date, durée), loyer, dépôt de garantie, procédure d'expulsion ;\n"
+        "- [diagnostics] résultat de chaque diagnostic (amiante, plomb, termites, électricité, gaz, "
         "assainissement, DPE), travaux obligatoires et délais ;\n"
-        "- état et travaux : désordres constatés (fissures, infiltrations, dégât des eaux, installation "
-        "hors d'usage), travaux en cours ou imposés, devis chiffrés ;\n"
-        "- risques et urbanisme : zone inondable ou plan de prévention qui vise la parcelle, emplacement "
-        "réservé, droit de préemption (commune, SAFER, locataire), monument historique, arrêté de péril "
-        "ou d'insalubrité ;\n"
-        "- servitudes propres au bien (passage, réseaux, vue) ;\n"
-        "- copropriété : charges, impayés, travaux votés, procédures ;\n"
-        "- consistance : composition, surfaces (Carrez, habitable, terrain), lots vendus, écart entre deux "
-        "pièces ;\n"
-        "- clauses écrites pour ce bien : intéressement sur la plus-value, droit de préférence, baisse de la "
-        "mise à prix, visite obligatoire.\n"
+        "- [etat_travaux] désordres constatés (fissures, infiltrations, dégât des eaux, installation hors "
+        "d'usage), travaux en cours ou imposés, devis chiffrés ;\n"
+        "- [urbanisme_servitudes] zone inondable ou plan de prévention qui vise la parcelle, emplacement "
+        "réservé, droit de préemption (commune, SAFER, locataire), monument historique, servitudes propres "
+        "au bien (passage, réseaux, vue) ;\n"
+        "- [juridique] arrêté de péril ou d'insalubrité, procédures en cours, clauses écrites pour ce bien "
+        "(intéressement sur la plus-value, droit de préférence) ;\n"
+        "- [copropriete] charges, impayés, travaux votés, procédures ;\n"
+        "- [autre] consistance : composition, surfaces (Carrez, habitable, terrain), lots vendus, écart "
+        "entre deux pièces ;\n"
+        "- [conditions_vente] seulement ce qui est propre à cette vente : mise à prix de chaque lot, baisse "
+        "possible de la mise à prix, visite obligatoire.\n"
         "Règles strictes :\n"
         "- Chaque point cite un extrait copié MOT POUR MOT depuis une page (25 à 300 caractères), "
         "avec le numéro du document (D1, D2…) et le numéro de page indiqués dans les balises.\n"
+        "- Les pages sont souvent numérisées : copie l'extrait caractère pour caractère, tel qu'il apparaît, "
+        "avec ses fautes, ses mots coupés et ses caractères étranges. Ne corrige rien, ne complète rien, ne "
+        "raccorde pas deux passages. Un extrait corrigé ou recomposé est rejeté et le point est perdu : "
+        "préfère un extrait court et exact.\n"
+        "- \"theme\" prend uniquement l'une des huit valeurs entre crochets ci-dessus ; \"document\" "
+        "s'écrit D1, D2… sans autre texte.\n"
         "- N'invente rien, ne déduis pas de chiffre absent du texte, n'écris aucun conseil juridique "
         "personnalisé. Si une information manque, ne la mentionne pas.\n"
         "- Quand le texte donne un chiffre (montant, surface, date, durée, pourcentage), choisis l'extrait "
@@ -192,6 +219,7 @@ CANDIDATE_PROFILES: dict[str, ReadingProfile] = {
         prompt_chars=MAX_PROMPT_CHARS,
         max_output_tokens=READING_MAX_OUTPUT_TOKENS,
         select_pages=select_pages_by_relevance,
+        rejects_quote=is_standard_clause,
     ),
     "v4_wide": ReadingProfile(
         version=CANDIDATE_VERSION,
@@ -200,5 +228,6 @@ CANDIDATE_PROFILES: dict[str, ReadingProfile] = {
         prompt_chars=2 * MAX_PROMPT_CHARS,
         max_output_tokens=4_000,
         select_pages=select_pages_by_relevance,
+        rejects_quote=is_standard_clause,
     ),
 }
