@@ -11813,6 +11813,7 @@ export type Database = {
           created_at: string;
           department: string | null;
           dpe_classes: string[];
+          frequency_downgraded_at: string | null;
           id: string;
           is_active: boolean;
           last_evaluated_at: string | null;
@@ -11838,6 +11839,7 @@ export type Database = {
           created_at?: string;
           department?: string | null;
           dpe_classes?: string[];
+          frequency_downgraded_at?: string | null;
           id?: string;
           is_active?: boolean;
           last_evaluated_at?: string | null;
@@ -11863,6 +11865,7 @@ export type Database = {
           created_at?: string;
           department?: string | null;
           dpe_classes?: string[];
+          frequency_downgraded_at?: string | null;
           id?: string;
           is_active?: boolean;
           last_evaluated_at?: string | null;

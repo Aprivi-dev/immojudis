@@ -81,7 +81,8 @@ export function PremiumFeaturePreview({
       {checkoutOpen === true ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           L’offre Analyse est offerte pendant {ANALYSIS_TRIAL_DAYS} jours à l’inscription, puis
-          proposée sur abonnement mensuel, résiliable depuis votre compte.
+          proposée sur abonnement mensuel, prélevé chaque mois jusqu’à résiliation, résiliable à
+          tout moment.
         </p>
       ) : checkoutOpen === false ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">

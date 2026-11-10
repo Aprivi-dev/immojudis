@@ -170,9 +170,13 @@ export async function sendCommercialConfirmation({
     .maybeSingle();
   if (subscriptionError) throw subscriptionError;
 
+  // L'ancien accès de 30 jours sans renouvellement n'est décrit que pour une acceptation qui le porte
+  // explicitement (ancien code d'offre). Une acceptation illisible ou absente est décrite comme
+  // l'offre actuelle, l'abonnement mensuel : jamais comme un « accès 30 jours ».
   const isRecurringOffer =
-    acceptance?.offer_code === ANALYSIS_OFFER_CODE ||
-    acceptance?.offer_code === ANALYSIS_SUBSCRIPTION_OFFER_CODE;
+    !acceptance?.offer_code ||
+    acceptance.offer_code === ANALYSIS_OFFER_CODE ||
+    acceptance.offer_code === ANALYSIS_SUBSCRIPTION_OFFER_CODE;
   const evidence = jsonRecord(acceptance?.evidence);
   const trialDays = numberValue(evidence.trial_days) ?? 0;
   const offerLabel =
@@ -186,8 +190,14 @@ export async function sendCommercialConfirmation({
     acceptance?.amount_cents ?? numberValue(subscriptionEvidence.stripe_price_amount_cents);
   const currency =
     acceptance?.currency ?? stringValue(subscriptionEvidence.stripe_price_currency) ?? "eur";
-  const interval = stringValue(subscriptionEvidence.stripe_price_interval);
-  const intervalCount = numberValue(subscriptionEvidence.stripe_price_interval_count);
+  // Périodicité : celle enregistrée avec l'acceptation (le Price relu au paiement), à défaut celle
+  // de l'abonnement synchronisé.
+  const interval =
+    stringValue(evidence.recurring_interval) ??
+    stringValue(subscriptionEvidence.stripe_price_interval);
+  const intervalCount =
+    numberValue(evidence.recurring_interval_count) ??
+    numberValue(subscriptionEvidence.stripe_price_interval_count);
   const recurringPrice =
     amountCents != null
       ? `Tarif : ${formatMoney(amountCents, currency)}${formatInterval(interval, intervalCount)}`
@@ -200,6 +210,7 @@ export async function sendCommercialConfirmation({
           ? `${ANALYSIS_TRIAL_LABEL}, puis ${ANALYSIS_RECURRING_LABEL.toLocaleLowerCase("fr-FR")}.`
           : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL}.`,
         recurringPrice,
+        "L’abonnement est conclu sans durée limitée et prélevé automatiquement chaque mois, à la même date, jusqu’à sa résiliation. Vous pouvez le résilier à tout moment depuis la page « Mon compte » : la résiliation prend effet à la fin de la période payée.",
         trialEnd ? `Fin de l’essai prévue le : ${formatOfferDate(trialEnd)}` : null,
         firstInvoiceAt ? `Premier prélèvement prévu le : ${formatOfferDate(firstInvoiceAt)}` : null,
       ]

@@ -11,6 +11,7 @@ export const SENT_TEMPLATE_KEYS = [
   "trial_end",
   "offer_opening",
   "payment_failed",
+  "payment_action_required",
   "trial_ending",
   "cancellation",
   "commercial_confirmation",

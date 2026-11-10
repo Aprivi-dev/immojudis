@@ -272,7 +272,9 @@ describe("SaleUnlockPanel", () => {
     expect(text).toContain(
       "Vous pourrez la débloquer le 1er novembre avec le compte gratuit, ou l’ouvrir dès maintenant avec l’offre Analyse, qui ouvre toutes les ventes.",
     );
-    expect(text).toContain("Son prix : 59\u00a0€\u00a0TTC / mois, résiliable à tout moment.");
+    expect(text).toContain(
+      "L’offre Analyse est un abonnement à 59\u00a0€\u00a0TTC / mois, prélevé automatiquement chaque mois jusqu’à résiliation, résiliable à tout moment.",
+    );
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
       "/offres",
     );

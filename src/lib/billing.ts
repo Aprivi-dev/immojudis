@@ -16,6 +16,7 @@ import { PublicApiError } from "@/lib/api-errors";
 import type { BillingPortalIntent } from "@/lib/billing-portal-request";
 import {
   sendCancellationConfirmationNotice,
+  sendPaymentActionRequiredNotice,
   sendPaymentFailedNotice,
   sendTrialEndingNotice,
   type CancellationNoticeKind,
@@ -407,13 +408,13 @@ async function resolveConfiguredAnalysisPrice(
   ) {
     throw new Error("Le Price Stripe Analyse doit être actif et récurrent à 59 € / mois en EUR.");
   }
-  // TVA (n° 45) : le tarif de 59 € est affiché TTC. Un Price « exclusive » ou sans comportement fiscal
-  // (« unspecified ») ferait ajouter la taxe au-dessus de 59 € (ou facturer sans taxe), en
-  // contradiction avec le prix annoncé : le checkout est refusé tant que le Price n'est pas « inclusive ».
-  // DÉCISION ENCORE OUVERTE (dépend du régime de TVA de la société) : choisir entre Stripe Tax
-  // (`automatic_tax: { enabled: true }` dans `buildAnalysisCheckoutSessionParams`, taux calculé par
-  // Stripe) et un taux fixe (`default_tax_rates`). Rien n'est choisi ici ; cette exigence vaut dans
-  // les deux cas, le prix affiché restant TTC.
+  // TVA (n° 45) : le tarif de 59 € est le prix final payé. Un Price « exclusive » ou sans comportement
+  // fiscal (« unspecified ») pourrait faire ajouter une taxe au-dessus de 59 €, en contradiction avec
+  // le prix annoncé : le checkout est refusé tant que le Price n'est pas « inclusive ».
+  // DÉCISION DU 09/11/2026 : franchise en base de TVA (art. 293 B du CGI). Aucun taux n'est appliqué
+  // (ni Stripe Tax ni `default_tax_rates`) ; chaque facture porte `VAT_EXEMPTION_INVOICE_MENTION`
+  // (pied de facture du client Stripe, voir `ensureStripeCustomer`). En cas de sortie de la franchise,
+  // brancher un taux ici et retirer la mention.
   if (price.tax_behavior !== "inclusive") {
     throw new Error(
       "Le Price Stripe Analyse doit avoir un comportement fiscal « inclusive » (prix de 59 € TTC).",
@@ -574,6 +575,9 @@ export async function handleStripeWebhook({
       case "invoice.payment_failed":
         handled = await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
         break;
+      case "invoice.payment_action_required":
+        handled = await handleInvoicePaymentActionRequired(event.data.object as Stripe.Invoice);
+        break;
       case "charge.refunded":
         handled = await handleChargeRefunded(event.data.object as Stripe.Charge, event);
         break;
@@ -690,6 +694,13 @@ export function stripeAccessPeriodEndIso(
   return stripeCurrentPeriodEndIso(subscription);
 }
 
+/**
+ * Régime de TVA retenu le 09/11/2026 : franchise en base (art. 293 B du CGI). Mention imprimée en pied
+ * de chaque facture Stripe ; à doubler dans le tableau de bord Stripe (pied de facture par défaut) pour
+ * les clients créés hors de ce code.
+ */
+export const VAT_EXEMPTION_INVOICE_MENTION = "TVA non applicable, art. 293 B du CGI";
+
 export function stripeCustomerIdempotencyKey(userId: string): string {
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) throw new Error("Identifiant utilisateur Stripe manquant.");
@@ -707,6 +718,8 @@ async function ensureStripeCustomer(
   const customer = await stripe.customers.create(
     {
       email: typeof auth.claims.email === "string" ? auth.claims.email : undefined,
+      // Franchise en base de TVA : mention obligatoire sur chaque facture émise par Stripe.
+      invoice_settings: { footer: VAT_EXEMPTION_INVOICE_MENTION },
       metadata: {
         user_id: auth.userId,
         source: "immojudis",
@@ -1003,18 +1016,41 @@ export async function enforceSingleTrialPerCard(
   return "reused";
 }
 
-async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<boolean> {
+async function userIdForInvoiceCustomer(invoice: Stripe.Invoice): Promise<string | null> {
   const customerId = stripeObjectId(invoice.customer);
-  if (!customerId || !invoice.id) return false;
+  if (!customerId) return null;
   const { data, error } = await supabaseAdmin
     .from("user_subscriptions")
     .select("user_id")
     .eq("stripe_customer_id", customerId)
     .maybeSingle();
   if (error) throw error;
-  if (!data?.user_id) return false;
+  return data?.user_id ?? null;
+}
+
+/**
+ * 3-D Secure au renouvellement (C10) : la banque retient le prélèvement jusqu'à la confirmation du
+ * client. La première facture passe par Checkout, qui gère lui-même la confirmation : seules les
+ * factures de renouvellement déclenchent l'email.
+ */
+async function handleInvoicePaymentActionRequired(invoice: Stripe.Invoice): Promise<boolean> {
+  if (!invoice.id || invoice.billing_reason === "subscription_create") return false;
+  const userId = await userIdForInvoiceCustomer(invoice);
+  if (!userId) return false;
+  await sendPaymentActionRequiredNotice({
+    userId,
+    invoiceId: invoice.id,
+    hostedInvoiceUrl: invoice.hosted_invoice_url,
+  });
+  return true;
+}
+
+async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<boolean> {
+  if (!invoice.id) return false;
+  const userId = await userIdForInvoiceCustomer(invoice);
+  if (!userId) return false;
   await sendPaymentFailedNotice({
-    userId: data.user_id,
+    userId,
     invoiceId: invoice.id,
     nextAttemptAt: invoice.next_payment_attempt,
   });

@@ -60,6 +60,11 @@ const mocks = vi.hoisted(() => ({
   forecast: vi.fn(),
   pepite: vi.fn(),
   authUser: null as { id: string } | null,
+  checkoutOpen: null as boolean | null,
+}));
+
+vi.mock("@/hooks/use-analysis-checkout-open", () => ({
+  useAnalysisCheckoutOpen: () => mocks.checkoutOpen,
 }));
 
 // Le repère « Pépite » : la liste publique et la route sont testées à part (use-sale-pepite, route).
@@ -234,6 +239,7 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
   mocks.authUser = null;
+  mocks.checkoutOpen = null;
   window.history.replaceState(null, "", "/");
 });
 
@@ -333,6 +339,29 @@ const PEPITE_OPEN = pepiteDetailPayload(
     PEPITE_CRITERIA,
   )!,
 );
+
+describe("plafond verrouillé d'un visiteur (garde d'ouverture du paiement)", () => {
+  const lockedText = (container: HTMLElement) => (container.textContent ?? "").replace(/\s+/g, " ");
+
+  it("ne propose l’offre Analyse que si elle s’achète vraiment", () => {
+    mocks.checkoutOpen = true;
+    const open = renderDetail("discovery");
+    expect(lockedText(open.container)).toContain(
+      "Créez un compte gratuit, puis débloquez la vente ou choisissez l’offre Analyse",
+    );
+    open.unmount();
+
+    for (const state of [false, null]) {
+      mocks.checkoutOpen = state;
+      const closed = renderDetail("discovery");
+      expect(lockedText(closed.container)).toContain(
+        "Créez un compte gratuit, puis débloquez la vente",
+      );
+      expect(lockedText(closed.container)).not.toContain("choisissez l’offre Analyse");
+      closed.unmount();
+    }
+  });
+});
 
 describe("repère « Pépite » de la fiche", () => {
   it("ne change rien tant que la vente n'est pas une pépite (mode shadow, panne)", () => {

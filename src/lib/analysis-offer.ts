@@ -74,8 +74,8 @@ export function offersPageDescription({
     return `Découverte est gratuite. L’offre Analyse (${term}, alertes quotidiennes, comparables) n’est pas encore ouverte à la souscription.`;
   }
   const candidates = [
-    `Découverte est gratuite. Analyse chiffre votre ${term}, suit les nouvelles ventes avec des alertes et s’appuie sur des comparables : ${label}.`,
-    `Découverte est gratuite. Analyse chiffre votre ${term} et suit les nouvelles ventes : ${label}.`,
+    `Découverte est gratuite. Analyse chiffre votre ${term}, suit les nouvelles ventes avec des alertes et s’appuie sur des comparables : abonnement à ${label}.`,
+    `Découverte est gratuite. Analyse chiffre votre ${term} et suit les nouvelles ventes : abonnement à ${label}.`,
   ];
   return (
     candidates.find((text) => text.length <= OFFERS_DESCRIPTION_MAX_LENGTH) ??
@@ -121,5 +121,7 @@ export function analysisOfferLabelMatchesPrice(
  * carte de l'inscription (`LAUNCH_OFFER_LABEL`).
  */
 export const ANALYSIS_TRIAL_LABEL = "Période d’essai Stripe (avec carte)";
-export const ANALYSIS_RECURRING_LABEL = "Puis abonnement récurrent résiliable depuis Mon compte";
-export const ANALYSIS_SUBSCRIPTION_ONLY_LABEL = "Abonnement récurrent résiliable depuis Mon compte";
+export const ANALYSIS_RECURRING_LABEL =
+  "Puis abonnement mensuel prélevé chaque mois jusqu’à résiliation";
+export const ANALYSIS_SUBSCRIPTION_ONLY_LABEL =
+  "Abonnement mensuel prélevé chaque mois jusqu’à résiliation";

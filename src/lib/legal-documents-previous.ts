@@ -24,6 +24,16 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     effectiveDate: "25 octobre 2026",
     applicableUntil: PEPITE_TERMS_EFFECTIVE_DATE,
     archive: "docs/legal-archives/conditions-generales-2026-10-25.1.tsx.txt",
+    /** Versions plus récentes que la précédente mais déjà remplacées, archivées elles aussi. */
+    earlier: [
+      {
+        version: "2026-10-26.1",
+        sha256: "745ef0eacc7edc8dd02a63e36f6a0f0f9a18b07eeef2644abec806d4b0fd83e0",
+        effectiveDate: PEPITE_LEGAL_EFFECTIVE_DATE,
+        applicableUntil: PEPITE_TERMS_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/conditions-generales-2026-10-26.1.tsx.txt",
+      },
+    ],
   },
   legal: {
     version: "2026-10-26.1",
