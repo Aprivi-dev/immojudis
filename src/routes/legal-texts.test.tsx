@@ -60,7 +60,7 @@ describe("conditions générales", () => {
 
   it("affichent le prix configurable, sans essai dans l'abonnement", () => {
     expect(pageText(<TermsPage />)).toContain(
-      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}. La souscription n’est pas encore ouverte.`,
+      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}. Ce prix est un prix final : TVA non applicable, art. 293 B du CGI.`,
     );
     cleanup();
     // Only a label stating the billed price (scripts/verify-required-env.mjs) and « TTC »
@@ -133,8 +133,11 @@ describe("conditions générales : classement, référencement et mise en avant"
     expect(text).toContain("12. Réclamations, médiation et droit applicable");
   });
 
-  it("portent la version 2026-10-26.1 (repère « Pépite »), ancrée par l'empreinte de leur source", () => {
-    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-26.1");
+  it("portent la version 2026-11-10.1 (ouverture des paiements), ancrée par l'empreinte de leur source ; la 2026-10-26.1 est archivée", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-11-10.1");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.terms.earlier.map((earlier) => earlier.version)).toEqual([
+      "2026-10-26.1",
+    ]);
   });
 
   it("respectent le préavis de 30 jours de l'article 14 : comptes existants soumis à la nouvelle version au moins 30 jours après le 1er novembre 2026, dernier jour d'envoi de l'information", () => {
@@ -162,7 +165,7 @@ describe("conditions générales : classement, référencement et mise en avant"
   it("précisent dans l'en-tête qui est soumis à quelle version, et où obtenir la précédente", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Version 2026-10-26.1, applicable à compter du 1er décembre 2026 aux comptes existants, et dès l’inscription pour les comptes créés à partir de sa mise en ligne. La version précédente (2026-10-25.1) reste applicable aux comptes existants jusqu’au 1er décembre 2026 ; elle est communiquée sur demande à contact@immojudis.example.",
+      "Version 2026-11-10.1, applicable à compter du 1er décembre 2026 aux comptes existants, et dès l’inscription pour les comptes créés à partir de sa mise en ligne. La version précédente (2026-10-25.1) reste applicable aux comptes existants jusqu’au 1er décembre 2026 ; elle est communiquée sur demande à contact@immojudis.example.",
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.terms.applicableUntil).toBe(
       LEGAL_DOCUMENTS.terms.effectiveDate,
@@ -273,9 +276,10 @@ describe("conditions générales : essai gratuit à l'inscription (25/10/2026)",
     expect(text).not.toContain("sept jours");
   });
 
-  it("disent que la souscription n'est pas encore ouverte, à côté du prix", () => {
+  it("indiquent la franchise de TVA à côté du prix, sans dire que la souscription n'est pas ouverte", () => {
+    expect(pageText(<TermsPage />)).not.toContain("pas encore ouverte");
     expect(pageText(<TermsPage />)).toContain(
-      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}. La souscription n’est pas encore ouverte.`,
+      `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}. Ce prix est un prix final : TVA non applicable, art. 293 B du CGI.`,
     );
   });
 

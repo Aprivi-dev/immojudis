@@ -166,11 +166,11 @@ export function TermsPage() {
 
           <TermsSection title="4. Prix et paiement">
             <p>
-              Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}. La souscription n’est
-              pas encore ouverte. Le montant TTC et la périodicité sont précisés dans le
-              récapitulatif avant toute souscription. Stripe prélève ce montant à la souscription,
-              puis à chaque échéance tant que l’abonnement n’est pas résilié. Immojudis ne reçoit ni
-              ne conserve le numéro complet de la carte.
+              Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}. Ce prix est un prix
+              final : TVA non applicable, art. 293 B du CGI. Le montant et la périodicité sont
+              précisés dans le récapitulatif avant toute souscription. Stripe prélève ce montant à
+              la souscription, puis à chaque échéance tant que l’abonnement n’est pas résilié.
+              Immojudis ne reçoit ni ne conserve le numéro complet de la carte.
             </p>
             <p className="mt-3">
               En cas d’échec de paiement, Stripe retente le prélèvement. Votre accès Analyse reste
