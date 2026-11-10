@@ -25,6 +25,7 @@ import {
 import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
 import { asRecordOrNull as recordValue } from "@/lib/guards";
 import { reviewReasonLabels } from "@/lib/information-agent-review-reasons";
+import { AutoPublicationDecisionNote } from "@/components/admin/AdminInformationAgentAutoPublicationPanel";
 
 const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"]);
 
@@ -155,6 +156,8 @@ export function AdminInformationAgentReviewPanel() {
   const factSourcesByMessageId = new Map(
     (page?.factSources ?? []).map((source) => [source.messageId, source]),
   );
+  // Moteur « publier ou relire » : annotations en simulation seulement (rien en mode arrêt).
+  const autoPublication = page?.autoPublication;
   return (
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="border-b px-5 py-4">
@@ -167,6 +170,11 @@ export function AdminInformationAgentReviewPanel() {
           Rien n’est intégré à une annonce sans validation. Les pièces doivent aussi disposer de
           droits de diffusion.
         </p>
+        {autoPublication?.mode === "unavailable" ? (
+          <p role="alert" className="mt-1 text-sm text-warning">
+            Simulation de la publication automatique indisponible.
+          </p>
+        ) : null}
       </div>
       {query.isPending ? (
         <p className="p-5 text-sm text-brand-navy/55">Chargement…</p>
@@ -407,6 +415,9 @@ export function AdminInformationAgentReviewPanel() {
                         Information douteuse, à vérifier avant de l’accepter :{" "}
                         {reviewReasonLabels(fact.metadata).join(" ; ")}.
                       </p>
+                    ) : null}
+                    {autoPublication?.mode === "simulation" ? (
+                      <AutoPublicationDecisionNote decision={autoPublication.decisions[fact.id]} />
                     ) : null}
                     {isLotUnidentified(fact.metadata) ? (
                       <p className="mt-2 text-xs font-medium text-amber-900">

@@ -858,3 +858,57 @@ describe("invariants de sécurité : journal et noyau de publication de l'agent 
     );
   });
 });
+
+describe("invariants de sécurité : aucun chemin de publication automatique (étape 3)", () => {
+  it("refuse un appel du noyau de publication avec 'auto'", () => {
+    const result = runInvariants({
+      "99990101000000_auto_publish.sql": `
+create or replace function app_private.publish_automatically(p_fact_id uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  return app_private.apply_information_agent_fact(p_fact_id, 'auto', null, 'auto_publication_v1');
+end;
+$$;`,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "calls app_private.apply_information_agent_fact with actor 'auto'",
+    );
+  });
+
+  it("refuse un appel du noyau dont l'auteur est une variable", () => {
+    const result = runInvariants({
+      "99990101000000_auto_publish_variable.sql": `
+create or replace function app_private.publish_with(p_fact_id uuid, p_kind text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  return app_private.apply_information_agent_fact(p_fact_id, p_kind, null, 'v1');
+end;
+$$;`,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "calls app_private.apply_information_agent_fact with actor p_kind",
+    );
+  });
+
+  it("refuse le retrait du verrou du mode automatique", () => {
+    const result = runInvariants({
+      "99990101000000_unlock_auto.sql":
+        "alter table public.information_agent_auto_publication_settings drop constraint information_agent_auto_publication_settings_auto_locked;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("drops the auto publication mode lock");
+  });
+
+  it("refuse une écriture accordée sur le journal des décisions", () => {
+    const result = runInvariants({
+      "99990101000000_decisions_insert.sql":
+        "grant insert, delete on table public.information_agent_auto_publication_decisions to service_role;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "grants more than SELECT on public.information_agent_auto_publication_decisions",
+    );
+  });
+});

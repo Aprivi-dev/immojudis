@@ -105,6 +105,72 @@ describe("AdminInformationAgentReviewPanel", () => {
     ).toBeTruthy();
   });
 
+  it("shows the simulated engine decision next to each fact, and nothing when the mode is off", async () => {
+    const fact = (id: string, value: string) => ({
+      id,
+      case_id: "33333333-3333-4333-8333-333333333333",
+      sale_id: "11111111-1111-4111-8111-111111111111",
+      fact_key: "surface_m2",
+      display_value: value,
+      confidence: 0.9,
+      extraction_method: "inbound_rules_v1",
+      evidence_asset_id: null,
+      evidence_excerpt: null,
+      metadata: {},
+    });
+    const page = {
+      facts: [
+        fact("44444444-4444-4444-8444-444444444441", "54 m²"),
+        fact("44444444-4444-4444-8444-444444444442", "60 m²"),
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", recipient_email: "a@example.test" }],
+      assets: [],
+      extractions: [],
+    };
+    mocks.fetchReview.mockResolvedValue({
+      ...page,
+      autoPublication: {
+        mode: "simulation",
+        decisions: {
+          "44444444-4444-4444-8444-444444444441": {
+            outcome: "would_publish",
+            label: "Aurait été publié",
+            reasons: [],
+          },
+          "44444444-4444-4444-8444-444444444442": {
+            outcome: "review",
+            label: "Relecture",
+            reasons: ["le champ est déjà renseigné sur la fiche"],
+          },
+        },
+      },
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Simulation : aurait été publié.")).toBeTruthy();
+    expect(
+      screen.getByText("Simulation : relecture (le champ est déjà renseigné sur la fiche)."),
+    ).toBeTruthy();
+
+    cleanup();
+    mocks.fetchReview.mockResolvedValue({ ...page, autoPublication: { mode: "off" } });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("54 m²")).toBeTruthy();
+    expect(screen.queryByText(/^Simulation :/)).toBeNull();
+  });
+
   it("shows where each fact comes from (email, portal or manual import)", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   missions: vi.fn(),
   create: vi.fn(),
   sourceStatus: vi.fn(),
+  autoPublication: vi.fn(),
 }));
 
 vi.mock("@/lib/client-api", () => ({
@@ -51,6 +52,10 @@ vi.mock("@/lib/client-api", () => ({
   saveAdminInformationAgentEmailTemplateDraft: vi.fn(),
   publishAdminInformationAgentEmailTemplateDraft: vi.fn(),
 }));
+vi.mock("@/lib/client-api/admin-auto-publication", () => ({
+  fetchAdminAutoPublication: mocks.autoPublication,
+  runAdminAutoPublicationActionClient: vi.fn(),
+}));
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/components/admin/AdminShell", () => ({
   AdminPanel: ({ children, className }: { children: ReactNode; className?: string }) => (
@@ -78,6 +83,15 @@ beforeEach(() => {
   mocks.missions.mockResolvedValue({ ok: true, missions: [], facts: [] });
   mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
   mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+  mocks.autoPublication.mockResolvedValue({
+    mode: "off",
+    modeLabel: "Arrêt",
+    autoLocked: true,
+    lockReasons: ["textes juridiques mis à jour et publiés"],
+    eligibleFields: ["surface"],
+    caps: { daily: 10, perCase: 2 },
+    changes: [],
+  });
 });
 
 afterEach(() => {

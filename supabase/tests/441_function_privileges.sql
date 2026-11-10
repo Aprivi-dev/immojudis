@@ -5,7 +5,7 @@ select plan(4);
 -- CI contract (P4-07): every SECURITY DEFINER function of the exposed `public` schema that anon
 -- or authenticated can execute must be on this allowlist. Extension-owned objects (PostGIS's
 -- st_estimatedextent) are excluded: they are blocked by enforce_data_api_object_boundary().
--- To add a function, justify it in the migration and extend the arrays below.
+-- To add a function, justify it in the migration and extend the arrays below (byte order: collate "C").
 select is(
   (
     select coalesce(array_agg(function_row.oid::regprocedure::text order by function_row.oid::regprocedure::text), array[]::text[])
@@ -25,7 +25,7 @@ select is(
 
 select is(
   (
-    select coalesce(array_agg(function_row.oid::regprocedure::text order by function_row.oid::regprocedure::text), array[]::text[])
+    select coalesce(array_agg(function_row.oid::regprocedure::text order by function_row.oid::regprocedure::text collate "C"), array[]::text[])
     from pg_proc function_row
     where function_row.pronamespace = 'public'::regnamespace
       and function_row.prosecdef
@@ -45,9 +45,11 @@ select is(
     'review_outcome_evidence(uuid,text,text,jsonb,text)',
     'set_auction_sale_readiness_override(uuid,text,text,timestamp with time zone)',
     'set_catalogue_readiness_enforcement(boolean)',
+    'set_information_agent_auto_publication_mode(text)',
     'set_information_agent_autopilot_mode(text,text)',
     'set_information_agent_internal_domain(text,boolean,text)',
     'set_launch_offer(boolean)',
+    'stop_information_agent_auto_publication()',
     'stop_information_agent_autopilot(text)',
     'unlock_sale(uuid)',
     'update_information_agent_autopilot_settings(jsonb,text)'
