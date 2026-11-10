@@ -766,3 +766,46 @@ def test_a_v2_reading_is_read_again_in_v3_when_its_text_changed_or_its_lot_is_de
     assert counts["completed"] == 2
     assert [params[3] for params in upserts] == [V3, V3]
     assert calls[1].startswith("Bien vendu : lot 1")
+
+
+def test_the_reading_sends_its_prediction_within_its_own_90_second_budget(monkeypatch) -> None:  # noqa: ANN001
+    """Régression du 09-10/11/2026 : le client refusait toute prédiction à moins de 90 s de l'échéance.
+
+    La lecture se donne 90 s : chacune échouait (LLMTaskDeadlineExceeded) avant le moindre envoi.
+    """
+    import httpx
+
+    from src.enrichment import llm_client
+
+    quote = "Le logement est occupé par un locataire depuis le 1er mars 2021."
+    posts: list[object] = []
+
+    def post(*args: object, **kwargs: object) -> httpx.Response:
+        posts.append(kwargs)
+        answer = {"points": [{"theme": "occupation", "importance": "attention", "title": "Bien loué",
+                              "document": "D1", "page": 1, "quote": quote}]}
+        return httpx.Response(
+            201,
+            json={"id": "p-1", "status": "succeeded", "output": json.dumps(answer, ensure_ascii=False),
+                  "urls": {"get": "https://api.replicate.com/v1/predictions/p-1"}},
+            request=httpx.Request("POST", "https://api.replicate.com/v1/predictions"),
+        )
+
+    monkeypatch.setattr(llm_client.httpx, "post", post)
+    monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: "r-1")
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: None)
+    monkeypatch.setattr(llm_client, "record_llm_request", lambda *args, **kwargs: None)
+    monkeypatch.setattr(llm_client, "record_prediction", lambda *args, **kwargs: None)
+    monkeypatch.setattr(llm_client.ReplicateClient, "_record_usage", lambda self, *args, **kwargs: None)
+    client = llm_client.ReplicateClient(
+        api_token="token", model="qwen/qwen3-7-plus", min_interval_seconds=0, max_retries=0,
+        wait_seconds=60, timeout_seconds=180,
+    )
+    document = reading.ReadingDocument(
+        index=1, label="PV descriptif", url=None, document_type="pv_huissier", pages={1: quote + " " + "x" * 60}
+    )
+
+    result = reading.read_sale_documents([document], generate_json=client.generate_json_once, model="m")
+
+    assert (result.status, result.error_code) == ("completed", None)
+    assert len(posts) == 1 and [point["title"] for point in result.points] == ["Bien loué"]
