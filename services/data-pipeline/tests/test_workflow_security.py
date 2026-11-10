@@ -240,7 +240,7 @@ def test_fact_chunk_trial_is_manual_bounded_and_leaves_the_production_chunk_size
     assert re.search(r"^      LLM_FACT_CHUNK_CHARS: 10000$", pipeline_env, re.M)
 
 
-def test_document_reading_trial_is_manual_bounded_and_leaves_the_production_reading() -> None:
+def test_document_reading_trial_is_manual_bounded_and_reads_only() -> None:
     text = (WORKFLOWS / "document-reading-trial.yml").read_text(encoding="utf-8")
     jobs = parse_jobs(text)
 
@@ -264,10 +264,11 @@ def test_document_reading_trial_is_manual_bounded_and_leaves_the_production_read
     for setting in ("REPLICATE_MODEL", "REPLICATE_MAX_CALLS_PER_HOUR"):
         value = re.search(rf"^      {setting}: (.+)$", pipeline_env, re.M)
         assert value and f"{setting}: {value.group(1)}" in jobs[0].env, setting
-    # The trial comes before any change: production still reads with v3.
-    from src.document_reading import DOCUMENT_READING_VERSION, PRODUCTION_PROFILE
+    # The production profile is the control of every trial.
+    from scripts.document_reading_trial import PROFILES
+    from src.document_reading import PRODUCTION_PROFILE
 
-    assert PRODUCTION_PROFILE.version == DOCUMENT_READING_VERSION == "document_reading_v3"
+    assert PROFILES["production"] is PRODUCTION_PROFILE
 
 
 def test_recompute_secrets_reach_only_the_recompute_steps() -> None:

@@ -601,7 +601,7 @@ def test_run_passes_the_lot_of_the_sale_to_the_reading(monkeypatch) -> None:
     assert [point["title"] for point in json.loads(upserts[0][6])] == ["Lot libre"]
     lot_1 = reading.sold_lot_from_sale("apartment", "Nice", LOT_1)
     assert upserts[0][2] == reading.input_fingerprint(LOTS_MANIFEST, sold_lot=lot_1)
-    assert upserts[0][3] == "document_reading_v3"
+    assert upserts[0][3] == "document_reading_v4"
     assert "sale.raw_payload -> 'source_lot_selection'" in reading.CANDIDATES_SQL
 
 
@@ -728,29 +728,26 @@ def test_a_budget_refusal_on_a_sale_never_read_is_stored_and_stops_the_run(monke
     assert counts["failed"] == 1
 
 
-def test_v3_reads_again_only_the_v2_readings_of_a_designated_lot() -> None:
+def test_v4_reads_again_every_reading_of_an_earlier_version() -> None:
     sql = " ".join(reading.CANDIDATES_SQL.split())
-    assert "or ( reading.prompt_version <> %s" in sql
-    assert (
-        "and not ( reading.status = 'completed' and reading.prompt_version = 'document_reading_v2'"
-        " and coalesce(sale.raw_payload -> 'source_lot_selection' ->> 'status', '') <> 'selected' ) )"
-    ) in sql
-    assert reading.kept_without_v3(V2, "completed", None) is True
-    assert reading.kept_without_v3(V2, "completed", {"status": "ambiguous", "lot_count": 2}) is True
-    assert reading.kept_without_v3(V2, "completed", LOT_1) is False
-    assert reading.kept_without_v3(V2, "failed", None) is False
-    assert reading.kept_without_v3("document_reading_v1", "completed", None) is False
+    assert "or reading.prompt_version <> %s or (reading.status = 'failed'" in sql
+    # The v3 exception (a completed v2 reading without a designated lot was kept) is gone.
+    assert "document_reading_v2" not in sql and not hasattr(reading, "kept_without_v3")
+    assert reading.DOCUMENT_READING_VERSION == "document_reading_v4"
 
 
-def test_a_v2_reading_without_lot_is_kept_while_its_text_is_the_same(monkeypatch) -> None:
-    v2 = reading.input_fingerprint(MANIFEST, version=V2)
-    # Candidate because its extraction was rewritten with the same text.
-    rows = [("sale-1", "https://example.test/1", MANIFEST, v2, "completed", 0, False, None, None, None, V2)]
+def test_an_earlier_reading_is_read_again_even_when_its_text_is_the_same(monkeypatch) -> None:
+    rows = [
+        ("sale-1", "https://example.test/1", MANIFEST, reading.input_fingerprint(MANIFEST, version=version),
+         "completed", 0, False, None, None, None, version)
+        for version in (V2, "document_reading_v3")
+    ]
 
     counts, upserts, touched, calls = _run_rows(monkeypatch, rows, lambda _s, _u: {"points": []})
 
-    assert calls == [] and upserts == [] and len(touched) == 1
-    assert counts["unchanged"] == 1
+    assert len(calls) == 2 and touched == []
+    assert [params[3] for params in upserts] == ["document_reading_v4"] * 2
+    assert counts["completed"] == 2 and counts["unchanged"] == 0
 
 
 def test_a_v2_reading_is_read_again_in_v3_when_its_text_changed_or_its_lot_is_designated(monkeypatch) -> None:

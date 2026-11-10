@@ -103,4 +103,4 @@ def test_the_reading_validation_applies_the_guard() -> None:
     [point] = reading.validate_reading_points(raw, documents)
 
     assert point["title"] == "Performance énergétique : classe C d'après les chiffres du DPE"
-    assert reading.DOCUMENT_READING_VERSION == "document_reading_v3"
+    assert reading.DOCUMENT_READING_VERSION == "document_reading_v4"
