@@ -8,7 +8,10 @@
 --   * pour 'admin', la claim du pont est identique à aujourd'hui.
 begin;
 
-select plan(56);
+-- Dates comparées dans un fuseau fixe : la session de la CI n'en change pas le jour.
+set local timezone = 'UTC';
+
+select plan(59);
 
 -- Structure et droits -------------------------------------------------------------------------------------------
 select has_table('public', 'information_agent_fact_publications', 'the publication journal exists');
@@ -50,11 +53,11 @@ select ok(
 );
 
 select is(
-  (select array_agg(p.oid::regprocedure::text order by p.oid::regprocedure::text)
+  (select array_agg(p.pronamespace::regnamespace::text || '.' || p.proname order by p.proname)
      from pg_proc p
      where p.prosrc ilike '%apply_information_agent_fact%'
        and p.oid <> 'app_private.apply_information_agent_fact(uuid,text,uuid,text)'::regprocedure),
-  array['review_information_agent_fact_candidate(uuid,uuid,text,text)']::text[],
+  array['public.review_information_agent_fact_candidate']::text[],
   'the administrator review RPC is the only function that calls the core'
 );
 
@@ -76,10 +79,12 @@ select ok(
 -- Contrainte du journal : 'auto' prévu, mais encadré ----------------------------------------------------------
 insert into auth.users (id) values
   ('87800000-0000-4000-8000-0000000000a1'),
-  ('87800000-0000-4000-8000-0000000000a2');
+  ('87800000-0000-4000-8000-0000000000a2'),
+  ('87800000-0000-4000-8000-0000000000a3');
 insert into public.user_profiles (user_id, email, user_role) values
   ('87800000-0000-4000-8000-0000000000a1', 'publication-admin-878@example.test', 'admin'),
-  ('87800000-0000-4000-8000-0000000000a2', 'publication-user-878@example.test', 'user')
+  ('87800000-0000-4000-8000-0000000000a2', 'publication-user-878@example.test', 'user'),
+  ('87800000-0000-4000-8000-0000000000a3', 'publication-admin2-878@example.test', 'admin')
 on conflict (user_id) do update set user_role = excluded.user_role;
 
 insert into public.auction_sales (
@@ -97,39 +102,48 @@ insert into public.auction_sales (
 
 select lives_ok(
   $$insert into public.information_agent_fact_publications (
-      fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version
+      fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version, recipient_kind
     ) values (
       '87800000-9000-4000-8000-000000000001', '87800000-1000-4000-8000-000000000001',
-      'rooms_count', 'auto', null, 'politique-test-1'
+      'rooms_count', 'auto', null, 'politique-test-1', 'source_lawyer'
     )$$,
   'the journal constraint already accepts auto with a policy version and no person'
 );
 select throws_ok(
   $$insert into public.information_agent_fact_publications (
-      fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version
+      fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version, recipient_kind
     ) values (
       '87800000-9000-4000-8000-000000000002', '87800000-1000-4000-8000-000000000001',
-      'rooms_count', 'auto', '87800000-0000-4000-8000-0000000000a1', 'politique-test-1'
+      'rooms_count', 'auto', '87800000-0000-4000-8000-0000000000a1', 'politique-test-1', 'source_lawyer'
     )$$,
   '23514', null, 'an automatic publication cannot name a person'
 );
 select throws_ok(
   $$insert into public.information_agent_fact_publications (
-      fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version
+      fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version, recipient_kind
     ) values (
       '87800000-9000-4000-8000-000000000003', '87800000-1000-4000-8000-000000000001',
-      'rooms_count', 'admin', '87800000-0000-4000-8000-0000000000a1', 'politique-test-1'
+      'rooms_count', 'admin', '87800000-0000-4000-8000-0000000000a1', 'politique-test-1', 'source_lawyer'
     )$$,
   '23514', null, 'an administrator publication has no policy version'
 );
 select throws_ok(
   $$insert into public.information_agent_fact_publications (
-      fact_id, sale_id, fact_key, actor_kind, policy_version
+      fact_id, sale_id, fact_key, actor_kind, policy_version, recipient_kind
     ) values (
       '87800000-9000-4000-8000-000000000004', '87800000-1000-4000-8000-000000000001',
-      'rooms_count', 'robot', 'politique-test-1'
+      'rooms_count', 'robot', 'politique-test-1', 'source_lawyer'
     )$$,
   '23514', null, 'only admin and auto are known actors'
+);
+select throws_ok(
+  $$insert into public.information_agent_fact_publications (
+      fact_id, sale_id, fact_key, actor_kind, actor_id, recipient_kind
+    ) values (
+      '87800000-9000-4000-8000-000000000005', '87800000-1000-4000-8000-000000000001',
+      'rooms_count', 'admin', '87800000-0000-4000-8000-0000000000a1', 'greffe'
+    )$$,
+  '23514', null, 'the recipient of the case is one of the three known kinds'
 );
 delete from public.information_agent_fact_publications
 where fact_id = '87800000-9000-4000-8000-000000000001';
@@ -140,11 +154,12 @@ where fact_id = '87800000-9000-4000-8000-000000000001';
 -- publications, puis revient au mode différé.
 
 insert into public.information_agent_cases (
-  id, sale_id, created_by, status, recipient_email, normalized_recipient_email, subject, body_text,
-  question_keys, missing_information, sent_at, replied_at
+  id, sale_id, created_by, status, recipient_kind, recipient_email, normalized_recipient_email, subject,
+  body_text, question_keys, missing_information, sent_at, replied_at
 ) values (
   '87800000-3000-4000-8000-000000000001', '87800000-1000-4000-8000-000000000001',
-  '87800000-0000-4000-8000-0000000000a1', 'replied', 'avocat-878@example.test', 'avocat-878@example.test',
+  '87800000-0000-4000-8000-0000000000a1', 'replied', 'source_lawyer', 'avocat-878@example.test',
+  'avocat-878@example.test',
   'Demande d''informations', 'Merci de nous transmettre les informations manquantes.',
   array['surface'], array['surface'], now() - interval '3 days', now() - interval '2 days'
 );
@@ -159,12 +174,13 @@ insert into public.information_agent_missions (
 );
 insert into public.information_agent_messages (
   id, mission_id, case_id, user_id, direction, message_kind, delivery_status, subject, body_text,
-  received_at
+  received_at, provider_message_id, metadata
 ) values (
   '87800000-4000-4000-8000-000000000001', '87800000-2000-4000-8000-000000000001',
   '87800000-3000-4000-8000-000000000001', '87800000-0000-4000-8000-0000000000a1',
   'inbound', 'reply', 'received', 'Re: Demande d''informations', 'Voici les informations demandées.',
-  '2026-11-12 09:30:00+01'
+  '2026-11-12 09:30:00+01', 'publication-provider-878',
+  '{"imported_manually": false, "sender_authentication": {"status": "pass"}, "sender_matches_recipient": true}'::jsonb
 );
 
 insert into public.information_agent_fact_candidates (
@@ -232,6 +248,7 @@ select ok(
           and (entry->>'received_at')::timestamptz = '2026-11-12 09:30:00+01'::timestamptz
           and entry->>'fact_id' = '87800000-5000-4000-8000-000000000001'
           and entry->>'source' = 'professional_email'
+          and entry->>'recipient_kind' = 'source_lawyer'
           and entry->>'reviewed_at' is not null
           and entry->'value'->>'value' = '54'
      from (select raw_payload->'information_agent_verified_facts'->'surface_m2' as entry
@@ -242,6 +259,7 @@ select ok(
   (select actor_kind = 'admin' and actor_id = '87800000-0000-4000-8000-0000000000a1' and policy_version is null
           and fact_key = 'surface_m2' and sale_id = '87800000-1000-4000-8000-000000000001'
           and response_received_at = '2026-11-12 09:30:00+01'::timestamptz
+          and recipient_kind = 'source_lawyer'
      from public.information_agent_fact_publications
      where fact_id = '87800000-5000-4000-8000-000000000001'),
   'the journal names the real author: the administrator, without policy version'
@@ -269,7 +287,7 @@ select ok(
   (select resolution_actor_type = 'human' and resolution_actor_id = '87800000-0000-4000-8000-0000000000a1'
           and created_by = '87800000-0000-4000-8000-0000000000a1' and evidence_kind = 'manual_review'
           and resolution_note = 'Réponse reçue et validée par un administrateur.'
-          and claim_status = 'accepted' and field_key = 'property.surface_m2'
+          and claim_status = 'accepted' and field_key in ('property.surface_m2')
      from public.auction_fact_claims
      where evidence_locator->>'information_agent_fact_id' = '87800000-5000-4000-8000-000000000001'),
   'the fact claim of an administrator decision is unchanged'
@@ -278,7 +296,7 @@ select ok(
 -- Autres clés à colonne -------------------------------------------------------------------------------------------
 select is(
   public.review_information_agent_fact_candidate(
-    '87800000-0000-4000-8000-0000000000a1', '87800000-5000-4000-8000-000000000002', 'accepted', null)->>'status',
+    '87800000-0000-4000-8000-0000000000a3', '87800000-5000-4000-8000-000000000002', 'accepted', null)->>'status',
   'accepted',
   'land surface accepted'
 );
@@ -555,10 +573,10 @@ select throws_ok(
 
 -- Le pont refuse une publication 'auto' au lieu d'écrire « validée par un administrateur » -------------------
 insert into public.information_agent_fact_publications (
-  fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version
+  fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version, recipient_kind
 ) values (
   '87800000-5000-4000-8000-000000000012', '87800000-1000-4000-8000-000000000001',
-  'occupancy_status', 'auto', null, 'politique-test-1'
+  'occupancy_status', 'auto', null, 'politique-test-1', 'source_lawyer'
 );
 -- Les publications précédentes passent le pont maintenant ; la mise à jour suivante le déclenche à sa fin.
 set constraints all immediate;
@@ -603,6 +621,26 @@ select throws_ok(
   '42501', null, 'a signed-in account cannot read the journal'
 );
 reset role;
+
+-- Suppression du compte d'un administrateur : sa publication reste, sans identité ----------------------------
+set constraints all immediate;
+delete from auth.users where id = '87800000-0000-4000-8000-0000000000a3';
+select ok(
+  (select actor_kind = 'admin' and actor_id is null and recipient_kind = 'source_lawyer'
+          and (new_values->>'land_surface_m2')::numeric = 300
+     from public.information_agent_fact_publications
+     where fact_id = '87800000-5000-4000-8000-000000000002'),
+  'a deleted administrator account leaves the publication with no identity (actor_id set to null)'
+);
+
+select ok(
+  (select prosrc ~ '''document_type'', document\.document_type'
+          and prosrc ~ '''file_path'', document\.file_path'
+          and prosrc !~ 'document\.(label|sha256|raw_payload|download_status|extraction_status)'
+     from pg_proc
+     where oid = 'app_private.apply_information_agent_fact(uuid,text,uuid,text)'::regprocedure),
+  'a replaced document keeps only its type and path in the journal (no file name, no raw content)'
+);
 
 select * from finish();
 rollback;
