@@ -4,11 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import {
-  fetchAdminInformationAgentAutopilot,
-  runAdminInformationAgentAutopilotActionClient,
-} from "@/lib/client-api";
+  AUTOPILOT_QUERY_KEY as QUERY_KEY,
+  autopilotQuery,
+} from "@/components/admin/information-agent-queries";
+import { runAdminInformationAgentAutopilotActionClient } from "@/lib/client-api";
 
-const QUERY_KEY = ["admin-information-agent-autopilot"] as const;
 const BTN = "admin-button-secondary";
 const MODES = [
   ["off", "Éteint"],
@@ -27,11 +27,7 @@ export function AdminInformationAgentAutopilotPanel() {
   const [cap, setCap] = useState("");
   const [days, setDays] = useState("");
   const [aipd, setAipd] = useState("");
-  const query = useQuery({
-    queryKey: QUERY_KEY,
-    queryFn: fetchAdminInformationAgentAutopilot,
-    staleTime: 30_000,
-  });
+  const query = useQuery(autopilotQuery());
   const run = useMutation({
     mutationFn: runAdminInformationAgentAutopilotActionClient,
     onSuccess: (view) => {
