@@ -100,7 +100,7 @@ describe("AdminInformationAgentReviewPanel", () => {
 
     expect(
       await screen.findByText(
-        "Information douteuse, à vérifier avant de l’accepter : valeur au conditionnel, approximative ou rapportée d’une autre source ; fourchette de valeurs.",
+        "Information douteuse, à vérifier avant de l’accepter : valeur au conditionnel ou approximative ; fourchette de valeurs.",
       ),
     ).toBeTruthy();
   });

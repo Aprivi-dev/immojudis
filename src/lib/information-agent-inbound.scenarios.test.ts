@@ -1728,6 +1728,20 @@ describe("information-agent offline inbound scenarios", () => {
       expect(occupancy.map((fact) => fact.proposed_value)).toEqual([{ value: "vacant" }]);
     });
 
+    it("enregistre les motifs de relecture des règles sur le candidat (conditionnel, réserve voisine)", async () => {
+      const state = fixture();
+      receivedEmail({
+        text: "La surface habitable serait d'environ 65 m². Le logement compte 3 pièces principales.",
+      });
+
+      await webhook();
+
+      const surface = state.facts.find((fact) => fact.fact_key === "surface_m2");
+      expect((surface?.metadata as Row)?.review_reasons).toEqual(["hedged_statement"]);
+      const rooms = state.facts.find((fact) => fact.fact_key === "rooms_count");
+      expect((rooms?.metadata as Row | undefined)?.review_reasons).toBeUndefined();
+    });
+
     it("marque « lot non identifié » une réponse sans numéro de lot pour une vente à plusieurs lots", async () => {
       const state = fixture({ multiLotSale: true });
       receivedEmail();
@@ -1738,6 +1752,14 @@ describe("information-agent offline inbound scenarios", () => {
       expect(state.facts.every((fact) => (fact.metadata as Row)?.lot_unidentified === true)).toBe(
         true,
       );
+      // Le même marqueur, en code de motif de relecture : le fait n'est jamais net.
+      expect(
+        state.facts.every((fact) =>
+          ((fact.metadata as Row)?.review_reasons as string[] | undefined)?.includes(
+            "lot_unidentified",
+          ),
+        ),
+      ).toBe(true);
       expect(state.cases[0]?.metadata).toMatchObject({ last_inbound_lot_unidentified: true });
       expect(state.messages[0]?.metadata).toMatchObject({
         inbound_processing: { status: "review", reason: "unidentified_lot_review" },
