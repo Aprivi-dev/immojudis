@@ -15,6 +15,7 @@ import math
 import os
 import re
 import time
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
@@ -331,42 +332,83 @@ _INVISIBLE_RE = re.compile(
 
 
 # --- Consignes adressées à un modèle ------------------------------------------------------------------
-# Même liste que `src/lib/information-agent-inbound/prompt-injection.ts`. Un texte qui en contient ne donne
-# aucun fait : le modèle n'est pas appelé, le validateur refuse tout, la pièce part en relecture humaine.
-# « Selon les instructions du juge », « le système de chauffage », « j'ignore les consignes » ne comptent pas.
+# Même liste et mêmes normalisations que `src/lib/information-agent-inbound/prompt-injection.ts`. Un texte qui
+# en contient ne donne aucun fait : le modèle n'est pas appelé, le validateur refuse tout, la pièce part en
+# relecture humaine. C'est un SIGNAL, pas une barrière : la publication automatique restera contrôlée par des
+# conditions structurelles (voir `docs/runbooks/information-agent.md`).
+# Ne comptent pas : « selon les instructions du juge », « le système de chauffage », « j'ignore les
+# consignes », « ignorer les indications de mon précédent courriel », une signature « Assistant : Paul Martin ».
+_ORDER_NOUNS = (
+    r"(?:(?:consignes|instructions|directives)\b(?!\s+(?:de|du|d['’]|dans)\s+(?:mon|ma|notre|le|la)\s+"
+    r"(?:pr[ée]c[ée]dent|dernier|derni[èe]re)\w*\s+(?:message|courriel|mail|e-mail|email|envoi|r[ée]ponse))|"
+    r"(?:r[èe]gles|indications)\s+(?:pr[ée]c[ée]dentes|ci-dessus|ant[ée]rieures|du\s+syst[èe]me|de\s+ce\s+prompt|"
+    r"qui\s+pr[ée]c[èe]dent))"
+)
 _IGNORE_ORDER_RE = re.compile(
     r"\b(?:ignor(?:e|es|ez|er)|oubli(?:e|es|ez|er)|ne\s+(?:tiens|tenez)\s+pas\s+compte)\s+(?:de\s+|des\s+|d['’])?"
-    r"(?:toutes?\s+)?(?:les\s+|tes\s+|vos\s+|ces\s+|ses\s+|leurs\s+)?"
-    r"(?:consignes|instructions|r[èe]gles|directives|indications)\b",
+    r"(?:toutes?\s+)?(?:les\s+|tes\s+|vos\s+|ces\s+|ses\s+|leurs\s+)?" + _ORDER_NOUNS,
     re.IGNORECASE,
 )
 _SUBJECT_BEFORE_RE = re.compile(r"\b(?:j['’]|je|n['’]|on|il|elle|ils|elles|nous)\s*$", re.IGNORECASE)
+_ENGLISH_GAP = r"[\s.,;:!-]+"
 PROMPT_INJECTION_RE = re.compile(
-    r"\b(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:the\s+|your\s+)?"
-    r"(?:previous\s+|prior\s+|above\s+|earlier\s+|preceding\s+)?(?:instructions|prompts?|rules|directions)\b|"
-    r"(?:^|[\n\r>\"'«(\[{.!?;])\s*(?:system|assistant|developer)\s*:|"
+    r"\b(?:ignor(?:e|es|ez|er)|oubli(?:e|es|ez|er))\s+tout\s+ce\s+qui\s+(?:pr[ée]c[èe]de|est\s+(?:au-dessus|ci-dessus|plus\s+haut))|"
+    rf"\b(?:ignore|disregard|forget){_ENGLISH_GAP}(?:(?:all|any){_ENGLISH_GAP})?(?:(?:the|your){_ENGLISH_GAP})?"
+    rf"(?:(?:previous|prior|above|earlier|preceding){_ENGLISH_GAP})?(?:instructions|prompts?|rules|directions)\b|"
+    r"\b(?:ignore|disregard|forget)\s+(?:everything|anything|all)\s+(?:above|before|prior|previous|earlier)\b|"
+    r"(?:^|[\n\r>\"'«(\[{.!?;])\s*(?:system|developer)\s*:|"
+    r"\br[ôo]le\s*:\s*(?:system|syst[èe]me|assistant|developer|d[ée]veloppeur)\b|"
+    r"\bsystem\s+prompt\b|"
     r"\btu\s+es\s+(?:maintenant\s+)?(?:un|une)\s+(?:mod[èe]le|ia|intelligence\s+artificielle|assistant|chatbot|llm)\b|"
     r"(?:\bvous\s+[êe]tes\s+(?:maintenant\s+)?(?:un|une)\s+|\ben\s+tant\s+qu['’]|\ben\s+tant\s+que\s+)"
     r"(?:mod[èe]le\s+de\s+langage|ia|intelligence\s+artificielle|llm|chatbot)\b|"
     r"\byou\s+are\s+(?:now\s+)?(?:an?\s+)?(?:ai|assistant|language\s+model|llm|chatbot)\b|"
-    r"\b(?:nouvelles?\s+(?:consignes|instructions)|new\s+instructions)\s*:|"
-    r"<\s*/?\s*(?:untrusted-evidence|untrusted-ocr|page\s+number|system|instructions?|prompt)\b|"
+    r"\b(?:act|behave)\s+as\b|\bpretend\s+(?:to\s+be|you\s+are)\b|"
+    r"\b(?:nouvelles?\s+(?:consignes?|instructions?)|new\s+instructions?)\s*:|"
+    r"(?:^|\n)[ \t]*\#{1,6}[ \t]*(?:instructions?|system|prompt|r[ôo]le|consignes?)\b|"
+    r"<\s*/?\s*(?:untrusted[-_\s]?(?:evidence|ocr)|page\s+number|system|instructions?|prompt)\b|"
     r"<\|(?:im_start|im_end|system|assistant|user)\|>|\[/?INST\]|<</?SYS>>",
     re.IGNORECASE | re.MULTILINE,
 )
+# « assistant: » seul sur sa ligne ou suivi d'une consigne en minuscule (sensible à la casse).
+_ASSISTANT_ROLE_RE = re.compile(
+    r"(?:^|[\n\r>\"'«(\[{.!?;])[ \t]*(?:[Aa]ssistant|ASSISTANT)[ \t]*:[ \t]*(?:$|(?=[a-zà-ÿ0-9\"'«<\[]))",
+    re.MULTILINE,
+)
+_HOMOGLYPHS = str.maketrans(
+    {
+        "а": "a", "в": "b", "е": "e", "к": "k", "м": "m", "н": "h", "о": "o", "р": "p", "с": "c", "т": "t",
+        "у": "y", "х": "x", "і": "i", "ї": "i", "ј": "j", "ѕ": "s", "ԁ": "d", "ԛ": "q", "ԝ": "w", "ɡ": "g",
+        "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T",
+        "Х": "X", "І": "I", "Ј": "J", "Ѕ": "S", "α": "a", "ε": "e", "ι": "i", "κ": "k", "ν": "v", "ο": "o",
+        "ρ": "p", "τ": "t", "υ": "u", "χ": "x", "Α": "A", "Ε": "E", "Ι": "I", "Κ": "K", "Ν": "N", "Ο": "O",
+        "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+    }
+)
+_SPACED_LETTERS_RE = re.compile(r"(?<![^\W\d_])(?:[^\W\d_][ \t]{1,2}){3,}[^\W\d_](?![^\W\d_])")
+
+
+def normalize_for_prompt_injection(text: str) -> str:
+    """Texte tel que le détecteur le lit : invisibles retirés, NFKC, homoglyphes ramenés à l'ASCII."""
+    return unicodedata.normalize("NFKC", _INVISIBLE_RE.sub("", text)).translate(_HOMOGLYPHS)
+
+
+def _has_injection(text: str) -> bool:
+    if PROMPT_INJECTION_RE.search(text) or _ASSISTANT_ROLE_RE.search(text):
+        return True
+    return any(
+        not _SUBJECT_BEFORE_RE.search(text[max(0, match.start() - 12) : match.start()])
+        for match in _IGNORE_ORDER_RE.finditer(text)
+    )
 
 
 def contains_prompt_injection(text: object) -> bool:
     """Le texte (brut, avant tout filtrage) contient-il une consigne adressée à un modèle ?"""
     if not isinstance(text, str) or not text:
         return False
-    visible = _INVISIBLE_RE.sub("", text)
-    if PROMPT_INJECTION_RE.search(visible):
-        return True
-    return any(
-        not _SUBJECT_BEFORE_RE.search(visible[max(0, match.start() - 12) : match.start()])
-        for match in _IGNORE_ORDER_RE.finditer(visible)
-    )
+    normalized = normalize_for_prompt_injection(text)
+    joined = _SPACED_LETTERS_RE.sub(lambda match: re.sub(r"[ \t]", "", match.group(0)), normalized)
+    return _has_injection(normalized) or (joined != normalized and _has_injection(joined))
 
 
 def _pages_contain_prompt_injection(pages: Sequence[Mapping[str, object]]) -> bool:
