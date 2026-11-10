@@ -199,8 +199,19 @@ const LOWERCASE_NAME_AFTER = new Set([
 /** Rôles qui désignent un particulier quand un prénom et un nom suivent (« le locataire Jean Dupont »). */
 const ROLE_RE =
   /(?<![\p{L}\p{N}])(?:d[ée]biteurs?|d[ée]bitrices?|saisie?s?|locataires?|occupant(?:e|s|es)?|propri[ée]taires?|vendeur(?:s)?|vendeuses?|venderesses?)(?![\p{L}\p{N}])/giu;
+/**
+ * Ce qui suit un rôle, lu à sa position (`y`, sans copier le reste du texte) : séparateurs, au plus deux
+ * qualificatifs (« saisi », « actuel ») chacun suivi de séparateurs, puis un prénom et un nom. Aucun
+ * quantificateur imbriqué : séparateurs et qualificatifs sont disjoints (un séparateur n'est jamais une
+ * lettre), donc la recherche reste linéaire, même sur une longue suite d'espaces ou de tabulations.
+ */
 const ROLE_NAME_RE =
-  /^(?:[\s,:;«»"()–-]+|saisie?s?(?![\p{L}])|actuel(?:le)?s?(?![\p{L}]))*(\p{Lu}[\p{Ll}'’-]+)[ \t\u00a0]+(\p{Lu}[\p{L}'’-]+)/u;
+  /[\s,:;«»"()–-]*(?:(?:saisie?s?|actuel(?:le)?s?)(?![\p{L}])[\s,:;«»"()–-]*){0,2}(\p{Lu}[\p{Ll}'’-]+)[ \t\u00a0]+(\p{Lu}[\p{L}'’-]+)/uy;
+/**
+ * Ce qui suit une civilité, lu à sa position (`y`) : des espaces, un éventuel « de », « du » ou « d’ », puis
+ * le nom. Groupes disjoints (espaces, puis lettres) : recherche linéaire.
+ */
+const CIVILITY_NAME_RE = /([ \t\u00a0]*)(?:(?:de|du|d['’])[ \t\u00a0]*)?(\p{L}[\p{L}'’-]*)/uy;
 
 /**
  * Nom d'un particulier :
@@ -219,16 +230,12 @@ export function namesPrivatePerson(text: string): boolean {
   for (const match of normalized.matchAll(CIVILITY_RE)) {
     const civility = match[1]!.toLowerCase();
     const dotted = match[2] === ".";
-    const rest = normalized.slice(match.index + match[0].length);
     // Une espace (pas une virgule, pas « ² »), ou rien après un point, un éventuel « de », « du » ou
-    // « d’ », puis le nom.
-    const name = (dotted ? /^[ \t\u00a0]*/u : /^[ \t\u00a0]+/u).exec(rest);
-    if (!name) continue;
-    const after = /^(?:(?:de|du|d['’])[ \t\u00a0]*)?([\p{L}][\p{L}'’-]*)/u.exec(
-      rest.slice(name[0].length),
-    );
-    if (!after) continue;
-    const word = after[1]!;
+    // « d’ », puis le nom. Lu à la position de la civilité, sans copier le reste du texte.
+    CIVILITY_NAME_RE.lastIndex = match.index + match[0].length;
+    const after = CIVILITY_NAME_RE.exec(normalized);
+    if (!after || (!dotted && !after[1])) continue;
+    const word = after[2]!;
     // « Madame Monsieur » : une civilité qui en suit une autre n'est pas un nom.
     if (FULL_CIVILITIES.has(word.toLowerCase())) continue;
     if (/^\p{Lu}/u.test(word)) return true;
@@ -237,7 +244,8 @@ export function namesPrivatePerson(text: string): boolean {
     if (lowercaseAllowed && !NOT_A_NAME.has(word.toLowerCase())) return true;
   }
   for (const match of normalized.matchAll(ROLE_RE)) {
-    if (ROLE_NAME_RE.test(normalized.slice(match.index + match[0].length))) return true;
+    ROLE_NAME_RE.lastIndex = match.index + match[0].length;
+    if (ROLE_NAME_RE.test(normalized)) return true;
   }
   return false;
 }

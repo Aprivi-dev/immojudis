@@ -2101,14 +2101,18 @@ function functionSignature(schema, name, argumentText) {
     }
   }
 
-  const codeRoots = ["../src/", "../services/data-pipeline/src/"];
+  // Dossiers de code, chacun avec son adresse relative au script et son chemin relatif au dépôt (affiché).
+  const codeRoots = [
+    { url: "../src/", path: "src/" },
+    { url: "../services/data-pipeline/src/", path: "services/data-pipeline/src/" },
+  ];
   for (const root of codeRoots) {
     let entries;
     try {
-      entries = await readdir(new URL(root, import.meta.url), { recursive: true });
+      entries = await readdir(new URL(root.url, import.meta.url), { recursive: true });
     } catch (error) {
       failures.push(
-        `${root.replace("../", "")} cannot be read to check the publication core (${error.code ?? "error"})`,
+        `${root.path} cannot be read to check the publication core (${error.code ?? "error"})`,
       );
       continue;
     }
@@ -2116,11 +2120,10 @@ function functionSignature(schema, name, argumentText) {
       const name = String(entry);
       if (!/\.(?:ts|tsx|mjs|cjs|js|py)$/.test(name)) continue;
       if (/\.test\.[cm]?[jt]sx?$/.test(name) || /(?:^|\/)test_[^/]*\.py$/.test(name)) continue;
-      const relative = `${root.replace("../", "")}${name}`;
-      const source = (await readFile(new URL(`${root}${name}`, import.meta.url), "utf8")).replace(
-        /\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g,
-        "",
-      );
+      const relative = `${root.path}${name}`;
+      const source = (
+        await readFile(new URL(`${root.url}${name}`, import.meta.url), "utf8")
+      ).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g, "");
       if (corePrefix.test(source)) {
         failures.push(
           `${relative} names app_private.apply_information_agent_fact: only the administrator RPC may call the publication core`,
