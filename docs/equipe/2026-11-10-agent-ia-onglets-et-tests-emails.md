@@ -93,3 +93,80 @@ de passe, le changement d'adresse et le lien magique n'ont pas été déclenché
 
 Le point 1 est sans effet sur les décisions : seuls les rebonds définitifs retirent un consentement
 (`account-email-delivery-events.ts`) ou excluent une adresse (`information-agent-inbound/delivery-events.ts`).
+
+---
+
+## 3. Corrections validées (PR #464)
+
+Validation du propriétaire : « oui, corrige les trois points et ajoute remis et rebond ». Codé par le
+`developpeur`, relu par `code-reviewer`. Aucune migration, aucune règle d'envoi modifiée.
+
+| N°  | Changement                                                                                                  | Fichiers principaux                                                                 |
+| --- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 1   | Journal des envois : « Rebond passager » en orange pour un rebond de type « transient », avec sa précision  | `email-delivery-status.ts`, `admin-emails/history.ts`, `EmailHistoryPanel.tsx`      |
+| 2   | Journal des envois : emails de Supabase Auth affichés « Compte · … », reconnus par l'objet exact du gabarit | `admin-emails/history.ts`                                                           |
+| 3   | Gabarits d'authentification : lien « Copiez ce lien » encodé avec `{{ .RedirectTo \| urlquery }}`           | `auth-email-templates.ts`, `supabase/templates/*.html`, `auth-confirmation.ts`      |
+| 4   | Agent IA, onglet Envois : état de remise (Remis, Différé, Échec, Rebond, Rebond passager, Plainte)          | `information-agent/delivery-state.ts`, `delivery-log-reader.ts`, liste des missions |
+
+**Garanties conservées.**
+
+- Le contenu d'un email de compte n'est toujours ni lu chez Resend ni affiché, et « Actualiser » ignore
+  toujours ces lignes.
+- Le `href` du bouton des emails d'authentification est identique à avant. Contrôle fait avec
+  `html/template` de Go 1.24 sur les six gabarits : analyse, exécution, adresse de retour entièrement
+  encodée dans le lien visible.
+- L'état de remise envoyé au navigateur est une valeur codée, sans adresse, objet ni identifiant.
+
+**Exception ajoutée à un test de verrou.** `email-delivery-log.test.ts` liste les seuls fichiers autorisés à
+lire `email_send_log`. `information-agent/delivery-log-reader.ts` y est ajouté, car ce journal est la seule
+source de « Remis », « Différé » et « Échec ». Il ne lit que l'identifiant Resend, le statut et le type de
+rebond. Le test vérifie qu'il n'est importé que par `information-agent.ts`, quel que soit le chemin
+d'import, qu'il n'est appelé que dans `listAdminInformationAgentMissions`, et qu'aucun fichier de décision
+ne lit l'état calculé.
+
+**Relecture par `code-reviewer`.** Aucun point Critique. Cinq corrections intégrées dans un second commit :
+
+- un envoi en échec n'apparaissait pas : il affiche « Échec » ;
+- un rebond de type inconnu pouvait, journal purgé, s'afficher « passager, l'adresse reste utilisable » :
+  le type du fournisseur est désormais conservé dans `metadata.delivery`, et une entrée ancienne sans type
+  affiche « Rebond passager » sans cette précision ;
+- le verrou pouvait être contourné par un import relatif : la recherche porte sur le nom du module ;
+- l'aperçu des gabarits dans l'administration reproduit maintenant `urlquery` de Go ;
+- la page de confirmation relit le « + » comme une espace, en un seul décodage.
+
+**Laissé pour plus tard** (antérieur à cette PR ou hors périmètre validé) :
+
+- un rebond passager tardif peut écraser le type d'un rebond définitif dans le journal
+  (`record_email_delivery_event`, demande une migration) ;
+- la réécriture de `metadata` à l'envoi (`information-agent/send.ts`) peut effacer `metadata.delivery` si un
+  rebond arrive entre l'appel à Resend et cette mise à jour ;
+- un journal illisible laisse les missions sans état de remise, sans le signaler à l'écran.
+
+**Vérifications.** `tsc`, lint et invariants de sécurité au vert ; 990 fichiers et 13 286 tests passés, aucun
+échec ; budget JS 6 680 742 octets (+906 par rapport à `main`) pour un plafond de 6 730 000, inchangé.
+
+**Mise en production.** Le point 3 ne prend effet qu'après le workflow « Apply Supabase Auth Config »
+(`plan` puis `apply`). Un email d'authentification réel est à contrôler juste après.
+
+---
+
+## 4. Constat hors périmètre : l'enrichissement des fiches n'est pas automatique
+
+Question du propriétaire le 10/11 : une réponse reçue est-elle analysée par une IA puis intégrée
+automatiquement à la fiche ? Réponse vérifiée dans le code et en production : non.
+
+| Étape                                                    | Automatique | État                                                             |
+| -------------------------------------------------------- | ----------- | ---------------------------------------------------------------- |
+| Réception et rattachement au dossier                     | Oui         | Vérifié en production                                            |
+| Lecture par l'IA et extraction d'informations candidates | Oui         | En place ; aucune information extraite en production à ce jour   |
+| Intégration dans la fiche                                | Non         | Chaque information est acceptée ou rejetée par un administrateur |
+
+- Aucun chemin du code ne publie une information sans validation (`reviewAdminInformationAgentFact`). La
+  politique de confidentialité s'y engage.
+- Le workflow « Information Agent Evidence », programmé toutes les 30 minutes, n'est lancé par GitHub que
+  toutes les 4 à 11 heures (huit derniers lancements relevés). La réponse de test de 07:18 UTC a été
+  analysée à 11:33.
+
+Proposition faite au propriétaire, en attente de sa décision : concevoir un enrichissement automatique sous
+conditions (expéditeur authentifié, lot identifié, citation exacte, pas de contradiction avec la fiche),
+avec relecture maintenue pour les contradictions, les réponses ambiguës et les pièces jointes.
