@@ -108,7 +108,7 @@ def test_trial_reads_each_sale_with_each_profile_and_never_writes() -> None:
     connection = FakeConnection({SALE_A: _row(SALE_A), SALE_B: _row(SALE_B)})
     client = FakeClient([_points(), _points(), _points(), RuntimeError("provider down")])
 
-    report = trial.run_trial(connection, client, options=trial.TrialOptions(sales=5))
+    report = trial.run_trial(connection, client, options=trial.TrialOptions(sales=5, profiles=("v4", "v4_wide")))
 
     assert all(statement.lstrip().lower().startswith("select") for statement in connection.statements)
     assert connection.rollbacks >= 2 and client.calls_made == 4
@@ -145,12 +145,28 @@ def test_details_carry_facts_stored_and_trial_points_without_private_names() -> 
     assert len(detail["facts"]["investment_facts"]) == 2 and detail["facts"]["legal_risks"] == []
     assert detail["stored"]["version"] == "document_reading_v2" and len(detail["stored"]["points"]) == 1
     assert detail["trials"]["v4"]["points"][0]["quote"] == ASBESTOS
+    # The dropped point is shown with its reason and what the model wrote.
+    assert detail["trials"]["v4"]["rejected"] == [{
+        "reason": "quote_not_found", "theme": "conditions_vente", "importance": "info", "title": "Inventé",
+        "document": "D1", "page": "1", "quote": "Cette phrase ne figure dans aucune page du dossier.",
+    }]
+
+
+def test_the_production_profile_is_read_as_a_control() -> None:
+    connection = FakeConnection({SALE_A: _row(SALE_A)})
+    client = FakeClient([_points(), _points()])
+
+    report = trial.run_trial(connection, client, options=trial.TrialOptions(profiles=("v3", "v4")))
+
+    assert list(report.results[0].profiles) == ["v3", "v4"]
+    assert client.prompts[0][0] == trial.PRODUCTION_PROFILE.system_prompt
+    assert trial.PROFILES["v3"] is trial.PRODUCTION_PROFILE and tuple(trial.PROFILES) == ("v3", "v4", "v4_wide")
 
 
 def test_sale_prefixes_select_the_sales_and_the_call_cap_stops_the_trial() -> None:
     connection = FakeConnection({SALE_A: _row(SALE_A), SALE_B: _row(SALE_B)})
     client = FakeClient([_points()])
-    options = trial.TrialOptions(sale_prefixes=("bbbbbbbb",), max_calls=1)
+    options = trial.TrialOptions(sale_prefixes=("bbbbbbbb",), max_calls=1, profiles=("v4", "v4_wide"))
 
     report = trial.run_trial(connection, client, options=options)
 
