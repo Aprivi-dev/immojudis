@@ -8,12 +8,15 @@ import Inbox from "lucide-react/dist/esm/icons/inbox.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import {
+  REVIEW_QUERY_KEY as QUERY_KEY,
+  reviewQuery,
+} from "@/components/admin/information-agent-queries";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import Link from "next/link";
 import { saleDetailPath } from "@/lib/navigation";
 import {
   fetchAdminInformationAgentEvidenceUrlClient,
-  fetchAdminInformationAgentReview,
   reviewAdminInformationAgentFactClient,
   runAdminInformationAgentMessageActionClient,
   updateAdminInformationAgentEvidenceRightsClient,
@@ -22,7 +25,6 @@ import {
 import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
 import { asRecordOrNull as recordValue } from "@/lib/guards";
 
-const QUERY_KEY = ["admin-information-agent-review"] as const;
 const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"]);
 
 export function AdminInformationAgentReviewPanel() {
@@ -38,12 +40,7 @@ export function AdminInformationAgentReviewPanel() {
     {},
   );
   const [offset, setOffset] = useState(0);
-  const query = useQuery({
-    queryKey: [...QUERY_KEY, offset],
-    queryFn: () => fetchAdminInformationAgentReview({ offset, limit: ADMIN_PAGE_SIZE }),
-    placeholderData: keepPreviousData,
-    staleTime: 30_000,
-  });
+  const query = useQuery({ ...reviewQuery(offset), placeholderData: keepPreviousData });
   // Après traitement des dernières lignes d'une page, revient sur la dernière page non vide.
   useEffect(() => {
     const data = query.data;

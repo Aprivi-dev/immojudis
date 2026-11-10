@@ -8,11 +8,10 @@ import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {
-  fetchAdminInformationAgentUnrouted,
-  markAdminInformationAgentUnroutedHandledClient,
-} from "@/lib/client-api";
-
-const QUERY_KEY = ["admin-information-agent-unrouted"] as const;
+  UNROUTED_QUERY_KEY as QUERY_KEY,
+  unroutedQuery,
+} from "@/components/admin/information-agent-queries";
+import { markAdminInformationAgentUnroutedHandledClient } from "@/lib/client-api";
 
 const REASON_LABELS: Record<string, string> = {
   no_token: "Adresse de réponse sans jeton de dossier",
@@ -34,12 +33,7 @@ const AUTHENTICATION_LABELS: Record<string, string> = {
 export function AdminInformationAgentUnroutedPanel() {
   const queryClient = useQueryClient();
   const [offset, setOffset] = useState(0);
-  const query = useQuery({
-    queryKey: [...QUERY_KEY, offset],
-    queryFn: () => fetchAdminInformationAgentUnrouted({ offset, limit: ADMIN_PAGE_SIZE }),
-    placeholderData: keepPreviousData,
-    staleTime: 30_000,
-  });
+  const query = useQuery({ ...unroutedQuery(offset), placeholderData: keepPreviousData });
   // Après traitement des dernières lignes d’une page, revient sur la dernière page non vide.
   useEffect(() => {
     const data = query.data;

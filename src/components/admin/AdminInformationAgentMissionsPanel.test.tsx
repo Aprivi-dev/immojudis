@@ -2,8 +2,13 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AdminInformationAgentMissionsPanel } from "./AdminInformationAgentMissionsPanel";
+import { AdminInformationAgentMissionsList } from "./AdminInformationAgentMissionsList";
+import {
+  AdminInformationAgentMissionsPanel,
+  type OpenMissionRequest,
+} from "./AdminInformationAgentMissionsPanel";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -439,35 +444,11 @@ describe("AdminInformationAgentMissionsPanel", () => {
   it("lets an admin resume a mission after a transient send failure", async () => {
     mocks.list.mockResolvedValue({ ok: true, missions: [mission("failed")], facts: [] });
 
-    renderPanel(null);
+    renderWithList(null);
 
     fireEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
     expect(screen.getByRole("button", { name: "Valider et envoyer" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Annuler la mission" })).toBeTruthy();
-  });
-
-  it("shows the sale title as a link to the fiche on every history row", async () => {
-    mocks.list.mockResolvedValue({
-      ok: true,
-      missions: [
-        { ...mission("sent"), saleTitle: "Appartement à Bordeaux" },
-        {
-          ...mission("draft", "55555555-5555-4555-8555-555555555555", "autre@example.test"),
-          id: "66666666-6666-4666-8666-666666666666",
-          saleTitle: null,
-        },
-      ],
-      facts: [],
-    });
-
-    renderPanel(null);
-
-    const titled = await screen.findByRole("link", { name: "Appartement à Bordeaux" });
-    expect(titled.getAttribute("href")).toBe("/sales/11111111-1111-4111-8111-111111111111");
-    const untitled = screen.getByRole("link", { name: "Annonce sans titre" });
-    expect(untitled.getAttribute("href")).toBe("/sales/55555555-5555-4555-8555-555555555555");
-    expect(screen.getByText("cabinet@example.test")).toBeTruthy();
-    expect(screen.getByText("autre@example.test")).toBeTruthy();
   });
 
   it("offers Ouvrir for every status and opens a sent mission read-only", async () => {
@@ -478,7 +459,7 @@ describe("AdminInformationAgentMissionsPanel", () => {
     });
     mocks.action.mockResolvedValue({ ok: true, missions: [mission("sent")], facts: [] });
 
-    renderPanel(null);
+    renderWithList(null);
 
     expect(screen.queryByRole("button", { name: "Reprendre" })).toBeNull();
     fireEvent.click(await screen.findByRole("button", { name: "Ouvrir" }));
@@ -503,26 +484,6 @@ describe("AdminInformationAgentMissionsPanel", () => {
       action: "record_reply",
       missionId: "22222222-2222-4222-8222-222222222222",
     });
-  });
-
-  it("keeps Reprendre for a draft and Ouvrir for the other statuses", async () => {
-    mocks.list.mockResolvedValue({
-      ok: true,
-      missions: [
-        mission("draft"),
-        {
-          ...mission("sent", "11111111-1111-4111-8111-111111111111", "b@example.test"),
-          id: "77777777-7777-4777-8777-777777777777",
-          status: "replied",
-        },
-      ],
-      facts: [],
-    });
-
-    renderPanel(null);
-
-    expect(await screen.findAllByRole("button", { name: "Reprendre" })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Ouvrir" })).toHaveLength(1);
   });
 
   it("explains next to the button why sending is not available yet", async () => {
@@ -583,26 +544,16 @@ describe("AdminInformationAgentMissionsPanel", () => {
     const firstResponse = new Promise((resolve) => {
       resolveFirst = resolve;
     });
-    const onClose = vi.fn();
     mocks.list.mockResolvedValue({ ok: true, missions: [historyMission], facts: [] });
     mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
     mocks.create.mockReturnValue(firstResponse);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <AdminInformationAgentMissionsPanel
-          selection={{
-            saleId: firstSaleId,
-            title: "File en cours",
-            recipientName: null,
-            recipientContact: null,
-          }}
-          onClose={onClose}
-        />
-      </QueryClientProvider>,
-    );
+    renderWithList({
+      saleId: firstSaleId,
+      title: "File en cours",
+      recipientName: null,
+      recipientContact: null,
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
-    expect(onClose).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole("heading", { name: "Brouillon pour history@example.test" }),
     ).toBeTruthy();
@@ -718,6 +669,96 @@ describe("AdminInformationAgentMissionsPanel", () => {
     }
     fireEvent.change(field, { target: { value: "dupont@cabinet-dupont.test" } });
     expect((action as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("place le champ d'origine juste sous le message « Origine de l'adresse inconnue »", async () => {
+    const message =
+      "Origine de l’adresse inconnue : elle ne figure pas dans l’annonce de cette vente. Indiquez la page publique où vous l’avez trouvée avant l’envoi.";
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValue(
+      previewResponse({
+        blockers: [message],
+        fingerprint: null,
+        addressOrigin: { text: message, url: null, automated: false, known: false },
+      }),
+    );
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Origine de l’adresse inconnue");
+    const field = screen.getByRole("textbox", { name: /Page publique où figure l’adresse/ });
+    // Dans le bloc de l'aperçu, après la liste des motifs de blocage, et mis en évidence.
+    const preview = screen.getByRole("region", { name: "Aperçu de l’e-mail" });
+    expect(preview.contains(field)).toBe(true);
+    expect(alert.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(alert.nextElementSibling?.getAttribute("data-origin-required")).toBe("true");
+    expect(alert.nextElementSibling?.contains(field)).toBe(true);
+    // Le champ peut recevoir le focus et sa saisie est envoyée avec l'aperçu suivant.
+    (field as HTMLInputElement).focus();
+    expect(document.activeElement).toBe(field);
+    fireEvent.change(field, { target: { value: "https://annuaire.example.test/cabinet" } });
+    mocks.preview.mockResolvedValue(previewResponse());
+    await showPreview("Afficher l’aperçu");
+    expect(mocks.preview.mock.calls.at(-1)?.[0]).toMatchObject({
+      recipientOriginUrl: "https://annuaire.example.test/cabinet",
+    });
+  });
+
+  it("garde le champ d'origine dans l'aperçu sans le mettre en évidence quand l'origine est connue", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValue(previewResponse());
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    const field = screen.getByRole("textbox", { name: /Page publique où figure l’adresse/ });
+    expect(field.closest("[data-origin-required]")).toBeNull();
+    await showPreview();
+    // Même élément avant et après l'aperçu : la saisie et le focus ne sont pas perdus.
+    expect(screen.getByRole("textbox", { name: /Page publique où figure l’adresse/ })).toBe(field);
+    expect(field.closest("[data-origin-required]")).toBeNull();
+  });
+
+  it("dit que l'actualisation de la source est facultative et sans rapport avec l'origine de l'adresse", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+
+    expect(screen.getByText("Actualiser la source (facultatif)")).toBeTruthy();
+    expect(screen.getByText(/sans rapport avec l’origine de l’adresse/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Actualiser la source" })).toBeTruthy();
+  });
+
+  it("ne relit pas le statut du refresh tant que l'éditeur est masqué", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const selection = {
+      saleId: "11111111-1111-4111-8111-111111111111",
+      title: "Appartement à Bordeaux",
+      recipientName: null,
+      recipientContact: null,
+    };
+
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel
+          selection={selection}
+          onClose={vi.fn()}
+          active={false}
+        />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+
+    expect(mocks.sourceStatus).not.toHaveBeenCalled();
   });
 
   it("queues a refresh for the exact sale and exposes its running status", async () => {
@@ -848,35 +889,6 @@ describe("AdminInformationAgentMissionsPanel", () => {
       ).toBeTruthy(),
     );
     expect(screen.queryByRole("heading", { name: "Brouillon pour first@example.test" })).toBeNull();
-  });
-
-  it("pages the history 50 missions at a time with offset/limit and the exact total", async () => {
-    mocks.list.mockImplementation(async ({ offset }: { offset: number }) => ({
-      ok: true,
-      missions: [
-        {
-          ...mission("sent"),
-          id: `mission-${offset}`,
-          recipientEmail: `page${offset}@example.test`,
-        },
-      ],
-      facts: [],
-      offset,
-      limit: 50,
-      total: 120,
-      hasMore: offset + 50 < 120,
-    }));
-
-    renderPanel(null);
-
-    expect(await screen.findByText("page0@example.test")).toBeTruthy();
-    expect(mocks.list).toHaveBeenLastCalledWith({ offset: 0, limit: 50 });
-    expect(screen.getByText(/1–1 sur 120 · page 1 sur 3/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Suivant — missions récentes" }));
-    expect(await screen.findByText("page50@example.test")).toBeTruthy();
-    expect(mocks.list).toHaveBeenLastCalledWith({ offset: 50, limit: 50 });
-    fireEvent.click(screen.getByRole("button", { name: "Précédent — missions récentes" }));
-    expect(await screen.findByText("page0@example.test")).toBeTruthy();
   });
 
   it("looks up the sale's own drafts before creating one when the history has more pages", async () => {
@@ -1092,6 +1104,44 @@ function previewResponse(
     fingerprint: "f".repeat(64),
     ...overrides,
   };
+}
+
+type Selection = {
+  saleId: string;
+  title: string;
+  recipientName: string | null;
+  recipientContact: string | null;
+};
+
+/** Comme l'espace de travail : l'éditeur (À contacter) et la liste des envois, reliés par `openRequest`. */
+function Harness({ initial }: { initial: Selection | null }) {
+  const [selection, setSelection] = useState(initial);
+  const [openRequest, setOpenRequest] = useState<OpenMissionRequest | null>(null);
+  return (
+    <>
+      <AdminInformationAgentMissionsPanel
+        selection={selection}
+        onClose={() => setSelection(null)}
+        openRequest={openRequest}
+      />
+      <AdminInformationAgentMissionsList
+        onOpenMission={(mission) => {
+          setSelection(null);
+          setOpenRequest((previous) => ({ mission, nonce: (previous?.nonce ?? 0) + 1 }));
+        }}
+      />
+    </>
+  );
+}
+
+function renderWithList(selection: Selection | null) {
+  mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <Harness initial={selection} />
+    </QueryClientProvider>,
+  );
 }
 
 function renderPanel(
