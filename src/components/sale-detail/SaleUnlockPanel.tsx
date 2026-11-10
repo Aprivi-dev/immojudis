@@ -9,7 +9,7 @@ import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
-import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { analysisSubscriptionTerms, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { UNLOCKED_SALES_PATH } from "@/lib/navigation";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
 import { trackProductEvent } from "@/lib/product-events";
@@ -390,7 +390,7 @@ function ExhaustedNotice({ status }: { status: SaleUnlockStatus }) {
       <p className="mt-2 text-sm leading-relaxed text-ink-soft">
         {unlockQuotaReachedText(status, { analysisOpen: checkoutOpen === true })}{" "}
         {checkoutOpen === true
-          ? `Son prix : ${nonBreakingUnits(resolveAnalysisOfferLabel())}, résiliable à tout moment.`
+          ? `L’offre Analyse est un ${nonBreakingUnits(analysisSubscriptionTerms(resolveAnalysisOfferLabel()))}.`
           : checkoutOpen === false
             ? "L’offre Analyse n’est pas encore ouverte à la souscription."
             : null}

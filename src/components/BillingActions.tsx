@@ -411,7 +411,9 @@ export function BillingActions({
               <div>
                 <strong className="text-foreground">Immojudis Analyse</strong>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {trialAvailable ? ANALYSIS_TRIAL_LABEL : "Abonnement immédiat"}
+                  {trialAvailable
+                    ? ANALYSIS_TRIAL_LABEL
+                    : "Abonnement mensuel, sans engagement de durée"}
                 </p>
               </div>
               <strong className="text-lg text-foreground">{offerLabel}</strong>
@@ -420,8 +422,12 @@ export function BillingActions({
               {trialAvailable
                 ? "Carte bancaire requise pendant l’essai. "
                 : "Carte bancaire requise. "}
-              {trialAvailable ? ANALYSIS_RECURRING_LABEL : ANALYSIS_SUBSCRIPTION_ONLY_LABEL}. Le
-              montant et la périodicité sont affichés par Stripe avant confirmation.
+              {trialAvailable ? ANALYSIS_RECURRING_LABEL : ANALYSIS_SUBSCRIPTION_ONLY_LABEL}.{" "}
+              {trialAvailable
+                ? "Premier prélèvement à la fin de l’essai, puis chaque mois à la même date. "
+                : "Premier prélèvement à la souscription, puis chaque mois à la même date. "}
+              La résiliation empêche le renouvellement suivant ; l’accès reste ouvert jusqu’à la fin
+              de la période payée. Stripe affiche le montant et la périodicité avant confirmation.
             </p>
           </div>
 
@@ -441,9 +447,9 @@ export function BillingActions({
               >
                 conditions générales
               </Link>{" "}
-              (version {LEGAL_DOCUMENTS.terms.version}) et je reconnais que la commande m’oblige à{" "}
-              {trialAvailable ? "démarrer l’essai, puis " : "souscrire à "}payer le tarif récurrent
-              affiché par Stripe.
+              (version {LEGAL_DOCUMENTS.terms.version}) et je reconnais que la commande m’oblige à
+              payer {trialAvailable ? "après l’essai " : ""}
+              {offerLabel}, abonnement prélevé automatiquement chaque mois jusqu’à sa résiliation.
             </span>
           </label>
 
@@ -569,7 +575,7 @@ function checkoutReturnBanner({
  */
 function formatAccessEnd(
   currentPeriodEnd: string | null,
-  billing: Pick<PlanBilling, "status" | "graceEndsAt"> | null = null,
+  billing: Pick<PlanBilling, "status" | "graceEndsAt" | "hasStripeCustomer"> | null = null,
 ): string | null {
   const value =
     billing?.status === "past_due"
@@ -578,9 +584,18 @@ function formatAccessEnd(
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return `Actif jusqu'au ${new Intl.DateTimeFormat("fr-FR", {
+  const formatted = new Intl.DateTimeFormat("fr-FR", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(date)}`;
+  }).format(date);
+  // Abonnement en cours : la date est l'échéance mensuelle (renouvellement, ou fin si résilié), pas
+  // la fin d'un accès à durée fixe comme l'ancien accès de 30 jours.
+  if (
+    billing?.hasStripeCustomer &&
+    (billing.status === "active" || billing.status === "trialing")
+  ) {
+    return `Mon abonnement · échéance le ${formatted}`;
+  }
+  return `Actif jusqu'au ${formatted}`;
 }

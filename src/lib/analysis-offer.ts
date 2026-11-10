@@ -74,8 +74,9 @@ export function offersPageDescription({
     return `Découverte est gratuite. L’offre Analyse (${term}, alertes quotidiennes, comparables) n’est pas encore ouverte à la souscription.`;
   }
   const candidates = [
-    `Découverte est gratuite. Analyse chiffre votre ${term}, suit les nouvelles ventes avec des alertes et s’appuie sur des comparables : ${label}.`,
-    `Découverte est gratuite. Analyse chiffre votre ${term} et suit les nouvelles ventes : ${label}.`,
+    `Découverte est gratuite. Analyse chiffre votre ${term}, suit les nouvelles ventes avec des alertes et s’appuie sur des comparables : abonnement à ${label}.`,
+    `Découverte est gratuite. Analyse chiffre votre ${term} et suit les nouvelles ventes : abonnement à ${label}, résiliable à tout moment.`,
+    `Découverte est gratuite. Analyse chiffre votre ${term} et suit les nouvelles ventes : abonnement à ${label}.`,
   ];
   return (
     candidates.find((text) => text.length <= OFFERS_DESCRIPTION_MAX_LENGTH) ??
@@ -121,5 +122,17 @@ export function analysisOfferLabelMatchesPrice(
  * carte de l'inscription (`LAUNCH_OFFER_LABEL`).
  */
 export const ANALYSIS_TRIAL_LABEL = "Période d’essai Stripe (avec carte)";
-export const ANALYSIS_RECURRING_LABEL = "Puis abonnement récurrent résiliable depuis Mon compte";
-export const ANALYSIS_SUBSCRIPTION_ONLY_LABEL = "Abonnement récurrent résiliable depuis Mon compte";
+export const ANALYSIS_RECURRING_LABEL =
+  "Puis abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation, résiliable à tout moment depuis Mon compte";
+export const ANALYSIS_SUBSCRIPTION_ONLY_LABEL =
+  "Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation, résiliable à tout moment depuis Mon compte";
+
+/**
+ * Mention courte de l'offre partout où son prix apparaît (09/11/2026 : l'offre Analyse est un
+ * abonnement mensuel prélevé chaque mois jusqu'à résiliation, plus l'ancien accès de 30 jours sans
+ * renouvellement). Exemple : « abonnement à 59 € TTC / mois, prélevé automatiquement chaque mois jusqu’à résiliation,
+ * résiliable à tout moment ».
+ */
+export function analysisSubscriptionTerms(label: string = resolveAnalysisOfferLabel()): string {
+  return `abonnement à ${label}, prélevé automatiquement chaque mois jusqu’à résiliation, résiliable à tout moment`;
+}

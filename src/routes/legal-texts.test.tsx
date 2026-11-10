@@ -33,7 +33,12 @@ describe("conditions générales", () => {
     expect(text).toContain(
       "L’abonnement est conclu pour une durée indéterminée et facturé chaque mois. Vous pouvez le résilier à tout moment, sans frais ni préavis ; la résiliation prend effet à la fin de la période mensuelle en cours.",
     );
-    expect(text).not.toContain("reconduit chaque mois");
+    expect(text).toContain(
+      "Le prix est prélevé automatiquement à la souscription, puis chaque mois à la même date, jusqu’à la résiliation.",
+    );
+    // Contrat à durée indéterminée : jamais de « reconduction », qui le ferait lire comme un contrat à
+    // durée déterminée reconduit tacitement (articles L215-1 et suivants du code de la consommation).
+    expect(text).not.toContain("reconduit");
   });
 
   it("annoncent l'email de confirmation de la résiliation", () => {

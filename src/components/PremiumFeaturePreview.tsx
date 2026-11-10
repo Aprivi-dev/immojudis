@@ -4,7 +4,11 @@ import Link from "next/link";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
-import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
+import {
+  ANALYSIS_TRIAL_DAYS,
+  analysisSubscriptionTerms,
+  resolveAnalysisOfferLabel,
+} from "@/lib/analysis-offer";
 
 const PRIMARY_LINK_CLASS =
   "inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft";
@@ -81,7 +85,7 @@ export function PremiumFeaturePreview({
       {checkoutOpen === true ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           L’offre Analyse est offerte pendant {ANALYSIS_TRIAL_DAYS} jours à l’inscription, puis
-          proposée sur abonnement mensuel, résiliable depuis votre compte.
+          proposée sur {analysisSubscriptionTerms(resolveAnalysisOfferLabel())}.
         </p>
       ) : checkoutOpen === false ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">

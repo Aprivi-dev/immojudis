@@ -24,7 +24,11 @@ export const PEPITE_TERMS_EFFECTIVE_DATE = "1er décembre 2026";
  * CGU 2026-11-10.1 (ouverture des paiements, BROUILLON à faire valider par un avocat avant la mise en
  * ligne) : l'article 4 ne dit plus que la souscription n'est pas encore ouverte et précise le régime de TVA
  * retenu le 09/11/2026 (franchise en base : « TVA non applicable, art. 293 B du CGI », mention reprise sur
- * les factures Stripe, `VAT_EXEMPTION_INVOICE_MENTION`). Rien d'autre ne change. La version 2026-10-26.1 est
+ * les factures Stripe, `VAT_EXEMPTION_INVOICE_MENTION`). L'article 2 dit en toutes lettres que le prix est
+ * prélevé automatiquement chaque mois jusqu'à la résiliation (contrat à durée indéterminée : pas de
+ * « reconduction », qui le ferait lire comme un contrat à durée déterminée reconduit tacitement), et
+ * l'article 13 ne parle plus d'une souscription « une fois ouverte » (demande du propriétaire du
+ * 10/11/2026 : l'offre est un abonnement mensuel, plus l'ancien accès de 30 jours). La version 2026-10-26.1 est
  * archivée. Date d'effet gardée au 1er décembre 2026 pour les comptes existants (même calendrier que la
  * 2026-10-26.1) ; à valider : préavis de 30 jours de l'article 14 pour ce changement, alors que toute
  * souscription accepte la version en cours au paiement (`commercial-acceptance.ts`).
@@ -101,7 +105,7 @@ export const LEGAL_DOCUMENTS = {
   },
   terms: {
     version: "2026-11-10.1",
-    sha256: "f56fcc29541033436853fa2082b738dfeb8ba54f4b5204fad36ec10780c72e5a",
+    sha256: "6b54cc1fe9be8f1a4879f691aba512e1505fb19bbff27516be841ba9f38d8fbc",
     effectiveDate: PEPITE_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },

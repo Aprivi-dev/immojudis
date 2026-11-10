@@ -37,7 +37,11 @@ import {
   type LoginReason,
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import {
+  ANALYSIS_TRIAL_DAYS,
+  analysisSubscriptionTerms,
+  resolveAnalysisOfferLabel,
+} from "@/lib/analysis-offer";
 import {
   LAUNCH_OFFER_DURATION_TEXT,
   LAUNCH_OFFER_SIGNUP_LINE,
@@ -133,7 +137,7 @@ function reasonCopy(
         : {
             signup:
               checkoutOpen === true
-                ? `Créez votre compte gratuit, puis souscrivez à l’offre Analyse depuis la page Offres (${nonBreakingUnits(resolveAnalysisOfferLabel())}, résiliable à tout moment).`
+                ? `Créez votre compte gratuit, puis souscrivez à l’offre Analyse depuis la page Offres (${nonBreakingUnits(analysisSubscriptionTerms(resolveAnalysisOfferLabel()))}).`
                 : checkoutOpen === false
                   ? "Créez votre compte gratuit. L’offre Analyse n’est pas encore ouverte à la souscription : vous pourrez demander à être prévenu de son ouverture."
                   : "Créez votre compte gratuit, sans carte bancaire, pour découvrir l’offre Analyse.",
@@ -532,7 +536,7 @@ export function LoginPage() {
                     {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes, avec les
                     comparables, les alertes quotidiennes et les exports
                     {checkoutOpen === true
-                      ? ` (${nonBreakingUnits(resolveAnalysisOfferLabel())}, résiliable à tout moment).`
+                      ? ` (${nonBreakingUnits(analysisSubscriptionTerms(resolveAnalysisOfferLabel()))}).`
                       : checkoutOpen === false
                         ? ` (tarif prévu : ${nonBreakingUnits(resolveAnalysisOfferLabel())}, pas encore souscriptible).`
                         : "."}

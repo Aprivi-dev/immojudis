@@ -651,10 +651,10 @@ describe("login page", () => {
     mocks.checkoutOpen = true;
     const open = render(<LoginPage />);
     expect(screen.getByTestId("login-reason").textContent).toBe(
-      "Créez votre compte gratuit, puis souscrivez à l’offre Analyse depuis la page Offres (59\u00a0€\u00a0TTC / mois, résiliable à tout moment).",
+      "Créez votre compte gratuit, puis souscrivez à l’offre Analyse depuis la page Offres (abonnement à 59\u00a0€\u00a0TTC / mois, prélevé automatiquement chaque mois jusqu’à résiliation, résiliable à tout moment).",
     );
     expect(open.container.textContent).toContain(
-      "(59\u00a0€\u00a0TTC / mois, résiliable à tout moment).",
+      "(abonnement à 59\u00a0€\u00a0TTC / mois, prélevé automatiquement chaque mois jusqu’à résiliation, résiliable à tout moment).",
     );
     expect(open.container.textContent).not.toContain("pas encore");
     open.unmount();

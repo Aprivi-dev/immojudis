@@ -17,7 +17,11 @@ import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
-import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import {
+  ANALYSIS_TRIAL_DAYS,
+  analysisSubscriptionTerms,
+  resolveAnalysisOfferLabel,
+} from "@/lib/analysis-offer";
 import { useAuth } from "@/hooks/use-auth";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
@@ -139,16 +143,23 @@ type FaqContext = {
 /** Aucun abonnement n'existe tant que la souscription est fermée : la réponse décrit l'à-venir. */
 const NOT_OPEN_PREFIX = "Quand l’abonnement sera ouvert, les règles prévues sont les suivantes. ";
 
+/** Décision du propriétaire du 10/11/2026 : dire que l'abonnement est sans engagement. */
+const NO_COMMITMENT_TEXT =
+  "Sans engagement : résiliez quand vous voulez, même dès le premier jour ; vous gardez l’accès jusqu’à la fin du mois payé.";
+
 const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = [
   {
     question: "Comment résilier ?",
     answer: ({ subscriptionOpen }) => (
       <>
-        {subscriptionOpen ? null : NOT_OPEN_PREFIX}Depuis la page « Mon compte », le bouton «
-        Résilier mon abonnement » ouvre directement le formulaire de résiliation du portail de
-        paiement : vous résiliez à tout moment, la date de fin d’accès est affichée avant
-        confirmation. La résiliation prend effet à la fin de la période payée. Le bouton « Gérer mon
-        abonnement » donne accès à vos factures et à votre moyen de paiement.
+        {subscriptionOpen ? null : NOT_OPEN_PREFIX}L’abonnement Analyse est prélevé automatiquement
+        chaque mois, à la même date, tant que vous ne l’avez pas résilié. Il est sans engagement :
+        vous pouvez résilier dès le premier jour et garder l’accès jusqu’à la fin du mois payé.
+        Depuis la page « Mon compte », le bouton « Résilier mon abonnement » ouvre directement le
+        formulaire de résiliation du portail de paiement : vous résiliez à tout moment, la date de
+        fin d’accès est affichée avant confirmation. La résiliation prend effet à la fin de la
+        période payée. Le bouton « Gérer mon abonnement » donne accès à vos factures et à votre
+        moyen de paiement.
       </>
     ),
   },
@@ -168,7 +179,7 @@ const FAQ: { question: string; answer: (context: FaqContext) => ReactNode }[] = 
           l’offre Analyse pendant {ANALYSIS_TRIAL_DAYS} jours, sans carte bancaire.{" "}
           {LAUNCH_OFFER_DURATION_TEXT} {LAUNCH_OFFER_DATA_TEXT}{" "}
           {subscriptionOpen
-            ? `Pour garder l’offre Analyse après l’essai, il faut y souscrire (${resolveAnalysisOfferLabel()}).`
+            ? `Pour garder l’offre Analyse après l’essai, il faut y souscrire (${analysisSubscriptionTerms(resolveAnalysisOfferLabel())}).`
             : `Pour garder l’offre Analyse après l’essai, il faudra y souscrire ; l’abonnement n’est pas encore ouvert (tarif prévu : ${resolveAnalysisOfferLabel()}). Vous pouvez demander à être prévenu de son ouverture.`}
         </>
       ) : (
@@ -272,13 +283,13 @@ export function OffersPage({
       ? null
       : !subscriptionKnownOpen
         ? `Tarif prévu : ${price}. Pas encore souscriptible.`
-        : "Abonnement mensuel, résiliable à tout moment.";
+        : `Abonnement mensuel prélevé automatiquement chaque mois jusqu’à sa résiliation. ${NO_COMMITMENT_TEXT}`;
   // Une ligne de prix dès l'en-tête ; le 59 € n'est qu'un tarif prévu tant que rien ne se souscrit.
   const priceLine =
     subscriptionKnownOpen === false
       ? `Découverte gratuite · Analyse ${price}, pas encore souscriptible`
       : subscriptionKnownOpen
-        ? `Découverte gratuite · Analyse ${price}, résiliable à tout moment`
+        ? `Découverte gratuite · Analyse : abonnement à ${price}, sans engagement`
         : `Découverte gratuite · Analyse : ${price}`;
   // L'invitation à l'essai s'adresse au visiteur : un compte voit son offre dans Mon compte.
   const visitorTrial = launchActive && !user;
@@ -387,7 +398,7 @@ export function OffersPage({
           {subscriptionKnownOpen === false
             ? `Analyse : tarif prévu ${price}, pas encore souscriptible.`
             : offerKnown
-              ? `Analyse coûte ${price}, résiliable à tout moment.`
+              ? `Analyse est un ${analysisSubscriptionTerms(price)}.`
               : `Analyse : ${price}. Les conditions de souscription s’affichent une fois l’offre chargée.`}
           {launchActive
             ? ` Elle est offerte pendant ${ANALYSIS_TRIAL_DAYS} jours à l’inscription, sans carte bancaire.`
