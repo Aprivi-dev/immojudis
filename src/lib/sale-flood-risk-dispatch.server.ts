@@ -1,5 +1,6 @@
 import "server-only";
 import { serverEnv } from "@/lib/env";
+import { postGitHubWorkflowDispatch } from "@/lib/github-workflow-dispatch.server";
 
 /** Workflow GitHub qui observe le risque d'inondation (voir `.github/workflows/sale-flood-risk.yml`). */
 export const SALE_FLOOD_RISK_WORKFLOW = "sale-flood-risk.yml";
@@ -23,20 +24,13 @@ export async function dispatchSaleFloodRiskWorkflow(
   const { githubToken: token, repository, ref } = serverEnv().pipeline;
   if (!token)
     throw new Error("Jeton de déclenchement GitHub absent : traitement d'inondation non déclenché");
-  const response = await fetcher(
-    `https://api.github.com/repos/${repository}/actions/workflows/${SALE_FLOOD_RISK_WORKFLOW}/dispatches`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      body: JSON.stringify({ ref }),
-      signal: AbortSignal.timeout(12_000),
-    },
-  );
+  const response = await postGitHubWorkflowDispatch({
+    token,
+    repository,
+    workflow: SALE_FLOOD_RISK_WORKFLOW,
+    ref,
+    fetcher,
+  });
   // Seul le statut remonte : la réponse de GitHub n'est pas journalisée.
   if (!response.ok) {
     throw new Error(`Déclenchement du workflow d'inondation refusé : HTTP ${response.status}`);

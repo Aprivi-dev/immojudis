@@ -1,6 +1,8 @@
 name: Information Agent Evidence
 
 on:
+  # Déclenché par la passe des réponses (`/api/cron/information-agent-inbound`) dès qu'une analyse attend, au plus
+  # une fois par tranche de 10 min ; l'horaire GitHub, non tenu, reste le filet (docs/operations/planification.md).
   workflow_dispatch:
   schedule:
     - cron: "*/30 * * * *"
