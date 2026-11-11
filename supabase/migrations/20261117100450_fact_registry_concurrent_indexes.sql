@@ -32,9 +32,10 @@ set local statement_timeout = '60s';
 -- Verrous : aucun dans cette migration. La construction prend un SHARE UPDATE EXCLUSIVE sur la table et attend la
 -- fin des transactions en cours : possible pendant un import, plus rapide en dehors.
 --
--- Retour arrière : drop index concurrently if exists public.auction_sales_held_fields_idx; drop index concurrently
--- if exists public.auction_fact_claims_agent_fact_key; puis supprimer les deux lignes ci-dessous et les deux
--- entrées de la liste blanche du script.
+-- Retour arrière, par une nouvelle migration (« drop index concurrently » est refusé dans une migration) : drop
+-- index if exists ordinaire des deux index, sous lock_timeout de 2 s et entre deux lots de publication, et
+-- suppression des deux lignes ci-dessous ; dans la même PR, retirer les deux entrées de la liste blanche du
+-- script. Détail dans docs/runbooks/registre-des-pieces-r2a.md.
 insert into app_private.concurrent_index_operations (
   operation_key, schema_name, table_name, index_name, create_sql
 )
