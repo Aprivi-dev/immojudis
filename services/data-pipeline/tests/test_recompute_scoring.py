@@ -49,7 +49,7 @@ def test_fetch_sales_lists_ids_then_reads_full_rows_in_small_batches(monkeypatch
 
     assert [row["id"] for row in rows] == [sale["id"] for sale in sales]
     assert all(call["method"] == "GET" and call["table"] == "auction_sales" for call in calls)
-    full_reads = [call for call in calls if call["params"]["select"] == "*"]
+    full_reads = [call for call in calls if call["params"]["select"] != "id"]
     assert len(full_reads) == 3  # 25 + 25 + 10
     assert calls[0]["params"]["order"] == "updated_at.desc.nullslast,id.asc"
 
@@ -60,7 +60,7 @@ def test_fetch_sales_limit_keeps_the_most_recent_and_skips_rows_deleted_meanwhil
     original = recompute_module._postgrest_request_with_retries
 
     def deleting_request(method, endpoint, *, table, params, **kwargs):
-        if params["select"] == "*":
+        if params["select"] != "id":
             sales.pop(1)  # deleted between the two passes
         return original(method, endpoint, table=table, params=params, **kwargs)
 
@@ -354,6 +354,138 @@ def test_storage_recompute_restores_partial_pdf_surface_scope() -> None:
     assert sale.app_surface_kind is None
     assert sale.surface_scope == "partial"
     assert sale.title == "Appartement"
+
+
+# --- Registre des pièces, étape PA : liste de colonnes explicite, rien d'interne dans raw_payload -------------------------
+
+
+def test_fetch_sales_reads_named_columns_and_never_the_whole_row(monkeypatch) -> None:
+    sales = [{"id": f"id-{index}", "source_url": f"https://example.test/{index}"} for index in range(3)]
+    calls = _fake_postgrest(monkeypatch, sales)
+
+    recompute_module._fetch_sales(source=None, limit=None)
+
+    selects = [call["params"]["select"] for call in calls]
+    assert selects == ["id", recompute_module.RECOMPUTE_SALE_SELECT]
+    columns = recompute_module.RECOMPUTE_SALE_SELECT.split(",")
+    assert "*" not in recompute_module.RECOMPUTE_SALE_SELECT
+    assert len(columns) == len(set(columns))
+    # Les colonnes du modèle, et aucune autre : une colonne interne de la table ne sort pas de la base.
+    assert set(columns) == {name for name, field in AuctionSale.model_fields.items() if not field.exclude}
+    assert "held_fields" not in columns and "premium_readiness_override" not in columns
+
+
+def test_every_row_column_the_recompute_reads_is_in_the_named_list() -> None:
+    """Colonne par colonne : chaque clé de ligne lue par le module est demandée à la base."""
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(recompute_module.__file__).read_text(encoding="utf-8"))
+    read: set[str] = set()
+    for node in ast.walk(tree):
+        target = None
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+            target, argument = node.func.value, node.args[0] if node.args else None
+        elif isinstance(node, ast.Subscript):
+            target, argument = node.value, node.slice
+        if isinstance(target, ast.Name) and target.id == "row":
+            if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                read.add(argument.value)
+
+    assert {"id", "updated_at", "raw_payload", "source_urls", "content_hash", "quality_flags"} <= read
+    assert read <= set(recompute_module.RECOMPUTE_SALE_SELECT.split(","))
+
+
+def test_recompute_pours_only_written_columns_into_the_raw_payload() -> None:
+    row = {
+        "id": "99900000-1000-4000-8000-000000000001",
+        "source_name": "licitor",
+        "source_url": "https://example.test/recompute-keys",
+        "created_at": "2026-11-01T08:00:00+00:00",
+        "updated_at": "2026-11-11T08:00:00+00:00",
+        "first_seen_at": "2026-11-01T08:00:00+00:00",
+        "last_seen_at": "2026-11-10T08:00:00+00:00",
+        "content_hash": "abc",
+        "rooms_count": 3,
+        "city": "Alphaville",
+        # Ce que rendait ``select=*`` : des colonnes que le modèle ne connaît pas.
+        "held_fields": {"property.rooms_count": {"value": 3, "claim_id": "c", "decision_id": "d"}},
+        "premium_readiness_override": "forced",
+        "location": "0101000020E6100000",
+        "catalogue_quarantined": False,
+        "raw_payload": {
+            "source_name": "licitor",
+            "source_url": "https://example.test/recompute-keys",
+            "title": "Une maison",
+            "lot_number": "2",
+            # Traces d'un recalcul antérieur à la liste explicite.
+            "id": "99900000-1000-4000-8000-000000000001",
+            "updated_at": "2026-11-05T08:00:00+00:00",
+            "created_at": "2026-11-01T08:00:00+00:00",
+        },
+    }
+
+    sale = _sale_from_storage_row(row)
+
+    for key in ("id", "updated_at", "created_at", "first_seen_at", "last_seen_at", "held_fields",
+                "premium_readiness_override", "location", "catalogue_quarantined"):
+        assert key not in sale.raw_payload, key
+    # Les colonnes écrites et les clés propres à la source y restent, comme avant.
+    assert sale.raw_payload["rooms_count"] == 3
+    assert sale.raw_payload["city"] == "Alphaville"
+    assert sale.raw_payload["lot_number"] == "2"
+    assert sale.raw_payload["content_hash"] == "abc"
+    # Le modèle garde l'identifiant et les dates de la ligne : la garde de révision de l'écriture en dépend.
+    assert sale.id == row["id"]
+    assert sale.updated_at.isoformat() == "2026-11-11T08:00:00+00:00"
+    assert sale.created_at is not None and sale.first_seen_at is not None and sale.last_seen_at is not None
+    assert set(sale.raw_payload) & recompute_module.RECOMPUTE_ROW_ONLY_COLUMNS == set()
+
+
+def test_recompute_row_only_columns_are_the_identifier_and_the_row_dates() -> None:
+    assert recompute_module.RECOMPUTE_ROW_ONLY_COLUMNS == {
+        "id", "created_at", "updated_at", "first_seen_at", "last_seen_at",
+    }
+    assert "raw_payload" not in recompute_module.RECOMPUTE_PAYLOAD_COLUMNS
+
+
+def test_emptied_visit_dates_do_not_come_back_from_their_copy_in_the_raw_payload() -> None:
+    """Second écho des visites : la colonne vidée ne se reprend pas dans la copie que le recalcul y avait versée."""
+    visits = ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"]
+    row = {
+        "id": "99900000-1000-4000-8000-000000000002",
+        "source_name": "avoventes",
+        "source_url": "https://example.test/visites",
+        "visit_dates": visits,
+        "raw_payload": {"source_name": "avoventes", "source_url": "https://example.test/visites", "title": "Maison"},
+    }
+    first = _sale_from_storage_row(row)
+    assert first.visit_dates == visits and first.raw_payload["visit_dates"] == visits
+
+    # La colonne est vidée en base ; la ligne relue porte la mémoire brute écrite par le recalcul précédent.
+    emptied = {**row, "visit_dates": [], "raw_payload": dict(first.raw_payload)}
+    second = _sale_from_storage_row(emptied)
+
+    assert second.visit_dates == []
+    assert second.raw_payload["visit_dates"] == []
+
+
+def test_visit_dates_read_by_the_source_still_come_back_from_the_source_snapshot() -> None:
+    visits = ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"]
+    row = {
+        "id": "99900000-1000-4000-8000-000000000003",
+        "source_name": "avoventes",
+        "source_url": "https://example.test/visites-source",
+        "visit_dates": [],
+        "raw_payload": {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/visites-source",
+            "title": "Maison",
+            "source_factual_snapshot": {"visit_dates": visits},
+        },
+    }
+
+    assert _sale_from_storage_row(row).visit_dates == visits
 
 
 def test_persisted_sale_procedure_validation_accepts_consistent_payload() -> None:
