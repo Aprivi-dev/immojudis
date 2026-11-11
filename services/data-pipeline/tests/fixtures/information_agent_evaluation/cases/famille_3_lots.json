@@ -1,0 +1,1399 @@
+{
+ "_comment": "Famille 3 : ventes à plusieurs lots (lot de la fiche connu ou non), réponse qui parle d'un autre lot, de plusieurs lots, d'un lot désigné autrement qu'avec son numéro, ou d'un lot de copropriété. Le lot de la fiche est dans contexte.lot_vendu. Tout est fictif : noms, adresses (.example), ventes.",
+ "famille": 3,
+ "libelle": "plusieurs lots, autre lot, lot non nommé",
+ "cas": [
+  {
+   "id": "F3-01",
+   "famille": 3,
+   "titre": "Lot de la fiche nommé, surface et pièces",
+   "message": {
+    "expediteur": "secretariat@vasseret-avocats.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 04/03/2027",
+    "corps": "Madame, Monsieur,\n\nLe lot n° 2 est un appartement de 54 m² comprenant 3 pièces.\n\nBien cordialement,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "Le lot n° 2 est un appartement de 54 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 3,
+     "citation": "comprenant 3 pièces"
+    }
+   }
+  },
+  {
+   "id": "F3-02",
+   "famille": 3,
+   "titre": "Lot de la fiche nommé, autre lot sans surface",
+   "message": {
+    "expediteur": "f.quenellec@scp-quenellec.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 05/03/2027",
+    "corps": "Bonjour,\n\nLot 2 : appartement, surface habitable 48 m². Lot 3 : cave en sous-sol.\n\nBien cordialement,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 48,
+     "citation": "Lot 2 : appartement, surface habitable 48 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-03",
+   "famille": 3,
+   "titre": "Autre lot seulement",
+   "message": {
+    "expediteur": "gmortessan@mortessan.example",
+    "objet": "RE: Vente en deux lots à Port-Essai, audience du 06/03/2027",
+    "corps": "Bonjour,\n\nLe lot 3 a une surface habitable de 54 m².\n\nBien cordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur concerne un autre lot que celui de la fiche.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-04",
+   "famille": 3,
+   "titre": "Trois lots avec trois surfaces",
+   "message": {
+    "expediteur": "hugo.tarbelin@tarbelin-avocats.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 07/03/2027",
+    "corps": "Madame, Monsieur,\n\nLot 1 : 30 m² ; lot 2 : 41 m² ; lot 3 : 25 m².\n\nBien cordialement,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Sainte-Fiction\n9, cours de l'Échantillon - 99200 Sainte-Fiction\nTél. : 02 99 00 80 08\nhugo.tarbelin@tarbelin-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 41,
+     "citation": "lot 2 : 41 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-05",
+   "famille": 3,
+   "titre": "Lot nommé, lot de la fiche inconnu",
+   "message": {
+    "expediteur": "ines.calvadour@calvadour-avocat.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 08/03/2027",
+    "corps": "Bonjour,\n\nLe lot 2 fait 54 m² habitables.\n\nBien cordialement,\n\nMaître Inès Calvadour\nAvocate au Barreau de Port-Essai\n60, rue des Scénarios - 99300 Port-Essai\nTél. : 03 99 00 90 09\nines.calvadour@calvadour-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Vente à plusieurs lots : la phrase ne permet pas de rattacher la valeur au lot de la fiche.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "Le lot 2 fait 54 m² habitables",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-06",
+   "famille": 3,
+   "titre": "Aucun lot nommé, lot de la fiche inconnu",
+   "message": {
+    "expediteur": "jb@selarl-brossardet.example",
+    "objet": "RE: Vente en deux lots à Port-Essai, audience du 09/03/2027",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m².\n\nBien cordialement,\n\nMaître Julien Brossardet\nSELARL Brossardet - Avocats\n3, impasse du Prototype - 99400 Bourg-Modèle\nTél. : 04 99 01 00 10\njb@selarl-brossardet.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Vente à plusieurs lots : la phrase ne permet pas de rattacher la valeur au lot de la fiche.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "La surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-07",
+   "famille": 3,
+   "titre": "Aucun lot nommé, lot de la fiche connu",
+   "message": {
+    "expediteur": "k.olmedo@olmedo-avocats.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 10/03/2027",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m², avec une cave.\n\nBien cordialement,\n\nMaître Karine Olmédo\nAvocate au Barreau de Lac-Témoin\n11, allée du Simulacre - 99500 Lac-Témoin\nTél. : 05 99 01 10 11\nk.olmedo@olmedo-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Vente à plusieurs lots : la phrase ne permet pas de rattacher la valeur au lot de la fiche.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "La surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-08",
+   "famille": 3,
+   "titre": "Vente à lot unique, « lot unique »",
+   "message": {
+    "expediteur": "l.vidrecourt@vidrecourt.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 11/03/2027",
+    "corps": "Bonjour,\n\nIl s'agit d'un lot unique : une maison de 90 m² habitables.\n\nBien cordialement,\n\nMaître Laurent Vidrecourt\nAvocat au Barreau de Mont-Exemple\n27, rue de l'Épreuve - 99600 Mont-Exemple\nTél. : 06 99 01 20 12\nl.vidrecourt@vidrecourt.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "house",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 90,
+     "citation": "une maison de 90 m² habitables"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-09",
+   "famille": 3,
+   "titre": "Lot de copropriété avec l'état descriptif",
+   "message": {
+    "expediteur": "a.fictel@fictel-avocats.example",
+    "objet": "RE: Vente en deux lots à Port-Essai, audience du 12/03/2027",
+    "corps": "Bonjour,\n\nLe lot n° 14 de l'état descriptif de division de la copropriété correspond à l'appartement de 52 m².\n\nBien cordialement,\n\nMaître Aurore Fictel\nAvocat au Barreau de Valmont-sur-Exemple\n12, rue des Essais - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 10 01\na.fictel@fictel-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 52,
+     "citation": "correspond à l'appartement de 52 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-10",
+   "famille": 3,
+   "titre": "Lot de copropriété sans contexte",
+   "message": {
+    "expediteur": "contact@lorquin-associes.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 13/03/2027",
+    "corps": "Madame, Monsieur,\n\nLot 14 : appartement de 52 m² au troisième étage.\n\nBien cordialement,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 52,
+     "citation": "Lot 14 : appartement de 52 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-11",
+   "famille": 3,
+   "titre": "Deux lots, « respectivement »",
+   "message": {
+    "expediteur": "cardaillou@cabinet-ardaillou.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 14/03/2027",
+    "corps": "Bonjour,\n\nLes lots 1 et 2 font respectivement 54 m² et 12 m².\n\nBien cordialement,\n\nMaître Clémence Ardaillou\nAvocate au Barreau de Port-Essai\n38, quai des Témoins - 99300 Port-Essai\nTél. : 03 99 00 30 03\ncardaillou@cabinet-ardaillou.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 1,
+     "lot_count": 2
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "Les lots 1 et 2 font respectivement 54 m² et 12 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-12",
+   "famille": 3,
+   "titre": "Total de deux lots",
+   "message": {
+    "expediteur": "d.pescatore@pescatore-avocat.example",
+    "objet": "RE: Vente en deux lots à Port-Essai, audience du 15/03/2027",
+    "corps": "Bonjour,\n\nLes lots 1-2 totalisent 154 m² habitables.\n\nBien cordialement,\n\nMaître Damien Pescatore\nAvocat - Barreau de Bourg-Modèle\n7, avenue de l'Hypothèse - 99400 Bourg-Modèle\nTél. : 04 99 00 40 04\nd.pescatore@pescatore-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Total de deux lots : ce n'est pas la surface du lot de la fiche.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-13",
+   "famille": 3,
+   "titre": "Deux lots de même surface, « chacun »",
+   "message": {
+    "expediteur": "secretariat@vasseret-avocats.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 16/03/2027",
+    "corps": "Madame, Monsieur,\n\nPour les lots 2 et 3, la surface habitable est de 54 m² chacun.\n\nBien cordialement,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "Pour les lots 2 et 3, la surface habitable est de 54 m² chacun"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-14",
+   "famille": 3,
+   "titre": "Pièces de deux lots, lot de la fiche en premier",
+   "message": {
+    "expediteur": "f.quenellec@scp-quenellec.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 17/03/2027",
+    "corps": "Bonjour,\n\nLe lot 2 comprend 2 pièces ; le lot 3 en comprend 4.\n\nBien cordialement,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 2,
+     "citation": "Le lot 2 comprend 2 pièces"
+    }
+   }
+  },
+  {
+   "id": "F3-15",
+   "famille": 3,
+   "titre": "Pièces de deux lots, lot de la fiche en second",
+   "message": {
+    "expediteur": "gmortessan@mortessan.example",
+    "objet": "RE: Vente en deux lots à Port-Essai, audience du 18/03/2027",
+    "corps": "Bonjour,\n\nLe lot 3 comprend 2 pièces et le lot 2 en comprend 4.\n\nBien cordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 4,
+     "citation": "le lot 2 en comprend 4"
+    }
+   }
+  },
+  {
+   "id": "F3-16",
+   "famille": 3,
+   "titre": "Lot désigné par une lettre",
+   "message": {
+    "expediteur": "hugo.tarbelin@tarbelin-avocats.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 19/03/2027",
+    "corps": "Madame, Monsieur,\n\nLot B : appartement de 54 m².\n\nBien cordialement,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Sainte-Fiction\n9, cours de l'Échantillon - 99200 Sainte-Fiction\nTél. : 02 99 00 80 08\nhugo.tarbelin@tarbelin-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Lot désigné par une lettre : correspondance avec le lot 2 de la fiche invérifiable.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "Lot B : appartement de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-17",
+   "famille": 3,
+   "titre": "Lot désigné en toutes lettres",
+   "message": {
+    "expediteur": "ines.calvadour@calvadour-avocat.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 20/03/2027",
+    "corps": "Bonjour,\n\nLe deuxième lot, un appartement, fait 54 m² habitables.\n\nBien cordialement,\n\nMaître Inès Calvadour\nAvocate au Barreau de Port-Essai\n60, rue des Scénarios - 99300 Port-Essai\nTél. : 03 99 00 90 09\nines.calvadour@calvadour-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "Le deuxième lot, un appartement, fait 54 m² habitables"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-18",
+   "famille": 3,
+   "titre": "Lot de la fiche cité avant un autre lot",
+   "message": {
+    "expediteur": "jb@selarl-brossardet.example",
+    "objet": "RE: Vente en deux lots à Port-Essai, audience du 21/03/2027",
+    "corps": "Bonjour,\n\nLe lot 2 est occupé. Le lot 3, libre, fait 54 m².\n\nBien cordialement,\n\nMaître Julien Brossardet\nSELARL Brossardet - Avocats\n3, impasse du Prototype - 99400 Bourg-Modèle\nTél. : 04 99 01 00 10\njb@selarl-brossardet.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur concerne un autre lot que celui de la fiche.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-19",
+   "famille": 3,
+   "titre": "Lot de la fiche retiré de la vente",
+   "message": {
+    "expediteur": "k.olmedo@olmedo-avocats.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 22/03/2027",
+    "corps": "Madame, Monsieur,\n\nLe lot 2 a été retiré de la vente. La surface habitable est de 54 m².\n\nBien cordialement,\n\nMaître Karine Olmédo\nAvocate au Barreau de Lac-Témoin\n11, allée du Simulacre - 99500 Lac-Témoin\nTél. : 05 99 01 10 11\nk.olmedo@olmedo-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Le lot de la fiche est retiré de la vente : la surface donnée ne peut pas lui être attribuée.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-20",
+   "famille": 3,
+   "titre": "Deux surfaces, lot de la fiche en second",
+   "message": {
+    "expediteur": "l.vidrecourt@vidrecourt.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 23/03/2027",
+    "corps": "Bonjour,\n\nLot 3 : 30 m². Le lot 2 fait 54 m².\n\nBien cordialement,\n\nMaître Laurent Vidrecourt\nAvocat au Barreau de Mont-Exemple\n27, rue de l'Épreuve - 99600 Mont-Exemple\nTél. : 06 99 01 20 12\nl.vidrecourt@vidrecourt.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "Le lot 2 fait 54 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-21",
+   "famille": 3,
+   "titre": "Vente à lot unique, surface qui inclut la cave",
+   "message": {
+    "expediteur": "a.fictel@fictel-avocats.example",
+    "objet": "RE: Vente en deux lots à Port-Essai, audience du 24/03/2027",
+    "corps": "Bonjour,\n\nLes deux lots de copropriété vendus ensemble (appartement et cave) font 54 m² au total.\n\nBien cordialement,\n\nMaître Aurore Fictel\nAvocat au Barreau de Valmont-sur-Exemple\n12, rue des Essais - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 10 01\na.fictel@fictel-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "54 m² est le total appartement et cave : ce n'est pas la surface du logement.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-22",
+   "famille": 3,
+   "titre": "Lot 1 seul lot de la vente",
+   "message": {
+    "expediteur": "contact@lorquin-associes.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 25/03/2027",
+    "corps": "Madame, Monsieur,\n\nLe lot 1, seul lot de la vente, est un appartement de 3 pièces.\n\nBien cordialement,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": {
+     "lot_number": 1,
+     "lot_count": null
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 3,
+     "citation": "est un appartement de 3 pièces"
+    }
+   }
+  },
+  {
+   "id": "F3-23",
+   "famille": 3,
+   "titre": "Lot nommé dans la phrase précédente",
+   "message": {
+    "expediteur": "cardaillou@cabinet-ardaillou.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 26/03/2027",
+    "corps": "Bonjour,\n\nLe lot 2 se compose de 3 pièces. Sa surface habitable est de 61 m².\n\nBien cordialement,\n\nMaître Clémence Ardaillou\nAvocate au Barreau de Port-Essai\n38, quai des Témoins - 99300 Port-Essai\nTél. : 03 99 00 30 03\ncardaillou@cabinet-ardaillou.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 61,
+     "citation": "Sa surface habitable est de 61 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 3,
+     "citation": "Le lot 2 se compose de 3 pièces"
+    }
+   }
+  },
+  {
+   "id": "F3-24",
+   "famille": 3,
+   "titre": "Numéro de lot hors de la vente",
+   "message": {
+    "expediteur": "d.pescatore@pescatore-avocat.example",
+    "objet": "RE: Vente en deux lots à Port-Essai, audience du 27/03/2027",
+    "corps": "Bonjour,\n\nLe lot n° 12 fait 54 m² habitables.\n\nBien cordialement,\n\nMaître Damien Pescatore\nAvocat - Barreau de Bourg-Modèle\n7, avenue de l'Hypothèse - 99400 Bourg-Modèle\nTél. : 04 99 00 40 04\nd.pescatore@pescatore-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Lot 12 inconnu dans une vente de trois lots : rattachement impossible.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "Le lot n° 12 fait 54 m² habitables",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-25",
+   "famille": 3,
+   "titre": "Maison et terrain, lot de la fiche nommé",
+   "message": {
+    "expediteur": "secretariat@vasseret-avocats.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, audience du 28/03/2027",
+    "corps": "Madame, Monsieur,\n\nLot 2 : maison de 4 pièces sur un terrain de 900 m².\n\nBien cordialement,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "house",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": true,
+     "valeur": 900,
+     "citation": "sur un terrain de 900 m²"
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 4,
+     "citation": "Lot 2 : maison de 4 pièces"
+    }
+   }
+  }
+ ]
+}
