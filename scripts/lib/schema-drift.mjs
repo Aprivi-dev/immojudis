@@ -11,8 +11,11 @@ const managedConcurrentIndexDefinitions = new Set(
 // predicate and expression its own way (redundant parentheses, `::text` casts on string constants, an
 // optional `USING btree`), which cannot be pinned to one text. For these operations only, the match is
 // made on a canonical form that ignores exactly those three things and nothing else: the index name,
-// table, uniqueness, columns, operators and constants still have to be the reviewed ones. The physical
-// index is verified separately, word for word, against the catalog (verifyConcurrentIndexes).
+// table, uniqueness, columns, operators and constants still have to be the reviewed ones. A `::text`
+// cast is ignored only right after a string constant ('…'::text): a cast of a column or of an
+// expression (`(id)::text`, `(held_fields)::text IS NOT NULL`) is another index and stays in the diff.
+// The physical index is verified separately, word for word, against the catalog
+// (verifyConcurrentIndexes).
 const managedConcurrentIndexCanonicalDefinitions = new Set(
   operations
     .filter((operation) => operation.predicate || operation.expressions)
@@ -36,7 +39,7 @@ function normalizeConcurrentIndexDefinition(value) {
 function canonicalConcurrentIndexDefinition(value) {
   return normalizeConcurrentIndexDefinition(value)
     .replace(/\s+using\s+btree\b/g, "")
-    .replace(/::text\b/g, "")
+    .replace(/'::text\b/g, "'")
     .replace(/[()]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
