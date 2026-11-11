@@ -231,6 +231,10 @@ def test_manifest_roundtrip_progresses_six_six_four_with_real_extraction(monkeyp
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["checked_at"] = "2020-01-01T00:00:00+00:00"
         metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    # Lot R6 (11/11/2026) : la péremption se juge sur la vérification enregistrée dans le manifeste, que le
+    # temps fait vieillir comme le fichier de suivi local. Le fichier seul ne décide plus de la reprise.
+    for proof_item in sale.raw_payload["document_analysis"]["cache_proof"]["documents"]:
+        proof_item["http_checked_at"] = "2020-01-01T00:00:00+00:00"
     pending_counts: list[int] = []
     for expected_pending in (10, 4, 0):
         stats = pdf_enrichment.enrich_sale_from_pdfs(sale)
