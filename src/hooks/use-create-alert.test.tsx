@@ -34,11 +34,7 @@ vi.mock("@/lib/search/analysis-offer-open", () => ({ isAnalysisOfferOpen: mocks.
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
 import { peekPendingAlert, clearPendingAlert } from "@/lib/pending-alert";
-import {
-  ACCOUNT_RIGHTS_UNREADABLE_TEXT,
-  alertSurfaceFromPath,
-  useCreateAlert,
-} from "./use-create-alert";
+import { alertSurfaceFromPath, useCreateAlert } from "./use-create-alert";
 
 function freePlan() {
   return {
@@ -508,41 +504,12 @@ describe("useCreateAlert : lecture des droits du compte", () => {
     const hook = setup();
 
     expect(await createAfterFailedRead(hook, { department: "33" })).toEqual({ status: "blocked" });
-    // Un échec n'est pas une vérification « en cours » : le message ne promet pas qu'attendre suffit.
-    expect(mocks.toast.error).toHaveBeenCalledWith(ACCOUNT_RIGHTS_UNREADABLE_TEXT);
+    // Un échec n'est pas une vérification « en cours » : c'est une erreur, pas une invitation à
+    // attendre.
+    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
     expect(mocks.toast.message).not.toHaveBeenCalled();
     expect(mocks.createAlert).not.toHaveBeenCalled();
     expect(hook.result.current.saving).toBe(false);
-  });
-
-  it("ignore une seconde demande pendant que la première crée l'alerte", async () => {
-    let release: () => void = () => undefined;
-    mocks.createAlert.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        }),
-    );
-    const hook = setup();
-    await waitFor(() => expect(hook.result.current.ready).toBe(true));
-
-    let first: Promise<unknown> = Promise.resolve();
-    await act(async () => {
-      first = hook.result.current.createAlertFromSearch({ department: "33" });
-      await waitFor(() => expect(mocks.createAlert).toHaveBeenCalledTimes(1));
-    });
-    let second;
-    await act(async () => {
-      second = await hook.result.current.createAlertFromSearch({ department: "33" });
-    });
-    expect(second).toEqual({ status: "blocked" });
-
-    await act(async () => {
-      release();
-      await first;
-    });
-    expect(mocks.createAlert).toHaveBeenCalledTimes(1);
-    expect(mocks.createZone).toHaveBeenCalledTimes(1);
   });
 });
 

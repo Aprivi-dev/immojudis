@@ -10,14 +10,14 @@ import List from "lucide-react/dist/esm/icons/list.js";
 import { toast } from "@/lib/toast";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { useAuth } from "@/hooks/use-auth";
-import { useCreateAlert } from "@/hooks/use-create-alert";
+import { ACCOUNT_CHECK_PENDING_TEXT, useCreateAlert } from "@/hooks/use-create-alert";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { exportSalesCsv, fetchAccessPlan } from "@/lib/client-api";
 import { applyPhotoMirrors, isPhotoMirrorEnabled, mirrorsFromSales } from "@/lib/photo-mirror";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
-import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { AiReviewRequestStatus } from "@/lib/ai-review-guard";
@@ -36,7 +36,6 @@ import {
   type ResultsView,
 } from "@/lib/search/results-view";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
-import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import {
   aroundAddressCenter,
   aroundAddressMachine,
@@ -997,23 +996,16 @@ export function SearchPage({
     },
   };
 
-  const { createAlertFromSearch, saving: savingAlert } = useCreateAlert({
+  // `explainReservedFeature` : une seule règle pour « fonction réservée à Analyse » (alertes ici,
+  // export CSV plus bas), écrite dans le crochet.
+  const {
+    createAlertFromSearch,
+    saving: savingAlert,
+    explainReservedFeature,
+  } = useCreateAlert({
     returnTo: currentHref,
     center,
   });
-
-  /**
-   * A feature reserved to Analyse: send the person to the offers page only when the
-   * subscription can really be bought, otherwise explain instead of leading to a dead end.
-   */
-  async function explainReservedFeature(reservedMessage: string) {
-    if (await isAnalysisOfferOpen()) {
-      toast.message(reservedMessage);
-      router.push(OFFERS_PATH);
-      return;
-    }
-    toast.message(`${reservedMessage} L'abonnement Analyse n'est pas encore ouvert.`);
-  }
 
   async function saveSearch(options?: SaveSearchOptions) {
     const result = await createAlertFromSearch(search, options);
@@ -1056,7 +1048,7 @@ export function SearchPage({
 
   async function exportCsv() {
     if (authLoading) {
-      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+      toast.message(ACCOUNT_CHECK_PENDING_TEXT);
       return;
     }
     if (!user) {
@@ -1064,7 +1056,7 @@ export function SearchPage({
       return;
     }
     if (entitlementsLoading || !entitlementsData) {
-      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+      toast.message(ACCOUNT_CHECK_PENDING_TEXT);
       return;
     }
     if (csvExportLocked) {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { acceptedEvents } from "./state-machine";
 import {
   mapboxPreviewMachine,
   type MapboxPreviewEvent,
@@ -51,8 +52,9 @@ describe("mapboxPreviewMachine", () => {
   });
 
   it("accepts a failure only while loading", () => {
-    const accepting = mapboxPreviewMachine.statuses.filter((status) =>
-      mapboxPreviewMachine.accepts({ status }, "LOAD_FAILED"),
+    const statuses = Object.keys(mapboxPreviewMachine.table) as MapboxPreviewStatus[];
+    const accepting = statuses.filter((status) =>
+      acceptedEvents(mapboxPreviewMachine, status).includes("LOAD_FAILED"),
     );
     expect(accepting).toEqual(["loading"]);
   });
