@@ -366,35 +366,48 @@ select is(
   (select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row
      where constraint_row.conrelid = 'public.auction_fact_claim_decisions'::regclass
        and constraint_row.conname = 'auction_fact_claim_decisions_lot_ref_check'),
-  $def$CHECK (((lot_ref IS NULL) OR (lot_ref ~* '^((lots? )?(n[°º] ?)?[1-9][0-9]{0,3}[a-z]?( ?(et|,|/|-|à) ?[1-9][0-9]{0,3}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$'::text)))$def$,
+  $def$CHECK (((lot_ref IS NULL) OR (lot_ref ~* '^((lots? )?(n[°º] ?)?[1-9][0-9]{0,2}[a-z]?( ?(et|,|-|à) ?[1-9][0-9]{0,2}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$'::text)))$def$,
   'the lot label is bounded by one anchored structural pattern, without BETWEEN'
 );
 
--- Libellés acceptés : ceux que la collecte lit dans les annonces et les documents. Refusés : tout mot libre.
+-- Libellés acceptés : ceux que la collecte lit dans les annonces et les documents. Refusés : tout mot libre, tout
+-- numéro de plus de trois chiffres ou à zéro initial, toute date écrite avec « / ». Limite connue, tenue ici pour
+-- qu'elle ne change pas sans être vue : une suite de deux à quatre groupes de un à trois chiffres a la forme
+-- d'une liste de lots et passe (« 612-345-678 » comme « lots 685,686,687 »).
 select results_eq(
   $$select sample.label, sample.lot_ref is null
-           or sample.lot_ref ~* '^((lots? )?(n[°º] ?)?[1-9][0-9]{0,3}[a-z]?( ?(et|,|/|-|à) ?[1-9][0-9]{0,3}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$'
+           or sample.lot_ref ~* '^((lots? )?(n[°º] ?)?[1-9][0-9]{0,2}[a-z]?( ?(et|,|-|à) ?[1-9][0-9]{0,2}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$'
       from (values
         (1, 'null', null::text), (2, 'lot 2', 'lot 2'), (3, 'Lot 14', 'Lot 14'), (4, 'lots 2 et 3', 'lots 2 et 3'),
         (5, 'lots 1-2', 'lots 1-2'), (6, 'Lot n° 3', 'Lot n° 3'), (7, 'lots n° 1 et 2', 'lots n° 1 et 2'),
         (8, 'bare number', '12'), (9, 'letter suffix', 'lot 3B'), (10, 'four lots', 'LOTS 1, 2, 3 et 4'),
         (11, 'ordinal', '2ème lot'), (12, 'range', 'lots 5 à 8'),
+        (13, 'three lots of three digits', 'lots 685,686,687'), (14, 'digit groups', '612-345-678'),
         (20, 'name and phone', 'M. Jean Dupont 06 12 34 56 78'),
         (21, 'name and address', 'Mme Martin, 12 rue des Lilas (Paris)'),
         (22, 'phone with dashes', '06-12-34-56-78'), (23, 'phone', '0612345678'), (24, 'word', 'lot unique'),
         (25, 'name', 'lot Dupont'), (26, 'five lots', 'lots 1, 2, 3, 4 et 5'), (27, 'empty', ''),
         (28, 'blank', '   '), (29, 'leading space', ' lot 2'), (30, 'email', 'lot 2 a.b@example.test'),
         (31, 'trailing newline', E'lot 2\n'), (32, 'inner newline', E'lot\n2'), (33, 'url', 'https://example.test/2'),
-        (34, 'five digits', 'lot 12345'), (35, 'trailing words', 'lot 2 de la copropriété')
+        (34, 'five digits', 'lot 12345'), (35, 'trailing words', 'lot 2 de la copropriété'),
+        (36, 'four digits', 'lot 1024'), (37, 'date with slashes', '12/11/1985'),
+        (38, 'short date with slashes', '1/2/1980'), (39, 'card number', '4532-7153-3790-1241'),
+        (40, 'phone with country code', '33-612-3456-78'), (41, 'slash list', 'lots 1/2'),
+        (42, 'non-breaking space', 'lot' || chr(160) || '2'), (43, 'leading zero', 'lot 02'),
+        (44, 'five numbers', '1-2-3-4-5')
       ) sample(position, label, lot_ref) order by sample.position$$,
   $$values ('null', true), ('lot 2', true), ('Lot 14', true), ('lots 2 et 3', true), ('lots 1-2', true),
            ('Lot n° 3', true), ('lots n° 1 et 2', true), ('bare number', true), ('letter suffix', true),
-           ('four lots', true), ('ordinal', true), ('range', true),
+           ('four lots', true), ('ordinal', true), ('range', true), ('three lots of three digits', true),
+           ('digit groups', true),
            ('name and phone', false), ('name and address', false), ('phone with dashes', false), ('phone', false),
            ('word', false), ('name', false), ('five lots', false), ('empty', false), ('blank', false),
            ('leading space', false), ('email', false), ('trailing newline', false), ('inner newline', false),
-           ('url', false), ('five digits', false), ('trailing words', false)$$,
-  'the pattern takes lot numbers as the collection reads them, and no free word: no name, address or phone number'
+           ('url', false), ('five digits', false), ('trailing words', false), ('four digits', false),
+           ('date with slashes', false), ('short date with slashes', false), ('card number', false),
+           ('phone with country code', false), ('slash list', false), ('non-breaking space', false),
+           ('leading zero', false), ('five numbers', false)$$,
+  'the pattern takes lot numbers as the collection reads them, three digits at most each, and no free word, long number or date with slashes; four groups of three digits at most still have the shape of a lot list'
 );
 
 select throws_ok(

@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(68);
+select plan(76);
 
 -- A1. Séquence commune --------------------------------------------------------------------------------------------
 select ok(
@@ -657,6 +657,142 @@ select is(
   app_private.fact_registry_triggers_not_always(),
   array[]::text[],
   'and none once each has its definition back'
+);
+
+-- Les constantes de la clause WHEN sont comparées telles quelles : ni leur casse ni leurs espaces ne sont effacés.
+create or replace trigger aaab_auction_sales_held_fields_marker_guard
+  before update of
+    surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
+    carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates
+  on public.auction_sales
+  for each row when (old.held_fields is not null or new.surface_source = 'FACT_REGISTRY')
+  execute function app_private.refuse_sale_field_projection_marker();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_marker_guard;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array['auction_sales.aaab_auction_sales_held_fields_marker_guard'],
+  'a WHEN clause whose literal differs by its case only is reported'
+);
+
+create or replace trigger aaab_auction_sales_held_fields_marker_guard
+  before update of
+    surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
+    carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates
+  on public.auction_sales
+  for each row when (old.held_fields is not null or new.surface_source = 'fact_ registry')
+  execute function app_private.refuse_sale_field_projection_marker();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_marker_guard;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array['auction_sales.aaab_auction_sales_held_fields_marker_guard'],
+  'a WHEN clause whose literal differs by one space only is reported'
+);
+
+-- La même clause, écrite avec un transtypage et des parenthèses de plus : rien à signaler.
+create or replace trigger aaab_auction_sales_held_fields_marker_guard
+  before update of
+    surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
+    carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates
+  on public.auction_sales
+  for each row when ((old.held_fields is not null) or ((new.surface_source)::text = ('fact_registry')))
+  execute function app_private.refuse_sale_field_projection_marker();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_marker_guard;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array[]::text[],
+  'the same WHEN clause written with a cast and more parentheses is not reported'
+);
+
+-- Réglages de la fonction (proconfig) et schéma de la fonction. Une garde par rôle qui porte « set role » lirait
+-- ce rôle au lieu de l'appelant ; une fonction du même nom dans un autre schéma n'est pas celle du registre.
+alter function app_private.refuse_api_role_held_fields_write() set role registry_probe_884;
+create function public.refuse_inserted_held_fields()
+returns trigger language plpgsql security invoker set search_path = '' as $function$
+begin
+  return new;
+end;
+$function$;
+create or replace trigger aaab_auction_sales_held_fields_insert_guard
+  before insert on public.auction_sales
+  for each row when (new.held_fields is not null)
+  execute function public.refuse_inserted_held_fields();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_insert_guard;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array[
+    'auction_sales.aaab_auction_sales_held_fields_insert_guard',
+    'auction_sales.aaab_auction_sales_held_fields_role_guard'
+  ],
+  'a trigger bound to a function of the same name in another schema, and a guard whose function carries a role setting, are reported'
+);
+
+alter function app_private.refuse_api_role_held_fields_write() reset role;
+create or replace trigger aaab_auction_sales_held_fields_insert_guard
+  before insert on public.auction_sales
+  for each row when (new.held_fields is not null)
+  execute function app_private.refuse_inserted_held_fields();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_insert_guard;
+drop function public.refuse_inserted_held_fields();
+
+-- Propriétaire : les six tables du registre appartiennent au propriétaire de la projection. La projection est
+-- donnée ici à un autre rôle (c'est le changement que le test peut faire sous un rôle qui n'est pas
+-- superutilisateur) : plus aucune table n'a son propriétaire.
+create temporary table projection_owner_884 on commit drop as
+select pg_get_userbyid(routine.proowner) as owner_name
+from pg_proc routine
+where routine.oid = 'app_private.project_sale_fields(uuid, text[], boolean, jsonb)'::regprocedure;
+grant create on schema app_private to registry_probe_884;
+alter function app_private.project_sale_fields(uuid, text[], boolean, jsonb) owner to registry_probe_884;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array[
+    'auction_fact_claim_decisions.owner', 'auction_fact_claims.owner', 'auction_fact_fields.owner',
+    'auction_fact_source_precedence.owner', 'auction_sale_field_hold_events.owner', 'auction_sales.owner'
+  ],
+  'a table of the registry whose owner is not the owner of the projection is reported, for each of the six tables'
+);
+
+select throws_ok(
+  'select app_private.assert_fact_registry_triggers()',
+  '55000',
+  'registry_unavailable',
+  'and the trigger check fails closed on it'
+);
+
+do $restore$
+begin
+  execute format(
+    'alter function app_private.project_sale_fields(uuid, text[], boolean, jsonb) owner to %I',
+    (select owner_name from projection_owner_884));
+end;
+$restore$;
+revoke create on schema app_private from registry_probe_884;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array[]::text[],
+  'and nothing is reported once the settings, the schema and the owner are back'
+);
+
+-- Le marqueur de transaction ne peut être posé que par son nom : aucune fonction de l'application ne passe à
+-- set_config un nom qui ne soit pas une constante (une fonction qui relaierait un nom reçu de son appelant lui
+-- laisserait poser le marqueur de la projection).
+select is(
+  (select coalesce(array_agg(namespace.nspname || '.' || routine.proname
+                             order by namespace.nspname, routine.proname), array[]::text[])
+     from pg_proc routine
+     join pg_namespace namespace on namespace.oid = routine.pronamespace
+     where namespace.nspname in ('public', 'app_private', 'licitor_ingestion')
+       and (select count(*) from regexp_matches(routine.prosrc, 'set_config\s*\(', 'gi'))
+         <> (select count(*) from regexp_matches(
+               routine.prosrc, 'set_config\s*\(\s*''[a-z_][a-z0-9_.]*''\s*,', 'gi'))),
+  array[]::text[],
+  'every function of the application calls set_config with a literal setting name only'
 );
 
 select is(
