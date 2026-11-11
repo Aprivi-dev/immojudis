@@ -890,6 +890,57 @@ describe("rôle refusé : cité autrement que comme interlocuteur de la vente", 
     expect(candidate).toMatchObject({ email: "maitre.durand@example.test", role: "lawyer" });
   });
 
+  it("description : le rôle se lit dans la phrase qui précède l'adresse, pas dans tout le texte", () => {
+    // Annonce `notaires` : « cabinet de toilette » décrit le bien, pas le titulaire de l'adresse.
+    const office = resolveInformationAgentListingContacts(
+      sale({
+        source: "notaires",
+        url: NOTAIRES.url,
+        organizerType: "notary",
+        sale: {
+          description:
+            "Maison de 120 m² avec trois chambres et un cabinet de toilette. Renseignements auprès de l'office : etude@example.test",
+        },
+      }),
+    );
+    expect(office.candidates.map((c) => [c.email, c.role])).toEqual([
+      ["etude@example.test", "source_contact"],
+    ]);
+    expect(office.refused).toEqual({});
+
+    // Cession de l'État : « devant notaire » décrit l'acte à venir, pas le service à contacter.
+    const cession = resolveInformationAgentListingContacts(
+      sale({
+        source: "cessions_etat",
+        url: CESSIONS.url,
+        organizerType: "state_service",
+        sale: {
+          description:
+            "L'acte de vente sera signé devant notaire dans les trois mois.\nContact du service : pgp.domaine@example.test",
+        },
+      }),
+    );
+    expect(cession.candidates.map((c) => [c.email, c.role])).toEqual([
+      ["pgp.domaine@example.test", "source_contact"],
+    ]);
+    expect(cession.refused).toEqual({});
+
+    // La phrase qui précède l'adresse, elle, compte toujours.
+    const cited = resolveInformationAgentListingContacts(
+      sale({
+        source: "notaires",
+        url: NOTAIRES.url,
+        organizerType: "notary",
+        sale: {
+          description:
+            "Maison avec jardin. Avocat du vendeur pour toute question : maitre.durand@example.test",
+        },
+      }),
+    );
+    expect(cited.candidates).toEqual([]);
+    expect(cited.refused).toEqual({ not_sale_interlocutor: 1 });
+  });
+
   it("un notaire cité dans une vente au tribunal n'est pas retenu", () => {
     const resolution = resolveInformationAgentListingContacts(
       sale({
