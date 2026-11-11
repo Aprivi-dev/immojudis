@@ -270,11 +270,14 @@ set held_fields = jsonb_set(
 where id = '88900000-1000-4000-8000-000000000003';
 select set_config('app.sale_field_projection', '', true);
 
--- Une copie (properties) qui porte la valeur tenue de la vente 3, et une copie égale à la valeur d'annonce de
--- la vente 4 (qui n'est pas un écart).
+-- Une copie (properties) qui porte la valeur tenue de la vente 3. Pour la vente 4, qui tient 3 pièces sur une
+-- annonce de 2 : une copie d'une autre valeur (7) et une copie égale à la valeur d'annonce, qui ne sont pas des
+-- écarts.
 insert into public.properties (source_url, source_name, rooms_count) values
   ('https://example.test/889/sale-3', 'licitor', 3),
-  ('https://example.test/889/sale-4', 'licitor', 2);
+  ('https://example.test/889/sale-4', 'licitor', 7);
+insert into public.auction_surfaces (source_url, rooms_count) values
+  ('https://example.test/889/sale-4', 2);
 
 set local role service_role;
 insert into check_reports select 'forged', public.check_fact_registry_consistency();
@@ -290,7 +293,7 @@ select is(
   (select report #> '{checks,echo_suspected}' from check_reports where step = 'forged'),
   '{"active": true, "count": 2, "sale_ids": [
       "88900000-1000-4000-8000-000000000001", "88900000-1000-4000-8000-000000000003"]}'::jsonb,
-  'the held value in a neighbour column, or in a copy, is a suspected echo; a copy equal to the listing value is not'
+  'the held value in a neighbour column, or in a copy, is a suspected echo; a copy of the listing value, or of any other value, is not'
 );
 
 select is(
@@ -323,6 +326,7 @@ update public.auction_sales set held_fields = held_fields #- '{property.rooms_co
 where id = '88900000-1000-4000-8000-000000000003';
 select set_config('app.sale_field_projection', '', true);
 delete from public.properties where source_url like 'https://example.test/889/%';
+delete from public.auction_surfaces where source_url like 'https://example.test/889/%';
 
 set local role service_role;
 insert into check_reports select 'labels', public.check_fact_registry_consistency();
