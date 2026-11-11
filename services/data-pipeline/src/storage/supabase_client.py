@@ -110,6 +110,7 @@ from src.storage.pdf_checkpoint_rules import (
     _checkpoint_payload_text_hash,
     _is_sha256,
     _manifest_urls,
+    _refused,
     _reusable_pdf_checkpoint_pages,
     _valid_pdf_checkpoint_pages,
     _validate_pdf_document_checkpoint_payload,
@@ -2026,8 +2027,7 @@ def _persist_pdf_document_checkpoint_with_connection(
         (source_url,),
     ).fetchone()
     if current is None or current[0] != expected_updated_at:
-        LOGGER.warning("Discarding obsolete PDF checkpoint for %s", source_url)
-        return False
+        return bool(_refused(source_url, "obsolete_revision"))  # le motif va dans last_error (file pdf)
 
     updated = connection.execute(
         """
@@ -2053,7 +2053,7 @@ def _persist_pdf_document_checkpoint_with_connection(
         ),
     ).fetchone()
     if updated is None:  # logged: the queue only said "checkpoint was not persisted" (04/11/2026)
-        return bool(LOGGER.warning("PDF checkpoint refused for %s: revision moved before the update", source_url))
+        return bool(_refused(source_url, "revision moved before the update"))
     if updated[0] != expected_updated_at:
         raise RuntimeError("PDF checkpoint changed the source sale revision")
 
@@ -2119,8 +2119,7 @@ def _persist_pdf_document_checkpoint_payload_to_supabase(
     db_url = settings.get("supabase_db_url")
     connection = _PUBLICATION_CONNECTION.get()
     if connection is None and not db_url:
-        LOGGER.warning("Skipping PDF checkpoint without a direct Postgres connection")
-        return False
+        return bool(_refused(clean_text(sale.source_url), "no_direct_connection"))
 
     def configure_dedicated_connection(current_connection: Any) -> None:
         """Keep checkpoint settings transaction-local to a new connection."""
