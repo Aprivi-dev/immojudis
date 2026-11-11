@@ -336,11 +336,15 @@ jobs:
       # référentiels Justice. Le run demandé est encore « queued » et, sans cette étape, le resterait jusqu'à
       # l'expiration de son bail d'une heure, pendant laquelle le lanceur ne déclenche rien d'autre (incident
       # du 11/11/2026, docs/audits/2026-11-11-collecte-echec-avant-demarrage.md). Le script n'utilise que la
-      # bibliothèque standard (python3 du runner, mode isolé -I) : il tourne même quand rien n'a pu être
-      # installé. Il ne clôt qu'un run encore « queued », jamais un run « running » ni un run d'un autre
-      # passage, et l'écrit en échec (« failed_before_start » et l'étape en cause), jamais en réussite.
+      # bibliothèque standard (python3 du runner, -I -S : ni variable d'environnement Python ni
+      # site-packages) : il tourne même quand rien n'a pu être installé. Il ne clôt qu'un run encore
+      # « queued », jamais un run « running » ni un run d'un autre passage, et l'écrit en échec
+      # (« failed_before_start » et l'étape en cause), jamais en réussite. Les modes qui n'exécutent pas le
+      # run demandé (publication_check, documents_backlog, enrichment_only) ne le closent pas : le vidage
+      # des pièces tourne dans un autre groupe de concurrence, en parallèle d'un passage planifié, et
+      # fermerait le run d'un autre job. Le plafond de l'étape (3 min) dépasse le délai global du script.
       - name: Close run that never started
-        if: always() && steps.pipeline.outcome == 'skipped' && inputs.publication_check != true && inputs.run_id != ''
+        if: always() && steps.pipeline.outcome == 'skipped' && inputs.run_id != '' && inputs.publication_check != true && inputs.documents_backlog != true && inputs.enrichment_only != true
         timeout-minutes: 3
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -349,7 +353,9 @@ jobs:
           STARTUP_SYSTEM_PACKAGES_OUTCOME: ${{ steps.system-packages.outcome }}
           STARTUP_PYTHON_DEPENDENCIES_OUTCOME: ${{ steps.python-deps.outcome }}
           STARTUP_JUSTICE_REFERENCES_OUTCOME: ${{ steps.justice-references.outcome }}
-        run: python3 -I scripts/close_unstarted_run.py
+          # « cancelled » ou « failure » : distingue une annulation quand aucune de ces étapes n'avait commencé.
+          STARTUP_JOB_STATUS: ${{ job.status }}
+        run: python3 -I -S scripts/close_unstarted_run.py
 
       # Le pipeline a tourné : src.run_finalizer clôt le run que ce job a réclamé. Quand il n'a pas démarré,
       # c'est l'étape précédente qui s'en charge, sans les dépendances Python.
