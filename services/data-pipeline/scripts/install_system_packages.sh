@@ -13,7 +13,9 @@
 #      deadline (150 s by default). An index that cannot be fetched is an error that triggers a new
 #      attempt, not a warning. On the last attempt only, the download is still tried with the indexes
 #      at hand: a broken repository that these packages do not need (the runner image declares
-#      several) must not stop the job, as it did not before.
+#      several) must not stop the job, as it did not before. The time of that download is reserved:
+#      the last `apt-get update` only gets what the deadline leaves beyond it, and is skipped when
+#      nothing is left (a repository that hangs must not eat the whole budget).
 #   2. local phase (`apt-get install --no-download`): unpacks what was downloaded, without network.
 #      It is not retried and never interrupted by the network deadline, so dpkg is never killed in
 #      the middle of a configuration because of a slow mirror.
@@ -30,7 +32,7 @@
 #   SYSTEM_PACKAGES_DOWNLOAD_TIMEOUT   one `apt-get install --download-only`    (default 60)
 #   SYSTEM_PACKAGES_INSTALL_TIMEOUT    the local `apt-get install`              (default 300)
 #   SYSTEM_PACKAGES_APT_COMMAND        command used instead of apt-get, run without sudo (the tests
-#                                      point it at a stand-in)
+#                                      point it at a stand-in); refused on a GitHub Actions runner
 set -uo pipefail
 
 if [ "$#" -eq 0 ]; then
@@ -63,6 +65,11 @@ positive_integer SYSTEM_PACKAGES_INSTALL_TIMEOUT "$install_timeout" 1
 # itself (sudo cannot relay a SIGKILL).
 launcher=(env DEBIAN_FRONTEND=noninteractive)
 if [ -n "${SYSTEM_PACKAGES_APT_COMMAND:-}" ]; then
+  # A test seam only: on a runner nothing may replace apt-get.
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    echo "::error title=Installation des paquets système impossible::SYSTEM_PACKAGES_APT_COMMAND est réservée aux tests et refusée sur un runner GitHub Actions."
+    exit 64
+  fi
   read -r -a apt_command <<< "$SYSTEM_PACKAGES_APT_COMMAND"
 else
   apt_command=(apt-get)
@@ -109,14 +116,27 @@ fetch_once() {
   local last_attempt="$1"
   shift
   local code=0
+  local update_limit="$update_timeout"
   index_incomplete=false
-  bounded "$update_timeout" update "${network_options[@]}" -o APT::Update::Error-Mode=any || code=$?
-  if [ "$code" -ne 0 ]; then
-    if [ "$last_attempt" != "true" ]; then
-      return "$code"
+  if [ "$last_attempt" = "true" ]; then
+    # Keep the time of the download: it is the last chance to fetch the packages.
+    local spare=$(($(remaining) - download_timeout))
+    if [ "$update_limit" -gt "$spare" ]; then
+      update_limit="$spare"
     fi
+  fi
+  if [ "$update_limit" -le 0 ]; then
     index_incomplete=true
-    echo "Paquets système : index apt incomplet (code ${code}), dernier essai de téléchargement avec les index disponibles."
+    echo "Paquets système : plus de temps pour rafraîchir les index, dernier essai de téléchargement avec les index disponibles."
+  else
+    bounded "$update_limit" update "${network_options[@]}" -o APT::Update::Error-Mode=any || code=$?
+    if [ "$code" -ne 0 ]; then
+      if [ "$last_attempt" != "true" ]; then
+        return "$code"
+      fi
+      index_incomplete=true
+      echo "Paquets système : index apt incomplet (code ${code}), dernier essai de téléchargement avec les index disponibles."
+    fi
   fi
   bounded "$download_timeout" install -y --download-only "${network_options[@]}" "$@"
 }
@@ -163,7 +183,7 @@ if [ "$fetched" != "true" ]; then
 fi
 
 if [ "$index_incomplete" = "true" ]; then
-  echo "::warning title=Index apt incomplet::Un dépôt apt du runner ne répond pas ; les paquets ($*) ont été téléchargés avec les index disponibles."
+  echo "::warning title=Index apt incomplet::Les index apt n'ont pas pu être rafraîchis en entier ; les paquets ($*) ont été téléchargés avec les index disponibles."
 fi
 echo "Paquets système : installation locale (sans réseau)."
 "${launcher[@]}" timeout --kill-after=10 "$install_timeout" "${apt_command[@]}" \
