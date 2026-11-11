@@ -70,7 +70,8 @@ function mirrorSource(root, overrides) {
 /**
  * Le script lit tout par rapport à son propre emplacement : on le copie dans un dépôt factice dont
  * les migrations sont celles du dépôt, plus les fichiers `extraMigrations`. `extraFiles` ajoute des fichiers
- * (chemin relatif au dépôt) sous `scripts/`, `supabase/repairs/` ou `supabase/functions/`.
+ * (chemin relatif au dépôt) sous `scripts/`, `supabase/repairs/`, `supabase/maintenance/` ou
+ * `supabase/functions/`.
  */
 export function runInvariants(
   extraMigrations = {},
@@ -103,8 +104,8 @@ export function runInvariants(
   for (const [name, sql] of Object.entries(extraMigrations)) {
     writeFileSync(join(root, "supabase/migrations", name), sql);
   }
-  // Rattrapages et fonctions Edge : ceux du dépôt, dans des dossiers réels où ajouter des fichiers.
-  for (const directory of ["supabase/repairs", "supabase/functions"]) {
+  // Rattrapages, maintenance et fonctions Edge : ceux du dépôt, dans des dossiers réels où ajouter des fichiers.
+  for (const directory of ["supabase/repairs", "supabase/maintenance", "supabase/functions"]) {
     mkdirSync(join(root, directory));
     for (const entry of readdirSync(join(repo, directory))) {
       symlinkSync(join(repo, directory, entry), join(root, directory, entry));

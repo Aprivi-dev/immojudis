@@ -22,10 +22,20 @@
 --
 -- Ce que la reparation fait : pour chaque vente de statut past ou quarantined dont l'une des deux echeances
 -- differe du resultat des fonctions corrigees, elle ecrit retention_deadline et catalogue_expiry_deadline.
--- Les declencheurs utilisateur sont suspendus le temps de l'ecriture (comme le rattrapage de
+-- Les declencheurs utilisateur en mode ordinaire sont suspendus le temps de l'ecriture (comme le rattrapage de
 -- 20261027100100) : ni journal des ventes, ni relecture IA, ni controle de source ne se declenche pour un
 -- simple recalcul. ALTER TABLE ... DISABLE TRIGGER prend un verrou SHARE ROW EXCLUSIVE : les ecritures de
 -- la collecte attendent la fin de la transaction (quelques secondes) ; a lancer hors collecte.
+--
+-- Registre des pieces (lot R2a, 2026-11-11) : ce fichier faisait « disable trigger user » puis « enable trigger
+-- user ». Le second ordre remet TOUS les declencheurs de la table en mode ordinaire : les trois declencheurs
+-- « aaab_ » du registre des pieces, poses en mode « always », ne joueraient plus en
+-- session_replication_role = replica, sans aucune erreur. Il ne suspend donc plus que les declencheurs qu'il veut
+-- taire, nommes un a un : ceux qui sont en mode ordinaire (tgenabled = 'O') et dont le nom ne commence pas par
+-- « aaab_ », notes dans une table temporaire, puis retablit exactement ceux-la. Un declencheur « always » n'est
+-- jamais touche. Derniere instruction avant le commit : app_private.assert_fact_registry_triggers(), qui fait
+-- echouer la transaction (rien n'est ecrit) si un declencheur du registre n'est pas en mode « always ».
+-- Prerequis : la migration 20261117100100_fact_registry_guards.sql.
 -- Une echeance deja echue ne declenche aucune suppression ici : c'est la purge planifiee (sale-retention,
 -- lots de 25) qui supprime ensuite, vente par vente, avec son pont d'archive statistique.
 -- Les valeurs d'origine sont copiees dans app_private.retention_deadline_repair_backup_20261029.
@@ -127,7 +137,29 @@ select s.status, count(*) as sans_date
     from deadline_repair_rows r
   on conflict (id) do nothing;
 
-  alter table public.auction_sales disable trigger user;
+  -- Declencheurs suspendus : ceux qui sont en mode ordinaire, jamais ceux du registre des pieces.
+  create temporary table deadline_repair_suspended_triggers (
+    trigger_name name primary key
+  ) on commit drop;
+
+  do $suspend$
+  declare
+    v_trigger name;
+  begin
+    for v_trigger in
+      select trigger_row.tgname
+        from pg_catalog.pg_trigger trigger_row
+       where trigger_row.tgrelid = 'public.auction_sales'::regclass
+         and not trigger_row.tgisinternal
+         and trigger_row.tgenabled = 'O'
+         and trigger_row.tgname not like 'aaab\_%'
+       order by trigger_row.tgname
+    loop
+      insert into deadline_repair_suspended_triggers (trigger_name) values (v_trigger);
+      execute pg_catalog.format('alter table public.auction_sales disable trigger %I', v_trigger);
+    end loop;
+  end;
+  $suspend$;
 
   update public.auction_sales s
      set retention_deadline = r.new_retention_deadline,
@@ -137,7 +169,23 @@ select s.status, count(*) as sans_date
     from deadline_repair_rows r
    where s.id = r.id;
 
-  alter table public.auction_sales enable trigger user;
+  -- Retablit exactement les declencheurs suspendus ci-dessus, dans leur mode d'origine (ordinaire).
+  do $resume$
+  declare
+    v_trigger name;
+  begin
+    for v_trigger in
+      select suspended.trigger_name
+        from deadline_repair_suspended_triggers suspended
+       order by suspended.trigger_name
+    loop
+      execute pg_catalog.format('alter table public.auction_sales enable trigger %I', v_trigger);
+    end loop;
+  end;
+  $resume$;
+
+  -- Echec ferme : rien n'est valide si un declencheur du registre des pieces n'est pas en mode « always ».
+  select app_private.assert_fact_registry_triggers();
 
   \echo === Application terminee : relancer la requete de controle de l en-tete. ===
 \endif
@@ -148,11 +196,13 @@ select s.status, count(*) as sans_date
   rollback;
 \endif
 
--- Retour arriere (a executer a la main, hors de ce fichier ; a faire avec les declencheurs suspendus) :
---   alter table public.auction_sales disable trigger user;
+-- Retour arriere (a executer a la main, hors de ce fichier) : reprendre les deux blocs « suspend » et « resume »
+-- ci-dessus autour de la mise a jour inverse, et terminer par app_private.assert_fact_registry_triggers().
+-- NE PAS utiliser « disable trigger user » puis « enable trigger user » : le second ordre sortirait les
+-- declencheurs du registre des pieces du mode « always » (remise en etat :
+-- supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql).
 --   update public.auction_sales s
 --      set retention_deadline = b.retention_deadline,
 --          catalogue_expiry_deadline = b.catalogue_expiry_deadline
 --     from app_private.retention_deadline_repair_backup_20261029 b
 --    where s.id = b.id;
---   alter table public.auction_sales enable trigger user;
