@@ -515,6 +515,12 @@ describe("InformationAgentContributionForm", () => {
         expect(screen.getByRole("alert").textContent).toContain("n’accepte plus de dépôt"),
       );
       expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+      // Réessayer ne servirait à rien : le message dit quoi faire, et la réponse saisie reste
+      // à l'écran pour être copiée dans l'email.
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Répondez simplement à l’email que vous avez reçu",
+      );
+      expect((screen.getByLabelText("Votre réponse") as HTMLTextAreaElement).value).toBe("Oui.");
     });
   });
 

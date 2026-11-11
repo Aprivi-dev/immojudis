@@ -3,7 +3,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import List from "lucide-react/dist/esm/icons/list.js";
@@ -37,6 +37,11 @@ import {
 } from "@/lib/search/results-view";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
 import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
+import {
+  aroundAddressCenter,
+  aroundAddressMachine,
+  isLocatingAroundAddress,
+} from "@/lib/search/around-address-machine";
 import {
   ANONYMOUS_PREVIEW_SCOPE,
   catalogPlaceholder,
@@ -248,8 +253,16 @@ export function SearchPage({
   const firstSearchDraftSync = useRef(true);
   const firstDraftSync = useRef(true);
   const mapTriggerRef = useRef<HTMLElement | null>(null);
-  const [center, setCenter] = useState<GeoPoint | null>(null);
-  const [geocoding, setGeocoding] = useState(false);
+  // Adresse d'une recherche « autour de » : le centre est rangé avec l'adresse qu'il localise
+  // (`around-address-machine.ts`), il ne survit donc ni à son effacement ni à son remplacement.
+  const [aroundAddress, dispatchAroundAddress] = useReducer(
+    aroundAddressMachine.transition,
+    aroundAddressMachine.initial,
+  );
+  // `useMemo` : le centre est un objet. Sans lui, le compilateur React ne sait pas qu'il reste le
+  // même d'un rendu à l'autre et renonce à optimiser la page (règle `preserve-manual-memoization`).
+  const center = useMemo(() => aroundAddressCenter(aroundAddress), [aroundAddress]);
+  const geocoding = isLocatingAroundAddress(aroundAddress);
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   // Sur bureau, la carte (mapbox-gl + points) ne se télécharge ni ne s'initialise qu'au premier
@@ -357,18 +370,17 @@ export function SearchPage({
   }, [draft, draftSignature, replaceSearch]);
 
   useEffect(() => {
-    if (!search.aroundAddress) {
-      setCenter(null);
-      return;
-    }
+    const address = search.aroundAddress || null;
+    dispatchAroundAddress({ type: "ADDRESS_CHANGED", address });
+    if (!address) return;
 
     let cancelled = false;
-    setGeocoding(true);
-    geocodeAddress(search.aroundAddress).then((point) => {
-      if (cancelled) return;
-      setCenter(point);
-      setGeocoding(false);
-    });
+    // Un géocodeur en panne vaut « adresse introuvable » : la recherche continue sans centre.
+    geocodeAddress(address)
+      .catch(() => null)
+      .then((point) => {
+        if (!cancelled) dispatchAroundAddress({ type: "RESOLVED", address, point });
+      });
 
     return () => {
       cancelled = true;

@@ -102,6 +102,37 @@ describe("AdminMfaGate", () => {
     expect(mocks.challenge).not.toHaveBeenCalled();
   });
 
+  it("gives the button back when the auth service throws instead of answering", async () => {
+    mocks.assurance.mockResolvedValue({
+      data: { currentLevel: "aal1", nextLevel: "aal2" },
+      error: null,
+    });
+    mocks.listFactors.mockResolvedValue({
+      data: { all: [{ id: "factor-1", factor_type: "totp", status: "verified" }] },
+    });
+    // Réseau coupé : l'appel lève au lieu de rendre `{ error }`.
+    mocks.challenge.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    mocks.challenge.mockResolvedValue({ data: { id: "challenge-1" }, error: null });
+    mocks.verify.mockResolvedValue({ data: {}, error: null });
+
+    render(
+      <AdminMfaGate>
+        <p>Tableau de bord</p>
+      </AdminMfaGate>,
+    );
+    fireEvent.change(await screen.findByLabelText("Code à 6 chiffres"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Vérifier" }));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    // Le bouton n'est pas resté sur « Vérification… » : une seconde tentative aboutit.
+    const retry = screen.getByRole("button", { name: "Vérifier" }) as HTMLButtonElement;
+    expect(retry.disabled).toBe(false);
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByText("Tableau de bord")).toBeTruthy());
+  });
+
   it("lets an administrator without a factor through so they can enrol", async () => {
     mocks.assurance.mockResolvedValue({
       data: { currentLevel: "aal1", nextLevel: "aal1" },

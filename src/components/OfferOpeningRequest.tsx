@@ -87,7 +87,13 @@ export function OfferOpeningRequest({
   }
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      // Plus de compte (déconnexion) : la demande affichée était celle du compte précédent. Sans
+      // cette remise à zéro, un visiteur déconnecté voyait encore « demande enregistrée ».
+      setOpeningRequested(null);
+      setSurvey(null);
+      return;
+    }
     let active = true;
     // Le changement d'un autre compte ne compte plus ; celui du compte courant, fait avant que cet
     // effet ne s'exécute, est conservé.

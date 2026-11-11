@@ -466,15 +466,18 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       setNote("");
       setLinksText("");
     } catch (cause: unknown) {
-      if (isLinkRejectedByServer(cause)) clearStoredToken(missionId);
+      const linkRejected = isLinkRejectedByServer(cause);
+      if (linkRejected) clearStoredToken(missionId);
       // Un refus de validation du serveur désigne un champ : son message est écrit pour le
       // visiteur (il ne passe pas par le filtre des messages techniques).
       const rejected = cause instanceof ContributionHttpError && cause.field ? cause : null;
       const rejectedField = rejected?.field ?? null;
+      // Lien refusé pendant l'envoi : réessayer ne servira à rien. Le formulaire reste affiché
+      // (la réponse saisie peut être copiée) et le message dit quoi faire, comme à l'ouverture
+      // d'un lien expiré.
+      const fallback = errorMessage(cause, "Impossible de transmettre votre réponse.");
       fail(
-        rejected
-          ? rejected.message
-          : errorMessage(cause, "Impossible de transmettre votre réponse."),
+        rejected ? rejected.message : linkRejected ? `${fallback} ${EXPIRED_LINK_HINT}` : fallback,
         rejectedField,
       );
       setStatus(null);

@@ -34,7 +34,11 @@ vi.mock("@/lib/search/analysis-offer-open", () => ({ isAnalysisOfferOpen: mocks.
 vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
 import { peekPendingAlert, clearPendingAlert } from "@/lib/pending-alert";
-import { alertSurfaceFromPath, useCreateAlert } from "./use-create-alert";
+import {
+  ACCOUNT_RIGHTS_UNREADABLE_TEXT,
+  alertSurfaceFromPath,
+  useCreateAlert,
+} from "./use-create-alert";
 
 function freePlan() {
   return {
@@ -465,6 +469,80 @@ describe("useCreateAlert", () => {
     expect(mocks.toast.error).toHaveBeenCalled();
     expect(hook.result.current.saving).toBe(false);
     expect(mocks.track).not.toHaveBeenCalled();
+  });
+});
+
+describe("useCreateAlert : lecture des droits du compte", () => {
+  /** Lance la création une fois la première lecture des droits terminée (en échec). */
+  async function createAfterFailedRead(hook: ReturnType<typeof setup>, search: SalesSearchParams) {
+    await waitFor(() => expect(mocks.plan).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    let outcome: Awaited<
+      ReturnType<ReturnType<typeof setup>["result"]["current"]["createAlertFromSearch"]>
+    >;
+    await act(async () => {
+      outcome = await hook.result.current.createAlertFromSearch(search);
+    });
+    return outcome!;
+  }
+
+  it("relit les droits à la demande après un échec, puis crée l'alerte", async () => {
+    mocks.plan.mockReset().mockRejectedValueOnce(new Error("réseau")).mockResolvedValue(freePlan());
+    const hook = setup();
+
+    expect(await createAfterFailedRead(hook, { department: "33" })).toEqual({
+      status: "created",
+      emailConsent: false,
+    });
+    expect(mocks.plan).toHaveBeenCalledTimes(2);
+    expect(mocks.createAlert).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.message).not.toHaveBeenCalledWith(
+      "Vérification de votre compte en cours. Réessayez dans un instant.",
+    );
+  });
+
+  it("dit que les droits n'ont pas pu être vérifiés quand la relecture échoue aussi", async () => {
+    mocks.plan.mockReset().mockRejectedValue(new Error("réseau"));
+    const hook = setup();
+
+    expect(await createAfterFailedRead(hook, { department: "33" })).toEqual({ status: "blocked" });
+    // Un échec n'est pas une vérification « en cours » : le message ne promet pas qu'attendre suffit.
+    expect(mocks.toast.error).toHaveBeenCalledWith(ACCOUNT_RIGHTS_UNREADABLE_TEXT);
+    expect(mocks.toast.message).not.toHaveBeenCalled();
+    expect(mocks.createAlert).not.toHaveBeenCalled();
+    expect(hook.result.current.saving).toBe(false);
+  });
+
+  it("ignore une seconde demande pendant que la première crée l'alerte", async () => {
+    let release: () => void = () => undefined;
+    mocks.createAlert.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const hook = setup();
+    await waitFor(() => expect(hook.result.current.ready).toBe(true));
+
+    let first: Promise<unknown> = Promise.resolve();
+    await act(async () => {
+      first = hook.result.current.createAlertFromSearch({ department: "33" });
+      await waitFor(() => expect(mocks.createAlert).toHaveBeenCalledTimes(1));
+    });
+    let second;
+    await act(async () => {
+      second = await hook.result.current.createAlertFromSearch({ department: "33" });
+    });
+    expect(second).toEqual({ status: "blocked" });
+
+    await act(async () => {
+      release();
+      await first;
+    });
+    expect(mocks.createAlert).toHaveBeenCalledTimes(1);
+    expect(mocks.createZone).toHaveBeenCalledTimes(1);
   });
 });
 
