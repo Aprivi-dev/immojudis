@@ -1,11 +1,14 @@
 name: Information Agent Evaluation Trial
 
 # Essai réel et PAYANT du modèle de lecture des réponses sur le jeu d'évaluation fictif de la publication
-# automatique (200 réponses, services/data-pipeline/tests/fixtures/information_agent_evaluation/). Lancement
-# manuel seulement, depuis main, avec la phrase de confirmation. Plafond dur de 5 USD vérifié avant chaque
-# appel par le script (services/data-pipeline/scripts/information_agent_evaluation_trial.py). Ne reçoit que le
-# jeton du modèle : aucune clé Supabase, aucune écriture en base, aucun envoi d'email. Les sorties brutes sont
-# publiées en artefact ; les rejouer dans le banc : voir docs/runbooks/information-agent.md.
+# automatique (215 réponses, services/data-pipeline/tests/fixtures/information_agent_evaluation/). Lancement
+# manuel seulement, depuis main, avec la phrase de confirmation ; une relance par l'interface est refusée (elle
+# repaierait sans nouvelle confirmation) : reprendre par un nouveau lancement avec reprise_run_id. Plafond dur
+# de 5 USD par lancement, vérifié avant et après chaque appel par le script
+# (services/data-pipeline/scripts/information_agent_evaluation_trial.py). Pilote d'abord (appels_max = 5), essai
+# complet ensuite (appels_max vide). Ne reçoit que le jeton du modèle : aucune clé Supabase, aucune écriture en
+# base, aucun envoi d'email. Les sorties brutes sont publiées en artefact ; les rejouer dans le banc : voir
+# docs/runbooks/information-agent.md.
 on:
   workflow_dispatch:
     inputs:
@@ -14,7 +17,12 @@ on:
         required: true
         type: string
       budget_usd:
-        description: "Plafond de dépense estimée en USD (5 au plus ; le script refuse davantage)"
+        description: "Plafond de dépense en USD pour ce lancement (5 au plus ; le script refuse davantage)"
+        required: false
+        default: "1"
+        type: string
+      appels_max:
+        description: "Pilote : nombre maximal d'appels (vide : essai complet)"
         required: false
         default: "5"
         type: string
@@ -26,7 +34,7 @@ on:
 
 permissions:
   contents: read
-  # Lecture de l'artefact d'une exécution précédente (reprise sans repayer les cas déjà faits).
+  # Lecture de l'artefact d'une exécution précédente (reprise sans repayer les pièces réussies).
   actions: read
 
 concurrency:
@@ -35,8 +43,8 @@ concurrency:
 
 jobs:
   trial:
-    # Le jeton du modèle n'est donné qu'au code de main.
-    if: github.ref == 'refs/heads/main'
+    # Le jeton du modèle n'est donné qu'au code de main, et seulement au premier essai d'une exécution.
+    if: github.ref == 'refs/heads/main' && github.run_attempt == 1
     name: Run the paid model trial on the fictitious evaluation set
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -51,6 +59,8 @@ jobs:
       REPLICATE_MODEL: qwen/qwen3-7-plus
       REPLICATE_MIN_INTERVAL_SECONDS: 11
       REPLICATE_MAX_RETRIES: 0
+      # Sans effet ici : ce plafond horaire est tenu en base, et l'essai n'a pas accès à la base. Gardé pour la
+      # concordance avec le worker ; le plafond de l'essai est celui du script.
       REPLICATE_MAX_CALLS_PER_HOUR: 60
     steps:
       - name: Check confirmation and inputs
@@ -58,6 +68,7 @@ jobs:
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
           BUDGET_USD: ${{ inputs.budget_usd }}
+          APPELS_MAX: ${{ inputs.appels_max }}
           REPRISE_RUN_ID: ${{ inputs.reprise_run_id }}
         run: |
           set -euo pipefail
@@ -67,6 +78,10 @@ jobs:
           fi
           if ! [[ "$BUDGET_USD" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
             echo "budget_usd illisible." >&2
+            exit 1
+          fi
+          if [ -n "$APPELS_MAX" ] && ! [[ "$APPELS_MAX" =~ ^[1-9][0-9]*$ ]]; then
+            echo "appels_max doit être un entier positif, ou vide." >&2
             exit 1
           fi
           if [ -n "$REPRISE_RUN_ID" ] && ! [[ "$REPRISE_RUN_ID" =~ ^[0-9]+$ ]]; then
@@ -97,9 +112,9 @@ jobs:
           REPRISE_RUN_ID: ${{ inputs.reprise_run_id }}
         run: |
           set -euo pipefail
-          mkdir -p "$(dirname "$RUNNER_TEMP/information-agent-evaluation/essai.json")"
+          mkdir -p "$RUNNER_TEMP/information-agent-evaluation"
           gh run download "$REPRISE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name information-agent-evaluation-trial --dir "$(dirname "$RUNNER_TEMP/information-agent-evaluation/essai.json")"
+            --name information-agent-evaluation-trial --dir "$RUNNER_TEMP/information-agent-evaluation"
           test -f "$RUNNER_TEMP/information-agent-evaluation/essai.json"
 
       - name: Estimate the maximal cost (no call)
@@ -111,7 +126,12 @@ jobs:
         env:
           REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
           BUDGET_USD: ${{ inputs.budget_usd }}
-        run: python -m scripts.information_agent_evaluation_trial --output "$RUNNER_TEMP/information-agent-evaluation/essai.json" --budget-usd "$BUDGET_USD"
+          APPELS_MAX: ${{ inputs.appels_max }}
+        run: |
+          set -euo pipefail
+          args=(--output "$RUNNER_TEMP/information-agent-evaluation/essai.json" --budget-usd "$BUDGET_USD")
+          if [ -n "$APPELS_MAX" ]; then args+=(--max-calls "$APPELS_MAX"); fi
+          python -m scripts.information_agent_evaluation_trial "${args[@]}"
 
       - name: Publish the raw model outputs
         if: always()
