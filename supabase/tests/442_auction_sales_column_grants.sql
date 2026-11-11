@@ -1,6 +1,6 @@
 begin;
 
-select plan(17);
+select plan(18);
 
 select ok(
   not has_table_privilege('authenticated', 'public.auction_sales', 'select'),
@@ -53,19 +53,36 @@ select ok(
   'the only definer views are the guarded catalogue view, the two documented discovery projections and the unlocked-sale projection'
 );
 
+-- Une vue créée SANS option s'exécute aussi avec les droits de son propriétaire : le filtre porte donc sur
+-- « pas security_invoker=true », et non sur « security_invoker=false » (qui laissait passer une vue sans
+-- option). Les vues installées par une extension (PostGIS) sont hors périmètre. auction_sale_source_presence
+-- (20261008102630) est créée sans option : elle lit app_private.auction_sale_source_presence pour le seul rôle
+-- de service ; elle est nommée ici pour que toute AUTRE vue de ce genre fasse échouer le test.
 select is(
   (
     select coalesce(array_agg(view_row.relname order by view_row.relname), array[]::name[])
     from pg_class view_row
     where view_row.relnamespace = 'public'::regnamespace
       and view_row.relkind = 'v'
-      and view_row.reloptions @> array['security_invoker=false']
+      and not coalesce(view_row.reloptions @> array['security_invoker=true'], false)
+      and not exists (
+        select 1 from pg_depend extension_member
+        where extension_member.classid = 'pg_class'::regclass
+          and extension_member.objid = view_row.oid
+          and extension_member.deptype = 'e'
+      )
   ),
   array[
-    'v_auction_sales_app', 'v_auction_sales_discovery', 'v_auction_sales_discovery_search',
-    'v_auction_sales_unlocked'
+    'auction_sale_source_presence', 'v_auction_sales_app', 'v_auction_sales_discovery',
+    'v_auction_sales_discovery_search', 'v_auction_sales_unlocked'
   ]::name[],
-  'no other public view is SECURITY DEFINER (allowlist for the security_definer_view advisor)'
+  'no other public view runs with the rights of its owner (allowlist for the security_definer_view advisor)'
+);
+
+select ok(
+  not has_table_privilege('anon', 'public.auction_sale_source_presence', 'select')
+  and not has_table_privilege('authenticated', 'public.auction_sale_source_presence', 'select'),
+  'the one view created without option is closed to the browser roles'
 );
 
 -- Stage 2 (20261110120000) is applied: the raw columns are hidden and the catalogue view is guarded.
