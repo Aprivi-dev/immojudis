@@ -11,16 +11,16 @@
    "cas_joues": 215,
    "cas_non_joues": [],
    "etat_attendu": {
-    "publications": 67,
+    "publications": 57,
     "publications_fausses": {
-     "total": 37,
-     "defauts_connus": 37,
+     "total": 40,
+     "defauts_connus": 40,
      "par_famille": {
       "1": 0,
       "2": 7,
       "3": 1,
-      "4": 4,
-      "5": 1,
+      "4": 5,
+      "5": 3,
       "6": 7,
       "7": 7,
       "8": 6,
@@ -206,6 +206,22 @@
       },
       {
        "etat": "etat_attendu",
+       "case_id": "F4-13",
+       "field": "surface_m2",
+       "published_value": 85,
+       "message": "corps",
+       "provenance": "regles",
+       "motifs_etat_reel": [
+        "case_not_replied",
+        "reply_in_review"
+       ],
+       "famille": 4,
+       "verite": "non publiable : Valeur passée, surface actuelle inconnue.",
+       "decision_proprietaire": null,
+       "defaut_connu": true
+      },
+      {
+       "etat": "etat_attendu",
        "case_id": "F4-23",
        "field": "surface_m2",
        "published_value": 54,
@@ -233,6 +249,38 @@
        ],
        "famille": 5,
        "verite": "non publiable : 28 m² est la surface du séjour, pas celle du logement.",
+       "decision_proprietaire": null,
+       "defaut_connu": true
+      },
+      {
+       "etat": "etat_attendu",
+       "case_id": "F5-20",
+       "field": "surface_m2",
+       "published_value": 420,
+       "message": "corps",
+       "provenance": "regles",
+       "motifs_etat_reel": [
+        "case_not_replied",
+        "reply_in_review"
+       ],
+       "famille": 5,
+       "verite": "non publiable : Surface développée sur plusieurs niveaux (comme une surface totale) : à relire.",
+       "decision_proprietaire": null,
+       "defaut_connu": true
+      },
+      {
+       "etat": "etat_attendu",
+       "case_id": "F5-25",
+       "field": "rooms_count",
+       "published_value": 6,
+       "message": "corps",
+       "provenance": "regles",
+       "motifs_etat_reel": [
+        "case_not_replied",
+        "reply_in_review"
+       ],
+       "famille": 5,
+       "verite": "non publiable : Pièces du dossier : ce ne sont pas des pièces du logement.",
        "decision_proprietaire": null,
        "defaut_connu": true
       },
@@ -624,28 +672,28 @@
     },
     "couverture": {
      "valeurs_publiables": 90,
-     "publiees_justes": 30,
-     "taux": 0.333,
+     "publiees_justes": 17,
+     "taux": 0.189,
      "par_famille": {
       "1": {
        "publiables": 30,
-       "publiees_justes": 8
+       "publiees_justes": 9
       },
       "2": {
        "publiables": 4,
-       "publiees_justes": 1
+       "publiees_justes": 0
       },
       "3": {
        "publiables": 19,
-       "publiees_justes": 6
+       "publiees_justes": 5
       },
       "4": {
        "publiables": 7,
-       "publiees_justes": 6
+       "publiees_justes": 1
       },
       "5": {
        "publiables": 17,
-       "publiees_justes": 6
+       "publiees_justes": 0
       },
       "6": {
        "publiables": 2,
@@ -657,7 +705,7 @@
       },
       "8": {
        "publiables": 3,
-       "publiees_justes": 2
+       "publiees_justes": 1
       },
       "9": {
        "publiables": 8,
@@ -676,6 +724,13 @@
      {
       "case_id": "F1-01",
       "field": "rooms_count",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F1-02",
+      "field": "surface_m2",
       "motifs": [
        "do_not_publish_requested"
       ]
@@ -706,7 +761,15 @@
       "case_id": "F1-06",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
+      ]
+     },
+     {
+      "case_id": "F1-06",
+      "field": "rooms_count",
+      "motifs": [
+       "do_not_publish_requested"
       ]
      },
      {
@@ -720,20 +783,6 @@
       "case_id": "F1-07",
       "field": "rooms_count",
       "motifs": []
-     },
-     {
-      "case_id": "F1-08",
-      "field": "land_surface_m2",
-      "motifs": [
-       "do_not_publish_requested"
-      ]
-     },
-     {
-      "case_id": "F1-08",
-      "field": "rooms_count",
-      "motifs": [
-       "do_not_publish_requested"
-      ]
      },
      {
       "case_id": "F1-09",
@@ -766,15 +815,15 @@
       "motifs": []
      },
      {
-      "case_id": "F1-12",
-      "field": "surface_m2",
+      "case_id": "F1-13",
+      "field": "land_surface_m2",
       "motifs": [
        "do_not_publish_requested"
       ]
      },
      {
-      "case_id": "F1-12",
-      "field": "land_surface_m2",
+      "case_id": "F1-13",
+      "field": "rooms_count",
       "motifs": [
        "do_not_publish_requested"
       ]
@@ -808,14 +857,14 @@
       ]
      },
      {
-      "case_id": "F1-22",
-      "field": "rooms_count",
+      "case_id": "F2-23",
+      "field": "surface_m2",
       "motifs": [
        "do_not_publish_requested"
       ]
      },
      {
-      "case_id": "F2-23",
+      "case_id": "F2-24",
       "field": "surface_m2",
       "motifs": [
        "do_not_publish_requested"
@@ -838,15 +887,8 @@
       ]
      },
      {
-      "case_id": "F3-01",
+      "case_id": "F3-02",
       "field": "surface_m2",
-      "motifs": [
-       "do_not_publish_requested"
-      ]
-     },
-     {
-      "case_id": "F3-01",
-      "field": "rooms_count",
       "motifs": [
        "do_not_publish_requested"
       ]
@@ -855,16 +897,30 @@
       "case_id": "F3-04",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "semantic_only_body"
       ]
      },
      {
-      "case_id": "F3-09",
+      "case_id": "F3-08",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
-       "private_person_named"
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F3-08",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F3-10",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
       ]
      },
      {
@@ -887,6 +943,7 @@
       "case_id": "F3-15",
       "field": "rooms_count",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "semantic_only_body",
        "statement_review_reason"
@@ -896,6 +953,7 @@
       "case_id": "F3-17",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "statement_review_reason"
       ]
@@ -904,6 +962,7 @@
       "case_id": "F3-20",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "semantic_only_body",
        "statement_review_reason"
@@ -938,11 +997,46 @@
       ]
      },
      {
+      "case_id": "F4-09",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F4-17",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F4-17",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
       "case_id": "F4-17",
       "field": "rooms_count",
       "motifs": [
        "semantic_not_confirmed",
        "statement_review_reason"
+      ]
+     },
+     {
+      "case_id": "F4-18",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F4-18",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
       ]
      },
      {
@@ -974,10 +1068,16 @@
       ]
      },
      {
+      "case_id": "F5-11",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
       "case_id": "F5-12",
       "field": "rooms_count",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -985,6 +1085,7 @@
       "case_id": "F5-13",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "semantic_only_body"
       ]
@@ -999,6 +1100,13 @@
      {
       "case_id": "F5-14",
       "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F5-15",
+      "field": "surface_m2",
       "motifs": [
        "do_not_publish_requested"
       ]
@@ -1007,16 +1115,42 @@
       "case_id": "F5-16",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed",
        "statement_review_reason"
+      ]
+     },
+     {
+      "case_id": "F5-17",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F5-19",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F5-19",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F5-21",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
       ]
      },
      {
       "case_id": "F5-23",
       "field": "land_surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed",
        "semantic_only_body"
       ]
@@ -1025,6 +1159,7 @@
       "case_id": "F5-24",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -1043,7 +1178,14 @@
       ]
      },
      {
-      "case_id": "F8-24",
+      "case_id": "F8-18",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F8-19",
       "field": "surface_m2",
       "motifs": [
        "do_not_publish_requested"
@@ -1178,6 +1320,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1222,6 +1365,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -1231,6 +1375,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1253,7 +1398,6 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1262,7 +1406,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1305,7 +1448,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1314,7 +1456,6 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1323,6 +1464,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1331,6 +1473,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1399,7 +1542,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1417,6 +1559,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1445,7 +1588,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1454,7 +1596,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1463,6 +1604,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1471,6 +1613,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "semantic_only_body"
@@ -1481,6 +1624,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1489,6 +1633,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1497,8 +1642,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
-       "private_person_named",
        "reply_in_review"
       ]
      },
@@ -1507,6 +1650,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1543,6 +1687,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "semantic_only_body",
@@ -1554,6 +1699,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "statement_review_reason"
@@ -1564,6 +1710,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "semantic_only_body",
@@ -1619,6 +1766,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1635,6 +1783,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "later_message_in_case",
        "reply_in_review"
       ]
@@ -1644,6 +1793,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "later_message_in_case",
        "reply_in_review"
       ]
@@ -1663,6 +1813,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1671,6 +1822,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1713,6 +1865,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1721,7 +1874,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -1731,6 +1883,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "semantic_only_body"
@@ -1759,6 +1912,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1767,7 +1921,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "statement_review_reason"
@@ -1778,6 +1931,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1786,6 +1940,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1794,6 +1949,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1802,6 +1958,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1810,7 +1967,6 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "semantic_only_body"
@@ -1821,6 +1977,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -1848,6 +2005,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1856,6 +2014,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -1864,7 +2023,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -2028,6 +2186,7 @@
       "case_id": "F1-02",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2066,6 +2225,7 @@
       "case_id": "F1-06",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2073,6 +2233,7 @@
       "case_id": "F1-06",
       "field": "rooms_count",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2093,7 +2254,6 @@
       "case_id": "F1-08",
       "field": "land_surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2101,7 +2261,6 @@
       "case_id": "F1-08",
       "field": "rooms_count",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2141,7 +2300,6 @@
       "case_id": "F1-12",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2149,7 +2307,6 @@
       "case_id": "F1-12",
       "field": "land_surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2157,6 +2314,7 @@
       "case_id": "F1-13",
       "field": "land_surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2164,6 +2322,7 @@
       "case_id": "F1-13",
       "field": "rooms_count",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2224,7 +2383,6 @@
       "case_id": "F1-22",
       "field": "rooms_count",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2240,6 +2398,7 @@
       "case_id": "F2-24",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2264,7 +2423,6 @@
       "case_id": "F3-01",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2272,7 +2430,6 @@
       "case_id": "F3-01",
       "field": "rooms_count",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2280,6 +2437,7 @@
       "case_id": "F3-02",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2292,6 +2450,7 @@
       "case_id": "F3-08",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2299,6 +2458,7 @@
       "case_id": "F3-08",
       "field": "land_surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2306,8 +2466,6 @@
       "case_id": "F3-09",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
-       "private_person_named",
        "semantic_not_confirmed"
       ]
      },
@@ -2315,6 +2473,7 @@
       "case_id": "F3-10",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2342,6 +2501,7 @@
       "case_id": "F3-15",
       "field": "rooms_count",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "semantic_only_body",
        "statement_review_reason"
@@ -2351,6 +2511,7 @@
       "case_id": "F3-17",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "statement_review_reason"
       ]
@@ -2403,6 +2564,7 @@
       "case_id": "F4-09",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2417,6 +2579,7 @@
       "case_id": "F4-17",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2424,6 +2587,7 @@
       "case_id": "F4-17",
       "field": "land_surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2439,6 +2603,7 @@
       "case_id": "F4-18",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2446,6 +2611,7 @@
       "case_id": "F4-18",
       "field": "land_surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2483,6 +2649,7 @@
       "case_id": "F5-11",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2490,7 +2657,6 @@
       "case_id": "F5-12",
       "field": "rooms_count",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2519,6 +2685,7 @@
       "case_id": "F5-15",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2526,7 +2693,6 @@
       "case_id": "F5-16",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed",
        "statement_review_reason"
       ]
@@ -2535,6 +2701,7 @@
       "case_id": "F5-17",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2542,6 +2709,7 @@
       "case_id": "F5-19",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2549,6 +2717,7 @@
       "case_id": "F5-19",
       "field": "land_surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2556,6 +2725,7 @@
       "case_id": "F5-21",
       "field": "land_surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2568,6 +2738,7 @@
       "case_id": "F5-24",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2591,6 +2762,7 @@
       "case_id": "F8-18",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2598,6 +2770,7 @@
       "case_id": "F8-19",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2605,7 +2778,6 @@
       "case_id": "F8-24",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -2746,6 +2918,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2794,6 +2967,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2803,6 +2977,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2827,7 +3002,6 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2837,7 +3011,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2883,7 +3056,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2893,7 +3065,6 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2903,6 +3074,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2912,6 +3084,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -2988,7 +3161,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3008,6 +3180,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3038,7 +3211,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3048,7 +3220,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3058,6 +3229,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3072,6 +3244,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3081,6 +3254,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3090,8 +3264,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
-       "private_person_named",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3101,6 +3273,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3134,6 +3307,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "semantic_only_body",
@@ -3145,6 +3319,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "statement_review_reason"
@@ -3209,6 +3384,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3227,6 +3403,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "later_message_in_case",
        "reply_in_review",
        "semantic_not_confirmed"
@@ -3237,6 +3414,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "later_message_in_case",
        "reply_in_review",
        "semantic_not_confirmed"
@@ -3257,6 +3435,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3266,6 +3445,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3311,6 +3491,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3320,7 +3501,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3355,6 +3535,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3364,7 +3545,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "statement_review_reason"
@@ -3375,6 +3555,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3384,6 +3565,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3393,6 +3575,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3402,6 +3585,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3416,6 +3600,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3445,6 +3630,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3454,6 +3640,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3463,7 +3650,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -3545,16 +3731,16 @@
    "cas_joues": 215,
    "cas_non_joues": [],
    "etat_attendu": {
-    "publications": 66,
+    "publications": 58,
     "publications_fausses": {
-     "total": 37,
-     "defauts_connus": 37,
+     "total": 41,
+     "defauts_connus": 41,
      "par_famille": {
       "1": 0,
       "2": 7,
       "3": 1,
-      "4": 5,
-      "5": 1,
+      "4": 7,
+      "5": 3,
       "6": 7,
       "7": 7,
       "8": 5,
@@ -3740,6 +3926,22 @@
       },
       {
        "etat": "etat_attendu",
+       "case_id": "F4-13",
+       "field": "surface_m2",
+       "published_value": 85,
+       "message": "corps",
+       "provenance": "regles",
+       "motifs_etat_reel": [
+        "case_not_replied",
+        "reply_in_review"
+       ],
+       "famille": 4,
+       "verite": "non publiable : Valeur passée, surface actuelle inconnue.",
+       "decision_proprietaire": null,
+       "defaut_connu": true
+      },
+      {
+       "etat": "etat_attendu",
        "case_id": "F4-14",
        "field": "rooms_count",
        "published_value": 3,
@@ -3772,6 +3974,22 @@
       },
       {
        "etat": "etat_attendu",
+       "case_id": "F4-24",
+       "field": "land_surface_m2",
+       "published_value": 1500,
+       "message": "corps",
+       "provenance": "regles",
+       "motifs_etat_reel": [
+        "case_not_replied",
+        "reply_in_review"
+       ],
+       "famille": 4,
+       "verite": "non publiable : Deux valeurs (avant et après division) : à relire.",
+       "decision_proprietaire": null,
+       "defaut_connu": true
+      },
+      {
+       "etat": "etat_attendu",
        "case_id": "F5-01",
        "field": "surface_m2",
        "published_value": 28,
@@ -3783,6 +4001,38 @@
        ],
        "famille": 5,
        "verite": "non publiable : 28 m² est la surface du séjour, pas celle du logement.",
+       "decision_proprietaire": null,
+       "defaut_connu": true
+      },
+      {
+       "etat": "etat_attendu",
+       "case_id": "F5-20",
+       "field": "surface_m2",
+       "published_value": 420,
+       "message": "corps",
+       "provenance": "regles",
+       "motifs_etat_reel": [
+        "case_not_replied",
+        "reply_in_review"
+       ],
+       "famille": 5,
+       "verite": "non publiable : Surface développée sur plusieurs niveaux (comme une surface totale) : à relire.",
+       "decision_proprietaire": null,
+       "defaut_connu": true
+      },
+      {
+       "etat": "etat_attendu",
+       "case_id": "F5-25",
+       "field": "rooms_count",
+       "published_value": 6,
+       "message": "corps",
+       "provenance": "regles",
+       "motifs_etat_reel": [
+        "case_not_replied",
+        "reply_in_review"
+       ],
+       "famille": 5,
+       "verite": "non publiable : Pièces du dossier : ce ne sont pas des pièces du logement.",
        "decision_proprietaire": null,
        "defaut_connu": true
       },
@@ -4158,28 +4408,28 @@
     },
     "couverture": {
      "valeurs_publiables": 90,
-     "publiees_justes": 29,
-     "taux": 0.322,
+     "publiees_justes": 17,
+     "taux": 0.189,
      "par_famille": {
       "1": {
        "publiables": 30,
-       "publiees_justes": 8
+       "publiees_justes": 9
       },
       "2": {
        "publiables": 4,
-       "publiees_justes": 1
+       "publiees_justes": 0
       },
       "3": {
        "publiables": 19,
-       "publiees_justes": 6
+       "publiees_justes": 5
       },
       "4": {
        "publiables": 7,
-       "publiees_justes": 6
+       "publiees_justes": 1
       },
       "5": {
        "publiables": 17,
-       "publiees_justes": 6
+       "publiees_justes": 0
       },
       "6": {
        "publiables": 2,
@@ -4215,6 +4465,13 @@
       ]
      },
      {
+      "case_id": "F1-02",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
       "case_id": "F1-03",
       "field": "surface_m2",
       "motifs": [
@@ -4240,7 +4497,15 @@
       "case_id": "F1-06",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
+      ]
+     },
+     {
+      "case_id": "F1-06",
+      "field": "rooms_count",
+      "motifs": [
+       "do_not_publish_requested"
       ]
      },
      {
@@ -4254,20 +4519,6 @@
       "case_id": "F1-07",
       "field": "rooms_count",
       "motifs": []
-     },
-     {
-      "case_id": "F1-08",
-      "field": "land_surface_m2",
-      "motifs": [
-       "do_not_publish_requested"
-      ]
-     },
-     {
-      "case_id": "F1-08",
-      "field": "rooms_count",
-      "motifs": [
-       "do_not_publish_requested"
-      ]
      },
      {
       "case_id": "F1-09",
@@ -4300,15 +4551,15 @@
       "motifs": []
      },
      {
-      "case_id": "F1-12",
-      "field": "surface_m2",
+      "case_id": "F1-13",
+      "field": "land_surface_m2",
       "motifs": [
        "do_not_publish_requested"
       ]
      },
      {
-      "case_id": "F1-12",
-      "field": "land_surface_m2",
+      "case_id": "F1-13",
+      "field": "rooms_count",
       "motifs": [
        "do_not_publish_requested"
       ]
@@ -4342,14 +4593,14 @@
       ]
      },
      {
-      "case_id": "F1-22",
-      "field": "rooms_count",
+      "case_id": "F2-23",
+      "field": "surface_m2",
       "motifs": [
        "do_not_publish_requested"
       ]
      },
      {
-      "case_id": "F2-23",
+      "case_id": "F2-24",
       "field": "surface_m2",
       "motifs": [
        "do_not_publish_requested"
@@ -4373,15 +4624,8 @@
       ]
      },
      {
-      "case_id": "F3-01",
+      "case_id": "F3-02",
       "field": "surface_m2",
-      "motifs": [
-       "do_not_publish_requested"
-      ]
-     },
-     {
-      "case_id": "F3-01",
-      "field": "rooms_count",
       "motifs": [
        "do_not_publish_requested"
       ]
@@ -4392,11 +4636,24 @@
       "motifs": []
      },
      {
-      "case_id": "F3-09",
+      "case_id": "F3-08",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
-       "private_person_named"
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F3-08",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F3-10",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
       ]
      },
      {
@@ -4415,6 +4672,7 @@
       "case_id": "F3-15",
       "field": "rooms_count",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "semantic_only_body",
        "statement_review_reason"
@@ -4424,6 +4682,7 @@
       "case_id": "F3-17",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed",
        "statement_review_reason"
       ]
@@ -4462,11 +4721,46 @@
       ]
      },
      {
+      "case_id": "F4-09",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F4-17",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F4-17",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
       "case_id": "F4-17",
       "field": "rooms_count",
       "motifs": [
        "semantic_not_confirmed",
        "statement_review_reason"
+      ]
+     },
+     {
+      "case_id": "F4-18",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F4-18",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
       ]
      },
      {
@@ -4499,10 +4793,16 @@
       ]
      },
      {
+      "case_id": "F5-11",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
       "case_id": "F5-12",
       "field": "rooms_count",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -4526,12 +4826,46 @@
       ]
      },
      {
+      "case_id": "F5-15",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
       "case_id": "F5-16",
       "field": "surface_m2",
       "motifs": [
-       "do_not_publish_requested",
        "semantic_not_confirmed",
        "statement_review_reason"
+      ]
+     },
+     {
+      "case_id": "F5-17",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F5-19",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F5-19",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F5-21",
+      "field": "land_surface_m2",
+      "motifs": [
+       "do_not_publish_requested"
       ]
      },
      {
@@ -4543,6 +4877,7 @@
       "case_id": "F5-24",
       "field": "surface_m2",
       "motifs": [
+       "do_not_publish_requested",
        "semantic_not_confirmed"
       ]
      },
@@ -4561,17 +4896,18 @@
       ]
      },
      {
-      "case_id": "F8-19",
-      "field": "surface_m2",
-      "motifs": [
-       "semantic_not_confirmed"
-      ]
-     },
-     {
-      "case_id": "F8-24",
+      "case_id": "F8-18",
       "field": "surface_m2",
       "motifs": [
        "do_not_publish_requested"
+      ]
+     },
+     {
+      "case_id": "F8-19",
+      "field": "surface_m2",
+      "motifs": [
+       "do_not_publish_requested",
+       "semantic_not_confirmed"
       ]
      },
      {
@@ -4700,6 +5036,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4744,6 +5081,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -4753,6 +5091,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4775,7 +5114,6 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4784,7 +5122,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4827,7 +5164,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4836,7 +5172,6 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4845,6 +5180,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4853,6 +5189,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4921,7 +5258,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4939,6 +5275,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4968,7 +5305,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4977,7 +5313,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4986,6 +5321,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -4999,6 +5335,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5007,6 +5344,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5015,8 +5353,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
-       "private_person_named",
        "reply_in_review"
       ]
      },
@@ -5025,6 +5361,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5055,6 +5392,7 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "semantic_only_body",
@@ -5066,6 +5404,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "statement_review_reason"
@@ -5125,6 +5464,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5141,6 +5481,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "later_message_in_case",
        "reply_in_review"
       ]
@@ -5150,6 +5491,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "later_message_in_case",
        "reply_in_review"
       ]
@@ -5169,6 +5511,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5177,6 +5520,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5220,6 +5564,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5228,7 +5573,6 @@
       "field": "rooms_count",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -5261,6 +5605,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5269,7 +5614,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed",
        "statement_review_reason"
@@ -5280,6 +5624,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5288,6 +5633,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5296,6 +5642,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5304,6 +5651,7 @@
       "field": "land_surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5317,6 +5665,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -5344,6 +5693,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5352,6 +5702,7 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
+       "do_not_publish_requested",
        "reply_in_review",
        "semantic_not_confirmed"
       ]
@@ -5361,7 +5712,6 @@
       "field": "surface_m2",
       "motifs": [
        "case_not_replied",
-       "do_not_publish_requested",
        "reply_in_review"
       ]
      },
@@ -5429,5 +5779,68 @@
     }
    }
   }
- ]
+ ],
+ "blocage_suiveur": {
+  "_comment": "Champs « ne doit pas être publié » de la configuration qui fait foi (suiveur, état attendu), hors publications fausses : bloqués par un motif qui correspond à la famille du piège (bonne raison) ou par un autre motif. « demande_citee_seule » : bloqués seulement par notre propre demande citée (piège non éprouvé).",
+  "par_famille": {
+   "1": {
+    "bonne_raison": 13,
+    "autre_raison": 0
+   },
+   "2": {
+    "bonne_raison": 15,
+    "autre_raison": 0
+   },
+   "3": {
+    "bonne_raison": 9,
+    "autre_raison": 0
+   },
+   "4": {
+    "bonne_raison": 13,
+    "autre_raison": 1
+   },
+   "5": {
+    "bonne_raison": 9,
+    "autre_raison": 0
+   },
+   "6": {
+    "bonne_raison": 16,
+    "autre_raison": 0
+   },
+   "7": {
+    "bonne_raison": 18,
+    "autre_raison": 0
+   },
+   "8": {
+    "bonne_raison": 17,
+    "autre_raison": 0
+   },
+   "9": {
+    "bonne_raison": 7,
+    "autre_raison": 1
+   }
+  },
+  "autre_raison": [
+   {
+    "case_id": "F4-22",
+    "famille": 4,
+    "field": "surface_m2",
+    "motifs": [
+     "reception:possible_wrong_recipient"
+    ],
+    "demande_citee_seule": false
+   },
+   {
+    "case_id": "F9-05",
+    "famille": 9,
+    "field": "surface_m2",
+    "motifs": [
+     "statement_review_reason"
+    ],
+    "demande_citee_seule": false
+   }
+  ],
+  "demande_citee_seule": [],
+  "pieges_non_eprouves": 0
+ }
 }

@@ -26,6 +26,7 @@ import {
   type RulesStageEntry,
   type StageCandidate,
 } from "./pipeline";
+import { analyseBlocking, type BlockingReport } from "./blocking";
 import {
   buildConfigurationReport,
   type ConfigurationReport,
@@ -181,11 +182,17 @@ function workerStages(): WorkerStage[] {
     .map((name) => readEvaluationJson(`stages/${name}`) as WorkerStage);
 }
 
-const knownDefects = (readEvaluationJson("known_defects.json") as { defauts: KnownDefect[] })
-  .defauts;
+const knownDefectsFile = readEvaluationJson("known_defects.json") as {
+  defauts: KnownDefect[];
+  pieges_non_eprouves: Array<{ case_id: string; field: string; raison: string }>;
+};
+const knownDefects = knownDefectsFile.defauts;
+/** Pièges que seule notre demande citée bloque, gardés exprès : liste visible et comptée, jamais en silence. */
+const untestedTraps = knownDefectsFile.pieges_non_eprouves;
 
 describe("étape 3 : moteur de décision", () => {
   const reports = new Map<string, ConfigurationReport>();
+  let blocking: BlockingReport;
 
   beforeAll(async () => {
     const rulesHash = createHash("sha256")
@@ -232,8 +239,29 @@ describe("étape 3 : moteur de décision", () => {
           knownDefects,
         }),
       );
+      if (stage.configuration === AUTHORITATIVE) {
+        const report = reports.get(AUTHORITATIVE)!;
+        blocking = analyseBlocking({
+          cases,
+          rules,
+          decisions,
+          falsePublications: new Set(
+            report.etat_attendu!.publications_fausses.liste.map(
+              (item) => `${item.case_id}:${item.field}`,
+            ),
+          ),
+        });
+      }
     }
   }, 300_000);
+
+  it("suiveur : aucun piège n'est bloqué seulement par notre demande citée, hors liste visible", () => {
+    const listed = new Set(untestedTraps.map((item) => `${item.case_id}:${item.field}`));
+    const found = blocking.demande_citee_seule.map((row) => `${row.case_id}:${row.field}`);
+    expect(found.filter((key) => !listed.has(key))).toEqual([]);
+    // Un piège listé qui est de nouveau éprouvé doit sortir de la liste.
+    expect([...listed].filter((key) => !found.includes(key))).toEqual([]);
+  });
 
   it("a les trois configurations simulées, jamais présentées comme une sortie réelle du modèle", () => {
     for (const name of SIMULATED) {
@@ -313,6 +341,12 @@ describe("étape 3 : moteur de décision", () => {
       _comment:
         "Rapport du banc d'évaluation. « regles_seules », « modele_ideal » et « suiveur » sont des SIMULATIONS, pas un résultat du modèle ; « suiveur » (le modèle confirme tout ce que lisent les règles) fait foi pour la sécurité tant qu'aucun essai réel complet n'est enregistré. « etat_attendu » : état du dossier que le moteur exige ; « etat_reel » : état que la chaîne écrit vraiment.",
       configurations: [...reports.values()],
+      blocage_suiveur: {
+        _comment:
+          "Champs « ne doit pas être publié » de la configuration qui fait foi (suiveur, état attendu), hors publications fausses : bloqués par un motif qui correspond à la famille du piège (bonne raison) ou par un autre motif. « demande_citee_seule » : bloqués seulement par notre propre demande citée (piège non éprouvé).",
+        ...blocking,
+        pieges_non_eprouves: untestedTraps.length,
+      },
     };
     await expect(serialize(payload)).toMatchFileSnapshot(fixturePath("report.json"));
   });

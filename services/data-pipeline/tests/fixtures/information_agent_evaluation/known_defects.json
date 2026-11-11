@@ -170,6 +170,21 @@
   {
    "configuration": "modele_ideal",
    "etat": "etat_attendu",
+   "case_id": "F4-13",
+   "field": "surface_m2",
+   "published_value": 85,
+   "message": "corps",
+   "provenance": "regles",
+   "motifs_etat_reel": [
+    "case_not_replied",
+    "reply_in_review"
+   ],
+   "groupe": "valeurs passées ou datées",
+   "cause": "« La maison faisait 85 m² avant l'extension » : valeur passée lue sans motif (aucun repère de temps passé pour une surface)."
+  },
+  {
+   "configuration": "modele_ideal",
+   "etat": "etat_attendu",
    "case_id": "F4-23",
    "field": "surface_m2",
    "published_value": 54,
@@ -196,6 +211,36 @@
    ],
    "groupe": "valeur hors sujet confirmée",
    "cause": "« Surface du séjour : 28 m² » : les règles prennent l'étiquette « Surface » pour la surface du bien ; seul le modèle peut l'écarter."
+  },
+  {
+   "configuration": "modele_ideal",
+   "etat": "etat_attendu",
+   "case_id": "F5-20",
+   "field": "surface_m2",
+   "published_value": 420,
+   "message": "corps",
+   "provenance": "regles",
+   "motifs_etat_reel": [
+    "case_not_replied",
+    "reply_in_review"
+   ],
+   "groupe": "valeur hors sujet confirmée",
+   "cause": "« L'immeuble développe 420 m² sur trois niveaux » : surface développée prise pour la surface du bien, sans motif."
+  },
+  {
+   "configuration": "modele_ideal",
+   "etat": "etat_attendu",
+   "case_id": "F5-25",
+   "field": "rooms_count",
+   "published_value": 6,
+   "message": "corps",
+   "provenance": "regles",
+   "motifs_etat_reel": [
+    "case_not_replied",
+    "reply_in_review"
+   ],
+   "groupe": "valeur hors sujet confirmée",
+   "cause": "« Le dossier comporte 6 pièces (cahier, procès-verbal…) » : les pièces du dossier sont lues comme des pièces du logement (la liste d'exclusions de la règle ne connaît pas « pièces (cahier »)."
   },
   {
    "configuration": "modele_ideal",
@@ -726,6 +771,21 @@
   {
    "configuration": "suiveur",
    "etat": "etat_attendu",
+   "case_id": "F4-13",
+   "field": "surface_m2",
+   "published_value": 85,
+   "message": "corps",
+   "provenance": "regles",
+   "motifs_etat_reel": [
+    "case_not_replied",
+    "reply_in_review"
+   ],
+   "groupe": "valeurs passées ou datées",
+   "cause": "« La maison faisait 85 m² avant l'extension » : valeur passée lue sans motif (aucun repère de temps passé pour une surface)."
+  },
+  {
+   "configuration": "suiveur",
+   "etat": "etat_attendu",
    "case_id": "F4-14",
    "field": "rooms_count",
    "published_value": 3,
@@ -756,6 +816,21 @@
   {
    "configuration": "suiveur",
    "etat": "etat_attendu",
+   "case_id": "F4-24",
+   "field": "land_surface_m2",
+   "published_value": 1500,
+   "message": "corps",
+   "provenance": "regles",
+   "motifs_etat_reel": [
+    "case_not_replied",
+    "reply_in_review"
+   ],
+   "groupe": "valeurs passées ou datées",
+   "cause": "« Le terrain faisait 1500 m² avant la division parcellaire ; il en reste 900 m² » : les règles lisent la valeur d'avant la division (1500) sans motif ; un modèle qui la confirme la fait publier."
+  },
+  {
+   "configuration": "suiveur",
+   "etat": "etat_attendu",
    "case_id": "F5-01",
    "field": "surface_m2",
    "published_value": 28,
@@ -767,6 +842,36 @@
    ],
    "groupe": "valeur hors sujet confirmée",
    "cause": "« Surface du séjour : 28 m² » : les règles prennent l'étiquette « Surface » pour la surface du bien ; seul le modèle peut l'écarter."
+  },
+  {
+   "configuration": "suiveur",
+   "etat": "etat_attendu",
+   "case_id": "F5-20",
+   "field": "surface_m2",
+   "published_value": 420,
+   "message": "corps",
+   "provenance": "regles",
+   "motifs_etat_reel": [
+    "case_not_replied",
+    "reply_in_review"
+   ],
+   "groupe": "valeur hors sujet confirmée",
+   "cause": "« L'immeuble développe 420 m² sur trois niveaux » : surface développée prise pour la surface du bien, sans motif."
+  },
+  {
+   "configuration": "suiveur",
+   "etat": "etat_attendu",
+   "case_id": "F5-25",
+   "field": "rooms_count",
+   "published_value": 6,
+   "message": "corps",
+   "provenance": "regles",
+   "motifs_etat_reel": [
+    "case_not_replied",
+    "reply_in_review"
+   ],
+   "groupe": "valeur hors sujet confirmée",
+   "cause": "« Le dossier comporte 6 pièces (cahier, procès-verbal…) » : les pièces du dossier sont lues comme des pièces du logement (la liste d'exclusions de la règle ne connaît pas « pièces (cahier »)."
   },
   {
    "configuration": "suiveur",
@@ -1113,5 +1218,6 @@
    "groupe": "pièce jointe",
    "cause": "Message avec pièce jointe (consigne « Instruction pour l'IA » dans le PV) : le fait du corps est publié, la pièce n'est pas prise en compte."
   }
- ]
+ ],
+ "pieges_non_eprouves": []
 }
