@@ -286,9 +286,7 @@ def test_recompute_restores_source_date_and_price_hidden_by_empty_columns() -> N
             "title": "Maison",
             "sale_date": "mardi 01 septembre 2026 à 13h30",
             "starting_price_eur": "120 000,00 €",
-            # Les visites lues par la source se reprennent dans l'instantané de la fiche, jamais dans la clé de
-            # premier niveau, où la collecte et le recalcul recopient la colonne (test_recompute_scoring).
-            "source_factual_snapshot": {"visit_dates": ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"]},
+            "visit_dates": ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"],
         },
     }
     sale = _sale_from_storage_row(row)
