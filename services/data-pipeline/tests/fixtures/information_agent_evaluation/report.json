@@ -1,0 +1,1133 @@
+{
+ "_comment": "Rapport du banc d'évaluation. « regles_seules » et « modele_ideal » sont des SIMULATIONS, pas un résultat du modèle ; seules les configurations « enregistrement_* » (modele_reel : true) rejouent une sortie réelle.",
+ "configurations": [
+  {
+   "configuration": "modele_ideal",
+   "modele_reel": false,
+   "description": "SIMULATION, aucune sortie réelle du modèle : sortie simulée égale à la vérité de terrain (borne haute de la couverture, pas un résultat du modèle).",
+   "cas_joues": 200,
+   "cas_non_joues": [],
+   "publications": 71,
+   "publications_fausses": {
+    "total": 26,
+    "defauts_connus": 26,
+    "par_famille": {
+     "1": 0,
+     "2": 7,
+     "3": 0,
+     "4": 5,
+     "5": 0,
+     "6": 7,
+     "7": 3,
+     "8": 4
+    },
+    "liste": [
+     {
+      "case_id": "F2-09",
+      "famille": 2,
+      "field": "rooms_count",
+      "published_value": 4,
+      "verite": "non publiable : La valeur est donnée avec un doute : « a priori ».",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F2-17",
+      "famille": 2,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : La valeur est donnée avec un doute : « je crois ».",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F2-18",
+      "famille": 2,
+      "field": "surface_m2",
+      "published_value": 61,
+      "verite": "non publiable : La valeur est donnée avec un doute : « normalement ».",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F2-19",
+      "famille": 2,
+      "field": "rooms_count",
+      "published_value": 3,
+      "verite": "non publiable : La valeur est donnée avec un doute : « en principe ».",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F2-20",
+      "famille": 2,
+      "field": "surface_m2",
+      "published_value": 98,
+      "verite": "non publiable : La valeur est donnée avec un doute : souvenir.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F2-21",
+      "famille": 2,
+      "field": "surface_m2",
+      "published_value": 72,
+      "verite": "non publiable : La valeur est donnée avec un doute : « à ma connaissance ».",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F2-22",
+      "famille": 2,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : La valeur est donnée avec un doute : chiffre non vérifié.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F4-08",
+      "famille": 4,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : La réponse contient une autre valeur pour ce champ (message transféré : 58 m²).",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F4-12",
+      "famille": 4,
+      "field": "surface_m2",
+      "published_value": 85,
+      "verite": "non publiable : Valeur d'avant l'agrandissement : ce n'est plus la surface du bien.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F4-13",
+      "famille": 4,
+      "field": "surface_m2",
+      "published_value": 85,
+      "verite": "non publiable : Valeur passée, surface actuelle inconnue.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F4-22",
+      "famille": 4,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : La réponse contient une autre valeur pour ce champ (message transféré : 60 m²).",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F4-23",
+      "famille": 4,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : Mesurage de 2004 antérieur à des travaux : valeur périmée.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F6-13",
+      "famille": 6,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : L'avocat demande, même indirectement, que l'information ne soit pas publiée.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F6-14",
+      "famille": 6,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : L'avocat demande, même indirectement, que l'information ne soit pas publiée.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F6-15",
+      "famille": 6,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : L'avocat demande, même indirectement, que l'information ne soit pas publiée.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F6-18",
+      "famille": 6,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : L'avocat demande, même indirectement, que l'information ne soit pas publiée.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F6-20",
+      "famille": 6,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : L'avocat demande, même indirectement, que l'information ne soit pas publiée.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F6-21",
+      "famille": 6,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : L'avocat demande, même indirectement, que l'information ne soit pas publiée.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F6-22",
+      "famille": 6,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : L'avocat demande, même indirectement, que l'information ne soit pas publiée.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F7-08",
+      "famille": 7,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : Tentative de manipulation de la lecture automatique : la réponse entière est à relire.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F7-18",
+      "famille": 7,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : Tentative de manipulation de la lecture automatique : la réponse entière est à relire.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F7-22",
+      "famille": 7,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : Tentative de manipulation de la lecture automatique : la réponse entière est à relire.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F8-08",
+      "famille": 8,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : La réponse nomme un particulier : relecture humaine obligatoire.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F8-09",
+      "famille": 8,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : La réponse nomme un particulier : relecture humaine obligatoire.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F8-10",
+      "famille": 8,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : La réponse nomme un particulier : relecture humaine obligatoire.",
+      "defaut_connu": true
+     },
+     {
+      "case_id": "F8-23",
+      "famille": 8,
+      "field": "surface_m2",
+      "published_value": 54,
+      "verite": "non publiable : La pièce jointe nomme un particulier (bail) : relecture.",
+      "defaut_connu": true
+     }
+    ]
+   },
+   "couverture": {
+    "valeurs_publiables": 78,
+    "publiees_justes": 45,
+    "taux": 0.577,
+    "par_famille": {
+     "1": {
+      "publiables": 28,
+      "publiees_justes": 17
+     },
+     "2": {
+      "publiables": 3,
+      "publiees_justes": 2
+     },
+     "3": {
+      "publiables": 18,
+      "publiees_justes": 13
+     },
+     "4": {
+      "publiables": 6,
+      "publiees_justes": 2
+     },
+     "5": {
+      "publiables": 16,
+      "publiees_justes": 8
+     },
+     "6": {
+      "publiables": 2,
+      "publiees_justes": 0
+     },
+     "7": {
+      "publiables": 0,
+      "publiees_justes": 0
+     },
+     "8": {
+      "publiables": 5,
+      "publiees_justes": 3
+     }
+    }
+   },
+   "non_publiees": [
+    {
+     "case_id": "F1-05",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-06",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-07",
+     "field": "rooms_count",
+     "motifs": []
+    },
+    {
+     "case_id": "F1-08",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested"
+     ]
+    },
+    {
+     "case_id": "F1-08",
+     "field": "rooms_count",
+     "motifs": [
+      "do_not_publish_requested"
+     ]
+    },
+    {
+     "case_id": "F1-09",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested"
+     ]
+    },
+    {
+     "case_id": "F1-10",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested"
+     ]
+    },
+    {
+     "case_id": "F1-11",
+     "field": "rooms_count",
+     "motifs": []
+    },
+    {
+     "case_id": "F1-13",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F1-14",
+     "field": "rooms_count",
+     "motifs": [
+      "case_cap_reached"
+     ]
+    },
+    {
+     "case_id": "F1-15",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body"
+     ]
+    },
+    {
+     "case_id": "F2-25",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F3-04",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body"
+     ]
+    },
+    {
+     "case_id": "F3-11",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body"
+     ]
+    },
+    {
+     "case_id": "F3-15",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F3-17",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F3-20",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F4-14",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F4-17",
+     "field": "surface_m2",
+     "motifs": [
+      "later_message_in_case"
+     ]
+    },
+    {
+     "case_id": "F4-18",
+     "field": "surface_m2",
+     "motifs": [
+      "later_message_in_case"
+     ]
+    },
+    {
+     "case_id": "F4-21",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body"
+     ]
+    },
+    {
+     "case_id": "F5-02",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body"
+     ]
+    },
+    {
+     "case_id": "F5-05",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-09",
+     "field": "rooms_count",
+     "motifs": []
+    },
+    {
+     "case_id": "F5-12",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-13",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body"
+     ]
+    },
+    {
+     "case_id": "F5-16",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F5-23",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body"
+     ]
+    },
+    {
+     "case_id": "F5-24",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F6-24",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested"
+     ]
+    },
+    {
+     "case_id": "F6-25",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested"
+     ]
+    },
+    {
+     "case_id": "F8-16",
+     "field": "surface_m2",
+     "motifs": [
+      "attachment_source",
+      "other_value_in_reply",
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F8-21",
+     "field": "surface_m2",
+     "motifs": [
+      "private_person_named"
+     ]
+    }
+   ],
+   "publications_etat_reel": 0
+  },
+  {
+   "configuration": "regles_seules",
+   "modele_reel": false,
+   "description": "SIMULATION, aucune sortie de modèle : lecture par l'IA désactivée, donc aucun accord de l'IA (test de fermeture : rien ne doit être publiable).",
+   "cas_joues": 200,
+   "cas_non_joues": [],
+   "publications": 0,
+   "publications_fausses": {
+    "total": 0,
+    "defauts_connus": 0,
+    "par_famille": {
+     "1": 0,
+     "2": 0,
+     "3": 0,
+     "4": 0,
+     "5": 0,
+     "6": 0,
+     "7": 0,
+     "8": 0
+    },
+    "liste": []
+   },
+   "couverture": {
+    "valeurs_publiables": 78,
+    "publiees_justes": 0,
+    "taux": 0,
+    "par_famille": {
+     "1": {
+      "publiables": 28,
+      "publiees_justes": 0
+     },
+     "2": {
+      "publiables": 3,
+      "publiees_justes": 0
+     },
+     "3": {
+      "publiables": 18,
+      "publiees_justes": 0
+     },
+     "4": {
+      "publiables": 6,
+      "publiees_justes": 0
+     },
+     "5": {
+      "publiables": 16,
+      "publiees_justes": 0
+     },
+     "6": {
+      "publiables": 2,
+      "publiees_justes": 0
+     },
+     "7": {
+      "publiables": 0,
+      "publiees_justes": 0
+     },
+     "8": {
+      "publiables": 5,
+      "publiees_justes": 0
+     }
+    }
+   },
+   "non_publiees": [
+    {
+     "case_id": "F1-01",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-01",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-02",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-03",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-03",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-04",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-05",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-06",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-06",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-07",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-07",
+     "field": "rooms_count",
+     "motifs": []
+    },
+    {
+     "case_id": "F1-08",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-08",
+     "field": "rooms_count",
+     "motifs": [
+      "do_not_publish_requested",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-09",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-10",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-11",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-11",
+     "field": "rooms_count",
+     "motifs": []
+    },
+    {
+     "case_id": "F1-12",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-13",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F1-13",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-14",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-14",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-14",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-15",
+     "field": "surface_m2",
+     "motifs": []
+    },
+    {
+     "case_id": "F1-16",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-16",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-21",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F1-22",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F2-23",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F2-24",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F2-25",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F3-01",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-01",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-02",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-04",
+     "field": "surface_m2",
+     "motifs": []
+    },
+    {
+     "case_id": "F3-08",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-09",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-10",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-11",
+     "field": "surface_m2",
+     "motifs": []
+    },
+    {
+     "case_id": "F3-13",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-14",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-15",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F3-17",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F3-20",
+     "field": "surface_m2",
+     "motifs": []
+    },
+    {
+     "case_id": "F3-22",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-23",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-23",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-25",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F3-25",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F4-09",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F4-14",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F4-16",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F4-17",
+     "field": "surface_m2",
+     "motifs": [
+      "later_message_in_case",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F4-18",
+     "field": "surface_m2",
+     "motifs": [
+      "later_message_in_case",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F4-21",
+     "field": "surface_m2",
+     "motifs": []
+    },
+    {
+     "case_id": "F5-02",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "semantic_only_body",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F5-05",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-09",
+     "field": "rooms_count",
+     "motifs": []
+    },
+    {
+     "case_id": "F5-10",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-11",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-12",
+     "field": "rooms_count",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-13",
+     "field": "surface_m2",
+     "motifs": []
+    },
+    {
+     "case_id": "F5-14",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-15",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-16",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F5-17",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-19",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-20",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-21",
+     "field": "land_surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F5-23",
+     "field": "land_surface_m2",
+     "motifs": []
+    },
+    {
+     "case_id": "F5-24",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F6-24",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F6-25",
+     "field": "surface_m2",
+     "motifs": [
+      "do_not_publish_requested",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F8-16",
+     "field": "surface_m2",
+     "motifs": [
+      "attachment_source",
+      "other_value_in_reply",
+      "semantic_not_confirmed",
+      "statement_review_reason"
+     ]
+    },
+    {
+     "case_id": "F8-18",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F8-19",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F8-21",
+     "field": "surface_m2",
+     "motifs": [
+      "private_person_named",
+      "semantic_not_confirmed"
+     ]
+    },
+    {
+     "case_id": "F8-24",
+     "field": "surface_m2",
+     "motifs": [
+      "semantic_not_confirmed"
+     ]
+    }
+   ],
+   "publications_etat_reel": 0
+  }
+ ]
+}
