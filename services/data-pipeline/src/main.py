@@ -95,7 +95,7 @@ from src.source_process import kill_live_source_processes, run_source_in_subproc
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.cessions_etat import scrape_cessions_etat_aquitaine_result
-from src.sources.common import ScrapeResult, is_plausible_email
+from src.sources.common import ScrapeResult
 from src.sources.encheres_immobilieres import scrape_encheres_immobilieres_aquitaine_result
 from src.sources.encheres_publiques import scrape_encheres_publiques_aquitaine_result
 from src.sources.info_encheres import scrape_info_encheres_aquitaine_result
@@ -640,6 +640,8 @@ def _normalize_and_deduplicate(run: _PipelineRun) -> None:
             sale = normalize_sale(raw_sale)
             normalized_observations.append(sale)
         except Exception as exc:
+            # The message cannot cite an internal address: ``normalize_internal_contacts`` only returns
+            # dictionaries of texts, which the model accepts (tests/test_licitor_contacts_resume.py).
             LOGGER.exception("Initial normalization failed for %s: %s", raw_sale.get("source_url"), exc)
             record_items(run_id, [raw_sale], decision="normalization_failed", reason=str(exc)[:1000])
             source_name = str(raw_sale.get("source_name") or "unknown")
@@ -1240,12 +1242,6 @@ def _hydrate_known_unchanged_sales(
     return skipped
 
 
-def _contact_email(value: object) -> str | None:
-    """E-mail address published in a contact text, read like every other source contact (form check only)."""
-    address = clear_email(value)
-    return address if is_plausible_email(address) else None
-
-
 def _keep_known_notaires_contact_email(sale: dict[str, object], known: dict[str, object]) -> None:
     """Unchanged notaires card: add the e-mail address of the stored detail to the phone of the card.
 
@@ -1254,14 +1250,18 @@ def _keep_known_notaires_contact_email(sale: dict[str, object], known: dict[str,
     11/11/2026, 26 of the 202 notaires sales still had the e-mail address the source publishes. The phone stays
     the card's (the current one); only the address comes from the stored detail. Notaires only (the one source
     whose card carries a contact poorer than its detail), and only for a card whose detail was skipped as
-    unchanged: a failed detail read keeps the card as it is and is read again at the next collection.
+    unchanged: a failed detail read keeps the card as it is and is read again at the next collection. The
+    address is read by the common extractor (``clear_email``).
     """
     if sale.get("source_name") != "notaires" or not sale.get("_known_unchanged"):
         return
-    card_contact = str(sale.get("lawyer_contact") or "").strip()
-    if _contact_email(card_contact):
+    if known.get("source_url") != sale.get("source_url"):
+        # Merged sale whose stored row comes from another source: its contact is not this card's detail.
         return
-    address = _contact_email(known.get("lawyer_contact"))
+    card_contact = str(sale.get("lawyer_contact") or "").strip()
+    if clear_email(card_contact):
+        return
+    address = clear_email(known.get("lawyer_contact"))
     if address:
         sale["lawyer_contact"] = " | ".join(part for part in (card_contact, address) if part)
 
@@ -1552,6 +1552,7 @@ def publish_factual_batch(run_id: str, raws: list, known: dict, errors: dict) ->
             _finalize_sale_for_app(sale, geocode=False)
             normalized.append(sale)
         except Exception as exc:
+            # No internal address in the message: same guarantee as in ``_normalize_and_deduplicate``.
             record_items(run_id, [raw], decision="normalization_failed", reason=str(exc)[:1000])
     sales = merge_duplicate_sales(normalized)
     mark_past_sales(sales)
