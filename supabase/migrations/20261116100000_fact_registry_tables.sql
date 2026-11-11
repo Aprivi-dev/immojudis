@@ -224,8 +224,12 @@ create table if not exists public.auction_fact_claim_decisions (
   seq bigint generated always as identity,
   claim_id uuid not null references public.auction_fact_claims(id) on delete restrict,
   sale_id uuid not null,
+  -- Écrite sans BETWEEN : suivi d'un autre terme par AND, il ne s'imprime pas de la même façon en production
+  -- (PostgreSQL 17.11) et sur la base d'ombre du contrôle de dérive (voir scripts/lib/schema-drift.mjs), ce qui
+  -- donnerait une fausse alerte de dérive.
   field_key text not null check (
-    char_length(field_key) between 2 and 128
+    char_length(field_key) >= 2
+    and char_length(field_key) <= 128
     and field_key ~ '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){0,3}$'
   ),
   decision text not null check (
