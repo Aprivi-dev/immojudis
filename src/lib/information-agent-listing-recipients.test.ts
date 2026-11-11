@@ -822,10 +822,12 @@ describe("rôle refusé : cité autrement que comme interlocuteur de la vente", 
             sale({
               source: fixtureSource,
               url: `https://annonces.example.test/${fixtureSource}/7`,
-              sale: { sale_procedure: null, ...texts },
+              sale: { sale_procedure: procedure, ...texts },
             }),
           ).map((candidate) => [candidate.email, [candidate.role, candidate.recipientKind]]),
         );
+      // Organisateur déclaré « avocat poursuivant » sur cette source : pas un avocat, un contact à confirmer.
+      const procedure: unknown = { organizer_type: "pursuing_lawyer" };
       expect(roles(source)).toEqual({
         "maitre.durand@example.test": ["source_contact", "source_contact"],
         "cabinet.martin@example.test": ["source_contact", "source_contact"],
@@ -837,6 +839,56 @@ describe("rôle refusé : cité autrement que comme interlocuteur de la vente", 
       });
     },
   );
+
+  it.each([
+    ["notaires", null],
+    ["notaires", { organizer_type: "unknown" }],
+    ["cessions_etat", null],
+    ["cessions_etat", { organizer_type: "seller" }],
+  ])(
+    "source `%s`, organisateur non déclaré (%j) : un bloc « avocat » est refusé comme interlocuteur",
+    (source, saleProcedure) => {
+      const resolution = resolveInformationAgentListingContacts(
+        sale({
+          source,
+          url: `https://annonces.example.test/${source}/8`,
+          sale: {
+            sale_procedure: saleProcedure,
+            description: "Cabinet Martin : cabinet.martin@example.test",
+            source_blocks: { contact_avocat: "Me Durand, maitre.durand@example.test" },
+          },
+          registry: [
+            {
+              email: "anne.leroy@example.test",
+              displayName: "Maître Anne Leroy, Avocat",
+              role: "lawyer",
+              sourceName: source,
+              sourceUrl: `https://annonces.example.test/${source}/8`,
+              observedAt: "2026-11-10T10:00:00.000Z",
+            },
+          ],
+        }),
+      );
+      // Ni candidat « contact de l'annonce » choisi seul, ni avocat : refusés, comme sur une vente déclarée.
+      expect(resolution.candidates).toEqual([]);
+      expect(selectInformationAgentContact(resolution.candidates)).toBeNull();
+      expect(resolution.refused).toEqual({ role_not_sale_interlocutor: 3 });
+    },
+  );
+
+  it("sur une source d'annonces judiciaires sans organisateur déclaré, le même bloc reste un avocat", () => {
+    const [candidate] = discoverInformationAgentContacts(
+      sale({
+        source: "licitor",
+        url: "https://annonces.example.test/licitor/8",
+        sale: {
+          sale_procedure: null,
+          source_blocks: { contact_avocat: "Me Durand, maitre.durand@example.test" },
+        },
+      }),
+    );
+    expect(candidate).toMatchObject({ email: "maitre.durand@example.test", role: "lawyer" });
+  });
 
   it("un notaire cité dans une vente au tribunal n'est pas retenu", () => {
     const resolution = resolveInformationAgentListingContacts(

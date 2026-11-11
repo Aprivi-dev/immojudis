@@ -20,6 +20,7 @@ import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { findEmailsInText, replaceEmailsInText } from "@/lib/information-agent/email-in-text";
 import { isInformationAgentExcludedAddress } from "@/lib/information-agent/excluded-addresses";
 import {
+  informationAgentImpliedOrganizerType,
   informationAgentListingBlockRole,
   informationAgentSaleFieldRole,
   informationAgentSourceRole,
@@ -190,6 +191,10 @@ export function resolveInformationAgentListingContacts(
   const sourceUrl = firstSourceUrl(sale);
   const organizerType =
     sale.information_agent_organizer_type ?? readInformationAgentOrganizerType(sale.sale_procedure);
+  // Pour dire qui est l'interlocuteur dans un texte libre ou au registre, l'organisateur non déclaré est
+  // celui que la source implique : une annonce de `notaires` est une vente notariale, une annonce de
+  // `cessions_etat` une cession. Un « avocat » y est refusé comme quand l'organisateur est déclaré.
+  const interlocutorOrganizer = informationAgentImpliedOrganizerType(organizerType, sourceName);
   const refused: InformationAgentContactResolution["refused"] = {};
   const refuse = (reason: InformationAgentContactRefusal) => {
     refused[reason] = (refused[reason] ?? 0) + 1;
@@ -345,7 +350,7 @@ export function resolveInformationAgentListingContacts(
           refuse("not_sale_interlocutor");
           continue;
         }
-        if (!isInterlocutorRoleForSale(textRole ?? role, organizerType)) {
+        if (!isInterlocutorRoleForSale(textRole ?? role, interlocutorOrganizer)) {
           refuse("role_not_sale_interlocutor");
           continue;
         }
@@ -373,7 +378,7 @@ export function resolveInformationAgentListingContacts(
     (sale.registry_contacts ?? []).filter((contact) => {
       const email = normalizedEmail(contact.email);
       if (email && barred.has(email)) return false;
-      if (!isInterlocutorRoleForSale(registryContactRole(contact), organizerType)) {
+      if (!isInterlocutorRoleForSale(registryContactRole(contact), interlocutorOrganizer)) {
         refuse("role_not_sale_interlocutor");
         return false;
       }

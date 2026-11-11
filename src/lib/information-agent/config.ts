@@ -1,4 +1,5 @@
 import "server-only";
+import { isNotaryMailDomain } from "@/lib/information-agent/contact-structure";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 // Configuration d'envoi de l'agent et garde-fous d'environnement (interrupteur, canari). Extraits
@@ -16,9 +17,6 @@ export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = p
   }
 }
 
-/** Domaine de messagerie du notariat : une adresse qui y est logée est celle d'un office. */
-const NOTARY_MAIL_DOMAIN = "notaires.fr";
-
 export const INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE =
   "Envoi à un notaire fermé : la réutilisation des annonces notariales pour écrire aux offices attend une autorisation. Le brouillon reste consultable ; l'envoi sera possible une fois le réglage INFORMATION_AGENT_NOTARY_SEND_ENABLED activé.";
 
@@ -34,9 +32,11 @@ export function assertInformationAgentNotarySendAllowed(
   recipient: { role: string | null; questionAudience: unknown; email: string },
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
-  const domain = recipient.email.trim().toLowerCase().split("@").pop() ?? "";
-  const notaryDomain = domain === NOTARY_MAIL_DOMAIN || domain.endsWith(`.${NOTARY_MAIL_DOMAIN}`);
-  if (recipient.role !== "notary" && recipient.questionAudience !== "notary" && !notaryDomain) {
+  if (
+    recipient.role !== "notary" &&
+    recipient.questionAudience !== "notary" &&
+    !isNotaryMailDomain(recipient.email)
+  ) {
     return;
   }
   if (env.INFORMATION_AGENT_NOTARY_SEND_ENABLED !== "true") {

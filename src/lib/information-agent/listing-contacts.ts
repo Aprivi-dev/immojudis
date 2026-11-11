@@ -265,6 +265,21 @@ export function informationAgentSourceRole(
 }
 
 /**
+ * Organisateur que la source implique quand la procédure n'en déclare pas : `notaires` ne publie que des
+ * ventes notariales, `cessions_etat` que des cessions de l'État. Un organisateur déclaré n'est jamais remplacé.
+ */
+export function informationAgentImpliedOrganizerType(
+  organizerType: InformationAgentOrganizerType,
+  sourceName: string | null,
+): InformationAgentOrganizerType {
+  if (organizerType !== "unknown") return organizerType;
+  const bySource = informationAgentSourceRole(sourceName);
+  if (bySource === NOTARY) return "notary";
+  if (bySource === STATE) return "state_service";
+  return "unknown";
+}
+
+/**
  * Rôle d'un bloc de contact pour cette vente, ou `null` si le bloc ne désigne pas l'interlocuteur de la
  * vente (il est alors écarté). TABLE FERMÉE ; la source est celle du bloc (vente ou observation fusionnée).
  *

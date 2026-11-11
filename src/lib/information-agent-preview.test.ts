@@ -999,8 +999,10 @@ describe("destinataire notaire ou structure : questions, envoi fermé, pied et o
       ...db.mission,
       metadata: { ...(db.mission.metadata as object), question_audience: "tout_le_monde" },
     };
-    expect((await preview()).blockers.join(" ")).toContain("Destinataire du brouillon non reconnu");
-    await expect(sendWith()).rejects.toThrow("Destinataire du brouillon non reconnu");
+    expect((await preview()).blockers.join(" ")).toContain(
+      "Destinataire du brouillon non identifié",
+    );
+    await expect(sendWith()).rejects.toThrow("Destinataire du brouillon non identifié");
   });
 
   it("aucun lien de dépôt de pièces dans le message à un notaire", async () => {
@@ -1112,7 +1114,7 @@ describe("destinataire notaire ou structure : questions, envoi fermé, pied et o
       metadata: { contact_identity: { role: "lawyer", bar: "Bordeaux", city: "Bordeaux" } },
     };
     const input = { ...notaryContent, recipientEmail: "jean.dupont@example.test" };
-    const regenerate = "régénérez le brouillon avant l'aperçu ou l'envoi";
+    const regenerate = "régénérez le brouillon avec le bouton";
     expect((await preview(input)).blockers).toEqual([expect.stringContaining(regenerate)]);
     await expect(sendWith(input)).rejects.toThrow(regenerate);
     expect(db.writes).toEqual([]);
