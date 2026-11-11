@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  aroundAddressCenter,
   aroundAddressMachine,
-  isLocatingAroundAddress,
   type AroundAddressEvent,
   type AroundAddressState,
 } from "./around-address-machine";
+
+/** Ce que la page lit de l'état : le centre et « localisation en cours ». */
+const aroundAddressCenter = (state: AroundAddressState) =>
+  state.status === "located" ? state.point : null;
+const isLocatingAroundAddress = (state: AroundAddressState) => state.status === "locating";
 
 const lyon = { lat: 45.76, lng: 4.83 };
 const lille = { lat: 50.63, lng: 3.06 };
@@ -85,7 +88,7 @@ describe("aroundAddressMachine", () => {
       { type: "ADDRESS_CHANGED", address: "nulle part" },
       { type: "RESOLVED", address: "nulle part", point: null },
     ]);
-    expect(state).toEqual({ status: "unlocated", address: "nulle part" });
+    expect(state).toEqual({ status: "unlocated" });
     expect(aroundAddressCenter(state)).toBeNull();
     expect(isLocatingAroundAddress(state)).toBe(false);
   });

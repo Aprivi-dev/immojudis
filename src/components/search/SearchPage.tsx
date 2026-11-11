@@ -36,11 +36,7 @@ import {
   type ResultsView,
 } from "@/lib/search/results-view";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
-import {
-  aroundAddressCenter,
-  aroundAddressMachine,
-  isLocatingAroundAddress,
-} from "@/lib/search/around-address-machine";
+import { aroundAddressMachine } from "@/lib/search/around-address-machine";
 import {
   ANONYMOUS_PREVIEW_SCOPE,
   catalogPlaceholder,
@@ -258,10 +254,8 @@ export function SearchPage({
     aroundAddressMachine.transition,
     aroundAddressMachine.initial,
   );
-  // `useMemo` : le centre est un objet. Sans lui, le compilateur React ne sait pas qu'il reste le
-  // même d'un rendu à l'autre et renonce à optimiser la page (règle `preserve-manual-memoization`).
-  const center = useMemo(() => aroundAddressCenter(aroundAddress), [aroundAddress]);
-  const geocoding = isLocatingAroundAddress(aroundAddress);
+  const center = aroundAddress.status === "located" ? aroundAddress.point : null;
+  const geocoding = aroundAddress.status === "locating";
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   // Sur bureau, la carte (mapbox-gl + points) ne se télécharge ni ne s'initialise qu'au premier

@@ -87,22 +87,26 @@ Détail et fichiers dans le registre (sections 4 et 5). Dans l'ordre où je les 
 La première version de ce lot faisait échouer le contrôle des budgets : `/sales` pesait 566 100
 octets pour un plafond de 565 000. Mesure sur `main` avant le lot : **564 872 octets, soit 128
 octets de marge**. Relever un plafond est une décision du propriétaire ; le lot a donc été allégé
-pour tenir dessous :
+jusqu'à **564 835 octets** (37 de moins que `main`) :
 
 - `defineMachine` ne rend plus que `initial`, `table` et `transition` ; la lecture des événements
   acceptés est une fonction à part (`acceptedEvents`), que les pages n'embarquent pas ;
+- la page lit l'état de la machine directement, sans fonctions intermédiaires ;
 - la fonction « réservé à l'offre Analyse », écrite deux fois (page et crochet d'alerte), n'existe
   plus qu'une fois ; le message « Vérification de votre compte en cours » aussi ;
-- la garde contre un double appel de la création d'alerte est retirée (les boutons des appelants
-  sont déjà désactivés pendant l'enregistrement) ; elle est notée dans le registre.
+- cinq chaînes de classes répétées mot pour mot dans `SearchHeader.tsx` et `SearchResults.tsx`
+  sont écrites une seule fois (aucun changement d'affichage) ;
+- la garde contre un double appel de la création d'alerte, ajoutée puis retirée : les boutons des
+  appelants sont déjà désactivés pendant l'enregistrement. Elle est notée dans le registre.
 
-À retenir pour la suite : toute correction sur `/sales` se paie en octets, et la marge est quasi
-nulle. Un vrai allègement de cette page, ou un relèvement décidé du plafond, précède le prochain
+À retenir : toute correction sur `/sales` se paie en octets, et la marge reste d'environ 165
+octets. Un vrai allègement de cette page, ou un relèvement décidé du plafond, précède le prochain
 chantier qui y touche.
 
 ## 7. Vérifications
 
-- `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run test:security-invariants` : résultats
-  dans la description de la demande de fusion.
+- `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run test:security-invariants`, puis
+  `npm run build` et `npm run build:budgets` : résultats dans la description de la demande de
+  fusion.
 - Dans ce conteneur, `tsc` dépasse la mémoire par défaut de Node : il a été lancé avec
   `NODE_OPTIONS=--max-old-space-size=8192`. Le dépôt exige Node 24 (`.nvmrc`).

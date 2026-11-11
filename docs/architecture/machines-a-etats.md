@@ -66,10 +66,15 @@ Les règles :
 - **Un fichier `*-machine.ts`** à côté de ce qu'il pilote, pur (ni React, ni réseau), avec son test
   `*-machine.test.ts` qui joue des suites d'événements, et une ligne dans la section 3.
 - **Dans un composant** : `const [state, dispatch] = useReducer(machine.transition, machine.initial)`.
-  Ce qu'affiche l'écran se dérive de `state` (fonctions du même fichier), jamais d'un second
-  `useState` tenu en parallèle. Une fonction de dérivation qui rend un objet s'appelle dans un
-  `useMemo` : sinon la règle `react-hooks/preserve-manual-memoization` du compilateur React signale
-  une erreur ailleurs dans le composant (exemple dans `src/components/search/SearchPage.tsx`).
+  Ce qu'affiche l'écran se lit dans `state` (`state.status === "located" ? state.point : null`),
+  jamais dans un second `useState` tenu en parallèle. Si la lecture passe par une fonction qui
+  rend un objet, appelez-la dans un `useMemo` : sinon la règle
+  `react-hooks/preserve-manual-memoization` du compilateur React signale une erreur ailleurs dans
+  le composant.
+- **Le poids compte.** `/sales` n'a presque aucune marge sous son budget JavaScript
+  (`scripts/check-build-budgets.mjs`) : mesurez avec `npm run build` puis `npm run build:budgets`
+  avant de pousser un changement sur cette page. `defineMachine` ne rend que `initial`, `table` et
+  `transition` pour cette raison ; `acceptedEvents(machine, status)` sert aux tests.
 - **Côté serveur** : la table TypeScript dit ce qui est permis, mais c'est l'écriture qui protège.
   Une transition se fait par une mise à jour conditionnelle (`.eq("status", étatAttendu)` ou
   `.in("status", étatsPermis)`), et un résultat vide se traite comme « quelqu'un est passé avant ».
