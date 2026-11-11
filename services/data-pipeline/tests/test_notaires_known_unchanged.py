@@ -167,10 +167,11 @@ def _detail_contact(card: dict) -> str:
     return detail["lawyer_contact"]
 
 
-def _hydrated(card: dict, stored_contact: str) -> str:
+def _hydrated(card: dict, stored_contact: str, stored_source_url: str | None = None) -> str:
     from src import main
 
-    known = {card["source_url"]: {"lawyer_contact": stored_contact, "raw_payload": {}}}
+    stored = {"source_url": stored_source_url or card["source_url"], "lawyer_contact": stored_contact, "raw_payload": {}}
+    known = {card["source_url"]: stored}
     main._hydrate_known_unchanged_sales([card], known)
     return card["lawyer_contact"]
 
@@ -213,6 +214,13 @@ def test_a_failed_detail_read_keeps_the_card_contact():
     card = _card_with_phone(_detail_fetch_failed=True)
 
     assert _hydrated(card, DETAIL_CONTACT) == PHONE
+
+
+def test_a_merged_sale_stored_under_another_source_does_not_lend_its_contact():
+    # Vente fusionnée : la ligne connue est celle d'une autre source, son contact n'est pas celui de ce détail.
+    card = _card_with_phone(_known_unchanged=True)
+
+    assert _hydrated(card, "05 00 00 00 09 | cabinet@example.test", "https://www.licitor.com/annonce/1.html") == PHONE
 
 
 def test_the_rule_is_for_notaires_only():

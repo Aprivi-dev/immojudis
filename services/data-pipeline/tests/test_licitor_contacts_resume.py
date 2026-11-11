@@ -26,7 +26,7 @@ import pytest
 from src import main, source_checkpoint
 from src.freshness import SOURCE_EXTRACTION_VERSION, record_source_checks
 from src.models import INTERNAL_CONTACTS_KEY
-from src.normalize import normalize_sale
+from src.normalize import normalize_internal_contacts, normalize_sale
 from src.sources import common, licitor
 from src.storage import internal_contacts as registry
 from src.storage.column_sets import UPSERT_COLUMNS
@@ -273,6 +273,31 @@ def test_the_address_only_leaves_towards_the_registry(scrape, caplog: pytest.Log
     (_run_id, _url, _signature, payload, _observed), = db.checkpoints()
     assert INTERNAL_CONTACTS_KEY not in payload.obj and EMAIL not in json.dumps(payload.obj)
     assert EMAIL not in caplog.text
+
+
+def test_normalized_internal_contacts_are_only_dictionaries_of_texts() -> None:
+    """Ce que le modèle reçoit est toujours valide : son erreur de validation ne peut donc pas citer l'adresse."""
+    messy = [
+        {"email": " Maitre@Example.test ", "name": {"a": 1}, "role": 3, "source_name": ["licitor"], "source_url": None},
+        {"email": EMAIL, "name": "doublon"},
+        {"email": 42},
+        {"email": "sans arobase"},
+        {"name": "sans adresse"},
+        "pas un dictionnaire",
+        None,
+    ]
+
+    contacts = normalize_internal_contacts(messy, URL)
+
+    assert [contact["email"] for contact in contacts] == [EMAIL]
+    assert all(set(contact) == {"email", "name", "role", "source_name", "source_url"} for contact in contacts)
+    assert all(isinstance(value, str) for contact in contacts for value in contact.values())
+    assert contacts[0]["source_url"] == URL
+    for not_a_list in (None, "texte", {"email": EMAIL}, 3):
+        assert normalize_internal_contacts(not_a_list, URL) == []
+    # Le modèle les accepte tels quels.
+    sale = normalize_sale({"source_name": "licitor", "source_url": URL, INTERNAL_CONTACTS_KEY: messy})
+    assert sale.internal_contacts == contacts
 
 
 def _raw_that_fails_normalization(scrape) -> dict[str, Any]:
