@@ -132,7 +132,8 @@ set local statement_timeout = '60s';
 -- VERROU : CREATE OR REPLACE TRIGGER et ENABLE ALWAYS TRIGGER prennent un SHARE ROW EXCLUSIVE sur
 -- public.auction_sales (lectures possibles, écritures en attente quelques millisecondes), à la première comme à
 -- la seconde application ; jamais ACCESS EXCLUSIVE. À APPLIQUER HORS IMPORT ; lock_timeout, ramené à 2 s juste
--- avant les déclencheurs, fait échouer la migration sans effet si le verrou n'est pas obtenu.
+-- avant le commentaire de colonne et les déclencheurs (les seules instructions qui attendent un verrou sur
+-- auction_sales), fait échouer la migration sans effet si le verrou n'est pas obtenu.
 --
 -- Retour arrière (tant que held_fields est nulle partout : sans aucun effet sur les fiches) : réappliquer les
 -- définitions de 20261116100500 (retenue, projection à trois paramètres, déclencheur et sa liste de colonnes),
@@ -1735,15 +1736,18 @@ comment on function app_private.project_sale_fields(uuid, text[], boolean, jsonb
 revoke all on function app_private.project_sale_fields(uuid, text[], boolean, jsonb)
   from public, anon, authenticated, service_role;
 
+-- Les trois dernières instructions de ce fichier attendent un verrou sur public.auction_sales : le commentaire de
+-- colonne (SHARE UPDATE EXCLUSIVE, qu'un lot de publication de la collecte ne gêne pas mais qu'un autre DDL ou un
+-- VACUUM gêne) et les deux déclencheurs (SHARE ROW EXCLUSIVE). Ce dernier verrou est libre, ou pris pour une
+-- vingtaine de secondes par un lot de publication : attendre cinq secondes ne ferait que mettre en attente,
+-- derrière cette migration, tous les autres écrivains de la table. Deux secondes : c'est plus que
+-- deadlock_timeout (1 s), délai au bout duquel PostgreSQL annule un autovacuum qui gêne ; à une seconde, la
+-- migration pouvait échouer face à lui. Au-delà elle échoue sans effet et se relance. Le délai est posé AVANT le
+-- commentaire de colonne, première des trois à attendre.
+set local lock_timeout = '2s';
+
 comment on column public.auction_sales.held_fields is
   'Registre des pièces : par champ, soit une entrée tenue (state held ou conflicted : valeur, provenance, dernière valeur connue de l''annonce, mémoire d''écho), soit une entrée libérée (state released : mémoire d''écho seule, anciennes valeurs tenues dont le retour est écarté). Nulle si rien n''est tenu ni mémorisé. Écrite par app_private.project_sale_fields et par le déclencheur de retenue aaab_auction_sales_hold_projected_fields ; toute autre écriture est refusée, et toute écriture directe d''un champ tenu est retenue par la base.';
-
--- Les deux déclencheurs de ce fichier prennent SHARE ROW EXCLUSIVE sur public.auction_sales. Ce verrou est libre,
--- ou pris pour une vingtaine de secondes par un lot de publication de la collecte : attendre cinq secondes ne
--- ferait que mettre en attente, derrière cette migration, tous les autres écrivains de la table. Deux secondes :
--- c'est plus que deadlock_timeout (1 s), délai au bout duquel PostgreSQL annule un autovacuum qui gêne ; à une
--- seconde, la migration pouvait échouer face à lui. Au-delà elle échoue sans effet et se relance.
-set local lock_timeout = '2s';
 
 -- Déclencheur de retenue : deux colonnes voisines de plus. La clause WHEN est fausse tant que held_fields est
 -- nulle et que l'écriture n'apporte pas le libellé réservé du registre : aucun appel PL/pgSQL pour une vente
