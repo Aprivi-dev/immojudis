@@ -56,6 +56,11 @@ export type AutopilotStats = {
    */
   todayBySharedStructure: Record<string, number>;
   weekBySharedStructure: Record<string, number>;
+  /**
+   * Faux tant que ce compte n'a pas été lu en entier (compteurs SQL seuls, ou trop de missions à lire) : le
+   * pilote n'écrit alors à aucune adresse d'un domaine partagé, et l'écran d'administration le signale.
+   */
+  sharedStructureCountsComplete: boolean;
   recentDomains: string[];
   firstAutopilotSendAt: string | null;
   autopilotTotal: number;
@@ -101,6 +106,7 @@ export function parseAutopilotStats(raw: unknown): AutopilotStats {
     // Absents de la fonction SQL : remplis par `loadAutopilotStats` (lecture des missions envoyées).
     todayBySharedStructure: record(r.today_by_shared_structure),
     weekBySharedStructure: record(r.week_by_shared_structure),
+    sharedStructureCountsComplete: r.shared_structure_counts_complete === true,
     recentDomains: Array.isArray(r.recent_domains)
       ? r.recent_domains.filter((item): item is string => typeof item === "string")
       : [],
@@ -264,6 +270,10 @@ export function autopilotBudgetDecision({
       if (sharedToday >= AUTOPILOT_SHARED_DOMAIN_DAY_CAP) {
         return { ok: false, scope: "candidate", code: "shared_domain_cap" };
       }
+      // Compte par structure incomplet : rien ne part vers un domaine partagé.
+      if (!stats.sharedStructureCountsComplete) {
+        return { ok: false, scope: "candidate", code: "structure_count_incomplete" };
+      }
       // Sans unité de plafond, la structure ne peut pas être comptée : le candidat est écarté.
       if (!structure || structure.sharedDomain !== sharedDomain) {
         return { ok: false, scope: "candidate", code: "structure_unknown" };
@@ -291,6 +301,11 @@ export function autopilotBudgetDecision({
   return { ok: true };
 }
 
+export type SharedStructureCounts = Pick<
+  AutopilotStats,
+  "todayBySharedStructure" | "weekBySharedStructure" | "sharedStructureCountsComplete"
+>;
+
 /** Envoi déjà compté (mission approuvée et non échouée), vu par le compteur des structures. */
 export type AutopilotSharedSend = {
   recipientEmail: string;
@@ -305,7 +320,7 @@ export type AutopilotSharedSend = {
 export function sharedStructureCounts(
   sends: readonly AutopilotSharedSend[],
   now: Date,
-): Pick<AutopilotStats, "todayBySharedStructure" | "weekBySharedStructure"> {
+): SharedStructureCounts {
   const dayStart = startOfParisDay(now).getTime();
   const weekStart = now.getTime() - WEEK_MS;
   const todayBySharedStructure: Record<string, number> = {};
@@ -324,7 +339,7 @@ export function sharedStructureCounts(
       todayBySharedStructure[structure.key] = (todayBySharedStructure[structure.key] ?? 0) + 1;
     }
   }
-  return { todayBySharedStructure, weekBySharedStructure };
+  return { todayBySharedStructure, weekBySharedStructure, sharedStructureCountsComplete: true };
 }
 
 // ---------------------------------------------------------------------------------------------------------

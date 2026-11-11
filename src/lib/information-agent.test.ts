@@ -159,7 +159,14 @@ describe("supervised information agent", () => {
     },
   );
 
-  it.each(["opposition", "sent", "record_fails", "already_sent", "timeout"] as const)(
+  it.each([
+    "opposition",
+    "structure_opposition",
+    "sent",
+    "record_fails",
+    "already_sent",
+    "timeout",
+  ] as const)(
     "rechecks the registry and records manual delivery correctly (%s)",
     async (scenario) => {
       const opposition = scenario === "opposition";
@@ -185,8 +192,13 @@ describe("supervised information agent", () => {
         metadata: {},
       };
       let contactReads = 0;
+      // La structure du destinataire s'oppose APRÈS le premier contrôle : seul le contrôle rejoué après
+      // l'approbation, avec les clés de la structure, peut encore arrêter l'envoi.
+      let oppositionReads = 0;
+      const structureKey = "structure|domain|example.test";
 
       class ApprovalQuery {
+        private requested: unknown[] = [];
         constructor(private readonly table: string) {}
 
         select() {
@@ -201,7 +213,8 @@ describe("supervised information agent", () => {
           return this;
         }
 
-        in() {
+        in(_column: string, values: unknown[]) {
+          this.requested = values;
           return this;
         }
 
@@ -289,7 +302,15 @@ describe("supervised information agent", () => {
                   error: null,
                 }
               : this.table === "information_agent_identity_oppositions"
-                ? { data: [], error: null }
+                ? {
+                    data:
+                      scenario === "structure_opposition" &&
+                      oppositionReads++ >= 1 &&
+                      this.requested.includes(structureKey)
+                        ? [{ identity_key: structureKey }]
+                        : [],
+                    error: null,
+                  }
                 : { data: null, error: null };
           return Promise.resolve(result).then(onFulfilled);
         }
@@ -356,7 +377,11 @@ describe("supervised information agent", () => {
             }),
           },
         });
-        if (opposition) {
+        if (scenario === "structure_opposition") {
+          await expect(operation).rejects.toThrow("Cette structure");
+          expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
+          expect(mission.status).toBe("failed");
+        } else if (opposition) {
           await expect(operation).rejects.toThrow("opposé");
           expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
           expect(mission.status).toBe("failed");
@@ -424,7 +449,7 @@ describe("supervised information agent", () => {
         // Registry reads: the recipient check before approval (two scopes), the origin lookup, the
         // admin-entry record (read + write), then the checks after approval and just before sending;
         // an opposition stops at the second one.
-        expect(contactReads).toBe(opposition ? 7 : 9);
+        expect(contactReads).toBe(opposition || scenario === "structure_opposition" ? 7 : 9);
         expect(mission.recipient_kind).toBe("manual_professional");
       } finally {
         vi.unstubAllEnvs();
@@ -593,10 +618,12 @@ describe("supervised information agent", () => {
       "cabinet@example.test",
       "etude@example.test",
     ]);
+    // Organisateur de la vente inconnu et aucun bloc avocat : le nom du champ `lawyer_contact` ne fait pas
+    // un avocat, c'est un contact de l'annonce.
     expect(candidates[0]).toMatchObject({
       name: "Me Dupont",
-      role: "lawyer",
-      recipientKind: "source_lawyer",
+      role: "source_contact",
+      recipientKind: "source_contact",
       confidence: "high",
     });
     expect(candidates[0]?.provenance[0]).toMatchObject({

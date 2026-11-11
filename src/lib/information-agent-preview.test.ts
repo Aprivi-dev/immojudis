@@ -11,6 +11,7 @@ const db = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/client.server", () => {
   class Query {
     private filters: Array<[string, unknown]> = [];
+    private requested: unknown[] | null = null;
     constructor(private readonly table: string) {}
     select() {
       return this;
@@ -23,7 +24,8 @@ vi.mock("@/integrations/supabase/client.server", () => {
       this.filters.push([column, value]);
       return this;
     }
-    in() {
+    in(_column: string, values: unknown[]) {
+      this.requested = values;
       return this;
     }
     ilike() {
@@ -79,7 +81,8 @@ vi.mock("@/integrations/supabase/client.server", () => {
               this.filters.every(([column, value]) => (row[column] ?? null) === value),
             )
           : this.table === "information_agent_identity_oppositions"
-            ? db.identityOppositions
+            ? // Comme en base : seules les clés demandées sont rendues.
+              db.identityOppositions.filter((row) => this.requested?.includes(row.identity_key))
             : [];
       return Promise.resolve({ data, error: null }).then(onFulfilled);
     }
@@ -170,8 +173,10 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
 
     expect(result.blockers).toEqual([]);
     expect(result.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    // `cabinet@…` est l'adresse générique d'une structure : variante « structure » de l'origine.
     expect(result.addressOrigin).toEqual({
-      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/109972.html), consultée le 12/10/2026.",
+      structureAddress: true,
+      text: "L’adresse de contact de votre étude (ou de votre service) figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/109972.html), consultée le 12/10/2026.",
       url: "https://www.licitor.com/annonce/109972.html",
       automated: false,
       known: true,
@@ -188,7 +193,11 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       expect(output).toContain("Pourquoi ce message");
       expect(output).toContain("Appartement à Bordeaux");
       expect(output).toContain("Ce message ne contient aucune offre commerciale.");
-      expect(output).toContain("votre nom, votre fonction, votre adresse professionnelle");
+      // Adresse générique : le pied ne prétend connaître aucune personne avant une réponse.
+      expect(output).toContain(
+        "l’adresse de contact de votre étude, de votre cabinet ou de votre service et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.",
+      );
+      expect(output).not.toContain("votre nom, votre fonction, votre adresse professionnelle");
       expect(output).toContain("Replicate (États-Unis)");
       expect(output).toContain("12 mois si vous ne répondez pas");
       expect(output).toContain("12 mois si vous ne répondez pas");
@@ -352,6 +361,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       url: "https://www.licitor.com/annonce/2.html",
       automated: true,
       searchSource: "other_listing",
+      structureAddress: true,
       known: true,
     });
     expect(result.addressOrigin.text).not.toContain("annonce publique de cette vente");
@@ -386,6 +396,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       url: "https://www.cabinet-dupont.test/contact",
       automated: true,
       searchSource: "firm_website",
+      structureAddress: true,
       known: true,
     });
     for (const output of [result.preview.html, result.preview.text]) {
@@ -856,5 +867,261 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "");
     const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
     expect(result.blockers.join(" ")).toContain("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL");
+  });
+});
+
+describe("destinataire notaire ou structure : questions, envoi fermé, pied et opposition", () => {
+  const LISTING_URL = "https://annonces.example.test/notaires/vente-1";
+  const NOTARY_DISABLED = "Envoi à un notaire fermé";
+  const notaryContent = {
+    missionId: MISSION_ID,
+    recipientEmail: "jean.martin@example.test",
+    recipientName: "Jean Martin",
+    subject: "Maison à Bordeaux : vérification de l’annonce",
+    bodyText: "Bonjour Jean Martin,\n\n- Pouvez-vous confirmer la surface habitable ?",
+  };
+  const registryRow = (email: string) => ({
+    normalized_email: email,
+    scope_sale_id: SALE_ID,
+    source_kind: "sale_listing",
+    source_name: "notaires",
+    source_url: LISTING_URL,
+    observed_at: "2026-11-10T08:00:00Z",
+    observed_by: "agent",
+    opposition_status: "unknown",
+    bounce_status: "none",
+  });
+
+  beforeEach(() => {
+    db.contacts = [registryRow("jean.martin@example.test")];
+    db.mission = {
+      ...db.mission,
+      recipient_email: "jean.martin@example.test",
+      recipient_kind: "source_contact",
+      recipient_name: "Jean Martin",
+      question_keys: ["surface", "visit"],
+      sale_snapshot: { title: "Maison à Bordeaux" },
+      metadata: {
+        contact_identity: {
+          role: "notary",
+          bar: null,
+          city: "Bordeaux",
+          structure_kind: "notary_office",
+          address_kind: "nominative",
+          office_code: "33001",
+          sale_office_code: "33001",
+        },
+        contact_discovery: { selected_email: "jean.martin@example.test" },
+        question_audience: "notary",
+      },
+    };
+  });
+
+  const preview = (input = notaryContent) =>
+    previewAdminInformationAgentMission({ auth: ADMIN, input });
+  const sendWith = async (input = notaryContent) => {
+    const { fingerprint } = await preview(input);
+    return runAdminInformationAgentAction({
+      auth: ADMIN,
+      input: {
+        action: "approve_and_send",
+        approvalConfirmed: true,
+        ...input,
+        previewFingerprint: fingerprint!,
+      },
+    });
+  };
+
+  it("envois aux notaires fermés par défaut : l'aperçu le dit, l'envoi est refusé sans rien écrire", async () => {
+    const result = await preview();
+    expect(result.blockers).toEqual([expect.stringContaining(NOTARY_DISABLED)]);
+    // L'aperçu du texte reste disponible.
+    expect(result.preview.text).toContain("Pouvez-vous confirmer la surface habitable ?");
+    await expect(sendWith()).rejects.toThrow(NOTARY_DISABLED);
+    expect(db.writes).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each(["false", "1", "TRUE", ""])("réglage « %s » : toujours fermé", async (value) => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", value);
+    expect((await preview()).blockers.join(" ")).toContain(NOTARY_DISABLED);
+  });
+
+  it("réglage explicite `true` : l'aperçu n'a plus de motif de blocage", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    expect((await preview()).blockers).toEqual([]);
+  });
+
+  it("vente notariale, adresse saisie par l'administrateur (rôle non établi) : fermé de même", async () => {
+    db.mission = {
+      ...db.mission,
+      recipient_kind: "manual_professional",
+      metadata: {
+        contact_identity: { role: null, bar: null, city: "Bordeaux", sale_office_code: "33001" },
+        contact_discovery: { selected_email: null },
+        question_audience: "notary",
+      },
+    };
+    expect((await preview()).blockers.join(" ")).toContain(NOTARY_DISABLED);
+    await expect(sendWith()).rejects.toThrow(NOTARY_DISABLED);
+  });
+
+  it("un avocat poursuivant n'est pas concerné par ce réglage", async () => {
+    db.contacts = [registryRow("jean.dupont@example.test")];
+    db.mission = {
+      ...db.mission,
+      recipient_email: "jean.dupont@example.test",
+      recipient_kind: "source_lawyer",
+      metadata: {
+        contact_identity: { role: "lawyer", bar: "Bordeaux", city: "Bordeaux" },
+        question_audience: "lawyer",
+      },
+    };
+    const result = await preview({ ...notaryContent, recipientEmail: "jean.dupont@example.test" });
+    expect(result.blockers).toEqual([]);
+  });
+
+  it("le destinataire du brouillon est relu : une question hors liste bloque l'aperçu et l'envoi", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    db.mission = { ...db.mission, question_keys: ["surface", "sale_terms"] };
+    expect((await preview()).blockers).toEqual([
+      expect.stringContaining("l'agent ne demande que la surface"),
+    ]);
+    await expect(sendWith()).rejects.toThrow("l'agent ne demande que la surface");
+    expect(db.writes).toEqual([]);
+  });
+
+  it("un destinataire enregistré que le code ne connaît pas est refusé", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    db.mission = {
+      ...db.mission,
+      metadata: { ...(db.mission.metadata as object), question_audience: "tout_le_monde" },
+    };
+    expect((await preview()).blockers.join(" ")).toContain("Destinataire du brouillon non reconnu");
+    await expect(sendWith()).rejects.toThrow("Destinataire du brouillon non reconnu");
+  });
+
+  it("aucun lien de dépôt de pièces dans le message à un notaire", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    const notary = await preview();
+    for (const output of [notary.preview.html, notary.preview.text]) {
+      expect(output).not.toContain("Déposer des pièces");
+      expect(output).not.toContain("/contribuer/");
+    }
+    // Service de l'État : le lien de dépôt reste proposé.
+    db.mission = {
+      ...db.mission,
+      metadata: { ...(db.mission.metadata as object), question_audience: "state_service" },
+    };
+    db.mission.metadata = {
+      ...(db.mission.metadata as object),
+      contact_identity: { role: "organizer", structure_kind: "state_service", city: "Bordeaux" },
+    };
+    expect((await preview()).preview.text).toContain("Déposer des pièces");
+  });
+
+  it("adresse nominative : pied de la personne, sans portée de structure", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    const { preview: shown } = await preview();
+    expect(shown.text).toContain("votre nom, votre fonction, votre adresse professionnelle");
+    expect(shown.text).toContain("Votre adresse professionnelle figure dans l’annonce publique");
+    expect(shown.text).not.toContain("aucune adresse de cette structure");
+  });
+
+  it("adresse générique : pied « structure » (catégories, origine, portée de l'opposition)", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    db.contacts = [registryRow("etude@example.test")];
+    db.mission = {
+      ...db.mission,
+      recipient_email: "etude@example.test",
+      metadata: {
+        ...(db.mission.metadata as object),
+        contact_identity: {
+          role: "notary",
+          city: "Bordeaux",
+          address_kind: "generic",
+          office_code: "33001",
+          sale_office_code: "33001",
+        },
+        contact_discovery: { selected_email: "etude@example.test" },
+      },
+    };
+    const result = await preview({ ...notaryContent, recipientEmail: "etude@example.test" });
+    expect(result.blockers).toEqual([]);
+    for (const output of [result.preview.html, result.preview.text]) {
+      expect(output).toContain(
+        "l’adresse de contact de votre étude, de votre cabinet ou de votre service et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.",
+      );
+      expect(output).toContain(
+        "L’adresse de contact de votre étude (ou de votre service) figure dans l’annonce publique de cette vente sur",
+      );
+      expect(output).not.toContain("Votre adresse professionnelle figure");
+      expect(output).toContain(
+        "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.",
+      );
+    }
+    // Phrase complète, avec la source, le lien et la date de consultation (le HTML met le lien en forme).
+    expect(result.addressOrigin.text).toBe(
+      `L’adresse de contact de votre étude (ou de votre service) figure dans l’annonce publique de cette vente sur Immobilier.notaires (${LISTING_URL}), consultée le 10/11/2026.`,
+    );
+  });
+
+  it("adresse générique sans structure identifiable (messagerie grand public) : aucune promesse de portée", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    db.contacts = [registryRow("etude@gmail.test")];
+    db.mission = {
+      ...db.mission,
+      recipient_email: "etude@gmail.test",
+      metadata: {
+        contact_identity: { role: "notary", city: "Bordeaux", address_kind: "generic" },
+        contact_discovery: { selected_email: "etude@gmail.test" },
+        question_audience: "notary",
+      },
+    };
+    const result = await preview({ ...notaryContent, recipientEmail: "etude@gmail.test" });
+    expect(result.preview.text).toContain("l’adresse de contact de votre étude, de votre cabinet");
+    expect(result.preview.text).not.toContain("aucune adresse de cette structure");
+  });
+
+  it("office opposé : une adresse nominative du même office est bloquée à l'aperçu et à l'envoi", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    db.identityOppositions = [{ identity_key: "structure|office|33001" }];
+    expect((await preview()).blockers).toEqual([expect.stringContaining("Cette structure")]);
+    await expect(sendWith()).rejects.toThrow("Cette structure");
+    expect(db.writes).toEqual([]);
+  });
+
+  it("adresse saisie sur un domaine partagé : la clé d'office de la mission est gardée", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    db.identityOppositions = [{ identity_key: "structure|office|33001" }];
+    const typed = "autre.notaire@exemple-fictif.notaires.fr";
+    db.contacts = [registryRow(typed)];
+    const result = await preview({ ...notaryContent, recipientEmail: typed });
+    expect(result.blockers).toEqual([expect.stringContaining("Cette structure")]);
+    // Sur un domaine propre, l'adresse saisie est identifiée par son domaine, pas par l'office de la vente.
+    db.contacts = [registryRow("contact@autre-etude.example.test")];
+    const own = await preview({
+      ...notaryContent,
+      recipientEmail: "contact@autre-etude.example.test",
+    });
+    expect(own.blockers).toEqual([]);
+  });
+
+  it("domaine opposé : un sous-domaine de la même structure est bloqué", async () => {
+    vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
+    db.identityOppositions = [{ identity_key: "structure|domain|etude.example.test" }];
+    const typed = "jean.martin@bordeaux.etude.example.test";
+    db.contacts = [registryRow(typed)];
+    db.mission = {
+      ...db.mission,
+      recipient_email: typed,
+      metadata: {
+        contact_identity: { role: "notary", city: "Bordeaux", address_kind: "nominative" },
+        contact_discovery: { selected_email: typed },
+        question_audience: "notary",
+      },
+    };
+    const result = await preview({ ...notaryContent, recipientEmail: typed });
+    expect(result.blockers).toEqual([expect.stringContaining("Cette structure")]);
   });
 });

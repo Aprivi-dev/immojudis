@@ -34,8 +34,10 @@ import {
   persistInformationAgentContactObservations,
   selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
-import { informationAgentStructureKeys } from "@/lib/information-agent/contact-structure";
-import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
+import {
+  personIdentityKeys,
+  recipientOppositionKeys,
+} from "@/lib/information-agent/opposition-keys";
 import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
 
 /**
@@ -134,18 +136,23 @@ export async function findAutopilotCandidates({
       skip("address_invalid");
       continue;
     }
-    const identityKeys = informationAgentIdentityKeys({
+    const oppositionKeys = recipientOppositionKeys({
       role: selected.role,
       name: selected.name ?? sale.lawyer_name,
-      ...saleIdentityPlace(sale),
+      place: saleIdentityPlace(sale),
+      email,
+      officeCode: selected.officeCode,
+      addressKind: selected.addressKind,
     });
+    // Identité du professionnel seule : une clé de structure ne dit pas qui il est (règle « identité complète »).
+    const identityKeys = personIdentityKeys(oppositionKeys.identityKeys);
     // Opposition (adresse et identité) vérifiée dès la sélection.
     try {
       await assertInformationAgentContactAllowed({
         saleId,
         email,
-        identityKeys,
-        structureKeys: informationAgentStructureKeys({ email, officeCode: selected.officeCode }),
+        identityKeys: oppositionKeys.identityKeys,
+        checkKeys: oppositionKeys.checkKeys,
       });
     } catch {
       skip("opposed");

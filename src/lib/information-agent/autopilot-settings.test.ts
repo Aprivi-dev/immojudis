@@ -25,6 +25,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
   };
 });
 
+import { autopilotBudgetDecision, autopilotPhase } from "@/lib/information-agent/autopilot-rules";
 import { loadAutopilotStats } from "@/lib/information-agent/autopilot-settings";
 
 // Adresses fictives : sous-domaine inexistant de `notaires.fr`, `example.test`.
@@ -78,6 +79,7 @@ describe("compteurs du pilote : envois par structure sur un domaine partagé", (
       "mailbox|autre.boite@exemple-fictif.notaires.fr": 1,
       "office|75012": 1,
     });
+    expect(stats.sharedStructureCountsComplete).toBe(true);
     // Lecture seule : une table, aucune écriture, et jamais tout `metadata`.
     expect(mocks.calls.map((call) => call.method)).toEqual([
       "from",
@@ -98,8 +100,26 @@ describe("compteurs du pilote : envois par structure sur un domaine partagé", (
     await expect(loadAutopilotStats(NOW)).rejects.toThrow("indisponible");
   });
 
-  it("refuse un compte incomplet", async () => {
+  it("au-delà de 1 000 lignes : compte rendu incomplet, sans erreur, et le pilote n'écrit plus en domaine partagé", async () => {
     mocks.rows = Array.from({ length: 1000 }, () => row({}));
-    await expect(loadAutopilotStats(NOW)).rejects.toThrow("incomplet");
+    const stats = await loadAutopilotStats(NOW);
+    // Les compteurs SQL restent lisibles (l'écran d'administration s'affiche).
+    expect(stats.sentTodayTotal).toBe(2);
+    expect(stats).toMatchObject({
+      todayBySharedStructure: {},
+      weekBySharedStructure: {},
+      sharedStructureCountsComplete: false,
+    });
+    expect(
+      autopilotBudgetDecision({
+        stats: { ...stats, todayByDomain: {} },
+        caps: { dayCap: 40, hourCap: 12, phase: autopilotPhase(null, [], NOW) },
+        domain: "exemple-fictif.notaires.fr",
+        structure: { key: "office|75012", sharedDomain: "notaires.fr" },
+        court: null,
+        now: NOW,
+        random: 0.5,
+      }),
+    ).toEqual({ ok: false, scope: "candidate", code: "structure_count_incomplete" });
   });
 });

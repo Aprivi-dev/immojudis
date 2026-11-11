@@ -4,6 +4,7 @@
  * l'écran d'administration n'en reçoit que les libellés et n'importe aucun module de l'agent pour cela.
  * Lu dans le brouillon (`metadata.contact_discovery`), jamais recalculé à partir de la vente.
  */
+import { INFORMATION_AGENT_REGISTRY_PROVENANCE_FIELD } from "@/lib/information-agent/contact-resolution";
 import {
   INFORMATION_AGENT_ADDRESS_KIND_LABELS,
   informationAgentAddressKind,
@@ -48,6 +49,20 @@ const ORIGIN_LABELS: Record<string, string> = {
   court_registry: "Adresse du référentiel des tribunaux",
 };
 
+/**
+ * Adresse du registre interne : relevée par la collecte dans une annonce qui la masque. Elle n'est pas
+ * « publiée » en clair, l'écran ne le dit donc pas.
+ */
+const REGISTRY_ORIGIN_LABEL = "Adresse relevée à la collecte de l’annonce (masquée sur la page)";
+
+/** Libellé d'une provenance, ou `null` si son type n'est pas connu. */
+function originLabel(provenance: Record<string, unknown>): string | null {
+  if (text(provenance.field) === INFORMATION_AGENT_REGISTRY_PROVENANCE_FIELD) {
+    return REGISTRY_ORIGIN_LABEL;
+  }
+  return ORIGIN_LABELS[text(provenance.kind) ?? ""] ?? null;
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -81,8 +96,10 @@ export function informationAgentRecipientProfile(
   const provenance = (Array.isArray(candidate.provenance) ? candidate.provenance : []).map(
     asRecord,
   );
-  const origin = provenance.find((item) => ORIGIN_LABELS[text(item.kind) ?? ""]);
-  if (!origin) return null;
+  // Libellé, source et lien viennent de la MÊME provenance : jamais le lien d'une page et le libellé d'une autre.
+  const origin = provenance.find((item) => originLabel(item));
+  const label = origin ? originLabel(origin) : null;
+  if (!origin || !label) return null;
   // Le greffe se reconnaît à l'origine de son adresse, pas au rôle de l'instantané.
   const roleLabel =
     text(origin.kind) === "court_registry"
@@ -99,8 +116,8 @@ export function informationAgentRecipientProfile(
     roleLabel,
     addressKind,
     addressKindLabel: INFORMATION_AGENT_ADDRESS_KIND_LABELS[addressKind],
-    originLabel: ORIGIN_LABELS[text(origin.kind) ?? ""],
+    originLabel: label,
     originSourceName: text(origin.source_name),
-    originUrl: httpUrl(provenance.find((item) => httpUrl(item.source_url))?.source_url),
+    originUrl: httpUrl(origin.source_url),
   };
 }

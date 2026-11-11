@@ -54,7 +54,9 @@ beforeEach(() => {
     starting_price_eur: null,
     lawyer_name: "Maître Jean Dupont",
     lawyer_contact: "cabinet@example.test",
-  } as AuctionSale);
+    // Vente au tribunal : `lawyer_contact` y porte l'avocat poursuivant.
+    sale_procedure: { organizer_type: "pursuing_lawyer" },
+  } as unknown as AuctionSale);
   mocks.template.mockResolvedValue({
     id: "published-template",
     revision: 3,
@@ -63,6 +65,8 @@ beforeEach(() => {
   mocks.claims.mockResolvedValue({ claims: [], claimsBacked: true });
   mocks.rpc.mockResolvedValue({ error: null });
   mocks.from.mockImplementation((table: string) => {
+    // Comme en base : seules les clés d'opposition demandées sont rendues.
+    let requested: unknown[] | null = null;
     const result = () => ({
       data:
         table === "information_agent_missions"
@@ -73,7 +77,9 @@ beforeEach(() => {
               ...inserted,
             }
           : table === "information_agent_identity_oppositions"
-            ? opposedIdentityKeys.map((identity_key) => ({ identity_key }))
+            ? opposedIdentityKeys
+                .filter((key) => requested?.includes(key))
+                .map((identity_key) => ({ identity_key }))
             : [],
       error: null,
     });
@@ -81,7 +87,10 @@ beforeEach(() => {
       select: () => query,
       eq: () => query,
       is: () => query,
-      in: () => query,
+      in: (_column: string, values: unknown[]) => {
+        requested = values;
+        return query;
+      },
       ilike: () => query,
       gte: () => query,
       neq: () => query,
@@ -296,6 +305,7 @@ describe("brouillon pour un notaire lu dans l'annonce", () => {
             name: "Jean Martin",
             field: "source_property_features.contact.email",
             principal: true,
+            addressKind: "nominative",
           },
         ],
         manager: [],
@@ -338,6 +348,15 @@ describe("brouillon pour un notaire lu dans l'annonce", () => {
     expect(questions).not.toMatch(
       /mise à prix|garantie|audience|date de la vente|loyer|transmettre/i,
     );
+    // Texte propre au notaire : ni pièces de procédure, ni invitation à joindre des documents.
+    const message = `${result.mission.subject}\n${result.mission.bodyText}`;
+    expect(message).toContain(
+      "Répondre est facultatif. Nous ne demandons que des informations déjà destinées aux candidats acquéreurs : celles de l’annonce et du cahier des charges. Ne nous transmettez rien d’autre : votre secret professionnel prime sur notre demande.",
+    );
+    expect(message).not.toMatch(
+      /cahier des conditions de vente|procès-verbal descriptif|garantie|audience|documents ou photos|joindre|mise à prix/i,
+    );
+    expect(result.mission.subject).toBe("Maison Bordeaux : vérification de l’annonce");
     expect(inserted).toMatchObject({
       recipient_kind: "source_contact",
       // Adresse nominative : la clé de la structure n'est pas parmi ses clés d'identité.
@@ -379,8 +398,106 @@ describe("brouillon pour un notaire lu dans l'annonce", () => {
     opposedIdentityKeys = ["structure|office|33001"];
     await expect(
       createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
-    ).rejects.toThrow("s'est opposé à être contacté");
+    ).rejects.toThrow("Cette structure (cabinet, office ou service) s'est opposée");
     expect(observed).toEqual([]);
     expect(inserted).toBeNull();
+  });
+
+  it("occupation demandée à un notaire : selon l'annonce ou le cahier des charges, sans le loyer", async () => {
+    const result = await createAdminInformationAgentDraft({
+      auth: admin,
+      input: { saleId, questionKeys: ["occupancy", "documents"] },
+    });
+    expect(result.mission.bodyText).toContain(
+      "- Selon l’annonce ou le cahier des charges, le bien est-il libre, occupé ou loué ?",
+    );
+    expect(result.mission.bodyText).toContain(
+      "- Où et comment le cahier des charges de la vente peut-il être consulté",
+    );
+    expect(result.mission.bodyText).not.toMatch(/loyer|cahier des conditions de vente/i);
+  });
+
+  it("vente notariale, adresse saisie par l'administrateur : la liste courte s'applique par défaut", async () => {
+    const result = await createAdminInformationAgentDraft({
+      auth: admin,
+      input: { saleId, recipientEmail: "autre.adresse@example.test" },
+    });
+    const allowed = ["surface", "composition", "occupancy", "visit", "documents"];
+    expect(result.mission.questionKeys.length).toBeGreaterThan(0);
+    for (const key of result.mission.questionKeys) expect(allowed).toContain(key);
+    expect(inserted).toMatchObject({
+      recipient_kind: "manual_professional",
+      metadata: { contact_identity: { role: null }, question_audience: "notary" },
+    });
+    expect(result.mission.bodyText).toContain("votre secret professionnel prime sur notre demande");
+    await expect(
+      createAdminInformationAgentDraft({
+        auth: admin,
+        input: {
+          saleId,
+          recipientEmail: "autre.adresse@example.test",
+          questionKeys: ["sale_date"],
+        },
+      }),
+    ).rejects.toThrow("l'agent ne demande que la surface");
+  });
+
+  it("office opposé : une adresse saisie sur le domaine partagé garde l'office de la vente et est refusée", async () => {
+    opposedIdentityKeys = ["structure|office|33001"];
+    inserted = null;
+    await expect(
+      createAdminInformationAgentDraft({
+        auth: admin,
+        input: { saleId, recipientEmail: "autre.notaire@exemple-fictif.notaires.fr" },
+      }),
+    ).rejects.toThrow("Cette structure (cabinet, office ou service) s'est opposée");
+    expect(inserted).toBeNull();
+  });
+
+  it("service de l'État d'une cession : son propre texte, la liste courte", async () => {
+    const listing = "https://annonces.example.test/cessions/bien-2";
+    mocks.sale.mockResolvedValue({
+      ...notarySale,
+      lawyer_contact: null,
+      source_name: "cessions_etat",
+      source_url: listing,
+      information_agent_organizer_type: "state_service",
+      listing_contact_blocks: [
+        {
+          sourceName: "cessions_etat",
+          sourceUrl: listing,
+          officeCode: null,
+          contact: [],
+          lawyer: [],
+          manager: [
+            {
+              email: "pgp.domaine@example.test",
+              name: null,
+              field: "source_property_features.manager.direction_email",
+              principal: true,
+              addressKind: "generic",
+            },
+          ],
+        },
+      ],
+    } as never);
+    const result = await createAdminInformationAgentDraft({ auth: admin, input: { saleId } });
+    expect(result.mission.recipientEmail).toBe("pgp.domaine@example.test");
+    expect(result.mission.bodyText).toContain(
+      "Répondre est facultatif. Nous ne demandons que des informations déjà destinées aux candidats à l’acquisition. Les règles de votre administration priment sur notre demande.",
+    );
+    expect(result.mission.bodyText).not.toContain("secret professionnel");
+    expect(inserted).toMatchObject({
+      // Adresse générique sur un domaine propre : elle porte la clé de sa structure.
+      recipient_identity_keys: ["structure|domain|example.test"],
+      metadata: {
+        contact_identity: {
+          role: "organizer",
+          structure_kind: "state_service",
+          address_kind: "generic",
+        },
+        question_audience: "state_service",
+      },
+    });
   });
 });

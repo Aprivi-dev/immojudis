@@ -36,22 +36,29 @@ import {
   searchInformationAgentAddressForDraft,
 } from "@/lib/information-agent/address-search";
 import { informationAgentAppOrigin } from "@/lib/information-agent/config";
+import { resolveInformationAgentListingContacts } from "@/lib/information-agent/contact-resolution";
 import {
   informationAgentAddressKind,
-  informationAgentStructureKeys,
+  informationAgentOfficeCodeFor,
+  isInformationAgentStructureKey,
 } from "@/lib/information-agent/contact-structure";
 import {
-  allowedInformationAgentQuestionKeys,
+  recipientOppositionKeys,
+  type InformationAgentRecipientOppositionKeys,
+} from "@/lib/information-agent/opposition-keys";
+import {
   INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE,
   informationAgentQuestionAudience,
   informationAgentQuestionTextFor,
   isInformationAgentQuestionAllowed,
+  type InformationAgentQuestionAudience,
 } from "@/lib/information-agent/recipient-questions";
+import { informationAgentAudienceTemplate } from "@/lib/information-agent/recipient-templates";
 import {
   assertInformationAgentContactAllowed,
   contactCandidateSnapshot,
-  discoverInformationAgentContacts,
   INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+  INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE,
   loadOpposedInformationAgentIdentityKeys,
   normalizedEmail,
   persistInformationAgentContactObservations,
@@ -71,7 +78,6 @@ import {
   withSignature,
 } from "@/lib/information-agent/draft-checks";
 import { missingRecipientMessage } from "@/lib/information-agent/email-address";
-import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
 import {
@@ -225,37 +231,29 @@ export async function createAdminInformationAgentDraft({
   // Opposition par identité, avant d'enregistrer ou de choisir la moindre adresse : un professionnel
   // opposé n'est plus sollicité sous une autre adresse, et son adresse n'est pas stockée.
   const identityPlace = saleIdentityPlace(sale);
-  // Clés de la structure de chaque adresse (office, domaine propre) : l'opposition d'une structure écarte
-  // toutes ses adresses. Seule l'adresse GÉNÉRIQUE les porte parmi ses clés d'identité : si elle s'oppose,
-  // l'opposition vaut pour la structure ; l'opposition d'une personne ne vaut que pour elle.
-  const structureKeysByEmail = new Map<string, string[]>();
-  const discovered = discoverInformationAgentContacts(sale).map((candidate) => {
-    const structureKeys = informationAgentStructureKeys({
+  const resolution = resolveInformationAgentListingContacts(sale);
+  // Clés d'opposition de chaque adresse (opposition-keys.ts) : celles qu'elle porte et celles à contrôler,
+  // dont la structure. Une structure opposée écarte toutes ses adresses.
+  const keysByEmail = new Map<string, InformationAgentRecipientOppositionKeys>();
+  const discovered = resolution.candidates.map((candidate) => {
+    const keys = recipientOppositionKeys({
+      role: candidate.role,
+      name: candidate.name ?? (candidate.role === "lawyer" ? sale.lawyer_name : null),
+      place: identityPlace,
       email: candidate.email,
       officeCode: candidate.officeCode,
+      addressKind: candidate.addressKind,
     });
-    structureKeysByEmail.set(candidate.email, structureKeys);
-    return {
-      ...candidate,
-      identityKeys: [
-        ...informationAgentIdentityKeys({
-          role: candidate.role,
-          name: candidate.name ?? (candidate.role === "lawyer" ? sale.lawyer_name : null),
-          ...identityPlace,
-        }),
-        ...(candidate.addressKind === "generic" ? structureKeys : []),
-      ],
-    };
+    keysByEmail.set(candidate.email, keys);
+    return { ...candidate, identityKeys: keys.identityKeys };
   });
-  const oppositionKeysOf = (candidate: (typeof discovered)[number]) => [
-    ...candidate.identityKeys,
-    ...(structureKeysByEmail.get(candidate.email) ?? []),
-  ];
+  const checkKeysOf = (candidate: (typeof discovered)[number]) =>
+    keysByEmail.get(candidate.email)?.checkKeys ?? candidate.identityKeys;
   const opposedKeys = new Set(
-    await loadOpposedInformationAgentIdentityKeys(discovered.flatMap(oppositionKeysOf)),
+    await loadOpposedInformationAgentIdentityKeys(discovered.flatMap(checkKeysOf)),
   );
   const listingCandidates = discovered.filter(
-    (candidate) => !oppositionKeysOf(candidate).some((key) => opposedKeys.has(key)),
+    (candidate) => !checkKeysOf(candidate).some((key) => opposedKeys.has(key)),
   );
   const candidatesSkippedForOpposition = discovered.length - listingCandidates.length;
   const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
@@ -290,11 +288,14 @@ export async function createAdminInformationAgentDraft({
   const recipientEmail =
     explicitRecipientEmail ?? selectedContact?.email ?? courtFallback?.candidate.email;
   if (!recipientEmail) {
-    throw new Error(
-      candidatesSkippedForOpposition > 0 && !contactCandidates.length
-        ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
-        : missingRecipientMessage(contactCandidates.length, search.noAddressNote),
-    );
+    if (candidatesSkippedForOpposition > 0 && !contactCandidates.length) {
+      throw new Error(
+        [...opposedKeys].some(isInformationAgentStructureKey)
+          ? INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE
+          : INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+      );
+    }
+    throw new Error(missingRecipientMessage(contactCandidates.length, search.noAddressNote));
   }
   const selectedByEmail =
     courtFallback?.candidate ??
@@ -305,35 +306,41 @@ export async function createAdminInformationAgentDraft({
     ? null
     : (input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null);
   const recipientIdentityRole = selectedByEmail?.role ?? null;
-  const recipientStructureKeys = courtFallback
-    ? []
-    : informationAgentStructureKeys({
+  const recipientOfficeCode = informationAgentOfficeCodeFor({
+    email: recipientEmail,
+    officeCode: selectedByEmail?.officeCode,
+    saleOfficeCode: resolution.officeCode,
+  });
+  const recipientAddressKind =
+    selectedByEmail?.addressKind ?? informationAgentAddressKind(recipientEmail);
+  // Un greffe n'a ni identité de personne ni structure opposable : aucune clé.
+  const recipientKeys: InformationAgentRecipientOppositionKeys = courtFallback
+    ? { identityKeys: [], checkKeys: [] }
+    : recipientOppositionKeys({
+        role: recipientIdentityRole,
+        name: recipientName,
+        place: identityPlace,
         email: recipientEmail,
-        officeCode: selectedByEmail?.officeCode,
+        officeCode: recipientOfficeCode,
+        addressKind: recipientAddressKind,
       });
-  const recipientIdentityKeys = [
-    ...informationAgentIdentityKeys({
-      role: recipientIdentityRole,
-      name: recipientName,
-      ...identityPlace,
-    }),
-    ...(informationAgentAddressKind(recipientEmail) === "generic" ? recipientStructureKeys : []),
-  ];
+  const recipientIdentityKeys = recipientKeys.identityKeys;
   await assertInformationAgentContactAllowed({
     saleId: sale.id,
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
-    structureKeys: recipientStructureKeys,
+    checkKeys: recipientKeys.checkKeys,
     courtRegistryAddress: Boolean(courtFallback),
   });
-  // Questions admises pour ce destinataire : un notaire ou un service de l'État ne reçoit que les questions
-  // sur la fiche. Une question choisie par l'administrateur hors de cette liste est refusée, jamais retirée
-  // en silence.
-  const questionAudience = courtFallback
+  // Questions et texte du message selon le destinataire (recipient-questions.ts, recipient-templates.ts).
+  // Rôle non établi (adresse saisie, contact de l'annonce) : l'organisateur de la vente décide. Une question
+  // choisie par l'administrateur hors de la liste admise est refusée, jamais retirée en silence.
+  const questionAudience: InformationAgentQuestionAudience = courtFallback
     ? "other"
     : informationAgentQuestionAudience({
         role: recipientIdentityRole,
         structureKind: selectedByEmail?.structureKind,
+        organizerType: resolution.organizerType,
       });
   if (
     requestedQuestionKeys?.some((key) => !isInformationAgentQuestionAllowed(questionAudience, key))
@@ -345,15 +352,10 @@ export async function createAdminInformationAgentDraft({
     selectDefaultInformationAgentQuestionKeys(
       gaps.filter((gap) => isInformationAgentQuestionAllowed(questionAudience, gap.key)),
     );
+  const audienceTemplate = informationAgentAudienceTemplate(questionAudience);
   if (!questionKeys.length) {
-    throw new Error(
-      questionAudience === "notary" || questionAudience === "state_service"
-        ? NO_GAP_FOR_LISTING_FIELDS_MESSAGE
-        : NO_GAP_MESSAGE,
-    );
+    throw new Error(audienceTemplate ? NO_GAP_FOR_LISTING_FIELDS_MESSAGE : NO_GAP_MESSAGE);
   }
-  const listingFieldAudience =
-    questionAudience === "notary" || questionAudience === "state_service";
   // Refused now rather than at the preview, after the admin has read the whole draft.
   await assertNoSentCaseForRecipient(sale.id, recipientEmail);
   await assertInformationAgentRecipientCooldown({
@@ -362,6 +364,7 @@ export async function createAdminInformationAgentDraft({
     courtRegistryFallback: Boolean(courtFallback),
   });
   if (courtFallback) await assertCourtRegistryDraftAllowed(courtFallback, sale.id);
+  const questionContext = informationAgentQuestionContext(inventory);
   const draft = buildInformationRequestDraft({
     sale,
     facts,
@@ -369,25 +372,16 @@ export async function createAdminInformationAgentDraft({
     signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
     ...(courtFallback
       ? COURT_REGISTRY_DRAFT_OPTIONS
-      : {
-          recipientName,
-          questionKeys,
-          template: emailTemplate.content,
-          ...(listingFieldAudience
-            ? {
-                questionLines: allowedInformationAgentQuestionKeys(
-                  questionAudience,
-                  questionKeys,
-                ).map((key) =>
-                  informationAgentQuestionTextFor(
-                    questionAudience,
-                    key,
-                    informationAgentQuestionContext(inventory),
-                  ),
-                ),
-              }
-            : {}),
-        }),
+      : audienceTemplate
+        ? {
+            recipientName,
+            questionKeys,
+            template: audienceTemplate,
+            questionLines: questionKeys.map((key) =>
+              informationAgentQuestionTextFor(questionAudience, key, questionContext),
+            ),
+          }
+        : { recipientName, questionKeys, template: emailTemplate.content }),
   });
 
   const { data, error } = await supabaseAdmin
@@ -417,7 +411,10 @@ export async function createAdminInformationAgentDraft({
           bar: identityPlace.bar,
           city: identityPlace.city,
           structure_kind: selectedByEmail?.structureKind ?? null,
-          office_code: selectedByEmail?.officeCode ?? null,
+          address_kind: courtFallback ? null : recipientAddressKind,
+          // Office de l'adresse retenue, et office de la vente (pour une adresse saisie ensuite).
+          office_code: recipientOfficeCode,
+          sale_office_code: resolution.officeCode,
         },
         question_audience: questionAudience,
         candidates_skipped_for_opposition: candidatesSkippedForOpposition,

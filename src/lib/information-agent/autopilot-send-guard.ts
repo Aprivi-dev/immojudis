@@ -9,7 +9,7 @@ import {
   loadAutopilotRegistryFacts,
 } from "@/lib/information-agent/autopilot-facts";
 import { evaluateAutopilotSendTime } from "@/lib/information-agent/autopilot-rules";
-import { isInformationAgentStructureKey } from "@/lib/information-agent/contact-structure";
+import { personIdentityKeys } from "@/lib/information-agent/opposition-keys";
 import {
   loadAutopilotSettings,
   loadExcludedIdentityKeys,
@@ -60,7 +60,7 @@ export async function assertAutopilotSendAllowed({
       sourceKind: otherOrigin ? "multiple_origins" : addressOriginKind,
       recipientRole: recipientKind === "source_lawyer" ? "lawyer" : recipientKind,
       // Une clé de structure (adresse générique) n'identifie pas le professionnel : elle ne compte pas.
-      identityComplete: identityKeys.some((key) => !isInformationAgentStructureKey(key)),
+      identityComplete: personIdentityKeys(identityKeys).length > 0,
       addressHygieneIssue: check ? informationAgentAddressHygieneIssue(normalized) : null,
       consumerDomain: isConsumerMailAddress(normalized),
       observationChannel: registry.licitorDecoded ? "licitor_cloudflare_decoded" : null,

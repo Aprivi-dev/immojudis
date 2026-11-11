@@ -16,6 +16,26 @@ export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = p
   }
 }
 
+export const INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE =
+  "Envoi à un notaire fermé : la réutilisation des annonces notariales pour écrire aux offices attend une autorisation. Le brouillon reste consultable ; l'envoi sera possible une fois le réglage INFORMATION_AGENT_NOTARY_SEND_ENABLED activé.";
+
+/**
+ * Les envois aux notaires sont FERMÉS par défaut (décision prudente du 11/11/2026, en attendant une
+ * autorisation sur la réutilisation des annonces notariales). Sont concernés le destinataire de rôle notaire
+ * et tout destinataire d'une vente notariale (`question_audience = notary`). Seule la valeur exacte `true`
+ * de `INFORMATION_AGENT_NOTARY_SEND_ENABLED` ouvre l'approbation et l'envoi ; le brouillon, l'aperçu du
+ * texte et la mesure à blanc restent possibles.
+ */
+export function assertInformationAgentNotarySendAllowed(
+  recipient: { role: string | null; questionAudience: unknown },
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): void {
+  if (recipient.role !== "notary" && recipient.questionAudience !== "notary") return;
+  if (env.INFORMATION_AGENT_NOTARY_SEND_ENABLED !== "true") {
+    throw new Error(INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE);
+  }
+}
+
 /** Keep the first provider canary restricted to Resend's own delivery test address. */
 export function assertInformationAgentCanaryRecipient(
   email: string,

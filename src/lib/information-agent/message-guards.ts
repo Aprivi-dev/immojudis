@@ -37,11 +37,14 @@ export function buildInformationAgentLegalFooter({
   email,
   addressOrigin,
   saleReference = null,
+  structureOpposition = false,
   env = process.env,
 }: {
   appUrl: string;
   email: string;
   addressOrigin: InformationAgentAddressOrigin;
+  /** L'opposition de cette adresse vaudra pour toute sa structure (`missionRecipient().structureOpposition`). */
+  structureOpposition?: boolean;
   saleReference?: string | null;
   env?: Readonly<Record<string, string | undefined>>;
 }): InformationAgentLegalFooter {
@@ -62,6 +65,8 @@ export function buildInformationAgentLegalFooter({
     addressOriginUrl: addressOrigin.url,
     automatedSearch: addressOrigin.automated,
     automatedSearchSource: addressOrigin.searchSource,
+    structureAddress: Boolean(addressOrigin.structureAddress),
+    structureOpposition: structureOpposition && !addressOrigin.courtRegistry,
     // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
     aiProvider: informationAgentAiProvider(env),
     privacyUrl: new URL("/privacy", appUrl).toString(),

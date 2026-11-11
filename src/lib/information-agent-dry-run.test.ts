@@ -78,19 +78,21 @@ vi.mock("@/integrations/supabase/client.server", () => {
   return { supabaseAdmin: { from: (table: string) => new Query(table), rpc: db.rpc } };
 });
 
+import { loadInformationAgentContactSales } from "@/lib/admin-information-agent-sale";
 import {
   assertInformationAgentContactAllowed,
   recordInformationAgentStructureOpposition,
 } from "@/lib/information-agent/contacts";
-import { informationAgentStructureKeys } from "@/lib/information-agent/contact-structure";
 import {
   measureInformationAgentRecipients,
   summarizeInformationAgentDryRun,
 } from "@/lib/information-agent/dry-run";
-import {
-  missionIdentityKeys,
-  missionStructureKeys,
-} from "@/lib/information-agent/mission-identity";
+import { missionRecipient } from "@/lib/information-agent/mission-identity";
+import { recipientOppositionKeys } from "@/lib/information-agent/opposition-keys";
+
+const ADMIN = { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } as never;
+const NOT_ADMIN = { isAdmin: false, userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" } as never;
+const measure = (saleIds: string[]) => measureInformationAgentRecipients({ auth: ADMIN, saleIds });
 
 const id = (n: number) => `${String(n).repeat(8)}-1111-4111-8111-111111111111`;
 const url = (source: string) => `https://annonces.example.test/${source}/1`;
@@ -201,10 +203,7 @@ beforeEach(() => {
 describe("mesure à blanc des destinataires", () => {
   it("rend le destinataire, son rôle et l'origine, sans rien écrire ni envoyer", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const report = await measureInformationAgentRecipients([
-      ...SALES.map((row) => String(row.id)),
-      id(9),
-    ]);
+    const report = await measure([...SALES.map((row) => String(row.id)), id(9)]);
 
     expect(
       report.rows.map((row) => [row.sourceName, row.outcome, row.recipient?.roleLabel]),
@@ -226,6 +225,7 @@ describe("mesure à blanc des destinataires", () => {
       structureKind: "notary_office",
       addressKind: "nominative",
       confidence: "high",
+      questionAudience: "notary",
       origin: {
         kind: "source_block",
         field: "source_property_features.contact.email",
@@ -236,8 +236,10 @@ describe("mesure à blanc des destinataires", () => {
     expect(report.rows[1].recipient).toMatchObject({
       email: "pgp.domaine@service-etat.example.test",
       addressKind: "generic",
+      questionAudience: "state_service",
       origin: { sourceUrl: url("cessions_etat") },
     });
+    expect(report.rows[2].recipient?.questionAudience).toBe("lawyer");
     expect(report.rows[7].blockedBy).toBe("address_opposed_or_bounced");
 
     expect(report.summary).toEqual({
@@ -253,6 +255,7 @@ describe("mesure à blanc des destinataires", () => {
         licitor: { selected: 1, ambiguous: 1, none: 1 },
         unknown: { not_found: 1 },
       },
+      blockedBy: { address_opposed_or_bounced: 1 },
       refused: { nominative_other_person: 1 },
       registryReadable: true,
     });
@@ -272,8 +275,18 @@ describe("mesure à blanc des destinataires", () => {
     fetchSpy.mockRestore();
   });
 
+  it("est réservée à un administrateur : sans ce droit, rien n'est lu", async () => {
+    await expect(
+      measureInformationAgentRecipients({ auth: NOT_ADMIN, saleIds: [id(1)] }),
+    ).rejects.toThrow("accès administrateur requis");
+    await expect(
+      loadInformationAgentContactSales({ auth: { isAdmin: false }, saleIds: [id(1)] }),
+    ).rejects.toThrow("accès administrateur requis");
+    expect(db.reads).toEqual([]);
+  });
+
   it("le résumé ne contient ni adresse ni identifiant de vente", async () => {
-    const report = await measureInformationAgentRecipients(SALES.map((row) => String(row.id)));
+    const report = await measure(SALES.map((row) => String(row.id)));
     const summary = JSON.stringify(summarizeInformationAgentDryRun(report.rows, true));
     expect(summary).not.toContain("@");
     expect(summary).not.toContain("example.test");
@@ -285,36 +298,67 @@ describe("mesure à blanc des destinataires", () => {
       { identity_key: "structure|office|33001" },
       { identity_key: "structure|domain|cabinet-leroy.example.test" },
     ];
-    const report = await measureInformationAgentRecipients([id(1), id(3), id(4)]);
+    const report = await measure([id(1), id(3), id(4)]);
     expect(report.rows.map((row) => [row.outcome, row.blockedBy])).toEqual([
-      ["blocked", "identity_or_structure_opposed"],
-      ["blocked", "identity_or_structure_opposed"],
+      ["blocked", "structure_opposed"],
+      ["blocked", "structure_opposed"],
       ["selected", null],
     ]);
+  });
+
+  it("office opposé, autre adresse du même office : aucun destinataire", async () => {
+    db.tables.information_agent_identity_oppositions = [{ identity_key: "structure|office|33001" }];
+    // Le registre porte une autre adresse de l'office, sans code : elle reçoit celui de la vente.
+    db.tables.information_agent_contacts.push({
+      scope_sale_id: id(1),
+      normalized_email: "autre.notaire@exemple-fictif.notaires.fr",
+      email: "autre.notaire@exemple-fictif.notaires.fr",
+      display_name: "Autre Notaire",
+      role: "notary",
+      source_name: "notaires",
+      source_url: url("notaires"),
+      source_kind: "sale_listing",
+      observed_at: "2026-11-10T10:00:00.000Z",
+      opposition_status: "unknown",
+      bounce_status: "none",
+    });
+    const [row] = (await measure([id(1)])).rows;
+    expect(row).toMatchObject({
+      outcome: "blocked",
+      blockedBy: "structure_opposed",
+      recipient: null,
+      candidateCount: 0,
+    });
   });
 });
 
 describe("opposition au niveau de la structure", () => {
+  const place = { bar: null, city: "Bordeaux" };
+
   it("refuse toute adresse d'une structure opposée, avec un message propre", async () => {
     db.tables.information_agent_identity_oppositions = [
       { identity_key: "structure|domain|cabinet-leroy.example.test" },
     ];
-    const email = "autre.avocat@cabinet-leroy.example.test";
+    const keysOf = (email: string) =>
+      recipientOppositionKeys({ role: "lawyer", name: "Autre Avocat", place, email });
+    const opposed = keysOf("autre.avocat@cabinet-leroy.example.test");
     await expect(
       assertInformationAgentContactAllowed({
-        email,
+        email: "autre.avocat@cabinet-leroy.example.test",
         saleId: id(3),
-        identityKeys: ["lawyer|bordeaux|avocat autre"],
-        structureKeys: informationAgentStructureKeys({ email }),
+        identityKeys: opposed.identityKeys,
+        checkKeys: opposed.checkKeys,
       }),
     ).rejects.toThrow("Cette structure");
+    // Sans les clés à contrôler, l'adresse nominative passerait : ses clés portées n'ont pas la structure.
+    expect(opposed.identityKeys).not.toContain("structure|domain|cabinet-leroy.example.test");
+    const free = keysOf("contact@cabinet-durand.example.test");
     await expect(
       assertInformationAgentContactAllowed({
         email: "contact@cabinet-durand.example.test",
         saleId: id(4),
-        structureKeys: informationAgentStructureKeys({
-          email: "contact@cabinet-durand.example.test",
-        }),
+        identityKeys: free.identityKeys,
+        checkKeys: free.checkKeys,
       }),
     ).resolves.toBeUndefined();
   });
@@ -323,6 +367,7 @@ describe("opposition au niveau de la structure", () => {
     db.allowWrites = true;
     await expect(
       recordInformationAgentStructureOpposition({
+        auth: ADMIN,
         email: "etude@example.test",
         officeCode: "33001",
         opposedAt: "2026-11-11T10:00:00.000Z",
@@ -339,44 +384,74 @@ describe("opposition au niveau de la structure", () => {
       },
     ]);
     db.writes.length = 0;
-    await expect(
-      recordInformationAgentStructureOpposition({ email: "etude@exemple-fictif.notaires.fr" }),
-    ).rejects.toThrow("Aucune structure identifiable");
-    await expect(
-      recordInformationAgentStructureOpposition({ email: "cabinet.fictif@gmail.test" }),
-    ).rejects.toThrow("Aucune structure identifiable");
+    for (const email of [
+      "etude@exemple-fictif.notaires.fr",
+      "cabinet.fictif@gmail.test",
+      "contact@exemple-fictif.avocat.fr",
+    ]) {
+      await expect(
+        recordInformationAgentStructureOpposition({ auth: ADMIN, email }),
+      ).rejects.toThrow("Aucune structure identifiable");
+    }
     expect(db.writes).toEqual([]);
   });
 
-  it("seule l'adresse générique porte la clé de sa structure parmi les clés de la mission", () => {
+  it("l'enregistrement d'une opposition de structure est réservé à un administrateur", async () => {
+    db.allowWrites = true;
+    await expect(
+      recordInformationAgentStructureOpposition({ auth: NOT_ADMIN, email: "etude@example.test" }),
+    ).rejects.toThrow("accès administrateur requis");
+    expect(db.writes).toEqual([]);
+  });
+
+  it("clés d'une mission : la structure est portée par l'adresse générique, contrôlée pour toutes", () => {
     const mission = {
       recipient_kind: "source_contact",
       recipient_name: "Jean Martin",
       metadata: {
-        contact_identity: { role: "notary", bar: null, city: "Bordeaux", office_code: "33001" },
+        contact_identity: {
+          role: "notary",
+          bar: null,
+          city: "Bordeaux",
+          address_kind: "generic",
+          office_code: "33001",
+          sale_office_code: "33001",
+        },
         contact_discovery: { selected_email: "etude@exemple-fictif.notaires.fr" },
+        question_audience: "notary",
       },
     } as never;
-    // Adresse choisie par le brouillon : le code d'office vaut.
-    expect(missionStructureKeys(mission, "Etude@exemple-fictif.notaires.fr")).toEqual([
-      "structure|office|33001",
-    ]);
-    expect(missionIdentityKeys(mission, null, "etude@exemple-fictif.notaires.fr")).toContain(
-      "structure|office|33001",
-    );
-    // Adresse changée par l'administrateur : le code d'office du brouillon ne la concerne plus.
-    expect(missionStructureKeys(mission, "jean.martin@example.test")).toEqual([
-      "structure|domain|example.test",
-    ]);
-    // Adresse nominative : l'opposition d'une personne ne vaut que pour elle.
+    const structureKeys = (keys: string[]) => keys.filter((key) => key.startsWith("structure|"));
+
+    // Adresse choisie par le brouillon, générique : elle porte la clé de l'office.
+    const drafted = missionRecipient(mission, null, "Etude@exemple-fictif.notaires.fr");
+    expect(structureKeys(drafted.keys.identityKeys)).toEqual(["structure|office|33001"]);
+    expect(drafted).toMatchObject({
+      role: "notary",
+      addressKind: "generic",
+      structureOpposition: true,
+      questionAudience: "notary",
+    });
+
+    // Adresse nominative saisie sur le domaine partagé : elle ne porte pas la clé, mais l'office de la vente
+    // reste contrôlé.
+    const typedShared = missionRecipient(mission, null, "autre.notaire@exemple-fictif.notaires.fr");
+    expect(structureKeys(typedShared.keys.identityKeys)).toEqual([]);
+    expect(structureKeys(typedShared.keys.checkKeys)).toEqual(["structure|office|33001"]);
+    expect(typedShared.structureOpposition).toBe(false);
+
+    // Adresse saisie sur un domaine propre : identifiée par ce domaine, pas par l'office de la vente.
+    const typedOwn = missionRecipient(mission, null, "jean.martin@example.test");
+    expect(structureKeys(typedOwn.keys.identityKeys)).toEqual([]);
+    expect(structureKeys(typedOwn.keys.checkKeys)).toEqual(["structure|domain|example.test"]);
+
+    // Brouillon antérieur à ce lot : pas de destinataire enregistré, donc aucune liste propre.
     expect(
-      missionIdentityKeys(mission, null, "jean.martin@example.test").filter((key) =>
-        key.startsWith("structure|"),
+      missionRecipient(
+        { recipient_kind: "source_lawyer", recipient_name: "Jean Dupont", metadata: {} } as never,
+        null,
+        "jean.dupont@example.test",
       ),
-    ).toEqual([]);
-    // Sans adresse (greffe) : aucune clé de structure.
-    expect(
-      missionIdentityKeys(mission, null, null).filter((key) => key.startsWith("structure|")),
-    ).toEqual([]);
+    ).toMatchObject({ role: "lawyer", questionAudience: "other", structureOpposition: false });
   });
 });
