@@ -16,12 +16,14 @@ set local statement_timeout = '60s';
 --
 -- Aucun droit pour les rôles du navigateur : public.auction_sales n'est lisible par anon et authenticated que
 -- colonne par colonne (20261010003000) et cette colonne n'est pas accordée ; elle est dans la liste des colonnes
--- internes de scripts/check-security-invariants.mjs. Seules app_private.project_sale_fields et la retenue
--- l'écrivent ; toute autre écriture est refusée (42501) par la base.
+-- internes de scripts/check-security-invariants.mjs. Seules app_private.project_sale_fields (qui pose et retire
+-- une pièce) et le déclencheur de retenue (qui met à jour la dernière valeur connue de l'annonce ou libère un
+-- champ) l'écrivent ; toute autre écriture est refusée (42501) par la base.
 --
 -- VERROU : ALTER TABLE ... ADD COLUMN prend un ACCESS EXCLUSIVE sur auction_sales jusqu'au COMMIT. Instantané une
 -- fois obtenu, mais en file d'attente derrière un import il bloque AUSSI les lectures du site, jusqu'à 5 s
--- (lock_timeout) : la migration échoue alors sans effet, à relancer. À APPLIQUER HORS IMPORT.
+-- (lock_timeout) : la migration échoue alors sans effet, à relancer. À APPLIQUER HORS IMPORT. La colonne et la
+-- contrainte ne sont ajoutées que si elles manquent : une seconde application ne reprend pas ce verrou.
 --
 -- Retour arrière (la colonne est vide tant que le lot R2 n'a rien écrit) : retirer d'abord 20261116100500
 -- (déclencheurs et fonctions), puis
@@ -29,8 +31,17 @@ set local statement_timeout = '60s';
 --   alter table public.auction_sales drop column if exists held_fields;
 --   commit;
 
-alter table public.auction_sales
-  add column if not exists held_fields jsonb;
+do $$
+begin
+  if not exists (
+    select 1 from pg_catalog.pg_attribute attribute
+    where attribute.attrelid = 'public.auction_sales'::regclass
+      and attribute.attname = 'held_fields' and not attribute.attisdropped
+  ) then
+    alter table public.auction_sales add column if not exists held_fields jsonb;
+  end if;
+end;
+$$;
 
 do $$
 begin
@@ -48,7 +59,7 @@ end;
 $$;
 
 comment on column public.auction_sales.held_fields is
-  'Registre des pièces : champs de la fiche tenus par une pièce acceptée (provenance et dernière valeur connue de l''annonce). Nulle si aucun champ n''est tenu. Écrite seulement par app_private.project_sale_fields ; toute autre écriture d''un champ tenu est retenue par la base (déclencheur aaab_auction_sales_hold_projected_fields).';
+  'Registre des pièces : champs de la fiche tenus par une pièce acceptée (provenance et dernière valeur connue de l''annonce). Nulle si aucun champ n''est tenu. Écrite par app_private.project_sale_fields (pose et retrait d''une pièce) et par le déclencheur de retenue aaab_auction_sales_hold_projected_fields (dernière valeur connue de l''annonce, libération d''un champ) ; toute autre écriture est refusée, et toute écriture directe d''un champ tenu est retenue par la base.';
 
 notify pgrst, 'reload schema';
 

@@ -1,18 +1,20 @@
 -- 20261116100500 : projection app_private.project_sale_fields (lot R1, étape M4).
 --   * exécutable par aucun rôle de l'API ; simulation sans écriture, application en un seul UPDATE ;
 --   * idempotente : un second appel n'écrit rien ;
---   * une pièce ne tient un champ que si sa DERNIÈRE décision est une acceptation, d'un lot identifié, d'une
---     origine qui peut tenir : un document resté candidat ne tient rien, un document accepté tient, l'annonce
---     ne tient jamais, une origine non classée non plus ;
+--   * une pièce ne tient un champ que si sa DERNIÈRE décision (ordre de seq, pas de date) est une acceptation,
+--     d'un lot identifié, d'une origine qui peut tenir : un document resté candidat ne tient rien, un document
+--     accepté tient, l'annonce ne tient jamais, une origine non classée non plus ;
 --   * même dossier, pièce plus récente : elle remplace ; deux origines au même rang qui se contredisent :
 --     « conflicted », rien ne bascule ;
---   * retrait, opposition, rejet : la valeur de l'annonce revient ;
---   * les décisions d'une vente absorbée par fusion valent pour la vente conservée.
+--   * retrait, opposition, rejet : la valeur de l'annonce revient, sans jamais d'erreur ; une pièce que la fiche
+--     refuse (moins de pièces que de chambres) ne bloque pas les autres champs ;
+--   * une pièce que l'annonce a délogée ne reprend pas le champ sans nouvelle décision ;
+--   * les décisions d'une vente absorbée par fusion, même en deux temps, valent pour la vente conservée.
 begin;
 
 set local timezone = 'UTC';
 
-select plan(68);
+select plan(90);
 
 -- Fonction et droits --------------------------------------------------------------------------------------------
 select has_function(
@@ -47,6 +49,9 @@ select is(
 
 -- Jeu d'essai ---------------------------------------------------------------------------------------------------
 insert into auth.users (id) values ('88300000-0000-4000-8000-0000000000a1');
+insert into public.user_profiles (user_id, email, user_role) values
+  ('88300000-0000-4000-8000-0000000000a1', 'registre-admin-883@example.test', 'admin')
+on conflict (user_id) do update set user_role = excluded.user_role;
 
 insert into public.auction_sales (
   id, source_name, source_url, status, sale_date, city, property_type, starting_price_eur,
@@ -58,7 +63,7 @@ select
   ('88300000-1000-4000-8000-00000000000' || n)::uuid, 'licitor', 'https://example.test/883/sale-' || n,
   'upcoming', current_timestamp + interval '20 days', 'Alphaville', 'house', 90000, '{}'::jsonb,
   '{}'::jsonb, 'tribunal', 50, 50, 'habitable', 'listing_text', 0.7, null, 2, 1, 'occupied', '[]'::jsonb
-from generate_series(1, 6) n;
+from generate_series(1, 9) n;
 
 -- Observations. Origines : dossiers d'avocat A, B et C (professional_email), saisie d'administrateur, document,
 -- annonce, recherche d'agent (non classée), pont de l'agent d'information d'avant le lot R2.
@@ -66,7 +71,7 @@ insert into public.auction_fact_claims (
   id, auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, source_url, confidence_score,
   extractor_name, extractor_version, created_by
 ) values
-  -- Vente 1 : remplacement, retrait, opposition, rejet.
+  -- Vente 1 : remplacement, retrait, opposition, rejet, pièce refusée par la fiche.
   ('88300000-2000-4000-8000-000000000101', '88300000-1000-4000-8000-000000000001', 'property.surface_m2',
     '54'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null,
     0.9, 'information_agent', 'v1', '88300000-0000-4000-8000-0000000000a1'),
@@ -86,6 +91,13 @@ insert into public.auction_fact_claims (
   ('88300000-2000-4000-8000-000000000106', '88300000-1000-4000-8000-000000000001', 'property.rooms_count',
     '1'::jsonb, 'admin_entry', '{}'::jsonb, null, null, 'admin_entry', 'v1',
     '88300000-0000-4000-8000-0000000000a1'),
+  ('88300000-2000-4000-8000-000000000107', '88300000-1000-4000-8000-000000000001',
+    'property.occupancy_status', '"rented"'::jsonb, 'professional_email',
+    '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null, 0.6, 'information_agent', 'v1',
+    '88300000-0000-4000-8000-0000000000a1'),
+  ('88300000-2000-4000-8000-000000000108', '88300000-1000-4000-8000-000000000001', 'property.rooms_count',
+    '5'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000b"}'::jsonb, null,
+    0.6, 'information_agent', 'v1', '88300000-0000-4000-8000-0000000000a1'),
   -- Vente 2 : contradictions.
   ('88300000-2000-4000-8000-000000000201', '88300000-1000-4000-8000-000000000002', 'property.rooms_count',
     '3'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null,
@@ -142,8 +154,36 @@ insert into public.auction_fact_claims (
   ('88300000-2000-4000-8000-000000000306', '88300000-1000-4000-8000-000000000003', 'property.surface_m2',
     '"abc"'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null,
     0.6, 'information_agent', 'v1', '88300000-0000-4000-8000-0000000000a1'),
+  ('88300000-2000-4000-8000-000000000307', '88300000-1000-4000-8000-000000000003', 'property.rooms_count',
+    '4'::jsonb, 'source_document', '{}'::jsonb, 'https://example.test/883/cahier.pdf', 0.5,
+    'immojudis-fact-claims', 'v1', null),
+  -- Deux lectures du même document, dont le localisateur porte une clé de dossier nulle.
+  ('88300000-2000-4000-8000-000000000308', '88300000-1000-4000-8000-000000000003',
+    'property.land_surface_m2', '610'::jsonb, 'source_document', '{"case_id": null}'::jsonb,
+    'https://example.test/883/cahier.pdf', 0.5, 'immojudis-fact-claims', 'v1', null),
+  ('88300000-2000-4000-8000-000000000309', '88300000-1000-4000-8000-000000000003',
+    'property.land_surface_m2', '640'::jsonb, 'source_document', '{"case_id": null}'::jsonb,
+    'https://example.test/883/cahier.pdf', 0.5, 'immojudis-fact-claims', 'v1', null),
   -- Vente 5, absorbée plus bas par la vente 4.
   ('88300000-2000-4000-8000-000000000501', '88300000-1000-4000-8000-000000000005', 'property.rooms_count',
+    '4'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null,
+    0.6, 'information_agent', 'v1', '88300000-0000-4000-8000-0000000000a1'),
+  -- Vente 6 : ordre des décisions et des pièces.
+  ('88300000-2000-4000-8000-000000000602', '88300000-1000-4000-8000-000000000006', 'property.surface_m2',
+    '61'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null,
+    0.6, 'information_agent', 'v1', '88300000-0000-4000-8000-0000000000a1'),
+  ('88300000-2000-4000-8000-000000000603', '88300000-1000-4000-8000-000000000006',
+    'property.land_surface_m2', '300'::jsonb, 'professional_email',
+    '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null, 0.6, 'information_agent', 'v1',
+    '88300000-0000-4000-8000-0000000000a1'),
+  ('88300000-2000-4000-8000-000000000604', '88300000-1000-4000-8000-000000000006',
+    'property.occupancy_status', '"rented"'::jsonb, 'admin_entry', '{}'::jsonb, null, null, 'admin_entry',
+    'v1', '88300000-0000-4000-8000-0000000000a1'),
+  ('88300000-2000-4000-8000-000000000605', '88300000-1000-4000-8000-000000000006',
+    'property.occupancy_status', '"vacant"'::jsonb, 'admin_entry', '{}'::jsonb, null, null, 'admin_entry',
+    'v1', '88300000-0000-4000-8000-0000000000a1'),
+  -- Vente 9, absorbée par la vente 8, elle-même absorbée par la vente 7.
+  ('88300000-2000-4000-8000-000000000901', '88300000-1000-4000-8000-000000000009', 'property.rooms_count',
     '4'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null,
     0.6, 'information_agent', 'v1', '88300000-0000-4000-8000-0000000000a1');
 
@@ -163,7 +203,7 @@ insert into public.auction_fact_claims (
 -- Décision d'un administrateur sur une observation (la vente et le champ sont ceux de l'observation).
 prepare decide(text, text, text, timestamptz, text) as
   insert into public.auction_fact_claim_decisions (
-    claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason, recipient_kind,
+    claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code, recipient_kind,
     received_at
   )
   select claim.id, claim.auction_sale_id, claim.field_key, $2, $3, 'admin',
@@ -188,7 +228,7 @@ select is(
 );
 
 -- Simulation puis application ---------------------------------------------------------------------------------
-execute decide('101', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
+execute decide('101', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
 
 create temporary table projection_marks on commit drop as
 select 'before'::text as step, ctid as row_version, updated_at
@@ -247,7 +287,7 @@ select is(
      "listing": {"surface_m2": 50, "app_surface_m2": 50, "app_surface_kind": "habitable",
                  "surface_source": "listing_text", "surface_confidence": 0.7},
      "claim_id": "88300000-2000-4000-8000-000000000101", "source_kind": "lawyer_email", "rank": 30,
-     "received_on": "2026-11-12", "publication_mode": "manual", "recipient_kind": "source_lawyer",
+     "received_on": "2026-10-12", "publication_mode": "manual", "recipient_kind": "source_lawyer",
      "tolerance": {"abs": 1, "rel": 0.02}, "on_listing_change": "keep_and_review"
    }'::jsonb,
   'the held entry carries the value, the listing values to restore, the provenance and the setting, no text'
@@ -302,7 +342,7 @@ select ok(
 );
 
 -- Même dossier, pièce plus récente : elle remplace ---------------------------------------------------------------
-execute decide('102', 'accepted', 'single_lot', '2026-11-14 09:00:00+00', null);
+execute decide('102', 'accepted', 'single_lot', '2026-10-14 09:00:00+00', null);
 
 select is(
   app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', array['property.surface_m2'], true)
@@ -316,12 +356,12 @@ select results_eq(
   $$select surface_m2, app_surface_m2, surface_confidence, held_fields #> '{property.surface_m2,listing,surface_m2}',
            held_fields #>> '{property.surface_m2,received_on}'
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000001'$$,
-  $$values (56::numeric, 56::numeric, 0.85::numeric, '50'::jsonb, '2026-11-14')$$,
+  $$values (56::numeric, 56::numeric, 0.85::numeric, '50'::jsonb, '2026-10-14')$$,
   'the replacement is not cancelled by the hold trigger, and the listing block still holds the listing value'
 );
 
 -- Une pièce plus ancienne du même dossier, acceptée après coup, ne reprend pas la main.
-execute decide('103', 'accepted', 'single_lot', '2026-11-10 09:00:00+00', null);
+execute decide('103', 'accepted', 'single_lot', '2026-10-10 09:00:00+00', null);
 
 select is(
   app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true)
@@ -331,7 +371,7 @@ select is(
 );
 
 -- Retrait : la pièce précédente du dossier, encore acceptée, reprend ; puis l'annonce ---------------------------
-execute decide('102', 'withdrawn', 'single_lot', null, 'Erreur de lecture.');
+execute decide('102', 'withdrawn', 'single_lot', null, 'entry_error');
 
 select is(
   (app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true)
@@ -340,8 +380,8 @@ select is(
   'withdrawing the latest piece gives the field to the previous piece of the case that is still accepted'
 );
 
-execute decide('101', 'withdrawn', 'single_lot', null, 'Erreur de lecture.');
-execute decide('103', 'withdrawn', 'single_lot', null, 'Erreur de lecture.');
+execute decide('101', 'withdrawn', 'single_lot', null, 'entry_error');
+execute decide('103', 'withdrawn', 'single_lot', null, 'entry_error');
 
 select is(
   app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true)
@@ -364,8 +404,8 @@ select results_eq(
   'the release is journaled with the value that was held and the listing value that came back'
 );
 
--- Opposition de l'avocat : retour à une annonce qui ne disait rien ---------------------------------------------
-execute decide('104', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
+-- Opposition du professionnel : retour à une annonce qui ne disait rien ----------------------------------------
+execute decide('104', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
 select app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true) ->> 'changed';
 
 select results_eq(
@@ -376,10 +416,10 @@ select results_eq(
 );
 
 insert into public.auction_fact_claim_decisions (
-  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, reason
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, reason_code
 ) values (
   '88300000-2000-4000-8000-000000000104', '88300000-1000-4000-8000-000000000001',
-  'property.land_surface_m2', 'opposed', 'single_lot', 'lawyer', 'Opposition du cabinet.'
+  'property.land_surface_m2', 'opposed', 'single_lot', 'lawyer', 'professional_opposition'
 );
 
 select is(
@@ -397,9 +437,9 @@ select results_eq(
 );
 
 -- Rejet après acceptation -----------------------------------------------------------------------------------------
-execute decide('105', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
+execute decide('105', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
 select app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true) ->> 'changed';
-execute decide('105', 'rejected', 'single_lot', null, 'Valeur d''un autre lot.');
+execute decide('105', 'rejected', 'single_lot', null, 'other_lot');
 
 select is(
   app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true)
@@ -414,27 +454,98 @@ select is(
   'the rejected room count gives way to the listing value'
 );
 
--- Une pièce incompatible avec la fiche fait échouer la projection, sans rien écrire ------------------------------
+-- Une pièce que la fiche refuse (moins de pièces que de chambres) ne bloque pas les autres champs -----------------
 update public.auction_sales set bedrooms_count = 2 where id = '88300000-1000-4000-8000-000000000001';
 execute decide('106', 'accepted', 'single_lot', null, null);
+execute decide('107', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
 
-select throws_ok(
-  $$select app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true)$$,
-  '23514',
-  'new row for relation "auction_sales" violates check constraint "auction_sales_rooms_bedrooms_check"',
-  'a room count below the bedroom count is refused by the table, loudly'
+select is(
+  app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true)
+    #> '{fields}' #- '{property.rooms_count,blocked,decision_id}'
+    #- '{property.occupancy_status,decision_id}',
+  '{
+     "property.land_surface_m2": {"state": "pass_through"},
+     "property.occupancy_status": {
+       "state": "held", "value": "rented", "claim_id": "88300000-2000-4000-8000-000000000107"},
+     "property.rooms_count": {"state": "blocked", "blocked": {
+       "claim_id": "88300000-2000-4000-8000-000000000106", "value": 1, "bedrooms_count": 2}},
+     "property.surface_m2": {"state": "pass_through"},
+     "sale.visit_dates": {"state": "pass_through"}
+   }'::jsonb,
+  'a room count below the bedroom count of the sale is not written: its field is blocked, the others are projected'
 );
 
 select results_eq(
-  $$select rooms_count, held_fields from public.auction_sales
-      where id = '88300000-1000-4000-8000-000000000001'$$,
-  $$values (2, null::jsonb)$$,
-  'the refused projection wrote nothing'
+  $$select rooms_count, bedrooms_count, occupancy_status, held_fields ? 'property.rooms_count'
+      from public.auction_sales where id = '88300000-1000-4000-8000-000000000001'$$,
+  $$values (2, 2, 'rented', false)$$,
+  'the projection did not fail: the occupancy is held, the room count keeps the listing value'
+);
+
+select app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true) ->> 'changed';
+
+select results_eq(
+  $$select event, held_value, incoming_value, decision_id is not null
+      from public.auction_sale_field_hold_events
+      where sale_id = '88300000-1000-4000-8000-000000000001' and event = 'projection_blocked'$$,
+  $$values ('projection_blocked', null::jsonb, '{"value": 1, "bedrooms_count": 2}'::jsonb, true)$$,
+  'the blocked piece is journaled once for review, even when the projection runs again'
+);
+
+-- Champ tenu par une pièce encore acceptée, puis pièce plus forte refusée par la fiche : l'affichage reste.
+execute decide('105', 'accepted', 'single_lot', '2026-10-13 09:00:00+00', null);
+execute decide('106', 'withdrawn', 'single_lot', null, 'entry_error');
+select app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true) ->> 'changed';
+execute decide('106', 'accepted', 'single_lot', null, null);
+
+select is(
+  (app_private.project_sale_fields(
+    '88300000-1000-4000-8000-000000000001', array['property.rooms_count'], true)
+    #> '{fields,property.rooms_count}') - 'decision_id' - 'blocked',
+  '{"state": "blocked", "value": 3, "claim_id": "88300000-2000-4000-8000-000000000105"}'::jsonb,
+  'a stronger piece that the sale refuses does not dislodge the piece that holds the field'
+);
+
+select is(
+  (select rooms_count from public.auction_sales where id = '88300000-1000-4000-8000-000000000001'),
+  3,
+  'the displayed room count is unchanged'
+);
+
+-- Un retrait ne peut pas échouer : une valeur d'annonce devenue incompatible n'est pas restaurée ----------------
+execute decide('106', 'withdrawn', 'single_lot', null, 'entry_error');
+execute decide('105', 'withdrawn', 'single_lot', null, 'entry_error');
+execute decide('108', 'accepted', 'single_lot', '2026-10-15 09:00:00+00', null);
+select app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', null, true)
+  #>> '{fields,property.rooms_count,state}';
+-- La fiche tient 5 pièces (annonce : 2) ; l'annonce donne ensuite 4 chambres, compatibles avec 5.
+update public.auction_sales set bedrooms_count = 4 where id = '88300000-1000-4000-8000-000000000001';
+execute decide('108', 'withdrawn', 'single_lot', null, 'authorization_withdrawn');
+
+select is(
+  app_private.project_sale_fields('88300000-1000-4000-8000-000000000001', array['property.rooms_count'], true)
+    #> '{fields,property.rooms_count}',
+  '{"state": "released", "released": true, "listing_value_incompatible": true}'::jsonb,
+  'withdrawing a piece never fails, even when the listing value to restore no longer fits the bedrooms'
+);
+
+select results_eq(
+  $$select sale.rooms_count, sale.bedrooms_count, sale.held_fields ? 'property.rooms_count',
+           event.held_value, event.listing_value, event.incoming_value
+      from public.auction_sales sale
+      join lateral (
+        select * from public.auction_sale_field_hold_events queue
+        where queue.sale_id = sale.id and queue.field_key = 'property.rooms_count'
+        order by queue.seq desc limit 1
+      ) event on true
+      where sale.id = '88300000-1000-4000-8000-000000000001'$$,
+  $$values (null::integer, 4, false, '5'::jsonb, '2'::jsonb, '{"bedrooms_count": 4}'::jsonb)$$,
+  'the room count is restored to nothing and the event says which bedroom count prevented the listing value'
 );
 
 -- Contradiction de deux origines au même rang, champ libre ----------------------------------------------------
-execute decide('201', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
-execute decide('202', 'accepted', 'single_lot', '2026-11-13 09:00:00+00', null);
+execute decide('201', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
+execute decide('202', 'accepted', 'single_lot', '2026-10-13 09:00:00+00', null);
 
 select is(
   app_private.project_sale_fields('88300000-1000-4000-8000-000000000002', array['property.rooms_count'], true)
@@ -482,8 +593,8 @@ select is(
 );
 
 -- Deux origines qui concordent à la tolérance près : pas de contradiction.
-execute decide('203', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
-execute decide('204', 'accepted', 'single_lot', '2026-11-13 09:00:00+00', null);
+execute decide('203', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
+execute decide('204', 'accepted', 'single_lot', '2026-10-13 09:00:00+00', null);
 
 select is(
   (app_private.project_sale_fields('88300000-1000-4000-8000-000000000002', array['property.surface_m2'], true)
@@ -493,9 +604,9 @@ select is(
 );
 
 -- Contradiction sur un champ déjà tenu : l'affichage ne change pas.
-execute decide('205', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
+execute decide('205', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
 select app_private.project_sale_fields('88300000-1000-4000-8000-000000000002', null, true) ->> 'changed';
-execute decide('206', 'accepted', 'single_lot', '2026-11-13 09:00:00+00', null);
+execute decide('206', 'accepted', 'single_lot', '2026-10-13 09:00:00+00', null);
 
 select is(
   (app_private.project_sale_fields(
@@ -522,7 +633,7 @@ select is(
   'a conflicted field is still held against a direct write'
 );
 
-execute decide('206', 'withdrawn', 'single_lot', null, 'Réponse d''un autre bien.');
+execute decide('206', 'withdrawn', 'single_lot', null, 'other_lot');
 
 select is(
   (app_private.project_sale_fields(
@@ -533,11 +644,11 @@ select is(
 );
 
 -- La pièce qui tenait le champ est contestée pendant que deux autres se contredisent : plus rien ne tient.
-execute decide('207', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
+execute decide('207', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
 select app_private.project_sale_fields('88300000-1000-4000-8000-000000000002', null, true) ->> 'changed';
-execute decide('208', 'accepted', 'single_lot', '2026-11-13 09:00:00+00', null);
-execute decide('209', 'accepted', 'single_lot', '2026-11-14 09:00:00+00', null);
-execute decide('207', 'opposed', 'single_lot', null, 'Opposition du cabinet.');
+execute decide('208', 'accepted', 'single_lot', '2026-10-13 09:00:00+00', null);
+execute decide('209', 'accepted', 'single_lot', '2026-10-14 09:00:00+00', null);
+execute decide('207', 'opposed', 'single_lot', null, 'professional_opposition');
 
 select is(
   (app_private.project_sale_fields(
@@ -554,15 +665,20 @@ select results_eq(
   'the opposed land surface is gone and the conflicting pieces hold nothing'
 );
 
+-- Cet appel a écrit deux évènements (libération, contradiction) : l'ordre de seq les départage, et la
+-- projection suivante ne rejournalise pas la contradiction.
+select app_private.project_sale_fields(
+  '88300000-1000-4000-8000-000000000002', array['property.land_surface_m2'], true) ->> 'changed';
+
 select is(
-  (select array_agg(event order by event) from public.auction_sale_field_hold_events
+  (select array_agg(event order by seq) from public.auction_sale_field_hold_events
      where sale_id = '88300000-1000-4000-8000-000000000002' and field_key = 'property.land_surface_m2'),
-  array['conflicted', 'projection_held', 'projection_released'],
-  'the hold, its release and the conflict are journaled'
+  array['projection_held', 'projection_released', 'conflicted'],
+  'two events of one call are ordered, and the next projection adds no duplicate'
 );
 
 -- Lot inconnu ou non rattaché -----------------------------------------------------------------------------------
-execute decide('301', 'accepted', 'unknown', '2026-11-12 09:00:00+00', null);
+execute decide('301', 'accepted', 'unknown', '2026-10-12 09:00:00+00', null);
 
 select is(
   app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
@@ -571,7 +687,7 @@ select is(
   'an accepted piece whose lot is unknown holds nothing'
 );
 
-execute decide('301', 'accepted', 'unmatched', '2026-11-12 09:00:00+00', null);
+execute decide('301', 'accepted', 'unmatched', '2026-10-12 09:00:00+00', null);
 
 select is(
   app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
@@ -591,7 +707,7 @@ insert into public.auction_fact_claim_decisions (
   claim_id, sale_id, field_key, decision, lot_attachment, lot_ref, actor_kind, actor_id, received_at
 ) values (
   '88300000-2000-4000-8000-000000000301', '88300000-1000-4000-8000-000000000003', 'property.rooms_count',
-  'accepted', 'matched', 'lot 2', 'admin', '88300000-0000-4000-8000-0000000000a1', '2026-11-12 09:00:00+00'
+  'accepted', 'matched', 'lot 2', 'admin', '88300000-0000-4000-8000-0000000000a1', '2026-10-12 09:00:00+00'
 );
 
 select is(
@@ -623,7 +739,7 @@ select results_eq(
   'the candidate document did not write the sale'
 );
 
-execute decide('302', 'rejected', 'single_lot', null, 'Extrait d''un autre lot.');
+execute decide('302', 'rejected', 'single_lot', null, 'other_lot');
 
 select is(
   app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
@@ -656,7 +772,7 @@ select results_eq(
 );
 
 -- Un avocat l'emporte sur un document, sans contradiction (rangs différents).
-execute decide('303', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
+execute decide('303', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
 
 select is(
   (app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
@@ -672,10 +788,25 @@ select is(
   'the listing block is still the listing value, not the document value'
 );
 
--- L'annonce ne tient jamais ; une origine non classée non plus ; une valeur irrecevable non plus ---------------
+-- Deux lectures du même document dont la clé de dossier est nulle : même origine, la plus récente remplace.
+execute decide('308', 'accepted', 'single_lot', null, null);
+execute decide('309', 'accepted', 'single_lot', null, null);
+
+select is(
+  (app_private.project_sale_fields(
+    '88300000-1000-4000-8000-000000000003', array['property.land_surface_m2'], true)
+    #> '{fields,property.land_surface_m2}') - 'decision_id',
+  '{"state": "held", "value": 640, "claim_id": "88300000-2000-4000-8000-000000000309"}'::jsonb,
+  'a null case key is not an origin: two readings of one document replace each other, they do not conflict'
+);
+
+execute decide('308', 'withdrawn', 'single_lot', null, 'entry_error');
+execute decide('309', 'withdrawn', 'single_lot', null, 'entry_error');
+select app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true) ->> 'changed';
+
+-- L'annonce ne tient jamais ; une origine non classée non plus -------------------------------------------------
 execute decide('304', 'accepted', 'single_lot', null, null);
 execute decide('305', 'accepted', 'single_lot', null, null);
-execute decide('306', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
 
 select is(
   app_private.project_sale_fields(
@@ -684,18 +815,114 @@ select is(
      "sale_id": "88300000-1000-4000-8000-000000000003", "applied": true, "changed": false,
      "fields": {
        "property.land_surface_m2": {"state": "pass_through"},
-       "property.surface_m2": {
-         "state": "pass_through", "invalid_claims": ["88300000-2000-4000-8000-000000000306"]}
+       "property.surface_m2": {"state": "pass_through"}
      }
    }'::jsonb,
-  'an accepted listing observation never holds, nor an unclassified origin; an unreadable value is reported'
+  'an accepted listing observation never holds, nor an unclassified origin'
 );
 
 select results_eq(
   $$select surface_m2, land_surface_m2, held_fields ?| array['property.surface_m2', 'property.land_surface_m2']
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000003'$$,
   $$values (50::numeric, null::numeric, false)$$,
-  'none of the three wrote the sale'
+  'neither wrote the sale'
+);
+
+-- Une valeur irrecevable est refusée à l'acceptation ; si une ligne plus ancienne que cette règle existe, la
+-- projection la signale au lieu de l'ignorer (simulée ici en coupant la validation le temps d'une insertion).
+select throws_ok(
+  $$execute decide('306', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null)$$,
+  '22023',
+  'An accepted fact claim must carry a value that the registry can hold.',
+  'a value that the registry cannot hold is refused at acceptance'
+);
+
+alter table public.auction_fact_claim_decisions disable trigger auction_fact_claim_decisions_validate;
+execute decide('306', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
+alter table public.auction_fact_claim_decisions enable always trigger auction_fact_claim_decisions_validate;
+
+select is(
+  app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', array['property.surface_m2'], true)
+    #> '{fields,property.surface_m2}',
+  '{"state": "pass_through", "invalid_claims": ["88300000-2000-4000-8000-000000000306"]}'::jsonb,
+  'an accepted value that the registry cannot hold is reported, never held'
+);
+
+-- Réglage changé en données : l'entrée est mise à jour sans évènement parasite --------------------------------
+create temporary table event_marks on commit drop as
+select count(*) as events from public.auction_sale_field_hold_events
+where sale_id = '88300000-1000-4000-8000-000000000003';
+
+update public.auction_fact_fields set on_listing_change = 'listing_wins_and_review'
+where field_key = 'property.rooms_count';
+
+select is(
+  app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
+    - 'sale_id' #- '{fields,property.rooms_count,decision_id}' #- '{fields,property.occupancy_status}'
+    #- '{fields,property.surface_m2}',
+  '{
+     "applied": true, "changed": true,
+     "fields": {
+       "property.land_surface_m2": {"state": "pass_through"},
+       "property.rooms_count": {
+         "state": "unchanged", "value": 3, "claim_id": "88300000-2000-4000-8000-000000000301"},
+       "sale.visit_dates": {"state": "pass_through"}
+     }
+   }'::jsonb,
+  'a setting changed in data refreshes the entry: the piece is unchanged'
+);
+
+select results_eq(
+  $$select sale.held_fields #>> '{property.rooms_count,on_listing_change}',
+           (select count(*) from public.auction_sale_field_hold_events event where event.sale_id = sale.id)
+             = (select events from event_marks)
+      from public.auction_sales sale where sale.id = '88300000-1000-4000-8000-000000000003'$$,
+  $$values ('listing_wins_and_review', true)$$,
+  'the entry carries the new setting and no event was journaled for it'
+);
+
+-- Libération durable : après que l'annonce a délogé une pièce, aucune pièce acceptée AVANT ne reprend le champ --
+execute decide('307', 'accepted', 'single_lot', null, null);
+select app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
+  #>> '{fields,property.rooms_count,state}';
+
+-- L'annonce passe à 6 pièces : réglage inverse, le champ est libéré.
+update public.auction_sales set rooms_count = 6 where id = '88300000-1000-4000-8000-000000000003';
+
+select results_eq(
+  $$select rooms_count, held_fields ? 'property.rooms_count'
+      from public.auction_sales where id = '88300000-1000-4000-8000-000000000003'$$,
+  $$values (6, false)$$,
+  'the listing wins: the room count of the lawyer is released'
+);
+
+select is(
+  app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
+    #> '{fields,property.rooms_count}',
+  '{"state": "pass_through"}'::jsonb,
+  'neither the dislodged piece nor a weaker piece accepted before the release takes the field back'
+);
+
+select is(
+  (select rooms_count from public.auction_sales where id = '88300000-1000-4000-8000-000000000003'),
+  6,
+  'the listing value that won is still displayed after the projection'
+);
+
+-- Une nouvelle décision humaine, postérieure à la libération, rend la pièce à nouveau candidate.
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, supersedes_decision_id
+)
+select decision.claim_id, decision.sale_id, decision.field_key, 'accepted', 'single_lot', 'admin',
+  '88300000-0000-4000-8000-0000000000a1', decision.id
+from public.auction_fact_claim_decisions decision
+where decision.claim_id = '88300000-2000-4000-8000-000000000307';
+
+select is(
+  (app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
+    #> '{fields,property.rooms_count}') - 'decision_id',
+  '{"state": "held", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000307"}'::jsonb,
+  'a new acceptance taken after the release holds the field again'
 );
 
 -- Ancien statut « accepted » d'une observation, sans décision au journal -------------------------------------
@@ -712,6 +939,91 @@ select is(
      }
    }'::jsonb,
   'an observation marked accepted in auction_fact_claims holds nothing without a journaled decision'
+);
+
+-- Ordre des décisions : seq, jamais la date ---------------------------------------------------------------------
+-- Acceptation que l'écrivain date de l'an 2999, puis opposition : l'opposition est la dernière décision.
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, received_at, decided_at
+) values (
+  '88300000-2000-4000-8000-000000000602', '88300000-1000-4000-8000-000000000006', 'property.surface_m2',
+  'accepted', 'single_lot', 'admin', '88300000-0000-4000-8000-0000000000a1', '2026-10-12 09:00:00+00',
+  '2999-01-01 00:00:00+00'
+);
+
+select is(
+  app_private.project_sale_fields('88300000-1000-4000-8000-000000000006', array['property.surface_m2'], true)
+    #>> '{fields,property.surface_m2,state}',
+  'held',
+  'a postdated acceptance holds like any other'
+);
+
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, reason_code
+) values (
+  '88300000-2000-4000-8000-000000000602', '88300000-1000-4000-8000-000000000006', 'property.surface_m2',
+  'opposed', 'single_lot', 'lawyer', 'professional_opposition'
+);
+
+select is(
+  app_private.project_sale_fields('88300000-1000-4000-8000-000000000006', array['property.surface_m2'], true)
+    #>> '{fields,property.surface_m2,state}',
+  'released',
+  'an opposition taken after an acceptance dated in the year 2999 still releases the field'
+);
+
+select ok(
+  (select bool_and(decided_at <= clock_timestamp()) from public.auction_fact_claim_decisions
+     where claim_id = '88300000-2000-4000-8000-000000000602'),
+  'the date given by the writer was replaced by the date of the database'
+);
+
+-- Deux décisions de la même observation dans UNE instruction : la dernière ligne écrite fait foi.
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code
+) values
+  ('88300000-2000-4000-8000-000000000603', '88300000-1000-4000-8000-000000000006',
+    'property.land_surface_m2', 'accepted', 'single_lot', 'admin', '88300000-0000-4000-8000-0000000000a1', null),
+  ('88300000-2000-4000-8000-000000000603', '88300000-1000-4000-8000-000000000006',
+    'property.land_surface_m2', 'withdrawn', 'single_lot', 'admin', '88300000-0000-4000-8000-0000000000a1',
+    'entry_error');
+
+select is(
+  app_private.project_sale_fields(
+    '88300000-1000-4000-8000-000000000006', array['property.land_surface_m2'], true)
+    #>> '{fields,property.land_surface_m2,state}',
+  'pass_through',
+  'accepted then withdrawn in one statement: the withdrawal is the last decision'
+);
+
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code
+) values
+  ('88300000-2000-4000-8000-000000000603', '88300000-1000-4000-8000-000000000006',
+    'property.land_surface_m2', 'withdrawn', 'single_lot', 'admin', '88300000-0000-4000-8000-0000000000a1',
+    'entry_error'),
+  ('88300000-2000-4000-8000-000000000603', '88300000-1000-4000-8000-000000000006',
+    'property.land_surface_m2', 'accepted', 'single_lot', 'admin', '88300000-0000-4000-8000-0000000000a1', null);
+
+select is(
+  app_private.project_sale_fields(
+    '88300000-1000-4000-8000-000000000006', array['property.land_surface_m2'], true)
+    #>> '{fields,property.land_surface_m2,state}',
+  'held',
+  'withdrawn then accepted in one statement: the acceptance is the last decision'
+);
+
+-- Même origine, une pièce datée (reçue il y a longtemps) et une pièce sans date de réception, décidée ensuite :
+-- la seconde est la plus récente (date de réception, à défaut date de décision).
+execute decide('604', 'accepted', 'single_lot', '2026-01-10 09:00:00+00', null);
+execute decide('605', 'accepted', 'single_lot', null, null);
+
+select is(
+  (app_private.project_sale_fields(
+    '88300000-1000-4000-8000-000000000006', array['property.occupancy_status'], true)
+    #> '{fields,property.occupancy_status}') - 'decision_id',
+  '{"state": "held", "value": "vacant", "claim_id": "88300000-2000-4000-8000-000000000605"}'::jsonb,
+  'a piece without a reception date is dated by its decision: the later entry of the same origin holds'
 );
 
 -- Origine d'une observation (fonction pure) ---------------------------------------------------------------------
@@ -766,7 +1078,8 @@ select ok(
 );
 
 -- Fusion : les décisions de la vente absorbée valent pour la vente conservée -----------------------------------
-execute decide('501', 'accepted', 'single_lot', '2026-11-12 09:00:00+00', null);
+execute decide('501', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
+execute decide('901', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
 update public.auction_sales
 set source_urls = '["https://example.test/883/sale-4", "https://example.test/883/sale-5"]'::jsonb
 where id = '88300000-1000-4000-8000-000000000004';
@@ -795,6 +1108,33 @@ select is(
   (select rooms_count from public.auction_sales where id = '88300000-1000-4000-8000-000000000004'),
   4,
   'the piece of the absorbed sale is displayed on the kept sale'
+);
+
+-- Fusion en deux temps : la vente 9 est absorbée par la 8, puis la 8 par la 7.
+update public.auction_sales
+set source_urls = '["https://example.test/883/sale-8", "https://example.test/883/sale-9"]'::jsonb
+where id = '88300000-1000-4000-8000-000000000008';
+delete from public.auction_sales where id = '88300000-1000-4000-8000-000000000009';
+update public.auction_sales
+set source_urls = '["https://example.test/883/sale-7", "https://example.test/883/sale-8"]'::jsonb
+where id = '88300000-1000-4000-8000-000000000007';
+delete from public.auction_sales where id = '88300000-1000-4000-8000-000000000008';
+
+select results_eq(
+  $$select old_sale_id, canonical_sale_id from app_private.auction_sale_merges
+      where old_sale_id in ('88300000-1000-4000-8000-000000000008', '88300000-1000-4000-8000-000000000009')
+      order by old_sale_id$$,
+  $$values
+      ('88300000-1000-4000-8000-000000000008'::uuid, '88300000-1000-4000-8000-000000000007'::uuid),
+      ('88300000-1000-4000-8000-000000000009'::uuid, '88300000-1000-4000-8000-000000000007'::uuid)$$,
+  'a merge in two steps is recorded flat: both absorbed sales point to the sale finally kept'
+);
+
+select is(
+  (app_private.project_sale_fields('88300000-1000-4000-8000-000000000007', null, true)
+    #> '{fields,property.rooms_count}') - 'decision_id',
+  '{"state": "held", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000901"}'::jsonb,
+  'the piece accepted on the first absorbed sale holds on the sale finally kept'
 );
 
 -- Paramètres ---------------------------------------------------------------------------------------------------
