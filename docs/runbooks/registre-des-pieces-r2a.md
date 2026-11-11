@@ -136,9 +136,12 @@ select reloptions from pg_class where oid = 'public.v_auction_fact_claims_read_m
 ```
 
 Puis le coût : `explain` (sans `analyze`) de la lecture par vente de la vue, avant et après, et la durée des
-imports. Attendu : inchangée. Sur le banc local (5 000 ventes dont aucune n'est tenue), l'écart reste dans le
-bruit, et aucun déclencheur du registre n'est appelé quand rien n'est tenu : le test 884 le prouve en remplaçant la
-fonction de retenue et celle de la garde du marqueur par une fonction qui lève. À suivre ensuite : les alertes
+imports. Attendu : inchangée. Sur le banc local (5 000 ventes dont aucune n'est tenue), le coût isolé de chaque
+élément du lot placé sur le chemin de l'import est de 1 à 6 microsecondes par ligne, pour une erreur de mesure de 3
+à 7 microsecondes : dans le bruit, et de l'ordre de 1 % d'une ligne au plus. Aucun déclencheur du registre n'est
+appelé quand rien n'est tenu : pendant cet upsert, les quatre fonctions de déclencheur du registre comptent zéro
+appel (`track_functions`), et le test 884 le prouve en remplaçant la fonction de retenue et celle de la garde du
+marqueur par une fonction qui lève. À suivre ensuite : les alertes
 `fact_registry.*` (aucune attendue) et le journal de la tâche `fact-registry-check` dans `operational_job_runs`.
 **Critère pour le lot R2b** : contrôle quotidien à zéro sur deux passages qui portent `counts`, durée des imports
 inchangée.
