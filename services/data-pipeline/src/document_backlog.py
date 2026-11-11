@@ -70,10 +70,15 @@ LOCK_YIELD_PAUSE_SECONDS = 20.0
 LOCK_LOST_STOP_REASON = "catalogue_lock_lost"
 # Priority used for (re)queued PDF generations; the ordinary enqueue uses 30.
 BACKLOG_PDF_PRIORITY = 40
-# Plafond de relecture : au plus ce nombre de lectures pdf terminées par vente en 24 heures, quelle que soit
-# l'empreinte de la tâche. Deux et non une : une vente lue le matin puis réellement invalidée par une collecte
-# (pièce changée, #415) est relue le jour même.
+# Plafond de relecture : au plus ce nombre de lectures pdf demandées par le vidage et terminées, par vente et
+# par 24 heures, quelle que soit l'empreinte de la tâche. Deux et non une : une vente lue le matin puis
+# réellement invalidée par une collecte (pièce changée, #415) est relue le jour même.
 MAX_COMPLETED_READS_PER_DAY = 2
+# Une tâche pdf annulée « review_required » (écriture de fin de passe refusée à l'admission jusqu'au dernier
+# essai, src/pdf_pass_outcomes.py) n'est pas réveillée par le vidage pendant ce nombre de jours, sauf
+# génération plus récente. Sept jours : quatre passes par cycle de onze jours au lieu d'une par jour, et une
+# vente redevenue admissible est quand même relue sans intervention.
+REVIEW_HOLD_DAYS = 7
 ACTIONABLE_STATUSES = ("active", "unknown", "upcoming", "postponed")
 USEFUL_DOCUMENT_TYPES = (
     "cahier_conditions_vente",
@@ -187,15 +192,35 @@ select s.source_url, s.source_name, s.sale_date,
    -- empreinte et une tâche neuve : ni les 4 essais ni la garde ci-dessus (une lecture terminée ne bloque plus
    -- dès qu'une tâche plus récente existe) ne bornent une vente qui reste à relire après chaque lecture. Le
    -- 11/11/2026, 3 ventes prenaient ainsi 104 des 200 lectures terminées en 48 heures, une par tick. Le compte
-   -- porte sur les lectures terminées, par le vidage ou par la file : une tâche annulée, en échec ou reportée
-   -- n'a rien lu et ne compte pas. La tâche en file reste servie par la voie générale, à son rang.
+   -- porte sur les lectures que le vidage a demandées (priorité du vidage) et qui sont terminées : une tâche
+   -- annulée, en échec ou reportée n'a rien lu. Une tâche de la voie générale (priorité 30) ne compte pas : elle
+   -- se termine souvent sans passe (pièces à jour après restauration), et la compter ferait attendre une pièce
+   -- nouvelle. La tâche en file reste servie par la voie générale, à son rang.
    and (
          select count(*) from public.auction_enrichment_jobs c
           where c.source_url = s.source_url
             and c.job_type = 'pdf'
             and c.status = 'completed'
+            and c.priority >= %s
             and c.completed_at >= now() - interval '24 hours'
        ) < %s
+   -- Tâche pdf annulée « review_required » : le vidage réveille toute tâche annulée d'une vente candidate
+   -- (ENSURE_JOB_SQL), il rejouerait donc dès le tick suivant la passe dont l'écriture vient d'être refusée
+   -- quatre fois. La vente attend une génération plus récente (pièces changées) ou la fin du délai.
+   and not exists (
+         select 1 from public.auction_enrichment_jobs r
+          where r.source_url = s.source_url
+            and r.job_type = 'pdf'
+            and r.status = 'cancelled'
+            and r.last_error like 'review_required:%%'
+            and r.updated_at >= now() - make_interval(days => %s)
+            and not exists (
+                  select 1 from public.auction_enrichment_jobs n
+                   where n.source_url = r.source_url
+                     and n.job_type = 'pdf'
+                     and n.created_at > r.created_at
+                )
+       )
  -- Documents never tried come first: a sale whose only unread documents
  -- already failed (and will likely fail again) must not starve them.
  -- A sale without a date ranks as if it ended within a week: for a State tender (Cessions de
@@ -321,6 +346,8 @@ class SaleOutcome:
     partial_passes: int = 0
     refused_checkpoints: int = 0
     read_complete: bool = False
+    # Passes conclues sur « rien à lire » : la tâche attend la revalidation d'un manifeste complet (lot R6).
+    waiting_passes: int = 0
 
 
 @dataclass
@@ -371,6 +398,7 @@ class BacklogReport:
             "partial_passes": partial_passes,
             "partial_pass_share": partial_pass_share(passes, partial_passes),
             "refused_checkpoints": sum(item.refused_checkpoints for item in self.outcomes),
+            "waiting_passes": sum(item.waiting_passes for item in self.outcomes),
             "prefetch": dict(self.prefetch),
             "facts_added": dict(sorted(facts.items())),
             "by_source": dict(sorted(by_source.items())),
@@ -410,7 +438,9 @@ def candidate_parameters(limit: int) -> tuple[object, ...]:
         list(ACTIONABLE_STATUSES),
         DOCUMENT_FACTS_VERSION,
         DOCUMENT_FACTS_VERSION,
+        BACKLOG_PDF_PRIORITY,
         MAX_COMPLETED_READS_PER_DAY,
+        REVIEW_HOLD_DAYS,
         int(limit),
     )
 
@@ -617,6 +647,7 @@ def drain_sale(
                 final_status, last_error = read_job_state(db_url, job_id)
                 outcome.partial_passes += int(is_partial_pass(final_status, last_error))
                 outcome.refused_checkpoints += int(is_refused_checkpoint(last_error))
+                outcome.waiting_passes += int(final_status == "queued" and waits_for_its_deadline(last_error))
                 refreshed = _fetch_sale(source_url)
                 settled_now = _settled_documents(refreshed)
                 progressed = settled_now > settled
@@ -641,8 +672,8 @@ def drain_sale(
                     # ``queued`` is a deferral with a durable checkpoint: the
                     # next six documents of a partial manifest, or the next
                     # OCR pages of a long scanned report. Anything else ends.
-                    # Une tâche qui attend une échéance (rien à revalider, écriture écartée) finit aussi : la
-                    # remettre en file tout de suite effacerait son échéance pour rejouer la même passe.
+                    # Une tâche qui attend une échéance (rien à revalider) finit aussi : la remettre en file
+                    # tout de suite effacerait son échéance pour rejouer la même passe.
                     break
                 if refreshed is None or _read_with_current_rules(refreshed):
                     break
@@ -784,7 +815,8 @@ def _write_step_summary(summary: dict[str, Any]) -> None:
         f"- Temps moyen par vente traitée : {summary['average_seconds_per_processed_sale']} s",
         f"- Ventes lues (toutes les pièces à jour) : {summary['sales_read']}",
         f"- Passes : {summary['passes']}, dont partielles {summary['partial_passes']} "
-        f"({round(100 * summary['partial_pass_share'])} %) ; points d'étape refusés : {summary['refused_checkpoints']}",
+        f"({round(100 * summary['partial_pass_share'])} %) ; points d'étape refusés : {summary['refused_checkpoints']} ; "
+        f"en attente d'une revalidation : {summary['waiting_passes']}",
     ]
     prefetch = summary.get("prefetch") or {}
     if prefetch:

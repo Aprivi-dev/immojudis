@@ -8,6 +8,17 @@ rapport avec les pièces (position, tribunal, procédure, caractéristiques).
 
 Repris des essais du diagnostic R6 du 11/11/2026 (cas T1 à T12), dont les tests de ``test_pdf_queue_ticks.py``
 rejouent les cas T3, T4 et T8.
+
+Le temps passe par une horloge (``age``, time-machine) : rien n'est réécrit, ni en base ni sur le disque du
+runner. L'empreinte d'une tâche ne change donc que si une passe écrit, et la même tâche est reprise à son
+échéance, essai après essai.
+
+Limites. Les transitions des tâches (``ENSURE_JOB_SQL``, ``CLAIM_JOB_SQL``, fin et report) et l'écriture de la
+vente (admission, garde de révision, création de la tâche pdf) sont récrites ici en Python : relues contre le
+SQL, mais rien ne les y lie. La sélection des ventes (``CANDIDATES_SQL``) n'est pas jouée : chaque ``drain`` est
+une visite décidée par le test, y compris quand la base ferait attendre la vente. Ces deux points sont
+vérifiés sur une vraie base dans ``test_document_backlog_candidates_postgres.py`` et
+``test_pdf_final_write_contract_postgres.py``.
 """
 
 from __future__ import annotations
@@ -22,6 +33,7 @@ from typing import Any
 
 import httpx
 import pymupdf
+import time_machine
 
 import src.config as config
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline
@@ -62,26 +74,6 @@ SETTINGS: dict[str, object] = {
     "llm_enabled": True,
     "llm_prompt_version": "banc",
 }
-# Dates de vérification du manifeste et des lignes d'extraction, vieillies ensemble par ``age``.
-_CHECK_KEYS = {"checked_at", "verified_at", "http_checked_at", "last_successful_check_at"}
-
-
-def _aged(value: Any, delta: timedelta) -> Any:
-    if isinstance(value, dict):
-        aged: dict[str, Any] = {}
-        for key, item in value.items():
-            if key in _CHECK_KEYS and isinstance(item, str) and item:
-                aged[key] = (datetime.fromisoformat(item) - delta).isoformat()
-            elif key == "http_checked_at_by_url" and isinstance(item, dict):
-                aged[key] = {url: (datetime.fromisoformat(at) - delta).isoformat() for url, at in item.items()}
-            else:
-                aged[key] = _aged(item, delta)
-        return aged
-    if isinstance(value, list):
-        return [_aged(item, delta) for item in value]
-    return value
-
-
 def pdf_bytes(directory: Path, text: str) -> bytes:
     """Un PDF d'une page portant ``text`` (une page blanche si ``text`` est vide)."""
     path = directory / f"source-{time.monotonic_ns()}.pdf"
@@ -124,7 +116,8 @@ class QueueBench:
         self.row: dict[str, Any] = {}
         self.extraction_rows: list[dict[str, Any]] = []
         self.jobs: list[dict[str, Any]] = []
-        self.discard_next_write = False
+        self.discarded_writes = 0  # nombre d'écritures à venir que la garde de révision écartera
+        self._clock: list[Any] = []
         for module in (queued_runner, supabase_client):
             monkeypatch.setattr(module, "fetch_sale_for_data_refresh", lambda _url: self.stored_sale())
         monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", self._upsert)
@@ -197,8 +190,8 @@ class QueueBench:
         sale = sales[0]
         if catalogue_write_rejection(sale) is not None and not closes_expired_offer_deadline(sale):
             return 0
-        if self.discard_next_write:  # la ligne a changé pendant la passe
-            self.discard_next_write = False
+        if self.discarded_writes:  # la ligne a changé pendant la passe
+            self.discarded_writes -= 1
             return 0
         sale.updated_at = datetime.now(UTC)
         self._store(sale)
@@ -270,7 +263,14 @@ class QueueBench:
         return dict(job)
 
     def _finish(
-        self, job_id: str, *, succeeded: bool, cancelled: bool = False, error_message: str | None = None, **_claim
+        self,
+        job_id: str,
+        *,
+        succeeded: bool,
+        cancelled: bool = False,
+        error_message: str | None = None,
+        retry_not_before: datetime | None = None,
+        **_claim,
     ) -> bool:
         job = self._job(job_id)
         job.update(
@@ -279,6 +279,9 @@ class QueueBench:
             last_error="" if succeeded else (error_message or "enrichment failed"),
             locked_at=None,
         )
+        if not succeeded and not cancelled:  # nouvel essai dans 30 minutes, ou plus tard si la fin le demande
+            retry_at = datetime.now(UTC) + timedelta(minutes=30)
+            job["next_attempt_at"] = max(retry_at, retry_not_before) if retry_not_before else retry_at
         return True
 
     def _defer(self, jobs: list[dict[str, Any]], error: Any) -> None:
@@ -307,17 +310,15 @@ class QueueBench:
             self.dirs[name].mkdir()
 
     def age(self, hours: float) -> None:
-        """Le temps passe : les vérifications, en base comme sur le disque du runner, vieillissent de ``hours`` heures."""
-        delta = timedelta(hours=hours)
-        self.row["raw_payload"] = _aged(self.row["raw_payload"], delta)
-        for row in self.extraction_rows:
-            row["result"] = _aged(row["result"], delta)
-        for job in self.jobs:
-            for key in ("next_attempt_at", "completed_at"):
-                if job[key] is not None:
-                    job[key] -= delta
-        for sidecar in self.dirs["documents"].rglob("*.http.json"):
-            sidecar.write_text(json.dumps(_aged(json.loads(sidecar.read_text()), delta)))
+        """Le temps passe : l'horloge avance de ``hours`` heures, pour la base du banc comme pour le runner."""
+        traveller = time_machine.travel(datetime.now(UTC) + timedelta(hours=hours), tick=True)
+        traveller.start()
+        self._clock.append(traveller)
+
+    def close(self) -> None:
+        """Remet l'horloge du processus (à appeler en fin de test)."""
+        while self._clock:
+            self._clock.pop().stop()
 
     def prefetch(self) -> dict[str, Any]:
         """La lecture en avance du vidage, hors verrou, avant la visite de la vente."""
