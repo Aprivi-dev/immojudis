@@ -50,9 +50,10 @@ Neuf minutes par passage, et le pipeline Python n'a jamais démarré.
   que la bibliothèque standard de Python (`python3 -I -S`) et l'API REST de Supabase. Elle ne clôt que le
   run demandé et seulement s'il est encore `queued` ; un run `running`, déjà clos ou d'un autre passage
   n'est pas touché. La clé n'est envoyée qu'à une adresse `https`, sans suivre de redirection, et le
-  script s'arrête de lui-même après 140 s au plus (plafond de l'étape : 3 min). Les modes qui n'exécutent
-  pas le run demandé (`publication_check`, `documents_backlog`, `enrichment_only`) ne le closent pas : le
-  vidage des pièces tourne dans un autre groupe de concurrence, en parallèle d'un passage planifié. Elle écrit `status = failed`, `summary.completion_status = failed_before_start`,
+  script s'arrête de lui-même après 140 s au plus (plafond de l'étape : 3 min). Un passage automatique
+  clôt toujours son run ; sinon, les modes qui n'exécutent pas le run demandé (`publication_check`,
+  `documents_backlog`, `enrichment_only`) ne le closent pas : le vidage des pièces tourne dans un autre
+  groupe de concurrence, en parallèle d'un passage planifié. Elle écrit `status = failed`, `summary.completion_status = failed_before_start`,
   `summary.startup_failure` (étape : `system_packages`, `python_dependencies`, `justice_references` ou
   `job_preparation`) et, dans `errors.runner`, « Échec avant démarrage : installation des paquets système
   (apt). Le pipeline n'a pas démarré… ». Pour une collecte planifiée, elle remet la source à échéance
@@ -93,5 +94,7 @@ errors->'runner' from auction_runs where id = '<run_id>';` rend `failed`, une he
   ouvert jusqu'à l'expiration du bail.
 - Un lancement manuel en mode `documents_backlog` ou `enrichment_only` qui porterait un `run_id` et
   échouerait avant le pipeline ne clôt pas ce run (ces modes ne l'exécutent pas) : le bail s'applique.
+- La clôture relit `summary` et `errors` puis les réécrit en entier : une écriture du lanceur entre les
+  deux (compte rendu d'un déclenchement) peut être perdue. Sans effet, le run devient terminal.
 - Un échec du `checkout` lui-même n'est pas couvert (le script n'est alors pas sur le runner) : le bail
   s'applique.
