@@ -12,6 +12,7 @@ import type {
 import {
   INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE,
   informationAgentAddressKind,
+  ownMailDomainOf,
   type InformationAgentAddressKind,
   type InformationAgentStructureKind,
 } from "@/lib/information-agent/contact-structure";
@@ -21,6 +22,7 @@ import { isInformationAgentExcludedAddress } from "@/lib/information-agent/exclu
 import {
   informationAgentListingBlockRole,
   informationAgentSaleFieldRole,
+  informationAgentSourceRole,
   isInterlocutorRoleForSale,
   isNonInterlocutorMention,
   readInformationAgentOrganizerType,
@@ -94,7 +96,9 @@ export type InformationAgentContactResolution = {
   refused: Partial<Record<InformationAgentContactRefusal, number>>;
   /** Organisateur de la vente retenu pour fixer les rôles. */
   organizerType: InformationAgentOrganizerType;
-  /** Code d'office de la vente notariale, quand ses blocs n'en publient qu'un seul ; sinon `null`. */
+  /** Source de l'annonce de la vente (`notaires`, `cessions_etat`, `licitor`…). */
+  sourceName: string | null;
+  /** Code d'office de la vente, quand ses blocs n'en publient qu'un seul ; sinon `null`. */
   officeCode: string | null;
 };
 
@@ -324,15 +328,24 @@ export function resolveInformationAgentListingContacts(
               lawyerAddress: lawyerBlockAddresses.has(email),
             })
           : null;
-      const role = saleField?.role ?? inferContactRole(`${observation.field} ${observation.value}`);
+      // Rôle lu dans le texte ; il sert d'abord à écarter qui n'est pas l'interlocuteur de la vente.
+      const textRole = saleField
+        ? null
+        : inferContactRole(`${observation.field} ${observation.value}`);
+      const role =
+        saleField?.role ?? textRoleForSource(textRole ?? "source_contact", observation.sourceName);
       if (saleField) {
-        group("sale_field", email);
+        // Deux adresses du champ ne sont celles d'une même structure que si elles partagent le même domaine
+        // propre : « jean.dupont@cabinet-a » et « contact@cabinet-b » restent à départager par
+        // l'administrateur.
+        const domain = ownMailDomainOf(email);
+        if (domain) group(`sale_field|${domain}`, email);
       } else {
         if (isNonInterlocutorMention(observation.field, String(observation.value), email)) {
           refuse("not_sale_interlocutor");
           continue;
         }
-        if (!isInterlocutorRoleForSale(role, organizerType)) {
+        if (!isInterlocutorRoleForSale(textRole ?? role, organizerType)) {
           refuse("role_not_sale_interlocutor");
           continue;
         }
@@ -368,15 +381,14 @@ export function resolveInformationAgentListingContacts(
     }),
   );
 
-  // Vente notariale dont les blocs ne publient qu'un seul code d'office : c'est l'office de la vente, donc
-  // celui de tout notaire retenu, que son adresse vienne d'un bloc, du champ, d'un texte ou du registre.
+  // Les blocs de l'annonce ne publient qu'un seul code d'office : c'est l'office de la vente, donc celui de
+  // tout notaire retenu, que son adresse vienne d'un bloc, du champ, d'un texte ou du registre, et quel que
+  // soit l'organisateur déclaré (une annonce de `notaires` sans `organizer_type` reste celle d'un office).
   const publishedOfficeCodes = new Set(
     blocks.flatMap((block) => (block.officeCode ? [block.officeCode] : [])),
   );
   const officeCode =
-    organizerType === "notary" && publishedOfficeCodes.size === 1
-      ? ([...publishedOfficeCodes][0] ?? null)
-      : null;
+    publishedOfficeCodes.size === 1 ? ([...publishedOfficeCodes][0] ?? null) : null;
   for (const candidate of byEmail.values()) {
     candidate.addressKind ??= informationAgentAddressKind(candidate.email);
     if (officeCode && candidate.role === "notary") candidate.officeCode ??= officeCode;
@@ -389,8 +401,21 @@ export function resolveInformationAgentListingContacts(
     ),
     refused,
     organizerType,
+    sourceName,
     officeCode,
   };
+}
+
+/**
+ * Rôle lu dans un texte libre (bloc cité, description), corrigé par la source : `notaires` ne publie que des
+ * notaires et `cessions_etat` que des services de l'État. Les mots « cabinet » ou « avocat » d'un de leurs
+ * textes ne font donc jamais un avocat : l'adresse reste un contact de l'annonce, à confirmer.
+ */
+function textRoleForSource(
+  role: InformationAgentContactRole,
+  sourceName: string | null,
+): InformationAgentContactRole {
+  return role === "lawyer" && informationAgentSourceRole(sourceName) ? "source_contact" : role;
 }
 
 function recipientKindForRole(

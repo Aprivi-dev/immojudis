@@ -341,6 +341,7 @@ export async function createAdminInformationAgentDraft({
         role: recipientIdentityRole,
         structureKind: selectedByEmail?.structureKind,
         organizerType: resolution.organizerType,
+        sourceName: resolution.sourceName,
       });
   if (
     requestedQuestionKeys?.some((key) => !isInformationAgentQuestionAllowed(questionAudience, key))

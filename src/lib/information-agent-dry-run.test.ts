@@ -275,14 +275,49 @@ describe("mesure à blanc des destinataires", () => {
     fetchSpy.mockRestore();
   });
 
-  it("est réservée à un administrateur : sans ce droit, rien n'est lu", async () => {
+  it("la mesure a sa propre garde d'administrateur, avant toute lecture", async () => {
+    // Liste vide : la lecture des ventes (qui a sa garde aussi) n'est jamais atteinte. Seule la garde de la
+    // mesure peut donc refuser.
+    await expect(
+      measureInformationAgentRecipients({ auth: NOT_ADMIN, saleIds: [] }),
+    ).rejects.toThrow("accès administrateur requis");
     await expect(
       measureInformationAgentRecipients({ auth: NOT_ADMIN, saleIds: [id(1)] }),
     ).rejects.toThrow("accès administrateur requis");
+    expect(db.reads).toEqual([]);
+  });
+
+  it("la lecture des ventes a sa propre garde d'administrateur", async () => {
     await expect(
       loadInformationAgentContactSales({ auth: { isAdmin: false }, saleIds: [id(1)] }),
     ).rejects.toThrow("accès administrateur requis");
     expect(db.reads).toEqual([]);
+    const loaded = await loadInformationAgentContactSales({
+      auth: { isAdmin: true },
+      saleIds: [id(1)],
+    });
+    expect([...loaded.sales.keys()]).toEqual([id(1)]);
+  });
+
+  it("source `notaires` sans organisateur déclaré, office opposé, autre adresse dans `lawyer_contact` : aucun destinataire", async () => {
+    db.tables.information_agent_identity_oppositions = [{ identity_key: "structure|office|33001" }];
+    db.tables.auction_sales = [
+      saleRow(1, "notaires", "unknown", {
+        source_property_features: {
+          contact: { name: "Jean Martin", email: "jean.martin@example.test" },
+          listing: { office_crpcen: "33001" },
+        },
+        lawyer_contact: "autre.notaire@exemple-fictif.notaires.fr",
+      }),
+    ];
+    const [row] = (await measure([id(1)])).rows;
+    expect(row).toMatchObject({
+      organizerType: "unknown",
+      outcome: "blocked",
+      blockedBy: "structure_opposed",
+      recipient: null,
+      candidateCount: 0,
+    });
   });
 
   it("le résumé ne contient ni adresse ni identifiant de vente", async () => {
@@ -429,7 +464,9 @@ describe("opposition au niveau de la structure", () => {
     expect(drafted).toMatchObject({
       role: "notary",
       addressKind: "generic",
-      structureOpposition: true,
+      // « Jean Martin » est nommé : pied ordinaire, mais l'opposition vaudra pour l'étude.
+      structureAddress: null,
+      structureOpposition: "notary_office",
       questionAudience: "notary",
     });
 
@@ -438,20 +475,26 @@ describe("opposition au niveau de la structure", () => {
     const typedShared = missionRecipient(mission, null, "autre.notaire@exemple-fictif.notaires.fr");
     expect(structureKeys(typedShared.keys.identityKeys)).toEqual([]);
     expect(structureKeys(typedShared.keys.checkKeys)).toEqual(["structure|office|33001"]);
-    expect(typedShared.structureOpposition).toBe(false);
+    expect(typedShared.structureOpposition).toBeNull();
 
     // Adresse saisie sur un domaine propre : identifiée par ce domaine, pas par l'office de la vente.
     const typedOwn = missionRecipient(mission, null, "jean.martin@example.test");
     expect(structureKeys(typedOwn.keys.identityKeys)).toEqual([]);
     expect(structureKeys(typedOwn.keys.checkKeys)).toEqual(["structure|domain|example.test"]);
 
-    // Brouillon antérieur à ce lot : pas de destinataire enregistré, donc aucune liste propre.
-    expect(
-      missionRecipient(
-        { recipient_kind: "source_lawyer", recipient_name: "Jean Dupont", metadata: {} } as never,
-        null,
-        "jean.dupont@example.test",
-      ),
-    ).toMatchObject({ role: "lawyer", questionAudience: "other", structureOpposition: false });
+    // Brouillon antérieur à ce lot : aucun destinataire enregistré, et aucune valeur supposée à sa place
+    // (l'aperçu et l'envoi le refusent : il doit être régénéré).
+    const legacy = missionRecipient(
+      { recipient_kind: "source_lawyer", recipient_name: null, metadata: {} } as never,
+      null,
+      "contact@example.test",
+    );
+    expect(legacy.questionAudience).toBeUndefined();
+    // Adresse générique d'un avocat, sans nom : variante « structure », avec le mot du cabinet.
+    expect(legacy).toMatchObject({
+      role: "lawyer",
+      structureAddress: "law_firm",
+      structureOpposition: "law_firm",
+    });
   });
 });

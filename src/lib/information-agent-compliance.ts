@@ -32,12 +32,13 @@ export type InformationAgentLegalFooter = {
   /** Type de source de la recherche : l'autre annonce n'est pas « une page publique » consultée. */
   automatedSearchSource?: InformationAgentAddressSourceKind;
   /**
-   * Variante « structure » du pied : le message part à l'adresse générique d'une étude, d'un cabinet ou d'un
-   * service (aucune personne n'est connue tant que personne n'a répondu).
+   * Variante « structure » du pied : le message part à l'adresse générique d'un cabinet, d'une étude ou d'un
+   * service et AUCUNE personne n'est nommée (personne n'est connu tant que personne n'a répondu). Avec un
+   * nom de personne, le pied ordinaire s'applique.
    */
-  structureAddress?: boolean;
-  /** L'opposition de cette adresse vaudra pour toute sa structure : le pied le dit. */
-  structureOpposition?: boolean;
+  structureAddress?: InformationAgentFooterStructure | null;
+  /** L'opposition de cette adresse vaudra pour toute sa structure : le pied le dit, avec le mot de la structure. */
+  structureOpposition?: InformationAgentFooterStructure | null;
   /** Prestataire d'IA qui lit les réponses (art. 14(1)(e)), tiré de la configuration. */
   aiProvider: InformationAgentAiProvider;
   privacyUrl: string;
@@ -126,8 +127,29 @@ export type InformationAgentAddressOrigin = {
   searchSource?: InformationAgentAddressSourceKind;
   /** Vrai pour l'adresse d'un greffe (référentiel des tribunaux) : variante « greffe » du pied et repère « Greffe ». */
   courtRegistry?: boolean;
-  /** Vrai pour l'adresse générique d'une étude, d'un cabinet ou d'un service : variante « structure » du pied. */
-  structureAddress?: boolean;
+  /** Adresse générique d'un cabinet, d'une étude ou d'un service, sans personne nommée : variante « structure » du pied. */
+  structureAddress?: InformationAgentFooterStructure;
+};
+
+/**
+ * Structure à laquelle un message est adressé, pour choisir le mot juste : « votre cabinet » pour un avocat,
+ * « votre étude » pour un notaire, « votre service » pour un service de l'État ; `unknown` quand le
+ * brouillon ne sait pas laquelle (adresse saisie par l'administrateur, contact de l'annonce).
+ */
+export type InformationAgentFooterStructure =
+  | "law_firm"
+  | "notary_office"
+  | "state_service"
+  | "unknown";
+
+const STRUCTURE_WORDS: Record<InformationAgentFooterStructure, { yours: string; that: string }> = {
+  law_firm: { yours: "de votre cabinet", that: "de ce cabinet" },
+  notary_office: { yours: "de votre étude", that: "de cette étude" },
+  state_service: { yours: "de votre service", that: "de ce service" },
+  unknown: {
+    yours: "de votre étude, de votre cabinet ou de votre service",
+    that: "de cette structure",
+  },
 };
 
 /** Date de relevé au format JJ/MM/AAAA, à l'heure de Paris ; null si la date est absente. */
@@ -161,7 +183,7 @@ export function informationAgentAddressOrigin(
   // Un greffe a sa propre variante : jamais la variante « structure ».
   const origin: InformationAgentAddressOrigin =
     input.structureAddress && !kindOrigin.courtRegistry
-      ? { ...kindOrigin, structureAddress: true }
+      ? { ...kindOrigin, structureAddress: input.structureAddress }
       : kindOrigin;
   return origin.automated && input.sourceKind
     ? { ...origin, searchSource: input.sourceKind }
@@ -177,10 +199,10 @@ function originForKind({
   observedAt,
   observedBy,
   matchRule,
-  structureAddress = false,
+  structureAddress = null,
 }: {
-  /** Adresse générique d'une étude, d'un cabinet ou d'un service (`contact-structure.ts`). */
-  structureAddress?: boolean;
+  /** Adresse générique d'une structure, sans personne nommée (`missionRecipient().structureAddress`). */
+  structureAddress?: InformationAgentFooterStructure | null;
   sourceName?: string | null;
   sourceUrl?: string | null;
   manual?: boolean;
@@ -212,7 +234,7 @@ function originForKind({
       // Adresse générique : ce n'est pas « votre » adresse, c'est celle de la structure (relecture juridique
       // du 11/11/2026).
       const subject = structureAddress
-        ? "L’adresse de contact de votre étude (ou de votre service)"
+        ? `L’adresse de contact ${STRUCTURE_WORDS[structureAddress].yours}`
         : "Votre adresse professionnelle";
       return {
         text: label
@@ -313,7 +335,7 @@ export function informationAgentLegalFooterSections(
         court
           ? INFORMATION_AGENT_COURT_REGISTRY_DATA_CATEGORIES_STATEMENT
           : footer.structureAddress
-            ? INFORMATION_AGENT_STRUCTURE_DATA_CATEGORIES_STATEMENT
+            ? informationAgentStructureDataCategoriesStatement(footer.structureAddress)
             : INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT
       } Origine : ${footer.addressOrigin}`,
     },
@@ -337,7 +359,7 @@ export function informationAgentLegalFooterSections(
     {
       label: "Opposition :",
       text: footer.structureOpposition
-        ? `${INFORMATION_AGENT_OBJECTION_STATEMENT} ${INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT}`
+        ? `${INFORMATION_AGENT_OBJECTION_STATEMENT} ${informationAgentStructureObjectionScopeStatement(footer.structureOpposition)}`
         : INFORMATION_AGENT_OBJECTION_STATEMENT,
     },
   );
@@ -379,12 +401,27 @@ export const INFORMATION_AGENT_COURT_REGISTRY_DATA_CATEGORIES_STATEMENT =
   "l’adresse de contact de votre greffe et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.";
 
 /** Catégories de données d'un message à l'adresse générique d'une structure : l'adresse, puis la personne qui répond. */
-export const INFORMATION_AGENT_STRUCTURE_DATA_CATEGORIES_STATEMENT =
-  "l’adresse de contact de votre étude, de votre cabinet ou de votre service et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.";
+export function informationAgentStructureDataCategoriesStatement(
+  structure: InformationAgentFooterStructure,
+): string {
+  return `l’adresse de contact ${STRUCTURE_WORDS[structure].yours} et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.`;
+}
 
-/** Portée de l'opposition faite depuis l'adresse générique d'une structure (pied et page de confirmation). */
+/**
+ * Portée de l'opposition faite depuis l'adresse générique d'une structure, quand celle-ci n'est pas connue
+ * (page de confirmation de l'opposition, structure `unknown` du pied).
+ */
 export const INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT =
   "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.";
+
+/** La même portée, avec le mot de la structure du destinataire (cabinet, étude, service). */
+export function informationAgentStructureObjectionScopeStatement(
+  structure: InformationAgentFooterStructure,
+): string {
+  if (structure === "unknown") return INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT;
+  const words = STRUCTURE_WORDS[structure];
+  return `Si vous vous opposez depuis l’adresse de contact ${words.yours}, nous n’écrirons plus à aucune adresse ${words.that}.`;
+}
 
 /** Catégories de données (art. 14(1)(d) RGPD). */
 export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =

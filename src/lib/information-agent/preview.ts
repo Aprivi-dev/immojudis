@@ -8,6 +8,7 @@ import {
 import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
 import {
   informationAgentControllerIdentity,
+  type InformationAgentFooterStructure,
   type InformationAgentLegalFooter,
 } from "@/lib/information-agent-compliance";
 import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
@@ -82,6 +83,8 @@ export type InformationAgentPreviewResponse = {
     known: boolean;
     /** Adresse d'un greffe (référentiel des tribunaux) : repère « Greffe » dans l'aperçu. */
     courtRegistry?: boolean;
+    /** Pied en variante « structure » (adresse générique sans personne nommée), avec la structure visée. */
+    structureAddress?: InformationAgentFooterStructure;
   };
   /** À renvoyer avec « Valider et envoyer » ; null si l'envoi est impossible. */
   fingerprint: string | null;
@@ -127,7 +130,9 @@ export async function previewAdminInformationAgentMission({
   await collect(() =>
     assertInformationAgentQuestionsAllowed(missionTarget.questionAudience, mission.question_keys),
   );
-  await collect(() => assertInformationAgentNotarySendAllowed(missionTarget, env));
+  await collect(() =>
+    assertInformationAgentNotarySendAllowed({ ...missionTarget, email: recipient }, env),
+  );
   await collect(() =>
     assertInformationAgentContactAllowed({
       saleId: mission.sale_id,
@@ -158,7 +163,7 @@ export async function previewAdminInformationAgentMission({
     saleId: mission.sale_id,
     manualOriginUrl: agentFound || courtFallback ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
-    structureAddress: !courtFallback && missionTarget.addressKind === "generic",
+    structureAddress: courtFallback ? null : missionTarget.structureAddress,
   });
   if (!addressOrigin.known) blockers.push(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   await collect(() => assertAgentFoundOriginIntact(agentFound, addressOrigin));
@@ -188,8 +193,8 @@ export async function previewAdminInformationAgentMission({
     addressOriginUrl: addressOrigin.origin.url,
     automatedSearch: addressOrigin.origin.automated,
     automatedSearchSource: addressOrigin.origin.searchSource,
-    structureAddress: Boolean(addressOrigin.origin.structureAddress),
-    structureOpposition: !courtFallback && missionTarget.structureOpposition,
+    structureAddress: addressOrigin.origin.structureAddress ?? null,
+    structureOpposition: courtFallback ? null : missionTarget.structureOpposition,
     aiProvider: previewAiProvider(env, blockers),
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: secret

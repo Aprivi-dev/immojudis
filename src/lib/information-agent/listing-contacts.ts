@@ -256,7 +256,9 @@ const PLAIN: InformationAgentListingRole = { role: "source_contact", structureKi
  * Rôle que la SOURCE de l'annonce donne à son contact : `notaires` ne publie que des notaires,
  * `cessions_etat` que des services de l'État. Les autres sources ne disent rien.
  */
-function sourceRole(sourceName: string | null): InformationAgentListingRole | null {
+export function informationAgentSourceRole(
+  sourceName: string | null,
+): InformationAgentListingRole | null {
   if (sourceName === "notaires") return NOTARY;
   if (sourceName === "cessions_etat") return STATE;
   return null;
@@ -294,7 +296,7 @@ export function informationAgentListingBlockRole({
   /** L'adresse du bloc `contact` est aussi celle que l'annonce donne pour l'avocat. */
   lawyerAddress: boolean;
 }): InformationAgentListingRole | null {
-  const bySource = sourceRole(sourceName);
+  const bySource = informationAgentSourceRole(sourceName);
   if (block === "lawyer") {
     return organizerType === "notary" || organizerType === "state_service" ? null : LAWYER;
   }
@@ -328,7 +330,7 @@ export function informationAgentSaleFieldRole({
   /** Un bloc `lawyer` de l'annonce porte cette adresse. */
   lawyerAddress: boolean;
 }): InformationAgentListingRole {
-  const bySource = sourceRole(sourceName);
+  const bySource = informationAgentSourceRole(sourceName);
   switch (organizerType) {
     case "notary":
       return bySource === NOTARY ? NOTARY : PLAIN;

@@ -212,6 +212,7 @@ export async function measureInformationAgentRecipients({
             role: selected.role,
             structureKind: selected.structureKind,
             organizerType: resolution.organizerType,
+            sourceName: resolution.sourceName,
           }),
           origin: selected.provenance[0],
         },

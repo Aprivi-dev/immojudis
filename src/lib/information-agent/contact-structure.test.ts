@@ -13,6 +13,7 @@ import {
   INFORMATION_AGENT_GENERIC_LOCAL_PARTS,
   INFORMATION_AGENT_GENERIC_LOCAL_PARTS_ALONE,
   INFORMATION_AGENT_PROVIDER_MAIL_DOMAINS,
+  INFORMATION_AGENT_PUBLIC_SUFFIXES,
   INFORMATION_AGENT_SHARED_MAIL_DOMAINS,
   informationAgentAddressKind,
   informationAgentCapStructure,
@@ -251,6 +252,20 @@ describe("clés d'opposition d'une structure", () => {
     ]);
     // Un parent partagé, de profession ou grand public n'est jamais une structure.
     expect(informationAgentStructureCheckKeys({ email: `etude@${NOTARY_DOMAIN}` })).toEqual([]);
+    // Ni un suffixe public à deux niveaux : n'importe qui peut y enregistrer un nom.
+    for (const suffix of ["asso.fr", "com.fr", "co.uk"]) {
+      expect(INFORMATION_AGENT_PUBLIC_SUFFIXES).toContain(suffix);
+      expect(
+        informationAgentStructureCheckKeys({ email: `contact@exemple-fictif.${suffix}` }),
+      ).toEqual([`structure|domain|exemple-fictif.${suffix}`]);
+      expect(
+        informationAgentStructureCheckKeys({ email: `contact@paris.exemple-fictif.${suffix}` }),
+      ).toEqual([
+        `structure|domain|paris.exemple-fictif.${suffix}`,
+        `structure|domain|exemple-fictif.${suffix}`,
+      ]);
+      expect(informationAgentStructureKeys({ email: `contact@${suffix}` })).toEqual([]);
+    }
   });
 });
 

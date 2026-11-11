@@ -1,5 +1,7 @@
 import type { Database, Json } from "@/integrations/supabase/types";
+import type { InformationAgentFooterStructure } from "@/lib/information-agent-compliance";
 import {
+  INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE,
   informationAgentAddressKind,
   informationAgentOfficeCodeFor,
   isInformationAgentStructureKey,
@@ -39,10 +41,18 @@ export type InformationAgentMissionRecipient = {
   keys: InformationAgentRecipientOppositionKeys;
   role: string | null;
   addressKind: InformationAgentAddressKind;
+  /**
+   * Variante « structure » du pied : adresse générique ET aucune personne nommée. Avec un nom (« Me … »
+   * attaché à l'adresse générique d'un cabinet), le pied ordinaire s'applique. `null` sinon.
+   */
+  structureAddress: InformationAgentFooterStructure | null;
   /** L'opposition de cette adresse vaudra pour toute sa structure (adresse générique d'une structure connue). */
-  structureOpposition: boolean;
-  /** `metadata.question_audience` tel qu'enregistré ; `other` pour un brouillon antérieur à ce champ. */
-  questionAudience: Json;
+  structureOpposition: InformationAgentFooterStructure | null;
+  /**
+   * `metadata.question_audience` tel qu'enregistré ; `undefined` pour un brouillon antérieur à ce champ, que
+   * l'aperçu et l'envoi refusent (`assertInformationAgentQuestionsAllowed`) : il doit être régénéré.
+   */
+  questionAudience: Json | undefined;
 };
 
 export function missionRecipient(
@@ -64,9 +74,10 @@ export function missionRecipient(
       : informationAgentAddressKind(email);
   const role =
     metadataText(identity.role) ?? (mission.recipient_kind === "source_lawyer" ? "lawyer" : null);
+  const name = recipientName?.trim() || mission.recipient_name;
   const keys = recipientOppositionKeys({
     role,
-    name: recipientName?.trim() || mission.recipient_name,
+    name,
     place: { bar: metadataText(identity.bar), city: metadataText(identity.city) },
     siren: metadataText(identity.siren),
     email,
@@ -77,13 +88,23 @@ export function missionRecipient(
     }),
     addressKind,
   });
+  // Structure du destinataire : celle que le brouillon a retenue pour SON adresse, sinon celle du rôle.
+  const storedStructure = sameAddress ? metadataText(identity.structure_kind) : null;
+  const structure: InformationAgentFooterStructure =
+    storedStructure === "law_firm" ||
+    storedStructure === "notary_office" ||
+    storedStructure === "state_service"
+      ? storedStructure
+      : ((role === "lawyer" || role === "notary"
+          ? INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE[role]
+          : null) ?? "unknown");
   return {
     keys,
     role,
     addressKind,
-    structureOpposition: keys.identityKeys.some(isInformationAgentStructureKey),
-    questionAudience:
-      metadata.question_audience === undefined ? "other" : metadata.question_audience,
+    structureAddress: addressKind === "generic" && !name?.trim() ? structure : null,
+    structureOpposition: keys.identityKeys.some(isInformationAgentStructureKey) ? structure : null,
+    questionAudience: metadata.question_audience,
   };
 }
 

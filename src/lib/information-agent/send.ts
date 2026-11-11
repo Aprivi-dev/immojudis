@@ -113,7 +113,7 @@ export async function approveAndSendMission({
   // Questions admises pour le destinataire du brouillon, relues à l'envoi ; envois aux notaires fermés par
   // défaut (config.ts).
   assertInformationAgentQuestionsAllowed(recipient.questionAudience, mission.question_keys);
-  assertInformationAgentNotarySendAllowed(recipient);
+  assertInformationAgentNotarySendAllowed({ ...recipient, email: input.recipientEmail });
   // Un greffe n'a pas de nom de personne ni de structure opposable : aucune clé, même si un nom est saisi.
   // Sinon : clés de la personne, et de la structure pour une adresse générique (opposition-keys.ts).
   const oppositionKeys = courtFallback ? { identityKeys: [], checkKeys: [] } : recipient.keys;
@@ -132,7 +132,7 @@ export async function approveAndSendMission({
     saleId: mission.sale_id,
     manualOriginUrl: agentFound || courtFallback ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
-    structureAddress: !courtFallback && recipient.addressKind === "generic",
+    structureAddress: courtFallback ? null : recipient.structureAddress,
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   assertAgentFoundOriginIntact(agentFound, addressOrigin);
@@ -283,7 +283,7 @@ export async function approveAndSendMission({
       email: edited.recipient_email,
       addressOrigin: addressOrigin.origin,
       saleReference: missionSaleReference(subscribedMission),
-      structureOpposition: !courtFallback && recipient.structureOpposition,
+      structureOpposition: courtFallback ? null : recipient.structureOpposition,
     });
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,
