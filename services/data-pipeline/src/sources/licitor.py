@@ -65,6 +65,9 @@ _NOT_A_PROPERTY_ADDRESS = (
     r"\bCabinet\b|[ÉE]tude|Tribunal|Mise\s+à\s+prix"
 )
 
+# Lien d'une annonce dans une liste publique : une carte par lien (lecture des listes et bloc d'une carte).
+_ANNOUNCEMENT_HREF_RE = re.compile(r"/annonce/.+/\d+\.html$")
+
 _LICITOR_DYNAMIC_COUNTER_RE = re.compile(
     r"^\s*🔎(?:\ufe0e|\ufe0f)?\s*\d[\d.,\s]*\s*❤(?:\ufe0e|\ufe0f)?\s*\d[\d.,\s]*\s*$"
 )
@@ -317,7 +320,7 @@ def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[l
         absolute = urljoin(page_url, href)
         if not is_allowed_origin_url(absolute, ALLOWED_ORIGINS):
             continue
-        if re.search(r"/annonce/.+/\d+\.html$", href):
+        if _ANNOUNCEMENT_HREF_RE.search(href):
             detail_urls.append(absolute)
         elif re.search(r"/ventes-aux-encheres-immobilieres/.+/prochaines-ventes\.html\?p=", href):
             next_urls.append(absolute)
@@ -330,7 +333,7 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
     by_url: dict[str, dict[str, Any]] = {}
     for link in soup.find_all("a", href=True):
         href = str(link.get("href"))
-        if not re.search(r"/annonce/.+/\d+\.html$", href):
+        if not _ANNOUNCEMENT_HREF_RE.search(href):
             continue
         source_url = urljoin(page_url, href)
         if not is_allowed_origin_url(source_url, ALLOWED_ORIGINS):
@@ -666,12 +669,21 @@ def _start_urls_for_target_departments() -> tuple[str, ...]:
 
 
 def _list_item_container(link: Any) -> Any:
+    """Bloc qui porte le texte de la carte de ``link`` : le lien, ou un parent qui n'a que cette carte.
+
+    Une carte peut ne pas afficher de mise à prix (bloc prix vide d'un lot, 10/11/2026). La remontée s'arrête
+    donc au premier parent qui porte un autre lien d'annonce : son texte serait celui de plusieurs cartes, et
+    la carte prendrait la commune et la mise à prix d'une voisine. La carte reste alors le lien lui-même, celui
+    que lit la preuve de catalogue (``.AdResults a.Ad`` dans ``src.catalogue_proof``).
+    """
     if "Mise à prix" in link.get_text(" ", strip=True) or "Mise a prix" in link.get_text(" ", strip=True):
         return link
     node = link
     for _ in range(5):
         parent = getattr(node, "parent", None)
         if parent is None:
+            break
+        if any(other is not link for other in parent.find_all("a", href=_ANNOUNCEMENT_HREF_RE)):
             break
         text = parent.get_text(" ", strip=True)
         if "Mise à prix" in text or "Mise a prix" in text:
