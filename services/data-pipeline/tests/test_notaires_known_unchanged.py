@@ -4,6 +4,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
+import pytest
+
 from src.freshness import SOURCE_EXTRACTION_VERSION, detail_is_fresh
 from src.sources import notaires
 from src.sources.common import listing_signature
@@ -142,11 +144,13 @@ def test_closed_card_rule_needs_a_proven_end():
 # --- Contact : la carte de liste porte le téléphone seul, le détail « téléphone | adresse » (11/11/2026) ---
 
 PHONE = "05 00 00 00 01"
-DETAIL_CONTACT = f"{PHONE} | office@example.test"
+ADDRESS = "office@example.test"
+DETAIL_CONTACT = f"{PHONE} | {ADDRESS}"
 
 
-def _card_with_phone() -> dict:
-    return notaires.parse_notaires_json(json.dumps({"annonceResumeDto": [{**_row("VNI"), "telephone": PHONE}]}))[0]
+def _card_with_phone(phone: str = PHONE, **marks: object) -> dict:
+    card = notaires.parse_notaires_json(json.dumps({"annonceResumeDto": [{**_row("VNI"), "telephone": phone}]}))[0]
+    return {**card, **marks}
 
 
 def _detail_contact(card: dict) -> str:
@@ -155,7 +159,7 @@ def _detail_contact(card: dict) -> str:
             {
                 "typeTransaction": "VNI",
                 "vni": {"descriptionFr": "Appartement à Bordeaux"},
-                "contact": {"nom": "Office Exemple", "telephone": PHONE, "mail": "office@example.test"},
+                "contact": {"nom": "Office Exemple", "telephone": PHONE, "mail": ADDRESS},
             }
         ),
         card,
@@ -163,48 +167,62 @@ def _detail_contact(card: dict) -> str:
     return detail["lawyer_contact"]
 
 
-def _known(card: dict, contact: str) -> dict:
-    return {card["source_url"]: {"lawyer_contact": contact, "raw_payload": {}}}
+def _hydrated(card: dict, stored_contact: str) -> str:
+    from src import main
+
+    known = {card["source_url"]: {"lawyer_contact": stored_contact, "raw_payload": {}}}
+    main._hydrate_known_unchanged_sales([card], known)
+    return card["lawyer_contact"]
 
 
 def test_an_unchanged_card_keeps_the_e_mail_address_of_the_stored_detail():
-    from src import main
-
-    card = _card_with_phone()
+    card = _card_with_phone(_known_unchanged=True)
     assert card["lawyer_contact"] == PHONE  # la carte de liste ne porte que le téléphone
-    stored = _detail_contact(card)
+    stored = _detail_contact(card)  # ce que la lecture du détail a écrit
     assert stored == DETAIL_CONTACT
-    card["_known_unchanged"] = True
 
-    main._hydrate_known_unchanged_sales([card], _known(card, stored))
-
-    assert card["lawyer_contact"] == DETAIL_CONTACT
+    assert _hydrated(card, stored) == DETAIL_CONTACT
 
 
-def test_the_card_contact_stays_when_the_stored_one_has_no_address_or_the_card_has_one():
-    from src import main
+def test_a_phone_changed_on_the_card_replaces_the_stored_one_and_keeps_the_address():
+    card = _card_with_phone("05 00 00 00 02", _known_unchanged=True)
 
-    card = {**_card_with_phone(), "_known_unchanged": True}
-    main._hydrate_known_unchanged_sales([card], _known(card, "05 00 00 00 09"))
-    assert card["lawyer_contact"] == PHONE
-
-    with_address = {**_card_with_phone(), "_known_unchanged": True, "lawyer_contact": f"{PHONE} | etude@example.test"}
-    main._hydrate_known_unchanged_sales([with_address], _known(with_address, DETAIL_CONTACT))
-    assert with_address["lawyer_contact"] == f"{PHONE} | etude@example.test"
+    assert _hydrated(card, DETAIL_CONTACT) == f"05 00 00 00 02 | {ADDRESS}"
 
 
-def test_a_detail_read_restores_the_address_and_the_next_unchanged_card_keeps_it():
-    """Le stock (colonne réduite au téléphone) se rétablit à la relecture du détail, puis ne se reperd plus."""
-    from src import main
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "05 00 00 00 09",  # aucune adresse connue
+        "05 00 00 00 09 | écrire @ l'étude",  # un « @ » n'est pas une adresse
+        "05 00 00 00 09 | maitre@avocat-conseil.fr",  # messagerie RPVA, écartée comme partout
+    ],
+)
+def test_the_card_contact_stays_when_the_stored_one_has_no_usable_address(stored: str):
+    assert _hydrated(_card_with_phone(_known_unchanged=True), stored) == PHONE
 
-    card = _card_with_phone()
-    # Passage 1 : le détail stocké n'est plus frais (72 h), la carte n'est donc plus « connue » : son détail est relu.
-    read = dict(card)
-    notaires._merge_detail(read, {"lawyer_contact": _detail_contact(card)})
-    main._hydrate_known_unchanged_sales([read], _known(card, PHONE))
-    assert read["lawyer_contact"] == DETAIL_CONTACT
 
-    # Passage 2 : carte inchangée, détail frais ; la valeur publiée au passage 1 est la valeur connue.
-    again = {**_card_with_phone(), "_known_unchanged": True}
-    main._hydrate_known_unchanged_sales([again], _known(card, read["lawyer_contact"]))
-    assert again["lawyer_contact"] == DETAIL_CONTACT
+def test_a_card_that_already_carries_an_address_is_left_alone():
+    card = _card_with_phone(_known_unchanged=True, lawyer_contact=f"{PHONE} | etude@example.test")
+
+    assert _hydrated(card, DETAIL_CONTACT) == f"{PHONE} | etude@example.test"
+
+
+def test_a_failed_detail_read_keeps_the_card_contact():
+    # Le détail sera relu au passage suivant (il n'est pas frais) : la carte reste telle quelle d'ici là.
+    card = _card_with_phone(_detail_fetch_failed=True)
+
+    assert _hydrated(card, DETAIL_CONTACT) == PHONE
+
+
+def test_the_rule_is_for_notaires_only():
+    card = {
+        "source_name": "encheres_immobilieres",
+        "source_url": "https://www.encheres-immobilieres.example.test/vente/1",
+        "lawyer_contact": PHONE,
+        "_known_unchanged": True,
+    }
+
+    assert _hydrated(card, DETAIL_CONTACT) == PHONE
+
+
