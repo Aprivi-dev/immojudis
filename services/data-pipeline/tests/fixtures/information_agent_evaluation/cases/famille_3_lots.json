@@ -1,0 +1,1444 @@
+{
+ "_comment": "Famille 3 : ventes à plusieurs lots (lot de la fiche connu ou non), réponse qui parle d'un autre lot, de plusieurs lots, d'un lot désigné autrement qu'avec son numéro, ou d'un lot de copropriété. Le lot de la fiche est dans contexte.lot_vendu ; l'objet du message est tiré du contexte. Tout est fictif : noms, adresses (.example), ventes.",
+ "famille": 3,
+ "libelle": "plusieurs lots, autre lot, lot non nommé",
+ "cas": [
+  {
+   "id": "F3-01",
+   "famille": 3,
+   "titre": "Lot de la fiche nommé, surface et pièces",
+   "message": {
+    "expediteur": "accueil@associes-vasseret.example",
+    "objet": "RE: Vente en trois lots à Lac-Témoin, lot n° 2, audience du 04/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLe lot n° 2 est un appartement de 54 m² comprenant 3 pièces.\n\nSentiments dévoués,\n\n-- \nMaître Élodie Vasseret\nVasseret & Associés\n31, boulevard Fictif - 99400 Lac-Témoin\nStandard : 05 99 04 14 24 - Secrétariat du lundi au vendredi, 9 h - 12 h",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 13,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "Le lot n° 2 est un appartement de 54 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 3,
+     "citation": "comprenant 3 pièces"
+    }
+   }
+  },
+  {
+   "id": "F3-02",
+   "famille": 3,
+   "titre": "Lot de la fiche nommé, autre lot sans surface",
+   "message": {
+    "expediteur": "quenellec@avocat-quenellec.example",
+    "objet": "RE: Vente en trois lots à Valmont-sur-Exemple, lot n° 2, audience du 05/03/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLot 2 : appartement, surface habitable 48 m². Lot 3 : cave en sous-sol.\n\nJe vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.\nMaître Quenellec\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m077@reponses.immojudis.example]\nEnvoyé : 2 novembre 2026 10:17\nÀ : quenellec@avocat-quenellec.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Quenellec,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 20,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 48,
+     "citation": "Lot 2 : appartement, surface habitable 48 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-03",
+   "famille": 3,
+   "titre": "Autre lot seulement",
+   "message": {
+    "expediteur": "g.mortessan@cabinet-mortessan.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, lot n° 2, audience du 06/03/2027 : vérification de l'annonce",
+    "corps": "Bonsoir,\n\nLe lot 3 a une surface habitable de 57 m².\n\nBien confraternellement,\n\nCabinet Mortessan\nAvocate au Barreau de Rive-Hypothèse\nT. 02 99 06 16 26 | g.mortessan@cabinet-mortessan.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 1,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur concerne un autre lot que celui de la fiche.",
+     "lecture_modele": {
+      "valeur": 57,
+      "citation": "Le lot 3 a une surface habitable de 57 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-04",
+   "famille": 3,
+   "titre": "Trois lots avec trois surfaces",
+   "message": {
+    "expediteur": "contact@selarl-tarbelin.example",
+    "objet": "RE: Vente en trois lots à Lac-Témoin, lot n° 2, audience du 07/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour Mesdames et Messieurs,\n\nLot 1 : 30 m² ; lot 2 : 41 m² ; lot 3 : 25 m².\n\nCdlt,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Clos-Maquette\n\nSELARL Tarbelin Avocats\n52, cours de l'Échantillon - 99700 Clos-Maquette\n\nLe mar. 4 nov. 2026 à 10:19, Immojudis <enquete+q079z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Tarbelin,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 8,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 41,
+     "citation": "lot 2 : 41 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-05",
+   "famille": 3,
+   "titre": "Lot nommé, lot de la fiche inconnu",
+   "message": {
+    "expediteur": "secretariat@scp-calvadour.example",
+    "objet": "RE: Vente en plusieurs lots à Valmont-sur-Exemple, audience du 08/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLe lot 2 fait 63 m² habitables.\n\nBien cordialement,\n\nMaître Inès Calvadour\nAvocate au Barreau de Valmont-sur-Exemple\n59, rue des Scénarios - 99800 Valmont-sur-Exemple\nTél. : 04 99 08 18 28\nsecretariat@scp-calvadour.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 15,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Vente à plusieurs lots : la phrase ne permet pas de rattacher la valeur au lot de la fiche.",
+     "lecture_modele": {
+      "valeur": 63,
+      "citation": "Le lot 2 fait 63 m² habitables",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-06",
+   "famille": 3,
+   "titre": "Aucun lot nommé, lot de la fiche inconnu",
+   "message": {
+    "expediteur": "julien.brossardet@avocats-brossardet.example",
+    "objet": "RE: Vente en plusieurs lots à Port-Essai, audience du 09/03/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 46 m².\n\nCordialement,\n\n-- \nMaître Julien Brossardet\nBrossardet Avocats\n66, impasse du Prototype - 99000 Sainte-Fiction\nStandard : 05 99 09 19 29 - Secrétariat du lundi au vendredi, 9 h - 12 h",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 22,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Vente à plusieurs lots : la phrase ne permet pas de rattacher la valeur au lot de la fiche.",
+     "lecture_modele": {
+      "valeur": 46,
+      "citation": "La surface habitable est de 46 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-07",
+   "famille": 3,
+   "titre": "Aucun lot nommé, lot de la fiche connu",
+   "message": {
+    "expediteur": "accueil@associes-olmedo.example",
+    "objet": "RE: Vente en trois lots à Lac-Témoin, lot n° 2, audience du 10/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour à l'équipe Immojudis,\n\nLa surface habitable est de 52 m², avec une cave.\n\nBien à vous,\nMaître Olmédo",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 3,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Vente à plusieurs lots : la phrase ne permet pas de rattacher la valeur au lot de la fiche.",
+     "lecture_modele": {
+      "valeur": 52,
+      "citation": "La surface habitable est de 52 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-08",
+   "famille": 3,
+   "titre": "Vente à lot unique, « lot unique »",
+   "message": {
+    "expediteur": "vidrecourt@avocat-vidrecourt.example",
+    "objet": "RE: Vente à Valmont-sur-Exemple, audience du 11/03/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nIl s'agit d'un lot unique : une maison de 90 m² habitables, sur un terrain de 430 m².\n\nTrès cordialement,\n\nCabinet d'avocats Vidrecourt\nAvocat au Barreau de Bourg-Modèle\nT. 02 99 01 21 31 | vidrecourt@avocat-vidrecourt.example\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m083@reponses.immojudis.example]\nEnvoyé : 8 novembre 2026 10:23\nÀ : vidrecourt@avocat-vidrecourt.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Vidrecourt,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "house",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 10,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 90,
+     "citation": "une maison de 90 m² habitables"
+    },
+    "land_surface_m2": {
+     "publiable": true,
+     "valeur": 430,
+     "citation": "sur un terrain de 430 m²"
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-09",
+   "famille": 3,
+   "titre": "Lot de copropriété avec l'état descriptif",
+   "message": {
+    "expediteur": "m.esparbes@cabinet-esparbes.example",
+    "objet": "RE: Vente à Port-Essai, audience du 12/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLe lot n° 14 de l'état descriptif de division de la copropriété correspond à l'appartement de 52 m².\n\nSentiments dévoués,\n\nMaître Mathilde Esparbès\nAvocate au Barreau de Lac-Témoin\n\nCabinet Esparbès\n87, rue des Essais - 99300 Lac-Témoin",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 17,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 52,
+     "citation": "correspond à l'appartement de 52 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-10",
+   "famille": 3,
+   "titre": "Lot de copropriété sans contexte",
+   "message": {
+    "expediteur": "contact@selarl-ravanelle.example",
+    "objet": "RE: Vente à Lac-Témoin, audience du 13/03/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLot 14 : appartement de 37 m² au troisième étage.\n\nJe vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.\n\nMaître Nicolas Ravanelle\nAvocat au Barreau de Mont-Exemple\n4, place du Modèle - 99400 Mont-Exemple\nTél. : 04 99 03 23 33\ncontact@selarl-ravanelle.example\n\nLe mar. 3 nov. 2026 à 10:25, Immojudis <enquete+q085z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Ravanelle,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 24,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 37,
+     "citation": "Lot 14 : appartement de 37 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-11",
+   "famille": 3,
+   "titre": "Deux lots, « respectivement »",
+   "message": {
+    "expediteur": "secretariat@scp-duquerroy.example",
+    "objet": "RE: Vente en deux lots à Valmont-sur-Exemple, lot n° 1, audience du 14/03/2027 : vérification de l'annonce",
+    "corps": "Bonsoir,\n\nLes lots 1 et 2 font respectivement 54 m² et 12 m².\n\nBien confraternellement,\n\n-- \nMaître Odile Duquerroy\nSCP Duquerroy & Associés\n11, quai des Témoins - 99500 Rive-Hypothèse\nStandard : 05 99 04 24 34 - Secrétariat du lundi au vendredi, 9 h - 12 h\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m086@reponses.immojudis.example]\nEnvoyé : 4 novembre 2026 10:26\nÀ : secretariat@scp-duquerroy.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Duquerroy,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 1,
+     "lot_count": 2
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 5,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "Les lots 1 et 2 font respectivement 54 m² et 12 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-12",
+   "famille": 3,
+   "titre": "Total de deux lots",
+   "message": {
+    "expediteur": "pascal.lamothe-essai@avocats-lamothe-essai.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, lot n° 2, audience du 15/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour Mesdames et Messieurs,\n\nLes lots 1-2 totalisent 154 m² habitables.\n\nCdlt,\nMaître Lamothe-Essai",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 12,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Total de deux lots : ce n'est pas la surface du lot de la fiche.",
+     "lecture_modele": {
+      "valeur": 154,
+      "citation": "Les lots 1-2 totalisent 154 m² habitables",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-13",
+   "famille": 3,
+   "titre": "Deux lots de même surface, « chacun »",
+   "message": {
+    "expediteur": "accueil@associes-berangeot.example",
+    "objet": "RE: Vente en trois lots à Lac-Témoin, lot n° 2, audience du 16/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nPour les lots 2 et 3, la surface habitable est de 44 m² chacun.\n\nBien cordialement,\n\nBérangeot & Associés\nAvocate au Barreau de Valmont-sur-Exemple\nT. 02 99 06 26 36 | accueil@associes-berangeot.example\n\nLe mar. 6 nov. 2026 à 10:28, Immojudis <enquete+q088z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Bérangeot,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 19,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 44,
+     "citation": "Pour les lots 2 et 3, la surface habitable est de 44 m² chacun"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-14",
+   "famille": 3,
+   "titre": "Pièces de deux lots, lot de la fiche en premier",
+   "message": {
+    "expediteur": "kervadec@avocat-kervadec.example",
+    "objet": "RE: Vente en trois lots à Valmont-sur-Exemple, lot n° 2, audience du 17/03/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLe lot 2 comprend 2 pièces ; le lot 3 en comprend 4.\n\nCordialement,\n\nMaître Sébastien Kervadec\nAvocat au Barreau de Sainte-Fiction\n\nCabinet d'avocats Kervadec\n32, rue du Banc d'Essai - 99800 Sainte-Fiction",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 26,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 2,
+     "citation": "Le lot 2 comprend 2 pièces"
+    }
+   }
+  },
+  {
+   "id": "F3-15",
+   "famille": 3,
+   "titre": "Pièces de deux lots, lot de la fiche en second",
+   "message": {
+    "expediteur": "t.fontrailles@cabinet-fontrailles.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, lot n° 2, audience du 18/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour à l'équipe Immojudis,\n\nLe lot 3 comprend 2 pièces et le lot 2 en comprend 4.\n\nBien à vous,\n\nMaître Thaïs Fontrailles\nAvocate au Barreau de Port-Essai\n39, rue de la Maquette - 99000 Port-Essai\nTél. : 04 99 08 28 38\nt.fontrailles@cabinet-fontrailles.example\n\nDe : Immojudis <enquete+k090x@reponses.immojudis.example>\nEnvoyé : mardi 8 novembre 2026 10:30\nÀ : t.fontrailles@cabinet-fontrailles.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Fontrailles,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 7,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 4,
+     "citation": "le lot 2 en comprend 4"
+    }
+   }
+  },
+  {
+   "id": "F3-16",
+   "famille": 3,
+   "titre": "Lot désigné par une lettre",
+   "message": {
+    "expediteur": "contact@selarl-massabiau.example",
+    "objet": "RE: Vente en trois lots à Lac-Témoin, lot n° 2, audience du 19/03/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nLot B : appartement de 58 m².\n\nTrès cordialement,\n\n-- \nMaître Ulysse Massabiau\nSELARL Massabiau Avocats\n46, cours de l'Échantillon - 99100 Bourg-Modèle\nStandard : 05 99 09 29 39 - Secrétariat du lundi au vendredi, 9 h - 12 h",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 14,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Lot désigné par une lettre : correspondance avec le lot 2 de la fiche invérifiable.",
+     "lecture_modele": {
+      "valeur": 58,
+      "citation": "Lot B : appartement de 58 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-17",
+   "famille": 3,
+   "titre": "Lot désigné en toutes lettres",
+   "message": {
+    "expediteur": "secretariat@scp-ponsardin.example",
+    "objet": "RE: Vente en trois lots à Valmont-sur-Exemple, lot n° 2, audience du 20/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLe deuxième lot, un appartement, fait 54 m² habitables.\n\nSentiments dévoués,\nMaître Ponsardin\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m092@reponses.immojudis.example]\nEnvoyé : 3 novembre 2026 10:32\nÀ : secretariat@scp-ponsardin.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Ponsardin,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 21,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "Le deuxième lot, un appartement, fait 54 m² habitables"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-18",
+   "famille": 3,
+   "titre": "Lot de la fiche cité avant un autre lot",
+   "message": {
+    "expediteur": "xavier.grelaud@avocats-grelaud.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, lot n° 2, audience du 21/03/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLe lot 2 est occupé. Le lot 3, libre, fait 54 m².\n\nJe vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.\n\nGrelaud Avocats\nAvocat au Barreau de Mont-Exemple\nT. 02 99 01 31 41 | xavier.grelaud@avocats-grelaud.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 2,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur concerne un autre lot que celui de la fiche.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "Le lot 3, libre, fait 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-19",
+   "famille": 3,
+   "titre": "Lot de la fiche retiré de la vente",
+   "message": {
+    "expediteur": "accueil@associes-saint-temoin.example",
+    "objet": "RE: Vente en trois lots à Lac-Témoin, lot n° 2, audience du 22/03/2027 : vérification de l'annonce",
+    "corps": "Bonsoir,\n\nLe lot 2 a été retiré de la vente. La surface habitable est de 54 m².\n\nBien confraternellement,\n\nMaître Yasmine Saint-Témoin\nAvocate au Barreau de Rive-Hypothèse\n\nSaint-Témoin & Associés\n67, allée du Simulacre - 99400 Rive-Hypothèse",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 9,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Le lot de la fiche est retiré de la vente : la surface donnée ne peut pas lui être attribuée.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "La surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-20",
+   "famille": 3,
+   "titre": "Deux surfaces, lot de la fiche en second",
+   "message": {
+    "expediteur": "hureau@avocat-hureau.example",
+    "objet": "RE: Vente en trois lots à Valmont-sur-Exemple, lot n° 2, audience du 23/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour Mesdames et Messieurs,\n\nLot 3 : 30 m². Le lot 2 fait 66 m².\n\nCdlt,\n\nMaître Zoé Hureau\nAvocate au Barreau de Clos-Maquette\n74, rue de l'Épreuve - 99500 Clos-Maquette\nTél. : 04 99 03 33 43\nhureau@avocat-hureau.example\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m095@reponses.immojudis.example]\nEnvoyé : 6 novembre 2026 10:35\nÀ : hureau@avocat-hureau.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Hureau,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 16,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 66,
+     "citation": "Le lot 2 fait 66 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-21",
+   "famille": 3,
+   "titre": "Vente à lot unique, surface qui inclut la cave",
+   "message": {
+    "expediteur": "a.fictel@cabinet-fictel.example",
+    "objet": "RE: Vente à Port-Essai, audience du 24/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLes deux lots de copropriété vendus ensemble (appartement et cave) font 54 m² au total.\n\nBien cordialement,\n\n-- \nMaître Aurore Fictel\nCabinet Fictel\n3, rue des Essais - 99000 Valmont-sur-Exemple\nStandard : 01 99 00 10 20 - Secrétariat du lundi au vendredi, 9 h - 12 h",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 23,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "54 m² est le total appartement et cave : ce n'est pas la surface du logement.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "font 54 m² au total",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-22",
+   "famille": 3,
+   "titre": "Lot 1 seul lot de la vente",
+   "message": {
+    "expediteur": "contact@selarl-lorquin.example",
+    "objet": "RE: Vente à Lac-Témoin, lot n° 1, audience du 25/03/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLe lot 1, seul lot de la vente, est un appartement de 3 pièces.\n\nCordialement,\nMaître Lorquin",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": {
+     "lot_number": 1,
+     "lot_count": null
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 3,
+     "citation": "est un appartement de 3 pièces"
+    }
+   }
+  },
+  {
+   "id": "F3-23",
+   "famille": 3,
+   "titre": "Lot nommé dans la phrase précédente",
+   "message": {
+    "expediteur": "secretariat@scp-ardaillou.example",
+    "objet": "RE: Vente en trois lots à Valmont-sur-Exemple, lot n° 2, audience du 26/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour à l'équipe Immojudis,\n\nLe lot 2 se compose de 3 pièces. Sa surface habitable est de 61 m².\n\nBien à vous,\n\nSCP Ardaillou & Associés\nAvocate au Barreau de Port-Essai\nT. 03 99 02 12 22 | secretariat@scp-ardaillou.example\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m098@reponses.immojudis.example]\nEnvoyé : 2 novembre 2026 10:38\nÀ : secretariat@scp-ardaillou.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Ardaillou,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 11,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 61,
+     "citation": "Sa surface habitable est de 61 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 3,
+     "citation": "Le lot 2 se compose de 3 pièces"
+    }
+   }
+  },
+  {
+   "id": "F3-24",
+   "famille": 3,
+   "titre": "Numéro de lot hors de la vente",
+   "message": {
+    "expediteur": "damien.pescatore@avocats-pescatore.example",
+    "objet": "RE: Vente en trois lots à Port-Essai, lot n° 2, audience du 27/03/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nLe lot n° 12 fait 54 m² habitables.\n\nTrès cordialement,\n\nMaître Damien Pescatore\nAvocat au Barreau de Bourg-Modèle\n\nPescatore Avocats\n24, avenue de l'Hypothèse - 99300 Bourg-Modèle",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 18,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Lot 12 inconnu dans une vente de trois lots : rattachement impossible.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "Le lot n° 12 fait 54 m² habitables",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F3-25",
+   "famille": 3,
+   "titre": "Maison et terrain, lot de la fiche nommé",
+   "message": {
+    "expediteur": "accueil@associes-vasseret.example",
+    "objet": "RE: Vente en trois lots à Lac-Témoin, lot n° 2, audience du 03/03/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLot 2 : maison de 4 pièces sur un terrain de 900 m².\n\nSentiments dévoués,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n31, boulevard Fictif - 99400 Lac-Témoin\nTél. : 05 99 04 14 24\naccueil@associes-vasseret.example\n\nLe mar. 4 nov. 2026 à 10:40, Immojudis <enquete+q100z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Vasseret,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "house",
+    "quality_flags": [
+     "multi_lot_sale"
+    ],
+    "lot_vendu": {
+     "lot_number": 2,
+     "lot_count": 3
+    },
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 25,
+    "messages_anterieurs": [],
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": true,
+     "valeur": 900,
+     "citation": "sur un terrain de 900 m²"
+    },
+    "rooms_count": {
+     "publiable": true,
+     "valeur": 4,
+     "citation": "Lot 2 : maison de 4 pièces"
+    }
+   }
+  }
+ ]
+}
