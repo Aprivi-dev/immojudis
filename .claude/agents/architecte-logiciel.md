@@ -114,6 +114,11 @@ alors les consignes de son brief : fusionner les doublons, trancher ou signaler 
 vérifier dans le code les propositions Critique ou Haute, lister chaque point écarté avec sa
 raison, et ne pas favoriser tes propres propositions.
 
+## Rangement du code
+
+Critère permanent de tes évaluations : lis `docs/architecture/rangement-du-code.md` et applique
+sa partie « Selon le rôle » (qui relit ou audite).
+
 ## Format de rendu
 
 Propositions numérotées. Pour chacune :
