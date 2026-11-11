@@ -159,6 +159,12 @@ def record_source_checks(raw_sales: list, known: dict, *, capture: str = "collec
         change = None
         if old.get("fingerprint") != fingerprint:
             change = classify_source_change(old, kind, fingerprints, evidence_fingerprint)
+            if change is not None and relayed and old.get("fingerprint") == _fingerprint_with_relayed_fields(sale):
+                # Transition : l'empreinte stockée date d'avant l'exclusion des champs repris. Calculée à l'ancienne
+                # manière, elle est identique : ni la page ni la base n'ont changé, seule la définition a changé.
+                # Sans cela, chaque page Vench restreinte verrait son analyse invalidée une fois à sa première
+                # relecture. Devient sans effet dès que l'empreinte stockée est la nouvelle ; à retirer ensuite.
+                change = None
         payload["source_checks"][url] = check
         if change == OPERATIONAL_CHANGE:
             invalidate_analysis(payload, "source_operational_changed", preserve_facts=True)
@@ -166,6 +172,21 @@ def record_source_checks(raw_sales: list, known: dict, *, capture: str = "collec
             invalidate_analysis(payload, "source_content_changed")
         if change is not None:
             payload["source_content_changed_at"] = check["checked_at"]
+
+
+def _fingerprint_with_relayed_fields(sale: dict) -> str:
+    """L'empreinte telle qu'elle était calculée quand les champs repris de la ligne stockée y entraient.
+
+    L'instantané portait alors la valeur reprise ; il porte aujourd'hui la clé sans valeur. Sert uniquement à
+    reconnaître, à la première relecture d'une page, une empreinte stockée par l'ancienne définition.
+    """
+    relayed = relayed_fields(sale)
+    snapshot = sale.get('source_factual_snapshot') or {}
+    content = {
+        key: snapshot[key] if key in snapshot and key not in relayed else sale.get(key)
+        for key in SOURCE_FACT_FIELDS
+    }
+    return hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
 
 
 def is_new_source_change(incoming: Any, existing: Any) -> bool:
