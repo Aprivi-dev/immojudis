@@ -162,6 +162,9 @@ Rapports complets des spécialistes, reproduits tels quels dans
 | `08-bascule-base-de-donnees.md`        | expert-postgres     | Spécification du lot R2 côté base : treize points, plan de migrations, sous-lots    |
 | `09-bascule-pipeline.md`               | data-pipeline       | Spécification du lot R2 côté collecte : écho, autres écrivains, observations, tests |
 | `10-mesures-apres-r1.md`               | qualite-donnees     | Mesures en production après R1 : inertie, durée des lots, second facteur, files     |
+| `11-documents-diagnostic.md`           | data-pipeline       | File de lecture des documents : premier diagnostic, en partie infirmé               |
+| `12-documents-mesures.md`              | qualite-donnees     | File de lecture des documents : mesures en production                               |
+| `13-documents-diagnostic-revise.md`    | data-pipeline       | File de lecture des documents : causes reproduites, correctifs A à N                |
 
 Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce document qui fait foi.
 
@@ -255,3 +258,32 @@ Le code de R2a se prépare pendant l'observation de R1. Rien de R2 n'est appliqu
 
 - Pour un avocat : la cessation d'affichage suffit-elle après une opposition, ou faut-il pouvoir effacer la valeur des journaux ; garder la valeur opposée pour reconnaître son retour est-il fondé ; texte affiché pour une valeur venue d'un greffe, d'un notaire ou d'un document ; durée de conservation des journaux.
 - Pour le propriétaire : rendre tenables la mise à prix, la date et le type de bien ; ouvrir un rôle de connexion propre à la collecte (chantier séparé, ne bloque pas R2).
+
+## 11. Lot R6, file de lecture des documents (11/11/2026)
+
+**Pourquoi maintenant.** Le lot R6 supposait que la file se viderait seule. Les mesures de l'annexe 10 ont montré l'inverse (181 tâches en attente, 71 en échec pour les ventes à venir). Les documents déjà possédés sont le premier gisement pour compléter les fiches.
+
+**Ce que les mesures ont établi (annexes 11 à 13).** Un premier diagnostic par lecture du code a été en partie infirmé par les mesures de production, puis révisé. Ce qui est établi :
+
+- **Trois ventes relues en boucle prennent 52 % des lectures** terminées en 48 heures : après chaque lecture réussie, une nouvelle tâche est créée pour la même vente, sans limite.
+- **140 des 180 tâches en attente n'ont rien à lire.** La fraîcheur exigée est de 24 heures alors que la file ne peut revisiter une vente que tous les 6 jours environ.
+- **Les 62 échecs « point d'étape non enregistré » sont des relectures de ventes déjà entièrement lues**, refusées à l'enregistrement, pas des téléchargements en échec.
+- **Quatre échecs viennent d'une valeur brute remise sans normalisation** (« libre », « 85,5 »).
+- Le budget du modèle n'est pas en cause (environ 1,6 USD par jour pour un plafond de 6). 88 % des documents des ventes à venir sont lus : le retard réel porte sur 59 ventes.
+
+**Première série livrée (correctifs A, B, C, D, F, G, H).** Valeur de la source remise par la règle de la collecte ; pas plus de deux lectures du vidage par vente et par jour ; péremption jugée sur la vérification enregistrée ; attente au lieu d'un échec quand il n'y a rien à lire sur un manifeste complet qui porte une pièce écartée ; version des faits posée dès que le manifeste est complet ; motif du refus écrit en clair ; tâche en échec visible, et bornée, quand l'écriture de fin de passe est écartée. Deux relectures indépendantes puis une contre-vérification ; les défauts relevés (dont un type de bien brut remis tel quel, et un prix pouvant être divisé par mille, tous deux antérieurs au lot) sont corrigés dans la série.
+
+**Effet attendu.** Environ 40 % de la capacité de lecture rendue, les 62 échecs disparaissent, le retard réel se résorbe en un à deux jours sans vidage manuel. À mesurer le lendemain de la mise en ligne avec les requêtes de `docs/audits/2026-11-11-file-de-lecture-des-pieces.md`.
+
+**Série suivante, dans l'ordre.** E (restaurer le texte d'un manifeste qui porte des pièces écartées), I (ne pas créer de tâche pour une vente entièrement lue), K et J (statuts des pièces illisibles ; pièces d'une source retirée), N (tâches des ventes entièrement retirées, par une fonction SQL).
+
+**Décisions qui reviennent au propriétaire.**
+
+- **Durée de validité d'une lecture** : 7 jours au lieu de 24 heures pour une pièce lue et inchangée, en gardant 24 heures pour les ventes à moins de 7 jours de leur audience et pour les liens morts. C'est ce qui supprime les 140 tâches sans travail et réduit les requêtes vers les sites sources ; le changement d'une pièce serait vu plus tard. À ne faire qu'après le correctif E.
+- **Ordre de passage** : une vente lointaine attend aujourd'hui 146 heures en moyenne derrière les ventes proches.
+
+## 12. Autres décisions et constats du 11/11/2026
+
+- **Licitor** : correctif du lecteur validé par le propriétaire (« tu peux faire les corrections qui te semblent nécessaires »), relu, PR #480.
+- **Petites Affiches et Enchères Publiques** : leur arrêt est voulu (le propriétaire : ces sites ont bloqué les informations utiles). Elles sortent des critères de suivi, comme Vench.
+- **Constat soumis au propriétaire** : 13 ventes d'Enchères Publiques sont encore « à venir » et hors quarantaine alors que leur dernière vérification date du 23 août 2026, sans autre source. Recommandation : marquer la source comme retirée du catalogue, comme Vench. En attente de sa réponse.
