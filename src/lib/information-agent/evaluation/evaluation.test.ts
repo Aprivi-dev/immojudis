@@ -48,9 +48,10 @@ describe("jeu d'évaluation : schéma", () => {
   it("compte 200 cas, 8 familles de 25, identifiants uniques", () => {
     expect(cases).toHaveLength(EVALUATION_FAMILIES.length * CASES_PER_FAMILY);
     for (const { number } of EVALUATION_FAMILIES) {
-      expect(cases.filter((item) => item.famille === number), `famille ${number}`).toHaveLength(
-        CASES_PER_FAMILY,
-      );
+      expect(
+        cases.filter((item) => item.famille === number),
+        `famille ${number}`,
+      ).toHaveLength(CASES_PER_FAMILY);
     }
     expect(new Set(cases.map((item) => item.id)).size).toBe(cases.length);
   });
@@ -59,7 +60,10 @@ describe("jeu d'évaluation : schéma", () => {
     for (const { file } of EVALUATION_FAMILIES) {
       const text = readFileSync(fixturePath(`cases/${file}`), "utf8");
       const addresses = text.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/gu) ?? [];
-      expect(addresses.filter((address) => !address.endsWith(".example")), file).toEqual([]);
+      expect(
+        addresses.filter((address) => !address.endsWith(".example")),
+        file,
+      ).toEqual([]);
     }
   });
 
@@ -74,7 +78,8 @@ describe("jeu d'évaluation : schéma", () => {
         const source =
           reading.source === "corps"
             ? item.message.corps
-            : item.message.pieces_jointes.find((attachment) => attachment.nom === reading.source)?.texte;
+            : item.message.pieces_jointes.find((attachment) => attachment.nom === reading.source)
+                ?.texte;
         expect(source, `${item.id} ${field} : source ${reading.source}`).toBeDefined();
         expect(source, `${item.id} ${field}`).toContain(reading.citation);
       }
@@ -125,7 +130,9 @@ describe("étape 3 : moteur de décision", () => {
   const reports = new Map<string, ConfigurationReport>();
 
   beforeAll(async () => {
-    const rulesHash = createHash("sha256").update(readFileSync(fixturePath(RULES_STAGE))).digest("hex");
+    const rulesHash = createHash("sha256")
+      .update(readFileSync(fixturePath(RULES_STAGE)))
+      .digest("hex");
     for (const stage of workerStages()) {
       if (stage.rules_stage_sha256 !== rulesHash) {
         throw new Error(
@@ -210,4 +217,3 @@ describe("étape 3 : moteur de décision", () => {
     await expect(serialize(payload)).toMatchFileSnapshot(fixturePath("report.json"));
   });
 });
-

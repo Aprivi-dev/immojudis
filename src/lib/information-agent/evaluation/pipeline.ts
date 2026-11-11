@@ -15,7 +15,7 @@ import {
 import {
   EvaluationDatabase,
   evaluationSupabase,
-  useEvaluationDatabase,
+  activateEvaluationDatabase,
   type Row,
 } from "@/lib/information-agent/evaluation/fake-supabase";
 
@@ -49,7 +49,9 @@ export function evaluationIds(evaluationCase: EvaluationCase) {
 function assertEvaluationClient() {
   // Garde-fou : le banc n'écrit jamais ailleurs qu'en mémoire.
   if ((supabaseAdmin as unknown) !== evaluationSupabase) {
-    throw new Error("Banc d'évaluation : le client Supabase doit être remplacé par la base en mémoire");
+    throw new Error(
+      "Banc d'évaluation : le client Supabase doit être remplacé par la base en mémoire",
+    );
   }
 }
 
@@ -64,9 +66,7 @@ function saleRow(evaluationCase: EvaluationCase): Row {
     starting_price_eur: null,
     address: null,
     quality_flags: contexte.quality_flags,
-    source_lot_selection: contexte.lot_vendu
-      ? { status: "selected", ...contexte.lot_vendu }
-      : null,
+    source_lot_selection: contexte.lot_vendu ? { status: "selected", ...contexte.lot_vendu } : null,
   };
 }
 
@@ -106,7 +106,7 @@ function stageCandidate(row: Row): StageCandidate {
 export async function runRulesStage(evaluationCase: EvaluationCase): Promise<RulesStageEntry> {
   assertEvaluationClient();
   const ids = evaluationIds(evaluationCase);
-  const database = useEvaluationDatabase(new EvaluationDatabase(evaluationCase.id));
+  const database = activateEvaluationDatabase(new EvaluationDatabase(evaluationCase.id));
   database.rows("auction_sales").push(saleRow(evaluationCase));
 
   const bodyText = cleanInboundBody(evaluationCase.message.corps, null);
@@ -135,7 +135,9 @@ export async function runRulesStage(evaluationCase: EvaluationCase): Promise<Rul
   const bodyForEvidence = replyTextForExtraction(bodyText).trim();
   return {
     body_evidence_text:
-      bodyForEvidence && bodyForEvidence !== "Réponse reçue sans corps de texte." ? bodyForEvidence : null,
+      bodyForEvidence && bodyForEvidence !== "Réponse reçue sans corps de texte."
+        ? bodyForEvidence
+        : null,
     lot_unidentified: lotUnidentified,
     candidates: database.rows("information_agent_fact_candidates").map(stageCandidate),
   };
@@ -149,7 +151,11 @@ export async function runRulesStage(evaluationCase: EvaluationCase): Promise<Rul
  */
 export type EngineVariant = "hypothese" | "etat_reel";
 
-export type FieldDecision = { value: number | null; outcome: "would_publish" | "review"; reasons: string[] };
+export type FieldDecision = {
+  value: number | null;
+  outcome: "would_publish" | "review";
+  reasons: string[];
+};
 export type EngineStageEntry = Record<EvaluationField, FieldDecision[]>;
 
 function messageMetadata(evaluationCase: EvaluationCase, processing: Row): Row {
@@ -178,8 +184,12 @@ export async function runEngineStage(
   assertEvaluationClient();
   const ids = evaluationIds(evaluationCase);
   const { contexte, message } = evaluationCase;
-  const database = useEvaluationDatabase(new EvaluationDatabase(`${evaluationCase.id}-engine`));
-  database.rows("information_agent_auto_publication_settings").push({ singleton: true, mode: "simulation" });
+  const database = activateEvaluationDatabase(
+    new EvaluationDatabase(`${evaluationCase.id}-engine`),
+  );
+  database
+    .rows("information_agent_auto_publication_settings")
+    .push({ singleton: true, mode: "simulation" });
   database.rows("auction_sales").push(saleRow(evaluationCase));
   database.rows("information_agent_cases").push({
     id: ids.caseId,
@@ -240,7 +250,9 @@ export async function runEngineStage(
       .rows("information_agent_auto_publication_decisions")
       .map((row) => [String(row.fact_id), row] as const),
   );
-  const entry = Object.fromEntries(EVALUATION_FIELDS.map((field) => [field, []])) as unknown as EngineStageEntry;
+  const entry = Object.fromEntries(
+    EVALUATION_FIELDS.map((field) => [field, []]),
+  ) as unknown as EngineStageEntry;
   for (const candidate of candidates) {
     if (!(EVALUATION_FIELDS as readonly string[]).includes(candidate.fact_key)) continue;
     const decision = decisions.get(candidate.id);
@@ -254,7 +266,11 @@ export async function runEngineStage(
             reasons: (decision.reasons as string[]) ?? [],
           }
         : // Candidat non examiné par la passe (en conflit avec la fiche) : relecture.
-          { value: Number.isFinite(value) ? value : null, outcome: "review", reasons: [candidate.status] },
+          {
+            value: Number.isFinite(value) ? value : null,
+            outcome: "review",
+            reasons: [candidate.status],
+          },
     );
   }
   return entry;

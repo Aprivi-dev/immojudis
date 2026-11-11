@@ -22,10 +22,18 @@ export const EVALUATION_FAMILIES = [
   { number: 1, file: "famille_1_nettes.json", label: "réponses nettes, contexte compris" },
   { number: 2, file: "famille_2_reserves.json", label: "conditionnel, approximation, réserve" },
   { number: 3, file: "famille_3_lots.json", label: "plusieurs lots, autre lot, lot non nommé" },
-  { number: 4, file: "famille_4_corrections.json", label: "valeur corrigée, périmée, contradictoire" },
+  {
+    number: 4,
+    file: "famille_4_corrections.json",
+    label: "valeur corrigée, périmée, contradictoire",
+  },
   { number: 5, file: "famille_5_confusions.json", label: "confusion de champs" },
   { number: 6, file: "famille_6_ne_pas_publier.json", label: "ne pas publier, confidentialité" },
-  { number: 7, file: "famille_7_manipulation.json", label: "manipulation du modèle, contenu trompeur" },
+  {
+    number: 7,
+    file: "famille_7_manipulation.json",
+    label: "manipulation du modèle, contenu trompeur",
+  },
   { number: 8, file: "famille_8_tiers.json", label: "particuliers, tiers, pièce jointe" },
 ] as const;
 export const CASES_PER_FAMILY = 25;
@@ -75,14 +83,27 @@ const caseSchema = z
         objet: z.string().min(1),
         corps: z.string().min(20),
         pieces_jointes: z
-          .array(z.object({ nom: z.string().regex(/^[\w.-]+\.txt$/u), texte: z.string().min(20) }).strict())
+          .array(
+            z
+              .object({ nom: z.string().regex(/^[\w.-]+\.txt$/u), texte: z.string().min(20) })
+              .strict(),
+          )
           .max(3),
       })
       .strict(),
     contexte: z
       .object({
         type_de_bien: z
-          .enum(["apartment", "house", "building", "commercial", "mixed", "land", "parking", "other"])
+          .enum([
+            "apartment",
+            "house",
+            "building",
+            "commercial",
+            "mixed",
+            "land",
+            "parking",
+            "other",
+          ])
           .nullable(),
         quality_flags: z.array(z.string()),
         lot_vendu: z
@@ -145,14 +166,18 @@ export const EVALUATION_FIELDS: readonly EvaluationField[] = AUTO_PUBLICATION_EL
 /** Lit et valide les 8 fichiers de familles (erreur détaillée au premier écart). */
 export function loadEvaluationCases(root = process.cwd()): EvaluationCase[] {
   return EVALUATION_FAMILIES.flatMap(({ number, file }) => {
-    const raw: unknown = JSON.parse(readFileSync(join(root, EVALUATION_ROOT, "cases", file), "utf8"));
+    const raw: unknown = JSON.parse(
+      readFileSync(join(root, EVALUATION_ROOT, "cases", file), "utf8"),
+    );
     const parsed = familyFileSchema.parse(raw);
     if (parsed.famille !== number) {
       throw new Error(`${file} : famille ${parsed.famille}, attendu ${number}`);
     }
     for (const evaluationCase of parsed.cas) {
       if (evaluationCase.famille !== number || !evaluationCase.id.startsWith(`F${number}-`)) {
-        throw new Error(`${file} : le cas ${evaluationCase.id} n'appartient pas à la famille ${number}`);
+        throw new Error(
+          `${file} : le cas ${evaluationCase.id} n'appartient pas à la famille ${number}`,
+        );
       }
     }
     return parsed.cas;
