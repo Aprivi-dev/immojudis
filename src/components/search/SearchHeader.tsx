@@ -46,6 +46,13 @@ const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => mod
  * sur le `sticky` de `SiteHeader`) ; c'est la barre de filtres qui reste à l'écran. Rendue AVANT
  * l'élément `main` de la page (repère « bannière »), avec la région qui annonce la mise à jour des résultats.
  */
+// Classes écrites une seule fois : elles étaient répétées mot pour mot dans ce fichier.
+const BOUND_INPUT_CLASS =
+  "h-full w-24 min-w-0 bg-transparent px-3 text-sm font-semibold tabular-nums outline-none";
+const BOUND_UNIT_CLASS =
+  "h-full w-16 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none";
+const SELECT_CHEVRON_CLASS = "pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft";
+
 export function SalesSiteHeader({ refreshing }: { refreshing: boolean }) {
   return (
     <SiteHeader
@@ -386,7 +393,7 @@ export function PriceFilter({
             setDraft((current) => ({ ...current, minPrice: event.target.value }))
           }
           placeholder="min €"
-          className="h-full w-24 min-w-0 bg-transparent px-3 text-sm font-semibold tabular-nums outline-none"
+          className={BOUND_INPUT_CLASS}
         />
         <span aria-hidden="true" className="text-ink-soft">
           –
@@ -400,7 +407,7 @@ export function PriceFilter({
             setDraft((current) => ({ ...current, maxPrice: event.target.value }))
           }
           placeholder="max €"
-          className="h-full w-24 min-w-0 bg-transparent px-3 text-sm font-semibold tabular-nums outline-none"
+          className={BOUND_INPUT_CLASS}
         />
       </div>
       {rangeMessage}
@@ -463,7 +470,7 @@ export function BedsBathsFilter({
         value={draft.minBeds}
         onChange={(event) => setDraft((current) => ({ ...current, minBeds: event.target.value }))}
         placeholder="ch."
-        className="h-full w-16 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
+        className={BOUND_UNIT_CLASS}
       />
       <input
         aria-label="Nombre minimum de salles de bain"
@@ -471,7 +478,7 @@ export function BedsBathsFilter({
         value={draft.minBaths}
         onChange={(event) => setDraft((current) => ({ ...current, minBaths: event.target.value }))}
         placeholder="sdb"
-        className="h-full w-16 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
+        className={BOUND_UNIT_CLASS}
       />
     </div>
   );
@@ -505,7 +512,7 @@ export function HomeTypeFilter({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
+      <ChevronDown className={SELECT_CHEVRON_CLASS} />
     </label>
   );
 }
@@ -561,7 +568,7 @@ export function SortDropdown({
           );
         })}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
+      <ChevronDown className={SELECT_CHEVRON_CLASS} />
     </label>
   );
 }

@@ -12,14 +12,17 @@ import { defineMachine } from "@/lib/state-machine";
  *
  * - `idle` : pas d'adresse ;
  * - `locating` : adresse en cours de localisation, aucun centre ;
- * - `located` : centre connu pour cette adresse ;
+ * - `located` : centre connu pour l'adresse de la recherche ;
  * - `unlocated` : adresse introuvable ou service indisponible, aucun centre.
+ *
+ * La page lit l'état directement : le centre n'existe que dans `located` (`state.point`),
+ * « localisation en cours » n'est vrai que dans `locating`.
  */
 export type AroundAddressState =
   | { status: "idle" }
   | { status: "locating"; address: string }
-  | { status: "located"; address: string; point: GeoPoint }
-  | { status: "unlocated"; address: string };
+  | { status: "located"; point: GeoPoint }
+  | { status: "unlocated" };
 
 export type AroundAddressEvent =
   /** L'adresse de la recherche a changé (`null` : plus d'adresse). */
@@ -45,18 +48,9 @@ export const aroundAddressMachine = defineMachine<AroundAddressState, AroundAddr
       event.address !== state.address
         ? state
         : event.point
-          ? { status: "located", address: state.address, point: event.point }
-          : { status: "unlocated", address: state.address },
+          ? { status: "located", point: event.point }
+          : { status: "unlocated" },
   },
   located: settled,
   unlocated: settled,
 });
-
-/** Centre de la recherche : seulement quand il est celui de l'adresse en cours. */
-export function aroundAddressCenter(state: AroundAddressState): GeoPoint | null {
-  return state.status === "located" ? state.point : null;
-}
-
-export function isLocatingAroundAddress(state: AroundAddressState): boolean {
-  return state.status === "locating";
-}

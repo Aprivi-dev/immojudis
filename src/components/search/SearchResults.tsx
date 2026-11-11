@@ -125,6 +125,10 @@ export const EAGER_IMAGE_COUNT = 1;
  * 14 cartes sur 24 n'ont pas de photo). Décidé sur les seules données de la vente, avant tout
  * chargement : la hauteur ne change donc pas quand l'image arrive ou échoue.
  */
+// Classes des faits d'une carte de résultat, écrites une seule fois (elles étaient répétées).
+const FACT_VALUE_CLASS = "mt-0.5 truncate text-sm font-semibold text-brand-navy tabular-nums";
+const FACT_CELL_CLASS = "min-w-0 border-l border-line-soft py-2.5 pl-3 pr-2";
+
 export function listingMediaFrameClass(
   sale: Pick<AuctionSale, "media"> &
     Partial<Pick<AuctionSale, "latitude" | "longitude" | "location_precision">>,
@@ -691,19 +695,15 @@ export const ListingCard = memo(function ListingCard({
         <dl className="mt-0.5 hidden grid-cols-3 border-y border-line-soft sm:grid">
           <div className="min-w-0 py-2.5 pr-2">
             <dt className="text-xs text-ink-soft">Surface</dt>
-            <dd className="mt-0.5 truncate text-sm font-semibold text-brand-navy tabular-nums">
-              {surfaceFact}
-            </dd>
+            <dd className={FACT_VALUE_CLASS}>{surfaceFact}</dd>
           </div>
           {premiumLocked ? (
-            <div className="min-w-0 border-l border-line-soft py-2.5 pl-3 pr-2">
+            <div className={FACT_CELL_CLASS}>
               <dt className="text-xs text-ink-soft">Pièces</dt>
-              <dd className="mt-0.5 truncate text-sm font-semibold text-brand-navy tabular-nums">
-                {roomsFact}
-              </dd>
+              <dd className={FACT_VALUE_CLASS}>{roomsFact}</dd>
             </div>
           ) : (
-            <div className="min-w-0 border-l border-line-soft py-2.5 pl-3 pr-2">
+            <div className={FACT_CELL_CLASS}>
               <dt className="text-xs text-ink-soft">Occupation</dt>
               <dd
                 className={`mt-0.5 truncate text-sm font-semibold ${occupancyTone || "text-brand-navy"}`}
@@ -714,9 +714,7 @@ export const ListingCard = memo(function ListingCard({
           )}
           <div className="min-w-0 border-l border-line-soft py-2.5 pl-3">
             <dt className="text-xs text-ink-soft">Vente le</dt>
-            <dd className="mt-0.5 truncate text-sm font-semibold text-brand-navy tabular-nums">
-              {dateFact}
-            </dd>
+            <dd className={FACT_VALUE_CLASS}>{dateFact}</dd>
           </div>
         </dl>
         <p className="text-sm text-ink-strong tabular-nums sm:hidden" data-testid="card-facts-line">
