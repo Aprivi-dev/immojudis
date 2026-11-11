@@ -1,12 +1,14 @@
 """Licitor : adresses internes après la réactivation du décodage (décision du propriétaire du 11/11/2026).
 
-Fixtures fictives (domaine example.test), aucune requête. Trois garanties :
+Fixtures fictives (domaine example.test), aucune requête. Ce que ces tests fixent :
 
-* une fiche reprise d'un point de reprise, dont l'adresse n'est ni dans le point de reprise ni au registre, est
-  relue au lieu d'être tenue pour fraîche ;
-* une vente connue dont le détail n'est plus frais est relue (c'est ce qui couvre les ventes connues après la
-  réactivation), une vente fraîche ne l'est pas ;
-* l'adresse ne sort que vers le registre : ni point de reprise, ni ``raw_payload``, ni colonne, ni journal.
+* l'interrupteur : actif par défaut dans la collecte planifiée, explicite dans le code ;
+* une vente connue dont le détail n'est plus frais est relue et obtient sa ligne au registre (c'est ce qui
+  couvre les ventes connues après la réactivation), une vente fraîche n'est pas relue ;
+* une fiche reprise d'un point de reprise n'a pas d'adresse à ce passage (le point de reprise n'en contient
+  jamais) et l'obtient à la relecture suivante de son détail ;
+* l'adresse ne sort que vers le registre : ni point de reprise, ni ``raw_payload``, ni colonne, ni journal, ni
+  motif d'un échec de normalisation.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from typing import Any
 import pytest
 
 from src import main, source_checkpoint
-from src.freshness import SOURCE_EXTRACTION_VERSION
+from src.freshness import SOURCE_EXTRACTION_VERSION, record_source_checks
 from src.models import INTERNAL_CONTACTS_KEY
 from src.normalize import normalize_sale
 from src.sources import common, licitor
@@ -77,12 +79,10 @@ class _Client:
 
 
 class _CheckpointDb:
-    """Base du point de reprise : garde les écritures, répond à la lecture du registre."""
+    """Base du point de reprise : garde ce qui y est écrit."""
 
-    def __init__(self, registered: list[str] | None = None, *, registry_error: Exception | None = None) -> None:
+    def __init__(self) -> None:
         self.calls: list[tuple[str, Any]] = []
-        self.registered = registered or []
-        self.registry_error = registry_error
 
     @contextmanager
     def transaction(self):
@@ -90,17 +90,10 @@ class _CheckpointDb:
 
     def execute(self, statement: str, params: Any = None) -> SimpleNamespace:
         self.calls.append((statement, params))
-        if "information_agent_contacts" in statement:
-            if self.registry_error is not None:
-                raise self.registry_error
-            return SimpleNamespace(fetchall=lambda: [(url,) for url in self.registered if url in params[0]])
         return SimpleNamespace(fetchall=lambda: [])
 
     def checkpoints(self) -> list[tuple[Any, ...]]:
         return [params for statement, params in self.calls if "insert into public.auction_collection_checkpoints" in statement]
-
-    def registry_reads(self) -> list[tuple[str, Any]]:
-        return [call for call in self.calls if "information_agent_contacts" in call[0]]
 
 
 class _PublicationConnection:
@@ -126,16 +119,11 @@ def scrape(monkeypatch: pytest.MonkeyPatch):
     def run(
         *,
         details: dict[str, tuple[str, Any, datetime]] | None = None,
-        db: _CheckpointDb | None = None,
         known: dict[str, str] | None = None,
-        decode: str | None = "true",
     ) -> tuple[Any, list[str], _CheckpointDb]:
-        db = db or _CheckpointDb()
+        db = _CheckpointDb()
         fetched: list[str] = []
-        if decode is None:
-            monkeypatch.delenv(licitor.DECODE_ENV, raising=False)
-        else:
-            monkeypatch.setenv(licitor.DECODE_ENV, decode)
+        monkeypatch.setenv(licitor.DECODE_ENV, "true")
         monkeypatch.delenv(licitor.SOURCE_BUDGET_ENV, raising=False)
         monkeypatch.setattr(source_checkpoint, "_context", lambda: ("postgresql://local", "run-2", details or {}, {}))
         monkeypatch.setattr(source_checkpoint, "_checkpoint_connect", lambda *_: nullcontext(db))
@@ -144,12 +132,10 @@ def scrape(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(licitor, "LicitorClient", lambda **kwargs: _Client(fetched))
         monkeypatch.setattr(licitor, "_collect_list_sales", lambda client, max_pages, errors: [_card()])
         monkeypatch.setattr(licitor, "TARGET_DEPARTMENTS", ("75",))
-        source_checkpoint._registered_contact_urls.cache_clear()
         source_checkpoint._connections.clear()
         try:
             return licitor.scrape_licitor_aquitaine_result(max_pages=1, known=known), fetched, db
         finally:
-            source_checkpoint._registered_contact_urls.cache_clear()
             source_checkpoint._connections.clear()
 
     return run
@@ -189,87 +175,11 @@ def test_the_switch_itself_stays_explicit(monkeypatch: pytest.MonkeyPatch) -> No
     assert licitor.decode_protected_emails_enabled() is True
 
 
-# --- Point de reprise -----------------------------------------------------------------------------------
+# --- Ventes connues : la fraîcheur du détail borne la relecture -----------------------------------------
 
 
-def test_the_checkpoint_records_that_an_address_was_held_back_never_the_address(scrape) -> None:
-    details = _interrupted_run(scrape)
-
-    payload = details[URL][1]
-    assert payload[source_checkpoint.CONTACTS_WITHHELD_KEY] is True
-    assert INTERNAL_CONTACTS_KEY not in payload and EMAIL not in json.dumps(payload)
-
-
-def test_a_restored_detail_without_a_registry_row_is_read_again_and_its_publication_writes_the_row(scrape) -> None:
-    details = _interrupted_run(scrape)
-
-    result, fetched, db = scrape(details=details)
-
-    assert fetched == [URL]  # relue : le point de reprise n'a pas l'adresse, le registre non plus
-    (sale,) = result.sales
-    assert not sale.get("_checkpoint_restored")
-    (row,) = _registry_rows(result.sales)
-    assert row["email"] == EMAIL and row["sale_id"] == SALE_ID and row["source_url"] == URL
-    # La lecture du registre ne demande que la page de la fiche, jamais une adresse.
-    (statement, params), = db.registry_reads()
-    assert "select distinct source_url" in statement and params == ([URL],)
-    # La fiche relue laisse son propre point de reprise, toujours sans adresse.
-    assert EMAIL not in json.dumps(db.checkpoints()[0][3].obj)
-
-
-def test_a_restored_detail_with_a_registry_row_is_not_read_again(scrape) -> None:
-    details = _interrupted_run(scrape)
-
-    result, fetched, _db = scrape(details=details, db=_CheckpointDb(registered=[URL]))
-
-    assert fetched == []
-    (sale,) = result.sales
-    assert sale["_checkpoint_restored"] is True
-    assert source_checkpoint.CONTACTS_WITHHELD_KEY not in sale
-
-
-@pytest.mark.parametrize("decode", [None, "false"])
-def test_a_restored_detail_is_kept_as_is_while_decoding_is_off(scrape, decode: str | None) -> None:
-    details = _interrupted_run(scrape)
-
-    result, fetched, db = scrape(details=details, decode=decode)
-
-    assert fetched == [] and result.sales[0]["_checkpoint_restored"] is True
-    assert db.registry_reads() == []
-    assert _registry_rows(result.sales) == []
-
-
-def test_a_restored_detail_that_never_had_an_address_is_not_read_again(scrape) -> None:
-    signature, payload, observed = _interrupted_run(scrape)[URL]
-    without_address = {key: value for key, value in payload.items() if key != source_checkpoint.CONTACTS_WITHHELD_KEY}
-
-    result, fetched, db = scrape(details={URL: (signature, without_address, observed)})
-
-    assert fetched == [] and result.sales[0]["_checkpoint_restored"] is True
-    assert db.registry_reads() == []
-
-
-def test_an_unreadable_registry_keeps_the_checkpoint_and_says_so_without_any_address(
-    scrape, caplog: pytest.LogCaptureFixture
-) -> None:
-    details = _interrupted_run(scrape)
-
-    with caplog.at_level(logging.DEBUG):
-        result, fetched, _db = scrape(
-            details=details, db=_CheckpointDb(registry_error=RuntimeError(f"boom {EMAIL}"))
-        )
-
-    assert fetched == [] and result.sales[0]["_checkpoint_restored"] is True
-    assert "registry unreadable" in caplog.text and "RuntimeError" in caplog.text
-    assert EMAIL not in caplog.text
-
-
-# --- Ventes connues : la fraîcheur du détail borne déjà la relecture -------------------------------------
-
-
-def _known_signatures(monkeypatch: pytest.MonkeyPatch, checked_hours_ago: float) -> dict[str, str]:
+def _known_signatures(monkeypatch: pytest.MonkeyPatch, checked_at: datetime) -> dict[str, str]:
     """Signatures remises à la source par le pipeline pour une vente connue, carte inchangée."""
-    checked_at = datetime.now(UTC) - timedelta(hours=checked_hours_ago)
     row = {
         "source_name": "licitor",
         "sale_date": (datetime.now(UTC) + timedelta(days=30)).isoformat(),
@@ -295,7 +205,7 @@ def _known_signatures(monkeypatch: pytest.MonkeyPatch, checked_hours_ago: float)
 def test_a_known_sale_whose_detail_is_no_longer_fresh_is_read_again_and_gets_its_registry_row(
     scrape, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    known = _known_signatures(monkeypatch, checked_hours_ago=25)
+    known = _known_signatures(monkeypatch, datetime.now(UTC) - timedelta(hours=25))
     assert known == {}  # au-delà de 24 h, la vente n'est plus remise comme « connue »
 
     result, fetched, _db = scrape(known=known)
@@ -307,7 +217,7 @@ def test_a_known_sale_whose_detail_is_no_longer_fresh_is_read_again_and_gets_its
 def test_a_known_sale_read_within_the_freshness_window_is_not_read_twice(
     scrape, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    known = _known_signatures(monkeypatch, checked_hours_ago=2)
+    known = _known_signatures(monkeypatch, datetime.now(UTC) - timedelta(hours=2))
     assert set(known) == {URL}
 
     result, fetched, _db = scrape(known=known)
@@ -316,24 +226,96 @@ def test_a_known_sale_read_within_the_freshness_window_is_not_read_twice(
     assert result.sales[0]["_known_unchanged"] is True
 
 
+# --- Point de reprise : comportement assumé -------------------------------------------------------------
+
+
+def test_a_detail_restored_from_a_checkpoint_has_no_address_until_its_detail_is_read_again(
+    scrape, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    details = _interrupted_run(scrape)
+    read_at = details[URL][1]["_checkpoint_checked_at"]
+
+    # Passage de reprise : la fiche n'est pas relue, et le point de reprise ne porte aucune adresse.
+    result, fetched, _db = scrape(details=details)
+    (restored,) = result.sales
+    assert fetched == [] and restored["_checkpoint_restored"] is True
+    assert INTERNAL_CONTACTS_KEY not in restored
+    assert _registry_rows(result.sales) == []
+    # La reprise ne rajeunit pas la fiche : sa preuve de lecture garde l'heure de la lecture d'origine.
+    record_source_checks([restored], {})
+    assert restored["source_checks"][URL]["checked_at"] == read_at
+
+    # 24 heures après la lecture d'origine, le détail n'est plus frais : relu, il écrit sa ligne au registre.
+    known = _known_signatures(monkeypatch, datetime.fromisoformat(read_at) - timedelta(hours=24))
+    assert known == {}
+    result, fetched, _db = scrape(known=known)
+    assert fetched == [URL]
+    assert [row["email"] for row in _registry_rows(result.sales)] == [EMAIL]
+
+
 # --- Vie privée -----------------------------------------------------------------------------------------
 
 
 def test_the_address_only_leaves_towards_the_registry(scrape, caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.DEBUG):
-        details = _interrupted_run(scrape)
-        result, _fetched, db = scrape(details=details)
+        result, fetched, db = scrape()
         (raw,) = result.sales
         sale = normalize_sale(raw)
         rows = _registry_rows(result.sales)
 
-    assert [row["email"] for row in rows] == [EMAIL]
+    assert fetched == [URL] and [row["email"] for row in rows] == [EMAIL]
     published = sale.model_dump(mode="json")
     assert INTERNAL_CONTACTS_KEY not in published
     assert EMAIL not in json.dumps(published, ensure_ascii=False, default=str)
     assert EMAIL not in json.dumps(sale.raw_payload, ensure_ascii=False, default=str)
     assert all(EMAIL not in str(published.get(column)) for column in UPSERT_COLUMNS)
     assert INTERNAL_CONTACTS_KEY not in UPSERT_COLUMNS
-    for _run_id, _url, _signature, payload, _observed in db.checkpoints():
-        assert EMAIL not in json.dumps(payload.obj)
+    (_run_id, _url, _signature, payload, _observed), = db.checkpoints()
+    assert INTERNAL_CONTACTS_KEY not in payload.obj and EMAIL not in json.dumps(payload.obj)
     assert EMAIL not in caplog.text
+
+
+def _raw_that_fails_normalization(scrape) -> dict[str, Any]:
+    result, _fetched, _db = scrape()
+    raw = {**result.sales[0], "observations": [1]}  # refusé par le modèle : la normalisation échoue
+    assert raw[INTERNAL_CONTACTS_KEY][0]["email"] == EMAIL
+    with pytest.raises(Exception):  # noqa: B017, PT011 - l'échec lui-même, quel qu'en soit le type
+        normalize_sale(raw)
+    return raw
+
+
+def test_a_failed_normalization_never_cites_the_address_in_the_log_nor_in_the_item_reason(
+    scrape, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    raw = _raw_that_fails_normalization(scrape)
+    recorded: list[dict[str, Any]] = []
+    monkeypatch.setattr(main, "record_items", lambda run_id, raws, **kwargs: recorded.append(kwargs))
+    monkeypatch.setattr(main, "record_sale_decisions", lambda *args, **kwargs: None)
+    run = main._PipelineRun(options=main.PipelineOptions(source="licitor"), settings={}, run_id="run-1")
+    run.raw_sales = [raw]
+
+    with caplog.at_level(logging.DEBUG):
+        main._normalize_and_deduplicate(run)
+
+    assert run.normalized_observations == []
+    (failure,) = [item for item in recorded if item.get("decision") == "normalization_failed"]
+    assert failure["reason"] and EMAIL not in failure["reason"]  # auction_collection_items.reason
+    assert run.errors["licitor"] and EMAIL not in json.dumps(run.errors)
+    assert "Initial normalization failed" in caplog.text and EMAIL not in caplog.text
+
+
+def test_a_failed_normalization_in_a_progressive_batch_never_cites_the_address(
+    scrape, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    raw = _raw_that_fails_normalization(scrape)
+    recorded: list[dict[str, Any]] = []
+    monkeypatch.setattr(main, "record_items", lambda run_id, raws, **kwargs: recorded.append(kwargs))
+    monkeypatch.setattr(main, "record_sale_decisions", lambda *args, **kwargs: None)
+    errors: dict[str, list[str]] = {}
+
+    with caplog.at_level(logging.DEBUG):
+        main.publish_factual_batch("run-1", [raw], {}, errors)
+
+    (failure,) = [item for item in recorded if item.get("decision") == "normalization_failed"]
+    assert failure["reason"] and EMAIL not in failure["reason"]
+    assert EMAIL not in json.dumps(errors) and EMAIL not in caplog.text
