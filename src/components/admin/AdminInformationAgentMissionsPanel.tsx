@@ -243,8 +243,12 @@ export function AdminInformationAgentMissionsPanel({
           .catch((error: unknown) => {
             preparingKeysRef.current.delete(requestKey);
             if (isCurrentSelection()) {
+              const message = error instanceof Error ? error.message : "Brouillon indisponible.";
               setPreparingSelectionKey(null);
-              setDraftError(error instanceof Error ? error.message : "Brouillon indisponible.");
+              // Régénération d'un brouillon déjà ouvert : le bloc d'erreur de la préparation n'est rendu
+              // que sans mission ouverte. Le refus du serveur est donc notifié, jamais muet.
+              if (activeMissionRef.current) toast.error(message);
+              else setDraftError(message);
             }
           });
 
@@ -411,6 +415,7 @@ export function AdminInformationAgentMissionsPanel({
    * Toujours disponible sur un brouillon modifiable : c'est le seul chemin pour un brouillon créé avant que
    * le serveur n'enregistre son destinataire, que l'aperçu refuse en demandant de le régénérer.
    */
+  const regeneratingRef = useRef(false);
   const regenerateDraft = () => {
     const opened = activeMissionRef.current;
     if (!opened?.saleId) return;
@@ -419,7 +424,11 @@ export function AdminInformationAgentMissionsPanel({
       prepareDraft(queued, { recipientEmail, recipientName, force: true });
       return;
     }
-    // Mission ouverte depuis la liste des envois : aucune sélection de la file ne la porte.
+    // Mission ouverte depuis la liste des envois : aucune sélection de la file ne la porte. Une seule
+    // régénération à la fois, même pour plusieurs clics dans le même tour (l'état « en cours » du bouton
+    // n'est connu qu'au rendu suivant).
+    if (regeneratingRef.current) return;
+    regeneratingRef.current = true;
     void createDraftAsync({
       saleId: opened.saleId,
       recipientEmail: recipientEmail.trim() || undefined,
@@ -440,6 +449,9 @@ export function AdminInformationAgentMissionsPanel({
       })
       .catch((error: unknown) => {
         toast.error(error instanceof Error ? error.message : "Brouillon indisponible.");
+      })
+      .finally(() => {
+        regeneratingRef.current = false;
       });
   };
 
