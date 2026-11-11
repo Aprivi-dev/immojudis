@@ -2203,6 +2203,19 @@ function functionSignature(schema, name, argumentText) {
       table: "auction_fact_claim_decisions",
       definition: "check\\s*\\(\\s*publication_mode\\s*<>\\s*'auto'\\s*\\)",
     },
+    // Tant que la publication automatique est verrouillée, seul un administrateur nommé accepte une pièce.
+    {
+      name: "auction_fact_claim_decisions_accepted_by_admin",
+      table: "auction_fact_claim_decisions",
+      definition:
+        "check\\s*\\(\\s*decision\\s*<>\\s*'accepted'\\s+or\\s+\\(\\s*actor_kind\\s*=\\s*'admin'\\s+and\\s+actor_id\\s+is\\s+not\\s+null\\s*\\)\\s*\\)",
+    },
+    {
+      name: "auction_fact_claim_decisions_admin_actor",
+      table: "auction_fact_claim_decisions",
+      definition:
+        "check\\s*\\(\\s*actor_kind\\s*<>\\s*'admin'\\s+or\\s+actor_id\\s+is\\s+not\\s+null\\s*\\)",
+    },
     {
       name: "auction_fact_source_precedence_listing_never_holds",
       table: "auction_fact_source_precedence",
