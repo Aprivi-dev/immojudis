@@ -49,6 +49,7 @@ paths = [
 '''(?:^|/)supabase/tests/881_fact_registry_tables\.sql''',
 '''(?:^|/)supabase/tests/882_sale_field_hold\.sql''',
 '''(?:^|/)supabase/tests/883_sale_field_projection\.sql''',
+'''(?:^|/)supabase/tests/885_sale_field_hold_echo\.sql''',
 ]
 regexes = [
 '''^property\.(?:surface_m2|carrez_surface_m2|land_surface_m2)$''',
