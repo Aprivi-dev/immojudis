@@ -78,10 +78,13 @@ bounded pass`. Une passe partielle est normale pour une vente de plus de six pi�
      consommé) : l'écriture de fin de passe n'a rien écrit. `revision_moved` : la ligne de la vente a changé
      pendant la passe, nouvel essai 30 minutes plus tard, quatre essais au plus. `expired` ou
      `missing_price_and_surface` : refus d'admission, nouvel essai un jour plus tard.
-   - `review_required: final catalogue write refused (<code>)` (tâche `cancelled`) : quatrième refus
-     d'admission de suite. Le vidage ne réveille pas cette tâche pendant 7 jours (`REVIEW_HOLD_DAYS`), sauf
-     si une génération plus récente existe (pièces changées). À regarder : la vente n'a plus ni prix ni
-     surface une fois ses pièces relues, ou elle est expirée.
+   - `review_required: final catalogue write refused (<code>, <version des faits>)` (tâche `cancelled`) :
+     quatrième refus d'admission de suite. Le vidage ne réveille pas cette tâche pendant 7 jours
+     (`REVIEW_HOLD_DAYS`) si l'audience est à plus de 7 jours, pendant 1 jour sinon (audience proche ou vente
+     sans date). L'attente tombe avant si les règles de lecture changent (la version du message n'est plus
+     `DOCUMENT_FACTS_VERSION`) ou si une génération plus récente, non annulée, existe (pièces changées). Une
+     génération plus récente annulée ne la lève pas : la liste des pièces est revenue à celle de la tâche en
+     revue. À regarder : la vente n'a plus ni prix ni surface une fois ses pièces relues, ou elle est expirée.
 
 3. **Une vente qui boucle.** Le manifeste dit ce qui reste à lire :
 
@@ -161,6 +164,17 @@ Règles posées le 11/11/2026 (lot R6, note
 - **Écriture de fin de passe écartée.** La tâche pdf échoue avec son code, un essai consommé : elle ne peut
   plus tourner sans fin. Remettre plus tôt en file une tâche `review_required` est une écriture en base :
   décision du propriétaire.
+- **Valeur remise quand une valeur de pièce est effacée.** Chaque relecture complète efface d'abord les
+  valeurs lues dans les pièces et remet celles de la source, depuis `source_factual_snapshot`. Règle :
+  ne jamais faire apparaître une valeur que la collecte n'aurait pas écrite pour la vente
+  (`_pdf_source_reader`, `src/pdf_fact_scope.py`). L'instantané est relu par `normalize_sale` avec le
+  contexte de la collecte repris du `raw_payload` de la vente (lot de l'annonce, drapeaux, titre, blocs de
+  la fiche, précision des dates). Sur une annonce Licitor à plusieurs lots dont le lot n'est plus désigné
+  (`source_lot_selection` absent), seul ce que l'instantané porte pour le champ est remis, sans relire le
+  texte de la page ; un champ vide reste vide. Si l'instantané ne se lit pas, le champ est remis vide et le
+  journal porte `Source snapshot unreadable for <url> : field <champ>`, sans la valeur. Limites : dans le
+  cas sans lot, un type de bien peut être remis `other` au lieu du type lu par la collecte, et un
+  instantané pris avant la lecture lot par lot (03/11/2026) porte les valeurs du premier lot.
 - **Lecture en avance.** Une pièce est à revalider quand sa vérification enregistrée en base a plus de
   24 heures. Le fichier de suivi local (`.http.json`), que la lecture en avance rafraîchit, ne sert plus
   qu'à éviter une requête : il ne décide plus si la pièce est reprise.
