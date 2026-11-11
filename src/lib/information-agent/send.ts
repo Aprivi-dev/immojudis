@@ -55,6 +55,7 @@ import {
 } from "@/lib/information-agent/message-guards";
 import {
   missionIdentityKeys,
+  missionStructureKeys,
   missionSaleReference,
 } from "@/lib/information-agent/mission-identity";
 import {
@@ -110,11 +111,18 @@ export async function approveAndSendMission({
   });
   for (const check of courtChecks) await check();
   // Un greffe n'a pas de nom de personne : aucune clé d'identité, même si un nom est saisi.
-  const identityKeys = missionIdentityKeys(mission, courtFallback ? null : input.recipientName);
+  // Une adresse générique porte aussi les clés de sa structure ; l'opposition d'une structure vaut pour
+  // toutes ses adresses.
+  const identityKeys = missionIdentityKeys(
+    mission,
+    courtFallback ? null : input.recipientName,
+    courtFallback ? null : input.recipientEmail,
+  );
   await assertInformationAgentContactAllowed({
     saleId: mission.sale_id,
     email: input.recipientEmail,
     identityKeys,
+    structureKeys: courtFallback ? [] : missionStructureKeys(mission, input.recipientEmail),
     courtRegistryAddress: Boolean(courtFallback),
   });
   // Adresse retrouvée par l'agent : sa seule origine est la ligne de registre de l'agent.

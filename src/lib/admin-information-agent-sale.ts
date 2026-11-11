@@ -13,6 +13,12 @@ import { informationAgentAddressHygieneIssue } from "@/lib/information-agent/add
 import { informationAgentAddressCheckEnabled } from "@/lib/information-agent/address-deliverability";
 import { findCourtRegistryFallback } from "@/lib/information-agent/court-registry";
 import { isCourtRegistryFallbackSale } from "@/lib/information-agent/court-registry-fallback";
+import {
+  readInformationAgentListingContactBlock,
+  readInformationAgentOrganizerType,
+  type InformationAgentListingContactBlock,
+  type InformationAgentOrganizerType,
+} from "@/lib/information-agent/listing-contacts";
 
 /**
  * The admin information workflow is allowed to inspect a sale that is kept out
@@ -114,6 +120,10 @@ export type AdminInformationAgentSale = AuctionSale & {
   source_block_urls: Record<string, string | null>;
   /** Adresses du registre interne (relevées par le pipeline, jamais publiées) pour cette vente. */
   registry_contacts: InformationAgentRegistryContact[];
+  /** Blocs de contact publiés dans l'annonce (`source_property_features`), vente puis observations. */
+  listing_contact_blocks: InformationAgentListingContactBlock[];
+  /** Organisateur de la vente (`sale_procedure.organizer_type`) : il fixe le rôle de l'interlocuteur. */
+  information_agent_organizer_type: InformationAgentOrganizerType;
 };
 
 /** Nombre maximal d'URL sources dont on lit les pièces (vente + observations). */
@@ -207,6 +217,9 @@ const EMAIL_AVAILABILITY_SELECT = [
   "observations",
   "source_blocks:raw_payload->source_blocks",
   "source_description:raw_payload->>source_description",
+  "source_property_features:raw_payload->source_property_features",
+  "payload_sale_procedure:raw_payload->sale_procedure",
+  "sale_procedure",
   "sale_venue_type",
   "sale_verification_status",
   "tribunal_code",
@@ -234,30 +247,10 @@ export async function classifyInformationAgentSaleContacts(
   const ids = [...new Set(saleIds)];
   for (let index = 0; index < ids.length; index += EMAIL_AVAILABILITY_CHUNK) {
     const chunk = ids.slice(index, index + EMAIL_AVAILABILITY_CHUNK);
-    const [salesResponse, registry] = await Promise.all([
-      supabaseAdmin.from("auction_sales").select(EMAIL_AVAILABILITY_SELECT).in("id", chunk),
-      loadRegistryContactsBySale(chunk),
-    ]);
-    if (salesResponse.error) throw salesResponse.error;
+    const { sales, registryReadable } = await loadInformationAgentContactSales(chunk);
+    const registry = { readable: registryReadable };
     const classified = await Promise.all(
-      (salesResponse.data ?? []).map(async (value) => {
-        const row = asSaleRow(value);
-        const id = nullableString(row?.id);
-        if (!row || !id) return null;
-        const sale = {
-          ...toInformationAgentSale(
-            {
-              ...row,
-              raw_payload: {
-                source_blocks: row.source_blocks ?? null,
-                source_description: row.source_description ?? null,
-              },
-            },
-            [],
-            null,
-          ),
-          registry_contacts: registry.contacts.get(id) ?? [],
-        };
+      [...sales].map(async ([id, sale]) => {
         const checkAddresses = informationAgentAddressCheckEnabled();
         const candidates = discoverInformationAgentContacts(sale).filter(
           (candidate) => !checkAddresses || !informationAgentAddressHygieneIssue(candidate.email),
@@ -278,6 +271,48 @@ export async function classifyInformationAgentSaleContacts(
     for (const entry of classified) if (entry) result.set(entry[0], entry[1]);
   }
   return result;
+}
+
+/**
+ * Ventes telles que le résolveur de contacts les lit (annonce, blocs de contact, registre interne), sans les
+ * pièces ni la présence par source. LECTURE SEULE : même source que la classe de contact et que la mesure à
+ * blanc (`dry-run.ts`). Une vente introuvable est absente ; une erreur de lecture des ventes est propagée.
+ * `registryReadable` est faux quand le registre interne n'a pas pu être lu.
+ */
+export async function loadInformationAgentContactSales(saleIds: readonly string[]): Promise<{
+  sales: Map<string, AdminInformationAgentSale>;
+  registryReadable: boolean;
+}> {
+  const sales = new Map<string, AdminInformationAgentSale>();
+  const ids = [...new Set(saleIds)];
+  if (!ids.length) return { sales, registryReadable: true };
+  const [salesResponse, registry] = await Promise.all([
+    supabaseAdmin.from("auction_sales").select(EMAIL_AVAILABILITY_SELECT).in("id", ids),
+    loadRegistryContactsBySale(ids),
+  ]);
+  if (salesResponse.error) throw salesResponse.error;
+  for (const value of salesResponse.data ?? []) {
+    const row = asSaleRow(value);
+    const id = nullableString(row?.id);
+    if (!row || !id) continue;
+    sales.set(id, {
+      ...toInformationAgentSale(
+        {
+          ...row,
+          raw_payload: {
+            source_blocks: row.source_blocks ?? null,
+            source_description: row.source_description ?? null,
+            source_property_features: row.source_property_features ?? null,
+            sale_procedure: row.payload_sale_procedure ?? null,
+          },
+        },
+        [],
+        null,
+      ),
+      registry_contacts: registry.contacts.get(id) ?? [],
+    });
+  }
+  return { sales, registryReadable: registry.readable };
 }
 
 /**
@@ -492,6 +527,12 @@ function toInformationAgentSale(
     source_blocks_by_source: collectSourceBlocksBySource(row, sourceBlocks, observations),
     source_block_urls: collectSourceBlockUrls(row, sourceBlocks, observations),
     information_agent_signals: inventorySignals(rawPayload),
+    listing_contact_blocks: collectListingContactBlocks(row, rawPayload, observations),
+    // La colonne `sale_procedure` fait foi ; la copie de `raw_payload` sert quand la colonne n'est pas remplie.
+    information_agent_organizer_type: readInformationAgentOrganizerType(
+      row.sale_procedure,
+      rawPayload.sale_procedure,
+    ),
     // Do not copy raw_payload into this internal snapshot.  The draft builder
     // only needs the explicitly mapped source blocks and descriptions, which
     // also keeps accidental browser serialization from exposing raw evidence.
@@ -515,6 +556,37 @@ function collectSourceBlocksBySource(
     result[`${observationSource}:${index + 1}`] = blocks;
   });
   return result;
+}
+
+/**
+ * Blocs de contact publiés par l'annonce (`source_property_features` : notaire, service de l'État, avocat)
+ * pour la vente puis pour chaque observation d'une autre source, avec la source et l'URL de l'annonce lue.
+ * Seuls les champs de contact sont recopiés, jamais le reste de `raw_payload`.
+ */
+function collectListingContactBlocks(
+  row: AdminInformationAgentSaleRow,
+  rawPayload: Record<string, unknown>,
+  observations: unknown[],
+): InformationAgentListingContactBlock[] {
+  const blocks: InformationAgentListingContactBlock[] = [];
+  const add = (features: unknown, sourceName: unknown, sourceUrl: unknown) => {
+    const block = readInformationAgentListingContactBlock(
+      features,
+      nullableString(sourceName),
+      nullableString(sourceUrl),
+    );
+    if (block) blocks.push(block);
+  };
+  add(rawPayload.source_property_features, row.source_name, row.source_url);
+  for (const value of observations) {
+    const observation = asRecord(value);
+    add(
+      asRecord(observation.raw_payload).source_property_features,
+      observation.source_name,
+      observation.source_url,
+    );
+  }
+  return blocks;
 }
 
 /** URL source de chaque entrée de `source_blocks_by_source` (mêmes clés). */

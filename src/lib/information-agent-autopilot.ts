@@ -30,6 +30,7 @@ import {
   type AutopilotSettings,
   type AutopilotStats,
 } from "@/lib/information-agent/autopilot-rules";
+import { informationAgentCapStructure } from "@/lib/information-agent/contact-structure";
 import {
   loadAutopilotSettings,
   loadAutopilotStats,
@@ -427,6 +428,10 @@ export async function runInformationAgentAutopilot(
         stats,
         caps,
         domain: candidate.domain,
+        structure: informationAgentCapStructure({
+          email: candidate.email,
+          officeCode: candidate.officeCode,
+        }),
         court: candidate.tribunalCode,
         now: deps.now(),
         random: deps.random(),

@@ -135,11 +135,14 @@ describe("manual admin draft preparation", () => {
       email: "cabinet@example.test",
       source_kind: "sale_listing",
       observed_by: "agent",
-      identity_keys: ["lawyer|bordeaux|dupont jean"],
+      // Adresse générique : elle porte aussi la clé de sa structure (domaine propre du cabinet).
+      identity_keys: ["lawyer|bordeaux|dupont jean", "structure|domain|example.test"],
     });
     expect(observed[0]?.observed_at).toEqual(expect.any(String));
     // Le brouillon garde les clés d'identité (jamais l'adresse) pour le contrôle avant envoi.
-    expect(inserted).toMatchObject({ recipient_identity_keys: ["lawyer|bordeaux|dupont jean"] });
+    expect(inserted).toMatchObject({
+      recipient_identity_keys: ["lawyer|bordeaux|dupont jean", "structure|domain|example.test"],
+    });
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("subscribe_information_agent_mission", {
       p_user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       p_mission_id: "22222222-2222-4222-8222-222222222222",
@@ -262,5 +265,122 @@ describe("manual admin draft preparation", () => {
       table: "information_agent_missions",
       values: expect.objectContaining({ status: "cancelled" }),
     });
+  });
+});
+
+describe("brouillon pour un notaire lu dans l'annonce", () => {
+  const listingUrl = "https://annonces.example.test/notaires/vente-1";
+  const notarySale = {
+    id: saleId,
+    title: "Maison Bordeaux",
+    property_type: "house",
+    address: "3 rue des Vignes",
+    city: "Bordeaux",
+    tribunal: null,
+    postal_code: "33000",
+    sale_date: null,
+    starting_price_eur: null,
+    lawyer_name: null,
+    lawyer_contact: "jean.martin@example.test",
+    source_name: "notaires",
+    source_url: listingUrl,
+    information_agent_organizer_type: "notary",
+    listing_contact_blocks: [
+      {
+        sourceName: "notaires",
+        sourceUrl: listingUrl,
+        officeCode: "33001",
+        contact: [
+          {
+            email: "jean.martin@example.test",
+            name: "Jean Martin",
+            field: "source_property_features.contact.email",
+            principal: true,
+          },
+        ],
+        manager: [],
+        lawyer: [],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    mocks.sale.mockResolvedValue(notarySale as never);
+  });
+
+  it("prépare un brouillon au notaire, avec les seules questions admises, sans rien envoyer", async () => {
+    const result = await createAdminInformationAgentDraft({ auth: admin, input: { saleId } });
+    expect(result.mission).toMatchObject({
+      recipientEmail: "jean.martin@example.test",
+      recipientName: "Jean Martin",
+      recipientKind: "source_contact",
+      status: "draft",
+      recipientProfile: {
+        roleLabel: "Notaire",
+        addressKind: "nominative",
+        originLabel: "Adresse publiée dans l’annonce",
+        originSourceName: "notaires",
+        originUrl: listingUrl,
+      },
+    });
+    const allowed = ["surface", "composition", "occupancy", "visit", "documents"];
+    expect(result.mission.questionKeys.length).toBeGreaterThan(0);
+    for (const key of result.mission.questionKeys) expect(allowed).toContain(key);
+    // Les lacunes de date et de mise à prix existent, mais ne sont pas demandées à un notaire.
+    expect(result.gaps.map((gap) => gap.key)).toEqual(
+      expect.arrayContaining(["sale_date", "starting_price_eur"]),
+    );
+    const questions = result.mission.bodyText
+      .split("\n")
+      .filter((line) => line.startsWith("- "))
+      .join("\n");
+    expect(questions).not.toBe("");
+    expect(questions).not.toMatch(
+      /mise à prix|garantie|audience|date de la vente|loyer|transmettre/i,
+    );
+    expect(inserted).toMatchObject({
+      recipient_kind: "source_contact",
+      // Adresse nominative : la clé de la structure n'est pas parmi ses clés d'identité.
+      recipient_identity_keys: ["notary|bordeaux|jean martin"],
+      metadata: {
+        contact_identity: { role: "notary", structure_kind: "notary_office", office_code: "33001" },
+        question_audience: "notary",
+      },
+    });
+    expect(observed[0]).toMatchObject({
+      email: "jean.martin@example.test",
+      role: "notary",
+      source_kind: "sale_listing",
+      source_url: listingUrl,
+      metadata: {
+        structure_kind: "notary_office",
+        address_kind: "nominative",
+        office_code: "33001",
+      },
+    });
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith(
+      "subscribe_information_agent_mission",
+      expect.anything(),
+    );
+  });
+
+  it("refuse une question hors liste choisie par l'administrateur, sans la retirer en silence", async () => {
+    await expect(
+      createAdminInformationAgentDraft({
+        auth: admin,
+        input: { saleId, questionKeys: ["surface", "sale_terms"] },
+      }),
+    ).rejects.toThrow("l'agent ne demande que la surface");
+    expect(inserted).toBeNull();
+  });
+
+  it("ne retient aucune adresse d'un office qui s'est opposé", async () => {
+    opposedIdentityKeys = ["structure|office|33001"];
+    await expect(
+      createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
+    ).rejects.toThrow("s'est opposé à être contacté");
+    expect(observed).toEqual([]);
+    expect(inserted).toBeNull();
   });
 });

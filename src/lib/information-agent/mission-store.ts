@@ -9,6 +9,7 @@ import {
 } from "@/lib/information-agent-questions";
 import type { InformationAgentRecipientKind } from "@/lib/information-agent/contacts";
 import { courtRegistryRecipientOrigin } from "@/lib/information-agent/court-registry-mission";
+import { informationAgentRecipientProfile } from "@/lib/information-agent/recipient-profile";
 import {
   UNVERIFIED_SEND_OUTCOME,
   type InformationAgentFact,
@@ -91,6 +92,7 @@ export function missionFromRow(row: MissionRow): InformationAgentMission {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     recipientOrigin: courtRegistryRecipientOrigin(row.metadata),
+    recipientProfile: informationAgentRecipientProfile(row.metadata, row.recipient_email),
   };
 }
 

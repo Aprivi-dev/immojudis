@@ -387,6 +387,51 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(screen.queryByText(/retrouvée automatiquement/)).toBeNull();
   });
 
+  it("montre le rôle du destinataire proposé, l'origine de l'adresse et sa nature", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: {
+        ...mission("draft"),
+        recipientProfile: {
+          roleLabel: "Notaire",
+          addressKind: "generic",
+          addressKindLabel: "Adresse générique de la structure",
+          originLabel: "Adresse publiée dans l’annonce",
+          originSourceName: "notaires",
+          originUrl: "https://annonces.example.test/notaires/vente-1",
+        },
+      },
+      gaps: [],
+      facts: [],
+    });
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    const profile = screen.getByTestId("recipient-profile");
+    expect(profile.textContent).toContain("Notaire");
+    expect(profile.textContent).toContain("Adresse publiée dans l’annonce (notaires)");
+    expect(profile.textContent).toContain("Adresse générique de la structure");
+    expect(within(profile).getByRole("link", { name: "voir l’annonce" }).getAttribute("href")).toBe(
+      "https://annonces.example.test/notaires/vente-1",
+    );
+
+    // L'administrateur saisit une autre adresse : le profil ne la décrit plus, il disparaît.
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
+      target: { value: "autre.adresse@example.test" },
+    });
+    expect(screen.queryByTestId("recipient-profile")).toBeNull();
+  });
+
+  it("n'affiche aucun profil quand le brouillon n'en porte pas", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(screen.queryByTestId("recipient-profile")).toBeNull();
+  });
+
   it("shows the inventory of the fiche with what is missing and what is known", async () => {
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.create.mockResolvedValue({

@@ -8,7 +8,12 @@
  * saisies d'administrateur, messageries grand public, notaires, commissaires et gestionnaires : validation
  * manuelle uniquement. Aucune relance.
  */
-import { isWithinAutopilotSendWindow } from "@/lib/information-agent/paris-time";
+import {
+  informationAgentCapStructure,
+  sharedMailDomainOf,
+  type InformationAgentCapStructure,
+} from "@/lib/information-agent/contact-structure";
+import { isWithinAutopilotSendWindow, startOfParisDay } from "@/lib/information-agent/paris-time";
 
 export type AutopilotMode = "off" | "simulation" | "live";
 
@@ -44,6 +49,13 @@ export type AutopilotStats = {
   todayByDomain: Record<string, number>;
   weekByDomain: Record<string, number>;
   todayByCourt: Record<string, number>;
+  /**
+   * Envois du jour et des 7 derniers jours par structure, pour les seuls domaines PARTAGÉS (`notaires.fr`,
+   * `gouv.fr`) : office (`office|<code>`) ou, sans code, boîte (`mailbox|<adresse>`). Comptés par
+   * l'application (`sharedStructureCounts`), pas par la fonction SQL. Jamais journalisés.
+   */
+  todayBySharedStructure: Record<string, number>;
+  weekBySharedStructure: Record<string, number>;
   recentDomains: string[];
   firstAutopilotSendAt: string | null;
   autopilotTotal: number;
@@ -86,6 +98,9 @@ export function parseAutopilotStats(raw: unknown): AutopilotStats {
     todayByDomain: record(r.today_by_domain),
     weekByDomain: record(r.week_by_domain),
     todayByCourt: record(r.today_by_court),
+    // Absents de la fonction SQL : remplis par `loadAutopilotStats` (lecture des missions envoyées).
+    todayBySharedStructure: record(r.today_by_shared_structure),
+    weekBySharedStructure: record(r.week_by_shared_structure),
     recentDomains: Array.isArray(r.recent_domains)
       ? r.recent_domains.filter((item): item is string => typeof item === "string")
       : [],
@@ -136,8 +151,16 @@ export const AUTOPILOT_PHASES = [
 ] as const;
 export const AUTOPILOT_HARD_DAY_CAP = 60;
 export const AUTOPILOT_HARD_HOUR_CAP = 12;
-export const AUTOPILOT_DOMAIN_DAY_CAP = 1;
-export const AUTOPILOT_DOMAIN_WEEK_CAP = 2;
+/**
+ * Plafond par STRUCTURE (cabinet, office notarial, service de l'État) : 1 envoi par jour, 2 par semaine.
+ * Sur un domaine propre, la structure est le domaine (comportement inchangé). Sur un domaine partagé par
+ * toute une profession (`notaires.fr`, `gouv.fr`), un plafond par domaine bloquerait la profession entière :
+ * la structure est l'office (code) ou, sans code, la boîte elle-même.
+ */
+export const AUTOPILOT_STRUCTURE_DAY_CAP = 1;
+export const AUTOPILOT_STRUCTURE_WEEK_CAP = 2;
+/** Plafond bas du domaine partagé lui-même, toutes structures confondues (valeur de départ du 11/11/2026). */
+export const AUTOPILOT_SHARED_DOMAIN_DAY_CAP = 3;
 export const AUTOPILOT_COURT_DAY_CAP = 3;
 export const AUTOPILOT_DOMAIN_SPACING_MS = 15 * 60_000;
 export const AUTOPILOT_MIN_GAP_MS = 2 * 60_000;
@@ -208,6 +231,7 @@ export function autopilotBudgetDecision({
   stats,
   caps,
   domain,
+  structure = null,
   court,
   now,
   random,
@@ -215,6 +239,8 @@ export function autopilotBudgetDecision({
   stats: AutopilotStats;
   caps: AutopilotCaps;
   domain: string | null;
+  /** Unité de plafond du destinataire (`informationAgentCapStructure`) ; obligatoire sur un domaine partagé. */
+  structure?: InformationAgentCapStructure | null;
   court: string | null;
   now: Date;
   random: number;
@@ -227,9 +253,31 @@ export function autopilotBudgetDecision({
     return { ok: false, scope: "run", code: "interval" };
   }
   if (domain) {
-    if (
-      (stats.todayByDomain[domain] ?? 0) >= AUTOPILOT_DOMAIN_DAY_CAP ||
-      (stats.weekByDomain[domain] ?? 0) >= AUTOPILOT_DOMAIN_WEEK_CAP
+    const sharedDomain = sharedMailDomainOf(domain);
+    if (sharedDomain) {
+      // Domaine partagé : plafond bas du domaine, puis plafond de la structure (office ou boîte).
+      const sharedToday = Object.entries(stats.todayByDomain).reduce(
+        (total, [sent, count]) =>
+          sharedMailDomainOf(sent) === sharedDomain ? total + count : total,
+        0,
+      );
+      if (sharedToday >= AUTOPILOT_SHARED_DOMAIN_DAY_CAP) {
+        return { ok: false, scope: "candidate", code: "shared_domain_cap" };
+      }
+      // Sans unité de plafond, la structure ne peut pas être comptée : le candidat est écarté.
+      if (!structure || structure.sharedDomain !== sharedDomain) {
+        return { ok: false, scope: "candidate", code: "structure_unknown" };
+      }
+      if (
+        (stats.todayBySharedStructure[structure.key] ?? 0) >= AUTOPILOT_STRUCTURE_DAY_CAP ||
+        (stats.weekBySharedStructure[structure.key] ?? 0) >= AUTOPILOT_STRUCTURE_WEEK_CAP
+      ) {
+        return { ok: false, scope: "candidate", code: "structure_cap" };
+      }
+    } else if (
+      // Domaine propre : la structure est le domaine.
+      (stats.todayByDomain[domain] ?? 0) >= AUTOPILOT_STRUCTURE_DAY_CAP ||
+      (stats.weekByDomain[domain] ?? 0) >= AUTOPILOT_STRUCTURE_WEEK_CAP
     ) {
       return { ok: false, scope: "candidate", code: "domain_cap" };
     }
@@ -241,6 +289,42 @@ export function autopilotBudgetDecision({
     return { ok: false, scope: "candidate", code: "court_cap" };
   }
   return { ok: true };
+}
+
+/** Envoi déjà compté (mission approuvée et non échouée), vu par le compteur des structures. */
+export type AutopilotSharedSend = {
+  recipientEmail: string;
+  officeCode: string | null;
+  approvedAt: string;
+};
+
+/**
+ * Envois du jour (heure de Paris) et des 7 derniers jours par structure, pour les domaines partagés seulement.
+ * Les envois vers un domaine propre sont déjà comptés par domaine (fonction SQL) et sont ignorés ici.
+ */
+export function sharedStructureCounts(
+  sends: readonly AutopilotSharedSend[],
+  now: Date,
+): Pick<AutopilotStats, "todayBySharedStructure" | "weekBySharedStructure"> {
+  const dayStart = startOfParisDay(now).getTime();
+  const weekStart = now.getTime() - WEEK_MS;
+  const todayBySharedStructure: Record<string, number> = {};
+  const weekBySharedStructure: Record<string, number> = {};
+  for (const send of sends) {
+    const structure = informationAgentCapStructure({
+      email: send.recipientEmail,
+      officeCode: send.officeCode,
+    });
+    const at = Date.parse(send.approvedAt);
+    if (!structure.sharedDomain || !Number.isFinite(at) || at > now.getTime()) continue;
+    if (at >= weekStart) {
+      weekBySharedStructure[structure.key] = (weekBySharedStructure[structure.key] ?? 0) + 1;
+    }
+    if (at >= dayStart) {
+      todayBySharedStructure[structure.key] = (todayBySharedStructure[structure.key] ?? 0) + 1;
+    }
+  }
+  return { todayBySharedStructure, weekBySharedStructure };
 }
 
 // ---------------------------------------------------------------------------------------------------------

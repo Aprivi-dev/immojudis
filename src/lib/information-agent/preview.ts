@@ -51,6 +51,7 @@ import {
 } from "@/lib/information-agent/message-guards";
 import {
   missionIdentityKeys,
+  missionStructureKeys,
   missionSaleReference,
 } from "@/lib/information-agent/mission-identity";
 import {
@@ -123,11 +124,13 @@ export async function previewAdminInformationAgentMission({
   });
   for (const check of courtChecks) await collect(check);
   const identityName = courtFallback ? null : input.recipientName;
+  const identityEmail = courtFallback ? null : recipient;
   await collect(() =>
     assertInformationAgentContactAllowed({
       saleId: mission.sale_id,
       email: recipient,
-      identityKeys: missionIdentityKeys(mission, identityName),
+      identityKeys: missionIdentityKeys(mission, identityName, identityEmail),
+      structureKeys: courtFallback ? [] : missionStructureKeys(mission, recipient),
       courtRegistryAddress: Boolean(courtFallback),
     }),
   );
@@ -142,7 +145,7 @@ export async function previewAdminInformationAgentMission({
     assertInformationAgentRecipientCooldown({
       email: recipient,
       missionId: mission.id,
-      identityKeys: missionIdentityKeys(mission, identityName),
+      identityKeys: missionIdentityKeys(mission, identityName, identityEmail),
       courtRegistryFallback: Boolean(courtFallback),
     }),
   );
