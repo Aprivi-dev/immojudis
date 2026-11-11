@@ -14,7 +14,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(90);
+select plan(91);
 
 -- Fonction et droits --------------------------------------------------------------------------------------------
 select has_function(
@@ -976,6 +976,36 @@ select ok(
   (select bool_and(decided_at <= clock_timestamp()) from public.auction_fact_claim_decisions
      where claim_id = '88300000-2000-4000-8000-000000000602'),
   'the date given by the writer was replaced by the date of the database'
+);
+
+-- L'ordre ne dépend pas de la date, même si une ligne en portait une fausse (validation coupée le temps d'une
+-- insertion, pour simuler une date de l'an 2999 restée dans le journal).
+alter table public.auction_fact_claim_decisions disable trigger auction_fact_claim_decisions_validate;
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, received_at, decided_at
+) values (
+  '88300000-2000-4000-8000-000000000602', '88300000-1000-4000-8000-000000000006', 'property.surface_m2',
+  'accepted', 'single_lot', 'admin', '88300000-0000-4000-8000-0000000000a1', '2026-10-12 09:00:00+00',
+  '2999-01-01 00:00:00+00'
+);
+alter table public.auction_fact_claim_decisions enable always trigger auction_fact_claim_decisions_validate;
+select app_private.project_sale_fields('88300000-1000-4000-8000-000000000006', array['property.surface_m2'], true)
+  #>> '{fields,property.surface_m2,state}';
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, reason_code
+) values (
+  '88300000-2000-4000-8000-000000000602', '88300000-1000-4000-8000-000000000006', 'property.surface_m2',
+  'opposed', 'single_lot', 'lawyer', 'professional_opposition'
+);
+
+select results_eq(
+  $$select app_private.project_sale_fields(
+             '88300000-1000-4000-8000-000000000006', array['property.surface_m2'], true)
+             #>> '{fields,property.surface_m2,state}',
+           (select max(decided_at) > '2998-01-01'::timestamptz from public.auction_fact_claim_decisions
+              where claim_id = '88300000-2000-4000-8000-000000000602')$$,
+  $$values ('released', true)$$,
+  'the last decision is the last one written (seq), even against a row that carries a date of the year 2999'
 );
 
 -- Deux décisions de la même observation dans UNE instruction : la dernière ligne écrite fait foi.
