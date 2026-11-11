@@ -406,6 +406,43 @@ export function AdminInformationAgentMissionsPanel({
                 ? "Cochez la confirmation de relecture pour activer l’envoi."
                 : null;
 
+  /**
+   * Recrée le brouillon de la mission ouverte (le serveur annule l'ancien pour cette vente et cette adresse).
+   * Toujours disponible sur un brouillon modifiable : c'est le seul chemin pour un brouillon créé avant que
+   * le serveur n'enregistre son destinataire, que l'aperçu refuse en demandant de le régénérer.
+   */
+  const regenerateDraft = () => {
+    const opened = activeMissionRef.current;
+    if (!opened?.saleId) return;
+    const queued = selectionRef.current;
+    if (queued && queued.saleId === opened.saleId) {
+      prepareDraft(queued, { recipientEmail, recipientName, force: true });
+      return;
+    }
+    // Mission ouverte depuis la liste des envois : aucune sélection de la file ne la porte.
+    void createDraftAsync({
+      saleId: opened.saleId,
+      recipientEmail: recipientEmail.trim() || undefined,
+      recipientName: recipientName.trim() || undefined,
+    })
+      .then((response) => {
+        if (!response?.mission) throw new Error("Le brouillon reçu est incomplet.");
+        void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+        // L'administrateur a pu ouvrir une autre mission pendant la régénération : on ne l'écrase pas.
+        if (activeMissionRef.current?.id !== opened.id) return;
+        hydrateMission(response.mission);
+        setShownPreview(
+          response.preview
+            ? { key: previewKeyOf(response.mission), response: response.preview }
+            : null,
+        );
+        toast.success("Brouillon régénéré. Aucun email n’a encore été envoyé.");
+      })
+      .catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : "Brouillon indisponible.");
+      });
+  };
+
   // Ouverture demandée depuis la liste des envois (autre onglet). Une préparation automatique de la
   // file encore en cours ne doit jamais écraser la mission choisie dans l'historique.
   const handledOpenNonceRef = useRef<number | null>(null);
@@ -784,6 +821,17 @@ export function AdminInformationAgentMissionsPanel({
           {activeMission.status === "draft" || activeMission.status === "failed" ? (
             <>
               <div className="mt-4 flex flex-wrap gap-2">
+                {activeMission.saleId ? (
+                  <button
+                    type="button"
+                    className="admin-button-secondary inline-flex items-center gap-2"
+                    disabled={createDraft.isPending}
+                    onClick={regenerateDraft}
+                  >
+                    <RefreshCw className="size-3.5" />
+                    {createDraft.isPending ? "Régénération…" : "Régénérer le brouillon"}
+                  </button>
+                ) : null}
                 {selection && sourceRefreshReady ? (
                   <button
                     type="button"
