@@ -20,7 +20,13 @@ from src.normalize import clean_text, normalize_occupancy_status, parse_french_d
 
 # The identity already includes source_url and evidence_locator.  Corrected
 # document claims receive a new UUID without duplicating unchanged v2 claims.
-FACT_CLAIMS_VERSION = "auction_fact_claims_v2"
+# v3 : une observation ``source_field`` ne se lit plus que dans l'instantané de la fiche (voir
+# ``_SOURCE_SNAPSHOT_KEY``). Les lignes v2 ont pu attribuer à l'annonce une valeur que la collecte avait seulement
+# relue en base ; un lecteur de la table peut les écarter par leur version.
+FACT_CLAIMS_VERSION = "auction_fact_claims_v3"
+# Ce que la source a publié à la dernière lecture de sa fiche, pris avant toute reprise de la ligne stockée
+# (``src.main._preserve_known_enrichment_payloads``).
+_SOURCE_SNAPSHOT_KEY = "source_factual_snapshot"
 FACT_CLAIMS_EXTRACTOR = "immojudis.pipeline.fact_claims"
 FACT_CLAIMS_NAMESPACE = UUID("b9866b5e-df4e-4cf4-a7f5-d43cc50a4b73")
 
@@ -241,16 +247,9 @@ def _source_snapshots(sale: AuctionSale) -> list[dict[str, object]]:
             continue
         payload = observation.get("raw_payload")
         payload = dict(payload) if isinstance(payload, dict) else {}
-        values = {
-            key: observation.get(key)
-            for _, key, _ in _FIELD_SPECS
-            if observation.get(key) is not None
-        }
-        # The compact observation row is the latest source-level snapshot.
-        # Let its explicit scalar win over a stale embedded raw payload when a
-        # refreshed observation reuses the same source URL.
-        for key, value in values.items():
-            payload[key] = value
+        # Les scalaires du résumé d'observation (mise à prix, date) viennent du modèle normalisé, donc aussi des
+        # colonnes relues en base : ils ne font pas une observation. Seul l'instantané de la fiche, porté par le
+        # ``raw_payload`` de l'observation, dit ce que cette source a publié.
         snapshots.append(
             {
                 "source_name": clean_text(observation.get("source_name")) or "unknown",
@@ -290,13 +289,18 @@ def _field_provenances(
     sale: AuctionSale,
 ) -> list[_Provenance]:
     provenances: list[_Provenance] = []
-    if _has_value(payload.get(field)):
+    # La clé de premier niveau du ``raw_payload`` n'est pas une preuve : c'est la vente brute entière, donc aussi les
+    # colonnes que la collecte ou le recalcul ont recopiées de la base (annonce inchangée, valeur d'un document,
+    # valeur posée par un autre écrivain). Sans instantané de la fiche, pas d'observation de ce type.
+    source_snapshot = payload.get(_SOURCE_SNAPSHOT_KEY)
+    source_value = source_snapshot.get(field) if isinstance(source_snapshot, dict) else None
+    if _has_value(source_value):
         provenances.append(
             (
                 "source_listing",
-                {"kind": "source_field", "quote": _quote(payload.get(field))},
+                {"kind": "source_field", "quote": _quote(source_value)},
                 0.92,
-                payload.get(field),
+                source_value,
                 None,
             )
         )
