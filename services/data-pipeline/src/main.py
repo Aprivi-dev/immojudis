@@ -1271,8 +1271,11 @@ def _preserve_known_enrichment_payloads(
         known = known or {}
         known_payload = known.get("raw_payload") or {}
         if not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed"):
+            # Un champ que le collecteur a repris de la ligne stockée (Vench, page restreinte) n'est pas ce que la
+            # source a publié : sa clé reste dans l'instantané, sans valeur.
+            relayed = base_reads.relayed_fields(sale)
             sale["source_factual_snapshot"] = {
-                key: sale.get(key) for key in KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS
+                key: None if key in relayed else sale.get(key) for key in KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS
             }
         elif known_payload.get("source_factual_snapshot"):
             sale["source_factual_snapshot"] = known_payload["source_factual_snapshot"]
