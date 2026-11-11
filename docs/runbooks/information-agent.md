@@ -236,6 +236,81 @@ La fonction de publication automatique viendra à l’étape 6, qui devra lever 
   n’est écrit, sans erreur). Il suit la vente (seule suppression admise). Migration `20261115100000`, tests
   pgTAP `880`.
 
+## Jeu d’évaluation et essai réel du modèle (étape 4, 11/11/2026)
+
+**À quoi il sert.** Mesurer, sans rien publier, ce que la chaîne entière (règles, lecture par l’IA, moteur)
+ferait de 200 réponses FICTIVES d’avocats, et tenir le seuil du déverrouillage : **zéro publication
+fausse** (une valeur « aurait été publiée » alors que la vérité dit « ne doit pas être publié », ou publiée
+avec une autre valeur). Le jeu est dans `services/data-pipeline/tests/fixtures/information_agent_evaluation/cases/`
+(8 familles de 25 : réponses nettes et contexte, réserves, lots, corrections, confusions de champs,
+« ne pas publier », manipulation, particuliers et pièces jointes). Chaque cas porte le message, le contexte
+(type de bien, lots, fiche, destinataire, authentification, délai, messages postérieurs) et la vérité pour
+la surface, le terrain et le nombre de pièces. Tout est fictif (adresses en `.example`, test).
+
+**Le banc, sans réseau ni modèle**, fait passer chaque cas par la vraie chaîne en trois étapes reliées par
+des fichiers (la chaîne est à cheval sur deux langages ; chaque langage vérifie que son fichier est à jour) :
+
+1. règles TypeScript (`src/lib/information-agent/evaluation/`, test Vitest) : nettoyage du corps,
+   `extractInformationAgentFacts`, `persistFactCandidates` sur une base en mémoire → `stages/rules_stage.json` ;
+2. worker Python (`services/data-pipeline/scripts/information_agent_evaluation.py`) : le vrai
+   `_process_job` lit le corps puis chaque pièce jointe, avec une base simulée et un client de modèle de
+   remplacement → `stages/worker_stage.<configuration>.json` ;
+3. moteur (même test Vitest) : la vraie passe `runAutoPublicationSimulation` → `report.json`.
+
+Configurations : **`regles_seules`** (IA désactivée : rien ne doit être publiable, test de fermeture) et
+**`modele_ideal`** (sortie de modèle SIMULÉE égale à la vérité, borne haute de la couverture). Ce sont des
+simulations, jamais un résultat du modèle (`modele_reel: false` dans le rapport, vérifié par test). Toute
+sortie réelle enregistrée devient une configuration `enregistrement_<nom>` (`modele_reel: true`).
+Hypothèse du banc : le dossier est « replied » et la réponse traitée sans motif, l’état que le moteur exige ;
+le rapport donne aussi `publications_etat_reel`, avec l’état que la chaîne écrit vraiment (dossier et
+traitement en « review » dès que la réponse a un corps) : **0 publication**, voir « Limites ».
+
+**Seuil permanent** (test Vitest) : aucune publication fausse hors de `known_defects.json`, et chaque défaut
+connu doit rester observé (un défaut corrigé doit sortir de la liste). Résultats du 11/11/2026 :
+`regles_seules` 0 publication ; `modele_ideal` 71 publications dont **26 fausses, toutes défauts connus**
+(familles 2 : 7, 4 : 5, 6 : 7, 7 : 3, 8 : 4), couverture 45 valeurs publiables sur 78 (57,7 %). Les défauts
+sont des trous des règles et des détecteurs de texte (doutes non reconnus, valeur d’un message transféré
+invisible, valeurs passées, « ne pas publier » indirect, consignes et noms non vus) ; leur cause est écrite
+dans `known_defects.json`. Le mode automatique reste verrouillé tant qu’ils ne sont pas corrigés.
+
+**Rejouer le banc** (après toute modification des règles, du worker ou du moteur) :
+
+```
+npx vitest run src/lib/information-agent/evaluation -u      # étape 1 (rules_stage.json)
+cd services/data-pipeline && python -m scripts.information_agent_evaluation --write   # étape 2
+cd ../.. && npx vitest run src/lib/information-agent/evaluation -u                  # étape 3 (report.json)
+```
+
+Sans `--write`, le script Python vérifie seulement que ses fichiers sont à jour (code 1 sinon) ; `pytest`
+et `npm test` échouent aussi sur un fichier périmé. `-u` ne fait que réécrire les fichiers : il ne lève
+jamais le seuil, qui est contrôlé à part.
+
+**Essai réel du modèle (payant, manuel).** Workflow « Information Agent Evaluation Trial »
+(`.github/workflows/information-agent-evaluation-trial.yml`) : Actions › Run workflow, branche `main`
+seulement, champ `confirmation` = `ESSAI PAYANT 5 USD`, `budget_usd` (5 au plus), `reprise_run_id` (vide,
+ou l’identifiant d’une exécution précédente à reprendre). Une seule exécution à la fois. Il ne reçoit que
+`REPLICATE_API_TOKEN` (aucune clé Supabase : aucune écriture en base, aucun email) et utilise le même modèle
+et les mêmes réglages que `information-agent-evidence.yml` (test de concordance). Le script
+(`scripts/information_agent_evaluation_trial.py`) passe chaque pièce par le vrai worker avec le vrai client
+Replicate (même prompt, `semantic_evidence_v3`, sortie plafonnée à 1 024 jetons, un seul essai).
+
+- **Plafond de dépense** : 5 USD en dur, cumulé sur le fichier (reprises comprises). Avant chaque appel, le
+  coût maximal est estimé (octets du prompt comme plafond des jetons d’entrée, 1 024 jetons de sortie, tarif
+  de `TOKEN_PRICES` majoré de 25 %) ; si le total dépasserait le plafond, l’essai s’arrête proprement sans
+  faire l’appel. L’estimation est inscrite avant l’appel : un arrêt brutal laisse un fichier partiel
+  exploitable et l’appel interrompu compte comme payé. Estimation du jeu complet : 193 appels au plus,
+  0,48 USD au plus (`--estimate-only`, sans appel).
+- **Reprise** : relancer avec `reprise_run_id` ; une pièce déjà enregistrée n’est jamais rappelée.
+- **Lire le résultat** : télécharger l’artefact `information-agent-evaluation-trial` (`essai.json`), le
+  copier sous `services/data-pipeline/tests/fixtures/information_agent_evaluation/model_outputs/<nom>.json`,
+  rejouer les étapes 2 et 3 ci-dessus, puis lire `report.json` (configuration `enregistrement_<nom>`). Une
+  publication fausse fait échouer le test : l’analyser et l’inscrire comme défaut connu ou corriger la
+  chaîne, après validation. Un cas dont une pièce manque (essai arrêté) est listé dans `cas_non_joues`.
+
+**Limites.** Pièces jointes en texte (`.txt`), pas en PDF. Les messages postérieurs ne passent pas par la
+chaîne : ils ne servent qu’au motif « message postérieur ». Le banc ne joue pas un message antérieur du même
+dossier.
+
 ## Contenu de l’e-mail
 
 - Signature : « L’équipe Immojudis », ou « Prénom Nom / Pour l’équipe Immojudis » quand `INFORMATION_AGENT_SIGNATURE_NAME` est renseignée (modifiable dans le brouillon).

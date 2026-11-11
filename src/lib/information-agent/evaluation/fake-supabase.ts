@@ -11,7 +11,11 @@ import "server-only";
 
 export type Row = Record<string, unknown>;
 
-type Result = { data: unknown; error: { code: string; message: string } | null; count?: number | null };
+type Result = {
+  data: unknown;
+  error: { code: string; message: string } | null;
+  count?: number | null;
+};
 
 const UPSERT_CONFLICT_COLUMNS: Record<string, string[]> = {
   information_agent_fact_candidates: [
@@ -50,7 +54,9 @@ export class EvaluationDatabase {
     }
     const mode = this.rows("information_agent_auto_publication_settings")[0]?.mode;
     if (mode !== "simulation") return Promise.resolve({ data: false, error: null });
-    const fact = this.rows("information_agent_fact_candidates").find((row) => row.id === args.p_fact_id);
+    const fact = this.rows("information_agent_fact_candidates").find(
+      (row) => row.id === args.p_fact_id,
+    );
     if (!fact) return Promise.resolve({ data: false, error: null });
     this.rows("information_agent_auto_publication_decisions").push({
       id: this.nextId("decision"),
@@ -158,7 +164,9 @@ class Query {
   }
 
   private run(): Result {
-    let rows = this.database.rows(this.table).filter((row) => this.filters.every((test) => test(row)));
+    let rows = this.database
+      .rows(this.table)
+      .filter((row) => this.filters.every((test) => test(row)));
     const total = rows.length;
     rows = [...rows].sort((left, right) => {
       for (const [column, ascending] of this.orders) {
@@ -176,7 +184,7 @@ class Query {
 /** Base courante du banc ; `evaluationSupabase` la sert à la place du client Supabase. */
 let active: EvaluationDatabase | null = null;
 
-export function useEvaluationDatabase(database: EvaluationDatabase): EvaluationDatabase {
+export function activateEvaluationDatabase(database: EvaluationDatabase): EvaluationDatabase {
   active = database;
   return database;
 }

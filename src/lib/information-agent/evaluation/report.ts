@@ -89,7 +89,10 @@ export function buildConfigurationReport({
 }): ConfigurationReport {
   const families = Object.fromEntries(EVALUATION_FAMILIES.map(({ number }) => [String(number), 0]));
   const coverageByFamily = Object.fromEntries(
-    EVALUATION_FAMILIES.map(({ number }) => [String(number), { publiables: 0, publiees_justes: 0 }]),
+    EVALUATION_FAMILIES.map(({ number }) => [
+      String(number),
+      { publiables: 0, publiees_justes: 0 },
+    ]),
   );
   const falsePublications: FalsePublication[] = [];
   const notPublished: ConfigurationReport["non_publiees"] = [];
