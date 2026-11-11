@@ -159,6 +159,8 @@ Rapports complets des spécialistes, reproduits tels quels dans
 | `05-formulaire-et-validation.md`       | ux-designer         | Formulaire de l'avocat, file de validation, fiche publique                          |
 | `06-sollicitation-et-pilote.md`        | strategie-email     | Pourquoi rien ne part, pilote réel, messages proposés                               |
 | `07-cadre-juridique.md`                | juridique-rgpd      | Ce qui peut être construit, textes proposés, vingt questions pour un avocat         |
+| `08-bascule-base-de-donnees.md`        | expert-postgres     | Spécification du lot R2 côté base : treize points, plan de migrations, sous-lots    |
+| `09-bascule-pipeline.md`               | data-pipeline       | Spécification du lot R2 côté collecte : écho, autres écrivains, observations, tests |
 
 Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce document qui fait foi.
 
@@ -199,4 +201,46 @@ Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce docum
 
 **Pour le juriste (s'ajoute à la section 5).** Durée de conservation des deux journaux, qui survivent à la purge de la vente ; sort de l'identifiant de l'administrateur après suppression de son compte ; trace d'une opposition conservée sans limite.
 
-**Suite.** Application des migrations en production hors import, puis au moins 24 heures d'observation (aucun champ tenu, aucun évènement, durée des imports inchangée) avant la bascule R2.
+**Mise en production.** PR #477 fusionnée le 11/11/2026. Migrations appliquées par le workflow officiel le 11/11 à 11:45 UTC, entre deux imports, en 4 secondes ; détection de dérive de schéma verte. Vérifié en lecture seule juste après : six migrations enregistrées, quatre tables sous RLS, onze déclencheurs en mode `always`, cinq champs et vingt-cinq lignes de préséance, 0 vente tenue, 0 décision, 0 évènement.
+
+**Suite.** Au moins 24 heures d'observation, soit pas avant le 12/11 à 11:45 UTC (aucun champ tenu, aucun évènement, durée des imports inchangée), avant toute mise en production du lot R2.
+
+### Constat hors plan : inventaires Licitor en échec (11/11/2026)
+
+En préparant l'application, un import en échec a été relevé. Cause trouvée et reproduite par data-pipeline : depuis le 10/11 à 06:00 UTC, tous les inventaires Licitor échouent (6 sur 6). Une annonce à quatre lots a deux cartes sans mise à prix ; le lecteur (`_list_item_container`, `services/data-pipeline/src/sources/licitor.py`) déborde alors sur les cartes voisines, et la preuve de catalogue refuse à juste titre de certifier l'inventaire. Sans lien avec le registre. Conséquence : les ventes retirées de Licitor avant leur audience ne sont plus repérées depuis le 09/11 à 18:37 UTC. Les deux lots mal lus sont en quarantaine, donc invisibles. Correctif proposé : arrêter la remontée du lecteur dès qu'un parent contient une autre annonce, avec un test ; la preuve de catalogue n'est pas touchée. **En attente de l'accord du propriétaire** (correctif hors plan).
+
+## 10. Le lot R2, découpé en trois étapes
+
+Les deux spécifications (annexes 08 et 09) concluent que R2 est trop gros pour une seule livraison. Découpage retenu, chaque étape étant réversible :
+
+| Étape | Base (annexe 08)                                                                                                                                                     | Collecte (annexe 09)                                                                                                                                                         | Effet sur les fiches                            | Condition pour passer à la suivante                                                                           |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| R2a   | Séquence commune aux deux journaux, gardes par rôle, retenue et projection corrigées, historique et RPC qui n'exposent plus `held_fields`, contrôle quotidien, index | PA : garde d'écho à l'écriture, listes de colonnes explicites, observations tirées du seul instantané de la source (version 3), reprise Vench hors empreinte                 | Aucun : rien n'est tenu                         | Observation de R1 propre ; contrôle quotidien à zéro sur deux passages ; durée des imports inchangée          |
+| R2b   | RPC d'administration (accepter, rejeter, retirer, opposition) sans droit d'exécution ouvert ; report des pièces lors d'une fusion                                    | PB : les copies (`properties`, `judicial_sales`, `auction_surfaces`) ne reçoivent plus les colonnes du registre ; fusion sur les valeurs d'annonce ; rattrapage d'extraction | Aucun                                           | Indicateur d'écho à zéro en production ; répétition complète sur base jetable (import, pose, retrait, fusion) |
+| R2c   | Bascule : le noyau écrit observation, décision, projection ; le pont est retiré ; la mention publique lit le registre ; droits des RPC ouverts aux administrateurs   | Rien à déployer ce jour-là                                                                                                                                                   | La première acceptation réelle devient possible | Première pièce posée : contrôle à zéro, mention affichée, retrait essayé sur une vente interne                |
+
+Le code de R2a se prépare pendant l'observation de R1. Rien de R2 n'est appliqué en production avant la fin de cette observation.
+
+### Arbitrages entre les deux spécifications
+
+- **Écho de la collecte : les deux côtés.** La collecte ne réécrit pas un groupe qu'elle n'a fait que relire en base si la base a bougé depuis (elle seule sait qu'une valeur sortante n'est qu'une relecture). La base garde une mémoire d'écho comme filet ; son compteur doit rester à zéro et signale un chemin oublié.
+- **La collecte continue de juger une vente sur la valeur affichée.** L'exigence de l'annexe 08 « remplacer partout les colonnes tenues par la valeur d'annonce » n'est retenue que pour la fusion de doublons. Essai du spécialiste du pipeline : appliquée partout, une pièce posée ne compterait plus pour la complétude (score de 71 à 60) et certaines ventes cesseraient d'être écrites.
+- **Valeur d'annonce mémorisée quand l'annonce se tait** : la règle de R1 est gardée, avec une alerte, puisque l'arbitrage précédent retire le moyen de distinguer un vrai silence d'un garde-fou.
+- **Copies sans lecteur** : cesser d'y écrire les colonnes du registre plutôt que les aligner, après vérification qu'aucun lecteur ne passe par l'API.
+- **Aucune observation n'est émise depuis une colonne relue en base**, et cela avant le premier champ tenu : la table des observations est immuable et sans purge, une valeur d'avocat y serait attribuée à l'annonce pour toujours.
+- **La collecte ne lit jamais `held_fields`** ; seule exception, une RPC dédiée pour la fusion.
+
+### Choix faits par délégation pour R2, à revoir si besoin
+
+- Valeur venue d'un greffe, d'un notaire ou d'un document : aucune mention nommée tant que le texte n'est pas validé par un avocat ; la valeur est « signalée », sans source.
+- Mise à prix, date de vente et type de bien transmis par un avocat : enregistrés, non affichés, tant que la règle « annonce contre pièce » n'est pas choisie pour ces champs.
+- Pièce jointe acceptée : le noyau la publie aujourd'hui comme document téléchargeable, ce que le choix 6 de la section 6 exclut. L'acceptation de la clé `document` est suspendue jusqu'à décision.
+- Mémoire d'écho : 7 jours hors opposition, vie de la vente après une opposition.
+- Opposition : fin d'affichage et blocage du retour de la valeur ; une demande d'effacement se traite à la main, hors R2.
+- Second facteur des administrateurs : vérifié avant R2c ; s'il n'est pas actif en production, R2c attend.
+- Valeurs déjà publiées par l'ancien noyau (aucune à ce jour) : s'il y en a le jour de la bascule, la valeur d'annonce est rendue et chaque fait est revalidé à la main, rien d'automatique.
+
+### Questions qui restent au propriétaire ou à un avocat (s'ajoutent à la section 5)
+
+- Pour un avocat : la cessation d'affichage suffit-elle après une opposition, ou faut-il pouvoir effacer la valeur des journaux ; garder la valeur opposée pour reconnaître son retour est-il fondé ; texte affiché pour une valeur venue d'un greffe, d'un notaire ou d'un document ; durée de conservation des journaux.
+- Pour le propriétaire : rendre tenables la mise à prix, la date et le type de bien ; ouvrir un rôle de connexion propre à la collecte (chantier séparé, ne bloque pas R2).
