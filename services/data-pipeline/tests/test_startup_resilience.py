@@ -44,6 +44,7 @@ case "$FAKE_APT_MODE" in
   always-fail) exit 100 ;;
   fail-update-only) if [ "$1" = "update" ]; then exit 100; fi; exit 0 ;;
   hang) sleep 60 ;;
+  hang-update) if [ "$1" = "update" ]; then sleep 60; fi; exit 0 ;;
   fail-local) if [[ "$*" == *--no-download* ]]; then exit 7; fi; exit 0 ;;
 esac
 """
@@ -127,6 +128,38 @@ def test_a_broken_repository_the_packages_do_not_need_does_not_stop_the_job(tmp_
     assert [call.split()[0] for call in calls] == ["update", "update", "update", "install", "install"]
     assert "--download-only" in calls[3] and "--no-download" in calls[4]
     assert "::warning title=Index apt incomplet::" in result.stdout and "::error" not in result.stdout
+
+
+def test_a_repository_that_hangs_leaves_the_time_of_the_last_download(tmp_path: Path) -> None:
+    # Every `apt-get update` hangs (a repository that does not answer), the packages themselves download.
+    # The last attempt keeps the 3 s of the download instead of spending them on one more update.
+    result, calls, elapsed = _install(
+        tmp_path, "hang-update", "antiword",
+        SYSTEM_PACKAGES_DEADLINE_SECONDS="10", SYSTEM_PACKAGES_UPDATE_TIMEOUT="2", SYSTEM_PACKAGES_DOWNLOAD_TIMEOUT="3",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert elapsed < 20
+    kinds = [call.split()[0] for call in calls]
+    assert kinds[:2] == ["update", "update"] and kinds[-2:] == ["install", "install"]
+    assert "--download-only" in calls[-2] and "--no-download" in calls[-1]
+    assert "::warning title=Index apt incomplet::" in result.stdout and "::error" not in result.stdout
+
+
+def test_the_default_budget_reserves_the_last_download() -> None:
+    # Two updates cut at their timeout and the two waits: what is left must cover a download attempt.
+    text = INSTALLER.read_text(encoding="utf-8")
+    d = {name: int(value) for name, value in re.findall(r'"\$\{SYSTEM_PACKAGES_([A-Z_]+):-(\d+)\}"', text)}
+    spent = 2 * d["UPDATE_TIMEOUT"] + d["BACKOFF_SECONDS"] + 2 * d["BACKOFF_SECONDS"]
+
+    assert d["DEADLINE_SECONDS"] - spent >= 30
+
+
+def test_the_apt_stand_in_is_refused_on_a_runner(tmp_path: Path) -> None:
+    result, calls, _ = _install(tmp_path, "ok", "antiword", GITHUB_ACTIONS="true")
+
+    assert result.returncode == 64 and calls == []
+    assert "SYSTEM_PACKAGES_APT_COMMAND est réservée aux tests" in result.stdout
 
 
 def test_a_hanging_mirror_is_cut_at_the_deadline(tmp_path: Path) -> None:
