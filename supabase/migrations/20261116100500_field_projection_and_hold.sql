@@ -46,7 +46,7 @@ set local statement_timeout = '60s';
 --     tout changement de held_fields par un rôle de l'API, réglage posé ou non. Son nom le fait passer AVANT la
 --     retenue (« held » < « hold ») : il juge ce que l'instruction écrit, pas ce que la retenue ajuste ensuite.
 --
--- Les quatre déclencheurs sont posés par « create or replace trigger » (une seconde application ne supprime rien
+-- Les trois déclencheurs sont posés par « create or replace trigger » (une seconde application ne supprime rien
 -- et ne prend que le verrou SHARE ROW EXCLUSIVE) puis passés en « enable always » : ils restent actifs en
 -- session_replication_role = replica.
 --
