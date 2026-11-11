@@ -1,0 +1,1362 @@
+{
+ "_comment": "Famille 2 : valeurs données au conditionnel, avec une approximation, une réserve, une source tierce (« selon »), une fourchette, ou un doute exprimé autrement (« je crois », « normalement », « à ma connaissance »). La vérité : jamais publiable, sauf trois formulations nettes malgré l'apparence. lecture_modele : la valeur qu'un modèle exact lirait quand même (le texte l'attribue au bien). Tout est fictif : noms, adresses (.example), ventes.",
+ "famille": 2,
+ "libelle": "conditionnel, approximation, réserve",
+ "cas": [
+  {
+   "id": "F2-01",
+   "famille": 2,
+   "titre": "Conditionnel",
+   "message": {
+    "expediteur": "contact@lorquin-associes.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 11/02/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nD'après mes informations, la surface habitable serait de 54 m².\n\nCordialement,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : conditionnel « serait ».",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "la surface habitable serait de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-02",
+   "famille": 2,
+   "titre": "Environ",
+   "message": {
+    "expediteur": "cardaillou@cabinet-ardaillou.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 12/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est d'environ 54 m², cave non comprise.\n\nBien à vous,\n\nMaître Clémence Ardaillou\nAvocate au Barreau de Port-Essai\n38, quai des Témoins - 99300 Port-Essai\nTél. : 03 99 00 30 03\ncardaillou@cabinet-ardaillou.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : approximation « environ ».",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "La surface habitable est d'environ 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-03",
+   "famille": 2,
+   "titre": "Approximativement, pour les pièces",
+   "message": {
+    "expediteur": "d.pescatore@pescatore-avocat.example",
+    "objet": "RE: Appartement à Valmont-sur-Exemple, audience du 13/02/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nLe logement compte approximativement 3 pièces, selon la configuration retenue.\n\nBien cordialement,\n\nMaître Damien Pescatore\nAvocat - Barreau de Bourg-Modèle\n7, avenue de l'Hypothèse - 99400 Bourg-Modèle\nTél. : 04 99 00 40 04\nd.pescatore@pescatore-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : approximation.",
+     "lecture_modele": {
+      "valeur": 3,
+      "citation": "Le logement compte approximativement 3 pièces",
+      "source": "corps"
+     }
+    }
+   }
+  },
+  {
+   "id": "F2-04",
+   "famille": 2,
+   "titre": "À confirmer par le géomètre",
+   "message": {
+    "expediteur": "secretariat@vasseret-avocats.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 14/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour à toute l'équipe,\n\nLa surface habitable de 54 m² reste à confirmer par le géomètre.\n\nCordialement,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : valeur à confirmer.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "La surface habitable de 54 m² reste à confirmer par le géomètre",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-05",
+   "famille": 2,
+   "titre": "Sous réserve du mesurage",
+   "message": {
+    "expediteur": "f.quenellec@scp-quenellec.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 15/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nSous réserve du mesurage définitif, l'appartement fait 61 m².\n\nBien à vous,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « sous réserve ».",
+     "lecture_modele": {
+      "valeur": 61,
+      "citation": "l'appartement fait 61 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-06",
+   "famille": 2,
+   "titre": "Fourchette entre deux valeurs",
+   "message": {
+    "expediteur": "gmortessan@mortessan.example",
+    "objet": "RE: Appartement à Valmont-sur-Exemple, audience du 16/02/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable se situe entre 50 et 55 m² selon les métrés dont je dispose.\n\nBien cordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Fourchette : aucune valeur unique.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-07",
+   "famille": 2,
+   "titre": "Valeur reprise de l'annonce de l'agence",
+   "message": {
+    "expediteur": "hugo.tarbelin@tarbelin-avocats.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 17/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m² selon l'annonce de l'agence, que je n'ai pas vérifiée.\n\nCordialement,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Sainte-Fiction\n9, cours de l'Échantillon - 99200 Sainte-Fiction\nTél. : 02 99 00 80 08\nhugo.tarbelin@tarbelin-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : valeur rapportée d'une annonce, non vérifiée.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "La surface habitable est de 54 m² selon l'annonce de l'agence",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-08",
+   "famille": 2,
+   "titre": "Ancien procès-verbal daté",
+   "message": {
+    "expediteur": "ines.calvadour@calvadour-avocat.example",
+    "objet": "RE: Maison à Lac-Témoin, audience du 18/02/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nD'après le procès-verbal de 2017, la maison développe 98 m² habitables.\n\nBien à vous,\n\nMaître Inès Calvadour\nAvocate au Barreau de Port-Essai\n60, rue des Scénarios - 99300 Port-Essai\nTél. : 03 99 00 90 09\nines.calvadour@calvadour-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "house",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : source ancienne (2017).",
+     "lecture_modele": {
+      "valeur": 98,
+      "citation": "la maison développe 98 m² habitables",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-09",
+   "famille": 2,
+   "titre": "A priori",
+   "message": {
+    "expediteur": "jb@selarl-brossardet.example",
+    "objet": "RE: Appartement à Valmont-sur-Exemple, audience du 19/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour à toute l'équipe,\n\nA priori, l'appartement comprend 4 pièces.\n\nBien cordialement,\n\nMaître Julien Brossardet\nSELARL Brossardet - Avocats\n3, impasse du Prototype - 99400 Bourg-Modèle\nTél. : 04 99 01 00 10\njb@selarl-brossardet.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « a priori ».",
+     "lecture_modele": {
+      "valeur": 4,
+      "citation": "l'appartement comprend 4 pièces",
+      "source": "corps"
+     }
+    }
+   }
+  },
+  {
+   "id": "F2-10",
+   "famille": 2,
+   "titre": "Sauf erreur",
+   "message": {
+    "expediteur": "k.olmedo@olmedo-avocats.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 20/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nSauf erreur de ma part, la surface habitable est de 47 m².\n\nCordialement,\n\nMaître Karine Olmédo\nAvocate au Barreau de Lac-Témoin\n11, allée du Simulacre - 99500 Lac-Témoin\nTél. : 05 99 01 10 11\nk.olmedo@olmedo-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « sauf erreur ».",
+     "lecture_modele": {
+      "valeur": 47,
+      "citation": "la surface habitable est de 47 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-11",
+   "famille": 2,
+   "titre": "Estimation",
+   "message": {
+    "expediteur": "l.vidrecourt@vidrecourt.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 21/02/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nJe ne dispose que d'une estimation : la surface habitable est de 54 m².\n\nBien à vous,\n\nMaître Laurent Vidrecourt\nAvocat au Barreau de Mont-Exemple\n27, rue de l'Épreuve - 99600 Mont-Exemple\nTél. : 06 99 01 20 12\nl.vidrecourt@vidrecourt.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : estimation.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "la surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-12",
+   "famille": 2,
+   "titre": "Plus ou moins",
+   "message": {
+    "expediteur": "a.fictel@fictel-avocats.example",
+    "objet": "RE: Appartement à Valmont-sur-Exemple, audience du 22/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nSurface habitable : 54 m² +/- 2 m², faute de mesurage récent.\n\nBien cordialement,\n\nMaître Aurore Fictel\nAvocat au Barreau de Valmont-sur-Exemple\n12, rue des Essais - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 10 01\na.fictel@fictel-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : marge « +/- 2 m² ».",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "Surface habitable : 54 m² +/- 2 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-13",
+   "famille": 2,
+   "titre": "À titre indicatif",
+   "message": {
+    "expediteur": "contact@lorquin-associes.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 23/02/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nÀ titre indicatif, la surface habitable est de 68 m².\n\nCordialement,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « à titre indicatif ».",
+     "lecture_modele": {
+      "valeur": 68,
+      "citation": "la surface habitable est de 68 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-14",
+   "famille": 2,
+   "titre": "Il me semble",
+   "message": {
+    "expediteur": "cardaillou@cabinet-ardaillou.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 24/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour à toute l'équipe,\n\nIl me semble que l'appartement fait 54 m².\n\nBien à vous,\n\nMaître Clémence Ardaillou\nAvocate au Barreau de Port-Essai\n38, quai des Témoins - 99300 Port-Essai\nTél. : 03 99 00 30 03\ncardaillou@cabinet-ardaillou.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « il me semble ».",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "l'appartement fait 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-15",
+   "famille": 2,
+   "titre": "Probablement",
+   "message": {
+    "expediteur": "d.pescatore@pescatore-avocat.example",
+    "objet": "RE: Maison à Valmont-sur-Exemple, audience du 25/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa maison compte probablement 5 pièces, je n'ai pas visité.\n\nBien cordialement,\n\nMaître Damien Pescatore\nAvocat - Barreau de Bourg-Modèle\n7, avenue de l'Hypothèse - 99400 Bourg-Modèle\nTél. : 04 99 00 40 04\nd.pescatore@pescatore-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "house",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « probablement ».",
+     "lecture_modele": {
+      "valeur": 5,
+      "citation": "La maison compte probablement 5 pièces",
+      "source": "corps"
+     }
+    }
+   }
+  },
+  {
+   "id": "F2-16",
+   "famille": 2,
+   "titre": "Valeur « de ... à ... »",
+   "message": {
+    "expediteur": "secretariat@vasseret-avocats.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 26/02/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 à 56 m² suivant que l'on compte la véranda.\n\nCordialement,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Fourchette (54 à 56 m²) : aucune valeur unique.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-17",
+   "famille": 2,
+   "titre": "« Je crois »",
+   "message": {
+    "expediteur": "f.quenellec@scp-quenellec.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 27/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nJe crois que la surface habitable est de 54 m².\n\nBien à vous,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « je crois ».",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "la surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-18",
+   "famille": 2,
+   "titre": "« Normalement »",
+   "message": {
+    "expediteur": "gmortessan@mortessan.example",
+    "objet": "RE: Appartement à Valmont-sur-Exemple, audience du 10/02/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nNormalement, l'appartement fait 61 m² habitables.\n\nBien cordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « normalement ».",
+     "lecture_modele": {
+      "valeur": 61,
+      "citation": "l'appartement fait 61 m² habitables",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-19",
+   "famille": 2,
+   "titre": "« En principe »",
+   "message": {
+    "expediteur": "hugo.tarbelin@tarbelin-avocats.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 11/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour à toute l'équipe,\n\nEn principe, l'appartement compte 3 pièces.\n\nCordialement,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Sainte-Fiction\n9, cours de l'Échantillon - 99200 Sainte-Fiction\nTél. : 02 99 00 80 08\nhugo.tarbelin@tarbelin-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « en principe ».",
+     "lecture_modele": {
+      "valeur": 3,
+      "citation": "l'appartement compte 3 pièces",
+      "source": "corps"
+     }
+    }
+   }
+  },
+  {
+   "id": "F2-20",
+   "famille": 2,
+   "titre": "« Si mes souvenirs sont exacts »",
+   "message": {
+    "expediteur": "ines.calvadour@calvadour-avocat.example",
+    "objet": "RE: Maison à Lac-Témoin, audience du 12/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nSi mes souvenirs sont exacts, la maison fait 98 m² habitables.\n\nBien à vous,\n\nMaître Inès Calvadour\nAvocate au Barreau de Port-Essai\n60, rue des Scénarios - 99300 Port-Essai\nTél. : 03 99 00 90 09\nines.calvadour@calvadour-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "house",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : souvenir.",
+     "lecture_modele": {
+      "valeur": 98,
+      "citation": "la maison fait 98 m² habitables",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-21",
+   "famille": 2,
+   "titre": "« À ma connaissance »",
+   "message": {
+    "expediteur": "jb@selarl-brossardet.example",
+    "objet": "RE: Appartement à Valmont-sur-Exemple, audience du 13/02/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nÀ ma connaissance, la surface habitable est de 72 m².\n\nBien cordialement,\n\nMaître Julien Brossardet\nSELARL Brossardet - Avocats\n3, impasse du Prototype - 99400 Bourg-Modèle\nTél. : 04 99 01 00 10\njb@selarl-brossardet.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : « à ma connaissance ».",
+     "lecture_modele": {
+      "valeur": 72,
+      "citation": "la surface habitable est de 72 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-22",
+   "famille": 2,
+   "titre": "Chiffre non vérifié",
+   "message": {
+    "expediteur": "k.olmedo@olmedo-avocats.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 14/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m², chiffre que je n'ai pas pu vérifier.\n\nCordialement,\n\nMaître Karine Olmédo\nAvocate au Barreau de Lac-Témoin\n11, allée du Simulacre - 99500 Lac-Témoin\nTél. : 05 99 01 10 11\nk.olmedo@olmedo-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur est donnée avec un doute : chiffre non vérifié.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "La surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-23",
+   "famille": 2,
+   "titre": "Nette : « selon le certificat de mesurage »",
+   "message": {
+    "expediteur": "l.vidrecourt@vidrecourt.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 15/02/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nLa surface habitable est de 54,20 m² selon le certificat de mesurage établi pour la vente.\n\nBien à vous,\n\nMaître Laurent Vidrecourt\nAvocat au Barreau de Mont-Exemple\n27, rue de l'Épreuve - 99600 Mont-Exemple\nTél. : 06 99 01 20 12\nl.vidrecourt@vidrecourt.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54.2,
+     "citation": "La surface habitable est de 54,20 m² selon le certificat de mesurage établi pour la vente"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-24",
+   "famille": 2,
+   "titre": "Nette : précision exacte",
+   "message": {
+    "expediteur": "a.fictel@fictel-avocats.example",
+    "objet": "RE: Appartement à Valmont-sur-Exemple, audience du 16/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour à toute l'équipe,\n\nLa surface Carrez est précisément de 43,70 m².\n\nBien cordialement,\n\nMaître Aurore Fictel\nAvocat au Barreau de Valmont-sur-Exemple\n12, rue des Essais - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 10 01\na.fictel@fictel-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 43.7,
+     "citation": "La surface Carrez est précisément de 43,70 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F2-25",
+   "famille": 2,
+   "titre": "Nette : la réserve porte sur un autre point",
+   "message": {
+    "expediteur": "contact@lorquin-associes.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 17/02/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 76 m². La date des visites reste à confirmer avec le commissaire de justice.\n\nCordialement,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 76,
+     "citation": "La surface habitable est de 76 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  }
+ ]
+}

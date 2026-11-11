@@ -1,0 +1,1383 @@
+{
+ "_comment": "Famille 8 : nom d'un particulier (occupant, débiteur, propriétaire), avec ou sans civilité, données de tiers (voisin, occupante joignable), et valeur portée par une pièce jointe (seule, identique ou différente du corps). Les pièces jointes sont des textes (.txt) pour rester lisibles. Tout est fictif : noms, adresses (.example), ventes.",
+ "famille": 8,
+ "libelle": "particuliers, tiers, pièce jointe",
+ "cas": [
+  {
+   "id": "F8-01",
+   "famille": 8,
+   "titre": "Occupant avec civilité « M. »",
+   "message": {
+    "expediteur": "f.quenellec@scp-quenellec.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 01/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Le bien est occupé par M. Durandal.\n\nBien cordialement,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-02",
+   "famille": 8,
+   "titre": "Propriétaire « Mme »",
+   "message": {
+    "expediteur": "gmortessan@mortessan.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 02/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². Mme Lebrequin, propriétaire, n'a pas répondu.\n\nCordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-03",
+   "famille": 8,
+   "titre": "« Les époux »",
+   "message": {
+    "expediteur": "hugo.tarbelin@tarbelin-avocats.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 03/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Les époux Garnache occupent toujours les lieux.\n\nBien à vous,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Sainte-Fiction\n9, cours de l'Échantillon - 99200 Sainte-Fiction\nTél. : 02 99 00 80 08\nhugo.tarbelin@tarbelin-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-04",
+   "famille": 8,
+   "titre": "« La famille »",
+   "message": {
+    "expediteur": "ines.calvadour@calvadour-avocat.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 04/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². La famille Tissandier quittera les lieux en mars.\n\nBien cordialement,\n\nMaître Inès Calvadour\nAvocate au Barreau de Port-Essai\n60, rue des Scénarios - 99300 Port-Essai\nTél. : 03 99 00 90 09\nines.calvadour@calvadour-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-05",
+   "famille": 8,
+   "titre": "Rôle suivi d'un nom",
+   "message": {
+    "expediteur": "jb@selarl-brossardet.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 05/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Le locataire Jean Pradelle a un bail en cours.\n\nCordialement,\n\nMaître Julien Brossardet\nSELARL Brossardet - Avocats\n3, impasse du Prototype - 99400 Bourg-Modèle\nTél. : 04 99 01 00 10\njb@selarl-brossardet.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-06",
+   "famille": 8,
+   "titre": "Débiteur saisi nommé",
+   "message": {
+    "expediteur": "k.olmedo@olmedo-avocats.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 06/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nDébiteur saisi : Paul Ancelin. La surface habitable est de 54 m².\n\nBien à vous,\n\nMaître Karine Olmédo\nAvocate au Barreau de Lac-Témoin\n11, allée du Simulacre - 99500 Lac-Témoin\nTél. : 05 99 01 10 11\nk.olmedo@olmedo-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-07",
+   "famille": 8,
+   "titre": "Civilité collée au nom",
+   "message": {
+    "expediteur": "l.vidrecourt@vidrecourt.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 07/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Bien occupé par M.Bertoli.\n\nBien cordialement,\n\nMaître Laurent Vidrecourt\nAvocat au Barreau de Mont-Exemple\n27, rue de l'Épreuve - 99600 Mont-Exemple\nTél. : 06 99 01 20 12\nl.vidrecourt@vidrecourt.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-08",
+   "famille": 8,
+   "titre": "Nom avant le rôle",
+   "message": {
+    "expediteur": "a.fictel@fictel-avocats.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 08/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². Paul Ancelin, propriétaire, occupe toujours les lieux.\n\nCordialement,\n\nMaître Aurore Fictel\nAvocat au Barreau de Valmont-sur-Exemple\n12, rue des Essais - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 10 01\na.fictel@fictel-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-09",
+   "famille": 8,
+   "titre": "Occupants nommés par prénoms",
+   "message": {
+    "expediteur": "contact@lorquin-associes.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 09/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Les occupants, Jean et Marie Pradelle, sont joignables pour la visite.\n\nBien à vous,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-10",
+   "famille": 8,
+   "titre": "« Chez les » suivi d'un nom",
+   "message": {
+    "expediteur": "cardaillou@cabinet-ardaillou.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 10/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². Les visites se font chez les Garnache, au deuxième étage.\n\nBien cordialement,\n\nMaître Clémence Ardaillou\nAvocate au Barreau de Port-Essai\n38, quai des Témoins - 99300 Port-Essai\nTél. : 03 99 00 30 03\ncardaillou@cabinet-ardaillou.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-11",
+   "famille": 8,
+   "titre": "Nom entre parenthèses après le rôle",
+   "message": {
+    "expediteur": "d.pescatore@pescatore-avocat.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 11/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Le locataire (Sylvain Morterat) est informé.\n\nCordialement,\n\nMaître Damien Pescatore\nAvocat - Barreau de Bourg-Modèle\n7, avenue de l'Hypothèse - 99400 Bourg-Modèle\nTél. : 04 99 00 40 04\nd.pescatore@pescatore-avocat.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-12",
+   "famille": 8,
+   "titre": "« Succession »",
+   "message": {
+    "expediteur": "secretariat@vasseret-avocats.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 12/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². Il s'agit de la succession Vernadet.\n\nBien à vous,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-13",
+   "famille": 8,
+   "titre": "Nom en minuscules après « monsieur »",
+   "message": {
+    "expediteur": "f.quenellec@scp-quenellec.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 13/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Bien occupé par monsieur pradelle.\n\nBien cordialement,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-14",
+   "famille": 8,
+   "titre": "Voisin et surface comparée",
+   "message": {
+    "expediteur": "gmortessan@mortessan.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 14/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nL'appartement du voisin du dessus, identique, fait 72 m².\n\nCordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "Valeur d'un autre logement (voisin).",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-15",
+   "famille": 8,
+   "titre": "Pièce jointe seule porteuse de la valeur",
+   "message": {
+    "expediteur": "hugo.tarbelin@tarbelin-avocats.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 15/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nVeuillez trouver ci-joint le procès-verbal de description du bien.\n\nBien à vous,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Sainte-Fiction\n9, cours de l'Échantillon - 99200 Sainte-Fiction\nTél. : 02 99 00 80 08\nhugo.tarbelin@tarbelin-avocats.example",
+    "pieces_jointes": [
+     {
+      "nom": "pv-description.txt",
+      "texte": "PROCÈS-VERBAL DE DESCRIPTION (extrait)\nAppartement situé au deuxième étage, comprenant une entrée, un séjour, deux chambres, une cuisine et une salle d'eau.\nSurface habitable : 54 m² (certificat de mesurage annexé).\n"
+     }
+    ]
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La valeur n'est donnée que par une pièce jointe.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "Surface habitable : 54 m²",
+      "source": "pv-description.txt"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-16",
+   "famille": 8,
+   "titre": "Pièce jointe et corps identiques",
+   "message": {
+    "expediteur": "ines.calvadour@calvadour-avocat.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 16/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m² (voir le procès-verbal joint).\n\nBien cordialement,\n\nMaître Inès Calvadour\nAvocate au Barreau de Port-Essai\n60, rue des Scénarios - 99300 Port-Essai\nTél. : 03 99 00 90 09\nines.calvadour@calvadour-avocat.example",
+    "pieces_jointes": [
+     {
+      "nom": "pv-description.txt",
+      "texte": "PROCÈS-VERBAL DE DESCRIPTION (extrait)\nAppartement situé au deuxième étage, comprenant une entrée, un séjour, deux chambres, une cuisine et une salle d'eau.\nSurface habitable : 54 m² (certificat de mesurage annexé).\n"
+     }
+    ]
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "surface habitable est de 54 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-17",
+   "famille": 8,
+   "titre": "Pièce jointe qui contredit le corps",
+   "message": {
+    "expediteur": "jb@selarl-brossardet.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 17/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m² (voir le procès-verbal joint).\n\nCordialement,\n\nMaître Julien Brossardet\nSELARL Brossardet - Avocats\n3, impasse du Prototype - 99400 Bourg-Modèle\nTél. : 04 99 01 00 10\njb@selarl-brossardet.example",
+    "pieces_jointes": [
+     {
+      "nom": "pv-description.txt",
+      "texte": "PROCÈS-VERBAL DE DESCRIPTION (extrait)\nAppartement situé au deuxième étage, comprenant une entrée, un séjour, deux chambres, une cuisine et une salle d'eau.\nSurface habitable : 58 m² (certificat de mesurage annexé).\n"
+     }
+    ]
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La pièce jointe donne une autre valeur (58 m²).",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-18",
+   "famille": 8,
+   "titre": "Loyer et occupants sans nom",
+   "message": {
+    "expediteur": "k.olmedo@olmedo-avocats.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 18/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². Le bien est loué 650 euros par mois à un couple de retraités.\n\nBien à vous,\n\nMaître Karine Olmédo\nAvocate au Barreau de Lac-Témoin\n11, allée du Simulacre - 99500 Lac-Témoin\nTél. : 05 99 01 10 11\nk.olmedo@olmedo-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "surface habitable est de 54 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-19",
+   "famille": 8,
+   "titre": "Téléphone d'une occupante sans nom",
+   "message": {
+    "expediteur": "l.vidrecourt@vidrecourt.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 19/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Pour la visite, contacter l'occupante au 06 99 00 00 12.\n\nBien cordialement,\n\nMaître Laurent Vidrecourt\nAvocat au Barreau de Mont-Exemple\n27, rue de l'Épreuve - 99600 Mont-Exemple\nTél. : 06 99 01 20 12\nl.vidrecourt@vidrecourt.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "surface habitable est de 54 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-20",
+   "famille": 8,
+   "titre": "« Mlle »",
+   "message": {
+    "expediteur": "a.fictel@fictel-avocats.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 20/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². Mlle Corvisart occupe le logement.\n\nCordialement,\n\nMaître Aurore Fictel\nAvocat au Barreau de Valmont-sur-Exemple\n12, rue des Essais - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 10 01\na.fictel@fictel-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-21",
+   "famille": 8,
+   "titre": "Assistante du cabinet nommée",
+   "message": {
+    "expediteur": "contact@lorquin-associes.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 21/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nPour Maître Brossardet, son assistante Mme Corbin : la surface habitable est de 54 m².\n\nBien à vous,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "surface habitable est de 54 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-22",
+   "famille": 8,
+   "titre": "« M. et Mme »",
+   "message": {
+    "expediteur": "cardaillou@cabinet-ardaillou.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 22/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². Les saisis, M. et Mme Rocheval, sont informés de la vente.\n\nBien cordialement,\n\nMaître Clémence Ardaillou\nAvocate au Barreau de Port-Essai\n38, quai des Témoins - 99300 Port-Essai\nTél. : 03 99 00 30 03\ncardaillou@cabinet-ardaillou.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse nomme un particulier : relecture humaine obligatoire.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-23",
+   "famille": 8,
+   "titre": "Nom seulement dans la pièce jointe",
+   "message": {
+    "expediteur": "d.pescatore@pescatore-avocat.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 23/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nLa surface habitable est de 54 m². Je joins le bail en cours.\n\nCordialement,\n\nMaître Damien Pescatore\nAvocat - Barreau de Bourg-Modèle\n7, avenue de l'Hypothèse - 99400 Bourg-Modèle\nTél. : 04 99 00 40 04\nd.pescatore@pescatore-avocat.example",
+    "pieces_jointes": [
+     {
+      "nom": "bail.txt",
+      "texte": "BAIL D'HABITATION\nEntre la SCI Témoin, bailleur, et M. Rocheval, locataire, pour un loyer mensuel de 650 euros."
+     }
+    ]
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La pièce jointe nomme un particulier (bail) : relecture.",
+     "lecture_modele": {
+      "valeur": 54,
+      "citation": "surface habitable est de 54 m²",
+      "source": "corps"
+     }
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-24",
+   "famille": 8,
+   "titre": "Société propriétaire, pas un particulier",
+   "message": {
+    "expediteur": "secretariat@vasseret-avocats.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 24/09/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface habitable est de 54 m². Le bien appartient à une SCI familiale.\n\nBien à vous,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "pieces_jointes": []
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": true,
+     "valeur": 54,
+     "citation": "surface habitable est de 54 m²"
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    }
+   }
+  },
+  {
+   "id": "F8-25",
+   "famille": 8,
+   "titre": "Pièce jointe : plan avec le nombre de pièces",
+   "message": {
+    "expediteur": "f.quenellec@scp-quenellec.example",
+    "objet": "RE: Appartement à Bourg-Modèle, audience du 25/09/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nJe vous joins le plan de l'appartement.\n\nBien cordialement,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "pieces_jointes": [
+     {
+      "nom": "plan.txt",
+      "texte": "PLAN DU LOT\nAppartement de 3 pièces : séjour, deux chambres, cuisine, salle d'eau."
+     }
+    ]
+   },
+   "contexte": {
+    "type_de_bien": "apartment",
+    "quality_flags": [],
+    "lot_vendu": null,
+    "fiche": {
+     "surface_m2": null,
+     "app_surface_m2": null,
+     "habitable_surface_m2": null,
+     "carrez_surface_m2": null,
+     "land_surface_m2": null,
+     "rooms_count": null,
+     "app_surface_kind": null,
+     "surface_scope": null
+    },
+    "destinataire": "source_lawyer",
+    "expediteur_est_destinataire": true,
+    "authentification": {
+     "dkim": "pass",
+     "dmarc": "pass"
+    },
+    "delai_jours": 4,
+    "messages_posterieurs": []
+   },
+   "verite": {
+    "surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "land_surface_m2": {
+     "publiable": false,
+     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "lecture_modele": null
+    },
+    "rooms_count": {
+     "publiable": false,
+     "raison": "La valeur n'est donnée que par une pièce jointe.",
+     "lecture_modele": {
+      "valeur": 3,
+      "citation": "Appartement de 3 pièces",
+      "source": "plan.txt"
+     }
+    }
+   }
+  }
+ ]
+}
