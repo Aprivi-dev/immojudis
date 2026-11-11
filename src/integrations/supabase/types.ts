@@ -1662,6 +1662,88 @@ export type Database = {
           },
         ];
       };
+      auction_fact_claim_decisions: {
+        Row: {
+          actor_id: string | null;
+          actor_kind: string;
+          claim_id: string;
+          decided_at: string;
+          decision: string;
+          field_key: string;
+          id: string;
+          information_agent_fact_id: string | null;
+          lot_attachment: string;
+          lot_ref: string | null;
+          publication_mode: string;
+          reason_code: string | null;
+          received_at: string | null;
+          recipient_kind: string | null;
+          sale_id: string;
+          seq: number;
+          supersedes_decision_id: string | null;
+        };
+        Insert: {
+          actor_id?: string | null;
+          actor_kind: string;
+          claim_id: string;
+          decided_at?: string;
+          decision: string;
+          field_key: string;
+          id?: string;
+          information_agent_fact_id?: string | null;
+          lot_attachment: string;
+          lot_ref?: string | null;
+          publication_mode?: string;
+          reason_code?: string | null;
+          received_at?: string | null;
+          recipient_kind?: string | null;
+          sale_id: string;
+          seq?: never;
+          supersedes_decision_id?: string | null;
+        };
+        Update: {
+          actor_id?: string | null;
+          actor_kind?: string;
+          claim_id?: string;
+          decided_at?: string;
+          decision?: string;
+          field_key?: string;
+          id?: string;
+          information_agent_fact_id?: string | null;
+          lot_attachment?: string;
+          lot_ref?: string | null;
+          publication_mode?: string;
+          reason_code?: string | null;
+          received_at?: string | null;
+          recipient_kind?: string | null;
+          sale_id?: string;
+          seq?: never;
+          supersedes_decision_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_fact_claim_decisions_claim_id_fkey";
+            columns: ["claim_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_fact_claims";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_fact_claim_decisions_claim_id_fkey";
+            columns: ["claim_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_fact_claims_read_model";
+            referencedColumns: ["claim_id"];
+          },
+          {
+            foreignKeyName: "auction_fact_claim_decisions_supersedes_decision_id_fkey";
+            columns: ["supersedes_decision_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_fact_claim_decisions";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_fact_claims: {
         Row: {
           ai_review_projection_id: string | null;
@@ -1896,6 +1978,65 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "v_auction_fact_claims_read_model";
             referencedColumns: ["claim_id"];
+          },
+        ];
+      };
+      auction_fact_fields: {
+        Row: {
+          abs_tolerance: number | null;
+          field_key: string;
+          held_columns: string[];
+          hold_enabled: boolean;
+          on_listing_change: string;
+          rel_tolerance: number | null;
+          value_type: string;
+        };
+        Insert: {
+          abs_tolerance?: number | null;
+          field_key: string;
+          held_columns: string[];
+          hold_enabled?: boolean;
+          on_listing_change?: string;
+          rel_tolerance?: number | null;
+          value_type: string;
+        };
+        Update: {
+          abs_tolerance?: number | null;
+          field_key?: string;
+          held_columns?: string[];
+          hold_enabled?: boolean;
+          on_listing_change?: string;
+          rel_tolerance?: number | null;
+          value_type?: string;
+        };
+        Relationships: [];
+      };
+      auction_fact_source_precedence: {
+        Row: {
+          can_hold: boolean;
+          field_key: string;
+          rank: number;
+          source_kind: string;
+        };
+        Insert: {
+          can_hold?: boolean;
+          field_key: string;
+          rank: number;
+          source_kind: string;
+        };
+        Update: {
+          can_hold?: boolean;
+          field_key?: string;
+          rank?: number;
+          source_kind?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_fact_source_precedence_field_key_fkey";
+            columns: ["field_key"];
+            isOneToOne: false;
+            referencedRelation: "auction_fact_fields";
+            referencedColumns: ["field_key"];
           },
         ];
       };
@@ -3511,6 +3652,60 @@ export type Database = {
           },
         ];
       };
+      auction_sale_field_hold_events: {
+        Row: {
+          created_at: string;
+          decision_id: string | null;
+          event: string;
+          field_key: string;
+          held_value: Json | null;
+          id: string;
+          incoming_value: Json | null;
+          listing_value: Json | null;
+          sale_id: string;
+          seq: number;
+        };
+        Insert: {
+          created_at?: string;
+          decision_id?: string | null;
+          event: string;
+          field_key: string;
+          held_value?: Json | null;
+          id?: string;
+          incoming_value?: Json | null;
+          listing_value?: Json | null;
+          sale_id: string;
+          seq?: never;
+        };
+        Update: {
+          created_at?: string;
+          decision_id?: string | null;
+          event?: string;
+          field_key?: string;
+          held_value?: Json | null;
+          id?: string;
+          incoming_value?: Json | null;
+          listing_value?: Json | null;
+          sale_id?: string;
+          seq?: never;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_field_hold_events_decision_id_fkey";
+            columns: ["decision_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_fact_claim_decisions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_field_hold_events_field_key_fkey";
+            columns: ["field_key"];
+            isOneToOne: false;
+            referencedRelation: "auction_fact_fields";
+            referencedColumns: ["field_key"];
+          },
+        ];
+      };
       auction_sale_flood_risk: {
         Row: {
           attempted_at: string;
@@ -4389,6 +4584,7 @@ export type Database = {
           has_garden: boolean | null;
           has_pool: boolean | null;
           has_terrace: boolean | null;
+          held_fields: Json | null;
           id: string;
           investment_score: number | null;
           investment_summary: string | null;
@@ -4481,6 +4677,7 @@ export type Database = {
           has_garden?: boolean | null;
           has_pool?: boolean | null;
           has_terrace?: boolean | null;
+          held_fields?: Json | null;
           id?: string;
           investment_score?: number | null;
           investment_summary?: string | null;
@@ -4573,6 +4770,7 @@ export type Database = {
           has_garden?: boolean | null;
           has_pool?: boolean | null;
           has_terrace?: boolean | null;
+          held_fields?: Json | null;
           id?: string;
           investment_score?: number | null;
           investment_summary?: string | null;
@@ -15425,6 +15623,7 @@ export type Database = {
           has_garden: boolean | null;
           has_pool: boolean | null;
           has_terrace: boolean | null;
+          held_fields: Json | null;
           id: string;
           investment_score: number | null;
           investment_summary: string | null;
@@ -16710,6 +16909,7 @@ export type Database = {
           has_garden: boolean | null;
           has_pool: boolean | null;
           has_terrace: boolean | null;
+          held_fields: Json | null;
           id: string;
           investment_score: number | null;
           investment_summary: string | null;
