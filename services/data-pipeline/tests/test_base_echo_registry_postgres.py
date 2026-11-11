@@ -12,8 +12,12 @@ Ces tests écrivent dans la base : il leur faut une base **jetable et locale** o
     PIPELINE_REGISTRY_DB_URL=postgresql://postgres@127.0.0.1:55600/replay python -m pytest -s \
         tests/test_base_echo_registry_postgres.py
 
-Sans ``PIPELINE_REGISTRY_DB_URL`` ils sont ignorés ; toute base non locale est refusée. Le journal des décisions est
-en ajout seul : chaque exécution y laisse ses lignes, sous des identifiants neufs. ``-s`` affiche la transcription.
+Sans ``PIPELINE_REGISTRY_DB_URL`` ils sont ignorés, sauf si ``PIPELINE_REGISTRY_DB_REQUIRED=1`` (étape de la CI) :
+l'absence de base est alors un échec. Toute base non locale est refusée. Le journal des décisions est en ajout seul :
+chaque exécution y laisse ses lignes, sous des identifiants neufs. ``-s`` affiche la transcription.
+
+Une seule classe, ``Registry``, pose les observations et les décisions (``_insert_claim``, ``_insert_decision``) : si
+le registre change la façon de les écrire (gardes par rôle, fonction d'administration), c'est là qu'il faut adapter.
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ from src.normalize import normalize_sale
 from src.storage import supabase_client as storage
 
 DB_URL_ENV = "PIPELINE_REGISTRY_DB_URL"
+REQUIRED_ENV = "PIPELINE_REGISTRY_DB_REQUIRED"
 ROOMS = "property.rooms_count"
 SURFACE = "property.surface_m2"
 SALE_DATE = (datetime.now(UTC) + timedelta(days=30)).replace(microsecond=0).isoformat()
@@ -46,11 +51,34 @@ SURFACE_COLUMNS = ("surface_m2", "app_surface_m2", "app_surface_kind", "surface_
 def _db_url() -> str:
     url = os.getenv(DB_URL_ENV)
     if not url:
+        if os.getenv(REQUIRED_ENV) == "1":
+            pytest.fail(f"{DB_URL_ENV} est absente alors que {REQUIRED_ENV}=1 : les scénarios n'ont pas été joués.")
         pytest.skip(f"{DB_URL_ENV} absente : base au schéma complet non disponible")
     host = urlsplit(url).hostname or ""
     if host not in {"localhost", "127.0.0.1", "::1", ""} and not host.startswith("/"):
         pytest.fail(f"{DB_URL_ENV} doit désigner une base locale (hôte {host!r} refusé) : ces tests écrivent.")
     return url
+
+
+def test_a_missing_database_is_fatal_when_the_scenarios_are_required(monkeypatch) -> None:
+    """Dans la CI, une étape qui ne trouverait pas sa base ne doit pas passer pour un succès."""
+    monkeypatch.delenv(DB_URL_ENV, raising=False)
+    monkeypatch.setenv(REQUIRED_ENV, "1")
+    # ``BaseException`` : un saut (``skip``) ne doit pas faire sauter ce test lui-même, mais le faire échouer.
+    with pytest.raises(BaseException) as required:
+        _db_url()
+    assert isinstance(required.value, pytest.fail.Exception) and DB_URL_ENV in str(required.value)
+
+    monkeypatch.delenv(REQUIRED_ENV)
+    with pytest.raises(BaseException) as optional:
+        _db_url()
+    assert isinstance(optional.value, pytest.skip.Exception)
+
+
+def test_a_database_that_is_not_local_is_refused(monkeypatch) -> None:
+    monkeypatch.setenv(DB_URL_ENV, "postgresql://postgres@db.example.test:5432/postgres")
+    with pytest.raises(pytest.fail.Exception, match="locale"):
+        _db_url()
 
 
 def say(text: str) -> None:
@@ -91,6 +119,18 @@ class Registry:
 
     def accept(self, sale_id: str, field: str, value: int, received_at: str) -> str:
         """Une réponse d'avocat devient une observation, puis une pièce acceptée, puis elle est projetée."""
+        claim_id = self._insert_claim(sale_id, field, value)
+        self._insert_decision(claim_id, "accepted", None, received_at)
+        self.project(sale_id)
+        return claim_id
+
+    def withdraw(self, sale_id: str, *claim_ids: str) -> None:
+        for claim_id in claim_ids:
+            self._insert_decision(claim_id, "withdrawn", "entry_error", None)
+        self.project(sale_id)
+
+    def _insert_claim(self, sale_id: str, field: str, value: int) -> str:
+        """Seul endroit qui pose une observation."""
         from psycopg.types.json import Jsonb
 
         claim_id = str(uuid.uuid4())
@@ -100,16 +140,10 @@ class Registry:
                values (%s, %s, %s, %s, 'professional_email', %s, null, 0.9, 'information_agent', 'v1', %s)""",
             (claim_id, sale_id, field, Jsonb(value), Jsonb({"case_id": self.case}), self.admin),
         )
-        self._decide(claim_id, "accepted", None, received_at)
-        self.project(sale_id)
         return claim_id
 
-    def withdraw(self, sale_id: str, *claim_ids: str) -> None:
-        for claim_id in claim_ids:
-            self._decide(claim_id, "withdrawn", "entry_error", None)
-        self.project(sale_id)
-
-    def _decide(self, claim_id: str, decision: str, reason: str | None, received_at: str | None) -> None:
+    def _insert_decision(self, claim_id: str, decision: str, reason: str | None, received_at: str | None) -> None:
+        """Seul endroit qui pose une décision."""
         self.db.execute(
             """insert into public.auction_fact_claim_decisions (claim_id, sale_id, field_key, decision,
                  lot_attachment, actor_kind, actor_id, reason_code, recipient_kind, received_at)
@@ -381,10 +415,53 @@ def test_a_held_sale_is_rewritten_without_event_when_nothing_moves(registry, sen
         for _publication in range(2):
             assert storage.upsert_sales_to_supabase([sale]) == 1
             assert (sent[-1]["rooms_count"], sent[-1]["app_surface_m2"]) == (3, 54)
-            # Aucune valeur n'est retenue : la base rend à chaque fois ce que la collecte y avait lu.
+            # Aucun mouvement, aucune valeur retenue : la base rend à chaque fois ce qu'elle a gardé de l'écriture.
+            assert base_reads.moved_groups(sale_id) == frozenset()
             assert base_reads.suppressed_count() == 0
 
     say(f"P1 après deux passages            : {registry.describe(sale_id)}")
     assert registry.row(sale_id) == before
     assert registry.listing_events(sale_id) == []
     assert registry.project(sale_id, apply=False)["changed"] is False
+
+
+def test_a_held_surface_and_a_reread_listing_never_look_like_a_move(registry, sent) -> None:
+    """Surface tenue à 54 m², fiche relue qui publie toujours 50 m² habitables, personne n'agit.
+
+    La base retient 54 à chaque écriture. La garde note ce que la base a gardé (``returning``), pas ce qui a été
+    envoyé : la lecture suivante n'est pas un mouvement, et la valeur de l'annonce continue de partir vers la base
+    sans être remplacée par la valeur tenue.
+    """
+    say("\n=== Surface tenue, fiche relue à 50 m² habitables : deux passages de deux publications ===")
+    url = _url()
+    listing = dict(
+        property_type="house", title="Une maison", surface_m2=50, habitable_surface_m2=50, rooms_count=2,
+        bedrooms_count=1, occupancy_status="occupé", source_detail_status="complete",
+        description="Une maison d'habitation de 50 m² habitables, 2 pièces, occupée.",
+        raw_text="Une maison d'habitation de 50 m² habitables, 2 pièces, occupée.",
+    )
+    assert storage.upsert_sales_to_supabase([_collect(_card(url, **listing), {})]) == 1
+    sale_id = registry.sale_id(url)
+    registry.accept(sale_id, SURFACE, 54, "2026-11-01 09:00+00")
+    memory = registry.listing_memory(sale_id, SURFACE)
+
+    for passage in range(2):
+        base_reads.reset()
+        known = storage.fetch_known_sale_details()
+        known.update(storage.fetch_known_sale_details(source_urls=[url], include_enrichment_payload=True))
+        sale = _collect(_card(url, **listing), known)  # la source publie toujours 50 m²
+        for publication in range(2):
+            assert storage.upsert_sales_to_supabase([sale]) == 1
+            say(
+                f"H{passage + 1}.{publication + 1} envoyé surface={sent[-1]['surface_m2']}/{sent[-1]['app_surface_m2']} "
+                f"| groupes « bougés » : {sorted(base_reads.moved_groups(sale_id))} | compteur={base_reads.suppressed_count()}"
+            )
+            assert (sent[-1]["surface_m2"], sent[-1]["app_surface_m2"]) == (50, 50)
+            assert base_reads.moved_groups(sale_id) == frozenset()
+            assert base_reads.suppressed_count() == 0
+
+    say(f"H3 après deux passages            : {registry.describe(sale_id)}")
+    row = registry.row(sale_id)
+    assert (row["surface_m2"], row["app_surface_m2"]) == (54, 54)
+    assert registry.listing_events(sale_id) == []
+    assert registry.listing_memory(sale_id, SURFACE) == memory

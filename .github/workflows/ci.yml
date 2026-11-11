@@ -382,6 +382,14 @@ jobs:
         env:
           SCHEMA_CONTRACT_REQUIRED: "1"
         run: SCHEMA_CONTRACT_DB_URL="$SUPABASE_DB_URL" python -m pytest -m schema_contract tests/test_schema_contract.py -q
+      # Garde d'écho de la collecte face au registre des pièces : une pièce est posée, remplacée ou retirée par la
+      # projection pendant qu'un passage a déjà lu la vente, puis la collecte écrit par son vrai chemin (scénarios
+      # A, B et C). Ces tests écrivent dans la base locale du job, jamais ailleurs ; sans base, l'étape échoue.
+      - name: Replay the collection echo scenarios against the fact registry
+        working-directory: services/data-pipeline
+        env:
+          PIPELINE_REGISTRY_DB_REQUIRED: "1"
+        run: PIPELINE_REGISTRY_DB_URL="$SUPABASE_DB_URL" python -m pytest tests/test_base_echo_registry_postgres.py -q
       - name: Stop local Supabase
         if: always()
         run: npx --yes supabase@2.110.0 stop --no-backup
