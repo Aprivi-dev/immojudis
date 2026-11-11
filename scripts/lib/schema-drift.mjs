@@ -13,7 +13,8 @@ const managedConcurrentIndexDefinitions = new Set(
 // made on a canonical form that ignores exactly those three things and nothing else: the index name,
 // table, uniqueness, columns, operators and constants still have to be the reviewed ones. A `::text`
 // cast is ignored only right after a string constant ('…'::text): a cast of a column or of an
-// expression (`(id)::text`, `(held_fields)::text IS NOT NULL`) is another index and stays in the diff.
+// expression (`(id)::text`, or the predicate column cast to text) is another index and stays in the
+// diff.
 // The physical index is verified separately, word for word, against the catalog
 // (verifyConcurrentIndexes).
 const managedConcurrentIndexCanonicalDefinitions = new Set(

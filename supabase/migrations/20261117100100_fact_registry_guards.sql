@@ -57,9 +57,9 @@ set local statement_timeout = '60s';
 --   6. lot_ref (public.auction_fact_claim_decisions) : ce que dit la pièce (« lot 2 », « Lot n° 3 »), texte libre
 --      de 40 caractères dans un journal non effaçable. Borné par un format : une lettre ou un chiffre, puis au
 --      plus 39 lettres, chiffres, espaces ou signes de ponctuation simple (. , / ( ) ' - ° º & + #). Ni arobase,
---      ni deux-points, ni saut de ligne. Écrite en une seule expression rationnelle, sans BETWEEN (la forme « between … and … »
---      suivie d'un autre terme par AND ne s'imprime pas de la même façon en production et sur la base d'ombre du
---      contrôle de dérive).
+--      ni deux-points, ni saut de ligne. Écrite en une seule expression rationnelle, sans BETWEEN (la forme
+--      « between … and … » suivie d'un autre terme par AND ne s'imprime pas de la même façon en production et
+--      sur la base d'ombre du contrôle de dérive).
 --
 -- Verrous : remplacement de fonctions ; ACCESS EXCLUSIVE bref sur public.auction_sale_field_hold_events et sur
 -- public.auction_fact_claim_decisions (tables vides en production : le contrôle des contraintes est immédiat).
@@ -154,9 +154,10 @@ $$;
 revoke all on function app_private.refuse_api_role_registry_origin()
   from public, anon, authenticated, service_role;
 
--- Garde du marqueur. SECURITY INVOKER, comme les deux gardes ci-dessus : elle lit le rôle qui écrit. Elle ne
--- s'exécute que pour une vente du registre (clause WHEN de son déclencheur, 20261117100200). Sans marqueur, ou avec
--- le marqueur d'une autre vente, elle laisse passer : la retenue s'applique alors à l'écriture.
+-- Garde du marqueur (point 5 de l'en-tête). SECURITY INVOKER, comme les deux gardes ci-dessus : elle lit le rôle
+-- qui écrit. Elle ne s'exécute que pour une vente du registre, ou pour une écriture qui apporte le libellé réservé
+-- (clause WHEN de son déclencheur, 20261117100200). Sans marqueur, ou avec le marqueur d'une autre vente, elle
+-- laisse passer : la retenue s'applique alors à l'écriture.
 create or replace function app_private.refuse_sale_field_projection_marker()
 returns trigger
 language plpgsql
@@ -300,7 +301,7 @@ $$;
 comment on table public.auction_sale_field_hold_events is
   'Registre des pièces : file de relecture en ajout seul des champs tenus (l''annonce a changé sur un champ tenu, pièce posée, retirée ou refusée par la fiche, contradiction, retour écarté d''une ancienne valeur tenue). Valeurs de champs seulement (occupation : vacant, occupied ou rented) : ni extrait, ni email, ni nom.';
 
--- 4. Format de lot_ref ---------------------------------------------------------------------------------------------
+-- 6. Format de lot_ref (point 6 de l'en-tête) --------------------------------------------------------------------
 -- Même méthode que ci-dessus : la contrainte de colonne de 20261116100000 (nom attribué d'office :
 -- auction_fact_claim_decisions_lot_ref_check) n'est recréée que si elle n'a pas déjà le format. Le motif tient en
 -- une expression : premier caractère lettre ou chiffre (donc ni vide, ni blanc), 40 caractères au plus. En
@@ -328,8 +329,9 @@ $$;
 comment on column public.auction_fact_claim_decisions.lot_ref is
   'Registre des pièces : ce que dit la pièce du lot (« lot 2 », « Lot n° 3 »). Format borné : lettres, chiffres, espaces et ponctuation simple, 40 caractères au plus. Jamais un nom, une adresse ni un extrait.';
 
--- 5. Garde d'origine étendue ---------------------------------------------------------------------------------------
--- Voir l'en-tête, point 4. CREATE OR REPLACE TRIGGER garde le déclencheur en place (jamais de fenêtre sans garde)
+-- 4. Garde d'origine étendue (point 4 de l'en-tête) --------------------------------------------------------------
+-- Placée en dernier : c'est la seule instruction de ce fichier qui attend un verrou sur une table écrite par la
+-- collecte. CREATE OR REPLACE TRIGGER garde le déclencheur en place (jamais de fenêtre sans garde)
 -- et ne prend que SHARE ROW EXCLUSIVE ; son mode est reposé ensuite, comme au lot R1.
 set local lock_timeout = '1s';
 
