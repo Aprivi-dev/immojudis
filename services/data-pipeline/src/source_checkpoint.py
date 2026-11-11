@@ -5,7 +5,6 @@ import atexit
 import copy
 import hashlib
 import json
-import logging
 import os
 import time
 from datetime import UTC, datetime, timedelta
@@ -33,10 +32,6 @@ CHECKPOINT_RETRY_DELAYS: tuple[float, ...] = ()
 CHECKPOINT_WRITE_RETRY_DELAYS: tuple[float, ...] = (5.0, 20.0)
 CHECKPOINT_LOCK_TIMEOUT = "5s"
 CHECKPOINT_STATEMENT_TIMEOUT = "15s"
-LOGGER = logging.getLogger(__name__)
-# Marqueur du point de reprise (un booléen, jamais une adresse) : la fiche portait des adresses internes, qui ne sont
-# pas écrites dans la table de reprise. Il permet de savoir, à la reprise, qu'il y a une adresse à relever.
-CONTACTS_WITHHELD_KEY = "_internal_contacts_withheld"
 
 
 def _checkpoint_connect(db_url: str):
@@ -132,57 +127,6 @@ def _stored_checked_at(payload: object, fallback: datetime) -> datetime:
     return fallback.astimezone(UTC) if fallback.tzinfo else fallback.replace(tzinfo=UTC)
 
 
-@lru_cache(maxsize=1)
-def _registered_contact_urls() -> frozenset[str] | None:
-    """Fiches reprises dont l'adresse retenue a déjà une ligne au registre de l'agent ; ``None`` si illisible.
-
-    Lu une fois par processus, pour les seules fiches dont le point de reprise porte ``CONTACTS_WITHHELD_KEY``.
-    Seule la page de la fiche (``source_url``) est lue : aucune adresse ne sort du registre. Comme toute écriture
-    du registre (``src.storage.internal_contacts``), une lecture impossible n'arrête pas la collecte : elle est
-    journalisée (type de l'erreur) et les fiches sont reprises telles quelles.
-    """
-    context = _context()
-    if not context:
-        return frozenset()
-    urls = sorted(
-        url for url, cached in context[2].items() if isinstance(cached[1], dict) and cached[1].get(CONTACTS_WITHHELD_KEY)
-    )
-    if not urls:
-        return frozenset()
-    try:
-        with _checkpoint_connect(context[0]) as db:
-            with db.transaction():
-                _configure_checkpoint_transaction(db)
-                rows = db.execute(
-                    """select distinct source_url from public.information_agent_contacts
-                       where source_kind='sale_listing' and source_url = any(%s)""",
-                    (urls,),
-                ).fetchall()
-    except Exception as exc:  # noqa: BLE001 - le registre interne n'arrête jamais la collecte
-        LOGGER.warning(
-            "Checkpoint restore: internal contacts registry unreadable, restored details keep no address: "
-            "error=%s details=%s",
-            type(exc).__name__,
-            len(urls),
-        )
-        return None
-    return frozenset(str(row[0]) for row in rows)
-
-
-def _withheld_contacts_to_read_again(source_url: str) -> bool:
-    """La fiche reprise avait une adresse interne, le décodage est actif et le registre n'a pas de ligne pour elle.
-
-    Le point de reprise ne garde pas l'adresse : reprise telle quelle, la fiche serait publiée sans elle et tenue
-    pour fraîche. Seul Licitor produit des adresses internes, d'où son interrupteur.
-    """
-    from src.sources.licitor import decode_protected_emails_enabled  # import tardif : licitor importe ce module
-
-    if not decode_protected_emails_enabled():
-        return False
-    registered = _registered_contact_urls()
-    return registered is not None and source_url not in registered
-
-
 def restore_detail(sale: dict) -> bool:
     context = _context()
     if not context:
@@ -204,10 +148,7 @@ def restore_detail(sale: dict) -> bool:
     age = datetime.now(UTC) - checked_at
     if age < timedelta(0) or age > MAX_CHECKPOINT_REUSE_AGE:
         return False
-    if cached[1].get(CONTACTS_WITHHELD_KEY) and _withheld_contacts_to_read_again(str(sale.get('source_url') or '')):
-        # Fiche à relire (décision du propriétaire du 11/11/2026) : son adresse n'est ni ici ni au registre.
-        return False
-    sale.update({key: value for key, value in cached[1].items() if key != CONTACTS_WITHHELD_KEY})
+    sale.update(cached[1])
     sale['_checkpoint_checked_at'] = checked_at.isoformat()
     sale['_checkpoint_restored'] = True
     return True
@@ -283,8 +224,6 @@ class CheckpointSales(list):
             observed = datetime.now(UTC)
             # Les adresses internes (registre de l'agent) ne sont jamais écrites dans la table de reprise.
             payload = json.loads(json.dumps({k: v for k, v in sale.items() if k != INTERNAL_CONTACTS_KEY}, default=str))
-            if sale.get(INTERNAL_CONTACTS_KEY):
-                payload[CONTACTS_WITHHELD_KEY] = True
             for delay in (*CHECKPOINT_WRITE_RETRY_DELAYS, None):
                 try:
                     if self._db is None:
