@@ -629,21 +629,24 @@ describe("invariants de sécurité : marché local de la règle pepite-v1.2", ()
     );
   });
 
-  it("refuse que les nouveaux modules de la règle lisent un avocat, un sponsoring ou investment_score", () => {
-    for (const [module, column] of [
-      ["src/lib/pepite-badges.ts", "investment_score"],
-      ["src/lib/pepite-copro.ts", "lawyer_name"],
-      ["src/lib/pepite-energy.ts", "paid_placement_status"],
-      ["src/lib/pepite-market.ts", "sponsored"],
-      ["src/lib/pepite-context.server.ts", "referenced_lawyers"],
-    ]) {
+  // Un cas par test (chacun lance le script une fois, sous son propre délai) : cinq lancements dans un même
+  // test dépassaient le délai de 20 s sur un runner chargé.
+  it.each([
+    ["src/lib/pepite-badges.ts", "investment_score"],
+    ["src/lib/pepite-copro.ts", "lawyer_name"],
+    ["src/lib/pepite-energy.ts", "paid_placement_status"],
+    ["src/lib/pepite-market.ts", "sponsored"],
+    ["src/lib/pepite-context.server.ts", "referenced_lawyers"],
+  ])(
+    "refuse que les nouveaux modules de la règle lisent un avocat, un sponsoring ou investment_score : %s (%s)",
+    (module, column) => {
       const result = runInvariants({}, [], {
         [module]: `export const column = "${column}";\n`,
       });
       expect(result.status, module).toBe(1);
       expect(result.stderr, module).toContain(module);
-    }
-  });
+    },
+  );
 
   it("refuse la migration de l'agrégat sans row level security", () => {
     const bad = migration(file).replace(
