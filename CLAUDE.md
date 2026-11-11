@@ -51,3 +51,6 @@ applique ensuite les étapes, avec les limites suivantes.
   pourquoi ne le sont que sur une liste validée par le propriétaire.
 - **Tests** : aucune suppression sans liste nominative validée par le propriétaire, et en dernier.
   `npm run test:security-invariants` et `supabase/tests/` sont exclus, sauf accord explicite.
+- **Scripts d'analyse** : ceux que le skill suggère (squelette du code, graphe des dépendances)
+  s'écrivent dans le scratchpad de la session, pas dans le dépôt.
+- **Sous-agents** : ceux que le skill fait travailler sont en lecture seule.
