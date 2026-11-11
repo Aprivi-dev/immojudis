@@ -63,10 +63,8 @@ lecture du code autour, jamais par un simple motif grep :
 
 ## Rangement du code
 
-Critère permanent de toute relecture : lis `docs/architecture/rangement-du-code.md` et relève
-ce qu'il décrit (liens cachés, liens inutiles, superflu, cas particuliers non justifiés). Ajoute
-à chaque point de ce type la mention « à corriger » si le lot l'introduit, « à noter » s'il
-préexiste.
+Critère permanent de toute relecture : lis `docs/architecture/rangement-du-code.md` et applique
+sa partie « Selon le rôle » (qui relit ou audite).
 
 ## Format de rendu
 
