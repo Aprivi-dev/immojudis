@@ -251,16 +251,21 @@ jobs:
           restore-keys: |
             immojudis-justice-reference-${{ runner.os }}-
 
+      # Nouvelles tentatives bornées (150 s de réseau au plus) : une panne passagère du miroir apt ne fait
+      # plus échouer le passage, une panne durable échoue vite avec une annotation d'erreur
+      # (scripts/install_system_packages.sh). Les identifiants de ces trois étapes de préparation servent à
+      # « Close run that never started », qui écrit dans le run laquelle a échoué.
       - name: Install document extraction packages
+        id: system-packages
         run: |
           packages=(antiword)
           if [ "${PDF_OCR_ENABLED:-false}" = "true" ]; then
             packages+=(tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng)
           fi
-          sudo apt-get update
-          sudo apt-get install -y "${packages[@]}"
+          bash scripts/install_system_packages.sh "${packages[@]}"
 
       - name: Install Python dependencies
+        id: python-deps
         run: python -m pip install --require-hashes -r requirements.lock
 
       # The references change rarely: a verified copy younger than 7 days (restored
@@ -268,6 +273,7 @@ jobs:
       # keeps the valid copy; the step fails, with an explicit message, only when no
       # valid copy exists at all.
       - name: Refresh and verify official Justice references
+        id: justice-references
         run: python -m src.official_sources.justice_reference_sync --max-age-days 7
 
       - name: Run manually requested pipeline
@@ -326,8 +332,29 @@ jobs:
           fi
           bash scripts/allow_source_warning.sh python -m src.main "${args[@]}"
 
+      # Le job a échoué (ou a été annulé) avant l'étape du pipeline : paquets système, dépendances Python,
+      # référentiels Justice. Le run demandé est encore « queued » et, sans cette étape, le resterait jusqu'à
+      # l'expiration de son bail d'une heure, pendant laquelle le lanceur ne déclenche rien d'autre (incident
+      # du 11/11/2026, docs/audits/2026-11-11-collecte-echec-avant-demarrage.md). Le script n'utilise que la
+      # bibliothèque standard (python3 du runner, mode isolé -I) : il tourne même quand rien n'a pu être
+      # installé. Il ne clôt qu'un run encore « queued », jamais un run « running » ni un run d'un autre
+      # passage, et l'écrit en échec (« failed_before_start » et l'étape en cause), jamais en réussite.
+      - name: Close run that never started
+        if: always() && steps.pipeline.outcome == 'skipped' && inputs.publication_check != true && inputs.run_id != ''
+        timeout-minutes: 3
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          REQUESTED_RUN_ID: ${{ inputs.run_id }}
+          STARTUP_SYSTEM_PACKAGES_OUTCOME: ${{ steps.system-packages.outcome }}
+          STARTUP_PYTHON_DEPENDENCIES_OUTCOME: ${{ steps.python-deps.outcome }}
+          STARTUP_JUSTICE_REFERENCES_OUTCOME: ${{ steps.justice-references.outcome }}
+        run: python3 -I scripts/close_unstarted_run.py
+
+      # Le pipeline a tourné : src.run_finalizer clôt le run que ce job a réclamé. Quand il n'a pas démarré,
+      # c'est l'étape précédente qui s'en charge, sans les dépendances Python.
       - name: Finalize unfinished run
-        if: always() && inputs.publication_check != true
+        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_AUTOMATIC: ${{ inputs.automatic }}
@@ -343,8 +370,11 @@ jobs:
       # SITE_URL : l'origine publique, https://immojudis.com, valeur de repli quand la variable est absente).
       # Une configuration manquante (secret absent, adresse invalide) rend l'étape rouge avec une annotation
       # d'erreur : elle ne saute plus en silence. Voir docs/runbooks/catalogue-visibility-projection.md.
+      # Seule exception : quand les dépendances Python ne sont pas installées (échec avant démarrage), cette
+      # étape, le rapport de couverture et la copie des photos ne peuvent pas tourner ; ils sont sautés au
+      # lieu de planter sur un module absent, et les invalidations en attente partent au passage suivant.
       - name: Invalidate public cache
-        if: always()
+        if: always() && steps.python-deps.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 5
         env:
@@ -355,7 +385,7 @@ jobs:
         run: python -m src.cache_invalidation --flush
 
       - name: Report source coverage and enrichment backlog
-        if: always()
+        if: always() && steps.python-deps.outcome == 'success'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m src.pipeline_health --report-only
@@ -372,7 +402,7 @@ jobs:
       # « withdrawn ») s'appliquent, car un retrait n'attend pas la réactivation. Le rattrapage du
       # stock est un workflow à part (photo-mirror-backfill.yml).
       - name: Copie des photos principales
-        if: always() && inputs.automatic == true
+        if: always() && steps.python-deps.outcome == 'success' && inputs.automatic == true
         timeout-minutes: 25
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
