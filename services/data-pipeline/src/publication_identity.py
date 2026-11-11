@@ -8,7 +8,7 @@ from itertools import combinations
 
 from psycopg.types.json import Jsonb
 
-from src import listing_minimum, rejected_listings
+from src import base_reads, listing_minimum, rejected_listings
 from src.admission import (
     LICITOR_MULTI_LOT_QUARANTINE,
     MISSING_PRICE_AND_SURFACE_QUARANTINE,
@@ -35,8 +35,13 @@ from src.reviewed_aliases import (
     ReviewedAliasRegistryError,
     load_reviewed_aliases,
 )
+from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT
 
 LOGGER = logging.getLogger(__name__)
+
+# Colonnes lues sous le verrou de publication : celles du modèle, et aucune autre. Une colonne interne ajoutée à la
+# table ne quitte donc jamais la base par cette lecture (``select to_jsonb(s)`` rendait la ligne entière).
+LOCKED_SALE_SELECT = DATA_REFRESH_SALE_SELECT
 
 _REVIEWED_ALIAS_RESOLVED_FLAGS = frozenset({'sale_procedure_conflict'})
 _REVIEWED_ALIAS_IDENTITY_FLAGS = frozenset({
@@ -284,6 +289,9 @@ def hold_identity(connection, incoming: AuctionSale, matches: list[AuctionSale],
 
 
 def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
+    # Garde d'écho, pour toutes les branches : un groupe que la collecte n'a fait que relire en base n'est pas réécrit
+    # si la base a bougé depuis (src.base_reads). ``incoming`` n'est pas modifiée ; sans mouvement, rien ne change.
+    incoming = base_reads.suppress_echo(existing, incoming)
     incoming_url = incoming.source_url
     previous_checks = existing.raw_payload.get('source_checks') or {}
     new_checks = incoming.raw_payload.get('source_checks') or {}
@@ -523,11 +531,15 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
         urls, postal_codes, hashes, canonical_ids, listing_ids)).fetchall()
     candidate_ids = sorted({str(row[0]) for row in candidate_rows if row and row[0]})
     if candidate_ids:
-        rows = connection.execute("""select to_jsonb(s) from public.auction_sales s
-            where s.id=any(%s::uuid[])
-            order by s.id""", (candidate_ids,)).fetchall()
+        rows = connection.execute(f"""select to_jsonb(s) from (
+              select {LOCKED_SALE_SELECT} from public.auction_sales where id=any(%s::uuid[])
+            ) s order by s.id""", (candidate_ids,)).fetchall()
     else:
         rows = []
+    # Chaque ligne lue sous verrou est une lecture en base de ce passage : comparée aux lectures précédentes, elle
+    # dit si la base a bougé depuis, et ses valeurs peuvent rester dans les ventes en mémoire jusqu'à l'écriture finale.
+    for row in rows:
+        base_reads.note(row[0])
     existing_rows = [_from_row(row[0]) for row in rows]
     existing_by_key: dict[str, AuctionSale] = {
         row.id or row.source_url: row for row in existing_rows

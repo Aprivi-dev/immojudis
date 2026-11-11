@@ -1,7 +1,9 @@
 import os
 
 import pytest
+from sale_table_columns import MODEL_COLUMN_TYPES, add_model_columns
 
+from src import base_reads
 from src.normalize import normalize_sale
 from src.publication_identity import (
     ensure_room_bedroom_consistency,
@@ -373,6 +375,7 @@ def test_targeted_alias_publication_reuses_existing_identity_under_lock():
             db.execute("""create table auction_sales(id uuid default gen_random_uuid(),source_url text primary key,
                 source_urls jsonb,source_name text,postal_code text,content_hash text,
                 address text,city text,starting_price_eur numeric,sale_date timestamptz,raw_payload jsonb default '{}')""")
+            add_model_columns(db)
             original_id = db.execute("""insert into auction_sales(source_url,source_urls,source_name,postal_code,address,city,starting_price_eur,sale_date)
                 values ('https://example.test/canonical','["https://example.test/alias"]','avoventes','33000',
                 '12 rue Victor Hugo','Bordeaux',100000,'2026-10-01T10:00:00+00:00') returning id""").fetchone()[0]
@@ -429,6 +432,7 @@ def test_ambiguous_alias_is_held_without_blocking_unrelated_publication():
                 source_urls jsonb,source_name text,postal_code text,content_hash text,
                 address text,city text,starting_price_eur numeric,raw_payload jsonb default '{}',
                 status text default 'active',quality_flags jsonb default '[]',updated_at timestamptz)""")
+            add_model_columns(db)
             db.execute("""insert into auction_sales(source_url,source_urls,source_name,postal_code,address,city)
                 values ('https://example.test/a','["https://example.test/alias"]','licitor','33000',
                         '12 rue Victor Hugo','Bordeaux'),
@@ -536,3 +540,203 @@ def test_verified_closing_clears_only_its_temporary_reservation():
     incoming.raw_payload['source_sale_schedule'] = {'opens_at':'2026-09-14T10:00:00Z','closes_at':'2026-09-15T10:00:00Z'}
     result = merge_revision(before,incoming)
     assert result.raw_payload['source_conflicts'] == [{'field':'carrez_surface_m2','selected_source':before.source_url}]
+
+
+# --- Registre des pièces, étape PA : liste de colonnes explicite et garde d'écho -------------------------------------------
+
+LOCKED_ID = '99900000-1000-4000-8000-000000000001'
+
+
+class _Rows:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
+
+
+class _RecordingConnection:
+    """Base simulée d'une seule ligne : garde les requêtes et rend la ligne telle qu'elle est à chaque lecture."""
+
+    def __init__(self, row):
+        self.row = row
+        self.statements = []
+
+    def execute(self, statement, params=None):
+        self.statements.append(statement)
+        if 'for no key update' in statement:
+            return _Rows([(self.row['id'],)])
+        if 'select to_jsonb(s)' in statement:
+            return _Rows([(dict(self.row),)])
+        return _Rows([])
+
+
+def _stored_row(url, **values):
+    return {'id': LOCKED_ID, 'source_name': 'licitor', 'source_url': url, 'source_urls': [url],
+            'address': '12 rue Victor Hugo', 'postal_code': '33000', 'city': 'Bordeaux',
+            'starting_price_eur': 100000, 'sale_date': '2026-10-01T10:00:00+00:00',
+            'surface_m2': None, 'app_surface_m2': None, 'app_surface_kind': None, 'surface_source': None,
+            'surface_confidence': None, 'land_surface_m2': None, 'rooms_count': None, 'occupancy_status': None,
+            'visit_dates': [], 'raw_payload': {}, **values}
+
+
+def _locked(url, rooms):
+    """La ligne verrouillée, après deux lectures qui montrent que la base a bougé (3 pièces lues, puis ``rooms``)."""
+    base_reads.note(_stored_row(url, rooms_count=3))
+    base_reads.note(_stored_row(url, rooms_count=rooms))
+    existing = sale(url)
+    existing.id = LOCKED_ID
+    existing.rooms_count = rooms
+    return existing
+
+
+def test_locked_rows_are_read_by_a_column_list_that_is_exactly_the_model():
+    from src.models import AuctionSale
+    from src.publication_identity import LOCKED_SALE_SELECT
+
+    columns = LOCKED_SALE_SELECT.split(',')
+    assert len(columns) == len(set(columns))
+    assert set(columns) == {name for name, field in AuctionSale.model_fields.items() if not field.exclude}
+    # Les tables minimales des tests PostgreSQL portent les mêmes colonnes.
+    assert set(MODEL_COLUMN_TYPES) == set(columns)
+
+
+def test_the_locked_read_names_its_columns_and_never_asks_for_the_whole_row():
+    from src.publication_identity import LOCKED_SALE_SELECT
+
+    url = 'https://example.test/explicit-columns'
+    connection = _RecordingConnection(_stored_row(url))
+    resolve_publication_identities(connection, [sale(url)])
+
+    reads = [statement for statement in connection.statements if 'select to_jsonb(s)' in statement]
+    assert len(reads) == 1
+    flattened = ' '.join(reads[0].split())
+    assert f'select {LOCKED_SALE_SELECT} from public.auction_sales where id=any(%s::uuid[])' in flattened
+    assert '*' not in flattened
+    assert 'from public.auction_sales s' not in flattened
+    assert 'held_fields' not in flattened
+
+
+def test_a_column_outside_the_model_never_leaves_the_database():
+    url = os.getenv('PIPELINE_TEST_DB_URL')
+    if not url:
+        pytest.skip('Requires disposable PostgreSQL')
+
+    class Recording:
+        def __init__(self, db):
+            self.db = db
+            self.rows = []
+
+        def execute(self, statement, params=None):
+            result = self.db.execute(statement, params)
+            if isinstance(statement, str) and 'select to_jsonb(s)' in statement:
+                fetched = result.fetchall()
+                self.rows.extend(row[0] for row in fetched)
+                return _Rows(fetched)
+            return result
+
+    with _postgres_connect(url) as db:
+        try:
+            db.execute("""create table auction_sales(id uuid default gen_random_uuid(),source_url text primary key,
+                held_fields jsonb, internal_note text)""")
+            add_model_columns(db)
+            db.execute("""insert into auction_sales(source_url,source_urls,source_name,postal_code,address,city,
+                starting_price_eur,sale_date,held_fields,internal_note)
+                values ('https://example.test/internal','["https://example.test/internal"]','licitor','33000',
+                '12 rue Victor Hugo','Bordeaux',100000,'2026-10-01T10:00:00+00:00',
+                '{"property.rooms_count":{"value":3}}','ne sort pas')""")
+            recording = Recording(db)
+            result = resolve_publication_identities(recording, [sale('https://example.test/internal', 120000)])
+            assert len(result) == 1 and result[0].starting_price_eur == 120000
+            assert len(recording.rows) == 1
+            assert set(recording.rows[0]) == set(MODEL_COLUMN_TYPES)
+            assert 'held_fields' not in recording.rows[0] and 'internal_note' not in recording.rows[0]
+        finally:
+            db.rollback()
+
+
+def test_same_source_revision_does_not_write_back_a_value_read_before_the_base_moved():
+    url = 'https://example.test/echo-same-source'
+    existing = _locked(url, rooms=4)
+    incoming = sale(url, checked='2026-09-12T12:00:00+00:00')
+    incoming.rooms_count = 3  # recopiée de la ligne lue avant le changement
+
+    result = merge_revision(existing, incoming)
+
+    assert result.rooms_count == 4
+    assert incoming.rooms_count == 3  # l'entrant de l'appelant n'est pas modifié
+    assert base_reads.suppressed_count() == 1
+
+
+def test_same_source_revision_still_replaces_when_the_base_did_not_move():
+    """Sans mouvement de la base, un rafraîchissement de la même source remplace comme avant."""
+    url = 'https://example.test/no-move'
+    for _ in range(2):
+        base_reads.note(_stored_row(url, rooms_count=3))
+    existing = sale(url)
+    existing.id = LOCKED_ID
+    existing.rooms_count = 3
+    incoming = sale(url, checked='2026-09-12T12:00:00+00:00')
+    incoming.rooms_count = None  # la source ne donne plus le nombre de pièces
+
+    assert merge_revision(existing, incoming).rooms_count is None
+    incoming.rooms_count = 3
+    assert merge_revision(existing, incoming).rooms_count == 3
+    assert base_reads.suppressed_count() == 0
+
+
+@pytest.mark.parametrize('incoming_url', ['https://example.test/echo-other-url', 'https://example.test/echo-canonical'])
+def test_cross_source_stale_value_neither_refills_a_released_column_nor_records_a_conflict(incoming_url):
+    """Les deux branches entre sources : autre URL, ou même URL lue par un autre collecteur."""
+    existing = _locked('https://example.test/echo-canonical', rooms=None)
+    incoming = sale(incoming_url, checked='2026-09-12T12:00:00+00:00')
+    incoming.source_name = 'avoventes'
+    incoming.rooms_count = 3
+
+    result = merge_revision(existing, incoming)
+
+    assert result.rooms_count is None
+    assert not [c for c in result.raw_payload.get('source_conflicts', []) if c.get('field') == 'rooms_count']
+
+
+@pytest.mark.parametrize('incoming_url', ['https://example.test/echo-other-url', 'https://example.test/echo-canonical'])
+def test_cross_source_stale_value_is_not_opposed_to_the_value_that_replaced_it(incoming_url):
+    existing = _locked('https://example.test/echo-canonical', rooms=4)
+    incoming = sale(incoming_url, checked='2026-09-12T12:00:00+00:00')
+    incoming.source_name = 'avoventes'
+    incoming.rooms_count = 3
+
+    result = merge_revision(existing, incoming)
+
+    assert result.rooms_count == 4
+    assert not [c for c in result.raw_payload.get('source_conflicts', []) if c.get('field') == 'rooms_count']
+
+
+def test_cross_source_merge_is_unchanged_when_nothing_was_read_from_the_base():
+    """Témoin : sans lecture mémorisée, la fusion entre sources remplit la colonne vide et inscrit le désaccord."""
+    existing = sale('https://example.test/witness')
+    existing.id = LOCKED_ID
+    incoming = sale('https://example.test/witness-other', checked='2026-09-12T12:00:00+00:00')
+    incoming.source_name = 'avoventes'
+    incoming.rooms_count = 3
+    assert merge_revision(existing, incoming).rooms_count == 3
+
+    existing.rooms_count = 4
+    result = merge_revision(existing, incoming)
+    assert [c['field'] for c in result.raw_payload['source_conflicts']] == ['rooms_count']
+
+
+def test_rows_read_under_the_lock_are_remembered_for_the_next_write_of_the_run():
+    url = 'https://example.test/locked-rows-noted'
+    connection = _RecordingConnection(_stored_row(url, rooms_count=3))
+    incoming = sale(url, checked='2026-09-12T12:00:00+00:00')
+    incoming.rooms_count = 3
+    assert resolve_publication_identities(connection, [incoming])[0].rooms_count == 3
+
+    connection.row['rooms_count'] = 4  # un autre écrivain change la ligne avant l'écriture suivante du passage
+    again = sale(url, checked='2026-09-12T13:00:00+00:00')
+    again.rooms_count = 3
+
+    assert resolve_publication_identities(connection, [again])[0].rooms_count == 4
+    assert again.rooms_count == 4  # la vente de l'appelant suit la ligne résolue
+    assert base_reads.suppressed_count() == 1
