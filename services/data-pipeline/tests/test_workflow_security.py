@@ -159,6 +159,7 @@ def test_secrets_are_never_in_the_environment_of_pip_and_apt_steps(path: Path) -
         "apply-supabase-migrations.yml",
         "check-pending-supabase-migrations.yml",
         "fact-chunk-trial.yml",
+        "information-agent-evaluation-trial.yml",
     ],
 )
 def test_pipeline_workflows_keep_secrets_out_of_the_job_environment(name: str) -> None:
