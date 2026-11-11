@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from contextvars import ContextVar
 
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
@@ -15,6 +16,7 @@ from src.normalize import clean_text
 from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION, document_url, is_modern_payload, modern_progress_entries
 
 LOGGER = logging.getLogger(__name__)
+_LAST_REFUSAL_REASON: ContextVar[str | None] = ContextVar("pdf_checkpoint_last_refusal_reason", default=None)
 
 
 def _is_sha256(value: object) -> bool:
@@ -255,4 +257,17 @@ def _refused(source_url: str | None, reason: str, document: str | None = None) -
     LOGGER.warning(
         "PDF checkpoint refused for %s: %s%s", source_url, reason, f" ({document})" if document else ""
     )
+    # Le motif seul (un code, jamais l'URL de la pièce) : la file l'écrit dans ``last_error``. Le journal du worker
+    # était le seul endroit où le lire (11/11/2026 : 62 tâches en échec sans motif en base).
+    _LAST_REFUSAL_REASON.set(reason)
     return None
+
+
+def reset_checkpoint_refusal() -> None:
+    """À appeler avant un essai de point d'étape : un motif plus ancien ne doit pas lui être attribué."""
+    _LAST_REFUSAL_REASON.set(None)
+
+
+def last_checkpoint_refusal() -> str | None:
+    """Motif du dernier refus depuis ``reset_checkpoint_refusal``, ou ``None`` si rien n'a été refusé."""
+    return _LAST_REFUSAL_REASON.get()

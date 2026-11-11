@@ -12,6 +12,7 @@ les vérifications avant de livrer du code.
 - [Dictionnaire de données](data-dictionary.md) : tables d'Outcome Graph, puis tables des pépites, de
   l'inondation, des communes, des loyers et du zonage.
 - [Architecture actuelle](architecture/current-state.md) et [cible](architecture/target-state.md).
+- [Rangement du code](architecture/rangement-du-code.md) : le critère permanent pour écrire et relire du code.
 - [README du pipeline de données](../services/data-pipeline/README.md) : collecte, enrichissement, imports de
   référence.
 - [README des migrations Supabase](../supabase/README.md).

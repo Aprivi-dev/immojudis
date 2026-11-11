@@ -2236,12 +2236,16 @@ def test_partial_pdf_checkpoint_failure_consumes_pdf_retry(monkeypatch) -> None:
     assert queued_runner.run_enrichment_queue_batch(
         limit=1, family=queued_runner.ENRICHMENT_FAMILY
     ) == 1
+    # Lot R6 (11/11/2026) : le message porte le motif du refus, que seul le journal du worker donnait. Ici la
+    # vente du test n'a pas de révision (``updated_at``), d'où ``no_analysis_or_revision``.
     assert finished == [
         (
             job["id"],
             {
                 "succeeded": False,
-                "error_message": "PDF document checkpoint was not persisted; retry required",
+                "error_message": (
+                    "PDF document checkpoint was not persisted; retry required: no_analysis_or_revision"
+                ),
                 "attempt_count": job["attempt_count"],
                 "locked_at": job["locked_at"],
             },
@@ -2335,8 +2339,11 @@ def test_shared_pdf_and_fact_claim_defers_fact_attempt_after_pdf_failure(monkeyp
     assert [job["id"] for job in deferred[0][0]] == [jobs[1]["id"]]
     assert [job_id for job_id, _kwargs in finished] == [jobs[0]["id"]]
     assert finished[0][1]["succeeded"] is False
-    assert finished[0][1]["error_message"].startswith(
-        "PDF document checkpoint was not persisted; retry required:"
+    # Lot R6 : le motif du refus s'intercale quand la validation en donne un. Le point d'étape simulé ici n'en
+    # donne pas, et celui de la restauration qui précède la passe (cache local absent) ne lui est pas attribué.
+    assert finished[0][1]["error_message"] == (
+        "PDF document checkpoint was not persisted; retry required: "
+        "Document extraction incomplete; retry required"
     )
     assert checkpoint_calls == [(sale, {"pdf_job": jobs[0]})]
 

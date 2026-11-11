@@ -165,22 +165,12 @@ def test_robots_block_is_rechecked_after_ttl_but_social_candidate_stays_skipped(
     )
     analysis = sale.raw_payload["document_analysis"]
     assert analysis["skipped_document_urls"] == [social_url]
-    assert stale_complete_document_urls(
-        analysis,
-        sale.documents,
-        tmp_path / pdf_enrichment.sale_storage_id(sale),
-        pdf_enrichment._document_filename,
-    ) == set()
+    assert stale_complete_document_urls(analysis, sale.documents) == set()
 
     stale_timestamp = "2020-01-01T00:00:00+00:00"
     analysis["http_checked_at_by_url"][blocked_url] = stale_timestamp
     analysis["cache_proof"]["verified_at"] = stale_timestamp
-    stale = stale_complete_document_urls(
-        analysis,
-        sale.documents,
-        tmp_path / pdf_enrichment.sale_storage_id(sale),
-        pdf_enrichment._document_filename,
-    )
+    stale = stale_complete_document_urls(analysis, sale.documents)
     assert stale == {blocked_url}
     stale_stats = pdf_enrichment.PdfEnrichmentStats()
     assert pdf_enrichment.download_documents(sale, output_root=tmp_path, stats=stale_stats) == []
