@@ -169,7 +169,13 @@ def test_the_cache_table_is_purged_after_30_days_by_the_loader() -> None:
 
 
 # ------------------------------------------------- clés techniques : jamais écrites en base
-TECHNICAL = {"_list_signature": "sig", "_recently_rejected": True, "_known_unchanged": True}
+TECHNICAL = {
+    "_list_signature": "sig",
+    "_recently_rejected": True,
+    "_known_unchanged": True,
+    # Champs qu'un collecteur a repris de la ligne stockée (src.base_reads) : propre au passage, jamais en base.
+    "_base_relayed_fields": ["surface_m2"],
+}
 
 
 def test_the_technical_keys_are_not_in_the_persistable_payload_and_the_original_is_untouched() -> None:

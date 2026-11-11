@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -76,6 +76,24 @@ class _RowReads:
 _LOCK = threading.Lock()
 _ROWS: dict[str, _RowReads] = {}
 _SUPPRESSED: set[tuple[str, str]] = set()
+
+# Clé technique d'une vente brute, jamais écrite en base : les champs qu'un collecteur a repris de la ligne stockée
+# parce que la page de la source ne les donnait pas (Vench, page restreinte ou pauvre). Ces champs ne sont pas ce
+# que la source a publié : ils n'entrent ni dans l'instantané de la fiche, ni dans son empreinte de fraîcheur.
+RELAYED_FIELDS_KEY = "_base_relayed_fields"
+
+
+def mark_relayed(raw_sale: dict[str, Any], fields: Iterable[str]) -> None:
+    """Note dans la vente brute les champs repris de la ligne stockée (cumulé d'un appel à l'autre)."""
+    names = sorted({*relayed_fields(raw_sale), *fields})
+    if names:
+        raw_sale[RELAYED_FIELDS_KEY] = names
+
+
+def relayed_fields(raw_sale: Mapping[str, Any]) -> frozenset[str]:
+    """Champs de la vente brute qui viennent de la ligne stockée, et non de la page de la source."""
+    names = raw_sale.get(RELAYED_FIELDS_KEY)
+    return frozenset(str(name) for name in names) if isinstance(names, (list, tuple, set, frozenset)) else frozenset()
 
 
 def reset() -> None:

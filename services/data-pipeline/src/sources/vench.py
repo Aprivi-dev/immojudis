@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
+from src.base_reads import mark_relayed
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.extraction_profiles import attach_source_property_features as _attach_source_property_features
@@ -163,6 +164,9 @@ def _backfill_from_known_detail(
     known = known_details.get(str(sale.get("source_url") or ""))
     if not known:
         return
+    # Ce que la page ne donnait pas et que la ligne stockée fournit : repris pour ne pas appauvrir la fiche, mais
+    # noté, car ce n'est pas ce que Vench a publié (ni instantané de la fiche, ni empreinte de fraîcheur).
+    relayed: list[str] = []
     for key in (
         "tribunal",
         "department",
@@ -196,12 +200,12 @@ def _backfill_from_known_detail(
     ):
         if sale.get(key) in (None, "", [], {}) and known.get(key) not in (None, "", [], {}):
             sale[key] = known[key]
-    if not sale.get("documents") and known.get("documents"):
-        sale["documents"] = known["documents"]
-    if not sale.get("raw_image_url") and known.get("raw_image_url"):
-        sale["raw_image_url"] = known["raw_image_url"]
-    if not sale.get("source_images") and known.get("source_images"):
-        sale["source_images"] = known["source_images"]
+            relayed.append(key)
+    for key in ("documents", "raw_image_url", "source_images"):
+        if not sale.get(key) and known.get(key):
+            sale[key] = known[key]
+            relayed.append(key)
+    mark_relayed(sale, relayed)
 
 
 def _is_paywalled_or_sparse(sale: dict[str, Any]) -> bool:
