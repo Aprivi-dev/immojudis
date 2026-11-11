@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import {
+  DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+  renderInformationAgentEmailContent,
+} from "@/lib/information-agent-email-template";
+import {
   AUTO_PUBLICATION_ELIGIBLE_FIELDS,
   type AutoPublicationEligibleField,
 } from "@/lib/information-agent/auto-publication-policy";
@@ -35,8 +39,24 @@ export const EVALUATION_FAMILIES = [
     label: "manipulation du modèle, contenu trompeur",
   },
   { number: 8, file: "famille_8_tiers.json", label: "particuliers, tiers, pièce jointe" },
+  { number: 9, file: "famille_9_complements.json", label: "compléments de la relecture" },
 ] as const;
-export const CASES_PER_FAMILY = 25;
+/** Cas par famille : 25 pour les 8 familles de pièges, 15 pour la série de compléments. */
+export const CASES_PER_FAMILY: Record<number, number> = {
+  1: 25,
+  2: 25,
+  3: 25,
+  4: 25,
+  5: 25,
+  6: 25,
+  7: 25,
+  8: 25,
+  9: 15,
+};
+export const EVALUATION_CASE_COUNT = 215;
+
+/** Source d'une valeur : le corps du message évalué ou un message voisin du dossier. */
+const messageSource = z.string().regex(/^(?:corps|anterieur-\d|posterieur-\d)$/u);
 
 const numberOrNull = z.number().finite().nullable();
 
@@ -56,6 +76,8 @@ const fieldTruth = z.discriminatedUnion("publiable", [
       publiable: z.literal(true),
       valeur: z.number().finite().positive(),
       citation: z.string().min(1),
+      /** Message qui porte la valeur (corps du message évalué par défaut). */
+      source: messageSource.optional(),
     })
     .strict(),
   z
@@ -74,8 +96,8 @@ const fieldTruth = z.discriminatedUnion("publiable", [
 
 const caseSchema = z
   .object({
-    id: z.string().regex(/^F[1-8]-\d{2}$/u),
-    famille: z.number().int().min(1).max(8),
+    id: z.string().regex(/^F[1-9]-\d{2}$/u),
+    famille: z.number().int().min(1).max(9),
     titre: z.string().min(5),
     message: z
       .object({
@@ -135,10 +157,22 @@ const caseSchema = z
           .strict(),
         /** Jours entre l'envoi de notre demande et la réception de la réponse. */
         delai_jours: z.number().min(0).max(120),
-        /** Messages entrants du même dossier reçus après celui-ci (en relecture, comme dans la vraie chaîne). */
-        messages_posterieurs: z.array(z.object({ objet: z.string(), corps: z.string() }).strict()),
+        /** Messages entrants du même dossier reçus avant et après celui-ci : ils passent par la même chaîne. */
+        messages_anterieurs: z
+          .array(z.object({ objet: z.string(), corps: z.string() }).strict())
+          .max(3),
+        messages_posterieurs: z
+          .array(z.object({ objet: z.string(), corps: z.string() }).strict())
+          .max(3),
       })
       .strict(),
+    /**
+     * Cas dont la vérité dépend d'un choix prudent que le propriétaire peut assouplir (compté à part) :
+     * collaborateur du cabinet nommé en signature, données de tiers sans nom.
+     */
+    decision_proprietaire: z
+      .enum(["collaborateur_en_signature", "donnees_de_tiers_sans_nom"])
+      .optional(),
     verite: z
       .object({
         surface_m2: fieldTruth,
@@ -152,7 +186,7 @@ const caseSchema = z
 const familyFileSchema = z
   .object({
     _comment: z.string(),
-    famille: z.number().int().min(1).max(8),
+    famille: z.number().int().min(1).max(9),
     libelle: z.string(),
     cas: z.array(caseSchema),
   })
@@ -163,7 +197,39 @@ export type FieldTruth = z.infer<typeof fieldTruth>;
 export type EvaluationField = AutoPublicationEligibleField;
 export const EVALUATION_FIELDS: readonly EvaluationField[] = AUTO_PUBLICATION_ELIGIBLE_FIELDS;
 
-/** Lit et valide les 8 fichiers de familles (erreur détaillée au premier écart). */
+/** Texte de notre demande actuelle, cité sous les réponses du jeu (`demande_actuelle.txt`). */
+export const CURRENT_REQUEST_FILE = "demande_actuelle.txt";
+
+/**
+ * Notre demande telle que le gabarit du code la rend aujourd'hui, avec des valeurs fictives fixes. Le jeu la
+ * cite mot pour mot ; un changement du gabarit change ce texte et fait échouer le test qui le fige.
+ */
+export function renderCurrentRequest(): string {
+  return renderInformationAgentEmailContent({
+    template: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+    values: {
+      recipient_name: "Maître Aurore Fictel",
+      salutation: "Bonjour Maître Fictel,",
+      sale_title: "Appartement T3",
+      sale_subject_title: "Appartement T3 à Valmont-sur-Exemple",
+      sale_reference:
+        "Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)",
+      location: "Valmont-sur-Exemple",
+      tribunal: "tribunal judiciaire de Valmont-sur-Exemple",
+      hearing_date: "14/01/2027",
+      hearing_line: "Audience annoncée : 14/01/2027",
+      subject_date: "audience du 14/01/2027",
+      starting_price: "60 000 €",
+      price_line: "Mise à prix annoncée : 60 000 €",
+      questions: [
+        "- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?",
+        "- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?",
+      ].join("\n"),
+    },
+  }).bodyText;
+}
+
+/** Lit et valide les fichiers de familles (erreur détaillée au premier écart). */
 export function loadEvaluationCases(root = process.cwd()): EvaluationCase[] {
   return EVALUATION_FAMILIES.flatMap(({ number, file }) => {
     const raw: unknown = JSON.parse(

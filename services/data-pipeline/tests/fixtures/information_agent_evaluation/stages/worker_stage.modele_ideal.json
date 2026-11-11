@@ -7,6 +7,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-01-fact-001",
+     "message_id": "F1-01-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -23,6 +24,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-01-fact-002",
+     "message_id": "F1-01-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -49,6 +51,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-02-fact-001",
+     "message_id": "F1-02-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -65,6 +68,7 @@
      "evidence_asset_id": "F1-02-asset-body",
      "fact_key": "property_type",
      "id": "F1-02-py-001",
+     "message_id": "F1-02-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -94,6 +98,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-03-fact-001",
+     "message_id": "F1-03-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -110,6 +115,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F1-03-fact-002",
+     "message_id": "F1-03-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -137,6 +143,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-04-fact-001",
+     "message_id": "F1-04-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -152,6 +159,7 @@
      "evidence_asset_id": "F1-04-asset-body",
      "fact_key": "property_type",
      "id": "F1-04-py-001",
+     "message_id": "F1-04-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -181,6 +189,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F1-05-fact-001",
+     "message_id": "F1-05-message",
      "metadata": {},
      "proposed_value": {
       "unit": "m2",
@@ -205,6 +214,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-06-fact-001",
+     "message_id": "F1-06-message",
      "metadata": {},
      "proposed_value": {
       "unit": "m2",
@@ -218,6 +228,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-06-fact-002",
+     "message_id": "F1-06-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -244,6 +255,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-07-fact-001",
+     "message_id": "F1-07-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -267,52 +279,36 @@
   "F1-08": {
    "candidates": [
     {
-     "display_value": "surface habitable : 66 m²",
+     "display_value": "Terrain : 712 m²",
      "evidence_asset_id": null,
-     "fact_key": "surface_m2",
+     "fact_key": "land_surface_m2",
      "id": "F1-08-fact-001",
+     "message_id": "F1-08-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 66
+      "value": 712
      },
      "source_page": null,
      "status": "pending"
     },
     {
-     "display_value": "3 pièces",
+     "display_value": "5 pièces",
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-08-fact-002",
+     "message_id": "F1-08-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
-      "value": 3
+      "value": 5
      },
      "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "apartment",
-     "evidence_asset_id": "F1-08-asset-body",
-     "fact_key": "property_type",
-     "id": "F1-08-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "apartment"
-     },
-     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -325,49 +321,8 @@
    ]
   },
   "F1-09": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 87 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F1-09-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 87
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "house",
-     "evidence_asset_id": "F1-09-asset-body",
-     "fact_key": "property_type",
-     "id": "F1-09-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "house"
-     },
-     "source_page": 1,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F1-10": {
    "candidates": [
@@ -376,6 +331,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-10-fact-001",
+     "message_id": "F1-10-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -392,6 +348,7 @@
      "evidence_asset_id": "F1-10-asset-body",
      "fact_key": "property_type",
      "id": "F1-10-py-001",
+     "message_id": "F1-10-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -421,6 +378,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-11-fact-001",
+     "message_id": "F1-11-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -437,6 +395,7 @@
      "evidence_asset_id": null,
      "fact_key": "property_type",
      "id": "F1-11-fact-002",
+     "message_id": "F1-11-message",
      "metadata": {},
      "proposed_value": {
       "value": "apartment"
@@ -456,36 +415,37 @@
   "F1-12": {
    "candidates": [
     {
-     "display_value": "2 pièces",
+     "display_value": "surface utile : 136 m²",
      "evidence_asset_id": null,
-     "fact_key": "rooms_count",
+     "fact_key": "surface_m2",
      "id": "F1-12-fact-001",
+     "message_id": "F1-12-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
-      "value": 2
+      "unit": "m2",
+      "value": 136
      },
      "source_page": null,
      "status": "pending"
     },
     {
-     "display_value": "apartment",
-     "evidence_asset_id": "F1-12-asset-body",
-     "fact_key": "property_type",
-     "id": "F1-12-py-001",
+     "display_value": "Terrain : 950 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F1-12-fact-002",
+     "message_id": "F1-12-message",
      "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
-      "value": "apartment"
+      "unit": "m2",
+      "value": 950
      },
-     "source_page": 1,
+     "source_page": null,
      "status": "pending"
     }
    ],
@@ -504,11 +464,9 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F1-13-fact-001",
+     "message_id": "F1-13-message",
      "metadata": {
-      "review_reasons": [
-       "short_citation"
-      ],
-      "semantic_agreement": false,
+      "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
@@ -523,6 +481,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-13-fact-002",
+     "message_id": "F1-13-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -549,6 +508,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-14-fact-001",
+     "message_id": "F1-14-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -565,6 +525,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F1-14-fact-002",
+     "message_id": "F1-14-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -581,6 +542,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-14-fact-003",
+     "message_id": "F1-14-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -596,6 +558,7 @@
      "evidence_asset_id": null,
      "fact_key": "property_type",
      "id": "F1-14-fact-004",
+     "message_id": "F1-14-message",
      "metadata": {},
      "proposed_value": {
       "value": "house"
@@ -615,10 +578,28 @@
   "F1-15": {
    "candidates": [
     {
-     "display_value": "apartment",
+     "display_value": "Terrain : 1 830 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F1-15-fact-001",
+     "message_id": "F1-15-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 1830
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "land",
      "evidence_asset_id": "F1-15-asset-body",
      "fact_key": "property_type",
      "id": "F1-15-py-001",
+     "message_id": "F1-15-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -627,22 +608,7 @@
       ]
      },
      "proposed_value": {
-      "value": "apartment"
-     },
-     "source_page": 1,
-     "status": "pending"
-    },
-    {
-     "display_value": "66 m²",
-     "evidence_asset_id": "F1-15-asset-body",
-     "fact_key": "surface_m2",
-     "id": "F1-15-py-002",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1"
-     },
-     "proposed_value": {
-      "value": 66.0
+      "value": "land"
      },
      "source_page": 1,
      "status": "pending"
@@ -663,6 +629,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-16-fact-001",
+     "message_id": "F1-16-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -679,6 +646,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-16-fact-002",
+     "message_id": "F1-16-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -694,6 +662,7 @@
      "evidence_asset_id": "F1-16-asset-body",
      "fact_key": "property_type",
      "id": "F1-16-py-001",
+     "message_id": "F1-16-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -717,124 +686,28 @@
    ]
   },
   "F1-17": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 55 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F1-17-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 55
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "3 pièces",
-     "evidence_asset_id": null,
-     "fact_key": "rooms_count",
-     "id": "F1-17-fact-002",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "value": 3
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "apartment",
-     "evidence_asset_id": "F1-17-asset-body",
-     "fact_key": "property_type",
-     "id": "F1-17-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "apartment"
-     },
-     "source_page": 1,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F1-18": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 55 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F1-18-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 55
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "apartment",
-     "evidence_asset_id": "F1-18-asset-body",
-     "fact_key": "property_type",
-     "id": "F1-18-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "apartment"
-     },
-     "source_page": 1,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F1-19": {
    "candidates": [
     {
-     "display_value": "surface habitable : 55 m²",
+     "display_value": "surface habitable : 66 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-19-fact-001",
+     "message_id": "F1-19-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 55
+      "value": 66
      },
      "source_page": null,
      "status": "pending"
@@ -844,6 +717,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-19-fact-002",
+     "message_id": "F1-19-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -859,6 +733,7 @@
      "evidence_asset_id": "F1-19-asset-body",
      "fact_key": "property_type",
      "id": "F1-19-py-001",
+     "message_id": "F1-19-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -884,17 +759,18 @@
   "F1-20": {
    "candidates": [
     {
-     "display_value": "surface habitable : 55 m²",
+     "display_value": "surface habitable : 71 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-20-fact-001",
+     "message_id": "F1-20-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 55
+      "value": 71
      },
      "source_page": null,
      "status": "pending"
@@ -904,6 +780,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-20-fact-002",
+     "message_id": "F1-20-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -919,6 +796,7 @@
      "evidence_asset_id": "F1-20-asset-body",
      "fact_key": "property_type",
      "id": "F1-20-py-001",
+     "message_id": "F1-20-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -948,6 +826,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-21-fact-001",
+     "message_id": "F1-21-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -964,6 +843,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-21-fact-002",
+     "message_id": "F1-21-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -979,6 +859,7 @@
      "evidence_asset_id": "F1-21-asset-body",
      "fact_key": "property_type",
      "id": "F1-21-py-001",
+     "message_id": "F1-21-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1004,17 +885,18 @@
   "F1-22": {
    "candidates": [
     {
-     "display_value": "surface habitable : 55 m²",
+     "display_value": "surface habitable : 58 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-22-fact-001",
+     "message_id": "F1-22-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 55
+      "value": 58
      },
      "source_page": null,
      "status": "pending"
@@ -1024,6 +906,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-22-fact-002",
+     "message_id": "F1-22-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1039,6 +922,7 @@
      "evidence_asset_id": "F1-22-asset-body",
      "fact_key": "property_type",
      "id": "F1-22-py-001",
+     "message_id": "F1-22-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1068,6 +952,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F1-23-fact-001",
+     "message_id": "F1-23-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1088,64 +973,8 @@
    ]
   },
   "F1-24": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 55 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F1-24-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 55
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "3 pièces",
-     "evidence_asset_id": null,
-     "fact_key": "rooms_count",
-     "id": "F1-24-fact-002",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "value": 3
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "apartment",
-     "evidence_asset_id": "F1-24-asset-body",
-     "fact_key": "property_type",
-     "id": "F1-24-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "apartment"
-     },
-     "source_page": 1,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F1-25": {
    "candidates": [
@@ -1154,6 +983,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F1-25-fact-001",
+     "message_id": "F1-25-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1170,6 +1000,7 @@
      "evidence_asset_id": "F1-25-asset-body",
      "fact_key": "property_type",
      "id": "F1-25-py-001",
+     "message_id": "F1-25-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1195,10 +1026,11 @@
   "F2-01": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 67 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-01-fact-001",
+     "message_id": "F2-01-message",
      "metadata": {
       "review_reasons": [
        "hedged_statement",
@@ -1209,7 +1041,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 67
      },
      "source_page": null,
      "status": "pending"
@@ -1226,10 +1058,11 @@
   "F2-02": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 92 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-02-fact-001",
+     "message_id": "F2-02-message",
      "metadata": {
       "review_reasons": [
        "hedged_statement"
@@ -1239,10 +1072,29 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 92
      },
      "source_page": null,
      "status": "pending"
+    },
+    {
+     "display_value": "parking",
+     "evidence_asset_id": "F2-02-asset-body",
+     "fact_key": "property_type",
+     "id": "F2-02-py-001",
+     "message_id": "F2-02-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "parking"
+     },
+     "source_page": 1,
+     "status": "conflict"
     }
    ],
    "semantic": [
@@ -1260,6 +1112,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F2-03-fact-001",
+     "message_id": "F2-03-message",
      "metadata": {
       "review_reasons": [
        "hedged_statement",
@@ -1294,21 +1147,33 @@
    ]
   },
   "F2-05": {
+   "candidates": [],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F2-06": {
    "candidates": [
     {
-     "display_value": "61 m²",
-     "evidence_asset_id": "F2-05-asset-body",
+     "display_value": "55 m²",
+     "evidence_asset_id": "F2-06-asset-body",
      "fact_key": "surface_m2",
-     "id": "F2-05-py-001",
+     "id": "F2-06-py-001",
+     "message_id": "F2-06-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
       "review_reasons": [
-       "pending_verification"
+       "reported_or_comparison",
+       "value_range"
       ]
      },
      "proposed_value": {
-      "value": 61.0
+      "value": 55.0
      },
      "source_page": 1,
      "status": "pending"
@@ -1322,23 +1187,14 @@
     }
    ]
   },
-  "F2-06": {
-   "candidates": [],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
   "F2-07": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 74 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-07-fact-001",
+     "message_id": "F2-07-message",
      "metadata": {
       "review_reasons": [
        "reported_or_comparison",
@@ -1349,7 +1205,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 74
      },
      "source_page": null,
      "status": "pending"
@@ -1370,6 +1226,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-08-fact-001",
+     "message_id": "F2-08-message",
      "metadata": {
       "review_reasons": [
        "reported_or_comparison"
@@ -1389,6 +1246,7 @@
      "evidence_asset_id": "F2-08-asset-body",
      "fact_key": "property_type",
      "id": "F2-08-py-001",
+     "message_id": "F2-08-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1418,6 +1276,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F2-09-fact-001",
+     "message_id": "F2-09-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1433,6 +1292,7 @@
      "evidence_asset_id": "F2-09-asset-body",
      "fact_key": "property_type",
      "id": "F2-09-py-001",
+     "message_id": "F2-09-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1462,6 +1322,7 @@
      "evidence_asset_id": "F2-10-asset-body",
      "fact_key": "surface_m2",
      "id": "F2-10-py-001",
+     "message_id": "F2-10-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1487,10 +1348,11 @@
   "F2-11": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "118 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-11-fact-001",
+     "message_id": "F2-11-message",
      "metadata": {
       "review_reasons": [
        "pending_verification"
@@ -1500,9 +1362,28 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 118
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F2-11-asset-body",
+     "fact_key": "property_type",
+     "id": "F2-11-py-001",
+     "message_id": "F2-11-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -1517,10 +1398,11 @@
   "F2-12": {
    "candidates": [
     {
-     "display_value": "54 m²",
+     "display_value": "83 m²",
      "evidence_asset_id": "F2-12-asset-body",
      "fact_key": "surface_m2",
      "id": "F2-12-py-001",
+     "message_id": "F2-12-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1529,7 +1411,7 @@
       ]
      },
      "proposed_value": {
-      "value": 54.0
+      "value": 83.0
      },
      "source_page": 1,
      "status": "pending"
@@ -1550,6 +1432,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-13-fact-001",
+     "message_id": "F2-13-message",
      "metadata": {
       "review_reasons": [
        "pending_verification"
@@ -1576,10 +1459,11 @@
   "F2-14": {
    "candidates": [
     {
-     "display_value": "54 m²",
+     "display_value": "36 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-14-fact-001",
+     "message_id": "F2-14-message",
      "metadata": {
       "review_reasons": [
        "hedged_statement"
@@ -1589,7 +1473,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 36
      },
      "source_page": null,
      "status": "pending"
@@ -1599,6 +1483,7 @@
      "evidence_asset_id": "F2-14-asset-body",
      "fact_key": "property_type",
      "id": "F2-14-py-001",
+     "message_id": "F2-14-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1628,6 +1513,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F2-15-fact-001",
+     "message_id": "F2-15-message",
      "metadata": {
       "review_reasons": [
        "hedged_statement"
@@ -1646,6 +1532,7 @@
      "evidence_asset_id": "F2-15-asset-body",
      "fact_key": "property_type",
      "id": "F2-15-py-001",
+     "message_id": "F2-15-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1681,17 +1568,18 @@
   "F2-17": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 59 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-17-fact-001",
+     "message_id": "F2-17-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 59
      },
      "source_page": null,
      "status": "pending"
@@ -1712,6 +1600,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-18-fact-001",
+     "message_id": "F2-18-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1728,6 +1617,7 @@
      "evidence_asset_id": "F2-18-asset-body",
      "fact_key": "property_type",
      "id": "F2-18-py-001",
+     "message_id": "F2-18-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1757,6 +1647,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F2-19-fact-001",
+     "message_id": "F2-19-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1772,6 +1663,7 @@
      "evidence_asset_id": "F2-19-asset-body",
      "fact_key": "property_type",
      "id": "F2-19-py-001",
+     "message_id": "F2-19-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1801,6 +1693,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-20-fact-001",
+     "message_id": "F2-20-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1817,6 +1710,7 @@
      "evidence_asset_id": "F2-20-asset-body",
      "fact_key": "property_type",
      "id": "F2-20-py-001",
+     "message_id": "F2-20-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -1846,6 +1740,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-21-fact-001",
+     "message_id": "F2-21-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1869,17 +1764,18 @@
   "F2-22": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 43 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-22-fact-001",
+     "message_id": "F2-22-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 43
      },
      "source_page": null,
      "status": "pending"
@@ -1900,6 +1796,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-23-fact-001",
+     "message_id": "F2-23-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1927,6 +1824,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-24-fact-001",
+     "message_id": "F2-24-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -1950,12 +1848,31 @@
   "F2-25": {
    "candidates": [
     {
-     "display_value": "surface habitable : 76 m²",
+     "display_value": "surface habitable : 126 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F2-25-fact-001",
+     "message_id": "F2-25-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 126
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "Terrain : 1 040 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F2-25-fact-002",
+     "message_id": "F2-25-message",
      "metadata": {
       "review_reasons": [
+       "short_citation",
        "pending_verification"
       ],
       "semantic_agreement": false,
@@ -1963,7 +1880,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 76
+      "value": 1040
      },
      "source_page": null,
      "status": "pending"
@@ -1984,6 +1901,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-01-fact-001",
+     "message_id": "F3-01-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2000,6 +1918,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F3-01-fact-002",
+     "message_id": "F3-01-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2015,6 +1934,7 @@
      "evidence_asset_id": "F3-01-asset-body",
      "fact_key": "property_type",
      "id": "F3-01-py-001",
+     "message_id": "F3-01-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2044,6 +1964,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-02-fact-001",
+     "message_id": "F3-02-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2060,6 +1981,7 @@
      "evidence_asset_id": "F3-02-asset-body",
      "fact_key": "property_type",
      "id": "F3-02-py-001",
+     "message_id": "F3-02-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2085,10 +2007,11 @@
   "F3-03": {
    "candidates": [
     {
-     "display_value": "54 m²",
+     "display_value": "57 m²",
      "evidence_asset_id": "F3-03-asset-body",
      "fact_key": "surface_m2",
      "id": "F3-03-py-001",
+     "message_id": "F3-03-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2098,7 +2021,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54.0
+      "value": 57.0
      },
      "source_page": 1,
      "status": "pending"
@@ -2119,6 +2042,7 @@
      "evidence_asset_id": "F3-04-asset-body",
      "fact_key": "surface_m2",
      "id": "F3-04-py-001",
+     "message_id": "F3-04-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -2141,10 +2065,11 @@
   "F3-05": {
    "candidates": [
     {
-     "display_value": "54 m²",
+     "display_value": "63 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-05-fact-001",
+     "message_id": "F3-05-message",
      "metadata": {
       "review_reasons": [
        "lot_unverified"
@@ -2154,7 +2079,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 63
      },
      "source_page": null,
      "status": "pending"
@@ -2171,10 +2096,11 @@
   "F3-06": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 46 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-06-fact-001",
+     "message_id": "F3-06-message",
      "metadata": {
       "lot_unidentified": true,
       "review_reasons": [
@@ -2185,7 +2111,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 46
      },
      "source_page": null,
      "status": "pending"
@@ -2202,10 +2128,11 @@
   "F3-07": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 52 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-07-fact-001",
+     "message_id": "F3-07-message",
      "metadata": {
       "lot_unidentified": true,
       "review_reasons": [
@@ -2216,7 +2143,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 52
      },
      "source_page": null,
      "status": "pending"
@@ -2237,6 +2164,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-08-fact-001",
+     "message_id": "F3-08-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2249,21 +2177,20 @@
      "status": "pending"
     },
     {
-     "display_value": "house",
-     "evidence_asset_id": "F3-08-asset-body",
-     "fact_key": "property_type",
-     "id": "F3-08-py-001",
+     "display_value": "Terrain : 430 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F3-08-fact-002",
+     "message_id": "F3-08-message",
      "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
-      "value": "house"
+      "unit": "m2",
+      "value": 430
      },
-     "source_page": 1,
+     "source_page": null,
      "status": "pending"
     }
    ],
@@ -2282,6 +2209,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-09-fact-001",
+     "message_id": "F3-09-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2298,6 +2226,7 @@
      "evidence_asset_id": "F3-09-asset-body",
      "fact_key": "property_type",
      "id": "F3-09-py-001",
+     "message_id": "F3-09-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2323,17 +2252,18 @@
   "F3-10": {
    "candidates": [
     {
-     "display_value": "52 m²",
+     "display_value": "37 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-10-fact-001",
+     "message_id": "F3-10-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 52
+      "value": 37
      },
      "source_page": null,
      "status": "pending"
@@ -2343,6 +2273,7 @@
      "evidence_asset_id": "F3-10-asset-body",
      "fact_key": "property_type",
      "id": "F3-10-py-001",
+     "message_id": "F3-10-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2372,6 +2303,7 @@
      "evidence_asset_id": "F3-11-asset-body",
      "fact_key": "surface_m2",
      "id": "F3-11-py-001",
+     "message_id": "F3-11-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -2392,7 +2324,24 @@
    ]
   },
   "F3-12": {
-   "candidates": [],
+   "candidates": [
+    {
+     "display_value": "154 m²",
+     "evidence_asset_id": "F3-12-asset-body",
+     "fact_key": "surface_m2",
+     "id": "F3-12-py-001",
+     "message_id": "F3-12-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1"
+     },
+     "proposed_value": {
+      "value": 154.0
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
    "semantic": [
     {
      "asset": "corps",
@@ -2404,17 +2353,18 @@
   "F3-13": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 44 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-13-fact-001",
+     "message_id": "F3-13-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 44
      },
      "source_page": null,
      "status": "pending"
@@ -2435,6 +2385,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F3-14-fact-001",
+     "message_id": "F3-14-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2461,6 +2412,7 @@
      "evidence_asset_id": "F3-15-asset-body",
      "fact_key": "rooms_count",
      "id": "F3-15-py-001",
+     "message_id": "F3-15-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2486,10 +2438,11 @@
   "F3-16": {
    "candidates": [
     {
-     "display_value": "54 m²",
+     "display_value": "58 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-16-fact-001",
+     "message_id": "F3-16-message",
      "metadata": {
       "review_reasons": [
        "lot_unidentified"
@@ -2499,7 +2452,7 @@
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 58
      },
      "source_page": null,
      "status": "pending"
@@ -2509,6 +2462,7 @@
      "evidence_asset_id": "F3-16-asset-body",
      "fact_key": "property_type",
      "id": "F3-16-py-001",
+     "message_id": "F3-16-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2538,6 +2492,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-17-fact-001",
+     "message_id": "F3-17-message",
      "metadata": {
       "review_reasons": [
        "lot_unidentified"
@@ -2557,6 +2512,7 @@
      "evidence_asset_id": "F3-17-asset-body",
      "fact_key": "property_type",
      "id": "F3-17-py-001",
+     "message_id": "F3-17-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2596,7 +2552,11 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-19-fact-001",
-     "metadata": {},
+     "message_id": "F3-19-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
      "proposed_value": {
       "unit": "m2",
       "value": 54
@@ -2616,10 +2576,11 @@
   "F3-20": {
    "candidates": [
     {
-     "display_value": "54 m²",
+     "display_value": "66 m²",
      "evidence_asset_id": "F3-20-asset-body",
      "fact_key": "surface_m2",
      "id": "F3-20-py-001",
+     "message_id": "F3-20-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2628,7 +2589,7 @@
       ]
      },
      "proposed_value": {
-      "value": 54.0
+      "value": 66.0
      },
      "source_page": 1,
      "status": "pending"
@@ -2649,6 +2610,7 @@
      "evidence_asset_id": "F3-21-asset-body",
      "fact_key": "property_type",
      "id": "F3-21-py-001",
+     "message_id": "F3-21-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2678,6 +2640,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F3-22-fact-001",
+     "message_id": "F3-22-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2693,6 +2656,7 @@
      "evidence_asset_id": "F3-22-asset-body",
      "fact_key": "property_type",
      "id": "F3-22-py-001",
+     "message_id": "F3-22-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2722,6 +2686,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-23-fact-001",
+     "message_id": "F3-23-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2738,6 +2703,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F3-23-fact-002",
+     "message_id": "F3-23-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2764,6 +2730,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F3-24-fact-001",
+     "message_id": "F3-24-message",
      "metadata": {
       "review_reasons": [
        "lot_unidentified"
@@ -2794,6 +2761,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F3-25-fact-001",
+     "message_id": "F3-25-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2810,6 +2778,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F3-25-fact-002",
+     "message_id": "F3-25-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2836,6 +2805,7 @@
      "evidence_asset_id": "F4-01-asset-body",
      "fact_key": "surface_m2",
      "id": "F4-01-py-001",
+     "message_id": "F4-01-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -2862,6 +2832,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-02-fact-001",
+     "message_id": "F4-02-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -2878,6 +2849,79 @@
      "evidence_asset_id": "F4-02-asset-body",
      "fact_key": "property_type",
      "id": "F4-02-py-001",
+     "message_id": "F4-02-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
+     "display_value": "45 m²",
+     "evidence_asset_id": "F4-02-asset-posterieur-1",
+     "fact_key": "surface_m2",
+     "id": "F4-02-py-002",
+     "message_id": "F4-02-message-posterieur-1",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 45.0
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    },
+    {
+     "asset": "posterieur-1",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F4-03": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 39 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F4-03-fact-001",
+     "message_id": "F4-03-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 39
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F4-03-asset-body",
+     "fact_key": "property_type",
+     "id": "F4-03-py-001",
+     "message_id": "F4-03-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -2897,49 +2941,9 @@
      "asset": "corps",
      "error_code": null,
      "status": "completed"
-    }
-   ]
-  },
-  "F4-03": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F4-03-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
     },
     {
-     "display_value": "apartment",
-     "evidence_asset_id": "F4-03-asset-body",
-     "fact_key": "property_type",
-     "id": "F4-03-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "apartment"
-     },
-     "source_page": 1,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
+     "asset": "posterieur-1",
      "error_code": null,
      "status": "completed"
     }
@@ -2982,15 +2986,12 @@
      "evidence_asset_id": "F4-07-asset-body",
      "fact_key": "surface_m2",
      "id": "F4-07-py-001",
+     "message_id": "F4-07-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
+      "processor_version": "evidence_v1"
      },
      "proposed_value": {
-      "unit": "m2",
       "value": 54.0
      },
      "source_page": 1,
@@ -3012,6 +3013,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-08-fact-001",
+     "message_id": "F4-08-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3028,6 +3030,7 @@
      "evidence_asset_id": "F4-08-asset-body",
      "fact_key": "property_type",
      "id": "F4-08-py-001",
+     "message_id": "F4-08-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3053,17 +3056,18 @@
   "F4-09": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 71 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-09-fact-001",
+     "message_id": "F4-09-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 71
      },
      "source_page": null,
      "status": "pending"
@@ -3073,6 +3077,7 @@
      "evidence_asset_id": "F4-09-asset-body",
      "fact_key": "property_type",
      "id": "F4-09-py-001",
+     "message_id": "F4-09-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3102,6 +3107,7 @@
      "evidence_asset_id": "F4-10-asset-body",
      "fact_key": "surface_m2",
      "id": "F4-10-py-001",
+     "message_id": "F4-10-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -3124,26 +3130,81 @@
   "F4-11": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 52 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-11-fact-001",
+     "message_id": "F4-11-message-anterieur-1",
+     "metadata": {},
+     "proposed_value": {
+      "unit": "m2",
+      "value": 52
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "surface habitable : 48 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F4-11-fact-002",
+     "message_id": "F4-11-message",
      "metadata": {
-      "review_reasons": [
-       "corrected_or_stale_value"
-      ],
-      "semantic_agreement": false,
+      "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 48
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F4-11-asset-anterieur-1",
+     "fact_key": "property_type",
+     "id": "F4-11-py-001",
+     "message_id": "F4-11-message-anterieur-1",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F4-11-asset-body",
+     "fact_key": "property_type",
+     "id": "F4-11-py-002",
+     "message_id": "F4-11-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
    "semantic": [
+    {
+     "asset": "anterieur-1",
+     "error_code": null,
+     "status": "completed"
+    },
     {
      "asset": "corps",
      "error_code": null,
@@ -3158,6 +3219,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-12-fact-001",
+     "message_id": "F4-12-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3174,6 +3236,7 @@
      "evidence_asset_id": "F4-12-asset-body",
      "fact_key": "property_type",
      "id": "F4-12-py-001",
+     "message_id": "F4-12-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3203,6 +3266,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-13-fact-001",
+     "message_id": "F4-13-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3219,6 +3283,7 @@
      "evidence_asset_id": "F4-13-asset-body",
      "fact_key": "property_type",
      "id": "F4-13-py-001",
+     "message_id": "F4-13-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3248,6 +3313,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F4-14-fact-001",
+     "message_id": "F4-14-message",
      "metadata": {},
      "proposed_value": {
       "value": 3
@@ -3271,6 +3337,7 @@
      "evidence_asset_id": "F4-15-asset-body",
      "fact_key": "surface_m2",
      "id": "F4-15-py-001",
+     "message_id": "F4-15-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3301,6 +3368,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-16-fact-001",
+     "message_id": "F4-16-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3324,43 +3392,67 @@
   "F4-17": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 64 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-17-fact-001",
+     "message_id": "F4-17-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 64
      },
      "source_page": null,
      "status": "pending"
     },
     {
-     "display_value": "apartment",
-     "evidence_asset_id": "F4-17-asset-body",
-     "fact_key": "property_type",
-     "id": "F4-17-py-001",
+     "display_value": "Terrain : 310 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F4-17-fact-002",
+     "message_id": "F4-17-message",
      "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
-      "value": "apartment"
+      "unit": "m2",
+      "value": 310
      },
-     "source_page": 1,
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "3 pièces",
+     "evidence_asset_id": null,
+     "fact_key": "rooms_count",
+     "id": "F4-17-fact-003",
+     "message_id": "F4-17-message-posterieur-1",
+     "metadata": {
+      "review_reasons": [
+       "corrected_or_stale_value"
+      ],
+      "semantic_agreement": false,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "value": 3
+     },
+     "source_page": null,
      "status": "pending"
     }
    ],
    "semantic": [
     {
      "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    },
+    {
+     "asset": "posterieur-1",
      "error_code": null,
      "status": "completed"
     }
@@ -3373,6 +3465,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-18-fact-001",
+     "message_id": "F4-18-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3385,21 +3478,20 @@
      "status": "pending"
     },
     {
-     "display_value": "apartment",
-     "evidence_asset_id": "F4-18-asset-body",
-     "fact_key": "property_type",
-     "id": "F4-18-py-001",
+     "display_value": "Terrain : 520 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F4-18-fact-002",
+     "message_id": "F4-18-message",
      "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
-      "value": "apartment"
+      "unit": "m2",
+      "value": 520
      },
-     "source_page": 1,
+     "source_page": null,
      "status": "pending"
     }
    ],
@@ -3428,10 +3520,13 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-20-fact-001",
+     "message_id": "F4-20-message",
      "metadata": {
       "review_reasons": [
        "corrected_or_stale_value"
-      ]
+      ],
+      "semantic_agreement": false,
+      "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
@@ -3456,6 +3551,7 @@
      "evidence_asset_id": "F4-21-asset-body",
      "fact_key": "surface_m2",
      "id": "F4-21-py-001",
+     "message_id": "F4-21-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -3476,31 +3572,8 @@
    ]
   },
   "F4-22": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F4-22-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F4-23": {
    "candidates": [
@@ -3509,6 +3582,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F4-23-fact-001",
+     "message_id": "F4-23-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3536,6 +3610,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F4-24-fact-001",
+     "message_id": "F4-24-message",
      "metadata": {},
      "proposed_value": {
       "unit": "m2",
@@ -3549,6 +3624,7 @@
      "evidence_asset_id": "F4-24-asset-body",
      "fact_key": "property_type",
      "id": "F4-24-py-001",
+     "message_id": "F4-24-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3578,6 +3654,7 @@
      "evidence_asset_id": "F4-25-asset-body",
      "fact_key": "surface_m2",
      "id": "F4-25-py-001",
+     "message_id": "F4-25-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3607,7 +3684,11 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-01-fact-001",
-     "metadata": {},
+     "message_id": "F5-01-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
      "proposed_value": {
       "unit": "m2",
       "value": 28
@@ -3631,6 +3712,7 @@
      "evidence_asset_id": "F5-02-asset-body",
      "fact_key": "surface_m2",
      "id": "F5-02-py-001",
+     "message_id": "F5-02-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -3677,6 +3759,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F5-05-fact-001",
+     "message_id": "F5-05-message",
      "metadata": {},
      "proposed_value": {
       "unit": "m2",
@@ -3701,6 +3784,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F5-06-fact-001",
+     "message_id": "F5-06-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3728,6 +3812,7 @@
      "evidence_asset_id": "F5-07-asset-body",
      "fact_key": "property_type",
      "id": "F5-07-py-001",
+     "message_id": "F5-07-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3737,6 +3822,22 @@
      },
      "proposed_value": {
       "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
+     "display_value": "120 m²",
+     "evidence_asset_id": "F5-07-asset-body",
+     "fact_key": "land_surface_m2",
+     "id": "F5-07-py-002",
+     "message_id": "F5-07-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1"
+     },
+     "proposed_value": {
+      "value": 120.0
      },
      "source_page": 1,
      "status": "pending"
@@ -3757,6 +3858,7 @@
      "evidence_asset_id": "F5-08-asset-body",
      "fact_key": "property_type",
      "id": "F5-08-py-001",
+     "message_id": "F5-08-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3786,6 +3888,7 @@
      "evidence_asset_id": null,
      "fact_key": "property_type",
      "id": "F5-09-fact-001",
+     "message_id": "F5-09-message",
      "metadata": {},
      "proposed_value": {
       "value": "apartment"
@@ -3809,6 +3912,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F5-10-fact-001",
+     "message_id": "F5-10-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3824,6 +3928,7 @@
      "evidence_asset_id": "F5-10-asset-body",
      "fact_key": "property_type",
      "id": "F5-10-py-001",
+     "message_id": "F5-10-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3853,6 +3958,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-11-fact-001",
+     "message_id": "F5-11-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3869,6 +3975,7 @@
      "evidence_asset_id": "F5-11-asset-body",
      "fact_key": "rooms_count",
      "id": "F5-11-py-001",
+     "message_id": "F5-11-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3898,6 +4005,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F5-12-fact-001",
+     "message_id": "F5-12-message",
      "metadata": {},
      "proposed_value": {
       "value": 3
@@ -3910,6 +4018,7 @@
      "evidence_asset_id": "F5-12-asset-body",
      "fact_key": "property_type",
      "id": "F5-12-py-001",
+     "message_id": "F5-12-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3939,6 +4048,7 @@
      "evidence_asset_id": "F5-13-asset-body",
      "fact_key": "property_type",
      "id": "F5-13-py-001",
+     "message_id": "F5-13-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -3957,6 +4067,7 @@
      "evidence_asset_id": "F5-13-asset-body",
      "fact_key": "surface_m2",
      "id": "F5-13-py-002",
+     "message_id": "F5-13-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -3983,6 +4094,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-14-fact-001",
+     "message_id": "F5-14-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -3990,6 +4102,23 @@
      "proposed_value": {
       "unit": "m2",
       "value": 110
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "Terrain : 380 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F5-14-fact-002",
+     "message_id": "F5-14-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 380
      },
      "source_page": null,
      "status": "pending"
@@ -4010,6 +4139,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-15-fact-001",
+     "message_id": "F5-15-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -4026,6 +4156,7 @@
      "evidence_asset_id": null,
      "fact_key": "energy_diagnostics",
      "id": "F5-15-fact-002",
+     "message_id": "F5-15-message",
      "metadata": {},
      "proposed_value": {
       "value": "DPE D · GES E"
@@ -4038,6 +4169,7 @@
      "evidence_asset_id": "F5-15-asset-body",
      "fact_key": "property_type",
      "id": "F5-15-py-001",
+     "message_id": "F5-15-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -4056,6 +4188,7 @@
      "evidence_asset_id": "F5-15-asset-body",
      "fact_key": "energy_diagnostics",
      "id": "F5-15-py-002",
+     "message_id": "F5-15-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -4085,6 +4218,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-16-fact-001",
+     "message_id": "F5-16-message",
      "metadata": {
       "review_reasons": [
        "short_citation"
@@ -4104,6 +4238,7 @@
      "evidence_asset_id": null,
      "fact_key": "visit_information",
      "id": "F5-16-fact-002",
+     "message_id": "F5-16-message",
      "metadata": {},
      "proposed_value": {
       "value": "Visite le 12/01 à 10 h"
@@ -4112,10 +4247,11 @@
      "status": "pending"
     },
     {
-     "display_value": "Bonjour, Visite le 12/01 à 10 h ; audience le 20/01. Surface : 33 m². Cordialement, Maître Julien Brossardet SELARL Brossardet - Avocats 3, impasse du Prototype - 99400 Bourg-Modèle Tél. : 04 99 01 00 10 jb@selarl-brossardet.exam",
+     "display_value": "Madame, Monsieur, Visite le 12/01 à 10 h ; audience le 20/01. Surface : 33 m². Je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.",
      "evidence_asset_id": "F5-16-asset-body",
      "fact_key": "visit_information",
      "id": "F5-16-py-001",
+     "message_id": "F5-16-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -4124,7 +4260,7 @@
       ]
      },
      "proposed_value": {
-      "value": "Bonjour, Visite le 12/01 à 10 h ; audience le 20/01. Surface : 33 m². Cordialement, Maître Julien Brossardet SELARL Brossardet - Avocats 3, impasse du Prototype - 99400 Bourg-Modèle Tél. : 04 99 01 00 10 jb@selarl-brossardet.exam"
+      "value": "Madame, Monsieur, Visite le 12/01 à 10 h ; audience le 20/01. Surface : 33 m². Je vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées."
      },
      "source_page": 1,
      "status": "pending"
@@ -4145,6 +4281,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-17-fact-001",
+     "message_id": "F5-17-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -4161,6 +4298,7 @@
      "evidence_asset_id": "F5-17-asset-body",
      "fact_key": "property_type",
      "id": "F5-17-py-001",
+     "message_id": "F5-17-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -4190,15 +4328,12 @@
      "evidence_asset_id": "F5-18-asset-body",
      "fact_key": "surface_m2",
      "id": "F5-18-py-001",
+     "message_id": "F5-18-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
+      "processor_version": "evidence_v1"
      },
      "proposed_value": {
-      "unit": "m2",
       "value": 64.0
      },
      "source_page": 1,
@@ -4220,6 +4355,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-19-fact-001",
+     "message_id": "F5-19-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -4232,21 +4368,20 @@
      "status": "pending"
     },
     {
-     "display_value": "commercial",
-     "evidence_asset_id": "F5-19-asset-body",
-     "fact_key": "property_type",
-     "id": "F5-19-py-001",
+     "display_value": "Terrain : 600 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F5-19-fact-002",
+     "message_id": "F5-19-message",
      "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
-      "value": "commercial"
+      "unit": "m2",
+      "value": 600
      },
-     "source_page": 1,
+     "source_page": null,
      "status": "pending"
     }
    ],
@@ -4265,6 +4400,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-20-fact-001",
+     "message_id": "F5-20-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -4281,6 +4417,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F5-20-fact-002",
+     "message_id": "F5-20-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -4296,6 +4433,7 @@
      "evidence_asset_id": "F5-20-asset-body",
      "fact_key": "property_type",
      "id": "F5-20-py-001",
+     "message_id": "F5-20-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -4325,6 +4463,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F5-21-fact-001",
+     "message_id": "F5-21-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -4341,6 +4480,7 @@
      "evidence_asset_id": "F5-21-asset-body",
      "fact_key": "property_type",
      "id": "F5-21-py-001",
+     "message_id": "F5-21-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -4370,6 +4510,7 @@
      "evidence_asset_id": null,
      "fact_key": "land_surface_m2",
      "id": "F5-22-fact-001",
+     "message_id": "F5-22-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -4386,6 +4527,7 @@
      "evidence_asset_id": "F5-22-asset-body",
      "fact_key": "property_type",
      "id": "F5-22-py-001",
+     "message_id": "F5-22-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -4415,6 +4557,7 @@
      "evidence_asset_id": "F5-23-asset-body",
      "fact_key": "land_surface_m2",
      "id": "F5-23-py-001",
+     "message_id": "F5-23-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -4441,6 +4584,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F5-24-fact-001",
+     "message_id": "F5-24-message",
      "metadata": {},
      "proposed_value": {
       "unit": "m2",
@@ -4465,7 +4609,11 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F5-25-fact-001",
-     "metadata": {},
+     "message_id": "F5-25-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
      "proposed_value": {
       "value": 6
      },
@@ -4484,19 +4632,39 @@
   "F6-01": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "66 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F6-01-fact-001",
+     "message_id": "F6-01-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 66
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F6-01-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-01-py-001",
+     "message_id": "F6-01-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -4511,17 +4679,18 @@
   "F6-02": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "Surface Carrez : 81 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F6-02-fact-001",
+     "message_id": "F6-02-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 81
      },
      "source_page": null,
      "status": "pending"
@@ -4538,20 +4707,40 @@
   "F6-03": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "Terrain : 2 150 m²",
      "evidence_asset_id": null,
-     "fact_key": "surface_m2",
+     "fact_key": "land_surface_m2",
      "id": "F6-03-fact-001",
+     "message_id": "F6-03-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 2150
      },
      "source_page": null,
      "status": "pending"
+    },
+    {
+     "display_value": "land",
+     "evidence_asset_id": "F6-03-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-03-py-001",
+     "message_id": "F6-03-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "land"
+     },
+     "source_page": 1,
+     "status": "conflict"
     }
    ],
    "semantic": [
@@ -4563,674 +4752,34 @@
    ]
   },
   "F6-04": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-04-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F6-05": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 58 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F6-05-fact-001",
+     "message_id": "F6-05-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-06": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-06-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-07": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-07-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-08": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-08-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-09": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-09-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-10": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-10-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-11": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-11-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-12": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-12-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-13": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-13-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-14": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-14-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-15": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-15-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-16": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-16-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-17": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-17-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-18": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-18-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-19": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-19-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-20": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-20-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-21": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-21-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-22": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-22-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-23": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-23-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-24": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-24-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "Cher Monsieur, chère Madame, Je ne peux pas vous communiquer les dates de visite ; la surface habitable est de 54 m². Cordialement, Maître Hugo Tarbelin Avocat au Barreau de Sainte-Fiction 9, cours de l'Échantillon - 99200 Sainte-Fiction Tél. : 02 99 00 80 08 hugo.tarbelin@tarbelin-avocats.exa",
-     "evidence_asset_id": "F6-24-asset-body",
-     "fact_key": "visit_information",
-     "id": "F6-24-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "Cher Monsieur, chère Madame, Je ne peux pas vous communiquer les dates de visite ; la surface habitable est de 54 m². Cordialement, Maître Hugo Tarbelin Avocat au Barreau de Sainte-Fiction 9, cours de l'Échantillon - 99200 Sainte-Fiction Tél. : 02 99 00 80 08 hugo.tarbelin@tarbelin-avocats.exa"
-     },
-     "source_page": 1,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F6-25": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F6-25-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
-  },
-  "F7-01": {
-   "candidates": [],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
-  },
-  "F7-02": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-02-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
-  },
-  "F7-03": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-03-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
+      "value": 58
      },
      "source_page": null,
      "status": "pending"
     },
     {
      "display_value": "apartment",
-     "evidence_asset_id": "F7-03-asset-body",
+     "evidence_asset_id": "F6-05-asset-body",
      "fact_key": "property_type",
-     "id": "F7-03-py-001",
+     "id": "F6-05-py-001",
+     "message_id": "F6-05-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -5253,116 +4802,904 @@
     }
    ]
   },
-  "F7-04": {
+  "F6-06": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "73 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
-     "id": "F7-04-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
-  },
-  "F7-05": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-05-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
-  },
-  "F7-06": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-06-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
-  },
-  "F7-07": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-07-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
-  },
-  "F7-08": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-08-fact-001",
+     "id": "F6-06-fact-001",
+     "message_id": "F6-06-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 73
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F6-06-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-06-py-001",
+     "message_id": "F6-06-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-07": {
+   "candidates": [
+    {
+     "display_value": "Surface Carrez : 44 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-07-fact-001",
+     "message_id": "F6-07-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 44
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-08": {
+   "candidates": [
+    {
+     "display_value": "Terrain : 2 150 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F6-08-fact-001",
+     "message_id": "F6-08-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 2150
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "land",
+     "evidence_asset_id": "F6-08-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-08-py-001",
+     "message_id": "F6-08-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "land"
+     },
+     "source_page": 1,
+     "status": "conflict"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-09": {
+   "candidates": [
+    {
+     "display_value": "3 pièces",
+     "evidence_asset_id": null,
+     "fact_key": "rooms_count",
+     "id": "F6-09-fact-001",
+     "message_id": "F6-09-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "value": 3
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F6-09-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-09-py-001",
+     "message_id": "F6-09-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-10": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 47 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-10-fact-001",
+     "message_id": "F6-10-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 47
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F6-10-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-10-py-001",
+     "message_id": "F6-10-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-11": {
+   "candidates": [
+    {
+     "display_value": "66 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-11-fact-001",
+     "message_id": "F6-11-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 66
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F6-11-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-11-py-001",
+     "message_id": "F6-11-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-12": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F6-13": {
+   "candidates": [
+    {
+     "display_value": "Terrain : 2 150 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F6-13-fact-001",
+     "message_id": "F6-13-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 2150
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "land",
+     "evidence_asset_id": "F6-13-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-13-py-001",
+     "message_id": "F6-13-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "land"
+     },
+     "source_page": 1,
+     "status": "conflict"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-14": {
+   "candidates": [
+    {
+     "display_value": "3 pièces",
+     "evidence_asset_id": null,
+     "fact_key": "rooms_count",
+     "id": "F6-14-fact-001",
+     "message_id": "F6-14-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "value": 3
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F6-14-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-14-py-001",
+     "message_id": "F6-14-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-15": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 58 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-15-fact-001",
+     "message_id": "F6-15-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 58
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F6-15-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-15-py-001",
+     "message_id": "F6-15-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-16": {
+   "candidates": [
+    {
+     "display_value": "73 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-16-fact-001",
+     "message_id": "F6-16-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 73
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F6-16-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-16-py-001",
+     "message_id": "F6-16-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-17": {
+   "candidates": [
+    {
+     "display_value": "Surface Carrez : 44 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-17-fact-001",
+     "message_id": "F6-17-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 44
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-18": {
+   "candidates": [
+    {
+     "display_value": "Terrain : 2 150 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F6-18-fact-001",
+     "message_id": "F6-18-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 2150
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "land",
+     "evidence_asset_id": "F6-18-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-18-py-001",
+     "message_id": "F6-18-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "land"
+     },
+     "source_page": 1,
+     "status": "conflict"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-19": {
+   "candidates": [
+    {
+     "display_value": "3 pièces",
+     "evidence_asset_id": null,
+     "fact_key": "rooms_count",
+     "id": "F6-19-fact-001",
+     "message_id": "F6-19-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "value": 3
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F6-19-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-19-py-001",
+     "message_id": "F6-19-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-20": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 47 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-20-fact-001",
+     "message_id": "F6-20-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 47
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F6-20-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-20-py-001",
+     "message_id": "F6-20-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-21": {
+   "candidates": [
+    {
+     "display_value": "66 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-21-fact-001",
+     "message_id": "F6-21-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 66
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F6-21-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-21-py-001",
+     "message_id": "F6-21-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-22": {
+   "candidates": [
+    {
+     "display_value": "Surface Carrez : 81 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-22-fact-001",
+     "message_id": "F6-22-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 81
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-23": {
+   "candidates": [
+    {
+     "display_value": "Terrain : 2 150 m²",
+     "evidence_asset_id": null,
+     "fact_key": "land_surface_m2",
+     "id": "F6-23-fact-001",
+     "message_id": "F6-23-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 2150
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "land",
+     "evidence_asset_id": "F6-23-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-23-py-001",
+     "message_id": "F6-23-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "land"
+     },
+     "source_page": 1,
+     "status": "conflict"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-24": {
+   "candidates": [
+    {
+     "display_value": "3 pièces",
+     "evidence_asset_id": null,
+     "fact_key": "rooms_count",
+     "id": "F6-24-fact-001",
+     "message_id": "F6-24-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "value": 3
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F6-24-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-24-py-001",
+     "message_id": "F6-24-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
+     "display_value": "Bonsoir, Je ne peux pas vous communiquer les dates de visite. L'appartement compte 3 pièces. Bien confraternellement, Maître Gaëlle Mortessan Avocate au Barreau de Rive-Hypothèse Cabinet Mortessan 45, rue de la Maquette - 99600 Rive-Hypothèse",
+     "evidence_asset_id": "F6-24-asset-body",
+     "fact_key": "visit_information",
+     "id": "F6-24-py-002",
+     "message_id": "F6-24-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "Bonsoir, Je ne peux pas vous communiquer les dates de visite. L'appartement compte 3 pièces. Bien confraternellement, Maître Gaëlle Mortessan Avocate au Barreau de Rive-Hypothèse Cabinet Mortessan 45, rue de la Maquette - 99600 Rive-Hypothèse"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F6-25": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 58 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F6-25-fact-001",
+     "message_id": "F6-25-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 58
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F6-25-asset-body",
+     "fact_key": "property_type",
+     "id": "F6-25-py-001",
+     "message_id": "F6-25-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F7-01": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F7-02": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F7-03": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F7-04": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F7-05": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F7-06": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F7-07": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F7-08": {
+   "candidates": [
+    {
+     "display_value": "35 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F7-08-fact-001",
+     "message_id": "F7-08-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 35
      },
      "source_page": null,
      "status": "pending"
@@ -5372,6 +5709,7 @@
      "evidence_asset_id": "F7-08-asset-body",
      "fact_key": "property_type",
      "id": "F7-08-py-001",
+     "message_id": "F7-08-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -5395,52 +5733,12 @@
    ]
   },
   "F7-09": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-09-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F7-10": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-10-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F7-11": {
    "candidates": [
@@ -5449,7 +5747,11 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F7-11-fact-001",
-     "metadata": {},
+     "message_id": "F7-11-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
      "proposed_value": {
       "unit": "m2",
       "value": 120
@@ -5473,7 +5775,11 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F7-12-fact-001",
-     "metadata": {},
+     "message_id": "F7-12-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
      "proposed_value": {
       "unit": "m2",
       "value": 75
@@ -5497,6 +5803,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F7-13-fact-001",
+     "message_id": "F7-13-message",
      "metadata": {},
      "proposed_value": {
       "unit": "m2",
@@ -5510,6 +5817,7 @@
      "evidence_asset_id": "F7-13-asset-body",
      "fact_key": "property_type",
      "id": "F7-13-py-001",
+     "message_id": "F7-13-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -5539,6 +5847,7 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F7-14-fact-001",
+     "message_id": "F7-14-message",
      "metadata": {},
      "proposed_value": {
       "value": 3
@@ -5562,7 +5871,11 @@
      "evidence_asset_id": null,
      "fact_key": "rooms_count",
      "id": "F7-15-fact-001",
-     "metadata": {},
+     "message_id": "F7-15-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
      "proposed_value": {
       "value": 4
      },
@@ -5581,16 +5894,17 @@
   "F7-16": {
    "candidates": [
     {
-     "display_value": "54 m²",
+     "display_value": "59 m²",
      "evidence_asset_id": "F7-16-asset-body",
      "fact_key": "surface_m2",
      "id": "F7-16-py-001",
+     "message_id": "F7-16-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
      },
      "proposed_value": {
-      "value": 54.0
+      "value": 59.0
      },
      "source_page": 1,
      "status": "pending"
@@ -5617,17 +5931,18 @@
   "F7-18": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 46 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F7-18-fact-001",
+     "message_id": "F7-18-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 46
      },
      "source_page": null,
      "status": "pending"
@@ -5637,6 +5952,7 @@
      "evidence_asset_id": "F7-18-asset-body",
      "fact_key": "property_type",
      "id": "F7-18-py-001",
+     "message_id": "F7-18-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -5666,7 +5982,11 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F7-19-fact-001",
-     "metadata": {},
+     "message_id": "F7-19-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
      "proposed_value": {
       "unit": "m2",
       "value": 140
@@ -5684,87 +6004,30 @@
    ]
   },
   "F7-20": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-20-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F7-21": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-21-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F7-22": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "Surface habitable : 50 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F7-22-fact-001",
+     "message_id": "F7-22-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 50
      },
      "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "apartment",
-     "evidence_asset_id": "F7-22-asset-body",
-     "fact_key": "property_type",
-     "id": "F7-22-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "apartment"
-     },
-     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -5777,112 +6040,32 @@
    ]
   },
   "F7-23": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-23-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F7-24": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-24-fact-001",
-     "metadata": {},
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": "PROMPT_INJECTION_SUSPECTED",
-     "status": "skipped"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F7-25": {
-   "candidates": [
-    {
-     "display_value": "surface habitable : 54 m²",
-     "evidence_asset_id": null,
-     "fact_key": "surface_m2",
-     "id": "F7-25-fact-001",
-     "metadata": {
-      "semantic_agreement": true,
-      "semantic_extraction_method": "semantic_evidence_v3"
-     },
-     "proposed_value": {
-      "unit": "m2",
-      "value": 54
-     },
-     "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "apartment",
-     "evidence_asset_id": "F7-25-asset-body",
-     "fact_key": "property_type",
-     "id": "F7-25-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "apartment"
-     },
-     "source_page": 1,
-     "status": "pending"
-    }
-   ],
-   "semantic": [
-    {
-     "asset": "corps",
-     "error_code": null,
-     "status": "completed"
-    }
-   ]
+   "candidates": [],
+   "semantic": []
   },
   "F8-01": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "71 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-01-fact-001",
+     "message_id": "F8-01-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 71
      },
      "source_page": null,
      "status": "pending"
@@ -5892,11 +6075,31 @@
      "evidence_asset_id": null,
      "fact_key": "occupancy_status",
      "id": "F8-01-fact-002",
+     "message_id": "F8-01-message",
      "metadata": {},
      "proposed_value": {
       "value": "occupied"
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F8-01-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-01-py-001",
+     "message_id": "F8-01-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -5911,17 +6114,18 @@
   "F8-02": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "43 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-02-fact-001",
+     "message_id": "F8-02-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 43
      },
      "source_page": null,
      "status": "pending"
@@ -5938,19 +6142,39 @@
   "F8-03": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 96 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-03-fact-001",
+     "message_id": "F8-03-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 96
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F8-03-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-03-py-001",
+     "message_id": "F8-03-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -5965,19 +6189,39 @@
   "F8-04": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "58 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-04-fact-001",
+     "message_id": "F8-04-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 58
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F8-04-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-04-py-001",
+     "message_id": "F8-04-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -5992,17 +6236,18 @@
   "F8-05": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "62 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-05-fact-001",
+     "message_id": "F8-05-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 62
      },
      "source_page": null,
      "status": "pending"
@@ -6012,6 +6257,7 @@
      "evidence_asset_id": null,
      "fact_key": "occupancy_status",
      "id": "F8-05-fact-002",
+     "message_id": "F8-05-message",
      "metadata": {},
      "proposed_value": {
       "value": "rented"
@@ -6031,19 +6277,39 @@
   "F8-06": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 37 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-06-fact-001",
+     "message_id": "F8-06-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 37
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F8-06-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-06-py-001",
+     "message_id": "F8-06-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6058,17 +6324,18 @@
   "F8-07": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "84 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-07-fact-001",
+     "message_id": "F8-07-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 84
      },
      "source_page": null,
      "status": "pending"
@@ -6078,11 +6345,31 @@
      "evidence_asset_id": null,
      "fact_key": "occupancy_status",
      "id": "F8-07-fact-002",
+     "message_id": "F8-07-message",
      "metadata": {},
      "proposed_value": {
       "value": "occupied"
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F8-07-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-07-py-001",
+     "message_id": "F8-07-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6097,17 +6384,18 @@
   "F8-08": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "49 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-08-fact-001",
+     "message_id": "F8-08-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 49
      },
      "source_page": null,
      "status": "pending"
@@ -6117,6 +6405,7 @@
      "evidence_asset_id": "F8-08-asset-body",
      "fact_key": "occupancy_status",
      "id": "F8-08-py-001",
+     "message_id": "F8-08-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6142,26 +6431,28 @@
   "F8-09": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 66 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-09-fact-001",
+     "message_id": "F8-09-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 66
      },
      "source_page": null,
      "status": "pending"
     },
     {
-     "display_value": "Madame, Monsieur, La surface habitable est de 54 m². Les occupants, Jean et Marie Pradelle, sont joignables pour la visite. Bien à vous, Maître Bastien Lorquin Avocat associé - Barreau de Sainte-Fiction 4, place du Modèle - 99200 Sainte-Fiction Tél. : 02 99 00 20 02 contact@lorquin-associes.example",
+     "display_value": "apartment",
      "evidence_asset_id": "F8-09-asset-body",
-     "fact_key": "visit_information",
+     "fact_key": "property_type",
      "id": "F8-09-py-001",
+     "message_id": "F8-09-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6170,7 +6461,26 @@
       ]
      },
      "proposed_value": {
-      "value": "Madame, Monsieur, La surface habitable est de 54 m². Les occupants, Jean et Marie Pradelle, sont joignables pour la visite. Bien à vous, Maître Bastien Lorquin Avocat associé - Barreau de Sainte-Fiction 4, place du Modèle - 99200 Sainte-Fiction Tél. : 02 99 00 20 02 contact@lorquin-associes.example"
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
+     "display_value": "Madame, Monsieur, La surface habitable de l'appartement est de 66 m². Les occupants, Jean et Marie Pradelle, sont joignables pour la visite. Cordialement, Maître Sébastien Kervadec Avocat au Barreau de Sainte-Fiction Cabinet d'avocats Kervadec 32, rue du Banc d'Essai - 99800 Sainte-Fiction",
+     "evidence_asset_id": "F8-09-asset-body",
+     "fact_key": "visit_information",
+     "id": "F8-09-py-002",
+     "message_id": "F8-09-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "Madame, Monsieur, La surface habitable de l'appartement est de 66 m². Les occupants, Jean et Marie Pradelle, sont joignables pour la visite. Cordialement, Maître Sébastien Kervadec Avocat au Barreau de Sainte-Fiction Cabinet d'avocats Kervadec 32, rue du Banc d'Essai - 99800 Sainte-Fiction"
      },
      "source_page": 1,
      "status": "pending"
@@ -6187,26 +6497,28 @@
   "F8-10": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "75 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-10-fact-001",
+     "message_id": "F8-10-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 75
      },
      "source_page": null,
      "status": "pending"
     },
     {
-     "display_value": "Bonjour, La surface habitable est de 54 m². Les visites se font chez les Garnache, au deuxième étage. Bien cordialement, Maître Clémence Ardaillou Avocate au Barreau de Port-Essai 38, quai des Témoins - 99300 Port-Essai Tél. : 03 99 00 30 03 cardaillou@cabinet-ardaill",
+     "display_value": "house",
      "evidence_asset_id": "F8-10-asset-body",
-     "fact_key": "visit_information",
+     "fact_key": "property_type",
      "id": "F8-10-py-001",
+     "message_id": "F8-10-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6215,7 +6527,26 @@
       ]
      },
      "proposed_value": {
-      "value": "Bonjour, La surface habitable est de 54 m². Les visites se font chez les Garnache, au deuxième étage. Bien cordialement, Maître Clémence Ardaillou Avocate au Barreau de Port-Essai 38, quai des Témoins - 99300 Port-Essai Tél. : 03 99 00 30 03 cardaillou@cabinet-ardaill"
+      "value": "house"
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
+     "display_value": "Bonjour à l'équipe Immojudis, La maison offre 75 m² habitables. Les visites se font chez les Garnache, au deuxième étage. Bien à vous, Maître Thaïs Fontrailles Avocate au Barreau de Port-Essai 39, rue de la Maquette - 99000 Port-Essai Tél. : 04 99 08 28 38 t.fontrailles@cabinet-fontraill",
+     "evidence_asset_id": "F8-10-asset-body",
+     "fact_key": "visit_information",
+     "id": "F8-10-py-002",
+     "message_id": "F8-10-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "Bonjour à l'équipe Immojudis, La maison offre 75 m² habitables. Les visites se font chez les Garnache, au deuxième étage. Bien à vous, Maître Thaïs Fontrailles Avocate au Barreau de Port-Essai 39, rue de la Maquette - 99000 Port-Essai Tél. : 04 99 08 28 38 t.fontrailles@cabinet-fontraill"
      },
      "source_page": 1,
      "status": "pending"
@@ -6232,17 +6563,18 @@
   "F8-11": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "52 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-11-fact-001",
+     "message_id": "F8-11-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 52
      },
      "source_page": null,
      "status": "pending"
@@ -6252,6 +6584,7 @@
      "evidence_asset_id": "F8-11-asset-body",
      "fact_key": "occupancy_status",
      "id": "F8-11-py-001",
+     "message_id": "F8-11-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6281,6 +6614,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-12-fact-001",
+     "message_id": "F8-12-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -6290,6 +6624,25 @@
       "value": 54
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F8-12-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-12-py-001",
+     "message_id": "F8-12-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6304,17 +6657,18 @@
   "F8-13": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "71 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-13-fact-001",
+     "message_id": "F8-13-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 71
      },
      "source_page": null,
      "status": "pending"
@@ -6324,11 +6678,31 @@
      "evidence_asset_id": null,
      "fact_key": "occupancy_status",
      "id": "F8-13-fact-002",
+     "message_id": "F8-13-message",
      "metadata": {},
      "proposed_value": {
       "value": "occupied"
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F8-13-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-13-py-001",
+     "message_id": "F8-13-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6347,10 +6721,13 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-14-fact-001",
+     "message_id": "F8-14-message",
      "metadata": {
       "review_reasons": [
        "reported_or_comparison"
-      ]
+      ],
+      "semantic_agreement": false,
+      "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
@@ -6364,6 +6741,7 @@
      "evidence_asset_id": "F8-14-asset-body",
      "fact_key": "property_type",
      "id": "F8-14-py-001",
+     "message_id": "F8-14-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6393,6 +6771,7 @@
      "evidence_asset_id": "F8-15-asset-pj-1",
      "fact_key": "document",
      "id": "F8-15-fact-001",
+     "message_id": "F8-15-message",
      "metadata": {},
      "proposed_value": {
       "storage_path": "F8-15-case/F8-15-message/pv-description.txt",
@@ -6406,6 +6785,7 @@
      "evidence_asset_id": "F8-15-asset-pj-1",
      "fact_key": "surface_m2",
      "id": "F8-15-py-001",
+     "message_id": "F8-15-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -6421,6 +6801,7 @@
      "evidence_asset_id": "F8-15-asset-pj-1",
      "fact_key": "property_type",
      "id": "F8-15-py-002",
+     "message_id": "F8-15-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6451,10 +6832,11 @@
   "F8-16": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "54 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-16-fact-001",
+     "message_id": "F8-16-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -6471,6 +6853,7 @@
      "evidence_asset_id": "F8-16-asset-pj-1",
      "fact_key": "document",
      "id": "F8-16-fact-002",
+     "message_id": "F8-16-message",
      "metadata": {},
      "proposed_value": {
       "storage_path": "F8-16-case/F8-16-message/pv-description.txt",
@@ -6480,10 +6863,30 @@
      "status": "pending"
     },
     {
+     "display_value": "house",
+     "evidence_asset_id": "F8-16-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-16-py-001",
+     "message_id": "F8-16-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
      "display_value": "54 m²",
      "evidence_asset_id": "F8-16-asset-pj-1",
      "fact_key": "surface_m2",
-     "id": "F8-16-py-001",
+     "id": "F8-16-py-002",
+     "message_id": "F8-16-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6502,7 +6905,8 @@
      "display_value": "apartment",
      "evidence_asset_id": "F8-16-asset-pj-1",
      "fact_key": "property_type",
-     "id": "F8-16-py-002",
+     "id": "F8-16-py-003",
+     "message_id": "F8-16-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6514,7 +6918,7 @@
       "value": "apartment"
      },
      "source_page": 1,
-     "status": "pending"
+     "status": "conflict"
     }
    ],
    "semantic": [
@@ -6533,10 +6937,11 @@
   "F8-17": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "54 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-17-fact-001",
+     "message_id": "F8-17-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -6553,6 +6958,7 @@
      "evidence_asset_id": "F8-17-asset-pj-1",
      "fact_key": "document",
      "id": "F8-17-fact-002",
+     "message_id": "F8-17-message",
      "metadata": {},
      "proposed_value": {
       "storage_path": "F8-17-case/F8-17-message/pv-description.txt",
@@ -6566,6 +6972,7 @@
      "evidence_asset_id": "F8-17-asset-pj-1",
      "fact_key": "surface_m2",
      "id": "F8-17-py-001",
+     "message_id": "F8-17-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6585,6 +6992,7 @@
      "evidence_asset_id": "F8-17-asset-pj-1",
      "fact_key": "property_type",
      "id": "F8-17-py-002",
+     "message_id": "F8-17-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6615,17 +7023,18 @@
   "F8-18": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 37 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-18-fact-001",
+     "message_id": "F8-18-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 37
      },
      "source_page": null,
      "status": "pending"
@@ -6635,11 +7044,31 @@
      "evidence_asset_id": null,
      "fact_key": "occupancy_status",
      "id": "F8-18-fact-002",
+     "message_id": "F8-18-message",
      "metadata": {},
      "proposed_value": {
       "value": "rented"
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F8-18-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-18-py-001",
+     "message_id": "F8-18-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6654,26 +7083,28 @@
   "F8-19": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "84 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-19-fact-001",
+     "message_id": "F8-19-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 84
      },
      "source_page": null,
      "status": "pending"
     },
     {
-     "display_value": "Madame, Monsieur, La surface habitable est de 54 m². Pour la visite, contacter l'occupante au 06 99 00 00 12. Bien cordialement, Maître Laurent Vidrecourt Avocat au Barreau de Mont-Exemple 27, rue de l'Épreuve - 99600 Mont-Exemple Tél. : 06 99 01 20 12 l.vidrecourt@vidrecourt.exam",
+     "display_value": "house",
      "evidence_asset_id": "F8-19-asset-body",
-     "fact_key": "visit_information",
+     "fact_key": "property_type",
      "id": "F8-19-py-001",
+     "message_id": "F8-19-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6682,7 +7113,26 @@
       ]
      },
      "proposed_value": {
-      "value": "Madame, Monsieur, La surface habitable est de 54 m². Pour la visite, contacter l'occupante au 06 99 00 00 12. Bien cordialement, Maître Laurent Vidrecourt Avocat au Barreau de Mont-Exemple 27, rue de l'Épreuve - 99600 Mont-Exemple Tél. : 06 99 01 20 12 l.vidrecourt@vidrecourt.exam"
+      "value": "house"
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
+     "display_value": "Messieurs, La maison offre 84 m² habitables. Pour la visite, contacter l'occupante au 06 99 00 00 12. Très cordialement, Maître Damien Pescatore Avocat au Barreau de Bourg-Modèle Pescatore Avocats 24, avenue de l'Hypothèse - 99300 Bourg-Modèle",
+     "evidence_asset_id": "F8-19-asset-body",
+     "fact_key": "visit_information",
+     "id": "F8-19-py-002",
+     "message_id": "F8-19-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "Messieurs, La maison offre 84 m² habitables. Pour la visite, contacter l'occupante au 06 99 00 00 12. Très cordialement, Maître Damien Pescatore Avocat au Barreau de Bourg-Modèle Pescatore Avocats 24, avenue de l'Hypothèse - 99300 Bourg-Modèle"
      },
      "source_page": 1,
      "status": "pending"
@@ -6699,37 +7149,20 @@
   "F8-20": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "49 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-20-fact-001",
+     "message_id": "F8-20-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 49
      },
      "source_page": null,
-     "status": "pending"
-    },
-    {
-     "display_value": "Occupé",
-     "evidence_asset_id": "F8-20-asset-body",
-     "fact_key": "occupancy_status",
-     "id": "F8-20-py-001",
-     "metadata": {
-      "content_trust": "untrusted_external_evidence",
-      "processor_version": "evidence_v1",
-      "review_reasons": [
-       "rules_only_attachment"
-      ]
-     },
-     "proposed_value": {
-      "value": "occupied"
-     },
-     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6744,19 +7177,39 @@
   "F8-21": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "surface habitable : 66 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-21-fact-001",
+     "message_id": "F8-21-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 66
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F8-21-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-21-py-001",
+     "message_id": "F8-21-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6771,19 +7224,39 @@
   "F8-22": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "75 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-22-fact-001",
+     "message_id": "F8-22-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 75
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "house",
+     "evidence_asset_id": "F8-22-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-22-py-001",
+     "message_id": "F8-22-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "house"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6798,17 +7271,18 @@
   "F8-23": {
    "candidates": [
     {
-     "display_value": "surface habitable : 54 m²",
+     "display_value": "52 m²",
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-23-fact-001",
+     "message_id": "F8-23-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
      },
      "proposed_value": {
       "unit": "m2",
-      "value": 54
+      "value": 52
      },
      "source_page": null,
      "status": "pending"
@@ -6818,6 +7292,7 @@
      "evidence_asset_id": null,
      "fact_key": "occupancy_status",
      "id": "F8-23-fact-002",
+     "message_id": "F8-23-message",
      "metadata": {},
      "proposed_value": {
       "value": "rented"
@@ -6830,6 +7305,7 @@
      "evidence_asset_id": "F8-23-asset-pj-1",
      "fact_key": "document",
      "id": "F8-23-fact-003",
+     "message_id": "F8-23-message",
      "metadata": {},
      "proposed_value": {
       "storage_path": "F8-23-case/F8-23-message/bail.txt",
@@ -6843,6 +7319,7 @@
      "evidence_asset_id": "F8-23-asset-pj-1",
      "fact_key": "occupancy_status",
      "id": "F8-23-py-001",
+     "message_id": "F8-23-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6877,6 +7354,7 @@
      "evidence_asset_id": null,
      "fact_key": "surface_m2",
      "id": "F8-24-fact-001",
+     "message_id": "F8-24-message",
      "metadata": {
       "semantic_agreement": true,
       "semantic_extraction_method": "semantic_evidence_v3"
@@ -6886,6 +7364,25 @@
       "value": 54
      },
      "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F8-24-asset-body",
+     "fact_key": "property_type",
+     "id": "F8-24-py-001",
+     "message_id": "F8-24-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
      "status": "pending"
     }
    ],
@@ -6904,6 +7401,7 @@
      "evidence_asset_id": "F8-25-asset-pj-1",
      "fact_key": "document",
      "id": "F8-25-fact-001",
+     "message_id": "F8-25-message",
      "metadata": {},
      "proposed_value": {
       "storage_path": "F8-25-case/F8-25-message/plan.txt",
@@ -6917,6 +7415,7 @@
      "evidence_asset_id": "F8-25-asset-body",
      "fact_key": "property_type",
      "id": "F8-25-py-001",
+     "message_id": "F8-25-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6928,13 +7427,14 @@
       "value": "apartment"
      },
      "source_page": 1,
-     "status": "pending"
+     "status": "conflict"
     },
     {
      "display_value": "apartment",
      "evidence_asset_id": "F8-25-asset-pj-1",
      "fact_key": "property_type",
      "id": "F8-25-py-002",
+     "message_id": "F8-25-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1",
@@ -6946,13 +7446,14 @@
       "value": "apartment"
      },
      "source_page": 1,
-     "status": "pending"
+     "status": "conflict"
     },
     {
      "display_value": "3 pièce(s)",
      "evidence_asset_id": "F8-25-asset-pj-1",
      "fact_key": "rooms_count",
      "id": "F8-25-py-003",
+     "message_id": "F8-25-message",
      "metadata": {
       "content_trust": "untrusted_external_evidence",
       "processor_version": "evidence_v1"
@@ -6976,13 +7477,499 @@
      "status": "completed"
     }
    ]
+  },
+  "F9-01": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 63 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F9-01-fact-001",
+     "message_id": "F9-01-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 63
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "3 pièces",
+     "evidence_asset_id": null,
+     "fact_key": "rooms_count",
+     "id": "F9-01-fact-002",
+     "message_id": "F9-01-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "value": 3
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F9-01-asset-body",
+     "fact_key": "property_type",
+     "id": "F9-01-py-001",
+     "message_id": "F9-01-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-02": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 63 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F9-02-fact-001",
+     "message_id": "F9-02-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 63
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "3 pièces",
+     "evidence_asset_id": null,
+     "fact_key": "rooms_count",
+     "id": "F9-02-fact-002",
+     "message_id": "F9-02-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "value": 3
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F9-02-asset-body",
+     "fact_key": "property_type",
+     "id": "F9-02-py-001",
+     "message_id": "F9-02-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-03": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F9-04": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 47 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F9-04-fact-001",
+     "message_id": "F9-04-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 47
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-05": {
+   "candidates": [
+    {
+     "display_value": "surface : 52 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F9-05-fact-001",
+     "message_id": "F9-05-message",
+     "metadata": {
+      "review_reasons": [
+       "short_citation"
+      ],
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 52
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "anterieur-1",
+     "error_code": null,
+     "status": "completed"
+    },
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-06": {
+   "candidates": [
+    {
+     "display_value": "61 m²",
+     "evidence_asset_id": "F9-06-asset-body",
+     "fact_key": "surface_m2",
+     "id": "F9-06-py-001",
+     "message_id": "F9-06-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 61.0
+     },
+     "source_page": 1,
+     "status": "pending"
+    },
+    {
+     "display_value": "2 pièce(s)",
+     "evidence_asset_id": "F9-06-asset-body",
+     "fact_key": "rooms_count",
+     "id": "F9-06-py-002",
+     "message_id": "F9-06-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": 2
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-07": {
+   "candidates": [],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-08": {
+   "candidates": [],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-09": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 58 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F9-09-fact-001",
+     "message_id": "F9-09-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 58
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-10": {
+   "candidates": [
+    {
+     "display_value": "61 m²",
+     "evidence_asset_id": "F9-10-asset-body",
+     "fact_key": "surface_m2",
+     "id": "F9-10-py-001",
+     "message_id": "F9-10-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1"
+     },
+     "proposed_value": {
+      "value": 61.0
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-11": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 76 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F9-11-fact-001",
+     "message_id": "F9-11-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 76
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "apartment",
+     "evidence_asset_id": "F9-11-asset-body",
+     "fact_key": "property_type",
+     "id": "F9-11-py-001",
+     "message_id": "F9-11-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1",
+      "review_reasons": [
+       "rules_only_attachment"
+      ]
+     },
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-12": {
+   "candidates": [
+    {
+     "display_value": "surface habitable : 54 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F9-12-fact-001",
+     "message_id": "F9-12-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 54
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "pv.txt",
+     "evidence_asset_id": "F9-12-asset-pj-1",
+     "fact_key": "document",
+     "id": "F9-12-fact-002",
+     "message_id": "F9-12-message",
+     "metadata": {},
+     "proposed_value": {
+      "storage_path": "F9-12-case/F9-12-message/pv.txt",
+      "value": "F9-12-asset-pj-1"
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    },
+    {
+     "asset": "pv.txt",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-13": {
+   "candidates": [
+    {
+     "display_value": "1250 m²",
+     "evidence_asset_id": "F9-13-asset-body",
+     "fact_key": "land_surface_m2",
+     "id": "F9-13-py-001",
+     "message_id": "F9-13-message",
+     "metadata": {
+      "content_trust": "untrusted_external_evidence",
+      "processor_version": "evidence_v1"
+     },
+     "proposed_value": {
+      "value": 1250.0
+     },
+     "source_page": 1,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
+  },
+  "F9-14": {
+   "candidates": [],
+   "semantic": []
+  },
+  "F9-15": {
+   "candidates": [
+    {
+     "display_value": "24 m²",
+     "evidence_asset_id": null,
+     "fact_key": "surface_m2",
+     "id": "F9-15-fact-001",
+     "message_id": "F9-15-message",
+     "metadata": {
+      "semantic_agreement": true,
+      "semantic_extraction_method": "semantic_evidence_v3"
+     },
+     "proposed_value": {
+      "unit": "m2",
+      "value": 24
+     },
+     "source_page": null,
+     "status": "pending"
+    },
+    {
+     "display_value": "Appartement",
+     "evidence_asset_id": null,
+     "fact_key": "property_type",
+     "id": "F9-15-fact-002",
+     "message_id": "F9-15-message",
+     "metadata": {},
+     "proposed_value": {
+      "value": "apartment"
+     },
+     "source_page": null,
+     "status": "pending"
+    }
+   ],
+   "semantic": [
+    {
+     "asset": "corps",
+     "error_code": null,
+     "status": "completed"
+    }
+   ]
   }
  },
  "configuration": "modele_ideal",
- "description": "SIMULATION, aucune sortie réelle du modèle : sortie simulée égale à la vérité de terrain (borne haute de la couverture, pas un résultat du modèle).",
- "format": "information_agent_evaluation_worker_stage_v1",
+ "description": "SIMULATION, aucune sortie réelle du modèle : sortie simulée égale à la vérité de terrain, citations en phrase entière (borne haute de la couverture, pas un résultat du modèle).",
+ "essai": null,
+ "format": "information_agent_evaluation_worker_stage_v2",
  "modele_reel": false,
- "rules_stage_sha256": "3e26f34bf0136804c4b55b81789e4bca54724d37e87362e643e7b108cc18e96c",
+ "rules_stage_sha256": "7eb8711c84c7a471fd896a5e0c1b26008e5b11675f7f122b8beedca0ec35b4e4",
  "semantic_processor_version": "semantic_evidence_v3",
  "source": null,
  "system_prompt_sha256": "0f02626b4449ccacc4981510773ad717382734d835843eed795d323a78b8eb82"

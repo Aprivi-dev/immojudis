@@ -8,9 +8,9 @@
    "famille": 5,
    "titre": "Surface du séjour seule",
    "message": {
-    "expediteur": "gmortessan@mortessan.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 01/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nSurface du séjour : 28 m², très lumineux.\n\nBien cordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "expediteur": "g.mortessan@cabinet-mortessan.example",
+    "objet": "RE: Appartement à Clos-Maquette, audience du 02/05/2027 : vérification de l'annonce",
+    "corps": "Bonsoir,\n\nSurface du séjour : 28 m², très lumineux.\n\nBien confraternellement,\n\n-- \nMaître Gaëlle Mortessan\nCabinet Mortessan\n45, rue de la Maquette - 99600 Rive-Hypothèse\nStandard : 02 99 06 16 26 - Secrétariat du lundi au vendredi, 9 h - 12 h",
     "pieces_jointes": []
    },
    "contexte": {
@@ -33,23 +33,28 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 25,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
      "raison": "28 m² est la surface du séjour, pas celle du logement.",
-     "lecture_modele": null
+     "lecture_modele": {
+      "valeur": 28,
+      "citation": "Surface du séjour : 28 m²",
+      "source": "corps"
+     }
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -59,9 +64,9 @@
    "famille": 5,
    "titre": "Surface habitable et surface du séjour",
    "message": {
-    "expediteur": "hugo.tarbelin@tarbelin-avocats.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 02/05/2027 : vérification de l'annonce",
-    "corps": "Madame, Monsieur,\n\nSurface habitable 64 m², dont un séjour de 28 m².\n\nCordialement,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Sainte-Fiction\n9, cours de l'Échantillon - 99200 Sainte-Fiction\nTél. : 02 99 00 80 08\nhugo.tarbelin@tarbelin-avocats.example",
+    "expediteur": "contact@selarl-tarbelin.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 03/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour Mesdames et Messieurs,\n\nSurface habitable 64 m², dont un séjour de 28 m².\n\nCdlt,\nMaître Tarbelin\n\nLe mar. 3 nov. 2026 à 10:07, Immojudis <enquete+q127z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Tarbelin,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -84,7 +89,8 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 6,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -95,12 +101,12 @@
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -110,9 +116,9 @@
    "famille": 5,
    "titre": "Carrez et habitable différentes",
    "message": {
-    "expediteur": "ines.calvadour@calvadour-avocat.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 03/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nSurface Carrez : 48,6 m² ; surface habitable : 51 m².\n\nBien cordialement,\n\nMaître Inès Calvadour\nAvocate au Barreau de Port-Essai\n60, rue des Scénarios - 99300 Port-Essai\nTél. : 03 99 00 90 09\nines.calvadour@calvadour-avocat.example",
+    "expediteur": "secretariat@scp-calvadour.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 04/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nSurface Carrez : 48,6 m² ; surface habitable : 51 m².\n\nBien cordialement,\n\nSCP Calvadour & Associés\nAvocate au Barreau de Valmont-sur-Exemple\nT. 04 99 08 18 28 | secretariat@scp-calvadour.example",
     "pieces_jointes": []
    },
    "contexte": {
@@ -135,23 +141,28 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 13,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
      "raison": "Deux surfaces (Carrez et habitable) : le choix de la surface affichée relève d'une relecture.",
-     "lecture_modele": null
+     "lecture_modele": {
+      "valeur": 48.6,
+      "citation": "Surface Carrez : 48,6 m²",
+      "source": "corps"
+     }
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -161,9 +172,9 @@
    "famille": 5,
    "titre": "Surface au sol et surface habitable",
    "message": {
-    "expediteur": "jb@selarl-brossardet.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 04/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nSurface au sol 80 m², surface habitable 62 m² en raison des combles.\n\nCordialement,\n\nMaître Julien Brossardet\nSELARL Brossardet - Avocats\n3, impasse du Prototype - 99400 Bourg-Modèle\nTél. : 04 99 01 00 10\njb@selarl-brossardet.example",
+    "expediteur": "julien.brossardet@avocats-brossardet.example",
+    "objet": "RE: Maison à Clos-Maquette, audience du 05/05/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nSurface au sol 80 m², surface habitable 62 m² en raison des combles.\n\nCordialement,\n\nMaître Julien Brossardet\nAvocat au Barreau de Sainte-Fiction\n\nBrossardet Avocats\n66, impasse du Prototype - 99000 Sainte-Fiction\n\nDe : Immojudis <enquete+k129x@reponses.immojudis.example>\nEnvoyé : mardi 5 novembre 2026 10:09\nÀ : julien.brossardet@avocats-brossardet.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Brossardet,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -186,23 +197,28 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 20,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
      "raison": "Deux surfaces (au sol et habitable) : choix à relire.",
-     "lecture_modele": null
+     "lecture_modele": {
+      "valeur": 62,
+      "citation": "surface habitable 62 m²",
+      "source": "corps"
+     }
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -212,9 +228,9 @@
    "famille": 5,
    "titre": "Parcelle d'une maison",
    "message": {
-    "expediteur": "k.olmedo@olmedo-avocats.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 05/05/2027 : vérification de l'annonce",
-    "corps": "Madame, Monsieur,\n\nLa parcelle de la maison fait 540 m² et est entièrement close.\n\nBien cordialement,\n\nMaître Karine Olmédo\nAvocate au Barreau de Lac-Témoin\n11, allée du Simulacre - 99500 Lac-Témoin\nTél. : 05 99 01 10 11\nk.olmedo@olmedo-avocats.example",
+    "expediteur": "accueil@associes-olmedo.example",
+    "objet": "RE: Maison à Port-Essai, audience du 06/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour à l'équipe Immojudis,\n\nLa parcelle de la maison fait 540 m² et est entièrement close.\n\nBien à vous,\n\nMaître Karine Olmédo\nAvocate au Barreau de Port-Essai\n73, allée du Simulacre - 99100 Port-Essai\nTél. : 01 99 00 20 30\naccueil@associes-olmedo.example",
     "pieces_jointes": []
    },
    "contexte": {
@@ -237,13 +253,14 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 1,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
@@ -253,7 +270,7 @@
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -263,9 +280,9 @@
    "famille": 5,
    "titre": "Terrain de la copropriété pour un appartement",
    "message": {
-    "expediteur": "l.vidrecourt@vidrecourt.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 06/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nL'immeuble en copropriété est édifié sur un terrain de 3000 m².\n\nCordialement,\n\nMaître Laurent Vidrecourt\nAvocat au Barreau de Mont-Exemple\n27, rue de l'Épreuve - 99600 Mont-Exemple\nTél. : 06 99 01 20 12\nl.vidrecourt@vidrecourt.example",
+    "expediteur": "vidrecourt@avocat-vidrecourt.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 07/05/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nL'immeuble en copropriété est édifié sur un terrain de 3000 m².\n\nTrès cordialement,\n\n-- \nMaître Laurent Vidrecourt\nCabinet d'avocats Vidrecourt\n80, rue de l'Épreuve - 99200 Bourg-Modèle\nStandard : 02 99 01 21 31 - Secrétariat du lundi au vendredi, 9 h - 12 h\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m131@reponses.immojudis.example]\nEnvoyé : 7 novembre 2026 10:11\nÀ : vidrecourt@avocat-vidrecourt.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Vidrecourt,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -288,13 +305,14 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 8,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
@@ -308,7 +326,7 @@
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -318,9 +336,9 @@
    "famille": 5,
    "titre": "Jardin privatif d'un appartement",
    "message": {
-    "expediteur": "a.fictel@fictel-avocats.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 07/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nL'appartement bénéficie d'un jardin privatif de 120 m².\n\nBien cordialement,\n\nMaître Aurore Fictel\nAvocat au Barreau de Valmont-sur-Exemple\n12, rue des Essais - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 10 01\na.fictel@fictel-avocats.example",
+    "expediteur": "m.esparbes@cabinet-esparbes.example",
+    "objet": "RE: Appartement à Clos-Maquette, audience du 08/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nL'appartement bénéficie d'un jardin privatif de 120 m².\n\nSentiments dévoués,\nMaître Esparbès",
     "pieces_jointes": []
    },
    "contexte": {
@@ -343,23 +361,28 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 15,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
      "publiable": false,
      "raison": "Jardin privatif en jouissance : ce n'est pas une surface de terrain du bien.",
-     "lecture_modele": null
+     "lecture_modele": {
+      "valeur": 120,
+      "citation": "jardin privatif de 120 m²",
+      "source": "corps"
+     }
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -369,9 +392,9 @@
    "famille": 5,
    "titre": "Chambres et non pièces",
    "message": {
-    "expediteur": "contact@lorquin-associes.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 08/05/2027 : vérification de l'annonce",
-    "corps": "Madame, Monsieur,\n\nL'appartement dispose de 3 chambres et d'un séjour double.\n\nCordialement,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "expediteur": "contact@selarl-ravanelle.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 09/05/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nL'appartement dispose de 3 chambres et d'un séjour double.\n\nJe vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.\n\nSELARL Ravanelle Avocats\nAvocat au Barreau de Mont-Exemple\nT. 04 99 03 23 33 | contact@selarl-ravanelle.example\n\nLe mar. 2 nov. 2026 à 10:13, Immojudis <enquete+q133z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Ravanelle,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -394,24 +417,29 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 22,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
      "raison": "Le texte compte des chambres, pas des pièces.",
-     "lecture_modele": null
+     "lecture_modele": {
+      "valeur": 3,
+      "citation": "L'appartement dispose de 3 chambres",
+      "source": "corps"
+     }
     }
    }
   },
@@ -420,9 +448,9 @@
    "famille": 5,
    "titre": "Type T4 sans nombre de pièces écrit",
    "message": {
-    "expediteur": "cardaillou@cabinet-ardaillou.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 09/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nIl s'agit d'un appartement de type T4 au deuxième étage.\n\nBien cordialement,\n\nMaître Clémence Ardaillou\nAvocate au Barreau de Port-Essai\n38, quai des Témoins - 99300 Port-Essai\nTél. : 03 99 00 30 03\ncardaillou@cabinet-ardaillou.example",
+    "expediteur": "secretariat@scp-duquerroy.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 10/05/2027 : vérification de l'annonce",
+    "corps": "Bonsoir,\n\nIl s'agit d'un appartement de type T4 au deuxième étage.\n\nBien confraternellement,\n\nMaître Odile Duquerroy\nAvocate au Barreau de Rive-Hypothèse\n\nSCP Duquerroy & Associés\n11, quai des Témoins - 99500 Rive-Hypothèse",
     "pieces_jointes": []
    },
    "contexte": {
@@ -445,18 +473,19 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 3,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
@@ -471,9 +500,9 @@
    "famille": 5,
    "titre": "Pièces dont chambres",
    "message": {
-    "expediteur": "d.pescatore@pescatore-avocat.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 10/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nL'appartement comprend 4 pièces dont 3 chambres.\n\nCordialement,\n\nMaître Damien Pescatore\nAvocat - Barreau de Bourg-Modèle\n7, avenue de l'Hypothèse - 99400 Bourg-Modèle\nTél. : 04 99 00 40 04\nd.pescatore@pescatore-avocat.example",
+    "expediteur": "pascal.lamothe-essai@avocats-lamothe-essai.example",
+    "objet": "RE: Appartement à Clos-Maquette, audience du 11/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour Mesdames et Messieurs,\n\nL'appartement comprend 4 pièces dont 3 chambres.\n\nCdlt,\n\nMaître Pascal Lamothe-Essai\nAvocat au Barreau de Clos-Maquette\n18, avenue de l'Hypothèse - 99600 Clos-Maquette\nTél. : 01 99 05 25 35\npascal.lamothe-essai@avocats-lamothe-essai.example\n\nDe : Immojudis <enquete+k135x@reponses.immojudis.example>\nEnvoyé : mardi 4 novembre 2026 10:15\nÀ : pascal.lamothe-essai@avocats-lamothe-essai.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Lamothe-Essai,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -496,18 +525,19 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 10,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
@@ -520,11 +550,11 @@
   {
    "id": "F5-11",
    "famille": 5,
-   "titre": "Pièces jointes et surface",
+   "titre": "Pièces jointes annoncées sans pièce jointe et surface",
    "message": {
-    "expediteur": "secretariat@vasseret-avocats.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 11/05/2027 : vérification de l'annonce",
-    "corps": "Madame, Monsieur,\n\nVous trouverez 3 pièces jointes à ce message. La surface habitable est de 45 m².\n\nBien cordialement,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "expediteur": "accueil@associes-berangeot.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 12/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nJe vous adresserai 3 pièces jointes séparément. La surface habitable est de 45 m².\n\nBien cordialement,\n\n-- \nMaître Romane Bérangeot\nBérangeot & Associés\n25, boulevard Fictif - 99700 Valmont-sur-Exemple\nStandard : 02 99 06 26 36 - Secrétariat du lundi au vendredi, 9 h - 12 h",
     "pieces_jointes": []
    },
    "contexte": {
@@ -547,7 +577,8 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 17,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -558,12 +589,12 @@
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -573,9 +604,9 @@
    "famille": 5,
    "titre": "Pièces d'eau",
    "message": {
-    "expediteur": "f.quenellec@scp-quenellec.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 12/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nL'appartement de 3 pièces dispose de 2 pièces d'eau.\n\nCordialement,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "expediteur": "kervadec@avocat-kervadec.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 13/05/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nL'appartement de 3 pièces dispose de 2 pièces d'eau.\n\nCordialement,\nMaître Kervadec\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m137@reponses.immojudis.example]\nEnvoyé : 6 novembre 2026 10:17\nÀ : kervadec@avocat-kervadec.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Kervadec,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -598,18 +629,19 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 24,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
@@ -624,9 +656,9 @@
    "famille": 5,
    "titre": "Cave et appartement",
    "message": {
-    "expediteur": "gmortessan@mortessan.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 13/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nLe lot comprend une cave de 8 m² et un appartement de 46 m².\n\nBien cordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "expediteur": "t.fontrailles@cabinet-fontrailles.example",
+    "objet": "RE: Appartement à Clos-Maquette, audience du 14/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour à l'équipe Immojudis,\n\nLe lot comprend une cave de 8 m² et un appartement de 46 m².\n\nBien à vous,\n\nCabinet Fontrailles\nAvocate au Barreau de Port-Essai\nT. 04 99 08 28 38 | t.fontrailles@cabinet-fontrailles.example",
     "pieces_jointes": []
    },
    "contexte": {
@@ -649,7 +681,8 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 5,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -660,12 +693,12 @@
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -675,9 +708,9 @@
    "famille": 5,
    "titre": "Garage et maison",
    "message": {
-    "expediteur": "hugo.tarbelin@tarbelin-avocats.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 14/05/2027 : vérification de l'annonce",
-    "corps": "Madame, Monsieur,\n\nMaison de 110 m² avec un garage attenant de 20 m².\n\nCordialement,\n\nMaître Hugo Tarbelin\nAvocat au Barreau de Sainte-Fiction\n9, cours de l'Échantillon - 99200 Sainte-Fiction\nTél. : 02 99 00 80 08\nhugo.tarbelin@tarbelin-avocats.example",
+    "expediteur": "contact@selarl-massabiau.example",
+    "objet": "RE: Maison à Port-Essai, audience du 15/05/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nMaison de 110 m² avec un garage attenant de 20 m², le tout sur un terrain de 380 m².\n\nTrès cordialement,\n\nMaître Ulysse Massabiau\nAvocat au Barreau de Bourg-Modèle\n\nSELARL Massabiau Avocats\n46, cours de l'Échantillon - 99100 Bourg-Modèle\n\nLe mar. 8 nov. 2026 à 10:19, Immojudis <enquete+q139z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Massabiau,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -700,7 +733,8 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 12,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -710,13 +744,13 @@
      "citation": "Maison de 110 m²"
     },
     "land_surface_m2": {
-     "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
-     "lecture_modele": null
+     "publiable": true,
+     "valeur": 380,
+     "citation": "sur un terrain de 380 m²"
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -726,9 +760,9 @@
    "famille": 5,
    "titre": "DPE et GES par m²",
    "message": {
-    "expediteur": "ines.calvadour@calvadour-avocat.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 15/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nDPE : D (215 kWh/m²/an), GES : E (48 kg CO2/m²/an). Surface habitable de l'appartement : 70 m².\n\nBien cordialement,\n\nMaître Inès Calvadour\nAvocate au Barreau de Port-Essai\n60, rue des Scénarios - 99300 Port-Essai\nTél. : 03 99 00 90 09\nines.calvadour@calvadour-avocat.example",
+    "expediteur": "secretariat@scp-ponsardin.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 16/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nDPE : D (215 kWh/m²/an), GES : E (48 kg CO2/m²/an). Surface habitable de l'appartement : 70 m².\n\nSentiments dévoués,\n\nMaître Valérie Ponsardin\nAvocate au Barreau de Lac-Témoin\n53, rue des Scénarios - 99200 Lac-Témoin\nTél. : 01 99 00 30 40\nsecretariat@scp-ponsardin.example",
     "pieces_jointes": []
    },
    "contexte": {
@@ -751,7 +785,8 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 19,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -762,12 +797,12 @@
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -777,9 +812,9 @@
    "famille": 5,
    "titre": "Dates de visite et d'audience",
    "message": {
-    "expediteur": "jb@selarl-brossardet.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 16/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nVisite le 12/01 à 10 h ; audience le 20/01. Surface : 33 m².\n\nCordialement,\n\nMaître Julien Brossardet\nSELARL Brossardet - Avocats\n3, impasse du Prototype - 99400 Bourg-Modèle\nTél. : 04 99 01 00 10\njb@selarl-brossardet.example",
+    "expediteur": "xavier.grelaud@avocats-grelaud.example",
+    "objet": "RE: Appartement à Clos-Maquette, audience du 17/05/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nVisite le 12/01 à 10 h ; audience le 20/01. Surface : 33 m².\n\nJe vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.\n\n-- \nMaître Xavier Grelaud\nGrelaud Avocats\n60, impasse du Prototype - 99300 Mont-Exemple\nStandard : 02 99 01 31 41 - Secrétariat du lundi au vendredi, 9 h - 12 h\n\nDe : Immojudis <enquete+k141x@reponses.immojudis.example>\nEnvoyé : mardi 3 novembre 2026 10:21\nÀ : xavier.grelaud@avocats-grelaud.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Grelaud,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -802,7 +837,8 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 26,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -813,12 +849,12 @@
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -828,9 +864,9 @@
    "famille": 5,
    "titre": "Balcon ajouté à la surface",
    "message": {
-    "expediteur": "k.olmedo@olmedo-avocats.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 17/05/2027 : vérification de l'annonce",
-    "corps": "Madame, Monsieur,\n\nAppartement de 58 m² avec un balcon de 6 m².\n\nBien cordialement,\n\nMaître Karine Olmédo\nAvocate au Barreau de Lac-Témoin\n11, allée du Simulacre - 99500 Lac-Témoin\nTél. : 05 99 01 10 11\nk.olmedo@olmedo-avocats.example",
+    "expediteur": "accueil@associes-saint-temoin.example",
+    "objet": "RE: Appartement à Port-Essai, audience du 18/05/2027 : vérification de l'annonce",
+    "corps": "Bonsoir,\n\nAppartement de 58 m² avec un balcon de 6 m².\n\nBien confraternellement,\nMaître Saint-Témoin",
     "pieces_jointes": []
    },
    "contexte": {
@@ -853,7 +889,8 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 7,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -864,12 +901,12 @@
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -879,9 +916,9 @@
    "famille": 5,
    "titre": "Surface totale qui inclut une loggia",
    "message": {
-    "expediteur": "l.vidrecourt@vidrecourt.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 18/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nSurface totale 64 m², dont 6 m² de loggia.\n\nCordialement,\n\nMaître Laurent Vidrecourt\nAvocat au Barreau de Mont-Exemple\n27, rue de l'Épreuve - 99600 Mont-Exemple\nTél. : 06 99 01 20 12\nl.vidrecourt@vidrecourt.example",
+    "expediteur": "hureau@avocat-hureau.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 19/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour Mesdames et Messieurs,\n\nSurface totale 64 m², dont 6 m² de loggia.\n\nCdlt,\n\nCabinet d'avocats Hureau\nAvocate au Barreau de Clos-Maquette\nT. 04 99 03 33 43 | hureau@avocat-hureau.example\n\n-----Message d'origine-----\nDe : Immojudis [mailto:enquete+m143@reponses.immojudis.example]\nEnvoyé : 5 novembre 2026 10:23\nÀ : hureau@avocat-hureau.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Hureau,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -904,23 +941,28 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 14,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
      "raison": "64 m² inclut la loggia : la surface habitable n'est pas donnée.",
-     "lecture_modele": null
+     "lecture_modele": {
+      "valeur": 64,
+      "citation": "Surface totale 64 m²",
+      "source": "corps"
+     }
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -930,9 +972,9 @@
    "famille": 5,
    "titre": "Surface utile d'un local commercial",
    "message": {
-    "expediteur": "a.fictel@fictel-avocats.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 19/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nLa surface utile du local commercial est de 120 m².\n\nBien cordialement,\n\nMaître Aurore Fictel\nAvocat au Barreau de Valmont-sur-Exemple\n12, rue des Essais - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 10 01\na.fictel@fictel-avocats.example",
+    "expediteur": "a.fictel@cabinet-fictel.example",
+    "objet": "RE: Local commercial à Clos-Maquette, audience du 20/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa surface utile du local commercial est de 120 m². Le terrain d'emprise fait 600 m².\n\nBien cordialement,\n\nMaître Aurore Fictel\nAvocate au Barreau de Valmont-sur-Exemple\n\nCabinet Fictel\n3, rue des Essais - 99000 Valmont-sur-Exemple",
     "pieces_jointes": []
    },
    "contexte": {
@@ -955,7 +997,8 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 21,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -965,13 +1008,13 @@
      "citation": "La surface utile du local commercial est de 120 m²"
     },
     "land_surface_m2": {
-     "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
-     "lecture_modele": null
+     "publiable": true,
+     "valeur": 600,
+     "citation": "Le terrain d'emprise fait 600 m²"
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -979,11 +1022,11 @@
   {
    "id": "F5-20",
    "famille": 5,
-   "titre": "Immeuble : surface et pièces",
+   "titre": "Immeuble : surface sur plusieurs niveaux et pièces",
    "message": {
-    "expediteur": "contact@lorquin-associes.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 20/05/2027 : vérification de l'annonce",
-    "corps": "Madame, Monsieur,\n\nL'immeuble développe 420 m² sur trois niveaux et compte 8 pièces au total.\n\nCordialement,\n\nMaître Bastien Lorquin\nAvocat associé - Barreau de Sainte-Fiction\n4, place du Modèle - 99200 Sainte-Fiction\nTél. : 02 99 00 20 02\ncontact@lorquin-associes.example",
+    "expediteur": "contact@selarl-lorquin.example",
+    "objet": "RE: Immeuble à Port-Essai, audience du 21/05/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nL'immeuble développe 420 m² sur trois niveaux et compte 8 pièces au total.\n\nCordialement,\n\nMaître Bastien Lorquin\nAvocat au Barreau de Sainte-Fiction\n10, place du Modèle - 99100 Sainte-Fiction\nTél. : 02 99 01 11 21\ncontact@selarl-lorquin.example\n\nLe mar. 7 nov. 2026 à 10:25, Immojudis <enquete+q145z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Lorquin,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -1006,18 +1049,23 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 2,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
-     "publiable": true,
-     "valeur": 420,
-     "citation": "L'immeuble développe 420 m²"
+     "publiable": false,
+     "raison": "Surface développée sur plusieurs niveaux (comme une surface totale) : à relire.",
+     "lecture_modele": {
+      "valeur": 420,
+      "citation": "L'immeuble développe 420 m²",
+      "source": "corps"
+     }
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
@@ -1036,9 +1084,9 @@
    "famille": 5,
    "titre": "Terrain à bâtir",
    "message": {
-    "expediteur": "cardaillou@cabinet-ardaillou.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 21/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nLe terrain à bâtir a une contenance de 2500 m².\n\nBien cordialement,\n\nMaître Clémence Ardaillou\nAvocate au Barreau de Port-Essai\n38, quai des Témoins - 99300 Port-Essai\nTél. : 03 99 00 30 03\ncardaillou@cabinet-ardaillou.example",
+    "expediteur": "secretariat@scp-ardaillou.example",
+    "objet": "RE: Terrain à Lac-Témoin, audience du 22/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour à l'équipe Immojudis,\n\nLe terrain à bâtir a une contenance de 2500 m².\n\nBien à vous,\n\n-- \nMaître Clémence Ardaillou\nSCP Ardaillou & Associés\n17, quai des Témoins - 99200 Port-Essai\nStandard : 03 99 02 12 22 - Secrétariat du lundi au vendredi, 9 h - 12 h",
     "pieces_jointes": []
    },
    "contexte": {
@@ -1061,13 +1109,14 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 9,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
@@ -1077,7 +1126,7 @@
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -1087,9 +1136,9 @@
    "famille": 5,
    "titre": "Terrain nu déjà affiché par la surface retenue",
    "message": {
-    "expediteur": "d.pescatore@pescatore-avocat.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 22/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nLe terrain a une contenance de 2500 m².\n\nCordialement,\n\nMaître Damien Pescatore\nAvocat - Barreau de Bourg-Modèle\n7, avenue de l'Hypothèse - 99400 Bourg-Modèle\nTél. : 04 99 00 40 04\nd.pescatore@pescatore-avocat.example",
+    "expediteur": "damien.pescatore@avocats-pescatore.example",
+    "objet": "RE: Terrain à Clos-Maquette, audience du 23/05/2027 : vérification de l'annonce",
+    "corps": "Messieurs,\n\nLe terrain a une contenance de 2500 m².\n\nTrès cordialement,\nMaître Pescatore",
     "pieces_jointes": []
    },
    "contexte": {
@@ -1112,13 +1161,14 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 16,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
@@ -1132,7 +1182,7 @@
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -1142,9 +1192,9 @@
    "famille": 5,
    "titre": "Séparateur de milliers : terrain",
    "message": {
-    "expediteur": "secretariat@vasseret-avocats.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 23/05/2027 : vérification de l'annonce",
-    "corps": "Madame, Monsieur,\n\nLa maison est édifiée sur un terrain de 1 250 m².\n\nBien cordialement,\n\nMaître Élodie Vasseret\nAvocate au Barreau de Lac-Témoin\n21, boulevard Fictif - 99500 Lac-Témoin\nTél. : 05 99 00 50 05\nsecretariat@vasseret-avocats.example",
+    "expediteur": "accueil@associes-vasseret.example",
+    "objet": "RE: Maison à Port-Essai, audience du 24/05/2027 : vérification de l'annonce",
+    "corps": "Bonjour,\n\nLa maison est édifiée sur un terrain de 1 250 m².\n\nSentiments dévoués,\n\nVasseret & Associés\nAvocate au Barreau de Lac-Témoin\nT. 05 99 04 14 24 | accueil@associes-vasseret.example\n\nLe mar. 3 nov. 2026 à 10:28, Immojudis <enquete+q148z@reponses.immojudis.example> a écrit :\n> Bonjour Maître Vasseret,\n>\n> Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n>\n> Vente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\n> Audience annoncée : 14/01/2027\n> Mise à prix annoncée : 60 000 €\n>\n> Ces informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n>\n> - Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n> - Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n>\n> Répondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n>\n> Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n>\n> Merci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n>\n> Bien cordialement,\n> L’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -1167,13 +1217,14 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 23,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
@@ -1183,7 +1234,7 @@
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -1193,9 +1244,9 @@
    "famille": 5,
    "titre": "Surface des annexes séparée",
    "message": {
-    "expediteur": "f.quenellec@scp-quenellec.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 24/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nSurface habitable : 54 m2 ; surface des annexes : 21 m2.\n\nCordialement,\n\nMaître François Quenellec\nSCP Quenellec - Avocats au Barreau de Valmont-sur-Exemple\n2 bis, rue du Banc d'Essai - 99100 Valmont-sur-Exemple\nTél. : 01 99 00 60 06\nf.quenellec@scp-quenellec.example",
+    "expediteur": "quenellec@avocat-quenellec.example",
+    "objet": "RE: Appartement à Lac-Témoin, audience du 25/05/2027 : vérification de l'annonce",
+    "corps": "Madame, Monsieur,\n\nSurface habitable : 54 m2 ; surface des annexes : 21 m2.\n\nJe vous prie d'agréer, Madame, Monsieur, l'expression de mes salutations distinguées.\n\nMaître François Quenellec\nAvocat au Barreau de Mont-Exemple\n\nCabinet d'avocats Quenellec\n38, rue du Banc d'Essai - 99500 Mont-Exemple",
     "pieces_jointes": []
    },
    "contexte": {
@@ -1219,6 +1270,7 @@
      "dmarc": "pass"
     },
     "delai_jours": 4,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
@@ -1229,12 +1281,12 @@
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     }
    }
@@ -1244,9 +1296,9 @@
    "famille": 5,
    "titre": "Pièces du dossier prises pour des pièces du bien",
    "message": {
-    "expediteur": "gmortessan@mortessan.example",
-    "objet": "RE: Bien à Lac-Témoin, audience du 25/05/2027 : vérification de l'annonce",
-    "corps": "Bonjour,\n\nLe dossier comporte 6 pièces (cahier, procès-verbal, diagnostics, titre, état hypothécaire et plan).\n\nBien cordialement,\n\nMaître Gaëlle Mortessan\nAvocate - Droit immobilier et voies d'exécution\n15, rue de la Maquette - 99600 Mont-Exemple\nTél. : 06 99 00 70 07\ngmortessan@mortessan.example",
+    "expediteur": "g.mortessan@cabinet-mortessan.example",
+    "objet": "RE: Appartement à Clos-Maquette, audience du 26/05/2027 : vérification de l'annonce",
+    "corps": "Bonsoir,\n\nLe dossier comporte 6 pièces (cahier, procès-verbal, diagnostics, titre, état hypothécaire et plan).\n\nBien confraternellement,\n\nMaître Gaëlle Mortessan\nAvocate au Barreau de Rive-Hypothèse\n45, rue de la Maquette - 99600 Rive-Hypothèse\nTél. : 02 99 06 16 26\ng.mortessan@cabinet-mortessan.example\n\nDe : Immojudis <enquete+k150x@reponses.immojudis.example>\nEnvoyé : mardi 5 novembre 2026 10:30\nÀ : g.mortessan@cabinet-mortessan.example\nObjet : Appartement T3 à Valmont-sur-Exemple, audience du 14/01/2027 : vérification de l'annonce\n\nBonjour Maître Mortessan,\n\nImmojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal. Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :\n\nVente concernée : Appartement T3, 8 rue du Témoin, 99100 Valmont-sur-Exemple (tribunal judiciaire de Valmont-sur-Exemple)\nAudience annoncée : 14/01/2027\nMise à prix annoncée : 60 000 €\n\nCes informations manquent à la fiche ou y sont contradictoires. Une réponse même partielle nous est utile ; notre équipe la relit avant toute mise à jour de la fiche.\n\n- Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?\n- Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?\n\nRépondre est facultatif. Le plus simple : un retour à cet email, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire.\n\nNe communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, garantie exigée pour enchérir, audience) : votre secret professionnel prime sur notre demande. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.\n\nMerci par avance : une fiche exacte évite aux candidats de vous interroger sur des points déjà connus.\n\nBien cordialement,\nL’équipe Immojudis",
     "pieces_jointes": []
    },
    "contexte": {
@@ -1269,24 +1321,29 @@
      "dkim": "pass",
      "dmarc": "pass"
     },
-    "delai_jours": 4,
+    "delai_jours": 11,
+    "messages_anterieurs": [],
     "messages_posterieurs": []
    },
    "verite": {
     "surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "land_surface_m2": {
      "publiable": false,
-     "raison": "La réponse ne donne aucune valeur pour ce champ.",
+     "raison": "La réponse ne donne aucune valeur pour ce champ (rien à lire).",
      "lecture_modele": null
     },
     "rooms_count": {
      "publiable": false,
      "raison": "Pièces du dossier : ce ne sont pas des pièces du logement.",
-     "lecture_modele": null
+     "lecture_modele": {
+      "valeur": 6,
+      "citation": "Le dossier comporte 6 pièces",
+      "source": "corps"
+     }
     }
    }
   }
