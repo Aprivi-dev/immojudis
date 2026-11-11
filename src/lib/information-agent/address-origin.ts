@@ -6,6 +6,7 @@ import {
   type InformationAgentAddressObserver,
   type InformationAgentAddressOrigin,
   type InformationAgentAddressSourceKind,
+  type InformationAgentFooterStructure,
 } from "@/lib/information-agent-compliance";
 import { normalizedEmail } from "@/lib/information-agent/contacts";
 import {
@@ -50,10 +51,10 @@ export async function resolveInformationAgentAddressOrigin({
   saleId,
   manualOriginUrl,
   fallbackObservedAt = null,
-  structureAddress = false,
+  structureAddress = null,
 }: {
-  /** Adresse générique d'une structure (`missionRecipient().addressKind`) : variante « structure » de l'origine. */
-  structureAddress?: boolean;
+  /** Adresse générique d'une structure, sans personne nommée (`missionRecipient().structureAddress`). */
+  structureAddress?: InformationAgentFooterStructure | null;
   email: string;
   saleId: string | null;
   manualOriginUrl: string | null;

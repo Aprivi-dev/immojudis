@@ -122,6 +122,24 @@ export const INFORMATION_AGENT_PROVIDER_MAIL_DOMAINS: readonly string[] = [
   "9online.fr",
 ];
 
+/**
+ * Suffixes publics à deux niveaux : n'importe qui peut y enregistrer un nom (`association.asso.fr`,
+ * `societe.co.uk`). Ce ne sont jamais des structures : aucune clé d'opposition n'y est portée ni contrôlée.
+ * LISTE FERMÉE, comparée au domaine exact.
+ */
+export const INFORMATION_AGENT_PUBLIC_SUFFIXES: readonly string[] = [
+  "asso.fr",
+  "com.fr",
+  "nom.fr",
+  "prd.fr",
+  "presse.fr",
+  "tm.fr",
+  "co.uk",
+  "org.uk",
+  "com.au",
+  "co.nz",
+];
+
 function listedDomainOf(list: readonly string[], domain: string): string | null {
   return list.find((entry) => domain === entry || domain.endsWith(`.${entry}`)) ?? null;
 }
@@ -135,6 +153,7 @@ export function sharedMailDomainOf(emailOrDomain: string): string | null {
 function isOwnMailDomain(domain: string): boolean {
   return (
     domain.includes(".") &&
+    !INFORMATION_AGENT_PUBLIC_SUFFIXES.includes(domain) &&
     !listedDomainOf(INFORMATION_AGENT_SHARED_MAIL_DOMAINS, domain) &&
     !listedDomainOf(INFORMATION_AGENT_PROVIDER_MAIL_DOMAINS, domain) &&
     !isConsumerMailAddress(`x@${domain}`)

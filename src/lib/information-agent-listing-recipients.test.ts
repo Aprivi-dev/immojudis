@@ -406,6 +406,40 @@ describe("adresse générique avant adresse nominative", () => {
     });
   });
 
+  it("champ de la vente, deux cabinets différents : aucune préférence, l'administrateur tranche", () => {
+    const candidates = discoverInformationAgentContacts(
+      sale({
+        ...ENCHERES_IMMOBILIERES,
+        features: undefined,
+        sale: {
+          lawyer_name: "Maître Jean Dupont",
+          lawyer_contact: "jean.dupont@cabinet-a.example.test / contact@cabinet-b.example.test",
+        },
+      }),
+    );
+    expect(candidates.map((candidate) => [candidate.email, candidate.addressKind])).toEqual([
+      ["contact@cabinet-b.example.test", "generic"],
+      ["jean.dupont@cabinet-a.example.test", "nominative"],
+    ]);
+    expect(candidates[0].score).toBe(candidates[1].score);
+    expect(selectInformationAgentContact(candidates)).toBeNull();
+  });
+
+  it("champ de la vente, messagerie sans domaine propre : aucune préférence non plus", () => {
+    const candidates = discoverInformationAgentContacts(
+      sale({
+        ...ENCHERES_IMMOBILIERES,
+        features: undefined,
+        sale: {
+          lawyer_name: "Maître Anne Leroy",
+          lawyer_contact: "anne.leroy@gmail.test / cabinet@gmail.test",
+        },
+      }),
+    );
+    expect(candidates).toHaveLength(2);
+    expect(selectInformationAgentContact(candidates)).toBeNull();
+  });
+
   it("sans adresse générique : l'adresse nominative de la personne nommée par l'annonce", () => {
     expect(
       selectInformationAgentContact(discoverInformationAgentContacts(sale(NOTAIRES))),
@@ -663,13 +697,43 @@ describe("office notarial de la vente", () => {
     expect(byEmail.get("etude.fictive@gmail.test")).toBeUndefined();
   });
 
-  it("hors vente notariale, un code d'office publié ne s'applique à personne", () => {
+  it("le code d'office ne va qu'aux candidats de rôle notaire", () => {
+    // Organisateur déclaré « avocat poursuivant » sur une annonce de `notaires` : aucun notaire retenu,
+    // donc personne ne porte le code, bien que l'annonce le publie.
     const resolution = resolveInformationAgentListingContacts(
       sale({ ...NOTAIRES, organizerType: "pursuing_lawyer" }),
     );
-    expect(resolution.officeCode).toBeNull();
+    expect(resolution.officeCode).toBe("33001");
+    expect(resolution.candidates.map((candidate) => candidate.role)).toEqual(["source_contact"]);
     expect(resolution.candidates.every((candidate) => !candidate.officeCode)).toBe(true);
   });
+
+  it.each([
+    ["`sale_procedure` nul", null],
+    ["organisateur `unknown`", { organizer_type: "unknown" }],
+    ["organisateur hors liste", { organizer_type: "seller" }],
+  ])(
+    "organisateur non déclaré (%s) : le code unique vaut quand même pour tout notaire",
+    (_l, p) => {
+      const resolution = resolveInformationAgentListingContacts(
+        sale({
+          source: "notaires",
+          url: NOTAIRES.url,
+          features: NOTAIRES.features,
+          sale: {
+            sale_procedure: p,
+            lawyer_contact: "autre.notaire@exemple-fictif.notaires.fr",
+          },
+        }),
+      );
+      expect(resolution.organizerType).toBe("unknown");
+      expect(resolution.officeCode).toBe("33001");
+      expect(resolution.candidates.map((c) => [c.email, c.role, c.officeCode]).sort()).toEqual([
+        ["autre.notaire@exemple-fictif.notaires.fr", "notary", "33001"],
+        ["jean.martin@example.test", "notary", "33001"],
+      ]);
+    },
+  );
 });
 
 describe("rôle refusé : cité autrement que comme interlocuteur de la vente", () => {
@@ -744,6 +808,35 @@ describe("rôle refusé : cité autrement que comme interlocuteur de la vente", 
     ]);
     expect(tribunal.refused).toEqual({ role_not_sale_interlocutor: 1 });
   });
+
+  it.each(["notaires", "cessions_etat"])(
+    "source `%s` : un texte libre ne fait jamais un avocat (« cabinet », « avocat »)",
+    (source) => {
+      const texts = {
+        description: "Avocat : maitre.durand@example.test",
+        source_blocks: { cabinet: "Cabinet Martin : cabinet.martin@example.test" },
+      };
+      const roles = (fixtureSource: string) =>
+        Object.fromEntries(
+          discoverInformationAgentContacts(
+            sale({
+              source: fixtureSource,
+              url: `https://annonces.example.test/${fixtureSource}/7`,
+              sale: { sale_procedure: null, ...texts },
+            }),
+          ).map((candidate) => [candidate.email, [candidate.role, candidate.recipientKind]]),
+        );
+      expect(roles(source)).toEqual({
+        "maitre.durand@example.test": ["source_contact", "source_contact"],
+        "cabinet.martin@example.test": ["source_contact", "source_contact"],
+      });
+      // Les mêmes textes sur une source d'annonces judiciaires : inchangé.
+      expect(roles("licitor")).toEqual({
+        "maitre.durand@example.test": ["lawyer", "source_lawyer"],
+        "cabinet.martin@example.test": ["lawyer", "source_lawyer"],
+      });
+    },
+  );
 
   it("un notaire cité dans une vente au tribunal n'est pas retenu", () => {
     const resolution = resolveInformationAgentListingContacts(

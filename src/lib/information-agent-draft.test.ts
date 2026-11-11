@@ -442,6 +442,27 @@ describe("brouillon pour un notaire lu dans l'annonce", () => {
     ).rejects.toThrow("l'agent ne demande que la surface");
   });
 
+  it("source `notaires` sans organisateur déclaré, adresse saisie : la source donne la liste courte", async () => {
+    mocks.sale.mockResolvedValue({
+      ...notarySale,
+      lawyer_contact: null,
+      information_agent_organizer_type: undefined,
+      sale_procedure: null,
+      listing_contact_blocks: [],
+    } as never);
+    const result = await createAdminInformationAgentDraft({
+      auth: admin,
+      input: { saleId, recipientEmail: "autre.adresse@example.test" },
+    });
+    const allowed = ["surface", "composition", "occupancy", "visit", "documents"];
+    for (const key of result.mission.questionKeys) expect(allowed).toContain(key);
+    expect(inserted).toMatchObject({
+      recipient_kind: "manual_professional",
+      metadata: { contact_identity: { role: null }, question_audience: "notary" },
+    });
+    expect(result.mission.bodyText).toContain("votre secret professionnel prime sur notre demande");
+  });
+
   it("office opposé : une adresse saisie sur le domaine partagé garde l'office de la vente et est refusée", async () => {
     opposedIdentityKeys = ["structure|office|33001"];
     inserted = null;

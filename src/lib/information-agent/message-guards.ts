@@ -4,6 +4,7 @@ import { INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION } from "../../../emails/info
 import {
   informationAgentControllerIdentity,
   type InformationAgentAddressOrigin,
+  type InformationAgentFooterStructure,
   type InformationAgentLegalFooter,
 } from "@/lib/information-agent-compliance";
 import { informationAgentAiProvider } from "@/lib/information-agent-ai-provider";
@@ -37,14 +38,14 @@ export function buildInformationAgentLegalFooter({
   email,
   addressOrigin,
   saleReference = null,
-  structureOpposition = false,
+  structureOpposition = null,
   env = process.env,
 }: {
   appUrl: string;
   email: string;
   addressOrigin: InformationAgentAddressOrigin;
   /** L'opposition de cette adresse vaudra pour toute sa structure (`missionRecipient().structureOpposition`). */
-  structureOpposition?: boolean;
+  structureOpposition?: InformationAgentFooterStructure | null;
   saleReference?: string | null;
   env?: Readonly<Record<string, string | undefined>>;
 }): InformationAgentLegalFooter {
@@ -65,8 +66,8 @@ export function buildInformationAgentLegalFooter({
     addressOriginUrl: addressOrigin.url,
     automatedSearch: addressOrigin.automated,
     automatedSearchSource: addressOrigin.searchSource,
-    structureAddress: Boolean(addressOrigin.structureAddress),
-    structureOpposition: structureOpposition && !addressOrigin.courtRegistry,
+    structureAddress: addressOrigin.structureAddress ?? null,
+    structureOpposition: addressOrigin.courtRegistry ? null : structureOpposition,
     // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
     aiProvider: informationAgentAiProvider(env),
     privacyUrl: new URL("/privacy", appUrl).toString(),

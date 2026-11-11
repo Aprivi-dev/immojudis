@@ -33,41 +33,47 @@ import {
   STATE_SERVICE_EMAIL_TEMPLATE,
 } from "@/lib/information-agent/recipient-templates";
 
-describe("destinataire des questions : le rôle établi, sinon l'organisateur de la vente", () => {
+describe("destinataire des questions : le rôle établi, sinon l'organisateur de la vente, sinon la source", () => {
+  const audience = (
+    role: string | null,
+    organizerType: "pursuing_lawyer" | "notary" | "state_service" | "unknown",
+    sourceName: string | null = "licitor",
+    structureKind?: "state_service",
+  ) => informationAgentQuestionAudience({ role, organizerType, sourceName, structureKind });
+
   it("rôle établi", () => {
-    expect(
-      informationAgentQuestionAudience({ role: "lawyer", organizerType: "pursuing_lawyer" }),
-    ).toBe("lawyer");
-    expect(informationAgentQuestionAudience({ role: "notary", organizerType: "notary" })).toBe(
-      "notary",
+    expect(audience("lawyer", "pursuing_lawyer")).toBe("lawyer");
+    expect(audience("notary", "notary", "notaires")).toBe("notary");
+    expect(audience("organizer", "state_service", "cessions_etat", "state_service")).toBe(
+      "state_service",
     );
-    expect(
-      informationAgentQuestionAudience({
-        role: "organizer",
-        structureKind: "state_service",
-        organizerType: "state_service",
-      }),
-    ).toBe("state_service");
   });
 
   it.each([null, "source_contact", "organizer", "manual_professional"])(
     "rôle non établi (%s) : liste courte sur une vente notariale ou une cession, inchangé ailleurs",
     (role) => {
-      expect(informationAgentQuestionAudience({ role, organizerType: "notary" })).toBe("notary");
-      expect(informationAgentQuestionAudience({ role, organizerType: "state_service" })).toBe(
-        "state_service",
-      );
-      expect(informationAgentQuestionAudience({ role, organizerType: "pursuing_lawyer" })).toBe(
-        "other",
-      );
-      expect(informationAgentQuestionAudience({ role, organizerType: "unknown" })).toBe("other");
+      expect(audience(role, "notary")).toBe("notary");
+      expect(audience(role, "state_service")).toBe("state_service");
+      expect(audience(role, "pursuing_lawyer")).toBe("other");
+      expect(audience(role, "unknown")).toBe("other");
+    },
+  );
+
+  it.each([null, "source_contact", "manual_professional"])(
+    "organisateur inconnu, rôle non établi (%s) : la source de l'annonce départage",
+    (role) => {
+      // Adresse saisie par l'administrateur sur une vente d'une source `notaires` : liste courte, envoi fermé.
+      expect(audience(role, "unknown", "notaires")).toBe("notary");
+      expect(audience(role, "unknown", "cessions_etat")).toBe("state_service");
+      expect(audience(role, "unknown", "avoventes")).toBe("other");
+      expect(audience(role, "unknown", null)).toBe("other");
+      // Même départage quand l'organisateur déclaré contredit la source.
+      expect(audience(role, "pursuing_lawyer", "notaires")).toBe("notary");
     },
   );
 
   it("un notaire désigné reste un notaire même si l'organisateur de la vente est inconnu", () => {
-    expect(informationAgentQuestionAudience({ role: "notary", organizerType: "unknown" })).toBe(
-      "notary",
-    );
+    expect(audience("notary", "unknown", null)).toBe("notary");
   });
 });
 
@@ -190,7 +196,7 @@ describe("texte du message selon le destinataire", () => {
 });
 
 describe("envois aux notaires fermés par défaut", () => {
-  const notary = { role: "notary", questionAudience: "notary" };
+  const notary = { role: "notary", questionAudience: "notary", email: "jean.martin@example.test" };
 
   it("refuse tant que le réglage n'est pas exactement `true`", () => {
     for (const env of [{}, { INFORMATION_AGENT_NOTARY_SEND_ENABLED: "false" }]) {
@@ -213,18 +219,47 @@ describe("envois aux notaires fermés par défaut", () => {
   });
 
   it("vaut pour le rôle notaire et pour tout destinataire d'une vente notariale, pas pour les autres", () => {
+    const email = "jean.martin@example.test";
     expect(() =>
-      assertInformationAgentNotarySendAllowed({ role: null, questionAudience: "notary" }, {}),
+      assertInformationAgentNotarySendAllowed(
+        { role: null, questionAudience: "notary", email },
+        {},
+      ),
     ).toThrow("Envoi à un notaire fermé");
     expect(() =>
-      assertInformationAgentNotarySendAllowed({ role: "notary", questionAudience: "other" }, {}),
+      assertInformationAgentNotarySendAllowed(
+        { role: "notary", questionAudience: "other", email },
+        {},
+      ),
     ).toThrow("Envoi à un notaire fermé");
     for (const recipient of [
-      { role: "lawyer", questionAudience: "lawyer" },
-      { role: "organizer", questionAudience: "state_service" },
-      { role: null, questionAudience: "other" },
+      { role: "lawyer", questionAudience: "lawyer", email },
+      { role: "organizer", questionAudience: "state_service", email },
+      { role: null, questionAudience: "other", email },
     ]) {
       expect(() => assertInformationAgentNotarySendAllowed(recipient, {})).not.toThrow();
+    }
+  });
+
+  it("vaut pour toute adresse en `notaires.fr` ou l'un de ses sous-domaines, quel que soit le rôle", () => {
+    const lawyer = { role: "lawyer", questionAudience: "lawyer" };
+    for (const email of [
+      "jean.martin@exemple-fictif.notaires.fr",
+      "ETUDE@Paris.Exemple-Fictif.Notaires.fr",
+    ]) {
+      expect(() => assertInformationAgentNotarySendAllowed({ ...lawyer, email }, {})).toThrow(
+        "Envoi à un notaire fermé",
+      );
+      expect(() =>
+        assertInformationAgentNotarySendAllowed(
+          { ...lawyer, email },
+          { INFORMATION_AGENT_NOTARY_SEND_ENABLED: "true" },
+        ),
+      ).not.toThrow();
+    }
+    // Un domaine qui contient le mot sans être le domaine du notariat n'est pas concerné.
+    for (const email of ["contact@mesnotaires.example.test", "contact@notaires.fr.example.test"]) {
+      expect(() => assertInformationAgentNotarySendAllowed({ ...lawyer, email }, {})).not.toThrow();
     }
   });
 });
@@ -242,58 +277,88 @@ describe("pied du message, variante « structure »", () => {
     optOutUrl: "https://immojudis.example/api/information-agent/opt-out",
     ...overrides,
   });
+  const listing = {
+    sourceKind: "sale_listing" as const,
+    sourceName: "licitor",
+    sourceUrl: "https://annonces.example.test/licitor/1",
+    observedAt: "2026-11-10T08:00:00Z",
+    observedBy: "agent" as const,
+  };
+  const WORDS = [
+    ["law_firm", "de votre cabinet", "de ce cabinet"],
+    ["notary_office", "de votre étude", "de cette étude"],
+    ["state_service", "de votre service", "de ce service"],
+  ] as const;
 
-  it("origine : « l'adresse de contact de votre étude (ou de votre service) », pour l'annonce seulement", () => {
-    const listing = {
-      sourceKind: "sale_listing" as const,
-      sourceName: "licitor",
-      sourceUrl: "https://annonces.example.test/licitor/1",
-      observedAt: "2026-11-10T08:00:00Z",
-      observedBy: "agent" as const,
-    };
-    const structure = informationAgentAddressOrigin({ ...listing, structureAddress: true });
-    expect(structure.text).toBe(
-      "L’adresse de contact de votre étude (ou de votre service) figure dans l’annonce publique de cette vente sur Licitor (https://annonces.example.test/licitor/1), consultée le 10/11/2026.",
+  it.each(WORDS)(
+    "%s : le mot de la structure dans l'origine, les catégories et la portée",
+    (kind, yours, that) => {
+      const origin = informationAgentAddressOrigin({ ...listing, structureAddress: kind });
+      expect(origin.text).toBe(
+        `L’adresse de contact ${yours} figure dans l’annonce publique de cette vente sur Licitor (https://annonces.example.test/licitor/1), consultée le 10/11/2026.`,
+      );
+      expect(origin.structureAddress).toBe(kind);
+      const lines = informationAgentLegalFooterLines(
+        footer({ addressOrigin: origin.text, structureAddress: kind, structureOpposition: kind }),
+      ).join("\n");
+      expect(lines).toContain(
+        `Vos données : l’adresse de contact ${yours} et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges. Origine : L’adresse de contact ${yours} figure`,
+      );
+      expect(lines).toContain(
+        `Opposition : ${INFORMATION_AGENT_OBJECTION_STATEMENT} Si vous vous opposez depuis l’adresse de contact ${yours}, nous n’écrirons plus à aucune adresse ${that}.`,
+      );
+      // Un cabinet d'avocat n'est jamais appelé « étude » ou « service », et inversement.
+      for (const [other, otherYours] of WORDS) {
+        if (other !== kind) expect(lines).not.toContain(otherYours);
+      }
+    },
+  );
+
+  it("structure inconnue : formule générale", () => {
+    const origin = informationAgentAddressOrigin({ ...listing, structureAddress: "unknown" });
+    expect(origin.text).toContain(
+      "L’adresse de contact de votre étude, de votre cabinet ou de votre service figure dans l’annonce",
     );
-    expect(structure.structureAddress).toBe(true);
+    expect(
+      informationAgentLegalFooterLines(footer({ structureOpposition: "unknown" })).join("\n"),
+    ).toContain(
+      "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.",
+    );
+    expect(INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT).toBe(
+      "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.",
+    );
+  });
+
+  it("sans variante : pied de la personne ; un greffe garde la sienne", () => {
     const person = informationAgentAddressOrigin(listing);
     expect(person.text).toContain("Votre adresse professionnelle figure dans l’annonce publique");
     expect(person.structureAddress).toBeUndefined();
-    // Un greffe garde sa propre variante.
+    const lines = informationAgentLegalFooterLines(footer({})).join("\n");
+    expect(lines).toContain(
+      "Vos données : votre nom, votre fonction, votre adresse professionnelle",
+    );
+    expect(lines).not.toContain("nous n’écrirons plus à aucune adresse");
     const court = informationAgentAddressOrigin({
       sourceKind: "court_registry_fallback",
-      structureAddress: true,
+      structureAddress: "law_firm",
     });
     expect(court.courtRegistry).toBe(true);
     expect(court.structureAddress).toBeUndefined();
   });
 
-  it("catégories de données et portée de l'opposition", () => {
-    const structure = informationAgentLegalFooterLines(
-      footer({ structureAddress: true, structureOpposition: true }),
+  it("personne nommée à une adresse générique : catégories ordinaires et portée de l'opposition, sans contradiction", () => {
+    const lines = informationAgentLegalFooterLines(
+      footer({
+        addressOrigin: informationAgentAddressOrigin(listing).text,
+        structureAddress: null,
+        structureOpposition: "law_firm",
+      }),
     ).join("\n");
-    expect(structure).toContain(
-      "Vos données : l’adresse de contact de votre étude, de votre cabinet ou de votre service et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges. Origine : Origine.",
+    expect(lines).toContain(
+      "Vos données : votre nom, votre fonction, votre adresse professionnelle et nos échanges. Origine : Votre adresse professionnelle figure",
     );
-    expect(structure).toContain(
-      `Opposition : ${INFORMATION_AGENT_OBJECTION_STATEMENT} ${INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT}`,
-    );
-    expect(INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT).toBe(
-      "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.",
-    );
-
-    const person = informationAgentLegalFooterLines(footer({})).join("\n");
-    expect(person).toContain(
-      "Vos données : votre nom, votre fonction, votre adresse professionnelle",
-    );
-    expect(person).not.toContain("aucune adresse de cette structure");
-
-    // Adresse générique sans structure identifiable : catégories « structure », aucune promesse de portée.
-    const unknownStructure = informationAgentLegalFooterLines(
-      footer({ structureAddress: true, structureOpposition: false }),
-    ).join("\n");
-    expect(unknownStructure).toContain("l’adresse de contact de votre étude, de votre cabinet");
-    expect(unknownStructure).not.toContain("aucune adresse de cette structure");
+    expect(lines).not.toContain("si vous répondez, le nom, la fonction");
+    expect(lines).toContain("nous n’écrirons plus à aucune adresse de ce cabinet.");
   });
 });
 

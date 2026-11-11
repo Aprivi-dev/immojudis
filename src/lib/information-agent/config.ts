@@ -16,21 +16,29 @@ export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = p
   }
 }
 
+/** Domaine de messagerie du notariat : une adresse qui y est logée est celle d'un office. */
+const NOTARY_MAIL_DOMAIN = "notaires.fr";
+
 export const INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE =
   "Envoi à un notaire fermé : la réutilisation des annonces notariales pour écrire aux offices attend une autorisation. Le brouillon reste consultable ; l'envoi sera possible une fois le réglage INFORMATION_AGENT_NOTARY_SEND_ENABLED activé.";
 
 /**
  * Les envois aux notaires sont FERMÉS par défaut (décision prudente du 11/11/2026, en attendant une
- * autorisation sur la réutilisation des annonces notariales). Sont concernés le destinataire de rôle notaire
- * et tout destinataire d'une vente notariale (`question_audience = notary`). Seule la valeur exacte `true`
+ * autorisation sur la réutilisation des annonces notariales). Sont concernés le destinataire de rôle notaire,
+ * tout destinataire d'une vente notariale (`question_audience = notary`) et toute adresse en `notaires.fr`
+ * (ou l'un de ses sous-domaines), quels que soient le rôle et la vente. Seule la valeur exacte `true`
  * de `INFORMATION_AGENT_NOTARY_SEND_ENABLED` ouvre l'approbation et l'envoi ; le brouillon, l'aperçu du
  * texte et la mesure à blanc restent possibles.
  */
 export function assertInformationAgentNotarySendAllowed(
-  recipient: { role: string | null; questionAudience: unknown },
+  recipient: { role: string | null; questionAudience: unknown; email: string },
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
-  if (recipient.role !== "notary" && recipient.questionAudience !== "notary") return;
+  const domain = recipient.email.trim().toLowerCase().split("@").pop() ?? "";
+  const notaryDomain = domain === NOTARY_MAIL_DOMAIN || domain.endsWith(`.${NOTARY_MAIL_DOMAIN}`);
+  if (recipient.role !== "notary" && recipient.questionAudience !== "notary" && !notaryDomain) {
+    return;
+  }
   if (env.INFORMATION_AGENT_NOTARY_SEND_ENABLED !== "true") {
     throw new Error(INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE);
   }
