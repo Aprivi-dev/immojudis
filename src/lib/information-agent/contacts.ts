@@ -13,6 +13,23 @@ import {
   informationAgentExcludedAddressReason,
   isInformationAgentExcludedAddress,
 } from "@/lib/information-agent/excluded-addresses";
+import {
+  informationAgentAddressKind,
+  informationAgentStructureKeys,
+  isInformationAgentStructureKey,
+  ownMailDomainOf,
+  type InformationAgentAddressKind,
+  type InformationAgentStructureKind,
+} from "@/lib/information-agent/contact-structure";
+import {
+  informationAgentListingBlockRole,
+  isInterlocutorRoleForSale,
+  isNonInterlocutorMention,
+  readInformationAgentOrganizerType,
+  type InformationAgentListingBlockName,
+  type InformationAgentListingContactBlock,
+  type InformationAgentOrganizerType,
+} from "@/lib/information-agent/listing-contacts";
 
 export { normalizedEmail };
 export {
@@ -66,6 +83,25 @@ export type InformationAgentContactCandidate = {
   identityKeys?: string[];
   /** Règle d'appariement de la recherche automatique (`same_name_and_phone`, `generic`…). */
   matchRule?: string;
+  /** Structure de l'interlocuteur, quand l'annonce la désigne (cabinet, office notarial, service de l'État). */
+  structureKind?: InformationAgentStructureKind | null;
+  /** Adresse générique de la structure ou adresse nominative (`contact-structure.ts`). */
+  addressKind?: InformationAgentAddressKind;
+  /** Code de l'office notarial publié par l'annonce (CRPCEN), pour un notaire seulement. */
+  officeCode?: string | null;
+};
+
+/** Motifs pour lesquels une adresse présente dans l'annonce n'est pas retenue (comptages de la mesure à blanc). */
+export type InformationAgentContactRefusal =
+  | "excluded_address"
+  | "not_sale_interlocutor"
+  | "role_not_sale_interlocutor"
+  | "nominative_other_person";
+
+export type InformationAgentContactResolution = {
+  candidates: InformationAgentContactCandidate[];
+  /** Nombre d'adresses écartées, par motif. Aucune adresse. */
+  refused: Partial<Record<InformationAgentContactRefusal, number>>;
 };
 
 type InformationAgentContactRegistryRow =
@@ -103,6 +139,10 @@ export type InformationAgentRegistryContact = {
 export type InformationAgentContactSale = AuctionSale & {
   source_block_urls?: Record<string, string | null> | null;
   registry_contacts?: readonly InformationAgentRegistryContact[] | null;
+  /** Blocs de contact de `source_property_features` (vente et observations), lus par le chargeur admin. */
+  listing_contact_blocks?: readonly InformationAgentListingContactBlock[] | null;
+  /** `organizer_type` de la procédure de vente ; à défaut, lu dans `sale_procedure`. */
+  information_agent_organizer_type?: InformationAgentOrganizerType | null;
 };
 
 /**
@@ -115,10 +155,109 @@ export type InformationAgentContactSale = AuctionSale & {
 export function discoverInformationAgentContacts(
   sale: InformationAgentContactSale,
 ): InformationAgentContactCandidate[] {
+  return resolveInformationAgentListingContacts(sale).candidates;
+}
+
+/** Score d'une adresse qu'un bloc de contact de l'annonce associe à l'interlocuteur de la vente. */
+const LISTING_BLOCK_SCORE = 100;
+/** Score d'un bloc `contact` dont le rôle n'est pas établi : jamais choisi seul devant un interlocuteur désigné. */
+const LISTING_PLAIN_CONTACT_SCORE = 76;
+/** Écart qui fait choisir un contact seul (`selectInformationAgentContact`). */
+const SELECTION_MARGIN = 12;
+const LISTING_BLOCK_NAMES: readonly InformationAgentListingBlockName[] = [
+  "contact",
+  "manager",
+  "lawyer",
+];
+
+/**
+ * Même lecture que `discoverInformationAgentContacts`, avec le compte des adresses écartées et leur motif.
+ *
+ * Trois lectures, dans cet ordre :
+ * 1. les blocs de contact de l'annonce (`source_property_features` : notaire, service de l'État, avocat),
+ *    avec le rôle que la vente leur donne (`informationAgentListingBlockRole`) ;
+ * 2. le champ `lawyer_contact`, les blocs cités et les descriptions ;
+ * 3. le registre interne (adresses relevées par le pipeline).
+ * Puis la règle de préférence : dans une même structure, l'adresse générique passe devant la nominative.
+ */
+export function resolveInformationAgentListingContacts(
+  sale: InformationAgentContactSale,
+): InformationAgentContactResolution {
   const sourceName = cleanContactValue(sale.source_name ?? sale.primary_source);
   const sourceUrl = firstSourceUrl(sale);
-  const observations: ContactObservation[] = [];
+  const organizerType =
+    sale.information_agent_organizer_type ?? readInformationAgentOrganizerType(sale.sale_procedure);
+  const refused: InformationAgentContactResolution["refused"] = {};
+  const refuse = (reason: InformationAgentContactRefusal) => {
+    refused[reason] = (refused[reason] ?? 0) + 1;
+  };
+  const byEmail = new Map<string, InformationAgentContactCandidate>();
+  /** Adresses d'une même structure : clé de groupe (bloc de l'annonce ou domaine propre) vers adresses. */
+  const groups = new Map<string, Set<string>>();
+  const group = (key: string, email: string) => {
+    const members = groups.get(key) ?? new Set<string>();
+    members.add(email);
+    groups.set(key, members);
+  };
 
+  // 1. Blocs de contact de l'annonce.
+  const blocks = sale.listing_contact_blocks ?? [];
+  const lawyerAddresses = new Set([
+    ...extractEmails(sale.lawyer_contact),
+    ...blocks.flatMap((block) => block.lawyer.map((record) => record.email)),
+  ]);
+  const accepted = new Set<string>();
+  const otherPeople = new Set<string>();
+  blocks.forEach((block, blockIndex) => {
+    for (const blockName of LISTING_BLOCK_NAMES) {
+      for (const record of block[blockName]) {
+        const listingRole = informationAgentListingBlockRole({
+          block: blockName,
+          organizerType,
+          sourceName: block.sourceName,
+          lawyerAddress: lawyerAddresses.has(record.email),
+        });
+        if (!listingRole) {
+          refuse("role_not_sale_interlocutor");
+          continue;
+        }
+        if (isInformationAgentExcludedAddress(record.email)) {
+          refuse("excluded_address");
+          continue;
+        }
+        // Adresse nominative d'une autre personne que le contact nommé par l'annonce : jamais retenue.
+        if (informationAgentAddressKind(record.email) === "nominative" && !record.principal) {
+          otherPeople.add(record.email);
+          continue;
+        }
+        accepted.add(record.email);
+        group(`block|${blockIndex}|${blockName}`, record.email);
+        upsertContactCandidate(byEmail, {
+          email: record.email,
+          name: record.name,
+          role: listingRole.role,
+          structureKind: listingRole.structureKind,
+          officeCode: listingRole.role === "notary" ? block.officeCode : null,
+          score:
+            listingRole.role === "source_contact"
+              ? LISTING_PLAIN_CONTACT_SCORE
+              : LISTING_BLOCK_SCORE + 4,
+          provenance: {
+            kind: "source_block",
+            field: record.field,
+            sourceName: block.sourceName ?? sourceName,
+            sourceUrl: safeSourceUrlOrNull(block.sourceUrl) ?? sourceUrl,
+          },
+        });
+      }
+    }
+  });
+  // Écartée partout, y compris si un bloc cité ou une description la répète.
+  const barred = new Set([...otherPeople].filter((email) => !accepted.has(email)));
+  for (let index = 0; index < barred.size; index += 1) refuse("nominative_other_person");
+
+  // 2. Champ de la vente, blocs cités et descriptions.
+  const observations: ContactObservation[] = [];
   addContactObservation(observations, {
     value: sale.lawyer_contact,
     kind: "sale_field",
@@ -164,49 +303,159 @@ export function discoverInformationAgentContacts(
     });
   }
 
-  const byEmail = new Map<string, InformationAgentContactCandidate>();
   for (const observation of observations) {
     for (const email of extractEmails(observation.value)) {
-      if (isInformationAgentExcludedAddress(email)) continue;
-      const role = inferContactRole(`${observation.field} ${observation.value}`);
-      const score = observation.score + (role === "source_contact" ? 0 : 4);
-      const provenance: InformationAgentContactProvenance = {
-        kind: observation.kind,
-        field: observation.field,
-        sourceName: observation.sourceName,
-        sourceUrl: observation.sourceUrl,
-      };
-      const current = byEmail.get(email);
-      if (!current) {
-        byEmail.set(email, {
-          email,
-          name: observation.name ?? null,
-          role,
-          recipientKind: role === "lawyer" ? "source_lawyer" : "source_contact",
-          confidence: confidenceForContactScore(score),
-          score,
-          provenance: [provenance],
-        });
+      if (barred.has(email)) continue;
+      if (isInformationAgentExcludedAddress(email)) {
+        refuse("excluded_address");
         continue;
       }
-      if (!current.provenance.some((item) => sameContactProvenance(item, provenance))) {
-        current.provenance.push(provenance);
+      // `lawyer_contact` porte le contact de l'organisateur de la vente, quel qu'il soit : le pipeline y
+      // projette aussi celui du notaire ou du service de l'État. Son rôle est donc celui de l'organisateur.
+      const organizerRole = observation.kind === "sale_field" ? saleFieldRole(organizerType) : null;
+      const role =
+        organizerRole?.role ?? inferContactRole(`${observation.field} ${observation.value}`);
+      if (observation.kind !== "sale_field") {
+        if (isNonInterlocutorMention(observation.field, String(observation.value), email)) {
+          refuse("not_sale_interlocutor");
+          continue;
+        }
+        if (!isInterlocutorRoleForSale(role, organizerType)) {
+          refuse("role_not_sale_interlocutor");
+          continue;
+        }
       }
-      if (score > current.score) {
-        current.score = score;
-        current.confidence = confidenceForContactScore(score);
-        current.role = role;
-        current.recipientKind = role === "lawyer" ? "source_lawyer" : "source_contact";
-      }
-      if (!current.name && observation.name) current.name = observation.name;
+      upsertContactCandidate(byEmail, {
+        email,
+        name: observation.name ?? null,
+        role,
+        structureKind: organizerRole?.structureKind ?? null,
+        officeCode: null,
+        score: observation.score + (role === "source_contact" ? 0 : 4),
+        provenance: {
+          kind: observation.kind,
+          field: observation.field,
+          sourceName: observation.sourceName,
+          sourceUrl: observation.sourceUrl,
+        },
+      });
     }
   }
 
-  addRegistryContacts(byEmail, sale.registry_contacts ?? []);
-
-  return [...byEmail.values()].sort(
-    (left, right) => right.score - left.score || left.email.localeCompare(right.email),
+  // 3. Registre interne.
+  addRegistryContacts(
+    byEmail,
+    (sale.registry_contacts ?? []).filter((contact) => {
+      const email = normalizedEmail(contact.email);
+      return !email || !barred.has(email);
+    }),
   );
+
+  for (const candidate of byEmail.values()) {
+    candidate.addressKind = informationAgentAddressKind(candidate.email);
+    const domain = ownMailDomainOf(candidate.email);
+    if (domain) group(`domain|${domain}`, candidate.email);
+  }
+  for (const members of groups.values()) preferGenericAddress(byEmail, members);
+
+  return {
+    candidates: [...byEmail.values()].sort(
+      (left, right) => right.score - left.score || left.email.localeCompare(right.email),
+    ),
+    refused,
+  };
+}
+
+/** Rôle du contact porté par `lawyer_contact` : celui de l'organisateur de la vente ; `null` : avocat (inféré). */
+function saleFieldRole(organizerType: InformationAgentOrganizerType): {
+  role: InformationAgentContactRole;
+  structureKind: InformationAgentStructureKind;
+} | null {
+  if (organizerType === "notary") return { role: "notary", structureKind: "notary_office" };
+  if (organizerType === "state_service") {
+    return { role: "organizer", structureKind: "state_service" };
+  }
+  return null;
+}
+
+function recipientKindForRole(
+  role: InformationAgentContactRole,
+): InformationAgentContactCandidate["recipientKind"] {
+  return role === "lawyer" ? "source_lawyer" : "source_contact";
+}
+
+/** Ajoute une adresse ou complète celle déjà connue : la meilleure observation fixe le score et le rôle. */
+function upsertContactCandidate(
+  byEmail: Map<string, InformationAgentContactCandidate>,
+  observed: {
+    email: string;
+    name: string | null;
+    role: InformationAgentContactRole;
+    structureKind: InformationAgentStructureKind | null;
+    officeCode: string | null;
+    score: number;
+    provenance: InformationAgentContactProvenance;
+  },
+) {
+  const current = byEmail.get(observed.email);
+  if (!current) {
+    byEmail.set(observed.email, {
+      email: observed.email,
+      name: observed.name,
+      role: observed.role,
+      recipientKind: recipientKindForRole(observed.role),
+      confidence: confidenceForContactScore(observed.score),
+      score: observed.score,
+      provenance: [observed.provenance],
+      ...(observed.structureKind ? { structureKind: observed.structureKind } : {}),
+      ...(observed.officeCode ? { officeCode: observed.officeCode } : {}),
+    });
+    return;
+  }
+  if (!current.provenance.some((item) => sameContactProvenance(item, observed.provenance))) {
+    current.provenance.push(observed.provenance);
+  }
+  if (observed.score > current.score) {
+    current.score = observed.score;
+    current.confidence = confidenceForContactScore(observed.score);
+    current.role = observed.role;
+    current.recipientKind = recipientKindForRole(observed.role);
+    current.structureKind = observed.structureKind ?? undefined;
+  } else if (!current.structureKind && observed.structureKind && current.role === observed.role) {
+    current.structureKind = observed.structureKind;
+  }
+  if (!current.officeCode && observed.officeCode) current.officeCode = observed.officeCode;
+  if (!current.name && observed.name) current.name = observed.name;
+}
+
+/**
+ * Règle de préférence dans une même structure (même bloc de l'annonce ou même domaine propre) : s'il existe
+ * une adresse générique et une adresse nominative, la meilleure adresse générique passe devant la meilleure
+ * nominative, avec l'écart qui la fait choisir seule. Elle prend le rôle de la structure quand le sien n'était
+ * pas établi. Le nom du professionnel reste attaché à son adresse nominative, pas à l'adresse générique.
+ */
+function preferGenericAddress(
+  byEmail: Map<string, InformationAgentContactCandidate>,
+  members: ReadonlySet<string>,
+) {
+  const ranked = [...members]
+    .map((email) => byEmail.get(email))
+    .filter((candidate): candidate is InformationAgentContactCandidate => Boolean(candidate))
+    .sort((left, right) => right.score - left.score || left.email.localeCompare(right.email));
+  const generic = ranked.find((candidate) => candidate.addressKind === "generic");
+  const nominative = ranked.find((candidate) => candidate.addressKind === "nominative");
+  if (!generic || !nominative) return;
+  if (generic.role === "source_contact" && nominative.role !== "source_contact") {
+    generic.role = nominative.role;
+    generic.recipientKind = nominative.recipientKind;
+    if (nominative.structureKind) generic.structureKind = nominative.structureKind;
+    if (nominative.officeCode) generic.officeCode = nominative.officeCode;
+  }
+  const preferred = nominative.score + SELECTION_MARGIN;
+  if (generic.score < preferred) {
+    generic.score = preferred;
+    generic.confidence = confidenceForContactScore(preferred);
+  }
 }
 
 /**
@@ -241,17 +490,20 @@ function addRegistryContacts(
         }
       : undefined;
     const score = 100 + (role === "source_contact" ? 0 : 4);
+    const structureKind: InformationAgentStructureKind | null =
+      role === "lawyer" ? "law_firm" : role === "notary" ? "notary_office" : null;
     const current = byEmail.get(email);
     if (!current) {
       byEmail.set(email, {
         email,
         name: cleanContactValue(contact.displayName),
         role,
-        recipientKind: role === "lawyer" ? "source_lawyer" : "source_contact",
+        recipientKind: recipientKindForRole(role),
         confidence: confidenceForContactScore(score),
         score,
         provenance: [provenance],
         ...(source ? { source } : {}),
+        ...(structureKind ? { structureKind } : {}),
       });
       continue;
     }
@@ -384,6 +636,9 @@ export async function persistInformationAgentContactObservations({
         confidence: candidate.confidence,
         score: candidate.score,
         ...(candidate.matchRule ? { match_rule: candidate.matchRule } : {}),
+        ...(candidate.structureKind ? { structure_kind: candidate.structureKind } : {}),
+        ...(candidate.addressKind ? { address_kind: candidate.addressKind } : {}),
+        ...(candidate.officeCode ? { office_code: candidate.officeCode } : {}),
       },
       last_seen_at: observedAt,
     };
@@ -432,12 +687,18 @@ export async function assertInformationAgentContactAllowed({
   email,
   saleId,
   identityKeys = [],
+  structureKeys = [],
   courtRegistryAddress = false,
 }: {
   email: string;
   saleId?: string | null;
   /** Clés d'identité du professionnel : une opposition vaut sous toute autre adresse. */
   identityKeys?: readonly string[];
+  /**
+   * Clés de la structure du destinataire (`informationAgentStructureKeys`) : une opposition enregistrée pour
+   * la structure vaut pour toutes ses adresses, génériques ou nominatives.
+   */
+  structureKeys?: readonly string[];
   /**
    * L'adresse est celle du greffe du référentiel des tribunaux, vérifiée par l'appelant
    * (`assertCourtRegistryFallbackAddress`) : seule l'exclusion `court` est levée, pour cette adresse.
@@ -455,11 +716,51 @@ export async function assertInformationAgentContactAllowed({
       "Le contact est explicitement opposé ou en rebond permanent ; aucune sollicitation n'est autorisée.",
     );
   }
-  await assertInformationAgentIdentityAllowed(identityKeys);
+  const opposed = await loadOpposedInformationAgentIdentityKeys([
+    ...identityKeys,
+    ...structureKeys,
+  ]);
+  if (opposed.some(isInformationAgentStructureKey)) {
+    throw new Error(INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE);
+  }
+  if (opposed.length) throw new Error(INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE);
 }
 
 export const INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE =
   "Ce professionnel s'est opposé à être contacté (opposition enregistrée sous une autre adresse) ; aucune sollicitation n'est autorisée.";
+
+export const INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE =
+  "Cette structure (cabinet, office ou service) s'est opposée à être contactée ; aucune de ses adresses n'est sollicitée.";
+
+export const INFORMATION_AGENT_STRUCTURE_UNKNOWN_MESSAGE =
+  "Aucune structure identifiable pour cette adresse (domaine partagé ou messagerie grand public, sans code d'office) : enregistrez l'opposition pour l'adresse.";
+
+/**
+ * Enregistre une opposition pour toute la structure : code d'office notarial ou domaine PROPRE du cabinet.
+ * Elle va dans la liste d'opposition par identité (aucune adresse, jamais purgée) et vaut pour toutes les
+ * adresses de la structure. Un domaine partagé (`notaires.fr`, `gouv.fr`) ou une messagerie grand public
+ * n'identifie aucune structure : refus, l'opposition se fait alors par adresse. Jamais effacée par ce chemin.
+ */
+export async function recordInformationAgentStructureOpposition({
+  email,
+  officeCode,
+  opposedAt = new Date().toISOString(),
+}: {
+  email: string;
+  officeCode?: string | null;
+  opposedAt?: string;
+}): Promise<string[]> {
+  const normalized = normalizedEmail(email);
+  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const keys = informationAgentStructureKeys({ email: normalized, officeCode });
+  if (!keys.length) throw new Error(INFORMATION_AGENT_STRUCTURE_UNKNOWN_MESSAGE);
+  const { error } = await supabaseAdmin.from("information_agent_identity_oppositions").upsert(
+    keys.map((identity_key) => ({ identity_key, opposed_at: opposedAt })),
+    { onConflict: "identity_key", ignoreDuplicates: true },
+  );
+  if (error) throw error;
+  return keys;
+}
 
 /**
  * Clés d'identité qui figurent dans la liste d'opposition. Une erreur de base est propagée : un
@@ -638,7 +939,8 @@ function extractEmails(value: unknown): string[] {
 function inferContactRole(value: string): InformationAgentContactRole {
   const normalized = stripDiacritics(value).toLowerCase();
   if (/avocat|lawyer|cabinet/.test(normalized)) return "lawyer";
-  if (/notair|notary|etude/.test(normalized)) return "notary";
+  // « étude » seule ne dit pas notaire : c'est aussi le mot d'un commissaire de justice.
+  if (/notair|notari|notary/.test(normalized)) return "notary";
   if (/organisat|organizer|commissaire|vendeur/.test(normalized)) return "organizer";
   return "source_contact";
 }
@@ -686,6 +988,9 @@ export function contactCandidateSnapshot(candidate: InformationAgentContactCandi
     recipient_kind: candidate.recipientKind,
     confidence: candidate.confidence,
     score: candidate.score,
+    structure_kind: candidate.structureKind ?? null,
+    address_kind: candidate.addressKind ?? informationAgentAddressKind(candidate.email),
+    office_code: candidate.officeCode ?? null,
     provenance: candidate.provenance.map((item) => ({
       kind: item.kind,
       field: item.field,

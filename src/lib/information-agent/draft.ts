@@ -37,6 +37,17 @@ import {
 } from "@/lib/information-agent/address-search";
 import { informationAgentAppOrigin } from "@/lib/information-agent/config";
 import {
+  informationAgentAddressKind,
+  informationAgentStructureKeys,
+} from "@/lib/information-agent/contact-structure";
+import {
+  allowedInformationAgentQuestionKeys,
+  INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE,
+  informationAgentQuestionAudience,
+  informationAgentQuestionTextFor,
+  isInformationAgentQuestionAllowed,
+} from "@/lib/information-agent/recipient-questions";
+import {
   assertInformationAgentContactAllowed,
   contactCandidateSnapshot,
   discoverInformationAgentContacts,
@@ -205,29 +216,46 @@ export async function createAdminInformationAgentDraft({
   const facts = getFactReliabilitiesFromClaims(sale, claimRead.claims);
   const inventory = buildInformationAgentInventory(sale, facts);
   const gaps = detectInformationGaps(sale, facts, inventory);
-  const defaultQuestions = selectDefaultInformationAgentQuestionKeys(gaps);
-  const questionKeys = uniqueQuestionKeys(input.questionKeys ?? defaultQuestions);
-  if (!questionKeys.length) {
-    throw new Error(
-      "Aucune lacune n'est identifiée pour cette annonce. Choisissez explicitement une question si une vérification reste nécessaire.",
-    );
+  const requestedQuestionKeys = input.questionKeys ? uniqueQuestionKeys(input.questionKeys) : null;
+  // Les questions dépendent du destinataire (recipient-questions.ts) : elles sont arrêtées une fois celui-ci
+  // connu. Sans lacune ni question choisie, rien n'est lu ni enregistré.
+  if (!(requestedQuestionKeys ?? gaps).length) {
+    throw new Error(NO_GAP_MESSAGE);
   }
   // Opposition par identité, avant d'enregistrer ou de choisir la moindre adresse : un professionnel
   // opposé n'est plus sollicité sous une autre adresse, et son adresse n'est pas stockée.
   const identityPlace = saleIdentityPlace(sale);
-  const discovered = discoverInformationAgentContacts(sale).map((candidate) => ({
-    ...candidate,
-    identityKeys: informationAgentIdentityKeys({
-      role: candidate.role,
-      name: candidate.name ?? (candidate.role === "lawyer" ? sale.lawyer_name : null),
-      ...identityPlace,
-    }),
-  }));
+  // Clés de la structure de chaque adresse (office, domaine propre) : l'opposition d'une structure écarte
+  // toutes ses adresses. Seule l'adresse GÉNÉRIQUE les porte parmi ses clés d'identité : si elle s'oppose,
+  // l'opposition vaut pour la structure ; l'opposition d'une personne ne vaut que pour elle.
+  const structureKeysByEmail = new Map<string, string[]>();
+  const discovered = discoverInformationAgentContacts(sale).map((candidate) => {
+    const structureKeys = informationAgentStructureKeys({
+      email: candidate.email,
+      officeCode: candidate.officeCode,
+    });
+    structureKeysByEmail.set(candidate.email, structureKeys);
+    return {
+      ...candidate,
+      identityKeys: [
+        ...informationAgentIdentityKeys({
+          role: candidate.role,
+          name: candidate.name ?? (candidate.role === "lawyer" ? sale.lawyer_name : null),
+          ...identityPlace,
+        }),
+        ...(candidate.addressKind === "generic" ? structureKeys : []),
+      ],
+    };
+  });
+  const oppositionKeysOf = (candidate: (typeof discovered)[number]) => [
+    ...candidate.identityKeys,
+    ...(structureKeysByEmail.get(candidate.email) ?? []),
+  ];
   const opposedKeys = new Set(
-    await loadOpposedInformationAgentIdentityKeys(discovered.flatMap((item) => item.identityKeys)),
+    await loadOpposedInformationAgentIdentityKeys(discovered.flatMap(oppositionKeysOf)),
   );
   const listingCandidates = discovered.filter(
-    (candidate) => !candidate.identityKeys.some((key) => opposedKeys.has(key)),
+    (candidate) => !oppositionKeysOf(candidate).some((key) => opposedKeys.has(key)),
   );
   const candidatesSkippedForOpposition = discovered.length - listingCandidates.length;
   const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
@@ -277,17 +305,55 @@ export async function createAdminInformationAgentDraft({
     ? null
     : (input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null);
   const recipientIdentityRole = selectedByEmail?.role ?? null;
-  const recipientIdentityKeys = informationAgentIdentityKeys({
-    role: recipientIdentityRole,
-    name: recipientName,
-    ...identityPlace,
-  });
+  const recipientStructureKeys = courtFallback
+    ? []
+    : informationAgentStructureKeys({
+        email: recipientEmail,
+        officeCode: selectedByEmail?.officeCode,
+      });
+  const recipientIdentityKeys = [
+    ...informationAgentIdentityKeys({
+      role: recipientIdentityRole,
+      name: recipientName,
+      ...identityPlace,
+    }),
+    ...(informationAgentAddressKind(recipientEmail) === "generic" ? recipientStructureKeys : []),
+  ];
   await assertInformationAgentContactAllowed({
     saleId: sale.id,
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
+    structureKeys: recipientStructureKeys,
     courtRegistryAddress: Boolean(courtFallback),
   });
+  // Questions admises pour ce destinataire : un notaire ou un service de l'État ne reçoit que les questions
+  // sur la fiche. Une question choisie par l'administrateur hors de cette liste est refusée, jamais retirée
+  // en silence.
+  const questionAudience = courtFallback
+    ? "other"
+    : informationAgentQuestionAudience({
+        role: recipientIdentityRole,
+        structureKind: selectedByEmail?.structureKind,
+      });
+  if (
+    requestedQuestionKeys?.some((key) => !isInformationAgentQuestionAllowed(questionAudience, key))
+  ) {
+    throw new Error(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE);
+  }
+  const questionKeys =
+    requestedQuestionKeys ??
+    selectDefaultInformationAgentQuestionKeys(
+      gaps.filter((gap) => isInformationAgentQuestionAllowed(questionAudience, gap.key)),
+    );
+  if (!questionKeys.length) {
+    throw new Error(
+      questionAudience === "notary" || questionAudience === "state_service"
+        ? NO_GAP_FOR_LISTING_FIELDS_MESSAGE
+        : NO_GAP_MESSAGE,
+    );
+  }
+  const listingFieldAudience =
+    questionAudience === "notary" || questionAudience === "state_service";
   // Refused now rather than at the preview, after the admin has read the whole draft.
   await assertNoSentCaseForRecipient(sale.id, recipientEmail);
   await assertInformationAgentRecipientCooldown({
@@ -303,7 +369,25 @@ export async function createAdminInformationAgentDraft({
     signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
     ...(courtFallback
       ? COURT_REGISTRY_DRAFT_OPTIONS
-      : { recipientName, questionKeys, template: emailTemplate.content }),
+      : {
+          recipientName,
+          questionKeys,
+          template: emailTemplate.content,
+          ...(listingFieldAudience
+            ? {
+                questionLines: allowedInformationAgentQuestionKeys(
+                  questionAudience,
+                  questionKeys,
+                ).map((key) =>
+                  informationAgentQuestionTextFor(
+                    questionAudience,
+                    key,
+                    informationAgentQuestionContext(inventory),
+                  ),
+                ),
+              }
+            : {}),
+        }),
   });
 
   const { data, error } = await supabaseAdmin
@@ -332,7 +416,10 @@ export async function createAdminInformationAgentDraft({
           role: recipientIdentityRole,
           bar: identityPlace.bar,
           city: identityPlace.city,
+          structure_kind: selectedByEmail?.structureKind ?? null,
+          office_code: selectedByEmail?.officeCode ?? null,
         },
+        question_audience: questionAudience,
         candidates_skipped_for_opposition: candidatesSkippedForOpposition,
         address_search: search.snapshot,
         fact_claims_checked: claimRead.claimsBacked,
@@ -400,6 +487,12 @@ export async function createAdminInformationAgentDraft({
     contactCandidates: courtFallback ? [courtFallback.candidate] : contactCandidates,
   };
 }
+
+const NO_GAP_MESSAGE =
+  "Aucune lacune n'est identifiée pour cette annonce. Choisissez explicitement une question si une vérification reste nécessaire.";
+
+const NO_GAP_FOR_LISTING_FIELDS_MESSAGE =
+  "Aucune lacune que l'agent peut demander à un notaire ou à un service de l'État (surface, pièces, occupation, visites, lieu de consultation du cahier des charges) pour cette annonce.";
 
 function saleSnapshot(sale: AuctionSale): Json {
   return {

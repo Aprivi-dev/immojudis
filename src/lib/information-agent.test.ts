@@ -103,6 +103,8 @@ describe("supervised information agent", () => {
         select: vi.fn(),
         eq: vi.fn(),
         is: vi.fn(),
+        // Opposition de la structure du destinataire (liste d'opposition par identité).
+        in: vi.fn(),
         single: vi.fn().mockResolvedValue({
           data: { id: "22222222-2222-4222-8222-222222222222", status: "draft" },
           error: null,
@@ -114,6 +116,7 @@ describe("supervised information agent", () => {
       query.select.mockReturnValue(query);
       query.eq.mockReturnValue(query);
       query.is.mockReturnValue(query);
+      query.in.mockReturnValue(query);
       vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
       const fetchImpl = vi.fn();
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", enabled);
@@ -145,7 +148,8 @@ describe("supervised information agent", () => {
           }),
         ).rejects.toThrow(expectedError);
         expect(fetchImpl).not.toHaveBeenCalled();
-        expect(supabaseAdmin.from).toHaveBeenCalledTimes(2);
+        // Mission, registre des contacts, puis opposition de la structure : trois lectures, aucune écriture.
+        expect(supabaseAdmin.from).toHaveBeenCalledTimes(3);
         expect(supabaseAdmin.rpc).not.toHaveBeenCalled();
         expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
       } finally {
@@ -284,7 +288,9 @@ describe("supervised information agent", () => {
                     : [],
                   error: null,
                 }
-              : { data: null, error: null };
+              : this.table === "information_agent_identity_oppositions"
+                ? { data: [], error: null }
+                : { data: null, error: null };
           return Promise.resolve(result).then(onFulfilled);
         }
       }

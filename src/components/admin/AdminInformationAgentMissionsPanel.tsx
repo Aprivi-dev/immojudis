@@ -648,6 +648,32 @@ export function AdminInformationAgentMissionsPanel({
               type="email"
               readOnly={!isMissionEditable(activeMission.status)}
             />
+            {activeMission.recipientProfile &&
+            normalizeEmail(recipientEmail) === normalizeEmail(activeMission.recipientEmail) ? (
+              <p className="text-xs leading-5 text-brand-navy/70" data-testid="recipient-profile">
+                <span className="font-semibold">{activeMission.recipientProfile.roleLabel}</span>
+                {" · "}
+                {activeMission.recipientProfile.originLabel}
+                {activeMission.recipientProfile.originSourceName
+                  ? ` (${activeMission.recipientProfile.originSourceName})`
+                  : ""}
+                {activeMission.recipientProfile.originUrl ? (
+                  <>
+                    {" "}
+                    <a
+                      href={activeMission.recipientProfile.originUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="underline underline-offset-2"
+                    >
+                      voir l’annonce
+                    </a>
+                  </>
+                ) : null}
+                {" · "}
+                {activeMission.recipientProfile.addressKindLabel}
+              </p>
+            ) : null}
             <Field
               label="Objet"
               value={subject}

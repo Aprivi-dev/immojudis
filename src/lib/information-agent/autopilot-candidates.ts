@@ -34,6 +34,7 @@ import {
   persistInformationAgentContactObservations,
   selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
+import { informationAgentStructureKeys } from "@/lib/information-agent/contact-structure";
 import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
 import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
 
@@ -48,6 +49,8 @@ export type AutopilotCandidate = {
   tribunalCode: string | null;
   email: string;
   domain: string;
+  /** Code d'office publié par l'annonce (notaire) : unité de plafond sur un domaine partagé. */
+  officeCode?: string | null;
   identityKeys: string[];
 };
 
@@ -138,7 +141,12 @@ export async function findAutopilotCandidates({
     });
     // Opposition (adresse et identité) vérifiée dès la sélection.
     try {
-      await assertInformationAgentContactAllowed({ saleId, email, identityKeys });
+      await assertInformationAgentContactAllowed({
+        saleId,
+        email,
+        identityKeys,
+        structureKeys: informationAgentStructureKeys({ email, officeCode: selected.officeCode }),
+      });
     } catch {
       skip("opposed");
       continue;
@@ -189,6 +197,7 @@ export async function findAutopilotCandidates({
       tribunalCode: sale.tribunal_code?.trim() || null,
       email,
       domain: mailDomainOf(email),
+      officeCode: selected.officeCode ?? null,
       identityKeys,
     });
   }
