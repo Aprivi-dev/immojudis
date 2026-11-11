@@ -289,8 +289,8 @@ begin
     'candidate_sales', v_candidates,
     'sales_checked', pg_catalog.cardinality(v_sale_ids),
     'truncated', v_candidates > pg_catalog.cardinality(v_sale_ids),
-    'held_sales', v_held_sales,
-    'held_fields', v_held_fields,
+    'held_sale_count', v_held_sales,
+    'held_field_count', v_held_fields,
     'checks', pg_catalog.jsonb_build_object(
       'projection_drift', pg_catalog.jsonb_build_object(
         'active', pg_catalog.cardinality(v_drift) > 0,

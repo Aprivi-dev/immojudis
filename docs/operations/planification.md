@@ -1,6 +1,7 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 10 novembre 2026 (analyse des réponses de l'agent déclenchée à la réception ;
+Mis à jour le 11 novembre 2026 (contrôle quotidien du registre des pièces ; auparavant, le 10 novembre :
+analyse des réponses de l'agent déclenchée à la réception ;
 auparavant, le 31 octobre : cadences réelles des tâches `pg_cron` et seuils de `cron.stale` alignés dessus,
 `sale-results` et `weekly-digest` supervisées ; auparavant : règle de répartition entre les trois planificateurs,
 filets quotidiens sans effet quand `pg_cron` a réussi, inventaire des workflows GitHub planifiés). Toute route `src/app/api/cron/*` doit figurer
@@ -36,29 +37,30 @@ reste silencieuse.
 
 ## Tâches applicatives (routes `/api/cron/*`)
 
-| Tâche                                                                    | Système            | Horaire (UTC)                                                        | Route / script                          | Supervisée                                           | Seuil d'alerte (`cron.stale`) |
-| ------------------------------------------------------------------------ | ------------------ | -------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------- | ----------------------------- |
-| Évaluation des alertes                                                   | Vercel Cron        | 06:15, rattrapage 08:15                                              | `/api/cron/smart-alerts`                | oui                                                  | pas de succès depuis 27 h     |
-| Envoi des alertes                                                        | Vercel Cron        | 07:30, rattrapage 09:30                                              | `/api/cron/alert-notifications`         | oui                                                  | 27 h                          |
-| Suivi des changements                                                    | Vercel Cron        | 06:45, rattrapage 08:45                                              | `/api/cron/sale-change-monitor`         | oui                                                  | 27 h                          |
-| Rappels d'audience et avertissements graves                              | Vercel Cron        | 07:15, rattrapage 09:15                                              | `/api/cron/sale-reminders`              | oui                                                  | 27 h                          |
-| Alertes de résultat ou de remise en vente                                | Vercel Cron        | 10:15                                                                | `/api/cron/sale-results`                | oui                                                  | 27 h                          |
-| Récapitulatif hebdomadaire « Ma semaine »                                | Vercel Cron        | 11:30 (chaque jour ; l'envoi suit le jour choisi)                    | `/api/cron/weekly-digest`               | oui                                                  | 8 jours                       |
-| Email de fin d'essai gratuit (J+5)                                       | Vercel Cron        | 12:30, rattrapage 14:30                                              | `/api/cron/trial-end-email`             | journal d'exécution seulement                        | pas encore                    |
-| Rétention des données                                                    | Vercel Cron        | dimanche 04:15                                                       | `/api/cron/data-retention`              | oui                                                  | 8 jours                       |
-| Complétude des annonces (palier de classement de /sales)                 | Supabase `pg_cron` | toutes les heures à :20                                              | `/api/cron/listing-completeness`        | oui                                                  | 3 h                           |
-| Complétude des annonces (filet quotidien)                                | Vercel Cron        | 05:50, sans effet si `pg_cron` a réussi dans les 2 h                 | `/api/cron/listing-completeness`        | oui (même tâche, même seuil)                         | 3 h                           |
-| Risque d'inondation des ventes (règle `pepite-v2`)                       | Supabase `pg_cron` | tick à :25 de chaque heure, passage toutes les 2 h                   | `/api/cron/sale-flood-risk`             | oui                                                  | 5 h                           |
-| Risque d'inondation des ventes (filet quotidien)                         | Vercel Cron        | 05:35, sans effet si la passe a réussi dans les 2 h                  | `/api/cron/sale-flood-risk`             | oui (même tâche, même seuil)                         | 5 h                           |
-| Pépites des ventes (règle `pepite-v1.1` ou `pepite-v2`)                  | Supabase `pg_cron` | toutes les heures à :35                                              | `/api/cron/sale-pepites`                | oui                                                  | 3 h                           |
-| Pépites des ventes (filet quotidien)                                     | Vercel Cron        | 05:42, sans effet si `pg_cron` a réussi dans les 2 h                 | `/api/cron/sale-pepites`                | oui (même tâche, même seuil)                         | 3 h                           |
-| Rapprochement Stripe / droits (lecture seule)                            | Vercel Cron        | 05:20, sans effet si Stripe n'est pas configuré                      | `/api/cron/billing-reconciliation`      | journal d'exécution, alerte dédiée à chaque écart    | pas encore                    |
-| Résumé quotidien des réponses à relire                                   | Vercel Cron        | 07:05, sans rattrapage                                               | `/api/cron/replies-review-digest`       | journal d'exécution seulement                        | pas encore                    |
-| Santé opérationnelle                                                     | Supabase `pg_cron` | tick toutes les 15 min, passage toutes les 30 min                    | `/api/cron/operational-health`          | oui                                                  | 65 min                        |
-| Purge des ventes                                                         | Supabase `pg_cron` | tick toutes les 5 min, passage toutes les 15 min                     | `/api/cron/sale-retention`              | oui                                                  | 35 min                        |
-| Pré-calcul des valorisations                                             | Supabase `pg_cron` | tick toutes les 5 min, passage si dossier dû, sinon 1 h              | `/api/cron/precompute-valuations`       | non (déclenchement géré par la file de valorisation) | —                             |
-| Réponses de l'agent (lecture seule, n'envoie aucun e-mail)               | Supabase `pg_cron` | tick toutes les 2 min, passage si message dû, sinon 8 min            | `/api/cron/information-agent-inbound`   | oui                                                  | 25 min                        |
-| Pilote automatique de l'agent (désactivé par défaut ; envoi réel bloqué) | Supabase `pg_cron` | toutes les 10 min, appel HTTP seulement si le mode n'est pas « off » | `/api/cron/information-agent-autopilot` | non (le pilote n'a pas de cadence de rattrapage)     | 20 min                        |
+| Tâche                                                                       | Système            | Horaire (UTC)                                                                | Route / script                          | Supervisée                                           | Seuil d'alerte (`cron.stale`) |
+| --------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------- | ----------------------------- |
+| Évaluation des alertes                                                      | Vercel Cron        | 06:15, rattrapage 08:15                                                      | `/api/cron/smart-alerts`                | oui                                                  | pas de succès depuis 27 h     |
+| Envoi des alertes                                                           | Vercel Cron        | 07:30, rattrapage 09:30                                                      | `/api/cron/alert-notifications`         | oui                                                  | 27 h                          |
+| Suivi des changements                                                       | Vercel Cron        | 06:45, rattrapage 08:45                                                      | `/api/cron/sale-change-monitor`         | oui                                                  | 27 h                          |
+| Rappels d'audience et avertissements graves                                 | Vercel Cron        | 07:15, rattrapage 09:15                                                      | `/api/cron/sale-reminders`              | oui                                                  | 27 h                          |
+| Alertes de résultat ou de remise en vente                                   | Vercel Cron        | 10:15                                                                        | `/api/cron/sale-results`                | oui                                                  | 27 h                          |
+| Récapitulatif hebdomadaire « Ma semaine »                                   | Vercel Cron        | 11:30 (chaque jour ; l'envoi suit le jour choisi)                            | `/api/cron/weekly-digest`               | oui                                                  | 8 jours                       |
+| Email de fin d'essai gratuit (J+5)                                          | Vercel Cron        | 12:30, rattrapage 14:30                                                      | `/api/cron/trial-end-email`             | journal d'exécution seulement                        | pas encore                    |
+| Rétention des données                                                       | Vercel Cron        | dimanche 04:15                                                               | `/api/cron/data-retention`              | oui                                                  | 8 jours                       |
+| Complétude des annonces (palier de classement de /sales)                    | Supabase `pg_cron` | toutes les heures à :20                                                      | `/api/cron/listing-completeness`        | oui                                                  | 3 h                           |
+| Complétude des annonces (filet quotidien)                                   | Vercel Cron        | 05:50, sans effet si `pg_cron` a réussi dans les 2 h                         | `/api/cron/listing-completeness`        | oui (même tâche, même seuil)                         | 3 h                           |
+| Risque d'inondation des ventes (règle `pepite-v2`)                          | Supabase `pg_cron` | tick à :25 de chaque heure, passage toutes les 2 h                           | `/api/cron/sale-flood-risk`             | oui                                                  | 5 h                           |
+| Risque d'inondation des ventes (filet quotidien)                            | Vercel Cron        | 05:35, sans effet si la passe a réussi dans les 2 h                          | `/api/cron/sale-flood-risk`             | oui (même tâche, même seuil)                         | 5 h                           |
+| Pépites des ventes (règle `pepite-v1.1` ou `pepite-v2`)                     | Supabase `pg_cron` | toutes les heures à :35                                                      | `/api/cron/sale-pepites`                | oui                                                  | 3 h                           |
+| Pépites des ventes (filet quotidien)                                        | Vercel Cron        | 05:42, sans effet si `pg_cron` a réussi dans les 2 h                         | `/api/cron/sale-pepites`                | oui (même tâche, même seuil)                         | 3 h                           |
+| Rapprochement Stripe / droits (lecture seule)                               | Vercel Cron        | 05:20, sans effet si Stripe n'est pas configuré                              | `/api/cron/billing-reconciliation`      | journal d'exécution, alerte dédiée à chaque écart    | pas encore                    |
+| Contrôle du registre des pièces (lecture seule ; alertes `fact_registry.*`) | Vercel Cron        | 05:28, sans effet tant que la migration `20261117100500` n'est pas appliquée | `/api/cron/fact-registry-check`         | oui                                                  | 27 h                          |
+| Résumé quotidien des réponses à relire                                      | Vercel Cron        | 07:05, sans rattrapage                                                       | `/api/cron/replies-review-digest`       | journal d'exécution seulement                        | pas encore                    |
+| Santé opérationnelle                                                        | Supabase `pg_cron` | tick toutes les 15 min, passage toutes les 30 min                            | `/api/cron/operational-health`          | oui                                                  | 65 min                        |
+| Purge des ventes                                                            | Supabase `pg_cron` | tick toutes les 5 min, passage toutes les 15 min                             | `/api/cron/sale-retention`              | oui                                                  | 35 min                        |
+| Pré-calcul des valorisations                                                | Supabase `pg_cron` | tick toutes les 5 min, passage si dossier dû, sinon 1 h                      | `/api/cron/precompute-valuations`       | non (déclenchement géré par la file de valorisation) | —                             |
+| Réponses de l'agent (lecture seule, n'envoie aucun e-mail)                  | Supabase `pg_cron` | tick toutes les 2 min, passage si message dû, sinon 8 min                    | `/api/cron/information-agent-inbound`   | oui                                                  | 25 min                        |
+| Pilote automatique de l'agent (désactivé par défaut ; envoi réel bloqué)    | Supabase `pg_cron` | toutes les 10 min, appel HTTP seulement si le mode n'est pas « off »         | `/api/cron/information-agent-autopilot` | non (le pilote n'a pas de cadence de rattrapage)     | 20 min                        |
 
 ### Cadences réelles des tâches `pg_cron` et seuils de `cron.stale`
 
@@ -335,6 +337,34 @@ alerte transitoire à l'ouverture : « Ajouter une tâche supervisée » plus ba
 Les quatre tâches Vercel quotidiennes, et l'email de fin d'essai, ont un second passage deux heures plus
 tard : il ne fait rien si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).
 Chaque passage réessaie 3 fois (5 s, 20 s, 60 s) sur une erreur réseau ou 5xx.
+
+## Contrôle quotidien du registre des pièces (lot R2a, 11/11/2026)
+
+`/api/cron/fact-registry-check` (Vercel Cron, 05:28 UTC) appelle `public.sync_fact_registry_alerts`, qui lance
+`public.check_fact_registry_consistency` (lecture seule : la projection n'y est appelée qu'en simulation) puis
+ouvre ou referme une alerte opérationnelle par contrôle. Le rapport ne porte que des comptes et des identifiants
+de vente (20 au plus), jamais une valeur.
+
+| Alerte                                 | Ce qu'elle dit                                                                                                                                                    | Gravité       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `fact_registry.projection_drift`       | La simulation de projection changerait une vente qui tient un champ, ou dont une pièce est acceptée                                                               | critique      |
+| `fact_registry.triggers_not_always`    | Un déclencheur du registre manque ou n'est plus en mode `always` (remise en état : `supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql`) | critique      |
+| `fact_registry.column_mismatch`        | Une colonne tenue diffère de la valeur de son entrée, ou une surface tenue ne porte plus les libellés neutres                                                     | critique      |
+| `fact_registry.echo_suspected`         | Une colonne voisine ou une copie (`properties`, `auction_surfaces`, `judicial_sales`) porte la valeur d'une pièce                                                 | avertissement |
+| `fact_registry.internal_column_copied` | `raw_payload` d'une vente du registre contient la colonne interne                                                                                                 | avertissement |
+| `fact_registry.events_burst`           | Plus de 50 évènements en 24 heures dans la file de relecture                                                                                                      | avertissement |
+| `fact_registry.echo_suppressed`        | La base a écarté le retour d'une ancienne valeur tenue dans les 48 heures : un chemin de la collecte a échappé à sa garde d'écho. Doit rester à zéro              | avertissement |
+| `fact_registry.stale_listing`          | L'annonce s'est tue sur un champ tenu (valeur d'annonce mémorisée peut-être périmée), ou une surface est tenue sur une vente devenue un terrain                   | avertissement |
+
+- **Supervision.** La tâche est dans la liste attendue de `cron.stale` (27 heures, migration `20261117100600`).
+  Mise en production : procédure « Ajouter une tâche supervisée » ci-dessous (appeler la route une fois avec
+  `CRON_SECRET` juste après les migrations) ; runbook `docs/runbooks/registre-des-pieces-r2a.md`.
+- **Avant la migration.** Le code peut être déployé avant : la fonction est alors absente, la tâche réussit sans
+  rien contrôler et le dit (`skipped: migration_pending` dans le journal des exécutions).
+- **Borne.** 500 ventes au plus par passage. Au-delà, le rapport est marqué tronqué et la tâche échoue : elle
+  ne fait pas passer un contrôle partiel pour complet.
+- **Tant que rien n'est tenu** (lots R2a et R2b), les huit contrôles sont à zéro : seuls `triggers_not_always`
+  et `events_burst` peuvent se lever.
 
 ## Plan Vercel Hobby : ordre des tâches et seuil de `cron.stale`
 

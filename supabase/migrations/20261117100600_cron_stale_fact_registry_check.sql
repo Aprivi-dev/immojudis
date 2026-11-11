@@ -39,6 +39,7 @@ declare
     'sale-flood-risk', 'sale-results', 'weekly-digest'
   ];
   new_job constant text := 'fact-registry-check';
+  new_entry constant text := '(''fact-registry-check'', interval ''27 hours'')';
   anchor constant text := '(''weekly-digest'', interval ''8 days'')';
 begin
   foreach job in array existing_jobs loop
@@ -59,7 +60,7 @@ begin
         errcode = '55000',
         message = 'Operational health expected-jobs list changed (weekly-digest anchor missing); review before adding fact-registry-check.';
     end if;
-    updated := replace(updated, anchor, anchor || ', (''' || new_job || ''', interval ''27 hours'')');
+    updated := replace(updated, anchor, anchor || ', ' || new_entry);
   end if;
 
   foreach job in array existing_jobs || new_job loop

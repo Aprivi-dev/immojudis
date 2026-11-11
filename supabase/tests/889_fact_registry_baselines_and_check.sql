@@ -201,9 +201,9 @@ select is(
   (select jsonb_build_object(
      'limit', 500, 'truncated', false,
      'candidate_sales', count(*), 'sales_checked', count(*),
-     'held_sales', count(*) filter (where exists (
+     'held_sale_count', count(*) filter (where exists (
        select 1 from jsonb_each(sale.held_fields) field where field.value ->> 'state' in ('held', 'conflicted'))),
-     'held_fields', (select count(*) from public.auction_sales held, jsonb_each(held.held_fields) field
+     'held_field_count', (select count(*) from public.auction_sales held, jsonb_each(held.held_fields) field
                       where field.value ->> 'state' in ('held', 'conflicted')))
      from public.auction_sales sale where sale.held_fields is not null),
   'it examines every sale that holds or remembers a field, and counts the held ones'

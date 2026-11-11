@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   RECONCILED_CHECK_CONSTRAINTS,
   canonicalCheckCondition,
+  canonicalConcurrentIndexDefinition,
   checkBody,
   normalizeConcurrentIndexDefinition,
   normalizeDiff,
@@ -98,6 +99,74 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
         "CREATE INDEX dvf_transactions_insee_type_sale_date_idx ON public.dvf_transactions (insee_code, sale_date);",
       ),
     ).toContain("dvf_transactions_insee_type_sale_date_idx");
+  });
+
+  describe("fact registry indexes (partial, expression, unique)", () => {
+    // Formes possibles de l'outil de diff pour un même index : avec ou sans « USING btree », avec ou sans
+    // parenthèses autour du prédicat, avec ou sans transtypage ::text des constantes.
+    it.each([
+      "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id) WHERE (held_fields IS NOT NULL);",
+      "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales USING btree (id) WHERE (held_fields IS NOT NULL);",
+      "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id) WHERE held_fields IS NOT NULL;",
+      "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims (((evidence_locator ->> 'information_agent_fact_id'::text))) WHERE (evidence_locator ? 'information_agent_fact_id'::text);",
+      "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims USING btree (((evidence_locator ->> 'information_agent_fact_id'::text))) WHERE (evidence_locator ? 'information_agent_fact_id'::text);",
+      "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id')) WHERE evidence_locator ? 'information_agent_fact_id';",
+    ])("ignores the reviewed definition however it is printed: %s", (line) => {
+      expect(normalizeDiff(line)).toBe("");
+    });
+
+    it.each([
+      [
+        "another predicate",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id) WHERE (held_fields IS NULL);",
+      ],
+      [
+        "no predicate",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id);",
+      ],
+      [
+        "another column",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (source_url) WHERE (held_fields IS NOT NULL);",
+      ],
+      [
+        "unique where it must not be",
+        "CREATE UNIQUE INDEX auction_sales_held_fields_idx ON public.auction_sales (id) WHERE (held_fields IS NOT NULL);",
+      ],
+      [
+        "another access method",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales USING hash (id) WHERE (held_fields IS NOT NULL);",
+      ],
+      [
+        "not unique where it must be",
+        "CREATE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims (((evidence_locator ->> 'information_agent_fact_id'::text))) WHERE (evidence_locator ? 'information_agent_fact_id'::text);",
+      ],
+      [
+        "another expression",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims (((evidence_locator ->> 'case_id'::text))) WHERE (evidence_locator ? 'information_agent_fact_id'::text);",
+      ],
+      [
+        "another table",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_sales (((evidence_locator ->> 'information_agent_fact_id'::text))) WHERE (evidence_locator ? 'information_agent_fact_id'::text);",
+      ],
+    ])("keeps a fact registry index with %s in the diff", (_label, line) => {
+      expect(normalizeDiff(line)).toBe(line);
+    });
+
+    it("does not loosen the match of the earlier operations", () => {
+      // La forme canonique (parenthèses, ::text, USING btree ignorés) ne vaut que pour les deux index ci-dessus.
+      expect(
+        normalizeDiff(
+          "CREATE INDEX auction_sales_postal_code_idx ON public.auction_sales USING btree (postal_code);",
+        ),
+      ).toContain("auction_sales_postal_code_idx");
+      expect(
+        canonicalConcurrentIndexDefinition(
+          'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "auction_fact_claims_agent_fact_key" ON "public"."auction_fact_claims" (("evidence_locator" ->> \'information_agent_fact_id\')) WHERE ("evidence_locator" ? \'information_agent_fact_id\');',
+        ),
+      ).toBe(
+        "create unique index auction_fact_claims_agent_fact_key on public.auction_fact_claims evidence_locator ->> 'information_agent_fact_id' where evidence_locator ? 'information_agent_fact_id'",
+      );
+    });
   });
 
   it("keeps altered definitions and indexes outside the allowlist", () => {

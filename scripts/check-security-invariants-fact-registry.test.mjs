@@ -10,7 +10,7 @@ afterAll(removeSandboxes);
 
 describe("invariants de sécurité : registre des pièces (lot R1)", () => {
   const heldColumns =
-    "surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates, held_fields";
+    "surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2, carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates, held_fields";
   const holdWhen =
     "when (old.held_fields is not null or new.held_fields is distinct from old.held_fields)";
   const always = (table, trigger) =>
@@ -568,6 +568,182 @@ $$;`;
       content: 'export const rpc = "project_sale_fields";\n',
       message: "names app_private.project_sale_fields",
     },
+    // Lot R2a ----------------------------------------------------------------------------------------------------
+    {
+      label: "la séquence commune déplacée par une migration",
+      file: migration("sequence_setval"),
+      content: "select setval('app_private.fact_registry_seq', 1, false);",
+      message: "moves app_private.fact_registry_seq with setval",
+    },
+    {
+      label: "la séquence commune redémarrée",
+      file: migration("sequence_restart"),
+      content: "alter sequence app_private.fact_registry_seq restart with 1;",
+      message: "alters or drops app_private.fact_registry_seq",
+    },
+    {
+      label: "la séquence commune ouverte au rôle de service",
+      file: migration("sequence_grant"),
+      content: "grant usage on sequence app_private.fact_registry_seq to service_role;",
+      message: "grants a privilege on app_private.fact_registry_seq",
+    },
+    {
+      label: "un déclencheur de datation qui laisse l'écrivain choisir le numéro d'ordre",
+      file: migration("stamp_without_sequence"),
+      content: triggerFunction(
+        "app_private.stamp_fact_registry_event",
+        "new.created_at := clock_timestamp(); return new;",
+      ),
+      prefix: ": ",
+      message:
+        "app_private.stamp_fact_registry_event no longer takes the order number from app_private.fact_registry_seq",
+    },
+    {
+      label: "une écriture de held_fields par la cible d'un INTO",
+      file: migration("held_fields_into"),
+      content: triggerFunction(
+        "app_private.release_by_into",
+        "select null::jsonb into new.held_fields; return new;",
+      ),
+      message: "writes auction_sales.held_fields through INTO in app_private.release_by_into",
+    },
+    {
+      label: "un journal des ventes qui vide held_fields sur la ligne écrite, pas sur sa copie",
+      file: migration("history_writes_row"),
+      content: triggerFunction(
+        "public.log_auction_sale_change",
+        "new.held_fields := null; return new;",
+        "set search_path = ''",
+      ),
+      message: "writes auction_sales.held_fields in public.log_auction_sale_change",
+    },
+    {
+      label: "une garde des origines réservées revenue à la seule liste d'exclusion",
+      file: migration("origin_guard_exclusion_only"),
+      content: triggerFunction(
+        "app_private.refuse_api_role_registry_origin",
+        "if current_user in ('anon', 'authenticated', 'service_role', 'authenticator') then raise exception using errcode = '42501'; end if; return new;",
+        "security invoker set search_path = ''",
+      ),
+      prefix: ": ",
+      message:
+        "app_private.refuse_api_role_registry_origin no longer accepts only the owner of app_private.project_sale_fields",
+    },
+    {
+      label: "une liste des déclencheurs du registre qui en oublie un",
+      file: migration("trigger_list_short"),
+      content:
+        "create or replace function app_private.fact_registry_triggers_not_always() returns text[] language sql stable security definer set search_path = '' as $$ select array[]::text[] from pg_catalog.pg_trigger trigger_row where trigger_row.tgname = 'aaab_auction_sales_hold_projected_fields' and trigger_row.tgenabled = 'A' $$;",
+      prefix: ": ",
+      message:
+        "app_private.fact_registry_triggers_not_always no longer checks that auction_sale_field_hold_events_stamp is enabled always",
+    },
+    {
+      label: "un contrôle du mode des déclencheurs qui ne lève plus",
+      file: migration("assert_triggers_silent"),
+      content:
+        "create or replace function app_private.assert_fact_registry_triggers() returns void language plpgsql stable security definer set search_path = '' as $$ begin perform app_private.fact_registry_triggers_not_always(); end; $$;",
+      prefix: ": ",
+      message:
+        "app_private.assert_fact_registry_triggers no longer raises 55000 registry_unavailable",
+    },
+    {
+      label: "le contrôle du mode des déclencheurs ouvert au rôle de service",
+      file: migration("assert_triggers_grant"),
+      content:
+        "grant execute on function app_private.assert_fact_registry_triggers() to service_role;",
+      message:
+        "grants a privilege on app_private.assert_fact_registry_triggers: no API role may execute it",
+    },
+    {
+      label: "le contrôle quotidien ouvert à un rôle du navigateur",
+      file: migration("check_grant_browser"),
+      content:
+        "grant execute on function public.check_fact_registry_consistency(integer) to authenticated;",
+      message:
+        "grants on public.check_fact_registry_consistency something else than EXECUTE to service_role alone",
+    },
+    {
+      label: "une fonction publique qui rend la ligne entière d'une vente",
+      file: migration("public_whole_row"),
+      content:
+        "create or replace function public.read_whole_sale(p_sale_id uuid) returns public.auction_sales language sql security definer set search_path = '' as $$ select sale from public.auction_sales sale where sale.id = p_sale_id $$;",
+      prefix: ": ",
+      message: "public.read_whole_sale returns a whole auction_sales row",
+    },
+    {
+      label: "une fonction publique qui écrit une vente avec RETURNING *",
+      file: migration("public_returning_star"),
+      content:
+        "create or replace function public.touch_sale(p_sale_id uuid) returns jsonb language plpgsql security definer set search_path = '' as $$ declare v_row record; begin update public.auction_sales sale set updated_at = now() where sale.id = p_sale_id returning * into v_row; return to_jsonb(v_row); end; $$;",
+      prefix: ": ",
+      message: "public.touch_sale writes auction_sales with RETURNING *",
+    },
+    {
+      label: "une fonction publique qui lit la colonne interne",
+      file: migration("public_reads_held_fields"),
+      content:
+        "create or replace function public.peek_registry(p_sale_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select sale.held_fields from public.auction_sales sale where sale.id = p_sale_id $$;",
+      prefix: ": ",
+      message: "public.peek_registry names auction_sales.held_fields",
+    },
+    {
+      label: "des valeurs d'annonce qui servent aussi la valeur tenue",
+      file: migration("baselines_serve_value"),
+      content:
+        "create or replace function public.get_sale_field_baselines(p_sale_ids uuid[] default null) returns table (sale_id uuid, field_key text, columns text[], listing jsonb) language sql stable security definer set search_path = '' as $$ select sale.id, entry.key, array[]::text[], jsonb_build_object('listing', entry.value -> 'listing', 'held', entry.value -> 'value') from public.auction_sales sale cross join lateral jsonb_each(sale.held_fields) entry where entry.value ->> 'state' in ('held', 'conflicted') $$;",
+      prefix: ": ",
+      message: "public.get_sale_field_baselines reads the key 'value' of a held entry",
+    },
+    {
+      label: "un contrôle quotidien qui applique la projection",
+      file: migration("check_applies"),
+      content:
+        "create or replace function public.check_fact_registry_consistency(p_limit integer default 500) returns jsonb language plpgsql stable security definer set search_path = '' as $$ declare v_sale_id uuid; begin return app_private.project_sale_fields(v_sale_id, null, true); end; $$;",
+      prefix: ": ",
+      message:
+        "public.check_fact_registry_consistency must call the projection once, as a simulation",
+    },
+    {
+      label: "une fonction d'alertes qui écrit la table des alertes elle-même",
+      file: migration("alerts_direct_write"),
+      content:
+        "create or replace function public.sync_fact_registry_alerts(p_limit integer default 500) returns jsonb language plpgsql security definer set search_path = '' as $$ declare v_report jsonb := public.check_fact_registry_consistency(p_limit); begin insert into public.operational_alerts (alert_key, category, severity) values ('anything', 'import', 'critical'); return v_report; end; $$;",
+      prefix: ": ",
+      message:
+        "public.sync_fact_registry_alerts must only run the check and open or close fact_registry.* alerts",
+    },
+    {
+      label: "une projection qui n'écrit plus les libellés de surface neutres",
+      file: migration("projection_invoker"),
+      content: null,
+      prefix: ": ",
+      message: "app_private.project_sale_fields must write neutral surface labels",
+    },
+    {
+      label: "un rattrapage qui écrit les ventes sans finir par le contrôle des déclencheurs",
+      where: "repair",
+      file: "repairs/99990101000005_without_assert.sql",
+      content:
+        "begin; update public.auction_sales set city = btrim(city) where city <> btrim(city); commit;",
+      message:
+        "writes auction_sales without ending by select app_private.assert_fact_registry_triggers(); before its commit",
+    },
+    {
+      label: "un rattrapage qui coupe des déclencheurs par un nom calculé, sans épargner le registre",
+      where: "repair",
+      file: "repairs/99990101000006_dynamic_disable.sql",
+      content:
+        "begin; do $$ declare v_trigger name; begin for v_trigger in select tgname from pg_trigger where tgrelid = 'public.auction_sales'::regclass and not tgisinternal loop execute format('alter table public.auction_sales disable trigger %I', v_trigger); end loop; end $$; update public.auction_sales set city = btrim(city); select app_private.assert_fact_registry_triggers(); commit;",
+      message: "switches triggers of auction_sales by a computed name without keeping to",
+    },
+    {
+      label: "un module de l'application, hors du module serveur, qui nomme une fonction du registre",
+      where: "source",
+      file: "src/lib/registre-controle.ts",
+      content: 'export const rpc = "sync_fact_registry_alerts";\n',
+      message: "names public.sync_fact_registry_alerts",
+    },
   ];
   const filesOf = (where) =>
     Object.fromEntries(
@@ -594,20 +770,24 @@ $$;`;
     expect(refused.stderr).toContain(prefix === null ? message : `${file}${prefix}${message}`);
   });
 
-  it("refuse un déclencheur de retenue qui ne se déclenche plus sur une colonne tenue", () => {
-    const result = runInvariants({
-      [migration("hold_trigger_without_rooms")]: holdTrigger(
-        heldColumns.replace(" rooms_count,", ""),
-        holdWhen,
-      ),
-    });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain(
-      "the hold trigger aaab_auction_sales_hold_projected_fields no longer fires on a write of rooms_count",
-    );
-  });
+  // Une colonne tenue, puis une colonne voisine surveillée contre l'écho (lot R2a) : un passage chacune.
+  it.each(["rooms_count", "habitable_surface_m2"])(
+    "refuse un déclencheur de retenue qui ne se déclenche plus sur %s",
+    (column) => {
+      const result = runInvariants({
+        [migration("hold_trigger_without_column")]: holdTrigger(
+          heldColumns.replace(` ${column},`, ""),
+          holdWhen,
+        ),
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        `the hold trigger aaab_auction_sales_hold_projected_fields no longer fires on a write of ${column}`,
+      );
+    },
+  );
 
-  it("accepte les formes permises et annonce les sept invariants", () => {
+  it("accepte les formes permises et annonce les dix invariants", () => {
     const result = runInvariants(
       {
         [migration("accepted_recreated_guard")]:
@@ -635,13 +815,17 @@ $$;`;
         [migration("accepted_comments")]:
           "-- update public.auction_sales set held_fields = null; set session_replication_role = replica;\nselect 1; /* grant all on all tables in schema public to anon; */",
         [migration("accepted_projection_writes")]:
-          "create or replace function app_private.project_sale_fields(p_sale_id uuid, p_fields text[] default null, p_apply boolean default false) returns jsonb language plpgsql security definer set search_path = '' as $$ begin perform set_config('app.sale_field_projection', p_sale_id::text, true); update public.auction_sales set held_fields = null where id = p_sale_id; return '{}'::jsonb; end; $$;",
+          "create or replace function app_private.project_sale_fields(p_sale_id uuid, p_fields text[] default null, p_apply boolean default false, p_listing_hints jsonb default null) returns jsonb language plpgsql security definer set search_path = '' as $$ declare t_surface_source text; t_app_surface_kind text; begin t_surface_source := 'fact_registry'; t_app_surface_kind := 'built'; perform set_config('app.sale_field_projection', p_sale_id::text, true); update public.auction_sales set held_fields = null, surface_source = t_surface_source, app_surface_kind = t_app_surface_kind where id = p_sale_id; return '{}'::jsonb; end; $$;",
       },
       [],
       {},
       {
         "supabase/repairs/99990101000000_accepted_repair.sql":
           "select app_private.project_sale_fields(sale.id, null, false) from public.auction_sales sale where false;",
+        // Un rattrapage qui écrit les ventes : déclencheurs ordinaires hors registre coupés par leur nom,
+        // puis le contrôle du mode des déclencheurs en dernière instruction avant le commit.
+        "supabase/repairs/99990101000001_accepted_writing_repair.sql":
+          "begin; do $$ declare v_trigger name; begin for v_trigger in select trigger_row.tgname from pg_catalog.pg_trigger trigger_row where trigger_row.tgrelid = 'public.auction_sales'::regclass and not trigger_row.tgisinternal and trigger_row.tgenabled = 'O' and trigger_row.tgname not like 'aaab\\_%' loop execute format('alter table public.auction_sales disable trigger %I', v_trigger); execute format('alter table public.auction_sales enable trigger %I', v_trigger); end loop; end $$; update public.auction_sales set city = btrim(city) where city <> btrim(city); select app_private.assert_fact_registry_triggers(); commit;",
       },
     );
     expect(result.stderr).toBe("");
@@ -656,6 +840,9 @@ $$;`;
         "field-projection-not-callable-by-api",
         "fact-claims-never-repointed",
         "registry-no-fk-to-auction-sales",
+        "held-fields-never-returned",
+        "fact-registry-check-read-only",
+        "registry-neutral-surface-labels",
       ]),
     );
   });
