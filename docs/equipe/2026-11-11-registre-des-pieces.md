@@ -161,3 +161,37 @@ Rapports complets des spécialistes, reproduits tels quels dans
 | `07-cadre-juridique.md`                | juridique-rgpd      | Ce qui peut être construit, textes proposés, vingt questions pour un avocat         |
 
 Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce document qui fait foi.
+
+## 9. Journal d'exécution
+
+### Lot R1, fondations inertes (11/11/2026)
+
+**Ce qui est livré.** Six migrations (`20261116100000` à `20261116100500`) : les quatre tables du registre, la colonne interne `auction_sales.held_fields`, la projection `app_private.project_sale_fields` et les déclencheurs de retenue. Trois fichiers de tests pgTAP (881, 882, 883), un module d'invariants de sécurité, les types et la note `docs/architecture/registre-des-pieces.md`. Rien n'appelle encore la projection : aucune fiche ne change.
+
+**Déroulé.** Le premier développeur a été interrompu par une limite d'usage. Le second a repris ses six fichiers et y a trouvé deux défauts francs (une migration qui ne s'appliquait pas, une projection qui échouait sur toute vente sans pièce acceptée). Trois relectures indépendantes ont suivi (expert-postgres, securite-applicative, code-reviewer). Toutes concluent « fusionnable, lot inerte », avec des défauts à traiter avant le branchement. Vingt et un points ont été corrigés dans le lot avant sa mise en ligne, puisque rien n'était encore appliqué ; les autres ouvrent le lot R2.
+
+**Vérifications locales (base jetable PostgreSQL 16).** Rejeu de toutes les migrations sans erreur, deux applications successives du lot, 284 assertions pgTAP sur les quatre fichiers touchés, passe pgTAP complète sans changement sur l'existant, trois cas de concurrence à deux sessions sans interblocage, coût de l'import de masse inchangé (écart dans le bruit, aucun appel des déclencheurs quand rien n'est tenu).
+
+**Choix faits par délégation pendant ce lot, à revoir si besoin.**
+
+- Une information n'est « acceptée » que par une personne de l'équipe (administrateur existant). La réponse d'un avocat reste une proposition jusqu'à cette validation, tant que la publication automatique est verrouillée.
+- Le motif d'une décision est un code pris dans une liste fermée. Aucun texte libre dans un journal qu'on ne peut pas effacer.
+- L'occupation tenue par le registre se limite à libre, occupé, loué (choix 5 de la section 6).
+- Les dates de visite ne peuvent pas être tenues tant que leur normalisation n'existe pas (contrainte en base) : le texte d'une annonce peut contenir un nom et un téléphone.
+- Les trois nouvelles natures de pièce (email d'un professionnel, formulaire, saisie d'un administrateur) ne peuvent pas être insérées par un rôle de l'API.
+- Quand l'annonce l'emporte sur une pièce (réglage `listing_wins_and_review`), la libération est durable : toute décision antérieure à la libération est écartée jusqu'à une nouvelle décision humaine.
+
+**Reporté à l'ouverture du lot R2 (à faire avant la bascule).**
+
+- Écho de la collecte : une valeur retirée ou contestée peut revenir, recopiée par l'import depuis la base (`services/data-pipeline/src/main.py`). Défaut le plus important.
+- Ordre de verrouillage du noyau (le fait puis la vente, à inverser) et délai d'attente de la RPC d'administration pendant un import.
+- Fusion de doublons : report des pièces et de la valeur d'annonce mémorisée.
+- Valeur écrite dans `app_surface_kind` et `surface_source` : une constante neutre, l'origine restant dans `held_fields` ; sort de la nature de surface (Carrez, habitable, terrain).
+- Tables `properties` et `judicial_sales`, qui reçoivent les mêmes colonnes sans retenue.
+- Les deux RPC d'administration qui rendent la ligne entière de `auction_sales`, et `recompute_scoring.py` qui lit toutes les colonnes.
+- Le rattrapage `supabase/repairs/20261029100200_recompute_past_quarantined_deadlines.sql` coupe puis rétablit tous les déclencheurs de `auction_sales` : rejoué, il sortirait ceux du registre du mode `always`. À ne pas rejouer tel quel.
+- Contrôle quotidien « la simulation de projection ne change rien pour une vente tenue », et test de concordance.
+
+**Pour le juriste (s'ajoute à la section 5).** Durée de conservation des deux journaux, qui survivent à la purge de la vente ; sort de l'identifiant de l'administrateur après suppression de son compte ; trace d'une opposition conservée sans limite.
+
+**Suite.** Application des migrations en production hors import, puis au moins 24 heures d'observation (aucun champ tenu, aucun évènement, durée des imports inchangée) avant la bascule R2.
