@@ -22,6 +22,7 @@ import { isInformationAgentExcludedAddress } from "@/lib/information-agent/exclu
 import {
   informationAgentImpliedOrganizerType,
   informationAgentListingBlockRole,
+  informationAgentMentionContext,
   informationAgentSaleFieldRole,
   informationAgentSourceRole,
   isInterlocutorRoleForSale,
@@ -334,9 +335,15 @@ export function resolveInformationAgentListingContacts(
             })
           : null;
       // Rôle lu dans le texte ; il sert d'abord à écarter qui n'est pas l'interlocuteur de la vente.
+      // Dans une description, seul ce qui précède l'adresse dans sa phrase la qualifie ; un bloc cité est
+      // court et porte un libellé : il se lit en entier.
       const textRole = saleField
         ? null
-        : inferContactRole(`${observation.field} ${observation.value}`);
+        : inferContactRole(
+            observation.kind === "source_text"
+              ? `${observation.field} ${informationAgentMentionContext(String(observation.value), email)}`
+              : `${observation.field} ${observation.value}`,
+          );
       const role =
         saleField?.role ?? textRoleForSource(textRole ?? "source_contact", observation.sourceName);
       if (saleField) {

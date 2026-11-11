@@ -482,6 +482,37 @@ describe("opposition au niveau de la structure", () => {
     expect(structureKeys(typedOwn.keys.identityKeys)).toEqual([]);
     expect(structureKeys(typedOwn.keys.checkKeys)).toEqual(["structure|domain|example.test"]);
 
+    // Structure enregistrée par le brouillon : c'est elle qui choisit le mot du pied. Un service de l'État
+    // (rôle `organizer`, que le rôle seul ne distingue pas) ne retombe pas sur la formule générale.
+    const stateMission = (structureKind: unknown) =>
+      missionRecipient(
+        {
+          recipient_kind: "source_contact",
+          recipient_name: null,
+          metadata: {
+            contact_identity: {
+              role: "organizer",
+              city: "Bordeaux",
+              structure_kind: structureKind,
+              address_kind: "generic",
+            },
+            contact_discovery: { selected_email: "pgp.domaine@example.test" },
+            question_audience: "state_service",
+          },
+        } as never,
+        null,
+        "pgp.domaine@example.test",
+      );
+    expect(stateMission("state_service")).toMatchObject({
+      structureAddress: "state_service",
+      structureOpposition: "state_service",
+    });
+    // Valeur enregistrée inconnue : jamais reprise telle quelle.
+    expect(stateMission("ministere")).toMatchObject({
+      structureAddress: "unknown",
+      structureOpposition: "unknown",
+    });
+
     // Brouillon antérieur à ce lot : aucun destinataire enregistré, et aucune valeur supposée à sa place
     // (l'aperçu et l'envoi le refusent : il doit être régénéré).
     const legacy = missionRecipient(

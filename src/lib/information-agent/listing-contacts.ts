@@ -409,10 +409,18 @@ function plain(value: string): string {
  */
 export function isNonInterlocutorMention(field: string, value: string, email: string): boolean {
   if (NON_INTERLOCUTOR_FIELD.test(plain(field).replace(/[\s.-]/g, "_"))) return true;
-  const index = value.toLowerCase().indexOf(email.toLowerCase());
-  if (index < 0) return false;
-  const before = value.slice(Math.max(0, index - CONTEXT_WINDOW), index);
-  const sentence = before.split(/[\n\r|;]|\.\s/).pop() ?? "";
-  const context = plain(sentence);
+  const context = plain(informationAgentMentionContext(value, email));
   return NON_INTERLOCUTOR_PATTERNS.some((pattern) => pattern.test(context));
+}
+
+/**
+ * Ce qui précède l'adresse dans la même ligne ou la même phrase d'un texte : SEUL contexte qui dit à quel
+ * titre elle est citée. Le reste du texte parle d'autre chose (« cabinet de toilette », « vente devant
+ * notaire ») et ne qualifie pas l'adresse. Vide si l'adresse n'est pas dans le texte.
+ */
+export function informationAgentMentionContext(value: string, email: string): string {
+  const index = value.toLowerCase().indexOf(email.toLowerCase());
+  if (index < 0) return "";
+  const before = value.slice(Math.max(0, index - CONTEXT_WINDOW), index);
+  return before.split(/[\n\r|;]|\.\s/).pop() ?? "";
 }
