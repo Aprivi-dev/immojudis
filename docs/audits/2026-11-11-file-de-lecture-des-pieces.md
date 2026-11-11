@@ -12,15 +12,15 @@ persisted », dont 57 sur une vente au manifeste déjà complet ; 4 échecs vena
 
 ## Causes reproduites et correctifs livrés
 
-| #   | Cause                                                                                                                                              | Correctif                                                                                                                                                                               |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A   | À chaque relecture complète, la valeur brute de l'instantané de la source (« libre », « 85,5 », « Lot 12 », « 45.000 ») était remise sur la vente. | L'instantané est lu par `normalize_sale`, la règle de la collecte, sans seconde règle ; la ligne de base d'une trace reste une valeur typée (`src/pdf_fact_scope.py`).                  |
-| B   | Chaque lecture terminée écrit une nouvelle empreinte, donc une tâche neuve que rien ne bornait.                                                    | Le vidage ne choisit pas une vente pour laquelle il a déjà demandé 2 lectures terminées en 24 heures (priorité du vidage ; `src/document_backlog.py`).                                  |
-| C   | La lecture en avance rafraîchit les fichiers de suivi locaux ; jugée sur eux, la passe ne reprenait aucune pièce d'un manifeste de plus de 24 h.   | La péremption se juge sur la vérification enregistrée en base (`src/pdf_progress.py`).                                                                                                  |
-| D   | Manifeste complet avec un lien mort, runner neuf : texte non restaurable, rien à lire, manifeste vide reconstruit, point d'étape refusé, échec.    | Si le manifeste contient une URL écartée, la tâche attend l'heure où la première vérification expire, sans essai consommé ; tout autre cas reste un échec (`src/pdf_pass_outcomes.py`). |
-| F   | Une vente sans aucun texte (pièces toutes écartées) n'avait jamais de version des faits : à relire à chaque vidage.                                | La version est posée dès que le manifeste d'une vente à pièces est complet (`src/pdf_enrichment.py`).                                                                                   |
-| G   | Le motif d'un point d'étape refusé n'existait que dans le journal du worker.                                                                       | Un code suit le message dans `last_error` : `…retry required: no_progress_entries` (`src/storage/pdf_checkpoint_rules.py`).                                                             |
-| H   | Une écriture de fin de passe écartée (admission, révision déplacée) laissait la tâche « terminée » sans lecture enregistrée.                       | La tâche pdf échoue avec son code, un essai consommé. Refus d'admission : un essai par jour, puis `cancelled` en `review_required`, que le vidage ne réveille pas pendant 7 jours.      |
+| #   | Cause                                                                                                                                              | Correctif                                                                                                                                                                                                                    |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A   | À chaque relecture complète, la valeur brute de l'instantané de la source (« libre », « 85,5 », « Lot 12 », « 45.000 ») était remise sur la vente. | L'instantané est relu par `normalize_sale` avec le contexte de la collecte (lot, drapeaux, titre, blocs) ; sans lot désigné, seule sa valeur explicite du champ, sinon vide (`src/pdf_fact_scope.py`).                       |
+| B   | Chaque lecture terminée écrit une nouvelle empreinte, donc une tâche neuve que rien ne bornait.                                                    | Le vidage ne choisit pas une vente pour laquelle il a déjà demandé 2 lectures terminées en 24 heures (priorité du vidage ; `src/document_backlog.py`).                                                                       |
+| C   | La lecture en avance rafraîchit les fichiers de suivi locaux ; jugée sur eux, la passe ne reprenait aucune pièce d'un manifeste de plus de 24 h.   | La péremption se juge sur la vérification enregistrée en base (`src/pdf_progress.py`).                                                                                                                                       |
+| D   | Manifeste complet avec un lien mort, runner neuf : texte non restaurable, rien à lire, manifeste vide reconstruit, point d'étape refusé, échec.    | Si le manifeste contient une URL écartée, la tâche attend l'heure où la première vérification expire, sans essai consommé ; tout autre cas reste un échec (`src/pdf_pass_outcomes.py`).                                      |
+| F   | Une vente sans aucun texte (pièces toutes écartées) n'avait jamais de version des faits : à relire à chaque vidage.                                | La version est posée dès que le manifeste d'une vente à pièces est complet (`src/pdf_enrichment.py`).                                                                                                                        |
+| G   | Le motif d'un point d'étape refusé n'existait que dans le journal du worker.                                                                       | Un code suit le message dans `last_error` : `…retry required: no_progress_entries` (`src/storage/pdf_checkpoint_rules.py`).                                                                                                  |
+| H   | Une écriture de fin de passe écartée (admission, révision déplacée) laissait la tâche « terminée » sans lecture enregistrée.                       | La tâche pdf échoue avec son code, un essai consommé. Refus d'admission : un essai par jour, puis `cancelled` en `review_required`, que le vidage ne réveille pas pendant 7 jours (1 jour à 7 jours ou moins de l'audience). |
 
 Garde-fous vérifiés par des tests : une pièce nouvelle ou remplacée est lue, un texte perdu reste un échec
 visible puis est relu à l'expiration de ses vérifications, une vente invalidée par une collecte repasse le
@@ -28,6 +28,25 @@ jour même, une tâche de la voie générale terminée sans passe ne fait pas at
 
 ## Limites connues
 
+- **A remet la valeur de la collecte, ou rien.** Règle : restaurer ne fait jamais apparaître une valeur que
+  la collecte n'aurait pas écrite pour la vente. L'instantané ne porte que 22 champs : relu seul, son texte
+  est celui de toute la page, et un lot Licitor recevait la mise à prix, la surface ou les pièces d'un autre
+  lot. Il est donc relu avec le contexte de la collecte, repris du `raw_payload` de la vente. Ce contexte
+  est présent après une lecture de la fiche. Il ne l'est plus quand la collecte republie une vente connue
+  sans relire sa fiche : `source_lot_selection`, `sale_timezone` et `source_lots` ne sont ni dans la
+  projection des ventes connues (`src/storage/known_sale_projection.py`) ni dans les champs reportés
+  (`src/main.py`). Dans ce cas, sur une annonce Licitor à plusieurs lots, seul ce que l'instantané porte
+  pour le champ est remis, sans relire le texte de la page. Restent : un type de bien remis `other` au lieu
+  du type lu par la collecte (1 cas sur les 3 216 ventes brutes des tests), et un instantané pris avant la
+  lecture lot par lot (03/11/2026), qui porte les valeurs du premier lot sans qu'on puisse le reconnaître.
+- **Constat hors lot, à mesurer : la collecte elle-même perd le lot.** Sur une vente Licitor à plusieurs lots
+  republiée sans relecture de sa fiche, `normalize_sale` lit alors toute la page. Reproduit hors production
+  avec le vrai code et une carte de liste écrite à la main ; requête 8 ci-dessous pour compter les ventes
+  concernées. Correction dans `src/main.py` et `src/storage/known_sale_projection.py`, hors de ce lot.
+- **L'attente d'une revue** dure 7 jours seulement si l'audience est à plus de 7 jours, 1 jour sinon. Elle
+  tombe si les règles de lecture changent (la version est dans le message de la tâche) ou si une génération
+  plus récente, non annulée, existe. La base ne connaît pas l'empreinte courante d'une vente : « génération
+  courante » veut dire ici « aucune tâche pdf plus récente qui ne soit pas annulée ».
 - **B ne borne que le vidage.** Une vente qui recrée une tâche après chaque lecture reste servie par la
   voie générale, vite si elle est à moins de 7 jours (correctif I).
 - **H ne traite que la tâche pdf.** Une passe de faits de la même prise reste « terminée » alors que son
@@ -69,7 +88,7 @@ group by 1, 2 order by 2 desc, 1 desc limit 30;
 --    à des attentes « PDF pass deferred » ou à des échecs qui disent leur code.
 select status, left(coalesce(last_error, ''), 30) as debut,
        coalesce(substring(last_error from 'retry required: ([a-z_]+)'),
-                substring(last_error from '\(([a-z_]+)\)')) as code, count(*)
+                substring(last_error from '\(([a-z_]+)[,)]')) as code, count(*)
 from public.auction_enrichment_jobs
 where job_type = 'pdf' and updated_at >= now() - interval '24 hours'
 group by 1, 2, 3 order by 4 desc limit 40;
@@ -80,7 +99,7 @@ from public.auction_enrichment_jobs
 where job_type = 'pdf' and status = 'queued' and last_error like 'PDF pass deferred:%';
 
 -- 4. Écritures écartées : essais consommés, tâches passées en revue. Une même ligne ne doit pas dépasser 4 essais.
-select status, attempt_count, substring(last_error from '\(([a-z_]+)\)') as code, count(*),
+select status, attempt_count, substring(last_error from '\(([a-z_]+)[,)]') as code, count(*),
        min(created_at) as plus_ancienne, max(updated_at) as derniere_fin
 from public.auction_enrichment_jobs
 where job_type = 'pdf' and (last_error like 'PDF pass not recorded:%' or last_error like 'review_required:%')
@@ -113,6 +132,17 @@ from (select j.*, lag(completed_at) over (partition by source_url order by creat
       where job_type = 'pdf' and created_at >= now() - interval '48 hours'
         and source_url in (select source_url from boucle)) t
 group by 1, 2, 3;
+
+-- 8. Ventes Licitor à plusieurs lots dont le lot n'est plus désigné dans la vente brute enregistrée (lecture
+--    seule). Pour elles, une valeur de pièce effacée n'est remplacée que par la valeur explicite de
+--    l'instantané ; et la collecte, quand elle les republie sans relire la fiche, lit toute la page.
+select count(*) as ventes_a_plusieurs_lots,
+       count(*) filter (where not (s.raw_payload ? 'source_lot_selection')) as sans_lot_designe,
+       count(*) filter (where not (s.raw_payload ? 'source_lot_selection')
+                          and s.raw_payload ? 'source_factual_snapshot') as dont_avec_instantane
+from public.auction_sales s
+where s.source_name = 'licitor' and s.quality_flags ? 'multi_lot_sale'
+  and s.status in ('active', 'upcoming', 'postponed', 'unknown') and (s.sale_date is null or s.sale_date >= now());
 ```
 
 Lecture de la septième : un délai proche de 0 désigne l'écriture de fin de passe (correctif I), proche de

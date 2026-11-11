@@ -650,8 +650,15 @@ python -m src.document_backlog --max-sales 200 --budget-minutes 120 --max-passes
   sur un manifeste complet qui contient une URL écartée) termine la visite de
   la vente, sans passe de plus ;
 - une tâche pdf annulée « review_required » (écriture de fin de passe refusée à
-  l'admission quatre fois de suite) n'est pas réveillée pendant 7 jours, sauf
-  génération plus récente ;
+  l'admission quatre fois de suite) n'est pas réveillée pendant 7 jours si
+  l'audience est à plus de 7 jours, pendant 1 jour sinon ; l'attente tombe si
+  les règles de lecture changent ou si une génération plus récente, non
+  annulée, existe ;
+- une valeur de pièce effacée laisse la place à la valeur que la collecte a
+  écrite, jamais à une autre : l'instantané de la source est relu avec le
+  contexte de la collecte (lot de l'annonce compris) ; sans lot désigné sur une
+  annonce Licitor à plusieurs lots, seul ce que l'instantané porte pour le
+  champ est remis, sinon rien (`src/pdf_fact_scope.py`) ;
 - les erreurs restent sur le job et le manifeste documentaire de la vente ;
 - une pièce trop lourde au téléchargement (au-delà de `PDF_MAX_DOWNLOAD_MB`,
   50 Mo dans le workflow) est un échec définitif (`document_too_large`), comme
