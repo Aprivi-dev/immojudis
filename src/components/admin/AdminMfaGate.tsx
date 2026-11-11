@@ -49,6 +49,9 @@ export function AdminMfaGate({ children }: { children: ReactNode }) {
   return <MfaChallenge factorId={state.factorId} onVerified={() => setState({ status: "open" })} />;
 }
 
+const MFA_CHALLENGE_FAILED_TEXT =
+  "Impossible de lancer la vérification. Réessayez dans un instant.";
+
 function MfaChallenge({ factorId, onVerified }: { factorId: string; onVerified: () => void }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -61,26 +64,34 @@ function MfaChallenge({ factorId, onVerified }: { factorId: string; onVerified: 
       setError("Saisissez le code à 6 chiffres affiché par votre application.");
       return;
     }
+    // Une vérification à la fois, et le bouton est toujours rendu : une panne réseau (appel qui
+    // lève au lieu de rendre une erreur) ne laisse pas « Vérification… » affiché sans fin.
+    if (busy) return;
     setBusy(true);
     setError(null);
-    const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
-      factorId,
-    });
-    if (challengeError || !challenge) {
+    try {
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId,
+      });
+      if (challengeError || !challenge) {
+        setError(MFA_CHALLENGE_FAILED_TEXT);
+        return;
+      }
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId,
+        challengeId: challenge.id,
+        code: normalized,
+      });
+      if (verifyError) {
+        setError("Code incorrect ou expiré.");
+        setCode("");
+        return;
+      }
+    } catch {
+      setError(MFA_CHALLENGE_FAILED_TEXT);
+      return;
+    } finally {
       setBusy(false);
-      setError("Impossible de lancer la vérification. Réessayez dans un instant.");
-      return;
-    }
-    const { error: verifyError } = await supabase.auth.mfa.verify({
-      factorId,
-      challengeId: challenge.id,
-      code: normalized,
-    });
-    setBusy(false);
-    if (verifyError) {
-      setError("Code incorrect ou expiré.");
-      setCode("");
-      return;
     }
     onVerified();
   }

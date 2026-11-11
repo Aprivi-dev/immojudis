@@ -11,6 +11,9 @@ type Enrollment = { factorId: string; qrCode: string; secret: string };
  * /admin/securite: enrol a TOTP authenticator for the administrator account. The QR code is the
  * SVG data URI returned by Supabase, so no third-party QR service is involved.
  */
+const ENROLLMENT_FAILED_TEXT = "Impossible de démarrer l'enrôlement. Réessayez dans un instant.";
+const VERIFICATION_FAILED_TEXT = "Impossible de lancer la vérification. Réessayez dans un instant.";
+
 export function AdminSecurityPage() {
   const [factors, setFactors] = useState<MfaFactorSummary[] | null>(null);
   const [level, setLevel] = useState<string | null>(null);
@@ -19,14 +22,23 @@ export function AdminSecurityPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [{ data: list }, { data: assurance }] = await Promise.all([
-      supabase.auth.mfa.listFactors(),
-      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-    ]);
-    setFactors((list?.all ?? []) as MfaFactorSummary[]);
-    setLevel(assurance?.currentLevel ?? null);
+    try {
+      const [{ data: list }, { data: assurance }] = await Promise.all([
+        supabase.auth.mfa.listFactors(),
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+      ]);
+      setFactors((list?.all ?? []) as MfaFactorSummary[]);
+      setLevel(assurance?.currentLevel ?? null);
+      setLoadFailed(false);
+    } catch {
+      // Lecture impossible : la page sort de « Chargement… » et propose de relire. Les facteurs
+      // restent inconnus (`null`) : on ne propose pas d'enrôlement sans savoir s'il en existe un.
+      setLoadFailed(true);
+      setError("L’état de la double authentification n’a pas pu être lu.");
+    }
   }, []);
 
   useEffect(() => {
@@ -36,25 +48,32 @@ export function AdminSecurityPage() {
   const verified = pickVerifiedTotpFactor(factors);
 
   async function startEnrollment() {
+    if (busy) return;
     setBusy(true);
     setError(null);
     setMessage(null);
-    // A previous abandoned attempt leaves an unverified factor that would block a new enrolment.
-    for (const factor of factors ?? []) {
-      if (factor.factor_type === "totp" && factor.status === "unverified") {
-        await supabase.auth.mfa.unenroll({ factorId: factor.id });
+    // `finally` : un appel qui lève (réseau coupé) rend toujours les boutons.
+    try {
+      // A previous abandoned attempt leaves an unverified factor that would block a new enrolment.
+      for (const factor of factors ?? []) {
+        if (factor.factor_type === "totp" && factor.status === "unverified") {
+          await supabase.auth.mfa.unenroll({ factorId: factor.id });
+        }
       }
+      const { data, error: enrollError } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: `Immojudis admin ${new Date().toISOString().slice(0, 10)}`,
+      });
+      if (enrollError || !data) {
+        setError(ENROLLMENT_FAILED_TEXT);
+        return;
+      }
+      setEnrollment({ factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret });
+    } catch {
+      setError(ENROLLMENT_FAILED_TEXT);
+    } finally {
+      setBusy(false);
     }
-    const { data, error: enrollError } = await supabase.auth.mfa.enroll({
-      factorType: "totp",
-      friendlyName: `Immojudis admin ${new Date().toISOString().slice(0, 10)}`,
-    });
-    setBusy(false);
-    if (enrollError || !data) {
-      setError("Impossible de démarrer l'enrôlement. Réessayez dans un instant.");
-      return;
-    }
-    setEnrollment({ factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret });
   }
 
   async function confirmEnrollment(event: FormEvent) {
@@ -65,26 +84,32 @@ export function AdminSecurityPage() {
       setError("Saisissez le code à 6 chiffres affiché par votre application.");
       return;
     }
+    if (busy) return;
     setBusy(true);
     setError(null);
-    const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
-      factorId: enrollment.factorId,
-    });
-    if (challengeError || !challenge) {
+    try {
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: enrollment.factorId,
+      });
+      if (challengeError || !challenge) {
+        setError(VERIFICATION_FAILED_TEXT);
+        return;
+      }
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: enrollment.factorId,
+        challengeId: challenge.id,
+        code: normalized,
+      });
+      if (verifyError) {
+        setError("Code incorrect ou expiré.");
+        setCode("");
+        return;
+      }
+    } catch {
+      setError(VERIFICATION_FAILED_TEXT);
+      return;
+    } finally {
       setBusy(false);
-      setError("Impossible de lancer la vérification. Réessayez dans un instant.");
-      return;
-    }
-    const { error: verifyError } = await supabase.auth.mfa.verify({
-      factorId: enrollment.factorId,
-      challengeId: challenge.id,
-      code: normalized,
-    });
-    setBusy(false);
-    if (verifyError) {
-      setError("Code incorrect ou expiré.");
-      setCode("");
-      return;
     }
     setEnrollment(null);
     setCode("");
@@ -101,7 +126,19 @@ export function AdminSecurityPage() {
           exigée pour toutes les pages et routes d'administration.
         </p>
 
-        {factors === null ? (
+        {factors === null && loadFailed ? (
+          <button
+            type="button"
+            onClick={() => {
+              setLoadFailed(false);
+              setError(null);
+              void refresh();
+            }}
+            className="liquid-button mt-6 inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background"
+          >
+            Réessayer
+          </button>
+        ) : factors === null ? (
           <p className="mt-6 text-sm text-muted-foreground">Chargement…</p>
         ) : verified ? (
           <p className="mt-6 text-sm text-foreground">

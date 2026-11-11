@@ -468,6 +468,51 @@ describe("useCreateAlert", () => {
   });
 });
 
+describe("useCreateAlert : lecture des droits du compte", () => {
+  /** Lance la création une fois la première lecture des droits terminée (en échec). */
+  async function createAfterFailedRead(hook: ReturnType<typeof setup>, search: SalesSearchParams) {
+    await waitFor(() => expect(mocks.plan).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    let outcome: Awaited<
+      ReturnType<ReturnType<typeof setup>["result"]["current"]["createAlertFromSearch"]>
+    >;
+    await act(async () => {
+      outcome = await hook.result.current.createAlertFromSearch(search);
+    });
+    return outcome!;
+  }
+
+  it("relit les droits à la demande après un échec, puis crée l'alerte", async () => {
+    mocks.plan.mockReset().mockRejectedValueOnce(new Error("réseau")).mockResolvedValue(freePlan());
+    const hook = setup();
+
+    expect(await createAfterFailedRead(hook, { department: "33" })).toEqual({
+      status: "created",
+      emailConsent: false,
+    });
+    expect(mocks.plan).toHaveBeenCalledTimes(2);
+    expect(mocks.createAlert).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.message).not.toHaveBeenCalledWith(
+      "Vérification de votre compte en cours. Réessayez dans un instant.",
+    );
+  });
+
+  it("dit que les droits n'ont pas pu être vérifiés quand la relecture échoue aussi", async () => {
+    mocks.plan.mockReset().mockRejectedValue(new Error("réseau"));
+    const hook = setup();
+
+    expect(await createAfterFailedRead(hook, { department: "33" })).toEqual({ status: "blocked" });
+    // Un échec n'est pas une vérification « en cours » : c'est une erreur, pas une invitation à
+    // attendre.
+    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.message).not.toHaveBeenCalled();
+    expect(mocks.createAlert).not.toHaveBeenCalled();
+    expect(hook.result.current.saving).toBe(false);
+  });
+});
+
 describe("useCreateAlert : « Seulement les pépites »", () => {
   it("enregistre le critère dans les critères avancés, y compris pour un compte gratuit (critère public)", async () => {
     const hook = setup();

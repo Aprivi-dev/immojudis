@@ -15,6 +15,17 @@ pipeline de données Python dans `services/data-pipeline/`. Détails dans `READM
 - `npm test`
 - `npm run test:security-invariants`
 
+## Cycles de vie et statuts
+
+Avant de toucher à un statut, à un parcours d'écran tenu par plusieurs `useState`, ou à un
+`update({ status: … })` : lisez `docs/architecture/machines-a-etats.md` (où vit chaque cycle de vie,
+ce qui est déjà explicite, ce qui attend une décision du propriétaire).
+
+- Nouveau parcours d'interface à plusieurs étapes : une table `defineMachine`
+  (`src/lib/state-machine.ts`) dans un fichier `*-machine.ts`, son test, une ligne dans le registre.
+- Transition côté serveur : mise à jour conditionnelle sur le statut attendu, jamais sur
+  l'identifiant seul.
+
 ## Équipe d'agents
 
 - `/equipe <mission>` lance le chef d'orchestre (`.claude/skills/equipe/`), qui délègue

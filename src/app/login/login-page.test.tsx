@@ -448,6 +448,17 @@ describe("login page", () => {
     );
   });
 
+  it("n'emporte pas l'erreur du formulaire d'inscription dans un autre mode", () => {
+    mocks.search = { mode: "investor" };
+    render(<LoginPage />);
+    // Inscription sans prénom ni nom : l'erreur désigne un champ de ce formulaire.
+    fireEvent.submit(screen.getByLabelText("Prénom").closest("form") as HTMLFormElement);
+    expect(screen.getByRole("alert")).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Se connecter" })[0]);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("revient au mode connexion en retirant seulement le paramètre mode", () => {
     mocks.search = { mode: "investor", redirect: "/sales" };
     render(<LoginPage />);

@@ -3,21 +3,21 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import List from "lucide-react/dist/esm/icons/list.js";
 import { toast } from "@/lib/toast";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { useAuth } from "@/hooks/use-auth";
-import { useCreateAlert } from "@/hooks/use-create-alert";
+import { ACCOUNT_CHECK_PENDING_TEXT, useCreateAlert } from "@/hooks/use-create-alert";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
 import { useRouter, useSearchParams } from "next/navigation";
 import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { exportSalesCsv, fetchAccessPlan } from "@/lib/client-api";
 import { applyPhotoMirrors, isPhotoMirrorEnabled, mirrorsFromSales } from "@/lib/photo-mirror";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
-import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { AiReviewRequestStatus } from "@/lib/ai-review-guard";
@@ -36,7 +36,7 @@ import {
   type ResultsView,
 } from "@/lib/search/results-view";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
-import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
+import { aroundAddressMachine } from "@/lib/search/around-address-machine";
 import {
   ANONYMOUS_PREVIEW_SCOPE,
   catalogPlaceholder,
@@ -248,8 +248,14 @@ export function SearchPage({
   const firstSearchDraftSync = useRef(true);
   const firstDraftSync = useRef(true);
   const mapTriggerRef = useRef<HTMLElement | null>(null);
-  const [center, setCenter] = useState<GeoPoint | null>(null);
-  const [geocoding, setGeocoding] = useState(false);
+  // Adresse d'une recherche « autour de » : le centre est rangé avec l'adresse qu'il localise
+  // (`around-address-machine.ts`), il ne survit donc ni à son effacement ni à son remplacement.
+  const [aroundAddress, dispatchAroundAddress] = useReducer(
+    aroundAddressMachine.transition,
+    aroundAddressMachine.initial,
+  );
+  const center = aroundAddress.status === "located" ? aroundAddress.point : null;
+  const geocoding = aroundAddress.status === "locating";
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   // Sur bureau, la carte (mapbox-gl + points) ne se télécharge ni ne s'initialise qu'au premier
@@ -357,18 +363,17 @@ export function SearchPage({
   }, [draft, draftSignature, replaceSearch]);
 
   useEffect(() => {
-    if (!search.aroundAddress) {
-      setCenter(null);
-      return;
-    }
+    const address = search.aroundAddress || null;
+    dispatchAroundAddress({ type: "ADDRESS_CHANGED", address });
+    if (!address) return;
 
     let cancelled = false;
-    setGeocoding(true);
-    geocodeAddress(search.aroundAddress).then((point) => {
-      if (cancelled) return;
-      setCenter(point);
-      setGeocoding(false);
-    });
+    // Un géocodeur en panne vaut « adresse introuvable » : la recherche continue sans centre.
+    geocodeAddress(address)
+      .catch(() => null)
+      .then((point) => {
+        if (!cancelled) dispatchAroundAddress({ type: "RESOLVED", address, point });
+      });
 
     return () => {
       cancelled = true;
@@ -985,23 +990,16 @@ export function SearchPage({
     },
   };
 
-  const { createAlertFromSearch, saving: savingAlert } = useCreateAlert({
+  // `explainReservedFeature` : une seule règle pour « fonction réservée à Analyse » (alertes ici,
+  // export CSV plus bas), écrite dans le crochet.
+  const {
+    createAlertFromSearch,
+    saving: savingAlert,
+    explainReservedFeature,
+  } = useCreateAlert({
     returnTo: currentHref,
     center,
   });
-
-  /**
-   * A feature reserved to Analyse: send the person to the offers page only when the
-   * subscription can really be bought, otherwise explain instead of leading to a dead end.
-   */
-  async function explainReservedFeature(reservedMessage: string) {
-    if (await isAnalysisOfferOpen()) {
-      toast.message(reservedMessage);
-      router.push(OFFERS_PATH);
-      return;
-    }
-    toast.message(`${reservedMessage} L'abonnement Analyse n'est pas encore ouvert.`);
-  }
 
   async function saveSearch(options?: SaveSearchOptions) {
     const result = await createAlertFromSearch(search, options);
@@ -1044,7 +1042,7 @@ export function SearchPage({
 
   async function exportCsv() {
     if (authLoading) {
-      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+      toast.message(ACCOUNT_CHECK_PENDING_TEXT);
       return;
     }
     if (!user) {
@@ -1052,7 +1050,7 @@ export function SearchPage({
       return;
     }
     if (entitlementsLoading || !entitlementsData) {
-      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+      toast.message(ACCOUNT_CHECK_PENDING_TEXT);
       return;
     }
     if (csvExportLocked) {

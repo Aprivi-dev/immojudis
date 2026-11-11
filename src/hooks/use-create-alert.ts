@@ -38,6 +38,10 @@ const ALERTS_PATH = "/alertes";
 export const RESERVED_ALERT_CRITERIA_TEXT =
   "Les critères avancés (écart avec le marché, rendement, occupation, DPE…) font partie des alertes de l’offre Analyse. Avec le compte gratuit : zone, type de vente, type de bien, budget, surface…";
 
+/** La session ou les droits du compte ne sont pas encore lus (aussi dit par l'export de `/sales`). */
+export const ACCOUNT_CHECK_PENDING_TEXT =
+  "Vérification de votre compte en cours. Réessayez dans un instant.";
+
 export type CreateAlertOptions = {
   frequency?: "daily" | "weekly";
   /** Case « email récapitulatif » cochée : le consentement est donné à la création de l'alerte. */
@@ -96,7 +100,12 @@ export function useCreateAlert({
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
   const [saving, setSaving] = useState(false);
-  const { data: entitlements, isLoading: entitlementsLoading } = useQuery({
+  const {
+    data: entitlements,
+    isLoading: entitlementsLoading,
+    isError: entitlementsFailed,
+    refetch: refetchEntitlements,
+  } = useQuery({
     queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
     queryFn: fetchAccessPlan,
     enabled: Boolean(user) && !authLoading,
@@ -111,7 +120,11 @@ export function useCreateAlert({
   });
   const emailRecapEnabled = notificationPreferences?.preferences.alertEmailEnabled === true;
 
-  /** Une fonction réservée à Analyse : vers l'offre si elle est ouvrable, sinon on l'explique. */
+  /**
+   * Une fonction réservée à Analyse : vers l'offre si elle est ouvrable, sinon on l'explique au
+   * lieu de mener à une impasse. Rendue aux appelants (`/sales` : export CSV) pour ne pas être
+   * écrite deux fois.
+   */
   const explainReservedFeature = useCallback(
     async (reservedMessage: string) => {
       if (await isAnalysisOfferOpen()) {
@@ -130,7 +143,7 @@ export function useCreateAlert({
       options: CreateAlertOptions = {},
     ): Promise<CreateAlertResult> => {
       if (authLoading) {
-        toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+        toast.message(ACCOUNT_CHECK_PENDING_TEXT);
         return { status: "blocked" };
       }
       if (!user) {
@@ -147,11 +160,24 @@ export function useCreateAlert({
         router.push(loginPathWithRedirect(returnTo, { reason: "alerte" }));
         return { status: "login" };
       }
-      if (entitlementsLoading || !entitlements) {
-        toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+      // Lecture des droits du compte : en cours, lue, ou en échec. Un échec n'est pas « en cours » :
+      // on relance la lecture à la demande au lieu de répondre « réessayez » sans fin.
+      let rights = entitlements;
+      if (!rights && entitlementsFailed) {
+        setSaving(true);
+        const retried = await refetchEntitlements();
+        setSaving(false);
+        rights = retried.data;
+        if (!rights) {
+          toast.error(userMessage(retried.error));
+          return { status: "blocked" };
+        }
+      }
+      if (!rights) {
+        toast.message(ACCOUNT_CHECK_PENDING_TEXT);
         return { status: "blocked" };
       }
-      const alertsLocked = entitlements.plan.features.smartAlerts === "locked";
+      const alertsLocked = rights.plan.features.smartAlerts === "locked";
       if (alertsLocked) {
         await explainReservedFeature(
           "Les alertes de cette recherche sont réservées à l'offre Analyse.",
@@ -175,7 +201,7 @@ export function useCreateAlert({
       const queryDepartment = search.department ? null : departmentFromSearchQuery(search.query);
       const residualQuery = queryDepartment ? null : search.query;
       if (
-        !entitlements.plan.hasAnalysisAccess &&
+        !rights.plan.hasAnalysisAccess &&
         (residualQuery ||
           search.occupancy ||
           search.minScore != null ||
@@ -197,7 +223,7 @@ export function useCreateAlert({
         // qui créent une alerte (accueil du compte, départements) n'ont pas à l'embarquer d'office.
         const { buildAlertName, watchedZoneInputFromSearch } =
           await import("@/components/search/search-page-state");
-        const watchedZonesLocked = entitlements.plan.features.watchedZones === "locked";
+        const watchedZonesLocked = rights.plan.features.watchedZones === "locked";
         const watchedZoneInput = watchedZonesLocked
           ? null
           : await watchedZoneInputFromSearch(search, center);
@@ -220,7 +246,7 @@ export function useCreateAlert({
           dpe_classes: search.dpeClasses ?? [],
           require_house_with_land: Boolean(search.houseWithLand),
           alert_frequency:
-            options.frequency ?? (entitlements.plan.hasAnalysisAccess ? "daily" : "weekly"),
+            options.frequency ?? (rights.plan.hasAnalysisAccess ? "daily" : "weekly"),
           watched_zone_id: watchedZoneResponse?.zone.id ?? null,
           advanced_criteria: {
             source: "sales_search",
@@ -283,9 +309,10 @@ export function useCreateAlert({
       center,
       emailRecapEnabled,
       entitlements,
-      entitlementsLoading,
+      entitlementsFailed,
       explainReservedFeature,
       queryClient,
+      refetchEntitlements,
       returnTo,
       router,
       user,
@@ -295,5 +322,5 @@ export function useCreateAlert({
   /** Les droits du compte sont lus : une création lancée maintenant ne sera pas refusée « en cours ». */
   const ready = Boolean(user) && !authLoading && !entitlementsLoading && Boolean(entitlements);
 
-  return { createAlertFromSearch, saving, emailRecapEnabled, ready };
+  return { createAlertFromSearch, saving, emailRecapEnabled, ready, explainReservedFeature };
 }
