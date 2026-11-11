@@ -1230,12 +1230,25 @@ def _hydrate_known_unchanged_sales(
         if not (known := known_details.get(source_url)):
             continue
         _backfill_raw_sale_from_known_detail(sale, known)
+        _keep_known_contact_email(sale, known)
         restore_known_detail_blocks(sale, known_details)  # every source keeps the blocks of its stored detail
         _restore_known_detail_gallery(sale, known)
         # A list card carries the short text: the stored detail keeps its full description (notaires, 30/10/2026).
         if len(str(known.get("description") or "")) > len(str(sale.get("description") or "")):
             sale["description"] = known["description"]
     return skipped
+
+
+def _keep_known_contact_email(sale: dict[str, object], known: dict[str, object]) -> None:
+    """Keep the contact of the stored detail when it carries an e-mail address and the list card's does not.
+
+    A notaires card carries the phone alone, the detail « phone | e-mail ». Backfill fills empty fields only, so
+    the card's phone replaced the detail's contact at every collection that skipped the detail page: on
+    11/11/2026, 26 of the 202 notaires sales still had the e-mail address the source publishes.
+    """
+    stored = known.get("lawyer_contact")
+    if isinstance(stored, str) and "@" in stored and "@" not in str(sale.get("lawyer_contact") or ""):
+        sale["lawyer_contact"] = stored
 
 
 def _restore_known_detail_gallery(sale: dict[str, object], known: dict[str, object]) -> None:
