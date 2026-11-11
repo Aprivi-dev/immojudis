@@ -24,7 +24,7 @@ export const FACT_REGISTRY_CHECKS = [
   "stale_listing",
 ] as const;
 
-export type FactRegistryCheck = (typeof FACT_REGISTRY_CHECKS)[number];
+type FactRegistryCheck = (typeof FACT_REGISTRY_CHECKS)[number];
 
 /** « La fonction n'existe pas » : `PGRST202` (cache du schéma de PostgREST) ou `42883` (PostgreSQL). */
 function isMissingFunctionError(error: { code?: string }): boolean {
