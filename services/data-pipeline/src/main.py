@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
-from src import listing_minimum, retention_tombstones, source_withdrawal
+from src import base_reads, listing_minimum, retention_tombstones, source_withdrawal
 from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
@@ -445,6 +445,7 @@ def _open_run(options: PipelineOptions) -> _PipelineRun:
     run_id = create_run_in_supabase(options.source, options.use_llm, run_id=options.run_id) if options.upsert else None
     register_run(run_id)
     listing_minimum.reset_tally()
+    base_reads.reset()  # lectures en base et compteur d'écho : propres à ce passage
     if options.upsert:  # e-mails refusés par l'agent d'information : jamais comptés comme contact exploitable
         set_active_blocklist(load_contact_blocklist(settings))
         # Référentiel des tribunaux : contact de secours d'une vente au tribunal sans email (preuve court_email).
@@ -743,6 +744,7 @@ def _prepare_and_publish_early(run: _PipelineRun) -> None:
                                         prepared=min(offset + 25, len(canonical_sales)), published=run.early_upserted)
     timings["app_ready_seconds"] = round(preparation_seconds, 2)
     timings["early_supabase_seconds"] = round(publication_seconds, 2)
+    timings["base_echo_suppressed"] = base_reads.suppressed_count()
 
 
 def _select_enrichment_scope(run: _PipelineRun) -> None:
@@ -999,6 +1001,9 @@ def _publish_run(run: _PipelineRun) -> None:
             if final_sales:
                 run.final_upserted = upsert_sales_to_supabase(final_sales)
                 run.final_observations_upserted = upsert_observations_to_supabase(final_sales)
+            # Valeurs seulement relues en base et non réécrites parce que la base avait bougé (publications
+            # progressive, anticipée et finale du passage).
+            timings["base_echo_suppressed"] = base_reads.suppressed_count()
             if app_ready:
                 if run.cadastre_rows:
                     try:

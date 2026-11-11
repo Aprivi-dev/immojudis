@@ -25,6 +25,16 @@ def _drop_shared_postgres_connections():
 
 
 @pytest.fixture(autouse=True)
+def _fresh_base_reads():
+    """Les lectures en base mémorisées par la garde d'écho valent pour un passage : jamais d'un test à l'autre."""
+    from src import base_reads
+
+    base_reads.reset()
+    yield
+    base_reads.reset()
+
+
+@pytest.fixture(autouse=True)
 def _no_reference_communes_lookup(monkeypatch):
     """Le repli « nom de commune unique » de ``infer_missing_department`` lit ``reference_communes`` en base.
 

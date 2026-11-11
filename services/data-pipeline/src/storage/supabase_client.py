@@ -27,6 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - GitHub Actions installs psycop
     sql = None
     Jsonb = None
 
+from src import base_reads
 from src.admission import catalogue_write_rejection, has_price_or_surface, is_expired, quarantine_reason
 from src.asset_normalization import (
     build_auction_features_row,
@@ -594,6 +595,10 @@ def _write_sale_revisions(
     else:
         _upsert_with_rest(str(url), str(key), payload)
         _write_fact_claims_rest(str(url), str(key), sales)
+    # L'écriture de ce processus n'est pas un mouvement de la base : la garde d'écho compare la lecture suivante à
+    # ce qui vient d'être envoyé.
+    for sale, row in zip(sales, payload, strict=True):
+        base_reads.note_written(sale.id, row)
     _sync_normalized_sale_tables_with_rest(
         str(url),
         str(key),
@@ -3101,6 +3106,9 @@ def fetch_known_sale_details(
         if not isinstance(row, dict):
             raise ReviewedAliasRegistryError("Malformed auction_sales detail row")
         row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"), row.get("status"))
+        # Ces valeurs seront recopiées dans des ventes écrites plus tard : la garde d'écho doit savoir qu'elles
+        # viennent de la base, et quand elles ont été lues.
+        base_reads.note(row)
 
     details: dict[str, dict[str, Any]] = {}
     rows_by_id = {
