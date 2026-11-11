@@ -1,4 +1,6 @@
--- 20261116100500 : projection app_private.project_sale_fields (lot R1, étape M4).
+-- 20261116100500 puis 20261117100200 : projection app_private.project_sale_fields (lot R1, étape M4 ; version 2
+-- au lot R2a : quatrième paramètre, valeurs neutres dans les libellés de surface, entrée « released » gardée après
+-- une libération ; mémoire d'écho, indices de fusion et ordre par la séquence commune : 884 et 885).
 --   * exécutable par aucun rôle de l'API ; simulation sans écriture, application en un seul UPDATE ;
 --   * idempotente : un second appel n'écrit rien ;
 --   * une pièce ne tient un champ que si sa DERNIÈRE décision (ordre de seq, pas de date) est une acceptation,
@@ -18,22 +20,25 @@ select plan(94);
 
 -- Fonction et droits --------------------------------------------------------------------------------------------
 select has_function(
-  'app_private', 'project_sale_fields', array['uuid', 'text[]', 'boolean'], 'the projection exists'
+  'app_private', 'project_sale_fields', array['uuid', 'text[]', 'boolean', 'jsonb'], 'the projection exists'
 );
 
 select ok(
   (select prosecdef and proconfig @> array['search_path=""']::text[] and provolatile = 'v'
           and pg_get_function_result(oid) = 'jsonb'
           and pg_get_function_arguments(oid)
-            = 'p_sale_id uuid, p_fields text[] DEFAULT NULL::text[], p_apply boolean DEFAULT false'
-     from pg_proc where oid = 'app_private.project_sale_fields(uuid,text[],boolean)'::regprocedure),
-  'the projection is volatile, security definer, with an empty search_path, and simulates by default'
+            = 'p_sale_id uuid, p_fields text[] DEFAULT NULL::text[], p_apply boolean DEFAULT false, p_listing_hints jsonb DEFAULT NULL::jsonb'
+          and (select count(*) = 1 from pg_proc overload
+                 where overload.pronamespace = 'app_private'::regnamespace
+                   and overload.proname = 'project_sale_fields')
+     from pg_proc where oid = 'app_private.project_sale_fields(uuid,text[],boolean,jsonb)'::regprocedure),
+  'the projection is volatile, security definer, with an empty search_path, simulates by default, and has one signature'
 );
 
 select is(
   (select count(*)::integer
      from unnest(array[
-       'app_private.project_sale_fields(uuid,text[],boolean)',
+       'app_private.project_sale_fields(uuid,text[],boolean,jsonb)',
        'app_private.fact_claim_source_kind(text,text,jsonb)',
        'app_private.sale_field_claim_value(text,jsonb)',
        'app_private.sale_field_comparable(text,jsonb)',
@@ -218,6 +223,12 @@ insert into public.auction_fact_claims (
   '88300000-0000-4000-8000-0000000000a1', statement_timestamp()
 );
 
+-- Un champ est-il tenu (une entrée « released » ne garde que la mémoire d'écho : elle ne tient rien) ?
+create function pg_temp.holds(p_held jsonb, p_field_key text) returns boolean
+language sql immutable as $$
+  select coalesce(p_held -> p_field_key ->> 'state' in ('held', 'conflicted'), false);
+$$;
+
 -- Décision d'un administrateur sur une observation (la vente et le champ sont ceux de l'observation).
 prepare decide(text, text, text, timestamptz, text) as
   insert into public.auction_fact_claim_decisions (
@@ -292,8 +303,7 @@ select results_eq(
   $$select surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, rooms_count,
            occupancy_status
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000001'$$,
-  $$values (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email',
-            0.9::numeric, 2, 'occupied')$$,
+  $$values (54::numeric, 54::numeric, 'built', 'fact_registry', 0.9::numeric, 2, 'occupied')$$,
   'the accepted surface is written with its whole group; the other fields keep the listing values'
 );
 
@@ -301,9 +311,10 @@ select is(
   (select (held_fields #> '{property.surface_m2}') - 'decision_id'
      from public.auction_sales where id = '88300000-1000-4000-8000-000000000001'),
   '{
-     "v": 1, "value": 54, "state": "held",
+     "v": 2, "value": 54, "state": "held",
      "listing": {"surface_m2": 50, "app_surface_m2": 50, "app_surface_kind": "habitable",
                  "surface_source": "listing_text", "surface_confidence": 0.7},
+     "neighbors": {},
      "claim_id": "88300000-2000-4000-8000-000000000101", "source_kind": "lawyer_email", "rank": 30,
      "received_on": "2026-10-12", "publication_mode": "manual", "recipient_kind": "source_lawyer",
      "tolerance": {"abs": 1, "rel": 0.02}, "on_listing_change": "keep_and_review"
@@ -409,10 +420,14 @@ select is(
 );
 
 select results_eq(
-  $$select surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, held_fields
+  $$select surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence,
+           held_fields #>> '{property.surface_m2,state}', held_fields #>> '{property.surface_m2,released_by}',
+           held_fields #> '{property.surface_m2,value}', held_fields #> '{property.surface_m2,listing}',
+           held_fields #> '{property.surface_m2,claim_id}'
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000001'$$,
-  $$values (50::numeric, 50::numeric, 'habitable', 'listing_text', 0.7::numeric, null::jsonb)$$,
-  'withdrawal restores the listing value of the whole surface group and empties held_fields'
+  $$values (50::numeric, 50::numeric, 'habitable', 'listing_text', 0.7::numeric, 'released', 'withdrawn',
+            null::jsonb, null::jsonb, null::jsonb)$$,
+  'withdrawal restores the listing value of the whole surface group; the entry is released and holds nothing'
 );
 
 select results_eq(
@@ -448,10 +463,12 @@ select is(
 );
 
 select results_eq(
-  $$select land_surface_m2, held_fields from public.auction_sales
-      where id = '88300000-1000-4000-8000-000000000001'$$,
-  $$values (null::numeric, null::jsonb)$$,
-  'opposition restores the empty listing value: the opposed value is no longer displayed'
+  $$select land_surface_m2, held_fields #>> '{property.land_surface_m2,state}',
+           held_fields #>> '{property.land_surface_m2,released_by}',
+           held_fields #> '{property.land_surface_m2,echo}'
+      from public.auction_sales where id = '88300000-1000-4000-8000-000000000001'$$,
+  $$values (null::numeric, 'released', 'opposed', '[{"value": 800}]'::jsonb)$$,
+  'opposition restores the empty listing value: the opposed value is no longer displayed, and remembered without a term'
 );
 
 -- Rejet après acceptation -----------------------------------------------------------------------------------------
@@ -494,7 +511,7 @@ select is(
 );
 
 select results_eq(
-  $$select rooms_count, bedrooms_count, occupancy_status, held_fields ? 'property.rooms_count'
+  $$select rooms_count, bedrooms_count, occupancy_status, pg_temp.holds(held_fields, 'property.rooms_count')
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000001'$$,
   $$values (2, 2, 'rented', false)$$,
   'the projection did not fail: the occupancy is held, the room count keeps the listing value'
@@ -548,7 +565,7 @@ select is(
 );
 
 select results_eq(
-  $$select sale.rooms_count, sale.bedrooms_count, sale.held_fields ? 'property.rooms_count',
+  $$select sale.rooms_count, sale.bedrooms_count, pg_temp.holds(sale.held_fields, 'property.rooms_count'),
            event.held_value, event.listing_value, event.incoming_value
       from public.auction_sales sale
       join lateral (
@@ -605,8 +622,8 @@ select is(
 select is(
   (select (held_fields #> '{property.rooms_count}') - 'decision_id' - 'claim_id' - 'listing' - 'tolerance'
      from public.auction_sales where id = '88300000-1000-4000-8000-000000000002'),
-  '{"v": 1, "value": 5, "state": "held", "source_kind": "admin", "rank": 10, "publication_mode": "manual",
-    "recipient_kind": "source_lawyer", "on_listing_change": "keep_and_review"}'::jsonb,
+  '{"v": 2, "value": 5, "state": "held", "source_kind": "admin", "rank": 10, "publication_mode": "manual",
+    "recipient_kind": "source_lawyer", "on_listing_change": "keep_and_review", "neighbors": {}}'::jsonb,
   'the entry names the administrator origin and its rank'
 );
 
@@ -677,7 +694,7 @@ select is(
 );
 
 select results_eq(
-  $$select land_surface_m2, held_fields ? 'property.land_surface_m2'
+  $$select land_surface_m2, pg_temp.holds(held_fields, 'property.land_surface_m2')
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000002'$$,
   $$values (null::numeric, false)$$,
   'the opposed land surface is gone and the conflicting pieces hold nothing'
@@ -751,7 +768,7 @@ select is(
 );
 
 select results_eq(
-  $$select occupancy_status, held_fields ? 'property.occupancy_status'
+  $$select occupancy_status, pg_temp.holds(held_fields, 'property.occupancy_status')
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000003'$$,
   $$values ('occupied', false)$$,
   'the candidate document did not write the sale'
@@ -840,7 +857,8 @@ select is(
 );
 
 select results_eq(
-  $$select surface_m2, land_surface_m2, held_fields ?| array['property.surface_m2', 'property.land_surface_m2']
+  $$select surface_m2, land_surface_m2,
+           pg_temp.holds(held_fields, 'property.surface_m2') or pg_temp.holds(held_fields, 'property.land_surface_m2')
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000003'$$,
   $$values (50::numeric, null::numeric, false)$$,
   'neither wrote the sale'
@@ -855,8 +873,15 @@ select throws_ok(
   'a value that the registry cannot hold is refused at acceptance'
 );
 
+-- (sans le déclencheur de validation, l'écrivain doit aussi fournir le numéro d'ordre : pris dans la séquence.)
 alter table public.auction_fact_claim_decisions disable trigger auction_fact_claim_decisions_validate;
-execute decide('306', 'accepted', 'single_lot', '2026-10-12 09:00:00+00', null);
+insert into public.auction_fact_claim_decisions (
+  seq, claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, recipient_kind, received_at
+) values (
+  nextval('app_private.fact_registry_seq'), '88300000-2000-4000-8000-000000000306',
+  '88300000-1000-4000-8000-000000000003', 'property.surface_m2', 'accepted', 'single_lot', 'admin',
+  '88300000-0000-4000-8000-0000000000a1', 'source_lawyer', '2026-10-12 09:00:00+00'
+);
 alter table public.auction_fact_claim_decisions enable always trigger auction_fact_claim_decisions_validate;
 
 select is(
@@ -908,9 +933,10 @@ select app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', n
 update public.auction_sales set rooms_count = 6 where id = '88300000-1000-4000-8000-000000000003';
 
 select results_eq(
-  $$select rooms_count, held_fields ? 'property.rooms_count'
+  $$select rooms_count, pg_temp.holds(held_fields, 'property.rooms_count'),
+           held_fields #>> '{property.rooms_count,released_by}'
       from public.auction_sales where id = '88300000-1000-4000-8000-000000000003'$$,
-  $$values (6, false)$$,
+  $$values (6, false, 'listing')$$,
   'the listing wins: the room count of the lawyer is released'
 );
 
@@ -1000,8 +1026,9 @@ select ok(
 -- insertion, pour simuler une date de l'an 2999 restée dans le journal).
 alter table public.auction_fact_claim_decisions disable trigger auction_fact_claim_decisions_validate;
 insert into public.auction_fact_claim_decisions (
-  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, received_at, decided_at
+  seq, claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, received_at, decided_at
 ) values (
+  nextval('app_private.fact_registry_seq'),
   '88300000-2000-4000-8000-000000000602', '88300000-1000-4000-8000-000000000006', 'property.surface_m2',
   'accepted', 'single_lot', 'admin', '88300000-0000-4000-8000-0000000000a1', '2026-10-12 09:00:00+00',
   '2999-01-01 00:00:00+00'
@@ -1203,7 +1230,7 @@ update public.auction_fact_fields set on_listing_change = 'keep_and_review'
 where field_key = 'property.rooms_count';
 
 select results_eq(
-  $$select sale.rooms_count, sale.held_fields is null, event.event, event.sale_id
+  $$select sale.rooms_count, not pg_temp.holds(sale.held_fields, 'property.rooms_count'), event.event, event.sale_id
       from public.auction_sales sale
       join public.auction_sale_field_hold_events event
         on event.sale_id = sale.id and event.event = 'listing_changed_released'

@@ -79,6 +79,10 @@
     {
       "path": "/api/cron/replies-review-digest",
       "schedule": "5 7 * * *"
+    },
+    {
+      "path": "/api/cron/fact-registry-check",
+      "schedule": "28 5 * * *"
     }
   ]
 }
