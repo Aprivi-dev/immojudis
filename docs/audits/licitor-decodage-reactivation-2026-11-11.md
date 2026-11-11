@@ -17,9 +17,6 @@ Rappel : le décodage avait été désactivé par défaut le 23/10/2026 (PR #293
   tant qu'elle n'est pas supprimée ou passée à `true`.**
 - Le code reste explicite (`decode_protected_emails_enabled`, `src/sources/licitor.py`) : sans valeur vraie,
   aucun décodage. En local, `.env.example` garde `false`.
-- Point de reprise (`src/source_checkpoint.py`) : une fiche reprise d'un run interrompu, qui portait une adresse
-  et n'a pas de ligne au registre, est relue au lieu d'être tenue pour fraîche. Le point de reprise ne contient
-  toujours aucune adresse, seulement un marqueur booléen.
 
 ## Ce qui ne change pas
 
@@ -30,7 +27,11 @@ Rappel : le décodage avait été désactivé par défaut le 23/10/2026 (PR #293
 - Purge : seuil de 21 jours, purge hebdomadaire, soit 28 jours au plus après la dernière consultation de
   l'annonce ; aucune écriture pour une vente passée, retirée, annulée ou sans date.
 - Opposition : une adresse opposée n'est jamais écrite ni rafraîchie.
-- Aucune requête ajoutée vers Licitor : le décodage se fait sur le HTML déjà récupéré, dans le budget existant.
+- Aucune requête ajoutée vers Licitor : le décodage se fait sur le HTML déjà récupéré, dans le budget existant,
+  et ce lot n'ajoute ni rattrapage ni relecture forcée.
+- Point de reprise de collecte : il ne contient aucune adresse. Une fiche reprise d'un run interrompu est donc
+  publiée sans adresse à ce passage et la reçoit à la relecture suivante de son détail, au plus 24 heures après
+  sa lecture d'origine.
 - Le pilote automatique écarte toujours les adresses Licitor décodées tant que le réglage `allow_licitor_decoded`
   n'est pas activé (`docs/runbooks/information-agent.md`) : la réactivation remplit le registre, elle n'ouvre
   aucun envoi.
@@ -41,13 +42,13 @@ Mesure du diagnostic du 11/11/2026 : 71 ventes Licitor à venir sur 410 ont une 
 340 ventes à couvrir (moins celles dont la fiche ne présente aucune adresse retenue).
 
 Le détail d'une fiche n'est tenu pour frais que 24 heures (6 heures quand l'audience est à moins de 7 jours) ;
-passé ce délai il est relu, carte inchangée ou non, et l'adresse est écrite à cette lecture. Avec un passage
-Licitor toutes les 12 heures environ et 42 minutes de lecture de fiches par passage, les ventes concernées sont
-couvertes en deux passages, soit environ 24 heures après le premier passage qui suit la fusion ; trois passages
-si le budget en reporte. Aucun rattrapage forcé n'a été ajouté : il aurait relu une seconde fois des fiches
-encore fraîches pour un gain d'un passage au plus.
+passé ce délai il est relu, carte inchangée ou non, et l'adresse est écrite à cette lecture. Un passage Licitor
+a lieu toutes les 12 heures environ, avec un budget de 42 minutes décompté dès le début du passage, donc lecture
+des listes comprise ; les fiches non lues sont reportées au passage suivant. Les ventes concernées sont
+couvertes en deux à trois passages, 36 heures environ après la fusion. Aucun rattrapage forcé n'a été ajouté : il
+aurait relu une seconde fois des fiches encore fraîches pour un gain d'un passage au plus.
 
-Contrôle après deux passages (lecture seule, `service_role`) :
+Contrôle après trois passages (lecture seule, `service_role`) :
 
 ```sql
 select count(distinct scope_sale_id)
@@ -61,11 +62,14 @@ where source_kind = 'sale_listing'
 
 La carte de liste des notaires ne porte que le téléphone ; le détail porte « téléphone | adresse ». Pour une
 carte inchangée, le téléphone de la carte remplaçait le contact du détail à chaque collecte (26 ventes sur 202
-avec l'adresse dans la colonne le 11/11/2026). L'hydratation des ventes connues garde désormais le contact connu
-quand il contient une adresse et que celui de la carte n'en contient pas (`src/main.py`). Le stock se rétablit
+avec l'adresse dans la colonne le 11/11/2026). Désormais (`src/main.py`), pour une carte notaires
+inchangée dont le contact ne contient pas d'adresse alors que le détail connu en contient une, le contact devient
+« téléphone de la carte | adresse du détail connu » : le téléphone reste celui de la carte, seule l'adresse vient
+du détail. Les autres sources et les fiches dont la lecture du détail a échoué ne sont pas concernées. Le stock se rétablit
 sans écriture manuelle : le détail d'une vente notaires est relu au plus tard 72 heures après sa dernière lecture
 (6 heures à moins de 7 jours de la vente), ce qui réécrit « téléphone | adresse », et la valeur n'est plus perdue
-ensuite. Cette adresse est celle que la source publie ; elle reste dans la colonne publique, comme avant.
+ensuite. Cette adresse est celle que la source publie ; elle reste dans la colonne `lawyer_contact`, lisible par
+les comptes connectés, pas par les visiteurs, comme avant.
 
 ## Textes à revoir (non modifiés ici)
 
