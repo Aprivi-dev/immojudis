@@ -45,6 +45,12 @@ from src.pdf_enrichment import (
     sale_storage_id,
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
+from src.pdf_pass_outcomes import (
+    complete_manifest_without_restorable_text,
+    final_write_was_discarded,
+    nothing_due_deferral,
+    write_discarded_deferral,
+)
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import PARTIAL_MANIFEST_DEFERRAL, PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
 from src.queue_job_state import finish_job as _finish_claim
@@ -52,6 +58,7 @@ from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
 from src.source_withdrawal import SaleSourceWithdrawn, deferral_for, require_sale_not_withdrawn
+from src.storage.pdf_checkpoint_rules import last_checkpoint_refusal, reset_checkpoint_refusal
 from src.storage.supabase_client import (
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
@@ -372,7 +379,7 @@ def _persist_pdf_progress_before_defer(
         None,
     )
     try:
-        persisted = _persist_pdf_checkpoint_for_sale(sale, error=error, pdf_job=pdf_job)
+        persisted = _checkpoint_pdf_progress(sale, error=error, pdf_job=pdf_job)
     except Exception as checkpoint_error:
         LOGGER.warning("PDF documentary checkpoint failed before defer: %s", checkpoint_error)
         return False
@@ -427,10 +434,19 @@ def _consume_pdf_retry_after_checkpoint_failure(
         _defer_enrichment_jobs(dependent_jobs, deferred)
 
 
-def _pdf_checkpoint_failure_message(error: object) -> str:
-    text = str(error)
+def _checkpoint_pdf_progress(sale: object, **kwargs: object) -> bool:
+    """Un essai de point d'étape : le motif d'un refus plus ancien (restauration) ne lui est pas attribué."""
+    reset_checkpoint_refusal()
+    return _persist_pdf_checkpoint_for_sale(sale, **kwargs)
+
+
+def _pdf_checkpoint_failure_message(error: object | None = None) -> str:
+    """Préfixe lu par ``document_backlog.is_refused_checkpoint``, motif du refus (``no_progress_entries``), erreur."""
+    text = "" if error is None else str(error)
     prefix = "PDF document checkpoint was not persisted; retry required"
-    return text if text.startswith(prefix) else f"{prefix}: {text}"
+    if text.startswith(prefix):
+        return text
+    return ": ".join(part for part in (prefix, last_checkpoint_refusal(), text) if part)
 
 
 def _pdf_evidence_is_terminal_for_facts(sale: object) -> bool:
@@ -678,6 +694,7 @@ def run_enrichment_queue_batch(
             # Facts read under older rules are read again, as a collection does (``_needs_structured_heavy_enrichment``).
             if "pdf" in job_types and sale.documents and (not documents_are_current(sale) or sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION):
                 pdf_stage_error = True
+                persisted_manifest = complete_manifest_without_restorable_text(sale)
                 pdf_stats = enrich_sale_from_pdfs(sale)
                 analysis = sale.raw_payload.get("document_analysis") or {}
                 if pdf_stats.errors or analysis.get("failed_documents"):
@@ -700,6 +717,10 @@ def run_enrichment_queue_batch(
                             detail += f"; {'; '.join(fragments)}"
                     raise RuntimeError(f"Document extraction incomplete; retry required: {detail}")
                 if not manifest_is_complete(analysis, sale.documents):
+                    # Rien à lire sur un manifeste enregistré complet et frais : ni point d'étape (il le
+                    # remplacerait par un manifeste vide), ni échec ; la tâche attend la revalidation.
+                    if (waiting := nothing_due_deferral(persisted_manifest, sale, pdf_stats)) is not None:
+                        raise waiting
                     # Persist the merged document checkpoint before releasing
                     # the claim. The PDF budget is per pass, so this durable
                     # row is what lets the next worker select the next URLs
@@ -708,14 +729,9 @@ def run_enrichment_queue_batch(
                         (job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"),
                         None,
                     )
-                    checkpointed = _persist_pdf_checkpoint_for_sale(
-                        sale,
-                        pdf_job=pdf_job,
-                    )
+                    checkpointed = _checkpoint_pdf_progress(sale, pdf_job=pdf_job)
                     if not checkpointed:
-                        raise RuntimeError(
-                            "PDF document checkpoint was not persisted; retry required"
-                        )
+                        raise RuntimeError(_pdf_checkpoint_failure_message())
                     raise QueueJobDeferred(
                         "PDF document manifest is partial; continue the next bounded pass"
                     )
@@ -817,7 +833,17 @@ def run_enrichment_queue_batch(
             fill_tribunal(sale)
             classify_sale_procedure(sale)
             normalize_asset_features(sale)
-            upsert_sales_to_supabase([sale], refresh_last_seen=False)
+            written = upsert_sales_to_supabase([sale], refresh_last_seen=False)
+            pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
+            if pdf_jobs and final_write_was_discarded(written, sale):
+                # Écriture écartée (admission, révision déplacée) : la lecture n'est pas enregistrée, la tâche
+                # pdf n'est donc pas terminée. Les autres tâches de la prise gardent leur fin habituelle.
+                discarded = write_discarded_deferral(sale)
+                _record_worker_deferred_job_ids(pdf_jobs)
+                _defer_enrichment_jobs(pdf_jobs, discarded)
+                mark_enrichment_jobs_terminal(pdf_jobs)
+                LOGGER.warning("PDF job deferred for %s: %s", source_url, discarded)
+                sale_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") != "pdf"]
         except EncheresPubliquesAccessNotAuthorized as exc:
             # A non-EP source may redirect a document to Encheres Publiques
             # after the sale-level admission guard.  Treat that boundary as
@@ -973,10 +999,7 @@ def run_enrichment_queue_batch(
             checkpoint_persisted = True
             if pdf_failure:
                 try:
-                    persisted = _persist_pdf_checkpoint_for_sale(
-                        sale,
-                        pdf_job=pdf_jobs[0] if pdf_jobs else None,
-                    )
+                    persisted = _checkpoint_pdf_progress(sale, pdf_job=pdf_jobs[0] if pdf_jobs else None)
                 except Exception as checkpoint_exc:
                     persisted = False
                     LOGGER.warning(

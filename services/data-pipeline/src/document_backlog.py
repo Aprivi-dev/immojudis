@@ -46,6 +46,7 @@ from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
+from src.pdf_pass_outcomes import waits_for_its_deadline
 
 if TYPE_CHECKING:
     from src.catalogue_lock import CatalogueLockHandle
@@ -69,6 +70,10 @@ LOCK_YIELD_PAUSE_SECONDS = 20.0
 LOCK_LOST_STOP_REASON = "catalogue_lock_lost"
 # Priority used for (re)queued PDF generations; the ordinary enqueue uses 30.
 BACKLOG_PDF_PRIORITY = 40
+# Plafond de relecture : au plus ce nombre de lectures pdf terminées par vente en 24 heures, quelle que soit
+# l'empreinte de la tâche. Deux et non une : une vente lue le matin puis réellement invalidée par une collecte
+# (pièce changée, #415) est relue le jour même.
+MAX_COMPLETED_READS_PER_DAY = 2
 ACTIONABLE_STATUSES = ("active", "unknown", "upcoming", "postponed")
 USEFUL_DOCUMENT_TYPES = (
     "cahier_conditions_vente",
@@ -178,6 +183,19 @@ select s.source_url, s.source_name, s.sale_date,
                       )
                 )
        )
+   -- Plafond de relecture. Chaque lecture terminée écrit une nouvelle date de vérification, donc une nouvelle
+   -- empreinte et une tâche neuve : ni les 4 essais ni la garde ci-dessus (une lecture terminée ne bloque plus
+   -- dès qu'une tâche plus récente existe) ne bornent une vente qui reste à relire après chaque lecture. Le
+   -- 11/11/2026, 3 ventes prenaient ainsi 104 des 200 lectures terminées en 48 heures, une par tick. Le compte
+   -- porte sur les lectures terminées, par le vidage ou par la file : une tâche annulée, en échec ou reportée
+   -- n'a rien lu et ne compte pas. La tâche en file reste servie par la voie générale, à son rang.
+   and (
+         select count(*) from public.auction_enrichment_jobs c
+          where c.source_url = s.source_url
+            and c.job_type = 'pdf'
+            and c.status = 'completed'
+            and c.completed_at >= now() - interval '24 hours'
+       ) < %s
  -- Documents never tried come first: a sale whose only unread documents
  -- already failed (and will likely fail again) must not starve them.
  -- A sale without a date ranks as if it ended within a week: for a State tender (Cessions de
@@ -385,20 +403,23 @@ def _connect(db_url: str) -> Any:
     return connect(db_url)
 
 
+def candidate_parameters(limit: int) -> tuple[object, ...]:
+    """Paramètres de ``CANDIDATES_SQL``, dans l'ordre de ses jokers."""
+    return (
+        list(USEFUL_DOCUMENT_TYPES),
+        list(ACTIONABLE_STATUSES),
+        DOCUMENT_FACTS_VERSION,
+        DOCUMENT_FACTS_VERSION,
+        MAX_COMPLETED_READS_PER_DAY,
+        int(limit),
+    )
+
+
 def select_backlog_candidates(db_url: str, limit: int) -> list[dict[str, Any]]:
     with _connect(db_url) as connection:
         connection.execute("set transaction read only")
         connection.execute("set local statement_timeout = '30s'")
-        rows = connection.execute(
-            CANDIDATES_SQL,
-            (
-                list(USEFUL_DOCUMENT_TYPES),
-                list(ACTIONABLE_STATUSES),
-                DOCUMENT_FACTS_VERSION,
-                DOCUMENT_FACTS_VERSION,
-                int(limit),
-            ),
-        ).fetchall()
+        rows = connection.execute(CANDIDATES_SQL, candidate_parameters(limit)).fetchall()
     return [
         {
             "source_url": row[0],
@@ -612,10 +633,16 @@ def drain_sale(
                     # manifest) replaced the job. Follow the newer generation below instead of leaving the
                     # sale half read until the next drain (04/11/2026: most re-reads stopped there).
                     pass
-                elif final_status != "queued" or "authorization required" in last_error:
+                elif (
+                    final_status != "queued"
+                    or "authorization required" in last_error
+                    or waits_for_its_deadline(last_error)
+                ):
                     # ``queued`` is a deferral with a durable checkpoint: the
                     # next six documents of a partial manifest, or the next
                     # OCR pages of a long scanned report. Anything else ends.
+                    # Une tâche qui attend une échéance (rien à revalider, écriture écartée) finit aussi : la
+                    # remettre en file tout de suite effacerait son échéance pour rejouer la même passe.
                     break
                 if refreshed is None or _read_with_current_rules(refreshed):
                     break

@@ -71,7 +71,15 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
         "and not ( a.status = 'completed' and exists ( select 1 from public.auction_enrichment_jobs b"
         " where b.source_url = a.source_url and b.job_type = 'pdf' and b.created_at > a.created_at ) )"
     ) in sql
-    assert sql.count("%s") == 5
+    # Lot R6 (11/11/2026) : plafond de relecture, quelle que soit l'empreinte de la tâche. Le comportement est
+    # vérifié sur une vraie base dans test_document_backlog_candidates_postgres.py.
+    assert (
+        "and ( select count(*) from public.auction_enrichment_jobs c where c.source_url = s.source_url"
+        " and c.job_type = 'pdf' and c.status = 'completed'"
+        " and c.completed_at >= now() - interval '24 hours' ) < %s"
+    ) in sql
+    assert sql.count("%s") == 6
+    assert len(backlog.candidate_parameters(7)) == 6
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
     assert "j.job_type = 'pdf'" in claim and "for update of j, s skip locked" in claim
     ensure = " ".join(backlog.ENSURE_JOB_SQL.split())
@@ -170,6 +178,28 @@ def test_a_cancelled_pass_for_another_reason_ends_the_sale(monkeypatch) -> None:
 
     assert outcome.passes == 1
     assert fake.ensured == [url]
+
+
+@pytest.mark.parametrize(
+    "waiting",
+    [
+        "PDF pass deferred: the persisted manifest is complete and no document is due for revalidation",
+        "PDF pass deferred: the final catalogue write was discarded (the sale changed during the pass)",
+    ],
+)
+def test_a_job_waiting_for_its_deadline_is_not_requeued_at_once(monkeypatch, waiting: str) -> None:
+    # Lot R6 : remise en file tout de suite, la tâche perdait son échéance et rejouait la même passe (jusqu'à
+    # quatre fois par visite). Une passe partielle, elle, est toujours continuée (test ci-dessus).
+    url = "https://example.test/waiting"
+    stale = _sale(url, raw_payload={"document_facts_version": "document_facts_v4_occupancy_dates_prices"})
+    fake = _Fake(monkeypatch, {url: [stale]}, {url: [("queued", waiting)]})
+
+    outcome = backlog.drain_sale("db", {"source_url": url, "source_name": "avoventes"}, backlog.BacklogLimits(), 1e18)
+
+    assert outcome.passes == 1
+    assert fake.ensured == [url]
+    assert outcome.error is None
+    assert (outcome.partial_passes, outcome.refused_checkpoints) == (0, 0)
 
 
 def test_failed_pass_without_progress_is_recorded_and_republished(monkeypatch) -> None:
@@ -287,7 +317,7 @@ def test_selection_passes_the_current_facts_version(monkeypatch) -> None:
 
     monkeypatch.setattr(backlog, "_connect", lambda _db: _Connection())
     assert backlog.select_backlog_candidates("db", 7) == []
-    assert seen[0][2:] == (DOCUMENT_FACTS_VERSION, DOCUMENT_FACTS_VERSION, 7)
+    assert seen[0][2:] == (DOCUMENT_FACTS_VERSION, DOCUMENT_FACTS_VERSION, backlog.MAX_COMPLETED_READS_PER_DAY, 7)
 
 
 def test_one_failing_sale_never_stops_the_run(monkeypatch) -> None:

@@ -104,7 +104,7 @@ from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_re
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
-from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections
 
 LOGGER = logging.getLogger(__name__)
@@ -343,6 +343,9 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         permanent_document_failures=stats.permanent_document_failures,
         failed_document_diagnostics=failed_document_diagnostics,
     )
+    if manifest_is_complete(sale.raw_payload.get("document_analysis"), sale.documents):
+        # Plus rien à relire avec ces règles, même sans texte (pièces toutes écartées ou vides) : sans version, la vente restait à relire à chaque vidage.
+        sale.raw_payload["document_facts_version"] = DOCUMENT_FACTS_VERSION
     return stats
 
 
@@ -435,7 +438,7 @@ def download_documents(
     }
     downloaded: list[dict[str, str]] = []
     seen_urls: set[str] = set()
-    for document in _select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents, sale_dir, _document_filename)):
+    for document in _select_documents_for_extraction(sale.documents, sale=sale, revalidate_urls=stale_complete_document_urls(sale.raw_payload.get("document_analysis"), sale.documents)):
         _ensure_pdf_deadline(operation="selecting document")
         url = document.get("url")
         document_type = _canonical_document_type(
