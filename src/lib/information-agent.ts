@@ -50,7 +50,6 @@ export {
   loadInformationAgentContactRegistry,
   persistInformationAgentContactObservations,
   assertInformationAgentContactAllowed,
-  assertInformationAgentIdentityAllowed,
   loadOpposedInformationAgentIdentityKeys,
   recordInformationAgentAdminAddressEntry,
   isCourtRegistryEmail,

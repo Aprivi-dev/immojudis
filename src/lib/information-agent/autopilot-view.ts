@@ -87,6 +87,9 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
   return "";
 }
 
+export const AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE =
+  "Compte des envois par office ou service incomplet (trop de demandes sur 8 jours) : le pilote n’écrit à aucune adresse en notaires.fr ou gouv.fr tant qu’il l’est. Les autres compteurs restent exacts.";
+
 export function buildAutopilotView({
   settings,
   stats,
@@ -114,6 +117,8 @@ export function buildAutopilotView({
     };
   } else if (settings.pausedUntil && Date.parse(settings.pausedUntil) > now.getTime()) {
     notice = { tone: "warn", text: `En pause jusqu’au ${formatDateTime(settings.pausedUntil)}.` };
+  } else if (!stats.sharedStructureCountsComplete) {
+    notice = { tone: "warn", text: AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE };
   }
   return {
     mode: settings.mode,

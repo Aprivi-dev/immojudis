@@ -6,6 +6,7 @@ import {
   type InformationAgentAddressObserver,
   type InformationAgentAddressOrigin,
   type InformationAgentAddressSourceKind,
+  type InformationAgentFooterStructure,
 } from "@/lib/information-agent-compliance";
 import { normalizedEmail } from "@/lib/information-agent/contacts";
 import {
@@ -50,7 +51,10 @@ export async function resolveInformationAgentAddressOrigin({
   saleId,
   manualOriginUrl,
   fallbackObservedAt = null,
+  structureAddress = null,
 }: {
+  /** Adresse générique d'une structure, sans personne nommée (`missionRecipient().structureAddress`). */
+  structureAddress?: InformationAgentFooterStructure | null;
   email: string;
   saleId: string | null;
   manualOriginUrl: string | null;
@@ -91,6 +95,7 @@ export async function resolveInformationAgentAddressOrigin({
         observedAt: row.observed_at,
         observedBy,
         matchRule: matchRuleOf(row.metadata),
+        structureAddress,
       });
       // Un annuaire, un site ou une autre annonce sans lien exact ne prouvent rien.
       // L'adresse d'un greffe n'a pas de page publique : elle est connue par le nom du tribunal.
@@ -111,6 +116,7 @@ export async function resolveInformationAgentAddressOrigin({
     sourceUrl: url,
     observedAt,
     observedBy: "admin",
+    structureAddress,
   });
   if (origin.url) return { origin, known: true, kind: "admin_entry" };
   return {
