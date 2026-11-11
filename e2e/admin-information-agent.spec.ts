@@ -154,6 +154,31 @@ test.describe("admin information agent", () => {
     expect(state.unexpectedRequests).toEqual([]);
   });
 
+  test("shows the publication of received information off, with the automatic mode locked", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+
+    await page.goto("/admin/agent-ia?onglet=reglages");
+    const panel = page.getByRole("region", {
+      name: "Publication automatique des informations reçues",
+    });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText("Mode : Arrêt")).toBeVisible();
+    // Le mode automatique est affiché, verrouillé, avec ses conditions.
+    await expect(panel.getByRole("button", { name: "Automatique (verrouillé)" })).toBeDisabled();
+    await expect(panel.getByText("AIPD mise à jour et signée")).toBeVisible();
+    // L'arrêt d'urgence est présent ; déjà à l'arrêt, il n'y a rien à arrêter.
+    await expect(panel.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
+    await expect(panel.getByRole("button", { name: "Simulation", exact: true })).toBeEnabled();
+    expect(
+      state.events.some(
+        (event) => event.method === "POST" && event.path.endsWith("/auto-publication"),
+      ),
+    ).toBe(false);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
   test("keeps evidence and fact review guarded until rights and current values are checked", async ({
     page,
   }) => {
@@ -681,6 +706,15 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       await route.fulfill({ status: 200, json: autopilotFixture() });
       return;
     }
+    // Publication automatique des informations reçues (onglet Réglages) : arrêt par défaut, automatique
+    // verrouillé. Une action (changement de mode, arrêt d'urgence) est tracée et rend l'état « Arrêt ».
+    if (
+      path === "/api/admin/information-agent/auto-publication" &&
+      (method === "GET" || method === "POST")
+    ) {
+      await route.fulfill({ status: 200, json: autoPublicationFixture() });
+      return;
+    }
     // Suivi des envois et aller-retour de réception : indicateurs déjà mis en forme par le serveur.
     if (
       path === "/api/admin/information-agent/operations" &&
@@ -886,6 +920,24 @@ function autopilotFixture() {
     },
     ready: { count: 0, items: [] },
     events: [],
+  };
+}
+
+function autoPublicationFixture() {
+  return {
+    mode: "off",
+    modeLabel: "Arrêt",
+    autoLocked: true,
+    lockReasons: [
+      "textes juridiques mis à jour et publiés",
+      "AIPD mise à jour et signée",
+      "validation des huit points par un avocat",
+      "jeu d’évaluation à zéro publication fausse",
+      "période de simulation concluante",
+    ],
+    eligibleFields: ["surface", "surface du terrain", "nombre de pièces"],
+    caps: { daily: 10, perCase: 2 },
+    changes: [],
   };
 }
 
