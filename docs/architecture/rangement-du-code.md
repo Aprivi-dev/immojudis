@@ -30,15 +30,34 @@ exception avalée, une attente ou une nouvelle tentative, un test désactivé. C
 besoin que la conception n'avait pas prévu. On n'en ajoute pas sans dire pourquoi la conception ne
 peut pas l'absorber. En relecture, on les relève.
 
+Les nouvelles tentatives et les attentes vers un service externe (Replicate, IGN, sources
+collectées) sont légitimes : le service peut échouer sans que notre conception y soit pour rien.
+Elles ne se relèvent pas comme un défaut.
+
+## Ce que le critère ne remet pas en cause
+
+Le rangement existant du dépôt prime : il est organisé par couche (`src/lib`, `src/components`,
+fichiers `*.server.ts`). Le critère ne justifie pas de déplacer des fichiers. Un déplacement ne se
+fait que dans une refonte validée.
+
 ## Selon le rôle
 
 - **Qui écrit** (`developpeur`) : applique le critère dans le périmètre du lot seulement. Pas de
   refonte opportuniste : un défaut vu hors périmètre se signale dans le compte-rendu, il ne se
-  corrige pas en passant.
-- **Qui relit ou audite** (`code-reviewer`, `archeologue-code`, `architecte-logiciel`) : classe
-  chaque point « à corriger » quand le lot l'introduit, « à noter » quand il préexiste.
+  corrige pas en passant. Un cas particulier ajouté est justifié dans le compte-rendu.
+- **Qui relit ou audite** (`code-reviewer`, `archeologue-code`, `architecte-logiciel`) : relève
+  les défauts décrits ci-dessus et ajoute à chaque point la mention « à corriger » quand le lot
+  ou l'option examinés l'introduisent, « à noter » quand il préexiste.
+
+« À corriger » et « à noter » ne sont pas des priorités : chaque agent garde son échelle
+habituelle. Ces mentions ne déclenchent pas à elles seules le renvoi à l'auteur prévu pour un
+point Critique.
 
 ## Refonte complète
 
 Ce critère ne lance aucune refonte. La refonte d'une zone entière passe par le skill
 `/untangle-codebase`, dont la règle d'usage est dans `CLAUDE.md` (section « Rangement du code »).
+
+Pendant une refonte, les scripts d'analyse que le skill suggère (squelette du code, graphe des
+dépendances) s'écrivent dans le scratchpad de la session, pas dans le dépôt. Les sous-agents qu'il
+fait travailler sont en lecture seule.

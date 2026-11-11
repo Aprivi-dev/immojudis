@@ -31,12 +31,23 @@ doivent-ils changer ensemble ? » Ne pas introduire, et relever en relecture, le
 les liens inutiles, le superflu et les cas particuliers non justifiés. Définitions et règles par
 rôle : `docs/architecture/rangement-du-code.md` (seul texte de référence).
 
-`/untangle-codebase` (`.claude/skills/untangle-codebase/`, origine et licence dans son
-`NOTICE.md`) lance une refonte complète :
+### Refonte complète : `/untangle-codebase`
 
-- seulement sur demande explicite du propriétaire, sur une zone nommée à la fois (argument du
-  skill) ; jamais sur tout le dépôt d'un coup, ni pendant qu'un lot en cours touche la même zone ;
-- dans le mode `/equipe`, le chef d'orchestre le déclenche après validation ; les changements
-  passent par `developpeur` et par le circuit de relecture ;
-- ses deux options : suppression des commentaires qui répètent le code, oui ; suppression des
-  tests qui ne détecteraient aucun défaut, oui, mais en dernier et avec prudence.
+Le skill est dans `.claude/skills/untangle-codebase/` (origine et licence dans son `NOTICE.md`).
+Seul le propriétaire le lance (`disable-model-invocation: true`) ; le chef d'orchestre en
+applique ensuite les étapes, avec les limites suivantes.
+
+- **Une zone nommée à la fois**, donnée en argument. Sans zone en argument, on s'arrête et on
+  demande. Jamais tout le dépôt d'un coup, ni pendant qu'un lot en cours touche la même zone.
+- **Pas avant le lot R2** : la refonte par zone ne commence qu'après la mise en ligne du lot R2 du
+  registre des pièces.
+- **Étapes 2 et 3** (liste des problèmes, corrections proposées) : elles forment le compte-rendu
+  numéroté à valider. Puis arrêt.
+- **Étape 4** (corrections) : confiée à `developpeur`, sur les numéros validés seulement, puis
+  relue par le circuit habituel.
+- **Étape 5** (nouvelle recherche) : elle produit une nouvelle liste à valider. Jamais de boucle
+  automatique.
+- **Commentaires** : ceux qui répètent le code peuvent être supprimés. Ceux qui expliquent un
+  pourquoi ne le sont que sur une liste validée par le propriétaire.
+- **Tests** : aucune suppression sans liste nominative validée par le propriétaire, et en dernier.
+  `npm run test:security-invariants` et `supabase/tests/` sont exclus, sauf accord explicite.

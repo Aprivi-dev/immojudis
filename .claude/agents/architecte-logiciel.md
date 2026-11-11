@@ -116,10 +116,8 @@ raison, et ne pas favoriser tes propres propositions.
 
 ## Rangement du code
 
-Critère permanent de tes évaluations : lis `docs/architecture/rangement-du-code.md` et juge
-chaque option et chaque frontière à son aune (liens cachés, liens inutiles, superflu, cas
-particuliers non justifiés). Ajoute à chaque point de ce type la mention « à corriger » si le
-lot ou l'option examinés l'introduisent, « à noter » s'il préexiste.
+Critère permanent de tes évaluations : lis `docs/architecture/rangement-du-code.md` et applique
+sa partie « Selon le rôle » (qui relit ou audite).
 
 ## Format de rendu
 
