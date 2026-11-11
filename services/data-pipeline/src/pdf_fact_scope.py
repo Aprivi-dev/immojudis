@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from src.base_reads import snapshot_relayed_fields
 from src.normalize import (
     clean_text,
     has_rented_occupancy_signal,
@@ -445,6 +446,7 @@ def _clear_pdf_fact_projections(
     selected = _pdf_projection_scope_fields(fields)
     snapshot = raw_payload.get("source_factual_snapshot")
     snapshot = snapshot if isinstance(snapshot, dict) else {}
+    unknown_from_source = snapshot_relayed_fields(snapshot)
     cleared: set[str] = set()
     preserved: set[str] = set(independent_derived_fields)
     removed_payload_keys: set[str] = set()
@@ -469,6 +471,13 @@ def _clear_pdf_fact_projections(
             source_value = snapshot[field]
         elif "baseline" in trace:
             source_value = trace["baseline"]
+        elif field in unknown_from_source:
+            # La page de la source ne donnait pas ce champ (Vench, page restreinte) : la valeur d'avant la pièce
+            # est inconnue, pas vide. Sans valeur à remettre, la projection et sa trace restent en place.
+            remaining[field] = trace
+            preserved.add(field)
+            retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
+            continue
         else:
             source_value = None
         _pdf_set_projected_value(sale, field, source_value)

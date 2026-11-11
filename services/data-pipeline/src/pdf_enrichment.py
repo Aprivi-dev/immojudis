@@ -21,6 +21,7 @@ from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
 import pymupdf as fitz
 import httpx
 
+from src.base_reads import snapshot_relayed_fields
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.document_politeness import (
     DocumentPoliteness,
@@ -389,7 +390,12 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
     if sale.raw_payload.get("pdf_visit_dates_extraction"):
         if "visit_dates" not in preserved_projection_fields:
             fields += ["visit_dates"]
+    # Un champ que la page ne donnait pas (Vench, page restreinte) n'a pas de valeur de source connue : l'instantané
+    # n'en dit rien, il ne le remet donc pas à vide. La valeur laissée par ``_clear_pdf_fact_projections`` reste.
+    unknown_from_source = snapshot_relayed_fields(sale.raw_payload.get("source_factual_snapshot"))
     for key in fields:
+        if key in unknown_from_source:
+            continue
         setattr(sale, key, getattr(factual, key))
         sale.raw_payload.pop(key, None)
     for key in (

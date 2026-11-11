@@ -8,12 +8,14 @@ champs restent dans la vente pour ne pas appauvrir la fiche, mais ils n'entrent 
 from __future__ import annotations
 
 from copy import deepcopy
+from decimal import Decimal
 from pathlib import Path
 
 from src import main as pipeline
-from src.base_reads import RELAYED_FIELDS_KEY, mark_relayed, relayed_fields
+from src.base_reads import RELAYED_FIELDS_KEY, mark_relayed, relayed_fields, snapshot_relayed_fields
 from src.fact_claims import build_fact_claim_candidates
 from src.freshness import record_source_checks
+from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.personal_data import redact_storage_row
 from src.sources.vench import _filter_catalog_sales, parse_vench_detail_html
@@ -101,13 +103,87 @@ def test_fields_taken_from_the_stored_row_stay_out_of_the_source_snapshot() -> N
     raw = collect(stored())
 
     snapshot = raw["source_factual_snapshot"]
-    for field in ("surface_m2", "app_surface_m2", "app_surface_kind", "surface_source", "surface_confidence",
-                  "land_surface_m2", "rooms_count", "bedrooms_count", "occupancy_status", "description"):
-        assert field in snapshot and snapshot[field] is None, field
+    taken = ("surface_m2", "app_surface_m2", "app_surface_kind", "surface_source", "surface_confidence",
+             "land_surface_m2", "rooms_count", "bedrooms_count", "occupancy_status", "description")
+    # Leur clé est absente (« inconnu de la source », et non « vide à la source ») et l'instantané en garde la liste.
+    assert not set(taken) & set(snapshot)
+    assert snapshot["fields_from_stored_row"] == sorted(taken)
+    assert snapshot_relayed_fields(snapshot) == set(taken)
     # Ce que la page a publié y est.
     assert snapshot["starting_price_eur"] == "90 000 €"
     assert snapshot["sale_date"] == "15/12/2026"
     assert snapshot["raw_text"] == PAYWALL
+
+
+def test_a_page_that_takes_nothing_has_a_plain_snapshot() -> None:
+    raw = collect(stored(), surface_m2="82,45", raw_text="UNE MAISON • 82,45m² • Alphaville", address="1 rue Haute",
+                  postal_code="33000", description="Une maison de 82,45 m².")
+
+    assert "fields_from_stored_row" not in raw["source_factual_snapshot"]
+    assert raw["source_factual_snapshot"]["surface_m2"] == "82,45"
+
+
+def _document_reader_sale(snapshot: dict) -> AuctionSale:
+    """La vente telle que la lecture des pièces la relit : surface de 48,5 m² établie par un document."""
+    document = "https://example.test/ccv.pdf"
+    return AuctionSale(
+        source_name="vench",
+        source_url=URL,
+        surface_m2=48.5,
+        carrez_surface_m2=48.5,
+        surface_source="pdf",
+        surface_confidence=0.9,
+        surface_evidence="superficie loi Carrez de 48,50 m²",
+        rooms_count=3,
+        documents=[{"url": document, "label": "Cahier des conditions de vente", "sha256": "b" * 64}],
+        raw_payload={
+            "source_detail_status": "restricted",
+            "source_factual_snapshot": snapshot,
+            "document_analysis": {"profiles": [{"url": document, "sha256": "a" * 64}]},
+            "surface_extraction": {"source": "pdf", "value_m2": 48.5, "document_url": document},
+            "pdf_fact_provenance": {
+                field: {"value": value, "source": "pdf", "payload_keys": ["surface_extraction"]}
+                for field, value in (("surface_m2", 48.5), ("carrez_surface_m2", 48.5), ("surface_source", "pdf"))
+            },
+        },
+    )
+
+
+def test_a_changed_document_does_not_empty_a_surface_the_restricted_page_never_gave() -> None:
+    """Page restreinte, surface établie par un document, pièce modifiée, relecture en échec.
+
+    La pièce a changé : sa projection est défaite et la valeur « de la source » est remise. Pour un champ que la
+    page ne donnait pas, cette valeur est inconnue : la surface n'est pas remise à vide (la vente perdrait sa
+    surface sans qu'aucune source n'ait dit qu'elle n'en a pas).
+    """
+    from src.pdf_enrichment import _invalidate_replaced_document_facts
+
+    raw = collect(stored(surface_m2=48.5, app_surface_m2=48.5, surface_source="pdf", carrez_surface_m2=48.5,
+                         surface_evidence="superficie loi Carrez de 48,50 m²"))
+    sale = _document_reader_sale(raw["source_factual_snapshot"])
+    unknown = snapshot_relayed_fields(sale.raw_payload["source_factual_snapshot"])
+    assert {"surface_m2", "surface_confidence", "surface_evidence"} <= unknown
+
+    _invalidate_replaced_document_facts(sale, sale.documents)  # la relecture échoue ensuite : rien n'est reprojeté
+
+    assert (sale.surface_m2, sale.carrez_surface_m2, sale.surface_source) == (Decimal("48.5"), Decimal("48.5"), "pdf")
+    # Les champs sans trace de pièce que la page ne donnait pas non plus restent ce qu'ils étaient.
+    assert sale.surface_confidence == Decimal("0.9")
+    assert sale.surface_evidence == "superficie loi Carrez de 48,50 m²"
+    assert sale.raw_payload["source_content_changed"] is True  # l'analyse est bien invalidée
+
+
+def test_a_changed_document_still_restores_what_a_fully_read_page_published() -> None:
+    """Témoin : quand la page a été lue en entier, son instantané dit ce que vaut le champ, y compris « rien »."""
+    from src.pdf_enrichment import _invalidate_replaced_document_facts
+
+    snapshot = {"source_name": "vench", "source_url": URL, "surface_m2": None, "carrez_surface_m2": None,
+                "surface_source": None, "rooms_count": 3}
+    sale = _document_reader_sale(snapshot)
+
+    _invalidate_replaced_document_facts(sale, sale.documents)
+
+    assert (sale.surface_m2, sale.carrez_surface_m2, sale.surface_source) == (None, None, None)
 
 
 def test_the_freshness_fingerprint_ignores_what_the_stored_row_provided() -> None:
@@ -128,49 +204,18 @@ def test_the_freshness_fingerprint_ignores_what_the_stored_row_provided() -> Non
     assert "source_content_changed" not in second
 
 
-def collect_unmarked(known_row: dict, previous_payload: dict | None = None) -> dict:
-    """La même lecture sans la note des champs repris : le calcul d'avant, valeurs de la base comprises."""
-    raw = restricted_page()
-    known = {URL: {**known_row, "raw_payload": previous_payload or {}}}
-    _filter_catalog_sales([raw], known)
-    raw.pop(RELAYED_FIELDS_KEY)
-    pipeline._preserve_known_enrichment_payloads([raw], known)
-    record_source_checks([raw], known)
-    return raw
-
-
-def test_the_first_read_after_the_change_of_definition_does_not_invalidate_the_analysis() -> None:
-    """Transition : l'empreinte stockée par l'ancien calcul est reconnue, l'analyse de la vente n'est pas relancée."""
-    before = collect_unmarked(stored())
-    stored_check = before["source_checks"][URL]
-
-    first = collect(stored(), previous_payload={"source_checks": before["source_checks"]})
-
-    assert first["source_checks"][URL]["fingerprint"] != stored_check["fingerprint"]  # la définition a changé
-    assert "source_content_changed" not in first and "source_content_changed_at" not in first
-    # La nouvelle empreinte est stockée : les relectures suivantes ne dépendent plus de la base.
-    second = collect(stored(rooms_count=4), previous_payload={"source_checks": first["source_checks"]})
-    assert second["source_checks"][URL]["fingerprint"] == first["source_checks"][URL]["fingerprint"]
-    assert "source_content_changed" not in second
-
-
-def test_the_transition_does_not_hide_a_change_that_the_former_definition_would_have_seen() -> None:
-    before = collect_unmarked(stored())
-
-    # La page a changé entre-temps : l'ancienne définition l'aurait vu, la transition ne le masque pas.
-    changed_page = collect(
-        stored(), previous_payload={"source_checks": before["source_checks"]},
-        raw_text=PAYWALL + " Vente reportée au 12/01/2027.",
-    )
-    assert changed_page["source_content_changed"] is True
-
-    # Une valeur de la base a changé entre-temps : l'ancienne définition invalidait, comme avant, une dernière fois.
-    changed_base = collect(stored(rooms_count=4), previous_payload={"source_checks": before["source_checks"]})
-    assert changed_base["source_content_changed"] is True
-
-
 def test_without_the_mark_the_same_base_change_looked_like_a_source_change() -> None:
     """Témoin : c'est la note des champs repris, et rien d'autre, qui tient l'empreinte hors de la base."""
+
+    def collect_unmarked(known_row: dict, previous_payload: dict | None = None) -> dict:
+        raw = restricted_page()
+        known = {URL: {**known_row, "raw_payload": previous_payload or {}}}
+        _filter_catalog_sales([raw], known)
+        raw.pop(RELAYED_FIELDS_KEY)
+        pipeline._preserve_known_enrichment_payloads([raw], known)
+        record_source_checks([raw], known)
+        return raw
+
     first = collect_unmarked(stored())
     second = collect_unmarked(stored(rooms_count=4), previous_payload={"source_checks": first["source_checks"]})
 
@@ -243,5 +288,5 @@ def test_the_restricted_page_fixture_takes_its_surface_from_the_stored_row() -> 
     pipeline._preserve_known_enrichment_payloads([raw], known)
 
     assert {"surface_m2", "rooms_count", "occupancy_status"} <= relayed_fields(raw)
-    assert raw["source_factual_snapshot"]["surface_m2"] is None
+    assert "surface_m2" not in raw["source_factual_snapshot"]
     assert raw["surface_m2"] == 54
