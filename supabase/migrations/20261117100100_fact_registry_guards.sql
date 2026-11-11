@@ -190,7 +190,7 @@ end;
 $$;
 
 comment on function app_private.refuse_sale_field_projection_marker() is
-  'Registre des pièces : refuse (42501) l''écriture d''une colonne surveillée d''une vente du registre quand le marqueur de transaction app.sale_field_projection désigne cette vente et que le rôle n''est pas le propriétaire de la projection.';
+  'Registre des pièces : refuse (42501) l''écriture d''une colonne surveillée d''une vente du registre quand le marqueur de transaction de la projection désigne cette vente et que le rôle n''est pas le propriétaire de la projection.';
 
 revoke all on function app_private.refuse_sale_field_projection_marker()
   from public, anon, authenticated, service_role;
