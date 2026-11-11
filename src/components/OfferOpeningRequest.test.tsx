@@ -1,17 +1,18 @@
 // @vitest-environment jsdom
 
-import { cleanup } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OfferOpeningRequest } from "./OfferOpeningRequest";
 
 const mocks = vi.hoisted(() => ({
+  auth: { user: { id: "investor" } as { id: string } | null, loading: false },
   fetchOfferOpeningNotification: vi.fn(),
   updateOfferOpeningNotification: vi.fn(),
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({ user: { id: "investor" }, loading: false }),
+  useAuth: () => mocks.auth,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/client-billing", () => ({
@@ -25,10 +26,24 @@ vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn() } }));
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mocks.auth = { user: { id: "investor" }, loading: false };
   document.body.innerHTML = "";
 });
 
 describe("OfferOpeningRequest", () => {
+  it("forgets the previous account's request once the person signs out", async () => {
+    mocks.fetchOfferOpeningNotification.mockResolvedValue({ notification: { requested: true } });
+    const view = render(<OfferOpeningRequest />);
+    await waitFor(() => expect(screen.getByText(/Votre demande est enregistrée/)).toBeTruthy());
+
+    mocks.auth = { user: null, loading: false };
+    view.rerender(<OfferOpeningRequest />);
+    // Déconnecté : plus de « demande enregistrée » ni de « Retirer ma demande » d'un autre compte.
+    await waitFor(() => expect(screen.queryByText(/Votre demande est enregistrée/)).toBeNull());
+    expect(screen.queryByRole("button", { name: "Retirer ma demande" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Me prévenir de l’ouverture/ })).toBeTruthy();
+  });
+
   it("keeps a request clicked before the initial status read even starts, whatever that read answers", async () => {
     const reactGlobal = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
     const previousActEnvironment = reactGlobal.IS_REACT_ACT_ENVIRONMENT;

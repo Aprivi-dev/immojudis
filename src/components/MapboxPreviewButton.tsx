@@ -1,7 +1,7 @@
 "use client";
 
 import "mapbox-gl/dist/mapbox-gl.css";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import type * as MapboxGL from "mapbox-gl";
 import {
@@ -19,12 +19,14 @@ import {
   mapboxPreviewModeLabel,
   type MapboxPreviewMode,
 } from "@/lib/mapbox-preview";
+import {
+  mapboxPreviewMachine,
+  type MapboxPreviewStatus as PreviewStatus,
+} from "@/lib/mapbox-preview-machine";
 
 const PREVIEW_DEGREES_PER_SECOND = 3.5;
 const PREVIEW_MAX_DEGREES = 720;
 const PREVIEW_MAX_FPS = 30;
-
-type PreviewStatus = "idle" | "loading" | "ready" | "missing" | "error" | "unconfigured";
 
 type MapboxPreviewButtonProps = {
   mode: MapboxPreviewMode;
@@ -106,7 +108,12 @@ function MapboxPreviewCanvas({
   title: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [status, setStatus] = useState<PreviewStatus>("idle");
+  // Toutes les transitions sont dans `mapbox-preview-machine.ts` : une erreur après l'affichage
+  // de la carte y est ignorée.
+  const [{ status }, dispatch] = useReducer(
+    mapboxPreviewMachine.transition,
+    mapboxPreviewMachine.initial,
+  );
   const token = getMapboxAccessToken();
   const coordinateLabel =
     lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : null;
@@ -116,12 +123,12 @@ function MapboxPreviewCanvas({
     if (!active || !container) return;
 
     if (!token) {
-      setStatus("unconfigured");
+      dispatch({ type: "UNCONFIGURED" });
       return;
     }
 
     if (lat == null || lng == null) {
-      setStatus("missing");
+      dispatch({ type: "COORDINATES_MISSING" });
       return;
     }
 
@@ -132,7 +139,7 @@ function MapboxPreviewCanvas({
     let map: MapboxGL.Map | null = null;
     let marker: MapboxGL.Marker | null = null;
     const camera = mapboxPreviewCamera(mode);
-    setStatus("loading");
+    dispatch({ type: "LOAD_STARTED" });
 
     void import("mapbox-gl")
       .then((module) => {
@@ -232,18 +239,18 @@ function MapboxPreviewCanvas({
             syncRotation();
           }
 
-          setStatus("ready");
+          dispatch({ type: "LOADED" });
         };
 
         const handleError = () => {
-          if (!cancelled) setStatus("error");
+          if (!cancelled) dispatch({ type: "LOAD_FAILED" });
         };
 
         map.on("load", handleLoad);
         map.on("error", handleError);
       })
       .catch(() => {
-        if (!cancelled) setStatus("error");
+        if (!cancelled) dispatch({ type: "LOAD_FAILED" });
       });
 
     return () => {
@@ -252,7 +259,7 @@ function MapboxPreviewCanvas({
       removeRotationListeners?.();
       marker?.remove();
       map?.remove();
-      setStatus("idle");
+      dispatch({ type: "CLOSED" });
     };
   }, [active, lat, lng, mode, title, token]);
 

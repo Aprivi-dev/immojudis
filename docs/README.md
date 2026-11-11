@@ -12,6 +12,8 @@ les vérifications avant de livrer du code.
 - [Dictionnaire de données](data-dictionary.md) : tables d'Outcome Graph, puis tables des pépites, de
   l'inondation, des communes, des loyers et du zonage.
 - [Architecture actuelle](architecture/current-state.md) et [cible](architecture/target-state.md).
+- [Machines à états](architecture/machines-a-etats.md) : où vit chaque cycle de vie (parcours d'écran,
+  statuts en base, tâches du pipeline), la convention pour en écrire un, les points à trancher.
 - [README du pipeline de données](../services/data-pipeline/README.md) : collecte, enrichissement, imports de
   référence.
 - [README des migrations Supabase](../supabase/README.md).

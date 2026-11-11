@@ -302,6 +302,12 @@ export function LoginPage() {
 
   /** Switches the form mode and keeps the rest of the query string (the `redirect`). */
   function switchMode(next: LoginMode) {
+    // L'erreur d'un formulaire ne suit pas la personne dans un autre : « Renseignez votre prénom »
+    // n'a rien à faire au-dessus du formulaire de connexion, qui n'a pas ce champ.
+    if (next !== mode) {
+      setFormError(null);
+      setInvalidField(null);
+    }
     const params = new URLSearchParams(queryString);
     if (next === "login") params.delete("mode");
     else params.set("mode", next);
