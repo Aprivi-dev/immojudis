@@ -158,7 +158,10 @@ create table if not exists public.auction_fact_claim_decisions (
   lot_ref text check (lot_ref is null or char_length(btrim(lot_ref)) between 1 and 40),
   actor_kind text not null check (actor_kind in ('admin', 'lawyer', 'system')),
   actor_id uuid,
-  reason text check (reason is null or char_length(btrim(reason)) between 1 and 500),
+  -- Nommée : le nom attribué d'office (« …_reason_check ») est celui de la contrainte de table ci-dessous.
+  reason text constraint auction_fact_claim_decisions_reason_length check (
+    reason is null or char_length(btrim(reason)) between 1 and 500
+  ),
   information_agent_fact_id uuid,
   recipient_kind text check (
     recipient_kind is null
