@@ -12,7 +12,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(18);
+select plan(19);
 
 -- Jeu d'essai ---------------------------------------------------------------------------------------------------
 insert into public.auction_sales (id, source_name, source_url, status, starting_price_eur)
@@ -69,7 +69,9 @@ insert into claim_fixture values
   ('82', '8', false, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v4'),
   ('83', '8', false, 'property.rooms_count', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v4'),
   ('91', null, true, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v2'),
-  ('92', null, true, 'property.rooms_count', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v3');
+  ('92', null, true, 'property.rooms_count', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v3'),
+  -- (et, rattachée au lot seul, une candidate d'une génération au-dessus du plafond)
+  ('93', null, true, 'property.land_surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v4');
 
 insert into public.auction_fact_claims (
   id, auction_sale_id, lot_id, field_key, value_jsonb, evidence_kind, source_url, evidence_locator,
@@ -189,8 +191,18 @@ select is(
 -- 8. Lot seul ------------------------------------------------------------------------------------------------------
 select is(
   pg_temp.visible('8') || pg_temp.visible('9'),
-  array['81', '83', '91', '92'],
+  array['81', '83', '91', '92', '93'],
   'a generation above the ceiling hides nothing (version 2 stays), its candidate is hidden and its accepted claim is kept; claims attached to a lot only are unchanged, and a detached version 3 hides nothing on any sale'
+);
+
+-- Le masquage ne porte que sur les observations rattachées à une vente : une candidate rattachée à un lot seul
+-- reste visible même quand sa génération dépasse le plafond (aucune vente ne dit quelle génération la remplace).
+select is(
+  (select array_agg(right(model.claim_id::text, 2) order by model.claim_id)
+     from public.v_auction_fact_claims_read_model model
+     where model.auction_sale_id is null and model.lot_id = '89000000-6000-4000-8000-000000000001'),
+  array['91', '92', '93'],
+  'a candidate claim attached to a lot only stays visible above the generation ceiling'
 );
 
 -- 9. Option, droits et colonnes inchangés ----------------------------------------------------------------------

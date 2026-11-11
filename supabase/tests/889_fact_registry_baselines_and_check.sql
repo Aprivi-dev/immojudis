@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(53);
+select plan(54);
 
 -- Fonctions et droits ---------------------------------------------------------------------------------------------
 select ok(
@@ -839,6 +839,47 @@ select ok(
               and prosrc ~ 'app_private\.sync_fact_registry_alerts_from_report\(v_report\)'
          from pg_proc where oid = 'public.sync_fact_registry_alerts()'::regprocedure),
   'the alert function takes no parameter: the caller chooses neither the bound nor the report'
+);
+
+-- Borne du rapport : vingt identifiants de vente au plus par contrôle, le compte reste entier ---------------------
+-- Vingt et une ventes de plus, chacune avec une acceptation que personne n'a projetée.
+insert into public.auction_sales (
+  id, source_name, source_url, status, sale_date, city, property_type, starting_price_eur,
+  raw_payload, sale_procedure, sale_venue_type, rooms_count
+)
+select
+  ('88900000-1000-4000-8000-0000000001' || lpad(n::text, 2, '0'))::uuid, 'licitor',
+  'https://example.test/889/bound-' || n, 'upcoming', current_timestamp + interval '20 days', 'Alphaville',
+  'house', 90000, '{}'::jsonb, '{}'::jsonb, 'tribunal', 2
+from generate_series(1, 21) n;
+
+insert into public.auction_fact_claims (
+  id, auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, confidence_score,
+  extractor_name, extractor_version, created_by
+)
+select
+  ('88900000-2000-4000-8000-0000000001' || lpad(n::text, 2, '0'))::uuid,
+  ('88900000-1000-4000-8000-0000000001' || lpad(n::text, 2, '0'))::uuid,
+  'property.rooms_count', '3'::jsonb, 'professional_email',
+  jsonb_build_object('case_id', '88900000-3000-4000-8000-0000000001' || lpad(n::text, 2, '0')),
+  0.6, 'information_agent', 'v1', '88900000-0000-4000-8000-0000000000a1'
+from generate_series(1, 21) n;
+
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, recipient_kind, received_at
+)
+select claim.id, claim.auction_sale_id, claim.field_key, 'accepted', 'single_lot', 'admin',
+  '88900000-0000-4000-8000-0000000000a1', 'source_lawyer', '2026-11-01 09:00:00+00'
+from public.auction_fact_claims claim
+where claim.id::text like '88900000-2000-4000-8000-0000000001%';
+
+select results_eq(
+  $$select (bounded.report ->> 'truncated')::boolean,
+           (bounded.report #>> '{checks,projection_drift,count}')::integer >= 21,
+           jsonb_array_length(bounded.report #> '{checks,projection_drift,sale_ids}')
+      from (select public.check_fact_registry_consistency() as report) bounded$$,
+  $$values (false, true, 20)$$,
+  'a control lists twenty sales at most and still counts them all: twenty-one more drifting sales, a complete report'
 );
 
 -- cron.stale ------------------------------------------------------------------------------------------------------
