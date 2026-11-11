@@ -40,7 +40,7 @@ en production seulement après avoir relu le comptage.
 | 2 | `20261020130002_clear_info_encheres_phantom_point.sql` | 15 | Retire le point fantôme Info-Enchères (44.40655, 6.061187) et les parcelles trouvées sous ce point. |
 | 3 | `20261020130003_quarantine_licitor_multi_lot_annonces.sql` | 16 | Met 9 annonces Licitor multi-lots en quarantaine durable. |
 | 4 | `20261025100001_repair_doubled_tribunal_names.sql` | 26 | Corrige les noms canoniques de `public.tribunals` au préfixe double (« TJ Tribunal judiciaire du Mans » -> « TJ Le Mans »), avec le texte tribunal des ventes et les preuves de rattachement qui doivent leur rester égaux. |
-| 5 | `20261029100200_recompute_past_quarantined_deadlines.sql` | 6 (W1) | Recalcule `retention_deadline` et `catalogue_expiry_deadline` des ventes `past` et `quarantined` avec les fonctions corrigées par la migration `20261029100200_retention_past_quarantined_sales.sql` (à appliquer d'abord). Comptage par défaut ; les déclencheurs sont suspendus le temps de l'écriture. Sauvegarde : `app_private.retention_deadline_repair_backup_20261029`. |
+| 5 | `20261029100200_recompute_past_quarantined_deadlines.sql` | 6 (W1) | Recalcule `retention_deadline` et `catalogue_expiry_deadline` des ventes `past` et `quarantined` avec les fonctions corrigées par la migration `20261029100200_retention_past_quarantined_sales.sql` (à appliquer d'abord). Comptage par défaut ; seuls les déclencheurs en mode ordinaire sont suspendus le temps de l'écriture, jamais ceux du registre des pièces (préfixe `aaab_`, mode `always`) : le fichier se termine par `app_private.assert_fact_registry_triggers()` et exige la migration `20261117100100_fact_registry_guards.sql`. Sauvegarde : `app_private.retention_deadline_repair_backup_20261029`. |
 | 6 | `20261030100001_count_workspace_status_not_in_dossier.sql` | 36 (V2a) | **Comptage seulement, sans mode application** : statuts et plafonds saisis dans l'ancien dossier de travail Analyse qui n'ont pas leur pendant dans « Mon dossier » (`user_favorites`). Aucun rattrapage n'est décidé. |
 | 7 | `20261101110100_clear_points_outside_their_department.sql` | 65 (W2) | Retire les points situés hors de la boîte de leur département (vente 85bf9c86…, Grasse, point en Angleterre) : coordonnées et précision remises à vide, `implausible_coordinates` et `missing_gps` posés, trace dans `raw_payload.rejected_source_coordinates`. Comptage par défaut, qui liste les ventes visées ; les boîtes sont celles de `services/data-pipeline/src/department_bounds.py`. Sauvegarde : `app_private.points_outside_department_backup_20261101`. |
 | 8 | `20261108202100_delete_empty_listings.sql` | Annonces vides | Supprime définitivement les annonces sans voie ni lieu-dit, sans adresse email de contact, sans pièce et sans autre source, jamais celles qui ont une trace utilisateur (clés étrangères lues dans la base). Comptage par défaut. Jamais une vente avec un prix d'adjudication ou une issue connue ; le contrôle des traces est refait par vente, juste avant sa suppression. **Prérequis dans cet ordre : la règle d'entrée du pipeline fusionnée et active ; le balayage de dédoublonnage des annonces sans voie passé (`dedupe_streetless.py` : rapport `candidates`, relu, puis application), sinon les annonces rattachables à une vente jumelle sont supprimées ; puis la migration `20261108202000_listing_minimum_and_empty_listing_cleanup.sql` appliquée.** Pas de retour arrière : sauvegarde avant. |
@@ -113,3 +113,24 @@ Les tables de sauvegarde ne sont lisibles ni par `anon` ni par `authenticated`. 
 `services/data-pipeline/tests/test_chantier_f_repairs_sql.py` exécute les quatre fichiers avec `psql`
 sur une base jetable (`PIPELINE_TEST_DB_URL`, test ignoré sans base ni client `psql`) : le mode par
 défaut ne change rien, `-v apply=1` répare, une seconde application ne change rien.
+
+## Registre des pièces : règle pour tout rattrapage qui écrit `auction_sales`
+
+Les déclencheurs du registre des pièces (trois sur `auction_sales`, préfixe `aaab_`, et huit sur les
+journaux et les observations) sont en mode `always`. Un `alter table … disable trigger user` suivi
+d'un `enable trigger user` les remettrait en mode ordinaire, sans aucune erreur. Donc, pour tout
+fichier de ce dossier écrit depuis le lot R2a (migration `20261117100100_fact_registry_guards.sql`) :
+
+- ne jamais écrire `disable trigger user`, `disable trigger all`, `enable trigger user` ni
+  `enable trigger all` sur une table du registre ou sur `auction_sales` ;
+- pour taire des déclencheurs le temps d'une écriture, reprendre les deux blocs de
+  `20261029100200_recompute_past_quarantined_deadlines.sql` : seuls les déclencheurs en mode
+  ordinaire (`tgenabled = 'O'`) dont le nom ne commence pas par `aaab_`, notés dans une table
+  temporaire, puis rétablis un à un ;
+- terminer par `select app_private.assert_fact_registry_triggers();` juste avant le `commit` : la
+  transaction échoue, sans rien écrire, si un déclencheur du registre manque ou n'est plus en mode
+  `always`.
+
+L'invariant `hold-trigger-present-early` (`scripts/check-security-invariants-fact-registry.mjs`) le
+vérifie. Remise en état d'une base dont un déclencheur est sorti du mode `always` :
+`supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql`.
