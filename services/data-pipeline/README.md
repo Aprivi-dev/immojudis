@@ -642,12 +642,16 @@ python -m src.document_backlog --max-sales 200 --budget-minutes 120 --max-passes
   revision » ou « superseded after durable PDF checkpoint ») : le vidage remet
   en file cette génération et la suit, dans la limite de `--max-passes`. Une
   annulation pour une autre raison (annonce retirée) termine la vente ;
-- une vente qui compte déjà 2 lectures pdf terminées en 24 heures n'est pas
-  choisie, quelle que soit l'empreinte de ses tâches (plafond de relecture du
-  11/11/2026) ; sa tâche en file reste servie par la voie générale ;
+- une vente pour laquelle le vidage a déjà demandé 2 lectures pdf terminées en
+  24 heures n'est pas choisie, quelle que soit l'empreinte de ses tâches
+  (plafond de relecture du 11/11/2026) ; sa tâche en file reste servie par la
+  voie générale ;
 - une tâche qui attend une échéance (« PDF pass deferred » : rien à revalider
-  sur un manifeste complet, ou écriture de fin de passe écartée) termine la
-  visite de la vente, sans passe de plus ;
+  sur un manifeste complet qui contient une URL écartée) termine la visite de
+  la vente, sans passe de plus ;
+- une tâche pdf annulée « review_required » (écriture de fin de passe refusée à
+  l'admission quatre fois de suite) n'est pas réveillée pendant 7 jours, sauf
+  génération plus récente ;
 - les erreurs restent sur le job et le manifeste documentaire de la vente ;
 - une pièce trop lourde au téléchargement (au-delà de `PDF_MAX_DOWNLOAD_MB`,
   50 Mo dans le workflow) est un échec définitif (`document_too_large`), comme
