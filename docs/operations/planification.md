@@ -340,31 +340,36 @@ Chaque passage réessaie 3 fois (5 s, 20 s, 60 s) sur une erreur réseau ou 5xx.
 
 ## Contrôle quotidien du registre des pièces (lot R2a, 11/11/2026)
 
-`/api/cron/fact-registry-check` (Vercel Cron, 05:28 UTC) appelle `public.sync_fact_registry_alerts`, qui lance
-`public.check_fact_registry_consistency` (lecture seule : la projection n'y est appelée qu'en simulation) puis
-ouvre ou referme une alerte opérationnelle par contrôle. Le rapport ne porte que des comptes et des identifiants
-de vente (20 au plus), jamais une valeur.
+`/api/cron/fact-registry-check` (Vercel Cron, 05:28 UTC) appelle `public.sync_fact_registry_alerts()`, sans
+paramètre, qui lance `public.check_fact_registry_consistency` (lecture seule : la projection n'y est appelée qu'en
+simulation) puis ouvre ou referme une alerte opérationnelle par contrôle. Le rapport ne porte que des comptes et
+des identifiants de vente (20 au plus), jamais une valeur.
 
-| Alerte                                 | Ce qu'elle dit                                                                                                                                                    | Gravité       |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `fact_registry.projection_drift`       | La simulation de projection changerait une vente qui tient un champ, ou dont une pièce est acceptée                                                               | critique      |
-| `fact_registry.triggers_not_always`    | Un déclencheur du registre manque ou n'est plus en mode `always` (remise en état : `supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql`) | critique      |
-| `fact_registry.column_mismatch`        | Une colonne tenue diffère de la valeur de son entrée, ou une surface tenue ne porte plus les libellés neutres                                                     | critique      |
-| `fact_registry.echo_suspected`         | Une colonne voisine ou une copie (`properties`, `auction_surfaces`, `judicial_sales`) porte la valeur d'une pièce                                                 | avertissement |
-| `fact_registry.internal_column_copied` | `raw_payload` d'une vente du registre contient la colonne interne                                                                                                 | avertissement |
-| `fact_registry.events_burst`           | Plus de 50 évènements en 24 heures dans la file de relecture                                                                                                      | avertissement |
-| `fact_registry.echo_suppressed`        | La base a écarté le retour d'une ancienne valeur tenue dans les 48 heures : un chemin de la collecte a échappé à sa garde d'écho. Doit rester à zéro              | avertissement |
-| `fact_registry.stale_listing`          | L'annonce s'est tue sur un champ tenu (valeur d'annonce mémorisée peut-être périmée), ou une surface est tenue sur une vente devenue un terrain                   | avertissement |
+| Alerte                                 | Ce qu'elle dit                                                                                                                                                                                       | Gravité       |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `fact_registry.projection_drift`       | La simulation de projection changerait une vente qui tient ou mémorise un champ, ou dont une pièce est acceptée (rejouée une fois avant d'être signalée)                                             | critique      |
+| `fact_registry.triggers_not_always`    | Un déclencheur du registre manque, n'est plus en mode `always` ou n'appelle plus sa fonction (remise en état : `supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql`)        | critique      |
+| `fact_registry.column_mismatch`        | Une colonne tenue diffère de la valeur de son entrée, ou une surface tenue ne porte plus les libellés neutres                                                                                        | critique      |
+| `fact_registry.registry_label`         | `surface_source = 'fact_registry'` sur une vente dont aucune pièce ne tient la surface                                                                                                               | critique      |
+| `fact_registry.echo_suspected`         | La valeur d'une pièce, tenue, retirée ou opposée, est ailleurs que dans une colonne tenue : colonne voisine, copie (`properties`, `auction_surfaces`, `judicial_sales`) ou colonne d'un champ libéré | avertissement |
+| `fact_registry.internal_column_copied` | `raw_payload` d'une vente du registre contient la colonne interne                                                                                                                                    | avertissement |
+| `fact_registry.events_burst`           | Plus de 50 évènements d'écriture directe en 24 heures (annonce qui change, écho écarté) ; les évènements de la projection ne comptent pas                                                            | avertissement |
+| `fact_registry.echo_suppressed`        | La base a écarté le retour d'une ancienne valeur tenue dans les 48 heures : un chemin de la collecte a échappé à sa garde d'écho. Doit rester à zéro                                                 | avertissement |
+| `fact_registry.echo_blocked`           | Un champ libéré a retenu une écriture comme un écho il y a moins de 7 jours. Si l'alerte dure, l'annonce dit vraiment cette valeur et la fiche en affiche une ancienne : à relire                    | avertissement |
+| `fact_registry.stale_listing`          | L'annonce s'est tue sur un champ tenu (valeur d'annonce mémorisée peut-être périmée), ou une surface est encore tenue sur une vente devenue un terrain                                               | avertissement |
 
 - **Supervision.** La tâche est dans la liste attendue de `cron.stale` (27 heures, migration `20261117100600`).
-  Mise en production : procédure « Ajouter une tâche supervisée » ci-dessous (appeler la route une fois avec
-  `CRON_SECRET` juste après les migrations) ; runbook `docs/runbooks/registre-des-pieces-r2a.md`.
+  Mise en production sans manipuler de secret : fusionner, laisser Vercel déployer, attendre un passage planifié
+  de la tâche (elle répond `skipped: migration_pending`, compté comme un succès), puis appliquer les migrations ;
+  le passage du lendemain tombe avant 27 heures. Runbook `docs/runbooks/registre-des-pieces-r2a.md`.
 - **Avant la migration.** Le code peut être déployé avant : la fonction est alors absente, la tâche réussit sans
-  rien contrôler et le dit (`skipped: migration_pending` dans le journal des exécutions).
-- **Borne.** 500 ventes au plus par passage. Au-delà, le rapport est marqué tronqué et la tâche échoue : elle
-  ne fait pas passer un contrôle partiel pour complet.
-- **Tant que rien n'est tenu** (lots R2a et R2b), les huit contrôles sont à zéro : seuls `triggers_not_always`
-  et `events_burst` peuvent se lever.
+  rien contrôler et le dit (`skipped: migration_pending` dans le journal des exécutions). **Après la migration,
+  la réponse doit porter `counts`** : un `skipped` veut alors dire que PostgREST ne voit pas la fonction, et que
+  rien n'est contrôlé. Cette tolérance sera retirée au lot R2b.
+- **Borne.** 500 ventes au plus par passage. Au-delà, le rapport est marqué tronqué : la base ne synchronise que
+  les contrôles actifs (aucune alerte n'est refermée par un rapport partiel) et la tâche échoue.
+- **Tant que rien n'est tenu** (lots R2a et R2b), les dix contrôles sont à zéro : seuls `triggers_not_always`
+  et `registry_label` peuvent se lever.
 
 ## Plan Vercel Hobby : ordre des tâches et seuil de `cron.stale`
 

@@ -145,6 +145,19 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
         "another table",
         "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_sales (((evidence_locator ->> 'information_agent_fact_id'::text))) WHERE (evidence_locator ? 'information_agent_fact_id'::text);",
       ],
+      // Two forms that a canonical form dropping every `::text` and every parenthesis would hide.
+      [
+        "the column cast to text",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (((id)::text)) WHERE (held_fields IS NOT NULL);",
+      ],
+      [
+        "the predicate column cast to text",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id) WHERE ((held_fields)::text IS NOT NULL);",
+      ],
+      [
+        "the expression cast to another type than the reviewed one",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((((evidence_locator ->> 'information_agent_fact_id'::text))::text)) WHERE (evidence_locator ? 'information_agent_fact_id'::text);",
+      ],
     ])("keeps a fact registry index with %s in the diff", (_label, line) => {
       expect(normalizeDiff(line)).toBe(line);
     });
