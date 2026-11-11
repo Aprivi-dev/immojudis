@@ -260,10 +260,13 @@ order by 1, 2;
 ### A2. La fonction de contrôle des déclencheurs rend un tableau vide
 
 Attendu : `{}`. **C'est la première exécution de cette fonction sous PostgreSQL 17 en production** : elle compare
-le texte des clauses `WHEN` tel que le serveur l'imprime. Si A1 est bon (douze lignes en `A`) et que cette
-fonction nomme pourtant un déclencheur, ne rien réparer : la cause la plus probable est une forme imprimée que la
-comparaison ne prévoit pas, pas un déclencheur abîmé. Relever le tableau rendu et revenir vers le plan ; le
-fichier de maintenance ne corrige que le mode. Une entrée `<table>.owner` renvoie à la mesure P4.
+deux textes tels que le serveur les imprime, et tous deux dépendent de sa version. Le premier est la clause
+`WHEN` de chaque déclencheur. Le second est `proconfig`, les réglages de chaque fonction de déclencheur, attendus
+sous la forme exacte `search_path=""`. Si A1 est bon (douze lignes en `A`) et que cette fonction nomme pourtant un
+déclencheur, ne rien réparer : la cause la plus probable est une forme imprimée que la comparaison ne prévoit pas
+(clause `WHEN` ou `proconfig`), pas un déclencheur abîmé. Même conduite dans les deux cas : relever le tableau
+rendu et revenir vers le plan ; le fichier de maintenance ne corrige que le mode. Une entrée `<table>.owner`
+renvoie à la mesure P4.
 
 ```sql
 select app_private.fact_registry_triggers_not_always();
@@ -432,6 +435,13 @@ la projection) est une question ouverte du lot R2b, voir la note d'architecture.
 > type de retour change (la fonction est recréée). Les deux commencent toujours par `is_admin()`. Leur retour
 > passe de la ligne entière de la vente à six clés : c'est une réduction de ce qu'elles exposent. Aucune autre
 > fonction du lot n'est exécutable par `anon` ou `authenticated`.
+>
+> Limite de l'analyse statique. Les invariants lisent le texte des migrations : un `alter function` écrit en nom
+> nu après un `set local search_path`, ou construit dynamiquement (`execute`, `format`), les passe sans être vu.
+> Le contrôle en base (`app_private.fact_registry_triggers_not_always()`, lu chaque jour et avant toute écriture
+> du registre) rattrape ce que ces instructions changeraient sur les fonctions des déclencheurs : le mode de
+> sécurité, les réglages, et le propriétaire des tables et de la projection. Il ne relit pas le corps des
+> fonctions : une garde redéfinie avec une condition morte n'est vue que par les tests pgTAP.
 
 ## Restauration de données seules
 

@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(76);
+select plan(77);
 
 -- A1. Séquence commune --------------------------------------------------------------------------------------------
 select ok(
@@ -772,6 +772,23 @@ begin
 end;
 $restore$;
 revoke create on schema app_private from registry_probe_884;
+
+-- Projection absente (ici renommée, dans cette transaction seulement) : aucune table ne peut avoir « le
+-- propriétaire de la projection », les six sont signalées. Échec fermé, comme les gardes par rôle.
+alter function app_private.project_sale_fields(uuid, text[], boolean, jsonb)
+  rename to project_sale_fields_absent_884;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array[
+    'auction_fact_claim_decisions.owner', 'auction_fact_claims.owner', 'auction_fact_fields.owner',
+    'auction_fact_source_precedence.owner', 'auction_sale_field_hold_events.owner', 'auction_sales.owner'
+  ],
+  'without any projection the six tables of the registry are reported: no owner can be the right one'
+);
+
+alter function app_private.project_sale_fields_absent_884(uuid, text[], boolean, jsonb)
+  rename to project_sale_fields;
 
 select is(
   app_private.fact_registry_triggers_not_always(),

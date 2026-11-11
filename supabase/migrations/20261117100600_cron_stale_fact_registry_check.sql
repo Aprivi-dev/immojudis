@@ -13,10 +13,12 @@ set local statement_timeout = '60s';
 -- n'a aucun succès enregistré avant son premier passage ; l'alerte cron.stale s'ouvre alors en CRITIQUE au
 -- passage suivant d'operational-health. Donc : (1) le code qui porte la route est déjà déployé (avant la
 -- migration 20261117100500, la tâche réussit sans rien contrôler : résultat « skipped: migration_pending ») ;
--- (2) appliquer les migrations du lot ; (3) appeler la route une fois avec « Authorization: Bearer $CRON_SECRET » :
--- le succès enregistré referme la détection au passage suivant d'operational-health, et l'alerte se ferme deux
--- heures plus tard. Ne pas supprimer la ligne d'operational_alerts. Si la route a déjà réussi dans les 27 heures
--- qui précèdent (code déployé la veille), aucune alerte ne s'ouvre.
+-- (2) attendre un passage planifié de la tâche et vérifier son succès dans operational_job_runs ; (3) appliquer
+-- les migrations du lot : le succès de l'étape 2 a moins de 27 heures, aucune alerte ne s'ouvre, et le passage du
+-- lendemain tombe avant l'échéance. PERSONNE N'APPELLE LA ROUTE À LA MAIN et personne ne lit le secret de la
+-- tâche (docs/runbooks/registre-des-pieces-r2a.md, « Ordre de déploiement »). Si les migrations ont été appliquées
+-- sans attendre ce passage et que l'alerte s'ouvre, attendre le passage planifié suivant : elle se ferme deux
+-- heures après le premier succès. Ne pas supprimer la ligne d'operational_alerts.
 --
 -- Même méthode que 20261110120200 : pg_get_functiondef, remplacement d'un fragment vérifié, refus de deviner si la
 -- forme a changé. AUCUNE entrée existante n'est retirée : la migration refuse de s'appliquer si une des treize
