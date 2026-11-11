@@ -1,4 +1,5 @@
 """Exercise production publication SQL in a transaction that always rolls back."""
+from src import base_reads
 from src.config import load_settings
 from src.storage import supabase_client as storage
 
@@ -22,7 +23,8 @@ def main() -> int:
     if sale is None:
         raise RuntimeError("Cannot hydrate verification sale")
     try:
-        with storage.connect(str(settings["supabase_db_url"])) as connection:
+        # La transaction est toujours annulée : la portée jette ce que ces écritures ont noté pour la garde d'écho.
+        with base_reads.written_scope(), storage.connect(str(settings["supabase_db_url"])) as connection:
             connection.execute("set local lock_timeout='10s'")
             connection.execute("set local statement_timeout='60s'")
             token = storage._PUBLICATION_CONNECTION.set(connection)

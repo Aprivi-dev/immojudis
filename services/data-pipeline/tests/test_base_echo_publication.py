@@ -569,3 +569,232 @@ def test_the_canonical_row_copy_follows_too_when_a_second_source_is_withheld(mon
 
     payload = fake.rows[URL]["raw_payload"]
     assert (payload["rooms_count"], payload["occupancy_status"]) == (2, "occupied")
+
+
+def test_the_embedded_observation_of_another_source_is_never_rewritten(monkeypatch) -> None:
+    """Annonce Licitor inchangée, un autre écrivain pose 54 m² et 3 pièces : l'observation Avoventes (50 m², 2 pièces,
+    sans instantané) dit ce qu'Avoventes a donné, elle reste telle quelle."""
+    avoventes = {"surface_m2": 50, "rooms_count": 2, "title": "fiche Avoventes"}
+    observations = [
+        {"source_name": "licitor", "source_url": URL, "raw_payload": {"surface_m2": 50, "rooms_count": 2}},
+        {"source_name": "avoventes", "source_url": OTHER_URL, "raw_payload": dict(avoventes)},
+    ]
+    fake = FakeSaleBase([stored_row(observations=observations, source_urls=[URL, OTHER_URL])])
+    patch_publication(monkeypatch, fake)
+    known = storage.fetch_known_sale_details()
+    sale = collect(card(), known)
+
+    fake.move(URL, **POSED)
+    storage.upsert_sales_to_supabase([sale])
+
+    written_observations = {item["source_name"]: item["raw_payload"] for item in fake.rows[URL]["observations"]}
+    assert written_observations["avoventes"] == avoventes
+    assert (written_observations["licitor"]["surface_m2"], written_observations["licitor"]["rooms_count"]) == (54, 3)
+    assert (fake.rows[URL]["surface_m2"], fake.rows[URL]["rooms_count"]) == (54, 3)
+
+
+def test_a_carrez_surface_the_reread_listing_publishes_for_the_first_time_is_written(monkeypatch) -> None:
+    """Surface de 54 m² issue d'une pièce ; la fiche relue publie une Carrez de 53,2 m² ; un autre écrivain change la
+    seule confiance de la surface avant la publication. La Carrez de la source est écrite, pas effacée."""
+    payload = {
+        "source_checks": {},
+        "source_factual_snapshot": {"source_name": "licitor", "source_url": URL},
+        "surface_extraction": {"source": "pdf", "value_m2": 54},
+        "pdf_fact_provenance": {"surface_m2": {"value": 54, "source": "pdf", "payload_keys": ["surface_extraction"]}},
+    }
+    document = {"surface_m2": 54, "app_surface_m2": 54, "app_surface_kind": "built", "surface_source": "pdf",
+                "surface_scope": "total"}
+
+    def run(moved: dict[str, Any]) -> dict[str, Any]:
+        base_reads.reset()
+        fake = FakeSaleBase([stored_row(**document, surface_confidence=0.95, raw_payload=deepcopy(payload))])
+        patch_publication(monkeypatch, fake)
+        known = storage.fetch_known_sale_details()
+        known.update(storage.fetch_known_sale_details(source_urls=[URL], include_enrichment_payload=True))
+        raw = card(carrez_surface_m2="53,2 m²", description="Une maison d'habitation.")
+        raw.pop("_known_unchanged")
+        sale = collect(raw, known)
+        fake.move(URL, **moved)
+        storage.upsert_sales_to_supabase([sale])
+        return fake.rows[URL]
+
+    witness = run({})
+    row = run({"surface_confidence": 0.9})
+
+    assert witness["carrez_surface_m2"] == 53.2
+    assert row["carrez_surface_m2"] == 53.2
+    assert row["raw_payload"]["carrez_surface_m2"] == "53,2 m²"
+    # Ce que l'instantané ne donne pas (la portée de la surface) suit le groupe : c'est celui de la base.
+    assert row["surface_scope"] == witness["surface_scope"] == "total"
+    assert row["surface_confidence"] == 0.9  # le groupe, lui, est bien celui de la base
+
+
+# --- qui confirme une écriture, et quand ---------------------------------------------------------------------------------------
+
+
+def _fail_the_next_write_after_the_sale_row(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def failing_once(*_args, **_kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("canceling statement due to statement timeout")
+
+    monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", failing_once)
+
+
+def test_a_validated_publication_is_confirmed_before_a_later_write_is_rolled_back(base, monkeypatch) -> None:
+    """Publication validée, puis écriture d'enrichissement annulée (sans lecture sous verrou entre les deux), puis
+    publication finale : la base est dans l'état de la première écriture, personne d'autre n'a écrit."""
+    known = storage.fetch_known_sale_details()
+    sale = collect(card(), known)
+    sale.surface_source, sale.surface_confidence = "pdf", Decimal("0.95")
+    storage.upsert_sales_to_supabase([sale])
+    sale_id = base.rows[URL]["id"]
+
+    checkpoint = sale.model_copy(deep=True)
+    checkpoint.app_surface_kind = "carrez"
+    _fail_the_next_write_after_the_sale_row(monkeypatch)
+    with pytest.raises(RuntimeError):
+        storage.upsert_sales_to_supabase([checkpoint], refresh_last_seen=False)
+    assert base.rows[URL]["app_surface_kind"] != "carrez"  # annulée
+
+    sale.surface_confidence = Decimal("0.97")
+    storage.upsert_sales_to_supabase([sale])
+
+    assert base_reads.moved_groups(sale_id) == frozenset()
+    assert base.rows[URL]["surface_confidence"] == 0.97
+    assert base_reads.suppressed_count() == 0
+
+
+@pytest.mark.parametrize("another_writer_writes_the_same_afterwards", [False, True])
+def test_a_write_inside_the_transaction_of_a_caller_is_not_confirmed_before_its_rollback(
+    base, monkeypatch, another_writer_writes_the_same_afterwards
+) -> None:
+    """``verify_publication`` écrit pour de bon puis annule toujours : rien ne doit rester noté comme écrit.
+
+    Ni comme référence (la ligne d'avant, relue ensuite, n'est pas un mouvement), ni comme écriture en attente (si un
+    autre écrivain écrit plus tard la même chose, c'est bien un mouvement).
+    """
+    from src import verify_publication
+
+    known = storage.fetch_known_sale_details()
+    storage.upsert_sales_to_supabase([collect(card(), known)])
+    sale_id = base.rows[URL]["id"]
+    stored = {key: value for key, value in base.rows[URL].items() if value is not None}
+    hydrated = AuctionSale.model_validate({**stored, "surface_source": "pdf", "app_surface_kind": "carrez"})
+    lookups = iter([[(URL,)]])
+    real_execute = base.execute
+
+    def execute(query, params=None):
+        if isinstance(query, str) and "order by updated_at desc limit 1" in query:
+            return type("Rows", (), {"fetchone": lambda self: next(lookups)[0]})()
+        return real_execute(query, params)
+
+    monkeypatch.setattr(base, "execute", execute)
+    monkeypatch.setattr(verify_publication, "load_settings", storage.load_settings)
+    monkeypatch.setattr(storage, "connect", lambda _url: base)
+    monkeypatch.setattr(storage, "fetch_sale_for_data_refresh", lambda _url: hydrated)
+
+    assert verify_publication.main() == 0
+    assert base.rows[URL]["surface_source"] != "pdf"  # la vérification a bien été annulée
+    assert len(base.writes) == 3  # la publication, puis les deux écritures annulées
+
+    if another_writer_writes_the_same_afterwards:
+        base.move(URL, surface_source="pdf", app_surface_kind="carrez")
+    storage.upsert_sales_to_supabase([collect(card(), known)])
+
+    expected = {"surface"} if another_writer_writes_the_same_afterwards else frozenset()
+    assert base_reads.moved_groups(sale_id) == expected
+
+
+class _JobBase(FakeSaleBase):
+    """La base simulée, avec un travail de relecture de fiche toujours détenu par l'appelant."""
+
+    def execute(self, query: Any, params: Any = None):
+        if isinstance(query, str) and "auction_enrichment_jobs" in query:
+            return type("Rows", (), {"fetchone": lambda self: (1,), "fetchall": lambda self: [(1,)]})()
+        return super().execute(query, params)
+
+
+def test_a_source_detail_revision_is_confirmed_once_its_transaction_is_committed(monkeypatch) -> None:
+    """La relecture d'une fiche écrit par ``_write_sale_revisions`` dans sa propre transaction : elle la confirme."""
+    from src import source_detail
+
+    base = _JobBase([stored_row(**POSED)])
+    patch_publication(monkeypatch, base)
+    monkeypatch.setattr(storage, "connect", lambda _url: base)
+    known = storage.fetch_known_sale_details()
+    sale = collect(card(), known)
+    storage.upsert_sales_to_supabase([sale])
+    sale_id = base.rows[URL]["id"]
+
+    sale.surface_source, sale.surface_confidence = "pdf", Decimal("0.95")
+    job = {"id": "job", "attempt_count": 1, "locked_at": datetime.now(UTC)}
+    assert source_detail.publish_source_revision(sale, job, storage.load_settings()) is True
+    assert base.rows[URL]["surface_source"] == "pdf"
+    sale.updated_at = datetime.fromisoformat(base.rows[URL]["updated_at"])
+
+    checkpoint = sale.model_copy(deep=True)
+    checkpoint.app_surface_kind = "carrez"
+    _fail_the_next_write_after_the_sale_row(monkeypatch)
+    with pytest.raises(RuntimeError):
+        storage.upsert_sales_to_supabase([checkpoint], refresh_last_seen=False)
+    storage.upsert_sales_to_supabase([sale])
+
+    assert base_reads.moved_groups(sale_id) == frozenset()
+
+
+def test_a_write_that_does_not_return_one_row_per_row_sent_is_not_noted(base, monkeypatch, caplog) -> None:
+    """La base n'a pas rendu toutes les lignes écrites : rien n'est noté pour ce lot, et c'est journalisé."""
+    known = storage.fetch_known_sale_details()
+    sale = collect(card(), known)
+    sale.surface_source = "pdf"
+    real_write = storage._transaction_write
+
+    def losing_rows(table, payload, on_conflict=None, **kwargs):
+        rows = real_write(table, payload, on_conflict, **kwargs)
+        return rows[:-1] if table == "auction_sales" else rows
+
+    monkeypatch.setattr(storage, "_transaction_write", losing_rows)
+    with caplog.at_level("WARNING", logger="src.storage.supabase_client"):
+        storage.upsert_sales_to_supabase([sale])
+    monkeypatch.setattr(storage, "_transaction_write", real_write)
+
+    assert "Publication write returned 0 rows for 1 sent; echo reference left unchanged" in caplog.text
+    # La référence est restée celle d'avant : la lecture suivante voit un mouvement, ce qui ne peut que retenir.
+    storage.upsert_sales_to_supabase([sale])
+    assert base_reads.moved_groups(base.rows[URL]["id"]) == {"surface"}
+
+
+def test_the_rest_fallback_notes_and_confirms_what_it_sent(monkeypatch) -> None:
+    """Repli REST, hors production (le workflow exige la connexion directe) : pas de ``returning``, pas de
+    transaction. La ligne envoyée est notée et confirmée dès l'écriture faite ; la garde n'est jamais consultée sur
+    ce chemin (aucune lecture sous verrou), ce test ne fixe que la tenue de la référence : sans note ou sans
+    confirmation, la première lecture sous verrou n'aurait rien à quoi comparer et ne verrait aucun mouvement."""
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(storage, "load_settings", lambda: {
+        "supabase_url": "https://supabase.test", "supabase_service_role_key": "not-a-real-key", "supabase_db_url": None,
+    })
+    monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, payload: sent.extend(payload))
+    monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _sales: [])
+    for name in ("_write_fact_claims_rest", "_sync_normalized_sale_tables_with_rest", "_upsert_asset_tables_with_rest",
+                 "_enqueue_due_enrichment"):
+        monkeypatch.setattr(storage, name, lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *_args, **_kwargs: None)
+    untouched_id, moved_id = "99900000-1000-4000-8000-00000000000a", "99900000-1000-4000-8000-00000000000b"
+    sales = [
+        AuctionSale.model_validate({
+            **{key: value for key, value in stored_row(**POSED).items() if value is not None},
+            "id": sale_id, "source_url": url, "source_urls": [url],
+        })
+        for sale_id, url in ((untouched_id, URL), (moved_id, URL.replace("099999", "099998")))
+    ]
+
+    storage.upsert_sales_to_supabase(sales)
+
+    assert len(sent) == 2
+    base_reads.note_locked({"id": untouched_id, **sent[0]})
+    assert base_reads.moved_groups(untouched_id) == frozenset()
+    base_reads.note_locked({"id": moved_id, **sent[1], "rooms_count": 9})  # un autre écrivain est passé depuis
+    assert base_reads.moved_groups(moved_id) == {"rooms"}

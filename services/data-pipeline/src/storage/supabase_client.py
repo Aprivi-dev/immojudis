@@ -528,7 +528,9 @@ def upsert_sales_to_supabase(
         # All product tables for each bounded batch commit together. A failed transaction never falls
         # back to partially committed REST writes.
         submitted_sales = sales
-        with _postgres_connect(str(db_url)) as connection:
+        # La portée entoure la transaction : ce que la base a gardé des lignes écrites ne devient l'état de
+        # référence de la garde d'écho qu'une fois la transaction validée, et n'en laisse rien si elle est annulée.
+        with base_reads.written_scope(), _postgres_connect(str(db_url)) as connection:
             connection.execute("select set_config('app.pipeline_queue_owner', 'python', true)")
             connection.execute("set local lock_timeout = '15s'")
             connection.execute("set local statement_timeout = '120s'")
@@ -557,12 +559,13 @@ def upsert_sales_to_supabase(
         for sale in (*submitted_sales, *sales):
             if sale.source_url in written_urls:
                 sale.updated_at = written_at
-        # La transaction est validée : ce que la base a gardé devient l'état de référence de la garde d'écho.
-        base_reads.confirm_written(sale.id for sale in sales)
         return result
-    result = _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
-    base_reads.confirm_written(sale.id for sale in sales)
-    return result
+    if _PUBLICATION_CONNECTION.get() is not None:
+        # Écriture dans la transaction d'un appelant : c'est lui qui valide ou annule, donc lui qui ouvre la portée.
+        return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
+    # Repli REST (hors production) : pas de transaction, l'écriture vaut dès qu'elle est faite.
+    with base_reads.written_scope():
+        return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
 
 
 def _write_sale_revisions(
@@ -615,8 +618,15 @@ def _write_sale_revisions(
         # à ce que la base a gardé (``returning``), pas à ce qui a été envoyé : la base peut retenir une valeur.
         # Noté ici en attente ; l'état de référence ne change qu'une fois la transaction validée
         # (``upsert_sales_to_supabase``).
-        kept = _transaction_write("auction_sales", payload, "source_url", returning=base_reads.KEPT_COLUMNS)
-        base_reads.stage_written(kept or [])
+        kept = _transaction_write("auction_sales", payload, "source_url", returning=base_reads.KEPT_COLUMNS) or []
+        if len(kept) == len(payload):
+            base_reads.stage_written(kept)
+        else:
+            # La base n'a pas rendu une ligne par ligne envoyée : rien n'est noté pour ce lot. La lecture sous
+            # verrou suivante comparera à l'ancienne référence, ce qui ne peut que retenir une valeur relue.
+            LOGGER.warning(
+                "Publication write returned %s rows for %s sent; echo reference left unchanged", len(kept), len(payload)
+            )
         _write_fact_claims_postgres(sales, _PUBLICATION_CONNECTION.get())
     else:
         _upsert_with_rest(str(url), str(key), payload)
