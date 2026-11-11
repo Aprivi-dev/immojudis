@@ -71,8 +71,17 @@ replica` : les déclencheurs du registre sont en `enable always`.
   range aussi en « email d'avocat » une observation `manual_review`, `email_attachment` ou `portal_upload` qui
   porte ce triplet, celui du pont existant (qui s'exécute en propriétaire, et passe).
 - **Libellé du lot.** `lot_ref` suit un motif structurel, calé sur les libellés que la collecte lit (« lot 2 »,
-  « lots 1 et 2 », « Lot n° 3 », « 2ème lot ») : des numéros de lot, jamais un mot libre. Un nom, une adresse ou
-  un numéro de téléphone sont refusés.
+  « lots 1 et 2 », « Lot n° 3 », « 2ème lot ») : un à quatre numéros de un à trois chiffres, sans zéro initial,
+  séparés par « et », « , », « - » ou « à », jamais un mot libre. Sont refusés : un nom, une adresse, un numéro
+  de plus de trois chiffres (téléphone, année, code postal), une date écrite avec « / ». N'est pas refusée : une
+  suite de deux à quatre groupes de un à trois chiffres (« 612-345-678 »), qui a la forme exacte d'une liste de
+  lots (« lots 685,686,687 »). Douze chiffres et quatre lettres au plus.
+  **Contrat de l'écrivain (fonction de décision du lot R2b).** Avant d'écrire `lot_ref`, la fonction : remplace
+  toute espace insécable (U+00A0, U+202F) par une espace ordinaire, réduit les suites d'espaces à une seule et
+  retire celles du début et de la fin ; puis, si le libellé ne passe pas le motif, écrit **NULL** au lieu
+  d'échouer (le rattachement au lot reste porté par `lot_attachment` et `lot_id`). Le refus de « lot unique »,
+  « premier lot », « lot B » ou d'un numéro de lot à quatre chiffres est voulu : le motif n'est pas élargi pour
+  eux, ils donnent NULL. La fonction ne tronque pas et ne réécrit pas un libellé pour le faire passer.
 
 ## La projection
 
@@ -241,11 +250,14 @@ les contrôles actifs (aucune alerte n'est refermée), et la tâche échoue au l
 complet.
 
 **Mode des déclencheurs.** `app_private.assert_fact_registry_triggers()` lève `registry_unavailable` si l'un
-des douze déclencheurs du registre manque, n'est plus en mode `always`, ou n'appelle plus sa fonction. Un
-`alter table … disable trigger user`
-suivi d'un `enable trigger user` les remettrait tous en mode ordinaire sans aucune erreur. Remise en état :
-`supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql`. Règle pour un rattrapage :
-`supabase/repairs/README.md`.
+des douze déclencheurs du registre manque, n'est plus en mode `always`, ou n'a plus la définition de sa
+migration : fonction (nom, schéma `app_private`, mode de sécurité, réglages), évènements, colonnes, clause `WHEN`
+(les constantes entre apostrophes sont comparées telles quelles). Elle lève aussi quand l'une des six tables du
+registre, `auction_sales` comprise, n'a pas le propriétaire de la projection (signalée `<table>.owner`). Un
+`alter table … disable trigger user` suivi d'un `enable trigger user` les remettrait tous en mode ordinaire sans
+aucune erreur. Remise en état du mode seulement :
+`supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql` ; une définition ou un propriétaire
+différents se corrigent par migration. Règle pour un rattrapage : `supabase/repairs/README.md`.
 
 ## Régler le comportement
 
@@ -329,6 +341,18 @@ Après la contre-vérification :
 - un seul évènement par vente quand le libellé réservé est écarté sur une vente sans entrée ;
 - délai de verrou de 2 secondes avant les déclencheurs.
 
+Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
+
+- ordre des verrous de `20261117100100` : la table des observations d'abord, puis les deux journaux ; délai de
+  2 secondes posé avant le commentaire de colonne de `20261117100200` ;
+- `lot_ref` : trois chiffres au plus par numéro, « / » retiré des séparateurs, contrat de l'écrivain ci-dessus ;
+- contrôle des déclencheurs : constantes de la clause `WHEN` comparées telles quelles, réglages et schéma de la
+  fonction, propriétaire des six tables ;
+- vue des observations : la génération est calculée une fois par version présente, la version en est dérivée ;
+- invariants : aucun `owner to` ni `reassign owned` sur un objet du registre, aucun `alter function` sur les deux
+  fonctions de génération, `set_config` avec un nom littéral seulement (`set-config-literal-name`, doublé par
+  une assertion du test 884 sur le corps des fonctions en base).
+
 ## Reste pour le lot R2b
 
 - RPC d'administration (accepter, rejeter, retirer, opposition), sans droit d'exécution ouvert.
@@ -350,13 +374,29 @@ Après la contre-vérification :
 - Levée ou restitution après une opposition bloquante : une valeur d'annonce légitime, égale ou proche (à la
   tolérance du champ) de la valeur opposée, est retenue pour la vie de la vente. Il faut un geste d'administration
   qui lève le blocage, ou la restitution de la valeur d'annonce (voir le lot R2c).
-- Qui relance la projection après un reclassement en terrain : la surface tenue n'est libérée qu'à la projection
-  suivante, et aucune écriture de la collecte ne l'appelle. D'ici là le contrôle quotidien lève une alerte
-  critique de dérive.
+- Qui relance la projection quand une écriture de la collecte change ce qu'elle déciderait. La projection lit
+  des colonnes que la retenue ne surveille pas ou ne tient pas, et aucune écriture de la collecte ne l'appelle.
+  Deux cas connus, tous deux prouvés sur base jetable :
+  - un reclassement en terrain (`property_type` ou `surface_scope`) : la surface tenue n'est libérée qu'à la
+    projection suivante ;
+  - une écriture de `bedrooms_count` : une pièce « 3 pièces » acceptée sur une vente à 7 pièces et 6 chambres
+    est bloquée (plus de chambres que de pièces) ; la collecte corrige ensuite les chambres à 2, sans autre
+    écriture, et la simulation répond dès lors `changed = true` : la pièce tiendrait le champ, personne ne
+    l'applique.
+
+  D'ici la projection suivante, le contrôle quotidien lève l'alerte critique `fact_registry.projection_drift`.
+  La dérive ne suit donc pas `property_type` seul. À décider au lot R2b : la RPC de décision relance, la collecte
+  signale les ventes à reprojeter, ou le contrôle quotidien applique lui-même.
+
 - Faux positif de `echo_suspected` quand une colonne voisine est écrite APRÈS la première prise avec une valeur
   que la retenue n'écarte pas (par exemple la valeur d'annonce d'un autre champ égale à la pièce, ou une valeur
   déjà en place qu'une pièce de remplacement vient égaler) : le relevé `neighbors` date de la première prise.
-- `actor_id` d'une décision tiré de `auth.uid()`, jamais d'un paramètre de la RPC.
+- `actor_id` d'une décision tiré de `auth.uid()`, jamais d'un paramètre de la RPC : aujourd'hui la base
+  vérifie seulement que l'identifiant nommé est celui d'un administrateur existant.
+- Tâche `fact-registry-check` : le message d'erreur de PostgreSQL est recopié dans
+  `operational_job_runs.error_message` et dans les journaux, comme pour les autres tâches ; le réduire à un code.
+- Index partiel pour la liste de relecture d'administration, si l'écart mesuré en production avant et après la
+  migration `20261117100700` dépasse 100 ms (contrôle A4 du runbook).
 - Le noyau refuse une observation préexistante dont la vente, le champ ou la valeur diffèrent du fait de
   l'agent (l'index unique sur l'identifiant de fait ne garantit que l'unicité, pas le contenu).
 - Invariant `pipeline-no-wildcard-sale-read` : la collecte ne lit jamais la ligne entière d'une vente
@@ -392,6 +432,6 @@ des observations par génération), `891` (stabilité de la projection, essai al
 `fact-registry-append-only`, `held-fields-projection-only`, `hold-trigger-present-early`,
 `field-projection-not-callable-by-api`, `fact-claims-never-repointed`, `registry-no-fk-to-auction-sales`,
 `held-fields-never-returned`, `fact-registry-check-read-only`, `registry-neutral-surface-labels`,
-`fact-claims-generation-pattern`. La publication automatique reste verrouillée
+`fact-claims-generation-pattern`, `set-config-literal-name`. La publication automatique reste verrouillée
 (`auction_fact_claim_decisions_auto_locked`, `auction_fact_claim_decisions_accepted_by_admin`), les dates de
 visite aussi (`auction_fact_fields_visit_dates_locked`).
