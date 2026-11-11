@@ -25,6 +25,11 @@ par l'utilisateur.
 7. Si une tâche est ambiguë ou plus risquée que prévu, arrête-toi et explique pourquoi
    au lieu de deviner.
 
+## Rangement du code
+
+Critère permanent : lis `docs/architecture/rangement-du-code.md` avant d'écrire du code et
+applique sa partie « Selon le rôle » (qui écrit).
+
 ## Format de rendu
 
 La liste des fichiers modifiés, ce qui a changé dans chacun, le résultat de chaque

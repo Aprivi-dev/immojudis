@@ -406,6 +406,10 @@ def decode_protected_emails_enabled() -> bool:
     ``disabled``) ou inconnu : désactivé. Une valeur inconnue est signalée par un avertissement journalisé une
     fois (sans la valeur). Désactivé, les éléments masqués sont tout de même retirés de la page (jamais
     publiés) mais aucune adresse n'est décodée ni écrite au registre.
+
+    La collecte planifiée pose la variable : depuis la décision du propriétaire du 11/11/2026 (accord de Licitor
+    déclaré par le propriétaire), ``.github/workflows/data-pipeline.yml`` l'active quand la variable de dépôt est
+    absente. Ici, rien ne change : sans valeur explicitement vraie, aucun décodage.
     """
     value = (os.getenv(DECODE_ENV) or "").strip().lower()
     if value in _DECODE_ON:
@@ -447,8 +451,9 @@ def parse_licitor_detail_html(
     (voir ``src.sources.licitor_lots``), les cartes de la liste départageant les lots quand l'URL ne suffit pas.
     """
     soup = parse_html(html, "html.parser")
-    # Cloudflare masque les adresses e-mail des avocats. Licitor ayant donné son accord (14/10/2026,
-    # oral, à formaliser par écrit), on les décode dans le HTML déjà récupéré et dans les seuls blocs
+    # Cloudflare masque les adresses e-mail des avocats. Décision du propriétaire du 11/11/2026 (accord de
+    # Licitor déclaré par le propriétaire, pièce à verser au dossier) : interrupteur actif, on les décode
+    # dans le HTML déjà récupéré et dans les seuls blocs
     # des professionnels (``.Trust``) ; chaque élément masqué est retiré de la page (plus de
     # « [email protected] ») et l'adresse est mise à part, pour l'usage interne de l'agent. Une adresse
     # refusée (juridiction, RPVA, Ordre, CARPA, illisible) est retirée ; ailleurs dans la page, rien
