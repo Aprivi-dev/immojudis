@@ -14,7 +14,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(91);
+select plan(94);
 
 -- Fonction et droits --------------------------------------------------------------------------------------------
 select has_function(
@@ -64,6 +64,17 @@ select
   'upcoming', current_timestamp + interval '20 days', 'Alphaville', 'house', 90000, '{}'::jsonb,
   '{}'::jsonb, 'tribunal', 50, 50, 'habitable', 'listing_text', 0.7, null, 2, 1, 'occupied', '[]'::jsonb
 from generate_series(1, 9) n;
+
+-- Ventes c (conservée) et b (absorbée par c plus bas, après avoir été délogée par son annonce).
+insert into public.auction_sales (
+  id, source_name, source_url, status, sale_date, city, property_type, starting_price_eur,
+  raw_payload, sale_procedure, sale_venue_type, rooms_count, bedrooms_count
+)
+select
+  ('88300000-1000-4000-8000-00000000000' || n)::uuid, 'licitor', 'https://example.test/883/sale-' || n,
+  'upcoming', current_timestamp + interval '20 days', 'Alphaville', 'house', 90000, '{}'::jsonb,
+  '{}'::jsonb, 'tribunal', 2, 1
+from unnest(array['b', 'c']) n;
 
 -- Observations. Origines : dossiers d'avocat A, B et C (professional_email), saisie d'administrateur, document,
 -- annonce, recherche d'agent (non classée), pont de l'agent d'information d'avant le lot R2.
@@ -182,6 +193,13 @@ insert into public.auction_fact_claims (
   ('88300000-2000-4000-8000-000000000605', '88300000-1000-4000-8000-000000000006',
     'property.occupancy_status', '"vacant"'::jsonb, 'admin_entry', '{}'::jsonb, null, null, 'admin_entry',
     'v1', '88300000-0000-4000-8000-0000000000a1'),
+  -- Ventes c et b : 3 pièces sur c (dossier A), 4 pièces sur b (dossier B).
+  ('88300000-2000-4000-8000-000000000c01', '88300000-1000-4000-8000-00000000000c', 'property.rooms_count',
+    '3'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null,
+    0.6, 'information_agent', 'v1', '88300000-0000-4000-8000-0000000000a1'),
+  ('88300000-2000-4000-8000-000000000b01', '88300000-1000-4000-8000-00000000000b', 'property.rooms_count',
+    '4'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000b"}'::jsonb, null,
+    0.6, 'information_agent', 'v1', '88300000-0000-4000-8000-0000000000a1'),
   -- Vente 9, absorbée par la vente 8, elle-même absorbée par la vente 7.
   ('88300000-2000-4000-8000-000000000901', '88300000-1000-4000-8000-000000000009', 'property.rooms_count',
     '4'::jsonb, 'professional_email', '{"case_id": "88300000-3000-4000-8000-00000000000a"}'::jsonb, null,
@@ -1165,6 +1183,52 @@ select is(
     #> '{fields,property.rooms_count}') - 'decision_id',
   '{"state": "held", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000901"}'::jsonb,
   'the piece accepted on the first absorbed sale holds on the sale finally kept'
+);
+
+-- La libération d'une vente absorbée ne déloge pas les pièces de la vente conservée -----------------------------
+-- Vente c : 3 pièces tenues, réglage par défaut. Vente b : 4 pièces tenues, réglage inverse, puis l'annonce
+-- de b passe à 6 pièces et déloge sa pièce. Ensuite b est absorbée par c.
+update public.auction_fact_fields set on_listing_change = 'keep_and_review'
+where field_key = 'property.rooms_count';
+execute decide('c01', 'accepted', 'single_lot', null, null);
+select app_private.project_sale_fields('88300000-1000-4000-8000-00000000000c', null, true)
+  #>> '{fields,property.rooms_count,state}';
+update public.auction_fact_fields set on_listing_change = 'listing_wins_and_review'
+where field_key = 'property.rooms_count';
+execute decide('b01', 'accepted', 'single_lot', null, null);
+select app_private.project_sale_fields('88300000-1000-4000-8000-00000000000b', null, true)
+  #>> '{fields,property.rooms_count,state}';
+update public.auction_sales set rooms_count = 6 where id = '88300000-1000-4000-8000-00000000000b';
+update public.auction_fact_fields set on_listing_change = 'keep_and_review'
+where field_key = 'property.rooms_count';
+
+select results_eq(
+  $$select sale.rooms_count, sale.held_fields is null, event.event, event.sale_id
+      from public.auction_sales sale
+      join public.auction_sale_field_hold_events event
+        on event.sale_id = sale.id and event.event = 'listing_changed_released'
+      where sale.id = '88300000-1000-4000-8000-00000000000b'$$,
+  $$values (6, true, 'listing_changed_released', '88300000-1000-4000-8000-00000000000b'::uuid)$$,
+  'the listing of the sale to be absorbed dislodged its piece, and the release names that sale'
+);
+
+update public.auction_sales
+set source_urls = '["https://example.test/883/sale-c", "https://example.test/883/sale-b"]'::jsonb
+where id = '88300000-1000-4000-8000-00000000000c';
+delete from public.auction_sales where id = '88300000-1000-4000-8000-00000000000b';
+
+select is(
+  (app_private.project_sale_fields('88300000-1000-4000-8000-00000000000c', null, true)
+    - 'sale_id' #- '{fields,property.rooms_count,decision_id}') #> '{fields,property.rooms_count}',
+  '{"state": "unchanged", "value": 3, "claim_id": "88300000-2000-4000-8000-000000000c01"}'::jsonb,
+  'a release on the absorbed sale does not dislodge the piece of the kept sale, whose listing never moved'
+);
+
+select results_eq(
+  $$select rooms_count, held_fields #>> '{property.rooms_count,claim_id}'
+      from public.auction_sales where id = '88300000-1000-4000-8000-00000000000c'$$,
+  $$values (3, '88300000-2000-4000-8000-000000000c01')$$,
+  'the kept sale still displays its own piece; the dislodged piece of the absorbed sale does not come back'
 );
 
 -- Paramètres ---------------------------------------------------------------------------------------------------

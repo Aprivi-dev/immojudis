@@ -652,7 +652,8 @@ begin
     -- 3. Candidats : dernière décision (seq) de chaque observation décidée pour ces ventes ; seulement une
     --    acceptation, d'un lot identifié, d'une origine qui peut tenir ce champ, si le champ est tenable, et que
     --    l'annonce n'a pas délogée depuis (évènement listing_changed_released qui nomme la décision ou qui la
-    --    suit : il faut alors une nouvelle décision humaine).
+    --    suit : il faut alors une nouvelle décision humaine). Seul un évènement de la vente de la décision
+    --    compte : la libération d'une vente absorbée par fusion ne déloge pas les pièces de la vente conservée.
     for v_candidate in
       with decided as (
         select distinct decision.claim_id
@@ -699,7 +700,7 @@ begin
         and precedence.can_hold
         and not exists (
           select 1 from public.auction_sale_field_hold_events released
-          where released.sale_id = any(v_sales)
+          where released.sale_id = latest.sale_id
             and released.field_key = v_field.field_key
             and released.event = 'listing_changed_released'
             and (released.decision_id = latest.id or released.created_at >= latest.decided_at)

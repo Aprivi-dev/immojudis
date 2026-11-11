@@ -63,8 +63,9 @@ replica` : les déclencheurs du registre sont en `enable always`.
    fusion) et ne garde que les acceptations d'un lot identifié (`single_lot`, `matched`) dont l'origine peut
    tenir le champ. Une observation sans décision au journal, un document resté candidat, une pièce d'annonce
    ou un lot inconnu ne tiennent rien ;
-2. elle écarte toute pièce que l'annonce a délogée (évènement `listing_changed_released` qui nomme sa décision
-   ou qui la suit) : il faut une nouvelle décision humaine, postérieure, pour qu'elle reprenne le champ ;
+2. elle écarte toute pièce que l'annonce a délogée (évènement `listing_changed_released` de la vente de la
+   décision, qui nomme cette décision ou qui la suit) : il faut une nouvelle décision humaine, postérieure,
+   pour qu'elle reprenne le champ ;
 3. elle ordonne par rang, puis par date (réception, à défaut décision). Au même rang, une pièce plus récente
    de la même origine (même dossier) remplace la précédente ; deux origines différentes qui disent autre chose
    (hors tolérance) sont une contradiction : rien ne bascule, un évènement `conflicted` part en relecture ;
@@ -133,7 +134,9 @@ l'entrée de `held_fields` : un changement vaut pour un champ déjà tenu à sa 
 
 - Écho de la collecte après un retrait (`main.py` et mémoire des anciennes valeurs tenues).
 - Ordre de verrouillage du noyau et `lock_timeout` de la RPC.
-- Fusion de doublons (report des dossiers et reprojection).
+- Fusion de doublons (report des dossiers et reprojection). Dont ce cas : une libération par l'annonce n'écarte
+  que les décisions de sa propre vente, donc quand l'annonce de la vente conservée déloge sa pièce, une pièce
+  acceptée plus tôt sur une vente absorbée peut reprendre le champ à la projection suivante.
 - Valeur écrite dans `app_surface_kind` et `surface_source` (constante neutre, nature Carrez, habitable ou
   terrain).
 - Copies normalisées `properties` et `judicial_sales`, qui ne sont pas retenues.
