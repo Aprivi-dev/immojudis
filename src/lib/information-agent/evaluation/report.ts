@@ -37,7 +37,10 @@ export type KnownDefect = {
   cause: string;
 };
 
-export type FalsePublication = Omit<KnownDefect, "configuration" | "groupe" | "cause"> & {
+export type FalsePublication = Omit<
+  KnownDefect,
+  "configuration" | "groupe" | "cause" | "published_value"
+> & {
   famille: number;
   published_value: number | null;
   verite: string;

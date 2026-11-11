@@ -81,7 +81,7 @@ describe("jeu d'évaluation : schéma", () => {
 
   it("tire chaque citation, mot pour mot, du texte de sa source", () => {
     for (const item of cases) {
-      const neighbours = new Map([
+      const neighbours = new Map<string, string>([
         ...item.contexte.messages_anterieurs.map(
           (message, index) => [`anterieur-${index + 1}`, message.corps] as const,
         ),
