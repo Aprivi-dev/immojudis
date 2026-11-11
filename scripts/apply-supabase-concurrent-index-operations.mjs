@@ -60,6 +60,38 @@ const operations = Object.freeze([
     keyColumns: ["insee_code", "property_type", "sale_date"],
     expectedFragments: ["dvf_transactions", "insee_code", "property_type", "sale_date"],
   }),
+  // Registre des pièces, lot R2a (migration 20261117100450). Deux index d'une forme que les opérations
+  // précédentes n'avaient pas : `predicate` (index partiel), `expressions` (index sur une expression) et
+  // `unique` sont comparés au catalogue, mot pour mot (pg_get_expr), en plus de la méthode et des colonnes.
+  // Ventes qui tiennent ou mémorisent un champ : sert le contrôle quotidien et la lecture des valeurs d'annonce.
+  Object.freeze({
+    operationKey: "20261117100450:auction_sales_held_fields_idx",
+    schemaName: "public",
+    tableName: "auction_sales",
+    indexName: "auction_sales_held_fields_idx",
+    createSql:
+      'create index concurrently if not exists "auction_sales_held_fields_idx" on "public"."auction_sales" ("id") where ("held_fields" is not null)',
+    accessMethod: "btree",
+    keyColumns: ["id"],
+    predicate: "(held_fields IS NOT NULL)",
+    expectedFragments: ["auction_sales", "held_fields is not null"],
+  }),
+  // Une observation par fait de l'agent d'information : index unique sur l'identifiant du fait porté par le
+  // localisateur. Une colonne d'expression n'a pas de nom dans le catalogue : `keyColumns` est vide.
+  Object.freeze({
+    operationKey: "20261117100450:auction_fact_claims_agent_fact_key",
+    schemaName: "public",
+    tableName: "auction_fact_claims",
+    indexName: "auction_fact_claims_agent_fact_key",
+    createSql:
+      'create unique index concurrently if not exists "auction_fact_claims_agent_fact_key" on "public"."auction_fact_claims" (("evidence_locator" ->> \'information_agent_fact_id\')) where ("evidence_locator" ? \'information_agent_fact_id\')',
+    accessMethod: "btree",
+    keyColumns: [],
+    unique: true,
+    expressions: "(evidence_locator ->> 'information_agent_fact_id'::text)",
+    predicate: "(evidence_locator ? 'information_agent_fact_id'::text)",
+    expectedFragments: ["unique", "auction_fact_claims", "information_agent_fact_id"],
+  }),
 ]);
 
 function connectionUrl() {
@@ -137,11 +169,20 @@ function indexMatches(operation, index) {
     return false;
   }
   if (!index || typeof index === "string") return true;
+  // Un index partiel, sur une expression ou unique n'est accepté que si l'opération le déclare, et alors
+  // seulement avec le prédicat et l'expression attendus, tels que le catalogue les imprime.
+  const partialMatches = operation.predicate
+    ? index.is_partial === true && index.predicate === operation.predicate
+    : index.is_partial === false;
+  const expressionsMatch = operation.expressions
+    ? index.has_expressions === true && index.expressions === operation.expressions
+    : index.has_expressions === false;
   return (
     index.access_method === operation.accessMethod &&
     JSON.stringify(index.key_columns || []) === JSON.stringify(operation.keyColumns) &&
-    index.is_partial === false &&
-    index.has_expressions === false
+    Boolean(index.is_unique) === Boolean(operation.unique) &&
+    partialMatches &&
+    expressionsMatch
   );
 }
 
@@ -163,7 +204,10 @@ async function readIndex(sql, operation) {
              '{}'::text[]
            ) as key_columns,
            index_row.indpred is not null as is_partial,
-           index_row.indexprs is not null as has_expressions
+           index_row.indexprs is not null as has_expressions,
+           index_row.indisunique as is_unique,
+           pg_catalog.pg_get_expr(index_row.indpred, index_row.indrelid) as predicate,
+           pg_catalog.pg_get_expr(index_row.indexprs, index_row.indrelid) as expressions
       from pg_catalog.pg_class relation
       join pg_catalog.pg_namespace namespace_row
         on namespace_row.oid = relation.relnamespace

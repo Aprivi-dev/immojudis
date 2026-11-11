@@ -245,6 +245,29 @@ describe("scheduled jobs inventory", () => {
     }
     expect(definition).not.toContain("interval '30 hours'");
   });
+  it("contrôle le registre des pièces chaque jour (Vercel Cron), sous cron.stale à 27 heures", () => {
+    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    expect(vercel.crons.filter((cron) => cron.path === "/api/cron/fact-registry-check")).toEqual([
+      { path: "/api/cron/fact-registry-check", schedule: "28 5 * * *" },
+    ]);
+
+    // Dans la migration, les apostrophes de la liste attendue de cron.stale sont doublées.
+    const supervision = readFileSync(
+      join(root, "supabase/migrations/20261117100600_cron_stale_fact_registry_check.sql"),
+      "utf8",
+    );
+    expect(supervision).toContain("(''fact-registry-check'', interval ''27 hours'')");
+
+    const document = readFileSync(join(root, "docs/operations/planification.md"), "utf8");
+    expect(document).toMatch(/`\/api\/cron\/fact-registry-check`.*\| oui /);
+    const route = readFileSync(join(root, "src/app/api/cron/fact-registry-check/route.ts"), "utf8");
+    expect(route).toMatch(/^export const maxDuration = \d+;$/m);
+    // Le nom supervisé est celui que la migration attend.
+    expect(route).toContain('"fact-registry-check"');
+  });
+
   it("calcule les pépites toutes les heures à :35 (pg_cron), avec un filet quotidien et une alerte de fraîcheur", () => {
     const scheduler = readFileSync(
       join(root, "supabase/migrations/20261104100100_sale_pepites_scheduler.sql"),

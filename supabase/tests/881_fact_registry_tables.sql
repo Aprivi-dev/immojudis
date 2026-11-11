@@ -4,7 +4,8 @@
 --   * champs et préséance de départ : cinq champs, « keep_and_review » partout, visites verrouillées ; admin 10,
 --     lawyer_form 20, lawyer_email 30, document 50 tenables, listing 60 jamais ;
 --   * journal des décisions et évènements en ajout seul (UPDATE, DELETE, TRUNCATE : 55000 et message), même en
---     session_replication_role = replica ; ordre par seq, date imposée par la base ;
+--     session_replication_role = replica ; ordre par seq (séquence commune aux deux journaux depuis
+--     20261117100000, voir 884), date imposée par la base ;
 --   * publication automatique impossible, acceptation par un administrateur existant seulement, motif en liste
 --     fermée (aucun texte libre), valeur recevable seulement (occupation : libre, occupé, loué) ;
 --   * auction_fact_claims : trois origines de plus, réservées aux fonctions du serveur ; vidage refusé ;
@@ -13,7 +14,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(95);
+select plan(98);
 
 -- Structure, droits, RLS ---------------------------------------------------------------------------------------
 select has_table('public', 'auction_fact_fields', 'the field catalogue exists');
@@ -54,7 +55,7 @@ select is(
 );
 
 select is(
-  (select array_agg(relation.name || ':' || privilege.name order by relation.name, privilege.name)
+  (select array_agg(relation.name || ':' || privilege.name order by relation.name collate "C", privilege.name collate "C")
      from unnest(array[
        'public.auction_fact_fields', 'public.auction_fact_source_precedence',
        'public.auction_fact_claim_decisions', 'public.auction_sale_field_hold_events']) relation(name)
@@ -131,14 +132,17 @@ select is(
   (select array_agg(routine.pronamespace::regnamespace::text || '.' || routine.proname order by routine.proname)
      from pg_proc routine
      where routine.prosrc like '%app.sale_field_projection%'),
-  array['app_private.hold_projected_sale_fields', 'app_private.project_sale_fields']::text[],
-  'only the projection and the hold function name the projection marker'
+  array[
+    'app_private.hold_projected_sale_fields', 'app_private.project_sale_fields',
+    'app_private.refuse_sale_field_projection_marker'
+  ]::text[],
+  'only the projection, the hold function and the marker guard name the projection marker'
 );
 
 -- Données de départ ---------------------------------------------------------------------------------------------
 select results_eq(
   $$select field_key, held_columns, value_type, on_listing_change, hold_enabled
-      from public.auction_fact_fields order by field_key$$,
+      from public.auction_fact_fields order by field_key collate "C"$$,
   $$values
       ('property.land_surface_m2', array['land_surface_m2'], 'numeric', 'keep_and_review', true),
       ('property.occupancy_status', array['occupancy_status'], 'enum', 'keep_and_review', true),
@@ -327,11 +331,16 @@ select throws_ok(
 
 -- Journal des décisions : forme ---------------------------------------------------------------------------------
 select ok(
-  (select attidentity = 'a' from pg_attribute
-     where attrelid = 'public.auction_fact_claim_decisions'::regclass and attname = 'seq')
-  and (select attidentity = 'a' from pg_attribute
-         where attrelid = 'public.auction_sale_field_hold_events'::regclass and attname = 'seq'),
-  'both journals are ordered by an identity column that the writer cannot choose'
+  (select bool_and(attidentity = '' and attnotnull and not atthasdef) and count(*) = 2 from pg_attribute
+     where attrelid in (
+       'public.auction_fact_claim_decisions'::regclass, 'public.auction_sale_field_hold_events'::regclass)
+       and attname = 'seq')
+  and (select bool_and(prosrc like '%new.seq := pg_catalog.nextval(''app_private.fact_registry_seq''::regclass)%')
+         and count(*) = 2
+       from pg_proc where oid in (
+         'app_private.validate_auction_fact_claim_decision()'::regprocedure,
+         'app_private.stamp_fact_registry_event()'::regprocedure)),
+  'both journals are ordered by a number that their insert trigger takes from the common sequence, never from the writer'
 );
 
 select hasnt_column(
@@ -350,6 +359,67 @@ select is(
          'publication_mode', 'event')),
   array['lot_ref']::text[],
   'apart from the lot label (40 characters at most), every text column of the journals is a closed list'
+);
+
+-- Le libellé du lot : un motif structurel (20261117100100), écrit sans BETWEEN.
+select is(
+  (select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row
+     where constraint_row.conrelid = 'public.auction_fact_claim_decisions'::regclass
+       and constraint_row.conname = 'auction_fact_claim_decisions_lot_ref_check'),
+  $def$CHECK (((lot_ref IS NULL) OR (lot_ref ~* '^((lots? )?(n[°º] ?)?[1-9][0-9]{0,2}[a-z]?( ?(et|,|-|à) ?[1-9][0-9]{0,2}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$'::text)))$def$,
+  'the lot label is bounded by one anchored structural pattern, without BETWEEN'
+);
+
+-- Libellés acceptés : ceux que la collecte lit dans les annonces et les documents. Refusés : tout mot libre, tout
+-- numéro de plus de trois chiffres ou à zéro initial, toute date écrite avec « / ». Limite connue, tenue ici pour
+-- qu'elle ne change pas sans être vue : une suite de deux à quatre groupes de un à trois chiffres a la forme
+-- d'une liste de lots et passe (« 612-345-678 » comme « lots 685,686,687 »).
+select results_eq(
+  $$select sample.label, sample.lot_ref is null
+           or sample.lot_ref ~* '^((lots? )?(n[°º] ?)?[1-9][0-9]{0,2}[a-z]?( ?(et|,|-|à) ?[1-9][0-9]{0,2}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$'
+      from (values
+        (1, 'null', null::text), (2, 'lot 2', 'lot 2'), (3, 'Lot 14', 'Lot 14'), (4, 'lots 2 et 3', 'lots 2 et 3'),
+        (5, 'lots 1-2', 'lots 1-2'), (6, 'Lot n° 3', 'Lot n° 3'), (7, 'lots n° 1 et 2', 'lots n° 1 et 2'),
+        (8, 'bare number', '12'), (9, 'letter suffix', 'lot 3B'), (10, 'four lots', 'LOTS 1, 2, 3 et 4'),
+        (11, 'ordinal', '2ème lot'), (12, 'range', 'lots 5 à 8'),
+        (13, 'three lots of three digits', 'lots 685,686,687'), (14, 'digit groups', '612-345-678'),
+        (20, 'name and phone', 'M. Jean Dupont 06 12 34 56 78'),
+        (21, 'name and address', 'Mme Martin, 12 rue des Lilas (Paris)'),
+        (22, 'phone with dashes', '06-12-34-56-78'), (23, 'phone', '0612345678'), (24, 'word', 'lot unique'),
+        (25, 'name', 'lot Dupont'), (26, 'five lots', 'lots 1, 2, 3, 4 et 5'), (27, 'empty', ''),
+        (28, 'blank', '   '), (29, 'leading space', ' lot 2'), (30, 'email', 'lot 2 a.b@example.test'),
+        (31, 'trailing newline', E'lot 2\n'), (32, 'inner newline', E'lot\n2'), (33, 'url', 'https://example.test/2'),
+        (34, 'five digits', 'lot 12345'), (35, 'trailing words', 'lot 2 de la copropriété'),
+        (36, 'four digits', 'lot 1024'), (37, 'date with slashes', '12/11/1985'),
+        (38, 'short date with slashes', '1/2/1980'), (39, 'card number', '4532-7153-3790-1241'),
+        (40, 'phone with country code', '33-612-3456-78'), (41, 'slash list', 'lots 1/2'),
+        (42, 'non-breaking space', 'lot' || chr(160) || '2'), (43, 'leading zero', 'lot 02'),
+        (44, 'five numbers', '1-2-3-4-5')
+      ) sample(position, label, lot_ref) order by sample.position$$,
+  $$values ('null', true), ('lot 2', true), ('Lot 14', true), ('lots 2 et 3', true), ('lots 1-2', true),
+           ('Lot n° 3', true), ('lots n° 1 et 2', true), ('bare number', true), ('letter suffix', true),
+           ('four lots', true), ('ordinal', true), ('range', true), ('three lots of three digits', true),
+           ('digit groups', true),
+           ('name and phone', false), ('name and address', false), ('phone with dashes', false), ('phone', false),
+           ('word', false), ('name', false), ('five lots', false), ('empty', false), ('blank', false),
+           ('leading space', false), ('email', false), ('trailing newline', false), ('inner newline', false),
+           ('url', false), ('five digits', false), ('trailing words', false), ('four digits', false),
+           ('date with slashes', false), ('short date with slashes', false), ('card number', false),
+           ('phone with country code', false), ('slash list', false), ('non-breaking space', false),
+           ('leading zero', false), ('five numbers', false)$$,
+  'the pattern takes lot numbers as the collection reads them, three digits at most each, and no free word, long number or date with slashes; four groups of three digits at most still have the shape of a lot list'
+);
+
+select throws_ok(
+  $$insert into public.auction_fact_claim_decisions (
+      claim_id, sale_id, field_key, decision, lot_attachment, lot_ref, actor_kind, actor_id
+    ) values (
+      '88100000-2000-4000-8000-000000000001', '88100000-1000-4000-8000-000000000001',
+      'property.surface_m2', 'rejected', 'unknown', 'M. Jean Dupont 06 12 34 56 78', 'admin',
+      '88100000-0000-4000-8000-0000000000a1')$$,
+  '23514',
+  'new row for relation "auction_fact_claim_decisions" violates check constraint "auction_fact_claim_decisions_lot_ref_check"',
+  'the journal refuses a lot label that is not a lot label'
 );
 
 -- Journal des décisions : contraintes -------------------------------------------------------------------------
@@ -373,16 +443,20 @@ select results_eq(
   'a decision is manual by default and dated by the database, whatever date the writer gives'
 );
 
+-- Sans le déclencheur de validation, une décision n'a pas de numéro : l'insertion échoue au lieu de passer sans
+-- ordre (seq est NOT NULL et n'a pas de valeur par défaut). Le numéro qu'un écrivain fournit est remplacé : 884.
+alter table public.auction_fact_claim_decisions disable trigger auction_fact_claim_decisions_validate;
 select throws_ok(
   $$insert into public.auction_fact_claim_decisions (
-      seq, claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id
+      claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id
     ) values (
-      1, '88100000-2000-4000-8000-000000000002', '88100000-1000-4000-8000-000000000001',
+      '88100000-2000-4000-8000-000000000002', '88100000-1000-4000-8000-000000000001',
       'property.rooms_count', 'accepted', 'single_lot', 'admin', '88100000-0000-4000-8000-0000000000a1')$$,
-  '428C9',
+  '23502',
   null,
-  'the writer cannot choose the order of a decision'
+  'without its insert trigger a decision gets no order and is refused'
 );
+alter table public.auction_fact_claim_decisions enable always trigger auction_fact_claim_decisions_validate;
 
 select throws_ok(
   $$insert into public.auction_fact_claim_decisions (
@@ -799,7 +873,7 @@ select throws_ok(
       values ('88100000-1000-4000-8000-000000000001', 'property.surface_m2', 'something_else')$$,
   '23514',
   null,
-  'a hold event is one of the six known events'
+  'a hold event is one of the seven known events'
 );
 
 select throws_ok(
@@ -818,14 +892,15 @@ select is(
      where not trigger_row.tgisinternal and trigger_row.tgenabled = 'A'
        and relation.relnamespace = 'public'::regnamespace),
   array[
-    'aaab_auction_sales_held_fields_insert_guard', 'aaab_auction_sales_held_fields_role_guard',
+    'aaab_auction_sales_held_fields_insert_guard', 'aaab_auction_sales_held_fields_marker_guard',
+    'aaab_auction_sales_held_fields_role_guard',
     'aaab_auction_sales_hold_projected_fields', 'auction_fact_claim_decisions_append_only',
     'auction_fact_claim_decisions_no_truncate', 'auction_fact_claim_decisions_validate',
     'auction_fact_claims_no_truncate', 'auction_fact_claims_registry_origin_guard',
     'auction_sale_field_hold_events_append_only', 'auction_sale_field_hold_events_no_truncate',
     'auction_sale_field_hold_events_stamp'
   ]::text[],
-  'the eleven triggers of the registry, and no other trigger of the public schema, fire always'
+  'the twelve triggers of the registry, and no other trigger of the public schema, fire always'
 );
 
 set local session_replication_role = replica;
