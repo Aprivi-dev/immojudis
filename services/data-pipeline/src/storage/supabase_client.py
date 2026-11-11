@@ -2053,7 +2053,7 @@ def _persist_pdf_document_checkpoint_with_connection(
         ),
     ).fetchone()
     if updated is None:  # logged: the queue only said "checkpoint was not persisted" (04/11/2026)
-        return bool(_refused(source_url, "revision moved before the update"))
+        return bool(_refused(source_url, "revision_moved"))
     if updated[0] != expected_updated_at:
         raise RuntimeError("PDF checkpoint changed the source sale revision")
 

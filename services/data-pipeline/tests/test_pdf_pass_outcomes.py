@@ -18,12 +18,13 @@ from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 from src.pdf_pass_outcomes import (
     ADMISSION_REFUSAL_DELAY,
     NOTHING_DUE_DEFERRAL,
-    WRITE_DISCARDED_DEFERRAL,
-    complete_manifest_without_restorable_text,
+    WRITE_DISCARDED_ERROR,
+    WRITE_REFUSED_REVIEW,
+    complete_manifest_with_excluded_url,
+    discarded_write_ending,
     final_write_was_discarded,
     nothing_due_deferral,
     waits_for_its_deadline,
-    write_discarded_deferral,
 )
 from src.pdf_progress import (
     HTTP_REVALIDATION_WINDOW,
@@ -153,7 +154,7 @@ def test_nothing_is_awaited_once_a_url_is_already_due(dead_link_check: str) -> N
 
 def test_a_pass_without_anything_to_read_waits_for_the_revalidation() -> None:
     sale = _sale()
-    persisted = complete_manifest_without_restorable_text(sale)
+    persisted = complete_manifest_with_excluded_url(sale)
     assert persisted is not None
     stats = _pass_without_any_document(sale)
 
@@ -164,25 +165,54 @@ def test_a_pass_without_anything_to_read_waits_for_the_revalidation() -> None:
     assert waits_for_its_deadline(str(waiting))
 
 
-def test_a_restorable_manifest_whose_text_is_missing_is_not_a_wait() -> None:
+def test_a_complete_manifest_without_excluded_url_is_not_a_wait() -> None:
     # Sans URL écartée, la règle permet de restaurer le texte : s'il manque quand même, il est perdu.
     sale = _sale(dead_link=False)
     assert supabase_client._validated_persisted_pdf_manifest(sale) is not None
 
-    assert complete_manifest_without_restorable_text(sale) is None
+    assert complete_manifest_with_excluded_url(sale) is None
     assert nothing_due_deferral(None, sale, _pass_without_any_document(sale)) is None
+
+
+def test_an_altered_proof_alone_is_not_a_wait() -> None:
+    # La restauration est refusée, mais pas par la règle des URL écartées : c'est une anomalie, pas une attente.
+    sale = _sale(dead_link=False)
+    sale.raw_payload["document_analysis"]["cache_proof"]["input_fingerprint"] = "autre"
+    assert manifest_is_complete(sale.raw_payload["document_analysis"], sale.documents)
+    assert supabase_client._validated_persisted_pdf_manifest(sale) is None
+
+    assert complete_manifest_with_excluded_url(sale) is None
+
+
+@pytest.mark.parametrize("kind", ["blocked_document_urls", "skipped_document_urls", "terminal_document_urls"])
+def test_each_kind_of_excluded_url_makes_the_text_unrestorable_by_rule(kind: str) -> None:
+    sale = _sale()
+    analysis = sale.raw_payload["document_analysis"]
+    analysis["terminal_document_urls"] = []
+    analysis[kind] = [DEAD_URL]
+    assert manifest_is_complete(analysis, sale.documents)
+
+    assert complete_manifest_with_excluded_url(sale) is not None
+
+
+def test_an_excluded_url_that_is_no_longer_listed_is_not_a_wait() -> None:
+    sale = _sale(dead_link=False)
+    sale.raw_payload["document_analysis"]["terminal_document_urls"] = [DEAD_URL]  # pièce retirée de la liste
+    assert manifest_is_complete(sale.raw_payload["document_analysis"], sale.documents)
+
+    assert complete_manifest_with_excluded_url(sale) is None
 
 
 def test_a_partial_persisted_manifest_is_not_a_wait() -> None:
     sale = _sale()
     sale.raw_payload["document_analysis"]["manifest_complete"] = False
 
-    assert complete_manifest_without_restorable_text(sale) is None
+    assert complete_manifest_with_excluded_url(sale) is None
 
 
 def test_a_pass_that_handled_a_document_is_not_a_wait() -> None:
     sale = _sale()
-    persisted = complete_manifest_without_restorable_text(sale)
+    persisted = complete_manifest_with_excluded_url(sale)
     stats = _pass_without_any_document(sale)
 
     sale.raw_payload["document_analysis"]["documents_downloaded"] = 1
@@ -200,7 +230,7 @@ def test_a_pass_that_handled_a_document_is_not_a_wait() -> None:
 def test_expired_checks_are_not_a_wait() -> None:
     # Une pièce périmée que la passe n'a pas pu reprendre : attendre ne changerait rien, l'échec reste visible.
     sale = _sale(read_hours_ago=2, dead_hours_ago=30)
-    persisted = complete_manifest_without_restorable_text(sale)
+    persisted = complete_manifest_with_excluded_url(sale)
     assert persisted is not None
 
     assert nothing_due_deferral(persisted, sale, _pass_without_any_document(sale)) is None
@@ -208,7 +238,7 @@ def test_expired_checks_are_not_a_wait() -> None:
 
 def test_the_persisted_manifest_is_a_copy_taken_before_the_pass() -> None:
     sale = _sale()
-    persisted = complete_manifest_without_restorable_text(sale)
+    persisted = complete_manifest_with_excluded_url(sale)
 
     _pass_without_any_document(sale)
     sale.raw_payload["document_analysis"]["cache_proof"]["documents"].clear()
@@ -268,6 +298,42 @@ def test_a_checkpoint_refused_at_write_time_says_so() -> None:
     assert last_checkpoint_refusal() == "obsolete_revision"
 
 
+def test_a_checkpoint_whose_update_finds_a_moved_revision_says_so() -> None:
+    sale = _sale()
+    sale.updated_at = datetime.now(UTC)
+
+    class _MovedBetweenLockAndUpdate:
+        def __init__(self) -> None:
+            self.rows = [(sale.updated_at,), None]  # la révision lue est la bonne, la mise à jour ne trouve rien
+
+        def execute(self, _sql, _parameters=None):
+            return self
+
+        def fetchone(self):
+            return self.rows.pop(0)
+
+    reset_checkpoint_refusal()
+    written = supabase_client._persist_pdf_document_checkpoint_with_connection(
+        _MovedBetweenLockAndUpdate(), sale, sale.raw_payload["document_analysis"], []
+    )
+
+    assert written is False
+    assert last_checkpoint_refusal() == "revision_moved"
+
+
+def test_a_checkpoint_without_a_direct_connection_says_so(monkeypatch) -> None:
+    sale = _sale()
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {"supabase_db_url": ""})
+
+    reset_checkpoint_refusal()
+    written = supabase_client._persist_pdf_document_checkpoint_payload_to_supabase(
+        sale, sale.raw_payload["document_analysis"], []
+    )
+
+    assert written is False
+    assert last_checkpoint_refusal() == "no_direct_connection"
+
+
 # --- H : écriture de fin de passe écartée
 
 
@@ -280,31 +346,53 @@ def test_a_written_or_quarantined_sale_is_not_a_discarded_write() -> None:
     assert not final_write_was_discarded(0, sale)
 
 
-def test_a_write_discarded_by_the_revision_guard_is_retried_soon() -> None:
-    deferral = write_discarded_deferral(_sale())
-
-    assert str(deferral) == f"{WRITE_DISCARDED_DEFERRAL} (the sale changed during the pass)"
-    assert timedelta(minutes=29) < deferral.next_attempt_at - datetime.now(UTC) <= timedelta(minutes=30)
-    assert waits_for_its_deadline(str(deferral))
+def _claimed(attempt_count: int) -> dict[str, object]:
+    return {"id": "tache-pdf", "job_type": "pdf", "attempt_count": attempt_count, "max_attempts": 4}
 
 
-@pytest.mark.parametrize(
-    ("changes", "reason"),
-    [
-        ({"starting_price_eur": None}, "missing_price_and_surface"),
-        ({"sale_date": datetime.now(UTC) - timedelta(days=3), "status": "past"}, "expired"),
-    ],
-)
-def test_a_write_refused_at_admission_waits_a_day_with_its_reason(changes: dict[str, object], reason: str) -> None:
+@pytest.mark.parametrize("attempt_count", [1, 4])
+def test_a_write_discarded_by_the_revision_guard_fails_the_attempt(attempt_count: int) -> None:
+    # Un échec ordinaire : un essai consommé, nouvel essai 30 minutes plus tard, quatre essais au plus.
+    assert discarded_write_ending(_sale(), _claimed(attempt_count)) == {
+        "succeeded": False,
+        "error_message": f"{WRITE_DISCARDED_ERROR} (revision_moved)",
+    }
+    assert not waits_for_its_deadline(f"{WRITE_DISCARDED_ERROR} (revision_moved)")
+
+
+def _refused_sale(reason: str) -> AuctionSale:
     sale = _sale()
-    for field, value in changes.items():
-        setattr(sale, field, value)
+    if reason == "missing_price_and_surface":
+        sale.starting_price_eur = None
+    else:
+        sale.sale_date, sale.status = datetime.now(UTC) - timedelta(days=3), "past"
+    return sale
 
-    deferral = write_discarded_deferral(sale)
 
-    assert str(deferral) == f"{WRITE_DISCARDED_DEFERRAL} ({reason})"
-    wait = deferral.next_attempt_at - datetime.now(UTC)
+@pytest.mark.parametrize("reason", ["missing_price_and_surface", "expired"])
+def test_a_write_refused_at_admission_fails_the_attempt_and_waits_a_day(reason: str) -> None:
+    ending = discarded_write_ending(_refused_sale(reason), _claimed(3))
+
+    assert (ending["succeeded"], ending["error_message"]) == (False, f"{WRITE_DISCARDED_ERROR} ({reason})")
+    assert "cancelled" not in ending  # un échec : l'essai est consommé et compté
+    wait = ending["retry_not_before"] - datetime.now(UTC)
     assert ADMISSION_REFUSAL_DELAY - timedelta(minutes=1) < wait <= ADMISSION_REFUSAL_DELAY
+
+
+@pytest.mark.parametrize("reason", ["missing_price_and_surface", "expired"])
+def test_the_last_attempt_of_a_write_refused_at_admission_ends_in_review(reason: str) -> None:
+    assert discarded_write_ending(_refused_sale(reason), _claimed(4)) == {
+        "succeeded": False,
+        "cancelled": True,
+        "error_message": f"{WRITE_REFUSED_REVIEW} ({reason})",
+    }
+
+
+def test_a_claim_without_its_attempt_budget_is_never_taken_for_the_last_attempt() -> None:
+    # Sans ``max_attempts`` dans la prise, rien ne dit que c'est le dernier essai : la tâche échoue, la base borne.
+    ending = discarded_write_ending(_refused_sale("expired"), {"id": "tache-pdf", "attempt_count": 9})
+
+    assert "cancelled" not in ending and "retry_not_before" in ending
 
 
 def _run_current_sale(monkeypatch, sale: AuctionSale, jobs: list[dict[str, object]], upsert) -> tuple[list, list]:
@@ -338,14 +426,29 @@ def _pdf_job() -> dict[str, object]:
     return {"id": "tache-pdf", "source_url": SALE_URL, "job_type": "pdf", "attempt_count": 1}
 
 
-def test_a_discarded_final_write_defers_the_pdf_job_instead_of_completing_it(monkeypatch) -> None:
-    job = _pdf_job()
+def test_a_discarded_final_write_fails_the_pdf_job_instead_of_completing_it(monkeypatch) -> None:
+    finished, deferred = _run_current_sale(monkeypatch, _sale(), [_pdf_job()], lambda *_args, **_kwargs: 0)
 
-    finished, deferred = _run_current_sale(monkeypatch, _sale(), [job], lambda *_args, **_kwargs: 0)
+    assert deferred == []  # ni terminée, ni reportée sans essai
+    assert finished == [
+        (
+            "tache-pdf",
+            {"succeeded": False, "error_message": f"{WRITE_DISCARDED_ERROR} (revision_moved)", "attempt_count": 1},
+        )
+    ]
 
-    assert finished == []
-    assert [claimed for claimed, _error in deferred] == [[job]]
-    assert str(deferred[0][1]).startswith(WRITE_DISCARDED_DEFERRAL)
+
+def test_a_final_write_refused_until_the_last_attempt_cancels_the_pdf_job_for_review(monkeypatch) -> None:
+    job = {**_pdf_job(), "attempt_count": 4, "max_attempts": 4}
+
+    finished, deferred = _run_current_sale(
+        monkeypatch, _refused_sale("missing_price_and_surface"), [job], lambda *_args, **_kwargs: 0
+    )
+
+    assert deferred == []
+    assert [(job_id, kwargs["cancelled"], kwargs["error_message"]) for job_id, kwargs in finished] == [
+        ("tache-pdf", True, f"{WRITE_REFUSED_REVIEW} (missing_price_and_surface)")
+    ]
 
 
 def test_a_final_write_that_landed_completes_the_pdf_job(monkeypatch) -> None:
@@ -366,12 +469,15 @@ def test_a_sale_quarantined_by_the_final_write_completes_the_pdf_job(monkeypatch
     assert [(job_id, kwargs["succeeded"]) for job_id, kwargs in finished] == [("tache-pdf", True)]
 
 
-def test_the_other_jobs_of_the_claim_keep_their_usual_ending(monkeypatch) -> None:
-    # Reporter aussi la passe de faits la ferait rappeler le modèle à chaque essai : hors du périmètre du lot.
-    pdf_job = _pdf_job()
+def test_known_limit_a_fact_job_of_the_same_claim_is_completed_although_its_write_was_discarded(monkeypatch) -> None:
+    # LIMITE CONNUE, pas un comportement voulu. La passe de faits a pu appeler le modèle (appel payé), son
+    # résultat n'est pas enregistré, et sa tâche est quand même « terminée » : c'était déjà le cas avant le lot
+    # R6, qui ne borne que la tâche pdf. La faire échouer rappellerait le modèle à chaque essai : c'est une
+    # décision de budget, notée dans docs/audits/2026-11-11-file-de-lecture-des-pieces.md. Ce test ne fait que
+    # constater l'état actuel, pour qu'un changement soit délibéré.
     fact_job = {"id": "tache-faits", "source_url": SALE_URL, "job_type": "fact_extraction", "attempt_count": 1}
 
-    finished, deferred = _run_current_sale(monkeypatch, _sale(), [pdf_job, fact_job], lambda *_args, **_kwargs: 0)
+    finished, deferred = _run_current_sale(monkeypatch, _sale(), [_pdf_job(), fact_job], lambda *_args, **_kwargs: 0)
 
-    assert [claimed for claimed, _error in deferred] == [[pdf_job]]
-    assert [(job_id, kwargs["succeeded"]) for job_id, kwargs in finished] == [("tache-faits", True)]
+    assert deferred == []
+    assert [(job_id, kwargs["succeeded"]) for job_id, kwargs in finished] == [("tache-pdf", False), ("tache-faits", True)]

@@ -46,10 +46,10 @@ from src.pdf_enrichment import (
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pdf_pass_outcomes import (
-    complete_manifest_without_restorable_text,
+    complete_manifest_with_excluded_url,
+    discarded_write_ending,
     final_write_was_discarded,
     nothing_due_deferral,
-    write_discarded_deferral,
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import PARTIAL_MANIFEST_DEFERRAL, PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
@@ -435,13 +435,13 @@ def _consume_pdf_retry_after_checkpoint_failure(
 
 
 def _checkpoint_pdf_progress(sale: object, **kwargs: object) -> bool:
-    """Un essai de point d'étape : le motif d'un refus plus ancien (restauration) ne lui est pas attribué."""
+    """Seul chemin vers un point d'étape : le motif d'un refus plus ancien (restauration) est effacé avant l'essai."""
     reset_checkpoint_refusal()
     return _persist_pdf_checkpoint_for_sale(sale, **kwargs)
 
 
 def _pdf_checkpoint_failure_message(error: object | None = None) -> str:
-    """Préfixe lu par ``document_backlog.is_refused_checkpoint``, motif du refus (``no_progress_entries``), erreur."""
+    """Préfixe lu par ``is_refused_checkpoint``, motif mémorisé du refus, erreur. À n'appeler qu'après ``_checkpoint_pdf_progress``."""
     text = "" if error is None else str(error)
     prefix = "PDF document checkpoint was not persisted; retry required"
     if text.startswith(prefix):
@@ -694,7 +694,7 @@ def run_enrichment_queue_batch(
             # Facts read under older rules are read again, as a collection does (``_needs_structured_heavy_enrichment``).
             if "pdf" in job_types and sale.documents and (not documents_are_current(sale) or sale.raw_payload.get("document_facts_version") != DOCUMENT_FACTS_VERSION):
                 pdf_stage_error = True
-                persisted_manifest = complete_manifest_without_restorable_text(sale)
+                persisted_manifest = complete_manifest_with_excluded_url(sale)
                 pdf_stats = enrich_sale_from_pdfs(sale)
                 analysis = sale.raw_payload.get("document_analysis") or {}
                 if pdf_stats.errors or analysis.get("failed_documents"):
@@ -837,12 +837,12 @@ def run_enrichment_queue_batch(
             pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
             if pdf_jobs and final_write_was_discarded(written, sale):
                 # Écriture écartée (admission, révision déplacée) : la lecture n'est pas enregistrée, la tâche
-                # pdf n'est donc pas terminée. Les autres tâches de la prise gardent leur fin habituelle.
-                discarded = write_discarded_deferral(sale)
-                _record_worker_deferred_job_ids(pdf_jobs)
-                _defer_enrichment_jobs(pdf_jobs, discarded)
+                # pdf échoue donc avec son motif, un essai consommé (borne : src/pdf_pass_outcomes.py).
+                # Limite connue : les autres tâches de la prise gardent leur fin habituelle.
+                for job in pdf_jobs:
+                    _finish_job(job, **discarded_write_ending(sale, job))
                 mark_enrichment_jobs_terminal(pdf_jobs)
-                LOGGER.warning("PDF job deferred for %s: %s", source_url, discarded)
+                LOGGER.warning("PDF pass not recorded for %s: the final catalogue write was discarded", source_url)
                 sale_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") != "pdf"]
         except EncheresPubliquesAccessNotAuthorized as exc:
             # A non-EP source may redirect a document to Encheres Publiques

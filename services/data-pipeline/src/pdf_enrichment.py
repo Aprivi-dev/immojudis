@@ -343,8 +343,8 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         permanent_document_failures=stats.permanent_document_failures,
         failed_document_diagnostics=failed_document_diagnostics,
     )
-    if manifest_is_complete(sale.raw_payload.get("document_analysis"), sale.documents):
-        # Plus rien à relire avec ces règles, même sans texte (pièces toutes écartées ou vides) : sans version, la vente restait à relire à chaque vidage.
+    if sale.documents and manifest_is_complete(sale.raw_payload.get("document_analysis"), sale.documents):
+        # Plus rien à relire avec ces règles, même sans texte (pièces toutes écartées ou vides) : sans version, la vente restait à relire à chaque vidage. Une vente sans pièce n'a rien lu : pas de version.
         sale.raw_payload["document_facts_version"] = DOCUMENT_FACTS_VERSION
     return stats
 

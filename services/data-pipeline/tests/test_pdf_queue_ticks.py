@@ -13,8 +13,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.document_backlog import _read_with_current_rules, is_refused_checkpoint
+from src.models import AuctionSale
 from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
-from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_DEFERRAL
+from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, WRITE_REFUSED_REVIEW
 from src.pdf_progress import manifest_is_complete
 from tests.pdf_queue_bench import SALE_URL, QueueBench, pdf_enrichment
 
@@ -22,8 +23,10 @@ READABLE = [f"{SALE_URL}/piece-{index}.pdf" for index in range(3)]
 
 
 @pytest.fixture
-def bench(monkeypatch, tmp_path) -> QueueBench:
-    return QueueBench(monkeypatch, tmp_path)
+def bench(monkeypatch, tmp_path):
+    bench = QueueBench(monkeypatch, tmp_path)
+    yield bench
+    bench.close()
 
 
 def _texts(bench: QueueBench) -> str:
@@ -86,6 +89,7 @@ def test_a_cold_worker_waits_for_the_revalidation_instead_of_failing(bench: Queu
     assert (job["status"], job["last_error"]) == ("queued", NOTHING_DUE_DEFERRAL)
     assert job["attempt_count"] == 0  # aucun essai consommé
     assert outcome.passes == 1  # le vidage n'enchaîne pas la même passe quatre fois
+    assert outcome.waiting_passes == 1  # la visite apparaît dans le bilan du vidage
     assert outcome.error is None and outcome.refused_checkpoints == 0
     assert len(bench.requests) == requests_before
     assert bench.manifest == manifest_before  # le manifeste complet n'est pas remplacé par un manifeste vide
@@ -102,15 +106,18 @@ def test_the_waiting_sale_is_read_again_when_its_checks_expire(bench: QueueBench
     bench.age(1)
     bench.cold_runner()
     bench.drain()
-    assert bench.jobs[-1]["last_error"] == NOTHING_DUE_DEFERRAL
-    requests_before = len(bench.requests)
+    waiting = bench.jobs[-1]
+    assert waiting["last_error"] == NOTHING_DUE_DEFERRAL
+    requests_before, jobs_before = len(bench.requests), len(bench.jobs)
 
     bench.age(24)
     bench.cold_runner()
     outcome = bench.drain()
 
-    assert outcome.error is None
-    assert bench.jobs[-1]["status"] == "completed"
+    assert outcome.error is None and outcome.waiting_passes == 0
+    # C'est la même tâche qui est reprise à son échéance, à son premier essai : aucune tâche neuve.
+    assert len(bench.jobs) == jobs_before and bench.jobs[-1] is waiting
+    assert (waiting["status"], waiting["attempt_count"]) == ("completed", 1)
     assert sorted(bench.requests[requests_before:]) == sorted([*READABLE[:2], dead])
     assert _complete(bench) and _read_with_current_rules(bench.stored_sale())
 
@@ -154,26 +161,84 @@ def test_dead_links_of_a_partial_manifest_do_not_set_the_facts_version(bench: Qu
     assert "document_facts_version" not in sale.raw_payload
 
 
-# --- H : une écriture de fin de passe écartée ne termine pas la tâche
+def test_a_sale_without_any_document_gets_no_facts_version(bench: QueueBench) -> None:
+    # La collecte passe aussi par ``enrich_sale_from_pdfs`` pour une vente sans pièce : rien n'y est lu, la
+    # version des faits n'a pas à dire le contraire.
+    sale = AuctionSale(source_name="avoventes", source_url=SALE_URL, raw_text="Maison vendue aux enchères.")
+
+    pdf_enrichment.enrich_sale_from_pdfs(sale)
+
+    assert "document_facts_version" not in sale.raw_payload
 
 
-def test_a_discarded_final_write_defers_the_job_and_the_reading_lands_on_the_next_visit(bench: QueueBench) -> None:
+# --- H : une écriture de fin de passe écartée ne termine pas la tâche, et ses essais sont bornés
+
+
+def test_a_final_write_discarded_once_fails_the_attempt_then_the_reading_lands(bench: QueueBench) -> None:
     bench.publish(READABLE)
-    bench.discard_next_write = True  # la ligne de la vente a changé pendant la passe (garde de révision)
+    bench.discarded_writes = 1  # la ligne de la vente a changé pendant la passe (garde de révision)
 
     outcome = bench.drain()
 
     job = bench.jobs[-1]
-    assert job["status"] == "queued" and job["last_error"].startswith(WRITE_DISCARDED_DEFERRAL)
-    assert job["attempt_count"] == 0
-    assert outcome.passes == 1  # pas de nouvelle passe tout de suite
+    assert (job["status"], job["last_error"]) == ("failed", f"{WRITE_DISCARDED_ERROR} (revision_moved)")
+    assert job["attempt_count"] == 1  # un essai consommé : la tâche n'attend pas sans compter
+    assert outcome.passes == 1 and outcome.error == job["last_error"]
     assert bench.manifest == {}  # rien n'a été enregistré : la tâche ne pouvait pas être « terminée »
 
     bench.age(1)
     bench.drain()
 
-    assert bench.jobs[-1]["status"] == "completed"
+    assert len(bench.jobs) == 1 and (job["status"], job["attempt_count"]) == ("completed", 2)
     assert _complete(bench) and "Surface habitable : 81 m2" in _texts(bench)
+
+
+def test_a_final_write_discarded_every_time_stops_after_four_attempts(bench: QueueBench) -> None:
+    # Reportée sans essai, la tâche rejouait une passe complète à chaque visite, sans fin : ni le plafond de
+    # relecture (elle n'est jamais « terminée ») ni la garde d'un jour (0 essai) ne la voyaient.
+    bench.publish(READABLE)
+    bench.discarded_writes = 99
+
+    passes = 0
+    for _visit in range(4):
+        passes += bench.drain().passes
+        bench.age(0.6)
+
+    job = bench.jobs[-1]
+    assert len(bench.jobs) == 1 and passes == 4
+    assert (job["status"], job["attempt_count"], job["max_attempts"]) == ("failed", 4, 4)
+    assert job["last_error"] == f"{WRITE_DISCARDED_ERROR} (revision_moved)"
+    assert bench._claim("base-du-banc", job["id"]) is None  # essais épuisés : plus aucune prise
+
+
+def test_a_final_write_refused_at_admission_ends_in_review_after_four_daily_attempts(bench: QueueBench) -> None:
+    # La vente n'a ni prix ni surface une fois ses pièces lues : l'écriture est refusée à chaque passe. C'est un
+    # état de la vente : un essai par jour, puis la tâche est annulée pour revue au lieu de tourner sans fin.
+    bench.publish(READABLE)
+    for url in READABLE:
+        bench.serve(url, "Cahier des conditions de vente. Texte sans mesure ni montant.")
+    bench.row["starting_price_eur"] = None
+
+    endings = []
+    for _day in range(4):
+        outcome = bench.drain()
+        job = bench.jobs[-1]
+        endings.append((outcome.passes, job["status"], job["attempt_count"], job["last_error"]))
+        if job["status"] == "failed":
+            wait = job["next_attempt_at"] - datetime.now(UTC)
+            assert timedelta(hours=23, minutes=59) < wait <= timedelta(hours=24)
+        bench.age(24.1)
+        bench.cold_runner()
+
+    refused = f"{WRITE_DISCARDED_ERROR} (missing_price_and_surface)"
+    assert len(bench.jobs) == 1
+    assert endings == [
+        (1, "failed", 1, refused),
+        (1, "failed", 2, refused),
+        (1, "failed", 3, refused),
+        (1, "cancelled", 4, f"{WRITE_REFUSED_REVIEW} (missing_price_and_surface)"),
+    ]
+    assert bench.manifest == {}
 
 
 # --- Garde-fou : une pièce nouvelle ou modifiée est toujours lue
@@ -230,6 +295,23 @@ def test_a_lost_text_stays_a_visible_failure_with_its_reason(bench: QueueBench) 
     assert job["last_error"] == "PDF document checkpoint was not persisted; retry required: no_progress_entries"
     assert is_refused_checkpoint(job["last_error"]) and outcome.refused_checkpoints == 1
     assert bench.manifest == manifest_before
+
+
+def test_a_complete_manifest_whose_proof_was_altered_stays_a_visible_failure(bench: QueueBench) -> None:
+    # Aucune URL écartée : rien n'interdit de restaurer ce texte, c'est la preuve qui est abîmée. Ce n'est pas le
+    # cas « rien à lire », la tâche ne doit pas attendre un jour comme si tout allait bien.
+    _first_read(bench, READABLE)
+    bench.row["raw_payload"]["document_analysis"]["cache_proof"]["input_fingerprint"] = "autre"
+    assert _complete(bench)
+    bench.age(1)
+    bench.cold_runner()
+
+    outcome = bench.drain()
+
+    job = bench.jobs[-1]
+    assert job["status"] == "failed"
+    assert job["last_error"] == "PDF document checkpoint was not persisted; retry required: no_progress_entries"
+    assert outcome.waiting_passes == 0 and outcome.refused_checkpoints == 1
 
 
 def test_a_lost_text_is_read_again_when_its_checks_expire(bench: QueueBench) -> None:
