@@ -1,7 +1,9 @@
 -- 20261117100700 : la vue des observations ne montre que la dernière génération de la collecte.
 --   * une observation « candidate » de l'extracteur immojudis.pipeline.fact_claims est masquée quand la même
 --     vente porte une observation de ce même extracteur d'une génération plus haute ;
---   * la génération se compare en entier (v10 > v9) ; une version illisible reste visible et ne masque rien ;
+--   * la génération se compare en entier (v10 > v9), se calcule sans expression rationnelle et par extracteur ;
+--     une version illisible reste visible et ne masque rien ; une génération au-dessus du plafond ne masque rien
+--     et ses candidates sont masquées (une ligne isolée ne cache pas pour toujours les candidates d'une vente) ;
 --   * un autre extracteur, une observation sans extracteur, une observation déjà relue ne sont jamais masqués ;
 --   * une génération plus haute masque quel que soit son statut ; une observation rattachée à un lot seul ne
 --     masque rien et n'est pas masquée ;
@@ -10,7 +12,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(14);
+select plan(18);
 
 -- Jeu d'essai ---------------------------------------------------------------------------------------------------
 insert into public.auction_sales (id, source_name, source_url, status, starting_price_eur)
@@ -34,6 +36,8 @@ insert into claim_fixture values
   -- Vente 1 : une seule génération (version 2).
   ('11', '1', false, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v2'),
   ('12', '1', false, 'property.rooms_count', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v2'),
+  -- (et une observation d'un AUTRE extracteur, dont la version se lit comme une génération 3)
+  ('13', '1', false, 'property.land_surface_m2', 'immojudis-fact-claims', 'auction_fact_claims_v3'),
   -- Vente 2 : versions 2 et 3 ; la version 3 n'émet plus le nombre de pièces.
   ('21', '2', false, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v2'),
   ('22', '2', false, 'property.rooms_count', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v2'),
@@ -46,6 +50,9 @@ insert into claim_fixture values
   ('42', '4', false, 'property.rooms_count', 'immojudis.pipeline.fact_claims', 'v3'),
   ('43', '4', false, 'property.land_surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v'),
   ('44', '4', false, 'property.occupancy_status', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v1234567'),
+  ('45', '4', false, 'sale.visit_dates', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v999999'),
+  ('46', '4', false, 'sale.visit_dates', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v999999999999'),
+  ('47', '4', false, 'sale.visit_dates', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v2b'),
   -- Vente 5 : version 3 de la collecte, et des observations d'un autre extracteur ou sans extracteur.
   ('51', '5', false, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v3'),
   ('52', '5', false, 'property.rooms_count', 'immojudis-fact-claims', 'auction_fact_claims_v2'),
@@ -58,6 +65,9 @@ insert into claim_fixture values
   ('72', '7', false, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v3'),
   -- Vente 8 : une version 2 ; et, rattachées au lot seul, une version 2 et une version 3.
   ('81', '8', false, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v2'),
+  -- (et une génération 4, au-dessus du plafond : une candidate, et une observation déjà acceptée)
+  ('82', '8', false, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v4'),
+  ('83', '8', false, 'property.rooms_count', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v4'),
   ('91', null, true, 'property.surface_m2', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v2'),
   ('92', null, true, 'property.rooms_count', 'immojudis.pipeline.fact_claims', 'auction_fact_claims_v3');
 
@@ -76,7 +86,7 @@ from claim_fixture fixture;
 
 update public.auction_fact_claims
 set claim_status = 'accepted', resolution_actor_type = 'human', resolved_at = statement_timestamp()
-where id = '89000000-2000-4000-8000-000000000061';
+where id in ('89000000-2000-4000-8000-000000000061', '89000000-2000-4000-8000-000000000083');
 update public.auction_fact_claims
 set claim_status = 'rejected', resolution_actor_type = 'human', resolved_at = statement_timestamp(),
     resolution_note = 'Rejected in the fixture.'
@@ -90,7 +100,11 @@ language sql stable as $$
 $$;
 
 -- 1. Une seule génération : rien n'est masqué --------------------------------------------------------------------
-select is(pg_temp.visible('1'), array['11', '12'], 'a sale with version 2 only shows all its claims');
+select is(
+  pg_temp.visible('1'),
+  array['11', '12', '13'],
+  'a sale with version 2 only shows all its claims: the version of another extractor is not a generation of the pipeline'
+);
 
 -- 2. Deux générations : seule la plus haute reste ----------------------------------------------------------------
 select is(
@@ -100,13 +114,53 @@ select is(
 );
 
 -- 3. Comparaison en entier ---------------------------------------------------------------------------------------
-select is(pg_temp.visible('3'), array['32'], 'version 10 hides version 9: generations are compared as integers');
+select results_eq(
+  $$select version, app_private.fact_claims_generation(version)
+      from (values
+        (1, 'auction_fact_claims_v2'), (2, 'auction_fact_claims_v3'), (3, 'auction_fact_claims_v9'),
+        (4, 'auction_fact_claims_v10'), (5, 'auction_fact_claims_v99'), (6, 'auction_fact_claims_v02'),
+        (7, 'auction_fact_claims_v100'), (8, 'auction_fact_claims_v999999'),
+        (9, 'auction_fact_claims_v999999999999'), (10, 'auction_fact_claims_v'), (11, 'auction_fact_claims_v2b'),
+        (12, 'auction_fact_claims_v-1'), (13, 'auction_fact_claims_v 2'), (14, 'v3'),
+        (15, 'xauction_fact_claims_v2'), (16, 'Auction_fact_claims_v2'), (17, ''), (18, null)
+      ) sample(position, version) order by position$$,
+  $$values
+      ('auction_fact_claims_v2', 2), ('auction_fact_claims_v3', 3), ('auction_fact_claims_v9', 9),
+      ('auction_fact_claims_v10', 10), ('auction_fact_claims_v99', 99), ('auction_fact_claims_v02', 2),
+      ('auction_fact_claims_v100', null), ('auction_fact_claims_v999999', null),
+      ('auction_fact_claims_v999999999999', null), ('auction_fact_claims_v', null),
+      ('auction_fact_claims_v2b', null), ('auction_fact_claims_v-1', null), ('auction_fact_claims_v 2', null),
+      ('v3', null), ('xauction_fact_claims_v2', null), ('Auction_fact_claims_v2', null), ('', null), (null, null)$$,
+  'the generation is the one or two digits that end the version, as an integer; anything else is unreadable and never raises'
+);
+
+select is(
+  app_private.fact_claims_generation_ceiling(),
+  3,
+  'the generation ceiling is 3: version 2 of today and version 3 of the collection lot'
+);
+
+-- Versions 9 et 10 : au-dessus du plafond, donc masquées toutes les deux. Le plafond relevé (dans cette
+-- transaction seulement), la version 10 masque la version 9.
+select is(pg_temp.visible('3'), array[]::text[], 'candidate claims of generations above the ceiling are hidden');
+
+create or replace function app_private.fact_claims_generation_ceiling()
+returns integer language sql immutable parallel safe as $$ select 99; $$;
+
+select is(
+  pg_temp.visible('3') || pg_temp.visible('8'),
+  array['32', '82', '83'],
+  'once the ceiling is raised, version 10 hides version 9 (integers, not strings), and version 4 hides version 2'
+);
+
+create or replace function app_private.fact_claims_generation_ceiling()
+returns integer language sql immutable parallel safe as $$ select 3; $$;
 
 -- 4. Version illisible -------------------------------------------------------------------------------------------
 select is(
   pg_temp.visible('4'),
-  array['41', '42', '43', '44'],
-  'a version that the pattern does not read (v3, empty suffix, seven digits) is shown, hides nothing, and raises no error'
+  array['41', '42', '43', '44', '45', '46', '47'],
+  'an unreadable version (v3, empty suffix, three digits or more such as v999999, a letter) is shown, hides nothing, and raises no error: one stray row cannot hide the candidates of a sale'
 );
 
 -- 5. Autre extracteur, extracteur absent -----------------------------------------------------------------------
@@ -135,8 +189,8 @@ select is(
 -- 8. Lot seul ------------------------------------------------------------------------------------------------------
 select is(
   pg_temp.visible('8') || pg_temp.visible('9'),
-  array['81', '91', '92'],
-  'claims attached to a lot only are unchanged, and a detached version 3 hides nothing on any sale'
+  array['81', '83', '91', '92'],
+  'a generation above the ceiling hides nothing (version 2 stays), its candidate is hidden and its accepted claim is kept; claims attached to a lot only are unchanged, and a detached version 3 hides nothing on any sale'
 );
 
 -- 9. Option, droits et colonnes inchangés ----------------------------------------------------------------------
@@ -210,15 +264,30 @@ select ok(
 );
 reset enable_seqscan;
 
--- La vue ne lit la version que par l'expression ancrée : pas de comparaison de chaînes.
+-- La vue lit la génération par la fonction (pas d'expression rationnelle par ligne, pas de comparaison de
+-- chaînes entre versions) et le plafond par la sienne, pour l'extracteur de la collecte seul.
 select ok(
-  (select (select count(*) from regexp_matches(
-             pg_get_viewdef('public.v_auction_fact_claims_read_model'::regclass),
-             'regexp_match\([a-z]+\.extractor_version, ''\^auction_fact_claims_v\(\[0-9\]\{1,6\}\)\$''::text\)\)\[1\]\)::integer',
-             'g')) = 2
-          and pg_get_viewdef('public.v_auction_fact_claims_read_model'::regclass)
-            ~ 'extractor_name = ''immojudis\.pipeline\.fact_claims''::text'),
-  'the generation is read by one anchored pattern, as an integer, for the extractor of the pipeline'
+  (select definition ~ 'app_private\.fact_claims_generation\('
+          and definition ~ 'app_private\.fact_claims_generation_ceiling\(\)'
+          and definition !~* 'regexp'
+          and (select count(*) = 2 from regexp_matches(
+                 definition, 'extractor_name = ''immojudis\.pipeline\.fact_claims''::text', 'g'))
+     from (select pg_get_viewdef('public.v_auction_fact_claims_read_model'::regclass) as definition) view_text),
+  'the view reads the generation and its ceiling through their functions, without a regular expression, for the extractor of the pipeline on both sides'
+);
+
+select is(
+  (select array_agg(routine.signature || ':' || api_role.name order by routine.signature, api_role.name)
+     from unnest(array[
+       'app_private.fact_claims_generation(text)', 'app_private.fact_claims_generation_ceiling()'
+     ]) routine(signature)
+     cross join unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
+     where has_function_privilege(api_role.name, routine.signature, 'execute')),
+  array[
+    'app_private.fact_claims_generation(text):service_role',
+    'app_private.fact_claims_generation_ceiling():service_role'
+  ],
+  'the two functions that the view calls with the rights of its reader are executable by the server role only'
 );
 
 select * from finish();

@@ -39,8 +39,12 @@
 //    mécanisme d'alerte, sous des clés fact_registry.*, sans rien refermer sur un rapport tronqué.
 // 10. registry-neutral-surface-labels : la projection écrit des libellés de surface neutres, sans jamais y
 //    joindre l'origine de la pièce, et la retenue réserve le libellé du registre à la projection.
-// 11. fact-claims-generation-pattern : la vue des observations lit la génération de la collecte par une
-//    expression ancrée, et l'extracteur comme la version écrits par la collecte la respectent.
+// 11. fact-claims-generation-pattern : la vue des observations lit la génération de la collecte par sa fonction
+//    (préfixe fixe, un ou deux chiffres, sans expression rationnelle) et son plafond ; l'extracteur et la version
+//    écrits par la collecte se lisent et ne dépassent pas le plafond ; la vue garde security_invoker et n'est lue
+//    que par service_role.
+// Partout : aucune instruction ALTER FUNCTION ne touche une fonction du registre (mode de sécurité, propriétaire),
+// et lot_ref garde son motif structurel.
 //
 // Échec fermé : le code est cherché tel quel (un mot interdit dans un commentaire ou dans une adresse échoue
 // aussi) ; le SQL n'est débarrassé que de ses vrais commentaires (une chaîne '--' n'en ouvre pas un), puis mis
@@ -112,7 +116,13 @@ const ALERTS_FROM_REPORT_FUNCTION = "app_private.sync_fact_registry_alerts_from_
 const HISTORY_FUNCTION = "public.log_auction_sale_change";
 // Vue des observations (20261117100700) et constantes de la collecte qu'elle lit.
 const CLAIMS_VIEW = "public.v_auction_fact_claims_read_model";
-const GENERATION_PATTERN = "^auction_fact_claims_v([0-9]{1,6})$";
+const GENERATION_PREFIX = "auction_fact_claims_v";
+const GENERATION_FUNCTION = "app_private.fact_claims_generation";
+const GENERATION_CEILING_FUNCTION = "app_private.fact_claims_generation_ceiling";
+// Libellé du lot d'une décision : motif structurel (numéros de lot seulement), insensible à la casse.
+const LOT_REF_CONSTRAINT = "auction_fact_claim_decisions_lot_ref_check";
+const LOT_REF_PATTERN =
+  "^((lots? )?(n[°º] ?)?[1-9][0-9]{0,3}[a-z]?( ?(et|,|/|-|à) ?[1-9][0-9]{0,3}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$";
 const PIPELINE_FACT_CLAIMS = "../services/data-pipeline/src/fact_claims.py";
 // Fonctions internes du lot R2a : aucune n'est exécutable par un rôle de l'API.
 const INTERNAL_FUNCTIONS = [
@@ -126,6 +136,24 @@ const INTERNAL_FUNCTIONS = [
   "app_private.sale_field_value_leaks",
   MARKER_GUARD_FUNCTION,
   ALERTS_FROM_REPORT_FUNCTION,
+];
+// Fonctions du registre qu'aucune instruction ALTER FUNCTION ne touche (mode de sécurité, propriétaire, chemin
+// de recherche) : les gardes lisent le rôle appelant, la liste blanche lit le propriétaire de la projection.
+const UNALTERABLE_FUNCTIONS = [
+  PROJECTION_FUNCTION,
+  HOLD_FUNCTION,
+  ...INTERNAL_FUNCTIONS,
+  "app_private.refuse_api_role_held_fields_write",
+  "app_private.refuse_api_role_registry_origin",
+  "app_private.refuse_inserted_held_fields",
+  "app_private.fact_registry_append_only",
+  "app_private.refuse_auction_fact_claims_truncate",
+  "app_private.validate_auction_fact_claim_decision",
+  "app_private.stamp_fact_registry_event",
+  BASELINES_FUNCTION,
+  CHECK_FUNCTION,
+  ALERTS_FUNCTION,
+  HISTORY_FUNCTION,
 ];
 // Fonctions publiques du lot R2a : exécutables par service_role seul.
 const SERVER_ONLY_RPCS = [BASELINES_FUNCTION, CHECK_FUNCTION, ALERTS_FUNCTION];
@@ -938,6 +966,18 @@ export async function checkFactRegistryInvariants({
       `${triggerList.migration}: app_private.fact_registry_triggers_not_always no longer checks the function bound to each trigger (tgfoid)`,
     );
   }
+  if (
+    triggerList &&
+    (!/pg_get_triggerdef\s*\(/i.test(triggerList.body) ||
+      !/\.prosecdef\s*=\s*expected\.security_definer/i.test(triggerList.body) ||
+      !/\.tgtype\s*=\s*expected\.trigger_type/i.test(triggerList.body) ||
+      !/\.tgattr\b/i.test(triggerList.body) ||
+      !/=\s*expected\.when_clause/i.test(triggerList.body))
+  ) {
+    failures.push(
+      `${triggerList.migration}: app_private.fact_registry_triggers_not_always no longer compares the definition of each trigger (events, columns, WHEN clause) and the security mode of its function`,
+    );
+  }
   for (const trigger of [
     HOLD_TRIGGER,
     INSERT_GUARD_TRIGGER,
@@ -1139,6 +1179,64 @@ export async function checkFactRegistryInvariants({
       failures.push(
         `${name} grants every function of the public schema to a browser role: it would open ${SERVER_ONLY_RPCS.join(", ")}`,
       );
+    }
+  }
+
+  // Aucune instruction ALTER FUNCTION sur une fonction du registre : « security definer » sur une garde lui
+  // ferait lire le propriétaire au lieu du rôle appelant, « owner to » sur la projection changerait le seul rôle
+  // que les gardes acceptent. Une fonction se redéfinit par CREATE OR REPLACE, que ces invariants relisent.
+  for (const [name, sql] of all) {
+    if (!sinceLot(name, REGISTRY_MIGRATION)) continue;
+    for (const statement of sql.matchAll(/\balter\s+(?:function|routine|procedure)\b[^;]*/gi)) {
+      for (const fn of UNALTERABLE_FUNCTIONS) {
+        if (new RegExp(`\\b${escapeRegExp(fn)}\\b`, "i").test(statement[0])) {
+          failures.push(
+            `${name} alters ${fn} (security mode, owner or settings): a function of the fact registry is only redefined by create or replace`,
+          );
+        }
+      }
+    }
+  }
+  // La fonction interne qui synchronise les alertes à partir d'un rapport n'est appelée que par la fonction
+  // publique sans paramètre : toute autre fonction lui passerait un rapport de son choix.
+  for (const definition of definitions) {
+    if (
+      definition.name !== ALERTS_FUNCTION &&
+      definition.name !== ALERTS_FROM_REPORT_FUNCTION &&
+      /\bsync_fact_registry_alerts_from_report\s*\(/i.test(definition.body)
+    ) {
+      failures.push(
+        `${definition.migration}: ${definition.name} calls ${ALERTS_FROM_REPORT_FUNCTION}: only ${ALERTS_FUNCTION} may hand it a report`,
+      );
+    }
+  }
+  // lot_ref : la dernière définition de la contrainte porte le motif structurel, et aucun fichier ne la retire
+  // sans la reposer telle quelle.
+  const lotRefExact = new RegExp(
+    `add\\s+constraint\\s+${LOT_REF_CONSTRAINT}\\s+check\\s*\\(\\s*lot_ref\\s+is\\s+null\\s+or\\s+lot_ref\\s*~\\*\\s*'${escapeRegExp(LOT_REF_PATTERN)}'\\s*\\)`,
+    "i",
+  );
+  const lastLotRef = lastStatement(`add\\s+constraint\\s+${LOT_REF_CONSTRAINT}\\b[^;]*`);
+  if (!lastLotRef || !lotRefExact.test(lastLotRef[0])) {
+    failures.push(
+      `the constraint ${LOT_REF_CONSTRAINT} is missing or no longer bounds lot_ref by its structural pattern (lot numbers only)`,
+    );
+  }
+  for (const [name, sql] of all) {
+    if (!mentions(name, LOT_REF_CONSTRAINT)) continue;
+    const drop = new RegExp(
+      `drop\\s+constraint\\s+(?:if\\s+exists\\s+)?${LOT_REF_CONSTRAINT}\\b`,
+      "gi",
+    );
+    for (const match of sql.matchAll(drop)) {
+      if (!lotRefExact.test(sql.slice(match.index))) {
+        failures.push(
+          `${name} drops the constraint ${LOT_REF_CONSTRAINT} without restoring its structural pattern`,
+        );
+      }
+    }
+    if (new RegExp(`rename\\s+constraint\\s+${LOT_REF_CONSTRAINT}\\b`, "i").test(sql)) {
+      failures.push(`${name} renames the constraint ${LOT_REF_CONSTRAINT}`);
     }
   }
 
@@ -1451,30 +1549,84 @@ export async function checkFactRegistryInvariants({
   }
 
   // 11. fact-claims-generation-pattern ------------------------------------------------------------------------
-  // La vue ne masque une ancienne génération que si elle lit la version par l'expression ancrée ; la collecte
-  // doit écrire un extracteur et une version que cette expression lit, sinon rien ne serait masqué (ou tout).
+  // La vue ne masque une ancienne génération que si elle lit la version par sa fonction ; la collecte doit écrire
+  // un extracteur et une version que cette fonction lit, sous le plafond, sinon rien ne serait masqué (ou tout).
+  const viewName = CLAIMS_VIEW.slice("public.".length);
   const viewDefinition = lastStatement(
     `create\\s+or\\s+replace\\s+view\\s+${escapeRegExp(CLAIMS_VIEW)}\\b([^;]*)`,
   );
-  const extractorInView = /extractor_name\s*=\s*'([^']+)'/i.exec(viewDefinition?.[1] ?? "")?.[1];
+  const extractorsInView = [
+    ...(viewDefinition?.[1] ?? "").matchAll(/extractor_name\s*=\s*'([^']+)'/gi),
+  ].map((match) => match[1]);
+  const extractorInView = extractorsInView[0];
+  const generation = lastDefinition(GENERATION_FUNCTION);
+  const ceiling = lastDefinition(GENERATION_CEILING_FUNCTION);
+  const ceilingValue = /^\s*select\s+([0-9]{1,2})\s*;?\s*$/i.exec(ceiling?.body ?? "")?.[1];
+  for (const [name, sql] of all) {
+    if (!mentions(name, viewName)) continue;
+    if (
+      new RegExp(`alter\\s+view\\s+(?:if\\s+exists\\s+)?(?:public\\.)?${viewName}\\b`, "i").test(
+        sql,
+      )
+    ) {
+      failures.push(
+        `${name} alters ${CLAIMS_VIEW} (its security_invoker option or its owner): the view is only redefined by create or replace view, with security_invoker = true`,
+      );
+    }
+    for (const grant of sql.matchAll(/\bgrant\b[^;]*/gi)) {
+      if (!new RegExp(`\\b${viewName}\\b`, "i").test(grant[0])) continue;
+      if (
+        !new RegExp(
+          `^grant\\s+select\\s+on\\s+(?:table\\s+)?${escapeRegExp(CLAIMS_VIEW)}\\s+to\\s+service_role\\s*$`,
+          "i",
+        ).test(grant[0])
+      ) {
+        failures.push(
+          `${name} grants on ${CLAIMS_VIEW} something else than SELECT to service_role alone (claim evidence is not readable by a browser role)`,
+        );
+      }
+    }
+  }
   if (
     !viewDefinition ||
     !/with\s*\(\s*security_invoker\s*=\s*true\s*\)/i.test(viewDefinition[1]) ||
-    !extractorInView ||
-    viewDefinition[1].split(`'${GENERATION_PATTERN}'`).length !== 3 ||
-    !/\)\s*\[1\]\s*::integer/i.test(viewDefinition[1])
+    extractorsInView.length !== 2 ||
+    extractorsInView[1] !== extractorInView ||
+    !/app_private\.fact_claims_generation\s*\(\s*claim\.extractor_version\s*\)\s*<\s*latest\.generation/i.test(
+      viewDefinition[1],
+    ) ||
+    !/app_private\.fact_claims_generation_ceiling\s*\(\s*\)/i.test(viewDefinition[1]) ||
+    /regexp|extractor_version\s*[<>]/i.test(viewDefinition[1])
   ) {
     failures.push(
-      `${CLAIMS_VIEW} no longer reads the generation of the pipeline claims by its anchored pattern, as an integer, with security_invoker = true`,
+      `${CLAIMS_VIEW} no longer reads the generation of the pipeline claims through ${GENERATION_FUNCTION}, under its ceiling, for one extractor, with security_invoker = true`,
+    );
+  } else if (
+    !generation ||
+    !generation.body.includes(`'${GENERATION_PREFIX}'`) ||
+    !/length\s*\(\s*p_version\s*\)\s+in\s*\(\s*22\s*,\s*23\s*\)/i.test(generation.body) ||
+    !/translate\s*\(/i.test(generation.body) ||
+    /regexp/i.test(generation.body) ||
+    ceilingValue === undefined
+  ) {
+    failures.push(
+      `${GENERATION_FUNCTION} and ${GENERATION_CEILING_FUNCTION} must read one or two digits after '${GENERATION_PREFIX}' without a regular expression, under a literal ceiling`,
     );
   } else {
     try {
       const pipeline = await readSourceText(new URL(PIPELINE_FACT_CLAIMS, baseUrl));
       const version = /^FACT_CLAIMS_VERSION\s*=\s*"([^"]*)"\s*$/m.exec(pipeline)?.[1];
       const extractor = /^FACT_CLAIMS_EXTRACTOR\s*=\s*"([^"]*)"\s*$/m.exec(pipeline)?.[1];
-      if (version === undefined || !new RegExp(GENERATION_PATTERN).test(version)) {
+      const written = new RegExp(`^${escapeRegExp(GENERATION_PREFIX)}([0-9]{1,2})$`).exec(
+        version ?? "",
+      )?.[1];
+      if (written === undefined) {
         failures.push(
-          `services/data-pipeline/src/fact_claims.py: FACT_CLAIMS_VERSION (${version ?? "missing"}) does not match ${GENERATION_PATTERN}: ${CLAIMS_VIEW} could not order its generation`,
+          `services/data-pipeline/src/fact_claims.py: FACT_CLAIMS_VERSION (${version ?? "missing"}) is not '${GENERATION_PREFIX}' followed by one or two digits: ${CLAIMS_VIEW} could not order its generation`,
+        );
+      } else if (Number(written) > Number(ceilingValue)) {
+        failures.push(
+          `services/data-pipeline/src/fact_claims.py: FACT_CLAIMS_VERSION (${version}) is above the generation ceiling (${ceilingValue}) of ${GENERATION_CEILING_FUNCTION}: its claims would be hidden; raise the ceiling by a migration first`,
         );
       }
       if (extractor !== extractorInView) {

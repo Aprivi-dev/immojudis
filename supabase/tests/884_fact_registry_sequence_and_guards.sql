@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(66);
+select plan(68);
 
 -- A1. Séquence commune --------------------------------------------------------------------------------------------
 select ok(
@@ -598,6 +598,65 @@ select is(
   app_private.fact_registry_triggers_not_always(),
   array[]::text[],
   'and no longer once it calls its own function again'
+);
+
+-- Un déclencheur recréé avec une clause WHEN toujours fausse, ou sans une de ses colonnes, garde son nom, son mode
+-- et sa fonction : il est signalé quand même. De même une garde dont la fonction passe en SECURITY DEFINER.
+create or replace trigger aaab_auction_sales_held_fields_role_guard
+  before update of held_fields on public.auction_sales
+  for each row when (false)
+  execute function app_private.refuse_api_role_held_fields_write();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_role_guard;
+create or replace trigger aaab_auction_sales_held_fields_marker_guard
+  before update of
+    surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
+    carrez_surface_m2, land_surface_m2, bedrooms_count, occupancy_status, visit_dates
+  on public.auction_sales
+  for each row when (old.held_fields is not null or new.surface_source = 'fact_registry')
+  execute function app_private.refuse_sale_field_projection_marker();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_marker_guard;
+alter function app_private.refuse_api_role_registry_origin() security definer;
+create or replace trigger auction_sale_field_hold_events_append_only
+  before delete on public.auction_sale_field_hold_events
+  for each row execute function app_private.fact_registry_append_only();
+alter table public.auction_sale_field_hold_events
+  enable always trigger auction_sale_field_hold_events_append_only;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array[
+    'auction_fact_claims.auction_fact_claims_registry_origin_guard',
+    'auction_sale_field_hold_events.auction_sale_field_hold_events_append_only',
+    'auction_sales.aaab_auction_sales_held_fields_marker_guard',
+    'auction_sales.aaab_auction_sales_held_fields_role_guard'
+  ],
+  'a trigger recreated with when (false), without one of its columns or for fewer events, and a guard whose function became security definer, are all reported although name, mode and function are right'
+);
+
+create or replace trigger aaab_auction_sales_held_fields_role_guard
+  before update of held_fields on public.auction_sales
+  for each row when (new.held_fields is distinct from old.held_fields)
+  execute function app_private.refuse_api_role_held_fields_write();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_role_guard;
+create or replace trigger aaab_auction_sales_held_fields_marker_guard
+  before update of
+    surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
+    carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates
+  on public.auction_sales
+  for each row when (old.held_fields is not null or new.surface_source = 'fact_registry')
+  execute function app_private.refuse_sale_field_projection_marker();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_marker_guard;
+alter function app_private.refuse_api_role_registry_origin() security invoker;
+create or replace trigger auction_sale_field_hold_events_append_only
+  before update or delete on public.auction_sale_field_hold_events
+  for each row execute function app_private.fact_registry_append_only();
+alter table public.auction_sale_field_hold_events
+  enable always trigger auction_sale_field_hold_events_append_only;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array[]::text[],
+  'and none once each has its definition back'
 );
 
 select is(

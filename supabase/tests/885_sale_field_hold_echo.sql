@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(83);
+select plan(87);
 
 -- Fonctions pures -------------------------------------------------------------------------------------------------
 select is(app_private.sale_field_echo_memory(), interval '7 days', 'the echo memory lasts seven days');
@@ -174,6 +174,9 @@ from (values
 ) sale(n, property_type, surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence,
        habitable_surface_m2, land_surface_m2);
 
+-- Vente c : l'annonce donne aussi une surface Carrez de 50 m².
+update public.auction_sales set carrez_surface_m2 = 50 where id = '88500000-1000-4000-8000-00000000000c';
+
 -- Pièces d'avocat (un dossier par vente). Identifiant : vente puis numéro de pièce.
 insert into public.auction_fact_claims (
   id, auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, confidence_score,
@@ -191,7 +194,7 @@ from (values
   ('31', 'property.rooms_count', '3'::jsonb), ('32', 'property.rooms_count', '4'::jsonb),
   ('41', 'property.surface_m2', '54'::jsonb),
   ('51', 'property.surface_m2', '54'::jsonb), ('52', 'property.rooms_count', '3'::jsonb),
-  ('61', 'property.land_surface_m2', '800'::jsonb),
+  ('61', 'property.land_surface_m2', '800'::jsonb), ('62', 'property.land_surface_m2', '751'::jsonb),
   ('71', 'property.rooms_count', '3'::jsonb), ('72', 'property.occupancy_status', '"vacant"'::jsonb),
   ('73', 'property.land_surface_m2', '800'::jsonb),
   ('81', 'property.rooms_count', '3'::jsonb), ('82', 'property.rooms_count', '5'::jsonb),
@@ -880,8 +883,20 @@ select results_eq(
            held_fields #> '{property.surface_m2,restored}', held_fields #> '{property.surface_m2,neighbors}'
       from public.auction_sales where id = '88500000-1000-4000-8000-00000000000c'$$,
   $$values (50::numeric, 50::numeric, 'habitable', 'listing_text', 'opposed', '[{"value": 50.4}]'::jsonb,
-            '{"surface_m2": 50, "app_surface_m2": 50}'::jsonb, '{"habitable_surface_m2": 50}'::jsonb)$$,
+            '{"surface_m2": 50, "app_surface_m2": 50}'::jsonb,
+            '{"habitable_surface_m2": 50, "carrez_surface_m2": 50}'::jsonb)$$,
   'opposition: the listing value is back; the released entry keeps the opposed value without a term, the values given back to the columns and the neighbour columns'
+);
+
+-- La valeur opposée renvoyée par la seule colonne app_surface_m2 (l'autre colonne n'est pas écrite).
+set local role service_role;
+update public.auction_sales set app_surface_m2 = 50.4 where id = '88500000-1000-4000-8000-00000000000c';
+reset role;
+
+select is(
+  (select app_surface_m2 from public.auction_sales where id = '88500000-1000-4000-8000-00000000000c'),
+  50::numeric,
+  'the opposed value within the tolerance of the listing does not come back through app_surface_m2 alone either'
 );
 
 -- Import périmé qui renvoie la valeur de la pièce, avec les libellés de l'annonce : seule la valeur le trahit.
@@ -911,7 +926,17 @@ select results_eq(
   $$select habitable_surface_m2, carrez_surface_m2 from public.auction_sales
       where id = '88500000-1000-4000-8000-00000000000c'$$,
   $$values (50::numeric, null::numeric)$$,
-  'a neighbour column takes back the value it carried at the first take, even within the tolerance of a remembered value; another neighbour column does not take that value'
+  'a neighbour column takes back the value it carried at the first take, even within the tolerance of a remembered value; another value within that tolerance does not enter the Carrez column'
+);
+
+set local role service_role;
+execute reimport('c', 50, 50, 'habitable', 'listing_text', 0.7, 50, 50, null, 2, 1, 'occupied');
+reset role;
+
+select is(
+  (select carrez_surface_m2 from public.auction_sales where id = '88500000-1000-4000-8000-00000000000c'),
+  50::numeric,
+  'the Carrez column takes back the value it carried at the first take too'
 );
 
 -- Libellé réservé : l'écriture apporte surface_source = fact_registry avec une valeur qui n'est pas en mémoire.
@@ -946,6 +971,8 @@ select results_eq(
 set local role service_role;
 execute reimport('d', 70, 70, 'built', 'fact_registry', 0.85, 50, null, null, 2, 1, 'occupied');
 execute reimport('d', 70, 70, 'built', 'fact_registry', 0.85, 50, null, null, 2, 1, 'occupied');
+execute reimport('d', 71, 71, 'built', 'fact_registry', 0.85, 50, null, null, 2, 1, 'occupied');
+execute reimport('d', 72, 73, 'built', 'fact_registry', 0.85, 50, null, null, 2, 1, 'occupied');
 reset role;
 
 select results_eq(
@@ -957,7 +984,7 @@ select results_eq(
       from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-00000000000d'$$,
   $$values (50::numeric, 50::numeric, 'habitable', 'listing_text', true,
             array['echo_suppressed:no decision:50:{"surface_m2": 70, "app_surface_m2": 70, "surface_source": "fact_registry"}'])$$,
-  'the reserved label is refused on a sale that holds nothing too, journaled once, and held_fields stays null'
+  'the reserved label is refused on a sale that holds nothing too, and held_fields stays null; one event for the sale, whatever the values brought by the following writes'
 );
 
 -- Mémoire d'écho : ordre et oppositions (vente c, pièces) -------------------------------------------------------
@@ -1033,6 +1060,23 @@ select is(
   'mixed write: nor the held value brought by the other column, nor the reserved labels of the registry'
 );
 
+-- Le libellé réservé n'est jamais une valeur d'annonce, même quand la colonne ne le porte plus (état provoqué
+-- par la seule écriture qui passe la retenue : le marqueur, posé ici par le propriétaire).
+select set_config('app.sale_field_projection', '88500000-1000-4000-8000-00000000000e', true);
+update public.auction_sales set surface_source = 'ocr' where id = '88500000-1000-4000-8000-00000000000e';
+select set_config('app.sale_field_projection', '', true);
+set local role service_role;
+execute reimport('e', 65, 70, 'built', 'fact_registry', 0.85, 50, null, null, 2, 1, 'occupied');
+reset role;
+
+select is(
+  (select held_fields #> '{property.surface_m2,listing}' from public.auction_sales
+     where id = '88500000-1000-4000-8000-00000000000e'),
+  '{"surface_m2": 65, "app_surface_m2": 70, "app_surface_kind": "habitable", "surface_source": "pdf",
+    "surface_confidence": 0.9}'::jsonb,
+  'the reserved label never enters the listing block, even on a held surface whose column no longer carried it'
+);
+
 -- Réglage « l'annonce l'emporte » : la libération ne laisse passer ni l'écho, ni les colonnes voisines.
 update public.auction_fact_fields set on_listing_change = 'listing_wins_and_review'
 where field_key = 'property.surface_m2';
@@ -1050,8 +1094,8 @@ select results_eq(
            (select jsonb_agg(item -> 'value') from jsonb_array_elements(
               held_fields #> '{property.surface_m2,echo}') item)
       from public.auction_sales where id = '88500000-1000-4000-8000-00000000000e'$$,
-  $$values (52::numeric, 75::numeric, 'carrez', 'pdf', 50::numeric, null::numeric, 'released', 'listing',
-            '{"surface_m2": 52, "app_surface_m2": 75}'::jsonb, '[58, 56, 54]'::jsonb)$$,
+  $$values (65::numeric, 75::numeric, 'carrez', 'pdf', 50::numeric, null::numeric, 'released', 'listing',
+            '{"surface_m2": 65, "app_surface_m2": 75}'::jsonb, '[58, 56, 54]'::jsonb)$$,
   'listing wins: the changed column passes, the column that carried an echo takes its listing value back, the neighbour columns refuse the held value and the echo'
 );
 
@@ -1261,10 +1305,28 @@ select results_eq(
   'and the opposed value cannot come back'
 );
 
+-- Terrain libéré : une pièce qui confirmait l'annonce à la tolérance près (751 m² pour 750), opposée, ne revient pas.
+execute decide('62', 'accepted', null, '2026-11-02 09:00:00+00');
+select pg_temp.project('6') ->> 'changed';
+execute decide('62', 'opposed', 'professional_opposition', null);
+select pg_temp.project('6') ->> 'changed';
+set local role service_role;
+update public.auction_sales set land_surface_m2 = 751 where id = '88500000-1000-4000-8000-000000000006';
+reset role;
+
+select results_eq(
+  $$select sale.land_surface_m2, sale.held_fields #> '{property.land_surface_m2}' ? 'echo_blocked_since',
+           (select event.incoming_value from public.auction_sale_field_hold_events event
+              where event.sale_id = sale.id and event.event = 'echo_suppressed' order by event.seq desc limit 1)
+      from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-000000000006'$$,
+  $$values (750::numeric, true, '751'::jsonb)$$,
+  'an opposed land surface within the tolerance of the listing does not come back either'
+);
+
 -- Idempotence des ventes de cette seconde partie.
 select is(
   (select count(*)::integer from public.auction_sales sale
-     where sale.id::text ~ '^88500000-1000-4000-8000-00000000000[5cdef]$'
+     where sale.id::text ~ '^88500000-1000-4000-8000-00000000000[56cdef]$'
        and (app_private.project_sale_fields(sale.id, null, true) ->> 'changed')::boolean),
   0,
   'a second projection of these sales changes nothing either'
