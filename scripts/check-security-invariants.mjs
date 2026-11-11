@@ -1,5 +1,41 @@
 import { readdir, readFile } from "node:fs/promises";
 
+// Lectures partagées des arborescences de code (src/, pipeline) : chacune n'est parcourue qu'une fois et ses
+// fichiers de code sont lus en parallèle (par lots) au premier parcours, puis servis depuis le cache. Plusieurs
+// invariants lisent tout src/ ; les lire un par un, trois fois de suite, rendait le script lent. Le contenu
+// rendu est exactement celui de readFile, et une lecture en échec échoue au même endroit qu'avant.
+const SOURCE_FILE_PATTERN = /\.(?:ts|tsx|mjs|cjs|js|py)$/;
+const PREFETCH_BATCH = 64;
+const sourceTextCache = new Map();
+const sourceTreeCache = new Map();
+function readSourceText(url) {
+  const key = String(url);
+  if (!sourceTextCache.has(key)) sourceTextCache.set(key, readFile(url, "utf8"));
+  return sourceTextCache.get(key);
+}
+function readSourceTree(url) {
+  const key = String(url);
+  if (!sourceTreeCache.has(key)) {
+    sourceTreeCache.set(
+      key,
+      (async () => {
+        const entries = await readdir(url, { recursive: true });
+        const files = entries.map(String).filter((name) => SOURCE_FILE_PATTERN.test(name));
+        for (let index = 0; index < files.length; index += PREFETCH_BATCH) {
+          // Une erreur de lecture reste dans le cache et ressort quand l'invariant lit ce fichier.
+          await Promise.all(
+            files
+              .slice(index, index + PREFETCH_BATCH)
+              .map((name) => readSourceText(new URL(name, url)).catch(() => undefined)),
+          );
+        }
+        return entries;
+      })(),
+    );
+  }
+  return sourceTreeCache.get(key);
+}
+
 const pipelineSchemaUrl = new URL("../services/data-pipeline/sql/schema.sql", import.meta.url);
 const schema = await readFile(pipelineSchemaUrl, "utf8");
 const outcomeMigrationUrl = new URL(
@@ -1083,7 +1119,7 @@ if (
   const stripComments = (text) =>
     text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
   const read = async (relativePath) =>
-    stripComments(await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8"));
+    stripComments(await readSourceText(new URL(`../${relativePath}`, import.meta.url)));
   const compact = (text) => text.replace(/\s+/g, "");
   // Le contenu du bloc `{ … }` dont l'accolade ouvrante est à `open` (accolades des chaînes ignorées).
   const balancedBlock = (text, open) => {
@@ -1152,7 +1188,7 @@ if (
     "src/lib/admin-pepites.ts",
     "src/integrations/supabase/types.ts",
   ]);
-  const sourceFiles = await readdir(new URL("../src/", import.meta.url), { recursive: true });
+  const sourceFiles = await readSourceTree(new URL("../src/", import.meta.url));
   for (const entry of sourceFiles) {
     const name = String(entry);
     if (!/\.(?:ts|tsx|mjs|cjs)$/.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
@@ -1752,13 +1788,13 @@ function functionSignature(schema, name, argumentText) {
   ]);
   const stripComments = (text) =>
     text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
-  const entries = await readdir(new URL("../src/", import.meta.url), { recursive: true });
+  const entries = await readSourceTree(new URL("../src/", import.meta.url));
   for (const entry of entries) {
     const name = String(entry);
     if (!/\.(?:ts|tsx|mjs|cjs)$/.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
     const relativePath = `src/${name}`;
     if (allowed.has(relativePath)) continue;
-    const source = await readFile(new URL(`../${relativePath}`, import.meta.url), "utf8");
+    const source = await readSourceText(new URL(`../${relativePath}`, import.meta.url));
     if (referenceTables.test(stripComments(source))) {
       failures.push(
         `${relativePath} names a private reference table (anil_rents, commune_housing_tension, court_registry_contacts): only rent-reference.server.ts and information-agent/court-registry.ts may`,
@@ -2109,7 +2145,7 @@ function functionSignature(schema, name, argumentText) {
   for (const root of codeRoots) {
     let entries;
     try {
-      entries = await readdir(new URL(root.url, import.meta.url), { recursive: true });
+      entries = await readSourceTree(new URL(root.url, import.meta.url));
     } catch (error) {
       failures.push(
         `${root.path} cannot be read to check the publication core (${error.code ?? "error"})`,
@@ -2121,9 +2157,10 @@ function functionSignature(schema, name, argumentText) {
       if (!/\.(?:ts|tsx|mjs|cjs|js|py)$/.test(name)) continue;
       if (/\.test\.[cm]?[jt]sx?$/.test(name) || /(?:^|\/)test_[^/]*\.py$/.test(name)) continue;
       const relative = `${root.path}${name}`;
-      const source = (
-        await readFile(new URL(`${root.url}${name}`, import.meta.url), "utf8")
-      ).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g, "");
+      const source = (await readSourceText(new URL(`${root.url}${name}`, import.meta.url))).replace(
+        /\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g,
+        "",
+      );
       if (corePrefix.test(source)) {
         failures.push(
           `${relative} names app_private.apply_information_agent_fact: only the administrator RPC may call the publication core`,
