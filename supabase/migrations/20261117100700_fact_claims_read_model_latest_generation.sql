@@ -145,24 +145,24 @@ select
 from public.auction_fact_claims claim
 left join (
   -- Une ligne par vente : la plus haute génération lisible, au plus égale au plafond, de l'extracteur de la
-  -- collecte, et la version qui l'écrit. Les versions sont d'abord réduites à une ligne par vente et par version :
-  -- la génération se calcule par version présente, pas par observation.
-  -- (Le plafond est une clause FILTER de l'agrégat, pas un WHERE : PostgreSQL descendrait un WHERE jusqu'à la
-  -- lecture de la table, et recalculerait la génération pour chaque observation.)
+  -- collecte, et la version qui l'écrit, dérivée de cette génération. Les versions sont d'abord réduites à une
+  -- ligne par vente et par version, et c'est là, une seule fois par version présente (pas par observation), que
+  -- la génération est calculée et comparée au plafond : au-dessus, elle vaut NULL et ne compte pas.
+  -- (Le plafond est une expression de la liste de sélection d'une sous-requête groupée, pas un WHERE :
+  -- PostgreSQL descendrait un WHERE jusqu'à la lecture de la table, et recalculerait la génération pour chaque
+  -- observation.)
   select
     versions.auction_sale_id,
-    max(app_private.fact_claims_generation(versions.extractor_version)) filter (
-      where app_private.fact_claims_generation(versions.extractor_version)
-        <= app_private.fact_claims_generation_ceiling()
-    ) as generation,
-    'auction_fact_claims_v' || (
-      max(app_private.fact_claims_generation(versions.extractor_version)) filter (
-        where app_private.fact_claims_generation(versions.extractor_version)
-          <= app_private.fact_claims_generation_ceiling()
-      )
-    )::text as extractor_version
+    max(versions.generation) as generation,
+    'auction_fact_claims_v' || max(versions.generation)::text as extractor_version
   from (
-    select peer.auction_sale_id, peer.extractor_version
+    select
+      peer.auction_sale_id,
+      case
+        when app_private.fact_claims_generation(peer.extractor_version)
+          <= app_private.fact_claims_generation_ceiling()
+          then app_private.fact_claims_generation(peer.extractor_version)
+      end as generation
     from public.auction_fact_claims peer
     where peer.auction_sale_id is not null
       and peer.extractor_name = 'immojudis.pipeline.fact_claims'
