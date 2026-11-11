@@ -1,21 +1,25 @@
 """Banc d'évaluation hors ligne de la publication automatique : étape Python (worker de lecture des pièces).
 
-Le banc fait passer chacune des 200 réponses fictives du jeu
-(``tests/fixtures/information_agent_evaluation/cases/``) par la VRAIE chaîne, en trois étapes :
+Le banc fait passer chacune des réponses fictives du jeu (``tests/fixtures/information_agent_evaluation/cases/``)
+par la VRAIE chaîne, en trois étapes :
 
-1. règles TypeScript (test Vitest ``src/lib/information-agent/evaluation/evaluation.test.ts``) : elles
-   écrivent ``stages/rules_stage.json`` (texte de la pièce « corps du message » et candidats des règles) ;
-2. ce module : pour chaque cas, le vrai ``information_agent_evidence._process_job`` lit le corps puis chaque
-   pièce jointe, avec une base Supabase simulée en mémoire (``httpx.MockTransport``) et un client de modèle
-   de remplacement ; la table des candidats qui en sort est écrite dans ``stages/worker_stage.<config>.json`` ;
+1. réception et règles TypeScript (test Vitest ``src/lib/information-agent/evaluation/evaluation.test.ts``),
+   pour chaque message du dossier : ``stages/rules_stage.json`` (décision de la réception, texte de la pièce
+   « corps du message », candidats des règles) ;
+2. ce module : le vrai ``information_agent_evidence._process_job`` lit chaque pièce (corps de chaque message
+   extrait, puis pièces jointes), avec une base Supabase simulée en mémoire (``httpx.MockTransport``) et un
+   client de modèle de remplacement ; la table des candidats est écrite dans ``stages/worker_stage.<config>.json`` ;
 3. moteur de décision (même test Vitest) : la vraie passe de simulation lit ces candidats et décide.
 
 Configurations (aucune n'appelle un modèle) :
 
 - ``regles_seules`` : lecture par l'IA désactivée, donc aucun accord de l'IA ; rien ne doit être publiable ;
-- ``modele_ideal`` : sortie de modèle SIMULÉE, égale à la vérité de terrain (borne haute de la couverture) ;
-- ``enregistrement_<nom>`` : sortie RÉELLE du modèle, enregistrée par ``information_agent_evaluation_trial``
-  dans ``model_outputs/<nom>.json`` et rejouée ici à l'identique.
+- ``modele_ideal`` : sortie SIMULÉE égale à la vérité de terrain, citations en phrase entière (borne haute de
+  la couverture) ;
+- ``suiveur`` : sortie SIMULÉE pessimiste, le modèle confirme chaque valeur lue par les règles avec la ligne
+  qui la contient. C'est elle qui fait foi pour la sécurité tant qu'aucune sortie réelle n'est enregistrée ;
+- ``enregistrement_<nom>`` : sortie RÉELLE du modèle enregistrée par ``information_agent_evaluation_trial``
+  dans ``model_outputs/<nom>.json`` et rejouée à l'identique.
 
 Usage : ``python -m scripts.information_agent_evaluation`` vérifie que les fichiers sont à jour (code 1
 sinon) ; ``--write`` les réécrit.
@@ -28,6 +32,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import sys
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
@@ -42,15 +47,19 @@ if str(PIPELINE_ROOT) not in sys.path:
 
 from src import information_agent_evidence as evidence  # noqa: E402
 from src.enrichment import llm_client  # noqa: E402
-from src.information_agent_semantic import SEMANTIC_PROCESSOR_VERSION, SEMANTIC_SYSTEM_PROMPT  # noqa: E402
+from src.information_agent_semantic import (  # noqa: E402
+    SEMANTIC_PROCESSOR_VERSION,
+    SEMANTIC_SYSTEM_PROMPT,
+    contains_prompt_injection,
+)
 
 FIXTURE_ROOT = PIPELINE_ROOT / "tests" / "fixtures" / "information_agent_evaluation"
 CASES_DIR = FIXTURE_ROOT / "cases"
 STAGES_DIR = FIXTURE_ROOT / "stages"
 MODEL_OUTPUTS_DIR = FIXTURE_ROOT / "model_outputs"
 RULES_STAGE_FILE = STAGES_DIR / "rules_stage.json"
-WORKER_STAGE_FORMAT = "information_agent_evaluation_worker_stage_v1"
-MODEL_OUTPUTS_FORMAT = "information_agent_evaluation_model_outputs_v1"
+WORKER_STAGE_FORMAT = "information_agent_evaluation_worker_stage_v2"
+MODEL_OUTPUTS_FORMAT = "information_agent_evaluation_model_outputs_v2"
 FAMILY_FILES = (
     "famille_1_nettes.json",
     "famille_2_reserves.json",
@@ -60,18 +69,25 @@ FAMILY_FILES = (
     "famille_6_ne_pas_publier.json",
     "famille_7_manipulation.json",
     "famille_8_tiers.json",
+    "famille_9_complements.json",
 )
+CASES_PER_FAMILY = {1: 25, 2: 25, 3: 25, 4: 25, 5: 25, 6: 25, 7: 25, 8: 25, 9: 15}
 ELIGIBLE_FIELDS = ("surface_m2", "land_surface_m2", "rooms_count")
 BODY_ASSET = "corps"
 BASE_URL = "https://evaluation.invalid"
-SIMULATED_DESCRIPTIONS = {
+SIMULATED = {
     "regles_seules": (
         "SIMULATION, aucune sortie de modèle : lecture par l'IA désactivée, donc aucun accord de l'IA "
         "(test de fermeture : rien ne doit être publiable)."
     ),
     "modele_ideal": (
-        "SIMULATION, aucune sortie réelle du modèle : sortie simulée égale à la vérité de terrain "
-        "(borne haute de la couverture, pas un résultat du modèle)."
+        "SIMULATION, aucune sortie réelle du modèle : sortie simulée égale à la vérité de terrain, citations "
+        "en phrase entière (borne haute de la couverture, pas un résultat du modèle)."
+    ),
+    "suiveur": (
+        "SIMULATION PESSIMISTE, aucune sortie réelle du modèle : le modèle confirme chaque valeur lue par les "
+        "règles, avec la ligne qui la contient comme citation. Fait foi pour la sécurité tant qu'aucun essai "
+        "réel complet n'est enregistré."
     ),
 }
 
@@ -97,42 +113,54 @@ def load_rules_stage() -> dict[str, Any]:
     return payload["cas"]
 
 
+def _corps(rules_entry: Mapping[str, Any]) -> Mapping[str, Any]:
+    return next(message for message in rules_entry["messages"] if message["role"] == BODY_ASSET)
+
+
 def asset_keys(case: Mapping[str, Any], rules_entry: Mapping[str, Any]) -> list[str]:
-    """Pièces lues par le worker, dans l'ordre : le corps (s'il a une pièce), puis les pièces jointes."""
-    keys = [BODY_ASSET] if rules_entry.get("body_evidence_text") else []
-    return keys + [str(attachment["nom"]) for attachment in case["message"]["pieces_jointes"]]
+    """Pièces lues par le worker, dans l'ordre : le corps de chaque message extrait, puis les pièces jointes
+    du message évalué (stockées seulement si la réception a laissé l'extraction se faire)."""
+    keys = [message["role"] for message in rules_entry["messages"] if message.get("body_evidence_text")]
+    if _corps(rules_entry)["reception"]["statut"] == "extraction":
+        keys += [str(attachment["nom"]) for attachment in case["message"]["pieces_jointes"]]
+    return keys
 
 
 def _ids(case: Mapping[str, Any]) -> dict[str, str]:
     case_id = str(case["id"])
-    return {
-        "sale": f"{case_id}-sale",
-        "case": f"{case_id}-case",
-        "message": f"{case_id}-message",
-        "body_asset": f"{case_id}-asset-body",
-    }
+    return {"sale": f"{case_id}-sale", "case": f"{case_id}-case", "message": f"{case_id}-message"}
 
 
-def _asset_id(case: Mapping[str, Any], key: str) -> str:
-    if key == BODY_ASSET:
-        return _ids(case)["body_asset"]
+def _message_id(case: Mapping[str, Any], role: str) -> str:
+    return f"{case['id']}-message" if role == BODY_ASSET else f"{case['id']}-message-{role}"
+
+
+def _is_message(rules_entry: Mapping[str, Any], key: str) -> bool:
+    return any(message["role"] == key for message in rules_entry["messages"])
+
+
+def _asset_id(case: Mapping[str, Any], rules_entry: Mapping[str, Any], key: str) -> str:
+    if _is_message(rules_entry, key):
+        return f"{case['id']}-asset-body" if key == BODY_ASSET else f"{case['id']}-asset-{key}"
     names = [str(attachment["nom"]) for attachment in case["message"]["pieces_jointes"]]
     return f"{case['id']}-asset-pj-{names.index(key) + 1}"
 
 
-def _asset_content(case: Mapping[str, Any], rules_entry: Mapping[str, Any], key: str) -> bytes:
-    if key == BODY_ASSET:
-        return str(rules_entry["body_evidence_text"]).encode("utf-8")
+def asset_text(case: Mapping[str, Any], rules_entry: Mapping[str, Any], key: str) -> str:
+    for message in rules_entry["messages"]:
+        if message["role"] == key:
+            return str(message["body_evidence_text"])
     attachment = next(item for item in case["message"]["pieces_jointes"] if item["nom"] == key)
-    return str(attachment["texte"]).encode("utf-8")
+    return str(attachment["texte"])
 
 
 class FakeSupabase:
-    """Base Supabase en mémoire pour UN cas : seules les requêtes que fait le worker sont servies."""
+    """Base Supabase en mémoire pour UN dossier : seules les requêtes que fait le worker sont servies."""
 
     def __init__(self, case: Mapping[str, Any], rules_entry: Mapping[str, Any]) -> None:
         self.case = case
         self.ids = _ids(case)
+        self.message_ids = {message["message_id"] for message in rules_entry["messages"]}
         context = case["contexte"]
         lot = context["lot_vendu"]
         self.sale = {
@@ -148,22 +176,24 @@ class FakeSupabase:
         self.candidates: list[dict[str, Any]] = [dict(row) for row in rules_entry["candidates"]]
         self.assets: dict[str, tuple[dict[str, Any], bytes]] = {}
         for key in asset_keys(case, rules_entry):
-            content = _asset_content(case, rules_entry, key)
-            asset_id = _asset_id(case, key)
-            name = "email-body.txt" if key == BODY_ASSET else key
+            content = asset_text(case, rules_entry, key).encode("utf-8")
+            asset_id = _asset_id(case, rules_entry, key)
+            is_body = _is_message(rules_entry, key)
+            name = "email-body.txt" if is_body else key
+            message_id = _message_id(case, key if is_body else BODY_ASSET)
             self.assets[asset_id] = (
                 {
                     "id": asset_id,
                     "case_id": self.ids["case"],
-                    "message_id": self.ids["message"],
+                    "message_id": message_id,
                     "sale_id": self.ids["sale"],
                     "storage_bucket": "information-agent-evidence",
-                    "storage_path": f"{self.ids['case']}/{self.ids['message']}/{asset_id}/{name}",
+                    "storage_path": f"{self.ids['case']}/{message_id}/{asset_id}/{name}",
                     "original_filename": name,
                     "mime_type": "text/plain",
                     "size_bytes": len(content),
                     "sha256": hashlib.sha256(content).hexdigest(),
-                    "metadata": {"evidence_kind": "email_body"} if key == BODY_ASSET else {},
+                    "metadata": {"evidence_kind": "email_body"} if is_body else {},
                 },
                 content,
             )
@@ -203,10 +233,18 @@ class FakeSupabase:
         return httpx.Response(500, json={"message": "unexpected request in evaluation harness"})
 
     def _existing_body_rows(self, params: Mapping[str, str]) -> httpx.Response:
-        if params.get("message_id") != f"eq.{self.ids['message']}" or params.get("evidence_asset_id") != "is.null":
+        message_id = params.get("message_id", "").removeprefix("eq.")
+        if message_id not in self.message_ids or params.get("evidence_asset_id") != "is.null":
             self.unexpected.append(f"GET information_agent_fact_candidates {sorted(params.items())}")
             return httpx.Response(500)
-        return httpx.Response(200, json=[row for row in self.candidates if row.get("evidence_asset_id") is None])
+        return httpx.Response(
+            200,
+            json=[
+                row
+                for row in self.candidates
+                if row.get("evidence_asset_id") is None and row.get("message_id") == message_id
+            ],
+        )
 
     def _insert(self, rows: list[dict[str, Any]], params: Mapping[str, str]) -> httpx.Response:
         columns = ("message_id", "fact_key", "evidence_asset_id", "source_page", "display_value")
@@ -214,19 +252,17 @@ class FakeSupabase:
             self.unexpected.append("POST information_agent_fact_candidates without the expected conflict key")
             return httpx.Response(500)
         for row in rows:
-            if row.get("message_id") != self.ids["message"] or row.get("sale_id") != self.ids["sale"]:
+            if row.get("message_id") not in self.message_ids or row.get("sale_id") != self.ids["sale"]:
                 self.unexpected.append("POST information_agent_fact_candidates for another message")
                 return httpx.Response(500)
             key = tuple(row.get(column) for column in columns)
-            if any(
-                tuple({**existing, "message_id": self.ids["message"]}.get(column) for column in columns) == key
-                for existing in self.candidates
-            ):
+            if any(tuple(existing.get(column) for column in columns) == key for existing in self.candidates):
                 continue
             self._inserted += 1
             self.candidates.append(
                 {
                     "id": f"{self.case['id']}-py-{self._inserted:03d}",
+                    "message_id": row["message_id"],
                     "fact_key": row["fact_key"],
                     "proposed_value": row["proposed_value"],
                     "display_value": row.get("display_value"),
@@ -306,7 +342,7 @@ def run_case(
     *,
     after_asset: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """Fait lire chaque pièce du cas par le vrai worker ; rend la table des candidats et l'état de l'IA.
+    """Fait lire chaque pièce du dossier par le vrai worker ; rend la table des candidats et l'état de l'IA.
 
     ``client`` : ``None`` désactive la lecture par l'IA (règles seules) ; sinon il remplace le client
     Replicate (``create_llm_client``) et reçoit la clé de la pièce lue dans ``asset_key``.
@@ -330,11 +366,12 @@ def run_case(
         for index, key in enumerate(asset_keys(case, rules_entry)):
             if client is not None:
                 client.asset_key = key
+            asset_id = _asset_id(case, rules_entry, key)
             job = {
                 "id": f"{case['id']}-extraction-{index + 1}",
-                "asset_id": _asset_id(case, key),
+                "asset_id": asset_id,
                 "case_id": fake.ids["case"],
-                "message_id": fake.ids["message"],
+                "message_id": fake.assets[asset_id][0]["message_id"],
                 "sale_id": fake.ids["sale"],
                 "attempts": 1,
             }
@@ -361,30 +398,87 @@ def run_case(
     return {"candidates": candidates, "semantic": semantic}
 
 
-def ideal_response(case: Mapping[str, Any]) -> Callable[[str, str, str], Mapping[str, object]]:
-    """Sortie simulée d'un modèle exact : la vérité de terrain, citations comprises, pièce par pièce."""
+# Fin de phrase : ponctuation forte, point hors nombre, ou fin de ligne.
+_SENTENCE_END_RE = re.compile(r"[!?;\n]|(?<!\d)\.|\.(?!\d)")
+
+
+def full_sentence(text: str, citation: str) -> str:
+    """La phrase entière (ou la ligne) qui contient la citation, comme un bon modèle la recopierait."""
+    position = text.find(citation)
+    if position < 0:
+        return citation
+    start = 0
+    for match in _SENTENCE_END_RE.finditer(text, 0, position):
+        start = match.end()
+    end_match = _SENTENCE_END_RE.search(text, position + len(citation))
+    end = end_match.start() if end_match else len(text)
+    sentence = text[start:end].strip(" -•\t")
+    return sentence if 0 < len(sentence) <= 400 else citation
+
+
+def ideal_response(case: Mapping[str, Any], rules_entry: Mapping[str, Any]) -> Callable[[str, str, str], Mapping[str, object]]:
+    """Sortie simulée d'un modèle exact : la vérité de terrain, citée en phrase entière, pièce par pièce."""
 
     def respond(asset_key: str, _system_prompt: str, _user_prompt: str) -> Mapping[str, object]:
         facts: list[dict[str, object]] = []
+        text = asset_text(case, rules_entry, asset_key)
         for field in ELIGIBLE_FIELDS:
             truth = case["verite"][field]
             reading = (
-                {"valeur": truth["valeur"], "citation": truth["citation"], "source": BODY_ASSET}
+                {"valeur": truth["valeur"], "citation": truth["citation"], "source": truth.get("source", BODY_ASSET)}
                 if truth["publiable"]
                 else truth["lecture_modele"]
             )
             if not reading or reading["source"] != asset_key:
                 continue
-            facts.append(
-                {
-                    "fact_key": field,
-                    "proposed_value": {"value": reading["valeur"]},
-                    "display_value": str(reading["valeur"]),
-                    "evidence_excerpt": reading["citation"],
-                    "source_page": 1,
-                    "confidence": 0.95,
-                }
-            )
+            facts.append(_fact(field, reading["valeur"], full_sentence(text, reading["citation"])))
+        return {"facts": facts}
+
+    return respond
+
+
+def _fact(field: str, value: object, citation: str) -> dict[str, object]:
+    return {
+        "fact_key": field,
+        "proposed_value": {"value": value},
+        "display_value": str(value),
+        "evidence_excerpt": citation,
+        "source_page": 1,
+        "confidence": 0.95,
+    }
+
+
+_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def _line_with(text: str, value: float) -> str | None:
+    for line in text.split("\n"):
+        for match in _NUMBER_RE.finditer(line):
+            if abs(float(match.group(0).replace(",", ".")) - value) < 1e-6:
+                return line.strip()[:400]
+    return None
+
+
+def follower_response(case: Mapping[str, Any], rules_entry: Mapping[str, Any]) -> Callable[[str, str, str], Mapping[str, object]]:
+    """Sortie simulée pessimiste : chaque valeur lue par les règles dans ce message est confirmée."""
+
+    def respond(asset_key: str, _system_prompt: str, _user_prompt: str) -> Mapping[str, object]:
+        if not _is_message(rules_entry, asset_key):
+            return {"facts": []}
+        message_id = _message_id(case, asset_key)
+        text = asset_text(case, rules_entry, asset_key)
+        facts: list[dict[str, object]] = []
+        for row in rules_entry["candidates"]:
+            if row["fact_key"] not in ELIGIBLE_FIELDS or row["evidence_asset_id"] is not None:
+                continue
+            if row["message_id"] != message_id:
+                continue
+            value = (row.get("proposed_value") or {}).get("value")
+            if not isinstance(value, (int, float)):
+                continue
+            line = _line_with(text, float(value))
+            if line:
+                facts.append(_fact(row["fact_key"], value, line))
         return {"facts": facts}
 
     return respond
@@ -418,29 +512,55 @@ class RecordedResponse:
             )
         if entry.get("status") != "ok":
             # Échec du fournisseur pendant l'essai : le worker le traite comme une IA indisponible.
-            raise RuntimeError(f"recorded provider failure: {entry.get('error')}")
+            raise RuntimeError(f"recorded provider failure: {entry.get('status')}")
         return entry["response"]
 
 
-def recorded_case_complete(outputs: Mapping[str, Any], case: Mapping[str, Any], rules_entry: Mapping[str, Any]) -> bool:
-    """Toutes les pièces du cas ont une sortie (ou ont été écartées sans appel par le worker)."""
+def trial_completeness(outputs: Mapping[str, Any], cases: list[dict[str, Any]], rules: Mapping[str, Any]) -> dict[str, list[str]]:
+    """Ce qui manque à un essai réel : cas non joués, pièces en erreur, en cours, non appelées."""
     entries = outputs["outputs"]
-    return all(output_key(str(case["id"]), key) in entries for key in asset_keys(case, rules_entry))
+    report: dict[str, list[str]] = {
+        "cas_non_joues": [],
+        "pieces_en_erreur": [],
+        "pieces_en_cours": [],
+        "pieces_non_appelees_consigne": [],
+        "pieces_non_appelees_autres": [],
+    }
+    for case in cases:
+        rules_entry = rules[case["id"]]
+        keys = asset_keys(case, rules_entry)
+        if not all(output_key(case["id"], key) in entries for key in keys):
+            report["cas_non_joues"].append(case["id"])
+            continue
+        for key in keys:
+            name = output_key(case["id"], key)
+            status = entries[name].get("status")
+            if status == "error":
+                report["pieces_en_erreur"].append(name)
+            elif status == "in_flight":
+                report["pieces_en_cours"].append(name)
+            elif status == "not_called":
+                # Seule raison légitime : une consigne adressée à un modèle repérée par le worker.
+                bucket = "consigne" if contains_prompt_injection(asset_text(case, rules_entry, key)) else "autres"
+                report[f"pieces_non_appelees_{bucket}"].append(name)
+    return report
 
 
 def build_worker_stage(configuration: str) -> dict[str, Any]:
-    """Table des candidats de chaque cas pour une configuration (règles seules, modèle idéal, enregistrement)."""
+    """Table des candidats de chaque cas pour une configuration."""
     cases = load_cases()
     rules = load_rules_stage()
     outputs: dict[str, Any] | None = None
     source: str | None = None
+    essai: dict[str, list[str]] | None = None
     if configuration.startswith("enregistrement_"):
         source_path = MODEL_OUTPUTS_DIR / f"{configuration.removeprefix('enregistrement_')}.json"
         outputs = json.loads(source_path.read_text("utf-8"))
         if outputs.get("format") != MODEL_OUTPUTS_FORMAT:
             raise EvaluationHarnessError(f"{source_path.name} : format inconnu")
         source = f"model_outputs/{source_path.name}"
-    elif configuration not in SIMULATED_DESCRIPTIONS:
+        essai = trial_completeness(outputs, cases, rules)
+    elif configuration not in SIMULATED:
         raise EvaluationHarnessError(f"configuration inconnue : {configuration}")
     stage_cases: dict[str, Any] = {}
     for case in cases:
@@ -449,12 +569,14 @@ def build_worker_stage(configuration: str) -> dict[str, Any]:
             stage_cases[case["id"]] = run_case(case, rules_entry, None)
             continue
         if outputs is not None:
-            if not recorded_case_complete(outputs, case, rules_entry):
+            if essai is not None and case["id"] in essai["cas_non_joues"]:
                 stage_cases[case["id"]] = {"missing": True}
                 continue
             respond: Callable[[str, str, str], Mapping[str, object]] = RecordedResponse(outputs, case["id"])
+        elif configuration == "suiveur":
+            respond = follower_response(case, rules_entry)
         else:
-            respond = ideal_response(case)
+            respond = ideal_response(case, rules_entry)
         stage_cases[case["id"]] = run_case(case, rules_entry, StubModelClient(respond))
     return {
         "format": WORKER_STAGE_FORMAT,
@@ -463,9 +585,10 @@ def build_worker_stage(configuration: str) -> dict[str, Any]:
         "description": (
             f"Sortie RÉELLE du modèle {outputs.get('model')} enregistrée par l'essai ({source})."
             if outputs is not None
-            else SIMULATED_DESCRIPTIONS[configuration]
+            else SIMULATED[configuration]
         ),
         "source": source,
+        "essai": essai,
         "semantic_processor_version": SEMANTIC_PROCESSOR_VERSION,
         "system_prompt_sha256": prompt_sha256(SEMANTIC_SYSTEM_PROMPT),
         "rules_stage_sha256": file_sha256(RULES_STAGE_FILE),
@@ -475,7 +598,7 @@ def build_worker_stage(configuration: str) -> dict[str, Any]:
 
 def configurations() -> list[str]:
     recorded = sorted(path.stem for path in MODEL_OUTPUTS_DIR.glob("*.json")) if MODEL_OUTPUTS_DIR.is_dir() else []
-    return ["regles_seules", "modele_ideal", *(f"enregistrement_{name}" for name in recorded)]
+    return [*SIMULATED, *(f"enregistrement_{name}" for name in recorded)]
 
 
 def stage_path(configuration: str) -> Path:
