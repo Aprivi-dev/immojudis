@@ -452,12 +452,19 @@ def test_recompute_row_only_columns_are_the_identifier_and_the_row_dates() -> No
 def test_emptied_visit_dates_do_not_come_back_from_their_copy_in_the_raw_payload() -> None:
     """Second écho des visites : la colonne vidée ne se reprend pas dans la copie que le recalcul y avait versée."""
     visits = ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"]
+    url = "https://example.test/visites"
     row = {
         "id": "99900000-1000-4000-8000-000000000002",
         "source_name": "avoventes",
-        "source_url": "https://example.test/visites",
+        "source_url": url,
         "visit_dates": visits,
-        "raw_payload": {"source_name": "avoventes", "source_url": "https://example.test/visites", "title": "Maison"},
+        "raw_payload": {
+            "source_name": "avoventes",
+            "source_url": url,
+            "title": "Maison",
+            # La fiche a été lue : la source ne publie pas de visite. Les visites de la colonne viennent d'ailleurs.
+            "source_factual_snapshot": {"source_name": "avoventes", "source_url": url, "visit_dates": None},
+        },
     }
     first = _sale_from_storage_row(row)
     assert first.visit_dates == visits and first.raw_payload["visit_dates"] == visits
@@ -467,7 +474,63 @@ def test_emptied_visit_dates_do_not_come_back_from_their_copy_in_the_raw_payload
     second = _sale_from_storage_row(emptied)
 
     assert second.visit_dates == []
-    assert second.raw_payload["visit_dates"] == []
+    # La copie n'est pas rejouée, mais elle n'est pas non plus écrasée par la colonne vide.
+    assert second.raw_payload["visit_dates"] == visits
+    third = _sale_from_storage_row({**emptied, "raw_payload": dict(second.raw_payload)})
+    assert third.visit_dates == []
+
+
+def test_visit_dates_without_any_source_snapshot_keep_the_original_fallback() -> None:
+    """Vente jamais relue depuis que l'instantané existe : la clé de premier niveau est tout ce qui reste de la
+    source. Mesuré en production le 11/11/2026 : 13 ventes à venir et 13 en quarantaine dans ce cas."""
+    visits = ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"]
+    row = {
+        "id": "99900000-1000-4000-8000-000000000004",
+        "source_name": "avoventes",
+        "source_url": "https://example.test/visites-anciennes",
+        "visit_dates": [],
+        "raw_payload": {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/visites-anciennes",
+            "title": "Maison",
+            "visit_dates": visits,
+        },
+    }
+
+    sale = _sale_from_storage_row(row)
+
+    assert sale.visit_dates == visits
+    assert sale.raw_payload["visit_dates"] == visits
+
+
+@pytest.mark.parametrize("snapshot", [None, {}, {"source_name": "avoventes", "visit_dates": None}])
+def test_a_raw_copy_is_never_rewritten_empty_when_the_column_stays_empty(monkeypatch, snapshot) -> None:
+    """Avec ou sans instantané, une colonne que le recalcul laisse vide n'efface pas la copie de premier niveau."""
+    visits = ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"]
+    payload = {"source_name": "avoventes", "source_url": "https://example.test/copie", "visit_dates": visits}
+    if snapshot is not None:
+        payload["source_factual_snapshot"] = snapshot
+    row = {
+        "id": "99900000-1000-4000-8000-000000000005",
+        "source_name": "avoventes",
+        "source_url": "https://example.test/copie",
+        "visit_dates": [],
+        "raw_payload": payload,
+    }
+    # La normalisation écarte ces visites (garde-fou) : la colonne reste vide dans tous les cas.
+    real_normalize = recompute_module.normalize_sale
+
+    def normalize_without_visits(raw_sale):
+        sale = real_normalize(raw_sale)
+        sale.visit_dates = []
+        return sale
+
+    monkeypatch.setattr(recompute_module, "normalize_sale", normalize_without_visits)
+
+    sale = _sale_from_storage_row(row)
+
+    assert sale.visit_dates == []
+    assert sale.raw_payload["visit_dates"] == visits
 
 
 def test_visit_dates_read_by_the_source_still_come_back_from_the_source_snapshot() -> None:
