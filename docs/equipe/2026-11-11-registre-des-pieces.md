@@ -168,9 +168,9 @@ Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce docum
 
 **Ce qui est livré.** Six migrations (`20261116100000` à `20261116100500`) : les quatre tables du registre, la colonne interne `auction_sales.held_fields`, la projection `app_private.project_sale_fields` et les déclencheurs de retenue. Trois fichiers de tests pgTAP (881, 882, 883), un module d'invariants de sécurité, les types et la note `docs/architecture/registre-des-pieces.md`. Rien n'appelle encore la projection : aucune fiche ne change.
 
-**Déroulé.** Le premier développeur a été interrompu par une limite d'usage. Le second a repris ses six fichiers et y a trouvé deux défauts francs (une migration qui ne s'appliquait pas, une projection qui échouait sur toute vente sans pièce acceptée). Trois relectures indépendantes ont suivi (expert-postgres, securite-applicative, code-reviewer). Toutes concluent « fusionnable, lot inerte », avec des défauts à traiter avant le branchement. Vingt et un points ont été corrigés dans le lot avant sa mise en ligne, puisque rien n'était encore appliqué ; les autres ouvrent le lot R2.
+**Déroulé.** Le premier développeur a été interrompu par une limite d'usage. Le second a repris ses six fichiers et y a trouvé deux défauts francs (une migration qui ne s'appliquait pas, une projection qui échouait sur toute vente sans pièce acceptée). Trois relectures indépendantes ont suivi (expert-postgres, securite-applicative, code-reviewer). Toutes concluent « fusionnable, lot inerte », avec des défauts à traiter avant le branchement. Vingt et un points ont été corrigés dans le lot avant sa mise en ligne, puisque rien n'était encore appliqué ; les autres ouvrent le lot R2. Une contre-vérification des corrections a suivi (code-reviewer, tests rejoués, 1 650 combinaisons pièces et chambres sans erreur) : deux retouches de plus, dont une contrainte réécrite pour ne pas déclencher une fausse alerte de dérive de schéma à l'application.
 
-**Vérifications locales (base jetable PostgreSQL 16).** Rejeu de toutes les migrations sans erreur, deux applications successives du lot, 284 assertions pgTAP sur les quatre fichiers touchés, passe pgTAP complète sans changement sur l'existant, trois cas de concurrence à deux sessions sans interblocage, coût de l'import de masse inchangé (écart dans le bruit, aucun appel des déclencheurs quand rien n'est tenu).
+**Vérifications locales (base jetable PostgreSQL 16).** Rejeu de toutes les migrations sans erreur, deux applications successives du lot, 287 assertions pgTAP sur les quatre fichiers touchés, passe pgTAP complète sans changement sur l'existant, trois cas de concurrence à deux sessions sans interblocage, coût de l'import de masse inchangé (écart dans le bruit, aucun appel des déclencheurs quand rien n'est tenu).
 
 **Choix faits par délégation pendant ce lot, à revoir si besoin.**
 
@@ -191,6 +191,11 @@ Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce docum
 - Les deux RPC d'administration qui rendent la ligne entière de `auction_sales`, et `recompute_scoring.py` qui lit toutes les colonnes.
 - Le rattrapage `supabase/repairs/20261029100200_recompute_past_quarantined_deadlines.sql` coupe puis rétablit tous les déclencheurs de `auction_sales` : rejoué, il sortirait ceux du registre du mode `always`. À ne pas rejouer tel quel.
 - Contrôle quotidien « la simulation de projection ne change rien pour une vente tenue », et test de concordance.
+- Ordre entre les deux journaux : il repose encore sur l'horloge à un endroit (libération comparée à la date de décision). Passer à une séquence commune, pour qu'une restauration de données ne fausse pas l'ordre.
+- Libération durable et fusion : une pièce acceptée sur une vente absorbée peut reprendre un champ que l'annonce de la vente conservée venait de libérer (réglage `listing_wins_and_review` seulement).
+- Valeur d'annonce mémorisée périmée : si l'annonce cesse de donner une valeur pendant qu'une pièce tient le champ, le retrait de la pièce restaure l'ancienne valeur d'annonce jusqu'à l'import suivant.
+- Gardes par rôle : elles excluent les rôles de l'API par leur nom. À faire trancher par securite-applicative : liste d'exclusion ou liste blanche, compte tenu du chemin SQL direct du pipeline.
+- Écran de relecture : lire la valeur d'annonce dans `held_fields`, pas dans le dernier évènement (la file est dédoublonnée).
 
 **Pour le juriste (s'ajoute à la section 5).** Durée de conservation des deux journaux, qui survivent à la purge de la vente ; sort de l'identifiant de l'administrateur après suppression de son compte ; trace d'une opposition conservée sans limite.
 
