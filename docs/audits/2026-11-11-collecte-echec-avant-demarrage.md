@@ -39,15 +39,20 @@ Neuf minutes par passage, et le pipeline Python n'a jamais démarré.
   illisible est une erreur qui relance une tentative (`APT::Update::Error-Mode=any`), plus un simple
   avertissement ; à la dernière tentative seulement, le téléchargement est quand même essayé avec les
   index disponibles (un dépôt en panne dont ces paquets n'ont pas besoin ne bloque pas le passage, comme
-  avant). Phase locale (installation de ce qui est téléchargé, sans réseau) : une seule fois, jamais
+  avant). Le temps de ce dernier téléchargement est réservé : le dernier `update` ne reçoit que ce que le
+  plafond laisse au-delà, et il est sauté s'il ne reste rien (cas d'un dépôt qui pend : deux `update`
+  coupés à 40 s, puis téléchargement direct avec les 40 s restantes). Phase locale (installation de ce qui est téléchargé, sans réseau) : une seule fois, jamais
   interrompue par le plafond réseau. Une panne d'une minute et demie environ ne fait plus échouer le
   passage ; une panne durable échoue en 2 min 35 au plus avec l'annotation « Installation des paquets
   système impossible ».
 - **Clôture immédiate** : nouvelle étape « Close run that never started », exécutée quand l'étape du
   pipeline a été sautée. Elle lance `services/data-pipeline/scripts/close_unstarted_run.py`, qui n'utilise
-  que la bibliothèque standard de Python (`python3 -I`) et l'API REST de Supabase. Elle ne clôt que le
+  que la bibliothèque standard de Python (`python3 -I -S`) et l'API REST de Supabase. Elle ne clôt que le
   run demandé et seulement s'il est encore `queued` ; un run `running`, déjà clos ou d'un autre passage
-  n'est pas touché. Elle écrit `status = failed`, `summary.completion_status = failed_before_start`,
+  n'est pas touché. La clé n'est envoyée qu'à une adresse `https`, sans suivre de redirection, et le
+  script s'arrête de lui-même après 140 s au plus (plafond de l'étape : 3 min). Les modes qui n'exécutent
+  pas le run demandé (`publication_check`, `documents_backlog`, `enrichment_only`) ne le closent pas : le
+  vidage des pièces tourne dans un autre groupe de concurrence, en parallèle d'un passage planifié. Elle écrit `status = failed`, `summary.completion_status = failed_before_start`,
   `summary.startup_failure` (étape : `system_packages`, `python_dependencies`, `justice_references` ou
   `job_preparation`) et, dans `errors.runner`, « Échec avant démarrage : installation des paquets système
   (apt). Le pipeline n'a pas démarré… ». Pour une collecte planifiée, elle remet la source à échéance
@@ -80,7 +85,13 @@ errors->'runner' from auction_runs where id = '<run_id>';` rend `failed`, une he
 
 - Non vérifié sur un runner GitHub : les tests simulent apt et l'API REST. La première exécution réelle
   après fusion est à regarder (durée de l'étape des paquets, à comparer aux exécutions précédentes).
-- Une panne durable relance désormais un passage toutes les trente minutes au lieu d'une fois par heure :
-  deux fois plus d'exécutions en échec (courtes) et d'alertes tant qu'elle dure.
+- Une panne durable relance désormais un passage toutes les trente minutes au lieu d'une fois par heure,
+  sans recul ni alerte dédiée : deux fois plus d'exécutions en échec (courtes) tant qu'elle dure. Une
+  alerte stable sur des `failed_before_start` consécutifs demande une migration ; elle est reportée à
+  une décision du propriétaire.
+- Un job annulé pendant qu'il attend dans le groupe `concurrency` n'exécute aucune étape : le run reste
+  ouvert jusqu'à l'expiration du bail.
+- Un lancement manuel en mode `documents_backlog` ou `enrichment_only` qui porterait un `run_id` et
+  échouerait avant le pipeline ne clôt pas ce run (ces modes ne l'exécutent pas) : le bail s'applique.
 - Un échec du `checkout` lui-même n'est pas couvert (le script n'est alors pas sur le runner) : le bail
   s'applique.
