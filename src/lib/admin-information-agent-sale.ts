@@ -247,7 +247,7 @@ export async function classifyInformationAgentSaleContacts(
   const ids = [...new Set(saleIds)];
   for (let index = 0; index < ids.length; index += EMAIL_AVAILABILITY_CHUNK) {
     const chunk = ids.slice(index, index + EMAIL_AVAILABILITY_CHUNK);
-    const { sales, registryReadable } = await loadInformationAgentContactSales(chunk);
+    const { sales, registryReadable } = await readInformationAgentContactSales(chunk);
     const registry = { readable: registryReadable };
     const classified = await Promise.all(
       [...sales].map(async ([id, sale]) => {
@@ -276,13 +276,30 @@ export async function classifyInformationAgentSaleContacts(
 /**
  * Ventes telles que le résolveur de contacts les lit (annonce, blocs de contact, registre interne), sans les
  * pièces ni la présence par source. LECTURE SEULE : même source que la classe de contact et que la mesure à
- * blanc (`dry-run.ts`). Une vente introuvable est absente ; une erreur de lecture des ventes est propagée.
+ * blanc (`dry-run.ts`). Réservée à un administrateur : les ventes rendues portent des adresses. Une vente
+ * introuvable est absente ; une erreur de lecture des ventes est propagée.
  * `registryReadable` est faux quand le registre interne n'a pas pu être lu.
  */
-export async function loadInformationAgentContactSales(saleIds: readonly string[]): Promise<{
+export async function loadInformationAgentContactSales({
+  auth,
+  saleIds,
+}: {
+  auth: AdminInformationAgentSaleAuth;
+  saleIds: readonly string[];
+}): Promise<InformationAgentContactSales> {
+  requireAdminInformationAgentSaleAccess(auth);
+  return readInformationAgentContactSales(saleIds);
+}
+
+type InformationAgentContactSales = {
   sales: Map<string, AdminInformationAgentSale>;
   registryReadable: boolean;
-}> {
+};
+
+/** Lecture sans contrôle d'accès, pour le classement interne (`classifyInformationAgentSaleContacts`). */
+async function readInformationAgentContactSales(
+  saleIds: readonly string[],
+): Promise<InformationAgentContactSales> {
   const sales = new Map<string, AdminInformationAgentSale>();
   const ids = [...new Set(saleIds)];
   if (!ids.length) return { sales, registryReadable: true };

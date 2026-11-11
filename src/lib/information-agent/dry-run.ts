@@ -1,10 +1,19 @@
 import "server-only";
+import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { loadInformationAgentContactSales } from "@/lib/admin-information-agent-sale";
 import { informationAgentAddressCheckEnabled } from "@/lib/information-agent/address-deliverability";
 import { informationAgentAddressHygieneIssue } from "@/lib/information-agent/address-hygiene";
 import {
+  resolveInformationAgentListingContacts,
+  selectInformationAgentContact,
+  type InformationAgentContactCandidate,
+  type InformationAgentContactProvenance,
+  type InformationAgentContactRefusal,
+  type InformationAgentContactRole,
+} from "@/lib/information-agent/contact-resolution";
+import {
   informationAgentAddressKind,
-  informationAgentStructureKeys,
+  isInformationAgentStructureKey,
   type InformationAgentAddressKind,
   type InformationAgentStructureKind,
 } from "@/lib/information-agent/contact-structure";
@@ -12,25 +21,25 @@ import {
   isInformationAgentContactBlocked,
   loadInformationAgentContactRegistry,
   loadOpposedInformationAgentIdentityKeys,
-  resolveInformationAgentListingContacts,
-  selectInformationAgentContact,
-  type InformationAgentContactCandidate,
-  type InformationAgentContactProvenance,
-  type InformationAgentContactRefusal,
-  type InformationAgentContactRole,
 } from "@/lib/information-agent/contacts";
-import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
 import type { InformationAgentOrganizerType } from "@/lib/information-agent/listing-contacts";
 import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
+import { requireInformationAgentAdmin } from "@/lib/information-agent/mission-store";
+import { recipientOppositionKeys } from "@/lib/information-agent/opposition-keys";
+import {
+  informationAgentQuestionAudience,
+  type InformationAgentQuestionAudience,
+} from "@/lib/information-agent/recipient-questions";
 import { informationAgentRecipientRoleLabel } from "@/lib/information-agent/recipient-profile";
 
 /**
  * MESURE À BLANC des destinataires de l'agent d'information.
  *
  * Pour une liste de ventes, rend le destinataire que l'outil retiendrait, son rôle et l'origine de son
- * adresse, avec le même résolveur que la préparation d'un brouillon. LECTURE SEULE : aucune écriture au
- * registre, aucun brouillon, aucun envoi, aucun appel réseau hors la base. Aucune route ne l'expose : elle
- * s'appelle depuis un script serveur ou une console.
+ * adresse, avec le même résolveur et les mêmes clés d'opposition que la préparation d'un brouillon. LECTURE
+ * SEULE : aucune écriture au registre, aucun brouillon, aucun envoi, aucun appel réseau hors la base. Réservée
+ * à un administrateur ; aucune route ne l'expose (un test l'interdit) : elle se lance par le test manuel
+ * `src/lib/information-agent-dry-run.manual.test.ts`, qui n'affiche que des comptages.
  *
  * Les lignes (`rows`) contiennent des adresses : elles ne doivent JAMAIS être journalisées. Seul `summary`
  * (comptages, sans adresse ni nom) peut l'être.
@@ -52,7 +61,8 @@ export type InformationAgentDryRunOutcome =
 
 export type InformationAgentDryRunBlock =
   | "address_opposed_or_bounced"
-  | "identity_or_structure_opposed";
+  | "identity_opposed"
+  | "structure_opposed";
 
 export type InformationAgentDryRunRecipient = {
   email: string;
@@ -61,6 +71,8 @@ export type InformationAgentDryRunRecipient = {
   structureKind: InformationAgentStructureKind | null;
   addressKind: InformationAgentAddressKind;
   confidence: InformationAgentContactCandidate["confidence"];
+  /** Liste de questions et texte de message qui s'appliqueraient (`recipient-questions.ts`). */
+  questionAudience: InformationAgentQuestionAudience;
   /** Où l'adresse a été lue : champ, source et URL de l'annonce. */
   origin: InformationAgentContactProvenance;
 };
@@ -85,6 +97,7 @@ export type InformationAgentDryRunSummary = {
   selectedByAddressKind: Record<string, number>;
   /** Issue par source d'annonce : `{ notaires: { selected: 12, none: 1 } }`. */
   bySource: Record<string, Record<string, number>>;
+  blockedBy: Record<string, number>;
   refused: Record<string, number>;
   /** Faux si le registre interne n'a pas pu être lu pour au moins un lot (adresses du pipeline absentes). */
   registryReadable: boolean;
@@ -101,9 +114,14 @@ function increment(counts: Record<string, number>, key: string, by = 1) {
   counts[key] = (counts[key] ?? 0) + by;
 }
 
-export async function measureInformationAgentRecipients(
-  saleIds: readonly string[],
-): Promise<InformationAgentDryRunReport> {
+export async function measureInformationAgentRecipients({
+  auth,
+  saleIds,
+}: {
+  auth: SupabaseAuthContext;
+  saleIds: readonly string[];
+}): Promise<InformationAgentDryRunReport> {
+  requireInformationAgentAdmin(auth);
   const ids = [...new Set(saleIds)];
   const rows: InformationAgentDryRunRow[] = [];
   let registryReadable = true;
@@ -111,7 +129,7 @@ export async function measureInformationAgentRecipients(
 
   for (let index = 0; index < ids.length; index += CHUNK) {
     const chunk = ids.slice(index, index + CHUNK);
-    const loaded = await loadInformationAgentContactSales(chunk);
+    const loaded = await loadInformationAgentContactSales({ auth, saleIds: chunk });
     registryReadable &&= loaded.registryReadable;
     for (const saleId of chunk) {
       const sale = loaded.sales.get(saleId);
@@ -137,42 +155,40 @@ export async function measureInformationAgentRecipients(
       });
       // Oppositions par identité et par structure, comme à la préparation du brouillon (draft.ts).
       const place = saleIdentityPlace(sale);
-      const keysOf = (candidate: InformationAgentContactCandidate) => [
-        ...informationAgentIdentityKeys({
+      const checkKeysOf = (candidate: InformationAgentContactCandidate) =>
+        recipientOppositionKeys({
           role: candidate.role,
           name: candidate.name ?? (candidate.role === "lawyer" ? sale.lawyer_name : null),
-          ...place,
-        }),
-        ...informationAgentStructureKeys({
+          place,
           email: candidate.email,
           officeCode: candidate.officeCode,
-        }),
-      ];
-      const opposed = new Set(await loadOpposedInformationAgentIdentityKeys(clean.flatMap(keysOf)));
+          addressKind: candidate.addressKind,
+        }).checkKeys;
+      const opposed = new Set(
+        await loadOpposedInformationAgentIdentityKeys(clean.flatMap(checkKeysOf)),
+      );
       const candidates = clean.filter(
-        (candidate) => !keysOf(candidate).some((k) => opposed.has(k)),
+        (candidate) => !checkKeysOf(candidate).some((key) => opposed.has(key)),
       );
       const selected = selectInformationAgentContact(candidates);
       const base = {
         saleId,
         sourceName: sale.source_name ?? sale.primary_source ?? null,
-        organizerType: sale.information_agent_organizer_type,
+        organizerType: resolution.organizerType,
         candidateCount: candidates.length,
         refused,
       };
       if (!selected) {
+        const allOpposed = clean.length > 0 && candidates.length === 0;
         rows.push({
           ...base,
-          outcome: candidates.length
-            ? "ambiguous"
-            : clean.length > candidates.length
-              ? "blocked"
-              : "none",
+          outcome: candidates.length ? "ambiguous" : allOpposed ? "blocked" : "none",
           recipient: null,
-          blockedBy:
-            clean.length > candidates.length && !candidates.length
-              ? "identity_or_structure_opposed"
-              : null,
+          blockedBy: !allOpposed
+            ? null
+            : [...opposed].some(isInformationAgentStructureKey)
+              ? "structure_opposed"
+              : "identity_opposed",
         });
         continue;
       }
@@ -192,6 +208,11 @@ export async function measureInformationAgentRecipients(
           structureKind: selected.structureKind ?? null,
           addressKind: selected.addressKind ?? informationAgentAddressKind(selected.email),
           confidence: selected.confidence,
+          questionAudience: informationAgentQuestionAudience({
+            role: selected.role,
+            structureKind: selected.structureKind,
+            organizerType: resolution.organizerType,
+          }),
           origin: selected.provenance[0],
         },
       });
@@ -211,6 +232,7 @@ export function summarizeInformationAgentDryRun(
     selectedByRole: {},
     selectedByAddressKind: {},
     bySource: {},
+    blockedBy: {},
     refused: {},
     registryReadable,
   };
@@ -219,6 +241,7 @@ export function summarizeInformationAgentDryRun(
     const source = row.sourceName ?? "unknown";
     summary.bySource[source] ??= {};
     increment(summary.bySource[source], row.outcome);
+    if (row.blockedBy) increment(summary.blockedBy, row.blockedBy);
     for (const [reason, count] of Object.entries(row.refused)) {
       increment(summary.refused, reason, count);
     }

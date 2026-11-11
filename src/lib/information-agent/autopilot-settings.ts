@@ -7,6 +7,7 @@ import {
   type AutopilotSettings,
   type AutopilotSharedSend,
   type AutopilotStats,
+  type SharedStructureCounts,
 } from "@/lib/information-agent/autopilot-rules";
 
 /**
@@ -49,21 +50,26 @@ export async function loadAutopilotStats(now = new Date()): Promise<AutopilotSta
 }
 
 /**
- * Missions lues au plus sur 8 jours (plafond dur du pilote : 60 par jour). Au-delà, le compte serait
- * incomplet : la lecture échoue plutôt que de sous-compter.
+ * Missions lues au plus sur 8 jours (plafond dur du pilote : 60 par jour, soit 480 au plus, manuels en sus).
+ * Au-delà, le compte par structure serait incomplet.
  */
 const SHARED_SENDS_LIMIT = 1000;
 
 /**
  * Envois des 8 derniers jours, dont `sharedStructureCounts` ne retient que ceux d'un domaine partagé
- * (`notaires.fr`, `gouv.fr`), comptés par structure. Mêmes
- * missions que la fonction SQL `information_agent_autopilot_stats` : approuvées, en cours d'envoi, envoyées,
- * répondues, en revue, terminées, ou en échec « à vérifier ». LECTURE SEULE ; une erreur est propagée (un
- * plafond illisible ne vaut jamais autorisation).
+ * (`notaires.fr`, `gouv.fr`), comptés par structure. LECTURE SEULE.
+ *
+ * RÈGLE COPIÉE : la définition d'un envoi compté est celle de la table `sent` de la fonction SQL
+ * `public.information_agent_autopilot_stats` (migration
+ * `supabase/migrations/20261110230000_information_agent_autopilot.sql`) : mission approuvée depuis moins de
+ * 8 jours, de statut `sending`, `sent`, `replied`, `review` ou `completed`, ou `failed` avec
+ * `metadata.send_outcome = 'unverified'`. Les deux doivent changer ensemble.
+ *
+ * Une erreur de lecture est propagée (un plafond illisible ne vaut jamais autorisation). Un compte tronqué
+ * n'est pas une erreur : il est rendu incomplet (`sharedStructureCountsComplete: false`), le pilote n'écrit
+ * alors à aucune adresse d'un domaine partagé et l'écran d'administration l'affiche au lieu d'échouer.
  */
-async function loadSharedStructureCounts(
-  now: Date,
-): Promise<Pick<AutopilotStats, "todayBySharedStructure" | "weekBySharedStructure">> {
+async function loadSharedStructureCounts(now: Date): Promise<SharedStructureCounts> {
   // Seuls les champs utiles de `metadata` sont lus (jamais l'inventaire ni le reste du brouillon).
   const { data, error } = await supabaseAdmin
     .from("information_agent_missions")
@@ -76,7 +82,11 @@ async function loadSharedStructureCounts(
   if (error) throw error;
   if (!data) throw new Error("Compteur des envois par structure indisponible.");
   if (data.length >= SHARED_SENDS_LIMIT) {
-    throw new Error("Compteur des envois par structure incomplet : trop de lignes.");
+    return {
+      todayBySharedStructure: {},
+      weekBySharedStructure: {},
+      sharedStructureCountsComplete: false,
+    };
   }
   const sends: AutopilotSharedSend[] = [];
   for (const row of data as unknown as SharedSendRow[]) {

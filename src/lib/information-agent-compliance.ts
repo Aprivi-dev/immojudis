@@ -31,6 +31,13 @@ export type InformationAgentLegalFooter = {
   automatedSearch?: boolean;
   /** Type de source de la recherche : l'autre annonce n'est pas « une page publique » consultée. */
   automatedSearchSource?: InformationAgentAddressSourceKind;
+  /**
+   * Variante « structure » du pied : le message part à l'adresse générique d'une étude, d'un cabinet ou d'un
+   * service (aucune personne n'est connue tant que personne n'a répondu).
+   */
+  structureAddress?: boolean;
+  /** L'opposition de cette adresse vaudra pour toute sa structure : le pied le dit. */
+  structureOpposition?: boolean;
   /** Prestataire d'IA qui lit les réponses (art. 14(1)(e)), tiré de la configuration. */
   aiProvider: InformationAgentAiProvider;
   privacyUrl: string;
@@ -119,6 +126,8 @@ export type InformationAgentAddressOrigin = {
   searchSource?: InformationAgentAddressSourceKind;
   /** Vrai pour l'adresse d'un greffe (référentiel des tribunaux) : variante « greffe » du pied et repère « Greffe ». */
   courtRegistry?: boolean;
+  /** Vrai pour l'adresse générique d'une étude, d'un cabinet ou d'un service : variante « structure » du pied. */
+  structureAddress?: boolean;
 };
 
 /** Date de relevé au format JJ/MM/AAAA, à l'heure de Paris ; null si la date est absente. */
@@ -148,7 +157,12 @@ export function formatInformationAgentOriginDate(
 export function informationAgentAddressOrigin(
   input: Parameters<typeof originForKind>[0],
 ): InformationAgentAddressOrigin {
-  const origin = originForKind(input);
+  const kindOrigin = originForKind(input);
+  // Un greffe a sa propre variante : jamais la variante « structure ».
+  const origin: InformationAgentAddressOrigin =
+    input.structureAddress && !kindOrigin.courtRegistry
+      ? { ...kindOrigin, structureAddress: true }
+      : kindOrigin;
   return origin.automated && input.sourceKind
     ? { ...origin, searchSource: input.sourceKind }
     : origin;
@@ -163,7 +177,10 @@ function originForKind({
   observedAt,
   observedBy,
   matchRule,
+  structureAddress = false,
 }: {
+  /** Adresse générique d'une étude, d'un cabinet ou d'un service (`contact-structure.ts`). */
+  structureAddress?: boolean;
   sourceName?: string | null;
   sourceUrl?: string | null;
   manual?: boolean;
@@ -191,14 +208,20 @@ function originForKind({
     kind !== "court_registry_fallback";
 
   switch (kind) {
-    case "sale_listing":
+    case "sale_listing": {
+      // Adresse générique : ce n'est pas « votre » adresse, c'est celle de la structure (relecture juridique
+      // du 11/11/2026).
+      const subject = structureAddress
+        ? "L’adresse de contact de votre étude (ou de votre service)"
+        : "Votre adresse professionnelle";
       return {
         text: label
-          ? `Votre adresse professionnelle figure dans l’annonce publique de cette vente sur ${label}${link}${consulted(true)}.`
-          : `Votre adresse professionnelle figure dans l’avis de vente publié, accessible au public${link}${consulted(false)}.`,
+          ? `${subject} figure dans l’annonce publique de cette vente sur ${label}${link}${consulted(true)}.`
+          : `${subject} figure dans l’avis de vente publié, accessible au public${link}${consulted(false)}.`,
         url,
         automated,
       };
+    }
     case "other_listing":
       return {
         text: `Votre adresse professionnelle figure dans une autre annonce publique de vente qui vous mentionne comme interlocuteur${
@@ -289,7 +312,9 @@ export function informationAgentLegalFooterSections(
       text: `${
         court
           ? INFORMATION_AGENT_COURT_REGISTRY_DATA_CATEGORIES_STATEMENT
-          : INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT
+          : footer.structureAddress
+            ? INFORMATION_AGENT_STRUCTURE_DATA_CATEGORIES_STATEMENT
+            : INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT
       } Origine : ${footer.addressOrigin}`,
     },
   ];
@@ -309,7 +334,12 @@ export function informationAgentLegalFooterSections(
       label: "Vos droits :",
       text: `${informationAgentRightsStatement(footer.contactEmail)} ${INFORMATION_AGENT_COMPLAINT_STATEMENT}`,
     },
-    { label: "Opposition :", text: INFORMATION_AGENT_OBJECTION_STATEMENT },
+    {
+      label: "Opposition :",
+      text: footer.structureOpposition
+        ? `${INFORMATION_AGENT_OBJECTION_STATEMENT} ${INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT}`
+        : INFORMATION_AGENT_OBJECTION_STATEMENT,
+    },
   );
   return sections;
 }
@@ -347,6 +377,14 @@ export function informationAgentCourtRegistryPurposeStatement(dailyCap: number):
 /** Catégories de données d'un message à un greffe : adresse de service, puis la personne qui répond. */
 export const INFORMATION_AGENT_COURT_REGISTRY_DATA_CATEGORIES_STATEMENT =
   "l’adresse de contact de votre greffe et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.";
+
+/** Catégories de données d'un message à l'adresse générique d'une structure : l'adresse, puis la personne qui répond. */
+export const INFORMATION_AGENT_STRUCTURE_DATA_CATEGORIES_STATEMENT =
+  "l’adresse de contact de votre étude, de votre cabinet ou de votre service et, si vous répondez, le nom, la fonction et les coordonnées de la personne qui répond, ainsi que nos échanges.";
+
+/** Portée de l'opposition faite depuis l'adresse générique d'une structure (pied et page de confirmation). */
+export const INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT =
+  "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.";
 
 /** Catégories de données (art. 14(1)(d) RGPD). */
 export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =

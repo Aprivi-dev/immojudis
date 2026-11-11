@@ -50,7 +50,10 @@ export async function resolveInformationAgentAddressOrigin({
   saleId,
   manualOriginUrl,
   fallbackObservedAt = null,
+  structureAddress = false,
 }: {
+  /** Adresse générique d'une structure (`missionRecipient().addressKind`) : variante « structure » de l'origine. */
+  structureAddress?: boolean;
   email: string;
   saleId: string | null;
   manualOriginUrl: string | null;
@@ -91,6 +94,7 @@ export async function resolveInformationAgentAddressOrigin({
         observedAt: row.observed_at,
         observedBy,
         matchRule: matchRuleOf(row.metadata),
+        structureAddress,
       });
       // Un annuaire, un site ou une autre annonce sans lien exact ne prouvent rien.
       // L'adresse d'un greffe n'a pas de page publique : elle est connue par le nom du tribunal.
@@ -111,6 +115,7 @@ export async function resolveInformationAgentAddressOrigin({
     sourceUrl: url,
     observedAt,
     observedBy: "admin",
+    structureAddress,
   });
   if (origin.url) return { origin, known: true, kind: "admin_entry" };
   return {

@@ -2,11 +2,10 @@
  * Structure d'un destinataire de l'agent d'information (cabinet, office notarial, service de l'État) et
  * nature de son adresse (générique ou nominative). MODULE PUR : aucun accès réseau ni base.
  *
- * Règle de préférence (décision du propriétaire du 11/11/2026) : quand plusieurs adresses existent pour un
- * même professionnel ou une même structure, l'adresse générique de la structure passe avant l'adresse
- * nominative de la personne nommée par l'annonce : quelqu'un de la structure saura transmettre la demande.
- * L'adresse nominative d'une autre personne que celle nommée n'est jamais retenue
- * (`listing-contacts.ts`, `addressBelongsToNamedPerson`).
+ * Règle de préférence (décision du propriétaire du 11/11/2026) : quand un même bloc de contact de l'annonce
+ * donne plusieurs adresses, l'adresse générique de la structure passe avant l'adresse nominative de la
+ * personne nommée : quelqu'un de la structure saura transmettre la demande. L'adresse nominative d'une autre
+ * personne que celle nommée n'est jamais retenue (`contact-resolution.ts`).
  */
 import { isConsumerMailAddress, mailDomainOf } from "@/lib/information-agent/address-hygiene";
 
@@ -15,52 +14,66 @@ export type InformationAgentAddressKind = "generic" | "nominative";
 export type InformationAgentStructureKind = "law_firm" | "notary_office" | "state_service";
 
 /**
- * Premiers mots d'une adresse générique de structure. LISTE FERMÉE : une adresse n'est générique que si
- * la partie locale commence par l'un de ces mots, seul ou suivi d'un séparateur ou de chiffres
- * (`contact@`, `contact.lyon@`, `etude-dupont@`, `office12345@`). Tout le reste est nominatif.
- *
- * Trois familles : accueil d'une structure, formes d'exercice d'un cabinet ou d'un office, services de
- * l'État qui gèrent les cessions (boîtes fonctionnelles des directions des finances publiques).
+ * Structure que désigne un rôle établi, SEULE table rôle vers structure. `organizer` et `source_contact`
+ * n'en désignent aucune à eux seuls (`null`).
+ */
+export const INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE = {
+  lawyer: "law_firm",
+  notary: "notary_office",
+  organizer: null,
+  source_contact: null,
+} as const satisfies Record<string, InformationAgentStructureKind | null>;
+
+/**
+ * Mots qui font une adresse générique quelle que soit la suite (`contact@`, `contact.lyon@`,
+ * `etude-dupont@`, `office12345@`) : accueil d'une structure, formes d'exercice, boîtes des services de
+ * l'État qui gèrent les cessions. LISTE FERMÉE.
  */
 export const INFORMATION_AGENT_GENERIC_LOCAL_PARTS: readonly string[] = [
-  // Accueil
   "contact",
   "contacts",
   "accueil",
   "info",
   "infos",
-  "information",
-  "informations",
   "secretariat",
-  "courrier",
-  "standard",
-  "bureau",
-  // Cabinet ou office
   "etude",
   "office",
   "cabinet",
   "scp",
   "selarl",
   "selas",
-  "notaires",
-  "avocats",
-  "negociation",
-  "immobilier",
-  "encheres",
-  "ventes",
-  // Services de l'État
   "ddfip",
   "drfip",
   "dnid",
-  "domaine",
-  "domaines",
   "cessions",
   "pgp",
   "prie",
   "sgami",
 ];
 
+/**
+ * Mots ambigus : ce sont aussi des noms de famille ou des débuts d'adresse personnelle (`bureau.martin@`
+ * est M. ou Mme Bureau, `domaine.durand@` un domaine viticole). Génériques SEULEMENT seuls ou suivis de
+ * chiffres (`bureau@`, `ventes2@`). LISTE FERMÉE.
+ */
+export const INFORMATION_AGENT_GENERIC_LOCAL_PARTS_ALONE: readonly string[] = [
+  "bureau",
+  "courrier",
+  "standard",
+  "information",
+  "informations",
+  "domaine",
+  "domaines",
+  "notaires",
+  "avocats",
+  "negociation",
+  "immobilier",
+  "encheres",
+  "ventes",
+];
+
 const GENERIC_WORDS = new Set(INFORMATION_AGENT_GENERIC_LOCAL_PARTS);
+const GENERIC_WORDS_ALONE = new Set(INFORMATION_AGENT_GENERIC_LOCAL_PARTS_ALONE);
 
 function localPartOf(email: string): string {
   const normalized = email.trim().toLowerCase();
@@ -68,38 +81,73 @@ function localPartOf(email: string): string {
   return at >= 0 ? normalized.slice(0, at) : normalized;
 }
 
-/** Générique si le premier mot de la partie locale (avant `.`, `-`, `_`, `+` ou des chiffres) est dans la liste. */
+/** Nature de l'adresse d'après sa partie locale ; tout ce qui n'est pas dans les deux listes est nominatif. */
 export function informationAgentAddressKind(email: string): InformationAgentAddressKind {
-  const first = localPartOf(email).split(/[._+\-\d]/)[0] ?? "";
-  return GENERIC_WORDS.has(first) ? "generic" : "nominative";
+  const local = localPartOf(email);
+  const first = local.split(/[._+\-\d]/)[0] ?? "";
+  if (GENERIC_WORDS.has(first)) return "generic";
+  return GENERIC_WORDS_ALONE.has(first) && /^[a-z]+\d*$/.test(local) ? "generic" : "nominative";
 }
 
 /**
- * Domaines partagés par toute une profession ou une administration : l'adresse y est attribuée par un tiers
- * (notariat, État), le domaine ne dit rien de la structure. LISTE FERMÉE, comparée au domaine exact ou à ses
- * sous-domaines (`paris.notaires.fr`, `dgfip.finances.gouv.fr`).
+ * Domaines où toute une profession ou une administration est logée par décision du propriétaire
+ * (11/11/2026) : le PLAFOND du pilote y est compté par structure (office, service), avec un plafond bas pour
+ * le domaine lui-même. LISTE FERMÉE, comparée au domaine exact ou à ses sous-domaines.
  */
 export const INFORMATION_AGENT_SHARED_MAIL_DOMAINS: readonly string[] = ["notaires.fr", "gouv.fr"];
 
-/** Domaine partagé auquel l'adresse (ou le domaine) appartient, ou `null` pour un domaine propre. */
+/**
+ * Autres domaines qui n'identifient aucune structure : messageries de profession et fournisseurs d'accès
+ * français que la liste des messageries grand public (`address-hygiene.ts`) ne reconnaît pas. Aucune clé
+ * d'opposition de structure n'y est jamais rattachée. Le plafond du pilote y reste compté par domaine (plus
+ * strict). LISTE FERMÉE, comparée au domaine exact ou à ses sous-domaines.
+ */
+export const INFORMATION_AGENT_PROVIDER_MAIL_DOMAINS: readonly string[] = [
+  // Messageries de profession
+  "avocat.fr",
+  "avocatline.fr",
+  "avocat-conseil.fr",
+  "nomade.fr",
+  "justice.fr",
+  // Fournisseurs d'accès et messageries français
+  "aliceadsl.fr",
+  "alice.fr",
+  "cegetel.net",
+  "noos.fr",
+  "voila.fr",
+  "nordnet.fr",
+  "libertysurf.fr",
+  "tiscali.fr",
+  "dartybox.com",
+  "9online.fr",
+];
+
+function listedDomainOf(list: readonly string[], domain: string): string | null {
+  return list.find((entry) => domain === entry || domain.endsWith(`.${entry}`)) ?? null;
+}
+
+/** Domaine partagé (plafond par structure) auquel l'adresse ou le domaine appartient, sinon `null`. */
 export function sharedMailDomainOf(emailOrDomain: string): string | null {
-  const domain = mailDomainOf(emailOrDomain);
+  return listedDomainOf(INFORMATION_AGENT_SHARED_MAIL_DOMAINS, mailDomainOf(emailOrDomain));
+}
+
+/** Un domaine identifie-t-il une structure ? Ni partagé, ni messagerie de profession ou d'accès, ni grand public. */
+function isOwnMailDomain(domain: string): boolean {
   return (
-    INFORMATION_AGENT_SHARED_MAIL_DOMAINS.find(
-      (shared) => domain === shared || domain.endsWith(`.${shared}`),
-    ) ?? null
+    domain.includes(".") &&
+    !listedDomainOf(INFORMATION_AGENT_SHARED_MAIL_DOMAINS, domain) &&
+    !listedDomainOf(INFORMATION_AGENT_PROVIDER_MAIL_DOMAINS, domain) &&
+    !isConsumerMailAddress(`x@${domain}`)
   );
 }
 
 /**
- * Domaine propre à une structure : ni domaine partagé, ni messagerie grand public. Lui seul identifie un
- * cabinet ou une étude (`cabinet-dupont.fr`) ; `notaires.fr` ou `gmail.com` n'identifient personne.
+ * Domaine propre à une structure (`cabinet-dupont.fr`) ; `null` pour `notaires.fr`, `avocat.fr`, `gmail.com`…
+ * qui n'identifient personne.
  */
 export function ownMailDomainOf(email: string): string | null {
   const domain = mailDomainOf(email);
-  if (!domain || !domain.includes(".")) return null;
-  if (sharedMailDomainOf(domain) || isConsumerMailAddress(email)) return null;
-  return domain;
+  return domain && isOwnMailDomain(domain) ? domain : null;
 }
 
 /** Code d'office notarial (CRPCEN) : chiffres seuls, 4 à 6 ; toute autre forme est ignorée. */
@@ -110,13 +158,12 @@ export function normalizedOfficeCode(value: unknown): string | null {
 }
 
 /**
- * Clés d'opposition au niveau de la structure, rangées dans la liste d'opposition par identité
+ * Clés d'opposition PORTÉES par une adresse de la structure, rangées dans la liste d'opposition par identité
  * (`information_agent_identity_oppositions`, texte libre en minuscules : aucune migration).
  *
  * - `structure|office|<crpcen>` : office notarial, quel que soit le domaine de ses adresses ;
- * - `structure|domain|<domaine>` : domaine PROPRE de la structure seulement. Jamais un domaine partagé
- *   (`notaires.fr`, `gouv.fr`) ni une messagerie grand public : une opposition y vaudrait pour toute une
- *   profession ou pour des inconnus.
+ * - `structure|domain|<domaine>` : domaine PROPRE exact de l'adresse. Jamais un domaine partagé, une
+ *   messagerie de profession ou grand public : une opposition y vaudrait pour des inconnus.
  *
  * Une clé de structure ne contient aucune adresse email.
  */
@@ -135,6 +182,49 @@ export function informationAgentStructureKeys({
   return keys;
 }
 
+/**
+ * Clés à CONTRÔLER avant d'écrire à une adresse : celles qu'elle porte, plus celles des domaines parents
+ * (au moins deux libellés, propres eux aussi). L'opposition de `cabinet-dupont.fr` vaut ainsi pour
+ * `paris.cabinet-dupont.fr` ; l'inverse n'est pas vrai (un bureau qui s'oppose n'engage pas tout le cabinet).
+ */
+export function informationAgentStructureCheckKeys(input: {
+  email: string;
+  officeCode?: string | null;
+}): string[] {
+  const keys = informationAgentStructureKeys(input);
+  const domain = ownMailDomainOf(input.email);
+  if (!domain) return keys;
+  const labels = domain.split(".");
+  for (let start = 1; labels.length - start >= 2; start += 1) {
+    const parent = labels.slice(start).join(".");
+    if (isOwnMailDomain(parent)) keys.push(`structure|domain|${parent}`);
+  }
+  return keys;
+}
+
+/**
+ * Code d'office à rattacher à une adresse. RÈGLE UNIQUE :
+ * - l'adresse est celle d'un notaire que l'annonce désigne : son code (`officeCode`) ;
+ * - sinon (adresse saisie par l'administrateur, contact sans code), le code de l'office de la vente
+ *   (`saleOfficeCode`) vaut seulement si l'adresse n'a pas de domaine propre : sur `notaires.fr` ou une
+ *   messagerie, seul l'office dit à quelle structure elle appartient. Une adresse sur un domaine propre est
+ *   identifiée par ce domaine.
+ */
+export function informationAgentOfficeCodeFor({
+  email,
+  officeCode,
+  saleOfficeCode,
+}: {
+  email: string;
+  officeCode: string | null | undefined;
+  saleOfficeCode: string | null | undefined;
+}): string | null {
+  return (
+    normalizedOfficeCode(officeCode) ??
+    (ownMailDomainOf(email) ? null : normalizedOfficeCode(saleOfficeCode))
+  );
+}
+
 export function isInformationAgentStructureKey(key: string): boolean {
   return key.startsWith("structure|");
 }
@@ -142,7 +232,7 @@ export function isInformationAgentStructureKey(key: string): boolean {
 /**
  * Unité de plafond d'envoi d'un destinataire (pilote automatique).
  *
- * - domaine propre : la structure est le domaine (`sharedDomain` nul), plafond par domaine inchangé ;
+ * - hors domaine partagé : la structure est le domaine (`sharedDomain` nul), plafond par domaine inchangé ;
  * - domaine partagé : la structure est l'office (code) ou, sans code, la boîte elle-même ; le domaine
  *   partagé a en plus son propre plafond bas.
  *

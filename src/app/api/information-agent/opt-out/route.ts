@@ -1,6 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { RateLimitError } from "@/lib/api-errors";
+import { INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT } from "@/lib/information-agent-compliance";
+import { informationAgentOppositionCoversStructure } from "@/lib/information-agent/contacts";
 import { informationAgentPage } from "@/lib/information-agent-public-page";
 import { logInformationAgentRouteError } from "@/lib/information-agent-route-log";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
@@ -29,9 +31,13 @@ export async function GET(request: Request) {
     const verified = verifiedOptOut(request);
     if (!verified) return invalidLink();
     const action = new URL(request.url);
+    // Adresse de contact d'une étude, d'un cabinet ou d'un service : l'opposition vaudra pour la structure.
+    const structure = await informationAgentOppositionCoversStructure(verified.email);
     return informationAgentPage({
       title: "Ne plus être contacté",
-      message: `Confirmez que l’adresse ${verified.email} ne doit plus recevoir de message d’Immojudis.`,
+      message: `Confirmez que l’adresse ${verified.email} ne doit plus recevoir de message d’Immojudis.${
+        structure ? ` ${INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT}` : ""
+      }`,
       status: 200,
       forms: [
         {
@@ -54,6 +60,9 @@ export async function POST(request: Request) {
     });
     const verified = verifiedOptOut(request);
     if (!verified) return invalidLink();
+    // Lu avant l'écriture : l'opposition vide la ligne du registre, pas ses clés, mais la lecture d'abord
+    // garde la page exacte même si la ligne change.
+    const structure = await informationAgentOppositionCoversStructure(verified.email);
     const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
       {
         sale_id: null,
@@ -68,8 +77,9 @@ export async function POST(request: Request) {
     const action = new URL(request.url);
     return informationAgentPage({
       title: "Opposition enregistrée",
-      message:
-        "Votre adresse et votre identité professionnelle ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
+      message: structure
+        ? "Votre adresse, votre identité professionnelle et les autres adresses de votre étude, de votre cabinet ou de votre service ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité."
+        : "Votre adresse et votre identité professionnelle ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
       status: 200,
       links: [
         {

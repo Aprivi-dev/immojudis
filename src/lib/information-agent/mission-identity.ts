@@ -1,9 +1,14 @@
 import type { Database, Json } from "@/integrations/supabase/types";
 import {
   informationAgentAddressKind,
-  informationAgentStructureKeys,
+  informationAgentOfficeCodeFor,
+  isInformationAgentStructureKey,
+  type InformationAgentAddressKind,
 } from "@/lib/information-agent/contact-structure";
-import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
+import {
+  recipientOppositionKeys,
+  type InformationAgentRecipientOppositionKeys,
+} from "@/lib/information-agent/opposition-keys";
 import { tribunalBarAssociation } from "@/lib/lawyer-bar";
 import type { AuctionSale } from "@/lib/types";
 
@@ -26,47 +31,60 @@ export function metadataText(value: Json | undefined): string | null {
 }
 
 /**
- * Clés de la structure du destinataire (opposition au niveau du cabinet, de l'office ou du service). Le code
- * d'office du brouillon (`metadata.contact_identity.office_code`) ne vaut que si l'adresse est restée celle
- * que le brouillon a choisie ; le domaine propre se lit dans l'adresse elle-même.
+ * Ce que le brouillon sait du destinataire d'une mission, relu avec le nom et l'adresse éventuellement
+ * corrigés par l'administrateur. Rôle, lieu et office viennent du brouillon (`metadata.contact_identity`).
  */
-export function missionStructureKeys(mission: MissionRow, recipientEmail: string): string[] {
+export type InformationAgentMissionRecipient = {
+  /** Clés d'opposition (`recipientOppositionKeys`) : portées par la mission et à contrôler. */
+  keys: InformationAgentRecipientOppositionKeys;
+  role: string | null;
+  addressKind: InformationAgentAddressKind;
+  /** L'opposition de cette adresse vaudra pour toute sa structure (adresse générique d'une structure connue). */
+  structureOpposition: boolean;
+  /** `metadata.question_audience` tel qu'enregistré ; `other` pour un brouillon antérieur à ce champ. */
+  questionAudience: Json;
+};
+
+export function missionRecipient(
+  mission: MissionRow,
+  recipientName: string | null | undefined,
+  recipientEmail: string,
+): InformationAgentMissionRecipient {
   const metadata = asRecord(mission.metadata);
   const identity = asRecord(metadata.contact_identity ?? {});
   const selected = metadataText(asRecord(metadata.contact_discovery ?? {}).selected_email);
   const email = recipientEmail.trim().toLowerCase();
-  return informationAgentStructureKeys({
-    email,
-    officeCode: selected?.toLowerCase() === email ? metadataText(identity.office_code) : null,
-  });
-}
-
-/**
- * Clés d'identité du destinataire d'une mission, recalculées avec le nom éventuellement corrigé par
- * l'administrateur. Rôle et lieu viennent du brouillon (`metadata.contact_identity`).
- *
- * Avec `recipientEmail`, une adresse GÉNÉRIQUE porte aussi les clés de sa structure : si cette adresse
- * s'oppose, l'opposition vaut pour la structure. Une adresse nominative ne les porte pas : l'opposition
- * d'une personne ne vaut que pour elle.
- */
-export function missionIdentityKeys(
-  mission: MissionRow,
-  recipientName?: string | null,
-  recipientEmail?: string | null,
-): string[] {
-  const identity = asRecord(asRecord(mission.metadata).contact_identity ?? {});
-  const keys = informationAgentIdentityKeys({
-    role:
-      metadataText(identity.role) ?? (mission.recipient_kind === "source_lawyer" ? "lawyer" : null),
+  // Ce que le brouillon sait de SON adresse (nature désignée par l'annonce, office du notaire) ne vaut plus
+  // pour une adresse saisie ensuite : seul l'office de la vente peut encore s'y appliquer.
+  const sameAddress = selected?.toLowerCase() === email;
+  const storedKind = metadataText(identity.address_kind);
+  const addressKind: InformationAgentAddressKind =
+    sameAddress && (storedKind === "generic" || storedKind === "nominative")
+      ? storedKind
+      : informationAgentAddressKind(email);
+  const role =
+    metadataText(identity.role) ?? (mission.recipient_kind === "source_lawyer" ? "lawyer" : null);
+  const keys = recipientOppositionKeys({
+    role,
     name: recipientName?.trim() || mission.recipient_name,
-    bar: metadataText(identity.bar),
-    city: metadataText(identity.city),
+    place: { bar: metadataText(identity.bar), city: metadataText(identity.city) },
     siren: metadataText(identity.siren),
+    email,
+    officeCode: informationAgentOfficeCodeFor({
+      email,
+      officeCode: sameAddress ? metadataText(identity.office_code) : null,
+      saleOfficeCode: metadataText(identity.sale_office_code),
+    }),
+    addressKind,
   });
-  if (recipientEmail && informationAgentAddressKind(recipientEmail) === "generic") {
-    return [...new Set([...keys, ...missionStructureKeys(mission, recipientEmail)])];
-  }
-  return keys;
+  return {
+    keys,
+    role,
+    addressKind,
+    structureOpposition: keys.identityKeys.some(isInformationAgentStructureKey),
+    questionAudience:
+      metadata.question_audience === undefined ? "other" : metadata.question_audience,
+  };
 }
 
 /** Référence de la vente pour le pied du message : titre, lieu et tribunal du brouillon. */

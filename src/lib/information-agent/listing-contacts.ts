@@ -10,9 +10,13 @@
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { findEmailsInText } from "@/lib/information-agent/email-in-text";
 import {
+  INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE,
+  informationAgentAddressKind,
   normalizedOfficeCode,
+  type InformationAgentAddressKind,
   type InformationAgentStructureKind,
 } from "@/lib/information-agent/contact-structure";
+import { normalizeInformationAgentIdentityName } from "@/lib/information-agent/identity";
 
 export const INFORMATION_AGENT_ORGANIZER_TYPES = [
   "pursuing_lawyer",
@@ -36,7 +40,49 @@ export type InformationAgentListingContactRecord = {
    * d'une liste (`manager.managers[1..]`) : leur adresse nominative n'est jamais retenue.
    */
   principal: boolean;
+  /** Générique ou nominative ; la boîte de service d'une cession est générique par désignation du pipeline. */
+  addressKind: InformationAgentAddressKind;
 };
+
+/**
+ * Mots d'une boîte fonctionnelle d'un service de l'État. SOURCE UNIQUE : le pipeline, qui choisit
+ * `manager.direction_email` avec ces mots (`_FUNCTIONAL_MAILBOX_RE`,
+ * `services/data-pipeline/src/sources/cessions_etat_page.py`, lignes 41 à 45). Cette copie ne sert qu'à
+ * relire SON choix : quand aucune boîte fonctionnelle n'est publiée, le pipeline retient la première adresse,
+ * qui est alors celle d'une personne. Un test compare les deux listes mot pour mot.
+ */
+export const INFORMATION_AGENT_STATE_FUNCTIONAL_MAILBOX_WORDS: readonly string[] = [
+  "pole",
+  "gestion",
+  "domain",
+  "pgp",
+  "service",
+  "ddfip",
+  "drfip",
+  "dgfip",
+  "sgami",
+  "cession",
+  "immobilier",
+  "patrimoine",
+  "prie",
+  "france-domaine",
+  "bureau",
+  "direction",
+  "secretariat",
+  "contact",
+  "accueil",
+];
+const STATE_FUNCTIONAL_MAILBOX = new RegExp(
+  `(?:${INFORMATION_AGENT_STATE_FUNCTIONAL_MAILBOX_WORDS.join("|")})`,
+  "i",
+);
+
+/** Nature de l'adresse que le pipeline désigne comme boîte du service (`direction_email`). */
+function serviceMailboxKind(email: string): InformationAgentAddressKind {
+  return STATE_FUNCTIONAL_MAILBOX.test(email.split("@", 1)[0])
+    ? "generic"
+    : informationAgentAddressKind(email);
+}
 
 /** Blocs de contact d'une annonce (la vente, ou l'observation d'une autre source fusionnée). */
 export type InformationAgentListingContactBlock = {
@@ -112,6 +158,7 @@ export function readInformationAgentListingContactBlock(
       name: text(value.name),
       field: `source_property_features.${block}.email`,
       principal: true,
+      addressKind: informationAgentAddressKind(email),
     }));
   };
 
@@ -124,7 +171,21 @@ export function readInformationAgentListingContactBlock(
     seen.add(record.email);
     managerRecords.push(record);
   };
-  // Les personnes d'abord : chaque adresse reste associée au nom que l'annonce lui donne.
+  // La boîte du service d'abord, quelle que soit sa forme : c'est l'adresse que le pipeline désigne pour une
+  // demande d'information. Elle n'a pas de nom de personne.
+  for (const email of emailsOf(manager.direction_email)) {
+    addManager({
+      email,
+      name: null,
+      field: "source_property_features.manager.direction_email",
+      principal: true,
+      addressKind: serviceMailboxKind(email),
+    });
+  }
+  // Puis les personnes : chaque adresse reste associée au nom que l'annonce lui donne. Le gestionnaire nommé
+  // se reconnaît à son nom normalisé (« DURAND Marie » et « Marie Durand » sont la même personne).
+  const namedManager = normalizeInformationAgentIdentityName(managerName);
+  const people: InformationAgentListingContactRecord[] = [];
   for (const [listKey, list] of [
     ["managers", manager.managers],
     ["contacts", manager.contacts],
@@ -136,35 +197,31 @@ export function readInformationAgentListingContactBlock(
         text(person.name) ??
         text([text(person.prenom), text(person.nom)].filter(Boolean).join(" "));
       for (const email of emailsOf(person.email)) {
-        addManager({
+        people.push({
           email,
           name,
           field: `source_property_features.manager.${listKey}[${index}].email`,
-          principal: Boolean(name) && name === managerName,
+          principal:
+            namedManager.length > 0 && normalizeInformationAgentIdentityName(name) === namedManager,
+          addressKind: informationAgentAddressKind(email),
         });
       }
     });
   }
-  // Boîte du service (`direction_email`, reprise dans `email`) : absente de la liste, elle n'a pas de nom.
-  for (const email of emailsOf(manager.direction_email)) {
-    addManager({
-      email,
-      name: null,
-      field: "source_property_features.manager.direction_email",
-      principal: true,
-    });
+  // Aucune personne ne porte le nom du gestionnaire (l'annonce nomme un service, ou personne) : la première
+  // personne listée est le contact de la vente.
+  if (people.length && !people.some((record) => record.principal)) {
+    people[0] = { ...people[0], principal: true };
   }
+  people.forEach(addManager);
   for (const email of emailsOf(manager.email)) {
     addManager({
       email,
       name: managerRecords.length ? null : managerName,
       field: "source_property_features.manager.email",
       principal: true,
+      addressKind: informationAgentAddressKind(email),
     });
-  }
-  // Aucun nom de gestionnaire dans l'annonce : la première personne listée est le contact de la vente.
-  if (managerRecords.length && !managerRecords.some((record) => record.principal)) {
-    managerRecords[0] = { ...managerRecords[0], principal: true };
   }
 
   const block: InformationAgentListingContactBlock = {
@@ -183,21 +240,47 @@ export type InformationAgentListingRole = {
   structureKind: InformationAgentStructureKind | null;
 };
 
+const LAWYER: InformationAgentListingRole = {
+  role: "lawyer",
+  structureKind: INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE.lawyer,
+};
+const NOTARY: InformationAgentListingRole = {
+  role: "notary",
+  structureKind: INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE.notary,
+};
+// Un organisateur n'a de structure connue que désigné par la source des cessions de l'État.
+const STATE: InformationAgentListingRole = { role: "organizer", structureKind: "state_service" };
+const PLAIN: InformationAgentListingRole = { role: "source_contact", structureKind: null };
+
+/**
+ * Rôle que la SOURCE de l'annonce donne à son contact : `notaires` ne publie que des notaires,
+ * `cessions_etat` que des services de l'État. Les autres sources ne disent rien.
+ */
+function sourceRole(sourceName: string | null): InformationAgentListingRole | null {
+  if (sourceName === "notaires") return NOTARY;
+  if (sourceName === "cessions_etat") return STATE;
+  return null;
+}
+
 /**
  * Rôle d'un bloc de contact pour cette vente, ou `null` si le bloc ne désigne pas l'interlocuteur de la
- * vente (il est alors écarté). TABLE FERMÉE :
+ * vente (il est alors écarté). TABLE FERMÉE ; la source est celle du bloc (vente ou observation fusionnée).
  *
- * | organisateur      | `contact`                         | `manager`            | `lawyer` |
- * | vente notariale   | notaire                           | écarté               | écarté   |
- * | cession de l'État | écarté                            | service de l'État    | écarté   |
- * | avocat poursuivant| avocat si l'adresse est aussi     | écarté               | avocat   |
- * |                   | celle de l'avocat, sinon contact  |                      |          |
- * | inconnu           | notaire (source `notaires`),      | service de l'État    | avocat   |
- * |                   | sinon contact de l'annonce        | (source              |          |
- * |                   |                                   | `cessions_etat`)     |          |
+ * | organisateur       | `contact`                           | `manager`              | `lawyer` |
+ * | vente notariale    | notaire si la source est `notaires`,| écarté                 | écarté   |
+ * |                    | sinon contact de l'annonce          |                        |          |
+ * | cession de l'État  | écarté                              | service de l'État si   | écarté   |
+ * |                    |                                     | la source est          |          |
+ * |                    |                                     | `cessions_etat`        |          |
+ * | avocat poursuivant | avocat si l'adresse est aussi celle | écarté                 | avocat   |
+ * |                    | de l'avocat et que la source n'est  |                        |          |
+ * |                    | ni `notaires` ni `cessions_etat`,   |                        |          |
+ * |                    | sinon contact de l'annonce          |                        |          |
+ * | inconnu            | notaire si la source est `notaires`,| service de l'État si   | avocat   |
+ * |                    | sinon contact de l'annonce          | la source est          |          |
+ * |                    |                                     | `cessions_etat`        |          |
  *
- * « Contact de l'annonce » (`source_contact`) n'est jamais choisi seul quand un interlocuteur désigné existe :
- * l'administrateur tranche.
+ * « Contact de l'annonce » (`source_contact`) n'est jamais choisi seul devant un interlocuteur désigné.
  */
 export function informationAgentListingBlockRole({
   block,
@@ -211,23 +294,50 @@ export function informationAgentListingBlockRole({
   /** L'adresse du bloc `contact` est aussi celle que l'annonce donne pour l'avocat. */
   lawyerAddress: boolean;
 }): InformationAgentListingRole | null {
-  const lawyer: InformationAgentListingRole = { role: "lawyer", structureKind: "law_firm" };
-  const notary: InformationAgentListingRole = { role: "notary", structureKind: "notary_office" };
-  const state: InformationAgentListingRole = { role: "organizer", structureKind: "state_service" };
-  const plain: InformationAgentListingRole = { role: "source_contact", structureKind: null };
+  const bySource = sourceRole(sourceName);
+  if (block === "lawyer") {
+    return organizerType === "notary" || organizerType === "state_service" ? null : LAWYER;
+  }
+  if (block === "manager") {
+    const stateSale = organizerType === "state_service" || organizerType === "unknown";
+    return stateSale && bySource === STATE ? STATE : null;
+  }
+  if (organizerType === "state_service") return null;
+  if (organizerType === "pursuing_lawyer") return lawyerAddress && !bySource ? LAWYER : PLAIN;
+  return bySource === NOTARY ? NOTARY : PLAIN;
+}
+
+/**
+ * Rôle du contact porté par le champ `lawyer_contact`. Le nom du champ ne dit RIEN : le pipeline y projette
+ * le contact de l'organisateur quel qu'il soit (avocat, notaire, service de l'État). Le rôle vient donc de
+ * l'organisateur de la vente et de la source, jamais du mot « lawyer ».
+ *
+ * - vente notariale : notaire si la source est `notaires`, sinon contact de l'annonce ;
+ * - cession de l'État : service de l'État si la source est `cessions_etat`, sinon contact de l'annonce ;
+ * - avocat poursuivant : avocat, sauf sur une source `notaires` ou `cessions_etat` (contact de l'annonce) ;
+ * - organisateur inconnu, absent ou hors liste : le rôle de la source ; à défaut, avocat seulement si un
+ *   bloc `lawyer` de l'annonce porte la même adresse ; sinon contact de l'annonce.
+ */
+export function informationAgentSaleFieldRole({
+  organizerType,
+  sourceName,
+  lawyerAddress,
+}: {
+  organizerType: InformationAgentOrganizerType;
+  sourceName: string | null;
+  /** Un bloc `lawyer` de l'annonce porte cette adresse. */
+  lawyerAddress: boolean;
+}): InformationAgentListingRole {
+  const bySource = sourceRole(sourceName);
   switch (organizerType) {
     case "notary":
-      return block === "contact" ? notary : null;
+      return bySource === NOTARY ? NOTARY : PLAIN;
     case "state_service":
-      return block === "manager" ? state : null;
+      return bySource === STATE ? STATE : PLAIN;
     case "pursuing_lawyer":
-      if (block === "lawyer") return lawyer;
-      if (block === "contact") return lawyerAddress ? lawyer : plain;
-      return null;
+      return bySource ? PLAIN : LAWYER;
     case "unknown":
-      if (block === "lawyer") return lawyer;
-      if (block === "contact") return sourceName === "notaires" ? notary : plain;
-      return sourceName === "cessions_etat" ? state : null;
+      return bySource ?? (lawyerAddress ? LAWYER : PLAIN);
   }
 }
 

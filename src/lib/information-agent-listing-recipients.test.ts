@@ -1,38 +1,36 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { evaluateAutopilotCandidate } from "@/lib/information-agent/autopilot-rules";
 import {
+  contactCandidateSnapshot,
   discoverInformationAgentContacts,
   resolveInformationAgentListingContacts,
   selectInformationAgentContact,
   type InformationAgentContactSale,
   type InformationAgentRegistryContact,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import {
+  INFORMATION_AGENT_STATE_FUNCTIONAL_MAILBOX_WORDS,
   informationAgentListingBlockRole,
+  informationAgentSaleFieldRole,
   isNonInterlocutorMention,
   readInformationAgentListingContactBlock,
   readInformationAgentOrganizerType,
   type InformationAgentListingContactBlock,
   type InformationAgentOrganizerType,
 } from "@/lib/information-agent/listing-contacts";
-import {
-  INFORMATION_AGENT_LISTING_FIELD_QUESTION_KEYS,
-  INFORMATION_AGENT_QUESTION_KEYS_BY_AUDIENCE,
-  allowedInformationAgentQuestionKeys,
-  informationAgentQuestionAudience,
-  informationAgentQuestionTextFor,
-} from "@/lib/information-agent/recipient-questions";
 import { informationAgentRecipientProfile } from "@/lib/information-agent/recipient-profile";
-import { contactCandidateSnapshot } from "@/lib/information-agent/contacts";
-import { INFORMATION_AGENT_QUESTIONS } from "@/lib/information-agent-questions";
 
-// Jeux d'essai par source. Toutes les adresses sont fictives (`example.test`, `gmail.test`, sous-domaine
-// inexistant de `justice.fr`).
+// Jeux d'essai par source. Toutes les adresses sont fictives (`example.test`, `gmail.test`, sous-domaines
+// inexistants de `justice.fr`, `notaires.fr` et `avocat-conseil.fr`).
 const SALE_ID = "11111111-1111-4111-8111-111111111111";
 
 type Fixture = {
   source: string;
   url: string;
-  organizerType: InformationAgentOrganizerType;
+  /** Absent : la vente ne porte que `sale_procedure` (donné dans `sale`), comme en base. */
+  organizerType?: InformationAgentOrganizerType;
   features?: unknown;
   observations?: Array<{ source: string; url: string; features: unknown }>;
   sale?: Record<string, unknown>;
@@ -61,11 +59,16 @@ function sale(fixture: Fixture): InformationAgentContactSale {
     source_blocks: null,
     source_blocks_by_source: null,
     listing_contact_blocks: blocks,
-    information_agent_organizer_type: fixture.organizerType,
+    ...(fixture.organizerType ? { information_agent_organizer_type: fixture.organizerType } : {}),
     registry_contacts: fixture.registry ?? [],
     ...fixture.sale,
   } as unknown as InformationAgentContactSale;
 }
+
+const emails = (fixture: Fixture) =>
+  resolveInformationAgentListingContacts(sale(fixture)).candidates.map(
+    (candidate) => candidate.email,
+  );
 
 const NOTAIRES: Fixture = {
   source: "notaires",
@@ -184,6 +187,7 @@ describe("destinataire lu dans l'annonce, par source", () => {
       addressKind: "generic",
     });
     expect(selected?.provenance[0]).toMatchObject({
+      field: "source_property_features.manager.direction_email",
       sourceName: "cessions_etat",
       sourceUrl: CESSIONS.url,
     });
@@ -238,28 +242,150 @@ describe("destinataire lu dans l'annonce, par source", () => {
   });
 });
 
-describe("adresse générique avant adresse nominative", () => {
-  it("même structure (même domaine propre) : la générique est choisie seule", () => {
-    const candidates = discoverInformationAgentContacts(
-      sale({
-        ...NOTAIRES,
-        sale: {
-          ...NOTAIRES.sale,
-          source_blocks: { contact_office: "Office notarial : etude@example.test" },
-        },
-      }),
+describe("rôle du contact porté par `lawyer_contact` : jamais tiré du nom du champ", () => {
+  const withField = (source: string, saleProcedure: unknown, features?: unknown): Fixture => ({
+    source,
+    url: `https://annonces.example.test/${source}/1`,
+    features,
+    sale: {
+      lawyer_name: "Jean Martin",
+      lawyer_contact: "jean.martin@example.test",
+      sale_procedure: saleProcedure,
+    },
+  });
+  const roleOf = (fixture: Fixture) => {
+    const [candidate] = discoverInformationAgentContacts(sale(fixture));
+    return candidate?.role;
+  };
+  /** Verdict du pilote pour ce rôle, tout le reste étant admis. */
+  const pilotVerdict = (recipientRole: string) =>
+    evaluateAutopilotCandidate(
+      {
+        sourceKind: "sale_listing",
+        recipientRole,
+        selectedUnambiguously: true,
+        identityComplete: true,
+        addressHygieneIssue: null,
+        consumerDomain: false,
+        observationChannel: null,
+        addressObservedAt: "2026-11-01T10:00:00Z",
+        mailDomain: "ok",
+        saleDate: "2026-12-20T10:00:00Z",
+        hasUnpublishedGap: true,
+        humanDraftExists: false,
+        identityExcluded: false,
+        contactFirstRecordedAt: "2026-11-01T10:00:00Z",
+        alreadyInformed: false,
+        lastReplyAt: null,
+        silentSendsInSixMonths: 0,
+        lastSendAt: null,
+      },
+      { allowLicitorDecoded: false, art14RuleEnabled: true, art14MaxAgeDays: 30 },
+      new Date("2026-11-03T09:30:00Z"),
     );
+
+  it.each([
+    ["organisateur `unknown`", { organizer_type: "unknown" }],
+    ["`sale_procedure` nul", null],
+    ["`sale_procedure` vide", {}],
+    ["organisateur hors liste (`seller`)", { organizer_type: "seller" }],
+  ])("source `notaires`, %s : notaire, et le pilote refuse", (_label, saleProcedure) => {
+    const role = roleOf(withField("notaires", saleProcedure));
+    expect(role).toBe("notary");
+    expect(pilotVerdict(role ?? "")).toEqual({ ok: false, code: "role_not_lawyer" });
+  });
+
+  it.each([
+    ["organisateur `unknown`", { organizer_type: "unknown" }],
+    ["`sale_procedure` nul", null],
+    ["organisateur hors liste (`seller`)", { organizer_type: "seller" }],
+  ])("source `cessions_etat`, %s : service de l'État, et le pilote refuse", (_label, procedure) => {
+    const [candidate] = discoverInformationAgentContacts(
+      sale(withField("cessions_etat", procedure)),
+    );
+    expect(candidate).toMatchObject({ role: "organizer", structureKind: "state_service" });
+    expect(pilotVerdict(candidate.role)).toEqual({ ok: false, code: "role_not_lawyer" });
+  });
+
+  it.each([
+    ["organisateur `unknown`", { organizer_type: "unknown" }],
+    ["`sale_procedure` nul", null],
+    ["organisateur hors liste (`seller`)", { organizer_type: "seller" }],
+  ])("autre source, %s, sans bloc avocat : contact de l'annonce, et le pilote refuse", (_l, p) => {
+    const [candidate] = discoverInformationAgentContacts(sale(withField("licitor", p)));
+    expect(candidate).toMatchObject({ role: "source_contact", recipientKind: "source_contact" });
+    expect(candidate.structureKind).toBeUndefined();
+    expect(pilotVerdict(candidate.role)).toEqual({ ok: false, code: "role_not_lawyer" });
+  });
+
+  it("organisateur inconnu : avocat seulement si un bloc `lawyer` porte la même adresse", () => {
+    const corroborated = withField("licitor", null, {
+      lawyer: { name: "Jean Martin", email: "jean.martin@example.test" },
+    });
+    expect(roleOf(corroborated)).toBe("lawyer");
+    const otherLawyer = withField("licitor", null, {
+      lawyer: { name: "Anne Leroy", email: "anne.leroy@example.test" },
+    });
+    const candidates = discoverInformationAgentContacts(sale(otherLawyer));
+    expect(candidates.find((c) => c.email === "jean.martin@example.test")?.role).toBe(
+      "source_contact",
+    );
+    expect(candidates.find((c) => c.email === "anne.leroy@example.test")?.role).toBe("lawyer");
+  });
+
+  it("organisateur `pursuing_lawyer` sur une source `notaires` ou `cessions_etat` : pas « avocat »", () => {
+    for (const source of ["notaires", "cessions_etat"]) {
+      const role = roleOf(withField(source, { organizer_type: "pursuing_lawyer" }));
+      expect(role).toBe("source_contact");
+      expect(pilotVerdict(role ?? "")).toEqual({ ok: false, code: "role_not_lawyer" });
+    }
+    // Vente au tribunal sur une source d'annonces judiciaires : l'avocat poursuivant, admis par le pilote.
+    const role = roleOf(withField("licitor", { organizer_type: "pursuing_lawyer" }));
+    expect(role).toBe("lawyer");
+    expect(pilotVerdict(role ?? "")).toEqual({ ok: true });
+  });
+
+  it("vente notariale ou cession publiée par une autre source : contact de l'annonce", () => {
+    expect(roleOf(withField("licitor", { organizer_type: "notary" }))).toBe("source_contact");
+    expect(roleOf(withField("licitor", { organizer_type: "state_service" }))).toBe(
+      "source_contact",
+    );
+    expect(roleOf(withField("notaires", { organizer_type: "notary" }))).toBe("notary");
+  });
+
+  it("table du champ, cas par cas", () => {
+    const role = (
+      organizerType: InformationAgentOrganizerType,
+      sourceName: string | null,
+      lawyerAddress = false,
+    ) => informationAgentSaleFieldRole({ organizerType, sourceName, lawyerAddress }).role;
+    expect(role("unknown", null)).toBe("source_contact");
+    expect(role("unknown", null, true)).toBe("lawyer");
+    // La source prime sur un bloc avocat : `notaires` ne publie que des notaires.
+    expect(role("unknown", "notaires", true)).toBe("notary");
+    expect(role("pursuing_lawyer", "avoventes")).toBe("lawyer");
+  });
+});
+
+describe("adresse générique avant adresse nominative", () => {
+  it("même bloc de contact : la générique passe devant, avec le rôle du bloc", () => {
+    const candidates = discoverInformationAgentContacts(sale(CESSIONS));
     const [first, second] = candidates;
     expect(first).toMatchObject({
-      email: "etude@example.test",
+      email: "pgp.domaine@example.test",
       addressKind: "generic",
-      role: "notary",
+      role: "organizer",
+      structureKind: "state_service",
     });
-    expect(second).toMatchObject({ email: "jean.martin@example.test", addressKind: "nominative" });
+    expect(second).toMatchObject({
+      email: "claire.durand@example.test",
+      addressKind: "nominative",
+      role: "organizer",
+      name: "Claire Durand",
+    });
     expect(first.score - second.score).toBeGreaterThanOrEqual(12);
-    expect(selectInformationAgentContact(candidates)?.email).toBe("etude@example.test");
     // Le nom de la personne reste attaché à son adresse, pas à l'adresse générique.
-    expect(first.name).not.toBe("Jean Martin");
+    expect(first.name).toBeNull();
   });
 
   it("deux adresses du même avocat dans le champ de la vente : la générique passe devant", () => {
@@ -284,6 +410,34 @@ describe("adresse générique avant adresse nominative", () => {
     expect(
       selectInformationAgentContact(discoverInformationAgentContacts(sale(NOTAIRES))),
     ).toMatchObject({ email: "jean.martin@example.test", addressKind: "nominative" });
+  });
+
+  it("un simple domaine commun ne donne ni le rang ni le rôle à une adresse générique d'un texte libre", () => {
+    const candidates = discoverInformationAgentContacts(
+      sale({
+        ...NOTAIRES,
+        sale: {
+          ...NOTAIRES.sale,
+          description: "Renseignements : contact@example.test",
+          source_blocks: { divers: "Écrire à accueil@example.test" },
+        },
+      }),
+    );
+    const byEmail = new Map(candidates.map((candidate) => [candidate.email, candidate]));
+    // Le notaire désigné reste premier et choisi seul.
+    expect(candidates[0].email).toBe("jean.martin@example.test");
+    expect(selectInformationAgentContact(candidates)?.email).toBe("jean.martin@example.test");
+    // Les adresses génériques du même domaine gardent leur confiance basse et leur rôle non établi.
+    for (const email of ["contact@example.test", "accueil@example.test"]) {
+      expect(byEmail.get(email)).toMatchObject({
+        addressKind: "generic",
+        role: "source_contact",
+        recipientKind: "source_contact",
+        confidence: "low",
+      });
+      expect(byEmail.get(email)?.structureKind).toBeUndefined();
+      expect(byEmail.get(email)?.officeCode).toBeUndefined();
+    }
   });
 
   it("jamais l'adresse nominative d'une autre personne, même répétée ailleurs dans l'annonce", () => {
@@ -315,21 +469,206 @@ describe("adresse générique avant adresse nominative", () => {
     );
     expect(resolution.refused.nominative_other_person).toBe(1);
   });
+});
 
-  it("deux structures différentes ne se départagent pas par cette règle", () => {
-    // Messagerie grand public : aucun domaine propre, donc aucune structure commune.
-    const candidates = discoverInformationAgentContacts(
-      sale({
-        ...ENCHERES_IMMOBILIERES,
-        features: undefined,
-        sale: {
-          lawyer_name: "Maître Anne Leroy",
-          lawyer_contact: "anne.leroy@gmail.test / cabinet@gmail.test",
+describe("cessions de l'État : boîte du service et gestionnaire nommé", () => {
+  const manager = (value: Record<string, unknown>) =>
+    readInformationAgentListingContactBlock({ manager: value }, "cessions_etat", CESSIONS.url)
+      ?.manager;
+
+  it("`direction_email` est lue d'abord, principale, quelle que soit sa forme", () => {
+    const records = manager({
+      manager_name: "Claire Durand",
+      direction_email: "sdnc.gestion-domaniale@example.test",
+      email: "sdnc.gestion-domaniale@example.test",
+      managers: [
+        { name: "Claire Durand", email: "claire.durand@example.test" },
+        { name: "Paul Petit", email: "paul.petit@example.test" },
+      ],
+    });
+    expect(records?.[0]).toEqual({
+      email: "sdnc.gestion-domaniale@example.test",
+      name: null,
+      field: "source_property_features.manager.direction_email",
+      principal: true,
+      // « gestion » : boîte fonctionnelle au sens du pipeline, bien que « sdnc » ne soit pas un mot générique.
+      addressKind: "generic",
+    });
+    expect(records?.map((record) => [record.email, record.principal])).toEqual([
+      ["sdnc.gestion-domaniale@example.test", true],
+      ["claire.durand@example.test", true],
+      ["paul.petit@example.test", false],
+    ]);
+  });
+
+  it("sans boîte fonctionnelle publiée, le pipeline désigne une personne : l'adresse reste nominative", () => {
+    const records = manager({
+      manager_name: "Claire Durand",
+      direction_email: "claire.durand@example.test",
+      email: "claire.durand@example.test",
+      managers: [
+        { name: "Claire Durand", email: "claire.durand@example.test" },
+        { name: "Paul Petit", email: "paul.petit@example.test" },
+      ],
+    });
+    expect(records?.map((record) => [record.email, record.principal, record.addressKind])).toEqual([
+      ["claire.durand@example.test", true, "nominative"],
+      ["paul.petit@example.test", false, "nominative"],
+    ]);
+  });
+
+  it("le gestionnaire nommé se reconnaît sous une autre forme de nom : pas de repli sur la première personne", () => {
+    const records = manager({
+      manager_name: "Marie Durand",
+      managers: [
+        { name: "Paul Petit", email: "paul.petit@example.test" },
+        { name: "DURAND Marie", email: "marie.durand@example.test" },
+      ],
+    });
+    expect(records?.map((record) => [record.email, record.principal])).toEqual([
+      ["paul.petit@example.test", false],
+      ["marie.durand@example.test", true],
+    ]);
+    // Et dans la résolution : Paul Petit n'est jamais retenu, Marie Durand l'est.
+    expect(
+      emails({
+        ...CESSIONS,
+        features: {
+          manager: {
+            manager_name: "Marie Durand",
+            managers: [
+              { name: "Paul Petit", email: "paul.petit@example.test" },
+              { name: "DURAND Marie", email: "marie.durand@example.test" },
+            ],
+          },
         },
+        sale: {},
+      }),
+    ).toEqual(["marie.durand@example.test"]);
+  });
+
+  it("ancienne forme (`contacts`), l'annonce nomme un service : la première personne est le contact de la vente", () => {
+    expect(
+      manager({
+        manager_name: "Direction des finances publiques",
+        email: "claire.durand@example.test",
+        contacts: [
+          { nom: "Durand", prenom: "Claire", email: "claire.durand@example.test" },
+          { nom: "Petit", prenom: "Paul", email: "paul.petit@example.test" },
+        ],
+      }),
+    ).toEqual([
+      {
+        email: "claire.durand@example.test",
+        name: "Claire Durand",
+        field: "source_property_features.manager.contacts[0].email",
+        principal: true,
+        addressKind: "nominative",
+      },
+      {
+        email: "paul.petit@example.test",
+        name: "Paul Petit",
+        field: "source_property_features.manager.contacts[1].email",
+        principal: false,
+        addressKind: "nominative",
+      },
+    ]);
+  });
+
+  it("les mots d'une boîte fonctionnelle sont ceux du pipeline, mot pour mot", () => {
+    const python = readFileSync(
+      resolve(process.cwd(), "services/data-pipeline/src/sources/cessions_etat_page.py"),
+      "utf8",
+    );
+    const definition = python.match(/_FUNCTIONAL_MAILBOX_RE = re\.compile\(([\s\S]*?)re\.I,/);
+    expect(definition).not.toBeNull();
+    const words = [...(definition?.[1] ?? "").matchAll(/r"([^"]*)"/g)]
+      .map((match) => match[1])
+      .join("")
+      .replace(/^\(\?:/, "")
+      .replace(/\)$/, "")
+      .split("|");
+    expect(words).toEqual([...INFORMATION_AGENT_STATE_FUNCTIONAL_MAILBOX_WORDS]);
+  });
+
+  it("aucune adresse : aucun bloc ; une valeur qui n'est pas une adresse est ignorée", () => {
+    expect(
+      readInformationAgentListingContactBlock(
+        { contact: { name: "Jean Martin", phone: "05 00 00 00 01", email: "non communiqué" } },
+        "notaires",
+        null,
+      ),
+    ).toBeNull();
+    expect(readInformationAgentListingContactBlock(null, "notaires", null)).toBeNull();
+  });
+});
+
+describe("office notarial de la vente", () => {
+  it("un seul code publié : il vaut pour tout notaire retenu (champ, texte, registre)", () => {
+    const resolution = resolveInformationAgentListingContacts(
+      sale({
+        ...NOTAIRES,
+        features: { listing: { office_crpcen: "33001" }, contact: { email: "etude@example.test" } },
+        sale: {
+          lawyer_contact: "jean.martin@example.test",
+          source_blocks: { notaire: "Me Paul Petit, notaire : paul.petit@example.test" },
+        },
+        registry: [
+          {
+            email: "anne.leroy@example.test",
+            displayName: "Anne Leroy",
+            role: "notary",
+            sourceName: "notaires",
+            sourceUrl: NOTAIRES.url,
+            observedAt: "2026-11-10T10:00:00.000Z",
+          },
+        ],
       }),
     );
-    expect(candidates).toHaveLength(2);
-    expect(selectInformationAgentContact(candidates)).toBeNull();
+    expect(resolution.officeCode).toBe("33001");
+    expect(
+      resolution.candidates
+        .filter((candidate) => candidate.role === "notary")
+        .map((candidate) => [candidate.email, candidate.officeCode])
+        .sort(),
+    ).toEqual([
+      ["anne.leroy@example.test", "33001"],
+      ["etude@example.test", "33001"],
+      ["jean.martin@example.test", "33001"],
+      ["paul.petit@example.test", "33001"],
+    ]);
+  });
+
+  it("deux codes publiés (annonces fusionnées de deux offices) : aucun code commun n'est inventé", () => {
+    const resolution = resolveInformationAgentListingContacts(
+      sale({
+        ...NOTAIRES,
+        observations: [
+          {
+            source: "notaires",
+            url: "https://annonces.example.test/notaires/vente-1-bis",
+            features: {
+              contact: { name: "Anne Leroy", email: "anne.leroy@example.test" },
+              listing: { office_crpcen: "75012" },
+            },
+          },
+        ],
+        sale: { lawyer_contact: "etude.fictive@gmail.test" },
+      }),
+    );
+    expect(resolution.officeCode).toBeNull();
+    const byEmail = new Map(resolution.candidates.map((c) => [c.email, c.officeCode]));
+    expect(byEmail.get("jean.martin@example.test")).toBe("33001");
+    expect(byEmail.get("anne.leroy@example.test")).toBe("75012");
+    expect(byEmail.get("etude.fictive@gmail.test")).toBeUndefined();
+  });
+
+  it("hors vente notariale, un code d'office publié ne s'applique à personne", () => {
+    const resolution = resolveInformationAgentListingContacts(
+      sale({ ...NOTAIRES, organizerType: "pursuing_lawyer" }),
+    );
+    expect(resolution.officeCode).toBeNull();
+    expect(resolution.candidates.every((candidate) => !candidate.officeCode)).toBe(true);
   });
 });
 
@@ -352,6 +691,58 @@ describe("rôle refusé : cité autrement que comme interlocuteur de la vente", 
       "jean.martin@example.test",
     ]);
     expect(resolution.refused).toEqual({ role_not_sale_interlocutor: 2 });
+  });
+
+  it("vente notariale : le bloc `contact` d'une observation d'une autre source n'est pas « notaire »", () => {
+    const resolution = resolveInformationAgentListingContacts(
+      sale({
+        ...NOTAIRES,
+        observations: [
+          {
+            source: "petites_affiches",
+            url: "https://annonces.example.test/petites-affiches/9",
+            features: { contact: { email: "maitre.durand@example.test" } },
+          },
+        ],
+      }),
+    );
+    const other = resolution.candidates.find((c) => c.email === "maitre.durand@example.test");
+    expect(other).toMatchObject({ role: "source_contact", recipientKind: "source_contact" });
+    expect(other?.structureKind).toBeUndefined();
+    expect(other?.provenance[0]).toMatchObject({
+      sourceName: "petites_affiches",
+      sourceUrl: "https://annonces.example.test/petites-affiches/9",
+    });
+    // Le notaire de la source `notaires` reste l'interlocuteur choisi seul.
+    expect(selectInformationAgentContact(resolution.candidates)?.email).toBe(
+      "jean.martin@example.test",
+    );
+  });
+
+  it("le registre interne passe par le même filtre de rôle, refus compté", () => {
+    const registry: InformationAgentRegistryContact[] = [
+      {
+        email: "maitre.durand@example.test",
+        displayName: "Maître Durand, Avocat",
+        role: "lawyer",
+        sourceName: "licitor",
+        sourceUrl: "https://annonces.example.test/licitor/1",
+        observedAt: "2026-11-10T10:00:00.000Z",
+      },
+    ];
+    const notarial = resolveInformationAgentListingContacts(sale({ ...NOTAIRES, registry }));
+    expect(notarial.candidates.map((candidate) => candidate.email)).toEqual([
+      "jean.martin@example.test",
+    ]);
+    expect(notarial.refused).toEqual({ role_not_sale_interlocutor: 1 });
+    // Un notaire au registre d'une vente au tribunal : écarté de même.
+    const tribunal = resolveInformationAgentListingContacts(
+      sale({ ...ENCHERES_IMMOBILIERES, registry: [{ ...registry[0], role: "notary" }] }),
+    );
+    expect(tribunal.candidates.map((candidate) => candidate.email)).toEqual([
+      "anne.leroy@example.test",
+    ]);
+    expect(tribunal.refused).toEqual({ role_not_sale_interlocutor: 1 });
   });
 
   it("un notaire cité dans une vente au tribunal n'est pas retenu", () => {
@@ -422,7 +813,7 @@ describe("rôle refusé : cité autrement que comme interlocuteur de la vente", 
   });
 });
 
-describe("table des rôles par organisateur", () => {
+describe("table des rôles des blocs, par organisateur", () => {
   const role = (
     block: "contact" | "manager" | "lawyer",
     organizerType: InformationAgentOrganizerType,
@@ -430,12 +821,14 @@ describe("table des rôles par organisateur", () => {
     lawyerAddress = false,
   ) => informationAgentListingBlockRole({ block, organizerType, sourceName, lawyerAddress })?.role;
 
-  it("vente notariale : le contact est le notaire, rien d'autre", () => {
-    expect(role("contact", "notary")).toBe("notary");
-    expect(role("lawyer", "notary")).toBeUndefined();
-    expect(role("manager", "notary")).toBeUndefined();
+  it("vente notariale : le contact n'est notaire que sur la source `notaires`", () => {
+    expect(role("contact", "notary", "notaires")).toBe("notary");
+    expect(role("contact", "notary", "petites_affiches")).toBe("source_contact");
+    expect(role("contact", "notary")).toBe("source_contact");
+    expect(role("lawyer", "notary", "notaires")).toBeUndefined();
+    expect(role("manager", "notary", "cessions_etat")).toBeUndefined();
   });
-  it("cession de l'État : le gestionnaire, rien d'autre", () => {
+  it("cession de l'État : le gestionnaire de la source `cessions_etat`, rien d'autre", () => {
     expect(
       informationAgentListingBlockRole({
         block: "manager",
@@ -444,14 +837,16 @@ describe("table des rôles par organisateur", () => {
         lawyerAddress: false,
       }),
     ).toEqual({ role: "organizer", structureKind: "state_service" });
-    expect(role("contact", "state_service")).toBeUndefined();
+    expect(role("manager", "state_service", "licitor")).toBeUndefined();
+    expect(role("contact", "state_service", "notaires")).toBeUndefined();
     expect(role("lawyer", "state_service")).toBeUndefined();
   });
   it("avocat poursuivant : le bloc avocat ; le bloc contact seulement si c'est son adresse", () => {
     expect(role("lawyer", "pursuing_lawyer")).toBe("lawyer");
-    expect(role("contact", "pursuing_lawyer", null, true)).toBe("lawyer");
-    expect(role("contact", "pursuing_lawyer", null, false)).toBe("source_contact");
-    expect(role("manager", "pursuing_lawyer")).toBeUndefined();
+    expect(role("contact", "pursuing_lawyer", "avoventes", true)).toBe("lawyer");
+    expect(role("contact", "pursuing_lawyer", "avoventes", false)).toBe("source_contact");
+    expect(role("contact", "pursuing_lawyer", "notaires", true)).toBe("source_contact");
+    expect(role("manager", "pursuing_lawyer", "cessions_etat")).toBeUndefined();
   });
   it("organisateur inconnu : la source de l'annonce départage", () => {
     expect(role("lawyer", "unknown")).toBe("lawyer");
@@ -467,50 +862,6 @@ describe("table des rôles par organisateur", () => {
     );
     expect(readInformationAgentOrganizerType({ organizer_type: "seller" }, null)).toBe("unknown");
     expect(readInformationAgentOrganizerType(null)).toBe("unknown");
-  });
-});
-
-describe("lecture des blocs de contact de l'annonce", () => {
-  it("ancienne forme du gestionnaire (`contacts`) : la première personne est le contact de la vente", () => {
-    const block = readInformationAgentListingContactBlock(
-      {
-        manager: {
-          manager_name: "Direction des finances publiques",
-          email: "claire.durand@example.test",
-          contacts: [
-            { nom: "Durand", prenom: "Claire", email: "claire.durand@example.test" },
-            { nom: "Petit", prenom: "Paul", email: "paul.petit@example.test" },
-          ],
-        },
-      },
-      "cessions_etat",
-      CESSIONS.url,
-    );
-    expect(block?.manager).toEqual([
-      {
-        email: "claire.durand@example.test",
-        name: "Claire Durand",
-        field: "source_property_features.manager.contacts[0].email",
-        principal: true,
-      },
-      {
-        email: "paul.petit@example.test",
-        name: "Paul Petit",
-        field: "source_property_features.manager.contacts[1].email",
-        principal: false,
-      },
-    ]);
-  });
-
-  it("aucune adresse : aucun bloc ; une valeur qui n'est pas une adresse est ignorée", () => {
-    expect(
-      readInformationAgentListingContactBlock(
-        { contact: { name: "Jean Martin", phone: "05 00 00 00 01", email: "non communiqué" } },
-        "notaires",
-        null,
-      ),
-    ).toBeNull();
-    expect(readInformationAgentListingContactBlock(null, "notaires", null)).toBeNull();
   });
 });
 
@@ -558,68 +909,6 @@ describe("adresses écartées, tous rôles", () => {
   });
 });
 
-describe("ce qu'on peut demander selon le rôle", () => {
-  it("notaire et service de l'État : les champs de la fiche et le lieu de consultation, liste fermée", () => {
-    expect(INFORMATION_AGENT_LISTING_FIELD_QUESTION_KEYS).toEqual([
-      "surface",
-      "composition",
-      "occupancy",
-      "visit",
-      "documents",
-    ]);
-    expect(INFORMATION_AGENT_QUESTION_KEYS_BY_AUDIENCE.notary).toBe(
-      INFORMATION_AGENT_LISTING_FIELD_QUESTION_KEYS,
-    );
-    expect(INFORMATION_AGENT_QUESTION_KEYS_BY_AUDIENCE.state_service).toBe(
-      INFORMATION_AGENT_LISTING_FIELD_QUESTION_KEYS,
-    );
-  });
-
-  it("avocat poursuivant : inchangé, toutes les questions", () => {
-    expect([...INFORMATION_AGENT_QUESTION_KEYS_BY_AUDIENCE.lawyer].sort()).toEqual(
-      Object.keys(INFORMATION_AGENT_QUESTIONS).sort(),
-    );
-    expect(informationAgentQuestionTextFor("lawyer", "documents")).toBe(
-      INFORMATION_AGENT_QUESTIONS.documents.question,
-    );
-  });
-
-  it("rôle du destinataire", () => {
-    expect(informationAgentQuestionAudience({ role: "lawyer" })).toBe("lawyer");
-    expect(informationAgentQuestionAudience({ role: "notary" })).toBe("notary");
-    expect(
-      informationAgentQuestionAudience({ role: "organizer", structureKind: "state_service" }),
-    ).toBe("state_service");
-    expect(informationAgentQuestionAudience({ role: "organizer" })).toBe("other");
-    expect(informationAgentQuestionAudience({ role: null })).toBe("other");
-  });
-
-  it("rien sur la procédure, le prix, le vendeur ni les pièces du dossier", () => {
-    expect(
-      allowedInformationAgentQuestionKeys("notary", [
-        "sale_date",
-        "starting_price_eur",
-        "sale_terms",
-        "diagnostics",
-        "cadastre",
-        "photos",
-        "surface",
-        "visit",
-      ]),
-    ).toEqual(["surface", "visit"]);
-    expect(() => informationAgentQuestionTextFor("state_service", "sale_terms")).toThrow(
-      "non admise",
-    );
-    const asked = INFORMATION_AGENT_LISTING_FIELD_QUESTION_KEYS.map((key) =>
-      informationAgentQuestionTextFor("notary", key),
-    ).join("\n");
-    expect(asked).toContain("cahier des charges");
-    expect(asked).not.toMatch(
-      /vendeur|d[ée]biteur|propri[ée]taire|origine|proc[ée]dure|loyer|transmettre|mise à prix/i,
-    );
-  });
-});
-
 describe("ce que l'administrateur voit du destinataire", () => {
   const profile = (fixture: Fixture) => {
     const candidates = discoverInformationAgentContacts(sale(fixture));
@@ -646,10 +935,53 @@ describe("ce que l'administrateur voit du destinataire", () => {
       originUrl: CESSIONS.url,
     });
     expect(profile(AVOVENTES)).toMatchObject({ roleLabel: "Avocat", addressKind: "generic" });
-    expect(profile(LICITOR)).toMatchObject({
+  });
+
+  it("une adresse du registre, décodée à la collecte, n'est pas dite « publiée dans l'annonce »", () => {
+    const shown = profile(LICITOR);
+    expect(shown).toMatchObject({
       roleLabel: "Avocat",
       addressKind: "nominative",
-      originLabel: "Adresse publiée dans l’annonce",
+      originLabel: "Adresse relevée à la collecte de l’annonce (masquée sur la page)",
+      originSourceName: "licitor",
+      originUrl: LICITOR.url,
+    });
+    expect(shown?.originLabel).not.toContain("publiée");
+  });
+
+  it("libellé, source et lien viennent de la même provenance", () => {
+    // Première provenance sans lien, seconde avec lien d'une autre source : le lien n'est pas emprunté.
+    const shown = informationAgentRecipientProfile(
+      {
+        contact_discovery: {
+          candidates: [
+            {
+              email: "jeanne.exemple@example.test",
+              role: "lawyer",
+              provenance: [
+                {
+                  kind: "source_block",
+                  field: "information_agent_contacts",
+                  source_name: "licitor",
+                  source_url: null,
+                },
+                {
+                  kind: "source_text",
+                  field: "description",
+                  source_name: "avoventes",
+                  source_url: "https://annonces.example.test/avoventes/lot-4",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      "jeanne.exemple@example.test",
+    );
+    expect(shown).toMatchObject({
+      originLabel: "Adresse relevée à la collecte de l’annonce (masquée sur la page)",
+      originSourceName: "licitor",
+      originUrl: null,
     });
   });
 
