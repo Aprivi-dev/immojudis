@@ -7,10 +7,25 @@ const managedConcurrentIndexDefinitions = new Set(
   operations.map((operation) => normalizeConcurrentIndexDefinition(operation.createSql)),
 );
 
+// Partial, expression and unique indexes (fact registry, 20261117100450): the diff tool prints their
+// predicate and expression its own way (redundant parentheses, `::text` casts on string constants, an
+// optional `USING btree`), which cannot be pinned to one text. For these operations only, the match is
+// made on a canonical form that ignores exactly those three things and nothing else: the index name,
+// table, uniqueness, columns, operators and constants still have to be the reviewed ones. The physical
+// index is verified separately, word for word, against the catalog (verifyConcurrentIndexes).
+const managedConcurrentIndexCanonicalDefinitions = new Set(
+  operations
+    .filter((operation) => operation.predicate || operation.expressions)
+    .map((operation) => canonicalConcurrentIndexDefinition(operation.createSql)),
+);
+
 function normalizeConcurrentIndexDefinition(value) {
   return String(value)
     .trim()
-    .replace(/^create\s+index\s+(?:concurrently\s+)?(?:if\s+not\s+exists\s+)?/i, "create index ")
+    .replace(
+      /^create\s+(unique\s+)?index\s+(?:concurrently\s+)?(?:if\s+not\s+exists\s+)?/i,
+      (_match, unique) => `create ${unique ? "unique " : ""}index `,
+    )
     .replace(/"([a-z_][a-z0-9_]*)"/g, "$1")
     .replace(/\s+/g, " ")
     .replace(/;\s*$/, "")
@@ -18,8 +33,20 @@ function normalizeConcurrentIndexDefinition(value) {
     .toLowerCase();
 }
 
+function canonicalConcurrentIndexDefinition(value) {
+  return normalizeConcurrentIndexDefinition(value)
+    .replace(/\s+using\s+btree\b/g, "")
+    .replace(/::text\b/g, "")
+    .replace(/[()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function isManagedConcurrentIndexDefinition(value) {
-  return managedConcurrentIndexDefinitions.has(normalizeConcurrentIndexDefinition(value));
+  return (
+    managedConcurrentIndexDefinitions.has(normalizeConcurrentIndexDefinition(value)) ||
+    managedConcurrentIndexCanonicalDefinitions.has(canonicalConcurrentIndexDefinition(value))
+  );
 }
 
 async function verifyConcurrentIndexes(databaseUrl, runCheck = runConcurrentIndexOperations) {
@@ -410,6 +437,7 @@ export {
   runWithTransientRetry,
   RECONCILED_CHECK_CONSTRAINTS,
   canonicalCheckCondition,
+  canonicalConcurrentIndexDefinition,
   checkBody,
   isManagedConcurrentIndexDefinition,
   managedConcurrentIndexDefinitions,
