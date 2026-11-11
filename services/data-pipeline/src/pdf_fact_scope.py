@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -12,12 +13,9 @@ from src.normalize import (
     clean_text,
     has_rented_occupancy_signal,
     no_lease_occupancy_status,
-    normalize_occupancy_status,
+    normalize_sale,
     normalize_status,
-    parse_decimal,
     parse_french_datetime,
-    parse_price,
-    parse_surface,
     source_sale_timezone,
     strip_accents,
 )
@@ -199,25 +197,44 @@ def _pdf_get_projected_value(sale: Any, field: str) -> object:
     return getattr(sale, field, None)
 
 
-def _pdf_restored_decimal(field: str, value: object) -> Decimal | None:
-    """Valeur décimale remise depuis l'instantané de la source, lue comme la collecte la lit.
+def _pdf_source_reader(sale: Any, snapshot: dict[str, object]) -> Callable[[str], object]:
+    """Rend la lecture d'un champ de l'instantané de la source, faite comme la collecte la fait.
 
-    L'instantané garde la valeur brute de la page (« 85,5 », encheres_immobilieres) : ``Decimal`` la refuse, et la
-    chaîne laissée dans le champ faisait échouer la comparaison suivante (« '>' not supported between 'str' and
-    'int' », 11/11/2026). Une valeur illisible rend vide, jamais une chaîne.
+    ``source_factual_snapshot`` garde le texte de la page, avant normalisation. Remis tel quel à chaque
+    relecture complète, il a donné le 11/11/2026 « libre » hors de la contrainte d'occupation et « 85,5 » en
+    chaîne dans une surface ; lu par un analyseur choisi ici, « 45.000 » aurait valu 45 euros et « Lot 12 »
+    serait resté un type de bien. Une seule règle : ``normalize_sale``, celle de la collecte, que
+    ``pdf_enrichment._invalidate_replaced_document_facts`` applique déjà au même instantané. Elle n'appelle ni
+    base ni réseau ; elle écrit dans son entrée, d'où la copie. Un champ que l'instantané laisse vide est lu,
+    comme à la collecte, dans le texte de la page que l'instantané porte (``raw_text``, ``description``).
     """
-    try:
-        return Decimal(str(value))
-    except (ArithmeticError, TypeError, ValueError):
-        pass
-    if field.endswith("_eur"):
-        return parse_price(value)
-    if field.endswith("surface_m2"):
-        return parse_surface(value)
-    return parse_decimal(value)
+    read: list[Any] = []
+
+    def value(field: str) -> object:
+        if not read:
+            raw = copy.deepcopy(snapshot)
+            for key in ("source_name", "source_url"):
+                if not raw.get(key):
+                    raw[key] = getattr(sale, key, None)
+            read.append(normalize_sale(raw))
+        return getattr(read[0], field, None)
+
+    return value
+
+
+def _pdf_set_source_value(sale: Any, field: str, value: object) -> None:
+    """Remet une valeur déjà lue par la collecte (``_pdf_source_reader``) : elle a le type du champ."""
+    if value is None and isinstance(getattr(sale, field, None), list):
+        value = []
+    setattr(sale, field, value)
 
 
 def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
+    """Remet la ligne de base d'une trace : une valeur de la vente sérialisée par ``_pdf_provenance_value``.
+
+    Un décimal y est écrit en notation décimale (« 45000.00 »), pas comme sur une page (« 45.000 ») : ``Decimal``
+    le relit exactement. Ce qui ne se relit pas rend vide, jamais une chaîne dans un champ numérique.
+    """
     if field.startswith("raw_payload:"):
         key = field.split(":", 1)[1]
         if value is None:
@@ -228,14 +245,13 @@ def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
     current = getattr(sale, field, None)
     if field == "status":
         value = normalize_status(value, getattr(sale, "sale_date", None))
-    if field == "occupancy_status" and value is not None:
-        # L'instantané de la source garde le libellé brut de la page (« libre », cessions_etat) : remis tel quel,
-        # il violait auction_sales_occupancy_status_check (11/11/2026). Un libellé inconnu rend vide.
-        value = normalize_occupancy_status(value)
     if value is None and isinstance(current, list):
         value = []
     if value is not None and isinstance(current, Decimal):
-        value = _pdf_restored_decimal(field, value)
+        try:
+            value = Decimal(str(value))
+        except (ArithmeticError, TypeError, ValueError):
+            value = None
     elif value is not None and isinstance(current, datetime) and not isinstance(value, datetime):
         value = parse_french_datetime(
             value,
@@ -245,7 +261,7 @@ def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
         try:
             value = int(value)
         except (TypeError, ValueError):
-            pass
+            value = None
     setattr(sale, field, value)
 
 
@@ -465,6 +481,7 @@ def _clear_pdf_fact_projections(
     selected = _pdf_projection_scope_fields(fields)
     snapshot = raw_payload.get("source_factual_snapshot")
     snapshot = snapshot if isinstance(snapshot, dict) else {}
+    read_source = _pdf_source_reader(sale, snapshot)
     cleared: set[str] = set()
     preserved: set[str] = set(independent_derived_fields)
     removed_payload_keys: set[str] = set()
@@ -486,12 +503,9 @@ def _clear_pdf_fact_projections(
             retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
             continue
         if field in snapshot:
-            source_value = snapshot[field]
-        elif "baseline" in trace:
-            source_value = trace["baseline"]
+            _pdf_set_source_value(sale, field, read_source(field))
         else:
-            source_value = None
-        _pdf_set_projected_value(sale, field, source_value)
+            _pdf_set_projected_value(sale, field, trace["baseline"] if "baseline" in trace else None)
         cleared.add(field)
         removed_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
     for key in removed_payload_keys - retained_payload_keys:
@@ -517,7 +531,10 @@ def _clear_pdf_fact_projections(
         current = getattr(sale, field, None)
         if len(values) != 1 or not _pdf_values_match(current, next(iter(values))):
             continue
-        _pdf_set_projected_value(sale, field, snapshot[field] if field in snapshot else None)
+        if field in snapshot:
+            _pdf_set_source_value(sale, field, read_source(field))
+        else:
+            _pdf_set_projected_value(sale, field, None)
         raw_payload.pop(candidate_key, None)
         cleared.add(field)
     return {"cleared": cleared, "preserved": preserved}
