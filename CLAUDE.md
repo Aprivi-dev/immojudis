@@ -23,3 +23,20 @@ pipeline de données Python dans `services/data-pipeline/`. Détails dans `READM
   fichiers, uniquement sur les points validés par l'utilisateur. Aucun agent n'écrit dans
   la base de production.
 - Les comptes-rendus vont dans `docs/equipe/` (voir son `README.md`).
+
+## Rangement du code
+
+Critère permanent pour qui écrit ou relit du code. Une seule question : « ces morceaux
+doivent-ils changer ensemble ? » Ne pas introduire, et relever en relecture, les liens cachés,
+les liens inutiles, le superflu et les cas particuliers non justifiés. Définitions et règles par
+rôle : `docs/architecture/rangement-du-code.md` (seul texte de référence).
+
+`/untangle-codebase` (`.claude/skills/untangle-codebase/`, origine et licence dans son
+`NOTICE.md`) lance une refonte complète :
+
+- seulement sur demande explicite du propriétaire, sur une zone nommée à la fois (argument du
+  skill) ; jamais sur tout le dépôt d'un coup, ni pendant qu'un lot en cours touche la même zone ;
+- dans le mode `/equipe`, le chef d'orchestre le déclenche après validation ; les changements
+  passent par `developpeur` et par le circuit de relecture ;
+- ses deux options : suppression des commentaires qui répètent le code, oui ; suppression des
+  tests qui ne détecteraient aucun défaut, oui, mais en dernier et avec prudence.
