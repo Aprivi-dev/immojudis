@@ -1675,10 +1675,11 @@ export type Database = {
           lot_attachment: string;
           lot_ref: string | null;
           publication_mode: string;
-          reason: string | null;
+          reason_code: string | null;
           received_at: string | null;
           recipient_kind: string | null;
           sale_id: string;
+          seq: number;
           supersedes_decision_id: string | null;
         };
         Insert: {
@@ -1693,10 +1694,11 @@ export type Database = {
           lot_attachment: string;
           lot_ref?: string | null;
           publication_mode?: string;
-          reason?: string | null;
+          reason_code?: string | null;
           received_at?: string | null;
           recipient_kind?: string | null;
           sale_id: string;
+          seq?: never;
           supersedes_decision_id?: string | null;
         };
         Update: {
@@ -1711,10 +1713,11 @@ export type Database = {
           lot_attachment?: string;
           lot_ref?: string | null;
           publication_mode?: string;
-          reason?: string | null;
+          reason_code?: string | null;
           received_at?: string | null;
           recipient_kind?: string | null;
           sale_id?: string;
+          seq?: never;
           supersedes_decision_id?: string | null;
         };
         Relationships: [
@@ -3660,6 +3663,7 @@ export type Database = {
           incoming_value: Json | null;
           listing_value: Json | null;
           sale_id: string;
+          seq: number;
         };
         Insert: {
           created_at?: string;
@@ -3671,6 +3675,7 @@ export type Database = {
           incoming_value?: Json | null;
           listing_value?: Json | null;
           sale_id: string;
+          seq?: never;
         };
         Update: {
           created_at?: string;
@@ -3682,6 +3687,7 @@ export type Database = {
           incoming_value?: Json | null;
           listing_value?: Json | null;
           sale_id?: string;
+          seq?: never;
         };
         Relationships: [
           {
