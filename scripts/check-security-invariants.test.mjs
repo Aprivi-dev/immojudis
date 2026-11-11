@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // Chaque test lance le script d'invariants sur un dépôt factice (un processus Node, 2,5 à 5,5 s à vide) : sous
 // charge, le délai par défaut de 5 s est trop juste. 20 s pour tout le fichier.
@@ -85,10 +85,13 @@ function runInvariants(extraMigrations = {}, omittedMigrations = [], sourceOverr
   }
   if (overridden.length) mirrorSource(root, sourceOverrides);
   mkdirSync(join(root, "scripts"));
-  copyFileSync(
-    join(repo, "scripts/check-security-invariants.mjs"),
-    join(root, "scripts/check-security-invariants.mjs"),
-  );
+  // Le script et le module qu'il importe (invariants du registre des pièces).
+  for (const script of [
+    "check-security-invariants.mjs",
+    "check-security-invariants-fact-registry.mjs",
+  ]) {
+    copyFileSync(join(repo, "scripts", script), join(root, "scripts", script));
+  }
   mkdirSync(join(root, "supabase/migrations"), { recursive: true });
   for (const file of readdirSync(join(repo, "supabase/migrations"))) {
     if (omittedMigrations.includes(file)) continue;
@@ -980,6 +983,435 @@ $$;`;
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
       "src/lib/sneaky-core.ts names app_private.apply_information_agent_fact",
+    );
+  });
+});
+
+describe("invariants de sécurité : registre des pièces (lot R1)", () => {
+  const heldColumns =
+    "surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates, held_fields";
+  const holdWhen =
+    "when (old.held_fields is not null or new.held_fields is distinct from old.held_fields)";
+  const holdTrigger = (columns, when) => `
+drop trigger if exists aaab_auction_sales_hold_projected_fields on public.auction_sales;
+create trigger aaab_auction_sales_hold_projected_fields
+  before update of ${columns}
+  on public.auction_sales
+  for each row
+  ${when}
+  execute function app_private.hold_projected_sale_fields();`;
+  const triggerFunction = (name, body, options = "security definer set search_path = ''") => `
+create or replace function ${name}()
+returns trigger language plpgsql ${options} as $$
+begin
+  ${body}
+end;
+$$;`;
+  const decision = (columns, values) =>
+    `insert into public.auction_fact_claim_decisions (claim_id, sale_id, decision, lot_attachment, actor_kind${columns}) ${values};`;
+
+  // Un contournement par migration : chaque échec nomme sa migration, un seul passage du script suffit donc
+  // à les vérifier un par un (sql nul : même migration que l'entrée précédente, autre échec attendu). Les
+  // contrôles qui lisent la DERNIÈRE définition d'un objet (forme d'un déclencheur, fonctions) portent ici
+  // sur des objets différents ; le seul autre cas du déclencheur de retenue a son propre passage, plus bas.
+  const bypasses = [
+    {
+      label: "une écriture accordée au rôle de service sur le journal des décisions",
+      slug: "registry_grant_write",
+      sql: "grant insert, update on table public.auction_fact_claim_decisions to service_role;",
+      prefix: " ",
+      message:
+        "grants on public.auction_fact_claim_decisions something else than SELECT to service_role alone",
+    },
+    {
+      label: "une lecture des champs accordée à un rôle du navigateur",
+      slug: "registry_grant_browser",
+      sql: "grant select on public.auction_fact_fields to authenticated;",
+      prefix: " ",
+      message:
+        "grants on public.auction_fact_fields something else than SELECT to service_role alone",
+    },
+    {
+      label: "une politique sur la file des évènements",
+      slug: "registry_policy",
+      sql: "create policy events_read on public.auction_sale_field_hold_events for select to authenticated using (true);",
+      prefix: " ",
+      message: "opens public.auction_sale_field_hold_events with a policy",
+    },
+    {
+      label: "la RLS désactivée sur la préséance",
+      slug: "registry_rls_off",
+      sql: "alter table public.auction_fact_source_precedence disable row level security;",
+      prefix: " ",
+      message: "disables row level security on public.auction_fact_source_precedence",
+    },
+    {
+      label: "le déclencheur d'ajout seul du journal supprimé",
+      slug: "journal_drop_guard",
+      sql: "drop trigger if exists auction_fact_claim_decisions_append_only on public.auction_fact_claim_decisions;",
+      prefix: " ",
+      message:
+        "drops the trigger auction_fact_claim_decisions_append_only of public.auction_fact_claim_decisions without recreating it",
+    },
+    {
+      label: "les déclencheurs de la file des évènements désactivés",
+      slug: "events_disable_triggers",
+      sql: "alter table public.auction_sale_field_hold_events disable trigger all;",
+      prefix: " ",
+      message:
+        "disables the trigger auction_sale_field_hold_events_no_truncate of public.auction_sale_field_hold_events",
+    },
+    {
+      label: "le vidage des observations de nouveau permis",
+      slug: "claims_drop_truncate_guard",
+      sql: "drop trigger auction_fact_claims_no_truncate on public.auction_fact_claims;",
+      prefix: " ",
+      message:
+        "drops the trigger auction_fact_claims_no_truncate of public.auction_fact_claims without recreating it",
+    },
+    {
+      label: "une migration qui vide held_fields",
+      slug: "held_fields_update",
+      sql: "update public.auction_sales set held_fields = null where held_fields is not null;",
+      prefix: " ",
+      message: "writes auction_sales.held_fields outside a function",
+    },
+    {
+      label: "une autre fonction qui écrit held_fields",
+      slug: "held_fields_function",
+      sql: triggerFunction(
+        "app_private.release_every_field",
+        "update public.auction_sales set held_fields = null; return null;",
+      ),
+      prefix: " ",
+      message: "writes auction_sales.held_fields in app_private.release_every_field",
+    },
+    {
+      label: "une vente insérée avec held_fields",
+      slug: "held_fields_insert",
+      sql: "insert into public.auction_sales (source_name, source_url, held_fields) values ('licitor', 'https://example.test/forged', '{}'::jsonb);",
+      prefix: " ",
+      message: "inserts auction_sales.held_fields",
+    },
+    {
+      label: "un droit par colonne sur held_fields",
+      slug: "held_fields_column_grant",
+      sql: "grant select (id, held_fields) on public.auction_sales to authenticated;",
+      prefix: " ",
+      message: "grants a column privilege on auction_sales.held_fields",
+    },
+    {
+      label: "held_fields dans les colonnes lisibles (liste des colonnes internes)",
+      slug: "held_fields_column_grant",
+      sql: null,
+      prefix: ": ",
+      message: "auction_sales column grant exposes internal column held_fields",
+    },
+    {
+      label: "une lecture de toute la table donnée à un rôle du navigateur",
+      slug: "sales_table_grant",
+      sql: "grant select on table public.auction_sales to anon, authenticated;",
+      prefix: " ",
+      message: "grants a table-wide read of auction_sales to a browser role",
+    },
+    {
+      label: "le déclencheur de retenue supprimé",
+      slug: "hold_trigger_drop",
+      sql: "drop trigger if exists aaab_auction_sales_hold_projected_fields on public.auction_sales;",
+      prefix: " ",
+      message:
+        "drops the trigger aaab_auction_sales_hold_projected_fields of public.auction_sales without recreating it",
+    },
+    {
+      label: "les déclencheurs de la fiche désactivés le temps d'un rattrapage",
+      slug: "sales_disable_triggers",
+      sql: "alter table public.auction_sales disable trigger user; update public.auction_sales set rooms_count = 1; alter table public.auction_sales enable trigger user;",
+      prefix: " ",
+      message:
+        "disables the trigger aaab_auction_sales_hold_projected_fields of public.auction_sales",
+    },
+    {
+      label: "le déclencheur de retenue renommé pour passer après les autres",
+      slug: "hold_trigger_rename",
+      sql: "alter trigger aaab_auction_sales_hold_projected_fields on public.auction_sales rename to zzzz_auction_sales_hold_projected_fields;",
+      prefix: " ",
+      message:
+        "renames the trigger aaab_auction_sales_hold_projected_fields of public.auction_sales",
+    },
+    {
+      label: "un déclencheur BEFORE UPDATE qui passerait avant la retenue",
+      slug: "earlier_trigger",
+      sql: "create trigger aaaa_auction_sales_rewrite before insert or update on public.auction_sales for each row execute function app_private.stamp_auction_sale_content_changed_at();",
+      prefix: " ",
+      message:
+        "creates the BEFORE UPDATE trigger aaaa_auction_sales_rewrite on auction_sales, which runs before aaab_auction_sales_hold_projected_fields",
+    },
+    {
+      label: "la projection exécutable par le rôle de service",
+      slug: "projection_grant",
+      sql: "grant execute on function app_private.project_sale_fields(uuid, text[], boolean) to service_role;",
+      prefix: " ",
+      message: "grants a privilege on app_private.project_sale_fields",
+    },
+    {
+      label: "toutes les fonctions de app_private accordées d'un coup",
+      slug: "app_private_grant_all",
+      sql: "grant execute on all functions in schema app_private to service_role;",
+      prefix: " ",
+      message: "grants every function of app_private at once",
+    },
+    {
+      label: "une observation rattachée à une autre vente",
+      slug: "claims_repoint",
+      sql: "update public.auction_fact_claims claim set auction_sale_id = merge.canonical_sale_id from app_private.auction_sale_merges merge where claim.auction_sale_id = merge.old_sale_id;",
+      prefix: " ",
+      message: "re-points a fact claim to another sale",
+    },
+    {
+      label: "la garde d'immuabilité des observations supprimée",
+      slug: "claims_guard_drop",
+      sql: "drop trigger auction_fact_claims_guard_mutation on public.auction_fact_claims;",
+      prefix: " ",
+      message:
+        "drops the trigger auction_fact_claims_guard_mutation of public.auction_fact_claims without recreating it",
+    },
+    {
+      label: "la garde d'immuabilité redéfinie sans sa clause « détacher seulement »",
+      slug: "claims_guard_relaxed",
+      sql: triggerFunction(
+        "app_private.guard_auction_fact_claim_mutation",
+        "return new;",
+        "set search_path = ''",
+      ),
+      prefix: " ",
+      message:
+        "redefines app_private.guard_auction_fact_claim_mutation without its detach-only clause",
+    },
+    {
+      label: "une clé étrangère du journal vers auction_sales",
+      slug: "registry_fk",
+      sql: "alter table public.auction_fact_claim_decisions add constraint decisions_sale_fk foreign key (sale_id) references public.auction_sales(id) on delete cascade;",
+      prefix: " ",
+      message: "gives public.auction_fact_claim_decisions a foreign key to auction_sales",
+    },
+    {
+      label: "une colonne de la file des évènements qui référence auction_sales",
+      slug: "registry_fk_column",
+      sql: "alter table public.auction_sale_field_hold_events add column sale_ref uuid references auction_sales (id);",
+      prefix: " ",
+      message: "gives public.auction_sale_field_hold_events a foreign key to auction_sales",
+    },
+    {
+      label: "le verrou des décisions automatiques retiré",
+      slug: "decisions_unlock",
+      sql: "alter table public.auction_fact_claim_decisions drop constraint auction_fact_claim_decisions_auto_locked;",
+      prefix: " ",
+      message: "drops the automatic publication lock auction_fact_claim_decisions_auto_locked",
+    },
+    {
+      label: "la contrainte « l'annonce ne tient jamais » retirée",
+      slug: "listing_holds",
+      sql: "alter table public.auction_fact_source_precedence drop constraint if exists auction_fact_source_precedence_listing_never_holds;",
+      prefix: " ",
+      message:
+        "drops the automatic publication lock auction_fact_source_precedence_listing_never_holds",
+    },
+    {
+      label: "une décision insérée en mode automatique",
+      slug: "decision_auto",
+      sql: decision(
+        ", publication_mode",
+        "values (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'lawyer', 'auto')",
+      ),
+      prefix: " ",
+      message:
+        "inserts into public.auction_fact_claim_decisions with a publication_mode that is not the literal 'manual'",
+    },
+    {
+      label: "une décision dont le mode vient d'une variable",
+      slug: "decision_variable",
+      sql: decision(
+        ", publication_mode",
+        "select claim.id, claim.auction_sale_id, 'accepted', 'single_lot', 'lawyer', p_mode from public.auction_fact_claims claim",
+      ),
+      prefix: " ",
+      message:
+        "inserts into public.auction_fact_claim_decisions with a publication_mode that is not the literal 'manual'",
+    },
+    {
+      label: "une seconde ligne en mode automatique derrière une ligne manuelle",
+      slug: "decision_second_row",
+      sql: decision(
+        ", publication_mode",
+        "values (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'lawyer', 'manual'), (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'lawyer', 'auto')",
+      ),
+      prefix: " ",
+      message:
+        "inserts into public.auction_fact_claim_decisions with a publication_mode that is not the literal 'manual'",
+    },
+    {
+      label: "le mode par défaut des décisions changé",
+      slug: "decision_default",
+      sql: "alter table public.auction_fact_claim_decisions alter column publication_mode set default 'auto';",
+      prefix: " ",
+      message: "changes the default publication_mode of public.auction_fact_claim_decisions",
+    },
+    {
+      label: "le déclencheur de retenue recréé sans sa clause WHEN",
+      slug: "hold_trigger_without_when",
+      sql: holdTrigger(heldColumns, ""),
+      prefix: null,
+      message:
+        "the hold trigger aaab_auction_sales_hold_projected_fields is missing or lost its shape",
+    },
+    {
+      label: "une fonction de retenue qui lit toute la ligne",
+      slug: "hold_function_active",
+      sql: triggerFunction(
+        "app_private.hold_projected_sale_fields",
+        "if to_jsonb(new) <> to_jsonb(old) then new.raw_payload := old.raw_payload; perform app_private.project_sale_fields(new.id, null, true); end if; return new;",
+      ),
+      prefix: ": ",
+      message: "app_private.hold_projected_sale_fields converts the whole row",
+    },
+    {
+      label: "une fonction de retenue qui lit raw_payload",
+      slug: "hold_function_active",
+      sql: null,
+      prefix: ": ",
+      message: "app_private.hold_projected_sale_fields reads raw_payload",
+    },
+    {
+      label: "une fonction de retenue qui appelle la projection",
+      slug: "hold_function_active",
+      sql: null,
+      prefix: ": ",
+      message: "app_private.hold_projected_sale_fields calls the projection",
+    },
+    {
+      label: "une fonction de retenue qui ne refuse plus une écriture de held_fields",
+      slug: "hold_function_active",
+      sql: null,
+      prefix: ": ",
+      message:
+        "app_private.hold_projected_sale_fields no longer refuses (42501) a write of held_fields outside the projection",
+    },
+    {
+      label: "une projection qui n'est plus SECURITY DEFINER à chemin de recherche vide",
+      slug: "projection_invoker",
+      sql: "create or replace function app_private.project_sale_fields(p_sale_id uuid, p_fields text[] default null, p_apply boolean default false) returns jsonb language sql security invoker as $$ select '{}'::jsonb $$;",
+      prefix: ": ",
+      message: "app_private.project_sale_fields is not SECURITY DEFINER with an empty search_path",
+    },
+    {
+      label: "une fonction d'ajout seul qui laisse passer",
+      slug: "append_only_relaxed",
+      sql: triggerFunction(
+        "app_private.fact_registry_append_only",
+        "if tg_op = 'DELETE' then return old; end if; raise exception using errcode = '55000', message = 'ajout seul';",
+      ),
+      prefix: ": ",
+      message: "app_private.fact_registry_append_only no longer refuses every write",
+    },
+    {
+      label: "un déclencheur d'ajout seul recréé pour la seule suppression",
+      slug: "events_guard_delete_only",
+      sql: "drop trigger if exists auction_sale_field_hold_events_append_only on public.auction_sale_field_hold_events; create trigger auction_sale_field_hold_events_append_only before delete on public.auction_sale_field_hold_events for each row execute function app_private.fact_registry_append_only();",
+      prefix: null,
+      message:
+        "the append-only trigger auction_sale_field_hold_events_append_only of public.auction_sale_field_hold_events is missing or no longer refuses every row and statement",
+    },
+  ];
+  const fileOf = (slug) => `99990101000000_${slug}.sql`;
+
+  let refused;
+  beforeAll(() => {
+    refused = runInvariants(
+      Object.fromEntries(
+        bypasses.filter(({ sql }) => sql !== null).map(({ slug, sql }) => [fileOf(slug), sql]),
+      ),
+    );
+  });
+
+  it("le script échoue sur ces migrations", () => {
+    expect(refused.status).toBe(1);
+  });
+
+  // prefix : ce qui sépare le nom de la migration du message (nul pour un échec qui ne nomme pas de migration).
+  it.each(bypasses)("refuse $label", ({ slug, prefix, message }) => {
+    expect(refused.stderr).toContain(
+      prefix === null ? message : `${fileOf(slug)}${prefix}${message}`,
+    );
+  });
+
+  it("refuse un déclencheur de retenue qui ne se déclenche plus sur une colonne tenue", () => {
+    const result = runInvariants({
+      [fileOf("hold_trigger_without_rooms")]: holdTrigger(
+        heldColumns.replace(" rooms_count,", ""),
+        holdWhen,
+      ),
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "the hold trigger aaab_auction_sales_hold_projected_fields no longer fires on a write of rooms_count",
+    );
+  });
+
+  it("refuse un module qui nomme la colonne, la projection ou son marqueur, pas un commentaire", () => {
+    const result = runInvariants({}, [], {
+      "src/lib/registre-colonne.ts": 'export const column = "held_fields";\n',
+      "src/lib/registre-projection.ts": 'export const rpc = "project_sale_fields";\n',
+      "src/lib/registre-marqueur.ts": 'export const marker = "app.sale_field_projection";\n',
+      "src/lib/registre-commentaire.ts":
+        "// held_fields est écrite par la base seule, par project_sale_fields.\nexport const nothing = 1;\n",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("src/lib/registre-colonne.ts names auction_sales.held_fields");
+    expect(result.stderr).toContain(
+      "src/lib/registre-projection.ts names app_private.project_sale_fields",
+    );
+    expect(result.stderr).toContain(
+      "src/lib/registre-marqueur.ts names the transaction marker of the projection",
+    );
+    expect(result.stderr).not.toContain("src/lib/registre-commentaire.ts");
+  });
+
+  it("accepte les formes permises et annonce les sept invariants", () => {
+    const result = runInvariants({
+      [fileOf("accepted_recreated_guard")]:
+        "drop trigger if exists auction_fact_claim_decisions_append_only on public.auction_fact_claim_decisions; create trigger auction_fact_claim_decisions_append_only before update or delete on public.auction_fact_claim_decisions for each row execute function app_private.fact_registry_append_only();",
+      [fileOf("accepted_recreated_hold")]: holdTrigger(heldColumns, holdWhen),
+      [fileOf("accepted_detach")]:
+        "update public.auction_fact_claims set auction_sale_id = null where auction_sale_id = '00000000-0000-4000-8000-000000000001';",
+      [fileOf("accepted_manual_decisions")]:
+        decision(
+          ", publication_mode",
+          "values (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'lawyer', 'manual'), (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'lawyer', 'manual')",
+        ) +
+        decision(
+          "",
+          "select claim.id, claim.auction_sale_id, 'accepted', 'single_lot', 'lawyer' from public.auction_fact_claims claim",
+        ),
+      [fileOf("accepted_later_trigger")]:
+        "create trigger zzzz_auction_sales_other before update on public.auction_sales for each row execute function app_private.stamp_auction_sale_content_changed_at();",
+      [fileOf("accepted_registry_read")]:
+        "grant select on table public.auction_fact_fields to service_role;",
+      [fileOf("accepted_projection_writes")]:
+        "create or replace function app_private.project_sale_fields(p_sale_id uuid, p_fields text[] default null, p_apply boolean default false) returns jsonb language plpgsql security definer set search_path = '' as $$ begin update public.auction_sales set held_fields = null where id = p_sale_id; return '{}'::jsonb; end; $$;",
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    const checked = JSON.parse(result.stdout).checked;
+    expect(checked).toEqual(
+      expect.arrayContaining([
+        "fact-registry-tables-closed",
+        "fact-registry-append-only",
+        "held-fields-projection-only",
+        "hold-trigger-present-early",
+        "field-projection-not-callable-by-api",
+        "fact-claims-never-repointed",
+        "registry-no-fk-to-auction-sales",
+      ]),
     );
   });
 });

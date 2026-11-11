@@ -1,4 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
+import {
+  checkFactRegistryInvariants,
+  factRegistryInvariantNames,
+} from "./check-security-invariants-fact-registry.mjs";
 
 // Lectures partagées des arborescences de code (src/, pipeline) : chacune n'est parcourue qu'une fois et ses
 // fichiers de code sont lus en parallèle (par lots) au premier parcours, puis servis depuis le cache. Plusieurs
@@ -507,6 +511,8 @@ const internalAuctionSalesColumns = [
   /^location$/,
   /^premium_readiness_\w+$/,
   /^retention_\w+$/,
+  // Registre des pièces (20261116100300) : provenance des champs tenus, écrite par la seule projection.
+  /^held_fields$/,
 ];
 let authenticatedColumnGrants = 0;
 for (const [name, source] of migrationSources) {
@@ -2190,6 +2196,18 @@ function functionSignature(schema, name, argumentText) {
       table: "information_agent_fact_publications",
       definition: "check\\s*\\(\\s*actor_kind\\s*<>\\s*'auto'\\s*\\)",
     },
+    // Registre des pièces (20261116100000) : aucune décision du journal n'est automatique, et l'annonce ne
+    // tient jamais un champ (une pièce ne tient que par une décision d'acceptation humaine).
+    {
+      name: "auction_fact_claim_decisions_auto_locked",
+      table: "auction_fact_claim_decisions",
+      definition: "check\\s*\\(\\s*publication_mode\\s*<>\\s*'auto'\\s*\\)",
+    },
+    {
+      name: "auction_fact_source_precedence_listing_never_holds",
+      table: "auction_fact_source_precedence",
+      definition: "check\\s*\\(\\s*not\\s+can_hold\\s+or\\s+source_kind\\s*<>\\s*'listing'\\s*\\)",
+    },
   ];
   for (const lock of locks) {
     if (!new RegExp(`constraint\\s+${lock.name}\\s+${lock.definition}`, "i").test(allSql)) {
@@ -2216,6 +2234,45 @@ function functionSignature(schema, name, argumentText) {
           `${name} drops or renames public.${lock.table}, which carries the lock ${lock.name}`,
         );
       }
+    }
+  }
+
+  // Journal des décisions du registre : une insertion ne nomme publication_mode que pour y écrire le littéral
+  // 'manual' (sinon la valeur par défaut, 'manual', s'applique) ; le défaut de la colonne ne change pas.
+  for (const [name, sql] of all) {
+    if (!sql.includes("auction_fact_claim_decisions")) continue;
+    for (const match of sql.matchAll(
+      /insert\s+into\s+(?:public\.)?auction_fact_claim_decisions\s*(?:as\s+[a-z_]+\s*)?\(/gi,
+    )) {
+      const columns = topLevelArgs(sql.slice(match.index + match[0].length));
+      const position = columns.args.findIndex((column) => /^publication_mode$/i.test(column));
+      if (position < 0) continue;
+      const rest = sql.slice(match.index + match[0].length + columns.end + 1);
+      const statement = rest.slice(0, rest.search(/;|$/));
+      const values = /^\s*values\s*\(/i.exec(statement);
+      let manualOnly = Boolean(values);
+      let cursor = values ? values[0].length : 0;
+      while (manualOnly) {
+        const row = topLevelArgs(statement.slice(cursor));
+        if (row.args[position] !== "'manual'") manualOnly = false;
+        const next = /^\s*,\s*\(/.exec(statement.slice(cursor + row.end + 1));
+        if (!next) break;
+        cursor += row.end + 1 + next[0].length;
+      }
+      if (!manualOnly) {
+        failures.push(
+          `${name} inserts into public.auction_fact_claim_decisions with a publication_mode that is not the literal 'manual' (no automatic decision)`,
+        );
+      }
+    }
+    if (
+      /alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?auction_fact_claim_decisions\s+[^;]*\balter\s+(?:column\s+)?publication_mode\s+(?:set|drop)\s+default/i.test(
+        sql,
+      )
+    ) {
+      failures.push(
+        `${name} changes the default publication_mode of public.auction_fact_claim_decisions (it must stay 'manual')`,
+      );
     }
   }
 
@@ -2361,6 +2418,18 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Registre des pièces (lot R1, 20261116100000 à 20261116100500) : tables fermées, journaux en ajout seul,
+// held_fields écrite par la seule projection, déclencheur de retenue en tête, projection hors de portée de
+// l'API, observations jamais rattachées à une autre vente, aucune clé étrangère vers auction_sales. Les
+// contrôles sont dans scripts/check-security-invariants-fact-registry.mjs, avec les lectures partagées d'ici.
+await checkFactRegistryInvariants({
+  migrationSources,
+  readSourceTree,
+  readSourceText,
+  failures,
+  baseUrl: import.meta.url,
+});
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -2412,6 +2481,7 @@ console.log(
       "email-send-log-service-role-only-and-no-body",
       "information-agent-publication-journal-and-core-service-only",
       "information-agent-no-automatic-publication-path",
+      ...factRegistryInvariantNames,
     ],
   }),
 );
