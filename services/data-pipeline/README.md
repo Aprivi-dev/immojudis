@@ -198,16 +198,34 @@ Ce que la garde note d'une écriture :
 - l'écriture de `auction_sales` relit par `returning` les colonnes des groupes : la
   référence est ce que la base a **gardé**, pas ce qui a été envoyé (la base peut
   retenir une valeur) ;
-- cette lecture est notée en attente dans la transaction et ne devient la référence
-  qu'après sa validation ; une transaction annulée ne laisse aucune trace.
+- cette lecture est notée en attente dans la transaction, sous l'identifiant que la
+  base rend (une vente nouvelle n'en a pas encore en mémoire), et ne devient la
+  référence qu'après validation ; une transaction annulée ne laisse aucune trace ;
+- c'est celui qui valide ou annule la transaction qui ouvre la portée
+  (`base_reads.written_scope()`, autour de la transaction) : `upsert_sales_to_supabase`
+  pour sa propre transaction, `source_detail.publish_source_revision`,
+  `verify_publication` (toujours annulée). Une écriture faite dans la transaction
+  d'un appelant ne confirme rien elle-même ;
+- si la base ne rend pas une ligne par ligne envoyée, rien n'est noté pour le lot et
+  une ligne de journal le dit.
 
 Quand un groupe est repris de la base, ce qui décrit la même valeur le suit : pour
 la surface, `habitable_surface_m2`, `carrez_surface_m2`, `surface_scope`,
 `surface_evidence` ; dans `raw_payload`, la trace de la pièce lue
 (`pdf_fact_provenance` du champ et les clés qu'elle nomme, `surface_extraction`,
-`land_surface_extraction`). Les copies de la valeur retenue (premier niveau de
-`raw_payload`, `raw_payload` des observations embarquées) prennent la valeur
-écrite, sauf celles dont la source a réellement publié la valeur.
+`land_surface_extraction`). Exception : une colonne voisine que la fiche relue vient
+de publier elle-même (son instantané la porte) reste celle de la source. Les copies
+de la valeur retenue prennent la valeur écrite : le premier niveau du `raw_payload`
+de la ligne, et l'observation embarquée de la source soumise. L'observation d'une
+autre source n'est jamais touchée, ni une copie dont la source a réellement publié
+la valeur.
+
+Limite connue : après une fusion entre sources, la vente en mémoire porte le
+`raw_payload` stocké de la ligne canonique, sans marqueur « non relue ». À la
+publication suivante du même passage, la garde peut ne pas retenir une valeur que la
+base a changée entre-temps. La retenue côté base est alors le filet : une pièce posée
+pendant l'import n'est pas écrasée (scénario D de
+`tests/test_base_echo_registry_postgres.py`).
 
 Compteur et journal :
 
@@ -228,14 +246,50 @@ stockée restent dans la vente, mais leur clé est absente de l'instantané de l
 fiche, qui en garde la liste (`fields_from_stored_row`), et ils n'entrent pas dans
 l'empreinte de fraîcheur. Une restauration « valeur de la source » (pièce modifiée)
 ne remet donc pas à vide un champ que la page n'a jamais donné. **Vague acceptée** :
-l'empreinte de ces pages change une fois, donc la première relecture de chacune
-invalide son analyse (81 ventes en production au 11/11/2026 ; Vench n'a plus de
-passage depuis le 29/10/2026). Aucun code de transition.
+l'empreinte de ces pages change une fois. À la première relecture de chacune, la
+collecte y voit un changement de la source et réécrit une seule fois
+`source_content_changed_at`, avec les marqueurs d'invalidation de l'analyse ; les
+relectures suivantes n'y touchent plus (81 ventes en production au 11/11/2026 ;
+Vench n'a plus de passage depuis le 29/10/2026). Aucun code de transition.
 
 Au recalcul (`recompute_scoring`), une colonne `visit_dates` vide se reprend dans
 l'instantané de la fiche quand il existe ; sans instantané, dans la clé de premier
-niveau de `raw_payload`, comme avant. Une copie de premier niveau n'est jamais
-réécrite vide par une colonne que le recalcul laisse vide.
+niveau de `raw_payload`, comme avant. Une colonne déjà remplie n'est jamais
+remplacée, et une copie de premier niveau n'est jamais réécrite vide par une colonne
+que le recalcul laisse vide. Le premier recalcul peut donc changer la colonne
+`visit_dates` **dans les deux sens** par rapport à l'ancien code :
+
+- des visites peuvent **apparaître** : colonne vide, instantané qui porte des visites
+  que la copie de premier niveau n'avait pas (ou plus) ;
+- des visites que l'ancien code aurait rejouées depuis la copie de premier niveau ne
+  le sont plus quand l'instantané existe et n'en donne pas.
+
+À compter en production avant le premier recalcul (lecture seule, comptages
+seulement) :
+
+```sql
+select
+  count(*) filter (where column_empty and snapshot_visits) as visites_qui_apparaissent,
+  count(*) filter (where column_empty and has_snapshot and not snapshot_visits and copy_visits)
+    as copies_non_rejouees,
+  count(*) filter (where column_empty and not has_snapshot and copy_visits)
+    as repli_d_origine_sans_instantane
+from (
+  select
+    coalesce(visit_dates, '[]'::jsonb) = '[]'::jsonb as column_empty,
+    jsonb_typeof(raw_payload -> 'source_factual_snapshot') = 'object'
+      and raw_payload -> 'source_factual_snapshot' <> '{}'::jsonb as has_snapshot,
+    coalesce(raw_payload -> 'source_factual_snapshot' -> 'visit_dates', 'null'::jsonb)
+      not in ('null'::jsonb, '[]'::jsonb, '""'::jsonb) as snapshot_visits,
+    coalesce(raw_payload -> 'visit_dates', 'null'::jsonb)
+      not in ('null'::jsonb, '[]'::jsonb, '""'::jsonb) as copy_visits
+  from public.auction_sales
+  where status in ('upcoming', 'active', 'quarantined')
+) sales;
+```
+
+Les deux premiers comptes sont des majorants : la normalisation repasse ses
+garde-fous sur la valeur reprise et peut l'écarter.
 
 Tests : `tests/test_base_echo_guard.py` (table de vérité),
 `tests/test_base_echo_publication.py` (chemin d'écriture, base simulée, dont la
