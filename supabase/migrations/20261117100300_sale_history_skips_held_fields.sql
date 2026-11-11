@@ -8,14 +8,16 @@ set local statement_timeout = '60s';
 --
 -- public.log_auction_sale_change (définition de 20261109140000) compare toutes les colonnes de l'ancienne et de
 -- la nouvelle ligne, sauf une liste de colonnes écartées. held_fields n'y était pas : dès qu'un champ serait tenu,
--- public.auction_sale_history (lisible par les comptes Analyse sous RLS) recevrait une empreinte de la colonne
--- interne à chaque pose, à chaque retrait et à chaque mise à jour de la valeur d'annonce mémorisée. held_fields est
+-- public.auction_sale_history (lue par le seul rôle serveur service_role : aucune politique ne l'ouvre aux rôles
+-- du navigateur) recevrait une empreinte de la colonne interne à chaque pose, à chaque retrait et à chaque mise à
+-- jour de la valeur d'annonce mémorisée, gardée 12 mois après la vente. held_fields est
 -- désormais écartée comme raw_payload : vidée sur la copie locale avant la conversion (la provenance, les
 -- identifiants de pièce et de décision ne sont jamais convertis) et ajoutée à la liste des clés ignorées.
 --
 -- Les colonnes tenues (surface, terrain, pièces, occupation) restent journalisées : c'est l'historique normal de
--- la fiche. Conséquence à connaître : la valeur d'une pièce retirée reste 12 mois dans auction_sale_history (purge
--- existante), comme toute ancienne valeur d'une fiche.
+-- la fiche. Conséquence à connaître : la valeur d'une pièce retirée ou opposée reste dans auction_sale_history,
+-- comme toute ancienne valeur d'une fiche : 12 mois après le changement, rattachée à la vente par son source_url,
+-- y compris après la suppression de la vente (purge existante, voir docs/data-retention-matrix.md).
 --
 -- Verrous : remplacement d'une fonction (le déclencheur l'appelle par son nom). Aucun verrou sur auction_sales.
 -- Possible pendant un import.

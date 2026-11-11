@@ -14,7 +14,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(95);
+select plan(98);
 
 -- Structure, droits, RLS ---------------------------------------------------------------------------------------
 select has_table('public', 'auction_fact_fields', 'the field catalogue exists');
@@ -132,8 +132,11 @@ select is(
   (select array_agg(routine.pronamespace::regnamespace::text || '.' || routine.proname order by routine.proname)
      from pg_proc routine
      where routine.prosrc like '%app.sale_field_projection%'),
-  array['app_private.hold_projected_sale_fields', 'app_private.project_sale_fields']::text[],
-  'only the projection and the hold function name the projection marker'
+  array[
+    'app_private.hold_projected_sale_fields', 'app_private.project_sale_fields',
+    'app_private.refuse_sale_field_projection_marker'
+  ]::text[],
+  'only the projection, the hold function and the marker guard name the projection marker'
 );
 
 -- Données de départ ---------------------------------------------------------------------------------------------
@@ -356,6 +359,45 @@ select is(
          'publication_mode', 'event')),
   array['lot_ref']::text[],
   'apart from the lot label (40 characters at most), every text column of the journals is a closed list'
+);
+
+-- Le libellé du lot : un format borné (20261117100100), écrit sans BETWEEN.
+select is(
+  (select pg_get_constraintdef(constraint_row.oid) from pg_constraint constraint_row
+     where constraint_row.conrelid = 'public.auction_fact_claim_decisions'::regclass
+       and constraint_row.conname = 'auction_fact_claim_decisions_lot_ref_check'),
+  $def$CHECK (((lot_ref IS NULL) OR (lot_ref ~ '^[0-9A-Za-zÀ-ÖØ-öø-ÿ][0-9A-Za-zÀ-ÖØ-öø-ÿ .,/()''°º&+#-]{0,39}$'::text)))$def$,
+  'the lot label is bounded by one anchored pattern, without BETWEEN'
+);
+
+select results_eq(
+  $$select sample.label, sample.lot_ref is null
+           or sample.lot_ref ~ '^[0-9A-Za-zÀ-ÖØ-öø-ÿ][0-9A-Za-zÀ-ÖØ-öø-ÿ .,/()''°º&+#-]{0,39}$'
+      from (values
+        (1, 'null', null::text), (2, 'lot 2', 'lot 2'), (3, 'Lot n° 3', 'Lot n° 3'),
+        (4, 'accented', '2ème lot (bâtiment A), 1/3'), (5, 'forty characters', repeat('a', 40)),
+        (6, 'forty-one characters', repeat('a', 41)), (7, 'empty', ''), (8, 'blank', '   '),
+        (9, 'leading space', ' lot 2'), (10, 'email', 'lot 2 a.b@example.test'),
+        (11, 'trailing newline', E'lot 2\n'), (12, 'inner newline', E'lot\n2'), (13, 'angle bracket', 'lot <2>'),
+        (14, 'url', 'https://example.test/lot'), (15, 'quote', 'lot "2"')
+      ) sample(position, label, lot_ref) order by sample.position$$,
+  $$values ('null', true), ('lot 2', true), ('Lot n° 3', true), ('accented', true), ('forty characters', true),
+           ('forty-one characters', false), ('empty', false), ('blank', false), ('leading space', false),
+           ('email', false), ('trailing newline', false), ('inner newline', false), ('angle bracket', false),
+           ('url', false), ('quote', false)$$,
+  'the pattern takes digits, letters, spaces and plain punctuation, and nothing else'
+);
+
+select throws_ok(
+  $$insert into public.auction_fact_claim_decisions (
+      claim_id, sale_id, field_key, decision, lot_attachment, lot_ref, actor_kind, actor_id
+    ) values (
+      '88100000-2000-4000-8000-000000000001', '88100000-1000-4000-8000-000000000001',
+      'property.surface_m2', 'rejected', 'unknown', 'lot 2 a.b@example.test', 'admin',
+      '88100000-0000-4000-8000-0000000000a1')$$,
+  '23514',
+  'new row for relation "auction_fact_claim_decisions" violates check constraint "auction_fact_claim_decisions_lot_ref_check"',
+  'the journal refuses a lot label that is not a lot label'
 );
 
 -- Journal des décisions : contraintes -------------------------------------------------------------------------
@@ -828,14 +870,15 @@ select is(
      where not trigger_row.tgisinternal and trigger_row.tgenabled = 'A'
        and relation.relnamespace = 'public'::regnamespace),
   array[
-    'aaab_auction_sales_held_fields_insert_guard', 'aaab_auction_sales_held_fields_role_guard',
+    'aaab_auction_sales_held_fields_insert_guard', 'aaab_auction_sales_held_fields_marker_guard',
+    'aaab_auction_sales_held_fields_role_guard',
     'aaab_auction_sales_hold_projected_fields', 'auction_fact_claim_decisions_append_only',
     'auction_fact_claim_decisions_no_truncate', 'auction_fact_claim_decisions_validate',
     'auction_fact_claims_no_truncate', 'auction_fact_claims_registry_origin_guard',
     'auction_sale_field_hold_events_append_only', 'auction_sale_field_hold_events_no_truncate',
     'auction_sale_field_hold_events_stamp'
   ]::text[],
-  'the eleven triggers of the registry, and no other trigger of the public schema, fire always'
+  'the twelve triggers of the registry, and no other trigger of the public schema, fire always'
 );
 
 set local session_replication_role = replica;

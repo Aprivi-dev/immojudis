@@ -17418,7 +17418,7 @@ export type Database = {
         Args: { p_active: boolean; p_details?: Json };
         Returns: undefined;
       };
-      sync_fact_registry_alerts: { Args: { p_limit?: number }; Returns: Json };
+      sync_fact_registry_alerts: { Args: never; Returns: Json };
       sync_sale_communes: {
         Args: never;
         Returns: { n_changed: number; n_with_code: number; n_written: number }[];

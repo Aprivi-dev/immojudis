@@ -3,24 +3,26 @@
 --     entre une libération par l'annonce et une décision se lit dans seq, jamais dans une date ; une libération de
 --     la vente conservée écarte aussi les décisions plus anciennes d'une vente absorbée ;
 --   * A2 : gardes par rôle en liste blanche (un rôle hors de la liste d'exclusion est refusé, même avec le
---     marqueur de la projection posé) ; contrôle du mode « always » des onze déclencheurs, remise en état ;
---     évènement echo_suppressed admis ;
+--     marqueur de la projection posé) ; garde du marqueur sur les colonnes d'une vente du registre ; origine
+--     professionnelle non forgeable par le triplet du pont ; contrôle du mode « always » et de la fonction des
+--     douze déclencheurs, remise en état ; évènement echo_suppressed admis ; inertie prouvée ;
 --   * A4 : l'historique des ventes ne reçoit jamais held_fields ;
 --   * A5 : aucune fonction de public ne rend la ligne entière de auction_sales ; les deux RPC de dérogation
 --     rendent six clés ;
---   * A6 : les deux index du registre sont enregistrés pour la construction concurrente.
+--   * A6 : les deux index du registre sont enregistrés pour la construction concurrente, et construits ici
+--     dans la transaction du test : texte du catalogue figé, unicité prouvée.
 begin;
 
 set local timezone = 'UTC';
 
-select plan(48);
+select plan(65);
 
 -- A1. Séquence commune --------------------------------------------------------------------------------------------
 select ok(
   (select relkind = 'S' from pg_class where oid = 'app_private.fact_registry_seq'::regclass)
-  and (select seqtypid = 'bigint'::regtype from pg_sequence
-         where seqrelid = 'app_private.fact_registry_seq'::regclass),
-  'the common sequence of the two journals exists and counts in bigint'
+  and (select seqtypid = 'bigint'::regtype and seqcache = 1 and seqincrement = 1 and not seqcycle
+         from pg_sequence where seqrelid = 'app_private.fact_registry_seq'::regclass),
+  'the common sequence of the two journals exists, counts in bigint, one by one, and caches no number (seqcache = 1: no session orders its rows ahead of another)'
 );
 
 select is(
@@ -294,11 +296,20 @@ select ok(
   (select bool_and(not prosecdef
             and prosrc ~ 'current_user in \(''anon'', ''authenticated'', ''service_role'', ''authenticator''\)'
             and prosrc ~ 'pg_get_userbyid\(routine\.proowner\) is distinct from current_user')
-          and count(*) = 2
+          and count(*) = 3
      from pg_proc where oid in (
        'app_private.refuse_api_role_held_fields_write()'::regprocedure,
-       'app_private.refuse_api_role_registry_origin()'::regprocedure)),
-  'both role guards read the calling role and accept only the owner of the projection'
+       'app_private.refuse_api_role_registry_origin()'::regprocedure,
+       'app_private.refuse_sale_field_projection_marker()'::regprocedure)),
+  'the two role guards and the marker guard read the calling role and accept only the owner of the projection'
+);
+
+select is(
+  (select pg_get_triggerdef(oid) from pg_trigger
+     where tgrelid = 'public.auction_fact_claims'::regclass
+       and tgname = 'auction_fact_claims_registry_origin_guard'),
+  $def$CREATE TRIGGER auction_fact_claims_registry_origin_guard BEFORE INSERT ON public.auction_fact_claims FOR EACH ROW WHEN (((new.evidence_kind = ANY (ARRAY['professional_email'::text, 'professional_form'::text, 'admin_entry'::text])) OR (new.extractor_name = 'information_agent'::text) OR (new.evidence_locator ? 'information_agent_fact_id'::text))) EXECUTE FUNCTION app_private.refuse_api_role_registry_origin()$def$,
+  'the origin guard covers the three reserved kinds, the extractor of the information agent and its fact identifier'
 );
 
 -- Un rôle créé après coup, absent de la liste d'exclusion, avec tous les droits de table et des politiques qui
@@ -320,11 +331,32 @@ create policy registry_probe_884_history on public.auction_sale_history
 set local role registry_probe_884;
 select set_config('app.sale_field_projection', '88400000-1000-4000-8000-000000000001', true);
 select throws_ok(
-  $$update public.auction_sales set held_fields = null, rooms_count = 9
-      where id = '88400000-1000-4000-8000-000000000001'$$,
+  $$update public.auction_sales set held_fields = null where id = '88400000-1000-4000-8000-000000000001'$$,
   '42501',
   'auction_sales.held_fields cannot be written by an API role.',
   'a role outside the exclusion list cannot write held_fields, even with the projection marker set'
+);
+-- Le marqueur n'ouvre pas non plus les colonnes tenues : sans toucher held_fields, la retenue laissait tout passer.
+select throws_ok(
+  $$update public.auction_sales set rooms_count = 9, occupancy_status = 'rented', surface_m2 = 99,
+           app_surface_m2 = 99
+      where id = '88400000-1000-4000-8000-000000000001'$$,
+  '42501',
+  'The sale field projection marker is reserved to app_private.project_sale_fields.',
+  'with the marker set, a role that does not own the projection cannot rewrite the held columns of a sale of the registry'
+);
+select throws_ok(
+  $$update public.auction_sales set habitable_surface_m2 = 54
+      where id = '88400000-1000-4000-8000-000000000001'$$,
+  '42501',
+  'The sale field projection marker is reserved to app_private.project_sale_fields.',
+  'nor one of the watched neighbour columns'
+);
+-- Le marqueur d'une AUTRE vente ne dit rien de celle-ci : l'écriture passe la garde et la retenue s'applique.
+select set_config('app.sale_field_projection', '88400000-1000-4000-8000-000000000006', true);
+select lives_ok(
+  $$update public.auction_sales set rooms_count = 9 where id = '88400000-1000-4000-8000-000000000001'$$,
+  'with the marker of another sale the write is not refused: it is held like any direct write'
 );
 select set_config('app.sale_field_projection', '', true);
 select throws_ok(
@@ -360,11 +392,80 @@ select lives_ok(
 );
 reset role;
 
+select results_eq(
+  $$select held_fields #> '{property.rooms_count,value}', rooms_count, occupancy_status, surface_m2,
+           habitable_surface_m2
+      from public.auction_sales where id = '88400000-1000-4000-8000-000000000001'$$,
+  $$values ('3'::jsonb, 3, 'occupied', 50::numeric, null::numeric)$$,
+  'the held entry and the columns of the sale are intact after the refused writes'
+);
+
+-- Le propriétaire de la projection, lui, passe la garde du marqueur (c'est ce que fait la projection).
+select set_config('app.sale_field_projection', '88400000-1000-4000-8000-000000000001', true);
+select lives_ok(
+  $$update public.auction_sales set rooms_count = rooms_count where id = '88400000-1000-4000-8000-000000000001'$$,
+  'the owner of the projection passes the marker guard'
+);
+select set_config('app.sale_field_projection', '', true);
+
+-- Origine professionnelle forgée par le triplet du pont : nature ordinaire, extracteur de l'agent, identifiant de
+-- fait. Le classement la rangerait en « lawyer_email ».
 select is(
-  (select held_fields #> '{property.rooms_count,value}' from public.auction_sales
-     where id = '88400000-1000-4000-8000-000000000001'),
-  '3'::jsonb,
-  'the held entry is intact after the refused writes'
+  app_private.fact_claim_source_kind(
+    'manual_review', 'information_agent', '{"information_agent_fact_id": "88400000-5000-4000-8000-000000000001"}'),
+  'lawyer_email',
+  'an ordinary kind with the extractor of the agent and a fact identifier is classified as a lawyer email'
+);
+
+set local role service_role;
+select throws_ok(
+  $$insert into public.auction_fact_claims (
+      auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, source_url, confidence_score,
+      extractor_name, extractor_version
+    ) values (
+      '88400000-1000-4000-8000-000000000006', 'property.rooms_count', '9'::jsonb, 'manual_review',
+      '{"information_agent_fact_id": "88400000-5000-4000-8000-000000000001"}'::jsonb,
+      'https://example.test/884/forged', 0.9, 'information_agent', 'v1')$$,
+  '42501',
+  'A professional or administrator fact claim cannot be inserted by an API role.',
+  'the server role cannot forge a professional origin with the triplet of the bridge'
+);
+select throws_ok(
+  $$insert into public.auction_fact_claims (
+      auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, source_url, confidence_score,
+      extractor_name, extractor_version
+    ) values (
+      '88400000-1000-4000-8000-000000000006', 'property.rooms_count', '9'::jsonb, 'email_attachment',
+      '{"information_agent_fact_id": "88400000-5000-4000-8000-000000000002"}'::jsonb,
+      'https://example.test/884/forged', 0.9, 'immojudis-fact-claims', 'v1')$$,
+  '42501',
+  'A professional or administrator fact claim cannot be inserted by an API role.',
+  'nor reserve the identifier of a fact under another extractor'
+);
+select throws_ok(
+  $$insert into public.auction_fact_claims (
+      auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, source_url, confidence_score,
+      extractor_name, extractor_version
+    ) values (
+      '88400000-1000-4000-8000-000000000006', 'property.rooms_count', '9'::jsonb, 'portal_upload',
+      '{}'::jsonb, 'https://example.test/884/forged', 0.9, 'information_agent', 'v1')$$,
+  '42501',
+  'A professional or administrator fact claim cannot be inserted by an API role.',
+  'nor use the extractor of the agent without an identifier'
+);
+reset role;
+
+-- Le pont existant s'exécute en propriétaire : la même ligne passe.
+select lives_ok(
+  $$insert into public.auction_fact_claims (
+      id, auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, source_url, confidence_score,
+      extractor_name, extractor_version
+    ) values (
+      '88400000-2000-4000-8000-0000000000b1', '88400000-1000-4000-8000-000000000006', 'property.rooms_count',
+      '9'::jsonb, 'manual_review',
+      '{"information_agent_fact_id": "88400000-5000-4000-8000-000000000001"}'::jsonb,
+      'https://example.test/884/bridge', 0.9, 'information_agent', 'v1')$$,
+  'the owner of the projection, as the existing bridge does, still inserts that claim'
 );
 
 set local role service_role;
@@ -389,7 +490,7 @@ select throws_ok(
 select is(
   app_private.fact_registry_triggers_not_always(),
   array[]::text[],
-  'the eleven triggers of the registry are in place and fire always'
+  'the twelve triggers of the registry are in place, fire always and call their own function'
 );
 
 select lives_ok(
@@ -405,10 +506,11 @@ select is(
   app_private.fact_registry_triggers_not_always(),
   array[
     'auction_sales.aaab_auction_sales_held_fields_insert_guard',
+    'auction_sales.aaab_auction_sales_held_fields_marker_guard',
     'auction_sales.aaab_auction_sales_held_fields_role_guard',
     'auction_sales.aaab_auction_sales_hold_projected_fields'
   ],
-  'after disable then enable trigger user, the three triggers of auction_sales are reported out of the always mode'
+  'after disable then enable trigger user, the four triggers of auction_sales are reported out of the always mode'
 );
 
 select throws_ok(
@@ -420,12 +522,13 @@ select throws_ok(
 
 -- Remise en état (supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql).
 alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_insert_guard;
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_marker_guard;
 alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_role_guard;
 alter table public.auction_sales enable always trigger aaab_auction_sales_hold_projected_fields;
 
 select lives_ok(
   'select app_private.assert_fact_registry_triggers()',
-  'once the three triggers are enabled always again, the check passes'
+  'once the four triggers are enabled always again, the check passes'
 );
 
 -- Un déclencheur supprimé, ou simplement désactivé, est signalé de la même façon.
@@ -453,6 +556,32 @@ select is(
   'everything is back in place'
 );
 
+-- Un déclencheur du bon nom, en mode « always », mais lié à une autre fonction ne garde plus rien : il est signalé.
+create or replace trigger auction_fact_claims_no_truncate
+  before truncate on public.auction_fact_claims
+  for each statement execute function app_private.fact_registry_append_only();
+alter table public.auction_fact_claims enable always trigger auction_fact_claims_no_truncate;
+
+select results_eq(
+  $$select app_private.fact_registry_triggers_not_always(),
+           (select tgenabled::text from pg_trigger
+              where tgrelid = 'public.auction_fact_claims'::regclass
+                and tgname = 'auction_fact_claims_no_truncate')$$,
+  $$values (array['auction_fact_claims.auction_fact_claims_no_truncate'], 'A')$$,
+  'a trigger recreated on another function is reported, although its name and its mode are right'
+);
+
+create or replace trigger auction_fact_claims_no_truncate
+  before truncate on public.auction_fact_claims
+  for each statement execute function app_private.refuse_auction_fact_claims_truncate();
+alter table public.auction_fact_claims enable always trigger auction_fact_claims_no_truncate;
+
+select is(
+  app_private.fact_registry_triggers_not_always(),
+  array[]::text[],
+  'and no longer once it calls its own function again'
+);
+
 select is(
   (select count(*)::integer
      from unnest(array[
@@ -461,7 +590,9 @@ select is(
        'app_private.sale_field_echo_matches(text,jsonb,jsonb,numeric,numeric)',
        'app_private.sale_field_echo_add(jsonb,text,jsonb,timestamptz,numeric,numeric)',
        'app_private.sale_field_incoming_class(text,jsonb,jsonb,jsonb,jsonb,numeric,numeric)',
-       'app_private.sale_field_value_leaks(text,jsonb,jsonb,jsonb,jsonb,jsonb,numeric,numeric)'
+       'app_private.sale_field_value_leaks(text,jsonb,jsonb,jsonb,jsonb,numeric,numeric)',
+       'app_private.refuse_sale_field_projection_marker()',
+       'app_private.sync_fact_registry_alerts_from_report(jsonb)'
      ]) routine(signature)
      cross join unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
      where has_function_privilege(api_role.name, routine.signature, 'execute')),
@@ -619,49 +750,114 @@ select results_eq(
   'the two indexes of the registry are registered as reviewed concurrent builds'
 );
 
-select ok(
-  not exists (
-    select 1 from app_private.concurrent_index_operations
-    where operation_key like '20261117100450:%' and status not in ('pending', 'applied')
-  )
-  and not exists (
-    select 1
-      from app_private.concurrent_index_operations operation_row
-     where operation_row.operation_key like '20261117100450:%'
-       and operation_row.status = 'applied'
-       and not exists (
-         select 1
-           from pg_catalog.pg_class relation_row
-           join pg_catalog.pg_namespace namespace_row on namespace_row.oid = relation_row.relnamespace
-           join pg_catalog.pg_index index_row on index_row.indexrelid = relation_row.oid
-          where namespace_row.nspname = operation_row.schema_name
-            and relation_row.relname = operation_row.index_name
-            and index_row.indisvalid
-       )
-  ),
-  'neither build is silently left failed, and a build marked applied has a valid physical index'
+-- Les index sont construits ici, dans la transaction du test, par l'instruction enregistrée (sans « concurrently »,
+-- interdit dans une transaction) : s'ils existent déjà, l'instruction ne fait rien. Les assertions qui suivent
+-- portent donc toujours sur des index réels.
+do $$
+declare
+  v_operation record;
+begin
+  for v_operation in
+    select create_sql from app_private.concurrent_index_operations
+    where operation_key like '20261117100450:%' order by operation_key
+  loop
+    if position(' concurrently ' in v_operation.create_sql) = 0 then
+      raise exception 'unexpected statement: %', v_operation.create_sql;
+    end if;
+    execute replace(v_operation.create_sql, ' concurrently ', ' ');
+  end loop;
+end;
+$$;
+
+select results_eq(
+  $$select operation.index_name, index_row.indisvalid, index_row.indisunique,
+           pg_get_indexdef(index_row.indexrelid)
+      from app_private.concurrent_index_operations operation
+      join pg_index index_row
+        on index_row.indexrelid = to_regclass(operation.schema_name || '.' || operation.index_name)
+      where operation.operation_key like '20261117100450:%'
+      order by operation.index_name$$,
+  $$values
+      ('auction_fact_claims_agent_fact_key', true, true,
+        'CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims USING btree (((evidence_locator ->> ''information_agent_fact_id''::text))) WHERE (evidence_locator ? ''information_agent_fact_id''::text)'),
+      ('auction_sales_held_fields_idx', true, false,
+        'CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales USING btree (id) WHERE (held_fields IS NOT NULL)')$$,
+  'built from the registered statements, the two indexes are the reviewed ones, word for word in the catalogue'
 );
 
-select ok(
-  not exists (
-    select 1 from pg_catalog.pg_index index_row
-    where index_row.indexrelid = to_regclass('public.auction_fact_claims_agent_fact_key')
-      and not (
-        index_row.indisunique
-        and pg_get_expr(index_row.indexprs, index_row.indrelid)
-          = '(evidence_locator ->> ''information_agent_fact_id''::text)'
-        and pg_get_expr(index_row.indpred, index_row.indrelid)
-          = '(evidence_locator ? ''information_agent_fact_id''::text)')
-  )
-  and not exists (
-    select 1 from pg_catalog.pg_index index_row
-    where index_row.indexrelid = to_regclass('public.auction_sales_held_fields_idx')
-      and not (
-        not index_row.indisunique and index_row.indexprs is null
-        and pg_get_expr(index_row.indpred, index_row.indrelid) = '(held_fields IS NOT NULL)')
-  ),
-  'when the indexes are built, they are the reviewed ones (unique on the fact identifier, partial on held_fields)'
+select results_eq(
+  $$select pg_get_expr(index_row.indexprs, index_row.indrelid) collate "default",
+           pg_get_expr(index_row.indpred, index_row.indrelid) collate "default"
+      from pg_index index_row
+      where index_row.indexrelid = 'public.auction_fact_claims_agent_fact_key'::regclass$$,
+  $$values ('(evidence_locator ->> ''information_agent_fact_id''::text)',
+            '(evidence_locator ? ''information_agent_fact_id''::text)')$$,
+  'the expression and the predicate read by the index script are those of the catalogue'
 );
+
+select throws_ok(
+  $$insert into public.auction_fact_claims (
+      auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, source_url, confidence_score,
+      extractor_name, extractor_version
+    ) values (
+      '88400000-1000-4000-8000-000000000001', 'property.surface_m2', '70'::jsonb, 'manual_review',
+      '{"information_agent_fact_id": "88400000-5000-4000-8000-000000000001"}'::jsonb,
+      'https://example.test/884/bridge-twice', 0.9, 'information_agent', 'v1')$$,
+  '23505',
+  'duplicate key value violates unique constraint "auction_fact_claims_agent_fact_key"',
+  'one fact of the information agent gives one claim at most, whatever the sale and the field'
+);
+
+-- Inertie prouvée --------------------------------------------------------------------------------------------------
+-- La fonction de retenue est remplacée par une fonction qui lève : si le déclencheur l'appelait pour une vente
+-- qui ne tient rien, l'écriture échouerait. (En dernier : les fonctions restent remplacées jusqu'au rollback.)
+create or replace function app_private.hold_projected_sale_fields()
+returns trigger language plpgsql security definer set search_path = '' as $function$
+begin
+  raise exception 'hold function called';
+end;
+$function$;
+
+set local role service_role;
+select lives_ok(
+  $$update public.auction_sales
+      set surface_m2 = 51, app_surface_m2 = 51, app_surface_kind = 'carrez', surface_source = 'pdf',
+          surface_confidence = 0.9, habitable_surface_m2 = 51, carrez_surface_m2 = 51, land_surface_m2 = 10,
+          rooms_count = 4, bedrooms_count = 2, occupancy_status = 'vacant', visit_dates = '["2026-12-01"]'::jsonb
+      where id = '88400000-1000-4000-8000-000000000006'$$,
+  'inert: a write of every watched column of a sale that holds nothing never calls the hold function'
+);
+select throws_ok(
+  $$update public.auction_sales set rooms_count = 4 where id = '88400000-1000-4000-8000-000000000001'$$,
+  'P0001',
+  'hold function called',
+  'while the same write on a sale of the registry does call it'
+);
+reset role;
+
+-- Même preuve pour la garde du marqueur : aucun appel quand rien n'est tenu.
+create or replace function app_private.refuse_sale_field_projection_marker()
+returns trigger language plpgsql security invoker set search_path = '' as $function$
+begin
+  raise exception 'marker guard called';
+end;
+$function$;
+
+set local role service_role;
+select lives_ok(
+  $$update public.auction_sales
+      set surface_m2 = 52, app_surface_m2 = 52, habitable_surface_m2 = 52, rooms_count = 5, bedrooms_count = 2,
+          occupancy_status = 'occupied'
+      where id = '88400000-1000-4000-8000-000000000006'$$,
+  'no cost when nothing is held: the marker guard is not called either'
+);
+select throws_ok(
+  $$update public.auction_sales set rooms_count = 4 where id = '88400000-1000-4000-8000-000000000001'$$,
+  'P0001',
+  'marker guard called',
+  'and it is called, before the hold, for a sale of the registry'
+);
+reset role;
 
 select * from finish();
 rollback;

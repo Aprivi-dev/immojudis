@@ -112,6 +112,33 @@ describe("contrôle quotidien du registre des pièces", () => {
     await expect(runFactRegistryCheckJob()).rejects.toThrow("rapport partiel");
   });
 
+  it("échoue sur un rapport tronqué même quand un contrôle y est levé", async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: report({
+        truncated: true,
+        checks: { projection_drift: { active: true, count: 1, sale_ids: [] } },
+      }),
+      error: null,
+    });
+
+    await expect(runFactRegistryCheckJob()).rejects.toThrow("rapport partiel");
+  });
+
+  it("résume les dix contrôles du rapport, dans l'ordre de gravité de la base", () => {
+    expect(FACT_REGISTRY_CHECKS).toEqual([
+      "projection_drift",
+      "triggers_not_always",
+      "column_mismatch",
+      "registry_label",
+      "echo_suspected",
+      "internal_column_copied",
+      "events_burst",
+      "echo_suppressed",
+      "echo_blocked",
+      "stale_listing",
+    ]);
+  });
+
   it.each([
     ["nul", null],
     ["un tableau", []],
