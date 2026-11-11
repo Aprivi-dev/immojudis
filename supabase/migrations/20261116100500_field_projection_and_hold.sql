@@ -13,10 +13,13 @@ set local statement_timeout = '60s';
 --     acceptations humaines d'une pièce rattachée au bon lot (single_lot, matched) dont l'origine peut tenir le
 --     champ (préséance, hold_enabled), ordonne par rang puis réception puis décision, distingue un remplacement
 --     (même rang, même origine : la plus récente l'emporte) d'une contradiction (même rang, origines
---     différentes, valeurs hors tolérance : rien ne bascule, évènement « conflicted »), et écrit en un seul
---     UPDATE les colonnes, held_fields et updated_at. Sans changement, elle n'écrit rien (updated_at et xmin ne
---     bougent pas). p_apply = false : simulation, sans verrou ni écriture. Exécutable par AUCUN rôle de l'API
---     (ni anon, ni authenticated, ni service_role) : seules des fonctions SECURITY DEFINER du lot R2 l'appelleront.
+--     différentes, valeurs hors tolérance : rien ne bascule, évènement « conflicted » ; la valeur affichée reste
+--     tant que la pièce qui la porte est encore acceptée, sinon la valeur de l'annonce revient), et écrit en un
+--     seul UPDATE les colonnes, held_fields et updated_at. Sans changement, elle n'écrit rien (updated_at et la
+--     ligne ne bougent pas). Quand plus aucune pièce ne tient un champ (retrait, opposition, rejet), elle
+--     restaure la valeur de l'annonce gardée dans le bloc « listing ». p_apply = false : simulation, sans verrou
+--     ni écriture. Exécutable par AUCUN rôle de l'API (ni anon, ni authenticated, ni service_role) : seules des
+--     fonctions SECURITY DEFINER du lot R2 l'appelleront.
 --   * déclencheur aaab_auction_sales_hold_projected_fields : passif. Il ne calcule aucun gagnant et ne lit ni les
 --     observations, ni la préséance, ni raw_payload (jamais to_jsonb(new) ni to_jsonb(old)) : il remet l'ancienne
 --     valeur des champs déjà tenus quand une écriture directe (collecte, repli REST, fusion, rattrapage…) les
@@ -33,10 +36,20 @@ set local statement_timeout = '60s';
 --     fournit held_fields est refusée (42501). Clause WHEN (une seule comparaison à NULL) : jamais d'appel pour
 --     la collecte.
 --
--- Écart assumé avec l'annexe 03 : le nombre de pièces tenu n'est jamais gardé sous le nombre de chambres entrant
--- (contrainte auction_sales_rooms_bedrooms_check) : le champ est alors libéré avec un évènement
--- listing_changed_released, au lieu de faire échouer l'écriture de la collecte. bedrooms_count est donc dans la
--- liste des colonnes du déclencheur.
+-- Écarts assumés avec l'annexe 03 :
+--   * le nombre de pièces tenu n'est jamais gardé sous le nombre de chambres entrant (contrainte
+--     auction_sales_rooms_bedrooms_check) : le champ est alors libéré avec un évènement listing_changed_released,
+--     au lieu de faire échouer l'écriture de la collecte. bedrooms_count est donc dans la liste des colonnes du
+--     déclencheur. À l'inverse, projeter un nombre de pièces inférieur au nombre de chambres de la fiche échoue
+--     (23514), sans rien écrire ;
+--   * une garde à l'insertion, que l'annexe ne prévoyait pas (« pas de branche INSERT ») : sans elle, une
+--     insertion forgée créerait une vente qui retient ses colonnes sans aucune décision ;
+--   * une pièce de document acceptée tient le champ (plan du 11/11/2026, section 3) : la préséance est en
+--     données (20261116100000), la projection ne nomme aucune origine.
+-- Valeurs écrites dans le groupe de surface par une pièce : surface_m2 et app_surface_m2 prennent la valeur,
+-- app_surface_kind et surface_source prennent « fact_registry_<origine> » (le noyau actuel écrit
+-- « information_agent_verified »), surface_confidence prend la confiance de l'observation, au moins 0,85 (même
+-- plancher que le noyau). surface_evidence reste hors du groupe. À confirmer au lot R2, avant la bascule.
 --
 -- Ordre des verrous (à respecter par tout appelant) : vente (FOR NO KEY UPDATE, qui ne bloque pas les clés
 -- étrangères des observations et des travaux d'enrichissement), puis observations, puis décisions.
