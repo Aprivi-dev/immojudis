@@ -1018,6 +1018,58 @@ $$;`;
       prefix: null,
       message: "is above the generation ceiling (1) of app_private.fact_claims_generation_ceiling",
     },
+    // Dernière contre-vérification du lot R2a : propriétaires, fonctions de génération, set_config relayé.
+    {
+      label: "le journal des décisions donné à un autre propriétaire",
+      file: migration("journal_owner"),
+      content: "alter table public.auction_fact_claim_decisions owner to service_role;",
+      message: "changes the owner of auction_fact_claim_decisions",
+    },
+    {
+      label: "la table des ventes donnée à un autre propriétaire, nommée sans son schéma",
+      file: migration("sales_owner"),
+      content: "set local search_path = public; ALTER TABLE auction_sales OWNER TO service_role;",
+      message: "changes the owner of auction_sales",
+    },
+    {
+      label: "la vue des observations donnée à un autre propriétaire par ALTER TABLE",
+      file: migration("claims_view_owner"),
+      content: "alter table public.v_auction_fact_claims_read_model owner to service_role;",
+      message: "changes the owner of v_auction_fact_claims_read_model",
+    },
+    {
+      label: "tous les objets d'un rôle donnés à un autre (REASSIGN OWNED)",
+      file: migration("reassign_owned"),
+      content: "reassign owned by postgres to service_role;",
+      message: "reassigns owned objects (reassign owned)",
+    },
+    {
+      label: "la fonction de génération modifiée par ALTER FUNCTION",
+      file: migration("alter_generation"),
+      content:
+        "alter function app_private.fact_claims_generation(text) set search_path = public; alter function app_private.fact_claims_generation_ceiling() owner to service_role;",
+      message: "alters app_private.fact_claims_generation (security mode",
+    },
+    {
+      label: "le plafond de génération modifié par ALTER FUNCTION",
+      file: migration("alter_generation"),
+      content: null,
+      message: "alters app_private.fact_claims_generation_ceiling (security mode",
+    },
+    {
+      label: "une fonction qui relaie à set_config un nom reçu en paramètre",
+      file: migration("set_config_relay"),
+      content:
+        "create function public.relay_setting(p_name text, p_value text) returns text language sql security definer set search_path = '' as $$ select pg_catalog.set_config(p_name, p_value, true) $$;",
+      message: "calls set_config with a first argument that is not a literal setting name",
+    },
+    {
+      label: "un nom de réglage assemblé à partir d'une constante",
+      file: migration("set_config_concat"),
+      content:
+        "create function public.relay_setting_suffix(p_name text) returns text language sql security definer set search_path = '' as $$ select set_config('app.' || p_name, 'x', true) $$;",
+      message: "calls set_config with a first argument that is not a literal setting name",
+    },
   ];
   const filesOf = (where) =>
     Object.fromEntries(
@@ -1075,7 +1127,7 @@ $$;`;
     );
   });
 
-  it("accepte les formes permises et annonce les onze invariants", () => {
+  it("accepte les formes permises et annonce les douze invariants", () => {
     const result = runInvariants(
       {
         [migration("accepted_recreated_guard")]:
@@ -1132,6 +1184,7 @@ $$;`;
         "fact-registry-check-read-only",
         "registry-neutral-surface-labels",
         "fact-claims-generation-pattern",
+        "set-config-literal-name",
       ]),
     );
   });

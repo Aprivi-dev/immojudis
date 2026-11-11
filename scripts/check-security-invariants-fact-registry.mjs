@@ -43,8 +43,12 @@
 //    (préfixe fixe, un ou deux chiffres, sans expression rationnelle) et son plafond ; l'extracteur et la version
 //    écrits par la collecte se lisent et ne dépassent pas le plafond ; la vue garde security_invoker et n'est lue
 //    que par service_role.
+// 12. set-config-literal-name : dans toutes les migrations, tous les rattrapages et tous les fichiers de
+//    maintenance, set_config n'est appelé qu'avec un nom de réglage littéral. Une fonction qui relaierait un nom
+//    reçu en paramètre laisserait son appelant poser le marqueur de transaction de la projection.
 // Partout : aucune instruction ALTER FUNCTION ne touche une fonction du registre (mode de sécurité, propriétaire),
-// et lot_ref garde son motif structurel.
+// aucune instruction ne change le propriétaire d'une table, de la vue ou de la séquence du registre (OWNER TO,
+// REASSIGN OWNED), et lot_ref garde son motif structurel.
 //
 // Échec fermé : le code est cherché tel quel (un mot interdit dans un commentaire ou dans une adresse échoue
 // aussi) ; le SQL n'est débarrassé que de ses vrais commentaires (une chaîne '--' n'en ouvre pas un), puis mis
@@ -65,6 +69,7 @@ export const factRegistryInvariantNames = [
   "fact-registry-check-read-only",
   "registry-neutral-surface-labels",
   "fact-claims-generation-pattern",
+  "set-config-literal-name",
 ];
 
 const REGISTRY_TABLES = [
@@ -122,7 +127,7 @@ const GENERATION_CEILING_FUNCTION = "app_private.fact_claims_generation_ceiling"
 // Libellé du lot d'une décision : motif structurel (numéros de lot seulement), insensible à la casse.
 const LOT_REF_CONSTRAINT = "auction_fact_claim_decisions_lot_ref_check";
 const LOT_REF_PATTERN =
-  "^((lots? )?(n[°º] ?)?[1-9][0-9]{0,3}[a-z]?( ?(et|,|/|-|à) ?[1-9][0-9]{0,3}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$";
+  "^((lots? )?(n[°º] ?)?[1-9][0-9]{0,2}[a-z]?( ?(et|,|-|à) ?[1-9][0-9]{0,2}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$";
 const PIPELINE_FACT_CLAIMS = "../services/data-pipeline/src/fact_claims.py";
 // Fonctions internes du lot R2a : aucune n'est exécutable par un rôle de l'API.
 const INTERNAL_FUNCTIONS = [
@@ -154,6 +159,18 @@ const UNALTERABLE_FUNCTIONS = [
   CHECK_FUNCTION,
   ALERTS_FUNCTION,
   HISTORY_FUNCTION,
+  GENERATION_FUNCTION,
+  GENERATION_CEILING_FUNCTION,
+];
+// Objets du registre dont aucune instruction ne change le propriétaire : le propriétaire d'une table en coupe les
+// déclencheurs, et les gardes par rôle ne laissent passer que le propriétaire de la projection. Cherchés par leur
+// nom nu : « set search_path » puis un nom sans schéma ne passe pas.
+const OWNED_OBJECTS = [
+  ...REGISTRY_TABLES,
+  "auction_fact_claims",
+  "auction_sales",
+  "v_auction_fact_claims_read_model",
+  "fact_registry_seq",
 ];
 // Fonctions publiques du lot R2a : exécutables par service_role seul.
 const SERVER_ONLY_RPCS = [BASELINES_FUNCTION, CHECK_FUNCTION, ALERTS_FUNCTION];
@@ -1194,6 +1211,42 @@ export async function checkFactRegistryInvariants({
             `${name} alters ${fn} (security mode, owner or settings): a function of the fact registry is only redefined by create or replace`,
           );
         }
+      }
+    }
+  }
+  // Propriétaire des tables, de la vue et de la séquence du registre : aucune instruction OWNER TO ne les nomme,
+  // et aucun fichier ne contient REASSIGN OWNED (qui change tous les propriétaires d'un rôle d'un coup).
+  for (const [name, sql] of all) {
+    if (!sinceLot(name, REGISTRY_MIGRATION)) continue;
+    if (/\breassign\s+owned\b/i.test(sql)) {
+      failures.push(
+        `${name} reassigns owned objects (reassign owned): the tables of the fact registry and auction_sales keep the owner of ${PROJECTION_FUNCTION}`,
+      );
+    }
+    for (const statement of sql.matchAll(/\balter\s[^;]*?\bowner\s+to\b[^;]*/gi)) {
+      for (const object of OWNED_OBJECTS) {
+        if (new RegExp(`\\b${object}\\b`, "i").test(statement[0])) {
+          failures.push(
+            `${name} changes the owner of ${object}: the objects of the fact registry keep the owner of ${PROJECTION_FUNCTION}`,
+          );
+        }
+      }
+    }
+  }
+  // 12. set-config-literal-name : toutes les migrations sont lues ici (pas seulement celles du registre), avec
+  // les rattrapages et les fichiers de maintenance. Le premier argument est une constante, suivie d'une virgule.
+  const settingSources = new Map(all);
+  for (const [name, source] of migrationSources) {
+    if (!settingSources.has(name) && /set_config/i.test(source)) {
+      settingSources.set(name, stripSql(source));
+    }
+  }
+  for (const [name, sql] of settingSources) {
+    for (const call of sql.matchAll(/\bset_config\s*\(/gi)) {
+      if (!/^\s*'[a-z_][a-z0-9_.]*'\s*,/i.test(sql.slice(call.index + call[0].length))) {
+        failures.push(
+          `${name} calls set_config with a first argument that is not a literal setting name: a relayed name could set the transaction marker ${PROJECTION_MARKER}`,
+        );
       }
     }
   }
