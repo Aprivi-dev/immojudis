@@ -120,10 +120,7 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
         "another predicate",
         "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id) WHERE (held_fields IS NULL);",
       ],
-      [
-        "no predicate",
-        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id);",
-      ],
+      ["no predicate", "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id);"],
       [
         "another column",
         "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (source_url) WHERE (held_fields IS NOT NULL);",

@@ -1167,7 +1167,9 @@ export async function checkFactRegistryInvariants({
     if (
       /\bentry\.value\b(?!\s*->)/i.test(baselines.body) ||
       /\bto_jsonb\s*\(\s*(?:sale|entry)\s*\)|\b(?:sale|entry)\.\*/i.test(baselines.body) ||
-      !/entry\.value\s*->>\s*'state'\s+in\s*\(\s*'held'\s*,\s*'conflicted'\s*\)/i.test(baselines.body)
+      !/entry\.value\s*->>\s*'state'\s+in\s*\(\s*'held'\s*,\s*'conflicted'\s*\)/i.test(
+        baselines.body,
+      )
     ) {
       failures.push(
         `${baselines.migration}: ${BASELINES_FUNCTION} must read a held entry key by key, for held fields only (state held or conflicted)`,
@@ -1221,7 +1223,9 @@ export async function checkFactRegistryInvariants({
       /'fact_registry[^']*'\s*\|\||\|\|\s*'fact_registry|'fact_registry_/i.test(projection.body) ||
       !/t_surface_source\s*:=\s*'fact_registry'\s*;/i.test(projection.body) ||
       !/t_app_surface_kind\s*:=\s*'built'\s*;/i.test(projection.body) ||
-      /t_(?:surface_source|app_surface_kind)\s*:=\s*[^;]*v_winner_source_kind/i.test(projection.body)
+      /t_(?:surface_source|app_surface_kind)\s*:=\s*[^;]*v_winner_source_kind/i.test(
+        projection.body,
+      )
     ) {
       failures.push(
         `${projection.migration}: ${PROJECTION_FUNCTION} must write neutral surface labels (surface_source 'fact_registry', app_surface_kind 'built'), never the origin of the piece`,

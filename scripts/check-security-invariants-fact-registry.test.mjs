@@ -730,7 +730,8 @@ $$;`;
         "writes auction_sales without ending by select app_private.assert_fact_registry_triggers(); before its commit",
     },
     {
-      label: "un rattrapage qui coupe des déclencheurs par un nom calculé, sans épargner le registre",
+      label:
+        "un rattrapage qui coupe des déclencheurs par un nom calculé, sans épargner le registre",
       where: "repair",
       file: "repairs/99990101000006_dynamic_disable.sql",
       content:
@@ -738,7 +739,8 @@ $$;`;
       message: "switches triggers of auction_sales by a computed name without keeping to",
     },
     {
-      label: "un module de l'application, hors du module serveur, qui nomme une fonction du registre",
+      label:
+        "un module de l'application, hors du module serveur, qui nomme une fonction du registre",
       where: "source",
       file: "src/lib/registre-controle.ts",
       content: 'export const rpc = "sync_fact_registry_alerts";\n',

@@ -87,8 +87,10 @@ select proname, prorettype::regtype from pg_proc
 where proname in ('set_auction_sale_readiness_override', 'clear_auction_sale_readiness_override');
 ```
 
-À suivre ensuite : la durée des imports (inchangée attendue : le banc local ne mesure aucun écart, et aucun
-déclencheur du registre n'est appelé quand rien n'est tenu) ; les alertes `fact_registry.*` (aucune attendue) ;
+À suivre ensuite : la durée des imports (inchangée attendue : sur le banc local, 5 000 ventes dont aucune n'est
+tenue, l'écart reste dans le bruit, le coût isolé des trois éléments du lot qui sont sur le chemin de l'import
+est de 0 à 7 microsecondes près par ligne, et aucun déclencheur du registre n'est appelé quand rien n'est tenu) ;
+les alertes `fact_registry.*` (aucune attendue) ;
 le journal de la tâche `fact-registry-check` dans `operational_job_runs`. **Critère pour le lot R2b** : contrôle
 quotidien à zéro sur deux passages, durée des imports inchangée.
 
