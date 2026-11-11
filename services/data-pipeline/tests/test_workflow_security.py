@@ -140,7 +140,10 @@ def test_secrets_are_never_in_the_environment_of_pip_and_apt_steps(path: Path) -
     offenders = []
     for job in parse_jobs(path.read_text(encoding="utf-8")):
         for step in job.steps:
-            installs = "pip install" in step.run or "apt-get" in step.run
+            # apt runs through scripts/install_system_packages.sh (tests/test_startup_resilience.py).
+            installs = (
+                "pip install" in step.run or "apt-get" in step.run or "install_system_packages.sh" in step.run
+            )
             if installs and (SECRET.search(step.env) or SECRET.search(job.env)):
                 offenders.append(f"{job.name}/{step.name}")
     assert offenders == []
@@ -185,6 +188,7 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
     receiving = {name for name, step in steps.items() if SECRET.search(step.env)}
     assert receiving == {
         "Run manually requested pipeline",
+        "Close run that never started",
         "Finalize unfinished run",
         "Invalidate public cache",
         "Report source coverage and enrichment backlog",
@@ -204,7 +208,12 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
     # Après la finalisation (un retrait déjà écrit part même si la collecte échoue) et jamais bloquante.
     names = [step.name for step in jobs["run"].steps]
     assert names.index("Invalidate public cache") == names.index("Finalize unfinished run") + 1
-    assert re.search(r"name: Invalidate public cache\n\s+if: always\(\)\n\s+continue-on-error: true", invalidation.text)
+    # Sautée seulement quand les dépendances Python ne sont pas installées (tests/test_startup_resilience.py).
+    assert re.search(
+        r"name: Invalidate public cache\n\s+if: always\(\) && steps\.python-deps\.outcome == 'success'\n"
+        r"\s+continue-on-error: true",
+        invalidation.text,
+    )
     benchmark = {step.name: step for step in jobs["model-benchmark"].steps}
     assert [name for name, step in benchmark.items() if SECRET.search(step.env)] == [
         "Compare existing and candidate models"
@@ -312,7 +321,12 @@ def test_photo_copy_step_runs_after_a_failed_collection_and_fails_visibly() -> N
     step = steps["Copie des photos principales"]
 
     # Même après une collecte en échec, mais seulement pour une exécution planifiée.
-    assert re.search(r"^        if: always\(\) && inputs\.automatic == true$", step.text, re.M)
+    # Sautée quand les dépendances Python ne sont pas installées (échec avant démarrage).
+    assert re.search(
+        r"^        if: always\(\) && steps\.python-deps\.outcome == 'success' && inputs\.automatic == true$",
+        step.text,
+        re.M,
+    )
     # Jamais masquée : les échecs de photos sortent en code 0 (src/photo_mirror.py), une sélection qui
     # lève sort en 1 et doit rendre le travail rouge.
     assert "continue-on-error" not in step.text

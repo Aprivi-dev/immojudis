@@ -78,9 +78,11 @@ jobs:
 
       - name: Install OCR packages
         if: steps.preflight.outputs.should_run == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
+        # Nouvelles tentatives bornées, échec rapide et visible sur une panne durable (même script que
+        # data-pipeline.yml).
+        run: >
+          bash services/data-pipeline/scripts/install_system_packages.sh
+          tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng
 
       - name: Install Python dependencies
         if: steps.preflight.outputs.should_run == 'true'
