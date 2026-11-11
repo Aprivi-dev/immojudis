@@ -203,3 +203,100 @@ validées. Les propositions 12 et 13 restent soumises à leur condition : une si
 Le mode automatique reste verrouillé tant que ne sont pas réunis : les textes publiés, l'AIPD mise à jour et
 signée, la validation des huit points par un avocat, le jeu d'évaluation à zéro publication fausse et une période
 de simulation concluante.
+
+---
+
+## 9. Journal d'exécution (état au 11/11/2026, 06:30 UTC)
+
+Rien n'est publié automatiquement. Le mode automatique est verrouillé en base à deux endroits et la simulation est
+à l'arrêt. Chaque étape a été relue par des spécialistes avant fusion, puis vérifiée en production en lecture seule.
+
+### En production
+
+| Étape | PR   | Fusion (UTC) | Migration                         | Vérifié en production                                                                                                                        |
+| ----- | ---- | ------------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | #465 | 10/11, 21:40 | Aucune                            | La passe des réponses rend son statut de déclenchement (`not_pending` faute de réponse en file).                                             |
+| 2     | #466 | 10/11, 21:14 | 20261114100000, appliquée à 21:36 | Journal créé et fermé à tous les rôles, noyau non appelable par les rôles de l'API, fiches affichées sans erreur.                            |
+| 3     | #470 | 11/11, 00:47 | 20261115100000, appliquée à 06:06 | Mode `off`, une ligne de réglage, deux verrous `auto_locked`, trois tables fermées, passe des réponses « inactive » après « non installée ». |
+
+PR d'accompagnement : #467, #468, #469 et #472 (exceptions du contrôle anti-secrets, à fusionner avant chaque
+branche qui ajoute des fichiers contenant `land_surface_m2`), #471 (durée du script des invariants).
+
+**Non vérifiable sans donnée réelle.** La mention « Information transmise par l'avocat poursuivant… » n'apparaît
+sur aucune fiche : aucune vente n'a d'information acceptée venant d'un avocat. Le déclenchement réel de l'analyse à
+l'arrivée d'une réponse ne se verra qu'à la prochaine vraie réponse.
+
+### Relectures et défauts trouvés avant mise en ligne
+
+- **Étape 1** : prompts-llm (23 faux faits nets sur 44 dans le premier jet, corrigés), securite-applicative
+  (disjoncteur du déclenchement, faux positifs de détection des consignes).
+- **Étape 2** : code-reviewer, expert-postgres, securite-applicative (attribution au seul avocat poursuivant,
+  journal déclaré, erreurs non avalées).
+- **Étape 3** : code-reviewer, securite-applicative, expert-postgres, puis une contre-vérification qui a altéré le
+  code pour contrôler que chaque correction est prouvée par un test. Deux séries de corrections. Points corrigés :
+  surface habitable ou Carrez déjà affichée jugée « vide », message ultérieur de l'avocat ignoré, plafond du jour
+  mal compté, lecture tronquée traitée comme « aucune autre valeur ».
+- **Défauts attrapés par la CI de l'étape 3**, tous corrigés avant fusion : une expression de détection à temps
+  exponentiel sur un message piégé (CodeQL), une contrainte de migration portant deux fois le même nom, un test de
+  parcours qui ignorait la nouvelle route. Après fusion : un test des invariants devenu trop lent (#471).
+
+### Enseignements de méthode
+
+1. **La migration et ses tests pgTAP s'exécutent en local** : PostgreSQL 16 et `pgtap` sont installés dans
+   l'environnement des agents. Le développeur doit rejouer les migrations dans une base jetable et lancer les tests
+   avant de rendre la main, au lieu de laisser la CI découvrir une erreur d'exécution.
+2. **Les tests de parcours (Playwright) se lancent en local** sur Chromium, avec
+   `executablePath: '/opt/pw-browsers/chromium'`. À faire dès qu'un écran d'administration change.
+3. **Un nouvel invariant qui parcourt les sources doit réutiliser la lecture partagée** de
+   `scripts/check-security-invariants.mjs` (`readSourceTree`), sous peine de ralentir tous les tests qui lancent le
+   script.
+4. **Toute expression régulière appliquée au texte d'un email reçu a un test de durée** sur des entrées hostiles de
+   100 000 caractères.
+
+### Étape 4 : ce que le jeu d'évaluation a révélé (en cours)
+
+Le premier jet du jeu (200 réponses fictives, 8 familles) et de son banc est écrit, non fusionné. Résultats, à
+lire comme des simulations et non comme un résultat du modèle :
+
+- **26 publications fausses avec un modèle supposé parfait**, 35 avec un modèle qui confirme ce que les règles ont
+  lu. Causes regroupées : doutes non reconnus (« je crois », « à ma connaissance », « a priori, … »), valeur
+  contradictoire dans un message transféré, valeurs passées ou datées, demande de ne pas publier indirecte
+  (« entre nous », « à titre officieux »), consignes cachées, noms de particuliers sans civilité, pièce jointe
+  seule porteuse d'un nom, valeur hors sujet (surface du séjour, pièces du dossier).
+- **Défaut de conception du moteur de l'étape 3** : la chaîne range tout dossier ayant reçu une réponse en
+  « relecture », alors que le moteur exige « répondu » et « terminé ». En l'état, la simulation afficherait
+  toujours « relecture ». Sans danger, mais sans utilité tant que ce n'est pas corrigé.
+- **Couverture perdue sans raison** : notre propre demande, citée sous la réponse, contient « secret
+  professionnel » et suffit à envoyer la réponse en relecture ; « mètres carrés », « Nombre de pièces : 3 » et
+  « 1 250 m² » ne sont pas lus par les règles.
+- **Le jeu lui-même n'est pas encore une preuve suffisante** (relecture prompts-llm) : trop répétitif (78 cas
+  reprennent la même phrase), 5 cas seulement avec notre demande citée, quelques étiquettes incohérentes, et un
+  seuil contournable en inscrivant un défaut comme « connu ». Corrections en cours.
+- **Workflow de l'essai réel** (relecture devops-ci) : aucun accès à la production, plafond tenu. À corriger avant
+  lancement : une relance par l'interface ne doit pas repayer un essai, le coût réel doit être relu chez le
+  fournisseur, pilote de 5 appels d'abord. Estimation : 0,48 USD au plus pour l'essai complet.
+
+### Suite prévue
+
+| Ordre | Travail                                                                                                                                                         | État                       |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 4     | Jeu durci (215 cas, trois configurations dont « suiveur »), banc incontournable, essai réel préparé                                                             | En correction              |
+| 4 bis | Corrections des règles, du validateur, des détecteurs et de la condition d'état du moteur, signal demandé au modèle, jusqu'à zéro publication fausse sur le jeu | À faire, après l'étape 4   |
+| 4 ter | Essai réel du modèle : pilote, essai complet, deux répétitions                                                                                                  | Après 4 bis, plafond 5 USD |
+| 2 bis | Le pipeline n'écrase plus une valeur transmise par l'avocat lors d'une nouvelle collecte                                                                        | En attente de validation   |
+| 5 à 7 | Selon le plan de la section 8                                                                                                                                   | À faire                    |
+
+### Décisions attendues du propriétaire
+
+1. **Étape 2 bis.** Le pipeline réécrit toute la ligne d'une vente à chaque nouvelle collecte de l'annonce (toutes
+   les 5 à 23 heures) et efface sans le signaler une valeur transmise par l'avocat, même acceptée à la main.
+   Correctif proposé : garder la valeur de l'avocat si l'annonce ne dit rien ; si l'annonce dit autre chose,
+   l'annonce l'emporte et le cas part en relecture. Hors des 13 propositions, donc à valider.
+2. **Règles prudentes retenues par défaut dans le jeu d'évaluation**, à assouplir si souhaité : toute réponse
+   accompagnée d'une pièce jointe part en relecture ; le nom d'un collaborateur du cabinet en signature envoie
+   aussi la réponse en relecture ; des données de tiers sans nom (téléphone d'un occupant) ne bloquent pas la
+   publication d'une surface.
+3. **Test instable sans lien avec ce chantier** : `e2e/admin-information-agent.spec.ts`, « shows the address origin
+   field right under the unknown-origin message », échoue environ une fois sur dix sur mobile pour 12 pixels de
+   décalage. À rendre robuste dans un correctif à part.
+4. **Simulation** : ne pas l'activer avant la fin de l'étape 4 bis.
