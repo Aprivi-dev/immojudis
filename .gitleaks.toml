@@ -38,6 +38,8 @@ paths = [
 '''(?:^|/)supabase/migrations/20261115100000_information_agent_auto_publication_simulation\.sql''',
 '''(?:^|/)supabase/migrations/20261116100000_fact_registry_tables\.sql''',
 '''(?:^|/)supabase/migrations/20261116100500_field_projection_and_hold\.sql''',
+'''(?:^|/)supabase/migrations/20261117100200_field_hold_and_projection_v2\.sql''',
+'''(?:^|/)supabase/migrations/20261117100500_fact_registry_baselines_and_check\.sql''',
 '''(?:^|/)supabase/tests/370_auction_fact_claims\.sql''',
 '''(?:^|/)supabase/tests/383_ai_review_projection_guard\.sql''',
 '''(?:^|/)supabase/tests/872_catalogue_quality_sentinel\.sql''',
