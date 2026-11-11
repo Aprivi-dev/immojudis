@@ -4,6 +4,8 @@ import json
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
+import pytest
+
 from src.freshness import SOURCE_EXTRACTION_VERSION, detail_is_fresh
 from src.sources import notaires
 from src.sources.common import listing_signature
@@ -137,3 +139,98 @@ def test_closed_card_rule_needs_a_proven_end():
         {"source_sale_schedule": {"opens_at": "2026-09-01T10:00:00+00:00", "closes_at": None}}, now
     )
     assert card_sale_long_past({"source_sale_schedule": {"closes_at": "2026-10-01T16:00:00+00:00"}}, now)
+
+
+# --- Contact : la carte de liste porte le téléphone seul, le détail « téléphone | adresse » (11/11/2026) ---
+
+PHONE = "05 00 00 00 01"
+ADDRESS = "office@example.test"
+DETAIL_CONTACT = f"{PHONE} | {ADDRESS}"
+
+
+def _card_with_phone(phone: str = PHONE, **marks: object) -> dict:
+    card = notaires.parse_notaires_json(json.dumps({"annonceResumeDto": [{**_row("VNI"), "telephone": phone}]}))[0]
+    return {**card, **marks}
+
+
+def _detail_contact(card: dict) -> str:
+    detail = notaires.parse_notaires_detail_json(
+        json.dumps(
+            {
+                "typeTransaction": "VNI",
+                "vni": {"descriptionFr": "Appartement à Bordeaux"},
+                "contact": {"nom": "Office Exemple", "telephone": PHONE, "mail": ADDRESS},
+            }
+        ),
+        card,
+    )
+    return detail["lawyer_contact"]
+
+
+def _hydrated(card: dict, stored_contact: str, stored_source_url: str | None = None) -> str:
+    from src import main
+
+    stored = {"source_url": stored_source_url or card["source_url"], "lawyer_contact": stored_contact, "raw_payload": {}}
+    known = {card["source_url"]: stored}
+    main._hydrate_known_unchanged_sales([card], known)
+    return card["lawyer_contact"]
+
+
+def test_an_unchanged_card_keeps_the_e_mail_address_of_the_stored_detail():
+    card = _card_with_phone(_known_unchanged=True)
+    assert card["lawyer_contact"] == PHONE  # la carte de liste ne porte que le téléphone
+    stored = _detail_contact(card)  # ce que la lecture du détail a écrit
+    assert stored == DETAIL_CONTACT
+
+    assert _hydrated(card, stored) == DETAIL_CONTACT
+
+
+def test_a_phone_changed_on_the_card_replaces_the_stored_one_and_keeps_the_address():
+    card = _card_with_phone("05 00 00 00 02", _known_unchanged=True)
+
+    assert _hydrated(card, DETAIL_CONTACT) == f"05 00 00 00 02 | {ADDRESS}"
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "05 00 00 00 09",  # aucune adresse connue
+        "05 00 00 00 09 | écrire @ l'étude",  # un « @ » n'est pas une adresse
+        "05 00 00 00 09 | maitre@avocat-conseil.fr",  # messagerie RPVA, écartée comme partout
+    ],
+)
+def test_the_card_contact_stays_when_the_stored_one_has_no_usable_address(stored: str):
+    assert _hydrated(_card_with_phone(_known_unchanged=True), stored) == PHONE
+
+
+def test_a_card_that_already_carries_an_address_is_left_alone():
+    card = _card_with_phone(_known_unchanged=True, lawyer_contact=f"{PHONE} | etude@example.test")
+
+    assert _hydrated(card, DETAIL_CONTACT) == f"{PHONE} | etude@example.test"
+
+
+def test_a_failed_detail_read_keeps_the_card_contact():
+    # Le détail sera relu au passage suivant (il n'est pas frais) : la carte reste telle quelle d'ici là.
+    card = _card_with_phone(_detail_fetch_failed=True)
+
+    assert _hydrated(card, DETAIL_CONTACT) == PHONE
+
+
+def test_a_merged_sale_stored_under_another_source_does_not_lend_its_contact():
+    # Vente fusionnée : la ligne connue est celle d'une autre source, son contact n'est pas celui de ce détail.
+    card = _card_with_phone(_known_unchanged=True)
+
+    assert _hydrated(card, "05 00 00 00 09 | cabinet@example.test", "https://www.licitor.com/annonce/1.html") == PHONE
+
+
+def test_the_rule_is_for_notaires_only():
+    card = {
+        "source_name": "encheres_immobilieres",
+        "source_url": "https://www.encheres-immobilieres.example.test/vente/1",
+        "lawyer_contact": PHONE,
+        "_known_unchanged": True,
+    }
+
+    assert _hydrated(card, DETAIL_CONTACT) == PHONE
+
+

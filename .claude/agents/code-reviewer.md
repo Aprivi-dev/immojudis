@@ -61,6 +61,11 @@ lecture du code autour, jamais par un simple motif grep :
   de cette dérive, renvoie à `archeologue-code`. Les failles de sécurité (secrets, RLS de
   façade, prompt injectable) relèvent de `securite-applicative`.
 
+## Rangement du code
+
+Critère permanent de toute relecture : lis `docs/architecture/rangement-du-code.md` et applique
+sa partie « Selon le rôle » (qui relit ou audite).
+
 ## Format de rendu
 
 Pour chaque point :
