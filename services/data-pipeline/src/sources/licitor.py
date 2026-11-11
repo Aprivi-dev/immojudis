@@ -406,6 +406,10 @@ def decode_protected_emails_enabled() -> bool:
     ``disabled``) ou inconnu : désactivé. Une valeur inconnue est signalée par un avertissement journalisé une
     fois (sans la valeur). Désactivé, les éléments masqués sont tout de même retirés de la page (jamais
     publiés) mais aucune adresse n'est décodée ni écrite au registre.
+
+    La collecte planifiée pose la variable : depuis la décision du propriétaire du 11/11/2026 (accord de Licitor
+    déclaré par le propriétaire), ``.github/workflows/data-pipeline.yml`` l'active quand la variable de dépôt est
+    absente. Ici, rien ne change : sans valeur explicitement vraie, aucun décodage.
     """
     value = (os.getenv(DECODE_ENV) or "").strip().lower()
     if value in _DECODE_ON:
