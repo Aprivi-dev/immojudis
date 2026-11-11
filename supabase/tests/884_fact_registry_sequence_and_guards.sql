@@ -332,9 +332,21 @@ select is(
 
 -- Un rôle créé après coup, absent de la liste d'exclusion, avec tous les droits de table et des politiques qui
 -- lui ouvrent toutes les lignes. Ni superutilisateur ni BYPASSRLS : le test tourne aussi sous un rôle qui n'est
--- pas superutilisateur (il se donne alors l'appartenance au rôle créé, pour pouvoir l'endosser).
+-- pas superutilisateur (le « postgres » de Supabase, qui a CREATEROLE). Depuis PostgreSQL 16, le créateur d'un
+-- rôle n'en reçoit que l'option ADMIN : pour l'endosser (SET), et plus bas pour reprendre une fonction qu'il lui
+-- aura donnée (INHERIT), il se donne l'appartenance, seulement si elle lui manque (un superutilisateur l'a déjà).
+-- Le bénéficiaire est écrit par son NOM, jamais « to current_user » : cette forme sans nom a fait tomber le
+-- serveur de la CI (extension supautils de l'image Supabase, qui lit le nom du bénéficiaire d'un GRANT de rôle).
 create role registry_probe_884 nologin;
-grant registry_probe_884 to current_user;
+do $membership$
+begin
+  if not pg_has_role(current_user, 'registry_probe_884', 'SET')
+    or not pg_has_role(current_user, 'registry_probe_884', 'USAGE')
+  then
+    execute format('grant registry_probe_884 to %I with inherit true, set true', current_user::text);
+  end if;
+end;
+$membership$;
 grant usage on schema public to registry_probe_884;
 grant select, insert, update on public.auction_sales, public.auction_fact_claims to registry_probe_884;
 -- (le journal des ventes est écrit par un déclencheur SECURITY INVOKER de auction_sales.)
