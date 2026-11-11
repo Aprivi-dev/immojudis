@@ -2452,6 +2452,14 @@ def test_download_documents_retries_permanent_failure_after_http_ttl(tmp_path, m
     metadata["checked_at"] = "2020-01-01T00:00:00+00:00"
     metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
 
+    # Lot R6 (11/11/2026) : la péremption se juge sur la vérification enregistrée dans le manifeste. Un fichier
+    # de suivi local ancien ne suffit plus à redemander une URL que le manifeste dit vérifiée à l'instant.
+    assert download_documents(sale, output_root=tmp_path, stats=PdfEnrichmentStats()) == []
+    assert len(calls) == 1
+    sale.raw_payload["document_analysis"]["http_checked_at_by_url"]["https://source.example/pv.pdf"] = (
+        "2020-01-01T00:00:00+00:00"
+    )
+
     third_stats = PdfEnrichmentStats()
     assert download_documents(sale, output_root=tmp_path, stats=third_stats) == []
     assert len(calls) == 2

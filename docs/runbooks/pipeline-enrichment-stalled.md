@@ -26,7 +26,8 @@ décide : relever `daily_ai_budget_usd` (route d'administration du pilote) ou ac
 2. `claimable_due = 0` et `excluded_due > 0` : les tâches échues ne peuvent pas être prises (vente expirée,
    source désactivée ou suspendue, `source_details_enabled` faux). Corriger la condition, pas la file.
 3. `claimable_due > 0` et rien ne bouge : le travailleur ne tourne pas ; voir le workflow `data-pipeline.yml`
-   et `pipeline.scheduler.disabled`.
+   et `pipeline.scheduler.disabled`. Des runs `enrichment-queue` en `failed_before_start` : le job échoue
+   avant le pipeline, voir « Échec avant démarrage » dans `docs/runbooks/pipeline-source-missed.md`.
 4. Tâches `source_detail` anciennes : la source concernée est-elle activée (`auction_source_state.enabled`) et
    non suspendue ?
 

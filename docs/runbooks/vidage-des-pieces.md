@@ -27,7 +27,11 @@ bounded pass`. Une passe partielle est normale pour une vente de plus de six pi�
   (`PDF_MAX_DOCUMENTS_PER_SALE`) ou un long rapport scanné. Une passe qui ne lit **aucune** pièce de plus
   ne l'est pas.
 - **Points d'étape refusés** : `PDF document checkpoint was not persisted; retry required: <raison>`. La
-  raison est journalisée depuis #423. Une vente en échec attend un jour avant d'être reprise.
+  raison est journalisée depuis #423 et, depuis le 11/11/2026, écrite dans `last_error` de la tâche (un
+  code comme `no_progress_entries`, jamais l'URL de la pièce). Une vente en échec attend un jour avant
+  d'être reprise.
+- **Une vente relue à chaque passage de la file.** Symptôme du 11/11/2026 : 3 ventes prenaient 104 des 200
+  lectures pdf terminées en 48 heures. Voir « Plafond de relecture et tâches en attente » plus bas.
 - **Rendement en baisse** dans le résumé d'étape du workflow (« Pièces jointes : vidage du stock »).
   Référence du 05/11/2026 sans lecture en avance : 43 ventes traitées sur 80 candidates en 150 minutes.
 - La sentinelle `catalogue.quality.documents_incomplete` s'ouvre : plus de 30 ventes en ligne ont une
@@ -41,6 +45,8 @@ bounded pass`. Une passe partielle est normale pour une vente de plus de six pi�
    - `passes`, `partial_passes`, `partial_pass_share` : passes conclues sur un manifeste partiel (tâche
      remise en file avec « manifest is partial », ou remplacée après un point d'étape durable) ;
    - `refused_checkpoints` : passes conclues sur « checkpoint was not persisted » ;
+   - `waiting_passes` : passes conclues sur « rien à lire » (la tâche attend la revalidation d'un manifeste
+     complet, voir le point 2) ;
    - `elapsed_seconds`, `stop_reason` (`candidates_exhausted`, `budget`, `catalogue_lock`,
      `catalogue_lock_lost`) ;
    - `lock_wait_seconds` : temps passé à attendre le verrou du catalogue, retranché de la durée évaluée par
@@ -61,6 +67,25 @@ bounded pass`. Une passe partielle est normale pour une vente de plus de six pi�
    order by 3 desc;
    ```
 
+   Trois fins datent du 11/11/2026 :
+   - `PDF pass deferred: the persisted manifest is complete and no document is due for revalidation`
+     (tâche `queued`, aucun essai consommé) : le manifeste enregistré est complet, il contient une URL
+     écartée (lien mort, pièce bloquée, lien non documentaire), donc son texte n'est pas restaurable sur ce
+     runner, et ses vérifications ont moins de 24 heures. Il n'y a rien à lire. `next_attempt_at` est l'heure
+     où la première vérification expire : la vente est alors relue. Un manifeste complet sans URL écartée
+     dont le texte manque n'attend pas : il échoue (point 4).
+   - `PDF pass not recorded: the final catalogue write was discarded (<code>)` (tâche `failed`, un essai
+     consommé) : l'écriture de fin de passe n'a rien écrit. `revision_moved` : la ligne de la vente a changé
+     pendant la passe, nouvel essai 30 minutes plus tard, quatre essais au plus. `expired` ou
+     `missing_price_and_surface` : refus d'admission, nouvel essai un jour plus tard.
+   - `review_required: final catalogue write refused (<code>, <version des faits>)` (tâche `cancelled`) :
+     quatrième refus d'admission de suite. Le vidage ne réveille pas cette tâche pendant 7 jours
+     (`REVIEW_HOLD_DAYS`) si l'audience est à plus de 7 jours, pendant 1 jour sinon (audience proche ou vente
+     sans date). L'attente tombe avant si les règles de lecture changent (la version du message n'est plus
+     `DOCUMENT_FACTS_VERSION`) ou si une génération plus récente, non annulée, existe (pièces changées). Une
+     génération plus récente annulée ne la lève pas : la liste des pièces est revenue à celle de la tâche en
+     revue. À regarder : la vente n'a plus ni prix ni surface une fois ses pièces relues, ou elle est expirée.
+
 3. **Une vente qui boucle.** Le manifeste dit ce qui reste à lire :
 
    ```sql
@@ -76,9 +101,24 @@ bounded pass`. Une passe partielle est normale pour une vente de plus de six pi�
    04/11 (corrigée par #421). Si cela revient, couper la lecture en avance (section suivante) et comparer
    avec le vidage suivant.
 
-4. **Points d'étape refusés.** Chercher `checkpoint` dans le journal du workflow : la raison suit le
-   message (analyse absente, schéma ou empreinte, cache local absent, pages ou textes qui ne concordent
-   pas, révision déplacée avant l'écriture).
+4. **Points d'étape refusés.** La raison suit le message, dans le journal du workflow (chercher
+   `checkpoint`) et dans `last_error` (analyse absente, schéma ou empreinte, cache local absent, pages ou
+   textes qui ne concordent pas, révision déplacée avant l'écriture) :
+
+   ```sql
+   select substring(last_error from 'retry required: ([a-z_]+)') as raison, count(*)
+   from public.auction_enrichment_jobs
+   where job_type = 'pdf' and status = 'failed'
+     and last_error like 'PDF document checkpoint was not persisted%'
+   group by 1
+   order by 2 desc;
+   ```
+
+   Les raisons sont des codes. `no_progress_entries` : la passe n'avait aucun texte à enregistrer ; sur un
+   manifeste déjà complet et sans URL écartée, c'est un texte perdu (lignes d'extraction absentes, preuve
+   altérée), relu quand ses vérifications expirent. `obsolete_revision` et `revision_moved` : la ligne de la
+   vente a changé avant ou pendant l'écriture du point d'étape. `no_direct_connection` : pas de connexion
+   PostgreSQL directe.
 
 5. **Le verrou.** `stop_reason = catalogue_lock`, ou de longues attentes entre deux ventes : une collecte
    tient le verrou du catalogue (jusqu'à 35 minutes, 50 pour Licitor). Ce n'est pas un défaut du vidage.
@@ -86,6 +126,58 @@ bounded pass`. Une passe partielle est normale pour une vente de plus de six pi�
 6. **La lecture des pièces est-elle effacée ailleurs ?** Si le nombre de ventes à relire remonte sans
    que le vidage ait échoué, une collecte efface peut-être `document_facts_version` (incidents corrigés
    par #422 et #425).
+
+## Plafond de relecture et tâches en attente
+
+Règles posées le 11/11/2026 (lot R6, note
+[file de lecture des pièces](../audits/2026-11-11-file-de-lecture-des-pieces.md)).
+
+- **Plafond de relecture.** Le vidage ne choisit pas une vente pour laquelle il a déjà demandé 2 lectures
+  pdf terminées dans les 24 dernières heures, quelle que soit l'empreinte des tâches
+  (`MAX_COMPLETED_READS_PER_DAY`, `src/document_backlog.py`). Ne comptent que les tâches terminées à la
+  priorité du vidage (40) : une tâche annulée, en échec ou reportée n'a rien lu, et une tâche de la voie
+  générale (priorité 30) se termine souvent sans passe, pièces à jour après restauration. Conséquence
+  voulue : une vente réellement modifiée une troisième fois dans la journée n'est plus prise par le vidage
+  ce jour-là ; sa tâche reste en file et la voie générale la sert à son rang. Les ventes au plafond :
+
+  ```sql
+  select source_url, count(*) as lectures_terminees_24h
+  from public.auction_enrichment_jobs
+  where job_type = 'pdf' and status = 'completed' and priority >= 40
+    and completed_at >= now() - interval '24 hours'
+  group by 1
+  having count(*) >= 2
+  order by 2 desc
+  limit 50;
+  ```
+
+  Une vente qui y revient chaque jour reste « à relire » après chaque lecture : regarder son manifeste
+  (point 3 du diagnostic) plutôt que relever le plafond.
+
+- **Vente sans texte.** Une vente dont toutes les pièces sont écartées (liens morts, robots) ou vides a
+  un manifeste complet : sa version des faits (`document_facts_version`) est posée, elle n'est plus à
+  relire à chaque vidage.
+- **Tâche qui attend.** La fin `PDF pass deferred` (point 2 du diagnostic) laisse la tâche en file avec
+  une échéance. Le vidage ne la reprend pas avant cette échéance et n'enchaîne pas la même passe ; la visite
+  compte dans `waiting_passes`. Tant qu'elle attend, les passes de faits de la vente attendent aussi (garde
+  de la prise, migration `20261111050000`).
+- **Écriture de fin de passe écartée.** La tâche pdf échoue avec son code, un essai consommé : elle ne peut
+  plus tourner sans fin. Remettre plus tôt en file une tâche `review_required` est une écriture en base :
+  décision du propriétaire.
+- **Valeur remise quand une valeur de pièce est effacée.** Chaque relecture complète efface d'abord les
+  valeurs lues dans les pièces et remet celles de la source, depuis `source_factual_snapshot`. Règle :
+  ne jamais faire apparaître une valeur que la collecte n'aurait pas écrite pour la vente
+  (`_pdf_source_reader`, `src/pdf_fact_scope.py`). L'instantané est relu par `normalize_sale` avec le
+  contexte de la collecte repris du `raw_payload` de la vente (lot de l'annonce, drapeaux, titre, blocs de
+  la fiche, précision des dates). Sur une annonce Licitor à plusieurs lots dont le lot n'est plus désigné
+  (`source_lot_selection` absent), seul ce que l'instantané porte pour le champ est remis, sans relire le
+  texte de la page ; un champ vide reste vide. Si l'instantané ne se lit pas, le champ est remis vide et le
+  journal porte `Source snapshot unreadable for <url> : field <champ>`, sans la valeur. Limites : dans le
+  cas sans lot, un type de bien peut être remis `other` au lieu du type lu par la collecte, et un
+  instantané pris avant la lecture lot par lot (03/11/2026) porte les valeurs du premier lot.
+- **Lecture en avance.** Une pièce est à revalider quand sa vérification enregistrée en base a plus de
+  24 heures. Le fichier de suivi local (`.http.json`), que la lecture en avance rafraîchit, ne sert plus
+  qu'à éviter une requête : il ne décide plus si la pièce est reprise.
 
 ## Interrupteur : nombre de processus de lecture en avance
 
@@ -166,3 +258,7 @@ timestamptz);` (migration du propriétaire). Le vidage note alors `is not deploy
   du résumé d'étape reste.
 - **Correctifs de la série #413 à #430** : un `git revert` du commit concerné, après lecture de son
   message. #421 et #422 corrigent des pertes de lecture : ne pas les annuler sans remplacement.
+- **Lot R6 du 11/11/2026** (plafond de relecture, tâches en attente, motif dans `last_error`) : un
+  `git revert` du commit concerné. Aucune migration, aucune donnée à reprendre : une tâche en attente
+  est une tâche `queued` ordinaire, reprise à son échéance par l'ancien code comme par le nouveau, et une
+  tâche annulée `review_required` est réveillée par l'ancien vidage dès sa visite suivante.
