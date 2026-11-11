@@ -75,9 +75,11 @@ BACKLOG_PDF_PRIORITY = 40
 # réellement invalidée par une collecte (pièce changée, #415) est relue le jour même.
 MAX_COMPLETED_READS_PER_DAY = 2
 # Une tâche pdf annulée « review_required » (écriture de fin de passe refusée à l'admission jusqu'au dernier
-# essai, src/pdf_pass_outcomes.py) n'est pas réveillée par le vidage pendant ce nombre de jours, sauf
-# génération plus récente. Sept jours : quatre passes par cycle de onze jours au lieu d'une par jour, et une
-# vente redevenue admissible est quand même relue sans intervention.
+# essai, src/pdf_pass_outcomes.py) n'est pas réveillée par le vidage pendant ce nombre de jours. Sept jours :
+# quatre passes par cycle de onze jours au lieu d'une par jour, et une vente redevenue admissible est quand
+# même relue sans intervention. L'attente est ramenée à un jour quand l'audience est à sept jours ou moins
+# (ou sans date), et elle tombe dès que les règles de lecture changent ou qu'une génération plus récente,
+# non annulée, existe (CANDIDATES_SQL).
 REVIEW_HOLD_DAYS = 7
 ACTIONABLE_STATUSES = ("active", "unknown", "upcoming", "postponed")
 USEFUL_DOCUMENT_TYPES = (
@@ -206,18 +208,28 @@ select s.source_url, s.source_name, s.sale_date,
        ) < %s
    -- Tâche pdf annulée « review_required » : le vidage réveille toute tâche annulée d'une vente candidate
    -- (ENSURE_JOB_SQL), il rejouerait donc dès le tick suivant la passe dont l'écriture vient d'être refusée
-   -- quatre fois. La vente attend une génération plus récente (pièces changées) ou la fin du délai.
+   -- quatre fois. La vente attend la fin du délai : sept jours si son audience est à plus de sept jours, un
+   -- jour sinon (une vente proche de son audience, ou sans date, ne peut pas attendre une semaine). Deux
+   -- événements lèvent l'attente avant : des règles de lecture nouvelles (la version est dans le message de
+   -- la tâche, la ligne de la vente garde l'ancienne tant que l'écriture est refusée), et une génération
+   -- plus récente qui n'est pas annulée (pièces changées). Une génération plus récente annulée ne compte
+   -- pas : la liste des pièces est revenue à celle de la tâche en revue, qui est de nouveau la courante.
    and not exists (
          select 1 from public.auction_enrichment_jobs r
           where r.source_url = s.source_url
             and r.job_type = 'pdf'
             and r.status = 'cancelled'
             and r.last_error like 'review_required:%%'
-            and r.updated_at >= now() - make_interval(days => %s)
+            and strpos(r.last_error, %s) > 0
+            and r.updated_at >= now() - case
+                  when s.sale_date > now() + interval '7 days' then make_interval(days => %s)
+                  else interval '1 day'
+                end
             and not exists (
                   select 1 from public.auction_enrichment_jobs n
                    where n.source_url = r.source_url
                      and n.job_type = 'pdf'
+                     and n.status <> 'cancelled'
                      and n.created_at > r.created_at
                 )
        )
@@ -440,6 +452,7 @@ def candidate_parameters(limit: int) -> tuple[object, ...]:
         DOCUMENT_FACTS_VERSION,
         BACKLOG_PDF_PRIORITY,
         MAX_COMPLETED_READS_PER_DAY,
+        DOCUMENT_FACTS_VERSION,
         REVIEW_HOLD_DAYS,
         int(limit),
     )

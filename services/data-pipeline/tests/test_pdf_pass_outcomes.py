@@ -384,7 +384,7 @@ def test_the_last_attempt_of_a_write_refused_at_admission_ends_in_review(reason:
     assert discarded_write_ending(_refused_sale(reason), _claimed(4)) == {
         "succeeded": False,
         "cancelled": True,
-        "error_message": f"{WRITE_REFUSED_REVIEW} ({reason})",
+        "error_message": f"{WRITE_REFUSED_REVIEW} ({reason}, {DOCUMENT_FACTS_VERSION})",
     }
 
 
@@ -447,7 +447,7 @@ def test_a_final_write_refused_until_the_last_attempt_cancels_the_pdf_job_for_re
 
     assert deferred == []
     assert [(job_id, kwargs["cancelled"], kwargs["error_message"]) for job_id, kwargs in finished] == [
-        ("tache-pdf", True, f"{WRITE_REFUSED_REVIEW} (missing_price_and_surface)")
+        ("tache-pdf", True, f"{WRITE_REFUSED_REVIEW} (missing_price_and_surface, {DOCUMENT_FACTS_VERSION})")
     ]
 
 
