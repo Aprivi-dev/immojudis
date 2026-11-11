@@ -30,8 +30,9 @@ set local statement_timeout = '60s';
 --      fonctions de décision des lots R2b et R2c avant toute écriture (échec fermé), et en dernière instruction de
 --      tout rattrapage qui écrit auction_sales. Remise en état : supabase/maintenance/
 --      20261117100600_restore_fact_registry_trigger_modes.sql.
---      Chaque déclencheur est contrôlé par son nom, son mode ET sa fonction (tgfoid) : un déclencheur recréé sur
---      une autre fonction est signalé comme manquant. La liste compte douze déclencheurs : les onze du lot R1 et
+--      Chaque déclencheur est contrôlé par son nom, son mode, sa fonction (tgfoid) et le mode de sécurité de
+--      celle-ci, son moment, ses évènements, ses colonnes et sa clause WHEN : un déclencheur recréé sur une autre
+--      fonction, ou avec « when (false) », est signalé comme manquant. La liste compte douze déclencheurs : les onze du lot R1 et
 --      aaab_auction_sales_held_fields_marker_guard, créé par 20261117100200. Entre cette migration et la
 --      suivante, assert_fact_registry_triggers() lève donc 55000 (échec fermé) : rien ne l'appelle avant
 --      20261117100500, et le workflow applique les deux à la suite.
@@ -54,19 +55,22 @@ set local statement_timeout = '60s';
 --      held_fields. La fonction lève 42501 quand le marqueur désigne la vente écrite et que le rôle n'est pas le
 --      propriétaire de la projection. Le déclencheur aaab_auction_sales_held_fields_marker_guard est créé par
 --      20261117100200 (un seul verrou sur auction_sales pour tout le lot).
---   6. lot_ref (public.auction_fact_claim_decisions) : ce que dit la pièce (« lot 2 », « Lot n° 3 »), texte libre
---      de 40 caractères dans un journal non effaçable. Borné par un format : une lettre ou un chiffre, puis au
---      plus 39 lettres, chiffres, espaces ou signes de ponctuation simple (. , / ( ) ' - ° º & + #). Ni arobase,
---      ni deux-points, ni saut de ligne. Écrite en une seule expression rationnelle, sans BETWEEN (la forme
---      « between … and … » suivie d'un autre terme par AND ne s'imprime pas de la même façon en production et
---      sur la base d'ombre du contrôle de dérive).
+--   6. lot_ref (public.auction_fact_claim_decisions) : ce que dit la pièce du lot, dans un journal non effaçable.
+--      Un motif de caractères laissait passer un nom et un téléphone (« M. Jean Dupont 06 12 34 56 78 »). Le
+--      motif est STRUCTUREL, calé sur les libellés que la collecte lit réellement (« lot 2 », « Lot 14 »,
+--      « lots 2 et 3 », « lots 1-2 », « lot n° 2 », « lots n° 1 et 2 », « 2ème lot ») : « lot » ou « lots » et
+--      « n° » facultatifs, un à quatre numéros de un à quatre chiffres sans zéro initial (suivis d'une lettre au
+--      plus), séparés par « et », « , », « / », « - » ou « à » ; ou un ordinal suivi de « lot ». Insensible à la
+--      casse. Aucun mot libre : ni nom, ni adresse, ni numéro de téléphone (zéro initial, dix chiffres). Écrit en
+--      une seule expression rationnelle, sans BETWEEN (la forme « between … and … » suivie d'un autre terme par
+--      AND ne s'imprime pas de la même façon en production et sur la base d'ombre du contrôle de dérive).
 --
 -- Verrous : remplacement de fonctions ; ACCESS EXCLUSIVE bref sur public.auction_sale_field_hold_events et sur
 -- public.auction_fact_claim_decisions (tables vides en production : le contrôle des contraintes est immédiat).
 -- Chaque contrainte n'est recréée que si elle n'a pas déjà la forme voulue : une seconde application ne reprend
 -- pas ces verrous. SHARE ROW EXCLUSIVE sur public.auction_fact_claims (CREATE OR REPLACE TRIGGER et ENABLE ALWAYS
 -- TRIGGER), à la première comme à la seconde application, jamais ACCESS EXCLUSIVE : les lectures passent, une
--- écriture d'observation attend quelques millisecondes. lock_timeout est ramené à 1 s juste avant (le verrou est
+-- écriture d'observation attend quelques millisecondes. lock_timeout est ramené à 2 s juste avant (le verrou est
 -- libre, ou pris par un lot de la collecte : attendre plus ne ferait que bloquer les autres écrivains). Aucun
 -- verrou sur auction_sales. À APPLIQUER ENTRE DEUX LOTS DE PUBLICATION, comme 20261117100200.
 --
@@ -196,10 +200,19 @@ comment on function app_private.refuse_sale_field_projection_marker() is
 revoke all on function app_private.refuse_sale_field_projection_marker()
   from public, anon, authenticated, service_role;
 
--- 2. Mode des déclencheurs du registre ---------------------------------------------------------------------------
+-- 2. Mode et définition des déclencheurs du registre -------------------------------------------------------------
 -- Les onze déclencheurs posés par 20261116100000, 20261116100100 et 20261116100500, et la garde du marqueur de
--- 20261117100200, nommés un à un avec leur fonction : un déclencheur supprimé, ou recréé sur une autre fonction,
--- est signalé comme un déclencheur passé en mode ordinaire.
+-- 20261117100200, nommés un à un. Un déclencheur est signalé s'il manque, s'il n'est plus en mode « always », ou
+-- si l'un de ces éléments n'est plus celui de sa migration :
+--   * sa fonction (tgfoid) et le mode de sécurité de celle-ci (prosecdef) : une garde par rôle passée en
+--     SECURITY DEFINER ne lirait plus le rôle appelant ;
+--   * son moment, sa portée et ses évènements (tgtype : 7 = avant insertion par ligne, 19 = avant mise à jour
+--     par ligne, 27 = avant mise à jour ou suppression par ligne, 34 = avant TRUNCATE par instruction) ;
+--   * ses colonnes (UPDATE OF …), dans l'ordre de leur déclaration ;
+--   * sa clause WHEN : un déclencheur recréé avec « when (false) » garde son nom, son mode et sa fonction, et
+--     ne garde plus rien. Elle est lue dans pg_get_triggerdef puis ramenée à une forme sans espaces, sans
+--     parenthèses, sans transtypage « ::text » et en minuscules, pour ne pas dépendre de la façon dont une
+--     version de PostgreSQL imprime les parenthèses (16 sur la base d'essai locale, 17 en CI et en production).
 create or replace function app_private.fact_registry_triggers_not_always()
 returns text[]
 language sql
@@ -214,22 +227,37 @@ as $$
   )
   from (
     values
-      ('auction_sales', 'aaab_auction_sales_held_fields_insert_guard', 'refuse_inserted_held_fields'),
-      ('auction_sales', 'aaab_auction_sales_held_fields_marker_guard', 'refuse_sale_field_projection_marker'),
-      ('auction_sales', 'aaab_auction_sales_held_fields_role_guard', 'refuse_api_role_held_fields_write'),
-      ('auction_sales', 'aaab_auction_sales_hold_projected_fields', 'hold_projected_sale_fields'),
-      ('auction_fact_claim_decisions', 'auction_fact_claim_decisions_append_only', 'fact_registry_append_only'),
-      ('auction_fact_claim_decisions', 'auction_fact_claim_decisions_no_truncate', 'fact_registry_append_only'),
+      ('auction_sales', 'aaab_auction_sales_held_fields_insert_guard', 'refuse_inserted_held_fields', false, 7,
+        '', 'new.held_fieldsisnotnull'),
+      ('auction_sales', 'aaab_auction_sales_held_fields_marker_guard', 'refuse_sale_field_projection_marker',
+        false, 19,
+        'surface_m2,app_surface_m2,app_surface_kind,surface_source,surface_confidence,habitable_surface_m2,carrez_surface_m2,land_surface_m2,rooms_count,bedrooms_count,occupancy_status,visit_dates',
+        'old.held_fieldsisnotnullornew.surface_source=''fact_registry'''),
+      ('auction_sales', 'aaab_auction_sales_held_fields_role_guard', 'refuse_api_role_held_fields_write', false,
+        19, 'held_fields', 'new.held_fieldsisdistinctfromold.held_fields'),
+      ('auction_sales', 'aaab_auction_sales_hold_projected_fields', 'hold_projected_sale_fields', true, 19,
+        'surface_m2,app_surface_m2,app_surface_kind,surface_source,surface_confidence,habitable_surface_m2,carrez_surface_m2,land_surface_m2,rooms_count,bedrooms_count,occupancy_status,visit_dates,held_fields',
+        'old.held_fieldsisnotnullornew.held_fieldsisdistinctfromold.held_fieldsornew.surface_source=''fact_registry'''),
+      ('auction_fact_claim_decisions', 'auction_fact_claim_decisions_append_only', 'fact_registry_append_only',
+        false, 27, '', ''),
+      ('auction_fact_claim_decisions', 'auction_fact_claim_decisions_no_truncate', 'fact_registry_append_only',
+        false, 34, '', ''),
       ('auction_fact_claim_decisions', 'auction_fact_claim_decisions_validate',
-        'validate_auction_fact_claim_decision'),
-      ('auction_fact_claims', 'auction_fact_claims_no_truncate', 'refuse_auction_fact_claims_truncate'),
-      ('auction_fact_claims', 'auction_fact_claims_registry_origin_guard', 'refuse_api_role_registry_origin'),
+        'validate_auction_fact_claim_decision', true, 7, '', ''),
+      ('auction_fact_claims', 'auction_fact_claims_no_truncate', 'refuse_auction_fact_claims_truncate', false,
+        34, '', ''),
+      ('auction_fact_claims', 'auction_fact_claims_registry_origin_guard', 'refuse_api_role_registry_origin',
+        false, 7, '',
+        'new.evidence_kind=anyarray[''professional_email'',''professional_form'',''admin_entry'']ornew.extractor_name=''information_agent''ornew.evidence_locator?''information_agent_fact_id'''),
       ('auction_sale_field_hold_events', 'auction_sale_field_hold_events_append_only',
-        'fact_registry_append_only'),
+        'fact_registry_append_only', false, 27, '', ''),
       ('auction_sale_field_hold_events', 'auction_sale_field_hold_events_no_truncate',
-        'fact_registry_append_only'),
-      ('auction_sale_field_hold_events', 'auction_sale_field_hold_events_stamp', 'stamp_fact_registry_event')
-  ) as expected (table_name, trigger_name, function_name)
+        'fact_registry_append_only', false, 34, '', ''),
+      ('auction_sale_field_hold_events', 'auction_sale_field_hold_events_stamp', 'stamp_fact_registry_event',
+        true, 7, '', '')
+  ) as expected (
+    table_name, trigger_name, function_name, security_definer, trigger_type, column_names, when_clause
+  )
   where not exists (
     select 1
     from pg_catalog.pg_trigger trigger_row
@@ -244,11 +272,29 @@ as $$
       and trigger_row.tgenabled = 'A'
       and routine_namespace.nspname = 'app_private'
       and routine.proname = expected.function_name
+      and routine.prosecdef = expected.security_definer
+      and trigger_row.tgtype = expected.trigger_type
+      and coalesce(
+        (
+          select pg_catalog.string_agg(attribute.attname, ',' order by listed.position)
+          from pg_catalog.unnest(trigger_row.tgattr::smallint[]) with ordinality listed(attnum, position)
+          join pg_catalog.pg_attribute attribute
+            on attribute.attrelid = trigger_row.tgrelid and attribute.attnum = listed.attnum
+        ),
+        ''
+      ) = expected.column_names
+      and coalesce(
+        pg_catalog.lower(pg_catalog.regexp_replace(
+          (pg_catalog.regexp_match(
+            pg_catalog.pg_get_triggerdef(trigger_row.oid), ' WHEN \((.*)\) EXECUTE FUNCTION '))[1],
+          '\s|\(|\)|::text', '', 'g')),
+        ''
+      ) = expected.when_clause
   );
 $$;
 
 comment on function app_private.fact_registry_triggers_not_always() is
-  'Registre des pièces : déclencheurs du registre absents, hors du mode « always » ou liés à une autre fonction que la leur (tableau vide si tout est en place). Lecture du catalogue seulement.';
+  'Registre des pièces : déclencheurs du registre absents, hors du mode « always », ou dont la fonction, son mode de sécurité, le moment, les évènements, les colonnes ou la clause WHEN ne sont plus ceux de leur migration (tableau vide si tout est en place). Lecture du catalogue seulement.';
 
 revoke all on function app_private.fact_registry_triggers_not_always()
   from public, anon, authenticated, service_role;
@@ -303,37 +349,36 @@ comment on table public.auction_sale_field_hold_events is
 
 -- 6. Format de lot_ref (point 6 de l'en-tête) --------------------------------------------------------------------
 -- Même méthode que ci-dessus : la contrainte de colonne de 20261116100000 (nom attribué d'office :
--- auction_fact_claim_decisions_lot_ref_check) n'est recréée que si elle n'a pas déjà le format. Le motif tient en
--- une expression : premier caractère lettre ou chiffre (donc ni vide, ni blanc), 40 caractères au plus. En
--- expression rationnelle avancée de PostgreSQL, « $ » ne concorde qu'à la fin de la chaîne : un saut de ligne
--- final est refusé.
+-- auction_fact_claim_decisions_lot_ref_check) n'est recréée que si elle n'a pas déjà le motif structurel (opérateur
+-- insensible à la casse). En expression rationnelle avancée de PostgreSQL, « $ » ne concorde qu'à la fin de la
+-- chaîne : un saut de ligne final est refusé.
 do $$
 begin
   if not exists (
     select 1 from pg_catalog.pg_constraint constraint_row
     where constraint_row.conrelid = 'public.auction_fact_claim_decisions'::regclass
       and constraint_row.conname = 'auction_fact_claim_decisions_lot_ref_check'
-      and pg_catalog.pg_get_constraintdef(constraint_row.oid) like '%lot_ref ~ %'
+      and pg_catalog.pg_get_constraintdef(constraint_row.oid) like '%lot_ref ~* %'
   ) then
     alter table public.auction_fact_claim_decisions
       drop constraint if exists auction_fact_claim_decisions_lot_ref_check;
     alter table public.auction_fact_claim_decisions
       add constraint auction_fact_claim_decisions_lot_ref_check check (
         lot_ref is null
-        or lot_ref ~ '^[0-9A-Za-zÀ-ÖØ-öø-ÿ][0-9A-Za-zÀ-ÖØ-öø-ÿ .,/()''°º&+#-]{0,39}$'
+        or lot_ref ~* '^((lots? )?(n[°º] ?)?[1-9][0-9]{0,3}[a-z]?( ?(et|,|/|-|à) ?[1-9][0-9]{0,3}[a-z]?){0,3}|[1-9][0-9]{0,2}(er|e|ème|eme|nd)? lot)$'
       );
   end if;
 end;
 $$;
 
 comment on column public.auction_fact_claim_decisions.lot_ref is
-  'Registre des pièces : ce que dit la pièce du lot (« lot 2 », « Lot n° 3 »). Format borné : lettres, chiffres, espaces et ponctuation simple, 40 caractères au plus. Jamais un nom, une adresse ni un extrait.';
+  'Registre des pièces : ce que dit la pièce du lot (« lot 2 », « lots 1 et 2 », « Lot n° 3 »). Motif structurel : numéros de lot seulement, jamais un mot libre, un nom, une adresse ni un extrait.';
 
 -- 4. Garde d'origine étendue (point 4 de l'en-tête) --------------------------------------------------------------
 -- Placée en dernier : c'est la seule instruction de ce fichier qui attend un verrou sur une table écrite par la
 -- collecte. CREATE OR REPLACE TRIGGER garde le déclencheur en place (jamais de fenêtre sans garde)
 -- et ne prend que SHARE ROW EXCLUSIVE ; son mode est reposé ensuite, comme au lot R1.
-set local lock_timeout = '1s';
+set local lock_timeout = '2s';
 
 create or replace trigger auction_fact_claims_registry_origin_guard
   before insert on public.auction_fact_claims

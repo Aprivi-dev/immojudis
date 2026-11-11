@@ -70,8 +70,9 @@ replica` : les déclencheurs du registre sont en `enable always`.
   observation de l'extracteur `information_agent`, ou qui porte `information_agent_fact_id` : le classement
   range aussi en « email d'avocat » une observation `manual_review`, `email_attachment` ou `portal_upload` qui
   porte ce triplet, celui du pont existant (qui s'exécute en propriétaire, et passe).
-- **Libellé du lot.** `lot_ref` (« lot 2 », « Lot n° 3 ») est borné par un format : lettres, chiffres, espaces et
-  ponctuation simple, 40 caractères au plus. Ni arobase, ni saut de ligne.
+- **Libellé du lot.** `lot_ref` suit un motif structurel, calé sur les libellés que la collecte lit (« lot 2 »,
+  « lots 1 et 2 », « Lot n° 3 », « 2ème lot ») : des numéros de lot, jamais un mot libre. Un nom, une adresse ou
+  un numéro de téléphone sont refusés.
 
 ## La projection
 
@@ -315,7 +316,18 @@ Après les trois relectures du lot (base de données, code, sécurité) :
 - contrôle quotidien : champs libérés, libellé réservé, rapport tronqué qui ne referme rien, fonction d'alerte
   sans paramètre, moins de faux positifs ;
 - la vue `v_auction_fact_claims_read_model` ne montre que la dernière génération des observations de la collecte
-  (migration `20261117100700`, à appliquer avant le passage de la collecte à la version 3).
+  (migration `20261117100700`, à appliquer avant le passage de la collecte à la version 3). La génération se lit
+  sans expression rationnelle, sous un plafond (`app_private.fact_claims_generation_ceiling()`, 3) : une
+  observation isolée d'une génération plus haute ne masque rien et est elle-même masquée.
+
+Après la contre-vérification :
+
+- la projection est stable en une application (une opposition à une pièce jamais affichée, suivie d'une
+  acceptation sur le même champ, laissait une dérive) ; test générique et essai aléatoire à graine fixe (`891`) ;
+- le contrôle des déclencheurs compare aussi leur définition (évènements, colonnes, clause `WHEN`) et le mode de
+  sécurité de leur fonction ;
+- un seul évènement par vente quand le libellé réservé est écarté sur une vente sans entrée ;
+- délai de verrou de 2 secondes avant les déclencheurs.
 
 ## Reste pour le lot R2b
 
@@ -333,8 +345,17 @@ Après les trois relectures du lot (base de données, code, sécurité) :
   PB de la collecte livrée : des copies figées y donneraient un faux positif permanent.
 - Retirer la tolérance `skipped: migration_pending` de la tâche `fact-registry-check` : une fonction absente
   (cache de schéma périmé, signature changée, retour arrière partiel) doit devenir un échec, pas un succès.
-- Paginer le contrôle quotidien avant le lot R3 : dès que les documents seront validés, presque toutes les
-  ventes seront candidates, et la borne de 500 fera échouer la tâche chaque jour.
+- Paginer le contrôle quotidien dès le lot R2b, et non au lot R3 : dès que des pièces seront acceptées en
+  nombre, la borne de 500 ventes candidates fera échouer la tâche chaque jour.
+- Levée ou restitution après une opposition bloquante : une valeur d'annonce légitime, égale ou proche (à la
+  tolérance du champ) de la valeur opposée, est retenue pour la vie de la vente. Il faut un geste d'administration
+  qui lève le blocage, ou la restitution de la valeur d'annonce (voir le lot R2c).
+- Qui relance la projection après un reclassement en terrain : la surface tenue n'est libérée qu'à la projection
+  suivante, et aucune écriture de la collecte ne l'appelle. D'ici là le contrôle quotidien lève une alerte
+  critique de dérive.
+- Faux positif de `echo_suspected` quand une colonne voisine est écrite APRÈS la première prise avec une valeur
+  que la retenue n'écarte pas (par exemple la valeur d'annonce d'un autre champ égale à la pièce, ou une valeur
+  déjà en place qu'une pièce de remplacement vient égaler) : le relevé `neighbors` date de la première prise.
 - `actor_id` d'une décision tiré de `auth.uid()`, jamais d'un paramètre de la RPC.
 - Le noyau refuse une observation préexistante dont la vente, le champ ou la valeur diffèrent du fait de
   l'agent (l'index unique sur l'identifiant de fait ne garantit que l'unicité, pas le contenu).
@@ -365,7 +386,8 @@ Tests pgTAP `881` (tables, droits, journaux, format du lot), `882` (retenue), `8
 index construits dans le test, inertie prouvée), `885` (mémoire d'écho, colonnes voisines, annonce qui se tait,
 indices de fusion, libellé réservé, écriture mixte, note de blocage, vente de terrain, opposition tardive), `889`
 (valeurs d'annonce, contrôle quotidien sur les champs tenus et libérés, alertes, rapport tronqué), `890` (vue
-des observations par génération) et `442` (vues). Invariants de
+des observations par génération), `891` (stabilité de la projection, essai aléatoire à graine fixe) et `442`
+(vues). Invariants de
 `scripts/check-security-invariants-fact-registry.mjs` : `fact-registry-tables-closed`,
 `fact-registry-append-only`, `held-fields-projection-only`, `hold-trigger-present-early`,
 `field-projection-not-callable-by-api`, `fact-claims-never-repointed`, `registry-no-fk-to-auction-sales`,

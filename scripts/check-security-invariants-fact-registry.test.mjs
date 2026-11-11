@@ -924,10 +924,99 @@ $$;`;
       label: "une vue des observations qui filtre un autre extracteur que celui de la collecte",
       file: migration("claims_view_other_extractor"),
       content:
-        "create or replace view public.v_auction_fact_claims_read_model with (security_invoker = true) as select claim.id as claim_id from public.auction_fact_claims claim left join (select peer.auction_sale_id, max((regexp_match(peer.extractor_version, '^auction_fact_claims_v([0-9]{1,6})$'))[1]::integer) as generation from public.auction_fact_claims peer where peer.extractor_name = 'another.extractor' group by peer.auction_sale_id) latest on latest.auction_sale_id = claim.auction_sale_id where not coalesce((regexp_match(claim.extractor_version, '^auction_fact_claims_v([0-9]{1,6})$'))[1]::integer < latest.generation, false);",
+        "create or replace view public.v_auction_fact_claims_read_model with (security_invoker = true) as select claim.id as claim_id from public.auction_fact_claims claim left join (select peer.auction_sale_id, max(app_private.fact_claims_generation(peer.extractor_version)) filter (where app_private.fact_claims_generation(peer.extractor_version) <= app_private.fact_claims_generation_ceiling()) as generation from public.auction_fact_claims peer where peer.extractor_name = 'another.extractor' group by peer.auction_sale_id) latest on latest.auction_sale_id = claim.auction_sale_id where not coalesce(claim.extractor_name = 'another.extractor' and app_private.fact_claims_generation(claim.extractor_version) < latest.generation, false);",
       prefix: null,
       message:
         "FACT_CLAIMS_EXTRACTOR (immojudis.pipeline.fact_claims) is not the extractor that public.v_auction_fact_claims_read_model filters (another.extractor)",
+    },
+    // Contre-vérification du lot R2a : nouvelles surfaces.
+    {
+      label: "une garde de held_fields passée en SECURITY DEFINER par ALTER FUNCTION",
+      file: migration("alter_guards"),
+      content:
+        "alter function app_private.refuse_api_role_held_fields_write() security definer; alter function app_private.refuse_api_role_registry_origin() security definer; ALTER FUNCTION app_private.refuse_sale_field_projection_marker() SECURITY DEFINER; alter function app_private.refuse_inserted_held_fields() security definer;",
+      message: "alters app_private.refuse_api_role_held_fields_write",
+    },
+    {
+      label: "la garde d'origine passée en SECURITY DEFINER par ALTER FUNCTION",
+      file: migration("alter_guards"),
+      content: null,
+      message: "alters app_private.refuse_api_role_registry_origin",
+    },
+    {
+      label: "la garde du marqueur passée en SECURITY DEFINER par ALTER FUNCTION",
+      file: migration("alter_guards"),
+      content: null,
+      message: "alters app_private.refuse_sale_field_projection_marker",
+    },
+    {
+      label: "la garde d'insertion passée en SECURITY DEFINER par ALTER FUNCTION",
+      file: migration("alter_guards"),
+      content: null,
+      message: "alters app_private.refuse_inserted_held_fields",
+    },
+    {
+      label: "la projection donnée à un autre propriétaire",
+      file: migration("projection_owner"),
+      content:
+        "alter function app_private.project_sale_fields(uuid, text[], boolean, jsonb) owner to service_role;",
+      message: "alters app_private.project_sale_fields",
+    },
+    {
+      label:
+        "une fonction publique qui passe son paramètre à la synchronisation interne des alertes",
+      file: migration("public_feeds_alert_report"),
+      content:
+        "create function public.close_registry_alerts(p_report jsonb) returns void language sql security definer set search_path = '' as $$ select app_private.sync_fact_registry_alerts_from_report(p_report) $$;",
+      prefix: ": ",
+      message:
+        "public.close_registry_alerts calls app_private.sync_fact_registry_alerts_from_report",
+    },
+    {
+      label: "la contrainte du libellé de lot retirée",
+      file: migration("lot_ref_dropped"),
+      content:
+        "alter table public.auction_fact_claim_decisions drop constraint auction_fact_claim_decisions_lot_ref_check;",
+      message:
+        "drops the constraint auction_fact_claim_decisions_lot_ref_check without restoring its structural pattern",
+    },
+    {
+      label: "la contrainte du libellé de lot assouplie",
+      file: migration("lot_ref_relaxed"),
+      content:
+        "alter table public.auction_fact_claim_decisions drop constraint auction_fact_claim_decisions_lot_ref_check; alter table public.auction_fact_claim_decisions add constraint auction_fact_claim_decisions_lot_ref_check check (lot_ref is null or char_length(lot_ref) <= 40);",
+      prefix: null,
+      message:
+        "the constraint auction_fact_claim_decisions_lot_ref_check is missing or no longer bounds lot_ref by its structural pattern",
+    },
+    {
+      label: "la vue des observations privée de security_invoker par ALTER VIEW",
+      file: migration("claims_view_definer"),
+      content: "alter view public.v_auction_fact_claims_read_model set (security_invoker = false);",
+      message: "alters public.v_auction_fact_claims_read_model",
+    },
+    {
+      label: "la vue des observations ouverte à un rôle du navigateur",
+      file: migration("claims_view_grant"),
+      content: "grant select on public.v_auction_fact_claims_read_model to authenticated;",
+      message:
+        "grants on public.v_auction_fact_claims_read_model something else than SELECT to service_role alone",
+    },
+    {
+      label: "une liste des déclencheurs du registre qui ne compare plus leur définition",
+      file: migration("trigger_list_short"),
+      content: null,
+      prefix: ": ",
+      message:
+        "app_private.fact_registry_triggers_not_always no longer compares the definition of each trigger",
+    },
+    {
+      label: "un plafond de génération ramené sous la version que la collecte écrit",
+      file: migration("generation_ceiling_low"),
+      content:
+        "create or replace function app_private.fact_claims_generation_ceiling() returns integer language sql immutable parallel safe as $$ select 1; $$;",
+      prefix: null,
+      message: "is above the generation ceiling (1) of app_private.fact_claims_generation_ceiling",
     },
   ];
   const filesOf = (where) =>
@@ -982,7 +1071,7 @@ $$;`;
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
-      "public.v_auction_fact_claims_read_model no longer reads the generation of the pipeline claims by its anchored pattern",
+      "public.v_auction_fact_claims_read_model no longer reads the generation of the pipeline claims through app_private.fact_claims_generation",
     );
   });
 

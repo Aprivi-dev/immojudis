@@ -21,9 +21,10 @@ n'est écrite, rien n'appelle la projection.
 Le workflow « Apply Supabase Migrations » applique tout ce qui est en attente, dans l'ordre, puis construit les
 index (« Apply reviewed concurrent index operations ») et contrôle la dérive de schéma. **À lancer entre deux lots
 de publication de la collecte**, à cause de A2 et de A3. Chaque migration est sa propre transaction. `lock_timeout`
-vaut 5 s, ramené à **1 s** juste avant les déclencheurs de A2 et de A3 : le verrou est libre, ou pris pour une
+vaut 5 s, ramené à **2 s** juste avant les déclencheurs de A2 et de A3 : le verrou est libre, ou pris pour une
 vingtaine de secondes par un lot de la collecte, et attendre plus ne ferait que mettre en attente tous les autres
-écrivains de la table derrière la migration. Si un verrou n'est pas obtenu, cette migration échoue sans effet, les
+écrivains de la table derrière la migration. Deux secondes et non une : PostgreSQL n'annule un autovacuum qui
+gêne qu'après `deadlock_timeout` (1 s). Si un verrou n'est pas obtenu, cette migration échoue sans effet, les
 précédentes restent appliquées, et il suffit de relancer le workflow. Chaque migration se rejoue sans dommage
 (seconde application vérifiée : aucun ACCESS EXCLUSIVE sur une table).
 
@@ -32,7 +33,12 @@ est attendue, son déclencheur n'est créé que par A3). Rien ne l'appelle avant
 à la main le rattrapage `20261029100200` ou le fichier de maintenance dans cet intervalle.
 
 **A9 doit être appliquée avant le lot « collecte » qui passe les observations à la version 3.** Tant que la
-collecte écrit une seule version, elle ne masque rien.
+collecte écrit une seule version, elle ne masque rien. Elle fixe un **plafond de génération** à 3
+(`app_private.fact_claims_generation_ceiling()`) : une observation candidate de la collecte d'une génération plus
+haute est masquée et ne masque rien. Avant de déployer une collecte qui écrirait une version 4, une migration
+relève le plafond (la CI échoue sinon, invariant `fact-claims-generation-pattern`). Pour revenir de la version 3 à
+la version 2, une migration ramène le plafond à 2 : les observations de la version 3 cessent de masquer et sont
+masquées, sans rien nettoyer.
 
 ## Ordre de déploiement (sans manipuler de secret)
 
@@ -54,12 +60,16 @@ Personne n'appelle la route à la main et personne ne lit `CRON_SECRET`. Ne pas 
 ## Avant
 
 1. **Observation du lot R1 terminée** (pas avant le 12/11/2026 à 11:45 UTC) et propre.
-2. **Aucun lot de publication en cours** au moment de lancer le workflow (aucune ligne attendue) :
+2. **Fenêtre libre** au moment de lancer le workflow : aucun lot de publication, aucune autre écriture ni aucun
+   autovacuum sur les DEUX tables dont A2 et A3 attendent le verrou (aucune ligne attendue) :
 
    ```sql
-   select a.pid, a.application_name, now() - a.xact_start
+   select l.relation::regclass, l.mode, a.pid, a.backend_type, a.application_name, now() - a.xact_start
    from pg_locks l join pg_stat_activity a using (pid)
-   where l.relation = 'public.auction_sales'::regclass and l.mode = 'RowExclusiveLock' and l.granted;
+   where l.relation in ('public.auction_sales'::regclass, 'public.auction_fact_claims'::regclass)
+     and l.granted
+     and l.mode in ('RowExclusiveLock', 'ShareUpdateExclusiveLock', 'ShareLock', 'ShareRowExclusiveLock',
+                    'ExclusiveLock', 'AccessExclusiveLock');
    ```
 
 3. **Un succès de la tâche de moins de 27 heures** (étape 2 de l'ordre de déploiement) :
@@ -69,7 +79,36 @@ Personne n'appelle la route à la main et personne ne lit `CRON_SECRET`. Ne pas 
    where job_name = 'fact-registry-check' order by started_at desc limit 3;
    ```
 
-4. **Mesures en lecture seule** (annexe 08, section F), à confier à `qualite-donnees` :
+4. **Trois conditions d'arrêt**, en lecture seule. Si l'une n'est pas remplie, ne pas appliquer et revenir vers
+   le plan :
+   - **le pont et la projection ont le même propriétaire** (une seule ligne, un seul propriétaire attendu). Sinon,
+     après A2, l'acceptation d'un fait de l'agent d'information échouerait en `42501` : la garde d'origine
+     n'accepte que le propriétaire de la projection.
+
+     ```sql
+     select routine.proname, pg_get_userbyid(routine.proowner) as proprietaire
+     from pg_proc routine join pg_namespace namespace on namespace.oid = routine.pronamespace
+     where namespace.nspname = 'app_private'
+       and routine.proname in ('bridge_accepted_information_agent_fact_claim', 'project_sale_fields');
+     ```
+
+   - **aucune vente ne porte déjà le libellé réservé** (0 attendu). Sinon la retenue serait appelée à chaque
+     écriture de ces ventes et l'alerte critique `fact_registry.registry_label` se lèverait au premier passage.
+
+     ```sql
+     select count(*) from public.auction_sales where surface_source like 'fact_registry%';
+     ```
+
+   - **aucune vente ne porte deux générations de l'extracteur de la collecte** (aucune ligne attendue). Sinon ne
+     pas appliquer A9 : elle masquerait des observations dès son application.
+
+     ```sql
+     select auction_sale_id, array_agg(distinct extractor_version) from public.auction_fact_claims
+     where auction_sale_id is not null and extractor_name = 'immojudis.pipeline.fact_claims'
+     group by 1 having count(distinct extractor_version) > 1 limit 20;
+     ```
+
+5. **Mesures en lecture seule** (annexe 08, section F), à confier à `qualite-donnees` :
    - journaux vides et aucun champ tenu (F.1 : 0, 0, 0). Si un journal n'est pas vide, A1 refuse de s'appliquer
      (erreur `55000`, « fact registry journals are not empty ») : ne pas forcer, revenir vers le plan. Le format
      de `lot_ref` (A2) suppose lui aussi un journal des décisions vide ;
@@ -135,7 +174,12 @@ where proname in ('set_auction_sale_readiness_override', 'clear_auction_sale_rea
 select reloptions from pg_class where oid = 'public.v_auction_fact_claims_read_model'::regclass;
 ```
 
-Puis le coût : `explain` (sans `analyze`) de la lecture par vente de la vue, avant et après, et la durée des
+Puis le coût. Pour la vue, mesurer avant et après A9 les DEUX lectures de l'application : la lecture par vente
+(`explain`, sans `analyze` : aucun parcours séquentiel attendu) et la liste de relecture d'administration, la plus
+chère (temps moyen des deux requêtes PostgREST dans `pg_stat_statements`, ou `explain` de
+`select count(*) from public.v_auction_fact_claims_read_model where auction_sale_id is not null and fact_status in ('candidate', 'conflicted')`).
+Sur le banc local, à 240 000 observations (dix fois la production), la liste passe de 60 à 70 ms à 170 à 200 ms :
+un agrégat de plus par vente, sans expression rationnelle. La lecture par vente reste sous 2 ms. Puis la durée des
 imports. Attendu : inchangée. Sur le banc local (5 000 ventes dont aucune n'est tenue), le coût isolé de chaque
 élément du lot placé sur le chemin de l'import est de 1 à 6 microsecondes par ligne, pour une erreur de mesure de 3
 à 7 microsecondes : dans le bruit, et de l'ordre de 1 % d'une ligne au plus. Aucun déclencheur du registre n'est
@@ -181,7 +225,11 @@ sans effet sur les fiches. Dans l'ordre inverse, chaque étape étant décrite e
 7. A3, **entre deux lots** : supprimer le déclencheur `aaab_auction_sales_held_fields_marker_guard`, réappliquer
    les définitions de `20261116100500` (retenue, projection à trois paramètres, déclencheur et sa liste de
    colonnes), puis supprimer les cinq fonctions de la mémoire d'écho. **Plus possible dès qu'un champ est tenu
-   ou libéré** : la retenue du lot R1 ne connaît pas l'état `released`.
+   ou libéré** : la retenue du lot R1 ne connaît pas l'état `released`. **A3 retirée seule,
+   `app_private.assert_fact_registry_triggers()` lève `registry_unavailable`** (A2 attend la garde du marqueur et
+   la clause `WHEN` de la version 2) tant qu'A2 n'est pas rétablie elle aussi : le contrôle quotidien ouvre
+   l'alerte `fact_registry.triggers_not_always`, et un rattrapage qui écrit `auction_sales` refuse de valider.
+   Retirer A3 et A2 dans la même fenêtre.
 8. A2, **entre deux lots** : rétablir les deux gardes et le déclencheur d'origine de `20261116100100` et
    `20261116100500`, supprimer les deux fonctions de contrôle et la fonction de la garde du marqueur ; ne
    rétablir les anciennes contraintes de `event` et de `lot_ref` que si aucun évènement `echo_suppressed`
@@ -222,13 +270,18 @@ commit;
 
 -- 2. Restaurer (session_replication_role = replica). Aucune erreur attendue.
 
--- 3. Après : remettre les trois déclencheurs en mode always, reposer la séquence commune sur le plus grand seq
---    des deux journaux, puis le contrôle, qui fait échouer la transaction s'il manque quelque chose.
+-- 3. Après, première transaction : remettre les trois déclencheurs en mode always. Elle est validée seule, pour
+--    que les gardes soient de retour même si la suite échoue.
 begin;
 set local lock_timeout = '5s';
 alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_insert_guard;
 alter table public.auction_fact_claim_decisions enable always trigger auction_fact_claim_decisions_validate;
 alter table public.auction_sale_field_hold_events enable always trigger auction_sale_field_hold_events_stamp;
+commit;
+
+-- 4. Seconde transaction : reposer la séquence commune sur le plus grand seq des deux journaux, puis le contrôle,
+--    qui lève s'il manque quelque chose.
+begin;
 select setval('app_private.fact_registry_seq', greatest(
   (select coalesce(max(seq), 0) from public.auction_fact_claim_decisions),
   (select coalesce(max(seq), 0) from public.auction_sale_field_hold_events),
@@ -236,6 +289,11 @@ select setval('app_private.fact_registry_seq', greatest(
 select app_private.assert_fact_registry_triggers();
 commit;
 ```
+
+**En cas d'échec ou d'abandon à n'importe quelle étape** (restauration interrompue, session perdue, erreur) :
+jouer `supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql`, qui remet les douze
+déclencheurs en mode `always` et le vérifie, puis le `setval` de l'étape 4. Ne jamais laisser la base avec un des
+trois déclencheurs suspendu.
 
 Résultat de l'essai : `held_fields`, les deux journaux (`seq` et dates compris) identiques à la source ; une
 nouvelle décision prend un numéro au-dessus de tous les autres ; la simulation de la projection ne changerait
@@ -247,8 +305,12 @@ aucune vente ; le contrôle quotidien lève les mêmes contrôles que sur la sou
   déclencheurs du registre du mode `always`, sans aucune erreur ;
 - les deux autres déclencheurs de chaque journal (ajout seul, pas de `TRUNCATE`) et les gardes de mise à jour de
   `auction_sales` ne gênent pas une restauration : ils ne jouent que sur `UPDATE`, `DELETE` et `TRUNCATE` ;
-- pendant la fenêtre, une acceptation ne serait plus validée et un évènement ne serait plus numéroté : ne rien
-  laisser écrire le registre (aucune décision, aucun import) entre les étapes 1 et 3 ;
+- pendant la fenêtre, une acceptation ne serait plus validée, un évènement ne serait plus numéroté et une vente
+  pourrait être insérée avec `held_fields` : **aucune écriture par l'API entre les étapes 1 et 3, rôle serveur
+  compris** (aucune décision, aucun import, tâches planifiées de la collecte arrêtées) ;
+- la garde d'origine des observations (`auction_fact_claims_registry_origin_guard`) reste en place et joue aussi
+  à l'insertion pendant la restauration : elle laisse passer si le rôle qui restaure est le propriétaire de la
+  projection (première condition d'arrêt de la section « Avant »). Restaurer avec ce rôle, pas avec un autre ;
 - ces instructions restent dans ce runbook, à la main : aucune migration, aucun rattrapage ni aucun fichier de
   maintenance ne coupe un déclencheur du registre ni ne déplace la séquence (invariants
   `fact-registry-append-only` et `hold-trigger-present-early`).

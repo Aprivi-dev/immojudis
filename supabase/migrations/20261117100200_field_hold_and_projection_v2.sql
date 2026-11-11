@@ -131,13 +131,13 @@ set local statement_timeout = '60s';
 --
 -- VERROU : CREATE OR REPLACE TRIGGER et ENABLE ALWAYS TRIGGER prennent un SHARE ROW EXCLUSIVE sur
 -- public.auction_sales (lectures possibles, écritures en attente quelques millisecondes), à la première comme à
--- la seconde application ; jamais ACCESS EXCLUSIVE. À APPLIQUER HORS IMPORT ; lock_timeout, ramené à 1 s juste
+-- la seconde application ; jamais ACCESS EXCLUSIVE. À APPLIQUER HORS IMPORT ; lock_timeout, ramené à 2 s juste
 -- avant les déclencheurs, fait échouer la migration sans effet si le verrou n'est pas obtenu.
 --
 -- Retour arrière (tant que held_fields est nulle partout : sans aucun effet sur les fiches) : réappliquer les
 -- définitions de 20261116100500 (retenue, projection à trois paramètres, déclencheur et sa liste de colonnes),
 -- puis
---   begin; set local lock_timeout = '1s';
+--   begin; set local lock_timeout = '2s';
 --   drop trigger if exists aaab_auction_sales_held_fields_marker_guard on public.auction_sales;
 --   -- (et retirer ce déclencheur de app_private.fact_registry_triggers_not_always, 20261117100100)
 --   drop function if exists app_private.project_sale_fields(uuid, text[], boolean, jsonb);
@@ -927,14 +927,16 @@ begin
     end if;
   end loop;
 
-  -- Libellé réservé écarté sur une vente dont la surface n'a aucune entrée : même évènement, sans décision.
+  -- Libellé réservé écarté sur une vente dont la surface n'a aucune entrée : même évènement, sans décision, UN SEUL
+  -- par vente quelle que soit la valeur apportée (la file n'a pas de purge : une collecte qui recopierait le libellé
+  -- à chaque passage avec une valeur différente n'y ajoute rien).
   if v_label_blocked and not v_held ? 'property.surface_m2' and not exists (
     select 1 from public.auction_sale_field_hold_events earlier
     where earlier.sale_id = new.id
       and earlier.field_key = 'property.surface_m2'
       and earlier.event = 'echo_suppressed'
       and earlier.decision_id is null
-      and earlier.incoming_value is not distinct from v_label_incoming
+      and earlier.incoming_value ? 'surface_source'
   ) then
     insert into public.auction_sale_field_hold_events (
       sale_id, field_key, event, held_value, listing_value, incoming_value, decision_id
@@ -1245,15 +1247,19 @@ begin
       order by precedence.rank, coalesce(latest.received_at, latest.decided_at) desc, latest.seq desc
     loop
       v_value := app_private.sale_field_claim_value(v_field.field_key, v_candidate.value_jsonb);
-      -- Opposition, ou autorisation d'affichage retirée : la valeur entrera en mémoire d'écho sans échéance, si le
-      -- champ a une entrée (tenue ou libérée) ou si cette pièce a déjà tenu le champ : une opposition prononcée
-      -- après l'expiration de l'entrée bloque elle aussi le retour de la valeur, pour la vie de la vente. La
-      -- valeur d'une pièce qui n'a jamais été affichée n'a pas à être retenue.
+      -- Opposition, ou autorisation d'affichage retirée : la valeur entre en mémoire d'écho sans échéance dès que
+      -- le champ a une entrée À L'ISSUE de cette passe (tenue ou libérée). « bound » : le champ avait déjà une
+      -- entrée, ou cette pièce a déjà tenu le champ ; une telle valeur suffit à créer une entrée libérée, même
+      -- après l'expiration de la précédente (une opposition bloque le retour pour la vie de la vente). La valeur
+      -- d'une pièce jamais affichée ne crée pas d'entrée à elle seule. La décision ne se lit pas sur l'entrée
+      -- d'avant la passe seule : la projection doit être stable en une application.
       if v_candidate.decision = 'opposed'
         or (v_candidate.decision = 'withdrawn' and v_candidate.reason_code = 'authorization_withdrawn')
       then
-        if v_value is not null and (v_stored is not null or v_candidate.was_held) then
-          v_opposed := v_opposed || jsonb_build_array(jsonb_build_object('seq', v_candidate.seq, 'value', v_value));
+        if v_value is not null then
+          v_opposed := v_opposed || jsonb_build_array(jsonb_build_object(
+            'seq', v_candidate.seq, 'value', v_value, 'bound', v_stored is not null or v_candidate.was_held
+          ));
         end if;
         continue;
       end if;
@@ -1582,7 +1588,9 @@ begin
     -- l'opposition à une pièce qui a tenu le champ et dont l'entrée a expiré ; une entrée libérée sans mémoire
     -- disparaît. Opposition tardive : le champ est libre depuis l'expiration, ses colonnes sont donc celles de
     -- l'annonce (« restored »). Indice de fusion : rien n'est affirmé des colonnes (lot R2b).
-    if not v_new_held ? v_field.field_key and jsonb_array_length(v_echo) > 0 then
+    if not v_new_held ? v_field.field_key and jsonb_array_length(v_echo) > 0
+      and (jsonb_array_length(v_hint_echo) > 0 or v_opposed @> '[{"bound": true}]'::jsonb)
+    then
       v_new_held := v_new_held || jsonb_build_object(v_field.field_key, jsonb_strip_nulls(jsonb_build_object(
         'v', 2,
         'state', 'released',
@@ -1732,9 +1740,10 @@ comment on column public.auction_sales.held_fields is
 
 -- Les deux déclencheurs de ce fichier prennent SHARE ROW EXCLUSIVE sur public.auction_sales. Ce verrou est libre,
 -- ou pris pour une vingtaine de secondes par un lot de publication de la collecte : attendre cinq secondes ne
--- ferait que mettre en attente, derrière cette migration, tous les autres écrivains de la table. Une seconde
--- suffit ; au-delà la migration échoue sans effet et se relance.
-set local lock_timeout = '1s';
+-- ferait que mettre en attente, derrière cette migration, tous les autres écrivains de la table. Deux secondes :
+-- c'est plus que deadlock_timeout (1 s), délai au bout duquel PostgreSQL annule un autovacuum qui gêne ; à une
+-- seconde, la migration pouvait échouer face à lui. Au-delà elle échoue sans effet et se relance.
+set local lock_timeout = '2s';
 
 -- Déclencheur de retenue : deux colonnes voisines de plus. La clause WHEN est fausse tant que held_fields est
 -- nulle et que l'écriture n'apporte pas le libellé réservé du registre : aucun appel PL/pgSQL pour une vente
