@@ -221,6 +221,11 @@ end;
 $$;
 
 -- Déclencheur de retenue ----------------------------------------------------------------------------------------
+-- Valeur entrante d'un champ à plusieurs colonnes (surface) : la colonne de valeur que l'écriture a changée
+-- (app_surface_m2 d'abord, sinon surface_m2), pour qu'une écriture partielle (un PATCH de surface_m2 seule) soit
+-- vue comme un changement de l'annonce ; à défaut, la valeur affichée entrante. Le bloc « listing » ne reprend que
+-- les colonnes que l'écriture a changées : une colonne inchangée porte encore la valeur tenue, pas celle de
+-- l'annonce.
 create or replace function app_private.hold_projected_sale_fields()
 returns trigger
 language plpgsql
@@ -231,8 +236,8 @@ declare
   v_held jsonb;
   v_key text;
   v_entry jsonb;
+  v_listing jsonb;
   v_incoming jsonb;
-  v_incoming_listing jsonb;
   v_incoming_logged jsonb;
   v_held_value jsonb;
   v_listing_value jsonb;
@@ -257,33 +262,29 @@ begin
   for v_key in select held.key from pg_catalog.jsonb_object_keys(old.held_fields) held(key) order by held.key
   loop
     v_entry := old.held_fields -> v_key;
+    v_listing := coalesce(v_entry -> 'listing', '{}'::jsonb);
     -- Colonnes du champ, nommées une à une (jamais la ligne entière).
     if v_key = 'property.surface_m2' then
-      v_incoming := to_jsonb(coalesce(new.app_surface_m2, new.surface_m2));
-      v_incoming_listing := jsonb_build_object(
-        'surface_m2', new.surface_m2,
-        'app_surface_m2', new.app_surface_m2,
-        'app_surface_kind', new.app_surface_kind,
-        'surface_source', new.surface_source,
-        'surface_confidence', new.surface_confidence
-      );
-      v_listing_value := coalesce(v_entry #> '{listing,app_surface_m2}', v_entry #> '{listing,surface_m2}');
+      v_incoming := to_jsonb(case
+        when new.app_surface_m2 is not null and new.app_surface_m2 is distinct from old.app_surface_m2
+          then new.app_surface_m2
+        when new.surface_m2 is not null and new.surface_m2 is distinct from old.surface_m2
+          then new.surface_m2
+        else coalesce(new.app_surface_m2, new.surface_m2)
+      end);
+      v_listing_value := coalesce(v_listing -> 'app_surface_m2', v_listing -> 'surface_m2');
     elsif v_key = 'property.land_surface_m2' then
       v_incoming := to_jsonb(new.land_surface_m2);
-      v_incoming_listing := jsonb_build_object('land_surface_m2', new.land_surface_m2);
-      v_listing_value := v_entry #> '{listing,land_surface_m2}';
+      v_listing_value := v_listing -> 'land_surface_m2';
     elsif v_key = 'property.rooms_count' then
       v_incoming := to_jsonb(new.rooms_count);
-      v_incoming_listing := jsonb_build_object('rooms_count', new.rooms_count);
-      v_listing_value := v_entry #> '{listing,rooms_count}';
+      v_listing_value := v_listing -> 'rooms_count';
     elsif v_key = 'property.occupancy_status' then
       v_incoming := to_jsonb(new.occupancy_status);
-      v_incoming_listing := jsonb_build_object('occupancy_status', new.occupancy_status);
-      v_listing_value := v_entry #> '{listing,occupancy_status}';
+      v_listing_value := v_listing -> 'occupancy_status';
     elsif v_key = 'sale.visit_dates' then
       v_incoming := new.visit_dates;
-      v_incoming_listing := jsonb_build_object('visit_dates', new.visit_dates);
-      v_listing_value := v_entry #> '{listing,visit_dates}';
+      v_listing_value := v_listing -> 'visit_dates';
     else
       raise exception using errcode = '22023',
         message = format('auction_sales.held_fields holds an unknown field %s.', v_key);
@@ -313,8 +314,9 @@ begin
       v_event := 'listing_changed_kept';
     end if;
 
-    -- Le nombre de pièces tenu ne descend jamais sous le nombre de chambres entrant (contrainte de la table) :
-    -- le champ est libéré et le cas part en relecture, avec les deux nombres.
+    -- Le nombre de pièces tenu ne descend jamais sous le nombre de chambres entrant (contrainte
+    -- auction_sales_rooms_bedrooms_check) : le champ est libéré et le cas part en relecture, avec les deux
+    -- nombres, au lieu de faire échouer l'écriture de la collecte.
     if v_keep
       and v_key = 'property.rooms_count'
       and new.bedrooms_count is not null
@@ -329,6 +331,35 @@ begin
     end if;
 
     if v_keep then
+      if v_event = 'listing_changed_kept' then
+        -- Dernière valeur connue de l'annonce : les colonnes que cette écriture a changées.
+        if v_key = 'property.surface_m2' then
+          if new.surface_m2 is distinct from old.surface_m2 then
+            v_listing := v_listing || jsonb_build_object('surface_m2', new.surface_m2);
+          end if;
+          if new.app_surface_m2 is distinct from old.app_surface_m2 then
+            v_listing := v_listing || jsonb_build_object('app_surface_m2', new.app_surface_m2);
+          end if;
+          if new.app_surface_kind is distinct from old.app_surface_kind then
+            v_listing := v_listing || jsonb_build_object('app_surface_kind', new.app_surface_kind);
+          end if;
+          if new.surface_source is distinct from old.surface_source then
+            v_listing := v_listing || jsonb_build_object('surface_source', new.surface_source);
+          end if;
+          if new.surface_confidence is distinct from old.surface_confidence then
+            v_listing := v_listing || jsonb_build_object('surface_confidence', new.surface_confidence);
+          end if;
+        elsif v_key = 'property.land_surface_m2' then
+          v_listing := jsonb_build_object('land_surface_m2', new.land_surface_m2);
+        elsif v_key = 'property.rooms_count' then
+          v_listing := jsonb_build_object('rooms_count', new.rooms_count);
+        elsif v_key = 'property.occupancy_status' then
+          v_listing := jsonb_build_object('occupancy_status', new.occupancy_status);
+        else
+          v_listing := jsonb_build_object('visit_dates', new.visit_dates);
+        end if;
+        v_held := jsonb_set(v_held, array[v_key, 'listing'], jsonb_strip_nulls(v_listing));
+      end if;
       if v_key = 'property.surface_m2' then
         new.surface_m2 := old.surface_m2;
         new.app_surface_m2 := old.app_surface_m2;
@@ -343,9 +374,6 @@ begin
         new.occupancy_status := old.occupancy_status;
       else
         new.visit_dates := old.visit_dates;
-      end if;
-      if v_event = 'listing_changed_kept' then
-        v_held := jsonb_set(v_held, array[v_key, 'listing'], jsonb_strip_nulls(v_incoming_listing));
       end if;
     else
       v_held := v_held - v_key;
@@ -406,15 +434,24 @@ declare
   v_sales uuid[];
   v_field public.auction_fact_fields%rowtype;
   v_candidate record;
-  v_winner record;
+  -- Le gagnant du champ en cours, en scalaires remis à zéro à chaque champ (jamais un enregistrement, qui ne se
+  -- lit pas avant sa première affectation et garderait le gagnant du champ précédent).
   v_has_winner boolean;
+  v_winner_claim_id uuid;
+  v_winner_decision_id uuid;
+  v_winner_source_kind text;
+  v_winner_rank smallint;
+  v_winner_received_at timestamptz;
+  v_winner_publication_mode text;
+  v_winner_recipient_kind text;
+  v_winner_confidence numeric;
   v_winner_value jsonb;
-  v_best_rank smallint;
   v_origins text[];
   v_value jsonb;
   v_conflicting jsonb;
   v_invalid jsonb;
   v_current jsonb;
+  v_current_still_accepted boolean;
   v_entry jsonb;
   v_listing jsonb;
   v_listing_value jsonb;
@@ -501,11 +538,21 @@ begin
     order by field.field_key
   loop
     v_has_winner := false;
+    v_winner_claim_id := null;
+    v_winner_decision_id := null;
+    v_winner_source_kind := null;
+    v_winner_rank := null;
+    v_winner_received_at := null;
+    v_winner_publication_mode := null;
+    v_winner_recipient_kind := null;
+    v_winner_confidence := null;
     v_winner_value := null;
-    v_best_rank := null;
     v_origins := array[]::text[];
     v_conflicting := '[]'::jsonb;
     v_invalid := '[]'::jsonb;
+    v_listing_value := null;
+    v_current := v_new_held -> v_field.field_key;
+    v_current_still_accepted := false;
 
     -- 3. Candidats : dernière décision de chaque observation décidée pour ces ventes ; seulement une
     --    acceptation, d'un lot identifié, d'une origine qui peut tenir ce champ, si le champ est tenable.
@@ -560,17 +607,26 @@ begin
         v_invalid := v_invalid || jsonb_build_array(v_candidate.claim_id);
         continue;
       end if;
+      if v_current ->> 'claim_id' = v_candidate.claim_id::text then
+        v_current_still_accepted := true;
+      end if;
       if not v_has_winner then
         v_has_winner := true;
-        v_winner := v_candidate;
+        v_winner_claim_id := v_candidate.claim_id;
+        v_winner_decision_id := v_candidate.decision_id;
+        v_winner_source_kind := v_candidate.source_kind;
+        v_winner_rank := v_candidate.rank;
+        v_winner_received_at := v_candidate.received_at;
+        v_winner_publication_mode := v_candidate.publication_mode;
+        v_winner_recipient_kind := v_candidate.recipient_kind;
+        v_winner_confidence := v_candidate.confidence_score;
         v_winner_value := v_value;
-        v_best_rank := v_candidate.rank;
         v_origins := array[v_candidate.origin_key];
         continue;
       end if;
       -- 4. Un rang plus faible ne compte pas ; au même rang, une origine déjà vue est remplacée par sa pièce
       --    la plus récente ; une autre origine qui dit autre chose est une contradiction.
-      exit when v_candidate.rank > v_best_rank;
+      continue when v_candidate.rank > v_winner_rank;
       continue when v_candidate.origin_key = any(v_origins);
       v_origins := v_origins || v_candidate.origin_key;
       if not app_private.sale_field_values_match(
@@ -582,23 +638,18 @@ begin
       end if;
     end loop;
 
-    v_current := v_new_held -> v_field.field_key;
-
     if jsonb_array_length(v_conflicting) > 0 then
-      -- Contradiction : rien ne bascule. Un champ tenu garde sa valeur affichée (état « conflicted »), un champ
-      -- libre le reste. Dans les deux cas, relecture.
-      v_state := 'conflicted';
       v_conflicting := jsonb_build_array(jsonb_build_object(
-        'claim_id', v_winner.claim_id, 'decision_id', v_winner.decision_id, 'value', v_winner_value
+        'claim_id', v_winner_claim_id, 'decision_id', v_winner_decision_id, 'value', v_winner_value
       )) || v_conflicting;
-      if v_current is not null then
-        v_new_held := jsonb_set(v_new_held, array[v_field.field_key, 'state'], to_jsonb('conflicted'::text));
-      end if;
-      v_events := v_events || jsonb_build_array(jsonb_build_object(
-        'field_key', v_field.field_key, 'event', 'conflicted', 'held_value', v_current -> 'value',
-        'incoming_value', v_conflicting, 'decision_id', v_winner.decision_id
-      ));
-    elsif v_has_winner then
+    end if;
+
+    if jsonb_array_length(v_conflicting) > 0 and v_current is not null and v_current_still_accepted then
+      -- Contradiction sur un champ tenu par une pièce toujours acceptée : rien ne bascule, la valeur affichée
+      -- reste (état « conflicted »), relecture.
+      v_state := 'conflicted';
+      v_new_held := jsonb_set(v_new_held, array[v_field.field_key, 'state'], to_jsonb('conflicted'::text));
+    elsif jsonb_array_length(v_conflicting) = 0 and v_has_winner then
       -- 5. Pièce posée. Première prise : le bloc « listing » est l'instantané des colonnes actuelles (celles de
       --    l'annonce, puisque le champ n'était pas tenu) ; champ déjà tenu : son bloc est repris.
       v_listing := v_current -> 'listing';
@@ -623,13 +674,13 @@ begin
         'value', v_winner_value,
         'state', 'held',
         'listing', v_listing,
-        'claim_id', v_winner.claim_id,
-        'decision_id', v_winner.decision_id,
-        'source_kind', v_winner.source_kind,
-        'rank', v_winner.rank,
-        'received_on', (v_winner.received_at at time zone 'Europe/Paris')::date,
-        'publication_mode', v_winner.publication_mode,
-        'recipient_kind', v_winner.recipient_kind,
+        'claim_id', v_winner_claim_id,
+        'decision_id', v_winner_decision_id,
+        'source_kind', v_winner_source_kind,
+        'rank', v_winner_rank,
+        'received_on', (v_winner_received_at at time zone 'Europe/Paris')::date,
+        'publication_mode', v_winner_publication_mode,
+        'recipient_kind', v_winner_recipient_kind,
         'tolerance', jsonb_build_object('abs', v_field.abs_tolerance, 'rel', v_field.rel_tolerance),
         'on_listing_change', v_field.on_listing_change
       ));
@@ -638,10 +689,10 @@ begin
       if v_field.field_key = 'property.surface_m2' then
         t_surface_m2 := (v_winner_value #>> '{}')::numeric;
         t_app_surface_m2 := (v_winner_value #>> '{}')::numeric;
-        t_app_surface_kind := 'fact_registry_' || v_winner.source_kind;
-        t_surface_source := 'fact_registry_' || v_winner.source_kind;
+        t_app_surface_kind := 'fact_registry_' || v_winner_source_kind;
+        t_surface_source := 'fact_registry_' || v_winner_source_kind;
         -- Même plancher que le noyau de publication pour une valeur acceptée par une personne.
-        t_surface_confidence := greatest(v_winner.confidence_score, 0.85);
+        t_surface_confidence := greatest(v_winner_confidence, 0.85);
       elsif v_field.field_key = 'property.land_surface_m2' then
         t_land_surface_m2 := (v_winner_value #>> '{}')::numeric;
       elsif v_field.field_key = 'property.rooms_count' then
@@ -659,14 +710,15 @@ begin
           when 'property.occupancy_status' then v_listing -> 'occupancy_status'
           else v_listing -> 'visit_dates'
         end;
-        v_events := v_events || jsonb_build_array(jsonb_build_object(
+        v_events := v_events || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
           'field_key', v_field.field_key, 'event', 'projection_held', 'held_value', v_winner_value,
-          'listing_value', v_listing_value, 'decision_id', v_winner.decision_id
-        ));
+          'listing_value', v_listing_value, 'decision_id', v_winner_decision_id
+        )));
       end if;
     elsif v_current is not null then
-      -- 6. Plus aucune pièce : la valeur de l'annonce revient (NULL si l'annonce ne disait rien).
-      v_state := 'released';
+      -- 6. La pièce qui tenait le champ n'est plus acceptée et aucune autre ne la remplace (plus de pièce, ou
+      --    des pièces qui se contredisent) : la valeur de l'annonce revient (NULL si l'annonce ne disait rien).
+      v_state := case when jsonb_array_length(v_conflicting) > 0 then 'conflicted' else 'released' end;
       v_listing := coalesce(v_current -> 'listing', '{}'::jsonb);
       if v_field.field_key = 'property.surface_m2' then
         t_surface_m2 := (v_listing ->> 'surface_m2')::numeric;
@@ -689,23 +741,37 @@ begin
         v_listing_value := v_listing -> 'visit_dates';
       end if;
       v_new_held := v_new_held - v_field.field_key;
-      v_events := v_events || jsonb_build_array(jsonb_build_object(
+      v_events := v_events || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
         'field_key', v_field.field_key, 'event', 'projection_released', 'held_value', v_current -> 'value',
-        'listing_value', v_listing_value, 'decision_id', v_current ->> 'decision_id'
-      ));
+        'listing_value', v_listing_value, 'decision_id', v_current -> 'decision_id'
+      )));
+    elsif jsonb_array_length(v_conflicting) > 0 then
+      -- Contradiction sur un champ libre : il le reste.
+      v_state := 'conflicted';
     else
       v_state := 'pass_through';
     end if;
 
+    if jsonb_array_length(v_conflicting) > 0 then
+      v_events := v_events || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+        'field_key', v_field.field_key, 'event', 'conflicted',
+        'held_value', v_new_held #> array[v_field.field_key, 'value'],
+        'incoming_value', v_conflicting, 'decision_id', v_winner_decision_id
+      )));
+    end if;
+
     v_result := v_result || jsonb_build_object(v_field.field_key, jsonb_strip_nulls(jsonb_build_object(
       'state', v_state,
-      'value', case
-        when v_state in ('held', 'unchanged') then v_winner_value
-        when v_state = 'conflicted' then v_current -> 'value'
+      -- Valeur tenue après la projection (absente si le champ n'est pas tenu).
+      'value', v_new_held #> array[v_field.field_key, 'value'],
+      'claim_id', v_new_held #> array[v_field.field_key, 'claim_id'],
+      'decision_id', v_new_held #> array[v_field.field_key, 'decision_id'],
+      -- Valeur de l'annonce rendue aux colonnes quand le champ est libéré.
+      'released', case when v_current is not null and not v_new_held ? v_field.field_key then true end,
+      'listing_value', case
+        when v_current is not null and not v_new_held ? v_field.field_key then v_listing_value
       end,
-      'claim_id', case when v_state in ('held', 'unchanged') then v_winner.claim_id end,
-      'decision_id', case when v_state in ('held', 'unchanged') then v_winner.decision_id end,
-      'conflicting', case when v_state = 'conflicted' then v_conflicting end,
+      'conflicting', case when jsonb_array_length(v_conflicting) > 0 then v_conflicting end,
       'invalid_claims', case when jsonb_array_length(v_invalid) > 0 then v_invalid end
     )));
   end loop;
