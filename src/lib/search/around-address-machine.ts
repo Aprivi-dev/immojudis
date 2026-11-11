@@ -27,32 +27,30 @@ export type AroundAddressEvent =
   /** Réponse du géocodeur pour `address` (`null` : introuvable ou en échec). */
   | { type: "RESOLVED"; address: string; point: GeoPoint | null };
 
-function onAddressChanged(
-  state: AroundAddressState,
+/** Depuis n'importe quel état : plus d'adresse, ou une adresse à localiser. */
+const ADDRESS_CHANGED = (
+  _state: AroundAddressState,
   event: Extract<AroundAddressEvent, { type: "ADDRESS_CHANGED" }>,
-): AroundAddressState {
-  if (!event.address) return state.status === "idle" ? state : { status: "idle" };
-  return { status: "locating", address: event.address };
-}
+): AroundAddressState => (event.address ? { status: "locating", address: event.address } : IDLE);
 
-export const aroundAddressMachine = defineMachine<AroundAddressState, AroundAddressEvent>(
-  { status: "idle" },
-  {
-    idle: { ADDRESS_CHANGED: onAddressChanged },
-    locating: {
-      ADDRESS_CHANGED: onAddressChanged,
-      // La réponse d'une adresse qui n'est plus celle de la recherche est ignorée.
-      RESOLVED: (state, event) => {
-        if (event.address !== state.address) return state;
-        return event.point
+const IDLE: AroundAddressState = { status: "idle" };
+const settled = { ADDRESS_CHANGED };
+
+export const aroundAddressMachine = defineMachine<AroundAddressState, AroundAddressEvent>(IDLE, {
+  idle: settled,
+  locating: {
+    ADDRESS_CHANGED,
+    // La réponse d'une adresse qui n'est plus celle de la recherche est ignorée.
+    RESOLVED: (state, event) =>
+      event.address !== state.address
+        ? state
+        : event.point
           ? { status: "located", address: state.address, point: event.point }
-          : { status: "unlocated", address: state.address };
-      },
-    },
-    located: { ADDRESS_CHANGED: onAddressChanged },
-    unlocated: { ADDRESS_CHANGED: onAddressChanged },
+          : { status: "unlocated", address: state.address },
   },
-);
+  located: settled,
+  unlocated: settled,
+});
 
 /** Centre de la recherche : seulement quand il est celui de l'adresse en cours. */
 export function aroundAddressCenter(state: AroundAddressState): GeoPoint | null {

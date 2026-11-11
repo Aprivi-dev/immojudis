@@ -34,14 +34,10 @@ export type TransitionTable<State extends Tagged<string>, Event extends Typed<st
 
 export type StateMachine<State extends Tagged<string>, Event extends Typed<string>> = {
   readonly initial: State;
+  /** La table, telle qu'elle a été écrite : pour les tests et la documentation. */
+  readonly table: TransitionTable<State, Event>;
   /** État suivant ; l'état reçu, inchangé, quand il n'accepte pas cet événement. */
   readonly transition: (state: State, event: Event) => State;
-  /** Vrai si cet état accepte ce type d'événement (utile pour désactiver un bouton). */
-  readonly accepts: (state: State, type: Event["type"]) => boolean;
-  /** Types d'événements acceptés par un état : sert aux tests et à la documentation. */
-  readonly acceptedEvents: (status: State["status"]) => Event["type"][];
-  /** Tous les états de la table, dans l'ordre de leur déclaration. */
-  readonly statuses: State["status"][];
 };
 
 export function defineMachine<State extends Tagged<string>, Event extends Typed<string>>(
@@ -49,25 +45,26 @@ export function defineMachine<State extends Tagged<string>, Event extends Typed<
   table: TransitionTable<State, Event>,
 ): StateMachine<State, Event> {
   type Handler = (state: State, event: Event) => State;
-  const handlers = table as unknown as Record<string, Record<string, Handler | undefined>>;
-  // `Object.hasOwn` : un type d'événement nommé comme une propriété héritée (« toString »,
-  // « constructor ») ne doit pas trouver une fonction d'`Object.prototype`.
-  const handlerFor = (status: string, type: string): Handler | undefined => {
-    const row = Object.hasOwn(handlers, status) ? handlers[status] : undefined;
-    return row && Object.hasOwn(row, type) ? row[type] : undefined;
-  };
-
+  const rows = table as unknown as Record<string, Record<string, Handler>>;
   return {
     initial,
+    table,
     transition(state, event) {
-      const handler = handlerFor(state.status, event.type);
-      return handler ? handler(state, event) : state;
+      const row = rows[state.status];
+      // `Object.hasOwn` : un type d'événement nommé comme une propriété héritée (« toString »,
+      // « constructor ») ne doit pas trouver une fonction d'`Object.prototype`.
+      return Object.hasOwn(row, event.type) ? row[event.type](state, event) : state;
     },
-    accepts: (state, type) => handlerFor(state.status, type) !== undefined,
-    acceptedEvents: (status) =>
-      Object.keys(Object.hasOwn(handlers, status) ? handlers[status] : {}).filter(
-        (type) => handlerFor(status, type) !== undefined,
-      ) as Event["type"][],
-    statuses: Object.keys(handlers) as State["status"][],
   };
+}
+
+/**
+ * Types d'événements qu'un état accepte. Hors de l'objet rendu par `defineMachine` : les pages
+ * qui n'en ont pas besoin ne l'embarquent pas (le budget JavaScript de `/sales` est serré).
+ */
+export function acceptedEvents<State extends Tagged<string>, Event extends Typed<string>>(
+  machine: StateMachine<State, Event>,
+  status: State["status"],
+): Event["type"][] {
+  return Object.keys(machine.table[status]) as Event["type"][];
 }

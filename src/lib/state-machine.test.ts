@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineMachine } from "./state-machine";
+import { acceptedEvents, defineMachine } from "./state-machine";
 
 type DoorState =
   | { status: "closed" }
@@ -59,18 +59,17 @@ describe("defineMachine", () => {
     // Un type d'événement venu de l'extérieur (réponse réseau mal formée), hors du typage.
     const inherited = { type: "toString" } as unknown as DoorEvent;
     expect(door.transition(state, inherited)).toBe(state);
-    expect(door.accepts(state, inherited.type)).toBe(false);
+    expect(acceptedEvents(door, "closed")).not.toContain("toString");
   });
 
   it("says which events a state accepts", () => {
-    expect(door.accepts({ status: "closed" }, "OPEN")).toBe(true);
-    expect(door.accepts({ status: "closed" }, "CLOSE")).toBe(false);
-    expect(door.acceptedEvents("closed")).toEqual(["OPEN", "LOCK"]);
-    expect(door.acceptedEvents("locked")).toEqual(["KNOCK"]);
+    expect(acceptedEvents(door, "closed")).toEqual(["OPEN", "LOCK"]);
+    expect(acceptedEvents(door, "open")).toEqual(["CLOSE"]);
+    expect(acceptedEvents(door, "locked")).toEqual(["KNOCK"]);
   });
 
-  it("lists every state of the table", () => {
-    expect(door.statuses).toEqual(["closed", "open", "locked"]);
+  it("keeps the table it was given, with every state", () => {
+    expect(Object.keys(door.table)).toEqual(["closed", "open", "locked"]);
   });
 
   it("works as a reducer over a sequence of events", () => {

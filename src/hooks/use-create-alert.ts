@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
@@ -38,9 +38,9 @@ const ALERTS_PATH = "/alertes";
 export const RESERVED_ALERT_CRITERIA_TEXT =
   "Les critères avancés (écart avec le marché, rendement, occupation, DPE…) font partie des alertes de l’offre Analyse. Avec le compte gratuit : zone, type de vente, type de bien, budget, surface…";
 
-/** Les droits du compte n'ont pas pu être lus, même en relançant la lecture. */
-export const ACCOUNT_RIGHTS_UNREADABLE_TEXT =
-  "Vos droits n’ont pas pu être vérifiés. Vérifiez votre connexion, puis réessayez.";
+/** La session ou les droits du compte ne sont pas encore lus (aussi dit par l'export de `/sales`). */
+export const ACCOUNT_CHECK_PENDING_TEXT =
+  "Vérification de votre compte en cours. Réessayez dans un instant.";
 
 export type CreateAlertOptions = {
   frequency?: "daily" | "weekly";
@@ -100,9 +100,6 @@ export function useCreateAlert({
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
   const [saving, setSaving] = useState(false);
-  // Une création à la fois par bouton : un second appel pendant la première est ignoré, même si
-  // l'appelant n'a pas (encore) désactivé son bouton.
-  const inFlight = useRef(false);
   const {
     data: entitlements,
     isLoading: entitlementsLoading,
@@ -123,7 +120,11 @@ export function useCreateAlert({
   });
   const emailRecapEnabled = notificationPreferences?.preferences.alertEmailEnabled === true;
 
-  /** Une fonction réservée à Analyse : vers l'offre si elle est ouvrable, sinon on l'explique. */
+  /**
+   * Une fonction réservée à Analyse : vers l'offre si elle est ouvrable, sinon on l'explique au
+   * lieu de mener à une impasse. Rendue aux appelants (`/sales` : export CSV) pour ne pas être
+   * écrite deux fois.
+   */
   const explainReservedFeature = useCallback(
     async (reservedMessage: string) => {
       if (await isAnalysisOfferOpen()) {
@@ -142,7 +143,7 @@ export function useCreateAlert({
       options: CreateAlertOptions = {},
     ): Promise<CreateAlertResult> => {
       if (authLoading) {
-        toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+        toast.message(ACCOUNT_CHECK_PENDING_TEXT);
         return { status: "blocked" };
       }
       if (!user) {
@@ -159,26 +160,21 @@ export function useCreateAlert({
         router.push(loginPathWithRedirect(returnTo, { reason: "alerte" }));
         return { status: "login" };
       }
-      if (inFlight.current) return { status: "blocked" };
       // Lecture des droits du compte : en cours, lue, ou en échec. Un échec n'est pas « en cours » :
       // on relance la lecture à la demande au lieu de répondre « réessayez » sans fin.
       let rights = entitlements;
       if (!rights && entitlementsFailed) {
-        inFlight.current = true;
         setSaving(true);
-        try {
-          rights = (await refetchEntitlements()).data;
-        } finally {
-          inFlight.current = false;
-          setSaving(false);
-        }
+        const retried = await refetchEntitlements();
+        setSaving(false);
+        rights = retried.data;
         if (!rights) {
-          toast.error(ACCOUNT_RIGHTS_UNREADABLE_TEXT);
+          toast.error(userMessage(retried.error));
           return { status: "blocked" };
         }
       }
       if (!rights) {
-        toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+        toast.message(ACCOUNT_CHECK_PENDING_TEXT);
         return { status: "blocked" };
       }
       const alertsLocked = rights.plan.features.smartAlerts === "locked";
@@ -221,7 +217,6 @@ export function useCreateAlert({
         });
         return { status: "blocked" };
       }
-      inFlight.current = true;
       setSaving(true);
       try {
         // Chargé à la demande : ce module (géocodage, filtres du catalogue) est lourd, et les pages
@@ -306,7 +301,6 @@ export function useCreateAlert({
         toast.error(userMessage(saveError));
         return { status: "failed" };
       } finally {
-        inFlight.current = false;
         setSaving(false);
       }
     },
@@ -328,5 +322,5 @@ export function useCreateAlert({
   /** Les droits du compte sont lus : une création lancée maintenant ne sera pas refusée « en cours ». */
   const ready = Boolean(user) && !authLoading && !entitlementsLoading && Boolean(entitlements);
 
-  return { createAlertFromSearch, saving, emailRecapEnabled, ready };
+  return { createAlertFromSearch, saving, emailRecapEnabled, ready, explainReservedFeature };
 }

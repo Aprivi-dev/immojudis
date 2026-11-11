@@ -42,7 +42,7 @@ corrections ont donc été faites directement, sur la branche `claude/brave-gaus
 | --- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Recherche « autour d'une adresse » (`/sales`)    | Adresse effacée pendant la localisation, ou géocodeur qui lève une erreur : « localisation en cours » restait affiché sans fin. En changeant d'adresse, le centre de l'ancienne servait encore au tri par distance et à la zone d'une alerte créée à ce moment. | Machine `around-address-machine.ts` : le centre appartient à son adresse.                                                                                             | `around-address-machine.test.ts` (10 cas), `SearchPage.around-address.test.tsx` (4 cas, 2 échouaient avant).                    |
 | 2   | Aperçu Mapbox d'une annonce                      | Une erreur Mapbox après l'affichage (une tuile en échec) recouvrait une carte qui fonctionnait, sans retour possible.                                                                                                                                           | Machine `mapbox-preview-machine.ts` : une erreur n'est acceptée que pendant le chargement.                                                                            | `mapbox-preview-machine.test.ts` (9 cas), `MapboxPreviewButton.test.tsx` (5 cas, premier test du composant ; 1 échouait avant). |
-| 3   | Création d'une alerte                            | Si la lecture des droits du compte échouait, chaque essai répondait « Vérification de votre compte en cours. Réessayez dans un instant. », sans fin. Rien n'empêchait un second appel pendant le premier (seuls les boutons des appelants étaient désactivés).  | La lecture est relancée à la demande ; si elle échoue encore, le message le dit. Un second appel pendant le premier est ignoré.                                       | `use-create-alert.test.tsx` (+3 cas).                                                                                           |
+| 3   | Création d'une alerte                            | Si la lecture des droits du compte échouait, chaque essai répondait « Vérification de votre compte en cours. Réessayez dans un instant. », sans fin.                                                                                                            | La lecture est relancée à la demande ; si elle échoue encore, c'est une erreur qui est affichée, plus une invitation à attendre.                                      | `use-create-alert.test.tsx` (+2 cas).                                                                                           |
 | 4   | Code de double authentification (admin)          | Un appel qui lève (réseau coupé) laissait le bouton sur « Vérification… ».                                                                                                                                                                                      | `try / finally` : le bouton revient, avec un message.                                                                                                                 | `AdminMfaGate.test.tsx` (+1 cas).                                                                                               |
 | 5   | Enrôlement de la double authentification (admin) | Lecture des facteurs en échec : « Chargement… » sans fin. Boutons figés si un appel levait.                                                                                                                                                                     | État « lecture impossible » avec « Réessayer » (l'enrôlement n'est pas proposé sans savoir si un facteur existe) ; boutons toujours rendus.                           | `AdminSecurityPage.test.tsx` (5 cas, premier test de la page).                                                                  |
 | 6   | Connexion / inscription                          | L'erreur du formulaire d'inscription (« Renseignez votre prénom ») restait affichée après le passage en mode connexion.                                                                                                                                         | L'erreur est effacée au changement de mode.                                                                                                                           | `login-page.test.tsx` (+1 cas, échouait avant).                                                                                 |
@@ -82,7 +82,25 @@ Détail et fichiers dans le registre (sections 4 et 5). Dans l'ordre où je les 
 5. **Interface** : mot de passe oublié (union simple), bouton favori (un crochet pour deux copies),
    lecture des droits du compte (un seul crochet avec un état d'erreur).
 
-## 6. Vérifications
+## 6. Le budget JavaScript de `/sales`
+
+La première version de ce lot faisait échouer le contrôle des budgets : `/sales` pesait 566 100
+octets pour un plafond de 565 000. Mesure sur `main` avant le lot : **564 872 octets, soit 128
+octets de marge**. Relever un plafond est une décision du propriétaire ; le lot a donc été allégé
+pour tenir dessous :
+
+- `defineMachine` ne rend plus que `initial`, `table` et `transition` ; la lecture des événements
+  acceptés est une fonction à part (`acceptedEvents`), que les pages n'embarquent pas ;
+- la fonction « réservé à l'offre Analyse », écrite deux fois (page et crochet d'alerte), n'existe
+  plus qu'une fois ; le message « Vérification de votre compte en cours » aussi ;
+- la garde contre un double appel de la création d'alerte est retirée (les boutons des appelants
+  sont déjà désactivés pendant l'enregistrement) ; elle est notée dans le registre.
+
+À retenir pour la suite : toute correction sur `/sales` se paie en octets, et la marge est quasi
+nulle. Un vrai allègement de cette page, ou un relèvement décidé du plafond, précède le prochain
+chantier qui y touche.
+
+## 7. Vérifications
 
 - `npx tsc --noEmit`, `npm run lint`, `npm test`, `npm run test:security-invariants` : résultats
   dans la description de la demande de fusion.
