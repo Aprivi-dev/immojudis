@@ -2,8 +2,8 @@
 
 Standard library only: this script runs when the system packages or the Python dependencies could
 not be installed, so nothing of requirements.lock (and nothing of ``src``) may be imported here. The
-workflow calls it with ``python3 -I -S`` (no environment variable, no site-packages) when the pipeline
-step was skipped.
+workflow calls it with ``python3 -I -S`` (no PYTHON* environment variable, no site-packages) when the
+pipeline step was skipped.
 
 Incident of 11/11/2026 (docs/audits/2026-11-11-collecte-echec-avant-demarrage.md): ``apt-get`` failed,
 ``src.run_finalizer`` could not even be imported, and the scheduled run stayed ``queued`` until its
@@ -42,7 +42,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 COMPLETION_STATUS = "failed_before_start"
@@ -57,6 +57,10 @@ TOTAL_BUDGET_SECONDS = 100.0
 WATCHDOG_SECONDS = 140.0
 # The service key is never sent in clear text.
 ALLOWED_SCHEMES: tuple[str, ...] = ("https",)
+# One run row is a few kilobytes: anything far larger is not an answer of the API.
+MAX_RESPONSE_BYTES = 1_000_000
+# What the watchdog needs to word its message: whether the closing request has left.
+_PROGRESS = {"close_sent": False}
 
 # Preparation steps of data-pipeline.yml, in their order of execution: (environment variable that
 # carries the outcome of the step, stage written in the run, wording shown to the operator).
@@ -130,7 +134,10 @@ def _request(
         try:
             request = urllib.request.Request(url, data=data, headers=headers, method=method)
             with _OPENER.open(request, timeout=min(REQUEST_TIMEOUT_SECONDS, left)) as response:
-                payload = json.loads(response.read().decode("utf-8") or "[]")
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
+                raise CloseError("réponse trop volumineuse")
+            payload = json.loads(raw.decode("utf-8") or "[]")
             if not isinstance(payload, list):
                 raise CloseError("réponse inattendue de l'API")
             return [row for row in payload if isinstance(row, dict)]
@@ -201,7 +208,8 @@ def close_unstarted_run(environ: dict[str, str]) -> int:
             print(f"Run {run_id} en état « {status} » : laissé intact (seul un run encore « queued » est clos ici).")
             return 0
 
-        now = datetime.now(UTC).isoformat()
+        # timezone.utc rather than datetime.UTC: the system interpreter may be older than 3.11.
+        now = datetime.now(timezone.utc).isoformat()  # noqa: UP017
         source = str(run.get("source") or "")
         source_due = False
         if run.get("scheduler_owned") is True and source and source != ENRICHMENT_QUEUE:
@@ -219,6 +227,7 @@ def close_unstarted_run(environ: dict[str, str]) -> int:
         for name, variable in (("github_run_id", "GITHUB_RUN_ID"), ("github_run_attempt", "GITHUB_RUN_ATTEMPT")):
             if environ.get(variable, "").isdigit():
                 startup_failure[name] = int(environ[variable])
+        _PROGRESS["close_sent"] = True
         closed = _request("PATCH", _endpoint(base_url, "auction_runs", {
             "id": f"eq.{run_id}",
             "status": "eq.queued",
@@ -267,9 +276,15 @@ def close_unstarted_run(environ: dict[str, str]) -> int:
 
 
 def _abort() -> None:
+    consequence = (
+        "la requête de clôture était partie, l'état du run est à vérifier (au pire il se ferme à l'expiration "
+        "de son bail)."
+        if _PROGRESS["close_sent"]
+        else "le run reste ouvert jusqu'à l'expiration de son bail."
+    )
     print(
         "::error title=Clôture du run impossible::Délai global dépassé (réseau ou résolution de nom bloqués) : "
-        "le run reste ouvert jusqu'à l'expiration de son bail.",
+        + consequence,
         flush=True,
     )
     os._exit(1)

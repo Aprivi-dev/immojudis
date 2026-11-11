@@ -52,7 +52,7 @@ case "$FAKE_APT_MODE" in
   always-fail) exit 100 ;;
   fail-update-only) if [ "$1" = "update" ]; then exit 100; fi; exit 0 ;;
   hang) sleep 60 ;;
-  hang-update) if [ "$1" = "update" ]; then sleep 60; fi; exit 0 ;;
+  hang-update) if [ "$1" = "update" ]; then sleep 60; fi; if [[ "$*" == *--download-only* ]]; then sleep "${FAKE_APT_DOWNLOAD_SECONDS:-0}"; fi; exit 0 ;;
   fail-local) if [[ "$*" == *--no-download* ]]; then exit 7; fi; exit 0 ;;
 esac
 """
@@ -139,18 +139,20 @@ def test_a_broken_repository_the_packages_do_not_need_does_not_stop_the_job(tmp_
 
 
 def test_a_repository_that_hangs_leaves_the_time_of_the_last_download(tmp_path: Path) -> None:
-    # Every `apt-get update` hangs (a repository that does not answer), the packages themselves download.
-    # The last attempt keeps the 3 s of the download instead of spending them on one more update.
+    # Every `apt-get update` hangs (a repository that does not answer), the packages themselves download
+    # in one second. After two updates cut at 3 s and the waits (1 s, 2 s), 3 s are left of the 12: less
+    # than the 4 s reserved for a download, so the third update is skipped and the download gets them.
+    # Without the reserve that update would take the 3 s and the download would never start.
     result, calls, elapsed = _install(
-        tmp_path, "hang-update", "antiword",
-        SYSTEM_PACKAGES_DEADLINE_SECONDS="10", SYSTEM_PACKAGES_UPDATE_TIMEOUT="2", SYSTEM_PACKAGES_DOWNLOAD_TIMEOUT="3",
+        tmp_path, "hang-update", "antiword", FAKE_APT_DOWNLOAD_SECONDS="1",
+        SYSTEM_PACKAGES_DEADLINE_SECONDS="12", SYSTEM_PACKAGES_UPDATE_TIMEOUT="3", SYSTEM_PACKAGES_DOWNLOAD_TIMEOUT="4",
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert elapsed < 20
-    kinds = [call.split()[0] for call in calls]
-    assert kinds[:2] == ["update", "update"] and kinds[-2:] == ["install", "install"]
+    assert elapsed < 25
+    assert [call.split()[0] for call in calls] == ["update", "update", "install", "install"]
     assert "--download-only" in calls[-2] and "--no-download" in calls[-1]
+    assert "plus de temps pour rafraîchir les index" in result.stdout
     assert "::warning title=Index apt incomplet::" in result.stdout and "::error" not in result.stdout
 
 
@@ -425,6 +427,55 @@ def test_the_watchdog_ends_a_blocked_process_before_the_step_timeout(tmp_path: P
     assert result.returncode == 1
     assert time.monotonic() - started < 20
     assert "::error title=Clôture du run impossible::Délai global dépassé" in result.stdout
+    assert "le run reste ouvert jusqu'à l'expiration de son bail" in result.stdout
+
+
+def test_the_watchdog_does_not_claim_the_run_is_open_once_the_close_has_left(tmp_path: Path) -> None:
+    blocked = (
+        "import sys, time; sys.path.insert(0, sys.argv[1]); import close_unstarted_run as m; "
+        "m.WATCHDOG_SECONDS = 1; "
+        "m.close_unstarted_run = lambda _environ: (m._PROGRESS.update(close_sent=True), time.sleep(60)); "
+        "sys.exit(m.main())"
+    )
+    result = subprocess.run(
+        [sys.executable, *ISOLATED, "-c", blocked, str(SCRIPTS)], env={"PATH": os.environ["PATH"]},
+        cwd=tmp_path, capture_output=True, text=True, timeout=60, check=False,
+    )
+
+    assert result.returncode == 1
+    assert "l'état du run est à vérifier" in result.stdout and "le run reste ouvert" not in result.stdout
+
+
+def test_the_closing_request_is_flagged_before_it_leaves(supabase: FakeSupabase, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(close_unstarted_run._PROGRESS, "close_sent", False)
+    supabase.tables["auction_runs"] += [_queued_run(), _queued_run(OTHER_RUN_ID, status="running")]
+    original = close_unstarted_run._request
+    seen: list[tuple[str, bool]] = []
+
+    def spy(method: str, url: str, key: str, body: dict[str, object] | None = None, **kwargs: float):
+        seen.append((f"{method} {'runs' if 'auction_runs' in url else 'source'}", close_unstarted_run._PROGRESS["close_sent"]))
+        return original(method, url, key, body, **kwargs)
+
+    monkeypatch.setattr(close_unstarted_run, "_request", spy)
+
+    # A run left untouched: nothing was sent that could have closed it.
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase, OTHER_RUN_ID)) == 0
+    assert close_unstarted_run._PROGRESS["close_sent"] is False
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase)) == 0
+    assert seen[1:] == [("GET runs", False), ("PATCH source", False), ("PATCH runs", True)]
+
+
+def test_an_oversized_answer_is_refused_without_being_parsed(
+    supabase: FakeSupabase, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    supabase.tables["auction_runs"].append(_queued_run())
+    monkeypatch.setattr(close_unstarted_run, "MAX_RESPONSE_BYTES", 50)
+
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase)) == 1
+
+    assert len(supabase.requests) == 1 and supabase.run(RUN_ID)["status"] == "queued"  # not retried
+    assert "(réponse trop volumineuse)" in capsys.readouterr().out
+    assert 'MAX_RESPONSE_BYTES = 1_000_000' in CLOSER.read_text(encoding="utf-8")
 
 
 def test_no_request_starts_once_the_global_budget_is_spent(
@@ -779,14 +830,15 @@ def test_the_run_is_closed_only_by_the_modes_that_would_have_executed_it() -> No
     workflow = (WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8")
     condition = _condition(_pipeline_steps()["Close run that never started"])
 
-    assert condition.split(" && ") == [
-        "always()",
-        "steps.pipeline.outcome == 'skipped'",
-        "inputs.run_id != ''",
-        "inputs.publication_check != true",
-        "inputs.documents_backlog != true",
-        "inputs.enrichment_only != true",
-    ]
+    assert condition == (
+        "always() && steps.pipeline.outcome == 'skipped' && inputs.run_id != '' && "
+        "(inputs.automatic == true || (inputs.publication_check != true && "
+        "inputs.documents_backlog != true && inputs.enrichment_only != true))"
+    )
+    # `automatic` is a boolean input, compared as such everywhere, and the pipeline step tests it first:
+    # a scheduled pass always executes the requested run, whatever the other switches.
+    assert re.search(r"^      automatic:\n(?:        .+\n)*?        type: boolean$", workflow, re.M)
+    assert "inputs.automatic == 'true'" not in workflow
     # The three excluded modes are exactly those of the pipeline step that run without --run-id, and
     # those with a concurrency group of their own are among them.
     pipeline = _pipeline_steps()["Run manually requested pipeline"].run  # type: ignore[attr-defined]
@@ -796,7 +848,10 @@ def test_the_run_is_closed_only_by_the_modes_that_would_have_executed_it() -> No
         if "REQUESTED_RUN_ID" not in body
     }
     assert without_run_id == {"publication_check", "documents_backlog", "enrichment_only"}
-    assert {f"inputs.{mode} != true" for mode in without_run_id} <= set(condition.split(" && "))
+    manual_modes = condition.split("inputs.automatic == true || (", 1)[1].rstrip(")")
+    assert set(manual_modes.split(" && ")) == {f"inputs.{mode} != true" for mode in without_run_id}
+    first_branch = re.search(r'if \[ "\$REQUESTED_([A-Z_]+)" = "true" \]', pipeline)
+    assert first_branch is not None and first_branch.group(1) == "AUTOMATIC"
     own_group = set(re.findall(r"inputs\.([a-z_]+) && 'immojudis-", workflow.split("concurrency:", 1)[1].split("jobs:", 1)[0]))
     assert own_group - {"model_benchmark"} <= without_run_id
 
