@@ -12,57 +12,96 @@ persisted », dont 57 sur une vente au manifeste déjà complet ; 4 échecs vena
 
 ## Causes reproduites et correctifs livrés
 
-| #   | Cause                                                                                                                                                 | Correctif                                                                                                                                         |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A   | À chaque relecture complète, la valeur brute de l'instantané de la source (« libre », « 85,5 ») était remise sur la vente.                            | Valeur lue comme la collecte la lit : occupation normalisée, décimal par l'analyseur du champ, vide si illisible (`src/pdf_fact_scope.py`).       |
-| B   | Chaque lecture terminée écrit une nouvelle empreinte, donc une tâche neuve que rien ne bornait.                                                       | Le vidage ne choisit pas une vente qui compte 2 lectures terminées en 24 heures (`src/document_backlog.py`).                                      |
-| C   | La lecture en avance rafraîchit les fichiers de suivi locaux ; jugée sur eux, la passe ne reprenait aucune pièce d'un manifeste de plus de 24 heures. | La péremption se juge sur la vérification enregistrée en base (`src/pdf_progress.py`).                                                            |
-| D   | Manifeste complet avec un lien mort, runner neuf : texte non restaurable, rien à lire, manifeste vide reconstruit, point d'étape refusé, échec.       | La tâche attend l'heure où la première vérification expire, sans essai consommé, et le manifeste n'est pas remplacé (`src/pdf_pass_outcomes.py`). |
-| F   | Une vente sans aucun texte (pièces toutes écartées) n'avait jamais de version des faits : à relire à chaque vidage.                                   | La version est posée dès que le manifeste est complet (`src/pdf_enrichment.py`).                                                                  |
-| G   | Le motif d'un point d'étape refusé n'existait que dans le journal du worker.                                                                          | Il suit le message dans `last_error` : `…retry required: no_progress_entries` (`src/storage/pdf_checkpoint_rules.py`).                            |
-| H   | Une écriture de fin de passe écartée (admission, révision déplacée) laissait la tâche « terminée » sans lecture enregistrée.                          | La tâche pdf est reportée : 30 minutes si la vente a changé pendant la passe, un jour pour un refus d'admission.                                  |
+| #   | Cause                                                                                                                                              | Correctif                                                                                                                                                                               |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A   | À chaque relecture complète, la valeur brute de l'instantané de la source (« libre », « 85,5 », « Lot 12 », « 45.000 ») était remise sur la vente. | L'instantané est lu par `normalize_sale`, la règle de la collecte, sans seconde règle ; la ligne de base d'une trace reste une valeur typée (`src/pdf_fact_scope.py`).                  |
+| B   | Chaque lecture terminée écrit une nouvelle empreinte, donc une tâche neuve que rien ne bornait.                                                    | Le vidage ne choisit pas une vente pour laquelle il a déjà demandé 2 lectures terminées en 24 heures (priorité du vidage ; `src/document_backlog.py`).                                  |
+| C   | La lecture en avance rafraîchit les fichiers de suivi locaux ; jugée sur eux, la passe ne reprenait aucune pièce d'un manifeste de plus de 24 h.   | La péremption se juge sur la vérification enregistrée en base (`src/pdf_progress.py`).                                                                                                  |
+| D   | Manifeste complet avec un lien mort, runner neuf : texte non restaurable, rien à lire, manifeste vide reconstruit, point d'étape refusé, échec.    | Si le manifeste contient une URL écartée, la tâche attend l'heure où la première vérification expire, sans essai consommé ; tout autre cas reste un échec (`src/pdf_pass_outcomes.py`). |
+| F   | Une vente sans aucun texte (pièces toutes écartées) n'avait jamais de version des faits : à relire à chaque vidage.                                | La version est posée dès que le manifeste d'une vente à pièces est complet (`src/pdf_enrichment.py`).                                                                                   |
+| G   | Le motif d'un point d'étape refusé n'existait que dans le journal du worker.                                                                       | Un code suit le message dans `last_error` : `…retry required: no_progress_entries` (`src/storage/pdf_checkpoint_rules.py`).                                                             |
+| H   | Une écriture de fin de passe écartée (admission, révision déplacée) laissait la tâche « terminée » sans lecture enregistrée.                       | La tâche pdf échoue avec son code, un essai consommé. Refus d'admission : un essai par jour, puis `cancelled` en `review_required`, que le vidage ne réveille pas pendant 7 jours.      |
 
 Garde-fous vérifiés par des tests : une pièce nouvelle ou remplacée est lue, un texte perdu reste un échec
 visible puis est relu à l'expiration de ses vérifications, une vente invalidée par une collecte repasse le
-jour même.
+jour même, une tâche de la voie générale terminée sans passe ne fait pas attendre une pièce nouvelle.
 
-## Non livré
+## Limites connues
 
-- **N (annuler la tâche d'une vente dont toutes les sources sont retirées).** Écarté après lecture du
-  code : à la levée du retrait, la publication remet la tâche en file avec la même empreinte, et
-  l'insertion ne réveille pas une ligne annulée (`on conflict do nothing`). Seul le vidage la réveille, et
-  seulement si la vente a encore une pièce à lire. Une vente entièrement lue ne serait donc plus
-  revalidée tant que ses pièces ne changent pas. Le report de 24 heures reste en place (15 tâches). À
-  reprendre avec un réveil à la levée du retrait (fonction SQL `set_catalogue_source_withdrawal`, donc
-  une migration) ou à la publication.
-- **Seconde série** : E (restaurer le texte malgré une URL écartée), I (ne pas créer de tâche pour un
-  manifeste complet, frais et à la version courante), J (pièce d'une source retirée, liens morts au-delà
-  de six pièces), K (statuts des pièces illisibles).
-- **Décisions du propriétaire** : L (fraîcheur d'une pièce lue et inchangée, aujourd'hui 24 heures), M
-  (migration : borner le bonus de 168 heures de la voie générale). Sans L, les tâches « sans travail »
-  (140 sur 180 en attente) restent, par construction.
-- H ne reporte que la tâche pdf. Une passe de faits dont l'écriture est écartée reste « terminée » : la
-  reporter rappellerait le modèle à chaque essai (budget, hors périmètre).
+- **B ne borne que le vidage.** Une vente qui recrée une tâche après chaque lecture reste servie par la
+  voie générale, vite si elle est à moins de 7 jours (correctif I).
+- **H ne traite que la tâche pdf.** Une passe de faits de la même prise reste « terminée » alors que son
+  écriture est écartée : appel au modèle payé, résultat non enregistré. C'était déjà le cas ; un test le
+  constate (`test_known_limit_…` dans `tests/test_pdf_pass_outcomes.py`). À décider : la faire échouer
+  rappelle le modèle à chaque essai (budget), ou vérifier l'admission avant l'appel.
+- **D retient les passes de faits** de la vente jusqu'à l'échéance, 24 heures au plus (garde de la prise).
+  Une vérification de lien mort plus ancienne que celles des pièces lues échoue encore (réglé par E).
+- **N non livré** (annuler la tâche d'une vente dont toutes les sources sont retirées) : à la levée du
+  retrait, la publication remet la même empreinte en file et l'insertion ne réveille pas une ligne annulée
+  (`on conflict do nothing`). Une vente entièrement lue ne serait plus revalidée tant que ses pièces ne
+  changent pas. Le report de 24 heures reste (15 tâches, sans téléchargement).
 
-## Mesures à refaire après mise en ligne (lecture seule)
+## Série suivante, dans l'ordre
+
+1. **E** : restaurer le texte des pièces lues malgré une URL écartée. Supprime la plupart des attentes D.
+2. **I** : ne pas créer de tâche pour un manifeste complet, frais et à la version courante. Sûr après E.
+3. **K et J** ensemble : statuts des pièces illisibles, pièces d'une source retirée, liens morts au-delà de
+   six pièces. K doit garder un chemin de revalidation pour les 404.
+4. **N** par la fonction SQL `set_catalogue_source_withdrawal` (migration) : annuler, et réveiller à la levée.
+5. **Décisions du propriétaire.** L : fraîcheur d'une pièce lue et inchangée à 7 jours, en gardant 24 heures
+   pour les ventes à moins de 7 jours et pour les liens morts ou bloqués ; c'est ce qui vide les 140 tâches
+   « sans travail ». Condition : **E avant L**, car l'attente D suit la même fenêtre et retiendrait les faits
+   d'une vente jusqu'à 7 jours. M (migration) : vieillir plus vite les ventes lointaines dans la voie
+   générale plutôt que supprimer le bonus de 168 heures ; à décider après les mesures.
+
+## Mesures à refaire le lendemain de la mise en ligne (lecture seule)
 
 ```sql
--- 1. Concentration. Attendu : le vidage ne lit plus une vente plus de 2 fois par jour. Une vente encore
---    au-dessus est servie par la voie générale (correctif I, seconde série).
-select lectures, count(*) as ventes
-from (select source_url, count(*) as lectures from public.auction_enrichment_jobs
+-- 1. Lectures terminées par vente en 24 heures, par priorité. Attendu : 2 au plus à la priorité 40 (vidage) ;
+--    une vente au-dessus à la priorité 30 est servie par la voie générale (correctif I).
+select priority, lectures, count(*) as ventes
+from (select source_url, priority, count(*) as lectures from public.auction_enrichment_jobs
       where job_type = 'pdf' and status = 'completed' and completed_at >= now() - interval '24 hours'
-      group by 1) t
-group by 1 order by 1 desc limit 20;
+      group by 1, 2) t
+group by 1, 2 order by 2 desc, 1 desc limit 30;
 
--- 2. Fins de passe en 24 heures : échecs « checkpoint » par motif, tâches en attente (« PDF pass deferred »).
-select status, coalesce(substring(last_error from 'retry required: ([a-z_ ]+)'),
-                        left(coalesce(last_error, ''), 60)) as fin, count(*)
+-- 2. Fins de passe en 24 heures, par code. Attendu : les 62 échecs « checkpoint » laissent place à des lectures,
+--    à des attentes « PDF pass deferred » ou à des échecs qui disent leur code.
+select status, left(coalesce(last_error, ''), 30) as debut,
+       coalesce(substring(last_error from 'retry required: ([a-z_]+)'),
+                substring(last_error from '\(([a-z_]+)\)')) as code, count(*)
 from public.auction_enrichment_jobs
 where job_type = 'pdf' and updated_at >= now() - interval '24 hours'
-group by 1, 2 order by 3 desc limit 40;
+group by 1, 2, 3 order by 4 desc limit 40;
 
--- 3. Qui recrée la tâche des ventes encore relues (diagnostic révisé, sans identifiant).
+-- 3. Attentes « rien à lire » : aucune échéance ne doit dépasser 24 heures.
+select count(*) as attentes, max(next_attempt_at - now()) as echeance_la_plus_lointaine
+from public.auction_enrichment_jobs
+where job_type = 'pdf' and status = 'queued' and last_error like 'PDF pass deferred:%';
+
+-- 4. Écritures écartées : essais consommés, tâches passées en revue. Une même ligne ne doit pas dépasser 4 essais.
+select status, attempt_count, substring(last_error from '\(([a-z_]+)\)') as code, count(*),
+       min(created_at) as plus_ancienne, max(updated_at) as derniere_fin
+from public.auction_enrichment_jobs
+where job_type = 'pdf' and (last_error like 'PDF pass not recorded:%' or last_error like 'review_required:%')
+group by 1, 2, 3 order by 4 desc limit 20;
+
+-- 5. Passes de faits retenues par une tâche pdf (208 le 11/11).
+select count(*) from public.auction_enrichment_jobs j
+where j.job_type = 'fact_extraction' and j.status = 'queued'
+  and exists (select 1 from public.auction_enrichment_jobs p
+              where p.source_url = j.source_url and p.job_type = 'pdf' and p.status in ('queued', 'running', 'failed')
+                and (p.status = 'running' or p.attempt_count < p.max_attempts));
+
+-- 6. Ventes à venir au manifeste complet sans version des faits (45 le 11/11). Si le nombre remonte chaque jour,
+--    une collecte efface la version : ces ventes reprennent des places du vidage.
+select count(*) from public.auction_sales s
+where s.status in ('active', 'upcoming', 'postponed', 'unknown') and (s.sale_date is null or s.sale_date >= now())
+  and jsonb_array_length(s.documents) > 0
+  and s.raw_payload->'document_analysis'->>'manifest_complete' = 'true'
+  and s.raw_payload->>'document_facts_version' is null;
+
+-- 7. Qui recrée la tâche des ventes encore relues (diagnostic révisé, sans identifiant).
 with boucle as (
   select source_url from public.auction_enrichment_jobs
   where job_type = 'pdf' and status = 'completed' and completed_at >= now() - interval '48 hours'
@@ -76,7 +115,7 @@ from (select j.*, lag(completed_at) over (partition by source_url order by creat
 group by 1, 2, 3;
 ```
 
-Lecture de la troisième : un délai proche de 0 désigne l'écriture de fin de passe (correctif I), proche de
+Lecture de la septième : un délai proche de 0 désigne l'écriture de fin de passe (correctif I), proche de
 60 à 70 minutes le vidage suivant. Refaire aussi M1 (échecs pdf par famille) et M2 (tâches en attente) du
-11/11 : les 62 échecs « checkpoint » doivent laisser place à des lectures terminées, à des tâches en
-attente, ou à des échecs qui disent leur motif.
+11/11. Ordre de grandeur attendu après un jour : 25 à 35 tâches pdf en échec au lieu de 86 (6 Vench et
+9 Cessions de l'État qui échouent encore, tâches épuisées non candidates, 5 ventes sans manifeste).
