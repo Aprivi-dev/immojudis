@@ -1091,7 +1091,7 @@ def test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured(monkeypa
     )
 
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _: nullcontext(SimpleNamespace(execute=lambda *args: None)))
-    monkeypatch.setattr(supabase_client, "_transaction_write", lambda table, payload, conflict: calls.append(("postgresql://example", table, len(payload))))
+    monkeypatch.setattr(supabase_client, "_transaction_write", lambda table, payload, conflict, **_kwargs: calls.append(("postgresql://example", table, len(payload))))
     assert supabase_client.upsert_sales_to_supabase([sale]) == 1
     assert calls == [
         ("postgresql://example", "auction_sales", 1),
@@ -1495,7 +1495,7 @@ def test_upsert_sales_can_preserve_last_seen_during_recompute(monkeypatch) -> No
     monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args: None)
 
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _: nullcontext(SimpleNamespace(execute=lambda *args: SimpleNamespace(fetchone=lambda: (sale.updated_at,)))))
-    monkeypatch.setattr(supabase_client, "_transaction_write", lambda table, payload, conflict: captured.setdefault("payload", payload))
+    monkeypatch.setattr(supabase_client, "_transaction_write", lambda table, payload, conflict, **_kwargs: captured.setdefault("payload", payload))
     assert supabase_client.upsert_sales_to_supabase([sale], refresh_last_seen=False) == 1
 
     payload = captured["payload"]
@@ -2512,7 +2512,7 @@ def test_publication_commits_completed_batches_before_later_batch_failure(monkey
             events.append('commit')
     monkeypatch.setattr(supabase_client, '_postgres_connect', connect)
     batch_sizes = []
-    def write(table, payload, conflict):
+    def write(table, payload, conflict, **_kwargs):
         batch_sizes.append(len(payload))
         if len(batch_sizes) == 2:
             raise RuntimeError('second batch failed')

@@ -390,3 +390,182 @@ def test_an_enrichment_checkpoint_of_this_process_is_not_a_move(base) -> None:
     assert base.writes[-1]["app_surface_kind"] == "carrez"
     assert base.writes[-1]["surface_source"] == "pdf"
     assert base_reads.suppressed_count() == 0
+
+
+# --- ce que la garde croit écrit : transaction annulée, valeur retenue par la base ------------------------------------------
+
+LAND_ROW = {
+    "property_type": "land", "title": "Un terrain", "description": "Un terrain.", "raw_text": "Un terrain.",
+    "land_surface_m2": 800, "surface_m2": None, "app_surface_m2": None, "app_surface_kind": None,
+    "surface_source": None, "surface_confidence": None, "rooms_count": None, "bedrooms_count": None,
+    "occupancy_status": None,
+}
+
+
+def _confirm_by_a_document(sale: AuctionSale) -> AuctionSale:
+    sale.surface_source, sale.surface_confidence = "pdf", Decimal("0.95")
+    return sale
+
+
+@pytest.mark.parametrize(
+    ("state", "enrich"),
+    [(stored_row(**LAND_ROW), lambda sale: sale), (stored_row(), _confirm_by_a_document)],
+    ids=["surface_derived_from_the_land", "surface_confirmed_by_a_document"],
+)
+def test_a_failed_transaction_then_a_retry_writes_what_a_pass_without_failure_writes(monkeypatch, state, enrich) -> None:
+    """Une instruction échoue après l'écriture de ``auction_sales`` : tout est annulé, puis le lot est repris."""
+
+    def run(fail_first: bool) -> tuple[dict[str, Any], dict[str, Any]]:
+        base_reads.reset()
+        base = FakeSaleBase([deepcopy(state)])
+        patch_publication(monkeypatch, base)
+        known = storage.fetch_known_sale_details()
+        sale = enrich(collect(card(), known))
+        if fail_first:
+            def broken(*_args, **_kwargs):
+                raise RuntimeError("canceling statement due to statement timeout")
+
+            monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", broken)
+            with pytest.raises(RuntimeError):
+                storage.upsert_sales_to_supabase([deepcopy(sale)])
+            assert groups(base.rows[URL]) == groups(state)  # la transaction a bien été annulée
+            monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", lambda *_args, **_kwargs: None)
+        storage.upsert_sales_to_supabase([deepcopy(sale)])
+        assert base_reads.moved_groups(base.rows[URL]["id"]) == frozenset()
+        assert base_reads.suppressed_count() == 0
+        return written(base)[-1], groups(base.rows[URL])
+
+    witness_write, witness_row = run(fail_first=False)
+    retried_write, retried_row = run(fail_first=True)
+
+    assert retried_write == witness_write
+    assert retried_row == witness_row
+    assert witness_row != groups(state)  # le passage écrit bien autre chose que la ligne de départ
+
+
+def test_a_value_retained_by_the_base_is_not_taken_for_a_move(monkeypatch) -> None:
+    """La base retient 54 m² ; la fiche relue dit toujours 50 m². Personne n'agit : rien n'a bougé, 50 est envoyé."""
+    retained = {key: POSED[key] for key in ("surface_m2", "app_surface_m2", "app_surface_kind", "surface_source",
+                                            "surface_confidence")}
+    base = FakeSaleBase([stored_row(habitable_surface_m2=50)])
+    patch_publication(monkeypatch, base)
+    base.retain(URL, **retained)
+    sale_id = base.rows[URL]["id"]
+
+    for _passage in range(2):
+        base_reads.reset()
+        known = storage.fetch_known_sale_details()
+        raw = card(surface_m2=50, habitable_surface_m2=50, description="Une maison de 50 m².")
+        raw.pop("_known_unchanged")
+        sale = collect(raw, known)
+        for _publication in range(2):
+            storage.upsert_sales_to_supabase([sale])
+            # La valeur de l'annonce part vers la base, qui décide ; elle n'est pas remplacée par la valeur retenue.
+            assert (base.writes[-1]["surface_m2"], base.writes[-1]["app_surface_m2"]) == (50, 50)
+            assert base_reads.moved_groups(sale_id) == frozenset()
+            assert base_reads.suppressed_count() == 0
+
+    assert groups(base.rows[URL])["app_surface_m2"] == 54
+
+
+# --- une fiche réellement relue --------------------------------------------------------------------------------------------
+
+
+def test_a_reread_listing_that_publishes_the_value_again_is_written_even_if_the_base_moved(monkeypatch) -> None:
+    """La fiche relue redit 3 pièces ; un autre traitement a écrit 4 pendant l'import : la source l'emporte, comme avant."""
+    base = FakeSaleBase([stored_row(rooms_count=3)])
+    patch_publication(monkeypatch, base)
+    known = storage.fetch_known_sale_details()
+    raw = card(rooms_count=3, surface_m2="50 m²", occupancy_status="occupé", description="Une maison de 3 pièces.")
+    raw.pop("_known_unchanged")
+    sale = collect(raw, known)
+    assert sale.raw_payload["source_factual_snapshot"]["rooms_count"] == 3
+
+    base.move(URL, rooms_count=4)
+    storage.upsert_sales_to_supabase([sale])
+
+    assert base.rows[URL]["rooms_count"] == 3
+    assert base_reads.suppressed_count() == 0
+
+
+def test_the_same_value_of_a_listing_that_was_not_reread_is_withheld(monkeypatch) -> None:
+    base = FakeSaleBase([stored_row(rooms_count=3)])
+    patch_publication(monkeypatch, base)
+    known = storage.fetch_known_sale_details()
+    sale = collect(card(), known)  # annonce inchangée : les 3 pièces viennent de la ligne lue
+
+    base.move(URL, rooms_count=4)
+    storage.upsert_sales_to_supabase([sale])
+
+    assert base.rows[URL]["rooms_count"] == 4
+    assert base_reads.suppressed_count() == 1
+
+
+# --- ce qui suit le groupe repris, et les copies de la valeur retenue ---------------------------------------------------------
+
+CARREZ_COLUMNS = ("surface_m2", "app_surface_m2", "app_surface_kind", "surface_source", "surface_confidence",
+                  "carrez_surface_m2", "habitable_surface_m2", "surface_scope", "surface_evidence")
+
+
+def test_a_surface_written_by_the_document_reader_during_the_run_stays_whole(monkeypatch) -> None:
+    """Pendant l'import, la lecture d'une pièce écrit 48,5 m² Carrez avec sa preuve et sa trace."""
+    base = FakeSaleBase([stored_row()])
+    patch_publication(monkeypatch, base)
+    known = storage.fetch_known_sale_details()
+    known.update(storage.fetch_known_sale_details(source_urls=[URL], include_enrichment_payload=True))
+    sale = collect(card(), known)
+    document = {
+        "surface_m2": 48.5, "app_surface_m2": 48.5, "app_surface_kind": "carrez", "surface_source": "pdf",
+        "surface_confidence": 0.9, "carrez_surface_m2": 48.5, "habitable_surface_m2": None,
+        "surface_scope": "private", "surface_evidence": "superficie loi Carrez de 48,50 m²",
+    }
+    traces = {
+        "surface_extraction": {"source": "pdf", "value_m2": 48.5, "document_url": "https://example.test/ccv.pdf"},
+        "pdf_fact_provenance": {"surface_m2": {"value": 48.5, "source": "pdf", "payload_keys": ["surface_extraction"]}},
+    }
+    base.move(URL, **document, raw_payload={**base.rows[URL]["raw_payload"], **traces})
+
+    storage.upsert_sales_to_supabase([sale])
+
+    row = base.rows[URL]
+    assert {column: row[column] for column in CARREZ_COLUMNS} == document
+    # La valeur reste décrite par ce qui l'a établie : sa trace permet toujours de la retirer.
+    assert row["raw_payload"]["surface_extraction"] == traces["surface_extraction"]
+    assert row["raw_payload"]["pdf_fact_provenance"] == traces["pdf_fact_provenance"]
+    # Et la copie de premier niveau suit la valeur écrite.
+    assert (row["raw_payload"]["surface_m2"], row["raw_payload"]["app_surface_m2"]) == (48.5, 48.5)
+    assert base_reads.suppressed_count() == 1
+
+
+def test_a_withdrawn_value_does_not_stay_in_a_copy_of_the_written_row(base) -> None:
+    """Retrait pendant l'import : ni le premier niveau de ``raw_payload`` ni l'observation embarquée ne gardent 3 et 54."""
+    known = storage.fetch_known_sale_details()
+    sale = collect(card(), known)
+    sale.observations = [{"source_name": "licitor", "source_url": URL, "raw_payload": deepcopy(sale.raw_payload)}]
+    assert (sale.raw_payload["rooms_count"], sale.raw_payload["surface_m2"]) == (3, 54)
+
+    base.move(URL, **LISTING)
+    storage.upsert_sales_to_supabase([sale])
+
+    row = base.rows[URL]
+    payload = row["raw_payload"]
+    assert (payload["rooms_count"], payload["surface_m2"], payload["app_surface_m2"]) == (2, 50, 50)
+    assert payload["occupancy_status"] == "occupied"
+    copies = [item["raw_payload"] for item in row["observations"] if item["source_url"] == URL]
+    assert copies and all((copy["rooms_count"], copy["surface_m2"]) == (2, 50) for copy in copies)
+
+
+def test_the_canonical_row_copy_follows_too_when_a_second_source_is_withheld(monkeypatch) -> None:
+    """Fusion entre sources : le ``raw_payload`` écrit est celui de la ligne stockée, avec sa copie de l'ancienne valeur."""
+    stored = stored_row(**POSED, source_urls=[URL, OTHER_URL])
+    stored["raw_payload"] = {**stored["raw_payload"], "rooms_count": 3, "occupancy_status": "rented"}
+    fake = FakeSaleBase([stored])
+    patch_publication(monkeypatch, fake)
+    known = storage.fetch_known_sale_details()
+    secondary = collect(card(OTHER_URL, "avoventes"), known)
+
+    fake.move(URL, rooms_count=2, occupancy_status="occupied")
+    storage.upsert_sales_to_supabase([secondary])
+
+    payload = fake.rows[URL]["raw_payload"]
+    assert (payload["rooms_count"], payload["occupancy_status"]) == (2, "occupied")

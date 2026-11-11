@@ -583,7 +583,7 @@ def _stored_row(url, **values):
 def _locked(url, rooms):
     """La ligne verrouillée, après deux lectures qui montrent que la base a bougé (3 pièces lues, puis ``rooms``)."""
     base_reads.note(_stored_row(url, rooms_count=3))
-    base_reads.note(_stored_row(url, rooms_count=rooms))
+    base_reads.note_locked(_stored_row(url, rooms_count=rooms))
     existing = sale(url)
     existing.id = LOCKED_ID
     existing.rooms_count = rooms
@@ -671,8 +671,8 @@ def test_same_source_revision_does_not_write_back_a_value_read_before_the_base_m
 def test_same_source_revision_still_replaces_when_the_base_did_not_move():
     """Sans mouvement de la base, un rafraîchissement de la même source remplace comme avant."""
     url = 'https://example.test/no-move'
-    for _ in range(2):
-        base_reads.note(_stored_row(url, rooms_count=3))
+    base_reads.note(_stored_row(url, rooms_count=3))
+    base_reads.note_locked(_stored_row(url, rooms_count=3))
     existing = sale(url)
     existing.id = LOCKED_ID
     existing.rooms_count = 3

@@ -1,16 +1,17 @@
 """Base simulée pour les tests de la garde d'écho : une table ``auction_sales`` en mémoire.
 
 Elle répond aux vraies requêtes de la collecte (verrou des candidats, lecture des lignes verrouillées, écriture
-``insert ... on conflict (source_url) do update``) et enregistre chaque écriture. ``move`` joue un autre écrivain
-qui change une ligne entre deux étapes du passage. Les tables voisines (copies, travaux, décisions) ne sont pas
+``insert ... on conflict (source_url) do update ... returning``) et enregistre chaque écriture. ``move`` joue un
+autre écrivain qui change une ligne entre deux étapes du passage ; ``retain`` joue une base qui retient des colonnes
+(un déclencheur qui remet sa valeur à chaque écriture). Les tables voisines (copies, travaux, décisions) ne sont pas
 simulées : ``patch_publication`` les neutralise, elles sont hors du sujet de ces tests.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import uuid
-from contextlib import nullcontext
 from copy import deepcopy
 from datetime import datetime
 from decimal import Decimal
@@ -57,8 +58,18 @@ class FakeSaleBase:
         self.statements: list[str] = []
         self.locked_reads: list[dict[str, Any]] = []
         self.writes: list[dict[str, Any]] = []
+        self.retained: dict[str, dict[str, Any]] = {}
         for row in rows or []:
             self.insert(row)
+
+    def __enter__(self) -> FakeSaleBase:
+        self._before = deepcopy(self.rows)
+        return self
+
+    def __exit__(self, exc_type: Any, *_details: Any) -> None:
+        # Comme une transaction : une erreur annule tout ce que le lot a écrit.
+        if exc_type is not None:
+            self.rows = self._before
 
     def insert(self, row: dict[str, Any]) -> dict[str, Any]:
         stored = {"id": str(uuid.uuid4()), **as_json(row)}
@@ -69,18 +80,25 @@ class FakeSaleBase:
         """Un autre écrivain change la ligne (comme une décision prise pendant le passage)."""
         self.rows[source_url].update(as_json(values))
 
+    def retain(self, source_url: str, **values: Any) -> None:
+        """La base retient ces colonnes : toute écriture de la ligne les laisse à ces valeurs."""
+        self.retained[source_url] = as_json(values)
+        self.rows[source_url].update(self.retained[source_url])
+
     def execute(self, query: Any, params: Any = None) -> _Result:
         text = query if isinstance(query, str) else query.as_string(None)
         self.statements.append(text)
         if text.startswith('insert into "public"."auction_sales"'):
+            kept = []
             for row in as_json(params[0].obj):
                 self.writes.append(deepcopy(row))
-                current = self.rows.get(row["source_url"])
-                if current is None:
-                    self.rows[row["source_url"]] = {"id": str(uuid.uuid4()), **row}
-                else:
-                    current.update(row)
-            return _Result([])
+                current = self.rows.setdefault(row["source_url"], {"id": str(uuid.uuid4())})
+                current.update(row)
+                current.update(self.retained.get(row["source_url"], {}))
+                kept.append(current)
+            # ``returning`` rend la ligne telle que la base l'a gardée, pas telle qu'elle a été envoyée.
+            returning = re.findall(r'"(\w+)"', text.partition(" returning ")[2])
+            return _Result([tuple(row.get(column) for column in returning) for row in kept] if returning else [])
         if text.startswith("select updated_at from public.auction_sales where source_url="):
             # Garde de révision d'une écriture d'enrichissement : la date de la ligne, comme la base la rend.
             row = self.rows.get(params[0])
@@ -108,7 +126,7 @@ class FakeSaleBase:
 def patch_publication(monkeypatch, base: FakeSaleBase) -> None:
     """Fait écrire ``upsert_sales_to_supabase`` dans ``base`` ; seule l'écriture de ``auction_sales`` est réelle."""
     monkeypatch.setattr(storage, "load_settings", lambda: dict(SETTINGS))
-    monkeypatch.setattr(storage, "_postgres_connect", lambda _url: nullcontext(base))
+    monkeypatch.setattr(storage, "_postgres_connect", lambda _url: base)
     monkeypatch.setattr(
         storage,
         "_read_known_sales_snapshot_with_retries",
