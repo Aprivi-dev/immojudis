@@ -683,7 +683,7 @@ def test_publication_failure_rolls_back_without_rest_fallback(monkeypatch):
     monkeypatch.setattr(storage, "load_settings", lambda: {"supabase_url": "https://example.test", "supabase_service_role_key": "test", "supabase_db_url": "test"})
     monkeypatch.setattr(storage, "_postgres_connect", lambda _: Connection())
     monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _: [])
-    monkeypatch.setattr(storage, "_transaction_write", lambda *args: events.append("write"))
+    monkeypatch.setattr(storage, "_transaction_write", lambda *args, **_kwargs: events.append("write"))
     monkeypatch.setattr(storage, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
     monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", lambda *args: (_ for _ in ()).throw(ValueError("broken child table")))
     monkeypatch.setattr(storage, "_upsert_with_rest", lambda *args: events.append("REST"))

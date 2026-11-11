@@ -128,7 +128,7 @@ def test_a_run_reads_the_base_then_publishes_without_echo_and_reports_the_counte
     # Les lectures et le compteur d'un passage précédent du même processus ne survivent pas à l'ouverture du passage.
     stale = {"id": base.rows[url]["id"], "source_name": "licitor", "source_url": url}
     base_reads.note({**stale, "rooms_count": 9})
-    base_reads.note({**stale, "rooms_count": 8})
+    base_reads.note_locked({**stale, "rooms_count": 8})
     base_reads.suppress_echo(AuctionSale(**stale, rooms_count=8), AuctionSale(**stale, rooms_count=9))
     assert base_reads.suppressed_count() == 1
     run = main._open_run(main.PipelineOptions(source="licitor", use_llm=False, heavy_enrichment=False))

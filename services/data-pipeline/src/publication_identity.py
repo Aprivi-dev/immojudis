@@ -290,8 +290,9 @@ def hold_identity(connection, incoming: AuctionSale, matches: list[AuctionSale],
 
 def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
     # Garde d'écho, pour toutes les branches : un groupe que la collecte n'a fait que relire en base n'est pas réécrit
-    # si la base a bougé depuis (src.base_reads). ``incoming`` n'est pas modifiée ; sans mouvement, rien ne change.
-    incoming = base_reads.suppress_echo(existing, incoming)
+    # si la base a bougé depuis (src.base_reads). ``submitted`` n'est pas modifiée ; sans mouvement, rien ne change.
+    submitted = incoming
+    incoming = base_reads.suppress_echo(existing, submitted)
     incoming_url = incoming.source_url
     previous_checks = existing.raw_payload.get('source_checks') or {}
     new_checks = incoming.raw_payload.get('source_checks') or {}
@@ -384,6 +385,8 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
                     if not (c.get('code') == 'closing_time_unverified' and c.get('selected_source') == incoming_url)]
         except (KeyError, TypeError, ValueError):
             pass
+    # Les copies de la valeur retenue (premier niveau de raw_payload, observations embarquées) suivent la valeur écrite.
+    base_reads.align_copies(result, submitted, incoming)
     return result
 
 
@@ -536,10 +539,10 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
             ) s order by s.id""", (candidate_ids,)).fetchall()
     else:
         rows = []
-    # Chaque ligne lue sous verrou est une lecture en base de ce passage : comparée aux lectures précédentes, elle
-    # dit si la base a bougé depuis, et ses valeurs peuvent rester dans les ventes en mémoire jusqu'à l'écriture finale.
+    # Chaque ligne lue sous verrou est une lecture en base de ce passage : comparée à l'état de référence, elle dit si
+    # la base a bougé depuis, et ses valeurs peuvent rester dans les ventes en mémoire jusqu'à l'écriture finale.
     for row in rows:
-        base_reads.note(row[0])
+        base_reads.note_locked(row[0])
     existing_rows = [_from_row(row[0]) for row in rows]
     existing_by_key: dict[str, AuctionSale] = {
         row.id or row.source_url: row for row in existing_rows

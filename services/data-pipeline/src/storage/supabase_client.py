@@ -264,10 +264,22 @@ def _fetch_reviewed_alias_registry(supabase_url: str, api_key: str) -> ReviewedA
         raise ReviewedAliasRegistryError("Malformed reviewed-alias RPC response") from exc
 
 
-def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict: str | None = None, *, ignore_conflicts: bool = False) -> None:
+def _transaction_write(
+    table: str,
+    payload: list[dict[str, object]],
+    on_conflict: str | None = None,
+    *,
+    ignore_conflicts: bool = False,
+    returning: tuple[str, ...] = (),
+) -> list[dict[str, object]]:
+    """Écrit ``payload`` dans la transaction de publication ; rend les colonnes ``returning`` des lignes écrites.
+
+    ``returning`` donne la ligne telle que la base l'a gardée, après ses déclencheurs, et non telle qu'elle a été
+    envoyée.
+    """
     connection = _PUBLICATION_CONNECTION.get()
     if not payload:
-        return
+        return []
     columns = list(dict.fromkeys(key for row in payload for key in row))
     names = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
     statement = sql.SQL("insert into {} ({}) select {} from jsonb_populate_recordset(null::{}, %s)").format(
@@ -282,8 +294,13 @@ def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict
         statement += (sql.SQL("do update set ") + sql.SQL(", ").join(
             sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column)) for column in updates
         )) if updates else sql.SQL("do nothing")
+    if returning:
+        statement += sql.SQL(" returning ") + sql.SQL(", ").join(sql.Identifier(column) for column in returning)
     LOGGER.info("Publication write table=%s rows=%s", table, len(payload))
-    connection.execute(statement, (Jsonb(_sanitize_postgrest_payload(payload)),))
+    result = connection.execute(statement, (Jsonb(_sanitize_postgrest_payload(payload)),))
+    if not returning:
+        return []
+    return [dict(zip(returning, row, strict=True)) for row in result.fetchall()]
 
 
 def pdf_enrichment_input_hash_for_sale(
@@ -540,8 +557,12 @@ def upsert_sales_to_supabase(
         for sale in (*submitted_sales, *sales):
             if sale.source_url in written_urls:
                 sale.updated_at = written_at
+        # La transaction est validée : ce que la base a gardé devient l'état de référence de la garde d'écho.
+        base_reads.confirm_written(sale.id for sale in sales)
         return result
-    return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
+    result = _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
+    base_reads.confirm_written(sale.id for sale in sales)
+    return result
 
 
 def _write_sale_revisions(
@@ -590,15 +611,18 @@ def _write_sale_revisions(
             on_conflict="code",
         )
     if _PUBLICATION_CONNECTION.get() is not None:
-        _transaction_write("auction_sales", payload, "source_url")
+        # L'écriture de ce processus n'est pas un mouvement de la base. La garde d'écho compare la lecture suivante
+        # à ce que la base a gardé (``returning``), pas à ce qui a été envoyé : la base peut retenir une valeur.
+        # Noté ici en attente ; l'état de référence ne change qu'une fois la transaction validée
+        # (``upsert_sales_to_supabase``).
+        kept = _transaction_write("auction_sales", payload, "source_url", returning=base_reads.KEPT_COLUMNS)
+        base_reads.stage_written(kept or [])
         _write_fact_claims_postgres(sales, _PUBLICATION_CONNECTION.get())
     else:
         _upsert_with_rest(str(url), str(key), payload)
+        # Repli REST : pas de ``returning`` ; la ligne envoyée est la seule connaissance disponible.
+        base_reads.stage_written({"id": sale.id, **row} for sale, row in zip(sales, payload, strict=True))
         _write_fact_claims_rest(str(url), str(key), sales)
-    # L'écriture de ce processus n'est pas un mouvement de la base : la garde d'écho compare la lecture suivante à
-    # ce qui vient d'être envoyé.
-    for sale, row in zip(sales, payload, strict=True):
-        base_reads.note_written(sale.id, row)
     _sync_normalized_sale_tables_with_rest(
         str(url),
         str(key),
@@ -3107,7 +3131,7 @@ def fetch_known_sale_details(
             raise ReviewedAliasRegistryError("Malformed auction_sales detail row")
         row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"), row.get("status"))
         # Ces valeurs seront recopiées dans des ventes écrites plus tard : la garde d'écho doit savoir qu'elles
-        # viennent de la base, et quand elles ont été lues.
+        # viennent de la base.
         base_reads.note(row)
 
     details: dict[str, dict[str, Any]] = {}
