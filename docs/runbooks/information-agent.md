@@ -246,9 +246,12 @@ fausse** (une valeur « aurait été publiée », par n’importe quel message d
 nettes et contexte, réserves, lots, corrections, confusions de champs, « ne pas publier », manipulation,
 particuliers et pièces jointes) et 15 compléments de la relecture. Chaque cas porte le message, le contexte
 (type de bien, lots, fiche, destinataire, authentification, délai, messages antérieurs et postérieurs du
-dossier) et la vérité pour la surface, le terrain et le nombre de pièces. 77 cas citent sous la réponse notre
+dossier) et la vérité pour la surface, le terrain et le nombre de pièces. 63 cas citent sous la réponse notre
 demande actuelle en entier, telle que le gabarit du code la rend (`demande_actuelle.txt`, figé par un test :
-un changement du gabarit le signale). Tout est fictif (adresses en `.example`, test).
+un changement du gabarit le signale). Cette citation déclenche le détecteur « ne pas publier » (« Ne
+communiquez que… », « secret professionnel ») : elle n’est posée que sur des cas publiables (trois sur quatre,
+pour mesurer la perte de couverture) et sur les cas de la famille 6 déjà reconnus, jamais sur un piège
+qu’elle masquerait. Tout est fictif (adresses en `.example`, test).
 
 **Règles de vérité prudentes** (le propriétaire peut les assouplir ; les cas concernés sont comptés à part
 dans le rapport, `decisions_proprietaire`) :
@@ -291,10 +294,20 @@ le moteur ne publie **jamais** rien : c’est à corriger avant toute simulation
 états et pour toute configuration ; chaque défaut connu doit rester observé. Un défaut connu est reconnu par
 sa signature complète (configuration, état, cas, champ, valeur, message, provenance, motifs de la décision du
 même fait dans l’état réel) : une nouvelle cause sur le même cas fait échouer le test. Résultats du
-11/11/2026, état attendu : `regles_seules` 0 publication ; `modele_ideal` 67 publications dont 37 fausses,
-couverture 30 sur 90 ; `suiveur` 66 publications dont 37 fausses, couverture 29 sur 90 ; toutes les fausses
+11/11/2026, état attendu : `regles_seules` 0 publication ; `modele_ideal` 57 publications dont 40 fausses,
+couverture 17 sur 90 ; `suiveur` 58 publications dont 41 fausses, couverture 17 sur 90 ; toutes les fausses
 sont des défauts connus (trous des règles et des détecteurs, groupés dans `known_defects.json`). Le mode
 automatique reste verrouillé tant qu’ils ne sont pas corrigés.
+
+**Bloqué pour la bonne raison.** Pour la configuration qui fait foi, le rapport (`blocage_suiveur`) dit, pour
+chaque champ « ne doit pas être publié » qui n’est pas une publication fausse, quel motif l’a bloqué (motif du
+moteur, décision de la réception, ou aucun fait proposé) et si ce motif correspond à la famille du piège
+(« bonne raison ») ou non (« autre raison », liste nominative). Un test échoue si un piège dont la nature
+n’est pas une demande de non-publication n’est bloqué QUE par le motif `do_not_publish_requested` venu de
+notre propre demande citée : retirer la citation du cas, ou l’inscrire dans `pieges_non_eprouves` de
+`known_defects.json` (liste visible et comptée). Au 11/11/2026 : 2 champs bloqués pour une autre raison
+(F4-22, mauvais destinataire possible ; F9-05, citation trop courte), aucun par la seule demande citée
+(4 avant la correction : F4-13, F4-24, F5-20, F5-25, devenus des défauts connus).
 
 **Rejouer le banc** (après toute modification de la réception, des règles, du worker, du prompt ou du
 moteur) :
