@@ -165,6 +165,7 @@ Rapports complets des spécialistes, reproduits tels quels dans
 | `11-documents-diagnostic.md`           | data-pipeline       | File de lecture des documents : premier diagnostic, en partie infirmé               |
 | `12-documents-mesures.md`              | qualite-donnees     | File de lecture des documents : mesures en production                               |
 | `13-documents-diagnostic-revise.md`    | data-pipeline       | File de lecture des documents : causes reproduites, correctifs A à N                |
+| `14-contacts-relecture-juridique.md`   | juridique-rgpd      | Contacts de l'agent d'information : conditions par rôle, questions pour l'avocat    |
 
 Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce document qui fait foi.
 
@@ -287,3 +288,47 @@ Le code de R2a se prépare pendant l'observation de R1. Rien de R2 n'est appliqu
 - **Licitor** : correctif du lecteur validé par le propriétaire (« tu peux faire les corrections qui te semblent nécessaires »), relu, PR #480.
 - **Petites Affiches et Enchères Publiques** : leur arrêt est voulu (le propriétaire : ces sites ont bloqué les informations utiles). Elles sortent des critères de suivi, comme Vench.
 - **Constat soumis au propriétaire** : 13 ventes d'Enchères Publiques sont encore « à venir » et hors quarantaine alors que leur dernière vérification date du 23 août 2026, sans autre source. Recommandation : marquer la source comme retirée du catalogue, comme Vench. En attente de sa réponse.
+
+## 13. Journal de la soirée du 11/11/2026
+
+Consigne du propriétaire appliquée à tous les lots, y compris ceux sans effet visible : circuit complet, sans allègement (développement, deux à trois relectures indépendantes, corrections, contre-vérification par l'exécution, CI, fusion).
+
+**En ligne.**
+
+| PR   | Objet                                                                                                           | État                                                                        |
+| ---- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| #482 | Skill `untangle-codebase` et critère permanent « rangement du code » (`docs/architecture/rangement-du-code.md`) | Fusionnée                                                                   |
+| #483 | Décodage des adresses Licitor réactivé ; contact des études notariales conservé                                 | Fusionnée ; valeur `true` constatée dans le journal du passage de 18:30 UTC |
+| #484 | Démarrage de la collecte robuste                                                                                | Fusionnée ; paquets installés en 12 s au premier passage réel               |
+| #485 | Exceptions du contrôle anti-secrets pour le lot R2a                                                             | Fusionnée                                                                   |
+| #486 | Registre des pièces, lot R2a côté base                                                                          | Fusionnée, **non appliquée en base**                                        |
+| #487 | Agent d'information : lecture des contacts en base, tous rôles                                                  | En CI, fusion armée                                                         |
+
+**Panne du 11/11 (14:30 à 17:00 UTC).** Une panne de résolution de noms sur le runner GitHub a fait échouer l'installation des paquets système. Le run restait ouvert jusqu'à l'expiration de son bail d'une heure, et le lanceur manquait le passage suivant. La collecte a repris seule à 17:00 UTC. La PR #484 clôt désormais tout de suite un run qui n'a pas démarré. Note : `docs/audits/2026-11-11-collecte-echec-avant-demarrage.md`. Reste ouvert : une alerte stable en cas de panne durable demande une migration, à décider.
+
+**Observation du lot R1.** Premier import de source après l'application (Info Enchères, 17:00 UTC) : 0 vente tenue, 0 évènement, 0 décision. Fin de l'observation le 12/11 à 11:45 UTC.
+
+**Registre, lot R2a côté base.** Quatre passes de corrections. Une régression (projection non stable en une passe) trouvée par la contre-vérification puis corrigée, rejouée sur 18 graines nouvelles. Trois essais de CI : le test 884 faisait tomber le serveur de test de Supabase (`grant … to current_user`), puis ne voyait plus pgTAP sous le rôle d'essai, et un tri dépendait de la collation. Les trois défauts étaient dans les tests, aucun dans les migrations ; ils ont été reproduits en local avant correction. Application prévue après un passage planifié de `fact-registry-check` et la fin de l'observation, entre deux lots de publication, avec les mesures P1 à P8 et les contrôles A1 à A5 du runbook `docs/runbooks/registre-des-pieces-r2a.md`. La partie collecte du lot (`claude/registre-pieces-r2a-collecte`) ne se fusionne qu'après l'application.
+
+**Contacts, décisions du propriétaire (11/11).**
+
+- L'outil de sollicitation ne contacte pas que des avocats : aussi les notaires et tout professionnel référencé par la source.
+- Trois étapes validées : lire les adresses déjà en base ; allumer la recherche sur le site du cabinet, avec sa validation ; recherche externe en dernier recours. Une adresse générique (contact@) suffit et est préférée.
+- Décodage Licitor réactivé : accord de Licitor déclaré par le propriétaire, pièce à verser au dossier.
+- Resend conservé : il s'agit de demandes d'information sur des annonces publiées, pas de prospection.
+
+**Choix du chef d'orchestre, à revoir si besoin.**
+
+- Une garde ajoutée au point de reprise de Licitor a été retirée après relecture : gain d'au plus 24 heures pour quelques fiches, contre un couplage et des relectures de fiches inutiles.
+- **Envois aux notaires fermés par défaut** (`INFORMATION_AGENT_NOTARY_SEND_ENABLED`, non posée sur Vercel) en attendant la réponse du propriétaire sur l'autorisation de réutilisation des annonces notariales. Brouillon et mesure à blanc restent possibles.
+- Les brouillons créés avant la PR #487 (4 en production) devront être régénérés par le bouton « Régénérer le brouillon ».
+
+**Relecture juridique (annexe 14).** Elle ne bloque pas les lots, aucun email ne partant. Conditions avant un premier envoi réel à un notaire ou à un service de l'État : message par rôle et portée de l'opposition annoncée (faits dans la PR #487) ; position écrite sur les conditions d'immobilier.notaires.fr ; garanties de transfert nommées ; mise à jour de la politique de confidentialité, du registre des traitements et de la mise en balance, à faire relire par un avocat ; purge de `information_agent_cases`.
+
+**À la main du propriétaire.**
+
+- Préparer ou non un courrier de demande d'autorisation à l'éditeur d'immobilier.notaires.fr.
+- Verser au dossier la trace écrite de l'accord de Licitor.
+- Les questions déjà ouvertes : quarantaine des 13 ventes d'Enchères Publiques, double authentification administrateur avant R2c, webhook Resend, durée de validité d'une lecture et ordre de passage (lot R6).
+
+**Suite.** Application du lot R2a en base, puis fusion de sa partie collecte ; migration de la file `admin_information_agent_queue` pour qu'elle lise les nouveaux blocs de contact ; mesure à blanc des destinataires sur la production ; étape 2 des contacts (recherche sur le site du cabinet) ; série suivante du lot R6, en commençant par la perte de `source_lot_selection` à la republication.
