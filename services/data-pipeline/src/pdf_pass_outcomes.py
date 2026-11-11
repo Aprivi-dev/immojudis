@@ -12,7 +12,8 @@ Décidées par ``queued_runner`` :
   marquée terminée, sans que la lecture soit enregistrée. Elle échoue maintenant avec son motif, donc avec un
   essai consommé : quatre essais au plus, puis le réarmement quotidien du vidage. Un refus d'admission
   (vente expirée, ni prix ni surface) est un état de la vente : ses essais sont espacés d'un jour et le dernier
-  annule la tâche en ``review_required``, que le vidage ne réveille pas avant ``REVIEW_HOLD_DAYS``.
+  annule la tâche en ``review_required``, que le vidage ne réveille pas tout de suite (``REVIEW_HOLD_DAYS``,
+  un jour à l'approche de l'audience, et jamais au-delà d'un changement des règles de lecture).
 
 ``document_backlog`` lit le premier message : il n'enchaîne pas une passe identique sur une tâche qui attend.
 """
@@ -24,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline
 from src.models import AuctionSale
+from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 from src.pdf_progress import document_url, manifest_is_complete, persisted_revalidation_due_at
 from src.pipeline_usage import QueueJobDeferred
 
@@ -31,6 +33,18 @@ NOTHING_DUE_DEFERRAL = "PDF pass deferred: the persisted manifest is complete an
 WRITE_DISCARDED_ERROR = "PDF pass not recorded: the final catalogue write was discarded"
 # Dernier essai d'une écriture refusée à l'admission : la tâche est annulée avec ce message et le code du refus.
 WRITE_REFUSED_REVIEW = "review_required: final catalogue write refused"
+
+
+def review_message(reason: str, facts_version: str = DOCUMENT_FACTS_VERSION) -> str:
+    """Message de la tâche annulée pour revue : le code du refus et les règles de lecture qui l'ont produit.
+
+    La version des règles est dans le message parce que la ligne de la vente ne la porte pas : l'écriture
+    qui l'aurait enregistrée est justement celle qui a été refusée. Le vidage la compare à la version
+    courante (``document_backlog.CANDIDATES_SQL``) : des règles nouvelles lèvent l'attente.
+    """
+    return f"{WRITE_REFUSED_REVIEW} ({reason}, {facts_version})"
+
+
 # Un refus d'admission ne change pas d'un tick à l'autre : même attente que les autres états stables
 # (source_withdrawal.SALE_DEFERRAL), mais chaque essai compte, pour que la suite ait une fin.
 ADMISSION_REFUSAL_DELAY = timedelta(hours=24)
@@ -111,7 +125,7 @@ def discarded_write_ending(sale: AuctionSale, job: dict[str, object]) -> dict[st
     if not reason:
         return {"succeeded": False, "error_message": f"{WRITE_DISCARDED_ERROR} (revision_moved)"}
     if _is_last_attempt(job):
-        return {"succeeded": False, "cancelled": True, "error_message": f"{WRITE_REFUSED_REVIEW} ({reason})"}
+        return {"succeeded": False, "cancelled": True, "error_message": review_message(reason)}
     return {
         "succeeded": False,
         "error_message": f"{WRITE_DISCARDED_ERROR} ({reason})",

@@ -236,7 +236,7 @@ def test_a_final_write_refused_at_admission_ends_in_review_after_four_daily_atte
         (1, "failed", 1, refused),
         (1, "failed", 2, refused),
         (1, "failed", 3, refused),
-        (1, "cancelled", 4, f"{WRITE_REFUSED_REVIEW} (missing_price_and_surface)"),
+        (1, "cancelled", 4, f"{WRITE_REFUSED_REVIEW} (missing_price_and_surface, {DOCUMENT_FACTS_VERSION})"),
     ]
     assert bench.manifest == {}
 

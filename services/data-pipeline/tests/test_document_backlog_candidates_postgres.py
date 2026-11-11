@@ -22,7 +22,7 @@ from psycopg.types.json import Jsonb
 
 from src import document_backlog as backlog
 from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
-from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, WRITE_REFUSED_REVIEW
+from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, review_message
 from src.storage.supabase_client import _postgres_connect
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -30,7 +30,7 @@ URL = "https://example.test/vente"
 DRAIN = backlog.BACKLOG_PDF_PRIORITY
 GENERAL_LANE = 30  # priorité des tâches créées à la publication (supabase_client._enqueue_due_enrichment)
 SUPERSEDED = "Superseded by a newer input revision"
-REVIEW = f"{WRITE_REFUSED_REVIEW} (missing_price_and_surface)"
+REVIEW = review_message("missing_price_and_surface")  # le message que la file écrit, version courante
 
 
 def _migration(name: str) -> str:
@@ -301,6 +301,74 @@ def test_a_pdf_job_cancelled_for_review_is_not_woken_up_by_the_drain() -> None:
             assert _selected_with(db, old) == [URL]
             recent = (("pipeline_v2:refusee", "cancelled"), {"hours_ago": 6 * 24, "priority": DRAIN, "last_error": REVIEW})
             assert _selected_with(db, recent) == []
+        finally:
+            db.rollback()
+
+
+def _review(hours_ago: float, message: str = REVIEW) -> tuple[tuple, dict]:
+    """La tâche pdf de la vente, annulée pour revue il y a ``hours_ago`` heures."""
+    return ("pipeline_v2:refusee", "cancelled"), {"hours_ago": hours_ago, "priority": DRAIN, "last_error": message}
+
+
+@pytest.mark.parametrize(
+    ("sale_date", "held_at_two_days"),
+    [
+        ("now() + interval '20 days'", True),
+        ("now() + interval '7 days 1 hour'", True),
+        # À sept jours de l'audience ou moins, ou sans date (cession dont l'échéance n'est que dans les pièces) :
+        # une semaine d'attente ferait passer l'audience. Un jour, comme un essai ordinaire.
+        ("now() + interval '6 days 23 hours'", False),
+        ("now() + interval '5 days'", False),
+        ("null", False),
+    ],
+)
+def test_the_review_hold_lasts_a_week_only_far_from_the_hearing(sale_date: str, held_at_two_days: bool) -> None:
+    with _connect() as db:
+        try:
+            _setup(db)
+            _sale(db)
+            db.execute(f"update auction_sales set sale_date = {sale_date}")
+
+            assert _selected_with(db, _review(23)) == []  # jamais avant un jour
+            assert _selected_with(db, _review(48)) == ([] if held_at_two_days else [URL])
+            assert _selected_with(db, _review(8 * 24)) == [URL]
+        finally:
+            db.rollback()
+
+
+def test_new_reading_rules_lift_the_review_hold() -> None:
+    # La ligne de la vente garde l'ancienne version tant que l'écriture est refusée : c'est le message de la tâche
+    # qui dit avec quelles règles la passe refusée a lu.
+    with _connect() as db:
+        try:
+            _setup(db)
+            _sale(db, pending_document=False, facts_version="document_facts_v4")
+            refused_with_old_rules = review_message("missing_price_and_surface", "document_facts_v4")
+            assert refused_with_old_rules != REVIEW
+
+            assert _selected_with(db, _review(48, refused_with_old_rules)) == [URL]
+            # Refusée avec les règles courantes : la même vente attend, même si sa ligne porte l'ancienne version.
+            assert _selected_with(db, _review(48)) == []
+        finally:
+            db.rollback()
+
+
+def test_only_a_newer_generation_that_is_not_cancelled_lifts_the_review_hold() -> None:
+    with _connect() as db:
+        try:
+            _setup(db)
+            _sale(db)
+            # Une pièce est apparue puis a disparu : la tâche de la liste intermédiaire est annulée, celle qui est
+            # en revue est de nouveau la génération courante. Elle levait l'attente pour toujours.
+            intermediate = (("pipeline_v2:intermediaire", "cancelled"), {"hours_ago": 20, "last_error": SUPERSEDED})
+            assert _selected_with(db, _review(24), intermediate) == []
+
+            for status in ("queued", "completed", "failed"):
+                newer = (("pipeline_v2:nouvelle-piece", status), {"hours_ago": 30})
+                assert _selected_with(db, _review(48), newer) == [URL], status
+            # Une génération plus ancienne que la tâche en revue ne dit rien de la liste courante.
+            older = (("pipeline_v2:ancienne", "completed"), {"hours_ago": 72})
+            assert _selected_with(db, _review(48), older) == []
         finally:
             db.rollback()
 

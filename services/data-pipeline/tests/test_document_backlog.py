@@ -75,7 +75,8 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
     # vraie base dans test_document_backlog_candidates_postgres.py ; ici, seulement l'accord entre la requête et
     # ses paramètres.
     assert "c.priority >= %s" in sql and "r.last_error like 'review_required:%%'" in sql
-    assert sql.count("%s") == len(backlog.candidate_parameters(7)) == 8
+    assert "strpos(r.last_error, %s) > 0" in sql and "and n.status <> 'cancelled'" in sql
+    assert sql.count("%s") == len(backlog.candidate_parameters(7)) == 9
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
     assert "j.job_type = 'pdf'" in claim and "for update of j, s skip locked" in claim
     ensure = " ".join(backlog.ENSURE_JOB_SQL.split())
@@ -328,6 +329,7 @@ def test_selection_passes_the_current_facts_version(monkeypatch) -> None:
         DOCUMENT_FACTS_VERSION,
         backlog.BACKLOG_PDF_PRIORITY,
         backlog.MAX_COMPLETED_READS_PER_DAY,
+        DOCUMENT_FACTS_VERSION,
         backlog.REVIEW_HOLD_DAYS,
         7,
     )
