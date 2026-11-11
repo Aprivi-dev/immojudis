@@ -167,6 +167,40 @@ SCHEMA_CONTRACT_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
 
 Le test ne lit que `information_schema` et refuse une base qui n'est pas locale.
 
+#### Valeur relue en base : la garde d'écho
+
+La collecte recopie dans une vente des valeurs qu'elle n'a fait que relire en base
+(annonce inchangée, fiche en échec, valeur établie par un document, page Vench
+restreinte, colonne remplie par la ligne stockée lors d'une fusion). Si la base
+change entre cette lecture et l'écriture, réécrire la valeur lue défait le
+changement. `src/base_reads.py` l'empêche : un groupe de colonnes seulement relu
+n'est pas réécrit si la base a bougé depuis (surface à cinq colonnes, terrain,
+nombre de pièces, occupation, dates de visite). Une valeur vide ou une valeur que
+la source vient de donner passent toujours. Quand la base n'a pas bougé, l'écriture
+est celle d'avant.
+
+- Les lectures sont notées dans `fetch_known_sale_details` et sous le verrou de
+  publication ; la garde s'applique en tête de `merge_revision`.
+- `timings.base_echo_suppressed` du passage compte les couples (vente, groupe)
+  dont une valeur relue et périmée n'a pas été réécrite. Chaque cas est journalisé
+  (`Base echo suppressed sale_id=… group=…`), sans valeur.
+- Les lectures de la ligne entière sont remplacées par des listes de colonnes
+  (`LOCKED_SALE_SELECT`, `RECOMPUTE_SALE_SELECT`) : une colonne interne de la
+  table ne sort pas de la base et ne finit pas dans `raw_payload`.
+
+Tests : `tests/test_base_echo_guard.py` (table de vérité),
+`tests/test_base_echo_publication.py` (chemin d'écriture, base simulée, dont la
+preuve d'écriture identique quand rien ne bouge), `tests/test_base_echo_postgres.py`
+(`PIPELINE_TEST_DB_URL`). Les scénarios de bout en bout avec le registre des pièces
+(retrait ou remplacement d'une pièce pendant un import) demandent une base locale
+jetable où toutes les migrations sont rejouées ; ils écrivent dans cette base et
+refusent toute base non locale :
+
+```bash
+PIPELINE_REGISTRY_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+  python -m pytest -s tests/test_base_echo_registry_postgres.py
+```
+
 Le pipeline conserve `auction_sales` comme table de compatibilité historique,
 mais alimente aussi le modèle produit normalisé demandé pour l'offre Pro :
 `properties` décrit le bien immobilier et `judicial_sales` décrit le contexte
@@ -225,6 +259,14 @@ backfill opérateur lit uniquement `raw_payload`, `observations` et les lignes
 persistées de `auction_observations`. Il conserve un curseur local par
 `(auction_sales.updated_at, auction_sales.id)`, reprend après chaque lot
 committed et ignore les ventes sans preuve avec un compteur explicite.
+
+Depuis `auction_fact_claims_v3`, une observation de nature `source_field` ne se
+lit que dans `raw_payload.source_factual_snapshot` (ce que la source a publié à la
+dernière lecture de sa fiche), pour la vente comme pour chaque observation d'une
+autre source. Les clés de premier niveau de `raw_payload` portent aussi les
+colonnes que la collecte a relues en base : elles ne font plus une observation.
+Sans instantané, pas d'observation. Les lignes `auction_fact_claims_v2` déjà
+écrites restent en base ; un lecteur peut les écarter par leur version.
 
 Le mode par défaut est une lecture sans écriture Supabase :
 
