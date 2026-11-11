@@ -6,21 +6,23 @@ import type { Json } from "@/integrations/supabase/types";
  * Contrôle quotidien du registre des pièces (plan du 11/11/2026, lot R2a ; migration
  * `20261117100500_fact_registry_baselines_and_check.sql`).
  *
- * La base fait tout le travail : `sync_fact_registry_alerts` lance le contrôle en lecture seule
- * (`check_fact_registry_consistency`), puis ouvre ou referme une alerte opérationnelle par contrôle
- * (`fact_registry.<contrôle>`), livrée par le canal d'alerte existant à la passe suivante de
- * `operational-health`. Cette tâche ne fournit ni rapport ni détail : elle déclenche, puis résume le
- * rapport rendu dans le journal des exécutions. Le rapport ne porte que des comptes et des
- * identifiants de vente, jamais une valeur.
+ * La base fait tout le travail : `sync_fact_registry_alerts` (sans paramètre) lance le contrôle en
+ * lecture seule (`check_fact_registry_consistency`), puis ouvre ou referme une alerte opérationnelle
+ * par contrôle (`fact_registry.<contrôle>`), livrée par le canal d'alerte existant à la passe suivante
+ * de `operational-health`. Cette tâche ne fournit ni borne, ni rapport, ni détail : elle déclenche,
+ * puis résume le rapport rendu dans le journal des exécutions. Le rapport ne porte que des comptes et
+ * des identifiants de vente, jamais une valeur.
  */
 export const FACT_REGISTRY_CHECKS = [
   "projection_drift",
   "triggers_not_always",
   "column_mismatch",
+  "registry_label",
   "echo_suspected",
   "internal_column_copied",
   "events_burst",
   "echo_suppressed",
+  "echo_blocked",
   "stale_listing",
 ] as const;
 
@@ -42,7 +44,8 @@ function jsonRecord(value: Json | undefined): Record<string, Json | undefined> |
  *   contrôle rien et le dit (`skipped`). Elle n'est attendue par `cron.stale` qu'une fois la migration
  *   `20261117100600` appliquée, donc jamais dans cet état.
  * - Rapport illisible, ou tronqué (plus de ventes que la borne du contrôle) : la tâche échoue. Un
- *   rapport partiel ne passe pas pour un contrôle complet.
+ *   rapport partiel ne passe pas pour un contrôle complet ; la base, de son côté, n'a alors refermé
+ *   aucune alerte (elle ne synchronise que les contrôles actifs d'un rapport tronqué).
  */
 export async function runFactRegistryCheckJob(): Promise<Record<string, unknown>> {
   const { data, error } = await supabaseAdmin.rpc("sync_fact_registry_alerts");

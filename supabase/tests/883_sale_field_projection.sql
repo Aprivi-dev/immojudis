@@ -314,6 +314,7 @@ select is(
      "v": 2, "value": 54, "state": "held",
      "listing": {"surface_m2": 50, "app_surface_m2": 50, "app_surface_kind": "habitable",
                  "surface_source": "listing_text", "surface_confidence": 0.7},
+     "neighbors": {},
      "claim_id": "88300000-2000-4000-8000-000000000101", "source_kind": "lawyer_email", "rank": 30,
      "received_on": "2026-10-12", "publication_mode": "manual", "recipient_kind": "source_lawyer",
      "tolerance": {"abs": 1, "rel": 0.02}, "on_listing_change": "keep_and_review"
@@ -622,7 +623,7 @@ select is(
   (select (held_fields #> '{property.rooms_count}') - 'decision_id' - 'claim_id' - 'listing' - 'tolerance'
      from public.auction_sales where id = '88300000-1000-4000-8000-000000000002'),
   '{"v": 2, "value": 5, "state": "held", "source_kind": "admin", "rank": 10, "publication_mode": "manual",
-    "recipient_kind": "source_lawyer", "on_listing_change": "keep_and_review"}'::jsonb,
+    "recipient_kind": "source_lawyer", "on_listing_change": "keep_and_review", "neighbors": {}}'::jsonb,
   'the entry names the administrator origin and its rank'
 );
 

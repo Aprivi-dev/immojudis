@@ -2,18 +2,20 @@
 -- et ses alertes (lot R2a, étape A7).
 --   * public.get_sale_field_baselines : champs tenus seulement, colonnes et valeur d'annonce, jamais la valeur
 --     tenue, la pièce, la décision ni l'origine ; serveur seul ;
---   * public.check_fact_registry_consistency : n'écrit rien (simulation seulement) ; base saine : rien à signaler ;
---     chaque écart provoqué est vu (dérive de la projection, déclencheur hors mode, colonne tenue différente,
---     écho dans une colonne voisine ou une copie, colonne interne recopiée, rafale d'évènements, écho écarté,
---     annonce qui se tait, surface tenue sur un terrain) ; comptes et identifiants de vente, jamais une valeur ;
---   * public.sync_fact_registry_alerts : une alerte opérationnelle par contrôle, clé et gravité fixées, refermée
---     quand l'écart disparaît ;
+--   * public.check_fact_registry_consistency : n'écrit rien (simulation seulement), même quand la simulation
+--     rend « changed » ; base saine : rien à signaler ; chaque écart provoqué est vu sur sa vente (dérive de la
+--     projection, déclencheur hors mode, colonne tenue différente, libellé réservé sans surface tenue, valeur
+--     d'une pièce dans une colonne voisine, une copie ou un champ libéré, colonne interne recopiée, rafale
+--     d'évènements, écho écarté, annonce qui se tait, surface tenue sur un terrain) ; comptes et identifiants de
+--     vente, jamais une valeur ;
+--   * public.sync_fact_registry_alerts : sans paramètre ; une alerte opérationnelle par contrôle, clé et gravité
+--     fixées, refermée quand l'écart disparaît, jamais refermée par un rapport tronqué ;
 --   * la tâche fact-registry-check est attendue par cron.stale toutes les 27 heures.
 begin;
 
 set local timezone = 'UTC';
 
-select plan(39);
+select plan(53);
 
 -- Fonctions et droits ---------------------------------------------------------------------------------------------
 select ok(
@@ -33,24 +35,25 @@ select ok(
 -- Une fonction stable peut tout de même appeler une fonction volatile, qui écrirait : le contrôle n'appelle la
 -- projection qu'en simulation (troisième argument false, écrit en dur), et aucune instruction d'écriture.
 select ok(
-  (select (select count(*) from regexp_matches(prosrc, 'project_sale_fields\s*\(', 'g')) = 1
-          and prosrc ~ 'app_private\.project_sale_fields\(v_sale_id, null, false\)'
+  (select (select count(*) from regexp_matches(prosrc, 'project_sale_fields\s*\(', 'g')) = 2
+          and (select count(*) from regexp_matches(
+                 prosrc, 'app_private\.project_sale_fields\(v_sale_id, null, false\)', 'g')) = 2
           and prosrc !~* '\m(insert|update|delete|truncate|set_config|nextval)\M'
      from pg_proc where oid = 'public.check_fact_registry_consistency(integer)'::regprocedure),
-  'the daily check only simulates the projection (apply = false, written literally) and has no write statement'
+  'the daily check only simulates the projection (apply = false, written literally, in the pass and in its replay) and has no write statement'
 );
 
 select is(
   (select array_agg(routine.signature || ':' || api_role.name order by routine.signature, api_role.name)
      from unnest(array[
        'public.get_sale_field_baselines(uuid[])', 'public.check_fact_registry_consistency(integer)',
-       'public.sync_fact_registry_alerts(integer)']) routine(signature)
+       'public.sync_fact_registry_alerts()']) routine(signature)
      cross join unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
      where has_function_privilege(api_role.name, routine.signature, 'execute')),
   array[
     'public.check_fact_registry_consistency(integer):service_role',
     'public.get_sale_field_baselines(uuid[]):service_role',
-    'public.sync_fact_registry_alerts(integer):service_role'
+    'public.sync_fact_registry_alerts():service_role'
   ],
   'the three functions are executable by the server role only'
 );
@@ -112,7 +115,8 @@ prepare decide(text, text) as
     received_at
   )
   select claim.id, claim.auction_sale_id, claim.field_key, $2, 'single_lot', 'admin',
-    '88900000-0000-4000-8000-0000000000a1', case when $2 = 'accepted' then null else 'entry_error' end,
+    '88900000-0000-4000-8000-0000000000a1',
+    case $2 when 'accepted' then null when 'opposed' then 'professional_opposition' else 'entry_error' end,
     'source_lawyer', '2026-11-01 09:00:00+00'
   from public.auction_fact_claims claim
   where claim.id = ('88900000-2000-4000-8000-0000000000' || $1)::uuid;
@@ -183,10 +187,10 @@ select is(
   (select array_agg(check_row.key order by check_row.key)
      from check_reports, jsonb_each(report -> 'checks') check_row where step = 'sound'),
   array[
-    'column_mismatch', 'echo_suppressed', 'echo_suspected', 'events_burst', 'internal_column_copied',
-    'projection_drift', 'stale_listing', 'triggers_not_always'
+    'column_mismatch', 'echo_blocked', 'echo_suppressed', 'echo_suspected', 'events_burst',
+    'internal_column_copied', 'projection_drift', 'registry_label', 'stale_listing', 'triggers_not_always'
   ],
-  'the daily check reports eight controls'
+  'the daily check reports ten controls'
 );
 
 select is(
@@ -244,14 +248,16 @@ reset role;
 
 select is(
   (select report #> '{checks,triggers_not_always}' from check_reports where step = 'triggers'),
-  '{"active": true, "count": 3, "triggers": [
+  '{"active": true, "count": 4, "triggers": [
       "auction_sales.aaab_auction_sales_held_fields_insert_guard",
+      "auction_sales.aaab_auction_sales_held_fields_marker_guard",
       "auction_sales.aaab_auction_sales_held_fields_role_guard",
       "auction_sales.aaab_auction_sales_hold_projected_fields"]}'::jsonb,
   'triggers put back to the ordinary mode are reported by name'
 );
 
 alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_insert_guard;
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_marker_guard;
 alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_role_guard;
 alter table public.auction_sales enable always trigger aaab_auction_sales_hold_projected_fields;
 
@@ -354,25 +360,59 @@ select app_private.project_sale_fields('88900000-1000-4000-8000-000000000001', n
 -- Un écho écarté par la retenue sur la vente 2 (la valeur retirée revient).
 update public.auction_sales set rooms_count = 3 where id = '88900000-1000-4000-8000-000000000002';
 
+-- Des évènements anciens, datés à la main (le déclencheur d'horodatage est suspendu le temps de l'écriture) : un
+-- écho écarté il y a 60 heures, et 51 changements d'annonce il y a 30 heures. Ni l'un ni les autres ne comptent.
+alter table public.auction_sale_field_hold_events disable trigger auction_sale_field_hold_events_stamp;
+insert into public.auction_sale_field_hold_events (seq, sale_id, field_key, event, incoming_value, created_at)
+values (nextval('app_private.fact_registry_seq'), '88900000-1000-4000-8000-000000000005', 'property.rooms_count',
+  'echo_suppressed', '7'::jsonb, statement_timestamp() - interval '60 hours');
+insert into public.auction_sale_field_hold_events (seq, sale_id, field_key, event, incoming_value, created_at)
+select nextval('app_private.fact_registry_seq'), '88900000-1000-4000-8000-000000000005', 'property.rooms_count',
+  'listing_changed_kept', to_jsonb(100 + n), statement_timestamp() - interval '30 hours'
+from generate_series(1, 51) n;
+alter table public.auction_sale_field_hold_events
+  enable always trigger auction_sale_field_hold_events_stamp;
+
 set local role service_role;
 insert into check_reports select 'echo', public.check_fact_registry_consistency();
 reset role;
 
 select is(
   (select report #> '{checks,echo_suppressed}' from check_reports where step = 'echo'),
-  '{"active": true, "count": 1, "total": 1, "window_hours": 48,
+  '{"active": true, "count": 1, "total": 2, "window_hours": 48,
     "sale_ids": ["88900000-1000-4000-8000-000000000002"]}'::jsonb,
-  'one suppressed echo is enough to raise the indicator of a forgotten path'
+  'one suppressed echo is enough to raise the indicator of a forgotten path; an echo older than 48 hours only counts in the total'
 );
 
 select is(
-  (select (report #> '{checks,events_burst}') - 'count' from check_reports where step = 'echo'),
-  '{"active": false, "threshold": 50, "window_hours": 24}'::jsonb,
-  'a handful of events is not a burst'
+  (select report #> '{checks,echo_blocked}' from check_reports where step = 'echo'),
+  '{"active": true, "count": 1, "sale_ids": ["88900000-1000-4000-8000-000000000002"]}'::jsonb,
+  'and the released entry that held the write back carries a blocking note, reported as long as it exists'
+);
+
+select is(
+  (select report #> '{checks,events_burst}' from check_reports where step = 'echo'),
+  '{"active": false, "count": 1, "threshold": 50, "window_hours": 24}'::jsonb,
+  'a handful of events is not a burst, and the fifty-one changes of thirty hours ago are out of the window'
+);
+
+-- Cinquante et un évènements de la projection dans l'heure : une séance d'acceptations n'est pas une rafale.
+insert into public.auction_sale_field_hold_events (sale_id, field_key, event, incoming_value)
+select '88900000-1000-4000-8000-000000000005', 'property.rooms_count', 'projection_blocked', to_jsonb(n)
+from generate_series(1, 51) n;
+
+set local role service_role;
+insert into check_reports select 'projection events', public.check_fact_registry_consistency();
+reset role;
+
+select is(
+  (select report #> '{checks,events_burst}' from check_reports where step = 'projection events'),
+  '{"active": false, "count": 1, "threshold": 50, "window_hours": 24}'::jsonb,
+  'the events of the projection do not count in the burst'
 );
 
 insert into public.auction_sale_field_hold_events (sale_id, field_key, event, incoming_value)
-select '88900000-1000-4000-8000-000000000005', 'property.rooms_count', 'projection_blocked', to_jsonb(n)
+select '88900000-1000-4000-8000-000000000005', 'property.rooms_count', 'listing_changed_kept', to_jsonb(n)
 from generate_series(1, 51) n;
 
 set local role service_role;
@@ -383,7 +423,7 @@ select ok(
   (select (report #>> '{checks,events_burst,active}')::boolean
           and (report #>> '{checks,events_burst,count}')::integer > 50
      from check_reports where step = 'burst'),
-  'more than fifty events in a day is a burst'
+  'more than fifty direct-write events in a day is a burst'
 );
 
 -- Le rapport ne porte que des comptes et des identifiants --------------------------------------------------
@@ -423,6 +463,7 @@ select results_eq(
   $$select alert_key, category, severity, status from public.operational_alerts
       where alert_key like 'fact\_registry.%' order by alert_key$$,
   $$values
+      ('fact_registry.echo_blocked', 'import', 'warning', 'open'),
       ('fact_registry.echo_suppressed', 'import', 'warning', 'open'),
       ('fact_registry.events_burst', 'import', 'warning', 'open'),
       ('fact_registry.triggers_not_always', 'import', 'critical', 'open')$$,
@@ -440,7 +481,7 @@ select is(
 select is(
   (select details - 'checked_at' from public.operational_alerts
      where alert_key = 'fact_registry.echo_suppressed'),
-  '{"count": 1, "total": 1, "window_hours": 48, "sale_ids": ["88900000-1000-4000-8000-000000000002"],
+  '{"count": 1, "total": 2, "window_hours": 48, "sale_ids": ["88900000-1000-4000-8000-000000000002"],
     "sales_checked": 4, "truncated": false}'::jsonb,
   'the echo alert carries a count and the sale, never a value'
 );
@@ -462,10 +503,11 @@ select results_eq(
   $$select alert_key, status, inactive_since is not null from public.operational_alerts
       where alert_key like 'fact\_registry.%' order by alert_key$$,
   $$values
+      ('fact_registry.echo_blocked', 'open', false),
       ('fact_registry.echo_suppressed', 'open', false),
       ('fact_registry.events_burst', 'open', false),
       ('fact_registry.triggers_not_always', 'open', true)$$,
-  'once the trigger is back, its alert turns inactive; the two others stay raised'
+  'once the trigger is back, its alert turns inactive; the three others stay raised'
 );
 
 select app_private.sync_operational_alert(
@@ -486,6 +528,291 @@ select throws_ok(
   'a signed-in browser session cannot synchronise the alerts'
 );
 reset role;
+
+-- Seconde partie : champs libérés, copies, colonnes voisines, gravités, rapport tronqué ---------------------------
+delete from public.operational_alerts where alert_key like 'fact\_registry.%';
+delete from public.properties where source_url like 'https://example.test/889/%';
+delete from public.auction_surfaces where source_url like 'https://example.test/889/%';
+
+-- Dix ventes de plus (6 à 9, a à f), toutes sur la même annonce : 50 m² habitables, 2 pièces, occupé. La vente 8
+-- porte déjà, avant toute pièce, une surface Carrez de 54 m² lue dans un document.
+insert into public.auction_sales (
+  id, source_name, source_url, status, sale_date, city, property_type, starting_price_eur,
+  raw_payload, sale_procedure, sale_venue_type,
+  surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
+  carrez_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates
+)
+select
+  ('88900000-1000-4000-8000-00000000000' || n)::uuid, 'licitor', 'https://example.test/889/sale-' || n,
+  'upcoming', current_timestamp + interval '20 days', 'Alphaville', 'house', 90000, '{}'::jsonb,
+  '{}'::jsonb, 'tribunal', 50, 50, 'habitable', 'listing_text', 0.7, 50,
+  case when n = '8' then 54 end, 2, 1, 'occupied', '[]'::jsonb
+from unnest(array['6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f']) n;
+
+insert into public.auction_fact_claims (
+  id, auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, confidence_score,
+  extractor_name, extractor_version, created_by
+)
+select
+  ('88900000-2000-4000-8000-0000000000' || piece.code)::uuid,
+  ('88900000-1000-4000-8000-00000000000' || left(piece.code, 1))::uuid,
+  piece.field_key, piece.value_jsonb, 'professional_email',
+  jsonb_build_object('case_id', '88900000-3000-4000-8000-00000000000' || left(piece.code, 1)),
+  0.6, 'information_agent', 'v1', '88900000-0000-4000-8000-0000000000a1'
+from (values
+  ('61', 'property.occupancy_status', '"vacant"'::jsonb), ('71', 'property.land_surface_m2', '800'::jsonb),
+  ('81', 'property.surface_m2', '54'::jsonb), ('91', 'property.surface_m2', '54'::jsonb),
+  ('a1', 'property.occupancy_status', '"vacant"'::jsonb), ('b1', 'property.land_surface_m2', '800'::jsonb),
+  ('c1', 'property.surface_m2', '54'::jsonb), ('e1', 'property.rooms_count', '3'::jsonb),
+  ('f1', 'property.surface_m2', '54'::jsonb), ('f2', 'property.rooms_count', '2'::jsonb)
+) piece(code, field_key, value_jsonb);
+
+-- Une écriture qui passe la retenue : le marqueur de la projection, posé à la main par le propriétaire.
+create function pg_temp.forge(p_sale text, p_assignments text) returns void
+language plpgsql as $$
+declare
+  v_id uuid := ('88900000-1000-4000-8000-00000000000' || p_sale)::uuid;
+begin
+  perform set_config('app.sale_field_projection', v_id::text, true);
+  execute format('update public.auction_sales set %s where id = %L', p_assignments, v_id);
+  perform set_config('app.sale_field_projection', '', true);
+end;
+$$;
+
+create function pg_temp.sale_ids(variadic p_sales text[]) returns jsonb
+language sql as $$
+  select jsonb_agg('88900000-1000-4000-8000-00000000000' || sale order by sale) from unnest(p_sales) sale;
+$$;
+
+execute decide('61', 'accepted');
+execute decide('71', 'accepted');
+execute decide('81', 'accepted');
+execute decide('91', 'accepted');
+execute decide('a1', 'accepted');
+execute decide('b1', 'accepted');
+execute decide('c1', 'accepted');
+execute decide('f1', 'accepted');
+execute decide('f2', 'accepted');
+select count(app_private.project_sale_fields(('88900000-1000-4000-8000-00000000000' || n)::uuid, null, true))
+from unnest(array['6', '7', '8', '9', 'a', 'b', 'c', 'f']) n;
+-- Vente f : une pièce qui dit exactement ce que dit l'annonce (2 pièces), puis retirée.
+execute decide('f2', 'withdrawn');
+select app_private.project_sale_fields('88900000-1000-4000-8000-00000000000f', null, true) ->> 'changed';
+
+set local role service_role;
+insert into check_reports select 'sound again', public.check_fact_registry_consistency();
+reset role;
+
+select is(
+  (select jsonb_object_agg(check_row.key, check_row.value -> 'sale_ids')
+     from check_reports, jsonb_each(report -> 'checks') check_row
+     where step = 'sound again' and check_row.value ? 'sale_ids'
+       and check_row.key not in ('echo_suppressed', 'echo_blocked') and jsonb_array_length(check_row.value -> 'sale_ids') > 0),
+  null::jsonb,
+  'held and released fields in order raise nothing: a neighbour column that already carried the value at the first take, and a released piece that said what the listing says, are not echoes'
+);
+
+-- Écarts provoqués, un par vente ------------------------------------------------------------------------------------
+select pg_temp.forge('6', $$occupancy_status = 'rented'$$);       -- occupation tenue réécrite
+select pg_temp.forge('7', $$land_surface_m2 = 999$$);             -- terrain tenu réécrit
+select pg_temp.forge('8', $$app_surface_kind = 'habitable'$$);    -- nature d'une surface tenue réécrite
+select pg_temp.forge('b', $$app_surface_m2 = 800$$);              -- terrain tenu recopié en surface principale
+insert into public.auction_surfaces (source_url, surface_m2) values ('https://example.test/889/sale-9', 54);
+insert into public.properties (source_url, source_name, occupancy_status) values
+  ('https://example.test/889/sale-a', 'licitor', 'vacant');
+-- Vente c : la portée de la surface devient « terrain » (colonne que la retenue ne surveille pas).
+update public.auction_sales set surface_scope = 'land' where id = '88900000-1000-4000-8000-00000000000c';
+-- Vente e : une acceptation jamais projetée, puis la vente est absorbée par la vente d.
+execute decide('e1', 'accepted');
+update public.auction_sales
+set source_urls = '["https://example.test/889/sale-d", "https://example.test/889/sale-e"]'::jsonb
+where id = '88900000-1000-4000-8000-00000000000d';
+select count(*) > 0 from public.bridge_auction_sales_to_outcome_graph();
+delete from public.auction_sales where id = '88900000-1000-4000-8000-00000000000e';
+
+create temporary table drift_marks on commit drop as
+select
+  (select array_agg(sale.xmin::text || ':' || sale.ctid::text order by sale.id) from public.auction_sales sale
+     where sale.id::text like '88900000-1000-%') as sales,
+  (select count(*) from public.auction_sale_field_hold_events) as events,
+  (select count(*) from public.auction_fact_claim_decisions) as decisions,
+  (select count(*) from public.operational_alerts) as alerts,
+  (select last_value from app_private.fact_registry_seq) as last_seq;
+
+set local role service_role;
+insert into check_reports select 'one by one', public.check_fact_registry_consistency();
+reset role;
+
+select is(
+  (select jsonb_build_object(
+     'column_mismatch', report #> '{checks,column_mismatch,sale_ids}',
+     'echo_suspected', report #> '{checks,echo_suspected,sale_ids}',
+     'stale_listing', report #> '{checks,stale_listing,sale_ids}',
+     'projection_drift', report #> '{checks,projection_drift,sale_ids}')
+     from check_reports where step = 'one by one'),
+  jsonb_build_object(
+    'column_mismatch', pg_temp.sale_ids('6', '7', '8'),
+    'echo_suspected', pg_temp.sale_ids('9', 'a', 'b'),
+    'stale_listing', pg_temp.sale_ids('c'),
+    'projection_drift', pg_temp.sale_ids('6', '7', '8', 'c', 'd')),
+  'each deviation is seen on its own sale: occupancy, land and surface kind rewritten; a copy in auction_surfaces, a copy in properties, a land surface copied as main surface; a surface held under a land scope; an acceptance on an absorbed sale, carried to the kept sale'
+);
+
+select ok(
+  (select mark.sales = (select array_agg(sale.xmin::text || ':' || sale.ctid::text order by sale.id)
+                          from public.auction_sales sale where sale.id::text like '88900000-1000-%')
+          and mark.events = (select count(*) from public.auction_sale_field_hold_events)
+          and mark.decisions = (select count(*) from public.auction_fact_claim_decisions)
+          and mark.alerts = (select count(*) from public.operational_alerts)
+          and mark.last_seq = (select last_value from app_private.fact_registry_seq)
+     from drift_marks mark)
+  and (select (report #>> '{checks,projection_drift,count}')::integer = 5
+         from check_reports where step = 'one by one'),
+  'the daily check writes nothing either when the simulation answers changed: five sales drift, none is rewritten'
+);
+
+-- Champs libérés : le contrôle les regarde encore ------------------------------------------------------------------
+-- Vente 9 : opposition ; la copie garde 54 alors que la fiche est revenue à 50. Vente a : retrait ; la copie garde
+-- « libre ». Vente f : opposition, puis la valeur opposée est remise dans les colonnes de la surface, avec le
+-- libellé du registre. Vente 5 (qui ne tient rien) : le libellé seul.
+execute decide('91', 'opposed');
+execute decide('a1', 'withdrawn');
+execute decide('f1', 'opposed');
+select count(app_private.project_sale_fields(('88900000-1000-4000-8000-00000000000' || n)::uuid, null, true))
+from unnest(array['9', 'a', 'f']) n;
+select pg_temp.forge('f', $$surface_m2 = 54, app_surface_m2 = 54, surface_source = 'fact_registry'$$);
+select pg_temp.forge('5', $$surface_source = 'fact_registry'$$);
+
+set local role service_role;
+insert into check_reports select 'released', public.check_fact_registry_consistency();
+reset role;
+
+select is(
+  (select jsonb_build_object(
+     'echo_suspected', report #> '{checks,echo_suspected,sale_ids}',
+     'registry_label', report #> '{checks,registry_label}',
+     'column_mismatch', report #> '{checks,column_mismatch,sale_ids}')
+     from check_reports where step = 'released'),
+  jsonb_build_object(
+    'echo_suspected', pg_temp.sale_ids('9', 'a', 'b', 'f'),
+    'registry_label', jsonb_build_object('active', true, 'count', 2, 'sale_ids', pg_temp.sale_ids('5', 'f')),
+    'column_mismatch', pg_temp.sale_ids('6', '7', '8')),
+  'a released field is still watched: the opposed or withdrawn value left in a copy, or put back in the columns of the field, is a suspected echo; the reserved label without a held surface is reported, even on a sale that holds nothing'
+);
+
+-- La valeur opposée dans une colonne voisine seule (les colonnes du champ sont remises en ordre).
+select pg_temp.forge('f', $$surface_m2 = 50, app_surface_m2 = 50, surface_source = 'listing_text',
+  habitable_surface_m2 = 54$$);
+select pg_temp.forge('5', $$surface_source = 'listing_text'$$);
+-- L'échéance de la mémoire de la vente a est passée : sa copie n'est plus comparée à rien.
+select pg_temp.forge('a', $$held_fields = jsonb_set(held_fields, '{property.occupancy_status,echo,0,until}',
+  to_jsonb(statement_timestamp() - interval '1 day'))$$);
+
+set local role service_role;
+insert into check_reports select 'expired', public.check_fact_registry_consistency();
+reset role;
+
+select is(
+  (select jsonb_build_object(
+     'echo_suspected', report #> '{checks,echo_suspected,sale_ids}',
+     'registry_label', report #> '{checks,registry_label,count}')
+     from check_reports where step = 'expired'),
+  jsonb_build_object('echo_suspected', pg_temp.sale_ids('9', 'b', 'f'), 'registry_label', 0),
+  'the opposed value in a neighbour column of the released field is seen too; an expired memory value is no longer compared; the label alert follows the column'
+);
+
+-- Gravité de chaque alerte ---------------------------------------------------------------------------------------------
+select app_private.sync_fact_registry_alerts_from_report(
+  jsonb_build_object(
+    'checked_at', statement_timestamp(), 'sales_checked', 0, 'truncated', false,
+    'checks', (
+      select jsonb_object_agg(check_key, jsonb_build_object('active', true, 'count', 1))
+      from unnest(array[
+        'projection_drift', 'triggers_not_always', 'column_mismatch', 'registry_label', 'echo_suspected',
+        'internal_column_copied', 'events_burst', 'echo_suppressed', 'echo_blocked', 'stale_listing']) check_key)));
+
+select results_eq(
+  $$select alert_key, category, severity, status from public.operational_alerts
+      where alert_key like 'fact\_registry.%' order by alert_key$$,
+  $$values
+      ('fact_registry.column_mismatch', 'import', 'critical', 'open'),
+      ('fact_registry.echo_blocked', 'import', 'warning', 'open'),
+      ('fact_registry.echo_suppressed', 'import', 'warning', 'open'),
+      ('fact_registry.echo_suspected', 'import', 'warning', 'open'),
+      ('fact_registry.events_burst', 'import', 'warning', 'open'),
+      ('fact_registry.internal_column_copied', 'import', 'warning', 'open'),
+      ('fact_registry.projection_drift', 'import', 'critical', 'open'),
+      ('fact_registry.registry_label', 'import', 'critical', 'open'),
+      ('fact_registry.stale_listing', 'import', 'warning', 'open'),
+      ('fact_registry.triggers_not_always', 'import', 'critical', 'open')$$,
+  'each of the ten controls has its alert, with its own severity: four critical, six warnings'
+);
+
+select throws_ok(
+  $$select app_private.sync_fact_registry_alerts_from_report('{"truncated": false, "checks": {}}'::jsonb)$$,
+  'XX000',
+  'fact registry check projection_drift returned no state',
+  'a report without the state of a control is refused'
+);
+
+select throws_ok(
+  $$select app_private.sync_fact_registry_alerts_from_report('{"checks": {}}'::jsonb)$$,
+  'XX000',
+  'fact registry check returned no truncation state',
+  'and so is a report that does not say whether it is complete'
+);
+
+-- Rapport tronqué : aucune alerte n'est refermée -----------------------------------------------------------------------
+delete from public.operational_alerts where alert_key like 'fact\_registry.%';
+set local role service_role;
+select public.sync_fact_registry_alerts() ->> 'truncated';
+reset role;
+
+select results_eq(
+  $$select alert_key, inactive_since is null from public.operational_alerts
+      where alert_key in ('fact_registry.projection_drift', 'fact_registry.column_mismatch',
+                          'fact_registry.triggers_not_always') and status = 'open'
+      order by alert_key$$,
+  $$values ('fact_registry.column_mismatch', true), ('fact_registry.projection_drift', true)$$,
+  'a complete report opens the critical alerts of the deviations above'
+);
+
+-- Borne à une vente : la vente examinée (la première, en ordre) n'a aucun écart ; un déclencheur est hors mode.
+alter table public.auction_fact_claims disable trigger auction_fact_claims_no_truncate;
+
+select results_eq(
+  $$select (partial.report ->> 'truncated')::boolean, partial.report #>> '{checks,projection_drift,active}',
+           partial.report #>> '{checks,column_mismatch,active}',
+           partial.report #>> '{checks,triggers_not_always,active}',
+           app_private.sync_fact_registry_alerts_from_report(partial.report) is null
+      from (select public.check_fact_registry_consistency(1) as report) partial$$,
+  $$values (true, 'false', 'false', 'true', false)$$,
+  'a report bounded to the first sale sees no drift, no mismatch, and the trigger'
+);
+
+select results_eq(
+  $$select alert_key, status, inactive_since is null, (details ->> 'truncated')::boolean
+      from public.operational_alerts
+      where alert_key in ('fact_registry.projection_drift', 'fact_registry.column_mismatch',
+                          'fact_registry.triggers_not_always')
+      order by alert_key$$,
+  $$values
+      ('fact_registry.column_mismatch', 'open', true, false),
+      ('fact_registry.projection_drift', 'open', true, false),
+      ('fact_registry.triggers_not_always', 'open', true, true)$$,
+  'a truncated report closes nothing: the two critical alerts stay raised, untouched; the control that is active in it is still synchronised'
+);
+
+alter table public.auction_fact_claims enable always trigger auction_fact_claims_no_truncate;
+
+select ok(
+  to_regprocedure('public.sync_fact_registry_alerts(integer)') is null
+  and pg_get_function_arguments('public.sync_fact_registry_alerts()'::regprocedure) = ''
+  and (select prosrc ~ 'public\.check_fact_registry_consistency\(\)'
+              and prosrc ~ 'app_private\.sync_fact_registry_alerts_from_report\(v_report\)'
+         from pg_proc where oid = 'public.sync_fact_registry_alerts()'::regprocedure),
+  'the alert function takes no parameter: the caller chooses neither the bound nor the report'
+);
 
 -- cron.stale ------------------------------------------------------------------------------------------------------
 select ok(

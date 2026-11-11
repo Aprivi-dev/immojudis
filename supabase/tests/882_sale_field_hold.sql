@@ -15,14 +15,21 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(80);
+select plan(83);
 
 -- Déclencheurs : forme et ordre -----------------------------------------------------------------------------------
 select ok(
   (select pg_get_triggerdef(oid) from pg_trigger
      where tgrelid = 'public.auction_sales'::regclass and tgname = 'aaab_auction_sales_hold_projected_fields')
-    ~ 'BEFORE UPDATE OF surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2, carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates, held_fields ON public\.auction_sales FOR EACH ROW WHEN \(\(\(old\.held_fields IS NOT NULL\) OR \(new\.held_fields IS DISTINCT FROM old\.held_fields\)\)\) EXECUTE FUNCTION app_private\.hold_projected_sale_fields\(\)',
-  'the hold trigger fires before an update of the held columns and their two neighbours, only for a sale that holds a field'
+    ~ 'BEFORE UPDATE OF surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2, carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates, held_fields ON public\.auction_sales FOR EACH ROW WHEN \(\(\(old\.held_fields IS NOT NULL\) OR \(new\.held_fields IS DISTINCT FROM old\.held_fields\) OR \(new\.surface_source = ''fact_registry''::text\)\)\) EXECUTE FUNCTION app_private\.hold_projected_sale_fields\(\)',
+  'the hold trigger fires before an update of the held columns and their two neighbours, only for a sale of the registry or a write that brings the reserved label'
+);
+
+select ok(
+  (select pg_get_triggerdef(oid) from pg_trigger
+     where tgrelid = 'public.auction_sales'::regclass and tgname = 'aaab_auction_sales_held_fields_marker_guard')
+    ~ 'BEFORE UPDATE OF surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2, carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates ON public\.auction_sales FOR EACH ROW WHEN \(\(\(old\.held_fields IS NOT NULL\) OR \(new\.surface_source = ''fact_registry''::text\)\)\) EXECUTE FUNCTION app_private\.refuse_sale_field_projection_marker\(\)',
+  'the marker guard fires before an update of the same columns, only for a sale of the registry or the reserved label'
 );
 
 select is(
@@ -30,12 +37,12 @@ select is(
      select tgname from pg_trigger
      where tgrelid = 'public.auction_sales'::regclass and not tgisinternal
        and (tgtype & 2) = 2 and (tgtype & 16) = 16
-     order by tgname limit 3) first_triggers),
+     order by tgname limit 4) first_triggers),
   array[
-    'aaaa_auction_sales_retention_tombstone_guard_update', 'aaab_auction_sales_held_fields_role_guard',
-    'aaab_auction_sales_hold_projected_fields'
+    'aaaa_auction_sales_retention_tombstone_guard_update', 'aaab_auction_sales_held_fields_marker_guard',
+    'aaab_auction_sales_held_fields_role_guard', 'aaab_auction_sales_hold_projected_fields'
   ],
-  'the role guard then the hold run right after the retention guard, before every other BEFORE UPDATE trigger'
+  'the marker guard, the role guard then the hold run right after the retention guard, before every other BEFORE UPDATE trigger'
 );
 
 select ok(
@@ -56,9 +63,11 @@ select ok(
 select ok(
   (select not prosecdef from pg_proc
      where oid = 'app_private.refuse_api_role_held_fields_write()'::regprocedure)
+  and (select not prosecdef and proconfig @> array['search_path=""']::text[] from pg_proc
+         where oid = 'app_private.refuse_sale_field_projection_marker()'::regprocedure)
   and (select prosecdef and proconfig @> array['search_path=""']::text[]
          from pg_proc where oid = 'app_private.hold_projected_sale_fields()'::regprocedure),
-  'the role guard reads the calling role (security invoker); the hold writes the queue (security definer)'
+  'the role guard and the marker guard read the calling role (security invoker); the hold writes the queue (security definer)'
 );
 
 select is(
@@ -66,6 +75,7 @@ select is(
      from unnest(array[
        'app_private.hold_projected_sale_fields()', 'app_private.refuse_inserted_held_fields()',
        'app_private.refuse_api_role_held_fields_write()', 'app_private.refuse_api_role_registry_origin()',
+       'app_private.refuse_sale_field_projection_marker()',
        'app_private.stamp_fact_registry_event()']) routine(signature)
      cross join unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
      where has_function_privilege(api_role.name, routine.signature, 'execute')),
@@ -789,11 +799,25 @@ select throws_ok(
 );
 select set_config('app.sale_field_projection', '88200000-1000-4000-8000-000000000001', true);
 select throws_ok(
-  $$update public.auction_sales set held_fields = null, surface_m2 = 99
+  $$update public.auction_sales set held_fields = null
       where id = '88200000-1000-4000-8000-000000000001'$$,
   '42501',
   'auction_sales.held_fields cannot be written by an API role.',
   'forged write: the server role cannot open held_fields by setting the projection marker itself'
+);
+select throws_ok(
+  $$update public.auction_sales set held_fields = null, surface_m2 = 99
+      where id = '88200000-1000-4000-8000-000000000001'$$,
+  '42501',
+  'The sale field projection marker is reserved to app_private.project_sale_fields.',
+  'forged write: with the marker set, the server role cannot write a held column either, with or without held_fields'
+);
+select throws_ok(
+  $$update public.auction_sales set surface_m2 = 99, app_surface_m2 = 99
+      where id = '88200000-1000-4000-8000-000000000001'$$,
+  '42501',
+  'The sale field projection marker is reserved to app_private.project_sale_fields.',
+  'forged write: the marker does not open the held columns of a sale of the registry to the server role'
 );
 select throws_ok(
   $$update public.auction_sales set held_fields = '{"property.rooms_count": {"value": 9}}'::jsonb

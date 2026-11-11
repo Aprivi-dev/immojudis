@@ -13,40 +13,71 @@ set local statement_timeout = '60s';
 --    base : un import commencé avant une décision peut réécrire une valeur que la décision vient de retirer ou de
 --    remplacer. Au lot R1 la base ne reconnaissait pas ce retour (scénarios A, B et C de l'annexe 09, section
 --    2.1). L'entrée d'un champ garde désormais les anciennes valeurs tenues :
---      {"v":2,"state":"held","value":56,"echo":[{"value":54,"until":"2026-11-18T09:00:00+00:00"}],"listing":{…},…}
+--      {"v":2,"state":"held","value":56,"echo":[{"value":54,"until":"2026-11-18T09:00:00+00:00"}],"listing":{…},
+--       "neighbors":{"carrez_surface_m2":54},…}
 --      {"v":2,"state":"released","echo":[{"value":56,"until":"…"},{"value":54}],"released_by":"withdrawn",
---       "decision_id":"…","tolerance":{"abs":1,"rel":0.02}}
---    * « echo » : au plus cinq valeurs, la plus récente d'abord. Chaque valeur porte sa propre échéance « until »
---      (app_private.sale_field_echo_memory() : 7 jours, arbitrage du plan) ; sans « until », elle vit autant que la
---      vente : c'est le cas d'une valeur dont la pièce a reçu une opposition, ou un retrait pour autorisation
---      retirée (authorization_withdrawn). Une valeur opposée n'est jamais chassée de la liste par une valeur à
---      échéance.
---    * À la libération (retrait, opposition, rejet, contradiction, ou annonce qui l'emporte), l'entrée n'est plus
---      supprimée : elle passe à l'état « released » et ne garde que la mémoire d'écho. Tout lecteur de « ce que
+--       "decision_id":"…","tolerance":{"abs":1,"rel":0.02},"neighbors":{…},"restored":{"surface_m2":50,…},
+--       "echo_blocked_since":"…","echo_blocked_at":"…"}
+--    * « echo » : la plus récente d'abord (une valeur nouvelle entre en tête ; les oppositions d'une même
+--      projection entrent de la plus ancienne décision à la plus récente). Chaque valeur porte sa propre échéance
+--      « until » (app_private.sale_field_echo_memory() : 7 jours, arbitrage du plan) ; sans « until », elle vit
+--      autant que la vente : c'est le cas d'une valeur dont la pièce a reçu une opposition, ou un retrait pour
+--      autorisation retirée (authorization_withdrawn). Cinq valeurs À ÉCHÉANCE au plus : au-delà la plus ancienne
+--      sort, jamais celle qui vient d'entrer. Une valeur sans échéance n'est jamais chassée et ne compte pas dans
+--      ces cinq places (autant de valeurs que d'oppositions prononcées par des personnes sur ce champ) : une
+--      limite commune ferait osciller la liste d'une projection à l'autre, ou oublier une opposition.
+--    * Une opposition bloque le retour de la valeur pour la vie de la vente, même prononcée après l'expiration de
+--      l'entrée : si la pièce a tenu le champ (évènement projection_held), la projection recrée une entrée
+--      libérée (released_by « opposed »). La valeur d'une pièce jamais affichée n'est mémorisée que si le champ a
+--      déjà une entrée.
+--    * À la libération (retrait, opposition, rejet, contradiction, vente de terrain, ou annonce qui l'emporte),
+--      l'entrée n'est plus supprimée : elle passe à l'état « released ». Elle garde la mémoire d'écho, le relevé
+--      des colonnes voisines (« neighbors ») et les valeurs rendues aux colonnes (« restored » : celles de
+--      l'annonce, pour que le contrôle quotidien distingue l'annonce d'un écho revenu). Tout lecteur de « ce que
 --      la vente tient » filtre donc state in ('held', 'conflicted').
---    * Une valeur échue est retirée à l'écriture suivante de la vente (retenue) ou par la projection suivante qui
---      écrit ; une entrée « released » sans mémoire disparaît, et held_fields redevient nulle quand il ne reste
---      rien. Aucune tâche planifiée n'écrit. L'échéance seule n'est pas un changement pour la simulation.
+--    * Ce qui est échu est retiré à la prochaine écriture d'une des colonnes surveillées de la vente (retenue),
+--      ou par la projection suivante qui écrit ; une entrée « released » sans mémoire disparaît, et held_fields
+--      redevient nulle quand il ne reste rien. Aucune tâche planifiée n'écrit. L'échéance seule n'est pas un
+--      changement pour la simulation.
 --    Règles de la retenue, avec I la valeur entrante, H la valeur tenue, L la valeur d'annonce mémorisée et E la
 --    mémoire d'écho :
 --      champ tenu : I qui ne dit rien, I égale à H, I égale à L : H reste, sans évènement (lot R1) ;
 --                   I égale à une valeur de E : H reste, L inchangée, évènement « echo_suppressed » (un par valeur
---                   et par décision) ; autre valeur : l'annonce a changé, comme au lot R1 ;
---      champ libéré : I égale à une valeur de E et différente de la colonne actuelle : la colonne actuelle reste
---                   (le groupe entier pour la surface), évènement « echo_suppressed » ; autre valeur : elle passe,
---                   comme pour un champ libre.
+--                   et par décision) ; autre valeur : l'annonce a changé, comme au lot R1. Surface : une colonne
+--                   n'entre dans L que si SA PROPRE classe est « changed » (jamais la valeur tenue ni un écho
+--                   apportés par l'autre colonne dans la même écriture), et à la libération par l'annonce une
+--                   colonne qui porte la valeur tenue ou un écho reprend sa valeur d'annonce ;
+--      champ libéré : I différente de la colonne actuelle (inégalité exacte) et égale à une valeur de E : la
+--                   colonne actuelle reste (le groupe entier pour la surface), évènement « echo_suppressed » ;
+--                   autre valeur : elle passe, comme pour un champ libre. La colonne actuelle n'est PAS prise
+--                   pour une valeur d'annonce à laquelle comparer I : une pièce qui confirme l'annonce à la
+--                   tolérance près (annonce 50, pièce 50,4) reviendrait sinon après son retrait.
+--    NOTE DE BLOCAGE. À chaque retenue sur un champ libéré, l'entrée note « echo_blocked_since » (première
+--    retenue) et « echo_blocked_at » (dernière). Si l'annonce dit vraiment la valeur retenue (elle a rejoint la
+--    pièce avant le retrait ou l'opposition : la fiche est revenue à une valeur d'annonce périmée), chaque passage
+--    de la collecte est retenu et la note reste : le contrôle quotidien garde l'alerte fact_registry.echo_blocked
+--    ouverte tant qu'elle existe. Après un écho isolé, la note sort d'elle-même quand la dernière retenue a plus
+--    de sale_field_echo_memory() (sinon l'alerte, et son rappel quotidien, ne se refermeraient jamais). Rendre la
+--    valeur d'annonce depuis la dernière observation de la source est reporté au lot R2c.
+--    LIBELLÉ RÉSERVÉ. surface_source = 'fact_registry' n'est écrit que par la projection. Hors projection, une
+--    écriture qui l'apporte sur une surface non tenue (champ libéré, ou vente sans entrée) recopie une ligne lue
+--    quand une pièce tenait le champ : le groupe de la surface garde ses valeurs actuelles, quelle que soit la
+--    valeur apportée, avec un évènement « echo_suppressed ». La clause WHEN du déclencheur porte ce cas.
 --    COLONNES VOISINES, jamais tenues mais surveillées (l'application affiche app_surface_m2, à défaut
 --    habitable_surface_m2, à défaut carrez_surface_m2, et la collecte recalcule ces colonnes les unes à partir
 --    des autres) : pour la surface, habitable_surface_m2 et carrez_surface_m2 ; pour le terrain, surface_m2 et
 --    app_surface_m2 (avec app_surface_kind) quand la surface n'est pas elle-même tenue. Une valeur entrante sur
 --    ces colonnes, égale à H ou à une valeur de E, est remplacée par la colonne actuelle : la valeur d'une pièce
 --    n'entre jamais dans une colonne que le registre ne tient pas, elle ne peut donc pas y rester après un
---    retrait. Sans évènement tant que le champ est tenu (la collecte recalcule à chaque passage à partir de la
---    valeur affichée) ; avec « echo_suppressed » une fois le champ libéré. Le déclencheur se déclenche donc sur
+--    retrait. Exception : la valeur que la colonne portait déjà à la première prise (« neighbors », par exemple
+--    une surface Carrez lue dans un document et égale à la pièce) est celle de l'annonce et passe. Champ tenu ou
+--    libéré, la colonne écartée est journalisée par un évènement « echo_suppressed » qui la nomme
+--    ({"carrez_surface_m2": 54}), dédoublonné par valeur et par décision. Le déclencheur se déclenche donc sur
 --    deux colonnes de plus.
 --    L'évènement « echo_suppressed » est l'indicateur d'un chemin que la garde d'écho de la collecte a oublié :
 --    il doit rester à zéro. Limite assumée : une annonce qui publie réellement une valeur de la mémoire est
---    retenue jusqu'à l'échéance (pour toujours après une opposition), et visible en relecture par cet évènement.
+--    retenue jusqu'à l'échéance (pour toujours après une opposition), visible en relecture par cet évènement et
+--    par la note de blocage.
 --
 -- 2. VALEUR D'ANNONCE QUAND L'ANNONCE SE TAIT (point 8, corrigé par le plan). La règle du lot R1 est gardée : une
 --    valeur entrante vide ne vide PAS la valeur d'annonce mémorisée (la collecte juge une vente sur la valeur
@@ -79,6 +110,18 @@ set local statement_timeout = '60s';
 -- 6. updated_at monotone : la projection écrit greatest(statement_timestamp(), updated_at + 1 microseconde), pour
 --    qu'une écriture optimiste de la collecte, gardée par updated_at, abandonne toujours après une projection.
 --
+-- 7. VENTE DE TERRAIN. Sur une vente de terrain (property_type ou surface_scope = 'land'), la projection ne pose
+--    ni ne garde property.surface_m2 : l'application afficherait la surface bâtie d'une pièce comme celle du
+--    terrain. État « blocked » propre à ce champ (raison land_sale) : si une pièce toujours acceptée tenait la
+--    surface avant le reclassement de la vente, le champ est libéré (released_by « blocked ») et la valeur
+--    d'annonce revient, alors que le blocage par le nombre de chambres laisse la pièce en place.
+--
+-- 8. GARDE DU MARQUEUR. Le marqueur de transaction app.sale_field_projection ouvrait la retenue des colonnes
+--    tenues à tout rôle capable de le poser. Le déclencheur aaab_auction_sales_held_fields_marker_guard
+--    (fonction SECURITY INVOKER de 20261117100100) refuse en 42501 l'écriture d'une colonne surveillée d'une
+--    vente du registre quand le marqueur désigne cette vente et que le rôle n'est pas le propriétaire de la
+--    projection.
+--
 -- Arbitrages du plan appliqués contre l'annexe 08 : la base n'exige de la collecte aucun remplacement des colonnes
 -- tenues par la valeur d'annonce (exigence P1 limitée à la fusion) ; une valeur entrante vide ne vide pas la
 -- valeur d'annonce (point 8) ; la mémoire d'écho dure 7 jours et non 30, par valeur et non par entrée.
@@ -88,13 +131,15 @@ set local statement_timeout = '60s';
 --
 -- VERROU : CREATE OR REPLACE TRIGGER et ENABLE ALWAYS TRIGGER prennent un SHARE ROW EXCLUSIVE sur
 -- public.auction_sales (lectures possibles, écritures en attente quelques millisecondes), à la première comme à
--- la seconde application ; jamais ACCESS EXCLUSIVE. À APPLIQUER HORS IMPORT ; lock_timeout (5 s) fait échouer la
--- migration sans effet si le verrou n'est pas obtenu.
+-- la seconde application ; jamais ACCESS EXCLUSIVE. À APPLIQUER HORS IMPORT ; lock_timeout, ramené à 1 s juste
+-- avant les déclencheurs, fait échouer la migration sans effet si le verrou n'est pas obtenu.
 --
 -- Retour arrière (tant que held_fields est nulle partout : sans aucun effet sur les fiches) : réappliquer les
 -- définitions de 20261116100500 (retenue, projection à trois paramètres, déclencheur et sa liste de colonnes),
 -- puis
---   begin; set local lock_timeout = '5s';
+--   begin; set local lock_timeout = '1s';
+--   drop trigger if exists aaab_auction_sales_held_fields_marker_guard on public.auction_sales;
+--   -- (et retirer ce déclencheur de app_private.fact_registry_triggers_not_always, 20261117100100)
 --   drop function if exists app_private.project_sale_fields(uuid, text[], boolean, jsonb);
 --   drop function if exists app_private.sale_field_incoming_class(text, jsonb, jsonb, jsonb, jsonb, numeric, numeric);
 --   drop function if exists app_private.sale_field_echo_add(jsonb, text, jsonb, timestamptz, numeric, numeric);
@@ -115,8 +160,10 @@ as $$
   select interval '7 days';
 $$;
 
--- held_fields sans les valeurs d'écho échues à p_now. Une entrée « released » qui n'a plus de mémoire disparaît ;
--- nul s'il ne reste aucune entrée. Les entrées tenues ne changent pas autrement.
+-- held_fields sans ce qui est échu à p_now : les valeurs d'écho dont l'échéance est passée, et la note de blocage
+-- (echo_blocked_since, echo_blocked_at) d'une entrée dont la dernière retenue date de plus que la durée de la
+-- mémoire. Une entrée « released » qui n'a plus de mémoire disparaît ; nul s'il ne reste aucune entrée. Les entrées
+-- tenues ne changent pas autrement.
 create or replace function app_private.sale_field_echo_prune(p_held jsonb, p_now timestamptz)
 returns jsonb
 language sql
@@ -132,8 +179,17 @@ as $$
           field.key,
           case
             when pg_catalog.jsonb_typeof(field.value) <> 'object' then field.value
-            when live.echo is null then field.value - 'echo'
-            else pg_catalog.jsonb_set(field.value, '{echo}', live.echo)
+            else (
+              case
+                when live.echo is null then field.value - 'echo'
+                else pg_catalog.jsonb_set(field.value, '{echo}', live.echo)
+              end
+            ) - case
+              when coalesce(field.value ->> 'echo_blocked_at', field.value ->> 'echo_blocked_since')::timestamptz
+                <= p_now - app_private.sale_field_echo_memory()
+                then array['echo_blocked_since', 'echo_blocked_at']
+              else array[]::text[]
+            end
           end as entry,
           live.echo
         from pg_catalog.jsonb_each(p_held) field
@@ -180,8 +236,11 @@ $$;
 -- Ajoute une valeur à la mémoire d'écho. p_until nul : la valeur vit autant que la vente. Une valeur déjà en
 -- mémoire (à la tolérance près) garde sa place et sa forme ; seule son échéance change : retirée si l'une des deux
 -- est sans échéance, sinon la plus tardive. Ajouter deux fois la même valeur ne change donc rien (la projection
--- reste idempotente). Une valeur nouvelle entre en tête. Cinq valeurs au plus : la plus ancienne valeur à échéance
--- sort d'abord, jamais une valeur sans échéance tant qu'il en reste une à échéance.
+-- reste idempotente). Une valeur nouvelle entre en tête : la liste va de la plus récente à la plus ancienne.
+-- Cinq valeurs À ÉCHÉANCE au plus : au-delà, c'est la plus ancienne (la dernière de la liste) qui sort, jamais celle
+-- qui vient d'entrer. Une valeur sans échéance (opposition, autorisation retirée) n'est jamais chassée et ne compte
+-- pas dans ces cinq places : il y en a autant que d'oppositions prononcées par des personnes sur ce champ de cette
+-- vente. Une limite commune les ferait osciller d'une projection à l'autre, ou oublier une opposition.
 create or replace function app_private.sale_field_echo_add(
   p_echo jsonb,
   p_field_key text,
@@ -200,6 +259,7 @@ declare
   v_result jsonb := '[]'::jsonb;
   v_element jsonb;
   v_found boolean := false;
+  v_timed integer;
   v_drop integer;
 begin
   if app_private.sale_field_comparable(p_field_key, p_value) is null then
@@ -233,11 +293,13 @@ begin
       else pg_catalog.jsonb_build_object('value', p_value, 'until', p_until)
     end
   ) || v_result;
-  while pg_catalog.jsonb_array_length(v_result) > 5 loop
-    select max(item.position)::integer - 1 into v_drop
+  loop
+    -- La dernière valeur à échéance de la liste (la plus ancienne) ; la nouvelle venue est en position 1.
+    select count(*)::integer, max(item.position)::integer - 1 into v_timed, v_drop
     from pg_catalog.jsonb_array_elements(v_result) with ordinality item(value, position)
     where item.value ->> 'until' is not null;
-    v_result := v_result - coalesce(v_drop, pg_catalog.jsonb_array_length(v_result) - 1);
+    exit when v_timed <= 5;
+    v_result := v_result - v_drop;
   end loop;
   return v_result;
 end;
@@ -303,6 +365,10 @@ declare
   v_state text;
   v_listing jsonb;
   v_echo jsonb;
+  -- v_neighbors : colonnes voisines relevées à la première prise ; v_suppressed : celles que cette écriture voulait
+  -- remplir avec la valeur d'une pièce.
+  v_neighbors jsonb;
+  v_suppressed jsonb;
   v_class text;
   v_class_app text;
   v_class_surface text;
@@ -320,10 +386,13 @@ declare
   v_silent boolean;
   v_spoke boolean;
   v_surface_held boolean;
+  v_label_blocked boolean := false;
+  v_label_incoming jsonb;
 begin
   -- La projection pose ce réglage de transaction (local) autour de son UPDATE : elle fait foi. Ce n'est pas un
-  -- contrôle d'accès : aaab_auction_sales_held_fields_role_guard n'accepte que le rôle propriétaire de la
-  -- projection, réglage posé ou non.
+  -- contrôle d'accès : aaab_auction_sales_held_fields_role_guard (held_fields) et
+  -- aaab_auction_sales_held_fields_marker_guard (colonnes d'une vente du registre) n'acceptent que le rôle
+  -- propriétaire de la projection, et passent avant ce déclencheur.
   if coalesce(pg_catalog.current_setting('app.sale_field_projection', true), '') = new.id::text then
     return new;
   end if;
@@ -331,17 +400,28 @@ begin
     raise exception using errcode = '42501',
       message = 'auction_sales.held_fields is written only by app_private.project_sale_fields.';
   end if;
-  if old.held_fields is null then
-    return new;
-  end if;
 
-  -- Les valeurs d'écho échues sortent à cette écriture.
-  v_held := app_private.sale_field_echo_prune(old.held_fields, v_now);
-  if v_held is null then
-    new.held_fields := null;
-    return new;
-  end if;
+  -- Ce qui est échu sort à cette écriture (valeurs d'écho, note de blocage ancienne).
+  v_held := coalesce(app_private.sale_field_echo_prune(old.held_fields, v_now), '{}'::jsonb);
   v_surface_held := coalesce(v_held #>> '{property.surface_m2,state}' in ('held', 'conflicted'), false);
+
+  -- LIBELLÉ RÉSERVÉ. surface_source = 'fact_registry' n'est écrit que par la projection, sur une surface tenue.
+  -- Une écriture directe qui l'apporte sur une surface non tenue recopie une ligne lue quand une pièce tenait le
+  -- champ : le groupe de la surface entier garde ses valeurs actuelles, quelle que soit la valeur apportée.
+  if not v_surface_held
+    and new.surface_source is not distinct from 'fact_registry'
+    and old.surface_source is distinct from 'fact_registry'
+  then
+    v_label_blocked := true;
+    v_label_incoming := jsonb_strip_nulls(jsonb_build_object(
+      'surface_source', new.surface_source, 'app_surface_m2', new.app_surface_m2, 'surface_m2', new.surface_m2
+    ));
+    new.surface_m2 := old.surface_m2;
+    new.app_surface_m2 := old.app_surface_m2;
+    new.app_surface_kind := old.app_surface_kind;
+    new.surface_source := old.surface_source;
+    new.surface_confidence := old.surface_confidence;
+  end if;
 
   for v_key in select held.key from pg_catalog.jsonb_object_keys(v_held) held(key) order by held.key
   loop
@@ -360,12 +440,16 @@ begin
     end if;
     v_listing := coalesce(v_entry -> 'listing', '{}'::jsonb);
     v_echo := coalesce(v_entry -> 'echo', '[]'::jsonb);
+    v_neighbors := coalesce(v_entry -> 'neighbors', '{}'::jsonb);
+    v_suppressed := '{}'::jsonb;
     v_held_value := v_entry -> 'value';
     v_abs := (v_entry #>> '{tolerance,abs}')::numeric;
     v_rel := (v_entry #>> '{tolerance,rel}')::numeric;
     v_listing_wins := coalesce(v_entry ->> 'on_listing_change' = 'listing_wins_and_review', false);
     v_decision_id := (v_entry ->> 'decision_id')::uuid;
     v_class := 'none';
+    v_class_app := null;
+    v_class_surface := null;
     v_incoming := null;
     v_incoming_logged := null;
     v_listing_value := null;
@@ -374,25 +458,45 @@ begin
     v_spoke := false;
 
     if v_state = 'released' then
-      -- Champ libéré : seule la mémoire d'écho joue. Une valeur entrante égale à une valeur de la mémoire, et
-      -- différente de la colonne actuelle, ne passe pas ; tout le reste passe comme pour un champ libre.
+      -- Champ libéré : seule la mémoire d'écho joue. Une valeur entrante DIFFÉRENTE de la colonne actuelle
+      -- (inégalité exacte) et égale, à la tolérance du champ, à une valeur de la mémoire ne passe pas ; tout le
+      -- reste passe comme pour un champ libre. La colonne actuelle n'est PAS une valeur d'annonce à laquelle
+      -- comparer la valeur entrante : une pièce qui confirme l'annonce à la tolérance près (annonce 50, pièce
+      -- 50,4) reviendrait sinon après son retrait ou son opposition.
       if v_key = 'property.surface_m2' then
-        if new.app_surface_m2 is distinct from old.app_surface_m2
+        v_listing_value := coalesce(to_jsonb(old.app_surface_m2), to_jsonb(old.surface_m2));
+        if v_label_blocked then
+          -- Le groupe a déjà repris ses valeurs. L'évènement garde la valeur apportée si elle est dans la
+          -- mémoire (le cas d'un import périmé), sinon ce que l'écriture apportait avec le libellé.
+          v_class := 'echo';
+          v_incoming := case
+            when (v_label_incoming ->> 'app_surface_m2')::numeric is distinct from old.app_surface_m2
+              and app_private.sale_field_incoming_class(
+                v_key, v_label_incoming -> 'app_surface_m2', null, null, v_echo, v_abs, v_rel
+              ) = 'echo'
+              then v_label_incoming -> 'app_surface_m2'
+            when (v_label_incoming ->> 'surface_m2')::numeric is distinct from old.surface_m2
+              and app_private.sale_field_incoming_class(
+                v_key, v_label_incoming -> 'surface_m2', null, null, v_echo, v_abs, v_rel
+              ) = 'echo'
+              then v_label_incoming -> 'surface_m2'
+            else v_label_incoming
+          end;
+        elsif new.app_surface_m2 is distinct from old.app_surface_m2
           and app_private.sale_field_incoming_class(
-            v_key, to_jsonb(new.app_surface_m2), null, to_jsonb(old.app_surface_m2), v_echo, v_abs, v_rel
+            v_key, to_jsonb(new.app_surface_m2), null, null, v_echo, v_abs, v_rel
           ) = 'echo'
         then
           v_class := 'echo';
           v_incoming := to_jsonb(new.app_surface_m2);
         elsif new.surface_m2 is distinct from old.surface_m2
           and app_private.sale_field_incoming_class(
-            v_key, to_jsonb(new.surface_m2), null, to_jsonb(old.surface_m2), v_echo, v_abs, v_rel
+            v_key, to_jsonb(new.surface_m2), null, null, v_echo, v_abs, v_rel
           ) = 'echo'
         then
           v_class := 'echo';
           v_incoming := to_jsonb(new.surface_m2);
         end if;
-        v_listing_value := coalesce(to_jsonb(old.app_surface_m2), to_jsonb(old.surface_m2));
         if v_class = 'echo' then
           new.surface_m2 := old.surface_m2;
           new.app_surface_m2 := old.app_surface_m2;
@@ -400,32 +504,32 @@ begin
           new.surface_source := old.surface_source;
           new.surface_confidence := old.surface_confidence;
         end if;
-        -- Colonnes voisines.
+        -- Colonnes voisines (sauf la valeur qu'elles portaient déjà à la première prise : celle de l'annonce).
         if new.habitable_surface_m2 is distinct from old.habitable_surface_m2
+          and new.habitable_surface_m2 is distinct from (v_neighbors ->> 'habitable_surface_m2')::numeric
           and app_private.sale_field_incoming_class(
-            v_key, to_jsonb(new.habitable_surface_m2), null, to_jsonb(old.habitable_surface_m2), v_echo,
-            v_abs, v_rel
+            v_key, to_jsonb(new.habitable_surface_m2), null, null, v_echo, v_abs, v_rel
           ) = 'echo'
         then
           v_class := 'echo';
-          v_incoming := coalesce(v_incoming, to_jsonb(new.habitable_surface_m2));
+          v_suppressed := v_suppressed || jsonb_build_object('habitable_surface_m2', new.habitable_surface_m2);
           new.habitable_surface_m2 := old.habitable_surface_m2;
         end if;
         if new.carrez_surface_m2 is distinct from old.carrez_surface_m2
+          and new.carrez_surface_m2 is distinct from (v_neighbors ->> 'carrez_surface_m2')::numeric
           and app_private.sale_field_incoming_class(
-            v_key, to_jsonb(new.carrez_surface_m2), null, to_jsonb(old.carrez_surface_m2), v_echo, v_abs,
-            v_rel
+            v_key, to_jsonb(new.carrez_surface_m2), null, null, v_echo, v_abs, v_rel
           ) = 'echo'
         then
           v_class := 'echo';
-          v_incoming := coalesce(v_incoming, to_jsonb(new.carrez_surface_m2));
+          v_suppressed := v_suppressed || jsonb_build_object('carrez_surface_m2', new.carrez_surface_m2);
           new.carrez_surface_m2 := old.carrez_surface_m2;
         end if;
       elsif v_key = 'property.land_surface_m2' then
         v_listing_value := to_jsonb(old.land_surface_m2);
         if new.land_surface_m2 is distinct from old.land_surface_m2
           and app_private.sale_field_incoming_class(
-            v_key, to_jsonb(new.land_surface_m2), null, to_jsonb(old.land_surface_m2), v_echo, v_abs, v_rel
+            v_key, to_jsonb(new.land_surface_m2), null, null, v_echo, v_abs, v_rel
           ) = 'echo'
         then
           v_class := 'echo';
@@ -435,22 +539,24 @@ begin
         -- Colonnes voisines (terrain recopié en surface principale), quand la surface n'est pas tenue.
         if not v_surface_held then
           if new.app_surface_m2 is distinct from old.app_surface_m2
+            and new.app_surface_m2 is distinct from (v_neighbors ->> 'app_surface_m2')::numeric
             and app_private.sale_field_incoming_class(
-              v_key, to_jsonb(new.app_surface_m2), null, to_jsonb(old.app_surface_m2), v_echo, v_abs, v_rel
+              v_key, to_jsonb(new.app_surface_m2), null, null, v_echo, v_abs, v_rel
             ) = 'echo'
           then
             v_class := 'echo';
-            v_incoming := coalesce(v_incoming, to_jsonb(new.app_surface_m2));
+            v_suppressed := v_suppressed || jsonb_build_object('app_surface_m2', new.app_surface_m2);
             new.app_surface_m2 := old.app_surface_m2;
             new.app_surface_kind := old.app_surface_kind;
           end if;
           if new.surface_m2 is distinct from old.surface_m2
+            and new.surface_m2 is distinct from (v_neighbors ->> 'surface_m2')::numeric
             and app_private.sale_field_incoming_class(
-              v_key, to_jsonb(new.surface_m2), null, to_jsonb(old.surface_m2), v_echo, v_abs, v_rel
+              v_key, to_jsonb(new.surface_m2), null, null, v_echo, v_abs, v_rel
             ) = 'echo'
           then
             v_class := 'echo';
-            v_incoming := coalesce(v_incoming, to_jsonb(new.surface_m2));
+            v_suppressed := v_suppressed || jsonb_build_object('surface_m2', new.surface_m2);
             new.surface_m2 := old.surface_m2;
           end if;
         end if;
@@ -458,7 +564,7 @@ begin
         v_listing_value := to_jsonb(old.rooms_count);
         if new.rooms_count is distinct from old.rooms_count
           and app_private.sale_field_incoming_class(
-            v_key, to_jsonb(new.rooms_count), null, to_jsonb(old.rooms_count), v_echo, v_abs, v_rel
+            v_key, to_jsonb(new.rooms_count), null, null, v_echo, v_abs, v_rel
           ) = 'echo'
         then
           v_class := 'echo';
@@ -479,7 +585,7 @@ begin
         v_listing_value := app_private.sale_field_comparable(v_key, to_jsonb(old.occupancy_status));
         if new.occupancy_status is distinct from old.occupancy_status
           and app_private.sale_field_incoming_class(
-            v_key, to_jsonb(new.occupancy_status), null, to_jsonb(old.occupancy_status), v_echo, v_abs, v_rel
+            v_key, to_jsonb(new.occupancy_status), null, null, v_echo, v_abs, v_rel
           ) = 'echo'
         then
           v_class := 'echo';
@@ -491,7 +597,7 @@ begin
         v_listing_value := old.visit_dates;
         if new.visit_dates is distinct from old.visit_dates
           and app_private.sale_field_incoming_class(
-            v_key, new.visit_dates, null, old.visit_dates, v_echo, v_abs, v_rel
+            v_key, new.visit_dates, null, null, v_echo, v_abs, v_rel
           ) = 'echo'
         then
           v_class := 'echo';
@@ -501,8 +607,17 @@ begin
       end if;
       if v_class = 'echo' then
         v_event := 'echo_suppressed';
-        v_incoming_logged := v_incoming;
+        -- Une colonne voisine seule : l'évènement nomme la colonne.
+        v_incoming_logged := coalesce(v_incoming, v_suppressed);
         v_held_value := null;
+        -- Note de blocage : la date de la première retenue et celle de la dernière. Si l'annonce dit vraiment
+        -- cette valeur (elle a rejoint la pièce avant le retrait ou l'opposition), chaque passage de la collecte
+        -- est retenu : la note reste, et le contrôle quotidien garde l'alerte fact_registry.echo_blocked ouverte.
+        -- Après un écho isolé, elle sort d'elle-même (sale_field_echo_prune).
+        if not v_entry ? 'echo_blocked_since' then
+          v_held := jsonb_set(v_held, array[v_key, 'echo_blocked_since'], to_jsonb(v_now));
+        end if;
+        v_held := jsonb_set(v_held, array[v_key, 'echo_blocked_at'], to_jsonb(v_now));
       end if;
     else
       -- Champ tenu (« held » ou « conflicted »). Colonnes du champ, nommées une à une.
@@ -611,24 +726,81 @@ begin
         end if;
       end if;
 
+      -- Colonnes voisines, que le champ reste tenu ou que l'annonce l'emporte : la valeur tenue, ou une valeur de
+      -- la mémoire d'écho, n'y entre pas (sauf la valeur que la colonne portait déjà à la première prise : celle
+      -- de l'annonce).
+      if v_key = 'property.surface_m2' then
+        if new.habitable_surface_m2 is distinct from old.habitable_surface_m2
+          and new.habitable_surface_m2 is distinct from (v_neighbors ->> 'habitable_surface_m2')::numeric
+          and app_private.sale_field_incoming_class(
+            v_key, to_jsonb(new.habitable_surface_m2), v_held_value, null, v_echo, v_abs, v_rel
+          ) in ('held', 'echo')
+        then
+          v_suppressed := v_suppressed || jsonb_build_object('habitable_surface_m2', new.habitable_surface_m2);
+          new.habitable_surface_m2 := old.habitable_surface_m2;
+        end if;
+        if new.carrez_surface_m2 is distinct from old.carrez_surface_m2
+          and new.carrez_surface_m2 is distinct from (v_neighbors ->> 'carrez_surface_m2')::numeric
+          and app_private.sale_field_incoming_class(
+            v_key, to_jsonb(new.carrez_surface_m2), v_held_value, null, v_echo, v_abs, v_rel
+          ) in ('held', 'echo')
+        then
+          v_suppressed := v_suppressed || jsonb_build_object('carrez_surface_m2', new.carrez_surface_m2);
+          new.carrez_surface_m2 := old.carrez_surface_m2;
+        end if;
+      elsif v_key = 'property.land_surface_m2' and not v_surface_held then
+        -- Terrain recopié en surface principale, quand la surface n'est pas tenue.
+        if new.app_surface_m2 is distinct from old.app_surface_m2
+          and new.app_surface_m2 is distinct from (v_neighbors ->> 'app_surface_m2')::numeric
+          and app_private.sale_field_incoming_class(
+            v_key, to_jsonb(new.app_surface_m2), v_held_value, null, v_echo, v_abs, v_rel
+          ) in ('held', 'echo')
+        then
+          v_suppressed := v_suppressed || jsonb_build_object('app_surface_m2', new.app_surface_m2);
+          new.app_surface_m2 := old.app_surface_m2;
+          new.app_surface_kind := old.app_surface_kind;
+        end if;
+        if new.surface_m2 is distinct from old.surface_m2
+          and new.surface_m2 is distinct from (v_neighbors ->> 'surface_m2')::numeric
+          and app_private.sale_field_incoming_class(
+            v_key, to_jsonb(new.surface_m2), v_held_value, null, v_echo, v_abs, v_rel
+          ) in ('held', 'echo')
+        then
+          v_suppressed := v_suppressed || jsonb_build_object('surface_m2', new.surface_m2);
+          new.surface_m2 := old.surface_m2;
+        end if;
+      end if;
+      -- Une colonne voisine écartée sans autre évènement pour ce champ est journalisée, en nommant la colonne (un
+      -- évènement par valeur et par décision : si la collecte la recalcule à chaque passage, la file n'en garde
+      -- qu'une trace).
+      if v_event is null and v_suppressed <> '{}'::jsonb then
+        v_event := 'echo_suppressed';
+        v_incoming_logged := v_suppressed;
+      end if;
+
       if v_keep then
         if v_class = 'changed' then
-          -- Dernière valeur connue de l'annonce : les colonnes que cette écriture a changées.
+          -- Dernière valeur connue de l'annonce. Une colonne n'y entre que si SA PROPRE classe est « changed » :
+          -- dans une écriture mixte, l'autre colonne de la surface peut porter la valeur tenue ou un écho, qui
+          -- reviendrait au retrait comme valeur d'annonce. Les libellés suivent leur colonne ; le libellé réservé
+          -- du registre n'est jamais une valeur d'annonce.
           if v_key = 'property.surface_m2' then
-            if new.surface_m2 is distinct from old.surface_m2 then
+            if v_class_surface = 'changed' then
               v_listing := v_listing || jsonb_build_object('surface_m2', new.surface_m2);
             end if;
-            if new.app_surface_m2 is distinct from old.app_surface_m2 then
+            if v_class_app = 'changed' then
               v_listing := v_listing || jsonb_build_object('app_surface_m2', new.app_surface_m2);
+              if new.app_surface_kind is distinct from old.app_surface_kind then
+                v_listing := v_listing || jsonb_build_object('app_surface_kind', new.app_surface_kind);
+              end if;
             end if;
-            if new.app_surface_kind is distinct from old.app_surface_kind then
-              v_listing := v_listing || jsonb_build_object('app_surface_kind', new.app_surface_kind);
-            end if;
-            if new.surface_source is distinct from old.surface_source then
+            if new.surface_source is distinct from old.surface_source
+              and new.surface_source is distinct from 'fact_registry'
+            then
               v_listing := v_listing || jsonb_build_object('surface_source', new.surface_source);
-            end if;
-            if new.surface_confidence is distinct from old.surface_confidence then
-              v_listing := v_listing || jsonb_build_object('surface_confidence', new.surface_confidence);
+              if new.surface_confidence is distinct from old.surface_confidence then
+                v_listing := v_listing || jsonb_build_object('surface_confidence', new.surface_confidence);
+              end if;
             end if;
           elsif v_key = 'property.land_surface_m2' then
             v_listing := jsonb_build_object('land_surface_m2', new.land_surface_m2);
@@ -655,41 +827,8 @@ begin
           new.app_surface_kind := old.app_surface_kind;
           new.surface_source := old.surface_source;
           new.surface_confidence := old.surface_confidence;
-          -- Colonnes voisines : la valeur tenue, ou une valeur de la mémoire d'écho, n'y entre pas.
-          if new.habitable_surface_m2 is distinct from old.habitable_surface_m2
-            and app_private.sale_field_incoming_class(
-              v_key, to_jsonb(new.habitable_surface_m2), v_held_value, null, v_echo, v_abs, v_rel
-            ) in ('held', 'echo')
-          then
-            new.habitable_surface_m2 := old.habitable_surface_m2;
-          end if;
-          if new.carrez_surface_m2 is distinct from old.carrez_surface_m2
-            and app_private.sale_field_incoming_class(
-              v_key, to_jsonb(new.carrez_surface_m2), v_held_value, null, v_echo, v_abs, v_rel
-            ) in ('held', 'echo')
-          then
-            new.carrez_surface_m2 := old.carrez_surface_m2;
-          end if;
         elsif v_key = 'property.land_surface_m2' then
           new.land_surface_m2 := old.land_surface_m2;
-          -- Colonnes voisines (terrain recopié en surface principale), quand la surface n'est pas tenue.
-          if not v_surface_held then
-            if new.app_surface_m2 is distinct from old.app_surface_m2
-              and app_private.sale_field_incoming_class(
-                v_key, to_jsonb(new.app_surface_m2), v_held_value, null, v_echo, v_abs, v_rel
-              ) in ('held', 'echo')
-            then
-              new.app_surface_m2 := old.app_surface_m2;
-              new.app_surface_kind := old.app_surface_kind;
-            end if;
-            if new.surface_m2 is distinct from old.surface_m2
-              and app_private.sale_field_incoming_class(
-                v_key, to_jsonb(new.surface_m2), v_held_value, null, v_echo, v_abs, v_rel
-              ) in ('held', 'echo')
-            then
-              new.surface_m2 := old.surface_m2;
-            end if;
-          end if;
         elsif v_key = 'property.rooms_count' then
           new.rooms_count := old.rooms_count;
         elsif v_key = 'property.occupancy_status' then
@@ -698,19 +837,23 @@ begin
           new.visit_dates := old.visit_dates;
         end if;
       else
-        -- Libération par l'annonce : ce que l'écriture apporte passe ; une colonne qu'elle n'a pas touchée porte
-        -- encore la valeur de la pièce et reprend donc la dernière valeur connue de l'annonce.
+        -- Libération par l'annonce : ce que l'annonce apporte passe (colonne de classe « changed », ou vidée).
+        -- Une colonne que l'écriture n'a pas touchée, ou qui porte la valeur tenue ou un écho, reprend la
+        -- dernière valeur connue de l'annonce.
         if v_key = 'property.surface_m2' then
-          if new.surface_m2 is not distinct from old.surface_m2 then
+          if v_class_surface in ('held', 'echo') then
             new.surface_m2 := (v_listing ->> 'surface_m2')::numeric;
           end if;
-          if new.app_surface_m2 is not distinct from old.app_surface_m2 then
+          if v_class_app in ('held', 'echo') then
             new.app_surface_m2 := (v_listing ->> 'app_surface_m2')::numeric;
           end if;
-          if new.app_surface_kind is not distinct from old.app_surface_kind then
+          if v_class_app in ('held', 'echo') or new.app_surface_kind is not distinct from old.app_surface_kind
+          then
             new.app_surface_kind := v_listing ->> 'app_surface_kind';
           end if;
-          if new.surface_source is not distinct from old.surface_source then
+          if new.surface_source is not distinct from old.surface_source
+            or new.surface_source is not distinct from 'fact_registry'
+          then
             new.surface_source := v_listing ->> 'surface_source';
           end if;
           if new.surface_confidence is not distinct from old.surface_confidence then
@@ -739,13 +882,24 @@ begin
             new.visit_dates := v_listing -> 'visit_dates';
           end if;
         end if;
-        -- L'entrée ne disparaît pas : elle garde en mémoire d'écho la valeur que la pièce tenait.
+        -- L'entrée ne disparaît pas : elle garde en mémoire d'écho la valeur que la pièce tenait, les colonnes
+        -- voisines de la première prise et les valeurs rendues aux colonnes (« restored » : celles de l'annonce).
         v_held := jsonb_set(v_held, array[v_key], jsonb_strip_nulls(jsonb_build_object(
           'v', 2,
           'state', 'released',
           'released_by', 'listing',
           'decision_id', v_entry -> 'decision_id',
           'tolerance', coalesce(v_entry -> 'tolerance', '{}'::jsonb),
+          'neighbors', v_entry -> 'neighbors',
+          'restored', case v_key
+            when 'property.surface_m2' then
+              jsonb_build_object('surface_m2', new.surface_m2, 'app_surface_m2', new.app_surface_m2)
+            when 'property.land_surface_m2' then jsonb_build_object('land_surface_m2', new.land_surface_m2)
+            when 'property.rooms_count' then jsonb_build_object('rooms_count', new.rooms_count)
+            when 'property.occupancy_status' then
+              jsonb_build_object('occupancy_status', new.occupancy_status)
+            else jsonb_build_object('visit_dates', new.visit_dates)
+          end,
           'echo', app_private.sale_field_echo_add(
             v_echo, v_key, v_held_value, v_now + app_private.sale_field_echo_memory(), v_abs, v_rel
           )
@@ -773,8 +927,28 @@ begin
     end if;
   end loop;
 
+  -- Libellé réservé écarté sur une vente dont la surface n'a aucune entrée : même évènement, sans décision.
+  if v_label_blocked and not v_held ? 'property.surface_m2' and not exists (
+    select 1 from public.auction_sale_field_hold_events earlier
+    where earlier.sale_id = new.id
+      and earlier.field_key = 'property.surface_m2'
+      and earlier.event = 'echo_suppressed'
+      and earlier.decision_id is null
+      and earlier.incoming_value is not distinct from v_label_incoming
+  ) then
+    insert into public.auction_sale_field_hold_events (
+      sale_id, field_key, event, held_value, listing_value, incoming_value, decision_id
+    ) values (
+      new.id, 'property.surface_m2', 'echo_suppressed', null,
+      coalesce(to_jsonb(old.app_surface_m2), to_jsonb(old.surface_m2)), v_label_incoming, null
+    );
+  end if;
+
+  if v_held = '{}'::jsonb then
+    v_held := null;
+  end if;
   if v_held is distinct from old.held_fields then
-    new.held_fields := case when v_held = '{}'::jsonb then null else v_held end;
+    new.held_fields := v_held;
   end if;
   return new;
 end;
@@ -835,10 +1009,17 @@ declare
   v_hint jsonb;
   v_hint_echo jsonb;
   v_element jsonb;
+  -- Valeurs opposées du champ ({"seq":…,"value":…}), ajoutées à la mémoire de la plus ancienne à la plus récente.
+  v_opposed jsonb;
   v_released_by text;
   v_listing jsonb;
   v_listing_value jsonb;
+  v_neighbors jsonb;
+  v_restored jsonb;
   v_incompatible boolean;
+  -- Vente de terrain : la surface (bâtie) n'y est jamais tenue.
+  v_land_sale boolean;
+  v_land_block boolean;
   v_state text;
   v_holds boolean;
   v_old_held jsonb;
@@ -881,16 +1062,18 @@ begin
   --    restent possibles). Jamais raw_payload.
   if p_apply then
     select sale.id, sale.held_fields, sale.surface_m2, sale.app_surface_m2, sale.app_surface_kind,
-      sale.surface_source, sale.surface_confidence, sale.land_surface_m2, sale.rooms_count,
-      sale.bedrooms_count, sale.occupancy_status, sale.visit_dates
+      sale.surface_source, sale.surface_confidence, sale.habitable_surface_m2, sale.carrez_surface_m2,
+      sale.land_surface_m2, sale.rooms_count, sale.bedrooms_count, sale.occupancy_status, sale.visit_dates,
+      sale.property_type, sale.surface_scope
     into v_sale
     from public.auction_sales sale
     where sale.id = p_sale_id
     for no key update;
   else
     select sale.id, sale.held_fields, sale.surface_m2, sale.app_surface_m2, sale.app_surface_kind,
-      sale.surface_source, sale.surface_confidence, sale.land_surface_m2, sale.rooms_count,
-      sale.bedrooms_count, sale.occupancy_status, sale.visit_dates
+      sale.surface_source, sale.surface_confidence, sale.habitable_surface_m2, sale.carrez_surface_m2,
+      sale.land_surface_m2, sale.rooms_count, sale.bedrooms_count, sale.occupancy_status, sale.visit_dates,
+      sale.property_type, sale.surface_scope
     into v_sale
     from public.auction_sales sale
     where sale.id = p_sale_id;
@@ -898,6 +1081,7 @@ begin
   if not found then
     raise exception using errcode = 'P0002', message = 'Auction sale not found.';
   end if;
+  v_land_sale := coalesce(v_sale.property_type = 'land' or v_sale.surface_scope = 'land', false);
 
   t_surface_m2 := v_sale.surface_m2;
   t_app_surface_m2 := v_sale.app_surface_m2;
@@ -909,8 +1093,9 @@ begin
   t_occupancy_status := v_sale.occupancy_status;
   t_visit_dates := v_sale.visit_dates;
   v_old_held := v_sale.held_fields;
-  -- Les valeurs d'écho échues ne comptent plus. Leur seul retrait n'est pas un changement : la projection ne
-  -- réécrit pas une vente pour cela (la retenue les retire à l'écriture suivante).
+  -- Ce qui est échu ne compte plus (valeurs d'écho, note de blocage ancienne). Son seul retrait n'est pas un
+  -- changement : la projection ne réécrit pas une vente pour cela (la retenue le retire à la prochaine écriture
+  -- d'une des colonnes qu'elle surveille) ; une projection qui écrit pour une autre raison écrit l'état élagué.
   v_base_held := app_private.sale_field_echo_prune(v_old_held, v_now);
   v_new_held := coalesce(v_base_held, '{}'::jsonb);
 
@@ -946,6 +1131,8 @@ begin
     v_blocked := null;
     v_listing_value := null;
     v_incompatible := false;
+    v_opposed := '[]'::jsonb;
+    v_land_block := false;
     v_stored := v_new_held -> v_field.field_key;
     v_current := case when v_stored ->> 'state' in ('held', 'conflicted') then v_stored end;
     v_current_still_accepted := false;
@@ -1023,6 +1210,20 @@ begin
               or (released.sale_id = p_sale_id and released.seq > latest.seq)
             )
         ) as dislodged,
+        latest.seq,
+        -- La pièce a-t-elle déjà tenu ce champ (pour une opposition prononcée après l'expiration de l'entrée) ?
+        case
+          when latest.decision in ('opposed', 'withdrawn') then exists (
+            select 1
+            from public.auction_sale_field_hold_events taken
+            join public.auction_fact_claim_decisions prior on prior.id = taken.decision_id
+            where taken.sale_id = any(v_sales)
+              and taken.field_key = v_field.field_key
+              and taken.event = 'projection_held'
+              and prior.claim_id = latest.claim_id
+          )
+          else false
+        end as was_held,
         case
           when origin.source_kind = 'admin' then 'admin'
           when jsonb_typeof(claim.evidence_locator -> 'case_id') = 'string'
@@ -1044,15 +1245,15 @@ begin
       order by precedence.rank, coalesce(latest.received_at, latest.decided_at) desc, latest.seq desc
     loop
       v_value := app_private.sale_field_claim_value(v_field.field_key, v_candidate.value_jsonb);
-      -- Opposition, ou autorisation d'affichage retirée : la valeur entre en mémoire d'écho sans échéance (elle
-      -- n'est gardée que si le champ a une entrée, tenue ou libérée).
+      -- Opposition, ou autorisation d'affichage retirée : la valeur entrera en mémoire d'écho sans échéance, si le
+      -- champ a une entrée (tenue ou libérée) ou si cette pièce a déjà tenu le champ : une opposition prononcée
+      -- après l'expiration de l'entrée bloque elle aussi le retour de la valeur, pour la vie de la vente. La
+      -- valeur d'une pièce qui n'a jamais été affichée n'a pas à être retenue.
       if v_candidate.decision = 'opposed'
         or (v_candidate.decision = 'withdrawn' and v_candidate.reason_code = 'authorization_withdrawn')
       then
-        if v_value is not null then
-          v_echo := app_private.sale_field_echo_add(
-            v_echo, v_field.field_key, v_value, null, v_field.abs_tolerance, v_field.rel_tolerance
-          );
+        if v_value is not null and (v_stored is not null or v_candidate.was_held) then
+          v_opposed := v_opposed || jsonb_build_array(jsonb_build_object('seq', v_candidate.seq, 'value', v_value));
         end if;
         continue;
       end if;
@@ -1099,8 +1300,33 @@ begin
       end if;
     end loop;
 
+    -- Les valeurs opposées entrent en mémoire de la plus ancienne décision à la plus récente : chaque valeur
+    -- nouvelle entre en tête, la liste reste donc « la plus récente d'abord ». Les valeurs à échéance de cette
+    -- projection (remplacement, libération) entrent après, en tête elles aussi.
+    for v_element in
+      select item.value
+      from jsonb_array_elements(v_opposed) item(value)
+      order by (item.value ->> 'seq')::bigint
+    loop
+      v_echo := app_private.sale_field_echo_add(
+        v_echo, v_field.field_key, v_element -> 'value', null, v_field.abs_tolerance, v_field.rel_tolerance
+      );
+    end loop;
+
     v_conflict := jsonb_array_length(v_conflicting) > 0;
-    if v_conflict then
+    if v_has_winner and v_land_sale and v_field.field_key = 'property.surface_m2' then
+      -- Vente de terrain : la surface d'une pièce est une surface bâtie, que l'application afficherait comme
+      -- celle du terrain. Elle n'est ni posée ni gardée, même si une pièce toujours acceptée tenait le champ
+      -- avant le reclassement de la vente (blocage propre à ce champ). Une contradiction entre pièces n'a alors
+      -- plus d'objet.
+      v_land_block := true;
+      v_conflict := false;
+      v_conflicting := '[]'::jsonb;
+      v_blocked := jsonb_build_object(
+        'claim_id', v_winner_claim_id, 'decision_id', v_winner_decision_id, 'value', v_winner_value,
+        'reason', 'land_sale'
+      );
+    elsif v_conflict then
       v_conflicting := jsonb_build_array(jsonb_build_object(
         'claim_id', v_winner_claim_id, 'decision_id', v_winner_decision_id, 'value', v_winner_value
       )) || v_conflicting;
@@ -1116,9 +1342,11 @@ begin
       );
     end if;
 
-    if (v_conflict or v_blocked is not null) and v_current is not null and v_current_still_accepted then
+    if (v_conflict or v_blocked is not null) and v_current is not null and v_current_still_accepted
+      and not v_land_block
+    then
       -- Contradiction, ou pièce que la fiche refuse, sur un champ tenu par une pièce toujours acceptée : rien ne
-      -- bascule, la valeur affichée reste, relecture.
+      -- bascule, la valeur affichée reste, relecture. (Pas sur une vente de terrain : la surface y est libérée.)
       if v_conflict then
         v_state := 'conflicted';
         v_new_held := jsonb_set(v_new_held, array[v_field.field_key, 'state'], to_jsonb('conflicted'::text));
@@ -1169,6 +1397,25 @@ begin
           where hinted.key = any(v_field.held_columns);
         end if;
       end if;
+      -- Colonnes voisines à la première prise (celles de l'annonce : la retenue n'y laisse entrer ensuite ni la
+      -- valeur tenue ni un écho). Une colonne voisine qui portait déjà la valeur de la pièce n'est pas un écho :
+      -- la retenue et le contrôle quotidien l'exceptent. Terrain : les colonnes de la surface principale, ou
+      -- leur valeur d'annonce si la surface est elle-même tenue.
+      v_neighbors := coalesce(v_current -> 'neighbors', jsonb_strip_nulls(case v_field.field_key
+        when 'property.surface_m2' then jsonb_build_object(
+          'habitable_surface_m2', v_sale.habitable_surface_m2,
+          'carrez_surface_m2', v_sale.carrez_surface_m2
+        )
+        when 'property.land_surface_m2' then
+          case
+            when v_new_held #>> '{property.surface_m2,state}' in ('held', 'conflicted') then jsonb_build_object(
+              'app_surface_m2', v_new_held #> '{property.surface_m2,listing,app_surface_m2}',
+              'surface_m2', v_new_held #> '{property.surface_m2,listing,surface_m2}'
+            )
+            else jsonb_build_object('app_surface_m2', v_sale.app_surface_m2, 'surface_m2', v_sale.surface_m2)
+          end
+        else '{}'::jsonb
+      end));
       -- Remplacement : la valeur que le champ tenait entre en mémoire d'écho. Fusion : de même pour la valeur
       -- que tenait la vente absorbée, si ce n'est pas celle qui tient désormais.
       if v_current is not null and not app_private.sale_field_values_match(
@@ -1192,6 +1439,7 @@ begin
         'value', v_winner_value,
         'state', 'held',
         'listing', v_listing,
+        'neighbors', v_neighbors,
         'listing_silent_since', v_current -> 'listing_silent_since',
         'claim_id', v_winner_claim_id,
         'decision_id', v_winner_decision_id,
@@ -1203,12 +1451,12 @@ begin
         'tolerance', jsonb_build_object('abs', v_field.abs_tolerance, 'rel', v_field.rel_tolerance),
         'on_listing_change', v_field.on_listing_change
       ));
-      -- Même pièce, même décision : seuls les réglages du champ (recopiés dans l'entrée), sa version ou sa
-      -- mémoire d'écho ont pu changer. L'entrée est mise à jour sans évènement.
+      -- Même pièce, même décision : seuls les réglages du champ (recopiés dans l'entrée), sa version, sa mémoire
+      -- d'écho ou le relevé de ses colonnes voisines ont pu changer. L'entrée est mise à jour sans évènement.
       v_state := case
         when v_current is not null
-          and (v_current - 'tolerance' - 'on_listing_change' - 'echo' - 'v')
-            = (v_entry - 'tolerance' - 'on_listing_change' - 'echo' - 'v')
+          and (v_current - 'tolerance' - 'on_listing_change' - 'echo' - 'v' - 'neighbors')
+            = (v_entry - 'tolerance' - 'on_listing_change' - 'echo' - 'v' - 'neighbors')
           then 'unchanged'
         else 'held'
       end;
@@ -1290,12 +1538,28 @@ begin
       where decision.claim_id = (v_current ->> 'claim_id')::uuid
       order by decision.seq desc
       limit 1;
+      -- « restored » : les valeurs rendues aux colonnes du champ, celles de l'annonce. Le contrôle quotidien les
+      -- distingue ainsi d'une valeur de la mémoire revenue dans la colonne.
+      v_restored := case v_field.field_key
+        when 'property.surface_m2' then
+          jsonb_build_object('surface_m2', t_surface_m2, 'app_surface_m2', t_app_surface_m2)
+        when 'property.land_surface_m2' then jsonb_build_object('land_surface_m2', t_land_surface_m2)
+        when 'property.rooms_count' then jsonb_build_object('rooms_count', t_rooms_count)
+        when 'property.occupancy_status' then jsonb_build_object('occupancy_status', t_occupancy_status)
+        else jsonb_build_object('visit_dates', t_visit_dates)
+      end;
       v_new_held := v_new_held || jsonb_build_object(v_field.field_key, jsonb_strip_nulls(jsonb_build_object(
         'v', 2,
         'state', 'released',
-        'released_by', case when v_released_by is null or v_released_by = 'accepted' then 'other' else v_released_by end,
+        'released_by', case
+          when v_land_block then 'blocked'
+          when v_released_by is null or v_released_by = 'accepted' then 'other'
+          else v_released_by
+        end,
         'decision_id', v_current -> 'decision_id',
-        'tolerance', jsonb_build_object('abs', v_field.abs_tolerance, 'rel', v_field.rel_tolerance)
+        'tolerance', jsonb_build_object('abs', v_field.abs_tolerance, 'rel', v_field.rel_tolerance),
+        'neighbors', v_current -> 'neighbors',
+        'restored', v_restored
       )));
       v_events := v_events || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
         'field_key', v_field.field_key, 'event', 'projection_released', 'held_value', v_current -> 'value',
@@ -1314,14 +1578,28 @@ begin
       v_state := 'pass_through';
     end if;
 
-    -- Mémoire d'écho. Un champ sans entrée n'en reçoit une (libérée) que par un indice de fusion ; une entrée
-    -- libérée sans mémoire disparaît.
-    if not v_new_held ? v_field.field_key and jsonb_array_length(v_hint_echo) > 0 then
+    -- Mémoire d'écho. Un champ sans entrée n'en reçoit une (libérée) que par un indice de fusion, ou par
+    -- l'opposition à une pièce qui a tenu le champ et dont l'entrée a expiré ; une entrée libérée sans mémoire
+    -- disparaît. Opposition tardive : le champ est libre depuis l'expiration, ses colonnes sont donc celles de
+    -- l'annonce (« restored »). Indice de fusion : rien n'est affirmé des colonnes (lot R2b).
+    if not v_new_held ? v_field.field_key and jsonb_array_length(v_echo) > 0 then
       v_new_held := v_new_held || jsonb_build_object(v_field.field_key, jsonb_strip_nulls(jsonb_build_object(
         'v', 2,
         'state', 'released',
-        'released_by', 'merge',
-        'tolerance', jsonb_build_object('abs', v_field.abs_tolerance, 'rel', v_field.rel_tolerance)
+        'released_by', case when jsonb_array_length(v_hint_echo) > 0 then 'merge' else 'opposed' end,
+        'tolerance', jsonb_build_object('abs', v_field.abs_tolerance, 'rel', v_field.rel_tolerance),
+        'restored', case
+          when jsonb_array_length(v_hint_echo) > 0 then null
+          else case v_field.field_key
+            when 'property.surface_m2' then
+              jsonb_build_object('surface_m2', v_sale.surface_m2, 'app_surface_m2', v_sale.app_surface_m2)
+            when 'property.land_surface_m2' then jsonb_build_object('land_surface_m2', v_sale.land_surface_m2)
+            when 'property.rooms_count' then jsonb_build_object('rooms_count', v_sale.rooms_count)
+            when 'property.occupancy_status' then
+              jsonb_build_object('occupancy_status', v_sale.occupancy_status)
+            else jsonb_build_object('visit_dates', v_sale.visit_dates)
+          end
+        end
       )));
     end if;
     if v_new_held ? v_field.field_key then
@@ -1452,16 +1730,41 @@ revoke all on function app_private.project_sale_fields(uuid, text[], boolean, js
 comment on column public.auction_sales.held_fields is
   'Registre des pièces : par champ, soit une entrée tenue (state held ou conflicted : valeur, provenance, dernière valeur connue de l''annonce, mémoire d''écho), soit une entrée libérée (state released : mémoire d''écho seule, anciennes valeurs tenues dont le retour est écarté). Nulle si rien n''est tenu ni mémorisé. Écrite par app_private.project_sale_fields et par le déclencheur de retenue aaab_auction_sales_hold_projected_fields ; toute autre écriture est refusée, et toute écriture directe d''un champ tenu est retenue par la base.';
 
--- Déclencheur de retenue : deux colonnes voisines de plus (la clause WHEN est fausse tant que held_fields est
--- nulle : aucun appel PL/pgSQL). Les deux autres déclencheurs de 20261116100500 ne changent pas.
+-- Les deux déclencheurs de ce fichier prennent SHARE ROW EXCLUSIVE sur public.auction_sales. Ce verrou est libre,
+-- ou pris pour une vingtaine de secondes par un lot de publication de la collecte : attendre cinq secondes ne
+-- ferait que mettre en attente, derrière cette migration, tous les autres écrivains de la table. Une seconde
+-- suffit ; au-delà la migration échoue sans effet et se relance.
+set local lock_timeout = '1s';
+
+-- Déclencheur de retenue : deux colonnes voisines de plus. La clause WHEN est fausse tant que held_fields est
+-- nulle et que l'écriture n'apporte pas le libellé réservé du registre : aucun appel PL/pgSQL pour une vente
+-- ordinaire. Les deux autres déclencheurs de 20261116100500 ne changent pas.
 create or replace trigger aaab_auction_sales_hold_projected_fields
   before update of
     surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
     carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates, held_fields
   on public.auction_sales
   for each row
-  when (old.held_fields is not null or new.held_fields is distinct from old.held_fields)
+  when (
+    old.held_fields is not null
+    or new.held_fields is distinct from old.held_fields
+    or new.surface_source = 'fact_registry'
+  )
   execute function app_private.hold_projected_sale_fields();
 alter table public.auction_sales enable always trigger aaab_auction_sales_hold_projected_fields;
+
+-- Garde du marqueur (fonction dans 20261117100100). Nommé pour passer après la garde d'insertion et avant la garde
+-- par rôle et la retenue (ordre alphabétique : …_insert_guard, …_marker_guard, …_role_guard, …_hold_…). Mêmes
+-- colonnes que la retenue, sauf held_fields (gardée par …_role_guard) ; clause WHEN fausse tant que held_fields
+-- est nulle et que l'écriture n'apporte pas le libellé réservé : aucun appel pour une vente ordinaire.
+create or replace trigger aaab_auction_sales_held_fields_marker_guard
+  before update of
+    surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
+    carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates
+  on public.auction_sales
+  for each row
+  when (old.held_fields is not null or new.surface_source = 'fact_registry')
+  execute function app_private.refuse_sale_field_projection_marker();
+alter table public.auction_sales enable always trigger aaab_auction_sales_held_fields_marker_guard;
 
 commit;
