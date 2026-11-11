@@ -301,12 +301,21 @@ select ok(
   'both role guards read the calling role and accept only the owner of the projection'
 );
 
--- Un rôle créé après coup, absent de la liste d'exclusion, avec tous les droits de table et sans RLS.
-create role registry_probe_884 nologin bypassrls;
+-- Un rôle créé après coup, absent de la liste d'exclusion, avec tous les droits de table et des politiques qui
+-- lui ouvrent toutes les lignes. Ni superutilisateur ni BYPASSRLS : le test tourne aussi sous un rôle qui n'est
+-- pas superutilisateur (il se donne alors l'appartenance au rôle créé, pour pouvoir l'endosser).
+create role registry_probe_884 nologin;
+grant registry_probe_884 to current_user;
 grant usage on schema public to registry_probe_884;
 grant select, insert, update on public.auction_sales, public.auction_fact_claims to registry_probe_884;
 -- (le journal des ventes est écrit par un déclencheur SECURITY INVOKER de auction_sales.)
 grant insert on public.auction_sale_history to registry_probe_884;
+create policy registry_probe_884_sales on public.auction_sales
+  for all to registry_probe_884 using (true) with check (true);
+create policy registry_probe_884_claims on public.auction_fact_claims
+  for all to registry_probe_884 using (true) with check (true);
+create policy registry_probe_884_history on public.auction_sale_history
+  for insert to registry_probe_884 with check (true);
 
 set local role registry_probe_884;
 select set_config('app.sale_field_projection', '88400000-1000-4000-8000-000000000001', true);
