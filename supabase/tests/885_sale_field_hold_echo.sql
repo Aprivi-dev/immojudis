@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(82);
+select plan(83);
 
 -- Fonctions pures -------------------------------------------------------------------------------------------------
 select is(app_private.sale_field_echo_memory(), interval '7 days', 'the echo memory lasts seven days');
@@ -897,6 +897,21 @@ select results_eq(
       from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-00000000000c'$$,
   $$values (50::numeric, 50::numeric, array['50.4'::jsonb])$$,
   'an opposed value within the tolerance of the listing does not come back: on a released field the current column is not a listing value to compare with'
+);
+
+-- Colonne voisine : la surface habitable valait 50 à la première prise. Vidée puis redonnée par l'annonce, elle
+-- reprend 50, bien que 50 soit dans la tolérance de la valeur opposée (50,4) : c'est la valeur de l'annonce.
+set local role service_role;
+update public.auction_sales set habitable_surface_m2 = null where id = '88500000-1000-4000-8000-00000000000c';
+execute reimport('c', 50, 50, 'habitable', 'listing_text', 0.7, 50, null, null, 2, 1, 'occupied');
+execute reimport('c', 50, 50, 'habitable', 'listing_text', 0.7, 50, 50.3, null, 2, 1, 'occupied');
+reset role;
+
+select results_eq(
+  $$select habitable_surface_m2, carrez_surface_m2 from public.auction_sales
+      where id = '88500000-1000-4000-8000-00000000000c'$$,
+  $$values (50::numeric, null::numeric)$$,
+  'a neighbour column takes back the value it carried at the first take, even within the tolerance of a remembered value; another neighbour column does not take that value'
 );
 
 -- Libellé réservé : l'écriture apporte surface_source = fact_registry avec une valeur qui n'est pas en mémoire.
