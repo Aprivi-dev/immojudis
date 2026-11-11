@@ -533,6 +533,39 @@ def test_a_raw_copy_is_never_rewritten_empty_when_the_column_stays_empty(monkeyp
     assert sale.raw_payload["visit_dates"] == visits
 
 
+def test_a_filled_column_is_never_replaced_by_the_snapshot_or_by_the_raw_copy() -> None:
+    """Le repli ne vaut que pour une colonne vide : date, mise à prix et visites déjà en colonne font foi."""
+    row = {
+        "id": "99900000-1000-4000-8000-000000000006",
+        "source_name": "avoventes",
+        "source_url": "https://example.test/colonnes-pleines",
+        "status": "upcoming",
+        "sale_date": "2027-03-10T13:30:00+00:00",
+        "starting_price_eur": 95000,
+        "visit_dates": ["LE MARDI 02 MARS 2027 DE 14H00 A 15H00"],
+        "raw_payload": {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/colonnes-pleines",
+            "title": "Maison",
+            # Copies de premier niveau et instantané d'une lecture plus ancienne : autres valeurs.
+            "sale_date": "mardi 01 septembre 2026 à 13h30",
+            "starting_price_eur": "120 000,00 €",
+            "visit_dates": ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"],
+            "source_factual_snapshot": {
+                "sale_date": "mardi 01 septembre 2026 à 13h30",
+                "starting_price_eur": "120 000,00 €",
+                "visit_dates": ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"],
+            },
+        },
+    }
+
+    sale = _sale_from_storage_row(row)
+
+    assert sale.sale_date.isoformat() == "2027-03-10T13:30:00+00:00"
+    assert sale.starting_price_eur == Decimal("95000")
+    assert sale.visit_dates == ["LE MARDI 02 MARS 2027 DE 14H00 A 15H00"]
+
+
 def test_visit_dates_read_by_the_source_still_come_back_from_the_source_snapshot() -> None:
     visits = ["LE LUNDI 24 AOUT 2026 DE 10H00 A 11H00"]
     row = {
