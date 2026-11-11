@@ -2,9 +2,12 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   parseAutopilotStats,
+  sharedStructureCounts,
   type AutopilotMode,
   type AutopilotSettings,
+  type AutopilotSharedSend,
   type AutopilotStats,
+  type SharedStructureCounts,
 } from "@/lib/information-agent/autopilot-rules";
 
 /**
@@ -43,8 +46,73 @@ export async function loadAutopilotStats(now = new Date()): Promise<AutopilotSta
     p_now: now.toISOString(),
   });
   if (error) throw error;
-  return parseAutopilotStats(data);
+  return { ...parseAutopilotStats(data), ...(await loadSharedStructureCounts(now)) };
 }
+
+/**
+ * Missions lues au plus sur 8 jours (plafond dur du pilote : 60 par jour, soit 480 au plus, manuels en sus).
+ * Au-delà, le compte par structure serait incomplet.
+ */
+const SHARED_SENDS_LIMIT = 1000;
+
+/**
+ * Envois des 8 derniers jours, dont `sharedStructureCounts` ne retient que ceux d'un domaine partagé
+ * (`notaires.fr`, `gouv.fr`), comptés par structure. LECTURE SEULE.
+ *
+ * RÈGLE COPIÉE : la définition d'un envoi compté est celle de la table `sent` de la fonction SQL
+ * `public.information_agent_autopilot_stats` (migration
+ * `supabase/migrations/20261110230000_information_agent_autopilot.sql`) : mission approuvée depuis moins de
+ * 8 jours, de statut `sending`, `sent`, `replied`, `review` ou `completed`, ou `failed` avec
+ * `metadata.send_outcome = 'unverified'`. Les deux doivent changer ensemble.
+ *
+ * Une erreur de lecture est propagée (un plafond illisible ne vaut jamais autorisation). Un compte tronqué
+ * n'est pas une erreur : il est rendu incomplet (`sharedStructureCountsComplete: false`), le pilote n'écrit
+ * alors à aucune adresse d'un domaine partagé et l'écran d'administration l'affiche au lieu d'échouer.
+ */
+async function loadSharedStructureCounts(now: Date): Promise<SharedStructureCounts> {
+  // Seuls les champs utiles de `metadata` sont lus (jamais l'inventaire ni le reste du brouillon).
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_missions")
+    .select(
+      "recipient_email,approved_at,status,send_outcome:metadata->>send_outcome,office_code:metadata->contact_identity->>office_code,selected_email:metadata->contact_discovery->>selected_email",
+    )
+    .gte("approved_at", new Date(now.getTime() - 8 * 86_400_000).toISOString())
+    .in("status", ["sending", "sent", "replied", "review", "completed", "failed"])
+    .limit(SHARED_SENDS_LIMIT);
+  if (error) throw error;
+  if (!data) throw new Error("Compteur des envois par structure indisponible.");
+  if (data.length >= SHARED_SENDS_LIMIT) {
+    return {
+      todayBySharedStructure: {},
+      weekBySharedStructure: {},
+      sharedStructureCountsComplete: false,
+    };
+  }
+  const sends: AutopilotSharedSend[] = [];
+  for (const row of data as unknown as SharedSendRow[]) {
+    if (row.status === "failed" && row.send_outcome !== "unverified") continue;
+    if (!row.approved_at || typeof row.recipient_email !== "string") continue;
+    // Le code d'office du brouillon ne vaut que si l'adresse est restée celle que le brouillon a choisie.
+    const sameAddress =
+      typeof row.selected_email === "string" &&
+      row.selected_email.trim().toLowerCase() === row.recipient_email.trim().toLowerCase();
+    sends.push({
+      recipientEmail: row.recipient_email,
+      officeCode: sameAddress && typeof row.office_code === "string" ? row.office_code : null,
+      approvedAt: row.approved_at,
+    });
+  }
+  return sharedStructureCounts(sends, now);
+}
+
+type SharedSendRow = {
+  recipient_email: string;
+  approved_at: string | null;
+  status: string;
+  send_outcome: string | null;
+  office_code: string | null;
+  selected_email: string | null;
+};
 
 /** Clés admises dans le journal (liste blanche) : codes, nombres et identifiants de vente, jamais autre chose. */
 const EVENT_DETAIL_KEYS = new Set([

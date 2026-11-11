@@ -243,8 +243,12 @@ export function AdminInformationAgentMissionsPanel({
           .catch((error: unknown) => {
             preparingKeysRef.current.delete(requestKey);
             if (isCurrentSelection()) {
+              const message = error instanceof Error ? error.message : "Brouillon indisponible.";
               setPreparingSelectionKey(null);
-              setDraftError(error instanceof Error ? error.message : "Brouillon indisponible.");
+              // Régénération d'un brouillon déjà ouvert : le bloc d'erreur de la préparation n'est rendu
+              // que sans mission ouverte. Le refus du serveur est donc notifié, jamais muet.
+              if (activeMissionRef.current) toast.error(message);
+              else setDraftError(message);
             }
           });
 
@@ -405,6 +409,51 @@ export function AdminInformationAgentMissionsPanel({
               : !sendConfirmed
                 ? "Cochez la confirmation de relecture pour activer l’envoi."
                 : null;
+
+  /**
+   * Recrée le brouillon de la mission ouverte (le serveur annule l'ancien pour cette vente et cette adresse).
+   * Toujours disponible sur un brouillon modifiable : c'est le seul chemin pour un brouillon créé avant que
+   * le serveur n'enregistre son destinataire, que l'aperçu refuse en demandant de le régénérer.
+   */
+  const regeneratingRef = useRef(false);
+  const regenerateDraft = () => {
+    const opened = activeMissionRef.current;
+    if (!opened?.saleId) return;
+    const queued = selectionRef.current;
+    if (queued && queued.saleId === opened.saleId) {
+      prepareDraft(queued, { recipientEmail, recipientName, force: true });
+      return;
+    }
+    // Mission ouverte depuis la liste des envois : aucune sélection de la file ne la porte. Une seule
+    // régénération à la fois, même pour plusieurs clics dans le même tour (l'état « en cours » du bouton
+    // n'est connu qu'au rendu suivant).
+    if (regeneratingRef.current) return;
+    regeneratingRef.current = true;
+    void createDraftAsync({
+      saleId: opened.saleId,
+      recipientEmail: recipientEmail.trim() || undefined,
+      recipientName: recipientName.trim() || undefined,
+    })
+      .then((response) => {
+        if (!response?.mission) throw new Error("Le brouillon reçu est incomplet.");
+        void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+        // L'administrateur a pu ouvrir une autre mission pendant la régénération : on ne l'écrase pas.
+        if (activeMissionRef.current?.id !== opened.id) return;
+        hydrateMission(response.mission);
+        setShownPreview(
+          response.preview
+            ? { key: previewKeyOf(response.mission), response: response.preview }
+            : null,
+        );
+        toast.success("Brouillon régénéré. Aucun email n’a encore été envoyé.");
+      })
+      .catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : "Brouillon indisponible.");
+      })
+      .finally(() => {
+        regeneratingRef.current = false;
+      });
+  };
 
   // Ouverture demandée depuis la liste des envois (autre onglet). Une préparation automatique de la
   // file encore en cours ne doit jamais écraser la mission choisie dans l'historique.
@@ -648,6 +697,32 @@ export function AdminInformationAgentMissionsPanel({
               type="email"
               readOnly={!isMissionEditable(activeMission.status)}
             />
+            {activeMission.recipientProfile &&
+            normalizeEmail(recipientEmail) === normalizeEmail(activeMission.recipientEmail) ? (
+              <p className="text-xs leading-5 text-brand-navy/70" data-testid="recipient-profile">
+                <span className="font-semibold">{activeMission.recipientProfile.roleLabel}</span>
+                {" · "}
+                {activeMission.recipientProfile.originLabel}
+                {activeMission.recipientProfile.originSourceName
+                  ? ` (${activeMission.recipientProfile.originSourceName})`
+                  : ""}
+                {activeMission.recipientProfile.originUrl ? (
+                  <>
+                    {" "}
+                    <a
+                      href={activeMission.recipientProfile.originUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="underline underline-offset-2"
+                    >
+                      voir l’annonce
+                    </a>
+                  </>
+                ) : null}
+                {" · "}
+                {activeMission.recipientProfile.addressKindLabel}
+              </p>
+            ) : null}
             <Field
               label="Objet"
               value={subject}
@@ -758,6 +833,17 @@ export function AdminInformationAgentMissionsPanel({
           {activeMission.status === "draft" || activeMission.status === "failed" ? (
             <>
               <div className="mt-4 flex flex-wrap gap-2">
+                {activeMission.saleId ? (
+                  <button
+                    type="button"
+                    className="admin-button-secondary inline-flex items-center gap-2"
+                    disabled={createDraft.isPending}
+                    onClick={regenerateDraft}
+                  >
+                    <RefreshCw className="size-3.5" />
+                    {createDraft.isPending ? "Régénération…" : "Régénérer le brouillon"}
+                  </button>
+                ) : null}
                 {selection && sourceRefreshReady ? (
                   <button
                     type="button"

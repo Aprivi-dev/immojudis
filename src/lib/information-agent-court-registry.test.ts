@@ -608,6 +608,7 @@ describe("aperçu et envoi d'une demande au greffe", () => {
       metadata: {
         contact_discovery: { method: "court_registry_fallback" },
         court_registry_fallback: { court_code: "agen", court_name: "Tribunal judiciaire d'Agen" },
+        question_audience: "other",
         address_origin: "court_registry_fallback",
       },
       ...overrides,
@@ -875,6 +876,7 @@ describe("vente relue à l'aperçu et à l'envoi d'une demande au greffe", () =>
       metadata: {
         contact_discovery: { method: "court_registry_fallback" },
         court_registry_fallback: { court_code: "agen", court_name: "Tribunal judiciaire d'Agen" },
+        question_audience: "other",
       },
     };
     db.contacts = [

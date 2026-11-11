@@ -27,6 +27,7 @@ import { assertInformationAgentAddressDeliverable } from "@/lib/information-agen
 import { assertAutopilotSendAllowed } from "@/lib/information-agent/autopilot-send-guard";
 import {
   assertInformationAgentCanaryRecipient,
+  assertInformationAgentNotarySendAllowed,
   assertInformationAgentOutboundEnabled,
   informationAgentCaseReference,
   resolveInformationAgentEmailConfig,
@@ -53,10 +54,9 @@ import {
   assertInformationAgentPreviewFingerprint,
   buildInformationAgentLegalFooter,
 } from "@/lib/information-agent/message-guards";
-import {
-  missionIdentityKeys,
-  missionSaleReference,
-} from "@/lib/information-agent/mission-identity";
+import { missionRecipient, missionSaleReference } from "@/lib/information-agent/mission-identity";
+import { assertInformationAgentQuestionsAllowed } from "@/lib/information-agent/recipient-questions";
+import { informationAgentAudienceInvitesDocuments } from "@/lib/information-agent/recipient-templates";
 import {
   asObject,
   loadOwnedMission,
@@ -109,12 +109,20 @@ export async function approveAndSendMission({
     recipientEmail: input.recipientEmail,
   });
   for (const check of courtChecks) await check();
-  // Un greffe n'a pas de nom de personne : aucune clé d'identité, même si un nom est saisi.
-  const identityKeys = missionIdentityKeys(mission, courtFallback ? null : input.recipientName);
+  const recipient = missionRecipient(mission, input.recipientName, input.recipientEmail);
+  // Questions admises pour le destinataire du brouillon, relues à l'envoi ; envois aux notaires fermés par
+  // défaut (config.ts).
+  assertInformationAgentQuestionsAllowed(recipient.questionAudience, mission.question_keys);
+  assertInformationAgentNotarySendAllowed({ ...recipient, email: input.recipientEmail });
+  // Un greffe n'a pas de nom de personne ni de structure opposable : aucune clé, même si un nom est saisi.
+  // Sinon : clés de la personne, et de la structure pour une adresse générique (opposition-keys.ts).
+  const oppositionKeys = courtFallback ? { identityKeys: [], checkKeys: [] } : recipient.keys;
+  const identityKeys = oppositionKeys.identityKeys;
   await assertInformationAgentContactAllowed({
     saleId: mission.sale_id,
     email: input.recipientEmail,
     identityKeys,
+    checkKeys: oppositionKeys.checkKeys,
     courtRegistryAddress: Boolean(courtFallback),
   });
   // Adresse retrouvée par l'agent : sa seule origine est la ligne de registre de l'agent.
@@ -124,6 +132,7 @@ export async function approveAndSendMission({
     saleId: mission.sale_id,
     manualOriginUrl: agentFound || courtFallback ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
+    structureAddress: courtFallback ? null : recipient.structureAddress,
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   assertAgentFoundOriginIntact(agentFound, addressOrigin);
@@ -218,7 +227,10 @@ export async function approveAndSendMission({
   });
   if (subscribeError) throw subscribeError;
   const subscribedMission = await loadOwnedMission(adminId, mission.id);
-  const contributionUrl = informationAgentContributionUrl(subscribedMission);
+  // Aucune invitation à joindre des documents dans un message à un notaire : pas de lien de dépôt.
+  const contributionUrl = informationAgentAudienceInvitesDocuments(recipient.questionAudience)
+    ? informationAgentContributionUrl(subscribedMission)
+    : undefined;
   const messageHash = approvalFingerprint(subscribedMission);
   const approval = await approveInformationAgentMissionForAdmin(
     subscribedMission,
@@ -244,6 +256,7 @@ export async function approveAndSendMission({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
       identityKeys: edited.recipient_identity_keys,
+      checkKeys: oppositionKeys.checkKeys,
       courtRegistryAddress: Boolean(courtFallback),
     });
     // Approval is already recorded: if a concurrent approval for the same recipient is older,
@@ -270,6 +283,7 @@ export async function approveAndSendMission({
       email: edited.recipient_email,
       addressOrigin: addressOrigin.origin,
       saleReference: missionSaleReference(subscribedMission),
+      structureOpposition: courtFallback ? null : recipient.structureOpposition,
     });
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,
@@ -290,6 +304,7 @@ export async function approveAndSendMission({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
       identityKeys: edited.recipient_identity_keys,
+      checkKeys: oppositionKeys.checkKeys,
       courtRegistryAddress: Boolean(courtFallback),
     });
     // Juste avant l'appel au fournisseur : règles du pilote revérifiées une dernière fois.
