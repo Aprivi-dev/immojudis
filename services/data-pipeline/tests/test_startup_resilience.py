@@ -6,6 +6,7 @@ Incident of 11/11/2026 (docs/audits/2026-11-11-collecte-echec-avant-demarrage.md
 from __future__ import annotations
 
 import ast
+import http.client
 import json
 import os
 import re
@@ -30,6 +31,13 @@ CLOSER = SCRIPTS / "close_unstarted_run.py"
 RUN_ID = "11111111-1111-4111-8111-111111111111"
 OTHER_RUN_ID = "22222222-2222-4222-8222-222222222222"
 SERVICE_KEY = "service-role-key-that-must-never-be-printed"
+# The command of the workflow step: system interpreter, no environment variable, no site-packages.
+ISOLATED = ["-I", "-S"]
+# Same isolation, with the one thing a local test needs: the stand-in API speaks plain http.
+ISOLATED_WITH_LOCAL_HTTP = (
+    "import sys; sys.path.insert(0, sys.argv[1]); import close_unstarted_run as m; "
+    "m.ALLOWED_SCHEMES = ('http', 'https'); sys.exit(m.main())"
+)
 
 # --- install_system_packages.sh ---------------------------------------------------------------
 
@@ -211,6 +219,9 @@ class FakeSupabase:
         self.requests: list[tuple[str, str, dict[str, str]]] = []
         self.fail_with: int | None = None
         self.fail_patch_of: str | None = None
+        self.redirect_to: str | None = None
+        # The first PATCH of auction_runs is applied, but its answer is a 503 (answer lost on the way).
+        self.lose_first_close_answer = False
         store = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -227,6 +238,8 @@ class FakeSupabase:
                 status, payload = store.answer(method, table, filters, body)
                 data = json.dumps(payload).encode()
                 self.send_response(status)
+                if status == 302:
+                    self.send_header("Location", str(store.redirect_to))
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
@@ -243,6 +256,8 @@ class FakeSupabase:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def answer(self, method: str, table: str, filters: dict[str, str], body: object) -> tuple[int, object]:
+        if self.redirect_to is not None and not table.startswith("elsewhere"):
+            return 302, {}
         if self.fail_with is not None or (method == "PATCH" and table == self.fail_patch_of):
             return self.fail_with or 503, {"message": f"secret detail {SERVICE_KEY}"}
         if table not in self.tables:
@@ -262,6 +277,9 @@ class FakeSupabase:
         if method == "PATCH":
             for row in matched:
                 row.update(body)  # type: ignore[arg-type]
+            if self.lose_first_close_answer and table == "auction_runs":
+                self.lose_first_close_answer = False
+                return 503, {}
         return 200, matched
 
     def run(self, run_id: str) -> dict[str, object]:
@@ -292,7 +310,9 @@ def _source_state(name: str, run_id: str) -> dict[str, object]:
 
 
 @pytest.fixture
-def supabase() -> Iterator[FakeSupabase]:
+def supabase(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeSupabase]:
+    # The stand-in speaks plain http; the https-only rule has its own tests below.
+    monkeypatch.setattr(close_unstarted_run, "ALLOWED_SCHEMES", ("http", "https"))
     fake = FakeSupabase()
     try:
         yield fake
@@ -338,7 +358,7 @@ def test_an_open_run_is_closed_as_failed_before_start_in_an_isolated_interpreter
 
     # As in the workflow: isolated mode, from a directory where no installed package is reachable.
     result = subprocess.run(
-        [sys.executable, "-I", str(CLOSER)],
+        [sys.executable, *ISOLATED, "-c", ISOLATED_WITH_LOCAL_HTTP, str(SCRIPTS)],
         env={**_environment(supabase), "GITHUB_STEP_SUMMARY": str(step_summary), "GITHUB_RUN_ID": "4209",
              "GITHUB_RUN_ATTEMPT": "1", "PATH": os.environ["PATH"]},
         cwd=tmp_path, capture_output=True, text=True, timeout=60, check=False,
@@ -381,6 +401,54 @@ def test_an_open_run_is_closed_as_failed_before_start_in_an_isolated_interpreter
     )
 
 
+def test_the_script_itself_starts_without_site_packages(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, *ISOLATED, str(CLOSER)], env={"PATH": os.environ["PATH"]},
+        cwd=tmp_path, capture_output=True, text=True, timeout=60, check=False,
+    )
+
+    assert result.returncode == 0 and "Aucun run demandé" in result.stdout, result.stderr
+
+
+def test_the_watchdog_ends_a_blocked_process_before_the_step_timeout(tmp_path: Path) -> None:
+    # A name resolution has no timeout of its own: whatever blocks, the process ends with an error.
+    blocked = (
+        "import sys, time; sys.path.insert(0, sys.argv[1]); import close_unstarted_run as m; "
+        "m.WATCHDOG_SECONDS = 1; m.close_unstarted_run = lambda _environ: time.sleep(60); sys.exit(m.main())"
+    )
+    started = time.monotonic()
+    result = subprocess.run(
+        [sys.executable, *ISOLATED, "-c", blocked, str(SCRIPTS)], env={"PATH": os.environ["PATH"]},
+        cwd=tmp_path, capture_output=True, text=True, timeout=60, check=False,
+    )
+
+    assert result.returncode == 1
+    assert time.monotonic() - started < 20
+    assert "::error title=Clôture du run impossible::Délai global dépassé" in result.stdout
+
+
+def test_no_request_starts_once_the_global_budget_is_spent(
+    supabase: FakeSupabase, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(close_unstarted_run, "TOTAL_BUDGET_SECONDS", 0)
+    supabase.tables["auction_runs"].append(_queued_run())
+
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase)) == 1
+
+    assert supabase.requests == [] and supabase.run(RUN_ID)["status"] == "queued"
+    assert "(délai global dépassé)" in capsys.readouterr().out
+
+
+def test_the_time_limits_fit_in_the_workflow_step() -> None:
+    step = _pipeline_steps()["Close run that never started"]
+    timeout = re.search(r"^\s+timeout-minutes: (\d+)$", step.text, re.M)  # type: ignore[attr-defined]
+    assert timeout is not None
+    slowest_attempt = 40  # a blocked name resolution, far above REQUEST_TIMEOUT_SECONDS
+
+    assert close_unstarted_run.TOTAL_BUDGET_SECONDS + slowest_attempt <= close_unstarted_run.WATCHDOG_SECONDS
+    assert close_unstarted_run.WATCHDOG_SECONDS + 30 <= int(timeout.group(1)) * 60
+
+
 @pytest.mark.parametrize("status", ["running", "succeeded", "failed"])
 def test_a_run_that_is_running_or_already_closed_is_left_untouched(
     supabase: FakeSupabase, status: str, capsys: pytest.CaptureFixture[str]
@@ -402,17 +470,46 @@ def test_a_run_claimed_between_the_read_and_the_close_stays_running(
     supabase.tables["auction_runs"].append(_queued_run(source="enrichment-queue"))
     original = close_unstarted_run._request
 
-    def claimed_meanwhile(method: str, url: str, key: str, body: dict[str, object] | None = None):
+    def claimed_meanwhile(method: str, url: str, key: str, body: dict[str, object] | None = None, **kwargs: float):
         if method == "PATCH":
             supabase.run(RUN_ID)["status"] = "running"  # a worker wins the queued -> running claim
-        return original(method, url, key, body)
+        return original(method, url, key, body, **kwargs)
 
     monkeypatch.setattr(close_unstarted_run, "_request", claimed_meanwhile)
 
     assert close_unstarted_run.close_unstarted_run(_environment(supabase)) == 0
     assert supabase.run(RUN_ID)["status"] == "running"
     assert supabase.run(RUN_ID)["finished_at"] is None
-    assert "laissé intact" in capsys.readouterr().out
+    assert "(« running »), laissé intact" in capsys.readouterr().out
+
+
+def test_a_close_whose_answer_was_lost_is_reported_as_already_closed(
+    supabase: FakeSupabase, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The first PATCH closes the run but its answer is lost; the retry matches no « queued » run any more.
+    monkeypatch.setattr(close_unstarted_run, "REQUEST_BACKOFF_SECONDS", 0)
+    supabase.tables["auction_runs"].append(_queued_run(source="enrichment-queue"))
+    supabase.lose_first_close_answer = True
+
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase)) == 0
+
+    run = supabase.run(RUN_ID)
+    assert run["status"] == "failed" and run["summary"]["completion_status"] == "failed_before_start"  # type: ignore[index]
+    assert [method for method, _, _ in supabase.requests] == ["GET", "PATCH", "PATCH", "GET"]
+    output = capsys.readouterr().out
+    assert "déjà clos en échec (failed_before_start)" in output and "laissé intact" not in output
+
+
+def test_the_source_is_made_due_only_when_its_last_run_is_the_closed_one(supabase: FakeSupabase) -> None:
+    # The source has moved on to another run since: its deadline belongs to that run.
+    supabase.tables["auction_runs"].append(_queued_run())
+    supabase.tables["auction_source_state"].append(_source_state("agrasc", OTHER_RUN_ID))
+    before = json.dumps(supabase.source("agrasc"))
+
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase)) == 0
+
+    assert supabase.run(RUN_ID)["status"] == "failed"
+    assert json.dumps(supabase.source("agrasc")) == before
 
 
 def test_an_enrichment_run_or_a_manual_run_is_closed_without_touching_any_source(supabase: FakeSupabase) -> None:
@@ -452,11 +549,16 @@ def test_a_source_already_due_keeps_its_own_deadline(supabase: FakeSupabase) -> 
         (("success", "failure", "skipped"), "python_dependencies", "Échec avant démarrage : installation des dépendances Python (pip)."),
         (("success", "success", "failure"), "justice_references", "Échec avant démarrage : vérification des référentiels Justice."),
         (("cancelled", "skipped", "skipped"), "system_packages", "Annulation avant démarrage : installation des paquets système (apt)."),
-        (("skipped", "skipped", "skipped"), "job_preparation", "Échec avant démarrage : préparation du job (avant l'installation des paquets)."),
+        (("skipped", "skipped", "skipped", "failure"), "job_preparation", "Échec avant démarrage : préparation du job (avant l'installation des paquets)."),
+        # Cancelled before any of the three steps had started: not a failure of the preparation.
+        (("skipped", "skipped", "skipped", "cancelled"), "job_preparation", "Annulation avant démarrage : préparation du job (avant l'installation des paquets)."),
+        (("skipped", "skipped", "skipped", ""), "job_preparation", "Échec avant démarrage : préparation du job (avant l'installation des paquets)."),
+        # The step that failed wins over the status of the job.
+        (("failure", "skipped", "skipped", "cancelled"), "system_packages", "Échec avant démarrage : installation des paquets système (apt)."),
     ],
 )
 def test_the_reason_names_the_preparation_step_that_failed(
-    supabase: FakeSupabase, outcomes: tuple[str, str, str], stage: str, sentence: str
+    supabase: FakeSupabase, outcomes: tuple[str, ...], stage: str, sentence: str
 ) -> None:
     supabase.tables["auction_runs"].append(_queued_run(source="enrichment-queue"))
     environ = _environment(
@@ -464,6 +566,7 @@ def test_the_reason_names_the_preparation_step_that_failed(
         STARTUP_SYSTEM_PACKAGES_OUTCOME=outcomes[0],
         STARTUP_PYTHON_DEPENDENCIES_OUTCOME=outcomes[1],
         STARTUP_JUSTICE_REFERENCES_OUTCOME=outcomes[2],
+        STARTUP_JOB_STATUS=outcomes[3] if len(outcomes) > 3 else "failure",
     )
 
     assert close_unstarted_run.close_unstarted_run(environ) == 0
@@ -491,6 +594,73 @@ def test_an_invalid_identifier_or_a_missing_secret_is_an_error_without_any_reque
     assert capsys.readouterr().out.count("::error title=Clôture du run impossible::") == 3
 
 
+@pytest.mark.parametrize("address", ["http://{host}", "ftp://{host}", "{host}", "https://", "https://[broken"])
+def test_the_key_only_leaves_for_an_https_address(
+    supabase: FakeSupabase, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], address: str
+) -> None:
+    monkeypatch.setattr(close_unstarted_run, "ALLOWED_SCHEMES", ("https",))  # the production value
+    supabase.tables["auction_runs"].append(_queued_run())
+    host = supabase.url.removeprefix("http://")
+
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase, SUPABASE_URL=address.format(host=host))) == 1
+
+    assert supabase.requests == [] and supabase.run(RUN_ID)["status"] == "queued"
+    output = capsys.readouterr().out
+    assert "https obligatoire" in output and host not in output
+
+
+def test_the_production_rule_is_https_only() -> None:
+    source = CLOSER.read_text(encoding="utf-8")
+
+    assert 'ALLOWED_SCHEMES: tuple[str, ...] = ("https",)' in source
+    assert "urlopen" not in source  # every request goes through the opener that refuses redirections
+
+
+def test_a_redirection_is_refused_and_the_key_is_not_sent_again(
+    supabase: FakeSupabase, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(close_unstarted_run, "REQUEST_BACKOFF_SECONDS", 0)
+    supabase.tables["auction_runs"].append(_queued_run())
+    supabase.redirect_to = f"{supabase.url}/rest/v1/elsewhere"
+
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase)) == 1
+
+    assert [(method, table) for method, table, _ in supabase.requests] == [("GET", "auction_runs")]
+    assert supabase.run(RUN_ID)["status"] == "queued"
+    output = capsys.readouterr().out
+    assert "(HTTP 302)" in output and "elsewhere" not in output and supabase.url not in output
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        http.client.IncompleteRead(b"partial"),
+        http.client.InvalidURL("nonnumeric port in https://db.example.invalid:x"),
+        http.client.BadStatusLine("garbage from db.example.invalid"),
+    ],
+)
+def test_a_connection_cut_while_reading_is_reported_by_its_type_only(
+    supabase: FakeSupabase, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], error: Exception
+) -> None:
+    monkeypatch.setattr(close_unstarted_run, "REQUEST_BACKOFF_SECONDS", 0)
+    supabase.tables["auction_runs"].append(_queued_run())
+
+    class Broken:
+        calls = 0
+
+        def open(self, *_args: object, **_kwargs: object) -> None:
+            Broken.calls += 1
+            raise error
+
+    monkeypatch.setattr(close_unstarted_run, "_OPENER", Broken())
+
+    assert close_unstarted_run.close_unstarted_run(_environment(supabase)) == 1
+
+    output = capsys.readouterr().out
+    assert f"({type(error).__name__})" in output and "example.invalid" not in output
+    assert Broken.calls == close_unstarted_run.REQUEST_ATTEMPTS  # retried, a bounded number of times
+
+
 @pytest.mark.parametrize(("status", "attempts"), [(503, 3), (401, 1)])
 def test_an_unreachable_or_refusing_database_fails_the_step_without_leaking(
     supabase: FakeSupabase, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
@@ -513,6 +683,7 @@ def test_a_network_error_is_reported_by_its_type_only(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(close_unstarted_run, "REQUEST_BACKOFF_SECONDS", 0)
+    monkeypatch.setattr(close_unstarted_run, "ALLOWED_SCHEMES", ("http", "https"))
     environ = {"SUPABASE_URL": "http://127.0.0.1:9", "SUPABASE_SERVICE_ROLE_KEY": SERVICE_KEY, "REQUESTED_RUN_ID": RUN_ID}
 
     assert close_unstarted_run.close_unstarted_run(environ) == 1
@@ -583,11 +754,8 @@ def test_a_job_that_never_started_closes_its_run_without_python_dependencies() -
 
     assert names.index("Close run that never started") == names.index("Run manually requested pipeline") + 1
     assert names.index("Finalize unfinished run") == names.index("Close run that never started") + 1
-    assert _condition(close) == (
-        "always() && steps.pipeline.outcome == 'skipped' && inputs.publication_check != true && inputs.run_id != ''"
-    )
     # System interpreter, isolated mode: neither the virtual environment nor requirements.lock is needed.
-    assert close.run.strip() == "python3 -I scripts/close_unstarted_run.py"  # type: ignore[attr-defined]
+    assert close.run.strip() == f"python3 {' '.join(ISOLATED)} scripts/close_unstarted_run.py"  # type: ignore[attr-defined]
     assert "continue-on-error" not in close.text  # type: ignore[attr-defined]
     assert set(re.findall(r"secrets\.([A-Z_]+)", close.env)) == {"SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"}  # type: ignore[attr-defined]
     for variable, step_id in (
@@ -596,11 +764,41 @@ def test_a_job_that_never_started_closes_its_run_without_python_dependencies() -
         ("STARTUP_JUSTICE_REFERENCES_OUTCOME", "justice-references"),
     ):
         assert f"{variable}: ${{{{ steps.{step_id}.outcome }}}}" in close.env  # type: ignore[attr-defined]
+    assert f"{close_unstarted_run.JOB_STATUS_VARIABLE}: ${{{{ job.status }}}}" in close.env  # type: ignore[attr-defined]
     assert {variable for variable, _, _ in close_unstarted_run.STAGES} <= set(re.findall(r"^\s+([A-Z_]+):", close.env, re.M))  # type: ignore[attr-defined]
     # The two closing steps never both run: one when the pipeline step ran, the other when it did not.
     assert _condition(steps["Finalize unfinished run"]) == (
         "always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true"
     )
+
+
+def test_the_run_is_closed_only_by_the_modes_that_would_have_executed_it() -> None:
+    # The pipeline step uses the requested run in two cases only: the scheduled pass and the plain manual
+    # scan. A document backlog drain runs in its own concurrency group, next to a scheduled pass: closing
+    # the run it was (wrongly) given would close the run of another job.
+    workflow = (WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8")
+    condition = _condition(_pipeline_steps()["Close run that never started"])
+
+    assert condition.split(" && ") == [
+        "always()",
+        "steps.pipeline.outcome == 'skipped'",
+        "inputs.run_id != ''",
+        "inputs.publication_check != true",
+        "inputs.documents_backlog != true",
+        "inputs.enrichment_only != true",
+    ]
+    # The three excluded modes are exactly those of the pipeline step that run without --run-id, and
+    # those with a concurrency group of their own are among them.
+    pipeline = _pipeline_steps()["Run manually requested pipeline"].run  # type: ignore[attr-defined]
+    without_run_id = {
+        mode.lower()
+        for mode, body in re.findall(r'if \[ "\$REQUESTED_([A-Z_]+)" = "true" \]; then\n(.*?)\n\s+fi', pipeline, re.S)
+        if "REQUESTED_RUN_ID" not in body
+    }
+    assert without_run_id == {"publication_check", "documents_backlog", "enrichment_only"}
+    assert {f"inputs.{mode} != true" for mode in without_run_id} <= set(condition.split(" && "))
+    own_group = set(re.findall(r"inputs\.([a-z_]+) && 'immojudis-", workflow.split("concurrency:", 1)[1].split("jobs:", 1)[0]))
+    assert own_group - {"model_benchmark"} <= without_run_id
 
 
 def test_steps_that_need_python_dependencies_are_skipped_when_they_are_not_installed() -> None:
