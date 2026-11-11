@@ -153,8 +153,11 @@ jobs:
       # Crawl-delay raises it).
       PDF_HOST_MIN_DELAY_SECONDS: 2
       ENABLE_LICITOR_BENCHMARK: true
-      # Interrupteur du decodage des adresses masquees (desactive si la variable de depot est absente ; 'true' pour l'activer).
-      LICITOR_DECODE_PROTECTED_EMAILS: ${{ vars.LICITOR_DECODE_PROTECTED_EMAILS || 'false' }}
+      # Interrupteur du decodage des adresses masquees. Decision du proprietaire du 11/11/2026 : decodage reactive,
+      # accord de Licitor declare par le proprietaire (piece a verser au dossier). Actif si la variable de depot est
+      # absente ; la variable de depot garde la main ('false' le coupe sans commit). Usage interne seulement :
+      # registre prive de l'agent, jamais publie (docs/runbooks/information-agent.md).
+      LICITOR_DECODE_PROTECTED_EMAILS: ${{ vars.LICITOR_DECODE_PROTECTED_EMAILS || 'true' }}
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
       # A repository variable is required for each half of the future source
