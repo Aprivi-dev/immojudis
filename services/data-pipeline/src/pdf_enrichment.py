@@ -30,10 +30,7 @@ from src.document_politeness import (
 )
 from src.freshness import invalidate_analysis, timestamp_is_fresh
 from src.models import AuctionSale
-from src.normalize import (
-    clean_text,
-    normalize_sale,
-)
+from src.normalize import clean_text
 from src.pdf_document_transport import (  # noqa: F401
     PublicDocumentTarget,  # noqa: F401
     _PinnedHTTPTransport,
@@ -105,7 +102,7 @@ from src.pdf_word_documents import extract_docx_document, extract_legacy_word_do
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
-from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections
+from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections, _pdf_set_source_value, _pdf_source_reader
 
 LOGGER = logging.getLogger(__name__)
 
@@ -366,10 +363,8 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
     preserved_projection_fields = projection_state.get("preserved", set())
     invalidate_analysis(sale.raw_payload, "document_manifest_changed" if removed else "document_bytes_changed")
     sale.raw_payload["superseded_document_analysis"] = previous
-    snapshot = sale.raw_payload.get("source_factual_snapshot") or {
-        "source_name": sale.source_name, "source_url": sale.source_url,
-    }
-    factual = normalize_sale(snapshot)
+    snapshot = sale.raw_payload.get("source_factual_snapshot") or {}
+    read_source = _pdf_source_reader(sale, snapshot)  # la valeur que la collecte a écrite, ou vide (pdf_fact_scope)
     fields = []
     if built_pdf:
         fields += [
@@ -393,7 +388,7 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
         if "visit_dates" not in preserved_projection_fields:
             fields += ["visit_dates"]
     for key in fields:
-        setattr(sale, key, getattr(factual, key))
+        _pdf_set_source_value(sale, key, read_source(key))
         sale.raw_payload.pop(key, None)
     for key in (
         "surface_extraction",
