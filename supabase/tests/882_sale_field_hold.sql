@@ -156,7 +156,7 @@ select results_eq(
 );
 
 select is(
-  (select array_agg(field.key || ':' || (field.value ->> 'on_listing_change') order by field.key)
+  (select array_agg(field.key || ':' || (field.value ->> 'on_listing_change') order by field.key collate "C")
      from public.auction_sales sale, jsonb_each(sale.held_fields) field
      where sale.id = '88200000-1000-4000-8000-000000000001'),
   array[
@@ -335,7 +335,7 @@ select results_eq(
   $$select field_key, event, held_value, listing_value, incoming_value, decision_id is not null
       from public.auction_sale_field_hold_events
       where sale_id = '88200000-1000-4000-8000-000000000001' and event like 'listing_changed%'
-      order by field_key$$,
+      order by field_key collate "C"$$,
   $$values
       ('property.land_surface_m2', 'listing_changed_kept', '800'::jsonb, null::jsonb, '900'::jsonb, true),
       ('property.occupancy_status', 'listing_changed_kept', '"vacant"'::jsonb, '"occupied"'::jsonb,
@@ -454,7 +454,7 @@ select results_eq(
 );
 
 select is(
-  (select array_agg(field.key || ':' || (field.value ->> 'state') order by field.key)
+  (select array_agg(field.key || ':' || (field.value ->> 'state') order by field.key collate "C")
      from public.auction_sales sale, jsonb_each(sale.held_fields) field
      where sale.id = '88200000-1000-4000-8000-000000000002'),
   array[
@@ -526,7 +526,7 @@ reset role;
 select results_eq(
   $$select surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status,
            (select array_agg(field.key || ':' || (field.value ->> 'state') || ':' || (field.value ? 'value')
-                     order by field.key)
+                     order by field.key collate "C")
               from jsonb_each(held_fields) field)
       from public.auction_sales where id = '88200000-1000-4000-8000-000000000002'$$,
   $$values (70::numeric, 900::numeric, 4, 2, 'rented', array[

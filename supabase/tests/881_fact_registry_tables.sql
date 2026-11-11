@@ -55,7 +55,7 @@ select is(
 );
 
 select is(
-  (select array_agg(relation.name || ':' || privilege.name order by relation.name, privilege.name)
+  (select array_agg(relation.name || ':' || privilege.name order by relation.name collate "C", privilege.name collate "C")
      from unnest(array[
        'public.auction_fact_fields', 'public.auction_fact_source_precedence',
        'public.auction_fact_claim_decisions', 'public.auction_sale_field_hold_events']) relation(name)
@@ -142,7 +142,7 @@ select is(
 -- Données de départ ---------------------------------------------------------------------------------------------
 select results_eq(
   $$select field_key, held_columns, value_type, on_listing_change, hold_enabled
-      from public.auction_fact_fields order by field_key$$,
+      from public.auction_fact_fields order by field_key collate "C"$$,
   $$values
       ('property.land_surface_m2', array['land_surface_m2'], 'numeric', 'keep_and_review', true),
       ('property.occupancy_status', array['occupancy_status'], 'enum', 'keep_and_review', true),
