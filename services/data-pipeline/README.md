@@ -175,26 +175,77 @@ restreinte, colonne remplie par la ligne stockée lors d'une fusion). Si la base
 change entre cette lecture et l'écriture, réécrire la valeur lue défait le
 changement. `src/base_reads.py` l'empêche : un groupe de colonnes seulement relu
 n'est pas réécrit si la base a bougé depuis (surface à cinq colonnes, terrain,
-nombre de pièces, occupation, dates de visite). Une valeur vide ou une valeur que
-la source vient de donner passent toujours. Quand la base n'a pas bougé, l'écriture
-est celle d'avant.
+nombre de pièces, occupation, dates de visite). Quand la base n'a pas bougé,
+l'écriture est celle d'avant.
 
-- Les lectures sont notées dans `fetch_known_sale_details` et sous le verrou de
-  publication ; la garde s'applique en tête de `merge_revision`.
-- `timings.base_echo_suppressed` du passage compte les couples (vente, groupe)
-  dont une valeur relue et périmée n'a pas été réécrite. Chaque cas est journalisé
-  (`Base echo suppressed sale_id=… group=…`), sans valeur.
+Trois conditions, par groupe :
+
+1. **La base a bougé.** Seule une lecture sous le verrou de publication le dit :
+   la ligne n'est plus dans l'état de référence (première lecture du passage, puis
+   ce que la base a gardé de chaque écriture validée de ce processus). Une lecture
+   sans verrou (`fetch_known_sale_details`) alimente les valeurs lues et ne pose la
+   référence que si elle manque : elle a pu être lue avant une écriture d'un autre
+   fil et notée après.
+2. **La vente n'apporte rien** : chaque colonne de valeur est vide ou égale à une
+   valeur lue en base. Une valeur vide passe toujours (un garde-fou de
+   normalisation doit pouvoir vider une valeur).
+3. **La source ne vient pas de la publier** : une fiche réellement relue dont
+   l'instantané (`source_factual_snapshot`) porte la valeur n'est jamais retenue,
+   même si la base a déjà rendu la même valeur.
+
+Ce que la garde note d'une écriture :
+
+- l'écriture de `auction_sales` relit par `returning` les colonnes des groupes : la
+  référence est ce que la base a **gardé**, pas ce qui a été envoyé (la base peut
+  retenir une valeur) ;
+- cette lecture est notée en attente dans la transaction et ne devient la référence
+  qu'après sa validation ; une transaction annulée ne laisse aucune trace.
+
+Quand un groupe est repris de la base, ce qui décrit la même valeur le suit : pour
+la surface, `habitable_surface_m2`, `carrez_surface_m2`, `surface_scope`,
+`surface_evidence` ; dans `raw_payload`, la trace de la pièce lue
+(`pdf_fact_provenance` du champ et les clés qu'elle nomme, `surface_extraction`,
+`land_surface_extraction`). Les copies de la valeur retenue (premier niveau de
+`raw_payload`, `raw_payload` des observations embarquées) prennent la valeur
+écrite, sauf celles dont la source a réellement publié la valeur.
+
+Compteur et journal :
+
+- `timings.base_echo_suppressed` du passage compte les couples (vente, groupe) dont
+  une valeur relue et périmée n'a pas été réécrite. Chaque cas est journalisé sans
+  valeur (`Base echo suppressed sale_id=… group=…`). Une reprise des seuls libellés
+  (même valeur) n'est pas comptée et a sa propre ligne (`Base labels kept …`).
+- **Ce compteur peut être supérieur à zéro sans aucun champ tenu** : il suffit qu'un
+  autre traitement du pipeline (lecture des pièces, recalcul) ait écrit la vente
+  pendant le passage. Ce n'est pas l'indicateur d'un chemin oublié : celui-là est le
+  compteur d'évènements de la retenue, côté base.
 - Les lectures de la ligne entière sont remplacées par des listes de colonnes
   (`LOCKED_SALE_SELECT`, `RECOMPUTE_SALE_SELECT`) : une colonne interne de la
   table ne sort pas de la base et ne finit pas dans `raw_payload`.
+
+Vench, page restreinte ou pauvre : les champs que le collecteur reprend de la ligne
+stockée restent dans la vente, mais leur clé est absente de l'instantané de la
+fiche, qui en garde la liste (`fields_from_stored_row`), et ils n'entrent pas dans
+l'empreinte de fraîcheur. Une restauration « valeur de la source » (pièce modifiée)
+ne remet donc pas à vide un champ que la page n'a jamais donné. **Vague acceptée** :
+l'empreinte de ces pages change une fois, donc la première relecture de chacune
+invalide son analyse (81 ventes en production au 11/11/2026 ; Vench n'a plus de
+passage depuis le 29/10/2026). Aucun code de transition.
+
+Au recalcul (`recompute_scoring`), une colonne `visit_dates` vide se reprend dans
+l'instantané de la fiche quand il existe ; sans instantané, dans la clé de premier
+niveau de `raw_payload`, comme avant. Une copie de premier niveau n'est jamais
+réécrite vide par une colonne que le recalcul laisse vide.
 
 Tests : `tests/test_base_echo_guard.py` (table de vérité),
 `tests/test_base_echo_publication.py` (chemin d'écriture, base simulée, dont la
 preuve d'écriture identique quand rien ne bouge), `tests/test_base_echo_postgres.py`
 (`PIPELINE_TEST_DB_URL`). Les scénarios de bout en bout avec le registre des pièces
-(retrait ou remplacement d'une pièce pendant un import) demandent une base locale
-jetable où toutes les migrations sont rejouées ; ils écrivent dans cette base et
-refusent toute base non locale :
+(retrait ou remplacement d'une pièce pendant un import, surface tenue face à une
+fiche relue) demandent une base locale jetable où toutes les migrations sont
+rejouées ; ils écrivent dans cette base et refusent toute base non locale. Le job
+« Supabase migrations + pgTAP » de la CI les lance sur sa base locale, avec
+`PIPELINE_REGISTRY_DB_REQUIRED=1` : l'absence de base y est un échec, pas un saut.
 
 ```bash
 PIPELINE_REGISTRY_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
@@ -267,6 +318,15 @@ autre source. Les clés de premier niveau de `raw_payload` portent aussi les
 colonnes que la collecte a relues en base : elles ne font plus une observation.
 Sans instantané, pas d'observation. Les lignes `auction_fact_claims_v2` déjà
 écrites restent en base ; un lecteur peut les écarter par leur version.
+
+**Ordre de mise en ligne.** La version entre dans l'identifiant d'une observation :
+au premier passage de chaque source, chaque observation existante reçoit un jumeau
+`auction_fact_claims_v3` (une vente relue ou dotée d'un instantané en émet autant
+qu'avant, 4 sur 4 dans les essais ; une vente sans instantané n'émet plus ses
+`source_field`, 1 sur 4). La vue `v_auction_fact_claims_read_model`, lue par
+l'application sans filtre de version, montrerait donc chaque fait en double. Ce
+changement ne doit être fusionné qu'**après** l'application de la migration qui
+limite cette vue à la version la plus récente par vente.
 
 Le mode par défaut est une lecture sans écriture Supabase :
 
