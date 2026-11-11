@@ -40,6 +40,10 @@ Le rangement existant du dépôt prime : il est organisé par couche (`src/lib`,
 fichiers `*.server.ts`). Le critère ne justifie pas de déplacer des fichiers. Un déplacement ne se
 fait que dans une refonte validée.
 
+Ranger une nouvelle fonctionnalité selon ces couches n'est donc pas un défaut et ne se relève pas.
+Le lien caché « éclatée par couche » vise le cas où un lot disperse une fonctionnalité au-delà de
+ce que ce rangement impose : un nouveau dossier ou une nouvelle couche que le dépôt n'avait pas.
+
 ## Selon le rôle
 
 - **Qui écrit** (`developpeur`) : applique le critère dans le périmètre du lot seulement. Pas de
@@ -57,7 +61,3 @@ point Critique.
 
 Ce critère ne lance aucune refonte. La refonte d'une zone entière passe par le skill
 `/untangle-codebase`, dont la règle d'usage est dans `CLAUDE.md` (section « Rangement du code »).
-
-Pendant une refonte, les scripts d'analyse que le skill suggère (squelette du code, graphe des
-dépendances) s'écrivent dans le scratchpad de la session, pas dans le dépôt. Les sous-agents qu'il
-fait travailler sont en lecture seule.
