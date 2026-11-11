@@ -245,12 +245,12 @@ def _card(url: str, **values: Any) -> dict[str, Any]:
     }
 
 
-def publish_listing(url: str) -> None:
+def publish_listing(url: str, **values: Any) -> None:
     """Première collecte : l'annonce dit 50 m² et 2 pièces, bien occupé."""
     raw = _card(
         url, property_type="house", title="Une maison", surface_m2=50, rooms_count=2, bedrooms_count=1,
         occupancy_status="occupé", description="Une maison d'habitation de 50 m², 2 pièces, occupée.",
-        raw_text="Une maison d'habitation de 50 m², 2 pièces, occupée.", source_detail_status="complete",
+        raw_text="Une maison d'habitation de 50 m², 2 pièces, occupée.", source_detail_status="complete", **values,
     )
     assert storage.upsert_sales_to_supabase([_collect(raw, {})]) == 1
 
@@ -465,3 +465,62 @@ def test_a_held_surface_and_a_reread_listing_never_look_like_a_move(registry, se
     assert (row["surface_m2"], row["app_surface_m2"]) == (54, 54)
     assert registry.listing_events(sale_id) == []
     assert registry.listing_memory(sale_id, SURFACE) == memory
+
+
+def test_scenario_d_a_piece_posed_during_the_import_survives_a_sale_merged_from_another_source(registry, sent) -> None:
+    """Limite connue de la garde côté collecte, couverte par la retenue côté base.
+
+    Une seconde source (Avoventes) est relue et fusionnée dans la ligne Licitor à la publication anticipée. La vente
+    en mémoire porte alors le ``raw_payload`` stocké de la ligne canonique, sans marqueur « non relue » : à la
+    publication finale, la garde ne retient pas forcément ses valeurs. Une pièce posée entre les deux publications ne
+    doit pourtant pas être écrasée dans la colonne : c'est la retenue de la base qui le garantit.
+    """
+    say("\n=== D. Pose pendant l'import, vente fusionnée entre deux sources ===")
+    url = _url()
+    # Une adresse propre au scénario : le rapprochement entre sources se fait par l'adresse, et les ventes des autres
+    # scénarios (ou d'un passage précédent sur la même base) partagent la date et la mise à prix.
+    address = f"{uuid.uuid4().int % 9000 + 1} chemin des Acacias, 33000 Alphaville"
+    publish_listing(url, address=address)
+    sale_id = registry.sale_id(url)
+    other_url = f"https://www.avoventes.fr/enchere/une-maison-alphaville-{uuid.uuid4().hex[:12]}"
+    base_reads.reset()
+    known = storage.fetch_known_sale_details()
+    known.update(storage.fetch_known_sale_details(source_urls=[url], include_enrichment_payload=True))
+    second = _collect(
+        _card(
+            other_url, source_name="avoventes", address=address, property_type="house", title="Une maison", surface_m2=50,
+            rooms_count=2, bedrooms_count=1, occupancy_status="occupé", source_detail_status="complete",
+            description="Une maison d'habitation de 50 m², 2 pièces, occupée.",
+            raw_text="Une maison d'habitation de 50 m², 2 pièces, occupée.",
+        ),
+        known,
+    )
+
+    assert storage.upsert_sales_to_supabase([second]) == 1  # publication anticipée : fusion dans la ligne Licitor
+    assert second.source_url == url and registry.sale_id(url) == sale_id
+    merged_rows = registry.db.execute(
+        "select count(*) from public.auction_sales where source_url = %s", (other_url,)
+    ).fetchone()[0]
+    assert merged_rows == 0
+    say(f"D1 seconde source fusionnée        : {registry.describe(sale_id)}")
+
+    registry.accept(sale_id, ROOMS, 3, "2026-11-01 09:00+00")
+    registry.accept(sale_id, SURFACE, 54, "2026-11-01 09:00+00")
+    say(f"D2 deux pièces posées pendant l'import : {registry.describe(sale_id)}")
+
+    assert storage.upsert_sales_to_supabase([second]) == 1  # publication finale de la même vente en mémoire
+    say(
+        f"D3 envoyé par la collecte          : pièces={sent[-1]['rooms_count']} "
+        f"surface={sent[-1]['surface_m2']}/{sent[-1]['app_surface_m2']} | retenus par la garde : {base_reads.suppressed_count()}"
+    )
+    say(f"D4 après l'écriture collecte       : {registry.describe(sale_id)}")
+    say(f"D5 évènements « annonce changée »   : {registry.listing_events(sale_id)}")
+    say(f"D6 valeur d'annonce mémorisée      : {registry.listing_memory(sale_id, ROOMS)}")
+
+    row = registry.row(sale_id)
+    assert row["rooms_count"] == 3
+    assert (row["surface_m2"], row["app_surface_m2"]) == (54, 54)
+    assert {ROOMS, SURFACE} <= set(row["held_fields"] or {})
+    # La collecte a renvoyé la valeur de l'annonce, que la base connaît : ce n'est pas un « changement de l'annonce ».
+    assert registry.listing_events(sale_id) == []
+    assert registry.listing_memory(sale_id, ROOMS) == {"rooms_count": 2}
