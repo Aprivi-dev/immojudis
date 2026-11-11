@@ -11,7 +11,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(55);
+select plan(56);
 
 -- Déclencheur : forme et ordre ----------------------------------------------------------------------------------
 select ok(
@@ -437,6 +437,16 @@ select is(
   '{"surface_m2": 72, "app_surface_m2": 60, "app_surface_kind": "carrez", "surface_source": "pdf",
     "surface_confidence": 0.9}'::jsonb,
   'the listing block only takes the column that the write changed, never the held value of the others'
+);
+
+update public.auction_sales set surface_m2 = 72 where id = '88200000-1000-4000-8000-000000000001';
+
+select is(
+  (select count(*)::integer from public.auction_sale_field_hold_events
+     where sale_id = '88200000-1000-4000-8000-000000000001' and field_key like '%surface_m2'
+       and incoming_value = '72'::jsonb),
+  1,
+  'the same partial write a second time is held without a second event'
 );
 
 update public.auction_sales set bedrooms_count = 3 where id = '88200000-1000-4000-8000-000000000001';

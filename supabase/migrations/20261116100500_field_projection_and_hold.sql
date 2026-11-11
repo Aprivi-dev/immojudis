@@ -236,9 +236,9 @@ $$;
 -- Déclencheur de retenue ----------------------------------------------------------------------------------------
 -- Valeur entrante d'un champ à plusieurs colonnes (surface) : la colonne de valeur que l'écriture a changée
 -- (app_surface_m2 d'abord, sinon surface_m2), pour qu'une écriture partielle (un PATCH de surface_m2 seule) soit
--- vue comme un changement de l'annonce ; à défaut, la valeur affichée entrante. Le bloc « listing » ne reprend que
--- les colonnes que l'écriture a changées : une colonne inchangée porte encore la valeur tenue, pas celle de
--- l'annonce.
+-- vue comme un changement de l'annonce ; à défaut, la valeur affichée entrante. Elle se compare à la dernière
+-- valeur connue de l'annonce pour CETTE colonne. Le bloc « listing » ne reprend que les colonnes que l'écriture
+-- a changées : une colonne inchangée porte encore la valeur tenue, pas celle de l'annonce.
 create or replace function app_private.hold_projected_sale_fields()
 returns trigger
 language plpgsql
@@ -278,14 +278,16 @@ begin
     v_listing := coalesce(v_entry -> 'listing', '{}'::jsonb);
     -- Colonnes du champ, nommées une à une (jamais la ligne entière).
     if v_key = 'property.surface_m2' then
-      v_incoming := to_jsonb(case
-        when new.app_surface_m2 is not null and new.app_surface_m2 is distinct from old.app_surface_m2
-          then new.app_surface_m2
-        when new.surface_m2 is not null and new.surface_m2 is distinct from old.surface_m2
-          then new.surface_m2
-        else coalesce(new.app_surface_m2, new.surface_m2)
-      end);
-      v_listing_value := coalesce(v_listing -> 'app_surface_m2', v_listing -> 'surface_m2');
+      if (new.app_surface_m2 is not null and new.app_surface_m2 is distinct from old.app_surface_m2)
+        or not (new.surface_m2 is not null and new.surface_m2 is distinct from old.surface_m2)
+          and new.app_surface_m2 is not null
+      then
+        v_incoming := to_jsonb(new.app_surface_m2);
+        v_listing_value := coalesce(v_listing -> 'app_surface_m2', v_listing -> 'surface_m2');
+      else
+        v_incoming := to_jsonb(new.surface_m2);
+        v_listing_value := coalesce(v_listing -> 'surface_m2', v_listing -> 'app_surface_m2');
+      end if;
     elsif v_key = 'property.land_surface_m2' then
       v_incoming := to_jsonb(new.land_surface_m2);
       v_listing_value := v_listing -> 'land_surface_m2';
