@@ -25,6 +25,13 @@ par l'utilisateur.
 7. Si une tâche est ambiguë ou plus risquée que prévu, arrête-toi et explique pourquoi
    au lieu de deviner.
 
+## Rangement du code
+
+Critère permanent : lis `docs/architecture/rangement-du-code.md` avant d'écrire du code et
+applique-le dans le périmètre du lot seulement. Un défaut de rangement vu hors périmètre se
+signale dans le compte-rendu (règle 1 : pas de refonte en passant). Un cas particulier ajouté
+est justifié dans le compte-rendu.
+
 ## Format de rendu
 
 La liste des fichiers modifiés, ce qui a changé dans chacun, le résultat de chaque
