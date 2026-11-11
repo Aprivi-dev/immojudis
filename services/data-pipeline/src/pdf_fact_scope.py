@@ -12,9 +12,12 @@ from src.normalize import (
     clean_text,
     has_rented_occupancy_signal,
     no_lease_occupancy_status,
+    normalize_occupancy_status,
     normalize_status,
+    parse_decimal,
     parse_french_datetime,
     parse_price,
+    parse_surface,
     source_sale_timezone,
     strip_accents,
 )
@@ -196,6 +199,24 @@ def _pdf_get_projected_value(sale: Any, field: str) -> object:
     return getattr(sale, field, None)
 
 
+def _pdf_restored_decimal(field: str, value: object) -> Decimal | None:
+    """Valeur décimale remise depuis l'instantané de la source, lue comme la collecte la lit.
+
+    L'instantané garde la valeur brute de la page (« 85,5 », encheres_immobilieres) : ``Decimal`` la refuse, et la
+    chaîne laissée dans le champ faisait échouer la comparaison suivante (« '>' not supported between 'str' and
+    'int' », 11/11/2026). Une valeur illisible rend vide, jamais une chaîne.
+    """
+    try:
+        return Decimal(str(value))
+    except (ArithmeticError, TypeError, ValueError):
+        pass
+    if field.endswith("_eur"):
+        return parse_price(value)
+    if field.endswith("surface_m2"):
+        return parse_surface(value)
+    return parse_decimal(value)
+
+
 def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
     if field.startswith("raw_payload:"):
         key = field.split(":", 1)[1]
@@ -207,15 +228,14 @@ def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
     current = getattr(sale, field, None)
     if field == "status":
         value = normalize_status(value, getattr(sale, "sale_date", None))
+    if field == "occupancy_status" and value is not None:
+        # L'instantané de la source garde le libellé brut de la page (« libre », cessions_etat) : remis tel quel,
+        # il violait auction_sales_occupancy_status_check (11/11/2026). Un libellé inconnu rend vide.
+        value = normalize_occupancy_status(value)
     if value is None and isinstance(current, list):
         value = []
     if value is not None and isinstance(current, Decimal):
-        try:
-            value = Decimal(str(value))
-        except (ArithmeticError, TypeError, ValueError):
-            parsed = parse_price(value)
-            if parsed is not None:
-                value = parsed
+        value = _pdf_restored_decimal(field, value)
     elif value is not None and isinstance(current, datetime) and not isinstance(value, datetime):
         value = parse_french_datetime(
             value,
