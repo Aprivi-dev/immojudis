@@ -339,12 +339,14 @@ jobs:
       # bibliothèque standard (python3 du runner, -I -S : ni variable d'environnement Python ni
       # site-packages) : il tourne même quand rien n'a pu être installé. Il ne clôt qu'un run encore
       # « queued », jamais un run « running » ni un run d'un autre passage, et l'écrit en échec
-      # (« failed_before_start » et l'étape en cause), jamais en réussite. Les modes qui n'exécutent pas le
-      # run demandé (publication_check, documents_backlog, enrichment_only) ne le closent pas : le vidage
-      # des pièces tourne dans un autre groupe de concurrence, en parallèle d'un passage planifié, et
-      # fermerait le run d'un autre job. Le plafond de l'étape (3 min) dépasse le délai global du script.
+      # (« failed_before_start » et l'étape en cause), jamais en réussite. La condition suit l'étape du
+      # pipeline : un passage automatique exécute toujours le run demandé (`automatic` y est testé en
+      # premier) ; sinon les modes qui ne l'exécutent pas (publication_check, documents_backlog,
+      # enrichment_only) ne le closent pas : le vidage des pièces tourne dans un autre groupe de
+      # concurrence, en parallèle d'un passage planifié, et fermerait le run d'un autre job. Le plafond de
+      # l'étape (3 min) dépasse le délai global du script.
       - name: Close run that never started
-        if: always() && steps.pipeline.outcome == 'skipped' && inputs.run_id != '' && inputs.publication_check != true && inputs.documents_backlog != true && inputs.enrichment_only != true
+        if: always() && steps.pipeline.outcome == 'skipped' && inputs.run_id != '' && (inputs.automatic == true || (inputs.publication_check != true && inputs.documents_backlog != true && inputs.enrichment_only != true))
         timeout-minutes: 3
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
