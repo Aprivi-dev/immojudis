@@ -236,6 +236,136 @@ La fonction de publication automatique viendra à l’étape 6, qui devra lever 
   n’est écrit, sans erreur). Il suit la vente (seule suppression admise). Migration `20261115100000`, tests
   pgTAP `880`.
 
+## Jeu d’évaluation et essai réel du modèle (étape 4, 11/11/2026)
+
+**À quoi il sert.** Mesurer, sans rien publier, ce que la chaîne entière (réception, règles, lecture par l’IA,
+moteur) ferait de 215 réponses FICTIVES d’avocats, et tenir le seuil du déverrouillage : **zéro publication
+fausse** (une valeur « aurait été publiée », par n’importe quel message du dossier, alors que la vérité dit
+« ne doit pas être publié », ou publiée avec une autre valeur). Le jeu est dans
+`services/data-pipeline/tests/fixtures/information_agent_evaluation/cases/` : 8 familles de 25 (réponses
+nettes et contexte, réserves, lots, corrections, confusions de champs, « ne pas publier », manipulation,
+particuliers et pièces jointes) et 15 compléments de la relecture. Chaque cas porte le message, le contexte
+(type de bien, lots, fiche, destinataire, authentification, délai, messages antérieurs et postérieurs du
+dossier) et la vérité pour la surface, le terrain et le nombre de pièces. 63 cas citent sous la réponse notre
+demande actuelle en entier, telle que le gabarit du code la rend (`demande_actuelle.txt`, figé par un test :
+un changement du gabarit le signale). Cette citation déclenche le détecteur « ne pas publier » (« Ne
+communiquez que… », « secret professionnel ») : elle n’est posée que sur des cas publiables (trois sur quatre,
+pour mesurer la perte de couverture) et sur les cas de la famille 6 déjà reconnus, jamais sur un piège
+qu’elle masquerait. Tout est fictif (adresses en `.example`, test).
+
+**Règles de vérité prudentes** (le propriétaire peut les assouplir ; les cas concernés sont comptés à part
+dans le rapport, `decisions_proprietaire`) :
+
+1. un message accompagné d’une pièce jointe autre que le corps est non publiable pour tous les champs ;
+2. un particulier nommé dans le corps ou l’objet (débiteur, occupant, partie au dossier, y compris en
+   capitales sans civilité, « BANQUE EXEMPLE c/ ROCHEVAL ») rend le message non publiable ;
+3. un collaborateur du cabinet nommé en signature (assistante, secrétaire) aussi, tant que le propriétaire
+   n’a pas tranché (`collaborateur_en_signature`) ;
+4. des données de tiers sans nom (téléphone d’une occupante, loyer d’un couple) laissent la valeur publiable
+   (`donnees_de_tiers_sans_nom`).
+
+**Le banc, sans réseau ni modèle**, fait passer chaque dossier par la vraie chaîne en trois étapes reliées par
+des fichiers (la chaîne est à cheval sur deux langages ; chaque langage vérifie que son fichier est à jour) :
+
+1. réception et règles TypeScript (`src/lib/information-agent/evaluation/`, test Vitest), pour chaque message
+   du dossier : relecture décidée à la réception (expéditeur, authentification, opposition possible, mauvais
+   destinataire, consigne adressée à un modèle), opposition, réponse automatique, puis
+   `extractInformationAgentFacts` et `persistFactCandidates` sur une base en mémoire → `stages/rules_stage.json` ;
+2. worker Python (`services/data-pipeline/scripts/information_agent_evaluation.py`) : le vrai `_process_job`
+   lit le corps de chaque message extrait puis les pièces jointes, avec une base simulée et un client de modèle
+   de remplacement → `stages/worker_stage.<configuration>.json` ;
+3. moteur (même test Vitest) : la vraie passe `runAutoPublicationSimulation` → `report.json`.
+
+Configurations, toutes SIMULÉES (`modele_reel: false`, vérifié par test) tant qu’aucun essai réel n’est rejoué :
+
+- **`regles_seules`** : IA désactivée ; rien ne doit être publiable (test de fermeture) ;
+- **`modele_ideal`** : sortie égale à la vérité, citée en phrase entière (borne haute de la couverture) ;
+- **`suiveur`** (pessimiste) : le modèle confirme chaque valeur lue par les règles, avec la ligne qui la
+  contient. **C’est elle qui fait foi pour la sécurité** (`fait_foi: true`) tant qu’aucun essai réel complet
+  n’est enregistré ;
+- `enregistrement_<nom>` : sortie RÉELLE du modèle enregistrée par l’essai et rejouée à l’identique.
+
+Le rapport donne chaque configuration dans deux états côte à côte : **`etat_attendu`** (le dossier
+« replied » et le message traité sans motif, l’état que le moteur exige) et **`etat_reel`** (l’état que la
+chaîne écrit vraiment : dossier et message en relecture dès qu’une réponse a un corps). Dans l’état réel,
+le moteur ne publie **jamais** rien : c’est à corriger avant toute simulation utile en production.
+
+**Seuil permanent** (test Vitest) : aucune publication fausse hors de `known_defects.json`, dans les deux
+états et pour toute configuration ; chaque défaut connu doit rester observé. Un défaut connu est reconnu par
+sa signature complète (configuration, état, cas, champ, valeur, message, provenance, motifs de la décision du
+même fait dans l’état réel) : une nouvelle cause sur le même cas fait échouer le test. Résultats du
+11/11/2026, état attendu : `regles_seules` 0 publication ; `modele_ideal` 57 publications dont 40 fausses,
+couverture 17 sur 90 ; `suiveur` 58 publications dont 41 fausses, couverture 17 sur 90 ; toutes les fausses
+sont des défauts connus (trous des règles et des détecteurs, groupés dans `known_defects.json`). Le mode
+automatique reste verrouillé tant qu’ils ne sont pas corrigés.
+
+**Bloqué pour la bonne raison.** Pour la configuration qui fait foi, le rapport (`blocage_suiveur`) dit, pour
+chaque champ « ne doit pas être publié » qui n’est pas une publication fausse, quel motif l’a bloqué (motif du
+moteur, décision de la réception, ou aucun fait proposé) et si ce motif correspond à la famille du piège
+(« bonne raison ») ou non (« autre raison », liste nominative). Un test échoue si un piège dont la nature
+n’est pas une demande de non-publication n’est bloqué QUE par le motif `do_not_publish_requested` venu de
+notre propre demande citée : retirer la citation du cas, ou l’inscrire dans `pieges_non_eprouves` de
+`known_defects.json` (liste visible et comptée). Au 11/11/2026 : 2 champs bloqués pour une autre raison
+(F4-22, mauvais destinataire possible ; F9-05, citation trop courte), aucun par la seule demande citée
+(4 avant la correction : F4-13, F4-24, F5-20, F5-25, devenus des défauts connus).
+
+**Rejouer le banc** (après toute modification de la réception, des règles, du worker, du prompt ou du
+moteur) :
+
+```
+npx vitest run src/lib/information-agent/evaluation -u      # étape 1 (rules_stage.json, demande citée)
+cd services/data-pipeline && python -m scripts.information_agent_evaluation --write   # étape 2
+cd ../.. && npx vitest run src/lib/information-agent/evaluation -u                  # étape 3 (report.json)
+```
+
+Sans `--write`, le script Python vérifie seulement que ses fichiers sont à jour (code 1 sinon) ; `pytest`
+et `npm test` échouent aussi sur un fichier périmé. `-u` ne fait que réécrire les fichiers : il ne lève
+jamais le seuil, qui est contrôlé à part.
+
+**Essai réel du modèle (payant, manuel).** Workflow « Information Agent Evaluation Trial »
+(`.github/workflows/information-agent-evaluation-trial.yml`) : Actions › Run workflow, branche `main`
+seulement, champ `confirmation` = `ESSAI PAYANT 5 USD`, `budget_usd` (1 par défaut, 5 au plus),
+`appels_max` (5 par défaut : pilote ; vide : essai complet), `reprise_run_id` (vide, ou l’identifiant d’une
+exécution précédente à reprendre). Une seule exécution à la fois ; une relance par l’interface (« Re-run »)
+est refusée : elle repaierait sans nouvelle confirmation. Il ne reçoit que `REPLICATE_API_TOKEN` (aucune clé
+Supabase : aucune écriture en base, aucun email) et utilise les mêmes variables `REPLICATE_*` et `LLM_*` que
+`information-agent-evidence.yml` (test de concordance ; `REPLICATE_MAX_CALLS_PER_HOUR` y est sans effet,
+faute de base). Le script (`scripts/information_agent_evaluation_trial.py`) passe chaque pièce par le vrai
+worker avec le vrai client Replicate (même prompt, `semantic_evidence_v3`, sortie plafonnée à 1 024 jetons,
+un seul essai, échéance de 25 s) et enregistre pour chaque appel les jetons d’entrée et de sortie facturés,
+la durée, l’identifiant et la version de la prédiction, et la sortie brute quand le JSON est invalide.
+
+- **Plafond de dépense** : 5 USD en dur **par lancement** (et sur le fichier, reprises comprises). Avant
+  chaque appel, son coût maximal est estimé (octets du prompt comme plafond des jetons d’entrée, 1 024 jetons
+  de sortie, tarif de `TOKEN_PRICES` majoré de 25 %) et l’appel n’est pas fait s’il ferait dépasser le
+  plafond. Après l’appel, la dépense retenue est le plus prudent de l’estimation et du coût réel calculé
+  sur les jetons facturés ; l’essai s’arrête dès qu’elle dépasse. L’appel est inscrit avant d’être fait : un
+  arrêt brutal laisse un fichier partiel exploitable et compte l’appel. Estimation du jeu complet : 203
+  appels au plus, 0,51 USD au plus (`--estimate-only`, sans appel).
+- **Procédure en quatre temps** :
+  1. **pilote** (`appels_max` = 5, `budget_usd` = 1) : lire le résumé de l’exécution (`resume` du fichier :
+     jetons facturés face à l’estimation, sortie au-delà de 1 024 jetons, durée face à l’échéance de 25 s).
+     Ne continuer que si le pilote ne montre aucun dépassement ;
+  2. **essai complet** : `appels_max` vide, `reprise_run_id` = l’exécution du pilote ;
+  3. **deux répétitions** (nouveaux lancements sans reprise) pour mesurer la variance du modèle ;
+  4. **nouvel essai après tout changement du prompt**, du modèle ou de ses réglages.
+- **Reprise** : une pièce réussie n’est jamais rappelée ; une pièce en erreur ou interrompue est rejouée,
+  et chaque tentative compte dans la dépense.
+- **Ce qui invalide une sortie enregistrée** : un autre prompt système, une autre version de lecture, un
+  autre modèle (la reprise est refusée), ou un autre texte de pièce (le banc refuse de rejouer une sortie dont
+  l’empreinte du prompt utilisateur diffère : changement du jeu, de la réception ou du nettoyage du corps).
+- **Lire le résultat** : télécharger l’artefact `information-agent-evaluation-trial` (`essai.json`), le copier
+  sous `services/data-pipeline/tests/fixtures/information_agent_evaluation/model_outputs/<nom>.json`, rejouer
+  les étapes 2 et 3, puis lire `report.json` (configuration `enregistrement_<nom>`). Un essai avec un cas non
+  joué, une pièce en erreur, interrompue ou non appelée sans consigne repérée affiche **« essai incomplet »**
+  et aucun chiffre de sécurité. Pour un essai complet, le test exige zéro publication fausse : aucun défaut
+  connu ne peut l’excuser. Une publication fausse se corrige dans la chaîne, après validation, puis l’essai est
+  rejoué.
+
+**Limites.** Pièces jointes en texte (`.txt`), pas en PDF. Le modèle idéal ne rend rien pour les messages
+voisins du dossier. L’état réel du dossier est reconstitué (relecture dès qu’un corps existe) faute de
+fonction exportée.
+
 ## Contenu de l’e-mail
 
 - Signature : « L’équipe Immojudis », ou « Prénom Nom / Pour l’équipe Immojudis » quand `INFORMATION_AGENT_SIGNATURE_NAME` est renseignée (modifiable dans le brouillon).
