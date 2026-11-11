@@ -3,8 +3,9 @@
 --   * chaque publication écrit une ligne de journal : valeurs et provenance précédentes, nouvelles valeurs,
 --     auteur réel ('admin'), pas de version de politique ; raw_payload reçoit publication_mode et received_at ;
 --   * le journal est fermé aux rôles de l'API (lecture seule pour service_role) ;
---   * le noyau n'est exécutable par aucun rôle de l'API ; 'auto' est accepté par la contrainte mais aucune
---     fonction ne l'écrit, et le pont vers auction_fact_claims refuse une publication 'auto' ;
+--   * le noyau n'est exécutable par aucun rôle de l'API ; 'auto' est refusé par le verrou de l'étape 3
+--     (20261115100000, test 880) et aucune fonction ne l'écrit ; le pont vers auction_fact_claims refuse en
+--     plus une publication 'auto' (vérifié ici verrou levé) ;
 --   * pour 'admin', la claim du pont est identique à aujourd'hui.
 begin;
 
@@ -100,14 +101,18 @@ insert into public.auction_sales (
   100, 2, 1, 'unknown'
 );
 
-select lives_ok(
+-- Depuis 20261115100000, la contrainte information_agent_fact_publications_auto_locked refuse 'auto' jusqu'à
+-- l'étape 6 (voir le test 880) : la forme d'une ligne 'auto' reste prévue par la contrainte de l'auteur.
+select throws_ok(
   $$insert into public.information_agent_fact_publications (
       fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version, recipient_kind
     ) values (
       '87800000-9000-4000-8000-000000000001', '87800000-1000-4000-8000-000000000001',
       'rooms_count', 'auto', null, 'politique-test-1', 'source_lawyer'
     )$$,
-  'the journal constraint already accepts auto with a policy version and no person'
+  '23514',
+  'new row for relation "information_agent_fact_publications" violates check constraint "information_agent_fact_publications_auto_locked"',
+  'an automatic publication is locked until step 6, even with a policy version and no person'
 );
 select throws_ok(
   $$insert into public.information_agent_fact_publications (
@@ -572,6 +577,10 @@ select throws_ok(
 );
 
 -- Le pont refuse une publication 'auto' au lieu d'écrire « validée par un administrateur » -------------------
+-- Le verrou de l'étape 3 (20261115100000) refuse déjà toute ligne 'auto' ; le test le lève ici, dans sa
+-- transaction annulée à la fin, pour vérifier le refus du pont seul (seconde barrière).
+alter table public.information_agent_fact_publications
+  drop constraint information_agent_fact_publications_auto_locked;
 insert into public.information_agent_fact_publications (
   fact_id, sale_id, fact_key, actor_kind, actor_id, policy_version, recipient_kind
 ) values (

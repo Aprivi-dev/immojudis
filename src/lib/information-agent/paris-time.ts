@@ -7,6 +7,16 @@
  * français, pas une fenêtre glissante de 24 heures.
  */
 export function startOfParisDay(now: Date): Date {
+  const { year, month, day } = parisClock(now);
+  const midnightAsUtc = Date.UTC(year, month - 1, day);
+  // Le décalage de Paris est celui de minuit, pas celui de l'instant donné : les jours de changement
+  // d'heure, ils diffèrent d'une heure. Deux passes suffisent (minuit n'est jamais dans l'heure sautée).
+  let start = midnightAsUtc - parisOffsetMs(now);
+  start = midnightAsUtc - parisOffsetMs(new Date(start));
+  return new Date(start);
+}
+
+function parisClock(at: Date) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Paris",
     year: "numeric",
@@ -16,18 +26,30 @@ export function startOfParisDay(now: Date): Date {
     minute: "2-digit",
     second: "2-digit",
     hourCycle: "h23",
-  }).formatToParts(now);
+  }).formatToParts(at);
   const part = (type: string) => Number(parts.find((item) => item.type === type)?.value);
+  return {
+    year: part("year"),
+    month: part("month"),
+    day: part("day"),
+    hour: part("hour"),
+    minute: part("minute"),
+    second: part("second"),
+  };
+}
+
+/** Décalage de l'heure de Paris sur UTC à l'instant donné (une ou deux heures), en millisecondes. */
+function parisOffsetMs(at: Date): number {
+  const clock = parisClock(at);
   const localAsUtc = Date.UTC(
-    part("year"),
-    part("month") - 1,
-    part("day"),
-    part("hour"),
-    part("minute"),
-    part("second"),
+    clock.year,
+    clock.month - 1,
+    clock.day,
+    clock.hour,
+    clock.minute,
+    clock.second,
   );
-  const offsetMs = localAsUtc - Math.floor(now.getTime() / 1000) * 1000;
-  return new Date(Date.UTC(part("year"), part("month") - 1, part("day")) - offsetMs);
+  return localAsUtc - Math.floor(at.getTime() / 1000) * 1000;
 }
 
 export type ParisParts = {

@@ -858,3 +858,125 @@ describe("invariants de sécurité : journal et noyau de publication de l'agent 
     );
   });
 });
+
+describe("invariants de sécurité : aucun chemin de publication automatique (étape 3)", () => {
+  const coreCall = (call) => `
+create or replace function app_private.publish_automatically(p_fact_id uuid, p_kind text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+begin
+  ${call}
+end;
+$$;`;
+
+  it.each([
+    [
+      "'auto'",
+      "return app_private.apply_information_agent_fact(p_fact_id, 'auto', null, 'v1');",
+      "with actor 'auto'",
+    ],
+    [
+      "une variable",
+      "return app_private.apply_information_agent_fact(p_fact_id, p_kind, null, 'v1');",
+      "with actor p_kind",
+    ],
+    [
+      "un identifiant entre guillemets",
+      `return app_private."apply_information_agent_fact"(p_fact_id, 'auto', null, 'v1');`,
+      "with actor 'auto'",
+    ],
+    [
+      "un appel non qualifié (search_path)",
+      "return apply_information_agent_fact(p_fact_id, 'auto', null, 'v1');",
+      "with actor 'auto'",
+    ],
+    [
+      "'admin' caché dans un argument imbriqué",
+      "return app_private.apply_information_agent_fact(coalesce(p_fact_id, 'admin'), p_kind, null, 'v1');",
+      "with actor p_kind",
+    ],
+  ])("refuse un appel du noyau avec %s", (_label, call, message) => {
+    const result = runInvariants({ "99990101000000_auto_publish.sql": coreCall(call) });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`calls app_private.apply_information_agent_fact ${message}`);
+  });
+
+  it("refuse le nom du noyau, même partiel, dans du SQL dynamique", () => {
+    const result = runInvariants({
+      "99990101000000_auto_publish_dynamic.sql": coreCall(
+        "execute format('select app_private.%I($1, %L, null, %L)', 'apply_information_agent_' || 'fact', 'auto', 'v1') using p_fact_id;",
+      ),
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("in dynamic SQL (execute)");
+  });
+
+  it.each([
+    [
+      "le retrait du verrou du mode automatique",
+      "alter table public.information_agent_auto_publication_settings drop constraint information_agent_auto_publication_settings_auto_locked;",
+      "drops the automatic publication lock information_agent_auto_publication_settings_auto_locked",
+    ],
+    [
+      "le retrait entre guillemets",
+      'alter table public.information_agent_auto_publication_settings drop constraint "information_agent_auto_publication_settings_auto_locked";',
+      "drops the automatic publication lock information_agent_auto_publication_settings_auto_locked",
+    ],
+    [
+      "le renommage puis le retrait",
+      "alter table public.information_agent_auto_publication_settings rename constraint information_agent_auto_publication_settings_auto_locked to tmp_lock; alter table public.information_agent_auto_publication_settings drop constraint tmp_lock;",
+      "renames the automatic publication lock information_agent_auto_publication_settings_auto_locked",
+    ],
+    [
+      "le retrait du verrou des publications",
+      "alter table public.information_agent_fact_publications drop constraint if exists information_agent_fact_publications_auto_locked;",
+      "drops the automatic publication lock information_agent_fact_publications_auto_locked",
+    ],
+    [
+      "la suppression de la table qui porte un verrou",
+      "drop table if exists public.information_agent_auto_publication_settings cascade;",
+      "drops or renames public.information_agent_auto_publication_settings",
+    ],
+    [
+      "le renommage de la table qui porte un verrou",
+      "alter table public.information_agent_fact_publications rename to information_agent_fact_publications_old;",
+      "drops or renames public.information_agent_fact_publications",
+    ],
+  ])("refuse %s", (_label, sql, message) => {
+    const result = runInvariants({ "99990101000000_unlock.sql": sql });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(message);
+  });
+
+  it.each([
+    "information_agent_auto_publication_decisions",
+    "information_agent_auto_publication_settings",
+    "information_agent_auto_publication_mode_changes",
+  ])("refuse une écriture accordée au rôle de service sur %s", (table) => {
+    const result = runInvariants({
+      "99990101000000_grant_write.sql": `grant insert, delete on table public.${table} to service_role;`,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`grants more than SELECT to service_role on public.${table}`);
+  });
+
+  it("refuse un appel de la revue administrateur hors de son module", () => {
+    const result = runInvariants({}, [], {
+      "src/lib/sneaky-publish.ts":
+        'export const rpc = "review_information_agent_fact_candidate";\n',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "src/lib/sneaky-publish.ts calls review_information_agent_fact_candidate",
+    );
+  });
+
+  it("refuse un module qui nomme le noyau de publication", () => {
+    const result = runInvariants({}, [], {
+      "src/lib/sneaky-core.ts": 'export const core = "apply_information_agent_fact";\n',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "src/lib/sneaky-core.ts names app_private.apply_information_agent_fact",
+    );
+  });
+});

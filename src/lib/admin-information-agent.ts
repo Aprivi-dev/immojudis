@@ -31,6 +31,7 @@ import {
   type InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
 import { requireAdmin } from "@/lib/admin-auth.server";
+import { loadAutoPublicationReviewAnnotations } from "@/lib/admin-information-agent-auto-publication";
 import { asRecord as recordOrEmpty } from "@/lib/guards";
 
 export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
@@ -218,6 +219,9 @@ export async function listAdminInformationAgentReview(
     : { data: [], error: null };
   if (extractionsError) throw extractionsError;
 
+  // Simulation du moteur « publier ou relire » : rien en mode arrêt.
+  const autoPublication = await loadAutoPublicationReviewAnnotations(facts);
+
   return {
     cases: cases ?? [],
     facts,
@@ -225,6 +229,7 @@ export async function listAdminInformationAgentReview(
     extractions: extractions ?? [],
     messages,
     factSources,
+    autoPublication,
     factsTotal,
     messagesTotal,
     ...adminPageMeta({ offset, limit, total: Math.max(factsTotal, messagesTotal) }),
