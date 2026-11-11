@@ -13,7 +13,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(79);
+select plan(80);
 
 -- Déclencheurs : forme et ordre -----------------------------------------------------------------------------------
 select ok(
@@ -790,6 +790,14 @@ select throws_ok(
   'forged write: nor on a sale that holds nothing'
 );
 select set_config('app.sale_field_projection', '', true);
+select throws_ok(
+  $$insert into public.auction_sales (source_name, source_url, held_fields)
+      values ('licitor', 'https://example.test/882/kept', null)
+      on conflict (source_url) do update set held_fields = excluded.held_fields$$,
+  '42501',
+  'auction_sales.held_fields cannot be written by an API role.',
+  'forged write: an upsert of the server role that carries a null held_fields does not empty a held sale'
+);
 reset role;
 
 select throws_ok(
