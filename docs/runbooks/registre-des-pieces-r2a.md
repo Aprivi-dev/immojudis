@@ -178,7 +178,7 @@ Puis le coût. Pour la vue, mesurer avant et après A9 les DEUX lectures de l'ap
 (`explain`, sans `analyze` : aucun parcours séquentiel attendu) et la liste de relecture d'administration, la plus
 chère (temps moyen des deux requêtes PostgREST dans `pg_stat_statements`, ou `explain` de
 `select count(*) from public.v_auction_fact_claims_read_model where auction_sale_id is not null and fact_status in ('candidate', 'conflicted')`).
-Sur le banc local, à 240 000 observations (dix fois la production), la liste passe de 60 à 70 ms à 170 à 200 ms :
+Sur le banc local, à 240 000 observations (dix fois la production), la liste passe de 60 à 80 ms à 170 à 260 ms :
 un agrégat de plus par vente, sans expression rationnelle. La lecture par vente reste sous 2 ms. Puis la durée des
 imports. Attendu : inchangée. Sur le banc local (5 000 ventes dont aucune n'est tenue), le coût isolé de chaque
 élément du lot placé sur le chemin de l'import est de 1 à 6 microsecondes par ligne, pour une erreur de mesure de 3
