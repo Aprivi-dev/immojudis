@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(65);
+select plan(66);
 
 -- A1. Séquence commune --------------------------------------------------------------------------------------------
 select ok(
@@ -230,6 +230,24 @@ select is(
     #> '{fields,property.rooms_count}') - 'decision_id',
   '{"state": "held", "value": 5, "claim_id": "88400000-2000-4000-8000-000000000003"}'::jsonb,
   'an acceptance written after the release holds, even dated before it (year 2000): seq decides'
+);
+
+-- Vente 2, absorbée par la vente 6 (qui ne tient rien). L'évènement de libération de la vente 2 nomme la décision
+-- de sa pièce d'avocat ; il ne nomme pas celle de sa pièce de document, qu'il suit. Sur la vente conservée,
+-- aucune des deux ne prend le champ : une libération écarte toute décision antérieure de SA vente, nommée ou non.
+update public.auction_sales
+set source_urls = '["https://example.test/884/sale-6", "https://example.test/884/sale-2"]'::jsonb
+where id = '88400000-1000-4000-8000-000000000006';
+select count(*) > 0 from public.bridge_auction_sales_to_outcome_graph();
+delete from public.auction_sales where id = '88400000-1000-4000-8000-000000000002';
+
+select results_eq(
+  $$select app_private.project_sale_fields(sale.id, array['property.rooms_count'], true)
+             #> '{fields,property.rooms_count}',
+           sale.rooms_count, sale.held_fields is null
+      from public.auction_sales sale where sale.id = '88400000-1000-4000-8000-000000000006'$$,
+  $$values ('{"state": "pass_through"}'::jsonb, 2, true)$$,
+  'on the kept sale, neither piece of the absorbed sale takes the field back: its release dislodged the decision it names and the earlier one it does not name'
 );
 
 -- Libération durable et vente absorbée ----------------------------------------------------------------------------

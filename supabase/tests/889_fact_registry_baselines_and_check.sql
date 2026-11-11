@@ -563,7 +563,8 @@ from (values
   ('61', 'property.occupancy_status', '"vacant"'::jsonb), ('71', 'property.land_surface_m2', '800'::jsonb),
   ('81', 'property.surface_m2', '54'::jsonb), ('91', 'property.surface_m2', '54'::jsonb),
   ('a1', 'property.occupancy_status', '"vacant"'::jsonb), ('b1', 'property.land_surface_m2', '800'::jsonb),
-  ('c1', 'property.surface_m2', '54'::jsonb), ('e1', 'property.rooms_count', '3'::jsonb),
+  ('c1', 'property.surface_m2', '54'::jsonb), ('d1', 'property.surface_m2', '50.4'::jsonb),
+  ('e1', 'property.rooms_count', '3'::jsonb),
   ('f1', 'property.surface_m2', '54'::jsonb), ('f2', 'property.rooms_count', '2'::jsonb)
 ) piece(code, field_key, value_jsonb);
 
@@ -674,12 +675,18 @@ select ok(
 -- Champs libérés : le contrôle les regarde encore ------------------------------------------------------------------
 -- Vente 9 : opposition ; la copie garde 54 alors que la fiche est revenue à 50. Vente a : retrait ; la copie garde
 -- « libre ». Vente f : opposition, puis la valeur opposée est remise dans les colonnes de la surface, avec le
--- libellé du registre. Vente 5 (qui ne tient rien) : le libellé seul.
+-- libellé du registre. Vente 5 (qui ne tient rien) : le libellé seul. Vente d : une pièce qui confirme l'annonce à
+-- la tolérance près (50,4 m² pour 50), acceptée puis opposée, et dont la valeur est remise dans les colonnes : la
+-- comparaison à la valeur rendue (50) est exacte, sinon 50,4 passerait pour la valeur d'annonce.
+execute decide('d1', 'accepted');
+select app_private.project_sale_fields('88900000-1000-4000-8000-00000000000d', null, true) ->> 'changed';
 execute decide('91', 'opposed');
 execute decide('a1', 'withdrawn');
+execute decide('d1', 'opposed');
 execute decide('f1', 'opposed');
 select count(app_private.project_sale_fields(('88900000-1000-4000-8000-00000000000' || n)::uuid, null, true))
-from unnest(array['9', 'a', 'f']) n;
+from unnest(array['9', 'a', 'd', 'f']) n;
+select pg_temp.forge('d', $$surface_m2 = 50.4, app_surface_m2 = 50.4$$);
 select pg_temp.forge('f', $$surface_m2 = 54, app_surface_m2 = 54, surface_source = 'fact_registry'$$);
 select pg_temp.forge('5', $$surface_source = 'fact_registry'$$);
 
@@ -694,13 +701,14 @@ select is(
      'column_mismatch', report #> '{checks,column_mismatch,sale_ids}')
      from check_reports where step = 'released'),
   jsonb_build_object(
-    'echo_suspected', pg_temp.sale_ids('9', 'a', 'b', 'f'),
+    'echo_suspected', pg_temp.sale_ids('9', 'a', 'b', 'd', 'f'),
     'registry_label', jsonb_build_object('active', true, 'count', 2, 'sale_ids', pg_temp.sale_ids('5', 'f')),
     'column_mismatch', pg_temp.sale_ids('6', '7', '8')),
-  'a released field is still watched: the opposed or withdrawn value left in a copy, or put back in the columns of the field, is a suspected echo; the reserved label without a held surface is reported, even on a sale that holds nothing'
+  'a released field is still watched: the opposed or withdrawn value left in a copy, or put back in the columns of the field (even within the tolerance of the listing value), is a suspected echo; the reserved label without a held surface is reported, even on a sale that holds nothing'
 );
 
 -- La valeur opposée dans une colonne voisine seule (les colonnes du champ sont remises en ordre).
+select pg_temp.forge('d', $$surface_m2 = 50, app_surface_m2 = 50$$);
 select pg_temp.forge('f', $$surface_m2 = 50, app_surface_m2 = 50, surface_source = 'listing_text',
   habitable_surface_m2 = 54$$);
 select pg_temp.forge('5', $$surface_source = 'listing_text'$$);
