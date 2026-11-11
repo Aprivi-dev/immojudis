@@ -4,7 +4,8 @@
 --   * champs et préséance de départ : cinq champs, « keep_and_review » partout, visites verrouillées ; admin 10,
 --     lawyer_form 20, lawyer_email 30, document 50 tenables, listing 60 jamais ;
 --   * journal des décisions et évènements en ajout seul (UPDATE, DELETE, TRUNCATE : 55000 et message), même en
---     session_replication_role = replica ; ordre par seq, date imposée par la base ;
+--     session_replication_role = replica ; ordre par seq (séquence commune aux deux journaux depuis
+--     20261117100000, voir 884), date imposée par la base ;
 --   * publication automatique impossible, acceptation par un administrateur existant seulement, motif en liste
 --     fermée (aucun texte libre), valeur recevable seulement (occupation : libre, occupé, loué) ;
 --   * auction_fact_claims : trois origines de plus, réservées aux fonctions du serveur ; vidage refusé ;
@@ -327,11 +328,16 @@ select throws_ok(
 
 -- Journal des décisions : forme ---------------------------------------------------------------------------------
 select ok(
-  (select attidentity = 'a' from pg_attribute
-     where attrelid = 'public.auction_fact_claim_decisions'::regclass and attname = 'seq')
-  and (select attidentity = 'a' from pg_attribute
-         where attrelid = 'public.auction_sale_field_hold_events'::regclass and attname = 'seq'),
-  'both journals are ordered by an identity column that the writer cannot choose'
+  (select bool_and(attidentity = '' and attnotnull and not atthasdef) and count(*) = 2 from pg_attribute
+     where attrelid in (
+       'public.auction_fact_claim_decisions'::regclass, 'public.auction_sale_field_hold_events'::regclass)
+       and attname = 'seq')
+  and (select bool_and(prosrc like '%new.seq := pg_catalog.nextval(''app_private.fact_registry_seq''::regclass)%')
+         and count(*) = 2
+       from pg_proc where oid in (
+         'app_private.validate_auction_fact_claim_decision()'::regprocedure,
+         'app_private.stamp_fact_registry_event()'::regprocedure)),
+  'both journals are ordered by a number that their insert trigger takes from the common sequence, never from the writer'
 );
 
 select hasnt_column(
@@ -373,16 +379,20 @@ select results_eq(
   'a decision is manual by default and dated by the database, whatever date the writer gives'
 );
 
+-- Sans le déclencheur de validation, une décision n'a pas de numéro : l'insertion échoue au lieu de passer sans
+-- ordre (seq est NOT NULL et n'a pas de valeur par défaut). Le numéro qu'un écrivain fournit est remplacé : 884.
+alter table public.auction_fact_claim_decisions disable trigger auction_fact_claim_decisions_validate;
 select throws_ok(
   $$insert into public.auction_fact_claim_decisions (
-      seq, claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id
+      claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id
     ) values (
-      1, '88100000-2000-4000-8000-000000000002', '88100000-1000-4000-8000-000000000001',
+      '88100000-2000-4000-8000-000000000002', '88100000-1000-4000-8000-000000000001',
       'property.rooms_count', 'accepted', 'single_lot', 'admin', '88100000-0000-4000-8000-0000000000a1')$$,
-  '428C9',
+  '23502',
   null,
-  'the writer cannot choose the order of a decision'
+  'without its insert trigger a decision gets no order and is refused'
 );
+alter table public.auction_fact_claim_decisions enable always trigger auction_fact_claim_decisions_validate;
 
 select throws_ok(
   $$insert into public.auction_fact_claim_decisions (
@@ -799,7 +809,7 @@ select throws_ok(
       values ('88100000-1000-4000-8000-000000000001', 'property.surface_m2', 'something_else')$$,
   '23514',
   null,
-  'a hold event is one of the six known events'
+  'a hold event is one of the seven known events'
 );
 
 select throws_ok(

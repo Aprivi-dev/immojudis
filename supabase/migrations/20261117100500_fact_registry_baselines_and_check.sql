@@ -12,10 +12,12 @@ set local statement_timeout = '60s';
 --      décision ni l'origine. SEUL usage (arbitrage du plan) : la fusion de doublons de la collecte, qui doit
 --      fusionner deux fiches sur leurs valeurs d'annonce et non sur la valeur d'une pièce. La collecte continue
 --      de juger une vente sur la valeur affichée : la base n'exige rien d'autre d'elle. Serveur seul.
---   2. public.check_fact_registry_consistency(p_limit) : le contrôle quotidien. Fonction STABLE : PostgreSQL
---      refuse toute écriture depuis une fonction non volatile, elle ne peut donc rien écrire (elle simule la
---      projection, p_apply = false). Elle rend un rapport JSON de comptes et d'identifiants de vente (20 au
---      plus par contrôle), jamais une valeur :
+--   2. public.check_fact_registry_consistency(p_limit) : le contrôle quotidien. Il n'écrit rien : la fonction
+--      est STABLE (PostgreSQL refuse toute instruction d'écriture dans son propre corps) et elle n'appelle la
+--      projection qu'en simulation, p_apply = false écrit en dur (une fonction stable peut appeler une fonction
+--      volatile : la garantie vient de ce littéral, vérifié par l'invariant fact-registry-check-read-only et par
+--      le test pgTAP 889). Elle rend un rapport JSON de comptes et d'identifiants de vente (20 au plus par
+--      contrôle), jamais une valeur :
 --        projection_drift        la simulation de projection rendrait « changed » pour une vente qui tient ou
 --                                mémorise un champ, ou dont une pièce a pour dernière décision une acceptation
 --                                d'un lot identifié ;
@@ -339,7 +341,7 @@ end;
 $$;
 
 comment on function public.check_fact_registry_consistency(integer) is
-  'Registre des pièces : contrôle quotidien en lecture seule (fonction stable). Rapport JSON de comptes et d''identifiants de vente, jamais une valeur : dérive de la projection, mode des déclencheurs, colonnes tenues, écho dans une colonne voisine ou une copie, colonne interne recopiée, rafale d''évènements, écho écarté, annonce qui se tait. Serveur seul (service_role).';
+  'Registre des pièces : contrôle quotidien en lecture seule (la projection n''y est appelée qu''en simulation). Rapport JSON de comptes et d''identifiants de vente, jamais une valeur : dérive de la projection, mode des déclencheurs, colonnes tenues, écho dans une colonne voisine ou une copie, colonne interne recopiée, rafale d''évènements, écho écarté, annonce qui se tait. Serveur seul (service_role).';
 
 revoke all on function public.check_fact_registry_consistency(integer) from public, anon, authenticated;
 grant execute on function public.check_fact_registry_consistency(integer) to service_role;
