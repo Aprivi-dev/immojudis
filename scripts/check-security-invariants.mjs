@@ -2010,6 +2010,226 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
+// Agent d'information, étape 3 (20261115100000) : AUCUN chemin ne publie automatiquement.
+// Les identifiants entre guillemets (`app_private."apply_information_agent_fact"`) sont ramenés à leur forme
+// simple avant tout contrôle.
+// 1. Tout appel du noyau `app_private.apply_information_agent_fact` dans une migration passe le littéral
+//    'admin' comme type d'auteur (ni 'auto', ni une variable, ni une expression). Aucune instruction `execute`
+//    (SQL dynamique) ne contient le nom du noyau, même partiel (`apply_information_agent_`).
+// 2. Aucun code de l'application ni du pipeline ne nomme le noyau ; seul `src/lib/admin-information-agent.ts`
+//    appelle `review_information_agent_fact_candidate` (et sa variante `_with_path`). Un dossier de code
+//    illisible est une erreur, pas un dossier sauté.
+// 3. Les deux verrous existent avec leur définition exacte et ne sont ni retirés, ni renommés, ni emportés par
+//    la suppression ou le renommage de leur table : `information_agent_auto_publication_settings_auto_locked`
+//    (mode automatique) et `information_agent_fact_publications_auto_locked` (publication 'auto').
+// 4. Les tables du réglage, de la trace des modes et du journal des décisions sont réservées au serveur en
+//    lecture seule : RLS, aucune politique, tout retiré aux rôles de l'API, SELECT seul pour service_role.
+// Ouvrir la publication automatique (étape 6) exige de changer cet invariant, explicitement.
+{
+  const stripSql = (text) =>
+    text
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/--[^\n]*/g, "")
+      .replace(/"([A-Za-z_][A-Za-z0-9_$]*)"/g, "$1");
+  const all = [...migrationSources].map(([name, source]) => [name, stripSql(source)]);
+  const allSql = all.map(([, sql]) => sql).join("\n");
+
+  // Arguments de premier niveau d'un appel (parenthèses et chaînes respectées).
+  const topLevelArgs = (text) => {
+    const args = [];
+    let depth = 0;
+    let quoted = false;
+    let current = "";
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index];
+      if (quoted) {
+        current += char;
+        if (char === "'") {
+          if (text[index + 1] === "'") {
+            current += "'";
+            index += 1;
+          } else {
+            quoted = false;
+          }
+        }
+        continue;
+      }
+      if (char === "'") quoted = true;
+      if (char === "(") depth += 1;
+      if (char === ")") {
+        if (depth === 0) return { args: [...args, current.trim()], end: index };
+        depth -= 1;
+      }
+      if (char === "," && depth === 0) {
+        args.push(current.trim());
+        current = "";
+        continue;
+      }
+      current += char;
+    }
+    return { args: [...args, current.trim()], end: text.length };
+  };
+
+  // Appel qualifié (`app_private.`, ou tout autre schéma) ou non qualifié (résolu par le search_path).
+  const core =
+    /(?:(?<![\w.])[a-z_][a-z0-9_]*\s*\.\s*|(?<![\w.]))apply_information_agent_fact\s*\(/gi;
+  // Nom du noyau, même partiel ; seule la fonction d'opposition par identité, sans rapport, partage le préfixe.
+  const corePrefix = /apply_information_agent_(?!identity_opposition\b)/i;
+  for (const [name, sql] of all) {
+    for (const match of sql.matchAll(core)) {
+      const before = sql.slice(Math.max(0, match.index - 40), match.index);
+      if (/\bfunction\s+$/i.test(before)) continue;
+      const { args } = topLevelArgs(sql.slice(match.index + match[0].length));
+      // Signature seule (revoke, comment, regprocedure) : uniquement des types.
+      if (args.join(",").replace(/\s+/g, "").toLowerCase() === "uuid,text,uuid,text") continue;
+      const actor = args[1];
+      if (actor !== "'admin'") {
+        failures.push(
+          `${name} calls app_private.apply_information_agent_fact with actor ${actor ?? "(none)"}: only the literal 'admin' is allowed (no automatic publication path)`,
+        );
+      }
+    }
+    // SQL dynamique : tout `execute` d'une chaîne (pas `execute function` d'un déclencheur, pas un droit).
+    for (const statement of sql.matchAll(
+      /(?<!grant\s|revoke\s)\bexecute\b(?!\s+(?:function|procedure|on)\b)[^;]*/gi,
+    )) {
+      if (corePrefix.test(statement[0])) {
+        failures.push(
+          `${name} names app_private.apply_information_agent_fact in dynamic SQL (execute): the publication core is called directly or not at all`,
+        );
+      }
+    }
+  }
+
+  // Dossiers de code, chacun avec son adresse relative au script et son chemin relatif au dépôt (affiché).
+  const codeRoots = [
+    { url: "../src/", path: "src/" },
+    { url: "../services/data-pipeline/src/", path: "services/data-pipeline/src/" },
+  ];
+  for (const root of codeRoots) {
+    let entries;
+    try {
+      entries = await readdir(new URL(root.url, import.meta.url), { recursive: true });
+    } catch (error) {
+      failures.push(
+        `${root.path} cannot be read to check the publication core (${error.code ?? "error"})`,
+      );
+      continue;
+    }
+    for (const entry of entries) {
+      const name = String(entry);
+      if (!/\.(?:ts|tsx|mjs|cjs|js|py)$/.test(name)) continue;
+      if (/\.test\.[cm]?[jt]sx?$/.test(name) || /(?:^|\/)test_[^/]*\.py$/.test(name)) continue;
+      const relative = `${root.path}${name}`;
+      const source = (
+        await readFile(new URL(`${root.url}${name}`, import.meta.url), "utf8")
+      ).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/g, "");
+      if (corePrefix.test(source)) {
+        failures.push(
+          `${relative} names app_private.apply_information_agent_fact: only the administrator RPC may call the publication core`,
+        );
+      }
+      if (
+        /review_information_agent_fact_candidate/.test(source) &&
+        !["src/lib/admin-information-agent.ts", "src/integrations/supabase/types.ts"].includes(
+          relative,
+        )
+      ) {
+        failures.push(
+          `${relative} calls review_information_agent_fact_candidate: only src/lib/admin-information-agent.ts may (administrator review)`,
+        );
+      }
+    }
+  }
+
+  const locks = [
+    {
+      name: "information_agent_auto_publication_settings_auto_locked",
+      table: "information_agent_auto_publication_settings",
+      definition: "check\\s*\\(\\s*mode\\s*<>\\s*'auto'\\s*\\)",
+    },
+    {
+      name: "information_agent_fact_publications_auto_locked",
+      table: "information_agent_fact_publications",
+      definition: "check\\s*\\(\\s*actor_kind\\s*<>\\s*'auto'\\s*\\)",
+    },
+  ];
+  for (const lock of locks) {
+    if (!new RegExp(`constraint\\s+${lock.name}\\s+${lock.definition}`, "i").test(allSql)) {
+      failures.push(`the automatic publication lock ${lock.name} is missing`);
+    }
+    for (const [name, sql] of all) {
+      if (new RegExp(`drop\\s+constraint\\s+(?:if\\s+exists\\s+)?${lock.name}\\b`, "i").test(sql)) {
+        failures.push(`${name} drops the automatic publication lock ${lock.name}`);
+      }
+      if (new RegExp(`rename\\s+constraint\\s+${lock.name}\\b`, "i").test(sql)) {
+        failures.push(`${name} renames the automatic publication lock ${lock.name}`);
+      }
+      if (
+        new RegExp(
+          `drop\\s+table\\s+(?:if\\s+exists\\s+)?(?:[a-z0-9_.,\\s]*,\\s*)?(?:public\\.)?${lock.table}\\b`,
+          "i",
+        ).test(sql) ||
+        new RegExp(
+          `alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?(?:public\\.)?${lock.table}\\s+rename\\s+to\\b`,
+          "i",
+        ).test(sql)
+      ) {
+        failures.push(
+          `${name} drops or renames public.${lock.table}, which carries the lock ${lock.name}`,
+        );
+      }
+    }
+  }
+
+  for (const table of [
+    "information_agent_auto_publication_settings",
+    "information_agent_auto_publication_mode_changes",
+    "information_agent_auto_publication_decisions",
+  ]) {
+    const qualified = `public\\.${table}`;
+    if (
+      !new RegExp(`create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?${qualified}\\b`, "i").test(
+        allSql,
+      )
+    ) {
+      failures.push(`public.${table} is not created by a migration`);
+      continue;
+    }
+    if (
+      !new RegExp(`alter\\s+table\\s+${qualified}\\s+enable\\s+row\\s+level\\s+security`, "i").test(
+        allSql,
+      ) ||
+      !new RegExp(
+        `revoke\\s+all\\s+on\\s+table\\s+${qualified}\\s+from\\s+public,\\s*anon,\\s*authenticated,\\s*service_role`,
+        "i",
+      ).test(allSql)
+    ) {
+      failures.push(`public.${table} is not closed to the API roles (RLS and revoke all)`);
+    }
+    for (const [name, sql] of all) {
+      if (new RegExp(`create\\s+policy[^;]*\\b${qualified}\\b`, "i").test(sql)) {
+        failures.push(`${name} opens public.${table} with a policy`);
+      }
+      for (const statement of sql.split(";")) {
+        if (!/^\s*grant\s/i.test(statement) || !new RegExp(`\\b${table}\\b`, "i").test(statement)) {
+          continue;
+        }
+        if (
+          !new RegExp(
+            `^\\s*grant\\s+select\\s+on\\s+(?:table\\s+)?${qualified}\\s+to\\s+service_role\\s*$`,
+            "i",
+          ).test(statement)
+        ) {
+          failures.push(
+            `${name} grants more than SELECT to service_role on public.${table} (written only by its RPC)`,
+          );
+        }
+      }
+    }
+  }
+}
+
 // Journal central des emails (module « Emails », lots 3 et 4, 01/11/2026) : deux tables réservées à
 // service_role (RLS activée, aucune politique, aucun droit pour public, anon ni authenticated), des fonctions
 // SECURITY DEFINER à search_path vide jamais exécutables par les rôles du navigateur, et un journal qui ne
@@ -2154,6 +2374,7 @@ console.log(
       "signup-trial-end-ignores-user-metadata",
       "email-send-log-service-role-only-and-no-body",
       "information-agent-publication-journal-and-core-service-only",
+      "information-agent-no-automatic-publication-path",
     ],
   }),
 );

@@ -7614,6 +7614,93 @@ export type Database = {
           },
         ];
       };
+      information_agent_auto_publication_decisions: {
+        Row: {
+          case_id: string;
+          decided_at: string;
+          fact_id: string;
+          fact_key: string;
+          id: string;
+          mode: string;
+          outcome: string;
+          policy_version: string;
+          reasons: string[];
+          sale_id: string;
+        };
+        Insert: {
+          case_id: string;
+          decided_at?: string;
+          fact_id: string;
+          fact_key: string;
+          id?: string;
+          mode: string;
+          outcome: string;
+          policy_version: string;
+          reasons?: string[];
+          sale_id: string;
+        };
+        Update: {
+          case_id?: string;
+          decided_at?: string;
+          fact_id?: string;
+          fact_key?: string;
+          id?: string;
+          mode?: string;
+          outcome?: string;
+          policy_version?: string;
+          reasons?: string[];
+          sale_id?: string;
+        };
+        Relationships: [];
+      };
+      information_agent_auto_publication_mode_changes: {
+        Row: {
+          actor_id: string;
+          changed_at: string;
+          emergency_stop: boolean;
+          id: string;
+          new_mode: string;
+          previous_mode: string;
+        };
+        Insert: {
+          actor_id: string;
+          changed_at?: string;
+          emergency_stop?: boolean;
+          id?: string;
+          new_mode: string;
+          previous_mode: string;
+        };
+        Update: {
+          actor_id?: string;
+          changed_at?: string;
+          emergency_stop?: boolean;
+          id?: string;
+          new_mode?: string;
+          previous_mode?: string;
+        };
+        Relationships: [];
+      };
+      information_agent_auto_publication_settings: {
+        Row: {
+          mode: string;
+          singleton: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          mode?: string;
+          singleton?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          mode?: string;
+          singleton?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [];
+      };
       information_agent_inbound_jobs: {
         Row: {
           attachment_link_expires_at: string;
@@ -15937,6 +16024,24 @@ export type Database = {
       stop_information_agent_autopilot: {
         Args: { p_reason?: string };
         Returns: Database["public"]["Tables"]["information_agent_autopilot_settings"]["Row"];
+      };
+      set_information_agent_auto_publication_mode: {
+        Args: { p_mode: string };
+        Returns: Database["public"]["Tables"]["information_agent_auto_publication_settings"]["Row"];
+      };
+      stop_information_agent_auto_publication: {
+        Args: never;
+        Returns: Database["public"]["Tables"]["information_agent_auto_publication_settings"]["Row"];
+      };
+      record_information_agent_auto_publication_decision: {
+        Args: {
+          p_fact_id: string;
+          p_fact_key: string;
+          p_outcome: string;
+          p_policy_version: string;
+          p_reasons: string[];
+        };
+        Returns: boolean;
       };
       sync_information_agent_autopilot_warning: {
         Args: { p_active: boolean; p_code: string; p_details?: Json };
