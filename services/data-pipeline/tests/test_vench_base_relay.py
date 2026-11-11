@@ -128,18 +128,49 @@ def test_the_freshness_fingerprint_ignores_what_the_stored_row_provided() -> Non
     assert "source_content_changed" not in second
 
 
+def collect_unmarked(known_row: dict, previous_payload: dict | None = None) -> dict:
+    """La même lecture sans la note des champs repris : le calcul d'avant, valeurs de la base comprises."""
+    raw = restricted_page()
+    known = {URL: {**known_row, "raw_payload": previous_payload or {}}}
+    _filter_catalog_sales([raw], known)
+    raw.pop(RELAYED_FIELDS_KEY)
+    pipeline._preserve_known_enrichment_payloads([raw], known)
+    record_source_checks([raw], known)
+    return raw
+
+
+def test_the_first_read_after_the_change_of_definition_does_not_invalidate_the_analysis() -> None:
+    """Transition : l'empreinte stockée par l'ancien calcul est reconnue, l'analyse de la vente n'est pas relancée."""
+    before = collect_unmarked(stored())
+    stored_check = before["source_checks"][URL]
+
+    first = collect(stored(), previous_payload={"source_checks": before["source_checks"]})
+
+    assert first["source_checks"][URL]["fingerprint"] != stored_check["fingerprint"]  # la définition a changé
+    assert "source_content_changed" not in first and "source_content_changed_at" not in first
+    # La nouvelle empreinte est stockée : les relectures suivantes ne dépendent plus de la base.
+    second = collect(stored(rooms_count=4), previous_payload={"source_checks": first["source_checks"]})
+    assert second["source_checks"][URL]["fingerprint"] == first["source_checks"][URL]["fingerprint"]
+    assert "source_content_changed" not in second
+
+
+def test_the_transition_does_not_hide_a_change_that_the_former_definition_would_have_seen() -> None:
+    before = collect_unmarked(stored())
+
+    # La page a changé entre-temps : l'ancienne définition l'aurait vu, la transition ne le masque pas.
+    changed_page = collect(
+        stored(), previous_payload={"source_checks": before["source_checks"]},
+        raw_text=PAYWALL + " Vente reportée au 12/01/2027.",
+    )
+    assert changed_page["source_content_changed"] is True
+
+    # Une valeur de la base a changé entre-temps : l'ancienne définition invalidait, comme avant, une dernière fois.
+    changed_base = collect(stored(rooms_count=4), previous_payload={"source_checks": before["source_checks"]})
+    assert changed_base["source_content_changed"] is True
+
+
 def test_without_the_mark_the_same_base_change_looked_like_a_source_change() -> None:
     """Témoin : c'est la note des champs repris, et rien d'autre, qui tient l'empreinte hors de la base."""
-
-    def collect_unmarked(known_row: dict, previous_payload: dict | None = None) -> dict:
-        raw = restricted_page()
-        known = {URL: {**known_row, "raw_payload": previous_payload or {}}}
-        _filter_catalog_sales([raw], known)
-        raw.pop(RELAYED_FIELDS_KEY)
-        pipeline._preserve_known_enrichment_payloads([raw], known)
-        record_source_checks([raw], known)
-        return raw
-
     first = collect_unmarked(stored())
     second = collect_unmarked(stored(rooms_count=4), previous_payload={"source_checks": first["source_checks"]})
 
