@@ -898,11 +898,14 @@ Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiab
 
 ## Source Licitor
 
-> **Décodage des adresses email masquées par Cloudflare (usage interne).** `LICITOR_DECODE_PROTECTED_EMAILS` est
-> **désactivé par défaut** ; pour l'activer, mettre `true` (toute autre valeur le laisse désactivé, une valeur non
-> reconnue est signalée par un avertissement). Désactivé, les éléments masqués sont toujours retirés de la page
-> (jamais publiés) mais aucune adresse n'est décodée ni écrite au registre de l'agent. En production : variable de
-> dépôt GitHub `LICITOR_DECODE_PROTECTED_EMAILS` (absente = désactivé). Procédure complète : `docs/runbooks/information-agent.md`.
+> **Décodage des adresses email masquées par Cloudflare (usage interne).** Dans le code,
+> `LICITOR_DECODE_PROTECTED_EMAILS` est **désactivé par défaut** ; pour l'activer, mettre `true` (toute autre valeur
+> le laisse désactivé, une valeur non reconnue est signalée par un avertissement). Désactivé, les éléments masqués
+> sont toujours retirés de la page (jamais publiés) mais aucune adresse n'est décodée ni écrite au registre de
+> l'agent. En production, depuis la décision du propriétaire du 11/11/2026 (accord de Licitor déclaré par le
+> propriétaire ; pièce à verser au dossier), le workflow de collecte l'active quand la variable de dépôt GitHub
+> `LICITOR_DECODE_PROTECTED_EMAILS` est absente ; posée à `false`, elle le coupe sans commit. Procédure complète :
+> `docs/runbooks/information-agent.md`.
 
 > **Licitor est collecté et affiché normalement.** Une seule source est retirée du catalogue à ce jour :
 > Petites Affiches (30/10/2026, migration `20261110093117_withdraw_petites_affiches_source.sql`). Le dépôt
