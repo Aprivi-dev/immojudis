@@ -305,7 +305,7 @@ select results_eq(
                and decision.field_key = event.field_key and decision.decision = 'accepted')
       from public.auction_sale_field_hold_events event
       where event.sale_id = '88500000-1000-4000-8000-000000000001' and event.event = 'echo_suppressed'
-      order by event.field_key$$,
+      order by event.field_key collate "C"$$,
   $$values
       ('property.rooms_count', 'echo_suppressed', null::jsonb, '2'::jsonb, '3'::jsonb, true),
       ('property.surface_m2', 'echo_suppressed', null::jsonb, '50'::jsonb, '54'::jsonb, true)$$,
@@ -576,7 +576,7 @@ select results_eq(
 );
 
 select is(
-  (select array_agg(field.key order by field.key)
+  (select array_agg(field.key order by field.key collate "C")
      from public.auction_sales sale,
           jsonb_object_keys(app_private.sale_field_echo_prune(
             sale.held_fields, statement_timestamp() + interval '10 years')) field(key)
@@ -613,8 +613,8 @@ reset role;
 
 select results_eq(
   $$select sale.rooms_count, sale.occupancy_status, sale.land_surface_m2,
-           (select array_agg(field.key order by field.key) from jsonb_object_keys(sale.held_fields) field(key)),
-           (select array_agg(event.field_key order by event.field_key)
+           (select array_agg(field.key order by field.key collate "C") from jsonb_object_keys(sale.held_fields) field(key)),
+           (select array_agg(event.field_key order by event.field_key collate "C")
               from public.auction_sale_field_hold_events event
               where event.sale_id = sale.id and event.event = 'echo_suppressed')
       from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-000000000007'$$,
@@ -1243,7 +1243,7 @@ execute decide('f3', 'accepted', null, '2026-11-01 09:00:00+00');
 select pg_temp.project('f') ->> 'changed';
 
 select is(
-  (select array_agg(field.key order by field.key)
+  (select array_agg(field.key order by field.key collate "C")
      from public.auction_sales sale, jsonb_object_keys(sale.held_fields) field(key)
      where sale.id = '88500000-1000-4000-8000-00000000000f'),
   array['property.land_surface_m2'],

@@ -213,7 +213,7 @@ select is(
 );
 
 select is(
-  (select array_agg(api_role.name || ':' || privilege.name order by api_role.name, privilege.name)
+  (select array_agg(api_role.name || ':' || privilege.name order by api_role.name collate "C", privilege.name collate "C")
      from unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
      cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) privilege(name)
      where has_table_privilege(api_role.name, 'public.v_auction_fact_claims_read_model', privilege.name)),
@@ -289,7 +289,7 @@ select ok(
 );
 
 select is(
-  (select array_agg(routine.signature || ':' || api_role.name order by routine.signature, api_role.name)
+  (select array_agg(routine.signature || ':' || api_role.name order by routine.signature collate "C", api_role.name collate "C")
      from unnest(array[
        'app_private.fact_claims_generation(text)', 'app_private.fact_claims_generation_ceiling()'
      ]) routine(signature)

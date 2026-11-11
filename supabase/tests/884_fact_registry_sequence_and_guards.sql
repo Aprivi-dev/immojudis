@@ -347,6 +347,28 @@ begin
   end if;
 end;
 $membership$;
+-- Le rôle d'essai appelle pgTAP une fois endossé (throws_ok, lives_ok). Sur la pile locale de Supabase, pgTAP vit
+-- dans un schéma que PUBLIC ne peut pas utiliser : sans ce droit, « function throws_ok(…) does not exist ». Le
+-- schéma n'est pas supposé : c'est celui où se trouve throws_ok (celui de l'extension pgtap quand elle est
+-- installée comme extension). L'exécution des fonctions n'est accordée que si elle manque.
+do $pgtap$
+declare
+  v_schema regnamespace;
+begin
+  for v_schema in
+    select distinct routine.pronamespace::regnamespace from pg_proc routine where routine.proname = 'throws_ok'
+  loop
+    execute format('grant usage on schema %s to registry_probe_884', v_schema);
+    if exists (
+      select 1 from pg_proc routine
+      where routine.pronamespace = v_schema
+        and not has_function_privilege('registry_probe_884', routine.oid, 'execute')
+    ) then
+      execute format('grant execute on all functions in schema %s to registry_probe_884', v_schema);
+    end if;
+  end loop;
+end;
+$pgtap$;
 grant usage on schema public to registry_probe_884;
 grant select, insert, update on public.auction_sales, public.auction_fact_claims to registry_probe_884;
 -- (le journal des ventes est écrit par un déclencheur SECURITY INVOKER de auction_sales.)
@@ -936,7 +958,7 @@ select throws_ok(
 reset role;
 
 select is(
-  (select array_agg(field.key order by field.key) from override_results, jsonb_object_keys(result) field(key)
+  (select array_agg(field.key order by field.key collate "C") from override_results, jsonb_object_keys(result) field(key)
      where step = 'set'),
   array[
     'id', 'premium_readiness_override', 'premium_readiness_override_at', 'premium_readiness_override_by',
@@ -981,7 +1003,7 @@ select is(
 select results_eq(
   $$select operation_key, schema_name, table_name, index_name, create_sql
       from app_private.concurrent_index_operations
-      where operation_key like '20261117100450:%' order by operation_key$$,
+      where operation_key like '20261117100450:%' order by operation_key collate "C"$$,
   $$values
       ('20261117100450:auction_fact_claims_agent_fact_key', 'public', 'auction_fact_claims',
         'auction_fact_claims_agent_fact_key',
@@ -1001,7 +1023,7 @@ declare
 begin
   for v_operation in
     select create_sql from app_private.concurrent_index_operations
-    where operation_key like '20261117100450:%' order by operation_key
+    where operation_key like '20261117100450:%' order by operation_key collate "C"
   loop
     if position(' concurrently ' in v_operation.create_sql) = 0 then
       raise exception 'unexpected statement: %', v_operation.create_sql;
@@ -1018,7 +1040,7 @@ select results_eq(
       join pg_index index_row
         on index_row.indexrelid = to_regclass(operation.schema_name || '.' || operation.index_name)
       where operation.operation_key like '20261117100450:%'
-      order by operation.index_name$$,
+      order by operation.index_name collate "C"$$,
   $$values
       ('auction_fact_claims_agent_fact_key', true, true,
         'CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims USING btree (((evidence_locator ->> ''information_agent_fact_id''::text))) WHERE (evidence_locator ? ''information_agent_fact_id''::text)'),

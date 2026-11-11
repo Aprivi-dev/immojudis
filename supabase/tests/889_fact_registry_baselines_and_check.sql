@@ -44,7 +44,7 @@ select ok(
 );
 
 select is(
-  (select array_agg(routine.signature || ':' || api_role.name order by routine.signature, api_role.name)
+  (select array_agg(routine.signature || ':' || api_role.name order by routine.signature collate "C", api_role.name collate "C")
      from unnest(array[
        'public.get_sale_field_baselines(uuid[])', 'public.check_fact_registry_consistency(integer)',
        'public.sync_fact_registry_alerts()']) routine(signature)
@@ -184,7 +184,7 @@ insert into check_reports select 'sound', public.check_fact_registry_consistency
 reset role;
 
 select is(
-  (select array_agg(check_row.key order by check_row.key)
+  (select array_agg(check_row.key order by check_row.key collate "C")
      from check_reports, jsonb_each(report -> 'checks') check_row where step = 'sound'),
   array[
     'column_mismatch', 'echo_blocked', 'echo_suppressed', 'echo_suspected', 'events_burst',
@@ -461,7 +461,7 @@ reset role;
 
 select results_eq(
   $$select alert_key, category, severity, status from public.operational_alerts
-      where alert_key like 'fact\_registry.%' order by alert_key$$,
+      where alert_key like 'fact\_registry.%' order by alert_key collate "C"$$,
   $$values
       ('fact_registry.echo_blocked', 'import', 'warning', 'open'),
       ('fact_registry.echo_suppressed', 'import', 'warning', 'open'),
@@ -501,7 +501,7 @@ reset role;
 
 select results_eq(
   $$select alert_key, status, inactive_since is not null from public.operational_alerts
-      where alert_key like 'fact\_registry.%' order by alert_key$$,
+      where alert_key like 'fact\_registry.%' order by alert_key collate "C"$$,
   $$values
       ('fact_registry.echo_blocked', 'open', false),
       ('fact_registry.echo_suppressed', 'open', false),
@@ -760,7 +760,7 @@ select app_private.sync_fact_registry_alerts_from_report(
 
 select results_eq(
   $$select alert_key, category, severity, status from public.operational_alerts
-      where alert_key like 'fact\_registry.%' order by alert_key$$,
+      where alert_key like 'fact\_registry.%' order by alert_key collate "C"$$,
   $$values
       ('fact_registry.column_mismatch', 'import', 'critical', 'open'),
       ('fact_registry.echo_blocked', 'import', 'warning', 'open'),
@@ -799,7 +799,7 @@ select results_eq(
   $$select alert_key, inactive_since is null from public.operational_alerts
       where alert_key in ('fact_registry.projection_drift', 'fact_registry.column_mismatch',
                           'fact_registry.triggers_not_always') and status = 'open'
-      order by alert_key$$,
+      order by alert_key collate "C"$$,
   $$values ('fact_registry.column_mismatch', true), ('fact_registry.projection_drift', true)$$,
   'a complete report opens the critical alerts of the deviations above'
 );
@@ -822,7 +822,7 @@ select results_eq(
       from public.operational_alerts
       where alert_key in ('fact_registry.projection_drift', 'fact_registry.column_mismatch',
                           'fact_registry.triggers_not_always')
-      order by alert_key$$,
+      order by alert_key collate "C"$$,
   $$values
       ('fact_registry.column_mismatch', 'open', true, false),
       ('fact_registry.projection_drift', 'open', true, false),
