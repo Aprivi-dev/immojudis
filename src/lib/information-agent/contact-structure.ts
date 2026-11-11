@@ -11,7 +11,20 @@ import { isConsumerMailAddress, mailDomainOf } from "@/lib/information-agent/add
 
 export type InformationAgentAddressKind = "generic" | "nominative";
 
-export type InformationAgentStructureKind = "law_firm" | "notary_office" | "state_service";
+export const INFORMATION_AGENT_STRUCTURE_KINDS = [
+  "law_firm",
+  "notary_office",
+  "state_service",
+] as const;
+
+export type InformationAgentStructureKind = (typeof INFORMATION_AGENT_STRUCTURE_KINDS)[number];
+
+/** Seul contrôle d'une valeur enregistrée (`metadata.contact_identity.structure_kind`). */
+export function isInformationAgentStructureKind(
+  value: unknown,
+): value is InformationAgentStructureKind {
+  return (INFORMATION_AGENT_STRUCTURE_KINDS as readonly unknown[]).includes(value);
+}
 
 /**
  * Structure que désigne un rôle établi, SEULE table rôle vers structure. `organizer` et `source_contact`
@@ -89,12 +102,25 @@ export function informationAgentAddressKind(email: string): InformationAgentAddr
   return GENERIC_WORDS_ALONE.has(first) && /^[a-z]+\d*$/.test(local) ? "generic" : "nominative";
 }
 
+/** Domaine de messagerie du notariat : une adresse qui y est logée est celle d'un office. */
+export const INFORMATION_AGENT_NOTARY_MAIL_DOMAIN = "notaires.fr";
+
+/** L'adresse (ou le domaine) est-elle sur le domaine du notariat ou l'un de ses sous-domaines ? SEUL prédicat. */
+export function isNotaryMailDomain(emailOrDomain: string): boolean {
+  return (
+    listedDomainOf([INFORMATION_AGENT_NOTARY_MAIL_DOMAIN], mailDomainOf(emailOrDomain)) !== null
+  );
+}
+
 /**
  * Domaines où toute une profession ou une administration est logée par décision du propriétaire
  * (11/11/2026) : le PLAFOND du pilote y est compté par structure (office, service), avec un plafond bas pour
  * le domaine lui-même. LISTE FERMÉE, comparée au domaine exact ou à ses sous-domaines.
  */
-export const INFORMATION_AGENT_SHARED_MAIL_DOMAINS: readonly string[] = ["notaires.fr", "gouv.fr"];
+export const INFORMATION_AGENT_SHARED_MAIL_DOMAINS: readonly string[] = [
+  INFORMATION_AGENT_NOTARY_MAIL_DOMAIN,
+  "gouv.fr",
+];
 
 /**
  * Autres domaines qui n'identifient aucune structure : messageries de profession et fournisseurs d'accès

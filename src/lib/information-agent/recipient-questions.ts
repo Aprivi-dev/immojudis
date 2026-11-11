@@ -87,6 +87,7 @@ export function informationAgentQuestionAudience(recipient: {
   }
   if (recipient.organizerType === "notary") return "notary";
   if (recipient.organizerType === "state_service") return "state_service";
+  // Organisateur non déclaré, ou déclaré « avocat poursuivant » sur une source qui n'en publie pas.
   const bySource = informationAgentSourceRole(recipient.sourceName);
   if (bySource?.role === "notary") return "notary";
   if (bySource?.structureKind === "state_service") return "state_service";
@@ -121,8 +122,13 @@ export function informationAgentQuestionTextFor(
   return informationAgentQuestionText(key, context);
 }
 
+/**
+ * Affiché tel quel à l'administrateur : il doit passer `isPublicErrorMessage` (`api-errors.ts`), qui masque
+ * tout message contenant un marqueur technique. « non reconnu » contenait « econn » et était remplacé par
+ * « Erreur admin ».
+ */
 export const INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE =
-  "Destinataire du brouillon non reconnu : régénérez le brouillon avant l'aperçu ou l'envoi.";
+  "Destinataire du brouillon non identifié : régénérez le brouillon avec le bouton “Régénérer le brouillon”.";
 
 export const INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE =
   "Requête invalide : sur une vente notariale ou une cession de l'État, l'agent ne demande que la surface, les pièces, l'occupation, les visites et le lieu de consultation du cahier des charges.";

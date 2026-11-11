@@ -13,13 +13,26 @@ import {
   renderInformationAgentEmailContent,
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
+import { isPublicErrorMessage } from "@/lib/api-errors";
+import { adminErrorResponse } from "@/lib/api-route-errors";
 import { INFORMATION_AGENT_QUESTIONS } from "@/lib/information-agent-questions";
+import {
+  INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+  INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE,
+  INFORMATION_AGENT_STRUCTURE_UNKNOWN_MESSAGE,
+} from "@/lib/information-agent/contacts";
+import {
+  INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE,
+  INFORMATION_AGENT_NO_GAP_MESSAGE,
+} from "@/lib/information-agent/draft";
 import {
   assertInformationAgentNotarySendAllowed,
   INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE,
 } from "@/lib/information-agent/config";
 import {
   assertInformationAgentQuestionsAllowed,
+  INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE,
+  INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE,
   INFORMATION_AGENT_LISTING_FIELD_QUESTION_KEYS,
   INFORMATION_AGENT_QUESTION_KEYS_BY_AUDIENCE,
   informationAgentQuestionAudience,
@@ -128,7 +141,7 @@ describe("questions admises", () => {
     expect(() => assertInformationAgentQuestionsAllowed("lawyer", ["sale_terms"])).not.toThrow();
     expect(() => assertInformationAgentQuestionsAllowed("other", ["surface_m2"])).not.toThrow();
     for (const unknown of ["tout_le_monde", null, 3]) {
-      expect(() => assertInformationAgentQuestionsAllowed(unknown, [])).toThrow("non reconnu");
+      expect(() => assertInformationAgentQuestionsAllowed(unknown, [])).toThrow("non identifié");
     }
   });
 });
@@ -359,6 +372,30 @@ describe("pied du message, variante « structure »", () => {
     );
     expect(lines).not.toContain("si vous répondez, le nom, la fonction");
     expect(lines).toContain("nous n’écrirons plus à aucune adresse de ce cabinet.");
+  });
+});
+
+describe("les messages de refus de l'agent arrivent tels quels à l'administrateur", () => {
+  it.each([
+    ["destinataire du brouillon non identifié", INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE],
+    ["envois aux notaires fermés", INFORMATION_AGENT_NOTARY_SEND_DISABLED_MESSAGE],
+    ["structure opposée", INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE],
+    ["structure non identifiable", INFORMATION_AGENT_STRUCTURE_UNKNOWN_MESSAGE],
+    ["professionnel opposé", INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE],
+    ["question hors liste", INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE],
+    ["aucune lacune", INFORMATION_AGENT_NO_GAP_MESSAGE],
+    ["aucune lacune de la liste courte", INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE],
+  ])("%s : ni marqueur technique ni longueur excessive", async (_label, message) => {
+    // `adminErrorResponse` remplace par « Erreur admin » tout message que ce filtre refuse.
+    expect(isPublicErrorMessage(message)).toBe(true);
+    const response = adminErrorResponse(new Error(message));
+    expect(await response.json()).toMatchObject({ error: message });
+  });
+
+  it("le message de régénération nomme le bouton de l'écran", () => {
+    expect(INFORMATION_AGENT_AUDIENCE_UNKNOWN_MESSAGE).toBe(
+      "Destinataire du brouillon non identifié : régénérez le brouillon avec le bouton “Régénérer le brouillon”.",
+    );
   });
 });
 

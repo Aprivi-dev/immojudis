@@ -226,7 +226,7 @@ export async function createAdminInformationAgentDraft({
   // Les questions dépendent du destinataire (recipient-questions.ts) : elles sont arrêtées une fois celui-ci
   // connu. Sans lacune ni question choisie, rien n'est lu ni enregistré.
   if (!(requestedQuestionKeys ?? gaps).length) {
-    throw new Error(NO_GAP_MESSAGE);
+    throw new Error(INFORMATION_AGENT_NO_GAP_MESSAGE);
   }
   // Opposition par identité, avant d'enregistrer ou de choisir la moindre adresse : un professionnel
   // opposé n'est plus sollicité sous une autre adresse, et son adresse n'est pas stockée.
@@ -355,7 +355,11 @@ export async function createAdminInformationAgentDraft({
     );
   const audienceTemplate = informationAgentAudienceTemplate(questionAudience);
   if (!questionKeys.length) {
-    throw new Error(audienceTemplate ? NO_GAP_FOR_LISTING_FIELDS_MESSAGE : NO_GAP_MESSAGE);
+    throw new Error(
+      audienceTemplate
+        ? INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE
+        : INFORMATION_AGENT_NO_GAP_MESSAGE,
+    );
   }
   // Refused now rather than at the preview, after the admin has read the whole draft.
   await assertNoSentCaseForRecipient(sale.id, recipientEmail);
@@ -486,10 +490,10 @@ export async function createAdminInformationAgentDraft({
   };
 }
 
-const NO_GAP_MESSAGE =
+export const INFORMATION_AGENT_NO_GAP_MESSAGE =
   "Aucune lacune n'est identifiée pour cette annonce. Choisissez explicitement une question si une vérification reste nécessaire.";
 
-const NO_GAP_FOR_LISTING_FIELDS_MESSAGE =
+export const INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE =
   "Aucune lacune que l'agent peut demander à un notaire ou à un service de l'État (surface, pièces, occupation, visites, lieu de consultation du cahier des charges) pour cette annonce.";
 
 function saleSnapshot(sale: AuctionSale): Json {

@@ -4,6 +4,7 @@
  * every message must carry the art. 14 GDPR information and a one-click objection link.
  */
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import type { InformationAgentStructureKind } from "@/lib/information-agent/contact-structure";
 import type { InformationAgentAiProvider } from "@/lib/information-agent-ai-provider";
 import { sourceLabel } from "@/lib/sale-source-links";
 
@@ -136,20 +137,32 @@ export type InformationAgentAddressOrigin = {
  * « votre étude » pour un notaire, « votre service » pour un service de l'État ; `unknown` quand le
  * brouillon ne sait pas laquelle (adresse saisie par l'administrateur, contact de l'annonce).
  */
-export type InformationAgentFooterStructure =
-  | "law_firm"
-  | "notary_office"
-  | "state_service"
-  | "unknown";
+export type InformationAgentFooterStructure = InformationAgentStructureKind | "unknown";
 
-const STRUCTURE_WORDS: Record<InformationAgentFooterStructure, { yours: string; that: string }> = {
-  law_firm: { yours: "de votre cabinet", that: "de ce cabinet" },
-  notary_office: { yours: "de votre étude", that: "de cette étude" },
-  state_service: { yours: "de votre service", that: "de ce service" },
-  unknown: {
-    yours: "de votre étude, de votre cabinet ou de votre service",
-    that: "de cette structure",
-  },
+type StructureWords = {
+  /** « de votre cabinet » */
+  yours: string;
+  /** « de ce cabinet » */
+  that: string;
+  /** « d’un cabinet » */
+  any: string;
+};
+
+const KNOWN_STRUCTURE_WORDS: Record<InformationAgentStructureKind, StructureWords> = {
+  notary_office: { yours: "de votre étude", that: "de cette étude", any: "d’une étude" },
+  law_firm: { yours: "de votre cabinet", that: "de ce cabinet", any: "d’un cabinet" },
+  state_service: { yours: "de votre service", that: "de ce service", any: "d’un service" },
+};
+
+/** « étude, cabinet ou service » : la formule générale est construite ici, une seule fois, des trois mots. */
+function anyStructure(form: "yours" | "any"): string {
+  const [first, second, third] = Object.values(KNOWN_STRUCTURE_WORDS).map((words) => words[form]);
+  return `${first}, ${second} ou ${third}`;
+}
+
+const STRUCTURE_WORDS: Record<InformationAgentFooterStructure, StructureWords> = {
+  ...KNOWN_STRUCTURE_WORDS,
+  unknown: { yours: anyStructure("yours"), that: "de cette structure", any: anyStructure("any") },
 };
 
 /** Date de relevé au format JJ/MM/AAAA, à l'heure de Paris ; null si la date est absente. */
@@ -411,8 +424,7 @@ export function informationAgentStructureDataCategoriesStatement(
  * Portée de l'opposition faite depuis l'adresse générique d'une structure, quand celle-ci n'est pas connue
  * (page de confirmation de l'opposition, structure `unknown` du pied).
  */
-export const INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT =
-  "Si vous vous opposez depuis l’adresse de contact d’une étude, d’un cabinet ou d’un service, nous n’écrirons plus à aucune adresse de cette structure.";
+export const INFORMATION_AGENT_STRUCTURE_OBJECTION_SCOPE_STATEMENT = `Si vous vous opposez depuis l’adresse de contact ${STRUCTURE_WORDS.unknown.any}, nous n’écrirons plus à aucune adresse ${STRUCTURE_WORDS.unknown.that}.`;
 
 /** La même portée, avec le mot de la structure du destinataire (cabinet, étude, service). */
 export function informationAgentStructureObjectionScopeStatement(

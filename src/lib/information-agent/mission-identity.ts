@@ -4,6 +4,7 @@ import {
   INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE,
   informationAgentAddressKind,
   informationAgentOfficeCodeFor,
+  isInformationAgentStructureKind,
   isInformationAgentStructureKey,
   type InformationAgentAddressKind,
 } from "@/lib/information-agent/contact-structure";
@@ -90,14 +91,13 @@ export function missionRecipient(
   });
   // Structure du destinataire : celle que le brouillon a retenue pour SON adresse, sinon celle du rôle.
   const storedStructure = sameAddress ? metadataText(identity.structure_kind) : null;
-  const structure: InformationAgentFooterStructure =
-    storedStructure === "law_firm" ||
-    storedStructure === "notary_office" ||
-    storedStructure === "state_service"
-      ? storedStructure
-      : ((role === "lawyer" || role === "notary"
-          ? INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE[role]
-          : null) ?? "unknown");
+  const structure: InformationAgentFooterStructure = isInformationAgentStructureKind(
+    storedStructure,
+  )
+    ? storedStructure
+    : ((role === "lawyer" || role === "notary"
+        ? INFORMATION_AGENT_STRUCTURE_KIND_BY_ROLE[role]
+        : null) ?? "unknown");
   return {
     keys,
     role,
