@@ -106,6 +106,11 @@ des constats précis, prouvés et classés.
 - `services/data-pipeline/src/`, `services/data-pipeline/sql/`.
 - `docs/architecture/current-state.md`, `docs/data-dictionary.md`, `docs/archive/`.
 
+## Rangement du code
+
+Critère permanent de tes audits : lis `docs/architecture/rangement-du-code.md` et applique sa
+partie « Selon le rôle » (qui relit ou audite).
+
 ## Format de rendu
 
 Un registre en quatre vues croisées : par constat, par époque, par responsabilité, par
