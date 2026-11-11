@@ -70,8 +70,8 @@ def locked(**values) -> None:
 
 def wrote(**values) -> None:
     """Une écriture validée de ce processus : ce que la base en a gardé devient l'état de référence."""
-    base_reads.stage_written([row(**values)])
-    base_reads.confirm_written([SALE_ID])
+    with base_reads.written_scope():
+        base_reads.stage_written([row(**values)])
 
 
 def sale(payload: dict | None = None, **values) -> AuctionSale:
@@ -343,8 +343,7 @@ def test_what_the_base_kept_is_the_reference_not_what_was_sent() -> None:
     """La base retient 54 m² quand la collecte envoie 50 : la lecture suivante rend 54, personne n'a agi."""
     read(**POSED)
     locked(**POSED)
-    base_reads.stage_written([row(**POSED)])  # ``returning`` : la ligne gardée, alors que 50 m² ont été envoyés
-    base_reads.confirm_written([SALE_ID])
+    wrote(**POSED)  # ``returning`` : la ligne gardée, alors que 50 m² ont été envoyés
     locked(**POSED)
 
     assert base_reads.moved_groups(SALE_ID) == frozenset()
@@ -352,12 +351,18 @@ def test_what_the_base_kept_is_the_reference_not_what_was_sent() -> None:
     assert base_reads.suppress_echo(sale(**POSED), outgoing) is outgoing
 
 
+def rolled_back(**values) -> None:
+    """Une écriture dont la transaction est annulée : la portée sort par une erreur."""
+    with pytest.raises(RuntimeError, match="annulée"), base_reads.written_scope():
+        base_reads.stage_written([row(**values)])
+        raise RuntimeError("transaction annulée")
+
+
 def test_a_write_whose_transaction_was_rolled_back_is_not_a_move() -> None:
     """L'écriture est notée en attente ; la transaction échoue ; la reprise relit la ligne d'avant."""
     read()
     locked()
-    base_reads.stage_written([row(app_surface_kind="built", surface_source="pdf", surface_confidence=0.95)])
-    # Pas de ``confirm_written`` : la transaction a été annulée. La reprise lit la ligne inchangée.
+    rolled_back(app_surface_kind="built", surface_source="pdf", surface_confidence=0.95)
     locked()
 
     assert base_reads.moved_groups(SALE_ID) == frozenset()
@@ -368,20 +373,83 @@ def test_a_write_whose_transaction_was_rolled_back_is_not_a_move() -> None:
 def test_a_rolled_back_write_does_not_hide_a_later_move() -> None:
     read(rooms_count=3)
     locked(rooms_count=3)
-    base_reads.stage_written([row(rooms_count=3, occupancy_status="vacant")])
+    rolled_back(rooms_count=3, occupancy_status="vacant")
     locked(rooms_count=2)  # ni la ligne d'avant, ni celle de l'écriture annulée
 
     assert base_reads.moved_groups(SALE_ID) == {"rooms"}
 
 
+def test_a_rolled_back_write_leaves_nothing_that_a_later_writer_could_be_taken_for() -> None:
+    """Annulée, l'écriture « loué » ne compte plus : si un autre écrit « loué » ensuite, c'est bien un mouvement."""
+    read(occupancy_status="occupied")
+    rolled_back(occupancy_status="rented")
+    locked(occupancy_status="occupied")
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+    locked(occupancy_status="rented")
+
+    assert base_reads.moved_groups(SALE_ID) == {"occupancy"}
+
+
+def test_a_validated_write_followed_by_a_rolled_back_one_is_still_the_reference() -> None:
+    """Écriture validée (publication), puis écriture annulée de la même ligne, sans lecture entre les deux."""
+    read(surface_confidence=0.7)
+    wrote(surface_confidence=0.8)
+    rolled_back(surface_confidence=0.9)
+    locked(surface_confidence=0.8)  # la base est dans l'état de la première écriture : personne d'autre n'a écrit
+
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+
 def test_a_committed_write_read_back_before_its_confirmation_is_not_a_move() -> None:
-    """Un autre fil relit la ligne juste après la validation, avant que le premier ait confirmé son écriture."""
+    """Un autre fil relit la ligne juste après la validation, avant que le premier soit sorti de sa portée."""
     read()
     locked()
-    base_reads.stage_written([row(app_surface_kind="built")])
+    with base_reads.written_scope():
+        base_reads.stage_written([row(app_surface_kind="built")])
+        locked(app_surface_kind="built")  # l'autre fil, entre la validation et la confirmation
     locked(app_surface_kind="built")
-    base_reads.confirm_written([SALE_ID])  # arrive après coup : rien à faire, rien à défaire
-    locked(app_surface_kind="built")
+
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+
+def test_a_write_noted_in_the_transaction_of_another_waits_for_its_owner() -> None:
+    """Écriture imbriquée : tant que celui qui tient la transaction n'a ni validé ni annulé, la référence ne bouge pas.
+
+    Une lecture sous verrou tranche alors : elle reconnaît l'écriture si elle la relit, sinon elle l'oublie, et un
+    changement ultérieur vers la même valeur par un autre écrivain reste un mouvement.
+    """
+    read(occupancy_status="occupied")
+    base_reads.stage_written([row(occupancy_status="rented")])  # hors de toute portée
+    locked(occupancy_status="occupied")  # la transaction de l'appelant a été annulée
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+    locked(occupancy_status="rented")  # un autre écrivain, plus tard
+
+    assert base_reads.moved_groups(SALE_ID) == {"occupancy"}
+
+
+def test_a_new_row_is_confirmed_under_the_identifier_the_base_returned() -> None:
+    """Une vente nouvelle n'a pas d'identifiant en mémoire : c'est celui du ``returning`` qui est noté et confirmé."""
+    with base_reads.written_scope():
+        base_reads.stage_written([row(surface_confidence=0.8), {"surface_m2": 1}])  # la seconde, sans identifiant
+    rolled_back(surface_confidence=0.9)
+    locked(surface_confidence=0.8)
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+    locked(surface_confidence=0.5)
+
+    assert base_reads.moved_groups(SALE_ID) == {"surface"}
+
+
+def test_scopes_do_not_leak_from_one_transaction_to_the_next() -> None:
+    wrote(rooms_count=3)
+    with base_reads.written_scope():
+        pass  # une transaction qui n'écrit rien ne confirme rien
+    rolled_back(rooms_count=5)
+    with base_reads.written_scope():
+        pass  # et ne ressuscite pas l'écriture annulée juste avant
+    locked(rooms_count=3)
 
     assert base_reads.moved_groups(SALE_ID) == frozenset()
 
@@ -558,6 +626,8 @@ def test_the_neighbouring_columns_and_the_traces_follow_the_surface_taken_from_t
         "surface_analysis": {"périmée": True},
         "pdf_fact_provenance": {
             "surface_m2": {"value": 50, "source": "pdf", "payload_keys": ["surface_analysis"]},
+            # La base n'a aucune trace pour l'habitable : celle de la vente sortante ne décrit plus rien.
+            "habitable_surface_m2": {"value": 50, "source": "pdf", "payload_keys": []},
             "rooms_count": {"value": 2, "source": "pdf", "payload_keys": []},
         },
     }
@@ -575,6 +645,7 @@ def test_the_neighbouring_columns_and_the_traces_follow_the_surface_taken_from_t
     assert traces["carrez_surface_m2"] == DOCUMENT_TRACES["pdf_fact_provenance"]["carrez_surface_m2"]
     # Ce qui décrivait l'ancienne valeur du groupe part ; les traces des autres champs ne bougent pas.
     assert "surface_analysis" not in result.raw_payload
+    assert "habitable_surface_m2" not in traces
     assert traces["rooms_count"] == stale_payload["pdf_fact_provenance"]["rooms_count"]
     assert "description" not in traces
     assert result.raw_payload["title"] == "Une maison"
@@ -616,13 +687,17 @@ def test_copies_of_the_withheld_value_follow_the_written_value() -> None:
     locked()
     other_source = "https://example.test/autre-source"
     submitted = sale(
-        {"_known_unchanged": True, "rooms_count": 3, "surface_m2": 54, "app_surface_m2": 54, "title": "Une maison"},
-        **POSED,
+        {"_known_unchanged": True, "rooms_count": 3, "surface_m2": 54, "app_surface_m2": 54, "title": "Une maison",
+         "habitable_surface_m2": 54, "surface_evidence": "preuve de l'ancienne valeur"},
+        **POSED, habitable_surface_m2=54, surface_evidence="preuve de l'ancienne valeur",
     )
     submitted.observations = [
         {"source_url": URL, "raw_payload": {"rooms_count": 3, "surface_m2": 54, "_known_unchanged": True}},
-        # Une autre source a réellement publié 3 pièces : c'est une preuve, pas une copie de la valeur retenue.
-        {"source_url": other_source, "raw_payload": {"rooms_count": 3, "source_factual_snapshot": {"rooms_count": 3}}},
+        # L'observation d'une autre source dit ce que cette source a donné : même sans instantané, même avec la
+        # même valeur, ce n'est pas une copie de la vente soumise.
+        {"source_name": "avoventes", "source_url": other_source, "raw_payload": {"rooms_count": 3, "surface_m2": 54}},
+        # Même URL lue par un autre collecteur : une autre source aussi.
+        {"source_name": "notaires", "source_url": URL, "raw_payload": {"rooms_count": 3, "surface_m2": 54}},
         {"source_url": "https://example.test/sans-payload"},
     ]
     kept_observations = deepcopy(submitted.observations)
@@ -634,15 +709,80 @@ def test_copies_of_the_withheld_value_follow_the_written_value() -> None:
 
     assert (result.raw_payload["rooms_count"], result.raw_payload["surface_m2"]) == (2, 50)
     assert result.raw_payload["app_surface_m2"] == 50
+    # Les colonnes voisines reprises avec la surface suivent dans la copie de premier niveau.
+    assert (result.raw_payload["habitable_surface_m2"], result.raw_payload["surface_evidence"]) == (None, None)
     assert result.raw_payload["title"] == "Une maison"
     assert "occupancy_status" not in result.raw_payload  # une clé absente n'est pas créée
-    own, other, bare = result.observations
+    own, other, same_url_other_collector, bare = result.observations
     assert own["raw_payload"]["rooms_count"] == 2 and own["raw_payload"]["surface_m2"] == 50
-    assert other["raw_payload"]["rooms_count"] == 3
+    assert other["raw_payload"] == {"rooms_count": 3, "surface_m2": 54}
+    assert same_url_other_collector["raw_payload"] == {"rooms_count": 3, "surface_m2": 54}
     assert bare == {"source_url": "https://example.test/sans-payload"}
     # Les objets de l'appelant ne sont pas modifiés.
     assert submitted.observations == kept_observations
     assert submitted.raw_payload["rooms_count"] == 3
+
+
+def test_a_copy_whose_source_really_published_the_value_is_evidence_not_a_copy() -> None:
+    read(rooms_count=3)
+    locked(rooms_count=2)
+    submitted = sale({"_known_unchanged": True, "rooms_count": 3}, rooms_count=3)
+    published = {"rooms_count": 3, "source_factual_snapshot": {"rooms_count": 3}}
+    submitted.observations = [{"source_url": URL, "raw_payload": dict(published)}]
+    guarded = base_reads.suppress_echo(sale(rooms_count=2), submitted)
+    result = guarded.model_copy(deep=True)
+
+    base_reads.align_copies(result, submitted, guarded)
+
+    assert result.raw_payload["rooms_count"] == 2
+    assert result.observations[0]["raw_payload"] == published
+
+
+def test_a_neighbouring_column_the_reread_listing_just_published_is_not_taken_from_the_base() -> None:
+    """Surface de 54 m² issue d'une pièce ; la fiche relue publie pour la première fois une Carrez de 53,2 m² ; un
+    autre écrivain change la seule confiance de la surface avant la publication."""
+    document = {"surface_m2": 54, "app_surface_m2": 54, "app_surface_kind": "built", "surface_source": "pdf"}
+    read(**document, surface_confidence=0.95)
+    locked(**document, surface_confidence=0.9)
+    existing = sale(**document, surface_confidence=0.9, surface_evidence="preuve de la pièce")
+    carrez_trace = {"value": 53.2, "source": "listing", "payload_keys": []}
+    payload = {
+        # La vente brute : la surface reprise de la ligne stockée, la Carrez lue sur la fiche.
+        "surface_m2": 54,
+        "app_surface_m2": 54,
+        "carrez_surface_m2": "53,2 m²",
+        "surface_evidence": "copie de l'ancienne preuve",
+        "source_factual_snapshot": {"carrez_surface_m2": "53,2 m²", "surface_scope": None, "surface_m2": None},
+        "pdf_fact_provenance": {"carrez_surface_m2": carrez_trace},
+    }
+    submitted = sale(payload, **document, surface_confidence=0.95, carrez_surface_m2=53.2, surface_scope="private",
+                     surface_evidence="copie de l'ancienne preuve")
+
+    guarded = base_reads.suppress_echo(existing, submitted)
+    result = guarded.model_copy(deep=True)
+    base_reads.align_copies(result, submitted, guarded)
+
+    assert result.surface_confidence == Decimal("0.9")  # le groupe est bien repris de la base
+    # La Carrez vient de la source : ni la colonne, ni sa trace, ni la copie de premier niveau ne sont touchées.
+    assert result.carrez_surface_m2 == Decimal("53.2")
+    assert result.raw_payload["carrez_surface_m2"] == "53,2 m²"
+    assert result.raw_payload["pdf_fact_provenance"] == {"carrez_surface_m2": carrez_trace}
+    # Ce que l'instantané ne donne pas suit le groupe, comme avant.
+    assert (result.surface_scope, result.surface_evidence) == (None, "preuve de la pièce")
+    assert result.raw_payload["surface_evidence"] == "preuve de la pièce"
+    assert base_reads.suppressed_count() == 0
+
+
+def test_the_same_neighbouring_column_follows_the_group_when_the_listing_was_not_reread() -> None:
+    document = {"surface_m2": 54, "app_surface_m2": 54, "app_surface_kind": "built", "surface_source": "pdf"}
+    read(**document, surface_confidence=0.95, carrez_surface_m2=53.2)
+    locked(**document, surface_confidence=0.9, carrez_surface_m2=None)
+    payload = {"_known_unchanged": True, "source_factual_snapshot": {"carrez_surface_m2": "53,2 m²"}}
+    submitted = sale(payload, **document, surface_confidence=0.95, carrez_surface_m2=53.2)
+
+    result = base_reads.suppress_echo(sale(**document, surface_confidence=0.9), submitted)
+
+    assert result.carrez_surface_m2 is None
 
 
 def test_copies_are_left_alone_when_nothing_was_withheld() -> None:

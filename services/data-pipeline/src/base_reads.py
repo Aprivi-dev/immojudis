@@ -32,7 +32,9 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -63,10 +65,6 @@ class EchoGroup:
     family: tuple[str, ...]
     satellites: tuple[str, ...] = ()
     trace_keys: tuple[str, ...] = ()
-
-    @property
-    def described_columns(self) -> tuple[str, ...]:
-        return (*self.columns, *self.satellites)
 
 
 GROUPS: tuple[EchoGroup, ...] = (
@@ -109,6 +107,8 @@ class _RowReads:
 _LOCK = threading.Lock()
 _ROWS: dict[str, _RowReads] = {}
 _SUPPRESSED: set[tuple[str, str]] = set()
+# Lignes dont une écriture est en attente dans la transaction en cours de ce fil (voir ``written_scope``).
+_WRITTEN_SCOPE: ContextVar[list[str] | None] = ContextVar("base_reads_written_scope", default=None)
 
 # Clé technique d'une vente brute, jamais écrite en base : les champs qu'un collecteur a repris de la ligne stockée
 # parce que la page de la source ne les donnait pas (Vench, page restreinte ou pauvre). Ces champs ne sont pas ce
@@ -239,9 +239,10 @@ def stage_written(rows: Iterable[Mapping[str, Any]]) -> None:
     """Note ce que la base a gardé d'une écriture de ce processus, tant que sa transaction n'est pas validée.
 
     ``rows`` vient du ``returning`` de l'écriture : c'est la ligne telle que la base l'a gardée, pas telle qu'elle a
-    été envoyée (la base peut retenir une valeur). L'état de référence ne change qu'à ``confirm_written`` ; si la
-    transaction est annulée, la lecture sous verrou suivante retrouve l'état de référence et rien n'a bougé.
+    été envoyée (la base peut retenir une valeur), sous l'identifiant que la base lui donne (une vente nouvelle n'en
+    a pas encore en mémoire). L'état de référence ne change qu'à la sortie sans erreur de ``written_scope``.
     """
+    scope = _WRITTEN_SCOPE.get()
     with _LOCK:
         for row in rows:
             row_id = row.get("id")
@@ -251,16 +252,41 @@ def stage_written(rows: Iterable[Mapping[str, Any]]) -> None:
             for group in GROUPS:
                 if all(column in row for column in group.columns):
                     reads.pending[group.name] = _state(row, group)
+            if scope is not None:
+                scope.append(str(row_id))
 
 
-def confirm_written(row_ids: Iterable[Any]) -> None:
-    """La transaction est validée : ce que la base a gardé devient l'état de référence de ces lignes."""
+@contextmanager
+def written_scope() -> Iterator[None]:
+    """Portée d'une transaction d'écriture : à ouvrir **autour** de la transaction, par celui qui la valide.
+
+    Sortie sans erreur (la transaction est validée) : ce que la base a gardé des lignes notées par ``stage_written``
+    devient leur état de référence. Sortie par une erreur (la transaction est annulée) : ces notes sont jetées, la
+    référence ne change pas. Une écriture faite dans la transaction d'un autre (appel imbriqué) ne décide de rien :
+    elle est notée dans la portée de celui qui valide ou annule.
+    """
+    staged: list[str] = []
+    token = _WRITTEN_SCOPE.set(staged)
+    try:
+        yield
+    except BaseException:
+        _settle(staged, committed=False)
+        raise
+    else:
+        _settle(staged, committed=True)
+    finally:
+        _WRITTEN_SCOPE.reset(token)
+
+
+def _settle(row_ids: list[str], *, committed: bool) -> None:
     with _LOCK:
         for row_id in row_ids:
-            reads = _ROWS.get(str(row_id)) if row_id else None
-            if reads is not None:
+            reads = _ROWS.get(row_id)
+            if reads is None:
+                continue
+            if committed:
                 reads.last.update(reads.pending)
-                reads.pending.clear()
+            reads.pending.clear()
 
 
 def _source_value(column: str, raw: Any) -> Any:
@@ -295,6 +321,19 @@ def _published_by_source(payload: Any, group: EchoGroup, outgoing: list[Any]) ->
     return all(value is None or value in published for value in outgoing)
 
 
+def _snapshot_carries(payload: Any, column: str) -> bool:
+    """Vrai si la fiche a été réellement relue et que son instantané donne une valeur à cette colonne."""
+    if not isinstance(payload, Mapping) or any(payload.get(flag) for flag in _NOT_REREAD_FLAGS):
+        return False
+    snapshot = payload.get(_SOURCE_SNAPSHOT_KEY)
+    return isinstance(snapshot, Mapping) and _canonical(snapshot.get(column)) is not None
+
+
+def _columns_to_take(group: EchoGroup, payload: Any) -> tuple[str, ...]:
+    """Colonnes reprises avec le groupe : les siennes, et ses voisines sauf celles que la source vient de publier."""
+    return (*group.columns, *(column for column in group.satellites if not _snapshot_carries(payload, column)))
+
+
 def _is_echo(group: EchoGroup, outgoing: list[Any], read_values: set[Any], payload: Any) -> bool:
     if all(value is None for value in outgoing):
         return False
@@ -309,15 +348,15 @@ def _jsonable(value: Any) -> Any:
     return list(value) if isinstance(value, list) else value
 
 
-def _take_traces(payload: dict[str, Any], base_payload: Any, group: EchoGroup) -> None:
-    """Aligne sur la ligne de la base les traces qui décrivent la valeur du groupe (la valeur reprise est la sienne)."""
+def _take_traces(payload: dict[str, Any], base_payload: Any, group: EchoGroup, columns: tuple[str, ...]) -> None:
+    """Aligne sur la ligne de la base les traces qui décrivent les colonnes reprises (leur valeur est la sienne)."""
     base_payload = base_payload if isinstance(base_payload, Mapping) else {}
     base_traces = base_payload.get(_PROVENANCE_KEY)
     base_traces = base_traces if isinstance(base_traces, Mapping) else {}
     traces = payload.get(_PROVENANCE_KEY)
     traces = dict(traces) if isinstance(traces, Mapping) else {}
     keys = set(group.trace_keys)
-    for column in group.described_columns:
+    for column in columns:
         for trace in (base_traces.get(column), traces.get(column)):
             if isinstance(trace, Mapping):
                 keys.update(str(key) for key in trace.get("payload_keys") or [])
@@ -364,10 +403,13 @@ def suppress_echo(existing: Any, incoming: Any) -> Any:
         if result is incoming:
             result = incoming.model_copy()
             result.raw_payload = dict(incoming.raw_payload)
-        for column in group.described_columns:
+        # Une colonne voisine que la fiche relue vient de publier (une Carrez donnée pour la première fois) reste
+        # celle de la source : seul le reste du groupe est repris de la base.
+        taken = _columns_to_take(group, incoming.raw_payload)
+        for column in taken:
             value = getattr(existing, column)
             setattr(result, column, list(value) if isinstance(value, list) else value)
-        _take_traces(result.raw_payload, getattr(existing, "raw_payload", None), group)
+        _take_traces(result.raw_payload, getattr(existing, "raw_payload", None), group, taken)
         if outgoing != [_canonical(getattr(existing, column)) for column in group.value_columns]:
             with _LOCK:
                 _SUPPRESSED.add((str(row_id), group.name))
@@ -381,10 +423,11 @@ def suppress_echo(existing: Any, incoming: Any) -> Any:
 def align_copies(result: Any, submitted: Any, guarded: Any) -> None:
     """Après la fusion : les copies de la valeur retenue ne restent pas dans la ligne écrite.
 
-    ``raw_payload`` garde au premier niveau une copie des colonnes, et chaque observation embarquée une copie de
-    son propre ``raw_payload``. Pour chaque groupe que ``suppress_echo`` a repris (``guarded`` diffère de
-    ``submitted``), les copies qui portent encore la valeur retenue prennent celle de ``result``. Une copie dont la
-    source a réellement publié cette valeur est une preuve, pas un écho : elle n'est pas touchée.
+    ``raw_payload`` garde au premier niveau une copie des colonnes, et chaque observation embarquée une copie du
+    ``raw_payload`` de sa source. Pour chaque groupe que ``suppress_echo`` a repris (``guarded`` diffère de
+    ``submitted``), le ``raw_payload`` de la ligne et l'observation de la source soumise prennent la valeur de
+    ``result`` s'ils portent encore la valeur retenue. L'observation d'une autre source dit ce que cette source a
+    donné : elle n'est jamais touchée. Une copie dont la source a réellement publié la valeur non plus.
     """
     if guarded is submitted:
         return
@@ -397,10 +440,19 @@ def align_copies(result: Any, submitted: Any, guarded: Any) -> None:
         result.raw_payload = _aligned_copy(result.raw_payload, group, stale, result)
         result.observations = [
             {**item, "raw_payload": _aligned_copy(item["raw_payload"], group, stale, result)}
-            if isinstance(item, dict) and isinstance(item.get("raw_payload"), dict)
+            if _is_observation_of(item, submitted) and isinstance(item.get("raw_payload"), dict)
             else item
             for item in result.observations or []
         ]
+
+
+def _is_observation_of(item: Any, sale: Any) -> bool:
+    """Vrai si cette observation embarquée est celle de la source de ``sale`` (même URL, même collecteur)."""
+    return (
+        isinstance(item, dict)
+        and item.get("source_url") == sale.source_url
+        and item.get("source_name") in (None, sale.source_name)
+    )
 
 
 def _aligned_copy(payload: dict[str, Any], group: EchoGroup, stale: set[Any], result: Any) -> dict[str, Any]:
@@ -408,7 +460,5 @@ def _aligned_copy(payload: dict[str, Any], group: EchoGroup, stale: set[Any], re
     copied = [_canonical(payload.get(column)) for column in group.value_columns]
     if not _is_echo(group, copied, stale, payload):
         return payload
-    return {
-        **payload,
-        **{column: _jsonable(getattr(result, column)) for column in group.described_columns if column in payload},
-    }
+    taken = _columns_to_take(group, payload)
+    return {**payload, **{column: _jsonable(getattr(result, column)) for column in taken if column in payload}}
