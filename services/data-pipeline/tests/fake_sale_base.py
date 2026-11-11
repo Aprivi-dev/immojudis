@@ -114,7 +114,13 @@ def patch_publication(monkeypatch, base: FakeSaleBase) -> None:
         "_read_known_sales_snapshot_with_retries",
         lambda *_args, **_kwargs: ((), base.snapshot()),
     )
+    patch_neighbouring_tables(monkeypatch)
+
+
+def patch_neighbouring_tables(monkeypatch) -> None:
+    """Neutralise le registre des alias et les écritures hors ``auction_sales`` (copies, travaux, décisions)."""
     monkeypatch.setattr("src.publication_identity.load_reviewed_aliases", lambda _connection: registry_from_rows([]))
+    monkeypatch.setattr(storage, "load_reviewed_aliases", lambda _connection: registry_from_rows([]))
     monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _sales: [])
     monkeypatch.setattr(storage, "_write_fact_claims_postgres", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(storage, "_sync_normalized_sale_tables_with_rest", lambda *_args, **_kwargs: None)
