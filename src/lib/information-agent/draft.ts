@@ -36,11 +36,29 @@ import {
   searchInformationAgentAddressForDraft,
 } from "@/lib/information-agent/address-search";
 import { informationAgentAppOrigin } from "@/lib/information-agent/config";
+import { resolveInformationAgentListingContacts } from "@/lib/information-agent/contact-resolution";
+import {
+  informationAgentAddressKind,
+  informationAgentOfficeCodeFor,
+  isInformationAgentStructureKey,
+} from "@/lib/information-agent/contact-structure";
+import {
+  recipientOppositionKeys,
+  type InformationAgentRecipientOppositionKeys,
+} from "@/lib/information-agent/opposition-keys";
+import {
+  INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE,
+  informationAgentQuestionAudience,
+  informationAgentQuestionTextFor,
+  isInformationAgentQuestionAllowed,
+  type InformationAgentQuestionAudience,
+} from "@/lib/information-agent/recipient-questions";
+import { informationAgentAudienceTemplate } from "@/lib/information-agent/recipient-templates";
 import {
   assertInformationAgentContactAllowed,
   contactCandidateSnapshot,
-  discoverInformationAgentContacts,
   INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+  INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE,
   loadOpposedInformationAgentIdentityKeys,
   normalizedEmail,
   persistInformationAgentContactObservations,
@@ -60,7 +78,6 @@ import {
   withSignature,
 } from "@/lib/information-agent/draft-checks";
 import { missingRecipientMessage } from "@/lib/information-agent/email-address";
-import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
 import {
@@ -205,29 +222,38 @@ export async function createAdminInformationAgentDraft({
   const facts = getFactReliabilitiesFromClaims(sale, claimRead.claims);
   const inventory = buildInformationAgentInventory(sale, facts);
   const gaps = detectInformationGaps(sale, facts, inventory);
-  const defaultQuestions = selectDefaultInformationAgentQuestionKeys(gaps);
-  const questionKeys = uniqueQuestionKeys(input.questionKeys ?? defaultQuestions);
-  if (!questionKeys.length) {
-    throw new Error(
-      "Aucune lacune n'est identifiée pour cette annonce. Choisissez explicitement une question si une vérification reste nécessaire.",
-    );
+  const requestedQuestionKeys = input.questionKeys ? uniqueQuestionKeys(input.questionKeys) : null;
+  // Les questions dépendent du destinataire (recipient-questions.ts) : elles sont arrêtées une fois celui-ci
+  // connu. Sans lacune ni question choisie, rien n'est lu ni enregistré.
+  if (!(requestedQuestionKeys ?? gaps).length) {
+    throw new Error(INFORMATION_AGENT_NO_GAP_MESSAGE);
   }
   // Opposition par identité, avant d'enregistrer ou de choisir la moindre adresse : un professionnel
   // opposé n'est plus sollicité sous une autre adresse, et son adresse n'est pas stockée.
   const identityPlace = saleIdentityPlace(sale);
-  const discovered = discoverInformationAgentContacts(sale).map((candidate) => ({
-    ...candidate,
-    identityKeys: informationAgentIdentityKeys({
+  const resolution = resolveInformationAgentListingContacts(sale);
+  // Clés d'opposition de chaque adresse (opposition-keys.ts) : celles qu'elle porte et celles à contrôler,
+  // dont la structure. Une structure opposée écarte toutes ses adresses.
+  const keysByEmail = new Map<string, InformationAgentRecipientOppositionKeys>();
+  const discovered = resolution.candidates.map((candidate) => {
+    const keys = recipientOppositionKeys({
       role: candidate.role,
       name: candidate.name ?? (candidate.role === "lawyer" ? sale.lawyer_name : null),
-      ...identityPlace,
-    }),
-  }));
+      place: identityPlace,
+      email: candidate.email,
+      officeCode: candidate.officeCode,
+      addressKind: candidate.addressKind,
+    });
+    keysByEmail.set(candidate.email, keys);
+    return { ...candidate, identityKeys: keys.identityKeys };
+  });
+  const checkKeysOf = (candidate: (typeof discovered)[number]) =>
+    keysByEmail.get(candidate.email)?.checkKeys ?? candidate.identityKeys;
   const opposedKeys = new Set(
-    await loadOpposedInformationAgentIdentityKeys(discovered.flatMap((item) => item.identityKeys)),
+    await loadOpposedInformationAgentIdentityKeys(discovered.flatMap(checkKeysOf)),
   );
   const listingCandidates = discovered.filter(
-    (candidate) => !candidate.identityKeys.some((key) => opposedKeys.has(key)),
+    (candidate) => !checkKeysOf(candidate).some((key) => opposedKeys.has(key)),
   );
   const candidatesSkippedForOpposition = discovered.length - listingCandidates.length;
   const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
@@ -262,11 +288,14 @@ export async function createAdminInformationAgentDraft({
   const recipientEmail =
     explicitRecipientEmail ?? selectedContact?.email ?? courtFallback?.candidate.email;
   if (!recipientEmail) {
-    throw new Error(
-      candidatesSkippedForOpposition > 0 && !contactCandidates.length
-        ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
-        : missingRecipientMessage(contactCandidates.length, search.noAddressNote),
-    );
+    if (candidatesSkippedForOpposition > 0 && !contactCandidates.length) {
+      throw new Error(
+        [...opposedKeys].some(isInformationAgentStructureKey)
+          ? INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE
+          : INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+      );
+    }
+    throw new Error(missingRecipientMessage(contactCandidates.length, search.noAddressNote));
   }
   const selectedByEmail =
     courtFallback?.candidate ??
@@ -277,17 +306,61 @@ export async function createAdminInformationAgentDraft({
     ? null
     : (input.recipientName ?? withoutProfessionSuffix(selectedByEmail?.name ?? "") ?? null);
   const recipientIdentityRole = selectedByEmail?.role ?? null;
-  const recipientIdentityKeys = informationAgentIdentityKeys({
-    role: recipientIdentityRole,
-    name: recipientName,
-    ...identityPlace,
+  const recipientOfficeCode = informationAgentOfficeCodeFor({
+    email: recipientEmail,
+    officeCode: selectedByEmail?.officeCode,
+    saleOfficeCode: resolution.officeCode,
   });
+  const recipientAddressKind =
+    selectedByEmail?.addressKind ?? informationAgentAddressKind(recipientEmail);
+  // Un greffe n'a ni identité de personne ni structure opposable : aucune clé.
+  const recipientKeys: InformationAgentRecipientOppositionKeys = courtFallback
+    ? { identityKeys: [], checkKeys: [] }
+    : recipientOppositionKeys({
+        role: recipientIdentityRole,
+        name: recipientName,
+        place: identityPlace,
+        email: recipientEmail,
+        officeCode: recipientOfficeCode,
+        addressKind: recipientAddressKind,
+      });
+  const recipientIdentityKeys = recipientKeys.identityKeys;
   await assertInformationAgentContactAllowed({
     saleId: sale.id,
     email: recipientEmail,
     identityKeys: recipientIdentityKeys,
+    checkKeys: recipientKeys.checkKeys,
     courtRegistryAddress: Boolean(courtFallback),
   });
+  // Questions et texte du message selon le destinataire (recipient-questions.ts, recipient-templates.ts).
+  // Rôle non établi (adresse saisie, contact de l'annonce) : l'organisateur de la vente décide. Une question
+  // choisie par l'administrateur hors de la liste admise est refusée, jamais retirée en silence.
+  const questionAudience: InformationAgentQuestionAudience = courtFallback
+    ? "other"
+    : informationAgentQuestionAudience({
+        role: recipientIdentityRole,
+        structureKind: selectedByEmail?.structureKind,
+        organizerType: resolution.organizerType,
+        sourceName: resolution.sourceName,
+      });
+  if (
+    requestedQuestionKeys?.some((key) => !isInformationAgentQuestionAllowed(questionAudience, key))
+  ) {
+    throw new Error(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE);
+  }
+  const questionKeys =
+    requestedQuestionKeys ??
+    selectDefaultInformationAgentQuestionKeys(
+      gaps.filter((gap) => isInformationAgentQuestionAllowed(questionAudience, gap.key)),
+    );
+  const audienceTemplate = informationAgentAudienceTemplate(questionAudience);
+  if (!questionKeys.length) {
+    throw new Error(
+      audienceTemplate
+        ? INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE
+        : INFORMATION_AGENT_NO_GAP_MESSAGE,
+    );
+  }
   // Refused now rather than at the preview, after the admin has read the whole draft.
   await assertNoSentCaseForRecipient(sale.id, recipientEmail);
   await assertInformationAgentRecipientCooldown({
@@ -296,6 +369,7 @@ export async function createAdminInformationAgentDraft({
     courtRegistryFallback: Boolean(courtFallback),
   });
   if (courtFallback) await assertCourtRegistryDraftAllowed(courtFallback, sale.id);
+  const questionContext = informationAgentQuestionContext(inventory);
   const draft = buildInformationRequestDraft({
     sale,
     facts,
@@ -303,7 +377,16 @@ export async function createAdminInformationAgentDraft({
     signatureName: process.env.INFORMATION_AGENT_SIGNATURE_NAME,
     ...(courtFallback
       ? COURT_REGISTRY_DRAFT_OPTIONS
-      : { recipientName, questionKeys, template: emailTemplate.content }),
+      : audienceTemplate
+        ? {
+            recipientName,
+            questionKeys,
+            template: audienceTemplate,
+            questionLines: questionKeys.map((key) =>
+              informationAgentQuestionTextFor(questionAudience, key, questionContext),
+            ),
+          }
+        : { recipientName, questionKeys, template: emailTemplate.content }),
   });
 
   const { data, error } = await supabaseAdmin
@@ -332,7 +415,13 @@ export async function createAdminInformationAgentDraft({
           role: recipientIdentityRole,
           bar: identityPlace.bar,
           city: identityPlace.city,
+          structure_kind: selectedByEmail?.structureKind ?? null,
+          address_kind: courtFallback ? null : recipientAddressKind,
+          // Office de l'adresse retenue, et office de la vente (pour une adresse saisie ensuite).
+          office_code: recipientOfficeCode,
+          sale_office_code: resolution.officeCode,
         },
+        question_audience: questionAudience,
         candidates_skipped_for_opposition: candidatesSkippedForOpposition,
         address_search: search.snapshot,
         fact_claims_checked: claimRead.claimsBacked,
@@ -400,6 +489,12 @@ export async function createAdminInformationAgentDraft({
     contactCandidates: courtFallback ? [courtFallback.candidate] : contactCandidates,
   };
 }
+
+export const INFORMATION_AGENT_NO_GAP_MESSAGE =
+  "Aucune lacune n'est identifiée pour cette annonce. Choisissez explicitement une question si une vérification reste nécessaire.";
+
+export const INFORMATION_AGENT_NO_GAP_FOR_LISTING_FIELDS_MESSAGE =
+  "Aucune lacune que l'agent peut demander à un notaire ou à un service de l'État (surface, pièces, occupation, visites, lieu de consultation du cahier des charges) pour cette annonce.";
 
 function saleSnapshot(sale: AuctionSale): Json {
   return {
