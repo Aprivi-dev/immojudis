@@ -161,6 +161,7 @@ Rapports complets des spécialistes, reproduits tels quels dans
 | `07-cadre-juridique.md`                | juridique-rgpd      | Ce qui peut être construit, textes proposés, vingt questions pour un avocat         |
 | `08-bascule-base-de-donnees.md`        | expert-postgres     | Spécification du lot R2 côté base : treize points, plan de migrations, sous-lots    |
 | `09-bascule-pipeline.md`               | data-pipeline       | Spécification du lot R2 côté collecte : écho, autres écrivains, observations, tests |
+| `10-mesures-apres-r1.md`               | qualite-donnees     | Mesures en production après R1 : inertie, durée des lots, second facteur, files     |
 
 Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce document qui fait foi.
 
@@ -239,6 +240,16 @@ Le code de R2a se prépare pendant l'observation de R1. Rien de R2 n'est appliqu
 - Opposition : fin d'affichage et blocage du retour de la valeur ; une demande d'effacement se traite à la main, hors R2.
 - Second facteur des administrateurs : vérifié avant R2c ; s'il n'est pas actif en production, R2c attend.
 - Valeurs déjà publiées par l'ancien noyau (aucune à ce jour) : s'il y en a le jour de la bascule, la valeur d'annonce est rendue et chaque fait est revalidé à la main, rien d'automatique.
+
+### Ce que les mesures en production ajoutent (annexe 10, 11/11 à 12:35 UTC)
+
+- **R1 est inerte sur tout ce qui se mesure** (0 vente tenue, 0 évènement, 0 décision, déclencheurs en mode `always`), mais sur 27 écritures seulement : aucun import de source n'avait encore tourné depuis l'application. Un relevé de référence du coût de l'insertion est pris (199 ms en moyenne par instruction).
+- **Critère d'observation réécrit** : au moins un passage de chaque source qui tourne (agrasc, avoventes, cessions_etat, encheres_immobilieres, info_encheres, licitor, notaires). Vench, Petites Affiches et Enchères Publiques n'ont plus de passage depuis le 29/10, le 30/10 et plus de trente jours ; elles ne comptent pas dans le critère. Ce point est à confirmer avec le propriétaire pour les deux dernières.
+- **Un lot de publication dure 20 à 29 secondes en médiane**, pas quelques secondes. Le verrou est étroit (une vente partage son code postal avec deux autres en moyenne) mais long. Conséquence pour R2b : l'écran d'administration doit réessayer seul quand la vente est occupée, et la réduction du verrou de la collecte est avancée dès qu'une mesure pendant un import la confirme.
+- **Le second facteur des administrateurs n'est ni exigé ni enrôlé** (un administrateur, aucun facteur, interrupteur jamais activé). C'est un préalable de R2c qui dépend d'une action du propriétaire : enrôlement sur `/admin/securite`, puis activation.
+- **Reprise de l'existant** : aucune publication de l'ancien noyau, aucun fait accepté, aucune surface marquée par l'agent. La bascule n'a rien à reprendre.
+- **La file des documents ne se vide pas d'elle-même**, contrairement à ce que supposait le lot R6 : 181 tâches en attente et 71 en échec pour les ventes à venir, dont 62 pour la même cause (« PDF document checkpoint was not persisted »). Le lot R6 passe en diagnostic.
+- Environ 63 % des observations existantes n'ont plus de vente (estimation) : à traiter avec la file de validation du lot R3.
 
 ### Questions qui restent au propriétaire ou à un avocat (s'ajoutent à la section 5)
 
