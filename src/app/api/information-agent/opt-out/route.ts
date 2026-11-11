@@ -31,8 +31,7 @@ export async function GET(request: Request) {
     const verified = verifiedOptOut(request);
     if (!verified) return invalidLink();
     const action = new URL(request.url);
-    // Adresse de contact d'une étude, d'un cabinet ou d'un service : l'opposition vaudra pour la structure.
-    const structure = await informationAgentOppositionCoversStructure(verified.email);
+    const structure = await oppositionCoversStructure(verified.email, "GET");
     return informationAgentPage({
       title: "Ne plus être contacté",
       message: `Confirmez que l’adresse ${verified.email} ne doit plus recevoir de message d’Immojudis.${
@@ -60,9 +59,8 @@ export async function POST(request: Request) {
     });
     const verified = verifiedOptOut(request);
     if (!verified) return invalidLink();
-    // Lu avant l'écriture : l'opposition vide la ligne du registre, pas ses clés, mais la lecture d'abord
-    // garde la page exacte même si la ligne change.
-    const structure = await informationAgentOppositionCoversStructure(verified.email);
+    // Lu avant l'écriture : la page reste exacte même si la ligne du registre change avec l'opposition.
+    const structure = await oppositionCoversStructure(verified.email, "POST");
     const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
       {
         sale_id: null,
@@ -90,6 +88,23 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     return failure(error, "POST");
+  }
+}
+
+/**
+ * L'opposition vaudra-t-elle pour toute la structure ? Lecture d'INFORMATION seulement : elle ne doit jamais
+ * empêcher d'afficher la page ni d'enregistrer l'opposition. En cas d'échec, l'erreur est journalisée (sans
+ * adresse) et la page garde son texte ordinaire, qui reste vrai : l'adresse ne sera plus contactée.
+ */
+async function oppositionCoversStructure(email: string, method: "GET" | "POST"): Promise<boolean> {
+  try {
+    return await informationAgentOppositionCoversStructure(email);
+  } catch (error) {
+    logInformationAgentRouteError("information-agent.opt-out", error, {
+      method,
+      step: "structure_scope",
+    });
+    return false;
   }
 }
 
