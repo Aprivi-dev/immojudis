@@ -1,5 +1,5 @@
 // Invariants du registre des pièces (plan du 11/11/2026 : lot R1, migrations 20261116100000 à 20261116100500, et
-// lot R2a, migrations 20261117100000 à 20261117100600 ; spécifications : annexes 03-base-de-donnees-arbitrage.md,
+// lot R2a, migrations 20261117100000 à 20261117100700 ; spécifications : annexes 03-base-de-donnees-arbitrage.md,
 // section 7, et 08-bascule-base-de-donnees.md de docs/equipe/annexes/2026-11-11-registre-des-pieces/).
 // Appelé par scripts/check-security-invariants.mjs, qui lui passe ses lectures partagées (migrations déjà lues,
 // arborescences de code en cache) : ce module ne lit aucun fichier par lui-même.
@@ -13,15 +13,20 @@
 // 3. held-fields-projection-only : auction_sales.held_fields n'est écrite que par la projection et la retenue
 //    (affectation, clause SET ou cible d'un INTO) ; aucun code de l'application, du pipeline, des scripts ni des
 //    fonctions Edge ne la nomme ; aucun droit par colonne ne l'ouvre ; le marqueur de transaction de la projection
-//    n'est nommé que par ces deux fonctions.
+//    n'est nommé que par ces deux fonctions et par la garde du marqueur ; le journal des ventes vide la colonne
+//    sur ses deux copies de la ligne.
 // 4. hold-trigger-present-early : le déclencheur de retenue garde sa forme (BEFORE UPDATE OF, clause WHEN), reste
-//    passif et précède tous les autres déclencheurs BEFORE UPDATE de auction_sales (sauf la garde « aaaa_ » et
-//    la garde par rôle de held_fields) ; les deux gardes par rôle n'acceptent que le propriétaire de la
-//    projection ; un rattrapage qui écrit auction_sales ne coupe que des déclencheurs en mode ordinaire hors
+//    passif et précède tous les autres déclencheurs BEFORE UPDATE de auction_sales (sauf la garde « aaaa_ », la
+//    garde par rôle de held_fields et la garde du marqueur) ; les gardes par rôle et la garde du marqueur
+//    n'acceptent que le propriétaire de la projection ; la garde d'origine des observations couvre le triplet
+//    du pont (extracteur et identifiant de fait de l'agent) ; le contrôle des déclencheurs lit leur mode ET leur
+//    fonction ; un rattrapage qui écrit auction_sales ne coupe que des déclencheurs en mode ordinaire hors
 //    registre et se termine par le contrôle du mode des déclencheurs.
 // 5. field-projection-not-callable-by-api : la projection et les fonctions internes du registre ne sont
-//    exécutables par aucun rôle de l'API ; les trois fonctions publiques du lot R2a ne le sont que par
-//    service_role, et dans l'application seul un module serveur les nomme ; aucun code ne nomme la projection.
+//    exécutables par aucun rôle de l'API (ni par un droit donné d'un coup sur le schéma public) ; les trois
+//    fonctions publiques du lot R2a ne le sont que par service_role, aucune autre fonction publique ne les
+//    enveloppe ni ne lit une table du registre, et dans l'application seul un module serveur les nomme ; aucun
+//    code ne nomme la projection.
 // 6. fact-claims-never-repointed : une observation n'est jamais rattachée à une autre vente ; sa garde
 //    d'immuabilité garde la clause « détacher seulement ».
 // 7. registry-no-fk-to-auction-sales : aucune clé étrangère du registre vers auction_sales (verrou sur la table
@@ -30,14 +35,19 @@
 //    seules trois fonctions de ce schéma nomment held_fields, et celle qui sert la collecte ne lit de l'entrée
 //    que son état et la valeur d'annonce (jamais la valeur tenue, la pièce, la décision ni l'origine).
 // 9. fact-registry-check-read-only : le contrôle quotidien n'appelle la projection qu'en simulation et ne
-//    contient aucune écriture ; la fonction qui tient les alertes n'écrit que par le mécanisme d'alerte, sous
-//    des clés fact_registry.*.
+//    contient aucune écriture ; la fonction qui tient les alertes ne prend aucun paramètre et n'écrit que par le
+//    mécanisme d'alerte, sous des clés fact_registry.*, sans rien refermer sur un rapport tronqué.
 // 10. registry-neutral-surface-labels : la projection écrit des libellés de surface neutres, sans jamais y
-//    joindre l'origine de la pièce.
+//    joindre l'origine de la pièce, et la retenue réserve le libellé du registre à la projection.
+// 11. fact-claims-generation-pattern : la vue des observations lit la génération de la collecte par une
+//    expression ancrée, et l'extracteur comme la version écrits par la collecte la respectent.
 //
 // Échec fermé : le code est cherché tel quel (un mot interdit dans un commentaire ou dans une adresse échoue
-// aussi) ; le SQL n'est débarrassé que de ses vrais commentaires (une chaîne '--' n'en ouvre pas un) ; les
-// droits sont cherchés partout, y compris dans un bloc DO ou dans le texte d'un EXECUTE.
+// aussi) ; le SQL n'est débarrassé que de ses vrais commentaires (une chaîne '--' n'en ouvre pas un), puis mis
+// sous une seule forme (minuscules hors des chaînes, pas d'espace autour du point d'un nom qualifié) : une
+// instruction en majuscules ou « public . auction_sales » est lue comme les autres ; les droits sont cherchés
+// partout, y compris dans un bloc DO ou dans le texte d'un EXECUTE. Les rattrapages (supabase/repairs/) et les
+// fichiers de maintenance (supabase/maintenance/) sont lus comme des migrations.
 
 export const factRegistryInvariantNames = [
   "fact-registry-tables-closed",
@@ -50,6 +60,7 @@ export const factRegistryInvariantNames = [
   "held-fields-never-returned",
   "fact-registry-check-read-only",
   "registry-neutral-surface-labels",
+  "fact-claims-generation-pattern",
 ];
 
 const REGISTRY_TABLES = [
@@ -62,6 +73,9 @@ const JOURNALS = ["auction_fact_claim_decisions", "auction_sale_field_hold_event
 const HOLD_TRIGGER = "aaab_auction_sales_hold_projected_fields";
 const INSERT_GUARD_TRIGGER = "aaab_auction_sales_held_fields_insert_guard";
 const ROLE_GUARD_TRIGGER = "aaab_auction_sales_held_fields_role_guard";
+const MARKER_GUARD_TRIGGER = "aaab_auction_sales_held_fields_marker_guard";
+const MARKER_GUARD_FUNCTION = "app_private.refuse_sale_field_projection_marker";
+const ORIGIN_GUARD_TRIGGER = "auction_fact_claims_registry_origin_guard";
 const RETENTION_GUARD_TRIGGER = "aaaa_auction_sales_retention_tombstone_guard_update";
 const HOLD_FUNCTION = "app_private.hold_projected_sale_fields";
 const PROJECTION_FUNCTION = "app_private.project_sale_fields";
@@ -94,7 +108,12 @@ const ASSERT_TRIGGERS_FUNCTION = "app_private.assert_fact_registry_triggers";
 const BASELINES_FUNCTION = "public.get_sale_field_baselines";
 const CHECK_FUNCTION = "public.check_fact_registry_consistency";
 const ALERTS_FUNCTION = "public.sync_fact_registry_alerts";
+const ALERTS_FROM_REPORT_FUNCTION = "app_private.sync_fact_registry_alerts_from_report";
 const HISTORY_FUNCTION = "public.log_auction_sale_change";
+// Vue des observations (20261117100700) et constantes de la collecte qu'elle lit.
+const CLAIMS_VIEW = "public.v_auction_fact_claims_read_model";
+const GENERATION_PATTERN = "^auction_fact_claims_v([0-9]{1,6})$";
+const PIPELINE_FACT_CLAIMS = "../services/data-pipeline/src/fact_claims.py";
 // Fonctions internes du lot R2a : aucune n'est exécutable par un rôle de l'API.
 const INTERNAL_FUNCTIONS = [
   "app_private.fact_registry_triggers_not_always",
@@ -105,6 +124,8 @@ const INTERNAL_FUNCTIONS = [
   "app_private.sale_field_echo_add",
   "app_private.sale_field_incoming_class",
   "app_private.sale_field_value_leaks",
+  MARKER_GUARD_FUNCTION,
+  ALERTS_FROM_REPORT_FUNCTION,
 ];
 // Fonctions publiques du lot R2a : exécutables par service_role seul.
 const SERVER_ONLY_RPCS = [BASELINES_FUNCTION, CHECK_FUNCTION, ALERTS_FUNCTION];
@@ -128,8 +149,14 @@ const ENTRY_KEYS_NEVER_SERVED = [
 ];
 // Les rattrapages (supabase/repairs/) sont analysés comme des migrations postérieures au lot, sauf ceux qui
 // existaient avant lui, nommés ici un par un. Le rattrapage 20261029100200, qui coupait puis rétablissait tous
-// les déclencheurs de auction_sales, a été réécrit au lot R2a : il n'est plus dans cette liste.
+// les déclencheurs de auction_sales, a été réécrit au lot R2a : il n'est plus dans cette liste. Les fichiers de
+// maintenance (supabase/maintenance/) sont lus de la même façon ; le seul à remettre un mode de déclencheur est
+// celui qui les repasse tous en « always ».
 const REPAIRS_PREFIX = "repairs/";
+const MAINTENANCE_PREFIX = "maintenance/";
+const HISTORICAL_MAINTENANCE = new Set([
+  "20260929124000_quarantine_agrasc_seller_and_close_excluded_jobs.sql",
+]);
 const HISTORICAL_REPAIRS = new Set([
   "20261020130001_repair_sale_department_and_coordinates.sql",
   "20261020130002_clear_info_encheres_phantom_point.sql",
@@ -187,6 +214,8 @@ const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * Retire les commentaires SQL, et eux seuls : une chaîne entre apostrophes est gardée telle quelle (« '--' »
  * n'ouvre pas un commentaire), un corps entre dollars est du code dont on retire aussi les commentaires, et sa
  * fin est cherchée par sa balise (un « -- » dans une chaîne dynamique ne cache pas ce qui suit la balise).
+ * Le code, hors des chaînes, est rendu en minuscules : une instruction écrite en majuscules se lit comme les
+ * autres. Les chaînes gardent leur casse (messages, valeurs comparées).
  */
 function stripSqlComments(text) {
   const token = /'|--|\/\*|\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/g;
@@ -196,10 +225,10 @@ function stripSqlComments(text) {
     token.lastIndex = index;
     const match = token.exec(text);
     if (!match) {
-      out += text.slice(index);
+      out += text.slice(index).toLowerCase();
       break;
     }
-    out += text.slice(index, match.index);
+    out += text.slice(index, match.index).toLowerCase();
     if (match[0] === "'") {
       // E'...' : la barre oblique inverse protège le caractère suivant.
       const escaped = /(?:^|[^A-Za-z0-9_])[eE]$/.test(
@@ -242,14 +271,22 @@ function stripSqlComments(text) {
         out += text.slice(match.index);
         break;
       }
-      out += match[0] + stripSqlComments(text.slice(bodyStart, close)) + match[0];
+      out +=
+        match[0].toLowerCase() +
+        stripSqlComments(text.slice(bodyStart, close)) +
+        match[0].toLowerCase();
       index = close + match[0].length;
     }
   }
   return out;
 }
 
-const stripSql = (text) => stripSqlComments(text).replace(/"([A-Za-z_][A-Za-z0-9_$]*)"/g, "$1");
+// Une seule forme pour tout le SQL lu : commentaires retirés, code en minuscules, identifiants sans guillemets,
+// aucun espace autour du point d'un nom qualifié (« public . auction_sales », « "public"."auction_sales" »).
+const stripSql = (text) =>
+  stripSqlComments(text)
+    .replace(/"([A-Za-z_][A-Za-z0-9_$]*)"/g, (_quoted, identifier) => identifier.toLowerCase())
+    .replace(/\b([A-Za-z_][A-Za-z0-9_$]*)\s*\.\s*(?=[A-Za-z_])/g, "$1.");
 
 /** Définitions `create [or replace] function` d'un fichier : nom qualifié, en-tête, corps, bornes. */
 function functionDefinitions(sql) {
@@ -321,10 +358,36 @@ export async function checkFactRegistryInvariants({
       `supabase/repairs/ cannot be read to check the fact registry (${error.code ?? "error"})`,
     );
   }
-  const sinceLot = (name, since) =>
-    name.startsWith(REPAIRS_PREFIX)
-      ? !HISTORICAL_REPAIRS.has(name.slice(REPAIRS_PREFIX.length))
-      : name >= since;
+  // Fichiers de maintenance : lus eux aussi (lancés à la main, hors de l'ordre des migrations).
+  try {
+    const maintenanceUrl = new URL("../supabase/maintenance/", baseUrl);
+    const maintenance = (await readSourceTree(maintenanceUrl))
+      .map(String)
+      .filter((name) => name.endsWith(".sql"))
+      .sort();
+    for (const name of maintenance) {
+      all.push([
+        `${MAINTENANCE_PREFIX}${name}`,
+        stripSql(await readSourceText(new URL(name, maintenanceUrl))),
+      ]);
+    }
+  } catch (error) {
+    failures.push(
+      `supabase/maintenance/ cannot be read to check the fact registry (${error.code ?? "error"})`,
+    );
+  }
+  const sinceLot = (name, since) => {
+    if (name.startsWith(REPAIRS_PREFIX)) {
+      return !HISTORICAL_REPAIRS.has(name.slice(REPAIRS_PREFIX.length));
+    }
+    if (name.startsWith(MAINTENANCE_PREFIX)) {
+      return !HISTORICAL_MAINTENANCE.has(name.slice(MAINTENANCE_PREFIX.length));
+    }
+    return name >= since;
+  };
+  // Les filtres « ce fichier nomme-t-il tel objet » lisent aussi les chaînes (SQL dynamique) sans leur casse.
+  const lowered = new Map(all.map(([name, sql]) => [name, sql.toLowerCase()]));
+  const mentions = (name, word) => lowered.get(name).includes(word);
   const allSql = all.map(([, sql]) => sql).join("\n");
   const definitions = all.flatMap(([name, sql]) =>
     functionDefinitions(sql).map((definition) => ({ ...definition, migration: name })),
@@ -341,7 +404,7 @@ export async function checkFactRegistryInvariants({
     const alterTable = `alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?${qualified}\\s+`;
     for (const [name, sql] of all) {
       // Seules les migrations qui nomment la table peuvent toucher un de ses déclencheurs.
-      if (!sinceLot(name, since) || !sql.includes(table)) continue;
+      if (!sinceLot(name, since) || !mentions(name, table)) continue;
       const creation = new RegExp(
         `create\\s+(?:or\\s+replace\\s+)?(?:constraint\\s+)?trigger\\s+${trigger}\\b`,
         "gi",
@@ -419,7 +482,7 @@ export async function checkFactRegistryInvariants({
       failures.push(`public.${table} is not closed to the API roles (RLS and revoke all)`);
     }
     for (const [name, sql] of all) {
-      if (!sql.includes(table)) continue;
+      if (!mentions(name, table)) continue;
       if (
         new RegExp(
           `alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?(?:public\\.)?${table}\\s+disable\\s+row\\s+level\\s+security`,
@@ -579,7 +642,7 @@ export async function checkFactRegistryInvariants({
     }
   }
   for (const [name, sql] of all) {
-    if (!sql.includes("fact_registry_seq")) continue;
+    if (!mentions(name, "fact_registry_seq")) continue;
     if (/\bsetval\s*\([^;]*\bfact_registry_seq\b/i.test(sql)) {
       failures.push(
         `${name} moves ${REGISTRY_SEQUENCE} with setval: the order of the two journals is never rewritten by a migration or a repair`,
@@ -625,8 +688,10 @@ export async function checkFactRegistryInvariants({
 
   // 3. held-fields-projection-only ------------------------------------------------------------------------------
   const allowedWriters = new Set([PROJECTION_FUNCTION, HOLD_FUNCTION]);
+  // Le marqueur est posé par la projection, lu par la retenue et par la garde du marqueur.
+  const markerReaders = new Set([PROJECTION_FUNCTION, HOLD_FUNCTION, MARKER_GUARD_FUNCTION]);
   for (const [name, sql] of all) {
-    if (!sinceLot(name, HELD_FIELDS_MIGRATION) && !sql.includes("held_fields")) continue;
+    if (!sinceLot(name, HELD_FIELDS_MIGRATION) && !mentions(name, "held_fields")) continue;
     const inFile = definitions.filter((entry) => entry.migration === name);
     const ownerAt = (index) => inFile.find((entry) => index >= entry.start && index < entry.end);
     for (const match of sql.matchAll(/\bheld_fields\s*(?::=|=(?!=))/gi)) {
@@ -660,9 +725,14 @@ export async function checkFactRegistryInvariants({
     }
     for (const match of sql.matchAll(new RegExp(escapeRegExp(PROJECTION_MARKER), "g"))) {
       const owner = ownerAt(match.index);
-      if (name.startsWith(REPAIRS_PREFIX) || !owner || !allowedWriters.has(owner.name)) {
+      if (
+        name.startsWith(REPAIRS_PREFIX) ||
+        name.startsWith(MAINTENANCE_PREFIX) ||
+        !owner ||
+        !markerReaders.has(owner.name)
+      ) {
         failures.push(
-          `${name} names the transaction marker of the projection ${owner ? `in ${owner.name}` : "outside a function"}: only ${PROJECTION_FUNCTION} sets it and ${HOLD_FUNCTION} reads it`,
+          `${name} names the transaction marker of the projection ${owner ? `in ${owner.name}` : "outside a function"}: only ${PROJECTION_FUNCTION} sets it, ${HOLD_FUNCTION} and ${MARKER_GUARD_FUNCTION} read it`,
         );
       }
     }
@@ -700,11 +770,24 @@ export async function checkFactRegistryInvariants({
       "auction_sales.held_fields is not added as a nullable jsonb column without default",
     );
   }
+  // Le journal des ventes ne recopie jamais la colonne interne dans l'historique : sa dernière définition la
+  // vide sur ses deux copies de la ligne et l'écarte des clés comparées.
+  const history = lastDefinition(HISTORY_FUNCTION);
+  if (
+    !history ||
+    !/\bnew_row\.held_fields\s*:=\s*null\s*;/i.test(history.body) ||
+    !/\bold_row\.held_fields\s*:=\s*null\s*;/i.test(history.body) ||
+    !history.body.includes("'held_fields'")
+  ) {
+    failures.push(
+      `${history?.migration ?? "no migration"}: ${HISTORY_FUNCTION} no longer empties held_fields on both copies of the row (new_row, old_row) nor ignores the key: the sale history would receive the internal column`,
+    );
+  }
 
   // 4. hold-trigger-present-early -------------------------------------------------------------------------------
   const holdTrigger = lastStatement(`${CREATE_TRIGGER}\\s+${HOLD_TRIGGER}\\s+([^;]*)`);
   const holdShape =
-    /^before\s+update\s+of\s+([a-z0-9_,\s]+?)\s+on\s+public\.auction_sales\s+for\s+each\s+row\s+when\s*\(\s*old\.held_fields\s+is\s+not\s+null\s+or\s+new\.held_fields\s+is\s+distinct\s+from\s+old\.held_fields\s*\)\s+execute\s+function\s+app_private\.hold_projected_sale_fields\(\)\s*$/i.exec(
+    /^before\s+update\s+of\s+([a-z0-9_,\s]+?)\s+on\s+public\.auction_sales\s+for\s+each\s+row\s+when\s*\(\s*old\.held_fields\s+is\s+not\s+null\s+or\s+new\.held_fields\s+is\s+distinct\s+from\s+old\.held_fields\s+or\s+new\.surface_source\s*=\s*'fact_registry'\s*\)\s+execute\s+function\s+app_private\.hold_projected_sale_fields\(\)\s*$/i.exec(
       holdTrigger?.[1].trim() ?? "",
     );
   if (!holdShape) {
@@ -735,11 +818,56 @@ export async function checkFactRegistryInvariants({
   ) {
     failures.push(`the role guard ${ROLE_GUARD_TRIGGER} is missing or lost its shape`);
   }
-  // Les deux gardes par rôle (held_fields, origines réservées des observations) : SECURITY INVOKER, liste
-  // d'exclusion gardée, et liste blanche depuis le lot R2a (seul le propriétaire de la projection passe).
+  // Garde du marqueur (lot R2a) : mêmes colonnes que la retenue sauf held_fields, pour toute vente du registre
+  // et pour toute écriture qui apporte le libellé réservé.
+  const markerGuard = lastStatement(`${CREATE_TRIGGER}\\s+${MARKER_GUARD_TRIGGER}\\s+([^;]*)`);
+  const markerShape =
+    /^before\s+update\s+of\s+([a-z0-9_,\s]+?)\s+on\s+public\.auction_sales\s+for\s+each\s+row\s+when\s*\(\s*old\.held_fields\s+is\s+not\s+null\s+or\s+new\.surface_source\s*=\s*'fact_registry'\s*\)\s+execute\s+function\s+app_private\.refuse_sale_field_projection_marker\(\)\s*$/i.exec(
+      markerGuard?.[1].trim() ?? "",
+    );
+  if (!markerShape) {
+    failures.push(`the marker guard ${MARKER_GUARD_TRIGGER} is missing or lost its shape`);
+  } else {
+    const columns = markerShape[1].split(",").map((column) => column.trim().toLowerCase());
+    for (const column of HELD_COLUMNS) {
+      if (column !== "held_fields" && !columns.includes(column)) {
+        failures.push(
+          `the marker guard ${MARKER_GUARD_TRIGGER} no longer fires on a write of ${column}`,
+        );
+      }
+    }
+  }
+  const markerFunction = lastDefinition(MARKER_GUARD_FUNCTION);
+  if (
+    !markerFunction ||
+    !new RegExp(
+      `current_setting\\(\\s*'${escapeRegExp(PROJECTION_MARKER)}'\\s*,\\s*true\\s*\\)\\s*,\\s*''\\s*\\)\\s*=\\s*new\\.id::text`,
+      "i",
+    ).test(markerFunction.body)
+  ) {
+    failures.push(
+      `${markerFunction?.migration ?? "no migration"}: ${MARKER_GUARD_FUNCTION} no longer compares the projection marker to the sale written`,
+    );
+  }
+  // Garde d'origine des observations : les trois natures réservées, et le triplet du pont (extracteur de
+  // l'agent, identifiant de fait), que le classement range aussi en origine professionnelle.
+  const originGuard = lastStatement(`${CREATE_TRIGGER}\\s+${ORIGIN_GUARD_TRIGGER}\\s+([^;]*)`);
+  if (
+    !/^before\s+insert\s+on\s+public\.auction_fact_claims\s+for\s+each\s+row\s+when\s*\(\s*new\.evidence_kind\s+in\s*\(\s*'professional_email'\s*,\s*'professional_form'\s*,\s*'admin_entry'\s*\)\s+or\s+new\.extractor_name\s*=\s*'information_agent'\s+or\s+new\.evidence_locator\s*\?\s*'information_agent_fact_id'\s*\)\s+execute\s+function\s+app_private\.refuse_api_role_registry_origin\(\)\s*$/i.test(
+      originGuard?.[1].trim() ?? "",
+    )
+  ) {
+    failures.push(
+      `the origin guard ${ORIGIN_GUARD_TRIGGER} is missing or lost its shape (reserved kinds, extractor and fact identifier of the information agent)`,
+    );
+  }
+  // Les gardes par rôle (held_fields, origines réservées des observations) et la garde du marqueur : SECURITY
+  // INVOKER, liste d'exclusion gardée, et liste blanche depuis le lot R2a (seul le propriétaire de la projection
+  // passe).
   for (const guard of [
     "app_private.refuse_api_role_held_fields_write",
     "app_private.refuse_api_role_registry_origin",
+    MARKER_GUARD_FUNCTION,
   ]) {
     const roleGuardFunction = lastDefinition(guard);
     if (
@@ -769,7 +897,13 @@ export async function checkFactRegistryInvariants({
     checkTriggerKept(trigger, "auction_sales", "hold of projected fields", PROJECTION_MIGRATION);
   }
   checkTriggerKept(
-    "auction_fact_claims_registry_origin_guard",
+    MARKER_GUARD_TRIGGER,
+    "auction_sales",
+    "hold of projected fields",
+    SEQUENCE_MIGRATION,
+  );
+  checkTriggerKept(
+    ORIGIN_GUARD_TRIGGER,
     "auction_fact_claims",
     "reserved origins of fact claims",
     REGISTRY_MIGRATION,
@@ -780,8 +914,8 @@ export async function checkFactRegistryInvariants({
     "order of the fact registry journals",
     REGISTRY_MIGRATION,
   );
-  // Contrôle du mode des déclencheurs : il lève 55000 dès qu'un déclencheur du registre manque ou n'est plus
-  // « always », et la liste qu'il lit nomme les onze déclencheurs.
+  // Contrôle du mode des déclencheurs : il lève 55000 dès qu'un déclencheur du registre manque, n'est plus
+  // « always » ou n'appelle plus sa fonction, et la liste qu'il lit nomme les douze déclencheurs.
   const assertTriggers = lastDefinition(ASSERT_TRIGGERS_FUNCTION);
   const triggerList = lastDefinition("app_private.fact_registry_triggers_not_always");
   if (
@@ -795,10 +929,20 @@ export async function checkFactRegistryInvariants({
       `${assertTriggers?.migration ?? "no migration"}: ${ASSERT_TRIGGERS_FUNCTION} no longer raises 55000 registry_unavailable when a registry trigger is not enabled always`,
     );
   }
+  if (
+    triggerList &&
+    (!/\.tgfoid\b/i.test(triggerList.body) ||
+      !/\.proname\s*=\s*expected\.function_name/i.test(triggerList.body))
+  ) {
+    failures.push(
+      `${triggerList.migration}: app_private.fact_registry_triggers_not_always no longer checks the function bound to each trigger (tgfoid)`,
+    );
+  }
   for (const trigger of [
     HOLD_TRIGGER,
     INSERT_GUARD_TRIGGER,
     ROLE_GUARD_TRIGGER,
+    MARKER_GUARD_TRIGGER,
     "auction_fact_claim_decisions_append_only",
     "auction_fact_claim_decisions_no_truncate",
     "auction_fact_claim_decisions_validate",
@@ -861,7 +1005,8 @@ export async function checkFactRegistryInvariants({
       if (
         trigger < HOLD_TRIGGER &&
         trigger !== RETENTION_GUARD_TRIGGER &&
-        trigger !== ROLE_GUARD_TRIGGER
+        trigger !== ROLE_GUARD_TRIGGER &&
+        trigger !== MARKER_GUARD_TRIGGER
       ) {
         failures.push(
           `${name} creates the BEFORE UPDATE trigger ${trigger} on auction_sales, which runs before ${HOLD_TRIGGER}: it would judge values that the hold then restores`,
@@ -983,6 +1128,18 @@ export async function checkFactRegistryInvariants({
         `${name} grants every function of app_private at once: it would open ${PROJECTION_FUNCTION}`,
       );
     }
+    // Même chose pour le schéma public, vers un rôle du navigateur : les trois fonctions du lot R2a sont
+    // réservées à service_role.
+    if (
+      sinceLot(name, SEQUENCE_MIGRATION) &&
+      /\bgrant\s+(?:execute|all)(?:\s+privileges)?\s+on\s+all\s+(?:functions|routines|procedures)\s+in\s+schema\s+[^;]*\bpublic\b[^;]*\bto\b[^;]*\b(?:anon|authenticated|public)\b/i.test(
+        sql,
+      )
+    ) {
+      failures.push(
+        `${name} grants every function of the public schema to a browser role: it would open ${SERVER_ONLY_RPCS.join(", ")}`,
+      );
+    }
   }
 
   // 3 et 5, côté code : ni l'application, ni le pipeline, ni un script, ni une fonction Edge ne nomment la
@@ -1050,7 +1207,7 @@ export async function checkFactRegistryInvariants({
 
   // 6. fact-claims-never-repointed ------------------------------------------------------------------------------
   for (const [name, sql] of all) {
-    if (!sql.includes("auction_fact_claims")) continue;
+    if (!mentions(name, "auction_fact_claims")) continue;
     for (const statement of sql.split(";")) {
       const update = /\bupdate\s+(?:only\s+)?(?:public\.)?auction_fact_claims\b([\s\S]*)$/i.exec(
         statement,
@@ -1102,7 +1259,7 @@ export async function checkFactRegistryInvariants({
   // 7. registry-no-fk-to-auction-sales --------------------------------------------------------------------------
   for (const table of REGISTRY_TABLES) {
     for (const [name, sql] of all) {
-      if (!sql.includes(table)) continue;
+      if (!mentions(name, table)) continue;
       for (const statement of sql.split(";")) {
         if (
           !new RegExp(
@@ -1151,6 +1308,28 @@ export async function checkFactRegistryInvariants({
         `${definition.migration}: ${fn} names auction_sales.held_fields: in the public schema only ${[...HELD_FIELDS_READERS].join(", ")} may`,
       );
     }
+    // Une fonction exposée ne lit aucune table du registre et n'enveloppe aucune de ses trois fonctions : elle
+    // les rendrait à ses propres appelants, quels que soient les droits des fonctions enveloppées.
+    if (!SERVER_ONLY_RPCS.includes(fn)) {
+      for (const table of REGISTRY_TABLES) {
+        if (new RegExp(`\\b${table}\\b`, "i").test(definition.body)) {
+          failures.push(
+            `${definition.migration}: ${fn} reads public.${table}: in the public schema only ${SERVER_ONLY_RPCS.join(", ")} read the fact registry`,
+          );
+        }
+      }
+      for (const rpc of SERVER_ONLY_RPCS) {
+        if (
+          new RegExp(`\\b${escapeRegExp(rpc.slice("public.".length))}\\s*\\(`, "i").test(
+            definition.body,
+          )
+        ) {
+          failures.push(
+            `${definition.migration}: ${fn} wraps ${rpc}: no other function of the public schema may call it`,
+          );
+        }
+      }
+    }
   }
   const baselines = lastDefinition(BASELINES_FUNCTION);
   if (!baselines) {
@@ -1185,12 +1364,13 @@ export async function checkFactRegistryInvariants({
     failures.push(`${CHECK_FUNCTION} is not defined by a migration`);
   } else {
     const projectionCalls = [...check.body.matchAll(/project_sale_fields\s*\(([^()]*)\)/gi)];
+    // Deux appels : la passe, puis le rejeu des ventes en dérive ; tous deux en simulation.
     if (
-      projectionCalls.length !== 1 ||
-      !/^\s*[a-z_.]+\s*,\s*null\s*,\s*false\s*$/i.test(projectionCalls[0][1])
+      projectionCalls.length !== 2 ||
+      projectionCalls.some((call) => !/^\s*[a-z_.]+\s*,\s*null\s*,\s*false\s*$/i.test(call[1]))
     ) {
       failures.push(
-        `${check.migration}: ${CHECK_FUNCTION} must call the projection once, as a simulation (third argument false, written literally)`,
+        `${check.migration}: ${CHECK_FUNCTION} must call the projection as a simulation only (third argument false, written literally), once in its pass and once in its replay`,
       );
     }
     if (WRITE_STATEMENT.test(check.body) || !/\bstable\b/i.test(check.head)) {
@@ -1202,18 +1382,43 @@ export async function checkFactRegistryInvariants({
       failures.push(`${check.migration}: ${CHECK_FUNCTION} converts the whole sale row`);
     }
   }
+  // La fonction publique ne prend aucun paramètre (ni borne, ni rapport) : elle lance le contrôle avec sa borne
+  // par défaut et passe le rapport à la fonction interne, seule à toucher les alertes.
   const alerts = lastDefinition(ALERTS_FUNCTION);
+  const alertsFromReport = lastDefinition(ALERTS_FROM_REPORT_FUNCTION);
   if (!alerts) {
     failures.push(`${ALERTS_FUNCTION} is not defined by a migration`);
   } else if (
+    !/sync_fact_registry_alerts\s*\(\s*\)\s*returns\b/i.test(alerts.head) ||
     WRITE_STATEMENT.test(alerts.body) ||
-    /project_sale_fields/i.test(alerts.body) ||
-    !/check_fact_registry_consistency\s*\(/i.test(alerts.body) ||
-    !/app_private\.sync_operational_alert\s*\(\s*'fact_registry\.'\s*\|\|/i.test(alerts.body) ||
-    [...alerts.body.matchAll(/sync_operational_alert\s*\(/gi)].length !== 1
+    /project_sale_fields|sync_operational_alert/i.test(alerts.body) ||
+    !/check_fact_registry_consistency\s*\(\s*\)/i.test(alerts.body) ||
+    !/app_private\.sync_fact_registry_alerts_from_report\s*\(/i.test(alerts.body)
   ) {
     failures.push(
-      `${alerts.migration}: ${ALERTS_FUNCTION} must only run the check and open or close fact_registry.* alerts through app_private.sync_operational_alert`,
+      `${alerts.migration}: ${ALERTS_FUNCTION} must take no parameter and only run the check, with its default bound, then hand its report to ${ALERTS_FROM_REPORT_FUNCTION}`,
+    );
+  }
+  if (!alertsFromReport) {
+    failures.push(`${ALERTS_FROM_REPORT_FUNCTION} is not defined by a migration`);
+  } else if (
+    WRITE_STATEMENT.test(alertsFromReport.body) ||
+    /project_sale_fields/i.test(alertsFromReport.body) ||
+    !/app_private\.sync_operational_alert\s*\(\s*'fact_registry\.'\s*\|\|/i.test(
+      alertsFromReport.body,
+    ) ||
+    [...alertsFromReport.body.matchAll(/sync_operational_alert\s*\(/gi)].length !== 1
+  ) {
+    failures.push(
+      `${alertsFromReport.migration}: ${ALERTS_FROM_REPORT_FUNCTION} must only open or close fact_registry.* alerts through app_private.sync_operational_alert`,
+    );
+  } else if (
+    !/continue\s+when\s+v_truncated\s+and\s+not\s+v_active\s*;/i.test(alertsFromReport.body) ||
+    alertsFromReport.body.search(/continue\s+when\s+v_truncated/i) >
+      alertsFromReport.body.search(/sync_operational_alert\s*\(/i)
+  ) {
+    failures.push(
+      `${alertsFromReport.migration}: ${ALERTS_FROM_REPORT_FUNCTION} no longer skips the inactive checks of a truncated report (a partial report would close an alert)`,
     );
   }
 
@@ -1229,6 +1434,57 @@ export async function checkFactRegistryInvariants({
     ) {
       failures.push(
         `${projection.migration}: ${PROJECTION_FUNCTION} must write neutral surface labels (surface_source 'fact_registry', app_surface_kind 'built'), never the origin of the piece`,
+      );
+    }
+  }
+  // Le libellé du registre est réservé à la projection : hors d'elle, la retenue le refuse sur une surface non
+  // tenue (la clause WHEN du déclencheur, contrôlée plus haut, l'appelle pour ce cas).
+  if (
+    holdFunction &&
+    !/new\.surface_source\s+is\s+not\s+distinct\s+from\s+'fact_registry'\s+and\s+old\.surface_source\s+is\s+distinct\s+from\s+'fact_registry'/i.test(
+      holdFunction.body,
+    )
+  ) {
+    failures.push(
+      `${holdFunction.migration}: ${HOLD_FUNCTION} no longer reserves the surface label 'fact_registry' to the projection`,
+    );
+  }
+
+  // 11. fact-claims-generation-pattern ------------------------------------------------------------------------
+  // La vue ne masque une ancienne génération que si elle lit la version par l'expression ancrée ; la collecte
+  // doit écrire un extracteur et une version que cette expression lit, sinon rien ne serait masqué (ou tout).
+  const viewDefinition = lastStatement(
+    `create\\s+or\\s+replace\\s+view\\s+${escapeRegExp(CLAIMS_VIEW)}\\b([^;]*)`,
+  );
+  const extractorInView = /extractor_name\s*=\s*'([^']+)'/i.exec(viewDefinition?.[1] ?? "")?.[1];
+  if (
+    !viewDefinition ||
+    !/with\s*\(\s*security_invoker\s*=\s*true\s*\)/i.test(viewDefinition[1]) ||
+    !extractorInView ||
+    viewDefinition[1].split(`'${GENERATION_PATTERN}'`).length !== 3 ||
+    !/\)\s*\[1\]\s*::integer/i.test(viewDefinition[1])
+  ) {
+    failures.push(
+      `${CLAIMS_VIEW} no longer reads the generation of the pipeline claims by its anchored pattern, as an integer, with security_invoker = true`,
+    );
+  } else {
+    try {
+      const pipeline = await readSourceText(new URL(PIPELINE_FACT_CLAIMS, baseUrl));
+      const version = /^FACT_CLAIMS_VERSION\s*=\s*"([^"]*)"\s*$/m.exec(pipeline)?.[1];
+      const extractor = /^FACT_CLAIMS_EXTRACTOR\s*=\s*"([^"]*)"\s*$/m.exec(pipeline)?.[1];
+      if (version === undefined || !new RegExp(GENERATION_PATTERN).test(version)) {
+        failures.push(
+          `services/data-pipeline/src/fact_claims.py: FACT_CLAIMS_VERSION (${version ?? "missing"}) does not match ${GENERATION_PATTERN}: ${CLAIMS_VIEW} could not order its generation`,
+        );
+      }
+      if (extractor !== extractorInView) {
+        failures.push(
+          `services/data-pipeline/src/fact_claims.py: FACT_CLAIMS_EXTRACTOR (${extractor ?? "missing"}) is not the extractor that ${CLAIMS_VIEW} filters (${extractorInView})`,
+        );
+      }
+    } catch (error) {
+      failures.push(
+        `services/data-pipeline/src/fact_claims.py cannot be read to check the fact claims generation (${error.code ?? "error"})`,
       );
     }
   }
