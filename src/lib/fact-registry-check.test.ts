@@ -11,7 +11,11 @@ import {
   REPROJECTION_PASS_START_BUDGET_MS,
   runFactRegistryCheckJob,
 } from "@/lib/fact-registry-check";
-import { isTransientError, withTransientRetries } from "@/lib/monitored-job.server";
+import {
+  isTransientError,
+  runMonitoredJob,
+  withTransientRetries,
+} from "@/lib/monitored-job.server";
 
 type ReportOverrides = {
   truncated?: unknown;
@@ -323,8 +327,11 @@ describe("contrôle quotidien du registre des pièces", () => {
       answer({ data: reprojection(), error: null }, { data: report(), error: null });
       const retried: string[] = [];
 
-      const summary = await withTransientRetries(runFactRegistryCheckJob, [0], (_attempt, error) =>
-        retried.push((error as Error).message),
+      const run = { startedAt: Date.now(), attempts: 0 };
+      const summary = await withTransientRetries(
+        () => runFactRegistryCheckJob(run),
+        [0],
+        (_attempt, error) => retried.push((error as Error).message),
       );
 
       expect(summary.alert).toBe("clear");
@@ -336,21 +343,121 @@ describe("contrôle quotidien du registre des pièces", () => {
     },
   );
 
-  it("reconnaît une panne passagère à son message d'origine, même avec un code", async () => {
-    answer(
-      { data: reprojection(), error: null },
-      {
-        data: null,
-        error: { code: "57014", message: "canceling statement due to statement timeout" },
-      },
-    );
+  it.each([
+    ["57014", "canceling statement due to statement timeout", false],
+    ["23514", "upstream answered 503, network 429", false],
+    ["40001", "could not serialize access", true],
+    ["40P01", "deadlock detected", true],
+  ])("classe une erreur par son code seul (%s)", async (code, message, transient) => {
+    answer({ data: reprojection(), error: null }, { data: null, error: { code, message } });
 
     const thrown = await runFactRegistryCheckJob().catch((error: unknown) => error);
 
     expect((thrown as Error).message).toBe(
-      "Contrôle du registre des pièces : étape check, code 57014.",
+      `Contrôle du registre des pièces : étape check, code ${code}.`,
     );
-    expect(isTransientError(thrown)).toBe(true);
+    expect(isTransientError(thrown)).toBe(transient);
+  });
+
+  it("ne demande pas de reprise quand il ne reste plus la place d'une tentative entière", async () => {
+    const start = 1_000_000;
+    // Panne de réseau 51 s après le début : 51 + 5 (attente) + 240 (une passe et le contrôle) dépasse 295 s.
+    vi.spyOn(Date, "now").mockReturnValue(start + 51_000);
+    answer(
+      { data: reprojection(), error: null },
+      { data: null, error: { code: "", message: "TypeError: fetch failed" } },
+    );
+
+    const thrown = await runFactRegistryCheckJob({ startedAt: start, attempts: 0 }).catch(
+      (error: unknown) => error,
+    );
+
+    expect((thrown as Error).message).toBe(
+      "Contrôle du registre des pièces : étape check, code inconnu.",
+    );
+    expect(isTransientError(thrown)).toBe(false);
+  });
+
+  it("ne demande pas de troisième reprise : son attente de 60 s ne laisse pas une tentative entière", async () => {
+    const networkFailure = { data: null, error: { code: "", message: "TypeError: fetch failed" } };
+    answer(networkFailure, { data: report(), error: null });
+
+    const run = { startedAt: Date.now(), attempts: 2 };
+    const thrown = await runFactRegistryCheckJob(run).catch((error: unknown) => error);
+
+    expect(isTransientError(thrown)).toBe(false);
+  });
+
+  it("contrôle coupé à 120 s : une seule exécution, en échec avec son code, en moins de 300 s", async () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      const calls: string[] = [];
+      let finished: Record<string, unknown> | null = null;
+      mocks.rpc.mockImplementation(async (name: string, args?: Record<string, unknown>) => {
+        calls.push(name);
+        if (name === "begin_operational_job_run") return { data: "run-1", error: null };
+        if (name === "finish_operational_job_run") {
+          finished = args ?? null;
+          return { data: null, error: null };
+        }
+        if (name === "reproject_fact_registry_drift") return { data: reprojection(), error: null };
+        // Le contrôle atteint le délai d'instruction de la base.
+        await vi.advanceTimersByTimeAsync(120_000);
+        return {
+          data: null,
+          error: { code: "57014", message: "canceling statement due to statement timeout" },
+        };
+      });
+      const run = { startedAt: start, attempts: 0 };
+
+      const outcome = await runMonitoredJob("fact-registry-check", () =>
+        runFactRegistryCheckJob(run),
+      );
+
+      expect(outcome).toMatchObject({
+        ok: false,
+        message: "Contrôle du registre des pièces : étape check, code 57014.",
+      });
+      expect(calls.filter((name) => name === "sync_fact_registry_alerts")).toHaveLength(1);
+      expect(calls.filter((name) => name === "finish_operational_job_run")).toHaveLength(1);
+      expect(finished).toMatchObject({
+        p_status: "failed",
+        p_error_message: "Contrôle du registre des pièces : étape check, code 57014.",
+      });
+      expect(Date.now() - start).toBeLessThan(300_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("panne de réseau répétée : les reprises s'arrêtent avant la durée de la route", async () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      const calls: string[] = [];
+      mocks.rpc.mockImplementation(async (name: string) => {
+        calls.push(name);
+        if (name === "begin_operational_job_run") return { data: "run-1", error: null };
+        if (name === "finish_operational_job_run") return { data: null, error: null };
+        if (name === "reproject_fact_registry_drift") return { data: reprojection(), error: null };
+        // Chaque contrôle met 20 s à échouer sur le réseau.
+        vi.setSystemTime(Date.now() + 20_000);
+        return { data: null, error: { code: "", message: "TypeError: fetch failed" } };
+      });
+      const run = { startedAt: start, attempts: 0 };
+
+      const pending = runMonitoredJob("fact-registry-check", () => runFactRegistryCheckJob(run));
+      await vi.runAllTimersAsync();
+      const outcome = await pending;
+
+      expect(outcome.ok).toBe(false);
+      // 20 s, attente de 5 s, 20 s : à 45 s la deuxième reprise (attente de 20 s) n'a plus sa place.
+      expect(calls.filter((name) => name === "sync_fact_registry_alerts")).toHaveLength(2);
+      expect(Date.now() - start).toBeLessThan(300_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("enchaîne les passes de la relance tant que la base dit qu'il en reste", async () => {

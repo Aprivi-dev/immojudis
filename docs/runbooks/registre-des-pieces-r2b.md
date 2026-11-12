@@ -63,8 +63,9 @@ Le lot est inerte pour le registre, mais deux choses déjà en service changent.
   du réglage du second facteur), `simulationFailureCodes` (codes des ventes dont la simulation lève) et
   `reprojection` (état de l'interrupteur, `passes`, comptes, codes des ventes en échec, jamais un identifiant de
   vente). En cas d'erreur de la base, `error_message` ne porte plus que l'étape et le code (« étape check, code
-  57014 »), jamais le message de PostgreSQL. Une panne passagère (réseau, délai d'instruction) est reconnue avant
-  ce nettoyage : la tâche entière est reprise par `runMonitoredCron`, comme les autres.
+  57014 »), jamais le message de PostgreSQL. Une panne passagère est reconnue à son code seul (erreur sans code : réseau ; `40001`, `40P01`) : la tâche
+  entière est alors reprise par `runMonitoredCron`, seulement s'il reste la place d'une tentative entière dans les
+  300 s de la route. Le délai d'instruction (`57014`) n'est jamais repris : il est enregistré tel quel.
 - **L'origine « document » ne peut plus tenir un champ** (`auction_fact_source_precedence.can_hold` à `false`,
   cinq lignes). Sans effet : aucune décision n'existe. Le lot R3 la rouvrira par sa propre migration.
 
@@ -489,7 +490,7 @@ where alert_key like 'fact\_registry.%' and status = 'open';
 - **La tâche échoue après B3** : lire `error_message` (étape et code). Étape `reprojection` : le contrôle a tourné
   quand même, et le message dit ce qu'il a donné ; les alertes sont à jour. Étape `check`, rapport partiel : le
   registre compte plus de 20 000 ventes ; aucune alerte n'a été refermée. Code `57014` : le délai d'instruction a
-  été atteint (la tâche a été reprise trois fois avant d'échouer) ; relever la durée et revenir vers le plan : le
+  été atteint (la tâche n'est pas reprise dans ce cas) ; relever la durée et revenir vers le plan : le
   hissage du délai de 120 s par PostgREST est alors à vérifier (P7).
 
 ### Fiche d'incident : suppression de doublons en échec
