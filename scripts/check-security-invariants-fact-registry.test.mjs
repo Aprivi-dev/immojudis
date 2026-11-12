@@ -1,4 +1,4 @@
-// Invariants du registre des pièces (scripts/check-security-invariants-fact-registry.mjs, lots R1 et R2a) et
+// Invariants du registre des pièces (scripts/check-security-invariants-fact-registry.mjs, lots R1, R2a et R2b) et
 // verrous ajoutés pour lui à information-agent-no-automatic-publication-path.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { removeSandboxes, runInvariants } from "./check-security-invariants-harness.mjs";
@@ -701,8 +701,7 @@ $$;`;
       content:
         "create or replace function public.check_fact_registry_consistency(p_limit integer default 500) returns jsonb language plpgsql stable security definer set search_path = '' as $$ declare v_sale_id uuid; begin return app_private.project_sale_fields(v_sale_id, null, true); end; $$;",
       prefix: ": ",
-      message:
-        "public.check_fact_registry_consistency must call the projection as a simulation only",
+      message: "public.check_fact_registry_consistency applies the projection",
     },
     {
       label:
@@ -712,7 +711,7 @@ $$;`;
         "create or replace function public.sync_fact_registry_alerts(p_limit integer default 500) returns jsonb language plpgsql security definer set search_path = '' as $$ declare v_report jsonb := public.check_fact_registry_consistency(p_limit); begin insert into public.operational_alerts (alert_key, category, severity) values ('anything', 'import', 'critical'); return v_report; end; $$;",
       prefix: ": ",
       message:
-        "public.sync_fact_registry_alerts must take no parameter and only run the check, with its default bound",
+        "public.sync_fact_registry_alerts must take no parameter and only run the check, page by page",
     },
     {
       label: "une projection qui n'écrit plus les libellés de surface neutres",
@@ -1056,6 +1055,223 @@ $$;`;
       content: null,
       message: "alters app_private.fact_claims_generation_ceiling (security mode",
     },
+    // Lot R2b : fonctions de décision, report à la fusion, relance planifiée.
+    {
+      label: "une fonction de décision ouverte aux comptes connectés",
+      file: migration("decision_rpc_granted"),
+      content:
+        "grant execute on function public.accept_auction_fact_claim(uuid, text, text, uuid) to authenticated;",
+      message: "grants a privilege on public.accept_auction_fact_claim: no API role may execute it",
+    },
+    {
+      label: "la fonction de décision interne ouverte au rôle de service",
+      file: migration("decide_granted"),
+      content:
+        "grant execute on function app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid) to service_role;",
+      message:
+        "grants a privilege on app_private.decide_auction_fact_claim: no API role may execute it",
+    },
+    {
+      label:
+        "une fonction de décision qui reçoit son auteur en paramètre et relaie le détail d'une erreur",
+      file: migration("decide_actor_parameter"),
+      content:
+        "create or replace function app_private.decide_auction_fact_claim(p_claim_id uuid, p_decision text, p_reason_code text, p_lot_attachment text, p_lot_ref text, p_supersedes_decision_id uuid, p_actor_id uuid) returns jsonb language plpgsql security definer set search_path = '' as $$ declare v_detail text; begin insert into public.auction_fact_claim_decisions (claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id) values (p_claim_id, p_claim_id, 'property.rooms_count', p_decision, 'single_lot', 'admin', p_actor_id); return '{}'::jsonb; exception when others then get stacked diagnostics v_detail = pg_exception_detail; raise exception using message = 'failed', detail = v_detail; end; $$;",
+      prefix: ": ",
+      message:
+        "app_private.decide_auction_fact_claim must take the author from (select auth.uid()), never from a parameter",
+    },
+    {
+      label: "la même fonction : le détail de l'erreur relayé",
+      file: migration("decide_actor_parameter"),
+      content: null,
+      prefix: ": ",
+      message:
+        "app_private.decide_auction_fact_claim reads or relays the detail, the hint or the message of an error",
+    },
+    {
+      label: "la même fonction : une erreur inattendue qui n'est plus ramenée à un code",
+      file: migration("decide_actor_parameter"),
+      content: null,
+      prefix: ": ",
+      message:
+        "app_private.decide_auction_fact_claim no longer turns an unexpected error into registry_write_failed",
+    },
+    {
+      label: "une fonction publique de décision qui prend un auteur et choisit sa décision",
+      file: migration("oppose_actor_parameter"),
+      content:
+        "create or replace function public.oppose_auction_fact_claim(p_claim_id uuid, p_actor_id uuid, p_decision text default 'opposed') returns jsonb language sql security definer set search_path = '' as $$ select app_private.decide_auction_fact_claim(p_claim_id, p_decision, 'other', null, null, null); $$;",
+      prefix: ": ",
+      message:
+        "public.oppose_auction_fact_claim must have no author parameter and only call app_private.decide_auction_fact_claim with the decision 'opposed'",
+    },
+    {
+      label: "une autre fonction qui appelle la fonction de décision",
+      file: migration("decide_wrapped"),
+      content:
+        "create function public.decide_for(p_claim_id uuid) returns jsonb language sql security definer set search_path = '' as $$ select app_private.decide_auction_fact_claim(p_claim_id, 'accepted', null, 'single_lot', null, null); $$;",
+      prefix: ": ",
+      message:
+        "public.decide_for calls app_private.decide_auction_fact_claim: only the four decision functions may",
+    },
+    {
+      label: "une fonction qui applique la projection sans être une des trois admises",
+      file: migration("projection_applied_elsewhere"),
+      content:
+        "create function app_private.reapply_everything() returns void language plpgsql security definer set search_path = '' as $$ declare v_sale_id uuid; begin perform app_private.project_sale_fields(v_sale_id, null, true); end; $$;",
+      prefix: ": ",
+      message: "app_private.reapply_everything applies the projection",
+    },
+    {
+      label: "une fonction qui lance la relance planifiée hors de la tâche quotidienne",
+      file: migration("reprojection_called_elsewhere"),
+      content:
+        "create function public.reproject_now() returns jsonb language sql security definer set search_path = '' as $$ select public.reproject_fact_registry_drift() $$;",
+      prefix: ": ",
+      message:
+        "public.reproject_now calls public.reproject_fact_registry_drift: the scheduled reprojection is launched by the daily job only",
+    },
+    {
+      label: "une migration qui ouvre la relance planifiée",
+      file: migration("reprojection_opened"),
+      content: "select app_private.set_fact_registry_scheduled_reprojection(true);",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label: "une migration qui ouvre la relance planifiée en écrivant sa table",
+      file: migration("reprojection_opened_by_update"),
+      content:
+        "update app_private.fact_registry_switches set enabled = true where switch_name = 'scheduled_reprojection';",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label:
+        "une migration qui ouvre la relance planifiée sous un alias, par une autre colonne d'abord",
+      file: migration("reprojection_opened_by_alias"),
+      content:
+        "update only app_private.fact_registry_switches as s set updated_by = 'x', enabled = true where s.switch_name is not null;",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label: "une migration qui lève le second facteur des décisions",
+      file: migration("second_factor_lifted"),
+      content:
+        "do $$ begin perform app_private.set_fact_registry_decisions_second_factor(false); end $$;",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label: "une insertion qui rouvre un interrupteur par conflit",
+      file: migration("switch_upsert"),
+      content:
+        "insert into app_private.fact_registry_switches (enabled, switch_name) values (true, 'scheduled_reprojection') on conflict (switch_name) do update set enabled = excluded.enabled;",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label: "une relance planifiée qui ne lit plus son interrupteur",
+      file: migration("reprojection_without_switch"),
+      content:
+        "create or replace function public.reproject_fact_registry_drift() returns jsonb language plpgsql security definer set search_path = '' as $$ declare v_sale_id uuid; begin perform app_private.project_sale_fields(v_sale_id, null, true); return '{}'::jsonb; end; $$;",
+      prefix: ": ",
+      message:
+        "public.reproject_fact_registry_drift must take no parameter, read its switch (closed when absent), do nothing without a decision in the journal",
+    },
+    {
+      label: "la même fonction de décision : un corps qui n'est plus celui qui a été relu",
+      file: migration("decide_actor_parameter"),
+      content: null,
+      prefix: ": ",
+      message: "the body of app_private.decide_auction_fact_claim is not the reviewed one",
+    },
+    {
+      label: "une fonction qui pose le jeton d'un autre puis appelle une fonction de décision",
+      file: migration("accept_as_someone"),
+      content:
+        "create function public.accept_fact_as(p_who uuid, p_claim_id uuid, p_lot text) returns jsonb language plpgsql security definer set search_path = '' as $$ begin perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', p_who, 'role', 'authenticated')::text, true); return public.accept_auction_fact_claim(p_claim_id, p_lot); end; $$;",
+      prefix: ": ",
+      message: "public.accept_fact_as names a decision function of the fact registry",
+    },
+    {
+      label: "la même fonction : le jeton de la requête écrit",
+      file: migration("accept_as_someone"),
+      content: null,
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "une fonction interne qui insère une décision au nom d'un auteur reçu en paramètre",
+      file: migration("decision_inserted_elsewhere"),
+      content:
+        "create function app_private.write_decision(p_who uuid, p_claim uuid, p_sale uuid, p_field text) returns uuid language sql security definer set search_path = '' as $$ insert into public.auction_fact_claim_decisions (claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id) values (p_claim, p_sale, p_field, 'accepted', 'single_lot', 'admin', p_who) returning id $$;",
+      prefix: ": ",
+      message:
+        "app_private.write_decision inserts into public.auction_fact_claim_decisions: only app_private.decide_auction_fact_claim writes a decision",
+    },
+    {
+      label: "une fonction qui pose le jeton par un littéral",
+      file: migration("impersonate_literal"),
+      content:
+        "create function public.impersonate(p_user uuid) returns void language sql security definer set search_path = '' as $$ select pg_catalog.set_config('request.jwt.claims', pg_catalog.json_build_object('sub', p_user)::text, false) $$;",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "un jeton posé par SET LOCAL dans le texte d'un EXECUTE",
+      file: migration("impersonate_set_local"),
+      content:
+        "create function app_private.as_user(p_user uuid) returns void language plpgsql set search_path = '' as $$ begin execute pg_catalog.format('set local request.jwt.claim.sub = %L', p_user); end; $$;",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "un jeton posé sur un rôle",
+      file: migration("impersonate_alter_role"),
+      content:
+        "alter role service_role set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "un jeton posé par la clause SET d'une fonction qui enveloppe une décision",
+      file: migration("impersonate_function_set"),
+      content:
+        "create function public.accept_fact_fixed(p_claim_id uuid, p_lot text) returns jsonb language sql security definer set search_path = '' set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001' as $$ select public.accept_auction_fact_claim(p_claim_id, p_lot) $$;",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "une application de la projection cachée par des parenthèses imbriquées",
+      file: migration("projection_applied_nested"),
+      content:
+        "create function app_private.apply_nested(p_sale uuid) returns jsonb language sql security definer set search_path = '' as $$ select app_private.project_sale_fields(coalesce(p_sale, gen_random_uuid()), null, (1 = 1)) $$;",
+      prefix: ": ",
+      message: "app_private.apply_nested applies the projection",
+    },
+    {
+      label: "une fonction qui écrit des décisions manuelles hors de la fonction de décision",
+      file: migration("manual_decisions_elsewhere"),
+      content: inFunction(
+        decision(
+          ", publication_mode",
+          "values (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'admin', 'manual')",
+        ),
+      ),
+      prefix: ": ",
+      message:
+        "app_private.registry_test_writer inserts into public.auction_fact_claim_decisions: only app_private.decide_auction_fact_claim writes a decision",
+    },
+    {
+      label: "une fonction de report qui lit la colonne interne de la vente conservée",
+      file: migration("merge_carry_reads_kept_sale"),
+      content:
+        "create or replace function app_private.carry_sale_user_data_to_merged_sale() returns trigger language plpgsql security definer set search_path = '' as $$ declare v_kept jsonb; begin select to_jsonb(merged) -> 'held_fields' into v_kept from public.auction_sales merged where merged.id <> old.id; perform app_private.project_sale_fields(old.id, null, true, old.held_fields); return old; end; $$;",
+      prefix: ": ",
+      message:
+        "app_private.carry_sale_user_data_to_merged_sale names held_fields otherwise than as old.held_fields",
+    },
+    {
+      label: "la relecture des observations qui rend une décision du journal",
+      file: migration("review_reads_journal"),
+      content:
+        "create or replace function public.review_auction_fact_claim(p_reviewer_id uuid, p_claim_id uuid, p_decision text, p_resolution_note text default null) returns jsonb language sql security definer set search_path = '' as $$ select to_jsonb(decision) from public.auction_fact_claim_decisions decision where decision.claim_id = p_claim_id $$;",
+      prefix: ": ",
+      message: "public.review_auction_fact_claim reads public.auction_fact_claim_decisions",
+    },
     {
       label: "une fonction qui relaie à set_config un nom reçu en paramètre",
       file: migration("set_config_relay"),
@@ -1069,6 +1285,180 @@ $$;`;
       content:
         "create function public.relay_setting_suffix(p_name text) returns text language sql security definer set search_path = '' as $$ select set_config('app.' || p_name, 'x', true) $$;",
       message: "calls set_config with a first argument that is not a literal setting name",
+    },
+    {
+      label: "un jeton posé par une fonction créée dans un schéma de la plateforme",
+      file: migration("impersonate_platform_schema"),
+      content:
+        "create function realtime.as_user(p_user uuid) returns text language sql security definer set search_path = '' as $$ select pg_catalog.set_config('request.jwt.claims', pg_catalog.json_build_object('sub', p_user)::text, true) $$;",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "le même jeton, seulement nommé, dans un schéma de la plateforme",
+      file: migration("token_named_platform_schema"),
+      content:
+        "create or replace function extensions.token_name() returns text language sql set search_path = '' as $$ select 'request.jwt' || '.claims' $$;",
+      message: "names the request token (request.jwt)",
+    },
+    // Contre-vérification du lot R2b : contournements trouvés par la relecture, tels qu'elle les a écrits, et
+    // formes voisines. Toute routine est lue, quelle que soit la forme de son corps ; le texte du fichier juge.
+    {
+      label:
+        "une enveloppe « begin atomic » ouverte à service_role, avec un jeton posé par un EXECUTE assemblé (Nx06)",
+      file: migration("cv2_nx06"),
+      content:
+        "create function app_private.request_scope(p_who uuid) returns boolean language plpgsql set search_path = '' as $s1$ begin execute pg_catalog.format('set local %I = %L', 'request.jwt.' || 'claims', pg_catalog.json_build_object('sub', p_who, 'role', 'authenticated', 'aal', 'aal2')::text); return true; end; $s1$; create function public.registry_batch(p_who uuid, p_claim uuid) returns jsonb language sql security definer set search_path = '' begin atomic select public.oppose_auction_fact_claim(p_claim) from (select app_private.request_scope(p_who) as ready offset 0) scope where scope.ready; end; grant execute on function public.registry_batch(uuid, uuid) to service_role;",
+      prefix: ": ",
+      message:
+        "public.registry_batch names a decision function of the fact registry: nothing wraps",
+    },
+    {
+      label: "le même fichier : il nomme une fonction de décision",
+      file: migration("cv2_nx06"),
+      content: null,
+      message:
+        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql may",
+    },
+    {
+      label: "le même fichier : un EXECUTE dont le texte est assemblé",
+      file: migration("cv2_nx06"),
+      content: null,
+      message: "runs dynamic SQL (execute) whose text is not a single string literal",
+    },
+    {
+      label: "le même fichier : le jeton de la requête nommé en deux morceaux",
+      file: migration("cv2_nx06"),
+      content: null,
+      message: "names the request token (request.jwt)",
+    },
+    {
+      label: "la même enveloppe en SECURITY INVOKER, ouverte à authenticated (Nx07)",
+      file: migration("cv2_nx07"),
+      content:
+        "create function app_private.request_scope(p_who uuid) returns boolean language plpgsql set search_path = '' as $s1$ begin execute pg_catalog.format('set local %I = %L', 'request.jwt.' || 'claims', pg_catalog.json_build_object('sub', p_who, 'role', 'authenticated', 'aal', 'aal2')::text); return true; end; $s1$; create function public.registry_batch(p_who uuid, p_claim uuid) returns jsonb language sql security invoker set search_path = '' begin atomic select public.oppose_auction_fact_claim(p_claim) from (select app_private.request_scope(p_who) as ready offset 0) scope where scope.ready; end; grant execute on function public.registry_batch(uuid, uuid) to authenticated;",
+      prefix: ": ",
+      message:
+        "public.registry_batch names a decision function of the fact registry: nothing wraps",
+    },
+    {
+      label: "une décision écrite par MERGE dans une fonction (Nb02)",
+      file: migration("cv2_nb02"),
+      content:
+        "create function app_private.nb(p_who uuid, p_claim uuid) returns jsonb language plpgsql security definer set search_path = '' as $$ begin merge into public.auction_fact_claim_decisions d using (select c.id, c.auction_sale_id, c.field_key from public.auction_fact_claims c where c.id = p_claim) s on false when not matched then insert (claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id) values (s.id, s.auction_sale_id, s.field_key, 'opposed', 'unknown', 'admin', p_who); return null; end; $$; revoke all on function app_private.nb(uuid, uuid) from public, anon, authenticated; grant execute on function app_private.nb(uuid, uuid) to service_role;",
+      message: "writes public.auction_fact_claim_decisions (insert, merge or copy)",
+    },
+    {
+      label: "une enveloppe dont la balise du corps porte un chiffre (Nd04)",
+      file: migration("cv2_nd04"),
+      content:
+        "create function public.nd(p_who uuid, p_claim uuid) returns jsonb language plpgsql security definer set search_path = '' as $w1$ begin return public.oppose_auction_fact_claim(p_claim); end; $w1$; revoke all on function public.nd(uuid, uuid) from public, anon, authenticated; grant execute on function public.nd(uuid, uuid) to service_role;",
+      prefix: ": ",
+      message: "public.nd names a decision function of the fact registry: nothing wraps",
+    },
+    {
+      label: "la même balise, appel direct de la fonction de décision (Nd05)",
+      file: migration("cv2_nd05"),
+      content:
+        "create function public.nd(p_who uuid, p_claim uuid) returns jsonb language plpgsql security definer set search_path = '' as $w1$ begin return app_private.decide_auction_fact_claim(p_claim, 'opposed', 'professional_opposition', null, null, null); end; $w1$; revoke all on function public.nd(uuid, uuid) from public, anon, authenticated; grant execute on function public.nd(uuid, uuid) to service_role;",
+      prefix: ": ",
+      message:
+        "public.nd calls app_private.decide_auction_fact_claim: only the four decision functions may",
+    },
+    {
+      label: "une enveloppe dont le corps est écrit entre apostrophes (Nd06)",
+      file: migration("cv2_nd06"),
+      content:
+        "create function public.nd(p_claim uuid) returns jsonb language sql security definer set search_path = '' as 'select public.oppose_auction_fact_claim(p_claim)'; grant execute on function public.nd(uuid) to service_role;",
+      prefix: ": ",
+      message: "public.nd names a decision function of the fact registry: nothing wraps",
+    },
+    {
+      label: "une enveloppe « begin atomic » (Nd07)",
+      file: migration("cv2_nd07"),
+      content:
+        "create function public.nd(p_claim uuid) returns jsonb language sql security definer set search_path = '' begin atomic select public.oppose_auction_fact_claim(p_claim); end; grant execute on function public.nd(uuid) to service_role;",
+      prefix: ": ",
+      message: "public.nd names a decision function of the fact registry: nothing wraps",
+    },
+    {
+      label: "une enveloppe écrite comme une procédure (Nd08)",
+      file: migration("cv2_nd08"),
+      content:
+        "create procedure public.nd(p_claim uuid) language plpgsql security definer set search_path = '' as $$ begin perform public.oppose_auction_fact_claim(p_claim); end; $$; grant execute on procedure public.nd(uuid) to service_role;",
+      prefix: ": ",
+      message: "public.nd names a decision function of the fact registry: nothing wraps",
+    },
+    {
+      label: "une enveloppe qui assemble le nom de la fonction dans un EXECUTE (Nd09)",
+      file: migration("cv2_nd09"),
+      content:
+        "create function public.nd(p_who uuid, p_claim uuid) returns jsonb language plpgsql security definer set search_path = '' as $$ declare v jsonb; begin execute 'select public.oppose_' || 'auction_fact_claim($1)' into v using p_claim; return v; end; $$; revoke all on function public.nd(uuid, uuid) from public, anon, authenticated; grant execute on function public.nd(uuid, uuid) to service_role;",
+      message: "runs dynamic SQL (execute) whose text is not a single string literal",
+    },
+    {
+      label: "un droit donné sur une fonction de décision nommée sans son schéma (Nc02)",
+      file: migration("cv2_nc02"),
+      content:
+        "grant execute on function accept_auction_fact_claim(uuid, text, text, uuid) to anon;",
+      message: "grants a privilege on public.accept_auction_fact_claim: no API role may execute it",
+    },
+    {
+      label: "le même fichier : il nomme une fonction de décision",
+      file: migration("cv2_nc02"),
+      content: null,
+      message:
+        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql may",
+    },
+    {
+      label: "un jeton posé par un EXECUTE format (Na16)",
+      file: migration("cv2_na16"),
+      content:
+        "create function public.na(p_who uuid, p_claim uuid) returns jsonb language plpgsql security definer set search_path = '' as $$ begin execute pg_catalog.format('set local %I = %L', 'request.jwt.claims', '{}'); return null; end; $$; revoke all on function public.na(uuid, uuid) from public, anon, authenticated; grant execute on function public.na(uuid, uuid) to service_role;",
+      message: "runs dynamic SQL (execute) whose text is not a single string literal",
+    },
+    {
+      label: "le même fichier : le jeton de la requête nommé",
+      file: migration("cv2_na16"),
+      content: null,
+      message: "names the request token (request.jwt)",
+    },
+    {
+      label: "une décision écrite par COPY",
+      file: migration("journal_copy"),
+      content: "copy public.auction_fact_claim_decisions from '/tmp/decisions.csv';",
+      message: "writes public.auction_fact_claim_decisions (insert, merge or copy)",
+    },
+    {
+      label: "la relance planifiée ouverte à un rôle du navigateur, nommée sans son schéma",
+      file: migration("reprojection_unqualified"),
+      content: "grant execute on function reproject_fact_registry_drift() to anon;",
+      message:
+        "grants on public.reproject_fact_registry_drift something else than EXECUTE to service_role alone",
+    },
+    {
+      label: "une routine dont le corps ne se lit pas",
+      file: migration("routine_without_body"),
+      content: "create function public.unreadable_body() returns integer language sql;",
+      prefix: ": ",
+      message: "the body of the routine public.unreadable_body cannot be read",
+    },
+    {
+      label: "la lecture du second facteur redéfinie pour ne plus l'exiger",
+      file: migration("second_factor_reader_off"),
+      content:
+        "create or replace function app_private.fact_registry_decisions_second_factor_required() returns boolean language sql stable security definer set search_path = '' as $$ select false; $$;",
+      prefix: ": ",
+      message:
+        "app_private.fact_registry_decisions_second_factor_required must only read the switch decisions_require_second_factor, and answer true when its row is missing",
+    },
+    {
+      label: "la lecture de l'interrupteur de la relance redéfinie pour l'ouvrir",
+      file: migration("reprojection_reader_on"),
+      content:
+        "create or replace function app_private.fact_registry_scheduled_reprojection_enabled() returns boolean language sql stable security definer set search_path = '' as $r2$ select true; $r2$;",
+      prefix: ": ",
+      message:
+        "app_private.fact_registry_scheduled_reprojection_enabled must only read the switch scheduled_reprojection, and answer false when its row is missing",
     },
   ];
   const filesOf = (where) =>
@@ -1127,7 +1517,7 @@ $$;`;
     );
   });
 
-  it("accepte les formes permises et annonce les douze invariants", () => {
+  it("accepte les formes permises et annonce les quatorze invariants", () => {
     const result = runInvariants(
       {
         [migration("accepted_recreated_guard")]:
@@ -1137,16 +1527,6 @@ $$;`;
         [migration("accepted_recreated_hold")]: holdTrigger(heldColumns, holdWhen),
         [migration("accepted_detach")]:
           "update public.auction_fact_claims set auction_sale_id = null where auction_sale_id = '00000000-0000-4000-8000-000000000001';",
-        [migration("accepted_manual_decisions")]: inFunction(
-          decision(
-            ", publication_mode",
-            "values (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'admin', 'manual'), (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'admin', 'manual')",
-          ) +
-            decision(
-              "",
-              "select claim.id, claim.auction_sale_id, 'accepted', 'single_lot', 'admin' from public.auction_fact_claims claim",
-            ),
-        ),
         [migration("accepted_later_trigger")]:
           "create trigger zzzz_auction_sales_other before update on public.auction_sales for each row execute function app_private.stamp_auction_sale_content_changed_at();",
         [migration("accepted_registry_read")]:
@@ -1154,6 +1534,9 @@ $$;`;
         // Un vrai commentaire n'est pas du code (une chaîne, elle, est lue : elle peut être du SQL dynamique).
         [migration("accepted_comments")]:
           "-- update public.auction_sales set held_fields = null; set session_replication_role = replica;\nselect 1; /* grant all on all tables in schema public to anon; */",
+        // Les quatre formes de corps se lisent, et un EXECUTE d'un seul littéral est admis.
+        [migration("accepted_routine_forms")]:
+          "create function public.accepted_digit_tag() returns integer language plpgsql set search_path = '' as $f1$ declare v integer; begin execute 'select 1' into v; return v; end; $f1$; create procedure public.accepted_procedure() language sql set search_path = '' as 'select 1'; create function public.accepted_atomic(p integer) returns integer language sql set search_path = '' begin atomic select case when p > 0 then 1 else 0 end; end; create function public.accepted_return(p integer) returns integer language sql set search_path = '' return p + 1;",
         [migration("accepted_projection_writes")]:
           "create or replace function app_private.project_sale_fields(p_sale_id uuid, p_fields text[] default null, p_apply boolean default false, p_listing_hints jsonb default null) returns jsonb language plpgsql security definer set search_path = '' as $$ declare t_surface_source text; t_app_surface_kind text; begin t_surface_source := 'fact_registry'; t_app_surface_kind := 'built'; perform set_config('app.sale_field_projection', p_sale_id::text, true); update public.auction_sales set held_fields = null, surface_source = t_surface_source, app_surface_kind = t_app_surface_kind where id = p_sale_id; return '{}'::jsonb; end; $$;",
       },
@@ -1185,6 +1568,8 @@ $$;`;
         "registry-neutral-surface-labels",
         "fact-claims-generation-pattern",
         "set-config-literal-name",
+        "registry-rpc-actor-from-jwt",
+        "registry-rpc-no-error-detail",
       ]),
     );
   });

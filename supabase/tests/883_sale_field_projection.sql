@@ -16,7 +16,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(94);
+select plan(95);
 
 -- Fonction et droits --------------------------------------------------------------------------------------------
 select has_function(
@@ -790,11 +790,24 @@ insert into public.auction_fact_claim_decisions (
   'property.occupancy_status', 'accepted', 'single_lot', 'admin', '88300000-0000-4000-8000-0000000000a1'
 );
 
+-- Depuis le lot R2b l'origine « document » ne peut pas tenir (préséance, can_hold à false) : même acceptée, elle
+-- ne tient rien.
+select is(
+  app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
+    #> '{fields,property.occupancy_status}',
+  '{"state": "pass_through"}'::jsonb,
+  'while the precedence table closes the document origin (lot R2b), an accepted document observation holds nothing'
+);
+
+-- La suite de ce fichier essaie la règle prévue pour le lot R3 (un document accepté par une personne tient le
+-- champ) : la préséance est rouverte ici, comme le fera la migration de ce lot.
+update public.auction_fact_source_precedence set can_hold = true where source_kind = 'document';
+
 select is(
   (app_private.project_sale_fields('88300000-1000-4000-8000-000000000003', null, true)
     #> '{fields,property.occupancy_status}') - 'decision_id',
   '{"state": "held", "value": "rented", "claim_id": "88300000-2000-4000-8000-000000000302"}'::jsonb,
-  'a document observation accepted by a person holds the field'
+  'once the precedence table opens the document origin, a document observation accepted by a person holds the field'
 );
 
 select results_eq(
@@ -1175,8 +1188,8 @@ select results_eq(
 select is(
   (app_private.project_sale_fields('88300000-1000-4000-8000-000000000004', null, true)
     #> '{fields,property.rooms_count}') - 'decision_id',
-  '{"state": "held", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000501"}'::jsonb,
-  'the kept sale is held by the piece accepted on the sale it absorbed'
+  '{"state": "unchanged", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000501"}'::jsonb,
+  'the kept sale is held by the piece accepted on the sale it absorbed: the merge itself projected it (lot R2b), a further projection changes nothing'
 );
 
 select is(
@@ -1208,8 +1221,8 @@ select results_eq(
 select is(
   (app_private.project_sale_fields('88300000-1000-4000-8000-000000000007', null, true)
     #> '{fields,property.rooms_count}') - 'decision_id',
-  '{"state": "held", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000901"}'::jsonb,
-  'the piece accepted on the first absorbed sale holds on the sale finally kept'
+  '{"state": "unchanged", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000901"}'::jsonb,
+  'the piece accepted on the first absorbed sale holds on the sale finally kept, posed by the two merges themselves'
 );
 
 -- La libération d'une vente absorbée ne déloge pas les pièces de la vente conservée -----------------------------
