@@ -15,7 +15,7 @@ from src import source_checkpoint
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
 from src.extraction_profiles import attach_source_property_features as _attach_source_property_features
-from src.normalize import clean_text, strip_accents
+from src.normalize import clean_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
@@ -30,6 +30,7 @@ from src.sources.common import (
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 from src.sources.petites_affiches_extraction import extract_petites_affiches_fields
+from src.text_folding import strip_accents
 
 BASE_URL = "https://www.petitesaffiches.fr"
 LIST_URL = f"{BASE_URL}/encheres-immobilieres/"

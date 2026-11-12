@@ -8,7 +8,6 @@ user.
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,6 +16,7 @@ from typing import Any
 
 from src.admission import quarantine_reason
 from src.models import AuctionSale
+from src.text_folding import strip_accents
 
 CATALOGUE_READINESS_POLICY_VERSION = "premium_readiness_v1"
 PREMIUM_READINESS_THRESHOLD = 75
@@ -414,9 +414,7 @@ def _is_state_sale(sale: AuctionSale) -> bool:
         sale.sale_legal_framework,
     )
     normalized = {
-        "".join(
-            char for char in unicodedata.normalize("NFKD", _text(value).lower()) if not unicodedata.combining(char)
-        ).replace("-", "_")
+        strip_accents(_text(value).lower()).replace("-", "_")
         for value in values
     }
     return bool(normalized & {"cessions_etat", "state", "etat", "domaines"})

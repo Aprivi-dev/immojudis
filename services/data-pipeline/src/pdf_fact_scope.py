@@ -20,9 +20,9 @@ from src.normalize import (
     normalize_status,
     parse_french_datetime,
     source_sale_timezone,
-    strip_accents,
 )
 from src.pdf_document_types import _canonical_document_type, _normalize_document_classifier_text
+from src.text_folding import strip_accents
 
 LOGGER = logging.getLogger(__name__)
 

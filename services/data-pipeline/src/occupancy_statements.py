@@ -24,8 +24,9 @@ La contrainte SQL n'a pas de valeur « mixte » : ``unknown`` (« À confirmer �
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass, field
+
+from src.text_folding import to_ascii
 
 VACANT = "vacant"
 OCCUPIED = "occupied"
@@ -41,7 +42,7 @@ CERTAIN_STATUSES = OCCUPIED_FAMILY | {VACANT}
 def fold(value: object) -> str:
     """Texte sans accents, en minuscules, apostrophes droites, « le(s) propriétaire(s) » -> « le propriétaire »."""
     text = re.sub(r"[\u2010-\u2015\u2212]", "-", str(value or ""))
-    text = unicodedata.normalize("NFKD", re.sub(r"[’`´]", "'", text)).encode("ascii", "ignore").decode("ascii").lower()
+    text = to_ascii(re.sub(r"[’`´]", "'", text)).lower()
     text = re.sub(r"\((?:s|e|es|x)\)", "", text)
     return re.sub(r"\s+", " ", text).strip()
 

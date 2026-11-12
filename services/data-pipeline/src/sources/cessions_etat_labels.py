@@ -12,9 +12,10 @@ il ne fait aucun accès réseau.
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+
+from src.text_folding import ascii_lower_single_spaced
 
 
 @dataclass(frozen=True)
@@ -40,10 +41,7 @@ GROUPS = {
 
 def fold(value: object | None) -> str:
     """Libellé replié : minuscules, sans accents ni ponctuation superflue."""
-    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
-    text = text.replace("’", "'").lower()
-    text = re.sub(r"[\s ]+", " ", text)
-    return text.strip(" :.-")
+    return ascii_lower_single_spaced(str(value or "")).strip(" :.-")
 
 
 def _specs(*items: tuple[str, str, str, str, tuple[str, ...]]) -> dict[str, FieldSpec]:
@@ -278,7 +276,7 @@ _AREA_UNITS = (
 )
 
 
-def parse_surface(value: str | None) -> Decimal | None:
+def parse_single_surface_with_area_units(value: str | None) -> Decimal | None:
     """Surface en m² d'une tuile : « 2609 », « 2882 m2 », « 48 m2 environ », « 1 ha 20 a 5 ca ».
 
     Une valeur qui mélange plusieurs nombres de m² (« 78 et 124 m² ») n'est pas une

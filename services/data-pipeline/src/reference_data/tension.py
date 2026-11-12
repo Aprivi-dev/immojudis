@@ -23,6 +23,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from src.french_dates import MONTH_NUMBERS
 from src.reference_data.names import department_from_insee
 
 # Pinned by identifier: a slug can be taken over by another dataset, an identifier cannot.
@@ -43,18 +44,12 @@ _ZONING = {
 _COLUMN_CODE = "CODGEO25"
 
 
-_MONTHS = {
-    "janvier": 1, "février": 2, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6, "juillet": 7,
-    "août": 8, "aout": 8, "septembre": 9, "octobre": 10, "novembre": 11, "décembre": 12, "decembre": 12,
-}  # fmt: skip
-
-
 def decree_reference_date(reference: str) -> date | None:
     """Date of a decree reference (« Décret n° 2025-1267 du 22 décembre 2025 »)."""
     match = _DECREE.search(reference)
     if match is None:
         return None
-    month = _MONTHS.get(match.group(3).casefold())
+    month = MONTH_NUMBERS.get(match.group(3).casefold())
     day = re.match(r"\d+", match.group(2))
     if month is None or day is None:
         return None

@@ -31,7 +31,7 @@ from src.municipality_location import (
     restore_municipality_placeholder,
     take_municipality_placeholder,
 )
-from src.normalize import clean_text, extract_department, strip_accents
+from src.normalize import clean_text, extract_department
 from src.position_quality import (
     GEOCODE_COMMUNE_MISMATCH,
     GEOCODE_OUTSIDE_DEPARTMENT,
@@ -52,6 +52,7 @@ from src.source_coordinates import (
     promote_source_coordinates,
     reset_source_promotion,
 )
+from src.text_folding import strip_accents
 
 LOGGER = logging.getLogger(__name__)
 NEGATIVE_GEOCODE_CACHE_TTL = timedelta(days=14)

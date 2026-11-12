@@ -6,7 +6,6 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urljoin, urlparse
-from zoneinfo import ZoneInfo
 
 import httpx
 from bs4 import BeautifulSoup
@@ -14,6 +13,7 @@ from bs4 import BeautifulSoup
 from src.catalogue_proof import public_page_proof
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text
+from src.french_dates import MONTH_NUMBERS, PARIS
 from src.listing_location import extract_adresse_du_bien
 from src.normalize import clean_text
 from src.occupancy_statements import occupancy_status_from_text
@@ -84,20 +84,6 @@ SHORT_MONTHS = {
     "NOV": "novembre",
     "DÉC": "décembre",
     "DEC": "décembre",
-}
-MONTH_NUMBERS = {
-    "janvier": 1,
-    "février": 2,
-    "mars": 3,
-    "avril": 4,
-    "mai": 5,
-    "juin": 6,
-    "juillet": 7,
-    "août": 8,
-    "septembre": 9,
-    "octobre": 10,
-    "novembre": 11,
-    "décembre": 12,
 }
 
 
@@ -774,7 +760,7 @@ PAST_SALE_TOLERANCE = timedelta(days=30)
 
 
 def _paris_today() -> date:
-    return datetime.now(ZoneInfo("Europe/Paris")).date()
+    return datetime.now(PARIS).date()
 
 
 def _list_sale_date(text: str | None) -> str | None:

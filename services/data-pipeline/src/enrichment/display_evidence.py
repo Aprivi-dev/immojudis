@@ -9,6 +9,7 @@ from typing import Any
 from src.enrichment.display_consistency import consistency_issues
 from src.enrichment.display_facts import known_offer_amounts
 from src.enrichment.display_semantics import semantic_display_issues
+from src.french_dates import MONTH_NAMES, MONTH_NUMBERS
 
 NUMBER = r"(?<![\w.,+])\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?"
 QUANTITIES = {
@@ -83,10 +84,8 @@ PUBLIC_SECRET = re.compile(
     re.I,
 )
 
-MONTHS = {'janvier': 1, 'février': 2, 'mars': 3, 'avril': 4, 'mai': 5, 'juin': 6,
-          'juillet': 7, 'août': 8, 'septembre': 9, 'octobre': 10, 'novembre': 11, 'décembre': 12}
 DATES = re.compile(r"\b(?:(\d{1,2})/(\d{1,2})/(\d{4})|(\d{4})-(\d{2})-(\d{2})|"
-                   r"(\d{1,2})\s+(" + '|'.join(MONTHS) + r")\s+(\d{4}))(?=\b|T)", re.I)
+                   r"(\d{1,2})\s+(" + '|'.join(MONTH_NAMES) + r")\s+(\d{4}))(?=\b|T)", re.I)
 
 
 def _dates(text: str) -> list[tuple[str, str]]:
@@ -98,7 +97,7 @@ def _dates(text: str) -> list[tuple[str, str]]:
             elif m[4]:
                 value = date(int(m[4]), int(m[5]), int(m[6]))
             else:
-                value = date(int(m[9]), MONTHS[m[8].lower()], int(m[7]))
+                value = date(int(m[9]), MONTH_NUMBERS[m[8].lower()], int(m[7]))
             result.append((m.group(), value.isoformat()))
         except ValueError:
             result.append((m.group(), 'invalid'))

@@ -13,12 +13,12 @@ génériques). Fonctions pures, sans réseau.
 from __future__ import annotations
 
 import re
-import unicodedata
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from src.normalize import clean_text
 from src.pdf_document_types import classify_document_type
+from src.text_folding import ascii_lower_single_spaced
 
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
 GROUPS = {
@@ -52,8 +52,7 @@ _KIND_LABELS = {
 
 def fold(value: object | None) -> str:
     """Texte replié (minuscules, sans accents) pour comparer des libellés."""
-    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"\s+", " ", text).strip().lower()
+    return ascii_lower_single_spaced(str(value or ""))
 
 
 def document_kind(label: object | None, url: object | None = None) -> tuple[str, str]:

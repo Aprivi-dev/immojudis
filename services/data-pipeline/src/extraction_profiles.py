@@ -12,13 +12,13 @@ The output is stored on the raw sale payload so that the canonical
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 from src.contact_channels import contact_channels
 from src.lot_scope import fact_view
 from src.text_fact_scope import fold_aligned, select_unit_floor, unit_floor_claims
+from src.text_folding import strip_accents
 from src.text_property_facts import (
     NO_DWELLING_FACTS_TYPES,
     OCCUPIED_RE,
@@ -66,12 +66,7 @@ def _clean(value: Any) -> str:
 
 
 def _fold(value: Any) -> str:
-    text = _clean(value).casefold()
-    return "".join(
-        char
-        for char in unicodedata.normalize("NFKD", text)
-        if not unicodedata.combining(char)
-    )
+    return strip_accents(_clean(value).casefold())
 
 
 def _clip(value: Any, limit: int = 280) -> str:

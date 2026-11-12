@@ -15,11 +15,11 @@ le parseur Licitor les décode, avec l'accord de Licitor (``extract_cloudflare_e
 from __future__ import annotations
 
 import re
-import unicodedata
 from urllib.parse import unquote
 
 from src.normalize import clean_text
 from src.personal_data import redact_personal_text
+from src.text_folding import ascii_lower_single_spaced
 
 _EMAIL_RE = re.compile(r"(?<![\w.+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w-])")
 _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")
@@ -46,8 +46,7 @@ _WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*")
 
 
 def fold(value: object | None) -> str:
-    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"\s+", " ", text).strip().lower()
+    return ascii_lower_single_spaced(str(value or ""))
 
 
 def keep_professional(value: object | None) -> str | None:

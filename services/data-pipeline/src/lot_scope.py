@@ -10,11 +10,10 @@ lectures qui suivent.
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from typing import Any
 
 from src.null_text import clean_text
+from src.text_folding import ascii_alnum_words, to_ascii
 
 LOT_SELECTION_KEY = "source_lot_selection"
 SELECTED = "selected"
@@ -82,8 +81,7 @@ def surface_reasoning_context(sale: Any) -> str:
 
 
 def _commune_key(value: object) -> str:
-    folded = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii").lower()
-    return re.sub(r"[^a-z0-9]+", "-", folded).strip("-")
+    return ascii_alnum_words(to_ascii(str(value or "")).lower(), "-")
 
 
 def other_commune(city: object, other: object) -> bool:

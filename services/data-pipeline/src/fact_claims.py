@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from datetime import datetime
 from uuid import UUID, uuid5
 
 from src.base_reads import SNAPSHOT_RELAYED_FIELDS_KEY, SOURCE_SNAPSHOT_KEY
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_occupancy_status, parse_french_datetime, parse_price, parse_surface
+from src.text_folding import ascii_alnum_words, strip_accents
 
 # The identity already includes source_url and evidence_locator.  Corrected
 # document claims receive a new UUID without duplicating unchanged v2 claims.
@@ -626,8 +626,7 @@ def _deduplicate_candidates(candidates: list[dict[str, object]]) -> list[dict[st
 
 def _normalize_key(value: object) -> str:
     text = "" if value is None else str(value)
-    text = "".join(char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
+    return ascii_alnum_words(strip_accents(text).lower(), "_")
 
 
 def _quote(value: object) -> str | None:

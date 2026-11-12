@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from src.normalize import clean_text, parse_price, strip_accents
+from src.normalize import clean_text, parse_price
+from src.text_folding import strip_accents
 
 # Thousands groups may be split by a space, a dot or (OCR, English layout)
 # a comma: « 188,933 € » is 188 933 €, never the tail « 933 ».

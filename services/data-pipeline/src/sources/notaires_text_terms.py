@@ -18,6 +18,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from src.french_dates import MONTH_PATTERN
 from src.normalize import parse_french_datetime
 from src.sources.notaires_price_nature import FIRST_OFFER_NATURE, starting_price_nature
 
@@ -29,9 +30,8 @@ _FIRST_OFFER = re.compile(
 _STARTING_PRICE = re.compile(rf"\bmise\s+[àa]\s+prix\s*:?\s*(?:de\s+)?{_AMOUNT}", re.I)
 _SLASH_DATE = r"(\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})(?:\s*(?:[àa]\s*)?(\d{1,2}\s*[:hH]\s*\d{2}))?"
 _OFFER_WINDOW = re.compile(rf"r[ée]ception\s+des\s+offres\s*:?\s*du\s+{_SLASH_DATE}\s+au\s+{_SLASH_DATE}", re.I)
-_MONTHS = r"janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre"
 _WEEKDAYS = r"lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"
-_WORD_DATE = rf"(?:(?:{_WEEKDAYS})\s+)?\d{{1,2}}(?:er)?\s+(?:{_MONTHS})\s+\d{{4}}(?:\s+[àa]\s+\d{{1,2}}\s*[hH:]\s*\d{{0,2}})?"
+_WORD_DATE = rf"(?:(?:{_WEEKDAYS})\s+)?\d{{1,2}}(?:er)?\s+(?:{MONTH_PATTERN})\s+\d{{4}}(?:\s+[àa]\s+\d{{1,2}}\s*[hH:]\s*\d{{0,2}})?"
 _OFFERS_END = re.compile(rf"r[ée]ception\s+des\s+offres[^.]{{0,120}}?se\s+terminera\s+le\s+({_WORD_DATE})", re.I)
 _OFFERS_START_END = re.compile(
     rf"r[ée]ception\s+des\s+offres\s+d[ée]butera\s+le\s+({_WORD_DATE})\s+et\s+se\s+terminera\s+le\s+({_WORD_DATE})",

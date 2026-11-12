@@ -20,12 +20,12 @@ passe des positions (``src.address_positions``). Les candidats lus sont gardés 
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Any
 
 from src.geocode_query import has_street_or_place
 from src.normalize import clean_text
 from src.pdf_fact_scope import _pdf_record_fact_projection
+from src.text_folding import ascii_alnum_words, to_ascii
 
 PDF_ADDRESS_EXTRACTION_KEY = "pdf_address_extraction"
 PDF_ADDRESS_CANDIDATES_KEY = "pdf_address_candidates"
@@ -139,5 +139,4 @@ def _same_place(sale: Any, candidate: dict[str, object]) -> bool:
 
 
 def _key(value: str) -> str:
-    folded = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
-    return re.sub(r"[^a-z0-9]+", " ", folded).strip()
+    return ascii_alnum_words(to_ascii(value).lower())

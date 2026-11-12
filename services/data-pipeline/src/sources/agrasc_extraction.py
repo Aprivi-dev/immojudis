@@ -20,10 +20,10 @@ jointes. Ce module, sans accès réseau, en tire :
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Any
 
 from src.normalize import clean_text
+from src.text_folding import ascii_lower_single_spaced
 
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
 AGORASTORE_LABEL = "Agorastore (commercialisateur pour l'AGRASC)"
@@ -79,9 +79,7 @@ DOCUMENT_TYPE_LABELS = {
 
 
 def fold(value: object | None) -> str:
-    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii")
-    text = text.replace("’", "'").lower()
-    return re.sub(r"\s+", " ", text).strip(" :.-")
+    return ascii_lower_single_spaced(str(value or "")).strip(" :.-")
 
 
 def classify_operator_document(label: object | None, url: object | None = None) -> str | None:

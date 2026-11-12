@@ -13,8 +13,9 @@ import httpx
 from src.config import DEFAULT_USER_AGENT, load_settings
 from src.geocode import coordinates_are_verified
 from src.models import AuctionSale
-from src.normalize import clean_text, strip_accents
+from src.normalize import clean_text
 from src.null_text import is_null_text
+from src.text_folding import strip_accents
 
 LOGGER = logging.getLogger(__name__)
 SOURCE_API_NAME = "ADEME DPE Open Data"

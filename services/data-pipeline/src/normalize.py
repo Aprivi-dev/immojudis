@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -12,6 +11,7 @@ from dateutil import parser
 
 from src.admission import is_date_only, licitor_lot_count, sale_date_has_passed
 from src.department_inference import department_from_geocode_evidence
+from src.french_dates import MONTH_NUMBERS
 from src.land_parcels import read_parcel_land_surface
 from src.listing_location import recover_listing_address, reject_monetary_address
 from src.lot_scope import fact_view as _fact_view
@@ -39,25 +39,15 @@ from src.room_counts import (
 from src.sale_date_plausibility import reject_implausible_sale_date
 from src.surface_text_recovery import built_value_names_other_object, extra_built_surface_from_text
 from src.text_fact_scope import private_amenity_mentioned
+from src.text_folding import strip_accents
 from src.tribunal_labels import clean_city_label
 
-FRENCH_MONTHS = {
-    "janvier": "January",
-    "février": "February",
-    "fevrier": "February",
-    "mars": "March",
-    "avril": "April",
-    "mai": "May",
-    "juin": "June",
-    "juillet": "July",
-    "août": "August",
-    "aout": "August",
-    "septembre": "September",
-    "octobre": "October",
-    "novembre": "November",
-    "décembre": "December",
-    "decembre": "December",
-}
+_ENGLISH_MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)  # fmt: skip
+# Mois français vers anglais, que dateutil comprend.
+FRENCH_MONTHS = {name: _ENGLISH_MONTHS[number - 1] for name, number in MONTH_NUMBERS.items()}
 
 FRENCH_WEEKDAYS = (
     "lundi",
@@ -154,12 +144,6 @@ def make_sale_signature(sale_date: object, price: object, status: object = None)
     signature = f"{date_part}|{price_part}"
     interrupted = normalize_status(status) if status else None
     return f"{signature}|{interrupted}" if interrupted in INTERRUPTED_SALE_STATUSES else signature
-
-
-def strip_accents(value: str) -> str:
-    return "".join(
-        char for char in unicodedata.normalize("NFKD", value) if not unicodedata.combining(char)
-    )
 
 
 MIN_PLAUSIBLE_PRICE_EUR = Decimal("100")

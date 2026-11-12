@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 
 from src.normalize import clean_text
+from src.text_folding import strip_accents
 
 DOCUMENT_TYPE_ALIASES = {
     "pv_descriptif": "pv_huissier",
@@ -144,9 +144,7 @@ def classify_document_type(label: str | None, url: str | None = None) -> str:
 
 def _normalize_document_classifier_text(value: object | None) -> str:
     text = clean_text(value) or ""
-    normalized = unicodedata.normalize("NFKD", text)
-    without_accents = "".join(char for char in normalized if not unicodedata.combining(char))
-    return without_accents.lower()
+    return strip_accents(text).lower()
 
 
 def _words(normalized: str) -> str:

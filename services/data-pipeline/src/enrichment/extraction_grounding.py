@@ -13,8 +13,8 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.document_reading import grounded_quote
-from src.normalize import strip_accents
 from src.occupancy_statements import OCCUPIED_FAMILY, VACANT, is_template_clause, occupancy_from_text
+from src.text_folding import strip_accents
 
 # A scalar field (type, rooms, occupation) is often supported by a very short quote (« Maison »,
 # « Studio T2 »): shorter than the 12 characters asked of a document-reading quote.

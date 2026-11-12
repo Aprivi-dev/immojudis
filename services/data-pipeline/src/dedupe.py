@@ -2,18 +2,17 @@ from __future__ import annotations
 
 import hashlib
 import re
-import unicodedata
 from collections.abc import Iterable
 from copy import deepcopy
 from datetime import UTC, date, datetime, time
 from typing import Any
-from zoneinfo import ZoneInfo
 
+from src.french_dates import PARIS
 from src.freshness import is_new_source_change
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_documents
+from src.text_folding import to_ascii
 
-PARIS = ZoneInfo("Europe/Paris")
 _STREET_NUMBER_RE = re.compile(r"\d")
 _POSTAL_CODE_RE = re.compile(r"\b(\d{5})\b")
 _TRAILING_DEPARTMENT_RE = re.compile(r"\s*\((?:\d{2}|2[AB]|97\d)\)\s*$", re.IGNORECASE)
@@ -397,7 +396,7 @@ def _has_strong_dedupe_signal(sale: AuctionSale) -> bool:
 
 
 def _normalize_street_text(value: str) -> str:
-    ascii_text = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii").lower()
+    ascii_text = to_ascii(value).lower()
     ascii_text = re.sub(r"\bfrance\b", " ", ascii_text)
     ascii_text = re.sub(r"\bcedex\b\s*\d*", " ", ascii_text)
     ascii_text = re.sub(r"\b(?:n|no|numero)\s+(\d+)\b", r"\1", ascii_text)

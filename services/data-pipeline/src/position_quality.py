@@ -27,9 +27,10 @@ from __future__ import annotations
 
 import math
 import re
-import unicodedata
 from collections.abc import Iterable
 from difflib import SequenceMatcher
+
+from src.text_folding import strip_accents
 
 IMPLAUSIBLE_COORDINATES = "implausible_coordinates"
 UNVERIFIED_SOURCE_COORDINATES = "unverified_source_coordinates"
@@ -156,8 +157,7 @@ _POSTAL_CODE = re.compile(r"\b\d{5}\b")
 
 
 def _fold(text: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", text)
-    return "".join(char for char in decomposed if not unicodedata.combining(char)).lower()
+    return strip_accents(text).lower()
 
 
 def _words(text: str) -> list[str]:

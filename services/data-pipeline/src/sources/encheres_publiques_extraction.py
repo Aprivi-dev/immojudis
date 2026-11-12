@@ -27,6 +27,7 @@ import re
 from typing import Any
 
 from src.cadastre_references import designation, parse_cadastral_references, ref_label
+from src.french_dates import MONTH_PATTERN
 from src.normalize import clean_text
 
 FEATURES_SCHEMA_VERSION = "encheres_publiques_features_v1"
@@ -248,10 +249,9 @@ def extract_encheres_publiques_characteristics(raw_sale: dict[str, Any]) -> dict
 
 # Titre de l'événement : « Vente immobilière au Tribunal judiciaire de Paris le 9 Juillet 2026 », « Vente
 # immobilière par l'Office du Parc le 16 Septembre 2026 », « … par Carbonnier Notaires du 1er au 2 Septembre 2026 ».
-_MONTHS = r"janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre"
 _EVENT_DATE_RE = re.compile(
-    rf"\bVente\s+immobili[èe]re\b[^\n]{{0,120}}?\b(?:le\s+(?P<day>\d{{1,2}}(?:er)?\s+(?:{_MONTHS})\s+\d{{4}})|"
-    rf"du\s+\d{{1,2}}(?:er)?(?:\s+(?:{_MONTHS}))?(?:\s+\d{{4}})?\s+au\s+(?P<end>\d{{1,2}}(?:er)?\s+(?:{_MONTHS})\s+\d{{4}}))",
+    rf"\bVente\s+immobili[èe]re\b[^\n]{{0,120}}?\b(?:le\s+(?P<day>\d{{1,2}}(?:er)?\s+(?:{MONTH_PATTERN})\s+\d{{4}})|"
+    rf"du\s+\d{{1,2}}(?:er)?(?:\s+(?:{MONTH_PATTERN}))?(?:\s+\d{{4}})?\s+au\s+(?P<end>\d{{1,2}}(?:er)?\s+(?:{MONTH_PATTERN})\s+\d{{4}}))",
     re.I,
 )
 # « Mise a prix: 120 000 » : ligne écrite par le collecteur, sans symbole €.

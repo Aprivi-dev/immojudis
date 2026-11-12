@@ -31,13 +31,14 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from src.normalize import normalize_occupancy_status, strip_accents
+from src.normalize import normalize_occupancy_status
 from src.real_extraction_review import (
     _agrasc_structured_evidence,
     _ai_excerpt_is_verbatim,
     _ai_labels_agree,
     _evidence_text,
 )
+from src.text_folding import strip_accents
 
 AI_REVIEW_FIELD_KEYS: dict[str, str] = {
     "property_type": "property.property_type",
