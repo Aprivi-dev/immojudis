@@ -9,6 +9,11 @@ import type {
   AdminAuctionFactClaimReviewResponse,
 } from "@/lib/admin-auction-fact-claims-review";
 import type {
+  AdminFactClaimDecisionInput,
+  AdminFactClaimDecisionListResponse,
+  AdminFactClaimDecisionResult,
+} from "@/lib/admin-fact-claim-decisions";
+import type {
   AdminInformationAgentMessageAction,
   AdminInformationAgentReviewInput,
   AdminInformationAgentReviewResponse,
@@ -103,6 +108,35 @@ export async function reviewAdminAuctionFactClaimClient(
     body: JSON.stringify(data),
   });
   return readJson<{ ok: true; result: unknown }>(response);
+}
+
+/** Registre des pièces : observations à décider, d'une vente ou de la file des origines réservées. */
+export async function fetchAdminFactClaimDecisions(args: {
+  saleId?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<AdminFactClaimDecisionListResponse> {
+  const search = new URLSearchParams();
+  if (args.saleId) search.set("saleId", args.saleId);
+  search.set("offset", String(args.offset ?? 0));
+  search.set("limit", String(args.limit ?? ADMIN_PAGE_SIZE));
+  const response = await fetch(`/api/admin/fact-claims/decisions?${search.toString()}`, {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+  return readJson<AdminFactClaimDecisionListResponse>(response);
+}
+
+export async function decideAdminFactClaimClient(
+  data: AdminFactClaimDecisionInput,
+): Promise<AdminFactClaimDecisionResult> {
+  const response = await fetch("/api/admin/fact-claims/decisions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<AdminFactClaimDecisionResult>(response);
 }
 
 export async function fetchAdminInformationAgentMissions(args?: {
