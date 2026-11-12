@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 import { apiRouteError } from "@/lib/api-observability";
-import {
-  bearerTokenFromRequest,
-  requireSupabaseAuthContext,
-} from "@/integrations/supabase/auth-middleware";
+import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
+import { requireAdmin } from "@/lib/admin-auth.server";
 import {
   adminFactClaimDecisionQuerySchema,
   adminFactClaimDecisionSchema,
   decideAdminFactClaim,
   listAdminFactClaimDecisions,
-  requireAdminContext,
 } from "@/lib/admin-fact-claim-decisions";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
 import { translateFactClaimDatabaseError } from "@/lib/fact-claim-database-errors";
@@ -30,12 +27,11 @@ const PRIVATE_HEADERS = {
  */
 async function handleGET(request: Request): Promise<Response> {
   try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    requireAdminContext(auth);
+    await requireAdmin(bearerTokenFromRequest(request));
     const input = adminFactClaimDecisionQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
-    const response = await listAdminFactClaimDecisions({ auth, input });
+    const response = await listAdminFactClaimDecisions(input);
     return NextResponse.json(response, { headers: PRIVATE_HEADERS });
   } catch (error) {
     return decisionErrorResponse(error, request, "Liste des observations indisponible.");
@@ -44,8 +40,7 @@ async function handleGET(request: Request): Promise<Response> {
 
 async function handlePOST(request: Request): Promise<Response> {
   try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    requireAdminContext(auth);
+    const auth = await requireAdmin(bearerTokenFromRequest(request));
     const input = adminFactClaimDecisionSchema.parse(await request.json());
     const response = await decideAdminFactClaim({ auth, input });
     return NextResponse.json(response, { headers: PRIVATE_HEADERS });

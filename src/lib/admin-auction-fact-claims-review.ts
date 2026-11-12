@@ -273,7 +273,7 @@ function toReviewItem(row: ClaimReadRow, sale: SaleSummary): AdminAuctionFactCla
   };
 }
 
-/** Valeur que la fiche affiche aujourd'hui pour ce champ ; nulle si le champ n'a pas de colonne connue ici. */
+/** Valeur que la fiche affiche aujourd'hui pour ce champ ; `undefined` si le champ n'a pas de colonne connue ici. */
 export function canonicalValue(fieldKey: string, sale: SaleSummary): unknown {
   switch (fieldKey) {
     case "sale.sale_date":
@@ -295,7 +295,7 @@ export function canonicalValue(fieldKey: string, sale: SaleSummary): unknown {
     case "sale.visit_dates":
       return sale.visitDates;
     default:
-      return null;
+      return undefined;
   }
 }
 

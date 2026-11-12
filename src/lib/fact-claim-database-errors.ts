@@ -32,6 +32,9 @@ export const FACT_CLAIM_DATABASE_ERROR_CODES = {
     status: 429,
     message: "Plafond de décisions définitives atteint pour aujourd'hui. Réessayez demain.",
   },
+  // Deux décisions simultanées du même administrateur. Annoncé par la partie base du lot R2c,
+  // levé par une migration `20261119…` qui n'est pas encore sur `main` : voir la liste des codes
+  // annoncés du test de concordance (`fact-claim-database-concordance.test.ts`).
   decision_in_progress: {
     status: 409,
     message:
@@ -83,10 +86,16 @@ const SQLSTATE_FALLBACK: Record<string, Translation> = {
   "42501": { status: 403, message: "Action non autorisée." },
   "55P03": { status: 409, message: SALE_BUSY },
   "40001": { status: 409, message: SALE_BUSY },
-  "55000": {
-    status: 409,
-    message: "Ce fait a déjà été traité ou est en cours de traitement ailleurs.",
-  },
+};
+
+/**
+ * La fonction de relecture lève ses refus d'état en `55000` avec un texte anglais : tous veulent
+ * dire « déjà traité ». Les fonctions de décision, elles, nomment chaque refus : un `55000` au
+ * message inconnu y est une erreur à instruire, pas un « déjà traité » qui pourrait être faux.
+ */
+const REVIEW_STATE_CONFLICT: Translation = {
+  status: 409,
+  message: "Ce fait a déjà été traité ou est en cours de traitement ailleurs.",
 };
 
 /**
@@ -94,7 +103,10 @@ const SQLSTATE_FALLBACK: Record<string, Translation> = {
  * code connu ; sinon une erreur sans texte de la base, ou l'erreur d'origine si elle ne vient pas
  * de la base (elle recevra le message générique de la route).
  */
-export function translateFactClaimDatabaseError(error: unknown): unknown {
+export function translateFactClaimDatabaseError(
+  error: unknown,
+  { reviewStateConflicts = false }: { reviewStateConflicts?: boolean } = {},
+): unknown {
   if (!error || typeof error !== "object") return error;
   const { code, message } = error as { code?: unknown; message?: unknown };
   const translation =
@@ -103,13 +115,17 @@ export function translateFactClaimDatabaseError(error: unknown): unknown {
       : undefined) ??
     (typeof code === "string" && Object.hasOwn(SQLSTATE_FALLBACK, code)
       ? SQLSTATE_FALLBACK[code]
-      : undefined);
+      : undefined) ??
+    (reviewStateConflicts && code === "55000" ? REVIEW_STATE_CONFLICT : undefined);
   if (!translation) {
-    // Erreur de la base hors liste : son texte peut citer une valeur ou un objet SQL. Seul son
-    // SQLSTATE va au journal du serveur, et la route répond son message générique.
-    return typeof code === "string" && "details" in error
-      ? new Error(`Unhandled database error ${code}`)
-      : error;
+    if (typeof code !== "string" || !("details" in error)) return error;
+    // Erreur de la base hors liste : son texte peut citer une valeur ou un objet SQL. Seuls son
+    // SQLSTATE et, si le message a la forme d'un code, ce code vont au journal du serveur (par le
+    // message de cette erreur, que `apiRouteError` journalise) ; la route répond son message
+    // générique. Les crochets empêchent que ce texte soit jamais pris pour un message public.
+    const sqlstate = /^[0-9A-Z]{5}$/.test(code) ? code : "?????";
+    const refusal = typeof message === "string" && /^[a-z_]{1,40}$/.test(message) ? message : "-";
+    return new Error(`Unhandled database error [${sqlstate}] [${refusal}]`);
   }
   return translation.status === 429
     ? // Fenêtre d'une heure au plus pour le plafond horaire ; le navigateur n'en fait rien d'automatique.
