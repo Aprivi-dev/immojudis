@@ -1286,6 +1286,20 @@ $$;`;
         "create function public.relay_setting_suffix(p_name text) returns text language sql security definer set search_path = '' as $$ select set_config('app.' || p_name, 'x', true) $$;",
       message: "calls set_config with a first argument that is not a literal setting name",
     },
+    {
+      label: "un jeton posé par une fonction créée dans un schéma de la plateforme",
+      file: migration("impersonate_platform_schema"),
+      content:
+        "create function realtime.as_user(p_user uuid) returns text language sql security definer set search_path = '' as $$ select pg_catalog.set_config('request.jwt.claims', pg_catalog.json_build_object('sub', p_user)::text, true) $$;",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "le même jeton, seulement nommé, dans un schéma de la plateforme",
+      file: migration("token_named_platform_schema"),
+      content:
+        "create or replace function extensions.token_name() returns text language sql set search_path = '' as $$ select 'request.jwt' || '.claims' $$;",
+      message: "names the request token (request.jwt)",
+    },
     // Contre-vérification du lot R2b : contournements trouvés par la relecture, tels qu'elle les a écrits, et
     // formes voisines. Toute routine est lue, quelle que soit la forme de son corps ; le texte du fichier juge.
     {
