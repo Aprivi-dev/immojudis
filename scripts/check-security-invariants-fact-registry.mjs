@@ -553,6 +553,47 @@ function maskSqlStrings(text) {
 }
 
 /**
+ * Le texte contient-il une chaîne E'…' où un caractère est écrit par son code (barre oblique inverse suivie de
+ * x, u, U ou d'un chiffre) ? Les corps entre dollars sont lus comme du code, et le contenu d'une chaîne ordinaire
+ * qui porte elle-même des apostrophes doublées est relu comme du SQL (commande pg_cron, texte d'un EXECUTE).
+ */
+function hasCodedEscapeString(text) {
+  const token = /'|\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/g;
+  let index = 0;
+  while (index < text.length) {
+    token.lastIndex = index;
+    const match = token.exec(text);
+    if (!match) return false;
+    if (match[0] === "'") {
+      const escaped = /(?:^|[^A-Za-z0-9_])[eE]$/.test(
+        text.slice(Math.max(0, match.index - 2), match.index),
+      );
+      let end = match.index + 1;
+      while (end < text.length) {
+        if (escaped && text[end] === "\\") {
+          if (/[xuU0-9]/.test(text[end + 1] ?? "")) return true;
+          end += 2;
+        } else if (text[end] !== "'") end += 1;
+        else if (text[end + 1] === "'") end += 2;
+        else break;
+      }
+      const content = text.slice(match.index + 1, end);
+      if (content.includes("''") && hasCodedEscapeString(content.replaceAll("''", "'"))) {
+        return true;
+      }
+      index = end + 1;
+    } else {
+      const bodyStart = match.index + match[0].length;
+      const close = text.indexOf(match[0], bodyStart);
+      if (close < 0) return hasCodedEscapeString(text.slice(bodyStart));
+      if (hasCodedEscapeString(text.slice(bodyStart, close))) return true;
+      index = close + match[0].length;
+    }
+  }
+  return false;
+}
+
+/**
  * Définitions `create [or replace] function|procedure` d'un fichier : nom qualifié, en-tête, corps, bornes. Le
  * corps est lu sous ses quatre formes : entre dollars (balise avec chiffres comprise), entre apostrophes,
  * « begin atomic … end », « return … ; ». Une routine dont le corps ne se lit pas est rendue dans `unreadable` :
@@ -2141,11 +2182,18 @@ export async function checkFactRegistryInvariants({
     const inserts = [
       ...judged.matchAll(/insert\s+into\s+app_private\.fact_registry_switches\b[^;]*/gi),
     ];
+    // Toute mention d'une fonction de réglage suivie d'une parenthèse est un appel, quelle que soit sa forme
+    // (select …, select true from …(…), values (…), perform), sauf les trois instructions qui la posent : sa
+    // définition, son commentaire, son « revoke ».
+    const setterCalled = [...judged.matchAll(/\bset_fact_registry_[a-z_]+\s*\(/gi)].some(
+      (match) =>
+        !/(?:create\s+(?:or\s+replace\s+)?function|comment\s+on\s+function|revoke\s+all\s+on\s+function)\s+app_private\.$/i.test(
+          judged.slice(Math.max(0, match.index - 80), match.index),
+        ),
+    );
     if (
       updates.some((match) => !settersOf(match.index)) ||
-      /\bselect\s+app_private\.set_fact_registry_|\bperform\s+app_private\.set_fact_registry_/i.test(
-        judged,
-      ) ||
+      setterCalled ||
       inserts.some(
         (match) =>
           !/values\s*\(\s*'scheduled_reprojection'\s*,\s*false\s*\)\s*on\s+conflict\s*\(\s*switch_name\s*\)\s*do\s+nothing\s*$/i.test(
@@ -2158,6 +2206,16 @@ export async function checkFactRegistryInvariants({
     ) {
       failures.push(
         `${name} sets a switch of the fact registry otherwise than in its safe sense (scheduled reprojection closed, second factor required), or calls a setter, outside the owner decisions admitted word for word in ${[...OWNER_SWITCH_STATEMENTS.keys()].join(", ")}`,
+      );
+    }
+  }
+  // Une fonction de réglage n'est définie qu'une fois : redéfinie avant l'appel admis du propriétaire, elle
+  // ferait autre chose que ce que dit cet appel.
+  for (const setter of SWITCH_SETTERS) {
+    const defined = definitions.filter((entry) => entry.name === setter);
+    if (defined.length !== 1) {
+      failures.push(
+        `${defined.at(-1)?.migration ?? "no migration"}: ${setter} is defined ${defined.length} times: a setter of the fact registry is defined once, by the migration that creates its switch`,
       );
     }
   }
@@ -2389,8 +2447,17 @@ export async function checkFactRegistryInvariants({
         `${name} writes a Unicode-escaped identifier or string (U&): a name spelled by its code points escapes every fact registry check`,
       );
     }
+    //    De même une chaîne E'…' qui écrit un caractère par son code (\x6f, o, \U0000006f, \157) : « o »
+    //    écrit \x6f cache un nom à toutes les règles de texte, dans une commande pg_cron comme dans un corps de
+    //    fonction écrit entre apostrophes.
+    if (hasCodedEscapeString(sql)) {
+      failures.push(
+        `${name} writes an escape string E'…' with a character given by its code (\\x, \\u, \\U or octal): a name spelled by its code points escapes every fact registry check`,
+      );
+    }
     // c. Fonctions qui lancent le texte d'une requête sans EXECUTE.
-    const queryRunner = /\b(?:query_to_xml\w*|cursor_to_xml\w*|ts_stat|dblink\w*)\b/i.exec(sql);
+    const queryRunner =
+      /\b(?:query_to_xml\w*|cursor_to_xml\w*|ts_stat|ts_rewrite|dblink\w*)\b/i.exec(sql);
     if (queryRunner) {
       failures.push(
         `${name} names ${queryRunner[0]}, which runs the text of a query: dynamic SQL without EXECUTE cannot be read by the fact registry checks`,
