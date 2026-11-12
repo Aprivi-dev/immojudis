@@ -1,11 +1,16 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 import {
+  DIFF_TOOL_FAILURE_TAIL_CHARACTERS,
+  DIFF_TOOL_FAILURE_TAIL_LINES,
   RECONCILED_CHECK_CONSTRAINTS,
+  diffToolFailureReport,
   canonicalCheckCondition,
   canonicalConcurrentIndexDefinition,
   checkBody,
@@ -162,6 +167,164 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
       expect(normalizeDiff(line)).toBe(line);
     });
 
+    // Production, 12/11/2026 08:50 UTC (workflow « Apply Supabase Migrations », lot R2a) : l'outil a imprimé
+    // chaque index sur DEUX lignes, le WHERE à part et indenté. Texte exact du journal.
+    const run20261112 = `CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))
+  WHERE evidence_locator ? 'information_agent_fact_id'::text;
+CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)
+  WHERE held_fields IS NOT NULL;`;
+
+    it("ignores the two reviewed indexes printed on two lines each (production, 12/11/2026)", () => {
+      expect(normalizeDiff(run20261112)).toBe("");
+      expect(normalizeDiff(run20261112.replaceAll("\n", "\r\n"))).toBe("");
+      // Sous les lignes d'en-tête de l'outil, qui ne finissent pas par un point-virgule.
+      expect(
+        normalizeDiff(
+          `-- Migration unit 1: 20261117100450_fact_registry_concurrent_indexes.sql\n\n${run20261112}\n`,
+        ),
+      ).toBe("");
+    });
+
+    it("removes only the reviewed statement and keeps its neighbours", () => {
+      expect(
+        normalizeDiff(
+          `ALTER TABLE public.auction_sales ADD COLUMN extra text;\n${run20261112}\nDROP TABLE public.auction_fact_claims;`,
+        ),
+      ).toBe(
+        "ALTER TABLE public.auction_sales ADD COLUMN extra text;\nDROP TABLE public.auction_fact_claims;",
+      );
+    });
+
+    it.each([
+      [
+        "an index outside the allowlist",
+        "CREATE INDEX unreviewed_extra_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another index name",
+        "CREATE INDEX auction_sales_held_fields_v2_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another table",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_fact_claims (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "unique where it must not be",
+        "CREATE UNIQUE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "not unique where it must be",
+        "CREATE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "another column",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (source_url)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another operator in the expression",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator -> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "another operator in the predicate",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NULL;",
+      ],
+      [
+        "another constant",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'case_id'::text;",
+      ],
+      [
+        "no predicate line",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  ;",
+      ],
+      [
+        "one more predicate line",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL\n  AND id IS NOT NULL;",
+      ],
+      [
+        "no terminator before the next statement",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL\nDROP TABLE public.auction_fact_claims;",
+      ],
+      [
+        "a comment between its two lines",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  -- WHERE held_fields IS NULL\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another statement before it on its first line",
+        "DROP TABLE public.x; CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another statement after it on its last line",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL; DROP TABLE public.x;",
+      ],
+      // Une constante entre apostrophes est une donnée : ni casse, ni contenu réécrits.
+      [
+        "a constant in another case",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'Information_Agent_Fact_ID'::text;",
+      ],
+      [
+        "a constant that holds USING btree",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id using btree'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "a constant that holds parentheses",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> '(information_agent_fact_id)'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "a constant that holds a quoted identifier",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> '\"information_agent_fact_id\"'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "a constant that holds its own cast",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id''::text'))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "an unterminated index before it",
+        "CREATE INDEX unreviewed_extra_idx ON public.auction_sales (postal_code)\nCREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+    ])("keeps a two-line index with %s in the diff", (_label, statement) => {
+      expect(normalizeDiff(statement)).toBe(statement);
+    });
+
+    it.each([
+      [
+        "ALTER TABLE",
+        "ALTER TABLE public.auction_sales\n  ADD COLUMN auction_sales_held_fields_idx text;",
+      ],
+      ["DROP INDEX", "DROP INDEX\n  public.auction_sales_held_fields_idx;"],
+      [
+        "CREATE POLICY",
+        "CREATE POLICY held_fields_read ON public.auction_sales\n  USING (held_fields IS NOT NULL);",
+      ],
+      [
+        "COMMENT that quotes the reviewed index",
+        "COMMENT ON TABLE public.auction_sales IS 'see\nCREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL';",
+      ],
+    ])("keeps a multi-line %s statement in the diff", (_label, statement) => {
+      expect(normalizeDiff(statement)).toBe(statement);
+    });
+
+    it("leaves a reviewed index printed without its semicolon in the diff", () => {
+      const withoutSemicolon =
+        "CREATE INDEX auction_sales_postal_code_idx ON public.auction_sales (postal_code)";
+      expect(normalizeDiff(`${withoutSemicolon};`)).toBe("");
+      expect(normalizeDiff(withoutSemicolon)).toBe(withoutSemicolon);
+      expect(normalizeDiff(`${withoutSemicolon}\n${withoutSemicolon}`)).toBe(
+        `${withoutSemicolon}\n${withoutSemicolon}`,
+      );
+    });
+
+    it("reads a long diff without any semicolon in a time proportional to its length", () => {
+      // 60 000 index lines, 3 Mo, aucun point-virgule : une recherche qui repart de chaque ligne jusqu'à
+      // la fin du texte y passe plus d'une minute.
+      const text = Array.from(
+        { length: 60_000 },
+        (_unused, index) => `CREATE INDEX unreviewed_${index}_idx ON public.auction_sales (id)`,
+      ).join("\n");
+      const started = performance.now();
+      expect(normalizeDiff(text)).toBe(text);
+      expect(performance.now() - started).toBeLessThan(2000);
+    });
+
     it("does not loosen the match of the earlier operations", () => {
       // La forme canonique (parenthèses, ::text, USING btree ignorés) ne vaut que pour les deux index ci-dessus.
       expect(
@@ -213,6 +376,101 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
     ).toBe(
       "create index auction_sales_source_urls_gin_idx on public.auction_sales using gin (source_urls)",
     );
+  });
+
+  describe("grants of the connector role managed outside migrations", () => {
+    it.each([
+      "GRANT SELECT ON public.auction_sales TO lovable_readonly;",
+      "GRANT SELECT ON TABLE public.auction_sales TO lovable_readonly;",
+      'GRANT SELECT ON TABLE public.auction_sales TO "lovable_readonly";',
+      "GRANT SELECT (id, city) ON TABLE public.auction_sales TO lovable_readonly;",
+      'GRANT SELECT ON TABLE app_private."Source Presence" TO lovable_readonly;',
+      "GRANT SELECT ON SEQUENCE public.auction_sales_id_seq TO lovable_readonly;",
+      "REVOKE SELECT ON TABLE public.auction_sales FROM lovable_readonly;",
+      // Les droits que les migrations donnent quand le rôle existe (20261008102630, 20261101110000, …).
+      "GRANT EXECUTE ON FUNCTION app_private.auction_sale_source_presence_json(uuid) TO lovable_readonly;",
+      "GRANT EXECUTE ON FUNCTION app_private.sale_document_photo_media(jsonb, uuid) TO lovable_readonly;",
+      "grant execute on function app_private.public_sale_conditions(jsonb) to lovable_readonly;",
+      "GRANT EXECUTE ON FUNCTION app_private.f() TO lovable_readonly;",
+      "GRANT EXECUTE ON FUNCTION app_private.f(p_sale_id uuid, pg_catalog.jsonb, numeric(10,2), character varying(20)[], timestamp with time zone) TO lovable_readonly;",
+      "REVOKE EXECUTE ON FUNCTION app_private.f(uuid) FROM lovable_readonly;",
+      "  GRANT SELECT ON TABLE public.auction_sales TO lovable_readonly;  ",
+      // Le privilège par défaut lu en production le 12/11/2026 (lovable_readonly=r/postgres, schéma public).
+      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
+      'alter default privileges for role "postgres"  in schema "public"\tgrant select on tables to "lovable_readonly" ;',
+      // Le seul droit de schéma lu en production le 12/11/2026.
+      "GRANT USAGE ON SCHEMA public TO lovable_readonly;",
+      "REVOKE USAGE ON SCHEMA public FROM lovable_readonly;",
+      'grant usage  on schema "public" to "lovable_readonly" ;',
+    ])("ignores %s", (line) => {
+      expect(normalizeDiff(line)).toBe("");
+    });
+
+    it.each([
+      // Tout droit autre que la lecture.
+      "GRANT ALL ON TABLE public.users TO lovable_readonly;",
+      "GRANT INSERT ON TABLE public.users TO lovable_readonly;",
+      "GRANT SELECT, UPDATE ON TABLE public.users TO lovable_readonly;",
+      "GRANT UPDATE (email) ON TABLE public.users TO lovable_readonly;",
+      "GRANT USAGE ON SEQUENCE public.users_id_seq TO lovable_readonly;",
+      "REVOKE ALL ON TABLE public.auction_sales FROM lovable_readonly;",
+      // Autre objet ou autre portée que ceux lus en production.
+      "GRANT USAGE ON SCHEMA app_private TO lovable_readonly;",
+      "GRANT USAGE ON SCHEMA public_archive TO lovable_readonly;",
+      "GRANT USAGE ON SCHEMA public, app_private TO lovable_readonly;",
+      "GRANT CREATE ON SCHEMA public TO lovable_readonly;",
+      "GRANT USAGE, CREATE ON SCHEMA public TO lovable_readonly;",
+      "GRANT ALL ON SCHEMA public TO lovable_readonly;",
+      "REVOKE ALL ON SCHEMA public FROM lovable_readonly;",
+      "GRANT USAGE ON SCHEMA public TO lovable_readonly, anon;",
+      "GRANT USAGE ON SCHEMA public TO lovable_readonly WITH GRANT OPTION;",
+      "GRANT USAGE ON SCHEMA public TO anon; GRANT USAGE ON SCHEMA public TO lovable_readonly;",
+      "GRANT SELECT ON ALL TABLES IN SCHEMA public TO lovable_readonly;",
+      "GRANT SELECT ON TABLE public.users, public.profiles TO lovable_readonly;",
+      "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app_private TO lovable_readonly;",
+      "GRANT ALL ON FUNCTION app_private.f(uuid) TO lovable_readonly;",
+      "GRANT EXECUTE ON PROCEDURE app_private.purge(uuid) TO lovable_readonly;",
+      "GRANT EXECUTE ON FUNCTION app_private.f(uuid), app_private.g(uuid) TO lovable_readonly;",
+      "GRANT EXECUTE ON FUNCTION app_private.f(uuid) TO anon, lovable_readonly;",
+      "GRANT EXECUTE ON FUNCTION app_private.f(uuid) TO lovable_readonly WITH GRANT OPTION;",
+      // Privilèges par défaut : seule la forme lue en production est ignorée.
+      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT INSERT ON TABLES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES IN SCHEMA app_private GRANT SELECT ON TABLES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES IN SCHEMA public, app_private GRANT SELECT ON TABLES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres, supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly WITH GRANT OPTION;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly, anon;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO anon;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE SELECT ON TABLES FROM lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO anon; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
+      // Le rôle nommé ailleurs que comme seul bénéficiaire d'un droit de lecture.
+      "CREATE POLICY lovable_readonly ON public.users FOR ALL TO anon USING (true);",
+      "CREATE POLICY open_read ON public.users FOR SELECT TO lovable_readonly USING (true);",
+      "GRANT ALL ON TABLE public.users TO lovable_readonly, anon;",
+      "GRANT ALL ON TABLE public.users TO anon, lovable_readonly;",
+      "GRANT SELECT ON TABLE public.users TO lovable_readonly WITH GRANT OPTION;",
+      "GRANT SELECT ON TABLE public.users TO anon; GRANT SELECT ON TABLE public.users TO lovable_readonly;",
+      "GRANT SELECT ON TABLE public.users TO anon; -- TO lovable_readonly;",
+      "GRANT service_role TO lovable_readonly;",
+      "GRANT lovable_readonly TO anon;",
+      "GRANT lovable_readonly TO postgres;",
+      "REVOKE ALL ON TABLE public.users FROM lovable_readonly, authenticated;",
+      "REVOKE SELECT ON TABLE public.lovable_readonly FROM authenticated;",
+      "GRANT SELECT ON TABLE public.users TO lovable_readonly_admin;",
+      "GRANT SELECT ON TABLE public.users TO not_lovable_readonly;",
+      "ALTER TABLE public.users OWNER TO lovable_readonly;",
+      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO lovable_readonly;",
+      "DROP TABLE public.users; -- lovable_readonly",
+      "COMMENT ON TABLE public.users IS 'lovable_readonly';",
+    ])("keeps %s", (line) => {
+      expect(normalizeDiff(line)).toBe(line);
+    });
   });
 
   it("preserves the existing platform-managed drift filters", () => {
@@ -520,5 +778,276 @@ describe("Transient connection failures of the diff tool (run 80)", () => {
     });
     expect(calls).toBe(1);
     expect(outcome.transient).toBe(true);
+  });
+});
+
+describe("Report of a failed diff tool", () => {
+  const toolLines = (count) =>
+    Array.from({ length: count }, (_unused, index) => `tool line ${index + 1}`).join("\n");
+
+  it("puts the diagnosis first and keeps only the end of each output", () => {
+    const report = diffToolFailureReport({
+      result: { status: 1, stdout: `${toolLines(5000)}\n`, stderr: "warning\nreal error\n" },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+    expect(report[1]).toBe(
+      `[schema-drift] Diff tool stdout, last ${DIFF_TOOL_FAILURE_TAIL_LINES} of 5000 line(s):`,
+    );
+    expect(report[2]).toBe(`> tool line ${5000 - DIFF_TOOL_FAILURE_TAIL_LINES + 1}`);
+    expect(report.slice(-4)).toEqual([
+      "> tool line 5000",
+      "[schema-drift] Diff tool stderr, last 2 of 2 line(s):",
+      "> warning",
+      "> real error",
+    ]);
+    expect(report).toHaveLength(1 + 1 + DIFF_TOOL_FAILURE_TAIL_LINES + 1 + 2);
+  });
+
+  it("names an unreachable tool, the GitHub annotation and the spawn error before any output", () => {
+    const report = diffToolFailureReport({
+      result: { status: null, stdout: "", stderr: "", error: new Error("spawnSync npx ENOENT") },
+      attempts: 3,
+      transient: true,
+      githubActions: true,
+    }).split("\n");
+
+    expect(report).toHaveLength(3);
+    expect(report[0]).toMatch(/^\[schema-drift\] TOOL UNREACHABLE: .* after 3 attempts\. /);
+    expect(report[1]).toMatch(/^::error title=Schema drift tool unreachable::TOOL UNREACHABLE: /);
+    expect(report[2]).toBe("[schema-drift] Diff tool not run to its end: spawnSync npx ENOENT");
+  });
+
+  it("says that the output was truncated when the tool overran the buffer", () => {
+    const report = diffToolFailureReport({
+      result: {
+        status: null,
+        stdout: "partial",
+        stderr: "",
+        error: Object.assign(new Error("spawnSync npx ENOBUFS"), { code: "ENOBUFS" }),
+      },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report[1]).toMatch(/^\[schema-drift\] OUTPUT TRUNCATED BY THE BUFFER: /);
+    expect(report.slice(2)).toEqual([
+      "[schema-drift] Diff tool stdout, last 1 of 1 line(s):",
+      "> partial",
+    ]);
+  });
+
+  it("does not let one endless line through whole", () => {
+    const report = diffToolFailureReport({
+      result: { status: 1, stdout: "", stderr: `first line\n${"y".repeat(500_000)}END\n` },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report).toHaveLength(3);
+    expect(report[1]).toBe(
+      `[schema-drift] Diff tool stderr, last 1 of 2 line(s), cut to their last ${DIFF_TOOL_FAILURE_TAIL_CHARACTERS} characters:`,
+    );
+    expect(report[2]).toHaveLength(2 + DIFF_TOOL_FAILURE_TAIL_CHARACTERS);
+    expect(report[2].endsWith("yEND")).toBe(true);
+  });
+
+  it("masks the connection target and its password wherever the tool prints them", () => {
+    // Fictitious URL and password.
+    const password = "S3cr/t-fake:pw";
+    const configured = `postgresql://postgres.abcdefgh:${encodeURIComponent(password)}@aws-0-eu-west-3.pooler.supabase.com:6543/postgres`;
+    const target = `${configured.replace(":6543/", ":5432/")}?sslmode=verify-full&connect_timeout=600`;
+    const report = diffToolFailureReport({
+      result: {
+        status: 1,
+        stdout: `connecting to ${target}\nretrying ${configured} now\n`,
+        stderr: [
+          `failed to connect to "postgres://postgres.abcdefgh:other-form@aws-0-eu-west-3.pooler.supabase.com/postgres": timeout`,
+          `password authentication failed (password=${password})`,
+          `encoded: ${encodeURIComponent(password)}`,
+          "real error",
+        ].join("\n"),
+        error: new Error(`spawnSync npx --to ${target} ETIMEDOUT`),
+      },
+      attempts: 1,
+      transient: false,
+      databaseUrls: [configured, target],
+    });
+
+    expect(report).not.toContain("S3cr");
+    expect(report).not.toContain("other-form");
+    expect(report).not.toContain("pooler.supabase.com");
+    expect(report).not.toContain("abcdefgh");
+    expect(report.split("\n").slice(1)).toEqual([
+      "[schema-drift] Diff tool not run to its end: spawnSync npx --to [masqué] ETIMEDOUT",
+      "[schema-drift] Diff tool stdout, last 2 of 2 line(s):",
+      "> connecting to [masqué]",
+      "> retrying [masqué] now",
+      "[schema-drift] Diff tool stderr, last 4 of 4 line(s):",
+      '> failed to connect to "[masqué] timeout',
+      "> password authentication failed (password=[masqué])",
+      "> encoded: [masqué]",
+      "> real error",
+    ]);
+  });
+
+  it("copies no line of the tool that GitHub could read as a workflow command", () => {
+    const report = diffToolFailureReport({
+      result: {
+        status: 1,
+        stdout:
+          "::error title=Forged::forged\n  ::add-mask::x\n##[error]forged\nplain\r::stop-commands::token\n",
+        stderr: "::set-output name=a::b",
+        error: new Error("first\n::warning::forged"),
+      },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report).toHaveLength(10);
+    for (const line of report) expect(line).toMatch(/^(?:\[schema-drift\] |> )/);
+    expect(report).toContain("> ::stop-commands::token");
+    expect(report[1]).toBe("[schema-drift] Diff tool not run to its end: first ::warning::forged");
+  });
+
+  // The whole script, in local mode, with a stand-in for `npx` (the only thing on its PATH besides the
+  // system tools: nothing is downloaded, no database is reached).
+  function withStandInTool(toolScript, launch) {
+    const directory = mkdtempSync(join(tmpdir(), "immojudis-schema-drift-test-"));
+    try {
+      const standIn = join(directory, "npx");
+      writeFileSync(standIn, `#!/bin/sh\n${toolScript}\n`);
+      chmodSync(standIn, 0o755);
+      return launch({
+        script: join(dirname(fileURLToPath(import.meta.url)), "check-supabase-schema-drift.mjs"),
+        options: {
+          encoding: "utf8",
+          env: { PATH: `${directory}:/usr/bin:/bin`, GITHUB_ACTIONS: "true" },
+        },
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+  const runScriptWithStandInTool = (toolScript) =>
+    withStandInTool(toolScript, ({ script, options }) => {
+      const run = spawnSync(process.execPath, [script], options);
+      return { status: run.status, stdout: run.stdout, stderr: run.stderr.trimEnd().split("\n") };
+    });
+  const wholeScript = { skip: process.platform === "win32", timeout: 30_000 };
+
+  it(
+    "prints the diagnosis first and the end of the tool output to its last line, with the tool status",
+    wholeScript,
+    () => {
+      // stdout: 2 MiB, beyond the default 1 MiB buffer of spawnSync. stderr: its last 200 lines weigh
+      // 90 KiB, beyond the 64 KiB that a pipe holds. The output goes to a real pipe that nobody reads
+      // for one second, as a busy CI log collector does: a script that exits without waiting for its
+      // writes loses what the pipe could not take, the last line first.
+      const printed = withStandInTool(
+        [
+          "seq 1 40000 | sed 's/$/ tool line padded to pass the default buffer of 1 MiB/'",
+          `seq 1 300 | sed 's/$/ error line ${"e".repeat(440)}/' >&2`,
+          'echo "final error line" >&2',
+          "exit 3",
+        ].join("\n"),
+        ({ script, options }) =>
+          spawnSync(
+            "/bin/sh",
+            [
+              "-c",
+              '{ "$0" "$1" 2>&1; echo "status $?"; } | { sleep 1; cat; }',
+              process.execPath,
+              script,
+            ],
+            options,
+          )
+            .stdout.trimEnd()
+            .split("\n"),
+      );
+
+      expect(printed[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+      expect(printed[1]).toMatch(/^::error title=Schema drift tool failed::DIFF TOOL FAILED: /);
+      expect(printed[2]).toBe(
+        `[schema-drift] Diff tool stdout, last ${DIFF_TOOL_FAILURE_TAIL_LINES} of 40000 line(s):`,
+      );
+      expect(printed[3]).toBe(
+        `> ${40000 - DIFF_TOOL_FAILURE_TAIL_LINES + 1} tool line padded to pass the default buffer of 1 MiB`,
+      );
+      expect(printed[3 + DIFF_TOOL_FAILURE_TAIL_LINES]).toBe(
+        `[schema-drift] Diff tool stderr, last ${DIFF_TOOL_FAILURE_TAIL_LINES} of 301 line(s):`,
+      );
+      expect(printed).toHaveLength(
+        3 + DIFF_TOOL_FAILURE_TAIL_LINES + 1 + DIFF_TOOL_FAILURE_TAIL_LINES + 1,
+      );
+      expect(printed.slice(-2)).toEqual(["> final error line", "status 3"]);
+      expect(printed.slice(-DIFF_TOOL_FAILURE_TAIL_LINES).join("\n").length).toBeGreaterThan(
+        80 * 1024,
+      );
+    },
+  );
+
+  it(
+    "fails when the tool is killed by a signal, and never says that the schema matches",
+    wholeScript,
+    () => {
+      const run = runScriptWithStandInTool("kill -9 $$");
+
+      expect(run.status).toBe(1);
+      expect(run.stderr[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+      expect(`${run.stdout}\n${run.stderr.join("\n")}`).not.toContain("matches");
+    },
+  );
+
+  it(
+    "fails and says so when the tool overruns the buffer, whatever its own status",
+    wholeScript,
+    () => {
+      const run = runScriptWithStandInTool("head -c 17000000 /dev/zero | tr '\\0' 'x'\nexit 0");
+
+      expect(run.status).toBe(1);
+      expect(run.stderr[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+      expect(run.stderr[2]).toMatch(/^\[schema-drift\] OUTPUT TRUNCATED BY THE BUFFER: /);
+      expect(run.stderr[3]).toBe(
+        `[schema-drift] Diff tool stdout, last 1 of 1 line(s), cut to their last ${DIFF_TOOL_FAILURE_TAIL_CHARACTERS} characters:`,
+      );
+      expect(run.stderr).toHaveLength(5);
+      expect(`${run.stdout}\n${run.stderr.join("\n")}`).not.toContain("matches");
+    },
+  );
+
+  const writeDiff = (sql) =>
+    `for argument in "$@"; do case "$argument" in --output=*) printf '%b' "${sql}" > "\${argument#--output=}";; esac; done\nexit 0`;
+
+  it(
+    "fails with REAL DRIFT first when the tool succeeds and its diff is not empty",
+    wholeScript,
+    () => {
+      const run = runScriptWithStandInTool(writeDiff("DROP POLICY x ON public.auction_sales;\\n"));
+
+      expect(run.status).toBe(1);
+      expect(run.stdout).toBe("");
+      expect(run.stderr).toEqual([
+        "[schema-drift] REAL DRIFT: Local database differs from committed migrations.",
+        "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
+        "DROP POLICY x ON public.auction_sales;",
+      ]);
+    },
+  );
+
+  it("succeeds when the diff holds nothing but the reviewed indexes", wholeScript, () => {
+    const run = runScriptWithStandInTool(
+      writeDiff(
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\\n  WHERE held_fields IS NOT NULL;\\n",
+      ),
+    );
+
+    expect(run).toEqual({
+      status: 0,
+      stdout: "[schema-drift] Local database matches committed migrations.\n",
+      stderr: [""],
+    });
   });
 });

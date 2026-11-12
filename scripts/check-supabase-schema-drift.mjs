@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  diffToolFailureReport,
   normalizeDiffWithNotes,
   runWithTransientRetry,
   verifyConcurrentIndexes,
@@ -76,6 +77,8 @@ try {
           PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || "600",
         },
         stdio: ["ignore", "pipe", "pipe"],
+        // Beyond this size the tool is stopped and the run fails with ENOBUFS (reported as such).
+        maxBuffer: 16 * 1024 * 1024,
       },
     );
   };
@@ -93,43 +96,43 @@ try {
   });
 
   if (result.status !== 0) {
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
-    if (result.error) console.error(`[schema-drift] ${result.error.message}`);
-    const message = transient
-      ? `TOOL UNREACHABLE: the diff tool could not connect to the database after ${attempts} attempts. The schema was not compared: this is NOT a schema drift. Re-run the workflow, or run "npm run check:schema-drift -- --remote".`
-      : "DIFF TOOL FAILED: the diff tool exited with an error that is not a connection timeout (not retried). The schema was not compared.";
-    console.error(`[schema-drift] ${message}`);
-    if (process.env.GITHUB_ACTIONS === "true")
-      console.error(
-        `::error title=${transient ? "Schema drift tool unreachable" : "Schema drift tool failed"}::${message}`,
-      );
-    process.exit(result.status ?? 1);
-  }
-
-  const rawDiff = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "";
-  const { diff, unusedReconciledChecks } = normalizeDiffWithNotes(rawDiff);
-  if (remote && unusedReconciledChecks.length) {
-    const notice = `RECONCILED_CHECK_CONSTRAINTS (scripts/lib/schema-drift.mjs) lists ${unusedReconciledChecks.length} constraint(s) with no DROP/ADD pair in this diff: ${unusedReconciledChecks.join(", ")}. Remove the entries once the shadow database image matches the production Postgres minor version.`;
-    console.warn(`[schema-drift] Warning: ${notice}`);
-    if (process.env.GITHUB_ACTIONS === "true")
-      console.warn(`::warning title=Stale schema-drift exceptions::${notice}`);
-  }
-  if (diff) {
+    // One write, then a natural exit: `process.exit` right after a long write to a pipe dropped the
+    // end of the output, the `[schema-drift]` line included.
     console.error(
-      `[schema-drift] REAL DRIFT: ${remote ? "Production" : "Local database"} differs from committed migrations.`,
+      diffToolFailureReport({
+        result,
+        attempts,
+        transient,
+        githubActions: process.env.GITHUB_ACTIONS === "true",
+        databaseUrls: remote ? [configuredTarget, target] : [],
+      }),
     );
-    if (process.env.GITHUB_ACTIONS === "true")
+    process.exitCode = result.status ?? 1;
+  } else {
+    const rawDiff = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "";
+    const { diff, unusedReconciledChecks } = normalizeDiffWithNotes(rawDiff);
+    if (remote && unusedReconciledChecks.length) {
+      const notice = `RECONCILED_CHECK_CONSTRAINTS (scripts/lib/schema-drift.mjs) lists ${unusedReconciledChecks.length} constraint(s) with no DROP/ADD pair in this diff: ${unusedReconciledChecks.join(", ")}. Remove the entries once the shadow database image matches the production Postgres minor version.`;
+      console.warn(`[schema-drift] Warning: ${notice}`);
+      if (process.env.GITHUB_ACTIONS === "true")
+        console.warn(`::warning title=Stale schema-drift exceptions::${notice}`);
+    }
+    if (diff) {
       console.error(
-        "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
+        `[schema-drift] REAL DRIFT: ${remote ? "Production" : "Local database"} differs from committed migrations.`,
       );
-    console.error(diff.slice(0, 40_000));
-    process.exit(1);
+      if (process.env.GITHUB_ACTIONS === "true")
+        console.error(
+          "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
+        );
+      console.error(diff.slice(0, 40_000));
+      process.exitCode = 1;
+    } else {
+      console.log(
+        `[schema-drift] ${remote ? "Production" : "Local database"} matches committed migrations.`,
+      );
+    }
   }
-
-  console.log(
-    `[schema-drift] ${remote ? "Production" : "Local database"} matches committed migrations.`,
-  );
 } finally {
   rmSync(temporaryDirectory, { recursive: true, force: true });
 }
