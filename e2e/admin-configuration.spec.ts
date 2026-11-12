@@ -510,7 +510,7 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     if (path === "/api/admin/publications") {
       await route.fulfill({
         status: 200,
-        json: { requests: [], totalCount: 0, pendingCount: 0, hasMore: false },
+        json: { requests: [], total: 0, pendingCount: 0, hasMore: false },
       });
       return;
     }
