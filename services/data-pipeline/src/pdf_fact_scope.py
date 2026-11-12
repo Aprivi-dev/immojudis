@@ -224,7 +224,7 @@ _LOT_WRITTEN_SNAPSHOT_FIELDS = frozenset({
 _UNREADABLE = object()
 
 
-def _pdf_source_reader(sale: Any, snapshot: dict[str, object]) -> Callable[[str], object]:
+def pdf_source_reader(sale: Any, snapshot: dict[str, object]) -> Callable[[str], object]:
     """Rend la lecture d'un champ de l'instantané de la source : la valeur que la collecte a écrite, ou vide.
 
     ``source_factual_snapshot`` garde le texte de la page, avant normalisation. Remis tel quel à chaque
@@ -309,7 +309,7 @@ def _pdf_source_reader(sale: Any, snapshot: dict[str, object]) -> Callable[[str]
 
 
 def _pdf_set_source_value(sale: Any, field: str, value: object) -> None:
-    """Remet une valeur déjà lue par la collecte (``_pdf_source_reader``) : elle a le type du champ."""
+    """Remet une valeur déjà lue par la collecte (``pdf_source_reader``) : elle a le type du champ."""
     if value is None and isinstance(getattr(sale, field, None), list):
         value = []
     setattr(sale, field, value)
@@ -596,7 +596,7 @@ def _clear_pdf_fact_projections(
     selected = _pdf_projection_scope_fields(fields)
     snapshot = raw_payload.get(SOURCE_SNAPSHOT_KEY)
     snapshot = snapshot if isinstance(snapshot, dict) else {}
-    read_source = _pdf_source_reader(sale, snapshot)
+    read_source = pdf_source_reader(sale, snapshot)
     cleared: set[str] = set()
     preserved: set[str] = set(independent_derived_fields)
     removed_payload_keys: set[str] = set()

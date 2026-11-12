@@ -18,7 +18,7 @@ Trois conditions, par groupe :
    affichée se déduit de l'habitable, de la Carrez ou du terrain) ; pour une fiche réellement relue, seule compte
    la valeur lue dans la même colonne ;
 3. la source ne vient pas de publier cette valeur : une fiche réellement relue dont la lecture par la règle de la
-   collecte (``pdf_fact_scope._pdf_source_reader`` : instantané et contexte, relus par ``normalize_sale``) donne
+   collecte (``pdf_fact_scope.pdf_source_reader`` : instantané et contexte, relus par ``normalize_sale``) donne
    la valeur n'est jamais un écho, même si la base a déjà rendu la même valeur. La valeur peut donc venir d'une
    clé de l'instantané comme du texte de la page.
 
@@ -32,7 +32,13 @@ référence que s'il n'existe pas encore.
 Le compteur (``suppressed_count``) est alimenté à la fusion, avant l'écriture : si la transaction est ensuite
 annulée et jamais rejouée, le couple reste compté. Il peut donc surestimer, jamais sous-estimer.
 
-Ce module ne sait pas pourquoi la base a bougé et ne lit rien d'autre que les colonnes et clés ci-dessous.
+Ce module ne sait pas pourquoi la base a bougé. Il ne lit que les colonnes et clés ci-dessous, et, pour savoir ce
+qu'une fiche relue publie, la lecture de la source de ``pdf_fact_scope`` (donc ``normalize_sale``).
+
+Deux cas théoriques des portées d'écriture, tous deux dans le sens prudent (la garde laisse écrire, ou retient une
+valeur relue, jamais l'inverse) : des portées imbriquées sorties dans le désordre versent leurs notes dans une
+portée qui n'est plus la bonne ; un autre écrivain qui écrit exactement l'état en attente d'une portée ensuite
+annulée n'est pas vu comme un mouvement tant que cette portée est ouverte.
 """
 
 from __future__ import annotations
@@ -336,10 +342,13 @@ def _published_by_source(source: Any, group: EchoGroup, outgoing: list[Any]) -> 
     snapshot = payload.get(SOURCE_SNAPSHOT_KEY)
     if not isinstance(snapshot, dict):
         return False
-    from src.pdf_fact_scope import _pdf_source_reader  # import tardif : ce module-là importe celui-ci
+    from src.pdf_fact_scope import pdf_source_reader  # import tardif : ce module-là importe celui-ci
 
-    read_source = _pdf_source_reader(source, snapshot)
-    published = {_canonical(read_source(column)) for column in group.family} - {None}
+    read_source = pdf_source_reader(source, snapshot)
+    # Les colonnes de valeur seulement : la lecture de la source calcule elle-même la surface affichée (depuis
+    # l'habitable, la Carrez ou le terrain). Un terrain de 65 m² publié ne fait pas d'une surface de 65 m² relue en
+    # base une valeur publiée.
+    published = {_canonical(read_source(column)) for column in group.value_columns} - {None}
     return all(value in published for value in outgoing)
 
 

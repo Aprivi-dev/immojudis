@@ -1121,3 +1121,37 @@ def test_a_reread_listing_is_only_compared_with_what_the_base_held_in_the_same_c
     # Témoin : la même vente, fiche non relue. La surface déduite du terrain relu n'est qu'une relecture.
     unread = sale({"_known_unchanged": True}, surface_m2=65, app_surface_m2=65, land_surface_m2=65)
     assert base_reads.suppress_echo(sale(**held, surface_confidence=0.9), unread).surface_m2 == 120
+
+
+def test_a_surface_the_reread_listing_publishes_as_land_is_published() -> None:
+    """Vente de terrain : la page ne donne qu'une surface de terrain, et la surface affichée en vient. La lecture de
+    la source calcule cette surface affichée : la valeur est publiée, la garde la laisse écrire."""
+    read(surface_m2=None, app_surface_m2=800, app_surface_kind="land", land_surface_m2=800)
+    moved = {"surface_m2": None, "app_surface_m2": 900, "app_surface_kind": "land", "land_surface_m2": 900}
+    locked(**moved)  # un autre écrivain
+    snapshot = {**TEXT_SNAPSHOT, "title": "Un terrain", "property_type": "land", "surface_m2": None,
+                "land_surface_m2": "800 m²"}
+    incoming = sale({"source_factual_snapshot": snapshot}, surface_m2=None, app_surface_m2=800,
+                    app_surface_kind="land", land_surface_m2=800)
+
+    result = base_reads.suppress_echo(sale(**moved), incoming)
+
+    assert result.app_surface_m2 == 800
+    assert (SALE_ID, "surface") not in {(item["sale_id"], item["group"]) for item in base_reads.suppressed_sample(50)}
+
+
+
+def test_a_reread_surface_is_not_published_because_the_source_gives_the_same_number_as_land() -> None:
+    """La surface de 65 m² vient d'un document, relue en base ; le document est retiré pendant le passage (120 m²).
+
+    La page relue publie 120 m² de surface et, par ailleurs, 65 m² de terrain : ce terrain ne fait pas de la
+    surface relue une valeur publiée. C'est un écho, la base garde 120.
+    """
+    read(surface_m2=65, app_surface_m2=65)
+    locked(surface_m2=120, app_surface_m2=120)
+    snapshot = {**TEXT_SNAPSHOT, "surface_m2": "120 m²", "land_surface_m2": "65 m²"}
+    incoming = sale({"source_factual_snapshot": snapshot}, surface_m2=65, app_surface_m2=65, land_surface_m2=65)
+
+    result = base_reads.suppress_echo(sale(surface_m2=120, app_surface_m2=120, land_surface_m2=65), incoming)
+
+    assert (result.surface_m2, result.app_surface_m2) == (120, 120)
