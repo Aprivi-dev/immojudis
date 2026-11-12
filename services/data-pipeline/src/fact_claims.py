@@ -15,7 +15,7 @@ import unicodedata
 from datetime import datetime
 from uuid import UUID, uuid5
 
-from src.base_reads import SOURCE_SNAPSHOT_KEY
+from src.base_reads import SNAPSHOT_RELAYED_FIELDS_KEY, SOURCE_SNAPSHOT_KEY
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_occupancy_status, parse_french_datetime, parse_price, parse_surface
 
@@ -145,12 +145,14 @@ def build_fact_claim_candidates(sale: AuctionSale) -> list[dict[str, object]]:
     Une vente dont le ``raw_payload`` n'a aucun instantané de fiche (jamais relue depuis qu'il existe) n'émet rien :
     rien n'y distingue ce que l'annonce a publié de ce que la collecte a relu en base, et la moindre observation de
     cette version masquerait à la lecture toutes celles de la version précédente. Elles restent donc visibles
-    jusqu'à la prochaine relecture de la fiche. Coût : d'ici là, les faits d'un document nouveau ne sont pas
-    enregistrés pour cette vente.
+    jusqu'à ce qu'une relecture de la fiche pose l'instantané. Coût : d'ici là, les faits d'un document nouveau ne
+    sont pas enregistrés pour cette vente. Cela peut être définitif : une vente qui n'est plus relue, ou relue à
+    l'identique par ``source_detail.prepare_source_revision``, qui garde la ligne stockée telle quelle.
     """
     own_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-    own_snapshot = own_payload.get(SOURCE_SNAPSHOT_KEY)
-    if not isinstance(own_snapshot, dict) or not own_snapshot:
+    # L'instantané d'une autre fiche, ou celui d'une page qui n'a rien donné (il ne liste que les champs repris de
+    # la ligne stockée), n'est pas un instantané de cette fiche.
+    if not set(_own_snapshot(own_payload, sale.source_url)) - {SNAPSHOT_RELAYED_FIELDS_KEY}:
         return []
     candidates: list[dict[str, object]] = []
     for snapshot in _source_snapshots(sale):

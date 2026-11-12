@@ -47,7 +47,7 @@ def test_build_ignores_flattened_values_when_persisted_payload_has_no_proof() ->
     # auction_sales row may have starting_price_eur/surface_m2 populated, but
     # this operator must not copy those fields into raw_payload.
     result = backfill.build_batch_candidates(
-        [sale_row(raw_payload={}, observations=[])],
+        [sale_row(raw_payload={"source_factual_snapshot": {"source_url": SALE_URL}}, observations=[])],
         {},
     )
 
@@ -328,7 +328,8 @@ def test_canonical_id_verification_drops_deleted_targets() -> None:
 
 def test_backfill_claims_nothing_from_columns_copied_into_the_persisted_payload() -> None:
     """``raw_payload`` garde au premier niveau les colonnes que la collecte a relues en base : ce n'est pas une preuve."""
-    copied = {"surface_m2": 54, "land_surface_m2": 800, "occupancy_status": "rented", "starting_price_eur": 90000}
+    copied = {"surface_m2": 54, "land_surface_m2": 800, "occupancy_status": "rented", "starting_price_eur": 90000,
+              "source_factual_snapshot": {"source_url": SALE_URL}}
 
     result = backfill.build_batch_candidates([sale_row(raw_payload=copied)], {})
 
