@@ -57,7 +57,7 @@ function reviewErrorResponse(error: unknown, request: Request): Response {
   // collection batch holding the sale gives 55P03 (sale_busy), a merge in progress gives 40001
   // (retry). Both mean "try again", not "already handled".
   return apiRouteError(
-    translateFactClaimDatabaseError(error),
+    translateFactClaimDatabaseError(error, { reviewStateConflicts: true }),
     request,
     "admin.fact-claims.review",
     {

@@ -9,6 +9,7 @@ import {
   allowedFactClaimDecisionActions,
   FACT_CLAIM_LOT_ATTACHMENTS,
   FACT_CLAIM_REJECT_REASONS,
+  FACT_CLAIM_RESERVED_EVIDENCE_KINDS,
   FACT_CLAIM_WITHDRAW_REASONS,
   type FactClaimDecisionAction,
 } from "@/lib/fact-claim-decisions";
@@ -63,8 +64,8 @@ export type AdminFactClaimDecisionItem = {
   fieldKey: string;
   /** Valeur proposée par l'observation. */
   value: unknown;
-  /** Valeur que la fiche affiche aujourd'hui. */
-  currentValue: unknown;
+  /** Valeur que la fiche affiche aujourd'hui. Absente : champ sans colonne connue, non comparé. */
+  currentValue?: unknown;
   /** Nature de la pièce (`evidence_kind`). */
   origin: string;
   /** Lien vers la source, seulement s'il est en http(s). */
@@ -99,13 +100,6 @@ export type AdminFactClaimDecisionResult = {
   };
 };
 
-/**
- * Sans vente choisie, la file ne montre que les natures que le registre réserve (réponse d'un
- * professionnel, saisie d'un administrateur) : les observations de la collecte se relisent dans
- * « Faits à vérifier ». Liste de la garde d'origine (`auction_fact_claims_registry_origin_guard`).
- */
-const RESERVED_EVIDENCE_KINDS = ["professional_email", "professional_form", "admin_entry"];
-
 const CLAIM_COLUMNS =
   "claim_id,auction_sale_id,field_key,value_jsonb,evidence_kind,source_url,captured_at,created_at";
 
@@ -133,27 +127,26 @@ type ClaimQuery = PromiseLike<{
 };
 
 /**
- * Observations à décider. Lecture par le rôle de service, après la garde administrateur : la vue
- * et le journal des décisions sont fermés aux rôles du navigateur.
+ * Observations à décider. Lecture par le rôle de service : la vue et le journal des décisions
+ * sont fermés aux rôles du navigateur. L'appelant a déjà vérifié le rôle administrateur
+ * (`requireAdmin` dans la route), comme pour toute lecture par le rôle de service.
  */
-export async function listAdminFactClaimDecisions({
-  auth,
-  input,
-}: {
-  auth: SupabaseAuthContext;
-  input: AdminFactClaimDecisionQuery;
-}): Promise<AdminFactClaimDecisionListResponse> {
-  requireAdminContext(auth);
+export async function listAdminFactClaimDecisions(
+  input: AdminFactClaimDecisionQuery,
+): Promise<AdminFactClaimDecisionListResponse> {
   const query = (supabaseAdmin as unknown as { from(view: string): ClaimQuery })
     .from("v_auction_fact_claims_read_model")
     .select(CLAIM_COLUMNS, { count: "exact" })
     .not("auction_sale_id", "is", null)
     .order("created_at", { ascending: false })
     .order("claim_id", { ascending: true });
-  if (input.saleId) query.eq("auction_sale_id", input.saleId);
-  else query.in("evidence_kind", RESERVED_EVIDENCE_KINDS);
+  // Sans vente choisie, la file ne montre que les natures que le registre réserve : les
+  // observations de la collecte se relisent dans « Faits à vérifier ».
+  const filtered = input.saleId
+    ? query.eq("auction_sale_id", input.saleId)
+    : query.in("evidence_kind", Object.keys(FACT_CLAIM_RESERVED_EVIDENCE_KINDS));
 
-  const { data, error, count } = await query.range(input.offset, input.offset + input.limit - 1);
+  const { data, error, count } = await filtered.range(input.offset, input.offset + input.limit - 1);
   if (error) throw error;
   const rows = (data ?? []).filter(isClaimRow);
 
@@ -204,7 +197,6 @@ export async function decideAdminFactClaim({
   auth: SupabaseAuthContext;
   input: AdminFactClaimDecisionInput;
 }): Promise<AdminFactClaimDecisionResult> {
-  requireAdminContext(auth);
   const { data, error } = await callDecision(auth.supabase, input);
   if (error) throw error;
   const result = data && typeof data === "object" && !Array.isArray(data) ? data : {};
@@ -248,10 +240,6 @@ function callDecision(client: SupabaseAuthContext["supabase"], input: AdminFactC
       // Motif par défaut de la base : « professional_opposition ».
       return client.rpc("oppose_auction_fact_claim", { p_claim_id: input.claimId });
   }
-}
-
-export function requireAdminContext(auth: SupabaseAuthContext): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
 /** Dernière décision de chaque observation, dans l'ordre de `seq` (jamais d'une date). */

@@ -38,6 +38,17 @@ export const FACT_CLAIM_LOT_ATTACHMENTS = {
   unknown: "Lot inconnu",
 } as const;
 
+/**
+ * Natures d'observation que le registre réserve (garde d'origine
+ * `auction_fact_claims_registry_origin_guard`), avec leur libellé : ce sont elles que la file de
+ * décision montre quand aucune vente n'est choisie.
+ */
+export const FACT_CLAIM_RESERVED_EVIDENCE_KINDS = {
+  professional_email: "Réponse d’un professionnel par e-mail",
+  professional_form: "Formulaire rempli par un professionnel",
+  admin_entry: "Saisie d’un administrateur",
+} as const;
+
 export type FactClaimRejectReason = keyof typeof FACT_CLAIM_REJECT_REASONS;
 export type FactClaimWithdrawReason = keyof typeof FACT_CLAIM_WITHDRAW_REASONS;
 export type FactClaimLotAttachment = keyof typeof FACT_CLAIM_LOT_ATTACHMENTS;
@@ -61,6 +72,21 @@ export function isFinalFactClaimDecision(latest: FactClaimLatestDecision | null)
     latest?.decision === "opposed" ||
     (latest?.decision === "withdrawn" && latest.reasonCode === "authorization_withdrawn")
   );
+}
+
+const DECISION_OF_ACTION: Record<FactClaimDecisionAction, string> = {
+  accept: "accepted",
+  reject: "rejected",
+  withdraw: "withdrawn",
+  oppose: "opposed",
+};
+
+/** L'action demandée, avec ce motif, écrirait-elle une décision définitive ? */
+export function isFinalFactClaimAction(
+  action: FactClaimDecisionAction,
+  reasonCode: string | null,
+): boolean {
+  return isFinalFactClaimDecision({ decision: DECISION_OF_ACTION[action], reasonCode });
 }
 
 /**

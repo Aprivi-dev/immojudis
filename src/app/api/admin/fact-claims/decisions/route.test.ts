@@ -113,7 +113,7 @@ beforeEach(() => {
       decision_id: DECISION_ID,
       decision: "accepted",
       sale_id: SALE_ID,
-      field_key: "property.surface_m2",
+      field_key: "property.occupancy_status",
       state: "held",
     },
     error: null,
@@ -158,6 +158,27 @@ describe("route des décisions du registre des pièces : garde d'accès", () => 
 
     expect(response.status).toBe(403);
     expect(state.filters.filter((filter) => filter.table !== "user_profiles")).toEqual([]);
+  });
+
+  it("ne crée aucun client de service pour la liste d'un compte non administrateur", async () => {
+    state.profileRole = "user";
+    // Modules neufs : le client de service, créé à sa première utilisation puis gardé pour le
+    // processus, n'existe pas encore pour cette route.
+    vi.resetModules();
+    const fresh = await import("./route");
+    const before = serviceClients().length;
+
+    const response = await fresh.GET(
+      new Request(URL, { headers: { authorization: `Bearer ${USER_TOKEN}` } }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(serviceClients()).toHaveLength(before);
+
+    // Contre-épreuve : le même module en crée un dès qu'un administrateur lit la liste.
+    state.profileRole = "admin";
+    await fresh.GET(new Request(URL, { headers: { authorization: `Bearer ${USER_TOKEN}` } }));
+    expect(serviceClients()).toHaveLength(before + 1);
   });
 });
 
@@ -213,7 +234,7 @@ describe("route des décisions du registre des pièces : écriture au nom de l'a
     // La liste fait d'abord travailler le client de service : il existe donc bien, avec un rpc
     // qui réussirait.
     await GET(new Request(URL, { headers: { authorization: `Bearer ${USER_TOKEN}` } }));
-    expect(serviceClients()).toHaveLength(1);
+    expect(serviceClients().length).toBeGreaterThan(0);
 
     const response = await post({
       action: "accept",
@@ -247,7 +268,7 @@ describe("route des décisions du registre des pièces : écriture au nom de l'a
         decisionId: DECISION_ID,
         decision: "accepted",
         saleId: SALE_ID,
-        fieldKey: "property.surface_m2",
+        fieldKey: "property.occupancy_status",
         state: "held",
       },
     });
@@ -282,23 +303,91 @@ describe("route des décisions du registre des pièces : écriture au nom de l'a
 });
 
 describe("route des décisions du registre des pièces : erreurs de la base", () => {
-  const SQLSTATES: Record<string, string> = {
-    admin_required: "42501",
-    second_factor_required: "42501",
-    rate_limited: "53400",
-    final_rate_limited: "53400",
-    sale_busy: "55P03",
-    retry: "40001",
-    claim_not_found: "P0002",
-    sale_not_found: "P0002",
-    invalid_reason_code: "22023",
-    invalid_lot_attachment: "22023",
-    invalid_argument: "22023",
-    registry_write_failed: "P0001",
-  };
+  // Figé en dur : SQLSTATE levé par la base, statut HTTP et message attendus. La table de
+  // l'application n'est pas comparée à elle-même.
+  const SALE_BUSY = "Import en cours sur cette vente, réessayez dans une minute.";
+  const FINAL = "Décision définitive, elle ne peut plus être modifiée.";
+  const EXPECTED: Array<[code: string, sqlstate: string, status: number, message: string]> = [
+    ["admin_required", "42501", 403, "Action réservée aux administrateurs."],
+    [
+      "second_factor_required",
+      "42501",
+      403,
+      "Cette décision demande la double authentification. Activez-la dans Sécurité, puis reconnectez-vous.",
+    ],
+    [
+      "rate_limited",
+      "53400",
+      429,
+      "Plafond de décisions atteint pour cette heure. Réessayez plus tard.",
+    ],
+    [
+      "final_rate_limited",
+      "53400",
+      429,
+      "Plafond de décisions définitives atteint pour aujourd'hui. Réessayez demain.",
+    ],
+    [
+      "decision_in_progress",
+      "55000",
+      409,
+      "Une autre décision est en cours avec votre compte. Attendez quelques secondes, puis réessayez.",
+    ],
+    ["sale_busy", "55P03", 409, SALE_BUSY],
+    ["retry", "40001", 409, SALE_BUSY],
+    ["invalid_transition", "55000", 409, "Cette observation a déjà été traitée."],
+    ["opposed_final", "55000", 409, FINAL],
+    ["withdrawal_final", "55000", 409, FINAL],
+    [
+      "origin_cannot_hold",
+      "55000",
+      409,
+      "L'origine de cette observation ne permet pas d'afficher sa valeur sur la fiche. Elle ne peut pas être acceptée.",
+    ],
+    [
+      "field_not_applicable",
+      "55000",
+      409,
+      "Une surface bâtie ne peut pas être acceptée sur une vente de terrain.",
+    ],
+    [
+      "claim_detached",
+      "55000",
+      409,
+      "Cette observation n'est plus rattachée à une vente (doublons fusionnés). Elle reviendra sur la vente conservée.",
+    ],
+    ["claim_not_found", "P0002", 404, "Observation introuvable."],
+    ["sale_not_found", "P0002", 404, "Vente introuvable."],
+    ["invalid_reason_code", "22023", 400, "Motif non reconnu."],
+    ["invalid_lot_attachment", "22023", 400, "Rattachement au lot non reconnu."],
+    [
+      "invalid_argument",
+      "22023",
+      400,
+      "Cette valeur ne peut pas être affichée sur la fiche, ou la demande est incomplète.",
+    ],
+    [
+      "registry_unavailable",
+      "55000",
+      503,
+      "Le registre des pièces est indisponible. Aucune décision n'a été enregistrée. Prévenez l'équipe technique.",
+    ],
+    [
+      "registry_write_failed",
+      "P0001",
+      500,
+      "La décision n'a pas pu être enregistrée et rien n'a été modifié. Réessayez ; si l'erreur persiste, prévenez l'équipe technique.",
+    ],
+  ];
 
-  it.each(Object.entries(FACT_CLAIM_DATABASE_ERROR_CODES))("traduit %s", async (code, expected) => {
-    const sqlstate = SQLSTATES[code] ?? "55000";
+  it("fige un statut et un message pour chaque code traduit", () => {
+    expect(EXPECTED.map(([code]) => code).sort()).toEqual(
+      Object.keys(FACT_CLAIM_DATABASE_ERROR_CODES).sort(),
+    );
+    for (const [, , , message] of EXPECTED) expect(message).not.toMatch(/[—–]/);
+  });
+
+  it.each(EXPECTED)("traduit %s (%s) en %i", async (code, sqlstate, status, message) => {
     state.rpcResult = {
       data: null,
       error: { code: sqlstate, message: code, details: null, hint: null },
@@ -306,9 +395,9 @@ describe("route des décisions du registre des pièces : erreurs de la base", ()
 
     const response = await post({ action: "oppose", claimId: CLAIM_ID });
 
-    expect(response.status).toBe(expected.status);
+    expect(response.status).toBe(status);
     const body = await response.json();
-    expect(body.error).toBe(expected.message);
+    expect(body.error).toBe(message);
     expect(body.ok).toBe(false);
     // Ni le code de la base ni son SQLSTATE ne partent vers le navigateur.
     const text = JSON.stringify(body);
@@ -316,22 +405,48 @@ describe("route des décisions du registre des pièces : erreurs de la base", ()
     expect(text).not.toContain(sqlstate);
   });
 
-  it("donne les messages attendus par l'écran", () => {
-    expect(FACT_CLAIM_DATABASE_ERROR_CODES.sale_busy.message).toBe(
-      "Import en cours sur cette vente, réessayez dans une minute.",
-    );
-    expect(FACT_CLAIM_DATABASE_ERROR_CODES.invalid_transition.message).toBe(
-      "Cette observation a déjà été traitée.",
-    );
-    expect(FACT_CLAIM_DATABASE_ERROR_CODES.opposed_final.message).toBe(
-      "Décision définitive, elle ne peut plus être modifiée.",
-    );
-    expect(FACT_CLAIM_DATABASE_ERROR_CODES.withdrawal_final.message).toBe(
-      FACT_CLAIM_DATABASE_ERROR_CODES.opposed_final.message,
-    );
-    for (const { message } of Object.values(FACT_CLAIM_DATABASE_ERROR_CODES)) {
-      expect(message).not.toMatch(/[—–]/);
-    }
+  it("ne dit pas « déjà traité » pour un 55000 au code inconnu, et ne journalise que deux codes", async () => {
+    const warn = vi.mocked(console.warn);
+    const error = vi.mocked(console.error);
+    state.rpcResult = {
+      data: null,
+      error: {
+        code: "55000",
+        message: "code_pas_encore_traduit",
+        details: "Failing row contains (12 rue des Lilas).",
+        hint: null,
+      },
+    };
+
+    const response = await post({ action: "oppose", claimId: CLAIM_ID });
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe("La décision n'a pas pu être enregistrée.");
+    expect(JSON.stringify(body)).not.toContain("code_pas_encore_traduit");
+    const logged = [...warn.mock.calls, ...error.mock.calls].flat().join("\n");
+    expect(logged).toContain("Unhandled database error [55000] [code_pas_encore_traduit]");
+    expect(logged).not.toContain("Lilas");
+  });
+
+  it("ne journalise pas le texte d'une erreur qui n'a pas la forme d'un code", async () => {
+    const error = vi.mocked(console.error);
+    state.rpcResult = {
+      data: null,
+      error: {
+        code: "55000",
+        message: "Row (12 rue des Lilas) is locked",
+        details: null,
+        hint: null,
+      },
+    };
+
+    const response = await post({ action: "oppose", claimId: CLAIM_ID });
+
+    expect(response.status).toBe(500);
+    const logged = error.mock.calls.flat().join("\n");
+    expect(logged).toContain("Unhandled database error [55000] [-]");
+    expect(logged).not.toContain("Lilas");
   });
 
   it("ne relaie rien d'une erreur de la base hors liste", async () => {
@@ -380,8 +495,8 @@ describe("route des décisions du registre des pièces : liste", () => {
   const claim = (id: string, kind: string) => ({
     claim_id: id,
     auction_sale_id: SALE_ID,
-    field_key: "property.surface_m2",
-    value_jsonb: 54,
+    field_key: "property.occupancy_status",
+    value_jsonb: "vacant",
     evidence_kind: kind,
     source_url: "javascript:alert(1)",
     captured_at: "2026-11-10T09:00:00Z",
@@ -396,7 +511,13 @@ describe("route des décisions du registre des pièces : liste", () => {
         claim(OTHER_CLAIM, "admin_entry"),
       ],
       auction_sales: [
-        { id: SALE_ID, title: "Appartement T3", city: "Bordeaux", sale_date: null, surface_m2: 50 },
+        {
+          id: SALE_ID,
+          title: "Appartement T3",
+          city: "Bordeaux",
+          sale_date: null,
+          occupancy_status: "occupied",
+        },
       ],
       // Rendu par seq décroissant : la première ligne d'une observation est sa dernière décision.
       auction_fact_claim_decisions: [
@@ -433,9 +554,9 @@ describe("route des décisions du registre des pièces : liste", () => {
     expect(body.items[0]).toMatchObject({
       claimId: CLAIM_ID,
       saleId: SALE_ID,
-      fieldKey: "property.surface_m2",
-      value: 54,
-      currentValue: 50,
+      fieldKey: "property.occupancy_status",
+      value: "vacant",
+      currentValue: "occupied",
       origin: "professional_email",
       // Un lien qui n'est pas en http(s) n'est pas rendu.
       sourceUrl: null,
@@ -458,6 +579,22 @@ describe("route des décisions du registre des pièces : liste", () => {
       method: "order",
       args: ["seq", { ascending: false }],
     });
+  });
+
+  it("n'invente pas de valeur affichée pour un champ sans colonne connue", async () => {
+    state.tables.v_auction_fact_claims_read_model = [
+      { ...claim(CLAIM_ID, "professional_email"), field_key: "property.property_type" },
+    ];
+
+    const response = await GET(
+      new Request(`${URL}?saleId=${SALE_ID}`, {
+        headers: { authorization: `Bearer ${USER_TOKEN}` },
+      }),
+    );
+
+    const [item] = (await response.json()).items;
+    expect(item.fieldKey).toBe("property.property_type");
+    expect("currentValue" in item).toBe(false);
   });
 
   it("sans vente choisie, ne lit que les origines réservées au registre", async () => {
