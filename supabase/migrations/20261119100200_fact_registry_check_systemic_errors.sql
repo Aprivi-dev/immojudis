@@ -361,25 +361,30 @@ begin
 
   -- Décisions définitives sur 48 heures, soit deux passages de la tâche : un passage en échec ne fait pas perdre
   -- celles de la veille. Leur nombre, et le nombre d'auteurs qui, dans cette fenêtre, ont dépassé le plafond sur
-  -- une période de 24 heures (les 24 heures qui précèdent chacune de leurs décisions).
+  -- une période de 24 heures (les 24 heures qui précèdent chacune de leurs décisions, bornes comprises ; les
+  -- décisions sont donc lues sur 72 heures). Une fonction de fenêtre, une seule lecture triée par auteur : les
+  -- plafonds n'étant plus appliqués, rien ne borne le nombre de décisions à compter.
   with finals as materialized (
     select decision.actor_id, decision.decided_at
     from public.auction_fact_claim_decisions decision
     where app_private.fact_decision_is_final(decision.decision, decision.reason_code)
       and decision.decided_at > v_now - interval '72 hours'
+  ),
+  counted as (
+    select finals.actor_id, finals.decided_at,
+      count(*) over (
+        partition by finals.actor_id
+        order by finals.decided_at
+        range between interval '24 hours' preceding and current row
+      ) as in_period
+    from finals
   )
   select
-    (select count(*) from finals recent where recent.decided_at > v_now - interval '48 hours')::integer,
-    (select count(distinct coalesce(recent.actor_id::text, ''))
-       from finals recent
-      where recent.decided_at > v_now - interval '48 hours'
-        and (
-          select count(*) from finals earlier
-          where earlier.actor_id is not distinct from recent.actor_id
-            and earlier.decided_at > recent.decided_at - interval '24 hours'
-            and earlier.decided_at <= recent.decided_at
-        ) > v_final_limit)::integer
-  into v_final, v_final_over;
+    (count(*) filter (where counted.decided_at > v_now - interval '48 hours'))::integer,
+    (count(distinct coalesce(counted.actor_id::text, '')) filter (
+      where counted.decided_at > v_now - interval '48 hours' and counted.in_period > v_final_limit))::integer
+  into v_final, v_final_over
+  from counted;
 
   return pg_catalog.jsonb_build_object(
     'merge_carried', pg_catalog.jsonb_build_object('count', v_carried, 'window_hours', 24),

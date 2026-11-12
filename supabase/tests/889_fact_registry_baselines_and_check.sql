@@ -21,7 +21,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(92);
+select plan(97);
 
 -- Relance planifiée, journal des décisions vide (lot R2b) ----------------------------------------------------------
 -- À faire avant toute décision du jeu d'essai. La lecture des ventes du registre est remplacée par une fonction qui
@@ -1403,6 +1403,43 @@ select results_eq(
       from (select app_private.fact_registry_global_checks(null) as report) checked$$,
   $$values (6, 2)$$,
   'beyond 48 hours a final decision is no longer counted'
+);
+
+-- Cas limites du dépassement (plafond de cinq) : c'est une période de 24 heures qui compte, pas la fenêtre de 48
+-- heures. Deux auteurs sont déjà comptés (a1 aujourd'hui, b1 la veille). Un auteur par cas.
+insert into auth.users (id)
+select ('88900000-0000-4000-8000-0000000000e' || n)::uuid from generate_series(1, 5) n;
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000e1', 3, interval '40 hours');
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000e1', 3, interval '10 hours');
+select is(
+  (app_private.fact_registry_global_checks(null) #>> '{checks,final_decisions_over_limit,count}')::integer,
+  2,
+  'six final decisions of one author within 48 hours, but never more than three in any 24 hours: not over the ceiling'
+);
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000e2', 5, interval '5 hours');
+select is(
+  (app_private.fact_registry_global_checks(null) #>> '{checks,final_decisions_over_limit,count}')::integer,
+  2,
+  'five final decisions together are at the ceiling, not over it'
+);
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000e3', 3, interval '60 hours');
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000e3', 3, interval '47 hours');
+select is(
+  (app_private.fact_registry_global_checks(null) #>> '{checks,final_decisions_over_limit,count}')::integer,
+  3,
+  'three decisions 47 hours ago after three 60 hours ago: six in 24 hours, and the last ones are within the window, so the author is reported'
+);
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000e4', 6, interval '50 hours');
+select is(
+  (app_private.fact_registry_global_checks(null) #>> '{checks,final_decisions_over_limit,count}')::integer,
+  3,
+  'six decisions together 50 hours ago are outside the window: ignored'
+);
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000e5', 6, interval '2 hours');
+select is(
+  (app_private.fact_registry_global_checks(null) #>> '{checks,final_decisions_over_limit,count}')::integer,
+  4,
+  'six decisions together within the window: over the ceiling'
 );
 
 -- Les trois réglages du registre se lisent dans le rapport.

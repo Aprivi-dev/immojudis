@@ -10,7 +10,7 @@
 --   * aucune tâche pg_cron ne nomme une fonction de décision ni le jeton de la requête.
 begin;
 
-select plan(14);
+select plan(15);
 
 -- Un déclencheur ordinaire témoin, posé pour le fichier : il note chaque ligne de auction_sales mise à jour.
 create temporary table probe_log (sale_id uuid) on commit drop;
@@ -84,6 +84,14 @@ select is(
 select is(
   app_private.fact_registry_triggers_not_always(), array[]::text[],
   'after the drift repair too, the triggers of the fact registry are still enabled always'
+);
+select is_empty(
+  $$select before.tgname, before.tgenabled, after.tgenabled
+      from triggers_before before
+      left join pg_trigger after
+        on after.tgrelid = 'public.auction_sales'::regclass and after.tgname = before.tgname
+      where after.tgenabled is distinct from before.tgenabled$$,
+  'and every trigger of auction_sales is back in the mode it had'
 );
 
 -- Les deux fonctions de suspension -------------------------------------------------------------------------------------

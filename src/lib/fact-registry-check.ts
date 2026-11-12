@@ -88,9 +88,22 @@ function hasRoomForRetry(run: FactRegistryCheckRun): boolean {
 /** Erreur de la base qui vaut d'être retentée, d'après son code seul. */
 class RetryableDatabaseError extends Error {}
 
-/** « La fonction n'existe pas » : `PGRST202` (cache du schéma de PostgREST) ou `42883` (PostgreSQL). */
-function isMissingFunctionError(error: { code?: string }): boolean {
-  return error.code === "PGRST202" || error.code === "42883";
+/**
+ * « La fonction appelée par la tâche n'existe pas » : `PGRST202` (cache du schéma de PostgREST), ou `42883`
+ * (PostgreSQL) quand son message nomme cette fonction-là. Un `42883` qui nomme une autre fonction vient de
+ * l'intérieur du contrôle ou de la relance (fonction interne absente, relevée telle quelle depuis le lot R2c) :
+ * c'est une erreur, pas une migration en attente. Le message n'est lu que pour ce nom, jamais recopié.
+ */
+function isMissingFunctionError(
+  error: { code?: string; message?: string },
+  rpcName: string,
+): boolean {
+  if (error.code === "PGRST202") return true;
+  return (
+    error.code === "42883" &&
+    typeof error.message === "string" &&
+    new RegExp(`\\b${rpcName}\\b`).test(error.message)
+  );
 }
 
 function jsonRecord(value: Json | undefined): Record<string, Json | undefined> | null {
@@ -152,7 +165,9 @@ async function runReprojection(startedAt: number): Promise<StepOutcome> {
   for (;;) {
     const { data, error } = await supabaseAdmin.rpc("reproject_fact_registry_drift");
     if (error) {
-      if (passes === 0 && isMissingFunctionError(error)) return { skipped: "migration_pending" };
+      if (passes === 0 && isMissingFunctionError(error, "reproject_fact_registry_drift")) {
+        return { skipped: "migration_pending" };
+      }
       throw databaseError("reprojection", error);
     }
     const report = jsonRecord(data);
@@ -190,7 +205,9 @@ async function runReprojection(startedAt: number): Promise<StepOutcome> {
 async function runCheck(): Promise<StepOutcome> {
   const { data, error } = await supabaseAdmin.rpc("sync_fact_registry_alerts");
   if (error) {
-    if (isMissingFunctionError(error)) return { skipped: "migration_pending" };
+    if (isMissingFunctionError(error, "sync_fact_registry_alerts")) {
+      return { skipped: "migration_pending" };
+    }
     throw databaseError("check", error);
   }
 
