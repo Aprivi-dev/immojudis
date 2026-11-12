@@ -23,8 +23,10 @@ import { decideAdminFactClaimClient, fetchAdminFactClaimDecisions } from "@/lib/
 import {
   FACT_CLAIM_LOT_ATTACHMENTS,
   FACT_CLAIM_REJECT_REASONS,
+  FACT_CLAIM_RESERVED_EVIDENCE_KINDS,
   FACT_CLAIM_WITHDRAW_REASONS,
   factClaimLotAttachmentHolds,
+  isFinalFactClaimAction,
   isFinalFactClaimDecision,
   type FactClaimDecisionAction,
   type FactClaimLotAttachment,
@@ -44,9 +46,7 @@ const ACTION_LABELS: Record<FactClaimDecisionAction, string> = {
 };
 
 const ORIGIN_LABELS: Record<string, string> = {
-  professional_email: "Réponse d’un professionnel par e-mail",
-  professional_form: "Formulaire rempli par un professionnel",
-  admin_entry: "Saisie d’un administrateur",
+  ...FACT_CLAIM_RESERVED_EVIDENCE_KINDS,
   source_listing: "Annonce",
   source_document: "Document de la vente",
   source_record: "Fiche de la source",
@@ -110,6 +110,8 @@ export function AdminFactClaimDecisionPanel() {
         error instanceof Error && error.message
           ? error.message
           : "La décision n’a pas pu être enregistrée.";
+      // Après un refus, la confirmation d’une décision définitive est à redonner.
+      setDraft((current) => (current ? { ...current, finalConfirmed: false } : current));
       setOutcome({ kind: "error", message });
       toast.error(message);
     },
@@ -150,8 +152,8 @@ export function AdminFactClaimDecisionPanel() {
               Observations à décider
             </h2>
             <p className="mt-1 max-w-3xl text-sm text-brand-navy/60">
-              Une observation acceptée remplace la valeur de l’annonce sur la fiche. Une opposition
-              ou un retrait d’autorisation sont définitifs.
+              Une observation acceptée peut remplacer la valeur affichée sur la fiche. Une
+              opposition ou un retrait d’autorisation sont définitifs.
             </p>
           </div>
           <button
@@ -293,9 +295,23 @@ function DecisionLine({
   onSubmit: (input: AdminFactClaimDecisionInput) => void;
 }) {
   const titleId = useId();
+  const articleRef = useRef<HTMLElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const hadDraft = useRef(false);
+  // Le formulaire se ferme (annulation, réussite) : le bouton qui portait le focus disparaît. Le
+  // focus revient au titre de l’observation, sauf si l’administrateur est déjà parti ailleurs.
+  useEffect(() => {
+    const closed = hadDraft.current && !draft;
+    hadDraft.current = draft != null;
+    if (!closed) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || articleRef.current?.contains(active)) {
+      titleRef.current?.focus();
+    }
+  }, [draft]);
   const state = decisionState(item.latestDecision);
   return (
-    <article className="p-5" aria-labelledby={titleId}>
+    <article ref={articleRef} className="p-5" aria-labelledby={titleId}>
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${state.tone}`}
@@ -308,7 +324,7 @@ function DecisionLine({
           </span>
         ) : null}
       </div>
-      <h3 id={titleId} className="mt-2 font-semibold">
+      <h3 id={titleId} ref={titleRef} tabIndex={-1} className="mt-2 font-semibold outline-none">
         {factFieldLabel(item.fieldKey)}
         <span className="font-normal text-brand-navy/60">
           {" · "}
@@ -377,7 +393,9 @@ function DecisionLine({
         </div>
       ) : (
         <p className="mt-4 text-sm text-brand-navy/70">
-          Aucune action possible : cette décision est définitive.
+          {isFinalFactClaimDecision(item.latestDecision)
+            ? "Aucune action possible : cette décision est définitive."
+            : "Aucune action proposée pour cet état."}
         </p>
       )}
 
@@ -415,9 +433,7 @@ function DecisionForm({
   // Le formulaire s’ouvre sous les boutons : le focus y est porté pour le clavier et les lecteurs d’écran.
   useEffect(() => headingRef.current?.focus(), [draft.action]);
 
-  const isFinal =
-    draft.action === "oppose" ||
-    (draft.action === "withdraw" && draft.reasonCode === "authorization_withdrawn");
+  const isFinal = isFinalFactClaimAction(draft.action, draft.reasonCode);
   const input = decisionInput(item, draft);
   const ready = input != null && (!isFinal || draft.finalConfirmed);
 
@@ -472,7 +488,7 @@ function DecisionForm({
           {draft.lotAttachment ? (
             <p className="mt-2 text-xs text-brand-navy/70">
               {factClaimLotAttachmentHolds(draft.lotAttachment)
-                ? "La valeur proposée remplacera celle de l’annonce sur la fiche."
+                ? "Si cette observation l’emporte, sa valeur remplacera celle de la fiche. Le résultat s’affiche après l’enregistrement."
                 : "La décision sera enregistrée, mais la valeur ne sera pas affichée sur la fiche."}
             </p>
           ) : null}
@@ -601,7 +617,7 @@ function successMessage(
     case "reject":
       return "Observation rejetée.";
     case "withdraw":
-      return input.reasonCode === "authorization_withdrawn"
+      return isFinalFactClaimAction(input.action, input.reasonCode)
         ? "Autorisation retirée. Cette décision est définitive."
         : "Observation retirée de la fiche.";
     case "oppose":
@@ -621,8 +637,8 @@ function decisionState(latest: AdminFactClaimDecisionItem["latestDecision"]): {
     return {
       label:
         latest.decision === "opposed"
-          ? "Opposition (définitif)"
-          : "Autorisation retirée (définitif)",
+          ? "Dernière décision : opposition (définitif)"
+          : "Dernière décision : autorisation retirée (définitif)",
       tone: final,
     };
   }
@@ -630,23 +646,25 @@ function decisionState(latest: AdminFactClaimDecisionItem["latestDecision"]): {
     case "accepted":
       return {
         label: factClaimLotAttachmentHolds(latest.lotAttachment as FactClaimLotAttachment)
-          ? "Acceptée"
-          : "Acceptée, non affichée",
+          ? "Dernière décision : acceptée"
+          : "Dernière décision : acceptée, sans affichage",
         tone: "border-success/30 bg-success-tint text-success",
       };
     case "rejected":
-      return { label: "Rejetée", tone: neutral };
+      return { label: "Dernière décision : rejetée", tone: neutral };
     case "withdrawn":
-      return { label: "Retirée", tone: neutral };
+      return { label: "Dernière décision : retirée", tone: neutral };
     case "contradicted":
-      return { label: "Contredite par une autre source", tone: final };
+      return { label: "Dernière décision : contredite par une autre source", tone: final };
     default:
       return { label: "État inconnu", tone: neutral };
   }
 }
 
 function displayValue(fieldKey: string, value: unknown): string {
-  if (value == null || value === "") return "Non renseignée";
+  // Absente de la réponse : le champ n’a pas de colonne connue, la fiche n’a pas été lue.
+  if (value === undefined) return "Non comparée ici";
+  if (value === null || value === "") return "Non renseignée";
   if (fieldKey === "property.occupancy_status" && typeof value === "string") {
     return OCCUPANCY_LABELS[value] ?? value;
   }
