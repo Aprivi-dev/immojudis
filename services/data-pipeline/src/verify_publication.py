@@ -24,6 +24,7 @@ def main() -> int:
         raise RuntimeError("Cannot hydrate verification sale")
     try:
         # La transaction est toujours annulée : la portée jette ce que ces écritures ont noté pour la garde d'écho.
+        # Sans elle rien ne serait noté non plus, mais chaque écriture journaliserait une écriture hors portée.
         with base_reads.written_scope(), storage.connect(str(settings["supabase_db_url"])) as connection:
             connection.execute("set local lock_timeout='10s'")
             connection.execute("set local statement_timeout='60s'")

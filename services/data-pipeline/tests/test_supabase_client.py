@@ -1496,7 +1496,7 @@ def test_upsert_sales_can_preserve_last_seen_during_recompute(monkeypatch) -> No
     monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args: None)
 
     monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _: nullcontext(SimpleNamespace(execute=lambda *args: SimpleNamespace(fetchone=lambda: (sale.updated_at,)))))
-    monkeypatch.setattr(supabase_client, "_transaction_write", lambda table, payload, conflict, **_kwargs: captured.setdefault("payload", payload))
+    monkeypatch.setattr(supabase_client, "_transaction_write", lambda table, payload, conflict, **_kwargs: captured.setdefault("payload", payload) and [])
     assert supabase_client.upsert_sales_to_supabase([sale], refresh_last_seen=False) == 1
 
     payload = captured["payload"]

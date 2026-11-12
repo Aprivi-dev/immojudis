@@ -150,6 +150,7 @@ def test_a_run_reads_the_base_then_publishes_without_echo_and_reports_the_counte
     main._apply_admission_and_reports(run)
     run.app_ready[0].investment_summary = "Synthèse ajoutée après la publication anticipée."
     assert run.app_ready[0].land_surface_m2 == 800
+    monkeypatch.setattr(main, "BASE_ECHO_SAMPLE_SIZE", 3)
     base.move(url, land_surface_m2=None)  # un second retrait, après la publication anticipée
     main._publish_run(run)
 
@@ -161,12 +162,11 @@ def test_a_run_reads_the_base_then_publishes_without_echo_and_reports_the_counte
     (_run_id, status, summary, _errors), = finished
     assert status == "succeeded"
     assert summary["timings"]["base_echo_suppressed"] == 4
-    # Le résumé nomme les couples (vente, groupe), sans valeur, dans la limite prévue.
+    # Le résumé nomme les couples (vente, groupe), sans valeur, et pas plus que la limite du passage (ici 3 sur 4).
     sale_id = str(base.rows[url]["id"])
     assert summary["base_echo_suppressed_sample"] == [
-        {"sale_id": sale_id, "group": group} for group in ("land", "occupancy", "rooms", "surface")
+        {"sale_id": sale_id, "group": group} for group in ("land", "occupancy", "rooms")
     ]
-    assert main.BASE_ECHO_SAMPLE_SIZE == 50
 
 
 def test_the_echo_counter_is_reported_as_zero_when_nothing_was_suppressed(monkeypatch) -> None:

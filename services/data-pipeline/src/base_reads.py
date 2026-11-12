@@ -14,9 +14,13 @@ Trois conditions, par groupe :
 1. la base a bougé : sous le verrou de publication, la ligne n'est plus dans l'état de référence (première lecture
    du passage, puis ce que la base a gardé de chaque écriture validée de ce processus) ;
 2. la vente sortante n'apporte rien : chaque colonne de valeur est vide ou égale à une valeur lue en base, et l'une
-   au moins n'est pas vide ;
-3. la source ne vient pas de publier cette valeur : une fiche réellement relue dont l'instantané porte la valeur
-   n'est jamais un écho, même si la base a déjà rendu la même valeur.
+   au moins n'est pas vide. Pour une fiche non relue, une valeur lue dans une colonne voisine suffit (la surface
+   affichée se déduit de l'habitable, de la Carrez ou du terrain) ; pour une fiche réellement relue, seule compte
+   la valeur lue dans la même colonne ;
+3. la source ne vient pas de publier cette valeur : une fiche réellement relue dont la lecture par la règle de la
+   collecte (``pdf_fact_scope._pdf_source_reader`` : instantané et contexte, relus par ``normalize_sale``) donne
+   la valeur n'est jamais un écho, même si la base a déjà rendu la même valeur. La valeur peut donc venir d'une
+   clé de l'instantané comme du texte de la page.
 
 Une valeur sortante vide n'est jamais remplacée : un garde-fou de normalisation doit pouvoir vider une valeur. Quand
 la base n'a pas bougé, ``suppress_echo`` rend la vente telle quelle : l'écriture est celle d'avant ce module.
@@ -24,6 +28,9 @@ la base n'a pas bougé, ``suppress_echo`` rend la vente telle quelle : l'écritu
 Seule une lecture sous verrou dit si la base a bougé. Une lecture sans verrou peut être notée après une écriture
 qu'elle n'a pas vue (deux fils, publication progressive) : elle alimente les valeurs lues et ne pose l'état de
 référence que s'il n'existe pas encore.
+
+Le compteur (``suppressed_count``) est alimenté à la fusion, avant l'écriture : si la transaction est ensuite
+annulée et jamais rejouée, le couple reste compté. Il peut donc surestimer, jamais sous-estimer.
 
 Ce module ne sait pas pourquoi la base a bougé et ne lit rien d'autre que les colonnes et clés ci-dessous.
 """
@@ -104,18 +111,22 @@ class _RowReads:
     last: dict[str, tuple[Any, ...]] = field(default_factory=dict)
     # Groupes que la base a changés pendant le passage, hors écritures de ce processus.
     moved: set[str] = field(default_factory=set)
-    # Valeurs lues en base pendant le passage, par groupe.
-    values: dict[str, set[Any]] = field(default_factory=dict)
+    # Valeurs lues en base pendant le passage, par groupe puis par colonne de la famille.
+    values: dict[str, dict[str, set[Any]]] = field(default_factory=dict)
 
 
 _LOCK = threading.Lock()
 _ROWS: dict[str, _RowReads] = {}
 _SUPPRESSED: set[tuple[str, str]] = set()
-# Écritures en attente dans la transaction en cours de ce fil (voir ``written_scope``) : par ligne et par groupe, ce
-# que la base en a gardé. Elles ne sont dans la mémoire partagée qu'une fois la transaction validée : un autre fil
-# qui annule la sienne ne peut pas les jeter.
+# Écritures en attente d'une transaction (voir ``written_scope``) : par ligne et par groupe, ce que la base en a
+# gardé. Chaque transaction a les siennes : celle qui annule ne jette pas celles d'une autre.
 _Staged = dict[str, dict[str, tuple[Any, ...]]]
+# La portée du fil courant, où ``stage_written`` note.
 _WRITTEN_SCOPE: ContextVar[_Staged | None] = ContextVar("base_reads_written_scope", default=None)
+# Toutes les portées ouvertes, lues sous ``_LOCK`` par ``note_locked`` : entre la validation en base d'une
+# transaction et la sortie de sa portée, un autre fil peut relire sous verrou ce qu'elle vient d'écrire. Ce n'est
+# pas un mouvement de la base.
+_OPEN_SCOPES: list[_Staged] = []
 
 # Clé technique d'une vente brute, jamais écrite en base : les champs qu'un collecteur a repris de la ligne stockée
 # parce que la page de la source ne les donnait pas (Vench, page restreinte ou pauvre). Ces champs ne sont pas ce
@@ -201,10 +212,10 @@ def _state(source: Any, group: EchoGroup) -> tuple[Any, ...]:
 
 
 def _add_values(reads: _RowReads, group: EchoGroup, row: Mapping[str, Any]) -> None:
-    values = reads.values.setdefault(group.name, set())
+    values = reads.values.setdefault(group.name, {})
     for column in group.family:
         if column in row and (value := _canonical(row[column])) is not None:
-            values.add(value)
+            values.setdefault(column, set()).add(value)
 
 
 def note(row: Mapping[str, Any]) -> None:
@@ -231,21 +242,22 @@ def note_locked(row: Mapping[str, Any]) -> None:
 
     Un groupe qui n'est plus dans son état de référence a été changé par un autre écrivain. Il reste marqué jusqu'à
     la fin du passage, car une copie de l'ancienne valeur peut encore se trouver dans une vente en mémoire. Un
-    groupe relu dans l'état que cette transaction vient d'écrire ne dit rien : ni mouvement, ni nouvelle référence
-    (c'est la validation de la transaction qui la posera).
+    groupe relu dans l'état qu'une transaction de ce processus vient d'écrire (la sienne, ou celle d'un autre fil
+    dont la portée n'est pas encore refermée) ne dit rien : ni mouvement, ni nouvelle référence (c'est la sortie
+    de cette portée qui la posera, ou non).
     """
     row_id = row.get("id")
     if not row_id:
         return
-    staged = (_WRITTEN_SCOPE.get() or {}).get(str(row_id), {})
     with _LOCK:
         reads = _ROWS.setdefault(str(row_id), _RowReads())
+        staged = [scope[str(row_id)] for scope in _OPEN_SCOPES if str(row_id) in scope]
         for group in GROUPS:
             _add_values(reads, group, row)
             if not all(column in row for column in group.columns):
                 continue
             state = _state(row, group)
-            if state == staged.get(group.name):
+            if any(state == states.get(group.name) for states in staged):
                 continue
             if group.name in reads.last and reads.last[group.name] != state:
                 reads.moved.add(group.name)
@@ -266,14 +278,15 @@ def stage_written(rows: Iterable[Mapping[str, Any]]) -> None:
     if scope is None:
         LOGGER.warning("Sale write noted outside any written scope; echo reference left unchanged")
         return
-    for row in rows:
-        row_id = row.get("id")
-        if not row_id:
-            continue
-        staged = scope.setdefault(str(row_id), {})
-        for group in GROUPS:
-            if all(column in row for column in group.columns):
-                staged[group.name] = _state(row, group)
+    with _LOCK:  # ``note_locked`` d'un autre fil lit cette portée
+        for row in rows:
+            row_id = row.get("id")
+            if not row_id:
+                continue
+            staged = scope.setdefault(str(row_id), {})
+            for group in GROUPS:
+                if all(column in row for column in group.columns):
+                    staged[group.name] = _state(row, group)
 
 
 @contextmanager
@@ -283,57 +296,51 @@ def written_scope() -> Iterator[None]:
     Sortie sans erreur (la transaction est validée) : ce que la base a gardé des lignes notées par ``stage_written``
     devient leur état de référence. Sortie par une erreur (la transaction est annulée) : ces notes sont jetées, la
     référence ne change pas. Une écriture faite dans la transaction d'un autre (appel imbriqué) ne décide de rien :
-    elle est notée dans la portée de celui qui valide ou annule.
+    elle est notée dans la portée de celui qui valide ou annule. Une portée ouverte dans une autre lui verse ses
+    notes à la sortie au lieu de les confirmer.
     """
+    outer = _WRITTEN_SCOPE.get()
     staged: _Staged = {}
     token = _WRITTEN_SCOPE.set(staged)
+    with _LOCK:
+        _OPEN_SCOPES.append(staged)
+    committed = False
     try:
         yield
+        committed = True
     finally:
         _WRITTEN_SCOPE.reset(token)
-    # Atteint seulement à la sortie sans erreur : une transaction annulée ne laisse rien.
-    with _LOCK:
-        for row_id, states in staged.items():
-            _ROWS.setdefault(row_id, _RowReads()).last.update(states)
+        with _LOCK:
+            _OPEN_SCOPES[:] = [scope for scope in _OPEN_SCOPES if scope is not staged]
+            if committed:
+                for row_id, states in staged.items():
+                    if outer is not None:
+                        # Portée imbriquée : celle qui l'entoure valide ou annule, c'est elle qui confirmera.
+                        outer.setdefault(row_id, {}).update(states)
+                    else:
+                        _ROWS.setdefault(row_id, _RowReads()).last.update(states)
 
 
-def _source_value(column: str, snapshot: Mapping[str, Any], payload: Mapping[str, Any]) -> Any:
-    """Valeur comparable d'un champ que la source a publié, lue par la règle de la normalisation.
+def _published_by_source(source: Any, group: EchoGroup, outgoing: list[Any]) -> bool:
+    """Vrai si la fiche a été réellement relue et que sa lecture donne chaque valeur sortante du groupe.
 
-    Les visites se lisent comme ``normalize_sale`` les lit : dans le champ de l'instantané, à défaut dans les blocs
-    de la source que porte la vente brute relue (« visites », « date de visite »), puis nettoyées une à une.
+    ``source`` porte le ``raw_payload`` de la fiche (et, s'il les a, titre et drapeaux). « Ce que la source
+    publie » se lit par la seule règle qui le dise, celle de la restauration des pièces : l'instantané et son
+    contexte relus par ``normalize_sale``. Une valeur que la collecte a lue dans le texte de la page y est donc,
+    comme celle d'une clé de l'instantané. Limite de cette règle : pour une annonce Licitor à plusieurs lots dont
+    le lot n'est plus désigné, seule la clé de l'instantané est lue.
     """
-    if column == "visit_dates":
-        from src.normalize import source_visit_dates
-
-        return _canonical(source_visit_dates({column: snapshot.get(column), "source_blocks": payload.get("source_blocks")}))
-    raw = snapshot.get(column)
-    if _canonical(raw) is None:
-        return None
-    if column == "occupancy_status":
-        from src.normalize import normalize_occupancy_status
-
-        return _canonical(normalize_occupancy_status(raw))
-    if isinstance(raw, (int, float, Decimal)) and not isinstance(raw, bool):
-        return _canonical(raw)
-    if column == "rooms_count":
-        from src.room_counts import parse_rooms_count
-
-        return _canonical(parse_rooms_count(raw))
-    from src.normalize import parse_surface
-
-    return _canonical(parse_surface(raw))
-
-
-def _published_by_source(payload: Any, group: EchoGroup, outgoing: list[Any]) -> bool:
-    """Vrai si la fiche a été réellement relue et que son instantané porte chaque valeur sortante du groupe."""
+    payload = getattr(source, "raw_payload", None)
     if not was_reread(payload):
         return False
     snapshot = payload.get(SOURCE_SNAPSHOT_KEY)
-    if not isinstance(snapshot, Mapping):
+    if not isinstance(snapshot, dict):
         return False
-    published = {_source_value(column, snapshot, payload) for column in group.family} - {None}
-    return all(value is None or value in published for value in outgoing)
+    from src.pdf_fact_scope import _pdf_source_reader  # import tardif : ce module-là importe celui-ci
+
+    read_source = _pdf_source_reader(source, snapshot)
+    published = {_canonical(read_source(column)) for column in group.family} - {None}
+    return all(value in published for value in outgoing)
 
 
 def _snapshot_carries(payload: Any, column: str) -> bool:
@@ -349,12 +356,19 @@ def _columns_to_take(group: EchoGroup, payload: Any) -> tuple[str, ...]:
     return (*group.columns, *(column for column in group.satellites if not _snapshot_carries(payload, column)))
 
 
-def _is_echo(group: EchoGroup, outgoing: list[Any], read_values: set[Any], payload: Any) -> bool:
-    if all(value is None for value in outgoing):
+def _is_echo(group: EchoGroup, outgoing: dict[str, Any], read: Mapping[str, set[Any]], source: Any) -> bool:
+    """``outgoing`` : valeur sortante par colonne de valeur ; ``read`` : valeurs lues en base par colonne."""
+    values = [value for value in outgoing.values() if value is not None]
+    if not values:
         return False
-    if any(value is not None and value not in read_values for value in outgoing):
-        return False
-    return not _published_by_source(payload, group, outgoing)
+    if was_reread(getattr(source, "raw_payload", None)):
+        # Fiche relue : la valeur peut venir de la page. Elle n'est une relecture que si la base portait cette
+        # valeur dans cette colonne même ; un terrain de 65 m² lu en base ne dit rien d'une surface de 65 m².
+        reread_only = all(value is None or value in read.get(column, ()) for column, value in outgoing.items())
+    else:
+        family = set().union(*read.values())
+        reread_only = all(value in family for value in values)
+    return reread_only and not _published_by_source(source, group, values)
 
 
 def _jsonable(value: Any) -> Any:
@@ -405,13 +419,15 @@ def suppress_echo(existing: Any, incoming: Any) -> Any:
         if reads is None or not reads.moved:
             return incoming
         moved = set(reads.moved)
-        read_values = {name: set(values) for name, values in reads.values.items()}
+        read_values = {
+            name: {column: set(values) for column, values in columns.items()} for name, columns in reads.values.items()
+        }
     result = incoming
     for group in GROUPS:
         if group.name not in moved:
             continue
-        outgoing = [_canonical(getattr(incoming, column)) for column in group.value_columns]
-        if not _is_echo(group, outgoing, read_values.get(group.name, set()), getattr(incoming, "raw_payload", None)):
+        outgoing = {column: _canonical(getattr(incoming, column)) for column in group.value_columns}
+        if not _is_echo(group, outgoing, read_values.get(group.name, {}), incoming):
             continue
         if _state(existing, group) == _state(incoming, group):
             continue
@@ -425,7 +441,7 @@ def suppress_echo(existing: Any, incoming: Any) -> Any:
             value = getattr(existing, column)
             setattr(result, column, list(value) if isinstance(value, list) else value)
         _take_traces(result.raw_payload, getattr(existing, "raw_payload", None), group, taken)
-        if outgoing != [_canonical(getattr(existing, column)) for column in group.value_columns]:
+        if outgoing != {column: _canonical(getattr(existing, column)) for column in group.value_columns}:
             with _LOCK:
                 _SUPPRESSED.add((str(row_id), group.name))
             LOGGER.info("Base echo suppressed sale_id=%s group=%s", row_id, group.name)
@@ -452,9 +468,9 @@ def align_copies(result: Any, submitted: Any, guarded: Any) -> None:
         stale = {_canonical(getattr(submitted, column)) for column in group.value_columns} - {None}
         if not stale:
             continue
-        result.raw_payload = _aligned_copy(result.raw_payload, group, stale, result)
+        result.raw_payload = _aligned_copy(result, group, stale, result)
         result.observations = [
-            {**item, "raw_payload": _aligned_copy(item["raw_payload"], group, stale, result)}
+            {**item, "raw_payload": _aligned_copy(_ObservedSource(item), group, stale, result)}
             if _is_observation_of(item, submitted) and isinstance(item.get("raw_payload"), dict)
             else item
             for item in result.observations or []
@@ -470,10 +486,33 @@ def _is_observation_of(item: Any, sale: Any) -> bool:
     )
 
 
-def _aligned_copy(payload: dict[str, Any], group: EchoGroup, stale: set[Any], result: Any) -> dict[str, Any]:
-    """``payload``, ou une copie dont les clés du groupe prennent les valeurs de ``result`` (jamais modifié en place)."""
-    copied = [_canonical(payload.get(column)) for column in group.value_columns]
-    if not _is_echo(group, copied, stale, payload):
+@dataclass(frozen=True)
+class _ObservedSource:
+    """Une observation embarquée, vue comme la fiche d'une source : ce que ``_published_by_source`` lit."""
+
+    item: Mapping[str, Any]
+
+    @property
+    def raw_payload(self) -> Any:
+        return self.item.get("raw_payload")
+
+    @property
+    def source_name(self) -> Any:
+        return self.item.get("source_name")
+
+    @property
+    def source_url(self) -> Any:
+        return self.item.get("source_url")
+
+
+def _aligned_copy(source: Any, group: EchoGroup, stale: set[Any], result: Any) -> dict[str, Any]:
+    """Le ``raw_payload`` de ``source``, ou une copie dont les clés du groupe prennent les valeurs de ``result``.
+
+    ``source`` est la fiche qui porte la copie : la ligne écrite, ou une observation. Jamais modifiée en place.
+    """
+    payload = source.raw_payload
+    copied = {column: _canonical(payload.get(column)) for column in group.value_columns}
+    if not _is_echo(group, copied, {column: stale for column in group.value_columns}, source):
         return payload
     taken = _columns_to_take(group, payload)
     return {**payload, **{column: _jsonable(getattr(result, column)) for column in taken if column in payload}}
