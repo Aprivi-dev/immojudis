@@ -13,8 +13,16 @@ import { nullableRpcArg } from "@/lib/rpc-args";
 /** Waits between attempts when the database or the network is briefly unreachable. */
 export const DEFAULT_RETRY_DELAYS_MS = [5_000, 20_000, 60_000];
 
+/**
+ * Panne passagère dont le message ne le dit plus : une tâche qui remplace le message d'origine par un
+ * texte sans donnée (il est recopié dans `operational_job_runs.error_message`) la classe avant, et la
+ * lève sous ce type pour garder la reprise.
+ */
+export class TransientJobError extends Error {}
+
 /** True for network blips and gateway errors that are worth retrying. */
 export function isTransientError(error: unknown): boolean {
+  if (error instanceof TransientJobError) return true;
   const message = operationalErrorMessage(error).toLowerCase();
   return (
     /\b(502|503|504|520|521|522|523|524|429)\b/.test(message) ||
