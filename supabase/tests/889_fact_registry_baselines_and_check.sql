@@ -177,6 +177,14 @@ from generate_series(1, 3) n;
 execute decide('21', 'withdrawn');
 select app_private.project_sale_fields('88900000-1000-4000-8000-000000000002', null, true) ->> 'changed';
 
+-- Statistiques des tables chargées : sans elles, si un VACUUM automatique lit le journal pendant le test, le
+-- planificateur croit les tables vides et le test passe de quelques dizaines de secondes à plus de dix minutes.
+-- ANALYZE est permis dans une transaction, au propriétaire des tables (pas besoin d'un superutilisateur).
+analyze public.auction_sales;
+analyze public.auction_fact_claims;
+analyze public.auction_fact_claim_decisions;
+analyze public.auction_sale_field_hold_events;
+
 -- L'état de départ du test : la file ne garde que les évènements de ce fichier (les autres tests n'en laissent pas).
 create temporary table check_reports (step text primary key, report jsonb) on commit drop;
 grant select, insert on check_reports to service_role;
@@ -649,6 +657,11 @@ from unnest(array['6', '7', '8', '9', 'a', 'b', 'c', 'f']) n;
 execute decide('f2', 'withdrawn');
 select app_private.project_sale_fields('88900000-1000-4000-8000-00000000000f', null, true) ->> 'changed';
 
+analyze public.auction_sales;
+analyze public.auction_fact_claims;
+analyze public.auction_fact_claim_decisions;
+analyze public.auction_sale_field_hold_events;
+
 set local role service_role;
 insert into check_reports select 'sound again', public.check_fact_registry_consistency();
 reset role;
@@ -944,6 +957,11 @@ select claim.id, claim.auction_sale_id, claim.field_key, 'accepted', 'single_lot
 from public.auction_fact_claims claim
 where claim.id::text like '88900000-2000-4000-8000-0000000001%';
 
+analyze public.auction_sales;
+analyze public.auction_fact_claims;
+analyze public.auction_fact_claim_decisions;
+analyze public.auction_sale_field_hold_events;
+
 select results_eq(
   $$select (bounded.report ->> 'truncated')::boolean,
            (bounded.report #>> '{checks,projection_drift,count}')::integer >= 21,
@@ -1046,6 +1064,11 @@ select claim.id, claim.auction_sale_id, claim.field_key, 'accepted', 'single_lot
   '88900000-0000-4000-8000-0000000000a1', 'source_lawyer', '2026-11-01 09:00:00+00'
 from public.auction_fact_claims claim
 where claim.id::text like '88900000-2000-4000-8000-00000002%';
+
+analyze public.auction_sales;
+analyze public.auction_fact_claims;
+analyze public.auction_fact_claim_decisions;
+analyze public.auction_sale_field_hold_events;
 
 set local role service_role;
 insert into check_reports select 'two pages', public.sync_fact_registry_alerts();
