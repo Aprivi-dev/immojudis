@@ -187,12 +187,71 @@ def test_surface_derived_from_the_habitable_surface_read_in_base_is_an_echo() ->
     posed = {key: POSED[key] for key in SURFACE}
     locked(**posed, habitable_surface_m2=50.0)
     existing = sale(**posed)
-    outgoing = sale(surface_m2=None, app_surface_m2=50, app_surface_kind="habitable", surface_source=None,
-                    surface_confidence=None)
+    outgoing = sale({"_known_unchanged": True}, surface_m2=None, app_surface_m2=50, app_surface_kind="habitable",
+                    surface_source=None, surface_confidence=None)
 
     result = base_reads.suppress_echo(existing, outgoing)
 
     assert surface(result) == surface(existing)
+
+
+TEXT_SNAPSHOT = {"source_name": "licitor", "source_url": URL, "title": "Une maison"}
+
+
+def test_a_new_surface_of_a_reread_listing_equal_to_the_land_read_in_base_is_written() -> None:
+    """La source change vraiment : 65 m², lus dans le texte de sa page. La base portait un terrain de 65 m².
+
+    Un faux écho figerait l'ancienne surface (120 m²) : pour une fiche relue, une valeur lue dans une autre colonne
+    ne prouve rien.
+    """
+    held = {"surface_m2": 120, "app_surface_m2": 120, "land_surface_m2": 65}
+    read(**held)
+    locked(**held, surface_confidence=0.9)  # un autre écrivain change un libellé
+    snapshot = {**TEXT_SNAPSHOT, "surface_m2": None, "description": "Une maison d'habitation de 65 m²."}
+    incoming = sale({"source_factual_snapshot": snapshot}, surface_m2=65, app_surface_m2=65, land_surface_m2=65)
+
+    result = base_reads.suppress_echo(sale(**held, surface_confidence=0.9), incoming)
+
+    assert result is incoming and base_reads.suppressed_count() == 0
+
+
+def test_the_same_new_surface_is_written_when_the_snapshot_key_carries_it() -> None:
+    held = {"surface_m2": 120, "app_surface_m2": 120, "land_surface_m2": 65}
+    read(**held)
+    locked(**held, surface_confidence=0.9)
+    incoming = sale({"source_factual_snapshot": {**TEXT_SNAPSHOT, "surface_m2": "65 m²"}},
+                    surface_m2=65, app_surface_m2=65, land_surface_m2=65)
+
+    assert base_reads.suppress_echo(sale(**held, surface_confidence=0.9), incoming) is incoming
+
+
+def test_an_occupancy_the_reread_listing_states_in_its_text_is_written() -> None:
+    """La base est passée par « vacant » puis « unknown » pendant le passage ; la page dit le bien libre, dans son texte."""
+    read()
+    locked(occupancy_status="vacant")
+    locked(occupancy_status="unknown")
+    snapshot = {**TEXT_SNAPSHOT, "occupancy_status": None, "description": "Bien libre de toute occupation."}
+    incoming = sale({"source_factual_snapshot": snapshot}, occupancy_status="vacant")
+
+    result = base_reads.suppress_echo(sale(occupancy_status="unknown"), incoming)
+
+    assert result.occupancy_status == "vacant" and base_reads.suppressed_count() == 0
+
+
+def test_a_room_count_the_reread_listing_states_in_its_text_is_written_even_if_the_base_showed_it_for_a_moment() -> None:
+    """Le mouvement est collant : la base a porté 3 un instant, puis 5. La page relue dit 3 pièces, dans son texte."""
+    read()
+    locked(rooms_count=3)
+    locked(rooms_count=5)
+    snapshot = {**TEXT_SNAPSHOT, "rooms_count": None, "description": "Une maison d'habitation de 3 pièces."}
+    incoming = sale({"source_factual_snapshot": snapshot}, rooms_count=3)
+
+    assert base_reads.suppress_echo(sale(rooms_count=5), incoming).rooms_count == 3
+
+    # Témoin : la page relue ne dit rien des pièces ; le 3 en mémoire n'est qu'une relecture, la base garde 5.
+    silent = sale({"source_factual_snapshot": {**TEXT_SNAPSHOT, "rooms_count": None, "description": "Une maison."}},
+                  rooms_count=3)
+    assert base_reads.suppress_echo(sale(rooms_count=5), silent).rooms_count == 5
 
 
 def test_surface_group_is_taken_whole_with_its_three_labels() -> None:
@@ -401,19 +460,64 @@ def test_a_validated_write_followed_by_a_rolled_back_one_is_still_the_reference(
     assert base_reads.moved_groups(SALE_ID) == frozenset()
 
 
-def test_a_committed_write_read_back_before_its_confirmation_is_not_a_move() -> None:
-    """Un autre fil relit la ligne juste après la validation, avant que le premier soit sorti de sa portée."""
+def test_a_locked_read_of_its_own_write_inside_the_scope_is_not_a_move() -> None:
+    """Le même fil relit sous verrou, dans sa transaction, la ligne qu'il vient d'écrire."""
     read()
     locked()
     with base_reads.written_scope():
         base_reads.stage_written([row(app_surface_kind="built")])
-        locked(app_surface_kind="built")  # l'autre fil, entre la validation et la confirmation
+        locked(app_surface_kind="built")
     locked(app_surface_kind="built")
 
     assert base_reads.moved_groups(SALE_ID) == frozenset()
 
 
-def test_a_write_noted_in_the_transaction_of_another_waits_for_its_owner() -> None:
+def test_another_thread_reading_a_committed_write_before_its_scope_closes_sees_no_move() -> None:
+    """Entre la validation en base du fil A et la sortie de sa portée, le fil B relit la ligne sous verrou."""
+    import threading
+
+    read()
+    locked()
+    errors: list[BaseException] = []
+
+    def thread_b() -> None:
+        try:
+            locked(app_surface_kind="built")
+        except BaseException as exc:  # remonté au fil principal par la liste
+            errors.append(exc)
+
+    with base_reads.written_scope():
+        base_reads.stage_written([row(app_surface_kind="built")])
+        worker = threading.Thread(target=thread_b)
+        worker.start()
+        worker.join()
+    assert errors == []
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+    locked(app_surface_kind="built")
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+    locked(app_surface_kind="carrez")  # la portée est refermée : un autre écrivain, donc un mouvement
+    assert base_reads.moved_groups(SALE_ID) == {"surface"}
+
+
+def test_a_scope_opened_inside_another_leaves_the_decision_to_the_outer_one() -> None:
+    """Portées imbriquées : l'intérieure sort sans erreur, l'extérieure annule. Rien n'est confirmé."""
+    read(occupancy_status="occupied")
+    with pytest.raises(RuntimeError, match="annulée"), base_reads.written_scope():
+        with base_reads.written_scope():
+            base_reads.stage_written([row(occupancy_status="rented")])
+        raise RuntimeError("transaction externe annulée")
+    locked(occupancy_status="occupied")  # la base n'a pas bougé
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+    with base_reads.written_scope():
+        with base_reads.written_scope():
+            base_reads.stage_written([row(occupancy_status="rented")])
+    locked(occupancy_status="rented")  # cette fois l'extérieure a validé : c'est la référence
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+
+def test_a_write_noted_outside_any_scope_leaves_the_reference_unchanged() -> None:
     """Écriture imbriquée : tant que celui qui tient la transaction n'a ni validé ni annulé, la référence ne bouge pas.
 
     Une lecture sous verrou tranche alors : elle reconnaît l'écriture si elle la relit, sinon elle l'oublie, et un
@@ -858,15 +962,19 @@ def test_the_guard_names_no_registry_object() -> None:
         {"source_factual_snapshot": {"visit_dates": ["  Lundi 8 mars\xa02027   de 14h à 15h "]}},
         # Les visites ne sont pas dans le champ mais dans un bloc de la source, sous un autre nom de clé.
         {"source_factual_snapshot": {"visit_dates": None}, "source_blocks": {"visites": "Lundi 8 mars 2027 de 14h à 15h"}},
-        {"source_factual_snapshot": {}, "source_blocks": {"detail": {"Date de visite": "Lundi 8 mars 2027 de 14h à 15h"}}},
+        {"source_factual_snapshot": {"visit_dates": []},
+         "source_blocks": {"detail": {"Date de visite": "Lundi 8 mars 2027 de 14h à 15h"}}},
     ],
     ids=["stray_spaces", "alias_visites", "alias_date_de_visite"],
 )
 def test_visits_the_reread_listing_publishes_are_read_as_normalisation_reads_them(published) -> None:
     """Condition 3 pour les visites : la valeur de la source se lit par la règle de la normalisation, alias compris."""
-    from src.normalize import source_visit_dates
+    from src.normalize import normalize_sale
 
-    written = source_visit_dates({**published["source_factual_snapshot"], "source_blocks": published.get("source_blocks")})
+    written = normalize_sale({
+        "source_name": "licitor", "source_url": URL, **published["source_factual_snapshot"],
+        "source_blocks": published.get("source_blocks"),
+    }).visit_dates
     assert written == ["Lundi 8 mars 2027 de 14h à 15h"]
     read(visit_dates=written)
     locked(visit_dates=["Mardi 9 mars 2027 à 10h"])  # un autre écrivain a changé les visites
@@ -891,33 +999,34 @@ def test_a_new_surface_next_to_a_reread_one_is_not_an_echo() -> None:
     assert (SALE_ID, "surface") not in {(item["sale_id"], item["group"]) for item in base_reads.suppressed_sample(50)}
 
 
-def test_a_write_validated_by_one_thread_survives_the_rollback_of_another() -> None:
-    """Le fil A écrit et valide ; entre son écriture et sa confirmation, le fil B écrit la même ligne puis annule.
-
-    Les notes en attente sont celles de la transaction qui les a faites : l'annulation de B ne jette pas celles de A.
-    """
+def test_interleaved_scopes_of_two_threads_do_not_share_their_pending_writes() -> None:
+    """Le fil B ouvre sa portée, le fil A écrit pendant qu'elle est ouverte, B annule, A valide."""
     import threading
 
     read(occupancy_status="occupied")
+    b_opened, a_staged = threading.Event(), threading.Event()
     errors: list[BaseException] = []
 
     def thread_b() -> None:
         try:
-            rolled_back(occupancy_status="vacant")
-        except BaseException as exc:  # remonté au fil principal par la liste, jamais avalé
+            with pytest.raises(RuntimeError, match="annulée"), base_reads.written_scope():
+                b_opened.set()
+                assert a_staged.wait(5)
+                raise RuntimeError("transaction de B annulée")
+        except BaseException as exc:  # remonté au fil principal par la liste
             errors.append(exc)
 
+    worker = threading.Thread(target=thread_b)
     with base_reads.written_scope():
-        base_reads.stage_written([row(occupancy_status="rented")])
-        worker = threading.Thread(target=thread_b)
         worker.start()
+        assert b_opened.wait(5)
+        base_reads.stage_written([row(occupancy_status="rented")])  # A écrit pendant que B est ouvert
+        a_staged.set()
         worker.join()
     assert errors == []
 
-    locked(occupancy_status="rented")  # ce que A a validé : pas un mouvement
+    locked(occupancy_status="rented")  # ce que A a validé
     assert base_reads.moved_groups(SALE_ID) == frozenset()
-    locked(occupancy_status="vacant")  # ce que B avait écrit puis annulé : un autre écrivain, donc un mouvement
-    assert base_reads.moved_groups(SALE_ID) == {"occupancy"}
 
 
 def test_a_locked_read_of_its_own_uncommitted_write_is_not_a_reference_if_the_transaction_fails() -> None:
@@ -966,3 +1075,49 @@ def test_the_sample_names_the_withheld_pairs_without_any_value() -> None:
     assert base_reads.suppressed_count() == 4
     assert base_reads.suppressed_sample(2) == [{"sale_id": SALE_ID, "group": "land"}, {"sale_id": SALE_ID, "group": "occupancy"}]
     assert len(base_reads.suppressed_sample(50)) == 4
+
+
+def test_a_scope_opened_by_another_thread_first_does_not_receive_the_writes_of_this_one() -> None:
+    """Même entrelacement, dans l'autre ordre : B ouvre sa portée avant A, A écrit et valide, B annule ensuite."""
+    import threading
+
+    read(occupancy_status="occupied")
+    b_opened, a_done = threading.Event(), threading.Event()
+    errors: list[BaseException] = []
+
+    def thread_b() -> None:
+        try:
+            with pytest.raises(RuntimeError, match="annulée"), base_reads.written_scope():
+                b_opened.set()
+                assert a_done.wait(5)
+                raise RuntimeError("transaction de B annulée")
+        except BaseException as exc:  # remonté au fil principal par la liste
+            errors.append(exc)
+
+    worker = threading.Thread(target=thread_b)
+    worker.start()
+    assert b_opened.wait(5)
+    with base_reads.written_scope():
+        base_reads.stage_written([row(occupancy_status="rented")])
+    a_done.set()
+    worker.join()
+    assert errors == []
+
+    locked(occupancy_status="rented")  # ce que A a validé
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+
+def test_a_reread_listing_is_only_compared_with_what_the_base_held_in_the_same_column() -> None:
+    """La lecture de la source ne retrouve pas la valeur (rien dans l'instantané ni dans son texte) : reste la règle
+    de la colonne. La base portait 65 m² de terrain, jamais 65 m² de surface : ce n'est pas une relecture."""
+    held = {"surface_m2": 120, "app_surface_m2": 120, "land_surface_m2": 65}
+    read(**held)
+    locked(**held, surface_confidence=0.9)
+    incoming = sale({"source_factual_snapshot": {**TEXT_SNAPSHOT, "surface_m2": None}},
+                    surface_m2=65, app_surface_m2=65, land_surface_m2=65)
+
+    assert base_reads.suppress_echo(sale(**held, surface_confidence=0.9), incoming) is incoming
+
+    # Témoin : la même vente, fiche non relue. La surface déduite du terrain relu n'est qu'une relecture.
+    unread = sale({"_known_unchanged": True}, surface_m2=65, app_surface_m2=65, land_surface_m2=65)
+    assert base_reads.suppress_echo(sale(**held, surface_confidence=0.9), unread).surface_m2 == 120

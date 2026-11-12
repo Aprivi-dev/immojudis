@@ -1235,7 +1235,7 @@ def _hydrate_known_unchanged_sales(
             # A previous scrape may contain the same mismatched detail. Do not
             # reintroduce it while quarantining a newly detected conflict.
             continue
-        if not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed"):
+        if base_reads.was_reread(sale):
             continue
         skipped += int(bool(sale.get("_known_unchanged")))
         source_url = str(sale.get("source_url") or "")

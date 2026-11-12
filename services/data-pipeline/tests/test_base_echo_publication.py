@@ -667,9 +667,38 @@ def test_a_validated_publication_is_confirmed_before_a_later_write_is_rolled_bac
     assert base_reads.suppressed_count() == 0
 
 
+def test_a_publication_whose_commit_fails_is_not_confirmed(base, monkeypatch) -> None:
+    """L'écriture passe, la validation échoue : la portée entoure la transaction, donc rien n'est confirmé.
+
+    Si un autre écrivain écrit ensuite ce que cette transaction avait tenté, c'est un mouvement de la base.
+    """
+    known = storage.fetch_known_sale_details()
+    sale = collect(card(), known)
+    storage.upsert_sales_to_supabase([sale])
+    sale_id = base.rows[URL]["id"]
+    real_exit = FakeSaleBase.__exit__
+
+    def failing_commit(self, exc_type, *details):
+        monkeypatch.setattr(FakeSaleBase, "__exit__", real_exit)  # une seule fois
+        real_exit(self, RuntimeError, *details)  # la base annule
+        raise RuntimeError("could not commit")
+
+    attempt = sale.model_copy(deep=True)
+    attempt.surface_source, attempt.app_surface_kind = "pdf", "carrez"
+    monkeypatch.setattr(FakeSaleBase, "__exit__", failing_commit)
+    with pytest.raises(RuntimeError, match="could not commit"):
+        storage.upsert_sales_to_supabase([attempt], refresh_last_seen=False)
+    assert base.rows[URL]["surface_source"] != "pdf"
+
+    base.move(URL, surface_source="pdf", app_surface_kind="carrez")  # un autre écrivain, plus tard
+    storage.upsert_sales_to_supabase([collect(card(), known)])
+
+    assert base_reads.moved_groups(sale_id) == {"surface"}
+
+
 @pytest.mark.parametrize("another_writer_writes_the_same_afterwards", [False, True])
 def test_a_write_inside_the_transaction_of_a_caller_is_not_confirmed_before_its_rollback(
-    base, monkeypatch, another_writer_writes_the_same_afterwards
+    base, monkeypatch, another_writer_writes_the_same_afterwards, caplog
 ) -> None:
     """``verify_publication`` écrit pour de bon puis annule toujours : rien ne doit rester noté comme écrit.
 
@@ -696,7 +725,10 @@ def test_a_write_inside_the_transaction_of_a_caller_is_not_confirmed_before_its_
     monkeypatch.setattr(storage, "connect", lambda _url: base)
     monkeypatch.setattr(storage, "fetch_sale_for_data_refresh", lambda _url: hydrated)
 
-    assert verify_publication.main() == 0
+    with caplog.at_level("WARNING", logger="src.base_reads"):
+        assert verify_publication.main() == 0
+    # La vérification ouvre sa portée : ses écritures, toujours annulées, ne sont pas des écritures hors portée.
+    assert [record.getMessage() for record in caplog.records if record.name == "src.base_reads"] == []
     assert base.rows[URL]["surface_source"] != "pdf"  # la vérification a bien été annulée
     assert len(base.writes) == 3  # la publication, puis les deux écritures annulées
 
@@ -765,3 +797,28 @@ def test_a_write_that_does_not_return_one_row_per_row_sent_is_not_noted(base, mo
     # La référence est restée celle d'avant : la lecture suivante voit un mouvement, ce qui ne peut que retenir.
     storage.upsert_sales_to_supabase([sale])
     assert base_reads.moved_groups(base.rows[URL]["id"]) == {"surface"}
+
+
+def test_the_rest_fallback_says_in_the_log_that_it_wrote_sales(monkeypatch, caplog) -> None:
+    """Hors production : ni transaction, ni verrou, ni garde. Si ce chemin écrit, le journal le dit."""
+    sent: list[dict[str, Any]] = []
+    monkeypatch.setattr(storage, "load_settings", lambda: {
+        "supabase_url": "https://supabase.test", "supabase_service_role_key": "not-a-real-key", "supabase_db_url": None,
+    })
+    monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, payload: sent.extend(payload))
+    monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _sales: [])
+    for name in ("_write_fact_claims_rest", "_sync_normalized_sale_tables_with_rest", "_upsert_asset_tables_with_rest",
+                 "_enqueue_due_enrichment"):
+        monkeypatch.setattr(storage, name, lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *_args, **_kwargs: None)
+    sale = AuctionSale.model_validate({key: value for key, value in stored_row(**POSED).items() if value is not None})
+
+    with caplog.at_level("WARNING"):
+        storage.upsert_sales_to_supabase([sale])
+
+    assert len(sent) == 1
+    assert "REST fallback wrote 1 sales without transaction, lock or echo guard" in [
+        record.getMessage() for record in caplog.records
+    ]
+    # Rien n'est noté pour la garde sur ce chemin, donc pas d'avertissement d'écriture hors portée non plus.
+    assert [record for record in caplog.records if record.name == "src.base_reads"] == []

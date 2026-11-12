@@ -561,11 +561,9 @@ def upsert_sales_to_supabase(
             if sale.source_url in written_urls:
                 sale.updated_at = written_at
         return result
-    if _PUBLICATION_CONNECTION.get() is not None:
-        # Écriture dans la transaction d'un appelant : c'est lui qui valide ou annule, donc lui qui ouvre la portée.
-        return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
-    # Repli REST (hors production) : ni verrou ni lecture sous verrou, la garde d'écho n'y agit pas et rien n'y est
-    # noté pour elle.
+    # Deux cas sans portée ouverte ici. Écriture dans la transaction d'un appelant : c'est lui qui valide ou annule,
+    # donc lui qui ouvre la portée. Repli REST (hors production) : ni verrou ni lecture sous verrou, la garde d'écho
+    # n'y agit pas et rien n'y est noté pour elle.
     return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
 
 
@@ -630,6 +628,8 @@ def _write_sale_revisions(
             )
         _write_fact_claims_postgres(sales, _PUBLICATION_CONNECTION.get())
     else:
+        # Hors production : la collecte exige la connexion directe. À voir dans le journal si cela arrive.
+        LOGGER.warning("REST fallback wrote %s sales without transaction, lock or echo guard", len(payload))
         _upsert_with_rest(str(url), str(key), payload)
         _write_fact_claims_rest(str(url), str(key), sales)
     _sync_normalized_sale_tables_with_rest(
