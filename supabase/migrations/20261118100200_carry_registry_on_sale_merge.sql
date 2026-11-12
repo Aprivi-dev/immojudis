@@ -17,15 +17,21 @@ set local statement_timeout = '60s';
 --      lit déjà les fiches qu'elle a absorbées. La fonction appelle la projection de la fiche conservée, avec les
 --      entrées held_fields de la fiche fusionnée en indice (20261118100000 : valeur d'annonce, mémoire d'écho,
 --      libération si aucune pièce ne prend le champ). L'appel n'a lieu que s'il existe quelque chose à reporter :
---      la fiche fusionnée tient ou mémorise un champ, ou une décision la nomme.
+--      la fiche fusionnée tient ou mémorise un champ, ou une décision la nomme, elle OU une fiche qu'elle avait
+--      elle-même absorbée (fusion en chaîne : A absorbée par B, puis B par C ; les décisions nomment A, B ne
+--      tient rien si sa pièce était bloquée, et C doit pourtant être reprojetée). La condition est lue AVANT que
+--      la table des fusions ne soit remise à plat.
 --
 -- VERROUS À L'EXÉCUTION. Le déclencheur auction_sales_carry_sale_user_data est un BEFORE DELETE de la fiche
--- fusionnée : la projection verrouille donc la fiche conservée APRÈS la fiche fusionnée. Dans le chemin SQL de la
--- collecte, le lot tient déjà les deux lignes (verrous pris par ordre d'identifiant) : aucune attente. Dans le
--- repli REST (hors production), la suppression peut croiser un lot qui tient la fiche conservée et attend la
--- fiche fusionnée : PostgreSQL annule alors l'une des deux transactions (interblocage détecté), sans écriture
--- partielle. C'est pourquoi l'appel est conditionnel. Une erreur de la projection annule la suppression : la
--- fusion n'efface jamais une pièce en silence.
+-- fusionnée : la suppression verrouille la fiche fusionnée, PUIS le déclencheur verrouille la fiche conservée (la
+-- projection la prend FOR NO KEY UPDATE). Cet ordre n'est pas celui des lots de la collecte, qui verrouillent par
+-- ordre d'identifiant : une suppression de doublon peut donc croiser un lot qui tient la fiche conservée et
+-- demande la fiche fusionnée. PostgreSQL détecte alors l'interblocage et annule l'une des deux transactions, sans
+-- écriture partielle. Une transaction qui tient déjà la fiche conservée quand elle supprime la fiche fusionnée
+-- n'attend pas. C'est pourquoi l'appel est conditionnel, et pourquoi la suppression des doublons vente par vente,
+-- sous point de sauvegarde, est une condition du lot R2c côté collecte (docs/runbooks/registre-des-pieces-r2b.md,
+-- « Suppression de doublons en échec »). Une erreur de la projection annule la suppression : la fusion n'efface
+-- jamais une pièce en silence.
 --
 -- Verrous de la migration : remplacement d'une fonction ; le déclencheur l'appelle par son nom et n'est pas touché.
 -- Aucun verrou sur auction_sales ni sur auction_fact_claims. À APPLIQUER ENTRE DEUX LOTS DE PUBLICATION : une
@@ -43,6 +49,7 @@ as $$
 declare
   v_target uuid;
   v_target_url text;
+  v_carries_registry boolean;
 begin
   select merged.id, merged.source_url
     into v_target, v_target_url
@@ -57,6 +64,19 @@ begin
   if v_target is null then
     return old;
   end if;
+
+  -- Registre des pièces : y a-t-il une pièce ou une mémoire à reporter ? La fiche supprimée tient ou mémorise un
+  -- champ, ou une décision la nomme, elle ou une fiche qu'elle avait absorbée. À lire avant la remise à plat des
+  -- correspondances ci-dessous.
+  v_carries_registry := old.held_fields is not null or exists (
+    select 1
+    from public.auction_fact_claim_decisions decision
+    where decision.sale_id = old.id
+      or decision.sale_id in (
+        select merge.old_sale_id from app_private.auction_sale_merges merge
+        where merge.canonical_sale_id = old.id
+      )
+  );
 
   -- Correspondance. Les anciennes fiches déjà fusionnées dans la ligne supprimée suivent la nouvelle
   -- fiche conservée (sinon la cascade supprimerait leur correspondance).
@@ -212,9 +232,7 @@ begin
   -- projection de la fiche conservée lit par app_private.auction_sale_merges (écrite plus haut). La fiche
   -- conservée est reprojetée seulement s'il existe une pièce ou une mémoire à reporter ; les entrées de la fiche
   -- fusionnée servent d'indice (valeur d'annonce, mémoire d'écho). old.held_fields est lue, jamais écrite.
-  if old.held_fields is not null or exists (
-    select 1 from public.auction_fact_claim_decisions decision where decision.sale_id = old.id
-  ) then
+  if v_carries_registry then
     perform app_private.project_sale_fields(v_target, null, true, old.held_fields);
   end if;
 
