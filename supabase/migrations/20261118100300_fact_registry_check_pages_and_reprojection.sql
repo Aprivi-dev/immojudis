@@ -7,105 +7,76 @@ set local statement_timeout = '60s';
 -- docs/architecture/registre-des-pieces.md). INERTE : aucune vente ne tient de champ, le journal des décisions est
 -- vide, et la relance planifiée est FERMÉE par défaut.
 --
---   1. CONTRÔLE QUOTIDIEN PAGINÉ. Au lot R2a, public.check_fact_registry_consistency(p_limit) examinait au plus 500
---      ventes ; au-delà le rapport était tronqué et la tâche échouait chaque jour. La fonction prend un second
---      paramètre, p_after : elle examine la page des ventes du registre qui suit cet identifiant, et rend
---      « next_after » (l'identifiant à passer pour la page suivante) quand il en reste. Elle reste en LECTURE SEULE
---      (STABLE, projection appelée en simulation seulement). Les contrôles qui ne dépendent pas d'une vente
---      (déclencheurs, libellé réservé, file d'évènements) sont rendus à chaque page, à l'identique.
---      public.sync_fact_registry_alerts(), sans paramètre comme avant, enchaîne les pages (500 ventes par page,
---      40 pages au plus) et additionne leurs rapports (app_private.fact_registry_report_add_page) : le rapport
---      rendu à la tâche a la même forme qu'au lot R2a, avec « truncated » à false tant que le registre compte moins
---      de 20 000 ventes. Au-delà, le comportement du lot R2a est gardé : aucune alerte n'est refermée, la tâche
---      échoue. L'ancienne signature à un paramètre est supprimée (une seule fonction de ce nom pour PostgREST).
+--   1. CONTRÔLE QUOTIDIEN PAR PAGES. Au lot R2a, public.check_fact_registry_consistency(p_limit) examinait au plus
+--      500 ventes ; au-delà le rapport était tronqué et la tâche échouait chaque jour. Le contrôle est découpé :
+--        * app_private.fact_registry_candidate_sales() : les ventes du registre, une seule définition ;
+--        * app_private.fact_registry_page_checks(ventes) : les contrôles PAR VENTE d'une page (dérive de la
+--          projection, colonnes tenues, valeur d'une pièce hors de ses colonnes, note de blocage, annonce qui se
+--          tait). C'est elle qui appelle la projection, en simulation seulement ;
+--        * app_private.fact_registry_global_checks(ventes) : ce qui ne dépend pas d'une page, calculé UNE fois
+--          (déclencheurs, libellé réservé, file d'évènements, colonne interne recopiée dans raw_payload, pièces
+--          reportées par une fusion sur 24 heures, relance planifiée ouverte). La lecture de raw_payload, la seule
+--          qui touche une grande colonne, est bornée aux 500 premières ventes du registre ;
+--        * app_private.fact_registry_report_add_page(rapport, page) : additionne une page. La liste des contrôles
+--          par vente n'est écrite nulle part : ce sont ceux que rend la page.
+--      public.check_fact_registry_consistency(p_limit) garde sa signature et son rapport du lot R2a (une page et
+--      les contrôles généraux ; « truncated » au-delà de la borne) : c'est la lecture d'une personne.
+--      public.sync_fact_registry_alerts(), sans paramètre comme avant, lit une fois les ventes du registre, enchaîne
+--      les pages (500 ventes par page, 40 pages au plus), calcule une fois les contrôles généraux et tient les
+--      alertes. Son rapport a la forme du lot R2a, avec « pages » en plus et « truncated » à false tant que le
+--      registre compte moins de 20 000 ventes. Au-delà, le comportement du lot R2a est gardé : aucune alerte n'est
+--      refermée, la tâche échoue.
+--      Onzième contrôle, « reprojection_enabled » : la relance planifiée est ouverte (alerte
+--      fact_registry.reprojection_enabled, avertissement, tant qu'elle l'est).
+--      Les deux fonctions appelées par la tâche portent un délai d'instruction (clause SET statement_timeout,
+--      120 s) : PostgREST l'applique à la transaction de l'appel.
 --   2. RELANCE PLANIFIÉE DE LA PROJECTION (arbitrage du 12/11/2026 sur la question laissée ouverte par le lot R2a).
 --      La projection lit des colonnes que la retenue ne tient pas : un reclassement en terrain (property_type,
---      surface_scope) ou une écriture de bedrooms_count par la collecte change ce qu'elle déciderait, et personne
---      ne la rappelait. Deux relances, et aucun déclencheur :
+--      surface_scope, app_surface_kind) ou une écriture de bedrooms_count par la collecte change ce qu'elle
+--      déciderait, et personne ne la rappelait. Deux relances, et aucun déclencheur :
 --        * toute décision d'administrateur reprojette la vente entière (20261118100100) ;
---        * app_private.reproject_drifted_sales(p_max), appelée par public.sync_fact_registry_alerts() AVANT le
---          contrôle : pour chaque vente du registre dont la simulation rend « changed », elle applique la
---          projection. C'EST UNE ÉCRITURE DE FICHE LANCÉE PAR UNE TÂCHE PLANIFIÉE. Elle ne fait que réappliquer des
+--        * public.reproject_fact_registry_drift(), sans paramètre, réservée à service_role : pour chaque vente du
+--          registre dont la simulation rend « changed », elle applique la projection. La tâche quotidienne
+--          fact-registry-check l'appelle AVANT public.sync_fact_registry_alerts(), par un appel à part : la relance
+--          a sa propre transaction, et ses verrous de ligne sont rendus avant que le contrôle ne commence.
+--          C'EST UNE ÉCRITURE DE FICHE LANCÉE PAR UNE TÂCHE PLANIFIÉE. Elle ne fait que réappliquer des
 --          décisions humaines déjà acceptées (aucune décision n'est écrite, le mode de publication reste
 --          « manual », les verrous auto_locked ne bougent pas). Elle est :
---            - FERMÉE PAR DÉFAUT : réglage app_private.fact_registry_switches, ligne « scheduled_reprojection »,
---              ouvert ou refermé sans migration de code par
---              select app_private.set_fact_registry_scheduled_reprojection(true ou false) ;
+--            - FERMÉE PAR DÉFAUT : réglage app_private.fact_registry_switches (20261118100100), ligne
+--              « scheduled_reprojection », ouvert ou refermé sans migration de code par
+--              select app_private.set_fact_registry_scheduled_reprojection(true ou false). Une ligne absente
+--              vaut « fermé », et la fonction de réglage lève si la ligne manque ;
 --            - sans effet tant que le journal des décisions est vide, et quand un déclencheur du registre manque ;
---            - bornée : p_max ventes par passage (50), les suivantes sont comptées (« deferred ») et reprises au
---              passage suivant ; une vente occupée par un lot de la collecte (verrou non obtenu en 3 secondes) est
---              comptée (« busy ») et reprise au passage suivant, et après trois ventes occupées le reste de la
---              passe est reporté (la tâche n'attend jamais plus de 9 secondes derrière la collecte) ; une vente
---              dont la projection échoue est comptée (« failed ») sans arrêter la passe, et le contrôle qui suit
---              la signale en dérive ;
+--            - bornée : 30 ventes écrites ou occupées par passage (chaque vente est une sous-transaction) ; dès la
+--              borne atteinte la passe s'arrête, sans simuler la suite (« bounded » à true), et le passage suivant
+--              reprend. Une vente occupée par un lot de la collecte (verrou non obtenu sous 3 secondes par attente
+--              de verrou) est comptée (« busy ») ; après trois ventes occupées la passe s'arrête. Une vente dont
+--              la projection échoue ne compte PAS dans la borne : elle ne prive pas les suivantes de leur tour.
+--              Elle est comptée (« failed »), et les vingt premières sont rendues avec leur code SQLSTATE et le
+--              nom de la contrainte, sans message ; le code part aussi au journal du serveur (RAISE LOG). Le
+--              contrôle qui suit la signale en dérive ;
 --            - journalisée : un évènement « drift_reprojected » par champ dont l'entrée a changé (à défaut, par
 --              champ tenu), dans public.auction_sale_field_hold_events, distinct d'une décision et des évènements
 --              de la projection elle-même.
---          Son compte rendu est joint au rapport sous la clé « reprojection ».
---      La contrainte de la colonne event est recréée avec « drift_reprojected » (même méthode que 20261117100100).
 --
 -- NON FAIT À CE LOT, conditions dans docs/runbooks/registre-des-pieces-r2b.md : retirer du contrôle les copies
 -- (properties, auction_surfaces, judicial_sales), à faire quand l'étape PB de la collecte sera en production ;
 -- index partiel de la liste de relecture, à décider sur la mesure A4 du runbook R2a.
 --
--- Verrous : ACCESS EXCLUSIVE bref sur public.auction_sale_field_hold_events, à la première application seulement
--- (table vide en production : le contrôle de la contrainte est immédiat ; seuls la retenue et la projection y
--- écrivent, pour une vente du registre). lock_timeout ramené à 2 s pour cette instruction. Création d'une petite
--- table de réglage dans app_private. Aucun verrou sur auction_sales ni sur auction_fact_claims. Possible pendant
--- un import.
+-- Verrous : création et remplacement de fonctions, une ligne de réglage. Aucun verrou sur auction_sales, sur
+-- auction_fact_claims ni sur les journaux. Possible pendant un import.
 --
 -- Retour arrière, par une nouvelle migration : refermer la relance
 -- (select app_private.set_fact_registry_scheduled_reprojection(false)) suffit à en retirer l'effet. Pour revenir
--- aux définitions du lot R2a : rétablir public.sync_fact_registry_alerts() et
--- public.check_fact_registry_consistency(integer) de 20261117100500 (en supprimant la signature à deux
--- paramètres), puis supprimer app_private.reproject_drifted_sales(integer),
--- app_private.fact_registry_report_add_page(jsonb, jsonb), app_private.fact_registry_candidate_sales(),
--- app_private.set_fact_registry_scheduled_reprojection(boolean) et app_private.fact_registry_switches. La valeur
--- « drift_reprojected » reste admise par la contrainte (un journal en ajout seul ne perd pas une valeur écrite).
+-- aux définitions du lot R2a : rétablir public.sync_fact_registry_alerts(),
+-- app_private.sync_fact_registry_alerts_from_report(jsonb) et public.check_fact_registry_consistency(integer) de
+-- 20261117100500, puis supprimer public.reproject_fact_registry_drift(),
+-- app_private.fact_registry_report_add_page(jsonb, jsonb), app_private.fact_registry_global_checks(uuid[]),
+-- app_private.fact_registry_page_checks(uuid[]), app_private.fact_registry_candidate_sales() et
+-- app_private.set_fact_registry_scheduled_reprojection(boolean). (L'alerte fact_registry.reprojection_enabled, si
+-- elle a été ouverte, reste dans operational_alerts : ne pas la supprimer.)
 
--- 1. Évènement drift_reprojected ---------------------------------------------------------------------------------
-set local lock_timeout = '2s';
-
-do $$
-begin
-  if not exists (
-    select 1 from pg_catalog.pg_constraint constraint_row
-    where constraint_row.conrelid = 'public.auction_sale_field_hold_events'::regclass
-      and constraint_row.conname = 'auction_sale_field_hold_events_event_check'
-      and pg_catalog.pg_get_constraintdef(constraint_row.oid) like '%drift_reprojected%'
-  ) then
-    alter table public.auction_sale_field_hold_events
-      drop constraint if exists auction_sale_field_hold_events_event_check;
-    alter table public.auction_sale_field_hold_events
-      add constraint auction_sale_field_hold_events_event_check check (
-        event in (
-          'listing_changed_kept', 'listing_changed_released', 'projection_held', 'projection_released',
-          'projection_blocked', 'conflicted', 'echo_suppressed', 'drift_reprojected'
-        )
-      );
-  end if;
-end;
-$$;
-
-comment on table public.auction_sale_field_hold_events is
-  'Registre des pièces : file de relecture en ajout seul des champs tenus (l''annonce a changé sur un champ tenu, pièce posée, retirée ou refusée par la fiche, contradiction, retour écarté d''une ancienne valeur tenue, projection réappliquée par la tâche planifiée). Valeurs de champs seulement (occupation : vacant, occupied ou rented) : ni extrait, ni email, ni nom.';
-
--- 2. Réglage de la relance planifiée ------------------------------------------------------------------------------
--- Même forme que app_private.security_switches (20261010002000) : une ligne par interrupteur, fermé par défaut,
--- changé par une fonction réservée à l'opérateur. Une ligne absente vaut « fermé ».
-create table if not exists app_private.fact_registry_switches (
-  switch_name text primary key check (switch_name = 'scheduled_reprojection'),
-  enabled boolean not null default false,
-  updated_at timestamptz not null default now(),
-  updated_by text
-);
-
-comment on table app_private.fact_registry_switches is
-  'Registre des pièces : interrupteurs d''exploitation. scheduled_reprojection : la tâche planifiée fact-registry-check réapplique la projection aux ventes en dérive (fermé par défaut).';
-
-alter table app_private.fact_registry_switches enable row level security;
-revoke all on table app_private.fact_registry_switches from public, anon, authenticated, service_role;
-
+-- 1. Réglage de la relance planifiée ------------------------------------------------------------------------------
 insert into app_private.fact_registry_switches (switch_name, enabled)
 values ('scheduled_reprojection', false)
 on conflict (switch_name) do nothing;
@@ -125,17 +96,21 @@ begin
          updated_at = pg_catalog.now(),
          updated_by = current_user
    where switch_name = 'scheduled_reprojection';
+  if not found then
+    raise exception using errcode = '55000',
+      message = 'The switch scheduled_reprojection has no row: restore it by a migration.';
+  end if;
   return p_enabled;
 end;
 $$;
 
 comment on function app_private.set_fact_registry_scheduled_reprojection(boolean) is
-  'Registre des pièces : ouvre (true) ou referme (false) la relance planifiée de la projection. Réservée à l''opérateur (rôle de migration).';
+  'Registre des pièces : ouvre (true) ou referme (false) la relance planifiée de la projection. Réservée au propriétaire (rôle de migration). Lève si la ligne du réglage manque.';
 
 revoke all on function app_private.set_fact_registry_scheduled_reprojection(boolean)
   from public, anon, authenticated, service_role;
 
--- 3. Ventes du registre ---------------------------------------------------------------------------------------------
+-- 2. Ventes du registre ---------------------------------------------------------------------------------------------
 -- Celles qui tiennent ou mémorisent un champ, et celles dont une pièce a pour dernière décision une acceptation
 -- d'un lot identifié (rapportée à la vente conservée après une fusion). Une seule définition, pour le contrôle et
 -- pour la relance.
@@ -167,14 +142,9 @@ comment on function app_private.fact_registry_candidate_sales() is
 revoke all on function app_private.fact_registry_candidate_sales()
   from public, anon, authenticated, service_role;
 
--- 4. Contrôle quotidien, par page (définition de 20261117100500 ; seuls changent le choix des ventes examinées et
---    les clés « truncated » et « next_after » du rapport) -----------------------------------------------------------
-drop function if exists public.check_fact_registry_consistency(integer);
-
-create or replace function public.check_fact_registry_consistency(
-  p_limit integer default 500,
-  p_after uuid default null
-)
+-- 3. Contrôles par vente, pour une page de ventes (requête du contrôle de 20261117100500, inchangée hormis le test
+--    « vente de terrain », qui passe par app_private.sale_is_land_sale) ----------------------------------------------
+create or replace function app_private.fact_registry_page_checks(p_sale_ids uuid[])
 returns jsonb
 language plpgsql
 stable
@@ -183,10 +153,7 @@ set search_path = ''
 as $$
 declare
   v_now timestamptz := pg_catalog.statement_timestamp();
-  v_limit integer := least(greatest(coalesce(p_limit, 500), 1), 5000);
-  v_candidates integer;
-  v_truncated boolean;
-  v_sale_ids uuid[];
+  v_sale_ids uuid[] := coalesce(p_sale_ids, array[]::uuid[]);
   v_sale_id uuid;
   v_drift_first uuid[] := array[]::uuid[];
   v_drift uuid[] := array[]::uuid[];
@@ -194,32 +161,9 @@ declare
   v_echo uuid[];
   v_stale uuid[];
   v_blocked uuid[];
-  v_copied uuid[];
-  v_label uuid[];
-  v_triggers text[];
-  v_events_day integer;
-  v_echo_events integer;
-  v_echo_events_total integer;
-  v_echo_event_sales uuid[];
   v_held_sales integer;
   v_held_fields integer;
 begin
-  -- Ventes examinées : une page des ventes du registre (app_private.fact_registry_candidate_sales), dans l'ordre
-  -- de leur identifiant, après p_after. Une vente de plus que la borne est lue pour savoir s'il reste une page.
-  select
-    (select count(*)::integer from app_private.fact_registry_candidate_sales()),
-    (select coalesce(pg_catalog.array_agg(bounded.id order by bounded.id), array[]::uuid[])
-       from (
-         select candidate.id
-         from app_private.fact_registry_candidate_sales() candidate(id)
-         where p_after is null or candidate.id > p_after
-         order by candidate.id
-         limit v_limit + 1
-       ) bounded)
-  into v_candidates, v_sale_ids;
-  v_truncated := pg_catalog.cardinality(v_sale_ids) > v_limit;
-  v_sale_ids := v_sale_ids[1:v_limit];
-
   -- 1. La simulation de projection ne doit rien changer. La simulation lit sans verrou, en plusieurs
   --    instructions : une décision validée pendant la passe peut la faire rendre « changed » à tort. Les ventes
   --    en dérive sont donc rejouées une fois, et seules celles qui le sont encore sont rendues.
@@ -234,10 +178,7 @@ begin
     end if;
   end loop;
 
-  -- 2. Mode et fonction des déclencheurs.
-  v_triggers := app_private.fact_registry_triggers_not_always();
-
-  -- 3, 4, 8 et 9. Une lecture par entrée de held_fields, tenue ou libérée, sans ce qui est échu.
+  -- 2. Une lecture par entrée de held_fields, tenue ou libérée, sans ce qui est échu.
   --    * colonnes tenues (entrée tenue seulement) ;
   --    * valeur d'une pièce hors de ses colonnes : colonnes voisines et copies (entrée tenue ou libérée), et
   --      colonnes du champ lui-même pour une entrée libérée. Références exactes : pour une entrée tenue, la
@@ -326,7 +267,8 @@ begin
         entry.value ? 'listing_silent_since'
         or (
           entry.key = 'property.surface_m2'
-          and (sale.property_type = 'land' or sale.surface_scope = 'land')
+          and app_private.sale_is_land_sale(
+            sale.property_type, sale.surface_scope, sale.app_surface_kind, sale.held_fields)
         )
       ) as stale,
       not piece.holds and entry.value ? 'echo_blocked_since' as blocked
@@ -382,12 +324,80 @@ begin
       and sale.id = any(v_sale_ids)
   ) checked;
 
-  -- 5. La colonne interne recopiée dans raw_payload.
-  select coalesce(pg_catalog.array_agg(sale.id), array[]::uuid[]) into v_copied
-  from public.auction_sales sale
-  where sale.held_fields is not null and sale.id = any(v_sale_ids) and sale.raw_payload ? 'held_fields';
+  return pg_catalog.jsonb_build_object(
+    'sales_checked', pg_catalog.cardinality(v_sale_ids),
+    'held_sale_count', v_held_sales,
+    'held_field_count', v_held_fields,
+    'checks', pg_catalog.jsonb_build_object(
+      'projection_drift', pg_catalog.jsonb_build_object(
+        'active', pg_catalog.cardinality(v_drift) > 0,
+        'count', pg_catalog.cardinality(v_drift),
+        'sale_ids', pg_catalog.to_jsonb(v_drift[1:20])
+      ),
+      'column_mismatch', pg_catalog.jsonb_build_object(
+        'active', pg_catalog.cardinality(v_mismatch) > 0,
+        'count', pg_catalog.cardinality(v_mismatch),
+        'sale_ids', pg_catalog.to_jsonb(v_mismatch[1:20])
+      ),
+      'echo_suspected', pg_catalog.jsonb_build_object(
+        'active', pg_catalog.cardinality(v_echo) > 0,
+        'count', pg_catalog.cardinality(v_echo),
+        'sale_ids', pg_catalog.to_jsonb(v_echo[1:20])
+      ),
+      'echo_blocked', pg_catalog.jsonb_build_object(
+        'active', pg_catalog.cardinality(v_blocked) > 0,
+        'count', pg_catalog.cardinality(v_blocked),
+        'sale_ids', pg_catalog.to_jsonb(v_blocked[1:20])
+      ),
+      'stale_listing', pg_catalog.jsonb_build_object(
+        'active', pg_catalog.cardinality(v_stale) > 0,
+        'count', pg_catalog.cardinality(v_stale),
+        'sale_ids', pg_catalog.to_jsonb(v_stale[1:20])
+      )
+    )
+  );
+end;
+$$;
 
-  -- 10. Le libellé réservé du registre sur une surface que rien ne tient. Toutes les ventes sont lues (une
+comment on function app_private.fact_registry_page_checks(uuid[]) is
+  'Registre des pièces : contrôles par vente du contrôle quotidien, pour une page de ventes (dérive de la projection, appelée en simulation seulement ; colonnes tenues ; valeur d''une pièce hors de ses colonnes ; note de blocage ; annonce qui se tait). Lecture seule.';
+
+revoke all on function app_private.fact_registry_page_checks(uuid[])
+  from public, anon, authenticated, service_role;
+
+-- 4. Contrôles qui ne dépendent pas d'une page : calculés une fois ---------------------------------------------------
+-- p_sale_ids : toutes les ventes du registre, dans l'ordre de leur identifiant. Seule la lecture de raw_payload
+-- (grande colonne) s'en sert, et elle est bornée aux 500 premières.
+create or replace function app_private.fact_registry_global_checks(p_sale_ids uuid[])
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_now timestamptz := pg_catalog.statement_timestamp();
+  v_payload_ids uuid[] := (coalesce(p_sale_ids, array[]::uuid[]))[1:500];
+  v_triggers text[] := app_private.fact_registry_triggers_not_always();
+  v_copied uuid[];
+  v_label uuid[];
+  v_events_day integer;
+  v_echo_events integer;
+  v_echo_events_total integer;
+  v_echo_event_sales uuid[];
+  v_carried integer;
+  v_reprojection_enabled boolean := coalesce(
+    (select switch.enabled from app_private.fact_registry_switches switch
+      where switch.switch_name = 'scheduled_reprojection'),
+    false
+  );
+begin
+  -- La colonne interne recopiée dans raw_payload (500 ventes au plus).
+  select coalesce(pg_catalog.array_agg(sale.id order by sale.id), array[]::uuid[]) into v_copied
+  from public.auction_sales sale
+  where sale.held_fields is not null and sale.id = any(v_payload_ids) and sale.raw_payload ? 'held_fields';
+
+  -- Le libellé réservé du registre sur une surface que rien ne tient. Toutes les ventes sont lues (une
   --     lecture par jour d'une colonne courte) : une insertion directe échappe à la retenue, qui ne voit que les
   --     mises à jour.
   select coalesce(pg_catalog.array_agg(sale.id order by sale.id), array[]::uuid[]) into v_label
@@ -395,7 +405,7 @@ begin
   where sale.surface_source = 'fact_registry'
     and not coalesce(sale.held_fields #>> '{property.surface_m2,state}' in ('held', 'conflicted'), false);
 
-  -- 6 et 7. La file de relecture. La rafale ne compte que ce qui vient d'une écriture directe (annonce qui
+  -- La file de relecture. La rafale ne compte que ce qui vient d'une écriture directe (annonce qui
   -- change, écho écarté) : une séance d'acceptations (projection_held) n'est pas une rafale.
   select
     count(*) filter (
@@ -412,43 +422,28 @@ begin
   into v_events_day, v_echo_events, v_echo_events_total, v_echo_event_sales
   from public.auction_sale_field_hold_events event;
 
+  -- Pièces reportées par une fusion sur 24 heures (information, pas une alerte).
+  select count(*)::integer into v_carried
+  from public.auction_sale_field_hold_events event
+  where event.event = 'merge_carried' and event.created_at >= v_now - interval '24 hours';
+
   return pg_catalog.jsonb_build_object(
-    'checked_at', v_now,
-    'limit', v_limit,
-    'candidate_sales', v_candidates,
-    'sales_checked', pg_catalog.cardinality(v_sale_ids),
-    'truncated', v_truncated,
-    'held_sale_count', v_held_sales,
-    'held_field_count', v_held_fields,
+    'merge_carried', pg_catalog.jsonb_build_object('count', v_carried, 'window_hours', 24),
     'checks', pg_catalog.jsonb_build_object(
-      'projection_drift', pg_catalog.jsonb_build_object(
-        'active', pg_catalog.cardinality(v_drift) > 0,
-        'count', pg_catalog.cardinality(v_drift),
-        'sale_ids', pg_catalog.to_jsonb(v_drift[1:20])
-      ),
       'triggers_not_always', pg_catalog.jsonb_build_object(
         'active', pg_catalog.cardinality(v_triggers) > 0,
         'count', pg_catalog.cardinality(v_triggers),
         'triggers', pg_catalog.to_jsonb(v_triggers)
-      ),
-      'column_mismatch', pg_catalog.jsonb_build_object(
-        'active', pg_catalog.cardinality(v_mismatch) > 0,
-        'count', pg_catalog.cardinality(v_mismatch),
-        'sale_ids', pg_catalog.to_jsonb(v_mismatch[1:20])
       ),
       'registry_label', pg_catalog.jsonb_build_object(
         'active', pg_catalog.cardinality(v_label) > 0,
         'count', pg_catalog.cardinality(v_label),
         'sale_ids', pg_catalog.to_jsonb(v_label[1:20])
       ),
-      'echo_suspected', pg_catalog.jsonb_build_object(
-        'active', pg_catalog.cardinality(v_echo) > 0,
-        'count', pg_catalog.cardinality(v_echo),
-        'sale_ids', pg_catalog.to_jsonb(v_echo[1:20])
-      ),
       'internal_column_copied', pg_catalog.jsonb_build_object(
         'active', pg_catalog.cardinality(v_copied) > 0,
         'count', pg_catalog.cardinality(v_copied),
+        'sales_read', pg_catalog.cardinality(v_payload_ids),
         'sale_ids', pg_catalog.to_jsonb(v_copied[1:20])
       ),
       'events_burst', pg_catalog.jsonb_build_object(
@@ -464,36 +459,24 @@ begin
         'total', v_echo_events_total,
         'sale_ids', pg_catalog.to_jsonb(v_echo_event_sales[1:20])
       ),
-      'echo_blocked', pg_catalog.jsonb_build_object(
-        'active', pg_catalog.cardinality(v_blocked) > 0,
-        'count', pg_catalog.cardinality(v_blocked),
-        'sale_ids', pg_catalog.to_jsonb(v_blocked[1:20])
-      ),
-      'stale_listing', pg_catalog.jsonb_build_object(
-        'active', pg_catalog.cardinality(v_stale) > 0,
-        'count', pg_catalog.cardinality(v_stale),
-        'sale_ids', pg_catalog.to_jsonb(v_stale[1:20])
+      'reprojection_enabled', pg_catalog.jsonb_build_object(
+        'active', v_reprojection_enabled,
+        'count', case when v_reprojection_enabled then 1 else 0 end
       )
     )
-  ) || case
-    -- Page suivante : après la dernière vente de celle-ci. Clé absente quand il n'en reste pas.
-    when v_truncated then
-      pg_catalog.jsonb_build_object('next_after', v_sale_ids[pg_catalog.cardinality(v_sale_ids)])
-    else '{}'::jsonb
-  end;
+  );
 end;
 $$;
 
-comment on function public.check_fact_registry_consistency(integer, uuid) is
-  'Registre des pièces : contrôle quotidien en lecture seule (la projection n''y est appelée qu''en simulation), par page de ventes du registre (p_after : identifiant après lequel reprendre ; « next_after » rendu quand il reste une page). Rapport JSON de comptes et d''identifiants de vente, jamais une valeur. Serveur seul (service_role).';
+comment on function app_private.fact_registry_global_checks(uuid[]) is
+  'Registre des pièces : contrôles du contrôle quotidien qui ne dépendent pas d''une page de ventes (déclencheurs, libellé réservé, colonne interne recopiée, file d''évènements, relance planifiée ouverte) et compte des pièces reportées par une fusion sur 24 heures. Lecture seule.';
 
-revoke all on function public.check_fact_registry_consistency(integer, uuid) from public, anon, authenticated;
-grant execute on function public.check_fact_registry_consistency(integer, uuid) to service_role;
+revoke all on function app_private.fact_registry_global_checks(uuid[])
+  from public, anon, authenticated, service_role;
 
--- 5. Addition de deux pages du rapport ------------------------------------------------------------------------------
--- Les contrôles par vente s'additionnent (compte, état, vingt premiers identifiants) ; les autres clés sont celles
--- de la première page (contrôles qui ne dépendent pas d'une vente, date, total des ventes du registre), sauf
--- « truncated » et « next_after », qui sont ceux de la dernière page lue.
+-- 5. Addition d'une page au rapport -------------------------------------------------------------------------------------
+-- Les trois comptes de ventes s'additionnent, et chaque contrôle que rend la page (compte, état, vingt premiers
+-- identifiants). La liste des contrôles par vente n'est pas tenue ici : ce sont les clés de la page.
 create or replace function app_private.fact_registry_report_add_page(p_report jsonb, p_page jsonb)
 returns jsonb
 language sql
@@ -504,49 +487,79 @@ as $$
     'sales_checked', (p_report ->> 'sales_checked')::integer + (p_page ->> 'sales_checked')::integer,
     'held_sale_count', (p_report ->> 'held_sale_count')::integer + (p_page ->> 'held_sale_count')::integer,
     'held_field_count', (p_report ->> 'held_field_count')::integer + (p_page ->> 'held_field_count')::integer,
-    'truncated', p_page -> 'truncated',
-    'next_after', p_page -> 'next_after',
     'checks', (p_report -> 'checks') || (
-      select pg_catalog.jsonb_object_agg(
-        paged.check_key,
-        (p_report #> array['checks', paged.check_key]) || pg_catalog.jsonb_build_object(
-          'active',
-          (p_report #>> array['checks', paged.check_key, 'active'])::boolean
-            or (p_page #>> array['checks', paged.check_key, 'active'])::boolean,
-          'count',
-          (p_report #>> array['checks', paged.check_key, 'count'])::integer
-            + (p_page #>> array['checks', paged.check_key, 'count'])::integer,
-          'sale_ids', (
-            select coalesce(pg_catalog.jsonb_agg(listed.value order by listed.position), '[]'::jsonb)
-            from pg_catalog.jsonb_array_elements(
-              (p_report #> array['checks', paged.check_key, 'sale_ids'])
-                || (p_page #> array['checks', paged.check_key, 'sale_ids'])
-            ) with ordinality listed(value, position)
-            where listed.position <= 20
+      select coalesce(
+        pg_catalog.jsonb_object_agg(
+          paged.key,
+          (p_report #> array['checks', paged.key]) || pg_catalog.jsonb_build_object(
+            'active',
+            (p_report #>> array['checks', paged.key, 'active'])::boolean or (paged.value ->> 'active')::boolean,
+            'count',
+            (p_report #>> array['checks', paged.key, 'count'])::integer + (paged.value ->> 'count')::integer,
+            'sale_ids', (
+              select coalesce(pg_catalog.jsonb_agg(listed.value order by listed.position), '[]'::jsonb)
+              from pg_catalog.jsonb_array_elements(
+                (p_report #> array['checks', paged.key, 'sale_ids']) || (paged.value -> 'sale_ids')
+              ) with ordinality listed(value, position)
+              where listed.position <= 20
+            )
           )
-        )
+        ),
+        '{}'::jsonb
       )
-      from pg_catalog.unnest(array[
-        'projection_drift', 'column_mismatch', 'echo_suspected', 'internal_column_copied', 'echo_blocked',
-        'stale_listing'
-      ]) paged(check_key)
+      from pg_catalog.jsonb_each(p_page -> 'checks') paged
     )
   );
 $$;
 
 comment on function app_private.fact_registry_report_add_page(jsonb, jsonb) is
-  'Registre des pièces : additionne une page au rapport du contrôle quotidien (contrôles par vente additionnés, autres clés de la première page).';
+  'Registre des pièces : additionne une page de contrôles par vente au rapport du contrôle quotidien.';
 
 revoke all on function app_private.fact_registry_report_add_page(jsonb, jsonb)
   from public, anon, authenticated, service_role;
 
--- 6. Relance planifiée de la projection -----------------------------------------------------------------------------
-create or replace function app_private.reproject_drifted_sales(p_max integer)
+-- 6. Le contrôle, pour une personne : une page et les contrôles généraux (signature et rapport du lot R2a) ------------
+create or replace function public.check_fact_registry_consistency(p_limit integer default 500)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_limit integer := least(greatest(coalesce(p_limit, 500), 1), 5000);
+  v_all uuid[] := array(
+    select candidate.id from app_private.fact_registry_candidate_sales() candidate(id) order by candidate.id
+  );
+  v_page jsonb := app_private.fact_registry_page_checks(v_all[1:v_limit]);
+  v_global jsonb := app_private.fact_registry_global_checks(v_all);
+begin
+  return pg_catalog.jsonb_build_object(
+      'checked_at', pg_catalog.statement_timestamp(),
+      'limit', v_limit,
+      'candidate_sales', pg_catalog.cardinality(v_all),
+      'truncated', pg_catalog.cardinality(v_all) > v_limit
+    )
+    || (v_page - 'checks')
+    || (v_global - 'checks')
+    || pg_catalog.jsonb_build_object('checks', (v_global -> 'checks') || (v_page -> 'checks'));
+end;
+$$;
+
+comment on function public.check_fact_registry_consistency(integer) is
+  'Registre des pièces : contrôle quotidien en lecture seule (la projection n''y est appelée qu''en simulation), pour les p_limit premières ventes du registre. Rapport JSON de comptes et d''identifiants de vente, jamais une valeur. Serveur seul (service_role).';
+
+revoke all on function public.check_fact_registry_consistency(integer) from public, anon, authenticated;
+grant execute on function public.check_fact_registry_consistency(integer) to service_role;
+
+-- 7. Relance planifiée de la projection -----------------------------------------------------------------------------
+create or replace function public.reproject_fact_registry_drift()
 returns jsonb
 language plpgsql
 volatile
 security definer
 set search_path = ''
+set statement_timeout = '120s'
 as $$
 declare
   v_enabled boolean := coalesce(
@@ -554,7 +567,10 @@ declare
       where switch.switch_name = 'scheduled_reprojection'),
     false
   );
-  v_max integer := greatest(coalesce(p_max, 0), 0);
+  -- Ventes écrites ou occupées par passage ; ventes occupées qui arrêtent la passe ; ventes en échec détaillées.
+  v_max constant integer := 30;
+  v_busy_max constant integer := 3;
+  v_failures_listed constant integer := 20;
   v_sale_id uuid;
   v_before jsonb;
   v_after jsonb;
@@ -562,8 +578,11 @@ declare
   v_applied integer := 0;
   v_busy integer := 0;
   v_failed integer := 0;
-  v_deferred integer := 0;
+  v_failures jsonb := '[]'::jsonb;
+  v_bounded boolean := false;
   v_events integer;
+  v_sqlstate text;
+  v_constraint text;
 begin
   -- Fermée, journal des décisions vide, ou retenue hors service : rien n'est simulé ni écrit.
   if v_enabled
@@ -573,13 +592,13 @@ begin
     for v_sale_id in
       select candidate.id from app_private.fact_registry_candidate_sales() candidate(id) order by candidate.id
     loop
+      -- Borne atteinte : la passe s'arrête là, sans simuler la suite ; le passage suivant reprend.
+      if v_applied + v_busy >= v_max or v_busy >= v_busy_max then
+        v_bounded := true;
+        exit;
+      end if;
       continue when not (app_private.project_sale_fields(v_sale_id, null, false) ->> 'changed')::boolean;
       v_drifted := v_drifted + 1;
-      -- Borne du passage ; et après trois ventes occupées par la collecte, le reste attend le passage suivant.
-      if v_applied + v_busy + v_failed >= v_max or v_busy >= 3 then
-        v_deferred := v_deferred + 1;
-        continue;
-      end if;
       -- Une vente par bloc : un verrou non obtenu ou une erreur n'annule que cette vente, et la passe continue. Le
       -- contrôle qui suit signale en dérive ce qui n'a pas été appliqué.
       begin
@@ -610,7 +629,18 @@ begin
         when lock_not_available then
           v_busy := v_busy + 1;
         when others then
+          -- Une vente en échec ne compte pas dans la borne : elle ne prive pas les suivantes de leur tour. Son
+          -- code et le nom de la contrainte sont rendus et journalisés, jamais son message ni son détail.
+          get stacked diagnostics v_sqlstate = returned_sqlstate, v_constraint = constraint_name;
           v_failed := v_failed + 1;
+          if v_failed <= v_failures_listed then
+            v_failures := v_failures || pg_catalog.jsonb_build_array(pg_catalog.jsonb_strip_nulls(
+              pg_catalog.jsonb_build_object(
+                'sale_id', v_sale_id, 'sqlstate', v_sqlstate, 'constraint', nullif(v_constraint, '')
+              )
+            ));
+          end if;
+          raise log 'fact registry scheduled reprojection failed for one sale: sqlstate %', v_sqlstate;
       end;
     end loop;
   end if;
@@ -622,51 +652,132 @@ begin
     'applied', v_applied,
     'busy', v_busy,
     'failed', v_failed,
-    'deferred', v_deferred
+    'failures', v_failures,
+    'bounded', v_bounded
   );
 end;
 $$;
 
-comment on function app_private.reproject_drifted_sales(integer) is
-  'Registre des pièces : réapplique la projection aux ventes du registre dont la simulation rend « changed » (reclassement en terrain, nombre de chambres corrigé par la collecte), p_max ventes au plus par passage. Écriture de fiche lancée par la tâche planifiée fact-registry-check ; fermée par défaut (app_private.fact_registry_switches) ; n''écrit aucune décision. Exécutable par aucun rôle de l''API.';
+comment on function public.reproject_fact_registry_drift() is
+  'Registre des pièces : réapplique la projection aux ventes du registre dont la simulation rend « changed » (reclassement en terrain, nombre de chambres corrigé par la collecte), 30 ventes au plus par passage. Écriture de fiche lancée par la tâche planifiée fact-registry-check, dans sa propre transaction, avant le contrôle ; fermée par défaut (app_private.fact_registry_switches) ; n''écrit aucune décision. Sans paramètre. Serveur seul (service_role).';
 
-revoke all on function app_private.reproject_drifted_sales(integer)
-  from public, anon, authenticated, service_role;
+revoke all on function public.reproject_fact_registry_drift() from public, anon, authenticated;
+grant execute on function public.reproject_fact_registry_drift() to service_role;
 
--- 7. La tâche quotidienne : relance, contrôle page par page, alertes -------------------------------------------------
-create or replace function public.sync_fact_registry_alerts()
-returns jsonb
+-- 8. Alertes : onze contrôles (définition de 20261117100500, plus reprojection_enabled) -------------------------------
+create or replace function app_private.sync_fact_registry_alerts_from_report(p_report jsonb)
+returns void
 language plpgsql
 volatile
 security definer
 set search_path = ''
 as $$
 declare
-  v_reprojection jsonb := app_private.reproject_drifted_sales(50);
-  v_report jsonb;
+  v_truncated boolean;
+  v_active boolean;
+  v_check record;
+begin
+  if pg_catalog.jsonb_typeof(p_report -> 'truncated') is distinct from 'boolean' then
+    raise exception using errcode = 'XX000', message = 'fact registry check returned no truncation state';
+  end if;
+  v_truncated := (p_report ->> 'truncated')::boolean;
+  for v_check in
+    select planned.check_key, planned.severity
+    from (
+      values
+        ('projection_drift', 'critical'),
+        ('triggers_not_always', 'critical'),
+        ('column_mismatch', 'critical'),
+        ('registry_label', 'critical'),
+        ('echo_suspected', 'warning'),
+        ('internal_column_copied', 'warning'),
+        ('events_burst', 'warning'),
+        ('echo_suppressed', 'warning'),
+        ('echo_blocked', 'warning'),
+        ('stale_listing', 'warning'),
+        ('reprojection_enabled', 'warning')
+    ) as planned (check_key, severity)
+  loop
+    if pg_catalog.jsonb_typeof(p_report #> array['checks', v_check.check_key, 'active']) is distinct from 'boolean'
+    then
+      raise exception using errcode = 'XX000',
+        message = pg_catalog.format('fact registry check %s returned no state', v_check.check_key);
+    end if;
+    v_active := (p_report #>> array['checks', v_check.check_key, 'active'])::boolean;
+    continue when v_truncated and not v_active;
+    perform app_private.sync_operational_alert(
+      'fact_registry.' || v_check.check_key,
+      'import',
+      v_check.severity,
+      (p_report #> array['checks', v_check.check_key]) - 'active'
+        || pg_catalog.jsonb_build_object(
+          'checked_at', p_report -> 'checked_at',
+          'sales_checked', p_report -> 'sales_checked',
+          'truncated', p_report -> 'truncated'
+        ),
+      v_active
+    );
+  end loop;
+end;
+$$;
+
+comment on function app_private.sync_fact_registry_alerts_from_report(jsonb) is
+  'Registre des pièces : ouvre ou referme les alertes opérationnelles fact_registry.* à partir d''un rapport du contrôle quotidien (clé, catégorie et gravité fixées ici ; onze contrôles). Rapport tronqué : seuls les contrôles actifs sont synchronisés. Exécutable par aucun rôle de l''API.';
+
+revoke all on function app_private.sync_fact_registry_alerts_from_report(jsonb)
+  from public, anon, authenticated, service_role;
+
+-- 9. La tâche quotidienne : contrôle page par page, contrôles généraux une fois, alertes ----------------------------
+create or replace function public.sync_fact_registry_alerts()
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = ''
+set statement_timeout = '120s'
+as $$
+declare
+  v_page_size constant integer := 500;
+  v_page_max constant integer := 40;
+  -- Les ventes du registre, lues une seule fois.
+  v_all uuid[] := array(
+    select candidate.id from app_private.fact_registry_candidate_sales() candidate(id) order by candidate.id
+  );
+  v_total integer := pg_catalog.cardinality(v_all);
+  v_global jsonb := app_private.fact_registry_global_checks(v_all);
+  v_paged jsonb;
   v_page jsonb;
-  v_after uuid;
   v_pages integer := 0;
+  v_report jsonb;
 begin
   loop
-    v_page := public.check_fact_registry_consistency(500, v_after);
-    v_report := case
-      when v_report is null then v_page
-      else app_private.fact_registry_report_add_page(v_report, v_page)
+    v_page := app_private.fact_registry_page_checks(
+      v_all[v_pages * v_page_size + 1 : (v_pages + 1) * v_page_size]
+    );
+    v_paged := case
+      when v_paged is null then v_page
+      else app_private.fact_registry_report_add_page(v_paged, v_page)
     end;
     v_pages := v_pages + 1;
-    v_after := (v_page ->> 'next_after')::uuid;
-    exit when v_after is null or v_pages >= 40;
+    exit when v_pages * v_page_size >= v_total or v_pages >= v_page_max;
   end loop;
-  v_report := (v_report - 'next_after')
-    || pg_catalog.jsonb_build_object('pages', v_pages, 'reprojection', v_reprojection);
+  v_report := pg_catalog.jsonb_build_object(
+      'checked_at', pg_catalog.statement_timestamp(),
+      'limit', v_page_size,
+      'pages', v_pages,
+      'candidate_sales', v_total,
+      'truncated', v_pages * v_page_size < v_total
+    )
+    || (v_paged - 'checks')
+    || (v_global - 'checks')
+    || pg_catalog.jsonb_build_object('checks', (v_global -> 'checks') || (v_paged -> 'checks'));
   perform app_private.sync_fact_registry_alerts_from_report(v_report);
   return v_report;
 end;
 $$;
 
 comment on function public.sync_fact_registry_alerts() is
-  'Registre des pièces : tâche quotidienne. Réapplique d''abord la projection aux ventes en dérive si la relance planifiée est ouverte (fermée par défaut), lance le contrôle page par page, puis ouvre ou referme les alertes opérationnelles fact_registry.*. Sans paramètre : l''appelant ne choisit ni la borne, ni le rapport. Rend le rapport additionné ; s''il est tronqué, aucune alerte n''est refermée et la tâche doit échouer. Serveur seul (service_role).';
+  'Registre des pièces : tâche quotidienne. Lit une fois les ventes du registre, lance les contrôles par vente page par page et les contrôles généraux une fois, puis ouvre ou referme les alertes opérationnelles fact_registry.*. Sans paramètre : l''appelant ne choisit ni la borne, ni le rapport. N''écrit aucune fiche (la relance planifiée est un appel à part). Rend le rapport additionné ; s''il est tronqué, aucune alerte n''est refermée et la tâche doit échouer. Serveur seul (service_role).';
 
 revoke all on function public.sync_fact_registry_alerts() from public, anon, authenticated;
 grant execute on function public.sync_fact_registry_alerts() to service_role;
