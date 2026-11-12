@@ -402,6 +402,33 @@ function removeManagedConcurrentIndexStatements(text) {
   return result + text.slice(copied);
 }
 
+// The only statements ignored for the connector role `lovable_readonly`, each alone on its line, with
+// this role as sole grantee and nothing after it (no WITH GRANT OPTION). What the role holds in
+// production was read on 2026-11-12: SELECT on tables, EXECUTE on functions, and one default privilege
+// set by `postgres` (SELECT on the future tables of `public`).
+const CONNECTOR_ROLE_READ_GRANTS = (() => {
+  const identifier = String.raw`(?:"[^"]+"|\w+)`;
+  const object = String.raw`${identifier}(?:\.${identifier})?`;
+  const role = String.raw`"?lovable_readonly"?\s*;$`;
+  return Object.freeze([
+    // SELECT, and nothing else, on one table, view or sequence, or on some of its columns.
+    new RegExp(
+      String.raw`^(?:GRANT|REVOKE)\s+SELECT(?:\s*\([^();]*\))?\s+ON\s+(?:(?:TABLE|SEQUENCE)\s+)?${object}\s+(?:TO|FROM)\s+${role}`,
+      "i",
+    ),
+    // EXECUTE on one function, whose argument types may hold one level of parentheses (numeric(10,2)).
+    new RegExp(
+      String.raw`^(?:GRANT|REVOKE)\s+EXECUTE\s+ON\s+FUNCTION\s+${object}\s*\((?:[^();]|\([^();]*\))*\)\s+(?:TO|FROM)\s+${role}`,
+      "i",
+    ),
+    // The default privilege: SELECT on the future tables of `public`, set by `postgres` or unnamed.
+    new RegExp(
+      String.raw`^ALTER\s+DEFAULT\s+PRIVILEGES\s+(?:FOR\s+ROLE\s+"?postgres"?\s+)?IN\s+SCHEMA\s+"?public"?\s+GRANT\s+SELECT\s+ON\s+TABLES\s+TO\s+${role}`,
+      "i",
+    ),
+  ]);
+})();
+
 function filterDiffLines(text) {
   return removeManagedConcurrentIndexStatements(text)
     .split(/\r?\n/)
@@ -416,16 +443,10 @@ function filterDiffLines(text) {
 
       // This read-only connector role is managed outside migrations (it exists in production, not in
       // the shadow database, where the migrations skip its grants). Ignore its grants without masking
-      // changes to application roles or objects: only a one-statement GRANT or REVOKE of privileges ON
-      // an object whose sole grantee is this role. Any other statement that names it (a policy, a grant
-      // shared with another role, a role membership, a grant WITH GRANT OPTION) stays in the diff.
-      if (
-        /^(?:GRANT|REVOKE)\s/i.test(normalized) &&
-        normalized.indexOf(";") === normalized.length - 1 &&
-        /\sON\s/i.test(normalized) &&
-        /\s(?:TO|FROM)\s+"?lovable_readonly"?\s*;$/i.test(normalized)
-      )
-        return false;
+      // changes to application roles or objects: only the read-only statements of
+      // CONNECTOR_ROLE_READ_GRANTS. Any other statement that names the role (a write privilege, a
+      // policy, a grant shared with another role, a role membership, WITH GRANT OPTION) stays in the diff.
+      if (CONNECTOR_ROLE_READ_GRANTS.some((pattern) => pattern.test(normalized))) return false;
 
       return !(
         /^-- Migration unit \d+:/i.test(normalized) ||
