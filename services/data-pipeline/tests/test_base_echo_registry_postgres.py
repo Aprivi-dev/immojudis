@@ -27,7 +27,6 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlsplit
 
 import pytest
 
@@ -41,6 +40,7 @@ from src.normalize import normalize_sale
 from src.storage import supabase_client as storage
 
 DB_URL_ENV = "PIPELINE_REGISTRY_DB_URL"
+LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 REQUIRED_ENV = "PIPELINE_REGISTRY_DB_REQUIRED"
 ROOMS = "property.rooms_count"
 SURFACE = "property.surface_m2"
@@ -54,10 +54,52 @@ def _db_url() -> str:
         if os.getenv(REQUIRED_ENV) == "1":
             pytest.fail(f"{DB_URL_ENV} est absente alors que {REQUIRED_ENV}=1 : les scénarios n'ont pas été joués.")
         pytest.skip(f"{DB_URL_ENV} absente : base au schéma complet non disponible")
-    host = urlsplit(url).hostname or ""
-    if host not in {"localhost", "127.0.0.1", "::1", ""} and not host.startswith("/"):
-        pytest.fail(f"{DB_URL_ENV} doit désigner une base locale (hôte {host!r} refusé) : ces tests écrivent.")
+    hosts = _connection_hosts(url)
+    if not hosts or not set(hosts) <= LOCAL_HOSTS:
+        pytest.fail(f"{DB_URL_ENV} doit désigner une base locale (hôtes {hosts!r} refusés) : ces tests écrivent.")
     return url
+
+
+def _connection_hosts(url: str) -> list[str]:
+    """Tous les hôtes que la connexion peut joindre, tels que le pilote les lit (``host`` et ``hostaddr``).
+
+    Une liste vide est refusée par l'appelant : sans hôte dans l'adresse, le pilote prend celui de l'environnement
+    (``PGHOST``) ou une socket locale, et rien ne dit lequel.
+    """
+    import psycopg
+    from psycopg.conninfo import conninfo_to_dict
+
+    try:
+        parameters = conninfo_to_dict(url)
+    except psycopg.Error:
+        pytest.fail(f"{DB_URL_ENV} n'est pas une adresse de connexion lisible.")
+    return [
+        host.strip()
+        for key in ("host", "hostaddr")
+        for host in str(parameters.get(key) or "").split(",")
+        if host.strip()
+    ]
+
+
+def _require_projection_owner(db: Any) -> None:
+    """Les scénarios posent des pièces comme le fait la projection : il faut être son propriétaire.
+
+    Les gardes par rôle du registre refusent tout autre rôle. On ne les contourne pas : on le dit.
+    """
+    found = db.execute(
+        """select pg_catalog.pg_get_userbyid(routine.proowner), current_user
+           from pg_catalog.pg_proc routine
+           join pg_catalog.pg_namespace schema on schema.oid = routine.pronamespace
+           where schema.nspname = 'app_private' and routine.proname = 'project_sale_fields'"""
+    ).fetchone()
+    if found is None:
+        pytest.fail("app_private.project_sale_fields est absente : les migrations du registre ne sont pas rejouées.")
+    owner, user = found
+    if owner != user:
+        pytest.fail(
+            f"Ces scénarios doivent se connecter avec le rôle propriétaire de app_private.project_sale_fields "
+            f"({owner!r}) ; la connexion utilise {user!r}. Les gardes par rôle du registre refuseraient ses écritures."
+        )
 
 
 def test_a_missing_database_is_fatal_when_the_scenarios_are_required(monkeypatch) -> None:
@@ -75,10 +117,54 @@ def test_a_missing_database_is_fatal_when_the_scenarios_are_required(monkeypatch
     assert isinstance(optional.value, pytest.skip.Exception)
 
 
-def test_a_database_that_is_not_local_is_refused(monkeypatch) -> None:
-    monkeypatch.setenv(DB_URL_ENV, "postgresql://postgres@db.example.test:5432/postgres")
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql://postgres@db.example.test:5432/postgres",
+        # L'adresse numérique l'emporte sur le nom : un nom local ne suffit pas.
+        "postgresql://postgres@localhost:5432/postgres?hostaddr=203.0.113.7",
+        "host=127.0.0.1 hostaddr=203.0.113.7 dbname=postgres",
+        # Plusieurs hôtes : tous doivent être locaux.
+        "postgresql://postgres@127.0.0.1:5432,db.example.test:5432/postgres",
+        # Sans hôte, le pilote prendrait celui de l'environnement.
+        "postgresql:///postgres",
+        "dbname=postgres user=postgres",
+        "postgresql://postgres@%2Fvar%2Frun%2Fpostgresql/postgres",
+    ],
+)
+def test_a_database_that_is_not_local_is_refused(monkeypatch, url) -> None:
+    monkeypatch.setenv(DB_URL_ENV, url)
     with pytest.raises(pytest.fail.Exception, match="locale"):
         _db_url()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["postgresql://postgres@127.0.0.1:55600/replay", "postgresql://postgres:mot@localhost:54322/postgres?hostaddr=127.0.0.1"],
+)
+def test_a_local_database_is_accepted(monkeypatch, url) -> None:
+    monkeypatch.setenv(DB_URL_ENV, url)
+    assert _db_url() == url
+
+
+def test_a_connection_that_does_not_own_the_projection_is_refused_with_a_clear_message() -> None:
+    import psycopg
+
+    with psycopg.connect(_db_url(), autocommit=True) as db:
+        _require_projection_owner(db)  # le rôle de la connexion : accepté
+        db.execute("set role service_role")
+        with pytest.raises(pytest.fail.Exception, match="propriétaire de app_private.project_sale_fields"):
+            _require_projection_owner(db)
+        db.execute("reset role")
+        users_before = db.execute("select count(*) from auth.users").fetchone()[0]
+
+    # La connexion des scénarios fait ce contrôle avant toute écriture.
+    from psycopg.conninfo import make_conninfo
+
+    with pytest.raises(pytest.fail.Exception, match="propriétaire de app_private.project_sale_fields"):
+        Registry(make_conninfo(_db_url(), options="-c role=service_role"))
+    with psycopg.connect(_db_url(), autocommit=True) as db:
+        assert db.execute("select count(*) from auth.users").fetchone()[0] == users_before
 
 
 def say(text: str) -> None:
@@ -92,6 +178,11 @@ class Registry:
         import psycopg
 
         self.db = psycopg.connect(url, autocommit=True)
+        try:
+            _require_projection_owner(self.db)
+        except BaseException:
+            self.db.close()
+            raise
         self.admin = str(uuid.uuid4())
         self.case = str(uuid.uuid4())
         self.db.execute("insert into auth.users (id) values (%s)", (self.admin,))
