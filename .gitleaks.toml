@@ -18,6 +18,7 @@ paths = [
 '''(?:^|/)services/data-pipeline/tests/fixtures/information_agent_extraction_attack\.json''',
 '''(?:^|/)services/data-pipeline/tests/test_information_agent_evaluation\.py''',
 '''(?:^|/)services/data-pipeline/tests/test_fact_claims\.py''',
+'''(?:^|/)src/app/api/admin/fact-claims/decisions/route\.test\.ts''',
 '''(?:^|/)src/components/admin/AdminInformationAgentReviewPanel\.test\.tsx''',
 '''(?:^|/)src/components/sale-detail/ListingCharacteristics\.test\.tsx''',
 '''(?:^|/)src/components/sale-detail/ListingCharacteristics\.tsx''',
