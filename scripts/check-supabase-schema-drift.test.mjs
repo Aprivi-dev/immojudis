@@ -11,6 +11,7 @@ import {
   DIFF_TOOL_FAILURE_TAIL_LINES,
   RECONCILED_CHECK_CONSTRAINTS,
   diffToolFailureReport,
+  quoteForeignText,
   canonicalCheckCondition,
   canonicalConcurrentIndexDefinition,
   checkBody,
@@ -378,106 +379,25 @@ CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)
     );
   });
 
-  describe("grants of the connector role managed outside migrations", () => {
-    it.each([
-      "GRANT SELECT ON public.auction_sales TO lovable_readonly;",
-      "GRANT SELECT ON TABLE public.auction_sales TO lovable_readonly;",
-      'GRANT SELECT ON TABLE public.auction_sales TO "lovable_readonly";',
-      "GRANT SELECT (id, city) ON TABLE public.auction_sales TO lovable_readonly;",
-      'GRANT SELECT ON TABLE app_private."Source Presence" TO lovable_readonly;',
-      "GRANT SELECT ON SEQUENCE public.auction_sales_id_seq TO lovable_readonly;",
-      "REVOKE SELECT ON TABLE public.auction_sales FROM lovable_readonly;",
-      // Les droits que les migrations donnent quand le rôle existe (20261008102630, 20261101110000, …).
-      "GRANT EXECUTE ON FUNCTION app_private.auction_sale_source_presence_json(uuid) TO lovable_readonly;",
-      "GRANT EXECUTE ON FUNCTION app_private.sale_document_photo_media(jsonb, uuid) TO lovable_readonly;",
-      "grant execute on function app_private.public_sale_conditions(jsonb) to lovable_readonly;",
-      "GRANT EXECUTE ON FUNCTION app_private.f() TO lovable_readonly;",
-      "GRANT EXECUTE ON FUNCTION app_private.f(p_sale_id uuid, pg_catalog.jsonb, numeric(10,2), character varying(20)[], timestamp with time zone) TO lovable_readonly;",
-      "REVOKE EXECUTE ON FUNCTION app_private.f(uuid) FROM lovable_readonly;",
-      "  GRANT SELECT ON TABLE public.auction_sales TO lovable_readonly;  ",
-      // Le privilège par défaut lu en production le 12/11/2026 (lovable_readonly=r/postgres, schéma public).
-      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
-      'alter default privileges for role "postgres"  in schema "public"\tgrant select on tables to "lovable_readonly" ;',
-      // Le seul droit de schéma lu en production le 12/11/2026.
-      "GRANT USAGE ON SCHEMA public TO lovable_readonly;",
-      "REVOKE USAGE ON SCHEMA public FROM lovable_readonly;",
-      'grant usage  on schema "public" to "lovable_readonly" ;',
-    ])("ignores %s", (line) => {
-      expect(normalizeDiff(line)).toBe("");
-    });
-
-    it.each([
-      // Tout droit autre que la lecture.
-      "GRANT ALL ON TABLE public.users TO lovable_readonly;",
-      "GRANT INSERT ON TABLE public.users TO lovable_readonly;",
-      "GRANT SELECT, UPDATE ON TABLE public.users TO lovable_readonly;",
-      "GRANT UPDATE (email) ON TABLE public.users TO lovable_readonly;",
-      "GRANT USAGE ON SEQUENCE public.users_id_seq TO lovable_readonly;",
-      "REVOKE ALL ON TABLE public.auction_sales FROM lovable_readonly;",
-      // Autre objet ou autre portée que ceux lus en production.
-      "GRANT USAGE ON SCHEMA app_private TO lovable_readonly;",
-      "GRANT USAGE ON SCHEMA public_archive TO lovable_readonly;",
-      "GRANT USAGE ON SCHEMA public, app_private TO lovable_readonly;",
-      "GRANT CREATE ON SCHEMA public TO lovable_readonly;",
-      "GRANT USAGE, CREATE ON SCHEMA public TO lovable_readonly;",
-      "GRANT ALL ON SCHEMA public TO lovable_readonly;",
-      "REVOKE ALL ON SCHEMA public FROM lovable_readonly;",
-      "GRANT USAGE ON SCHEMA public TO lovable_readonly, anon;",
-      "GRANT USAGE ON SCHEMA public TO lovable_readonly WITH GRANT OPTION;",
-      "GRANT USAGE ON SCHEMA public TO anon; GRANT USAGE ON SCHEMA public TO lovable_readonly;",
-      "GRANT SELECT ON ALL TABLES IN SCHEMA public TO lovable_readonly;",
-      "GRANT SELECT ON TABLE public.users, public.profiles TO lovable_readonly;",
-      "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app_private TO lovable_readonly;",
-      "GRANT ALL ON FUNCTION app_private.f(uuid) TO lovable_readonly;",
-      "GRANT EXECUTE ON PROCEDURE app_private.purge(uuid) TO lovable_readonly;",
-      "GRANT EXECUTE ON FUNCTION app_private.f(uuid), app_private.g(uuid) TO lovable_readonly;",
-      "GRANT EXECUTE ON FUNCTION app_private.f(uuid) TO anon, lovable_readonly;",
-      "GRANT EXECUTE ON FUNCTION app_private.f(uuid) TO lovable_readonly WITH GRANT OPTION;",
-      // Privilèges par défaut : seule la forme lue en production est ignorée.
-      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT INSERT ON TABLES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT ON TABLES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES IN SCHEMA app_private GRANT SELECT ON TABLES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES IN SCHEMA public, app_private GRANT SELECT ON TABLES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres, supabase_admin IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly WITH GRANT OPTION;",
-      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly, anon;",
-      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO anon;",
-      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE SELECT ON TABLES FROM lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO anon; ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
-      // Le rôle nommé ailleurs que comme seul bénéficiaire d'un droit de lecture.
-      "CREATE POLICY lovable_readonly ON public.users FOR ALL TO anon USING (true);",
-      "CREATE POLICY open_read ON public.users FOR SELECT TO lovable_readonly USING (true);",
-      "GRANT ALL ON TABLE public.users TO lovable_readonly, anon;",
-      "GRANT ALL ON TABLE public.users TO anon, lovable_readonly;",
-      "GRANT SELECT ON TABLE public.users TO lovable_readonly WITH GRANT OPTION;",
-      "GRANT SELECT ON TABLE public.users TO anon; GRANT SELECT ON TABLE public.users TO lovable_readonly;",
-      "GRANT SELECT ON TABLE public.users TO anon; -- TO lovable_readonly;",
-      "GRANT service_role TO lovable_readonly;",
-      "GRANT lovable_readonly TO anon;",
-      "GRANT lovable_readonly TO postgres;",
-      "REVOKE ALL ON TABLE public.users FROM lovable_readonly, authenticated;",
-      "REVOKE SELECT ON TABLE public.lovable_readonly FROM authenticated;",
-      "GRANT SELECT ON TABLE public.users TO lovable_readonly_admin;",
-      "GRANT SELECT ON TABLE public.users TO not_lovable_readonly;",
-      "ALTER TABLE public.users OWNER TO lovable_readonly;",
-      "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO lovable_readonly;",
-      "DROP TABLE public.users; -- lovable_readonly",
-      "COMMENT ON TABLE public.users IS 'lovable_readonly';",
-    ])("keeps %s", (line) => {
-      expect(normalizeDiff(line)).toBe(line);
-    });
+  // Le rôle `lovable_readonly` est supprimé par la migration 20261117110000 : plus aucune ligne qui le nomme
+  // n'est ignorée, pas même les droits de lecture que le contrôle laissait passer tant qu'il existait.
+  it.each([
+    "GRANT SELECT ON TABLE public.auction_sales TO lovable_readonly;",
+    'GRANT SELECT ON TABLE public.auction_sales TO "lovable_readonly";',
+    "GRANT SELECT (id, city) ON TABLE public.auction_sales TO lovable_readonly;",
+    "REVOKE SELECT ON TABLE public.auction_sales FROM lovable_readonly;",
+    "GRANT EXECUTE ON FUNCTION app_private.public_sale_conditions(jsonb) TO lovable_readonly;",
+    "GRANT USAGE ON SCHEMA public TO lovable_readonly;",
+    "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
+    "GRANT lovable_readonly TO postgres;",
+  ])("reports %s as drift", (line) => {
+    expect(normalizeDiff(line)).toBe(line);
   });
 
   it("preserves the existing platform-managed drift filters", () => {
     expect(
       normalizeDiff(`
 CREATE EXTENSION pg_net WITH SCHEMA public;
-GRANT SELECT ON public.auction_sales TO lovable_readonly;
 -- Migration unit 2: 20261008121940_hot_identity_and_collection_lookup_indexes.sql
 -- Transaction mode: non-transactional
 -- Boundary reason: CREATE INDEX CONCURRENTLY
@@ -899,17 +819,59 @@ describe("Report of a failed diff tool", () => {
         status: 1,
         stdout:
           "::error title=Forged::forged\n  ::add-mask::x\n##[error]forged\nplain\r::stop-commands::token\n",
-        stderr: "::set-output name=a::b",
-        error: new Error("first\n::warning::forged"),
+        stderr: "::set-output name=a::b\nmiddle ##[group]forged ##[endgroup]",
+        error: new Error("first\n::warning::forged\n##[error]forged"),
       },
       attempts: 1,
       transient: false,
     }).split("\n");
 
-    expect(report).toHaveLength(10);
+    expect(report).toHaveLength(11);
     for (const line of report) expect(line).toMatch(/^(?:\[schema-drift\] |> )/);
     expect(report).toContain("> ::stop-commands::token");
-    expect(report[1]).toBe("[schema-drift] Diff tool not run to its end: first ::warning::forged");
+    // `##[` is broken wherever it stands: the `> ` prefix alone would leave it readable.
+    for (const line of report) expect(line).not.toContain("##[");
+    expect(report).toContain("> ## [error]forged");
+    expect(report).toContain("> middle ## [group]forged ## [endgroup]");
+    expect(report[1]).toBe(
+      "[schema-drift] Diff tool not run to its end: first ::warning::forged ## [error]forged",
+    );
+  });
+
+  it("masks the password as written in the URL, in either case of its escapes, and when wrapped", () => {
+    // Fictitious URLs and passwords. The first password holds an unencoded `@`, `/` and `#`: the URL parser
+    // reads `Fk55` as the password and `ss` as the host.
+    const written = "Fk55@ss/w#rd-fake";
+    const unparsed = `postgresql://postgres:${written}@db.example.invalid:5432/postgres`;
+    const encoded = "Fake%2Fpw%3Atail";
+    const parsed = `postgresql://postgres.abcdefgh:${encoded}@aws-0-eu-west-3.pooler.supabase.com:6543/postgres`;
+    const report = diffToolFailureReport({
+      result: {
+        status: 1,
+        stdout: "",
+        stderr: [
+          `as written: password=${written}`,
+          `lower case escapes: ${encoded.replaceAll("%2F", "%2f").replaceAll("%3A", "%3a")}`,
+          `wrapped url: ${parsed.slice(0, 40)}\n    ${parsed.slice(40)} end`,
+          `wrapped password: ${written.slice(0, 5)}\r\n\t${written.slice(5)} end`,
+          "real error",
+        ].join("\n"),
+      },
+      attempts: 1,
+      transient: false,
+      databaseUrls: [unparsed, parsed],
+    });
+
+    for (const leak of ["w#rd", "Fk55", "%2fpw", "%2Fpw", "tail", "abcdefgh", "pooler"])
+      expect(report).not.toContain(leak);
+    expect(report.split("\n").slice(1)).toEqual([
+      "[schema-drift] Diff tool stderr, last 5 of 5 line(s):",
+      "> as written: password=[masqué]",
+      "> lower case escapes: [masqué]",
+      "> wrapped url: [masqué] end",
+      "> wrapped password: [masqué] end",
+      "> real error",
+    ]);
   });
 
   // The whole script, in local mode, with a stand-in for `npx` (the only thing on its PATH besides the
@@ -1032,10 +994,136 @@ describe("Report of a failed diff tool", () => {
       expect(run.stderr).toEqual([
         "[schema-drift] REAL DRIFT: Local database differs from committed migrations.",
         "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
-        "DROP POLICY x ON public.auction_sales;",
+        "> DROP POLICY x ON public.auction_sales;",
       ]);
     },
   );
+
+  it("copies no line of the diff that GitHub could read as a workflow command", wholeScript, () => {
+    // A comment or a name read from the database may hold anything, line breaks included.
+    const run = runScriptWithStandInTool(
+      writeDiff(
+        "COMMENT ON TABLE public.t IS 'a\\n::error title=Forged::forged\\n##[error]forged\\nb ##[group]c\\r::add-mask::d';\\n",
+      ),
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stderr.slice(2)).toEqual([
+      "> COMMENT ON TABLE public.t IS 'a",
+      "> ::error title=Forged::forged",
+      "> ## [error]forged",
+      "> b ## [group]c",
+      "> ::add-mask::d';",
+    ]);
+  });
+
+  it("masks a connection URL quoted by the diff", wholeScript, () => {
+    // Fictitious URL: in local mode the script knows no target, any Postgres URL is masked all the same.
+    const run = runScriptWithStandInTool(
+      writeDiff(
+        "COMMENT ON TABLE public.t IS 'see postgresql://postgres:Fk55-fake@db.example.invalid:5432/postgres';\\nDROP POLICY x ON public.t;\\n",
+      ),
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stderr.slice(2)).toEqual([
+      "> COMMENT ON TABLE public.t IS 'see [masqué]",
+      "> DROP POLICY x ON public.t;",
+    ]);
+  });
+
+  it("masks the password of the compared database wherever the diff quotes it", () => {
+    // Fictitious URL and password, as the script passes them in --remote mode.
+    const target =
+      "postgresql://postgres.abcdefgh:Fake%2Fpw@aws-0-eu-west-3.pooler.supabase.com:5432/postgres";
+    expect(
+      quoteForeignText(
+        `COMMENT ON TABLE public.t IS 'pw Fake/pw or Fake%2fpw';\n-- ${target}\n##[error]x`,
+        [target],
+      ),
+    ).toBe(
+      "> COMMENT ON TABLE public.t IS 'pw [masqué] or [masqué]';\n> -- [masqué]\n> ## [error]x",
+    );
+  });
+
+  it("masks before cutting, so that a password across the cut shows none of its characters", () => {
+    // Fictitious URL and password. The cut falls after the first four characters of the password.
+    const target = "postgresql://postgres:Fk55-fake-password@db.example.invalid:5432/postgres";
+    const quoted = quoteForeignText(`${"x".repeat(96)}Fk55-fake-password tail`, [target], 100);
+
+    expect(quoted).toBe(`> ${"x".repeat(96)}[mas`);
+    expect(quoted).not.toContain("Fk55");
+  });
+
+  it("cuts the diff to 40 000 characters after masking it, not before", wholeScript, () => {
+    // Fictitious URL, placed so that a cut made before the masking would fall inside it and lose ` tail`.
+    const run = runScriptWithStandInTool(
+      [
+        'for argument in "$@"; do case "$argument" in --output=*)',
+        "  { head -c 39980 /dev/zero | tr '\\0' 'x'",
+        "    printf ' postgresql://postgres:Fk55-fake-password@db.example.invalid:5432/postgres tail\\n'",
+        '  } > "${argument#--output=}";; esac; done',
+        "exit 0",
+      ].join("\n"),
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toHaveLength(3);
+    expect(run.stderr[2]).toBe(`> ${"x".repeat(39_980)} [masqué] tail`);
+  });
+
+  it("does not replace a password of fewer than four characters, but still masks its URL", () => {
+    // Fictitious URL: replacing every `abc` of a log would make it unreadable and tell the password.
+    const target = "postgresql://postgres:abc@db.example.invalid:5432/postgres";
+    const fourCharacters = "postgresql://postgres:abcd@db.example.invalid:5432/postgres";
+
+    expect(quoteForeignText(`abc abcdef\nconnecting to ${target} failed`, [target])).toBe(
+      "> abc abcdef\n> connecting to [masqué] failed",
+    );
+    expect(quoteForeignText("abc abcdef", [fourCharacters])).toBe("> abc [masqué]ef");
+  });
+
+  // The script in --remote mode, which never gets as far as the diff tool in these tests.
+  const runRemoteScript = (databaseUrl) =>
+    withStandInTool("exit 0", ({ script, options }) => {
+      const run = spawnSync(process.execPath, [script, "--remote"], {
+        ...options,
+        env: { ...options.env, SUPABASE_DB_URL: databaseUrl, PGCONNECT_TIMEOUT: "5" },
+      });
+      return { status: run.status, stdout: run.stdout, stderr: run.stderr.trimEnd().split("\n") };
+    });
+
+  // Fictitious values.
+  it.each([
+    // A raw `/` in the password makes the URL parser fail, and its error quotes the input.
+    [
+      "the URL parser rejects",
+      "postgresql://postgres:Fk55/fake-password@db.example.invalid:5432/db",
+    ],
+    // Valid for the URL parser, with no host: not a database.
+    ["has no //", "postgresql:postgres:Fk55-fake-password@db.example.invalid:5432/db"],
+    ["has another protocol", "https://postgres:Fk55-fake-password@db.example.invalid:5432/db"],
+  ])("fails without printing a connection URL that %s", wholeScript, (_case, databaseUrl) => {
+    const run = runRemoteScript(databaseUrl);
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe("");
+    expect(run.stderr).toEqual([
+      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL Postgres valide (postgres:// ou postgresql://, avec un hôte). Sa valeur n'est pas affichée.",
+    ]);
+  });
+
+  it("quotes and masks the error of the concurrent index check", wholeScript, () => {
+    // Fictitious password, and a local port where nothing listens: the driver error is foreign text.
+    const run = runRemoteScript("postgresql://postgres:Fk55-fake-password@127.0.0.1:9/postgres");
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe("");
+    expect(run.stderr[0]).toBe("[schema-drift] Concurrent index check failed:");
+    expect(run.stderr.length).toBeGreaterThan(1);
+    for (const line of run.stderr.slice(1)) expect(line).toMatch(/^> /);
+    expect(run.stderr.join("\n")).not.toContain("Fk55");
+  });
 
   it("succeeds when the diff holds nothing but the reviewed indexes", wholeScript, () => {
     const run = runScriptWithStandInTool(
