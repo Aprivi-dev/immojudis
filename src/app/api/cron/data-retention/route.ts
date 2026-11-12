@@ -1,4 +1,5 @@
-import { runDataRetention, runMonitoredCron } from "@/lib/cron-jobs";
+import { runMonitoredCron } from "@/lib/cron-jobs";
+import { runDataRetention } from "@/lib/data-retention-job";
 
 // Purges isolées en base (chacune a son propre délai) : même plafond que les autres tâches longues.
 // Next.js veut un littéral ici.

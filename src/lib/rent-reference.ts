@@ -9,8 +9,8 @@ import { departmentCode } from "@/lib/department-code";
 // ce n'est ni un loyer constaté, ni un loyer garanti, ni un loyer hors charges.
 
 /** Seuils de la règle de fiabilité d'une estimation ANIL à la commune. */
-export const RENT_RELIABLE_MIN_OBSERVATIONS = 30;
-export const RENT_RELIABLE_MIN_R2 = 0.5;
+const RENT_RELIABLE_MIN_OBSERVATIONS = 30;
+const RENT_RELIABLE_MIN_R2 = 0.5;
 
 export type RentSegment = "apt_all" | "apt_1_2" | "apt_3p" | "house";
 export const RENT_SEGMENTS: readonly RentSegment[] = ["apt_all", "apt_1_2", "apt_3p", "house"];

@@ -1,7 +1,6 @@
 import "server-only";
-import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -15,59 +14,52 @@ import {
 } from "@/lib/offer-opening-notification";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import type { ApiRequestContext } from "@/lib/api-observability";
 
-const NO_STORE = { "cache-control": "private, no-store" };
+/** PUT and PATCH share one bucket: both write the same request of the signed-in user. */
+async function authorizeWrite(request: Request, api: ApiRequestContext) {
+  const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+  await enforceUserRateLimit({
+    userId: auth.userId,
+    bucketKey: "billing.opening-notification",
+    ...RATE_LIMIT_POLICIES.formSubmit,
+    context: api,
+  });
+  return auth;
+}
 
 /** Has the signed-in user asked to be told when subscriptions open? */
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.billing.opening-notification.read", fallbackMessage: "Demande indisponible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    return NextResponse.json(await getOfferOpeningNotification({ auth }), { headers: NO_STORE });
-  } catch (error) {
-    return apiRouteError(error, request, "billing-opening-notification", {
-      fallbackMessage: "Demande indisponible",
-    });
-  }
-}
+    return getOfferOpeningNotification({ auth });
+  },
+);
 
 /** Records (or withdraws) the explicit, timestamped request to be told once at opening. */
-export async function PUT(request: Request) {
-  try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    await enforceUserRateLimit({
-      userId: auth.userId,
-      bucketKey: "billing.opening-notification",
-      ...RATE_LIMIT_POLICIES.formSubmit,
-    });
+export const PUT = apiRoute(
+  { scope: "api.billing.opening-notification.write", fallbackMessage: "Demande impossible" },
+  async (request, { api }) => {
+    const auth = await authorizeWrite(request, api);
     const input = offerOpeningNotificationSchema.parse(await request.json());
-    const response = await setOfferOpeningNotification({ auth, admin: supabaseAdmin, input });
-    return NextResponse.json(response, { headers: NO_STORE });
-  } catch (error) {
-    return apiRouteError(error, request, "billing-opening-notification", {
-      fallbackMessage: "Demande impossible",
-    });
-  }
-}
+    return setOfferOpeningNotification({ auth, admin: supabaseAdmin, input });
+  },
+);
 
 /**
  * Optional answers of the qualified waiting list (profile, sales studied per month, two price
  * marks, interview of about 45 minutes). Only for someone whose request is active: nothing here is required
  * to join the list.
  */
-export async function PATCH(request: Request) {
-  try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    await enforceUserRateLimit({
-      userId: auth.userId,
-      bucketKey: "billing.opening-notification",
-      ...RATE_LIMIT_POLICIES.formSubmit,
-    });
+export const PATCH = apiRoute(
+  {
+    scope: "api.billing.opening-notification.survey",
+    fallbackMessage: "Réponses impossibles à enregistrer",
+  },
+  async (request, { api }) => {
+    const auth = await authorizeWrite(request, api);
     const input = offerOpeningSurveySchema.parse(await request.json());
-    const response = await setOfferOpeningSurvey({ auth, admin: supabaseAdmin, input });
-    return NextResponse.json(response, { headers: NO_STORE });
-  } catch (error) {
-    return apiRouteError(error, request, "billing-opening-notification", {
-      fallbackMessage: "Réponses impossibles à enregistrer",
-    });
-  }
-}
+    return setOfferOpeningSurvey({ auth, admin: supabaseAdmin, input });
+  },
+);

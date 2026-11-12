@@ -40,8 +40,8 @@ type CourtScenariosPayload = {
 };
 
 /** The copy of the lots changes at most daily; an hour of cache keeps the answers well in step. */
-export const AUCTION_SCENARIOS_REVALIDATE_SECONDS = 3_600;
-export const AUCTION_SCENARIOS_CACHE_TAG = "auction-scenarios";
+const AUCTION_SCENARIOS_REVALIDATE_SECONDS = 3_600;
+const AUCTION_SCENARIOS_CACHE_TAG = "auction-scenarios";
 
 /**
  * The answer depends on the court, the starting-price band and the property group only, never on

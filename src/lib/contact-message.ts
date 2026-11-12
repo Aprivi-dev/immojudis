@@ -62,7 +62,7 @@ function singleLine(value: string): string {
  * Rubriques d'un signalement : l'endroit de la fiche concerné. Une liste fermée, car la valeur vient
  * de l'adresse de la page et finit dans le message prérempli.
  */
-export const CONTACT_REPORT_TOPICS = {
+const CONTACT_REPORT_TOPICS = {
   fiche: "Fiche de la vente",
   prix: "Mise à prix",
   date: "Date ou lieu de la vente",
@@ -186,7 +186,7 @@ const CONTACT_TRIAGE: Partial<Record<ContactSubject, { prefix: string; topic: st
 };
 
 /** Étiquettes Resend d'un message : sa catégorie, et le tri `droits` ou `donnees` quand il y a lieu. */
-export function contactEmailTags(subject: ContactSubject): { name: string; value: string }[] {
+function contactEmailTags(subject: ContactSubject): { name: string; value: string }[] {
   const topic = CONTACT_TRIAGE[subject]?.topic;
   return [
     { name: "category", value: "contact" },

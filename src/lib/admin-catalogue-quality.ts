@@ -16,7 +16,7 @@ import { finiteNumberFromNumberOrText as num } from "@/lib/finite-number";
  */
 
 /** ok : sous le seuil ; alert : au-dessus ; trend : mesure de tendance sans seuil ; unknown : non mesuré. */
-export type CatalogueQualityState = "ok" | "alert" | "trend" | "unknown";
+type CatalogueQualityState = "ok" | "alert" | "trend" | "unknown";
 
 export type CatalogueQualityRow = {
   key: string;
@@ -30,7 +30,7 @@ export type CatalogueQualityRow = {
   note: string | null;
 };
 
-export type CatalogueQualityAlert = {
+type CatalogueQualityAlert = {
   key: string;
   label: string;
   /** « Ouverte le …, vue le … ». */
@@ -40,7 +40,7 @@ export type CatalogueQualityAlert = {
 };
 
 /** Part des ventes à venir dont l'enchère plafond est calculable, pour un type de vente (P7). */
-export type CeilingCoverageRow = {
+type CeilingCoverageRow = {
   key: string;
   label: string;
   /** Ventes à venir évaluées (« 412 »). */
@@ -106,7 +106,7 @@ export const CATALOGUE_QUALITY_SOURCE_NAME = "catalogue-quality";
 export const CATALOGUE_QUALITY_ALERT_PREFIX = "catalogue.quality.";
 
 /** Libellés, dans l'ordre d'affichage : les invariants, les seuils, puis les tendances. */
-export const CATALOGUE_QUALITY_LABELS: Record<string, string> = {
+const CATALOGUE_QUALITY_LABELS: Record<string, string> = {
   bedrooms_ge_rooms: "Chambres ≥ pièces (plus d’une pièce)",
   land_with_rooms: "Terrains avec un nombre de pièces",
   licitor_lot_mismatch: "Lots Licitor discordants avec leur carte",
@@ -290,7 +290,7 @@ export type CeilingCoverageSale = {
   estimateErrorCode: string | null;
 };
 
-export const CEILING_FAILURE_LABELS: Record<string, string> = {
+const CEILING_FAILURE_LABELS: Record<string, string> = {
   regime_closed: "Type de vente non ouvert au calcul",
   valuation_conflict: "Conflit de valorisation",
   ai_block: "Donnée bloquée par la relecture IA",
@@ -400,7 +400,7 @@ export function buildCeilingCoverage(
 // normalisée, au moins deux sources. Les seuils de l'alerte restent ceux de la base ; la fusion reste coupée.
 // ------------------------------------------------------------------------------------------------------------
 
-export type CrossSourceDuplicateGroup = {
+type CrossSourceDuplicateGroup = {
   sale_day: string;
   starting_price_eur: number | string;
   city_key: string;

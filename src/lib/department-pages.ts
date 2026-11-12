@@ -77,7 +77,7 @@ export function departmentSearchPath(department: Pick<DepartmentRef, "code">): s
  * (`get_public_tribunal_sales`) lit le statut : `unknown` y marque une vente dont la base ne connaît
  * pas le statut, qui n'est pas présentée comme « à venir » mais « à confirmer ».
  */
-export type DepartmentSaleStatus = "scheduled" | "postponed" | "unknown";
+type DepartmentSaleStatus = "scheduled" | "postponed" | "unknown";
 
 /** Une vente à venir du catalogue public, réduite à ce que la page affiche. */
 export type DepartmentSale = {
@@ -170,7 +170,7 @@ export function medianOf(values: number[]): number | null {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-export function isTribunalSale(sale: Pick<DepartmentSale, "venueType">): boolean {
+function isTribunalSale(sale: Pick<DepartmentSale, "venueType">): boolean {
   return sale.venueType === "tribunal";
 }
 

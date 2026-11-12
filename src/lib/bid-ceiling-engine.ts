@@ -69,14 +69,14 @@ export const CEILING_PROFILES: ReadonlyArray<{ key: CeilingProfile; label: strin
 ];
 
 /** Marge gardée sous la valeur du bien (habiter, louer) ou marge de revente visée (revendre), en %. */
-export const PROFILE_MARGIN_PCT: Record<CeilingProject, Record<CeilingProfile, number>> = {
+const PROFILE_MARGIN_PCT: Record<CeilingProject, Record<CeilingProfile, number>> = {
   habiter: { prudent: 15, equilibre: 10, offensif: 5 },
   louer: { prudent: 15, equilibre: 10, offensif: 5 },
   revendre: { prudent: 20, equilibre: 15, offensif: 10 },
 };
 
 /** Rendement net visé pour un projet locatif, en % du coût total. */
-export const TARGET_NET_YIELD_PCT: Record<CeilingProfile, number> = {
+const TARGET_NET_YIELD_PCT: Record<CeilingProfile, number> = {
   prudent: 6,
   equilibre: 5,
   offensif: 4,
@@ -238,13 +238,13 @@ export function marginPctFor(
 }
 
 /** Marge ajoutée quand la valeur repose sur peu de ventes ou sur une surface estimée. */
-export function dataMarginPct(value: CeilingHypotheses["value"]): number {
+function dataMarginPct(value: CeilingHypotheses["value"]): number {
   if (value.source === "saisie") return 0;
   const fragile = value.reliability === "fragile" || (value.sampleSize ?? 99) < 8;
   return (fragile ? 3 : 0) + (value.surfaceEstimated ? 2 : 0);
 }
 
-export function occupationNeedsRelease(occupation: OccupationCase): boolean {
+function occupationNeedsRelease(occupation: OccupationCase): boolean {
   return occupation === "occupe" || occupation === "squat" || occupation === "inconnu";
 }
 
@@ -841,7 +841,7 @@ export type EstimatedFee = {
 };
 
 /** Sous ce montant, un poste estimé n'est pas assez important pour être signalé. */
-export const IMPORTANT_ESTIMATED_FEE_EUR = 1_000;
+const IMPORTANT_ESTIMATED_FEE_EUR = 1_000;
 
 /** Mention affichée près du plafond (fiche, rapport PDF) tant que la taxe foncière n'est pas renseignée. */
 export const PROPERTY_TAX_NOT_COUNTED = "Taxe foncière non comptée";

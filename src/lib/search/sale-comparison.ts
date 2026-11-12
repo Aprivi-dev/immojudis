@@ -2,7 +2,7 @@ import { propertyTypeLabel } from "@/lib/format";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 
 export const MAX_COMPARED_SALES = 3;
-export const MAX_SAVED_COMPARED_SALES = 12;
+const MAX_SAVED_COMPARED_SALES = 12;
 const MAX_SNAPSHOT_CANDIDATES = 30;
 
 /**
@@ -43,7 +43,7 @@ export type SaleComparisonSnapshot = {
   items: ComparedSale[];
 };
 
-export function toComparedSale(sale: AuctionSale): ComparedSale {
+function toComparedSale(sale: AuctionSale): ComparedSale {
   const surface = nonNegativeNumber(sale.app_surface_m2);
   return {
     id: sale.id,

@@ -17,7 +17,7 @@ export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
 export const REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS = UNSUBSCRIBE_TOKEN_TTL_DAYS;
 
 /** Durée de validité d'un lien de désinscription, la même pour toutes les portées. */
-export function unsubscribeTokenTtlDays(_scope: UnsubscribeScope): number {
+function unsubscribeTokenTtlDays(_scope: UnsubscribeScope): number {
   return UNSUBSCRIBE_TOKEN_TTL_DAYS;
 }
 

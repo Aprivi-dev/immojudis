@@ -3,8 +3,8 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { getAdjudicationPriceStatisticsForSale } from "@/lib/adjudication-price-statistics-repository";
+import { apiRoute } from "@/lib/api-route";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -12,17 +12,21 @@ import { recordUsageSafely } from "@/lib/record-usage-safely.server";
 
 const paramsSchema = z.object({ id: z.string().guid() });
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const context = createApiRequestContext(request, "adjudication-price-statistics.sale");
-  try {
+export const GET = apiRoute<{ id: string }>(
+  {
+    scope: "adjudication-price-statistics.sale",
+    fallbackMessage: "Statistiques d’adjudication temporairement indisponibles.",
+    fallbackStatus: 503,
+    versionedApi: true,
+  },
+  async (request, { api, params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
-      context,
+      context: api,
       bucketKey: "v1.sale-adjudication-statistics",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    const rawParams = await params;
     // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »):
     // the statistics of the tribunal of this sale only. The identifier is validated after the
     // entitlement, as before; an invalid one simply cannot match an unlock.
@@ -30,9 +34,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       auth,
       "sales.statistics",
       "Statistiques d’adjudication réservées à l’offre Analyse.",
-      { saleId: paramsSchema.safeParse(rawParams).data?.id },
+      { saleId: paramsSchema.safeParse(params).data?.id },
     );
-    const { id: saleId } = paramsSchema.parse(rawParams);
+    const { id: saleId } = paramsSchema.parse(params);
     const statistics = await getAdjudicationPriceStatisticsForSale(saleId);
 
     recordUsageSafely({
@@ -48,19 +52,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     });
 
-    return apiJson(statistics, context, {
-      headers: {
-        "cache-control": "private, no-store",
-        vary: "authorization",
-      },
-    });
-  } catch (error) {
-    const response = apiError(error, context, {
-      fallbackMessage: "Statistiques d’adjudication temporairement indisponibles.",
-      fallbackStatus: 503,
-    });
-    response.headers.set("cache-control", "private, no-store");
-    response.headers.set("vary", "authorization");
-    return response;
-  }
-}
+    return statistics;
+  },
+);

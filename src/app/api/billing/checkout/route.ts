@@ -3,14 +3,14 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { createPlanCheckoutSession, resolveCheckoutPlanCode } from "@/lib/billing";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { checkoutConsentSchema } from "@/lib/commercial-acceptance";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
-export async function POST(request: Request) {
-  const context = createApiRequestContext(request, "api.billing.checkout");
-  try {
+export const POST = apiRoute(
+  { scope: "api.billing.checkout", fallbackMessage: "Paiement indisponible." },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     // Chaque appel ouvre une session de paiement chez Stripe : 10 par heure et par compte, avant
     // toute lecture du corps.
@@ -18,28 +18,19 @@ export async function POST(request: Request) {
       userId: auth.userId,
       bucketKey: "billing.checkout",
       ...RATE_LIMIT_POLICIES.formSubmit,
-      context,
+      context: api,
     });
     const url = new URL(request.url);
-    const body = (await request.json().catch(() => null)) as {
-      plan?: unknown;
-      consent?: unknown;
-    } | null;
+    const body = (await request.json()) as { plan?: unknown; consent?: unknown } | null;
     const plan = resolveCheckoutPlanCode(body?.plan ?? url.searchParams.get("plan"));
     const consent = checkoutConsentSchema.parse(body?.consent);
-    const response = await createPlanCheckoutSession({
+    return createPlanCheckoutSession({
       auth,
       origin: url.origin,
       plan,
       consent,
-      requestId: context.requestId,
+      requestId: api.requestId,
       userAgent: request.headers.get("user-agent"),
     });
-    return apiJson(response, context);
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Paiement indisponible.",
-      fallbackStatus: 400,
-    });
-  }
-}
+  },
+);

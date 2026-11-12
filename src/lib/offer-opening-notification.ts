@@ -18,7 +18,6 @@ type OpeningInsert = Database["public"]["Tables"]["offer_opening_notifications"]
 export {
   OFFER_OPENING_CONSENT_TEXT,
   OFFER_OPENING_CONSENT_VERSION,
-  OFFER_OPENING_REQUESTED_TEXT,
   OFFER_OPENING_SURVEY_VERSION,
 } from "@/lib/offer-opening-consent";
 
@@ -83,7 +82,7 @@ export type OfferOpeningSurveyState = {
   answeredAt: string | null;
 };
 
-export type OfferOpeningNotificationState = {
+type OfferOpeningNotificationState = {
   requested: boolean;
   consentedAt: string | null;
   /** Réponses déjà enregistrées ; absent quand la demande n'est pas active. */

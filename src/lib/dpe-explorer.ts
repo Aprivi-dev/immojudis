@@ -55,8 +55,6 @@ export const dpeExplorerQuerySchema = z.object({
   includeMap: booleanParam.default(true),
   limit: z.coerce.number().int().min(1).max(500).default(120),
 });
-
-export type DpeExplorerQueryInput = z.input<typeof dpeExplorerQuerySchema>;
 export type DpeExplorerQuery = z.output<typeof dpeExplorerQuerySchema>;
 
 export type DpeExplorerItem = {

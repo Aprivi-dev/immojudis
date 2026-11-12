@@ -30,7 +30,7 @@ const AUTOMATIC_LLM_ENRICHMENT = true;
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
 type RunnerMode = "github_actions" | "webhook" | "queue_worker";
-export type RunnerStatus = "active" | "suspended" | "unknown";
+type RunnerStatus = "active" | "suspended" | "unknown";
 
 export type AdminScrollSource = (typeof SCROLL_SOURCES)[number];
 export type AdminScrollMode = "collect";
@@ -76,7 +76,7 @@ export type AdminDashboardData = {
  * affiche : `runs` (rapide : 25 derniers runs, état du runner) et `counts` (comptages exacts de
  * six tables).
  */
-export const ADMIN_DASHBOARD_SECTIONS = ["runs", "counts"] as const;
+const ADMIN_DASHBOARD_SECTIONS = ["runs", "counts"] as const;
 export type AdminDashboardSection = (typeof ADMIN_DASHBOARD_SECTIONS)[number];
 export const adminDashboardQuerySchema = z
   .object({ section: z.enum(ADMIN_DASHBOARD_SECTIONS).optional() })

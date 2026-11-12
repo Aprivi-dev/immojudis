@@ -137,9 +137,11 @@ describe("routes /api/admin", () => {
       const source = readFileSync(file, "utf8");
       expect(source).toMatch(/export const maxDuration = 30;/);
       expect(source).not.toMatch(/export (async )?function (GET|POST|PATCH|PUT|DELETE)\b/);
-      const exported = [...source.matchAll(/export const (GET|POST|PATCH|PUT|DELETE) = (\w+)\(/g)];
+      const exported = [
+        ...source.matchAll(/export const (GET|POST|PATCH|PUT|DELETE) = (\w+)(?:<[^>]*>)?\(/g),
+      ];
       expect(exported.length).toBeGreaterThan(0);
-      for (const [, , wrapper] of exported) expect(wrapper).toBe("withAdminDeadline");
+      for (const [, , wrapper] of exported) expect(wrapper).toBe("adminRoute");
     },
   );
 });

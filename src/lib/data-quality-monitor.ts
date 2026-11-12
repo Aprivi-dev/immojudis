@@ -61,14 +61,14 @@ export const DATA_QUALITY_SALE_COLUMNS = [
 
 const DATA_QUALITY_SALE_SELECT = joinColumns(DATA_QUALITY_SALE_COLUMNS);
 
-export type DataQualityStatus = "healthy" | "watch" | "critical";
+type DataQualityStatus = "healthy" | "watch" | "critical";
 
 export type DataQualityPrioritySale = Pick<
   AuctionSale,
   "id" | "title" | "city" | "property_type" | "score_confidence"
 > & { flags: string[] };
 
-export type DataQualityMetric = {
+type DataQualityMetric = {
   key: string;
   label: string;
   count: number;
@@ -93,7 +93,7 @@ export type DataQualitySourceCoverage = {
   weakCount: number;
 };
 
-export type DataQualityFreshness = {
+type DataQualityFreshness = {
   lastRunAt: string | null;
   lastSuccessfulRunAt: string | null;
   lastRunStatus: string | null;

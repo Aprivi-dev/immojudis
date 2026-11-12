@@ -29,7 +29,7 @@ type HearingsRpcClient = {
   ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
 
-export type UpcomingHearingsRead = {
+type UpcomingHearingsRead = {
   hearings: PublicHearing[];
   /** Nombre d'audiences de la fenêtre avant le plafond de la base (5 000). */
   totalCount: number;

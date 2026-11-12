@@ -11,11 +11,7 @@ import { isConsumerMailAddress, mailDomainOf } from "@/lib/information-agent/add
 
 export type InformationAgentAddressKind = "generic" | "nominative";
 
-export const INFORMATION_AGENT_STRUCTURE_KINDS = [
-  "law_firm",
-  "notary_office",
-  "state_service",
-] as const;
+const INFORMATION_AGENT_STRUCTURE_KINDS = ["law_firm", "notary_office", "state_service"] as const;
 
 export type InformationAgentStructureKind = (typeof INFORMATION_AGENT_STRUCTURE_KINDS)[number];
 
@@ -103,7 +99,7 @@ export function informationAgentAddressKind(email: string): InformationAgentAddr
 }
 
 /** Domaine de messagerie du notariat : une adresse qui y est logée est celle d'un office. */
-export const INFORMATION_AGENT_NOTARY_MAIL_DOMAIN = "notaires.fr";
+const INFORMATION_AGENT_NOTARY_MAIL_DOMAIN = "notaires.fr";
 
 /** L'adresse (ou le domaine) est-elle sur le domaine du notariat ou l'un de ses sous-domaines ? SEUL prédicat. */
 export function isNotaryMailDomain(emailOrDomain: string): boolean {

@@ -13,7 +13,7 @@ import type { SalesSearchParams } from "./search-url-state";
  * ces filtres font lire toute la recherche, et la relire bornée aux dates coûterait un second
  * balayage complet. Le titre n'affiche alors que le total.
  */
-export const UPCOMING_WEEK_DAYS = 7;
+const UPCOMING_WEEK_DAYS = 7;
 
 /** Jour calendaire de Paris (« 2026-11-06 ») : celui que comptent la semaine et le compte à rebours. */
 export function parisToday(now: Date = new Date()): string {

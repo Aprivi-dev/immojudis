@@ -150,6 +150,11 @@ describe("sale fact reliability route", () => {
     const response = await GET(request(), context);
 
     expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: "Vente introuvable.",
+      code: "NOT_FOUND",
+    });
     expect(mocks.adminFrom).not.toHaveBeenCalled();
   });
 
@@ -171,6 +176,10 @@ describe("sale fact reliability route", () => {
     });
 
     expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Identifiant de vente invalide.",
+      code: "INVALID_REQUEST",
+    });
     expect(mocks.auth).not.toHaveBeenCalled();
   });
 });

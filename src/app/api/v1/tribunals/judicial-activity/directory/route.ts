@@ -3,7 +3,7 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { parseApiResponse } from "@/lib/api-errors";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -13,13 +13,18 @@ import {
 } from "@/lib/tribunal-judicial-activity-directory";
 import { getTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-activity-repository";
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "tribunal.judicial_activity.directory");
-  try {
+export const GET = apiRoute(
+  {
+    scope: "tribunal.judicial_activity.directory",
+    fallbackMessage: "Répertoire statistique des tribunaux temporairement indisponible.",
+    fallbackStatus: 503,
+    versionedApi: true,
+  },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
-      context,
+      context: api,
       bucketKey: "v1.tribunal-judicial-activity-directory",
       ...RATE_LIMIT_POLICIES.compute,
     });
@@ -32,23 +37,9 @@ export async function GET(request: Request) {
     const input = tribunalJudicialActivityDirectoryQuerySchema.parse(
       Object.fromEntries(url.searchParams.entries()),
     );
-    const directory = parseApiResponse(
+    return parseApiResponse(
       tribunalJudicialActivityDirectoryResponseSchema,
       await getTribunalJudicialActivityDirectory(input),
     );
-    return apiJson(directory, context, {
-      headers: {
-        "cache-control": "private, no-store",
-        vary: "authorization",
-      },
-    });
-  } catch (error) {
-    const response = apiError(error, context, {
-      fallbackMessage: "Répertoire statistique des tribunaux temporairement indisponible.",
-      fallbackStatus: 503,
-    });
-    response.headers.set("cache-control", "private, no-store");
-    response.headers.set("vary", "authorization");
-    return response;
-  }
-}
+  },
+);

@@ -1,39 +1,25 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { apiKeyCreateInputSchema, createUserApiKey, listUserApiKeys } from "@/lib/api-keys";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.api-keys.list", fallbackMessage: "Clés API indisponibles" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await listUserApiKeys({ auth });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiKeyErrorResponse(error, request);
-  }
-}
+    return listUserApiKeys({ auth });
+  },
+);
 
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  { scope: "api.api-keys.create", fallbackMessage: "Clés API indisponibles" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = apiKeyCreateInputSchema.parse(await request.json());
     const response = await createUserApiKey({ auth, input, request });
-    return NextResponse.json(response, {
-      status: 201,
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiKeyErrorResponse(error, request);
-  }
-}
-
-function apiKeyErrorResponse(error: unknown, request: Request) {
-  return apiRouteError(error, request, "api-keys", {
-    fallbackMessage: "Clés API indisponibles",
-  });
-}
+    return NextResponse.json(response, { status: 201 });
+  },
+);

@@ -20,16 +20,16 @@ export type DvfComparableCandidate = {
 export const DVF_PUBLIC_SOURCE_URL =
   "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees/";
 
-export type DvfComparableSubject = {
+type DvfComparableSubject = {
   surfaceM2: number | null;
   landSurfaceM2?: number | null;
   propertyType: string | null;
   startingPriceEur?: number | null;
 };
 
-export type DvfComparableMode = "surface_matched" | "nearby_type_only" | "expanded_fallback";
+type DvfComparableMode = "surface_matched" | "nearby_type_only" | "expanded_fallback";
 
-export type ScoredDvfComparable = DvfComparableCandidate & {
+type ScoredDvfComparable = DvfComparableCandidate & {
   pricePerM2: number;
   monthsOld: number;
   surfaceDeltaPct: number | null;

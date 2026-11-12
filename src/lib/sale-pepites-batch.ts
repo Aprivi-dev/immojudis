@@ -89,16 +89,16 @@ const MAX_ONLINE_SALES = 20_000;
 const READ_CHUNK_SIZE = 25;
 const MAX_REPORTED_ERRORS = 5;
 /** Durée du bail : au-delà de `maxDuration` (300 s) de la route, il expire seul si la passe meurt. */
-export const SALE_PEPITES_LEASE_SECONDS = 360;
+const SALE_PEPITES_LEASE_SECONDS = 360;
 /**
  * Passé ce délai depuis le début de la passe, l'écriture n'attend plus de verrou : les paquets restants sont différés
  * (la route est coupée à 300 s, et chaque attente de verrou peut durer jusqu'au délai de la requête).
  */
 export const SALE_PEPITES_WRITE_DEADLINE_MS = 250_000;
 /** Part d'évaluations tentées en échec à partir de laquelle la passe est déclarée en échec. */
-export const SALE_PEPITES_FAILURE_RATE_THRESHOLD = 0.2;
+const SALE_PEPITES_FAILURE_RATE_THRESHOLD = 0.2;
 /** Une évaluation plus ancienne est refaite : la fiche lit aussi des tables liées (documents, scénarios…). */
-export const SALE_PEPITES_REFRESH_MS = PEPITE_REFRESH_HOURS * 3_600_000;
+const SALE_PEPITES_REFRESH_MS = PEPITE_REFRESH_HOURS * 3_600_000;
 
 type PepiteTableInsert = Database["public"]["Tables"]["auction_sale_pepites"]["Insert"];
 type EstimateRow = Database["public"]["Tables"]["auction_sale_market_estimates"]["Row"];

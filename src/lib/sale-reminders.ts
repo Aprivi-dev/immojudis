@@ -47,7 +47,7 @@ const REMINDER_DAYS: ReadonlyArray<{ days: number; kind: "audience_j7" | "audien
 ];
 
 /** Les événements de changement plus anciens ne sont plus relus (le cron passe chaque jour). */
-export const WARNING_LOOKBACK_HOURS = 72;
+const WARNING_LOOKBACK_HOURS = 72;
 /** Au plus ce nombre d'éléments par email : au-delà, un second email part (rien n'est perdu). */
 export const MAX_REMINDER_ITEMS_PER_EMAIL = 10;
 /**
@@ -68,9 +68,9 @@ const MAX_FOLLOWED_SALES_PER_USER = 300;
  * Un rappel d'audience (J-7, J-1) n'est envoyé que si la vente a été revue à la source depuis moins
  * de ce délai : une date que personne n'a revérifiée depuis plus d'un jour et demi peut être périmée.
  */
-export const MAX_SOURCE_CHECK_AGE_HOURS = 36;
+const MAX_SOURCE_CHECK_AGE_HOURS = 36;
 /** Au-delà de cette part de rappels d'audience écartés faute de vérification récente, le passage échoue. */
-export const MAX_STALE_SKIP_SHARE = 0.2;
+const MAX_STALE_SKIP_SHARE = 0.2;
 const PROCESSING_BUDGET_MS = 50_000;
 const USER_CONCURRENCY = 4;
 const PARIS_TIME_ZONE = "Europe/Paris";
@@ -185,7 +185,7 @@ function emptySummary(mode: SaleRemindersMode): SaleReminderRunSummary {
   };
 }
 
-export type DetectedReminder = {
+type DetectedReminder = {
   kind: SaleReminderKind;
   saleId: string;
   dedupeKey: string;
@@ -317,7 +317,7 @@ export function isSourceCheckStale(lastVerifiedAt: string | null, now: Date): bo
 }
 
 /** Ce qui est à rappeler à une personne aujourd'hui (avant le dédoublonnage du journal). */
-export async function detectRemindersForUser({
+async function detectRemindersForUser({
   store,
   userId,
   now,

@@ -83,7 +83,7 @@ const storedSaleSchema = z
   })
   .strict();
 
-export class AdjudicationPriceStatisticsUnavailableError extends Error {
+class AdjudicationPriceStatisticsUnavailableError extends Error {
   constructor(message = "Adjudication price statistics are temporarily unavailable.") {
     super(message);
     this.name = "AdjudicationPriceStatisticsUnavailableError";

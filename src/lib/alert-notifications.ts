@@ -21,7 +21,7 @@ type NotificationInsert = Database["public"]["Tables"]["user_alert_notifications
 type NotificationUpdate = Database["public"]["Tables"]["user_alert_notifications"]["Update"];
 
 export type AlertNotificationKind = NotificationRow["notification_kind"];
-export type AlertNotificationDeliveryStatus = NotificationRow["delivery_status"];
+type AlertNotificationDeliveryStatus = NotificationRow["delivery_status"];
 
 export type AlertNotificationMatchInput = {
   id: string | null;
@@ -88,7 +88,7 @@ export type AlertNotificationDispatchResult = {
 };
 
 /** Part d'e-mails dus en échec à partir de laquelle le passage est déclaré en échec. */
-export const EMAIL_FAILURE_RATE_THRESHOLD = 0.2;
+const EMAIL_FAILURE_RATE_THRESHOLD = 0.2;
 
 /**
  * Un passage dont les e-mails ne sont pas partis ne compte pas comme un succès : sinon la
@@ -245,7 +245,7 @@ export async function suppressAlertNotificationsForMatches({
   return { suppressedCount: data?.length ?? 0 };
 }
 
-export const ALERT_NOTIFICATION_ACTIONS = ["read", "unread", "dismiss", "restore"] as const;
+const ALERT_NOTIFICATION_ACTIONS = ["read", "unread", "dismiss", "restore"] as const;
 export type AlertNotificationAction = (typeof ALERT_NOTIFICATION_ACTIONS)[number];
 
 /** Corps de `PATCH /api/alerts/notifications` : une action hors de la liste est refusée, jamais devinée. */

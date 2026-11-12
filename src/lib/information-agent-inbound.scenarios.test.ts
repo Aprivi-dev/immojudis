@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  InformationAgentWebhookPayloadTooLargeError,
-  processInformationAgentInboundWebhook,
-} from "@/lib/information-agent-inbound";
+import { processInformationAgentInboundWebhook } from "@/lib/information-agent-inbound";
 
 const mocks = vi.hoisted(() => ({
   verify: vi.fn(),
@@ -421,9 +418,9 @@ beforeEach(() => vi.resetAllMocks());
 
 describe("information-agent offline inbound scenarios", () => {
   it("rejects an oversized declared body before signature verification", async () => {
-    await expect(
-      webhook(vi.fn(), "fixture", { "content-length": "300000" }),
-    ).rejects.toBeInstanceOf(InformationAgentWebhookPayloadTooLargeError);
+    await expect(webhook(vi.fn(), "fixture", { "content-length": "300000" })).rejects.toMatchObject(
+      { name: "WebhookPayloadTooLargeError" },
+    );
     expect(mocks.verify).not.toHaveBeenCalled();
   });
 
@@ -459,7 +456,7 @@ describe("information-agent offline inbound scenarios", () => {
           INFORMATION_AGENT_INBOUND_DOMAIN: DOMAIN,
         },
       }),
-    ).rejects.toBeInstanceOf(InformationAgentWebhookPayloadTooLargeError);
+    ).rejects.toMatchObject({ name: "WebhookPayloadTooLargeError" });
     expect(cancelled).toBe(true);
     expect(mocks.verify).not.toHaveBeenCalled();
   });
@@ -472,7 +469,7 @@ describe("information-agent offline inbound scenarios", () => {
     });
 
     await expect(webhook()).rejects.toMatchObject({
-      name: "InvalidInformationAgentWebhookSignatureError",
+      name: "InvalidWebhookSignatureError",
     });
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.get).not.toHaveBeenCalled();
@@ -565,7 +562,7 @@ describe("information-agent offline inbound scenarios", () => {
       webhook(vi.fn(), "forged", {}, false, {
         INFORMATION_AGENT_EMAIL_FROM: "agent@immojudis.test",
       }),
-    ).rejects.toMatchObject({ name: "InvalidInformationAgentWebhookSignatureError" });
+    ).rejects.toMatchObject({ name: "InvalidWebhookSignatureError" });
     expect(mocks.from).not.toHaveBeenCalled();
   });
 

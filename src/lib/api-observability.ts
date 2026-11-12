@@ -9,6 +9,7 @@ import {
   PublicApiError,
   RateLimitError,
   ResponseSchemaViolationError,
+  ServiceUnavailableError,
   isPublicErrorMessage,
 } from "@/lib/api-errors";
 import { resolveRequestId } from "@/lib/request-id";
@@ -194,6 +195,9 @@ export function classifyApiError(
   }
   if (error instanceof $ZodError || error instanceof SyntaxError) {
     return { code: "INVALID_REQUEST", status: 400, message: "Requête invalide." };
+  }
+  if (error instanceof ServiceUnavailableError) {
+    return { code: "INTERNAL_ERROR", status: 503, message: options.fallbackMessage };
   }
   if (error instanceof ResponseSchemaViolationError) {
     // The server broke its own published contract: a server fault, logged at error level.

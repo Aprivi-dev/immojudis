@@ -13,8 +13,8 @@ import type { ResendFailure } from "./resend";
 export type EmailViewTone = "ok" | "bad" | "warn" | "neutral";
 export type EmailViewBadge = { text: string; tone: EmailViewTone };
 /** `bad` : ligne en rouge (valeur manquante, enregistrement non vérifié). */
-export type EmailViewLine = { text: string; mono?: boolean; bad?: boolean };
-export type EmailViewItem = {
+type EmailViewLine = { text: string; mono?: boolean; bad?: boolean };
+type EmailViewItem = {
   title: string;
   /** Nom technique (variable d'environnement, clé de gabarit), en police à chasse fixe. */
   code?: string;

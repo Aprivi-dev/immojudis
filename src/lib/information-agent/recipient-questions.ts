@@ -22,7 +22,7 @@ import {
   type InformationAgentOrganizerType,
 } from "@/lib/information-agent/listing-contacts";
 
-export const INFORMATION_AGENT_QUESTION_AUDIENCES = [
+const INFORMATION_AGENT_QUESTION_AUDIENCES = [
   "lawyer",
   "notary",
   "state_service",
@@ -94,7 +94,7 @@ export function informationAgentQuestionAudience(recipient: {
   return recipient.role === "lawyer" ? "lawyer" : "other";
 }
 
-export function isInformationAgentQuestionAudience(
+function isInformationAgentQuestionAudience(
   value: unknown,
 ): value is InformationAgentQuestionAudience {
   return (INFORMATION_AGENT_QUESTION_AUDIENCES as readonly unknown[]).includes(value);

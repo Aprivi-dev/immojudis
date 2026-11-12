@@ -84,7 +84,7 @@ export async function recordEmailDeliveryEvent(event: DeliveryLogEvent): Promise
 }
 
 /** Délai maximal d'une écriture du journal depuis un webhook. */
-export const DELIVERY_LOG_TIMEOUT_MS = 3_000;
+const DELIVERY_LOG_TIMEOUT_MS = 3_000;
 
 /**
  * Exécute l'écriture du journal, bornée à 3 s : une panne ou une lenteur est rendue (`{ error }`) au lieu d'être

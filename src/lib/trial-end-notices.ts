@@ -41,7 +41,7 @@ import { buildTrialEndMessage } from "@/lib/trial-end-email";
 
 const PAGE_LIMIT = 200;
 /** Marge sous les 60 s de la route : le passage s'arrête de lui-même et échoue pour être vu. */
-export const TRIAL_END_BUDGET_MS = 50_000;
+const TRIAL_END_BUDGET_MS = 50_000;
 
 export type TrialEndNoticeSummary = {
   mode: EmailFeatureMode;

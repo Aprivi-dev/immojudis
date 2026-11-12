@@ -18,7 +18,7 @@ import { isMissingRpcError } from "@/lib/postgrest-errors";
  * le client de service. Une mesure impossible (migration pas encore appliquée, panne) vaut `null` et
  * s'affiche « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
-export type ActivationCount = number | null;
+type ActivationCount = number | null;
 
 export type ActivationWindow = {
   days: 7 | 30;
@@ -32,7 +32,7 @@ export type ActivationWindow = {
   createdAlert: ActivationCount;
 };
 
-export type UnlockThresholdMonth = {
+type UnlockThresholdMonth = {
   /** Début du mois de Paris (ISO). */
   monthStart: string | null;
   /** Vrai pour le mois en cours (compté depuis le 1er seulement). */
@@ -84,7 +84,7 @@ const thresholdSchema = z.object({
 
 const WINDOW_DAYS = [7, 30] as const;
 
-export function unavailableUnlockThreshold(): UnlockThreshold {
+function unavailableUnlockThreshold(): UnlockThreshold {
   return {
     discoveryAccounts: null,
     months: [

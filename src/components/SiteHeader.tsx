@@ -55,7 +55,7 @@ type SiteHeaderPlacement = "fixed" | "sticky";
  * Position et habillage de la barre pleine largeur (élément `<header>`) du catalogue (/sales), qui
  * porte la recherche et les filtres.
  */
-export function siteHeaderClasses(placement: SiteHeaderPlacement): string {
+function siteHeaderClasses(placement: SiteHeaderPlacement): string {
   return cn(
     placement === "fixed" ? "fixed inset-x-0 top-0 z-50" : "sticky top-0 z-40",
     "border-b border-border bg-white/95 text-foreground backdrop-blur supports-[backdrop-filter]:bg-white/90",
@@ -63,7 +63,7 @@ export function siteHeaderClasses(placement: SiteHeaderPlacement): string {
 }
 
 /** Rangée de la barre pleine largeur (logo, recherche, navigation). */
-export const SITE_HEADER_BAR_CLASSES =
+const SITE_HEADER_BAR_CLASSES =
   "mx-auto flex min-h-16 max-w-[96rem] items-center gap-3 px-4 sm:px-6 lg:px-8";
 
 /** Vrai quand l'en-tête, fixé en haut de l'écran, laisse dans la page un espace de sa hauteur (h-16). */

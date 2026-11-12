@@ -35,7 +35,7 @@ type AssignableReferencedLawyer = Pick<
   | "paid_placement_ends_at"
 >;
 
-export type AdminLawyerReferralEmailDelivery = {
+type AdminLawyerReferralEmailDelivery = {
   status: "sent" | "skipped" | "failed";
   provider: "resend";
   recipient: string | null;

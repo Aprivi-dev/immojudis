@@ -15,10 +15,9 @@ type AnnotationRow = Database["public"]["Tables"]["sale_workspace_annotations"][
 type AnnotationInsert = Database["public"]["Tables"]["sale_workspace_annotations"]["Insert"];
 type AnnotationUpdate = Database["public"]["Tables"]["sale_workspace_annotations"]["Update"];
 
-export const COLLABORATOR_ROLES = ["viewer", "commenter", "editor"] as const;
-export const COLLABORATOR_STATUSES = ["invited", "accepted", "revoked"] as const;
-export const ANNOTATION_TARGET_KINDS = ["general", "document", "page", "excerpt"] as const;
-export const ANNOTATION_STATUSES = ["open", "resolved", "archived"] as const;
+const COLLABORATOR_ROLES = ["viewer", "commenter", "editor"] as const;
+const ANNOTATION_TARGET_KINDS = ["general", "document", "page", "excerpt"] as const;
+const ANNOTATION_STATUSES = ["open", "resolved", "archived"] as const;
 
 export const collaboratorInviteSchema = z.object({
   saleId: z.string().guid(),
@@ -51,21 +50,15 @@ export const workspaceAnnotationUpdateSchema = z.object({
   body: z.string().trim().min(1).max(5000).optional(),
   status: z.enum(ANNOTATION_STATUSES).optional(),
 });
-
-export type CollaboratorInviteInput = z.input<typeof collaboratorInviteSchema>;
 export type CollaboratorInvitePayload = z.output<typeof collaboratorInviteSchema>;
-export type CollaboratorAcceptInput = z.input<typeof collaboratorAcceptSchema>;
 export type CollaboratorAcceptPayload = z.output<typeof collaboratorAcceptSchema>;
-export type CollaboratorRevokeInput = z.input<typeof collaboratorRevokeSchema>;
 export type CollaboratorRevokePayload = z.output<typeof collaboratorRevokeSchema>;
-export type WorkspaceAnnotationCreateInput = z.input<typeof workspaceAnnotationCreateSchema>;
 export type WorkspaceAnnotationCreatePayload = z.output<typeof workspaceAnnotationCreateSchema>;
-export type WorkspaceAnnotationUpdateInput = z.input<typeof workspaceAnnotationUpdateSchema>;
 export type WorkspaceAnnotationUpdatePayload = z.output<typeof workspaceAnnotationUpdateSchema>;
 
 export type SaleWorkspaceCollaborator = CollaboratorRow;
 export type SaleWorkspaceAnnotation = AnnotationRow;
-export type WorkspaceCollaborationRole = "owner" | (typeof COLLABORATOR_ROLES)[number];
+type WorkspaceCollaborationRole = "owner" | (typeof COLLABORATOR_ROLES)[number];
 
 export type SaleWorkspaceCollaborationResponse = {
   workspaceId: string | null;

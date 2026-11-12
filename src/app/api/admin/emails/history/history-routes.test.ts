@@ -64,11 +64,17 @@ describe("/api/admin/emails/history", () => {
     });
   });
 
-  it("liste les envoyés par défaut et n'actualise que sur demande", async () => {
-    await getList(listRequest("?box=autre", withToken));
+  it("n'actualise que sur demande", async () => {
+    await getList(listRequest("?box=sent", withToken));
     expect(mocks.list).toHaveBeenCalledWith(
       expect.objectContaining({ box: "sent", refresh: false, cursor: null, address: null }),
     );
+  });
+
+  it("refuse une boîte absente ou inconnue, comme le POST, sans rien lire", async () => {
+    expect((await getList(listRequest("?box=autre", withToken))).status).toBe(400);
+    expect((await getList(listRequest("", withToken))).status).toBe(400);
+    expect(mocks.list).not.toHaveBeenCalled();
   });
 
   it("refuse une adresse dans l'URL du GET : elle se cherche en POST", async () => {
@@ -76,6 +82,7 @@ describe("/api/admin/emails/history", () => {
       listRequest("?box=sent&address=alice%40example.test", withToken),
     );
     expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("L’adresse se cherche en POST, jamais dans l’URL.");
     expect(mocks.list).not.toHaveBeenCalled();
   });
 
@@ -139,7 +146,7 @@ describe("/api/admin/emails/history", () => {
   it("répond 400 pour une entrée invalide, sans détail interne", async () => {
     const { EmailHistoryInputError } = await import("@/lib/admin-emails/history");
     mocks.list.mockRejectedValue(new EmailHistoryInputError("Curseur invalide."));
-    const response = await getList(listRequest("?cursor=x", withToken));
+    const response = await getList(listRequest("?box=sent&cursor=x", withToken));
     expect(response.status).toBe(400);
   });
 });

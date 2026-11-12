@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import type { Json } from "@/integrations/supabase/types";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import { type SourceTraceEntry } from "@/lib/source-traceability";
@@ -523,20 +522,6 @@ export function reportPdfIdentity(report: Pick<SavedReportRow, "id" | "title">):
 } {
   const title = redactPersonalText(report.title);
   return { title, filename: `${slugify(title)}-${report.id.slice(0, 8)}.pdf` };
-}
-
-export function createShareToken(): string {
-  return randomBytes(24).toString("base64url");
-}
-
-/** Only this digest is stored; the raw token is shown once, when the link is created. */
-export function hashShareToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-export function normalizeShareToken(value: string): string | null {
-  const token = value.trim();
-  return /^[A-Za-z0-9_-]{24,120}$/.test(token) ? token : null;
 }
 
 export function normalizeShareExpiresAt(value: string | null | undefined): string | null {

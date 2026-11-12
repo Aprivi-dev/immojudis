@@ -121,8 +121,8 @@ export async function POST(request: Request) {
   // lectures sont mises en cache une heure ou quinze minutes, une vente retirée n'y resterait pas.
   revalidateTag(TRIBUNAL_SALES_CACHE_TAG, { expire: 0 });
   revalidateTag(HEARINGS_CACHE_TAG, { expire: 0 });
-  revalidatePath("/tribunaux/[slug]", "page");
-  revalidatePath("/audiences-a-venir");
+  revalidatePath(`${TRIBUNAL_PAGES_PATH}/[slug]`, "page");
+  revalidatePath(HEARINGS_PATH);
   // L'activité des tribunaux (comptes de ventes à venir, une heure de cache) alimente `/tribunaux`, les
   // pages tribunal et `/audiences-a-venir` : sans cette étiquette, une vente retirée y restait comptée
   // jusqu'à une heure après la purge des pages.

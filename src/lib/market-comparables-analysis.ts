@@ -1,6 +1,6 @@
 import type { MarketEstimate } from "@/lib/market.server";
 
-export type MarketComparableRow = {
+type MarketComparableRow = {
   kind: "retained_comparable" | "address_history";
   date: string;
   type: string;

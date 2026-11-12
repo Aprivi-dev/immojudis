@@ -19,12 +19,12 @@ import {
 } from "@/lib/rent-reference";
 
 export const PEPITE_BADGE_DOUBLE_EXIT = "double_exit" as const;
-export type PepiteBadgeKey = typeof PEPITE_BADGE_DOUBLE_EXIT;
+type PepiteBadgeKey = typeof PEPITE_BADGE_DOUBLE_EXIT;
 
 /** Rendement brut annuel minimal (loyer estimé x 12 / coût total d'achat) du badge « double sortie ». */
 export const PEPITE_DOUBLE_EXIT_MIN_GROSS_YIELD = 0.08;
 
-export const PEPITE_BADGE_LABELS: Record<PepiteBadgeKey, string> = {
+const PEPITE_BADGE_LABELS: Record<PepiteBadgeKey, string> = {
   double_exit: "Double sortie",
 };
 

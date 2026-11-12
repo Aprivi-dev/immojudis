@@ -1,26 +1,16 @@
-import { NextResponse } from "next/server";
+import { PublicApiError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 
-const ADMIN_ONLY_RESPONSE = {
-  ok: false,
-  error: "Cette fonctionnalité est désormais réservée à l’administration.",
-  code: "ADMIN_ONLY",
-};
+const retired = apiRoute(
+  { scope: "api.information-agent.retired", fallbackMessage: "Fonctionnalité indisponible." },
+  async () => {
+    throw new PublicApiError(
+      "Cette fonctionnalité est désormais réservée à l’administration.",
+      410,
+    );
+  },
+);
 
-export function GET() {
-  return retiredResponse();
-}
-
-export function POST() {
-  return retiredResponse();
-}
-
-export function PATCH() {
-  return retiredResponse();
-}
-
-function retiredResponse() {
-  return NextResponse.json(ADMIN_ONLY_RESPONSE, {
-    status: 410,
-    headers: { "cache-control": "no-store" },
-  });
-}
+export const GET = retired;
+export const POST = retired;
+export const PATCH = retired;

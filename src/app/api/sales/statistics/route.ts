@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -7,21 +7,15 @@ import {
 import { getSalesStatistics } from "@/lib/sales-statistics";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "sales.statistics", fallbackMessage: "Statistiques indisponibles" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const search = validateSalesSearch(Object.fromEntries(url.searchParams.entries()));
     const response = await getSalesStatistics({ auth, search });
     return NextResponse.json(response, {
-      headers: {
-        "cache-control": "private, no-store",
-        "x-immojudis-statistics-sample-size": String(response.summary.sampleSize),
-      },
+      headers: { "x-immojudis-statistics-sample-size": String(response.summary.sampleSize) },
     });
-  } catch (error) {
-    return apiRouteError(error, request, "sales.statistics", {
-      fallbackMessage: "Statistiques indisponibles",
-    });
-  }
-}
+  },
+);

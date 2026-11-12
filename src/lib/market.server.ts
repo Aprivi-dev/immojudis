@@ -38,7 +38,6 @@ import { salesSamplePeriod } from "@/lib/market-server/sample-period";
 export { officialDvfCommuneCode } from "@/lib/market-server/sources";
 
 export type {
-  MarketAddressSale,
   MarketEstimate,
   MarketContext,
   MarketEstimateErrorCode,

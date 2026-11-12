@@ -45,7 +45,7 @@ describe("alert notifications cron route", () => {
     const [, jobName, , options] = mocks.runMonitoredCron.mock.calls[0];
     expect(jobName).toBe("alert-notifications");
     // `smart-alerts` : 08:15 ; l'envoi : 09:30 (voir vercel.json).
-    expect(options).toEqual({ catchUpSchedule: "30 9 * * *" });
+    expect(options).toBeUndefined();
   });
 
   it("déclare une durée maximale", () => {

@@ -52,7 +52,7 @@ export type AlertMatchSummary = {
 };
 
 /** Une alerte qui n'a pas pu être évaluée ou enregistrée (message et code de l'erreur d'origine). */
-export type AlertEvaluationFailure = {
+type AlertEvaluationFailure = {
   alertId: string;
   error: string;
 };
@@ -79,14 +79,14 @@ export type PublicAlertEvaluationResponse = Omit<AlertEvaluationResponse, "alert
 };
 
 /** The user's plan does not include alerts: nothing to evaluate, not a failure. */
-export class AlertsNotIncludedError extends Error {
+class AlertsNotIncludedError extends Error {
   constructor() {
     super("Alertes avancées réservées à l’offre Analyse.");
     this.name = "AlertsNotIncludedError";
   }
 }
 
-export type SmartAlertBatchUserResult = {
+type SmartAlertBatchUserResult = {
   userId: string;
   ok: boolean;
   skipped?: boolean;
@@ -208,7 +208,7 @@ let pepiteIdsCache: { at: number; ids: Promise<ReadonlySet<string>> } | null = n
  * une panne n'est pas gardée et fait échouer les alertes qui en ont besoin (elles gardent leur date
  * d'évaluation et sont reprises au passage suivant).
  */
-export function loadPepiteSaleIdsForAlerts(now = Date.now()): Promise<ReadonlySet<string>> {
+function loadPepiteSaleIdsForAlerts(now = Date.now()): Promise<ReadonlySet<string>> {
   if (pepiteIdsCache && now - pepiteIdsCache.at < PEPITE_IDS_CACHE_MS) return pepiteIdsCache.ids;
   const entry = {
     at: now,
@@ -269,7 +269,7 @@ export function isRentBasisSilentPass(
 }
 
 /** Les loyers de la carte de l'ANIL n'ont pas pu être lus : une alerte à critère de rendement n'avance pas. */
-export class RentReferenceUnavailableError extends Error {
+class RentReferenceUnavailableError extends Error {
   constructor() {
     super(
       "Loyers de référence (ANIL) indisponibles : l'alerte à critère de rendement est reprise au prochain passage.",
@@ -960,7 +960,7 @@ export async function runSmartAlertEvaluationBatch({
 }
 
 /** Part de comptes en échec à partir de laquelle le passage est déclaré en échec. */
-export const SMART_ALERT_FAILURE_RATE_THRESHOLD = 0.2;
+const SMART_ALERT_FAILURE_RATE_THRESHOLD = 0.2;
 
 /**
  * Un passage où des comptes ont échoué ne compte pas comme un succès quand l'échec n'est plus

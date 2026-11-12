@@ -4,9 +4,9 @@ type SaleIdentity = {
   dedupe_confidence?: string | null;
 };
 
-export const EXAMPLE_SALE_ID_PREFIX = "example-immojudis-";
+const EXAMPLE_SALE_ID_PREFIX = "example-immojudis-";
 
-export function isHomepageExampleSale(sale: SaleIdentity): boolean {
+function isHomepageExampleSale(sale: SaleIdentity): boolean {
   return (
     sale.id.startsWith(EXAMPLE_SALE_ID_PREFIX) ||
     sale.dedupe_confidence === "demo" ||

@@ -1,6 +1,7 @@
 import "server-only";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { NextResponse } from "next/server";
+import { type ApiRouteContext, type ApiRouteOptions, apiRoute } from "@/lib/api-route";
 import { resolveRequestId } from "@/lib/request-id";
 
 /**
@@ -47,7 +48,7 @@ export function throwIfAdminDeadlineExceeded(): void {
   }
 }
 
-export function adminTimeoutResponse(request: Request, timeoutMs = ADMIN_ROUTE_TIMEOUT_MS) {
+function adminTimeoutResponse(request: Request, timeoutMs = ADMIN_ROUTE_TIMEOUT_MS) {
   const requestId = resolveRequestId(request.headers.get("x-request-id"));
   const isRead = request.method === "GET" || request.method === "HEAD";
   console.error(
@@ -111,4 +112,15 @@ export function withAdminDeadline<Args extends [Request, ...unknown[]]>(
       clearTimeout(timer);
     }
   };
+}
+
+/**
+ * Route `/api/admin/*` : l'enveloppe commune (`apiRoute`) sous le délai des routes admin. La garde
+ * administrateur reste dans le module appelé (`assertAdminAuth`).
+ */
+export function adminRoute<Params = Record<string, never>>(
+  options: ApiRouteOptions,
+  handler: (request: Request, route: ApiRouteContext<Params>) => Promise<Response | object>,
+) {
+  return withAdminDeadline(apiRoute(options, handler));
 }

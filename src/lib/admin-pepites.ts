@@ -35,15 +35,15 @@ import type { CeilingCoverageSale } from "@/lib/admin-catalogue-quality";
  * (`pepite-policy.ts`, `pepite-input.ts`, `sale-pepites-batch.ts` n'importent aucun module d'avocats).
  */
 
-export type PepiteVenue = "tribunal" | "notary" | "other";
+type PepiteVenue = "tribunal" | "notary" | "other";
 
-export const PEPITE_VENUE_LABELS: Record<PepiteVenue, string> = {
+const PEPITE_VENUE_LABELS: Record<PepiteVenue, string> = {
   tribunal: "Tribunal",
   notary: "Vente notariale",
   other: "Autre ou inconnu",
 };
 
-export type AdminPepiteCounters = {
+type AdminPepiteCounters = {
   venue: PepiteVenue;
   label: string;
   evaluated: number;
@@ -115,7 +115,7 @@ export type PepiteIndependence = {
 
 /** Écart de part (en points) à partir duquel le contrôle d'indépendance alerte, sur un échantillon suffisant. */
 export const INDEPENDENCE_ALERT_POINTS = 10;
-export const INDEPENDENCE_MIN_PEPITES = 10;
+const INDEPENDENCE_MIN_PEPITES = 10;
 
 /**
  * Pépites (publiées et à confirmer) dont le coût d'achat repose sur au moins un frais par défaut (n° 22) : au
@@ -260,7 +260,7 @@ export function pepiteFeesDefaultStat(rows: readonly AdminPepiteRow[]): PepiteFe
 }
 
 /** Le marché local d'une évaluation (`details.market`), en une phrase pour l'administration. */
-export function describeMarketNote(market: Record<string, unknown> | null): string | null {
+function describeMarketNote(market: Record<string, unknown> | null): string | null {
   if (!market) return null;
   const propertyType = textOrNull(market.propertyType);
   if (market.aggregateAbsent === true) {
@@ -498,7 +498,7 @@ export async function computePepiteIndependence(
 }
 
 /** Temps laissé au contrôle d'indépendance : au-delà, la page l'affiche « non mesuré ». */
-export const INDEPENDENCE_BUDGET_MS = 15_000;
+const INDEPENDENCE_BUDGET_MS = 15_000;
 
 /** Jeton et rôle administrateur vérifiés, puis lecture avec le client de service. */
 export async function getAdminPepites(

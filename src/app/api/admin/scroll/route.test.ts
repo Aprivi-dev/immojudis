@@ -43,9 +43,25 @@ it("returns an upstream error when the run was queued but not dispatched", async
   expect(await response.json()).toMatchObject({
     error: "La demande reste en file ; corrigez le canal puis relancez-la.",
     ok: false,
-    dispatched: false,
   });
   expect(mocks.start).toHaveBeenCalledWith("token", { source: "all" });
+});
+
+it("replaces a dispatch message that does not read like a public message", async () => {
+  mocks.start.mockResolvedValue({
+    ok: false,
+    dispatched: false,
+    dispatchMode: "github_actions",
+    message: "GitHub API returned 401 for https://api.github.com/repos/x/dispatches",
+    run: { id: "run-1" },
+  });
+
+  const response = await POST(request(JSON.stringify({ source: "all" })));
+
+  expect(response.status).toBe(502);
+  const body = await response.json();
+  expect(body).toMatchObject({ ok: false, error: "La collecte n'a pas pu être lancée." });
+  expect(JSON.stringify(body)).not.toContain("api.github.com");
 });
 
 it("returns a client error for an invalid launch request", async () => {

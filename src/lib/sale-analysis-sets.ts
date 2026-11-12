@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash, randomBytes } from "node:crypto";
+import { createShareToken, hashShareToken, normalizeShareToken } from "@/lib/share-token";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -29,8 +29,8 @@ type AnalysisSetMetadata = Pick<
   is_archived: boolean;
 };
 
-export const SALE_ANALYSIS_KINDS = ["comparison", "watchlist", "portfolio"] as const;
-export const SALE_ANALYSIS_DECISION_STATUSES = [
+const SALE_ANALYSIS_KINDS = ["comparison", "watchlist", "portfolio"] as const;
+const SALE_ANALYSIS_DECISION_STATUSES = [
   "watching",
   "shortlisted",
   "bid_ready",
@@ -67,14 +67,11 @@ export const saleAnalysisSetUpdateSchema = saleAnalysisSetInputSchema.partial().
   isArchived: saleAnalysisSetInputSchema.shape.isArchived.unwrap().optional(),
   items: z.array(saleAnalysisItemInputSchema).min(1).max(12).optional(),
 });
-
-export type SaleAnalysisItemInput = z.input<typeof saleAnalysisItemInputSchema>;
 export type SaleAnalysisSetInput = z.input<typeof saleAnalysisSetInputSchema>;
 export type SaleAnalysisSetPayload = z.output<typeof saleAnalysisSetInputSchema>;
-export type SaleAnalysisSetUpdateInput = z.input<typeof saleAnalysisSetUpdateSchema>;
 export type SaleAnalysisSetUpdatePayload = z.output<typeof saleAnalysisSetUpdateSchema>;
 
-export type SaleAnalysisSaleSummary = {
+type SaleAnalysisSaleSummary = {
   id: string;
   title: string | null;
   city: string | null;
@@ -315,7 +312,7 @@ export async function enableSaleComparisonShare({
     ownedItems.map((item) => ({ saleId: item.sale_id, decisionStatus: "watching" })),
   );
 
-  const token = randomBytes(24).toString("base64url");
+  const token = createShareToken();
   const sharedAt = new Date();
   const expiresAt = new Date(sharedAt.getTime() + 30 * 24 * 60 * 60 * 1_000).toISOString();
   const { error } = await supabaseAdmin
@@ -807,13 +804,4 @@ function canonicalSaleVenueType(value: string | null): ComparedSale["venueType"]
     return value;
   }
   return "unknown";
-}
-
-function normalizeShareToken(value: string): string | null {
-  const token = value.trim();
-  return /^[A-Za-z0-9_-]{32}$/.test(token) ? token : null;
-}
-
-function hashShareToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
 }

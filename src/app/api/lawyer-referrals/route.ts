@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -13,37 +13,35 @@ import {
   lawyerReferralRequestInputSchema,
 } from "@/lib/lawyer-referrals";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  {
+    scope: "api.lawyer-referrals.list",
+    fallbackMessage: "Demandes indisponibles",
+    emptyBody: { requests: [] },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const query = lawyerReferralListQuerySchema.parse({
       saleId: url.searchParams.get("saleId") ?? undefined,
       limit: url.searchParams.get("limit") ?? undefined,
     });
-    return NextResponse.json(await listLawyerReferralRequests({ auth, query }));
-  } catch (error) {
-    return apiRouteError(error, request, "lawyer-referrals", {
-      fallbackMessage: "Demandes indisponibles",
-      extra: { requests: [] },
-    });
-  }
-}
+    return listLawyerReferralRequests({ auth, query });
+  },
+);
 
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  { scope: "api.lawyer-referrals.create", fallbackMessage: "Demande impossible" },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
       bucketKey: "lawyer-referrals.create",
       ...RATE_LIMIT_POLICIES.formSubmit,
+      context: api,
     });
     const input = lawyerReferralRequestInputSchema.parse(await request.json());
     const response = await createLawyerReferralRequest({ auth, input, request });
     return NextResponse.json(response, { status: response.reusedExisting ? 200 : 201 });
-  } catch (error) {
-    return apiRouteError(error, request, "lawyer-referrals", {
-      fallbackMessage: "Demande impossible",
-    });
-  }
-}
+  },
+);

@@ -14,7 +14,7 @@ export type DnsResolver = {
   resolveMx: (name: string) => Promise<Array<{ exchange: string; priority: number }>>;
 };
 
-export const systemDnsResolver: DnsResolver = { resolveTxt, resolveMx };
+const systemDnsResolver: DnsResolver = { resolveTxt, resolveMx };
 
 export type DnsLookup<T> =
   | { status: "present"; value: T }

@@ -85,7 +85,7 @@ export type CompletenessGate = {
   fields: string[];
 };
 
-export type CompletenessMissingField = {
+type CompletenessMissingField = {
   id: string;
   label: string;
   category: CompletenessCategoryId;
@@ -96,7 +96,7 @@ export type CompletenessMissingField = {
   sourceContext: string;
 };
 
-export type CompletenessKnownField = {
+type CompletenessKnownField = {
   id: string;
   label: string;
   state: CompletenessState;
@@ -105,7 +105,7 @@ export type CompletenessKnownField = {
   evidence: CompletenessEvidence[];
 };
 
-export type CompletenessProfileId =
+type CompletenessProfileId =
   | "judicial_tribunal"
   | "public_auction_structured"
   | "state_disposal"

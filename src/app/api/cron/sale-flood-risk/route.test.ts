@@ -116,11 +116,9 @@ describe("sale flood risk cron route", () => {
       await runHandler();
 
       // Le déclenchement réussit même quand le workflow échoue : c'est la passe, écrite par le workflow, qui compte.
-      expect(mocks.runMonitoredCron.mock.calls[0][3]).toMatchObject({
-        catchUpSchedule: "35 5 * * *",
-        catchUpSuccessWindowHours: 2,
-        catchUpSuccessJobName: "sale-flood-risk",
-      });
+      // Le rattrapage du registre est celui de la passe « sale-flood-risk », même pour le déclenchement.
+      const [, jobName, , options] = mocks.runMonitoredCron.mock.calls[0];
+      expect(options?.catchUpOf ?? jobName).toBe("sale-flood-risk");
     },
   );
 

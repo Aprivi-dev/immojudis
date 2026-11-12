@@ -5,8 +5,9 @@ analyse des réponses de l'agent déclenchée à la réception ;
 auparavant, le 31 octobre : cadences réelles des tâches `pg_cron` et seuils de `cron.stale` alignés dessus,
 `sale-results` et `weekly-digest` supervisées ; auparavant : règle de répartition entre les trois planificateurs,
 filets quotidiens sans effet quand `pg_cron` a réussi, inventaire des workflows GitHub planifiés). Toute route `src/app/api/cron/*` doit figurer
-ici, dans `vercel.json` ou dans une migration `pg_cron`, et tout workflow GitHub qui a un `schedule` doit figurer
-dans le tableau des workflows ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
+ici et dans le registre `src/lib/scheduled-jobs.ts` (`CRON_JOBS` : horaires Vercel, rattrapage, `pg_cron` ou lancement
+à la main), que `vercel.json` et les migrations `pg_cron` doivent suivre, et tout workflow GitHub qui a un `schedule`
+doit figurer dans le tableau des workflows ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
 
 ## Qui déclenche quoi : la règle
 
@@ -49,9 +50,9 @@ reste silencieuse.
 | Rétention des données                                                                                               | Vercel Cron        | dimanche 04:15                                                               | `/api/cron/data-retention`              | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)                                                            | Supabase `pg_cron` | toutes les heures à :20                                                      | `/api/cron/listing-completeness`        | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                                                                           | Vercel Cron        | 05:50, sans effet si `pg_cron` a réussi dans les 2 h                         | `/api/cron/listing-completeness`        | oui (même tâche, même seuil)                         | 3 h                           |
-| Risque d'inondation des ventes (règle `pepite-v2`)                                                                  | Supabase `pg_cron` | tick à :25 de chaque heure, passage toutes les 2 h                           | `/api/cron/sale-flood-risk`             | oui                                                  | 5 h                           |
+| Risque d'inondation des ventes (règle `pepite-v2.1`)                                                                | Supabase `pg_cron` | tick à :25 de chaque heure, passage toutes les 2 h                           | `/api/cron/sale-flood-risk`             | oui                                                  | 5 h                           |
 | Risque d'inondation des ventes (filet quotidien)                                                                    | Vercel Cron        | 05:35, sans effet si la passe a réussi dans les 2 h                          | `/api/cron/sale-flood-risk`             | oui (même tâche, même seuil)                         | 5 h                           |
-| Pépites des ventes (règle `pepite-v1.1` ou `pepite-v2`)                                                             | Supabase `pg_cron` | toutes les heures à :35                                                      | `/api/cron/sale-pepites`                | oui                                                  | 3 h                           |
+| Pépites des ventes (règle `pepite-v1.2` ou `pepite-v2.1`)                                                           | Supabase `pg_cron` | toutes les heures à :35                                                      | `/api/cron/sale-pepites`                | oui                                                  | 3 h                           |
 | Pépites des ventes (filet quotidien)                                                                                | Vercel Cron        | 05:42, sans effet si `pg_cron` a réussi dans les 2 h                         | `/api/cron/sale-pepites`                | oui (même tâche, même seuil)                         | 3 h                           |
 | Rapprochement Stripe / droits (lecture seule)                                                                       | Vercel Cron        | 05:20, sans effet si Stripe n'est pas configuré                              | `/api/cron/billing-reconciliation`      | journal d'exécution, alerte dédiée à chaque écart    | pas encore                    |
 | Contrôle du registre des pièces (alertes `fact_registry.*` ; relance planifiée de la projection, fermée par défaut) | Vercel Cron        | 05:28, sans effet tant que la migration `20261117100500` n'est pas appliquée | `/api/cron/fact-registry-check`         | oui                                                  | 27 h                          |
@@ -100,7 +101,7 @@ Si plus de 3 h séparent l'application de la migration `20261024100100` et le d�
 qui n'existe pas encore. Il suffit alors d'appeler la route une fois, avec `CRON_SECRET`
 (`Authorization: Bearer $CRON_SECRET` sur `/api/cron/listing-completeness`), pour la refermer.
 
-Le calcul des pépites (route `/api/cron/sale-pepites`, règles `pepite-v1.1` et `pepite-v2`, migrations
+Le calcul des pépites (route `/api/cron/sale-pepites`, règles `pepite-v1.2` et `pepite-v2.1`, migrations
 `20261104100000` et `20261104100100`) tourne chaque heure à :35, par lots de 300 ventes (variable
 `SALE_PEPITES_BATCH_LIMIT`) : une vente jamais évaluée, modifiée, dont l'estimation a été recalculée, évaluée avec
 une autre version de la règle, du moteur de plafond ou d'un régime, ou évaluée il y a plus de 24 h, est

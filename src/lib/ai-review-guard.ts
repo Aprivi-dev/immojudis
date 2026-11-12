@@ -50,7 +50,7 @@ export type AiReviewProjectionReadModel = {
   source_url: string | null;
 };
 
-export type AiReviewDisplayStatus = "not_reviewed" | "publishable" | "blocked";
+type AiReviewDisplayStatus = "not_reviewed" | "publishable" | "blocked";
 
 /** Lifecycle of the authenticated read-model request used by display guards. */
 export type AiReviewRequestStatus = "disabled" | "loading" | "ready" | "error";

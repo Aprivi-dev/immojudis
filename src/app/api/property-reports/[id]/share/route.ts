@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -9,44 +8,32 @@ import { disablePropertyReportShare, enablePropertyReportShare } from "@/lib/pro
 
 const shareBodySchema = z.object({ expiresAt: z.string().nullable().optional() });
 
-type RouteParams = {
-  params: Promise<{ id: string }>;
-};
-
-export async function POST(request: Request, { params }: RouteParams) {
-  try {
-    const { id } = await params;
+export const POST = apiRoute<{ id: string }>(
+  { scope: "api.property-reports.share.enable", fallbackMessage: "Partage impossible" },
+  async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     // Corps facultatif : absent ou vide, la durée par défaut s'applique. Un JSON mal formé ou `null`
     // est une erreur de l'appelant (400), pas une panne.
     const rawBody = await request.text();
     const payload = shareBodySchema.parse(rawBody.trim() ? JSON.parse(rawBody) : {});
-    const response = await enablePropertyReportShare({
+    return enablePropertyReportShare({
       auth,
-      reportId: id,
+      reportId: params.id,
       origin: url.origin,
       expiresAt: payload.expiresAt,
     });
+  },
+);
 
-    return NextResponse.json(response);
-  } catch (error) {
-    return apiRouteError(error, request, "property-reports.id.share", {
-      fallbackMessage: "Partage impossible",
-    });
-  }
-}
-
-export async function DELETE(request: Request, { params }: RouteParams) {
-  try {
-    const { id } = await params;
+export const DELETE = apiRoute<{ id: string }>(
+  {
+    scope: "api.property-reports.share.disable",
+    fallbackMessage: "Désactivation du partage impossible",
+  },
+  async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
-    const response = await disablePropertyReportShare({ auth, reportId: id, origin: url.origin });
-    return NextResponse.json(response);
-  } catch (error) {
-    return apiRouteError(error, request, "property-reports.id.share", {
-      fallbackMessage: "Désactivation du partage impossible",
-    });
-  }
-}
+    return disablePropertyReportShare({ auth, reportId: params.id, origin: url.origin });
+  },
+);

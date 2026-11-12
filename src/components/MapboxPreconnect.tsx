@@ -2,7 +2,7 @@ import { preconnect } from "react-dom";
 import { getMapboxAccessToken } from "@/lib/mapbox";
 
 /** Origine des vignettes cartographiques (API d'images statiques) et des données de la carte. */
-export const MAPBOX_API_ORIGIN = "https://api.mapbox.com";
+const MAPBOX_API_ORIGIN = "https://api.mapbox.com";
 
 /**
  * Prépare la connexion (DNS, TCP, TLS) vers Mapbox : les vignettes des cartes sans photo

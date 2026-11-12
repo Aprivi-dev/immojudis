@@ -3,19 +3,9 @@ import { ACCOUNT_EMAIL_TEMPLATES } from "./definitions/account";
 import { AUTH_TEMPLATES } from "./definitions/auth";
 import { BILLING_EMAIL_TEMPLATES } from "./definitions/billing";
 import { OPERATIONS_EMAIL_TEMPLATES } from "./definitions/operations";
-import type {
-  EmailSampleVariant,
-  EmailSenderVariable,
-  EmailTemplateDefinition,
-  EmailTemplateLevel,
-} from "./types";
+import type { EmailSenderVariable, EmailTemplateDefinition, EmailTemplateLevel } from "./types";
 
-export type {
-  EmailSampleVariant,
-  EmailSenderVariable,
-  EmailTemplateDefinition,
-  EmailTemplateLevel,
-};
+export type { EmailSenderVariable, EmailTemplateDefinition };
 
 /** Tous les emails d'Immojudis, dans l'ordre de présentation. */
 export const EMAIL_TEMPLATES: readonly EmailTemplateDefinition[] = [

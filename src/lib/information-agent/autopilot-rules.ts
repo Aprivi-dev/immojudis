@@ -155,8 +155,8 @@ export const AUTOPILOT_PHASES = [
   { index: 4, label: "semaine 4", dayCap: 30, hourCap: 12 },
   { index: 5, label: "croisière", dayCap: 40, hourCap: 12 },
 ] as const;
-export const AUTOPILOT_HARD_DAY_CAP = 60;
-export const AUTOPILOT_HARD_HOUR_CAP = 12;
+const AUTOPILOT_HARD_DAY_CAP = 60;
+const AUTOPILOT_HARD_HOUR_CAP = 12;
 /**
  * Plafond par STRUCTURE (cabinet, office notarial, service de l'État) : 1 envoi par jour, 2 par semaine.
  * Sur un domaine propre, la structure est le domaine (comportement inchangé). Sur un domaine partagé par
@@ -167,14 +167,13 @@ export const AUTOPILOT_STRUCTURE_DAY_CAP = 1;
 export const AUTOPILOT_STRUCTURE_WEEK_CAP = 2;
 /** Plafond bas du domaine partagé lui-même, toutes structures confondues (valeur de départ du 11/11/2026). */
 export const AUTOPILOT_SHARED_DOMAIN_DAY_CAP = 3;
-export const AUTOPILOT_COURT_DAY_CAP = 3;
-export const AUTOPILOT_DOMAIN_SPACING_MS = 15 * 60_000;
-export const AUTOPILOT_MIN_GAP_MS = 2 * 60_000;
-export const AUTOPILOT_MAX_GAP_MS = 12 * 60_000;
+const AUTOPILOT_COURT_DAY_CAP = 3;
+const AUTOPILOT_MIN_GAP_MS = 2 * 60_000;
+const AUTOPILOT_MAX_GAP_MS = 12 * 60_000;
 const WEEK_MS = 7 * 86_400_000;
 
 /** Une semaine est « propre » : aucune plainte, rebonds définitifs sous 3 % des envois. */
-export function isCleanAutopilotWeek(week: AutopilotWeekStats | undefined): boolean {
+function isCleanAutopilotWeek(week: AutopilotWeekStats | undefined): boolean {
   if (!week || week.sent === 0) return true;
   return week.complaints === 0 && week.permanent_bounces / week.sent < 0.03;
 }
@@ -361,11 +360,11 @@ export function autopilotRunGate(settings: AutopilotSettings, now: Date): Autopi
 // ---------------------------------------------------------------------------------------------------------
 // Candidat
 // ---------------------------------------------------------------------------------------------------------
-export const AUTOPILOT_MIN_DAYS_BEFORE_SALE = 10;
-export const AUTOPILOT_ADDRESS_MAX_AGE_DAYS = 183;
-export const AUTOPILOT_REPLY_PAUSE_DAYS = 90;
-export const AUTOPILOT_SILENCE_PAUSE_DAYS = 183;
-export const AUTOPILOT_SILENCE_SENDS = 2;
+const AUTOPILOT_MIN_DAYS_BEFORE_SALE = 10;
+const AUTOPILOT_ADDRESS_MAX_AGE_DAYS = 183;
+const AUTOPILOT_REPLY_PAUSE_DAYS = 90;
+const AUTOPILOT_SILENCE_PAUSE_DAYS = 183;
+const AUTOPILOT_SILENCE_SENDS = 2;
 const DAY_MS = 86_400_000;
 
 /** Ce que le pilote sait d'un candidat avant de préparer son brouillon. */
@@ -500,8 +499,6 @@ export function evaluateAutopilotSafety(stats: AutopilotStats): AutopilotSafetyV
   if (!pause && delayedShare >= 0.1) warnings.push("delayed_24h");
   return { stop: stop ? { code: stop } : null, pause, warnings };
 }
-
-export { isWithinAutopilotSendWindow };
 
 /**
  * Règles revérifiées JUSTE AVANT l'envoi (l'état a pu changer depuis la sélection) : mêmes règles que la sélection

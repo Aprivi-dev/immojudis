@@ -5,7 +5,7 @@ import { cleanTextDeep as cleanText } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 import { matchesAnyPattern as matches } from "@/lib/analysis-text";
 
-export type UrbanPlanningSignalKind =
+type UrbanPlanningSignalKind =
   | "zoning"
   | "permit"
   | "servitude"
@@ -13,7 +13,7 @@ export type UrbanPlanningSignalKind =
   | "usage"
   | "public_record";
 
-export type UrbanPlanningPriority = "high" | "medium" | "low";
+type UrbanPlanningPriority = "high" | "medium" | "low";
 
 export type UrbanPlanningItem = {
   key: string;

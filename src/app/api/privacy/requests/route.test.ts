@@ -172,4 +172,18 @@ describe("/api/privacy/requests", () => {
     expect(response.status).toBe(201);
     expect(mocks.db.rows("data_subject_requests", { user_id: "user-1" })).toHaveLength(1);
   });
+
+  it("answers 500 with the generic message when the request cannot be filed for an unknown reason", async () => {
+    mocks.enforceUser.mockRejectedValue(new Error("rate limit store unreachable"));
+
+    const response = await POST(request("POST", { requestType: "access" }));
+
+    expect(response.status).toBe(500);
+    expectNoStore(response);
+    expect(await response.json()).toMatchObject({
+      error: "Demande impossible.",
+      code: "INTERNAL_ERROR",
+    });
+    expect(mocks.db.rows("data_subject_requests")).toHaveLength(2);
+  });
 });

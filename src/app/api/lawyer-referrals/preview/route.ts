@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -15,24 +14,21 @@ import {
  * Who would receive a referral request for this sale, shown before the user consents. Read-only:
  * nothing is created, recorded or sent.
  */
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.lawyer-referrals.preview", fallbackMessage: "Prévisualisation indisponible" },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
       bucketKey: "lawyer-referrals.preview",
       ...RATE_LIMIT_POLICIES.compute,
+      context: api,
     });
     const url = new URL(request.url);
     const query = lawyerReferralPreviewQuerySchema.parse({
       saleId: url.searchParams.get("saleId") ?? undefined,
       lawyerId: url.searchParams.get("lawyerId") ?? undefined,
     });
-    const response = await previewLawyerReferralRecipient({ auth, query });
-    return NextResponse.json(response, { headers: { "cache-control": "private, no-store" } });
-  } catch (error) {
-    return apiRouteError(error, request, "lawyer-referrals.preview", {
-      fallbackMessage: "Prévisualisation indisponible",
-    });
-  }
-}
+    return previewLawyerReferralRecipient({ auth, query });
+  },
+);

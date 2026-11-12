@@ -52,7 +52,7 @@ function parisOffsetMs(at: Date): number {
   return localAsUtc - Math.floor(at.getTime() / 1000) * 1000;
 }
 
-export type ParisParts = {
+type ParisParts = {
   year: number;
   month: number;
   day: number;
@@ -73,7 +73,7 @@ const PARIS_WEEKDAYS: Record<string, number> = {
 };
 
 /** Date et heure civiles à Paris (heure d'été et changement d'heure compris). */
-export function parisParts(now: Date): ParisParts {
+function parisParts(now: Date): ParisParts {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Paris",
     year: "numeric",
@@ -126,7 +126,7 @@ export function frenchPublicHolidays(year: number): Set<string> {
   return new Set([...fixed, plusDays(1), plusDays(39), plusDays(50)]);
 }
 
-export function isFrenchPublicHoliday(parts: Pick<ParisParts, "year" | "month" | "day">): boolean {
+function isFrenchPublicHoliday(parts: Pick<ParisParts, "year" | "month" | "day">): boolean {
   const key = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
   return frenchPublicHolidays(parts.year).has(key);
 }

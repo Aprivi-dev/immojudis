@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -9,43 +8,32 @@ import { disableSaleComparisonShare, enableSaleComparisonShare } from "@/lib/sal
 
 const setIdSchema = z.string().guid();
 
-type RouteContext = { params: Promise<{ id: string }> };
+const SHARE_DISABLED = { enabled: false, url: null, expiresAt: null };
 
-export async function POST(request: Request, context: RouteContext) {
-  try {
+export const POST = apiRoute<{ id: string }>(
+  {
+    scope: "sale-analysis-sets.id.share",
+    fallbackMessage: "Partage impossible",
+    emptyBody: SHARE_DISABLED,
+  },
+  async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const { id } = await context.params;
-    const response = await enableSaleComparisonShare({
+    return enableSaleComparisonShare({
       auth,
-      setId: setIdSchema.parse(id),
+      setId: setIdSchema.parse(params.id),
       origin: new URL(request.url).origin,
     });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-analysis-sets.id.share", {
-      fallbackMessage: "Partage impossible",
-      extra: { enabled: false, url: null, expiresAt: null },
-    });
-  }
-}
+  },
+);
 
-export async function DELETE(request: Request, context: RouteContext) {
-  try {
+export const DELETE = apiRoute<{ id: string }>(
+  {
+    scope: "sale-analysis-sets.id.share",
+    fallbackMessage: "Désactivation impossible",
+    emptyBody: SHARE_DISABLED,
+  },
+  async (request, { params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const { id } = await context.params;
-    const response = await disableSaleComparisonShare({
-      auth,
-      setId: setIdSchema.parse(id),
-    });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-analysis-sets.id.share", {
-      fallbackMessage: "Désactivation impossible",
-      extra: { enabled: false, url: null, expiresAt: null },
-    });
-  }
-}
+    return disableSaleComparisonShare({ auth, setId: setIdSchema.parse(params.id) });
+  },
+);

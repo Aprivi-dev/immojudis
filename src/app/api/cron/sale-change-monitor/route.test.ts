@@ -29,7 +29,7 @@ describe("sale change monitor cron route", () => {
     await GET(new Request("https://example.test/api/cron/sale-change-monitor"));
     const [, jobName, , options] = mocks.runMonitoredCron.mock.calls[0];
     expect(jobName).toBe("sale-change-monitor");
-    expect(options).toEqual({ catchUpSchedule: "45 8 * * *" });
+    expect(options).toBeUndefined();
     expect(mocks.runBatch).toHaveBeenCalledWith({ userLimit: 25 });
   });
 

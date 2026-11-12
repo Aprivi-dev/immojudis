@@ -26,19 +26,19 @@ import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { documentSignatureParts } from "@/lib/document-signature";
 import { ForbiddenError } from "@/lib/api-errors";
 
-export const SALE_WATCH_KINDS = ["alert_match", "favorite", "workspace"] as const;
-export const SALE_CHANGE_EVENT_KINDS = [
+const SALE_WATCH_KINDS = ["alert_match", "favorite", "workspace"] as const;
+const SALE_CHANGE_EVENT_KINDS = [
   "price_changed",
   "audience_changed",
   "status_changed",
   "documents_changed",
   "score_changed",
 ] as const;
-export const SALE_CHANGE_SEVERITIES = ["info", "important", "urgent"] as const;
+const SALE_CHANGE_SEVERITIES = ["info", "important", "urgent"] as const;
 
-export type SaleWatchKind = (typeof SALE_WATCH_KINDS)[number];
+type SaleWatchKind = (typeof SALE_WATCH_KINDS)[number];
 export type SaleChangeEventKind = (typeof SALE_CHANGE_EVENT_KINDS)[number];
-export type SaleChangeSeverity = (typeof SALE_CHANGE_SEVERITIES)[number];
+type SaleChangeSeverity = (typeof SALE_CHANGE_SEVERITIES)[number];
 
 type SaleWatchSnapshotRow = Database["public"]["Tables"]["user_sale_watch_snapshots"]["Row"];
 type SaleWatchSnapshotInsert = Database["public"]["Tables"]["user_sale_watch_snapshots"]["Insert"];
@@ -73,7 +73,7 @@ export type SaleChangeSnapshot = {
   sourceUrl: string | null;
 };
 
-export type SaleWatchSource = {
+type SaleWatchSource = {
   watchKind: SaleWatchKind;
   watchId: string;
   saleId: string;
@@ -122,7 +122,7 @@ export type SaleChangeMonitorResponse = {
   events: SaleChangeEventSummary[];
 };
 
-export type SaleChangeMonitorBatchUserResult = {
+type SaleChangeMonitorBatchUserResult = {
   userId: string;
   ok: boolean;
   /** Compte sans droit au suivi (offre de lancement sans email confirmé, plan Découverte) : écarté, pas en échec. */

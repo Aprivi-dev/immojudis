@@ -44,7 +44,7 @@ function Figure({ children }: { children: ReactNode }) {
  *
  * Sur mobile, « immobilières » est retiré de la phrase (titre de quatre lignes sinon).
  */
-export function CatalogueTitle({
+function CatalogueTitle({
   search,
   total,
   week,

@@ -49,9 +49,9 @@ import { surenchereWindow } from "@/lib/surenchere-window";
  */
 
 /** Les instantanés plus anciens ne sont plus relus (le cron passe chaque jour). */
-export const SNAPSHOT_LOOKBACK_DAYS = 7;
+const SNAPSHOT_LOOKBACK_DAYS = 7;
 /** Les événements de changement plus anciens ne sont plus relus. */
-export const STATUS_LOOKBACK_HOURS = 72;
+const STATUS_LOOKBACK_HOURS = 72;
 /**
  * Au plus ce nombre d'éléments par email et par passage ; le reste est compté (`deferred`) et repris
  * au passage suivant tant que l'instantané ou l'événement est dans sa fenêtre de relecture.
@@ -109,7 +109,7 @@ export interface SaleResultStore {
 }
 
 /** Raison courte d'un envoi en échec, conservée au journal à la place du texte d'erreur. */
-export const SALE_RESULT_FAILURE_CODES = [
+const SALE_RESULT_FAILURE_CODES = [
   "email_unavailable",
   "email_lookup_failed",
   "message_build_failed",

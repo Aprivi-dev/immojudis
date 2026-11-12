@@ -47,7 +47,7 @@ import { informationAgentRecipientRoleLabel } from "@/lib/information-agent/reci
  * Écarts connus avec la préparation réelle d'un brouillon : le délai de 30 jours par destinataire, la vente
  * déjà sollicitée, le statut de la vente et la résolution DNS de l'adresse ne sont pas contrôlés ici.
  */
-export type InformationAgentDryRunOutcome =
+type InformationAgentDryRunOutcome =
   /** Un destinataire que l'outil choisit seul. */
   | "selected"
   /** Plusieurs adresses possibles : l'administrateur tranche. */
@@ -59,12 +59,12 @@ export type InformationAgentDryRunOutcome =
   /** Vente absente de la base. */
   | "not_found";
 
-export type InformationAgentDryRunBlock =
+type InformationAgentDryRunBlock =
   | "address_opposed_or_bounced"
   | "identity_opposed"
   | "structure_opposed";
 
-export type InformationAgentDryRunRecipient = {
+type InformationAgentDryRunRecipient = {
   email: string;
   role: InformationAgentContactRole;
   roleLabel: string | null;

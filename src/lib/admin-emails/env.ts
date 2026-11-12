@@ -6,7 +6,7 @@ import "server-only";
  * (expéditeurs, destinataires, domaine de réception) sont affichées ; les secrets ne sont jamais lus
  * que pour dire s'ils sont renseignés.
  */
-export const EMAIL_ADDRESS_VARIABLES = [
+const EMAIL_ADDRESS_VARIABLES = [
   "ALERT_EMAIL_FROM",
   "NOREPLY_EMAIL_FROM",
   "RESEND_FROM_EMAIL",

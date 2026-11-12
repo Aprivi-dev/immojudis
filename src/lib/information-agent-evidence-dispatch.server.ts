@@ -6,13 +6,13 @@ import { postGitHubWorkflowDispatch } from "@/lib/github-workflow-dispatch.serve
 import { enforceGlobalRateLimit } from "@/lib/rate-limit";
 
 /** Workflow d'analyse des réponses de l'agent (voir `.github/workflows/information-agent-evidence.yml`). */
-export const INFORMATION_AGENT_EVIDENCE_WORKFLOW = "information-agent-evidence.yml";
+const INFORMATION_AGENT_EVIDENCE_WORKFLOW = "information-agent-evidence.yml";
 
 /**
  * Toujours `main`, quelle que soit `GITHUB_SCROLL_REF` : le workflow reçoit la clé de service de la production et
  * refuse toute autre branche (`if: github.ref == 'refs/heads/main'`). Une autre référence ne lancerait rien.
  */
-export const INFORMATION_AGENT_EVIDENCE_DISPATCH_REF = "main";
+const INFORMATION_AGENT_EVIDENCE_DISPATCH_REF = "main";
 
 /**
  * Au plus un déclenchement par tranche de 10 minutes, tenu en base par le limiteur global
@@ -30,7 +30,7 @@ export const INFORMATION_AGENT_EVIDENCE_DISPATCH_DAILY_LIMIT = {
   windowSeconds: 24 * 60 * 60,
 } as const;
 /** Au-delà, la plus ancienne analyse prenable est « figée » : plus de déclenchement, l'horaire GitHub reste. */
-export const INFORMATION_AGENT_EVIDENCE_STALLED_AFTER_MS = 2 * 60 * 60 * 1000;
+const INFORMATION_AGENT_EVIDENCE_STALLED_AFTER_MS = 2 * 60 * 60 * 1000;
 const DISPATCH_BUCKET_KEY = "information-agent.evidence-dispatch";
 const DAILY_BUCKET_KEY = "information-agent.evidence-dispatch.daily";
 

@@ -10,7 +10,7 @@ export const TRIBUNAL_STATISTICS_ELIGIBILITY_RULE_VERSION =
   "claim_ab_reviewed_frozen_round_as_of_v1" as const;
 export const TRIBUNAL_STATISTICS_SMOOTHING_RULE_VERSION = "jeffreys_beta_log_shrinkage_v1" as const;
 
-export const TRIBUNAL_STATISTICS_WARNING = {
+const TRIBUNAL_STATISTICS_WARNING = {
   HISTORICAL: "Statistiques descriptives historiques, pas une prédiction individuelle.",
   VERIFIED_EVIDENCE_ONLY: "Seules les preuves A/B validées pour chaque champ sont comptées.",
   DEFINITIVE_PRICE_REQUIRED:
@@ -33,7 +33,7 @@ export const TRIBUNAL_STATISTICS_WARNING = {
 // Stored warnings are deliberately closed: otherwise a service-role writer
 // could smuggle a small exact count (or arbitrary prose) through this public
 // array even when every metric cell is correctly suppressed.
-export const tribunalStatisticsStoredWarningSchema = z.enum([
+const tribunalStatisticsStoredWarningSchema = z.enum([
   TRIBUNAL_STATISTICS_WARNING.HISTORICAL,
   TRIBUNAL_STATISTICS_WARNING.VERIFIED_EVIDENCE_ONLY,
   TRIBUNAL_STATISTICS_WARNING.DEFINITIVE_PRICE_REQUIRED,
@@ -47,7 +47,7 @@ export const tribunalStatisticsStoredWarningSchema = z.enum([
   TRIBUNAL_STATISTICS_WARNING.ROUND_NOT_FROZEN,
 ]);
 
-export const TRIBUNAL_STATISTICS_EXCLUSION_REASONS = [
+const TRIBUNAL_STATISTICS_EXCLUSION_REASONS = [
   "no_terminal_outcome_at_cutoff",
   "ambiguous_terminal_outcome",
   "outcome_status_claim_ineligible",
@@ -63,9 +63,7 @@ export const TRIBUNAL_STATISTICS_EXCLUSION_REASONS = [
   "result_observed_before_hearing",
 ] as const;
 
-export const tribunalStatisticsExclusionReasonSchema = z.enum(
-  TRIBUNAL_STATISTICS_EXCLUSION_REASONS,
-);
+const tribunalStatisticsExclusionReasonSchema = z.enum(TRIBUNAL_STATISTICS_EXCLUSION_REASONS);
 
 const tribunalStatisticsExclusionReasonsSchema = z
   .record(z.string().min(1), nonNegativeIntegerSchema)
@@ -88,34 +86,22 @@ export const tribunalStatisticsWindowMonthsSchema = z.union([
   z.literal(36),
 ]);
 
-export const tribunalStatisticsReliabilitySchema = z.enum([
+const tribunalStatisticsReliabilitySchema = z.enum([
   "insufficient_data",
   "smoothed",
   "descriptive",
   "robust",
 ]);
 
-export const tribunalStatisticsAdjustmentMethodSchema = z.enum([
-  "suppressed",
-  "raw",
-  "beta_binomial",
-  "national_fallback",
-  "log_shrinkage",
-]);
+const tribunalStatisticsRateMethodSchema = z.enum(["raw", "beta_binomial", "national_fallback"]);
 
-export const tribunalStatisticsRateMethodSchema = z.enum([
-  "raw",
-  "beta_binomial",
-  "national_fallback",
-]);
-
-export const tribunalStatisticsDistributionMethodSchema = z.enum([
+const tribunalStatisticsDistributionMethodSchema = z.enum([
   "raw",
   "national_fallback",
   "log_shrinkage",
 ]);
 
-export const tribunalStatisticsConfidenceIntervalSchema = z
+const tribunalStatisticsConfidenceIntervalSchema = z
   .object({
     low: probabilitySchema,
     high: probabilitySchema,
@@ -232,7 +218,7 @@ export const tribunalStatisticsMetricSchema = z.union([
   publishedTribunalStatisticsMetricSchema,
 ]);
 
-export const tribunalStatisticsQuantilesSchema = z
+const tribunalStatisticsQuantilesSchema = z
   .object({
     p10: z.number().nonnegative(),
     p50: z.number().nonnegative(),
@@ -716,13 +702,7 @@ function reliabilityForSample(
 }
 
 export type TribunalStatisticsWindowMonths = z.infer<typeof tribunalStatisticsWindowMonthsSchema>;
-export type TribunalStatisticsExclusionReason = z.infer<
-  typeof tribunalStatisticsExclusionReasonSchema
->;
 export type TribunalStatisticsReliability = z.infer<typeof tribunalStatisticsReliabilitySchema>;
-export type TribunalStatisticsAdjustmentMethod = z.infer<
-  typeof tribunalStatisticsAdjustmentMethodSchema
->;
 export type TribunalStatisticsMetric = z.infer<typeof tribunalStatisticsMetricSchema>;
 export type TribunalStatisticsDistribution = z.infer<typeof tribunalStatisticsDistributionSchema>;
 export type TribunalStatisticsPayload = z.infer<typeof tribunalStatisticsPayloadSchema>;

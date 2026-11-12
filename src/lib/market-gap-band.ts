@@ -35,11 +35,11 @@ export { isOccupiedOccupancyStatus, isVacantOccupancyStatus };
  * l'en-tête de la migration 20261029120000) ; ce module en garde les seuils, que
  * `market-gap-band.test.ts` compare à ceux de la migration.
  */
-export const MARKET_GAP_BANDS = ["under", "near", "above"] as const;
+const MARKET_GAP_BANDS = ["under", "near", "above"] as const;
 export type MarketGapBand = (typeof MARKET_GAP_BANDS)[number];
 
 /** Les raisons pour lesquelles la fiche ne situe pas la mise à prix. */
-export const MARKET_GAP_INSUFFICIENT_BANDS = [
+const MARKET_GAP_INSUFFICIENT_BANDS = [
   "insufficient_surface",
   "insufficient_type",
   "insufficient",

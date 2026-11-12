@@ -137,7 +137,5 @@ function decodeCatalogue(input: CompactCatalogue): CompletenessCatalogue {
 }
 
 export const CATALOGUE = decodeCatalogue(catalogueJson as unknown as CompactCatalogue);
-
-export const LISTING_COMPLETENESS_CATALOGUE = CATALOGUE;
-export const LISTING_COMPLETENESS_FIELD_IDS = CATALOGUE.fields.map((field) => field.id);
+const LISTING_COMPLETENESS_FIELD_IDS = CATALOGUE.fields.map((field) => field.id);
 export const LISTING_COMPLETENESS_FIELD_COUNT = LISTING_COMPLETENESS_FIELD_IDS.length;

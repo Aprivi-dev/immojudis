@@ -84,7 +84,7 @@ export type PreparedAutopilotDraft = {
   alreadySimulated: boolean;
 };
 
-export type AutopilotPreview = { blockers: string[]; fingerprint: string | null };
+type AutopilotPreview = { blockers: string[]; fingerprint: string | null };
 
 export type AutopilotDeps = {
   now: () => Date;

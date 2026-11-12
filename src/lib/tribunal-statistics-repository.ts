@@ -143,7 +143,7 @@ const SNAPSHOT_COLUMNS = [
   "computed_at",
 ].join(",");
 
-export class TribunalStatisticsUnavailableError extends Error {
+class TribunalStatisticsUnavailableError extends Error {
   constructor(message = "Tribunal statistics are temporarily unavailable.") {
     super(message);
     this.name = "TribunalStatisticsUnavailableError";

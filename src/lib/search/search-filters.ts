@@ -19,8 +19,6 @@ import type { SalesSearchParams, SearchSortKey, ViewportBounds } from "./search-
 export const DEFAULT_SEARCH_LIMIT = 24;
 export const MAX_MAP_RESULTS = 10_000;
 
-export const TRANSACTION_OPTIONS = [{ label: "Ventes aux enchères", value: "for_sale" }] as const;
-
 export const HOME_TYPE_OPTIONS = [
   { label: "Maison", value: "house" },
   { label: "Appartement", value: "apartment" },

@@ -25,7 +25,7 @@ type AttemptRow = Pick<
   "outcome" | "error_code" | "latency_ms" | "created_at"
 >;
 
-export type ValuationModelSummary = Pick<
+type ValuationModelSummary = Pick<
   ModelRow,
   | "id"
   | "version"

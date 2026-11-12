@@ -30,14 +30,9 @@ export {
   informationAgentPreviewFingerprint,
 } from "@/lib/information-agent/message-guards";
 // Ré-exports : ces fonctions vivaient dans ce module (et ses tests les importent d'ici).
-export {
-  INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
-  resolveInformationAgentAddressOrigin,
-} from "@/lib/information-agent/address-origin";
+export { INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE } from "@/lib/information-agent/address-origin";
 export { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 export {
-  assertInformationAgentHasQuestion,
-  assertInformationAgentSaleCurrent,
   INFORMATION_AGENT_NO_QUESTION_MESSAGE,
   withoutProfessionSuffix,
   withSignature,
@@ -50,40 +45,22 @@ export {
   loadInformationAgentContactRegistry,
   persistInformationAgentContactObservations,
   assertInformationAgentContactAllowed,
-  loadOpposedInformationAgentIdentityKeys,
-  recordInformationAgentAdminAddressEntry,
-  isCourtRegistryEmail,
-  isInformationAgentExcludedAddress,
-  informationAgentExcludedAddressReason,
-} from "@/lib/information-agent/contacts";
-export type {
-  InformationAgentRecipientKind,
-  InformationAgentContactRole,
-  InformationAgentContactProvenance,
-  InformationAgentContactCandidate,
-  InformationAgentContactRegistryBlock,
 } from "@/lib/information-agent/contacts";
 
 // Ré-exports : ces éléments vivaient dans ce module (et ses tests les importent d'ici).
 export {
   detectInformationGaps,
   INFORMATION_AGENT_QUESTIONS,
-  informationAgentQuestionContext,
   informationAgentQuestionText,
   selectDefaultInformationAgentQuestionKeys,
 } from "@/lib/information-agent-questions";
-export type {
-  InformationAgentGap,
-  InformationAgentQuestionContext,
-  InformationAgentQuestionKey,
-} from "@/lib/information-agent-questions";
+export type { InformationAgentQuestionKey } from "@/lib/information-agent-questions";
 
 export {
   informationAgentAdminActionSchema,
   informationAgentCreateSchema,
   informationAgentListQuerySchema,
   informationAgentPreviewSchema,
-  UNVERIFIED_SEND_OUTCOME,
 } from "@/lib/information-agent/schemas";
 export type {
   InformationAgentAdminActionPayload,
@@ -91,7 +68,6 @@ export type {
   InformationAgentAdminMissionPage,
   InformationAgentAdminResponse,
   InformationAgentCreateInput,
-  InformationAgentFact,
   InformationAgentMission,
   InformationAgentPreviewInput,
   InformationAgentSendTrigger,
@@ -100,8 +76,6 @@ export {
   assertInformationAgentCanaryRecipient,
   assertInformationAgentOutboundEnabled,
   informationAgentAppOrigin,
-  informationAgentCaseReference,
-  resolveInformationAgentEmailConfig,
 } from "@/lib/information-agent/config";
 export {
   buildInformationRequestDraft,

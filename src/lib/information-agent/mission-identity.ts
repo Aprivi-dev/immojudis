@@ -29,7 +29,7 @@ export function saleIdentityPlace(sale: Pick<AuctionSale, "tribunal" | "city">):
   return { bar: tribunalBarAssociation(sale.tribunal), city: sale.city?.trim() || null };
 }
 
-export function metadataText(value: Json | undefined): string | null {
+function metadataText(value: Json | undefined): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 

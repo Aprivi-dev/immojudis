@@ -30,7 +30,7 @@ export type AutopilotView = {
   events: Array<{ at: string; label: string; detail: string }>;
 };
 
-export const AUTOPILOT_STOP_LABELS: Record<string, string> = {
+const AUTOPILOT_STOP_LABELS: Record<string, string> = {
   complaint: "une plainte sur les 100 premiers envois",
   complaints_14d: "deux plaintes en 14 jours",
   bounce_early: "trois rebonds définitifs sur les 30 premiers envois",
@@ -87,7 +87,7 @@ function eventDetail(kind: string, reason: string | null, details: unknown): str
   return "";
 }
 
-export const AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE =
+const AUTOPILOT_SHARED_COUNTS_INCOMPLETE_NOTICE =
   "Compte des envois par office ou service incomplet (trop de demandes sur 8 jours) : le pilote n’écrit à aucune adresse en notaires.fr ou gouv.fr tant qu’il l’est. Les autres compteurs restent exacts.";
 
 export function buildAutopilotView({

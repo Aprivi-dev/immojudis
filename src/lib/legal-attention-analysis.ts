@@ -3,10 +3,10 @@ import type { CadastralAnalysis } from "@/lib/cadastre-analysis";
 import type { OccupancyAnalysis } from "@/lib/occupation-analysis";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 
-export type LegalAttentionPriority = "high" | "medium" | "low";
-export type LegalAttentionStatus = "missing" | "to_verify" | "watch" | "documented";
+type LegalAttentionPriority = "high" | "medium" | "low";
+type LegalAttentionStatus = "missing" | "to_verify" | "watch" | "documented";
 
-export type LegalAttentionItem = {
+type LegalAttentionItem = {
   key: string;
   label: string;
   priority: LegalAttentionPriority;

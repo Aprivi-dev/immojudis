@@ -36,32 +36,12 @@ import type {
 
 export type {
   CompletenessEvidence,
-  CompletenessReason,
-  CompletenessInference,
-  FieldObservation,
   CompletenessFieldResult,
-  CompletenessCategorySummary,
-  CompletenessGate,
-  CompletenessMissingField,
-  CompletenessKnownField,
-  CompletenessProfileId,
-  CompletenessSourceProfile,
   ListingCompletenessResult,
 } from "@/lib/listing-completeness/types";
 
-export {
-  COMPLETENESS_STATES,
-  LISTING_COMPLETENESS_CATALOGUE,
-  LISTING_COMPLETENESS_FIELD_IDS,
-  LISTING_COMPLETENESS_FIELD_COUNT,
-} from "@/lib/listing-completeness/catalogue";
-export type {
-  CompletenessState,
-  CompletenessImportance,
-  CompletenessCategoryId,
-  CompletenessProcedure,
-  CompletenessClass,
-} from "@/lib/listing-completeness/catalogue";
+export { LISTING_COMPLETENESS_FIELD_COUNT } from "@/lib/listing-completeness/catalogue";
+export type { CompletenessState, CompletenessClass } from "@/lib/listing-completeness/catalogue";
 
 const MISSING_TEXT_MARKERS = new Set([
   "",
@@ -98,7 +78,7 @@ const STATE_FACTOR: Record<CompletenessState, number> = {
   conflict: CATALOGUE.scoring.state_factors.conflict ?? 0,
 };
 
-export const SHARED_GARDEN_LABEL = "Commun (copropriété)";
+const SHARED_GARDEN_LABEL = "Commun (copropriété)";
 
 function isMeaningfulText(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -1399,5 +1379,3 @@ export function getListingCompleteness(sale: AuctionSale): ListingCompletenessRe
     notApplicableReason: "Le non-applicable sort du score ; l’inaccessible reste inconnu.",
   };
 }
-
-export const computeListingCompleteness = getListingCompleteness;

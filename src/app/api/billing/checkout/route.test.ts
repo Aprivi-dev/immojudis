@@ -116,4 +116,35 @@ describe("POST /api/billing/checkout", () => {
       expect.objectContaining({ plan: "analysis", origin: "https://immojudis.test" }),
     );
   });
+
+  it("rejects a malformed body even when the plan is in the query string", async () => {
+    const response = await POST(
+      new Request("https://immojudis.test/api/billing/checkout?plan=analysis", {
+        method: "POST",
+        headers: { authorization: "Bearer token" },
+        body: "{bad json",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "Requête invalide.",
+      code: "INVALID_REQUEST",
+    });
+    expect(mocks.checkout).not.toHaveBeenCalled();
+  });
+
+  it("answers 500 with the generic message when the checkout fails for an unknown reason", async () => {
+    mocks.checkout.mockRejectedValue(new Error("stripe timeout"));
+
+    const response = await post({ plan: "analysis", consent });
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      error: "Paiement indisponible.",
+      code: "INTERNAL_ERROR",
+    });
+  });
 });

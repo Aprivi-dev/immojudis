@@ -28,7 +28,6 @@ import {
 } from "@/lib/sale-publication-guard";
 import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToAnalysis } from "@/lib/dpe-diagnostic-row";
 import { NotFoundError } from "@/lib/api-errors";
-export { dpeDiagnosticRowToAnalysis };
 
 export async function getSale(supabase: SupabaseClient, saleId: string): Promise<AuctionSale> {
   const { data, error } = await supabase
@@ -48,7 +47,7 @@ export async function getSale(supabase: SupabaseClient, saleId: string): Promise
   return appSaleRowToAuctionSale(data);
 }
 
-export type ActiveComparableScope = {
+type ActiveComparableScope = {
   label: string;
   city?: string | null;
   department?: string | null;
@@ -120,7 +119,7 @@ export async function getCadastralParcels(
   return (data ?? []).map(cadastreParcelRowToAnalysis);
 }
 
-export function cadastreParcelRowToAnalysis(row: CadastreParcelRow): StructuredCadastralParcel {
+function cadastreParcelRowToAnalysis(row: CadastreParcelRow): StructuredCadastralParcel {
   return {
     parcelKey: row.parcel_key ?? null,
     parcelId: row.parcel_id ?? null,
@@ -190,7 +189,7 @@ export async function getUrbanPlanningSignals(
     .filter((signal) => signal.sourceKind !== "risk");
 }
 
-export function urbanPlanningSignalRowToAnalysis(
+function urbanPlanningSignalRowToAnalysis(
   row: UrbanPlanningSignalRow,
 ): StructuredUrbanPlanningSignal {
   return {
@@ -212,7 +211,7 @@ export function urbanPlanningSignalRowToAnalysis(
   };
 }
 
-export function normalizeUrbanPlanningSignalKind(
+function normalizeUrbanPlanningSignalKind(
   value: string,
 ): StructuredUrbanPlanningSignal["signalKind"] {
   if (
@@ -228,9 +227,7 @@ export function normalizeUrbanPlanningSignalKind(
   return "public_record";
 }
 
-export function normalizeUrbanPlanningPriority(
-  value: string,
-): StructuredUrbanPlanningSignal["priority"] {
+function normalizeUrbanPlanningPriority(value: string): StructuredUrbanPlanningSignal["priority"] {
   if (value === "high" || value === "medium" || value === "low") return value;
   return "medium";
 }
@@ -257,7 +254,7 @@ export async function getValuationBacktestForReport(
   }
 }
 
-export function buildActiveComparableScopes(sale: AuctionSale): ActiveComparableScope[] {
+function buildActiveComparableScopes(sale: AuctionSale): ActiveComparableScope[] {
   const scopes: ActiveComparableScope[] = [];
   if (sale.city && sale.department) {
     scopes.push({
@@ -300,7 +297,7 @@ export function buildActiveComparableScopes(sale: AuctionSale): ActiveComparable
   return uniqueActiveComparableScopes(scopes);
 }
 
-export async function queryActiveComparableSales({
+async function queryActiveComparableSales({
   supabase,
   sale,
   scope,
@@ -344,9 +341,7 @@ export async function queryActiveComparableSales({
   return matches.slice(0, limit);
 }
 
-export function uniqueActiveComparableScopes(
-  scopes: ActiveComparableScope[],
-): ActiveComparableScope[] {
+function uniqueActiveComparableScopes(scopes: ActiveComparableScope[]): ActiveComparableScope[] {
   const seen = new Set<string>();
   return scopes.filter((scope) => {
     const key = [scope.city, scope.department, scope.tribunalCode, scope.propertyType]

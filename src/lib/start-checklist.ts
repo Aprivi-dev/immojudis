@@ -36,7 +36,7 @@ export function startProgress(rows: readonly StartFavoriteRow[]): StartProgress 
   };
 }
 
-export type StartStepId = "follow" | "dossier" | "reminder";
+type StartStepId = "follow" | "dossier" | "reminder";
 
 export type StartStep = { id: StartStepId; done: boolean };
 

@@ -46,8 +46,6 @@ export const dvfComparablesQuerySchema = z.object({
   months: z.coerce.number().int().min(6).max(60).default(36),
   limit: z.coerce.number().int().min(3).max(50).default(12),
 });
-
-export type DvfComparablesQueryInput = z.input<typeof dvfComparablesQuerySchema>;
 export type DvfComparablesQuery = z.output<typeof dvfComparablesQuerySchema>;
 
 export type DvfComparablesResponse = {

@@ -2,7 +2,7 @@ import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale } from "@/lib/types";
 import { cleanText } from "@/lib/clean-text";
 
-export type NearbyServiceCategoryKey =
+type NearbyServiceCategoryKey =
   | "transport"
   | "education"
   | "commerce"
@@ -10,7 +10,7 @@ export type NearbyServiceCategoryKey =
   | "green_space"
   | "administration";
 
-export type NearbyServiceCategory = {
+type NearbyServiceCategory = {
   key: NearbyServiceCategoryKey;
   label: string;
   status: "mentioned" | "to_measure" | "missing";

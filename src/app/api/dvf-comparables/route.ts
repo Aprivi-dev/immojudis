@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -8,8 +8,9 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { dvfComparablesQuerySchema, getDvfComparables } from "@/lib/dvf-comparables";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "dvf-comparables", fallbackMessage: "Comparables DVF indisponibles" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
@@ -21,14 +22,7 @@ export async function GET(request: Request) {
     const response = await getDvfComparables({ auth, input });
 
     return NextResponse.json(response, {
-      headers: {
-        "cache-control": "private, no-store",
-        "x-immojudis-dvf-sample-size": String(response.analysis.sampleSize),
-      },
+      headers: { "x-immojudis-dvf-sample-size": String(response.analysis.sampleSize) },
     });
-  } catch (error) {
-    return apiRouteError(error, request, "dvf-comparables", {
-      fallbackMessage: "Comparables DVF indisponibles",
-    });
-  }
-}
+  },
+);

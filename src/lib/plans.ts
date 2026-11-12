@@ -256,7 +256,7 @@ export function normalizePlanCode(value: unknown): PlanCode {
   return "decouverte";
 }
 
-export function isActivePlanStatus(status: unknown): boolean {
+function isActivePlanStatus(status: unknown): boolean {
   return status === "trialing" || status === "active";
 }
 

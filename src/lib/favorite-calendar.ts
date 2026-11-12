@@ -13,7 +13,6 @@ import { saleDeadlines } from "@/lib/sale-deadlines";
 import { DETAIL_VIEW } from "@/lib/sale-views";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { visitSlots, type VisitSlot } from "@/lib/visit-slots";
-import { isMissingCalendarFunction as isMissingFunction } from "@/lib/sale-calendar-rpc";
 
 /**
  * Export `.ics` de toutes les audiences suivies, en un fichier (« Mon planning », `/favoris`).
@@ -72,11 +71,7 @@ async function readCalendarRows(saleIds: readonly string[]): Promise<SaleCalenda
       batch.map((saleId) => client.rpc("get_public_sale_calendar_event", { p_sale_id: saleId })),
     );
     for (const { data, error } of answers) {
-      if (error) {
-        // La migration n'est pas déployée : pas d'export plutôt qu'une date devinée.
-        if (isMissingFunction(error)) throw new ConfigurationError("Calendrier non configuré.");
-        throw error;
-      }
+      if (error) throw error;
       const row = (Array.isArray(data) ? data[0] : data) as SaleCalendarRow | null | undefined;
       if (row) rows.push(row);
     }

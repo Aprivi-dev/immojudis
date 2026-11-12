@@ -156,4 +156,17 @@ describe("/api/property-reports", () => {
     expect(auth.userId).toBe("user-1");
     expect(input).toEqual({ saleId: SALE, reportKind: "opportunity", includeEnvironment: false });
   });
+
+  it("answers 500 with the generic message when the report cannot be built for an unknown reason", async () => {
+    mocks.save.mockRejectedValue(new Error("upstream timeout"));
+
+    const response = await call(POST, "POST", { body: { saleId: SALE } });
+
+    expect(response.status).toBe(500);
+    expectNoStore(response);
+    expect(await response.json()).toMatchObject({
+      error: "Rapport impossible.",
+      code: "INTERNAL_ERROR",
+    });
+  });
 });

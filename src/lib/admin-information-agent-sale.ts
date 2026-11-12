@@ -91,7 +91,7 @@ const ADMIN_INFORMATION_AGENT_SALE_SELECT = [
 ].join(",");
 
 /** Statuses for which it still makes sense to contact a sale interlocutor. */
-export const ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES = [
+const ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES = [
   "active",
   "upcoming",
   "unknown",
@@ -101,7 +101,7 @@ export const ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES = [
 type AdminInformationAgentAvailableStatus =
   (typeof ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES)[number];
 
-export type AdminInformationAgentSaleRow = Record<string, unknown> & {
+type AdminInformationAgentSaleRow = Record<string, unknown> & {
   id?: unknown;
   source_url?: unknown;
   source_name?: unknown;
@@ -395,7 +395,7 @@ export function isAvailableInformationAgentStatus(
  * Toutes les URL sources de la fiche : l'annonce principale, `source_urls` et chaque observation
  * d'une autre source. Les pièces d'un doublon fusionné comptent aussi pour l'inventaire.
  */
-export function saleSourceUrls(row: AdminInformationAgentSaleRow): string[] {
+function saleSourceUrls(row: AdminInformationAgentSaleRow): string[] {
   const urls = new Set<string>();
   const add = (value: unknown) => {
     if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) urls.add(value.trim());
@@ -635,9 +635,7 @@ const PDF_FACT_KEYS = {
  * pièce, avec le libellé de la pièce et la page. Les extraits (qui peuvent contenir des données
  * personnelles) ne sont jamais recopiés.
  */
-export function inventorySignals(
-  rawPayload: Record<string, unknown>,
-): InformationAgentInventorySignals {
+function inventorySignals(rawPayload: Record<string, unknown>): InformationAgentInventorySignals {
   const pdfFacts: NonNullable<InformationAgentInventorySignals["pdfFacts"]> = {};
   for (const [key, payloadKey] of Object.entries(PDF_FACT_KEYS) as Array<
     [keyof typeof PDF_FACT_KEYS, string]

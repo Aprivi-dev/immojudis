@@ -2,20 +2,25 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { getAdjudicationPriceStatisticsDirectory } from "@/lib/adjudication-price-statistics-repository";
+import { apiRoute } from "@/lib/api-route";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "adjudication-price-statistics.directory");
-  try {
+export const GET = apiRoute(
+  {
+    scope: "adjudication-price-statistics.directory",
+    fallbackMessage: "Statistiques d’adjudication temporairement indisponibles.",
+    fallbackStatus: 503,
+    versionedApi: true,
+  },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
-      context,
+      context: api,
       bucketKey: "v1.tribunal-adjudication-statistics",
       ...RATE_LIMIT_POLICIES.compute,
     });
@@ -39,16 +44,6 @@ export async function GET(request: Request) {
     } catch {
       // Telemetry cannot block a premium read.
     }
-    return apiJson(statistics, context, {
-      headers: { "cache-control": "private, no-store", vary: "authorization" },
-    });
-  } catch (error) {
-    const response = apiError(error, context, {
-      fallbackMessage: "Statistiques d’adjudication temporairement indisponibles.",
-      fallbackStatus: 503,
-    });
-    response.headers.set("cache-control", "private, no-store");
-    response.headers.set("vary", "authorization");
-    return response;
-  }
-}
+    return statistics;
+  },
+);

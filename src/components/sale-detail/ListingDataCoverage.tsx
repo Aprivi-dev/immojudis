@@ -62,7 +62,7 @@ const CHECKLIST = [
   { key: "source", label: "Source de l’annonce" },
 ] as const;
 
-export type ListingDataCoverageKey = (typeof CHECKLIST)[number]["key"];
+type ListingDataCoverageKey = (typeof CHECKLIST)[number]["key"];
 
 const KEY_FACT_FIELDS: ReadonlyArray<{ key: ListingDataCoverageKey; field: KeyFact }> = [
   { key: "surface", field: "surface" },
@@ -71,13 +71,13 @@ const KEY_FACT_FIELDS: ReadonlyArray<{ key: ListingDataCoverageKey; field: KeyFa
   { key: "schedule", field: "sale_date" },
 ];
 
-export type ListingDataCoverageItem = {
+type ListingDataCoverageItem = {
   key: ListingDataCoverageKey;
   label: string;
   present: boolean;
 };
 
-export type ListingDataCoverageKeyFact = {
+type ListingDataCoverageKeyFact = {
   key: ListingDataCoverageKey;
   label: string;
   presentation: FactPresentation;
@@ -563,7 +563,7 @@ function isNotCommunicated(fact: PublicListingFact): boolean {
 type NotCommunicatedItem = { fact: PublicListingFact; sectionTitle: string };
 
 /** « 3 informations non communiquées dans le dossier » (singular for one). */
-export function notCommunicatedTitle(count: number): string {
+function notCommunicatedTitle(count: number): string {
   return count > 1
     ? `${count} informations non communiquées dans le dossier`
     : `${count} information non communiquée dans le dossier`;

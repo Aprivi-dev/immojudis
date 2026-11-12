@@ -6,7 +6,8 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { AuthRequiredError, errorDetailForLog } from "@/lib/api-errors";
+import { PublicApiError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
 import {
   AI_REVIEW_CEILING_FIELD_KEYS,
@@ -29,21 +30,12 @@ const saleIdsSchema = z.array(z.string().guid()).min(1).max(500);
 
 const ceilingFieldKeys = new Set<string>(AI_REVIEW_CEILING_FIELD_KEYS);
 
-const projectionReader = supabaseAdmin;
-
 export type SaleAiReviewResponse = {
   projections: AiReviewProjectionReadModel[];
 };
 
-function response(payload: SaleAiReviewResponse | { error: string }, status = 200) {
-  return NextResponse.json(payload, {
-    status,
-    headers: {
-      "cache-control": "private, no-store",
-      vary: "authorization",
-      "referrer-policy": "no-referrer",
-    },
-  });
+function response(payload: SaleAiReviewResponse) {
+  return NextResponse.json(payload, { headers: { "referrer-policy": "no-referrer" } });
 }
 
 /**
@@ -80,14 +72,18 @@ function unavailableSaleRows(
     );
 }
 
-export async function GET(request: Request) {
-  const ids = [...new Set(new URL(request.url).searchParams.getAll("id"))];
-  const parsedIds = saleIdsSchema.safeParse(ids);
-  if (!parsedIds.success) {
-    return response({ error: "Identifiants de vente invalides." }, 400);
-  }
+export const GET = apiRoute(
+  {
+    scope: "sales.ai-review",
+    // Toute panne autre qu'une session absente est la même indisponibilité neutre.
+    fallbackMessage: "La relecture IA de cette annonce est momentanément indisponible.",
+    fallbackStatus: 503,
+  },
+  async (request) => {
+    const ids = [...new Set(new URL(request.url).searchParams.getAll("id"))];
+    const parsedIds = saleIdsSchema.safeParse(ids);
+    if (!parsedIds.success) throw new PublicApiError("Identifiants de vente invalides.", 400);
 
-  try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const { data: visibleSales, error: visibilityError } = await auth.supabase
       .from(DETAIL_VIEW)
@@ -127,13 +123,13 @@ export async function GET(request: Request) {
     const unavailableRows = unavailableSaleRows(parsedIds.data, visibleSaleIds);
     if (visibleSaleIds.size === 0) return response({ projections: unavailableRows });
 
-    const { data: projections, error: projectionError } = await projectionReader
+    const { data: projections, error: projectionError } = await supabaseAdmin
       .from("v_auction_ai_review_projection_read_model")
       .select(PROJECTION_COLUMNS)
       .in("auction_sale_id", [...visibleSaleIds]);
     if (projectionError) throw projectionError;
 
-    const { data: caseStatuses, error: caseStatusError } = await projectionReader
+    const { data: caseStatuses, error: caseStatusError } = await supabaseAdmin
       .from("auction_ai_review_case_status")
       .select(CASE_STATUS_COLUMNS)
       .in("auction_sale_id", [...visibleSaleIds]);
@@ -149,7 +145,7 @@ export async function GET(request: Request) {
       .map((projection) => `${projection.auction_sale_id}:${projection.field_key}`);
     let canonicalMismatches = new Set<string>();
     if (publishableKeys.length) {
-      const { data: publishableRows, error: publishableError } = await projectionReader
+      const { data: publishableRows, error: publishableError } = await supabaseAdmin
         .from("v_auction_ai_review_publishable")
         .select(PUBLISHABLE_COLUMNS)
         .in("auction_sale_id", [...visibleSaleIds]);
@@ -180,24 +176,5 @@ export async function GET(request: Request) {
             : projection,
         ),
     });
-  } catch (error) {
-    // Only the authentication failure is distinguishable; every other failure is the
-    // same neutral outage message and the detail goes to the server logs.
-    const unauthorized = error instanceof AuthRequiredError;
-    console.error(
-      JSON.stringify({
-        scope: "sales.ai-review",
-        status: unauthorized ? 401 : 503,
-        error: errorDetailForLog(error),
-      }),
-    );
-    return response(
-      {
-        error: unauthorized
-          ? "Authentification requise."
-          : "La relecture IA de cette annonce est momentanément indisponible.",
-      },
-      unauthorized ? 401 : 503,
-    );
-  }
-}
+  },
+);

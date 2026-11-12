@@ -95,7 +95,7 @@ export async function prepareAdminInformationAgentDraft({
 /**
  * Message d'erreur d'aperçu montré à l'administrateur : les messages métier français passent, tout le reste
  * (erreur de base, contrainte, réseau) devient un message générique. Le détail va au journal serveur, comme
- * pour `adminErrorResponse`, sans adresse email.
+ * pour l'enveloppe des routes admin (`adminRoute`), sans adresse email.
  */
 function previewErrorMessage(error: unknown): string {
   const classified = classifyApiError(error, {

@@ -183,7 +183,7 @@ describe("processAccountEmailDeliveryWebhook", () => {
         findAccount,
         revoke,
       }),
-    ).rejects.toMatchObject({ name: "InvalidAccountEmailWebhookSignatureError" });
+    ).rejects.toMatchObject({ name: "InvalidWebhookSignatureError" });
     expect(findAccount).not.toHaveBeenCalled();
     expect(revoke).not.toHaveBeenCalled();
   });
@@ -196,7 +196,7 @@ describe("processAccountEmailDeliveryWebhook", () => {
         findAccount,
         revoke,
       }),
-    ).rejects.toMatchObject({ name: "InvalidAccountEmailWebhookSignatureError" });
+    ).rejects.toMatchObject({ name: "InvalidWebhookSignatureError" });
   });
 
   it("échoue sans secret configuré (le fournisseur réessaiera)", async () => {
@@ -218,7 +218,7 @@ describe("processAccountEmailDeliveryWebhook", () => {
     });
     await expect(
       processAccountEmailDeliveryWebhook({ request, env, findAccount, revoke }),
-    ).rejects.toMatchObject({ name: "AccountEmailWebhookPayloadTooLargeError" });
+    ).rejects.toMatchObject({ name: "WebhookPayloadTooLargeError" });
   });
 
   it("laisse remonter une panne de la base pour que l'évènement soit rejoué", async () => {

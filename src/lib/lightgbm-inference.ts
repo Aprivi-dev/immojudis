@@ -1,5 +1,5 @@
 import { clamp } from "@/lib/guards";
-export type LightGbmTreeNode = {
+type LightGbmTreeNode = {
   split_feature?: number;
   threshold?: number | string;
   decision_type?: string;
@@ -10,12 +10,12 @@ export type LightGbmTreeNode = {
   leaf_value?: number;
 };
 
-export type LightGbmDump = {
+type LightGbmDump = {
   tree_info?: Array<{ tree_structure?: LightGbmTreeNode }>;
   average_output?: boolean;
 };
 
-export type LightGbmQuantileArtifact = {
+type LightGbmQuantileArtifact = {
   format: "lightgbm-json-v1";
   target: "log_price_per_m2";
   featureNames: string[];

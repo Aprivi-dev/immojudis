@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getAdminActivation, unavailableActivation } from "@/lib/admin-activation";
 import { getAdminBidCeilings, unavailableBidCeilings } from "@/lib/admin-bid-ceilings";
@@ -6,7 +5,7 @@ import {
   getAdminOfferOpeningSurvey,
   unavailableOfferOpeningSurvey,
 } from "@/lib/admin-offer-opening-survey";
-import { withAdminDeadline } from "@/lib/admin-route-deadline";
+import { adminRoute } from "@/lib/admin-route-deadline";
 import {
   getAdminPilotage,
   getAdminSaleReminderAccuracy,
@@ -16,14 +15,14 @@ import {
   getAdminSaleSignalFeedback,
   unavailableSaleSignalFeedback,
 } from "@/lib/admin-sale-signal-feedback";
-import { adminErrorResponse } from "@/lib/api-route-errors";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
 
 /** Agrégats de la page « Pilotage » : administrateur seulement, jamais mis en cache. */
-async function handleGET(request: Request) {
-  try {
+export const GET = adminRoute(
+  { scope: "admin.pilotage.read", fallbackMessage: "Pilotage indisponible" },
+  async (request) => {
     const token = bearerTokenFromRequest(request);
     const now = new Date();
     // La mesure des rappels ne doit pas faire tomber le reste du pilotage : en cas d'échec, elle vaut
@@ -56,16 +55,13 @@ async function handleGET(request: Request) {
           return unavailableActivation();
         }),
       ]);
-    return NextResponse.json(
-      { ...pilotage, saleReminders, signalFeedback, bidCeilings, offerOpeningSurvey, activation },
-      { headers: { "cache-control": "private, no-store" } },
-    );
-  } catch (error) {
-    return adminErrorResponse(error, {
-      fallbackMessage: "Pilotage indisponible",
-      fallbackStatus: 500,
-    });
-  }
-}
-
-export const GET = withAdminDeadline(handleGET);
+    return {
+      ...pilotage,
+      saleReminders,
+      signalFeedback,
+      bidCeilings,
+      offerOpeningSurvey,
+      activation,
+    };
+  },
+);

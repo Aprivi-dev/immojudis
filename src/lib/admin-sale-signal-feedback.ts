@@ -17,7 +17,7 @@ import type { SaleSignal } from "@/lib/sale-signal-feedback";
  * s'affiche « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
 /** Un nombre exact, ou `null` : « non mesuré » (comme `PilotageCount`). */
-export type FeedbackCount = number | null;
+type FeedbackCount = number | null;
 
 export type SignalFeedbackCounts = {
   /** Retours, dont « Utile » et « Pas pertinent », et comptes distincts. */
@@ -140,7 +140,7 @@ export async function getAdminSaleSignalFeedback(
 }
 
 /** Un motif de retour négatif sur une vente : le nombre de « Pas pertinent », jamais un compte. */
-export type SaleFeedbackBySaleRow = {
+type SaleFeedbackBySaleRow = {
   saleId: string;
   title: string | null;
   city: string | null;

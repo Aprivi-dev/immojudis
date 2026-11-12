@@ -73,7 +73,7 @@ export function seoSurface(value: number | null | undefined): string | null {
     .replaceAll(" ", " ")} m²`;
 }
 
-export function seoPrice(value: number): string {
+function seoPrice(value: number): string {
   return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 })
     .format(value)
     .replaceAll(" ", " ")

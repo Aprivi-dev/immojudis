@@ -59,11 +59,8 @@ describe("sale pepites cron route", () => {
 
     await runHandler();
 
-    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({
-      retryDelaysMs: [],
-      catchUpSchedule: "42 5 * * *",
-      catchUpSuccessWindowHours: 2,
-    });
+    expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("sale-pepites");
+    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({ retryDelaysMs: [] });
   });
 
   it("lit la taille du lot dans l'environnement", async () => {

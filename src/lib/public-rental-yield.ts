@@ -80,7 +80,7 @@ const monthlyRent = (surface: number, perM2: number) =>
  * rendement : une référence fiable donne la valeur centrale et sa fourchette, une référence
  * indicative QUE la fourchette, et rien sans borne de loyer.
  */
-export function publicMonthlyRentText(surface: number, reference: RentReference): string | null {
+function publicMonthlyRentText(surface: number, reference: RentReference): string | null {
   const { lowPerM2, highPerM2, rentPerM2 } = reference;
   const bounds =
     lowPerM2 != null && highPerM2 != null && lowPerM2 > 0 && highPerM2 > 0

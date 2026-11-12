@@ -56,9 +56,6 @@ const STRIPE_API_VERSION = "2026-06-24.dahlia";
 export {
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
   ANALYSIS_OFFER_CODE,
-  ANALYSIS_RECURRING_CURRENCY,
-  ANALYSIS_RECURRING_INTERVAL,
-  ANALYSIS_RECURRING_INTERVAL_COUNT,
   ANALYSIS_RECURRING_PRICE_CENTS,
   ANALYSIS_SUBSCRIPTION_BILLING_MODEL,
   ANALYSIS_SUBSCRIPTION_OFFER_CODE,
@@ -68,7 +65,7 @@ export const ANALYSIS_ACCESS_DAYS = 30;
 /** Legacy one-time constants retained for validating historical webhooks. */
 export const ANALYSIS_PRICE_CENTS = ANALYSIS_RECURRING_PRICE_CENTS;
 
-export function resolveAnalysisPriceId(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
+function resolveAnalysisPriceId(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
   const priceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
   if (!priceId) {
     throw new ConfigurationError(

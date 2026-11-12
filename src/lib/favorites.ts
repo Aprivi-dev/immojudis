@@ -34,7 +34,7 @@ export type FavoriteSale = {
   bidCeilingSavedAt: string | null;
 };
 
-export type FavoriteDepartmentSummary = {
+type FavoriteDepartmentSummary = {
   department: string;
   count: number;
   totalStartingPriceEur: number;
@@ -50,7 +50,7 @@ export type FavoriteSalesSummary = {
   departments: FavoriteDepartmentSummary[];
 };
 
-export type FavoritePlanAccess = {
+type FavoritePlanAccess = {
   code: PlanCode;
   label: string;
   feature: FeatureAccess;

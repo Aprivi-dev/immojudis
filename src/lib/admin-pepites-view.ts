@@ -19,14 +19,14 @@ export type PepitesViewCell = {
   bad?: string[];
 };
 
-export type PepitesViewTable = {
+type PepitesViewTable = {
   caption: string;
   head: string[];
   /** Chaque ligne : la première cellule est l'en-tête de la ligne. */
   rows: PepitesViewCell[][];
 };
 
-export type PepitesViewSection = {
+type PepitesViewSection = {
   id: string;
   title: string;
   paragraphs: string[];

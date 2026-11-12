@@ -90,7 +90,7 @@ export const SALE_LIST_COLUMNS = joinColumns(SALE_LIST_COLUMN_NAMES);
  * pièces, photos) : elles ne sont relues que pour les ventes qu'une alerte retient déjà sur les autres
  * critères (classe DPE, résumé enregistré avec la correspondance).
  */
-export const ALERT_DETAIL_COLUMN_NAMES = ["source_blocks", "documents", "documents_rich"] as const;
+const ALERT_DETAIL_COLUMN_NAMES = ["source_blocks", "documents", "documents_rich"] as const;
 
 /**
  * Colonnes inutiles à l'évaluation d'une alerte, et coûteuses : textes, provenance, photos.

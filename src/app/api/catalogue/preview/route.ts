@@ -1,5 +1,6 @@
+import { NextResponse } from "next/server";
 import { PublicApiError } from "@/lib/api-errors";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   DEGRADED_MIRRORS_REVALIDATE_SECONDS,
   loadPreviewCataloguePage,
@@ -46,9 +47,13 @@ function previewCacheControl(mirrorsDegraded: boolean): string {
   return `public, s-maxage=${PREVIEW_CDN_MAX_AGE_SECONDS}, stale-while-revalidate=${STALE_WHILE_REVALIDATE_SECONDS}`;
 }
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "api.catalogue.preview");
-  try {
+export const GET = apiRoute(
+  {
+    scope: "api.catalogue.preview",
+    fallbackMessage: "Catalogue indisponible.",
+    fallbackStatus: 503,
+  },
+  async (request) => {
     // Les paramètres illisibles sont refusés avant tout accès à la base (et sans consommer de quota).
     const parsed = parsePreviewSearchRequest(new URL(request.url).searchParams);
     if (!parsed.ok) throw new PublicApiError(parsed.message, 400);
@@ -70,16 +75,8 @@ export async function GET(request: Request) {
       parsed.search,
     );
     const response: PreviewSearchApiResponse = body;
-    return apiJson(
-      response,
-      context,
-      { headers: { "cache-control": previewCacheControl(mirrorsDegraded) } },
-      { echoRequestId: false },
-    );
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Catalogue indisponible.",
-      fallbackStatus: 503,
+    return NextResponse.json(response, {
+      headers: { "cache-control": previewCacheControl(mirrorsDegraded) },
     });
-  }
-}
+  },
+);

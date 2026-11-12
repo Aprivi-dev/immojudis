@@ -82,7 +82,6 @@ export const watchedZoneUpdateSchema = watchedZoneShape.partial().extend({
 
 export type WatchedZoneInput = z.input<typeof watchedZoneInputSchema>;
 export type WatchedZonePayload = z.output<typeof watchedZoneInputSchema>;
-export type WatchedZoneUpdateInput = z.input<typeof watchedZoneUpdateSchema>;
 export type WatchedZoneUpdatePayload = z.output<typeof watchedZoneUpdateSchema>;
 
 export type WatchedZonesResponse = {

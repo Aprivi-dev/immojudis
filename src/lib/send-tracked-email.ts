@@ -16,7 +16,7 @@ import { GENERIC_LOG_SUBJECTS, type SentTemplateKey } from "@/lib/email-template
  * - Aucun corps n'est enregistré. L'objet est remplacé par un objet générique pour les gabarits
  *   personnalisés avec des données de tiers (`GENERIC_LOG_SUBJECTS`).
  */
-export type TrackedEmailMode = "on" | "internal" | "test" | "manual" | "autopilot";
+type TrackedEmailMode = "on" | "internal" | "test" | "manual" | "autopilot";
 
 export type SendTrackedEmailInput = Parameters<typeof sendResendEmail>[0] & {
   /** Clé du gabarit dans le registre (`src/lib/email-templates`). */

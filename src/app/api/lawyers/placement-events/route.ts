@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -10,8 +9,13 @@ import {
 } from "@/lib/lawyer-placement-events";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  {
+    scope: "api.lawyers.placement-events",
+    fallbackMessage: "Événement de placement avocat impossible",
+    emptyBody: { recorded: false },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await assertFeatureEntitlement(
       auth,
@@ -19,11 +23,6 @@ export async function POST(request: Request) {
       "Annuaire des avocats indisponible pour ce compte.",
     );
     const input = lawyerPlacementEventInputSchema.parse(await request.json());
-    return NextResponse.json(await recordLawyerPlacementEvent({ input, userId: auth.userId }));
-  } catch (error) {
-    return apiRouteError(error, request, "lawyers.placement-events", {
-      fallbackMessage: "Événement de placement avocat impossible",
-      extra: { recorded: false },
-    });
-  }
-}
+    return recordLawyerPlacementEvent({ input, userId: auth.userId });
+  },
+);

@@ -28,11 +28,11 @@ import { buildAddressRows, type EmailAddressRow } from "./senders";
 const CACHE_TTL_MS = 60_000;
 const MIN_REFRESH_INTERVAL_MS = 5_000;
 
-export type EmailAlert = { id: string; severity: "error" | "warning"; message: string };
+type EmailAlert = { id: string; severity: "error" | "warning"; message: string };
 
-export type SecretStatus = { name: EmailSecretVariable; configured: boolean; purpose: string };
+type SecretStatus = { name: EmailSecretVariable; configured: boolean; purpose: string };
 
-export type WebhookExpectation = {
+type WebhookExpectation = {
   label: string;
   path: string;
   secret: EmailSecretVariable;
@@ -40,7 +40,7 @@ export type WebhookExpectation = {
 };
 
 /** Routes qui reçoivent des évènements de Resend, et ce qu'elles attendent. */
-export const EXPECTED_WEBHOOKS: readonly WebhookExpectation[] = [
+const EXPECTED_WEBHOOKS: readonly WebhookExpectation[] = [
   {
     label: "Rebonds et plaintes des emails aux comptes",
     path: "/api/webhooks/resend/account-emails",
@@ -131,7 +131,7 @@ function contactAddress(addresses: readonly EmailAddressRow[]): string | null {
   return addresses.find((row) => row.variable === "NEXT_PUBLIC_LEGAL_CONTACT_EMAIL")?.value ?? null;
 }
 
-export function buildAlerts(input: {
+function buildAlerts(input: {
   addresses: readonly EmailAddressRow[];
   resend: EmailAddressesReport["resend"];
   webhooks: EmailAddressesReport["webhooks"];

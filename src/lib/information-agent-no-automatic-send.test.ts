@@ -129,7 +129,7 @@ describe("agent d'information : aucun envoi automatique", () => {
     // La route n'expose l'action qu'en PATCH administrateur, avec une confirmation explicite.
     const route = read("src/app/api/admin/information-agent/missions/route.ts");
     expect(route).toMatch(
-      /async function handlePATCH[\s\S]*runAdminInformationAgentMissionActionForToken/,
+      /export const PATCH = adminRoute\([\s\S]*runAdminInformationAgentMissionActionForToken/,
     );
     const schemas = read(SCHEMAS_MODULE);
     expect(schemas).toMatch(/approvalConfirmed: z\.literal\(true\)/);

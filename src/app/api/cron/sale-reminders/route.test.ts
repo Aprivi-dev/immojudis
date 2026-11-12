@@ -30,8 +30,8 @@ describe("sale reminders cron route", () => {
       async (
         _request: Request,
         _jobName: string,
-        handler: () => Promise<Record<string, unknown>>,
-      ) => Response.json(await handler()),
+        handler: (run: { catchUp: boolean }) => Promise<Record<string, unknown>>,
+      ) => Response.json(await handler({ catchUp: schedule === "15 9 * * *" })),
     );
     return GET(
       new Request("https://example.test/api/cron/sale-reminders", {
@@ -48,7 +48,7 @@ describe("sale reminders cron route", () => {
     const [, jobName, , options] = mocks.runMonitoredCron.mock.calls[0];
     expect(jobName).toBe("sale-reminders");
     // Le second passage de vercel.json (09:15) ne refait rien si le premier a réussi.
-    expect(options).toEqual({ catchUpSchedule: "15 9 * * *" });
+    expect(options).toBeUndefined();
   });
 
   it("lance le passage avec le magasin réel", async () => {

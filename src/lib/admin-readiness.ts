@@ -1,5 +1,6 @@
 import "server-only";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { CRON_JOB_NAMES } from "@/lib/scheduled-jobs";
 import postgres from "postgres";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
@@ -9,7 +10,7 @@ import { legalConfigurationStatus } from "@/lib/legal-documents";
 import { resolveExpectedLatestMigrationVersion } from "@/lib/migration-manifest";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
-export type ReadinessArea =
+type ReadinessArea =
   | "billing"
   | "cron"
   | "database"
@@ -28,7 +29,7 @@ export type ReadinessItem = {
   action: string | null;
 };
 
-export type MigrationReadiness = {
+type MigrationReadiness = {
   status: ReadinessStatus;
   expectedLatestVersion: string;
   latestAppliedVersion: string | null;
@@ -36,7 +37,7 @@ export type MigrationReadiness = {
   detail: string;
 };
 
-export type OperationalAlertSummary = {
+type OperationalAlertSummary = {
   key: string;
   category: string;
   severity: "warning" | "critical";
@@ -72,29 +73,8 @@ export type AdminOperationalReadinessResponse = {
   operations: OperationalHealthReadiness;
   webhookUrl: string | null;
 };
-
-export const EXPECTED_LATEST_MIGRATION_VERSION = "20261003170000";
-export const OPERATIONAL_HEALTH_SLO_TARGET_PERCENT = 99.5;
-export const OPERATIONAL_HEALTH_SLO_WINDOW_DAYS = 30;
-
-const EXPECTED_CRONS = [
-  "/api/cron/smart-alerts",
-  "/api/cron/alert-notifications",
-  "/api/cron/sale-change-monitor",
-  "/api/cron/sale-reminders",
-  "/api/cron/sale-results",
-  "/api/cron/weekly-digest",
-  "/api/cron/trial-end-email",
-  "/api/cron/precompute-valuations",
-  "/api/cron/data-retention",
-  "/api/cron/operational-health",
-  "/api/cron/cnb-lawyer-directory",
-  "/api/cron/information-agent-inbound",
-  "/api/cron/listing-completeness",
-  "/api/cron/sale-pepites",
-  "/api/cron/sale-flood-risk",
-  "/api/cron/sale-retention",
-] as const;
+const OPERATIONAL_HEALTH_SLO_TARGET_PERCENT = 99.5;
+const OPERATIONAL_HEALTH_SLO_WINDOW_DAYS = 30;
 
 export async function getAdminOperationalReadiness(
   authToken: string,
@@ -193,7 +173,7 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       label: "Crons alertes",
       status: cronSecret ? "ready" : "blocked",
       detail: cronSecret
-        ? `${EXPECTED_CRONS.length} routes cron sont protégées par CRON_SECRET.`
+        ? `${CRON_JOB_NAMES.length} routes cron sont protégées par CRON_SECRET.`
         : "Les routes cron refusent les exécutions planifiées sans CRON_SECRET.",
       action: cronSecret ? null : "Configurer CRON_SECRET dans Vercel Production.",
     },

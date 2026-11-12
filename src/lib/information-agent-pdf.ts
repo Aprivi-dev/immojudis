@@ -6,8 +6,8 @@ import "server-only";
  * redaction box (text layer, annotations, form fields, attachments, author/producer metadata)
  * cannot survive: only the visible pixels are published.
  */
-export const MAX_FLATTENED_PAGES = 60;
-export const MAX_FLATTENED_BYTES = 20 * 1024 * 1024;
+const MAX_FLATTENED_PAGES = 60;
+const MAX_FLATTENED_BYTES = 20 * 1024 * 1024;
 const MAX_PAGE_PIXELS = 4_000_000;
 
 type RenderedPage = { jpeg: Uint8Array; width: number; height: number };

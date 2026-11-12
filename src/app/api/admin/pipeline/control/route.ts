@@ -1,16 +1,13 @@
 import "server-only";
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { withAdminDeadline } from "@/lib/admin-route-deadline";
+import { adminRoute } from "@/lib/admin-route-deadline";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
+import { NotFoundError } from "@/lib/api-errors";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
-
-const client = supabaseAdmin;
 
 const pipelineControlSettingsSchema = z
   .object({
@@ -25,17 +22,12 @@ const pipelineControlSettingsSchema = z
     message: "Au moins un paramètre de contrôle est requis",
   });
 
-function failure(error: unknown, request: Request) {
-  return apiRouteError(error, request, "admin.pipeline.control", {
-    fallbackMessage: "Contrôle du pipeline indisponible",
-  });
-}
-
-async function handlePATCH(request: Request) {
-  try {
+export const PATCH = adminRoute(
+  { scope: "admin.pipeline.control", fallbackMessage: "Contrôle du pipeline indisponible" },
+  async (request) => {
     await assertAdminAuth(bearerTokenFromRequest(request));
     const input = pipelineControlSettingsSchema.parse(await request.json());
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from("auction_pipeline_control")
       .update({ ...input, updated_at: new Date().toISOString() })
       .eq("id", true)
@@ -43,14 +35,7 @@ async function handlePATCH(request: Request) {
       .maybeSingle();
 
     if (error) throw error;
-    if (!data) {
-      return NextResponse.json({ error: "Contrôle du pipeline introuvable" }, { status: 404 });
-    }
-
-    return NextResponse.json(data, { headers: { "cache-control": "no-store" } });
-  } catch (error) {
-    return failure(error, request);
-  }
-}
-
-export const PATCH = withAdminDeadline(handlePATCH);
+    if (!data) throw new NotFoundError("Contrôle du pipeline introuvable");
+    return data;
+  },
+);

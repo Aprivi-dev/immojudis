@@ -19,15 +19,15 @@ import { roundWithEpsilon as round } from "@/lib/rounding";
  * All values in this file are deliberately synthetic. They are used by the
  * public announcement example only and never come from a tribunal feed.
  */
-export const EXAMPLE_TRIBUNAL_STATISTICS_AS_OF = "2026-10-02T10:00:00.000Z" as const;
-export const EXAMPLE_TRIBUNAL_STATISTICS_BUILT_AT = "2026-10-02T10:00:00.000Z" as const;
-export const EXAMPLE_TRIBUNAL_STATISTICS_REVIEWED_AT = "2026-10-02T10:00:00.000Z" as const;
+const EXAMPLE_TRIBUNAL_STATISTICS_AS_OF = "2026-10-02T10:00:00.000Z" as const;
+const EXAMPLE_TRIBUNAL_STATISTICS_BUILT_AT = "2026-10-02T10:00:00.000Z" as const;
+const EXAMPLE_TRIBUNAL_STATISTICS_REVIEWED_AT = "2026-10-02T10:00:00.000Z" as const;
 
 export const EXAMPLE_TRIBUNAL_STATISTICS_HISTORY_MONTHS = [3, 12, 24, 36] as const;
 export type ExampleTribunalStatisticsHistoryMonths =
   (typeof EXAMPLE_TRIBUNAL_STATISTICS_HISTORY_MONTHS)[number];
 
-export const EXAMPLE_TRIBUNAL_STATISTICS_SOURCE_NAMES = [
+const EXAMPLE_TRIBUNAL_STATISTICS_SOURCE_NAMES = [
   "demo-bulletin-synthetique",
   "demo-avis-juridique",
 ] as const;
@@ -131,7 +131,7 @@ const EXAMPLE_COURTS: Record<string, ExampleCourt> = {
  * listing with a similar city or court name therefore cannot receive demo
  * statistics accidentally.
  */
-export const EXAMPLE_TRIBUNAL_STATISTICS_SALE_IDS: Readonly<Record<string, string>> = {
+const EXAMPLE_TRIBUNAL_STATISTICS_SALE_IDS: Readonly<Record<string, string>> = {
   "example-immojudis-bordeaux-t2": "tj-bordeaux",
   "example-immojudis-nantes-maison": "tj-nantes",
   "example-immojudis-toulouse-maison": "tj-toulouse",

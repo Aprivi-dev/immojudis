@@ -44,12 +44,12 @@ function typeText(sale: SurfaceSaleLike): string {
   return [sale.property_type, sale.title].filter(Boolean).join(" ").toLowerCase();
 }
 
-export function isStudioSale(sale: SurfaceSaleLike): boolean {
+function isStudioSale(sale: SurfaceSaleLike): boolean {
   return /\b(studio|studette)\b/.test(typeText(sale));
 }
 
 // property_type est normalisé en "apartment" ; on tolère aussi les variantes FR/abrégées.
-export function isApartmentSale(sale: SurfaceSaleLike): boolean {
+function isApartmentSale(sale: SurfaceSaleLike): boolean {
   return /\bapartment\b|\bappart|\bapt\b/.test(typeText(sale));
 }
 

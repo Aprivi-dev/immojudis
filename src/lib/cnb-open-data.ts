@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { trimmedStringValue } from "@/lib/guards";
 
-export const CNB_DATASET_API_URL =
+const CNB_DATASET_API_URL =
   "https://www.data.gouv.fr/api/1/datasets/annuaire-des-avocats-de-france/";
 export const CNB_DATASET_PAGE_URL =
   "https://www.data.gouv.fr/datasets/annuaire-des-avocats-de-france";

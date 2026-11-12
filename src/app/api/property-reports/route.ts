@@ -1,3 +1,4 @@
+import { NextResponse } from "next/server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -7,35 +8,24 @@ import {
   propertyReportRequestSchema,
   savePropertyReport,
 } from "@/lib/property-reports";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "api.property-reports.list");
-  try {
+export const GET = apiRoute(
+  { scope: "api.property-reports.list", fallbackMessage: "Rapports indisponibles." },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const saleId = url.searchParams.get("saleId");
-    const response = await listPropertyReports({ auth, saleId });
-    return apiJson(response, context);
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Rapports indisponibles.",
-      fallbackStatus: 400,
-    });
-  }
-}
+    return listPropertyReports({ auth, saleId });
+  },
+);
 
-export async function POST(request: Request) {
-  const context = createApiRequestContext(request, "api.property-reports.create");
-  try {
+export const POST = apiRoute(
+  { scope: "api.property-reports.create", fallbackMessage: "Rapport impossible." },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = propertyReportRequestSchema.parse(await request.json());
     const response = await savePropertyReport({ auth, input, request });
-    return apiJson(response, context, { status: 201 });
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Rapport impossible.",
-      fallbackStatus: 400,
-    });
-  }
-}
+    return NextResponse.json(response, { status: 201 });
+  },
+);

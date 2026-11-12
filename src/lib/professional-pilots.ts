@@ -1,6 +1,6 @@
 import { z } from "zod/mini";
 
-export const PILOT_KINDS = ["tribunal", "notary", "state"] as const;
+const PILOT_KINDS = ["tribunal", "notary", "state"] as const;
 export type PilotKind = (typeof PILOT_KINDS)[number];
 
 export type PilotFact = {

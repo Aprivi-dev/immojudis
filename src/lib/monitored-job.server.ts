@@ -123,7 +123,7 @@ export function operationalErrorMessage(error: unknown): string {
   return "Scheduled job failed";
 }
 
-export async function beginRun(
+async function beginRun(
   jobName: string,
   retryDelaysMs: number[] = DEFAULT_RETRY_DELAYS_MS,
 ): Promise<string | null> {
@@ -145,7 +145,7 @@ export async function beginRun(
   }
 }
 
-export async function finishRun(
+async function finishRun(
   runId: string | null,
   status: "success" | "failed",
   summary: Record<string, unknown>,

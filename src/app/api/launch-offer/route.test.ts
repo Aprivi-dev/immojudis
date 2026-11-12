@@ -39,7 +39,7 @@ describe("GET /api/launch-offer", () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ active: false });
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("répond `false` quand l'offre est coupée", async () => {

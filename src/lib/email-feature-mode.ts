@@ -14,7 +14,7 @@ import { serverEnv, type EnvSource } from "@/lib/env";
  * propriétaire n'ouvre qu'après avoir mis à jour la politique de confidentialité et le registre des
  * traitements.
  */
-export const EMAIL_FEATURE_MODES = ["off", "internal", "on"] as const;
+const EMAIL_FEATURE_MODES = ["off", "internal", "on"] as const;
 export type EmailFeatureMode = (typeof EMAIL_FEATURE_MODES)[number];
 
 type Env = Pick<NodeJS.ProcessEnv, string>;

@@ -4,24 +4,24 @@ import { cleanTextDeep as cleanText } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 import { riskTextsWithType as riskTexts } from "@/lib/sale-risk-texts";
 
-export type RenovationConditionStatus =
+type RenovationConditionStatus =
   | "good"
   | "light_refresh"
   | "works_to_budget"
   | "heavy_works"
   | "unknown";
 
-export type RenovationPriority = "low" | "medium" | "high" | "unknown";
-export type RenovationBudgetLevel = "none" | "light" | "standard" | "heavy" | "unknown";
+type RenovationPriority = "low" | "medium" | "high" | "unknown";
+type RenovationBudgetLevel = "none" | "light" | "standard" | "heavy" | "unknown";
 
-export type RenovationEvidence = {
+type RenovationEvidence = {
   label: string;
   status: Exclude<RenovationConditionStatus, "unknown">;
   source: string;
   excerpt: string;
 };
 
-export type RenovationBudgetRange = {
+type RenovationBudgetRange = {
   lowEur: number | null;
   highEur: number | null;
   lowPerM2: number;

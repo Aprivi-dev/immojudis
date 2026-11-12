@@ -44,7 +44,7 @@ export type StripeSubscriptionView = {
   priceAmountCents?: number | null;
 };
 
-export type BillingDiscrepancyKind =
+type BillingDiscrepancyKind =
   /** Stripe facture un abonnement qui ouvre l'accès, aucune ligne ne le porte en base. */
   | "stripe_access_without_row"
   /** Stripe facture un abonnement qui ouvre l'accès, la base n'ouvre pas l'accès. */

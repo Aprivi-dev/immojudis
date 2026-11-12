@@ -73,8 +73,6 @@ export function createApiKeyReader(
     },
   } as unknown as SupabaseAuthContext["supabase"];
 }
-
-export type ApiKeyCreateInput = z.input<typeof apiKeyCreateInputSchema>;
 export type ApiKeyCreatePayload = z.output<typeof apiKeyCreateInputSchema>;
 
 export type ApiKeySummary = {
@@ -248,7 +246,7 @@ export async function apiKeyAuthContextFromRequest(
   };
 }
 
-export async function verifyApiKeySecret({
+async function verifyApiKeySecret({
   secret,
   requiredScope = "sales.feed:read",
   now = new Date(),

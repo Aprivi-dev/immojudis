@@ -287,12 +287,6 @@ const MOBILE_SIGNATURE_LINE_PATTERN =
 
 const SIGNATURE_SEPARATOR_PATTERN = /^[ \t]*--[ \t]*$/mu;
 
-export function requiredHeader(request: Request, name: string) {
-  const value = request.headers.get(name)?.trim();
-  if (!value) throw new Error(`Signature webhook incomplète: ${name}.`);
-  return value;
-}
-
 export function mergeJsonObject(current: Json, extra: Record<string, Json>): Json {
   const base = current && typeof current === "object" && !Array.isArray(current) ? current : {};
   return { ...base, ...extra };

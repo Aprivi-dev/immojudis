@@ -3,7 +3,7 @@
  * Historique) et l'onglet Envois de l'agent d'information. Module pur, sans accès à la base : importable
  * par le navigateur. Affichage seulement : aucune décision ne se lit ici (voir `email-delivery-log.ts`).
  */
-export type EmailDeliveryTone = "ok" | "bad" | "warn" | "neutral";
+type EmailDeliveryTone = "ok" | "bad" | "warn" | "neutral";
 export type EmailDeliveryLabel = { text: string; tone: EmailDeliveryTone; detail?: string };
 /**
  * `bounced_temporary_unconfirmed` : rebond noté « passager » sur une mission avant que le type du

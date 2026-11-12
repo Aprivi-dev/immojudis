@@ -55,8 +55,8 @@ const referralStatusSchema = z.enum([
 
 const referralMatchingStatusSchema = z.enum(["unmatched", "matched", "manual_review"]);
 
-export type LawyerReferralStatus = z.infer<typeof referralStatusSchema>;
-export type LawyerReferralMatchingStatus = z.infer<typeof referralMatchingStatusSchema>;
+type LawyerReferralStatus = z.infer<typeof referralStatusSchema>;
+type LawyerReferralMatchingStatus = z.infer<typeof referralMatchingStatusSchema>;
 
 export const lawyerReferralRequestInputSchema = z.object({
   saleId: z.string().guid(),
@@ -109,7 +109,7 @@ export type LawyerReferralResponse = {
  * Placement of the lawyer who would receive a request, at the time of the preview: "active" (paid
  * placement), "trial" (free trial of the paid placement, not yet paid) or "none".
  */
-export type LawyerReferralPlacement = "active" | "trial" | "none";
+type LawyerReferralPlacement = "active" | "trial" | "none";
 
 export type LawyerReferralPreviewResponse = {
   /** Null when no lawyer can be determined automatically: the request goes to manual review. */

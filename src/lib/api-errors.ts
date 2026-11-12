@@ -97,6 +97,17 @@ export class AuthRequiredError extends Error {
 }
 
 /**
+ * 503 : a dependency (database, provider) failed or timed out. The message is a detail for the logs;
+ * the response carries the route's fallback message.
+ */
+export class ServiceUnavailableError extends Error {
+  constructor(detail: string, options?: ErrorOptions) {
+    super(detail, options);
+    this.name = "ServiceUnavailableError";
+  }
+}
+
+/**
  * 503 : a server-side setting (environment variable, client) is missing. The message is a detail
  * for the logs; the response says « Service temporairement indisponible. ».
  */

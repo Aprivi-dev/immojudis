@@ -8,7 +8,7 @@ import {
 } from "@/lib/client-api/admin-auto-publication";
 import type { AutoPublicationReviewDecision } from "@/lib/admin-information-agent-auto-publication";
 
-export const AUTO_PUBLICATION_QUERY_KEY = ["admin-information-agent-auto-publication"] as const;
+const AUTO_PUBLICATION_QUERY_KEY = ["admin-information-agent-auto-publication"] as const;
 const REVIEW_QUERY_KEY = ["admin-information-agent-review"] as const;
 
 /**
