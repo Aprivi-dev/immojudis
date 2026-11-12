@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ rpc: vi.fn() }));
 
@@ -6,12 +6,19 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.rpc },
 }));
 
-import { FACT_REGISTRY_CHECKS, runFactRegistryCheckJob } from "@/lib/fact-registry-check";
+import {
+  FACT_REGISTRY_CHECKS,
+  REPROJECTION_PASS_START_BUDGET_MS,
+  runFactRegistryCheckJob,
+} from "@/lib/fact-registry-check";
+import { isTransientError, withTransientRetries } from "@/lib/monitored-job.server";
 
 type ReportOverrides = {
   truncated?: unknown;
   pages?: unknown;
   merge_carried?: unknown;
+  decisions_second_factor_required?: unknown;
+  simulation_failures?: unknown;
   checks?: Record<string, unknown>;
 };
 
@@ -50,6 +57,7 @@ function reprojection(overrides: Record<string, unknown> = {}) {
 
 const closedReprojection = {
   enabled: false,
+  passes: 1,
   drifted: 0,
   applied: 0,
   busy: 0,
@@ -58,14 +66,18 @@ const closedReprojection = {
   failureCodes: [],
 };
 
-/** Les deux appels de la tâche, dans l'ordre : la relance, puis le contrôle. */
-function answer(reprojected: unknown, checked: unknown) {
-  mocks.rpc.mockResolvedValueOnce(reprojected).mockResolvedValueOnce(checked);
+/** Les appels de la tâche, dans l'ordre : la relance (une réponse par passe), puis le contrôle. */
+function answer(...responses: unknown[]) {
+  for (const response of responses) mocks.rpc.mockResolvedValueOnce(response);
 }
 
 describe("contrôle quotidien du registre des pièces", () => {
   beforeEach(() => {
     mocks.rpc.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("lance la relance puis le contrôle, en deux appels sans paramètre", async () => {
@@ -89,6 +101,8 @@ describe("contrôle quotidien du registre des pièces", () => {
       heldFieldCount: 4,
       pages: null,
       mergeCarried24h: null,
+      decisionsSecondFactorRequired: null,
+      simulationFailureCodes: [],
       counts: Object.fromEntries(FACT_REGISTRY_CHECKS.map((name) => [name, 0])),
       raised: [],
       alert: "clear",
@@ -105,7 +119,7 @@ describe("contrôle quotidien du registre des pièces", () => {
           applied: 30,
           busy: 1,
           failed: 2,
-          bounded: true,
+          bounded: false,
           failures: [
             {
               sale_id: "88900000-1000-4000-8000-000000000101",
@@ -126,7 +140,16 @@ describe("contrôle quotidien du registre des pièces", () => {
         data: report({
           pages: 2,
           merge_carried: { count: 4, window_hours: 24 },
-          checks: { reprojection_enabled: { active: true, count: 1 } },
+          decisions_second_factor_required: false,
+          simulation_failures: [
+            { sale_id: "88900000-1000-4000-8000-000000000104", sqlstate: "22007" },
+            { sale_id: "88900000-1000-4000-8000-000000000105", sqlstate: "22007" },
+          ],
+          checks: {
+            reprojection_enabled: { active: true, count: 1 },
+            final_decisions: { active: true, count: 2, window_hours: 24 },
+            final_decisions_over_limit: { active: false, count: 0, limit: 5, window_hours: 24 },
+          },
         }),
         error: null,
       },
@@ -137,19 +160,26 @@ describe("contrôle quotidien du registre des pièces", () => {
     expect(summary).toMatchObject({
       pages: 2,
       mergeCarried24h: 4,
-      raised: ["reprojection_enabled"],
+      decisionsSecondFactorRequired: false,
+      simulationFailureCodes: ["22007"],
+      raised: ["reprojection_enabled", "final_decisions"],
       alert: "open",
       reprojection: {
         enabled: true,
+        passes: 1,
         drifted: 33,
         applied: 30,
         busy: 1,
         failed: 2,
-        bounded: true,
+        bounded: false,
         failureCodes: ["23514", "23514:auction_sales_rooms_check"],
       },
     });
-    expect(summary.counts).toMatchObject({ reprojection_enabled: 1 });
+    expect(summary.counts).toMatchObject({
+      reprojection_enabled: 1,
+      final_decisions: 2,
+      final_decisions_over_limit: 0,
+    });
     expect(JSON.stringify(summary)).not.toContain("88900000-1000-4000-8000");
   });
 
@@ -208,50 +238,211 @@ describe("contrôle quotidien du registre des pièces", () => {
     },
   );
 
-  it.each([
-    ["reprojection", true],
-    ["check", false],
-  ])(
-    "échoue sur toute autre erreur de la base (étape %s) sans recopier son message",
-    async (step, first) => {
-      const failure = {
-        data: null,
-        error: {
-          code: "23514",
-          message:
-            'new row for relation "auction_sales" violates check constraint "x": Failing row contains (secret)',
-        },
-      };
-      if (first) mocks.rpc.mockResolvedValueOnce(failure);
-      else answer({ data: reprojection(), error: null }, failure);
-
-      const thrown = await runFactRegistryCheckJob().catch((error: unknown) => error);
-
-      expect(thrown).toBeInstanceOf(Error);
-      expect((thrown as Error).message).toBe(
-        `Contrôle du registre des pièces : étape ${step}, code 23514.`,
-      );
-      expect((thrown as Error).message).not.toContain("secret");
-      // Une relance en échec arrête la tâche : le contrôle ne tourne pas sur un état inconnu.
-      expect(mocks.rpc).toHaveBeenCalledTimes(first ? 1 : 2);
+  const refused = {
+    data: null,
+    error: {
+      code: "23514",
+      message:
+        'new row for relation "auction_sales" violates check constraint "x": Failing row contains (secret)',
     },
-  );
+  };
 
-  it("ne recopie pas un code d'erreur qui n'en a pas la forme", async () => {
-    mocks.rpc.mockResolvedValueOnce({
-      data: null,
-      error: { code: "une phrase avec une valeur 54", message: "x" },
+  it("échoue sur une erreur de la base au contrôle, sans recopier son message", async () => {
+    answer({ data: reprojection(), error: null }, refused);
+
+    const thrown = await runFactRegistryCheckJob().catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe(
+      "Contrôle du registre des pièces : étape check, code 23514.",
+    );
+    expect(isTransientError(thrown)).toBe(false);
+  });
+
+  it("contrôle quand même après une relance en échec, puis échoue en disant les deux étapes", async () => {
+    answer(refused, {
+      data: report({ checks: { projection_drift: { active: true, count: 3, sale_ids: [] } } }),
+      error: null,
     });
 
+    const thrown = await runFactRegistryCheckJob().catch((error: unknown) => error);
+
+    expect(mocks.rpc.mock.calls).toEqual([
+      ["reproject_fact_registry_drift"],
+      ["sync_fact_registry_alerts"],
+    ]);
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe(
+      "Contrôle du registre des pièces : étape reprojection, code 23514. " +
+        "Contrôle fait ensuite : 1 contrôle(s) levé(s) (projection_drift).",
+    );
+    expect((thrown as Error).message).not.toContain("secret");
+    expect(isTransientError(thrown)).toBe(false);
+  });
+
+  it("dit les deux échecs quand la relance et le contrôle échouent", async () => {
+    answer(refused, { data: null, error: { code: "42501", message: "permission denied" } });
+
     await expect(runFactRegistryCheckJob()).rejects.toThrow(
-      "Contrôle du registre des pièces : étape reprojection, code inconnu.",
+      "Contrôle du registre des pièces : étape reprojection, code 23514. " +
+        "Contrôle du registre des pièces : étape check, code 42501.",
     );
   });
 
-  it("échoue sur un compte rendu de relance illisible", async () => {
-    mocks.rpc.mockResolvedValueOnce({ data: { applied: 3 }, error: null });
+  it("ne recopie pas un code d'erreur qui n'en a pas la forme", async () => {
+    answer(
+      { data: null, error: { code: "une phrase avec une valeur 54", message: "x" } },
+      { data: report(), error: null },
+    );
+
+    await expect(runFactRegistryCheckJob()).rejects.toThrow(
+      "Contrôle du registre des pièces : étape reprojection, code inconnu. " +
+        "Contrôle fait ensuite : aucun contrôle levé.",
+    );
+  });
+
+  it("échoue sur un compte rendu de relance illisible, après avoir contrôlé", async () => {
+    answer({ data: { applied: 3 }, error: null }, { data: report(), error: null });
 
     await expect(runFactRegistryCheckJob()).rejects.toThrow("compte rendu de la relance illisible");
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["la relance", true],
+    ["le contrôle", false],
+  ])(
+    "est reprise après une panne de réseau (fetch failed sur %s, puis succès)",
+    async (_step, first) => {
+      const networkFailure = {
+        data: null,
+        error: { code: "", message: "TypeError: fetch failed" },
+      };
+      if (first) answer(networkFailure, { data: report(), error: null });
+      else answer({ data: reprojection(), error: null }, networkFailure);
+      answer({ data: reprojection(), error: null }, { data: report(), error: null });
+      const retried: string[] = [];
+
+      const summary = await withTransientRetries(runFactRegistryCheckJob, [0], (_attempt, error) =>
+        retried.push((error as Error).message),
+      );
+
+      expect(summary.alert).toBe("clear");
+      expect(mocks.rpc).toHaveBeenCalledTimes(4);
+      expect(retried).toHaveLength(1);
+      // Le message enregistré reste nettoyé : l'étape et un code, rien du message d'origine.
+      expect(retried[0]).toContain("code inconnu.");
+      expect(retried[0]).not.toContain("fetch failed");
+    },
+  );
+
+  it("reconnaît une panne passagère à son message d'origine, même avec un code", async () => {
+    answer(
+      { data: reprojection(), error: null },
+      {
+        data: null,
+        error: { code: "57014", message: "canceling statement due to statement timeout" },
+      },
+    );
+
+    const thrown = await runFactRegistryCheckJob().catch((error: unknown) => error);
+
+    expect((thrown as Error).message).toBe(
+      "Contrôle du registre des pièces : étape check, code 57014.",
+    );
+    expect(isTransientError(thrown)).toBe(true);
+  });
+
+  it("enchaîne les passes de la relance tant que la base dit qu'il en reste", async () => {
+    answer(
+      {
+        data: reprojection({ enabled: true, drifted: 65, applied: 30, bounded: true }),
+        error: null,
+      },
+      {
+        data: reprojection({
+          enabled: true,
+          drifted: 35,
+          applied: 30,
+          failed: 1,
+          bounded: true,
+          failures: [{ sale_id: "88900000-1000-4000-8000-000000000101", sqlstate: "23514" }],
+        }),
+        error: null,
+      },
+      {
+        data: reprojection({ enabled: true, drifted: 5, applied: 5, busy: 1, bounded: false }),
+        error: null,
+      },
+      { data: report(), error: null },
+    );
+
+    const summary = await runFactRegistryCheckJob();
+
+    expect(mocks.rpc.mock.calls).toEqual([
+      ["reproject_fact_registry_drift"],
+      ["reproject_fact_registry_drift"],
+      ["reproject_fact_registry_drift"],
+      ["sync_fact_registry_alerts"],
+    ]);
+    expect(summary.reprojection).toEqual({
+      enabled: true,
+      passes: 3,
+      drifted: 65,
+      applied: 65,
+      busy: 1,
+      failed: 0,
+      bounded: false,
+      failureCodes: ["23514"],
+    });
+  });
+
+  it("n'enchaîne pas une passe de plus quand le temps réservé au contrôle est entamé", async () => {
+    const start = 1_000_000;
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(start)
+      .mockReturnValueOnce(start + REPROJECTION_PASS_START_BUDGET_MS - 1)
+      .mockReturnValue(start + REPROJECTION_PASS_START_BUDGET_MS);
+    const bounded = {
+      data: reprojection({ enabled: true, drifted: 90, applied: 30, bounded: true }),
+      error: null,
+    };
+    answer(bounded, bounded, { data: report(), error: null });
+
+    const summary = await runFactRegistryCheckJob();
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(3);
+    expect(summary.reprojection).toMatchObject({ passes: 2, applied: 60, bounded: true });
+  });
+
+  it("n'enchaîne pas après une passe qui n'a rien écrit (ventes occupées)", async () => {
+    answer(
+      {
+        data: reprojection({ enabled: true, drifted: 3, applied: 0, busy: 3, bounded: true }),
+        error: null,
+      },
+      { data: report(), error: null },
+    );
+
+    const summary = await runFactRegistryCheckJob();
+
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(summary.reprojection).toMatchObject({ passes: 1, applied: 0, busy: 3, bounded: true });
+  });
+
+  it("échoue, après le contrôle, quand une passe suivante de la relance échoue", async () => {
+    answer(
+      {
+        data: reprojection({ enabled: true, drifted: 40, applied: 30, bounded: true }),
+        error: null,
+      },
+      { data: null, error: { code: "PGRST202", message: "missing" } },
+      { data: report(), error: null },
+    );
+
+    await expect(runFactRegistryCheckJob()).rejects.toThrow(
+      "étape reprojection, code PGRST202. Contrôle fait ensuite : aucun contrôle levé.",
+    );
   });
 
   it("échoue sur un rapport tronqué au lieu de le faire passer pour complet", async () => {
