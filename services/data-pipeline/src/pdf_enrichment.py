@@ -21,7 +21,7 @@ from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
 import pymupdf as fitz
 import httpx
 
-from src.base_reads import snapshot_relayed_fields
+from src.base_reads import SOURCE_SNAPSHOT_KEY
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.document_politeness import (
     DocumentPoliteness,
@@ -103,7 +103,7 @@ from src.pdf_word_documents import extract_docx_document, extract_legacy_word_do
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, manifest_is_complete, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
-from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections, _pdf_set_source_value, _pdf_source_reader
+from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections, _pdf_restore_value_before_document, _pdf_source_reader
 
 LOGGER = logging.getLogger(__name__)
 
@@ -364,7 +364,7 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
     preserved_projection_fields = projection_state.get("preserved", set())
     invalidate_analysis(sale.raw_payload, "document_manifest_changed" if removed else "document_bytes_changed")
     sale.raw_payload["superseded_document_analysis"] = previous
-    snapshot = sale.raw_payload.get("source_factual_snapshot") or {}
+    snapshot = sale.raw_payload.get(SOURCE_SNAPSHOT_KEY) or {}
     read_source = _pdf_source_reader(sale, snapshot)  # la valeur que la collecte a écrite, ou vide (pdf_fact_scope)
     fields = []
     if built_pdf:
@@ -388,14 +388,11 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
     if sale.raw_payload.get("pdf_visit_dates_extraction"):
         if "visit_dates" not in preserved_projection_fields:
             fields += ["visit_dates"]
-    # Un champ que la page ne donnait pas (Vench, page restreinte) n'a pas de valeur de source connue : l'instantané
-    # n'en dit rien, il ne le remet donc pas à vide. La valeur laissée par ``_clear_pdf_fact_projections`` reste.
-    unknown_from_source = snapshot_relayed_fields(snapshot)
     for key in fields:
-        if key in unknown_from_source:
-            continue
-        _pdf_set_source_value(sale, key, read_source(key))
-        sale.raw_payload.pop(key, None)
+        # Un champ que la page ne donnait pas (Vench, page restreinte) n'a pas de valeur de source connue : la
+        # valeur laissée par ``_clear_pdf_fact_projections`` reste.
+        if _pdf_restore_value_before_document(sale, key, snapshot, read_source):
+            sale.raw_payload.pop(key, None)
     for key in (
         "surface_extraction",
         "surface_analysis",
