@@ -23,27 +23,41 @@ const managedConcurrentIndexCanonicalDefinitions = new Set(
     .map((operation) => canonicalConcurrentIndexDefinition(operation.createSql)),
 );
 
+// Applies `rewrite(code, position)` to the SQL outside string constants. A constant ('…', with '' for an
+// apostrophe) is data: it is compared as written, never lower-cased, re-spaced or rewritten.
+function rewriteOutsideStringConstants(sql, rewrite) {
+  return sql
+    .split(/('(?:[^']|'')*')/)
+    .map((piece, position) => (position % 2 === 0 ? rewrite(piece, position) : piece))
+    .join("");
+}
+
 function normalizeConcurrentIndexDefinition(value) {
-  return String(value)
+  const statement = String(value)
     .trim()
     .replace(
       /^create\s+(unique\s+)?index\s+(?:concurrently\s+)?(?:if\s+not\s+exists\s+)?/i,
       (_match, unique) => `create ${unique ? "unique " : ""}index `,
     )
-    .replace(/"([a-z_][a-z0-9_]*)"/g, "$1")
-    .replace(/\s+/g, " ")
-    .replace(/;\s*$/, "")
-    .trim()
-    .toLowerCase();
+    .replace(/;\s*$/, "");
+  return rewriteOutsideStringConstants(statement, (code) =>
+    code
+      .replace(/"([a-z_][a-z0-9_]*)"/g, "$1")
+      .replace(/\s+/g, " ")
+      .toLowerCase(),
+  ).trim();
 }
 
 function canonicalConcurrentIndexDefinition(value) {
-  return normalizeConcurrentIndexDefinition(value)
-    .replace(/\s+using\s+btree\b/g, "")
-    .replace(/'::text\b/g, "'")
-    .replace(/[()]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return rewriteOutsideStringConstants(
+    normalizeConcurrentIndexDefinition(value),
+    (code, position) =>
+      // Past the first piece, the code comes right after a string constant: a leading `::text` is its cast.
+      (position === 0 ? code : code.replace(/^::text\b/, ""))
+        .replace(/\s+using\s+btree\b/g, "")
+        .replace(/[()]/g, " ")
+        .replace(/\s+/g, " "),
+  ).trim();
 }
 
 function isManagedConcurrentIndexDefinition(value) {
@@ -352,23 +366,53 @@ function normalizeDiffWithNotes(value) {
   return { diff: filterDiffLines(text), unusedReconciledChecks: unused };
 }
 
+// The diff tool wraps a long statement over several lines (production, 2026-11-12: each fact registry
+// index came on two lines, its WHERE on an indented line of its own). An index is therefore matched as a
+// whole statement, from `CREATE [UNIQUE] INDEX` at the start of a line to the next semicolon, never line
+// by line. The statement is removed only when all of it is a reviewed definition
+// (isManagedConcurrentIndexDefinition): a line added, changed or missing leaves every line in the diff.
+// The semicolon has to end its line, and an index printed without one is left in the diff.
+//
+// One pass over the semicolons, each paired with the first `CREATE INDEX` line that follows the
+// previous semicolon: the time stays proportional to the text, even when it holds no semicolon at all.
+const CREATE_INDEX_START = /^[ \t]*CREATE\s+(?:UNIQUE\s+)?INDEX\s/gim;
+
+function removeManagedConcurrentIndexStatements(text) {
+  const starts = Array.from(text.matchAll(CREATE_INDEX_START), (match) => match.index);
+  let result = "";
+  let copied = 0;
+  let next = 0;
+  for (
+    let from = 0, semicolon = text.indexOf(";");
+    semicolon !== -1;
+    from = semicolon + 1, semicolon = text.indexOf(";", from)
+  ) {
+    while (next < starts.length && starts[next] < from) next += 1;
+    if (next === starts.length) break;
+    const start = starts[next];
+    if (start > semicolon) continue;
+    let end = semicolon + 1;
+    while (text[end] === " " || text[end] === "\t") end += 1;
+    const endsItsLine = end === text.length || text[end] === "\n" || text[end] === "\r";
+    if (endsItsLine && isManagedConcurrentIndexDefinition(text.slice(start, end))) {
+      result += text.slice(copied, start);
+      copied = end;
+    }
+  }
+  return result + text.slice(copied);
+}
+
 function filterDiffLines(text) {
-  return text
+  return removeManagedConcurrentIndexStatements(text)
     .split(/\r?\n/)
     .filter((line) => {
       const normalized = line.trim();
       if (!normalized) return false;
 
-      if (isManagedConcurrentIndexDefinition(normalized)) return false;
-
       // Supabase installs pg_net in a non-relocatable platform-selected schema.
       // Its presence and behavior are covered by pgTAP, so schema placement is
       // intentionally outside the application-owned drift boundary.
       if (/^CREATE EXTENSION pg_net WITH SCHEMA public;$/i.test(normalized)) return false;
-
-      // This read-only connector role is managed outside migrations. Ignore its
-      // grants without masking changes to application roles or objects.
-      if (/\blovable_readonly\b/i.test(normalized)) return false;
 
       return !(
         /^-- Migration unit \d+:/i.test(normalized) ||
@@ -378,6 +422,124 @@ function filterDiffLines(text) {
     })
     .join("\n")
     .trim();
+}
+
+// What is kept of each output of the diff tool when it fails: its last lines, and no more than this
+// many characters of them. The tool can print far more than a CI log shows (a job log was cut at
+// 64 KiB, before the real error): only the end, where the error is, is useful.
+const DIFF_TOOL_FAILURE_TAIL_LINES = 200;
+const DIFF_TOOL_FAILURE_TAIL_CHARACTERS = 100_000;
+
+const MASKED = "[masqué]";
+
+// The password of a connection URL as it is written there: between the first `:` after `//` and the last
+// `@`. Read as text, because the URL parser rejects, or cuts elsewhere, a password that holds an unencoded
+// `@`, `/`, `?` or `#`.
+function passwordAsWritten(databaseUrl) {
+  const authority = databaseUrl.indexOf("//");
+  const colon = authority === -1 ? -1 : databaseUrl.indexOf(":", authority + 2);
+  const at = databaseUrl.lastIndexOf("@");
+  return colon !== -1 && colon < at ? databaseUrl.slice(colon + 1, at) : "";
+}
+
+// Every form under which a tool may print the password of the URL: as written, as the URL parser reads
+// it, decoded, percent-encoded again, and each of these with its `%xx` escapes in upper and in lower case.
+function passwordForms(databaseUrl) {
+  const forms = new Set([passwordAsWritten(databaseUrl)]);
+  try {
+    forms.add(new URL(databaseUrl).password);
+  } catch {
+    // Not a URL: the password as written is still masked.
+  }
+  for (const form of [...forms]) {
+    try {
+      const decoded = decodeURIComponent(form);
+      forms.add(decoded);
+      forms.add(encodeURIComponent(decoded));
+    } catch {
+      // Not valid percent-encoding: the form itself is still masked.
+    }
+  }
+  for (const form of [...forms]) {
+    forms.add(form.replace(/%[0-9a-f]{2}/gi, (escape) => escape.toLowerCase()));
+    forms.add(form.replace(/%[0-9a-f]{2}/gi, (escape) => escape.toUpperCase()));
+  }
+  return forms;
+}
+
+// A secret as it may be printed, whole or wrapped: a line break, and the indentation that follows it, may
+// fall between any two of its characters.
+function secretPattern(secret) {
+  return new RegExp(Array.from(secret, RegExp.escape).join(String.raw`(?:\r?\n[ \t]*)?`), "g");
+}
+
+// The tool is given the connection URL and may print it back. Removes the given URLs, every form of
+// their password (passwordForms), even wrapped over several lines, and anything that looks like a
+// Postgres connection URL. A URL that is not one of the given ones is masked up to the end of its line.
+// A password shorter than SHORTEST_MASKED_SECRET is not replaced on its own: masking every `ab` of a log
+// makes it unreadable and tells the password by what is missing. The URL that holds it is still masked.
+const SHORTEST_MASKED_SECRET = 4;
+function maskDatabaseUrls(text, databaseUrls) {
+  const secrets = new Set(
+    databaseUrls.flatMap((databaseUrl) => [databaseUrl, ...passwordForms(databaseUrl)]),
+  );
+  return [...secrets]
+    .filter((secret) => secret.length >= SHORTEST_MASKED_SECRET)
+    .sort((left, right) => right.length - left.length)
+    .reduce((masked, secret) => masked.replace(secretPattern(secret), MASKED), text)
+    .replace(/\bpostgres(?:ql)?:\/\/\S+/gi, MASKED);
+}
+
+// Foreign text (output of the diff tool, SQL of the diff) copied into a CI log, where GitHub reads two
+// forms of workflow command. `::command::` must start its line: the `> ` prefix of every copied line
+// neutralises it. `##[command]` is not neutralised by a prefix: it is broken wherever it stands.
+const foreignLines = (text) => text.replaceAll("##[", "## [").split(/\r\n|\r|\n/);
+const quoteLines = (lines) => lines.map((line) => `> ${line}`);
+// What the script itself copies (the diff, an error of the index check): it may quote a connection URL
+// (a foreign server, a comment, a driver error), which is masked like the output of the tool. The text is
+// masked before it is cut to `maxCharacters`: a password that straddles the cut would otherwise show its
+// first characters.
+const quoteForeignText = (text, databaseUrls = [], maxCharacters = Infinity) =>
+  quoteLines(foreignLines(maskDatabaseUrls(text, databaseUrls).slice(0, maxCharacters))).join("\n");
+
+// Everything the script prints when the diff tool failed, as one text: the `[schema-drift]` diagnosis
+// first, so that it is read whatever the length of what follows, then the end of each output of the
+// tool. That output is foreign text copied into a CI log: connection URLs are masked, then it goes
+// through foreignLines and quoteLines, so that none of it can be read as a GitHub workflow command.
+function diffToolFailureReport({
+  result,
+  attempts,
+  transient,
+  githubActions = false,
+  databaseUrls = [],
+}) {
+  const message = transient
+    ? `TOOL UNREACHABLE: the diff tool could not connect to the database after ${attempts} attempts. The schema was not compared: this is NOT a schema drift. Re-run the workflow, or run "npm run check:schema-drift -- --remote".`
+    : "DIFF TOOL FAILED: the diff tool exited with an error that is not a connection timeout (not retried). The schema was not compared.";
+  const lines = [`[schema-drift] ${message}`];
+  if (githubActions)
+    lines.push(
+      `::error title=${transient ? "Schema drift tool unreachable" : "Schema drift tool failed"}::${message}`,
+    );
+  const quote = (text) =>
+    foreignLines(maskDatabaseUrls(String(text ?? ""), databaseUrls).trimEnd());
+  if (result.error)
+    lines.push(
+      result.error.code === "ENOBUFS"
+        ? "[schema-drift] OUTPUT TRUNCATED BY THE BUFFER: the tool printed more than the script can hold and was stopped (ENOBUFS). What follows is the end of what was received, not the end of what the tool had to say."
+        : `[schema-drift] Diff tool not run to its end: ${quote(result.error.message).join(" ")}`,
+    );
+  for (const stream of ["stdout", "stderr"]) {
+    const output = quote(result[stream]);
+    if (output.length === 1 && !output[0]) continue;
+    const lastLines = output.slice(-DIFF_TOOL_FAILURE_TAIL_LINES).join("\n");
+    const kept = lastLines.slice(-DIFF_TOOL_FAILURE_TAIL_CHARACTERS).split("\n");
+    lines.push(
+      `[schema-drift] Diff tool ${stream}, last ${kept.length} of ${output.length} line(s)${lastLines.length > DIFF_TOOL_FAILURE_TAIL_CHARACTERS ? `, cut to their last ${DIFF_TOOL_FAILURE_TAIL_CHARACTERS} characters` : ""}:`,
+      ...quoteLines(kept),
+    );
+  }
+  return lines.join("\n");
 }
 
 // Waits (seconds) before the 2 extra attempts that follow a transient connection
@@ -436,8 +598,12 @@ async function runWithTransientRetry({
 }
 
 export {
+  DIFF_TOOL_FAILURE_TAIL_CHARACTERS,
+  DIFF_TOOL_FAILURE_TAIL_LINES,
   TRANSIENT_RETRY_DELAYS_SECONDS,
+  diffToolFailureReport,
   isTransientConnectionFailure,
+  quoteForeignText,
   runWithTransientRetry,
   RECONCILED_CHECK_CONSTRAINTS,
   canonicalCheckCondition,

@@ -1,11 +1,17 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 import {
+  DIFF_TOOL_FAILURE_TAIL_CHARACTERS,
+  DIFF_TOOL_FAILURE_TAIL_LINES,
   RECONCILED_CHECK_CONSTRAINTS,
+  diffToolFailureReport,
+  quoteForeignText,
   canonicalCheckCondition,
   canonicalConcurrentIndexDefinition,
   checkBody,
@@ -162,6 +168,164 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
       expect(normalizeDiff(line)).toBe(line);
     });
 
+    // Production, 12/11/2026 08:50 UTC (workflow « Apply Supabase Migrations », lot R2a) : l'outil a imprimé
+    // chaque index sur DEUX lignes, le WHERE à part et indenté. Texte exact du journal.
+    const run20261112 = `CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))
+  WHERE evidence_locator ? 'information_agent_fact_id'::text;
+CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)
+  WHERE held_fields IS NOT NULL;`;
+
+    it("ignores the two reviewed indexes printed on two lines each (production, 12/11/2026)", () => {
+      expect(normalizeDiff(run20261112)).toBe("");
+      expect(normalizeDiff(run20261112.replaceAll("\n", "\r\n"))).toBe("");
+      // Sous les lignes d'en-tête de l'outil, qui ne finissent pas par un point-virgule.
+      expect(
+        normalizeDiff(
+          `-- Migration unit 1: 20261117100450_fact_registry_concurrent_indexes.sql\n\n${run20261112}\n`,
+        ),
+      ).toBe("");
+    });
+
+    it("removes only the reviewed statement and keeps its neighbours", () => {
+      expect(
+        normalizeDiff(
+          `ALTER TABLE public.auction_sales ADD COLUMN extra text;\n${run20261112}\nDROP TABLE public.auction_fact_claims;`,
+        ),
+      ).toBe(
+        "ALTER TABLE public.auction_sales ADD COLUMN extra text;\nDROP TABLE public.auction_fact_claims;",
+      );
+    });
+
+    it.each([
+      [
+        "an index outside the allowlist",
+        "CREATE INDEX unreviewed_extra_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another index name",
+        "CREATE INDEX auction_sales_held_fields_v2_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another table",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_fact_claims (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "unique where it must not be",
+        "CREATE UNIQUE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "not unique where it must be",
+        "CREATE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "another column",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (source_url)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another operator in the expression",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator -> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "another operator in the predicate",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NULL;",
+      ],
+      [
+        "another constant",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'case_id'::text;",
+      ],
+      [
+        "no predicate line",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  ;",
+      ],
+      [
+        "one more predicate line",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL\n  AND id IS NOT NULL;",
+      ],
+      [
+        "no terminator before the next statement",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL\nDROP TABLE public.auction_fact_claims;",
+      ],
+      [
+        "a comment between its two lines",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  -- WHERE held_fields IS NULL\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another statement before it on its first line",
+        "DROP TABLE public.x; CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another statement after it on its last line",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL; DROP TABLE public.x;",
+      ],
+      // Une constante entre apostrophes est une donnée : ni casse, ni contenu réécrits.
+      [
+        "a constant in another case",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'Information_Agent_Fact_ID'::text;",
+      ],
+      [
+        "a constant that holds USING btree",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id using btree'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "a constant that holds parentheses",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> '(information_agent_fact_id)'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "a constant that holds a quoted identifier",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> '\"information_agent_fact_id\"'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "a constant that holds its own cast",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id''::text'))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "an unterminated index before it",
+        "CREATE INDEX unreviewed_extra_idx ON public.auction_sales (postal_code)\nCREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+    ])("keeps a two-line index with %s in the diff", (_label, statement) => {
+      expect(normalizeDiff(statement)).toBe(statement);
+    });
+
+    it.each([
+      [
+        "ALTER TABLE",
+        "ALTER TABLE public.auction_sales\n  ADD COLUMN auction_sales_held_fields_idx text;",
+      ],
+      ["DROP INDEX", "DROP INDEX\n  public.auction_sales_held_fields_idx;"],
+      [
+        "CREATE POLICY",
+        "CREATE POLICY held_fields_read ON public.auction_sales\n  USING (held_fields IS NOT NULL);",
+      ],
+      [
+        "COMMENT that quotes the reviewed index",
+        "COMMENT ON TABLE public.auction_sales IS 'see\nCREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL';",
+      ],
+    ])("keeps a multi-line %s statement in the diff", (_label, statement) => {
+      expect(normalizeDiff(statement)).toBe(statement);
+    });
+
+    it("leaves a reviewed index printed without its semicolon in the diff", () => {
+      const withoutSemicolon =
+        "CREATE INDEX auction_sales_postal_code_idx ON public.auction_sales (postal_code)";
+      expect(normalizeDiff(`${withoutSemicolon};`)).toBe("");
+      expect(normalizeDiff(withoutSemicolon)).toBe(withoutSemicolon);
+      expect(normalizeDiff(`${withoutSemicolon}\n${withoutSemicolon}`)).toBe(
+        `${withoutSemicolon}\n${withoutSemicolon}`,
+      );
+    });
+
+    it("reads a long diff without any semicolon in a time proportional to its length", () => {
+      // 60 000 index lines, 3 Mo, aucun point-virgule : une recherche qui repart de chaque ligne jusqu'à
+      // la fin du texte y passe plus d'une minute.
+      const text = Array.from(
+        { length: 60_000 },
+        (_unused, index) => `CREATE INDEX unreviewed_${index}_idx ON public.auction_sales (id)`,
+      ).join("\n");
+      const started = performance.now();
+      expect(normalizeDiff(text)).toBe(text);
+      expect(performance.now() - started).toBeLessThan(2000);
+    });
+
     it("does not loosen the match of the earlier operations", () => {
       // La forme canonique (parenthèses, ::text, USING btree ignorés) ne vaut que pour les deux index ci-dessus.
       expect(
@@ -215,11 +379,25 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
     );
   });
 
+  // Le rôle `lovable_readonly` est supprimé par la migration 20261117110000 : plus aucune ligne qui le nomme
+  // n'est ignorée, pas même les droits de lecture que le contrôle laissait passer tant qu'il existait.
+  it.each([
+    "GRANT SELECT ON TABLE public.auction_sales TO lovable_readonly;",
+    'GRANT SELECT ON TABLE public.auction_sales TO "lovable_readonly";',
+    "GRANT SELECT (id, city) ON TABLE public.auction_sales TO lovable_readonly;",
+    "REVOKE SELECT ON TABLE public.auction_sales FROM lovable_readonly;",
+    "GRANT EXECUTE ON FUNCTION app_private.public_sale_conditions(jsonb) TO lovable_readonly;",
+    "GRANT USAGE ON SCHEMA public TO lovable_readonly;",
+    "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
+    "GRANT lovable_readonly TO postgres;",
+  ])("reports %s as drift", (line) => {
+    expect(normalizeDiff(line)).toBe(line);
+  });
+
   it("preserves the existing platform-managed drift filters", () => {
     expect(
       normalizeDiff(`
 CREATE EXTENSION pg_net WITH SCHEMA public;
-GRANT SELECT ON public.auction_sales TO lovable_readonly;
 -- Migration unit 2: 20261008121940_hot_identity_and_collection_lookup_indexes.sql
 -- Transaction mode: non-transactional
 -- Boundary reason: CREATE INDEX CONCURRENTLY
@@ -520,5 +698,444 @@ describe("Transient connection failures of the diff tool (run 80)", () => {
     });
     expect(calls).toBe(1);
     expect(outcome.transient).toBe(true);
+  });
+});
+
+describe("Report of a failed diff tool", () => {
+  const toolLines = (count) =>
+    Array.from({ length: count }, (_unused, index) => `tool line ${index + 1}`).join("\n");
+
+  it("puts the diagnosis first and keeps only the end of each output", () => {
+    const report = diffToolFailureReport({
+      result: { status: 1, stdout: `${toolLines(5000)}\n`, stderr: "warning\nreal error\n" },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+    expect(report[1]).toBe(
+      `[schema-drift] Diff tool stdout, last ${DIFF_TOOL_FAILURE_TAIL_LINES} of 5000 line(s):`,
+    );
+    expect(report[2]).toBe(`> tool line ${5000 - DIFF_TOOL_FAILURE_TAIL_LINES + 1}`);
+    expect(report.slice(-4)).toEqual([
+      "> tool line 5000",
+      "[schema-drift] Diff tool stderr, last 2 of 2 line(s):",
+      "> warning",
+      "> real error",
+    ]);
+    expect(report).toHaveLength(1 + 1 + DIFF_TOOL_FAILURE_TAIL_LINES + 1 + 2);
+  });
+
+  it("names an unreachable tool, the GitHub annotation and the spawn error before any output", () => {
+    const report = diffToolFailureReport({
+      result: { status: null, stdout: "", stderr: "", error: new Error("spawnSync npx ENOENT") },
+      attempts: 3,
+      transient: true,
+      githubActions: true,
+    }).split("\n");
+
+    expect(report).toHaveLength(3);
+    expect(report[0]).toMatch(/^\[schema-drift\] TOOL UNREACHABLE: .* after 3 attempts\. /);
+    expect(report[1]).toMatch(/^::error title=Schema drift tool unreachable::TOOL UNREACHABLE: /);
+    expect(report[2]).toBe("[schema-drift] Diff tool not run to its end: spawnSync npx ENOENT");
+  });
+
+  it("says that the output was truncated when the tool overran the buffer", () => {
+    const report = diffToolFailureReport({
+      result: {
+        status: null,
+        stdout: "partial",
+        stderr: "",
+        error: Object.assign(new Error("spawnSync npx ENOBUFS"), { code: "ENOBUFS" }),
+      },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report[1]).toMatch(/^\[schema-drift\] OUTPUT TRUNCATED BY THE BUFFER: /);
+    expect(report.slice(2)).toEqual([
+      "[schema-drift] Diff tool stdout, last 1 of 1 line(s):",
+      "> partial",
+    ]);
+  });
+
+  it("does not let one endless line through whole", () => {
+    const report = diffToolFailureReport({
+      result: { status: 1, stdout: "", stderr: `first line\n${"y".repeat(500_000)}END\n` },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report).toHaveLength(3);
+    expect(report[1]).toBe(
+      `[schema-drift] Diff tool stderr, last 1 of 2 line(s), cut to their last ${DIFF_TOOL_FAILURE_TAIL_CHARACTERS} characters:`,
+    );
+    expect(report[2]).toHaveLength(2 + DIFF_TOOL_FAILURE_TAIL_CHARACTERS);
+    expect(report[2].endsWith("yEND")).toBe(true);
+  });
+
+  it("masks the connection target and its password wherever the tool prints them", () => {
+    // Fictitious URL and password.
+    const password = "S3cr/t-fake:pw";
+    const configured = `postgresql://postgres.abcdefgh:${encodeURIComponent(password)}@aws-0-eu-west-3.pooler.supabase.com:6543/postgres`;
+    const target = `${configured.replace(":6543/", ":5432/")}?sslmode=verify-full&connect_timeout=600`;
+    const report = diffToolFailureReport({
+      result: {
+        status: 1,
+        stdout: `connecting to ${target}\nretrying ${configured} now\n`,
+        stderr: [
+          `failed to connect to "postgres://postgres.abcdefgh:other-form@aws-0-eu-west-3.pooler.supabase.com/postgres": timeout`,
+          `password authentication failed (password=${password})`,
+          `encoded: ${encodeURIComponent(password)}`,
+          "real error",
+        ].join("\n"),
+        error: new Error(`spawnSync npx --to ${target} ETIMEDOUT`),
+      },
+      attempts: 1,
+      transient: false,
+      databaseUrls: [configured, target],
+    });
+
+    expect(report).not.toContain("S3cr");
+    expect(report).not.toContain("other-form");
+    expect(report).not.toContain("pooler.supabase.com");
+    expect(report).not.toContain("abcdefgh");
+    expect(report.split("\n").slice(1)).toEqual([
+      "[schema-drift] Diff tool not run to its end: spawnSync npx --to [masqué] ETIMEDOUT",
+      "[schema-drift] Diff tool stdout, last 2 of 2 line(s):",
+      "> connecting to [masqué]",
+      "> retrying [masqué] now",
+      "[schema-drift] Diff tool stderr, last 4 of 4 line(s):",
+      '> failed to connect to "[masqué] timeout',
+      "> password authentication failed (password=[masqué])",
+      "> encoded: [masqué]",
+      "> real error",
+    ]);
+  });
+
+  it("copies no line of the tool that GitHub could read as a workflow command", () => {
+    const report = diffToolFailureReport({
+      result: {
+        status: 1,
+        stdout:
+          "::error title=Forged::forged\n  ::add-mask::x\n##[error]forged\nplain\r::stop-commands::token\n",
+        stderr: "::set-output name=a::b\nmiddle ##[group]forged ##[endgroup]",
+        error: new Error("first\n::warning::forged\n##[error]forged"),
+      },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report).toHaveLength(11);
+    for (const line of report) expect(line).toMatch(/^(?:\[schema-drift\] |> )/);
+    expect(report).toContain("> ::stop-commands::token");
+    // `##[` is broken wherever it stands: the `> ` prefix alone would leave it readable.
+    for (const line of report) expect(line).not.toContain("##[");
+    expect(report).toContain("> ## [error]forged");
+    expect(report).toContain("> middle ## [group]forged ## [endgroup]");
+    expect(report[1]).toBe(
+      "[schema-drift] Diff tool not run to its end: first ::warning::forged ## [error]forged",
+    );
+  });
+
+  it("masks the password as written in the URL, in either case of its escapes, and when wrapped", () => {
+    // Fictitious URLs and passwords. The first password holds an unencoded `@`, `/` and `#`: the URL parser
+    // reads `Fk55` as the password and `ss` as the host.
+    const written = "Fk55@ss/w#rd-fake";
+    const unparsed = `postgresql://postgres:${written}@db.example.invalid:5432/postgres`;
+    const encoded = "Fake%2Fpw%3Atail";
+    const parsed = `postgresql://postgres.abcdefgh:${encoded}@aws-0-eu-west-3.pooler.supabase.com:6543/postgres`;
+    const report = diffToolFailureReport({
+      result: {
+        status: 1,
+        stdout: "",
+        stderr: [
+          `as written: password=${written}`,
+          `lower case escapes: ${encoded.replaceAll("%2F", "%2f").replaceAll("%3A", "%3a")}`,
+          `wrapped url: ${parsed.slice(0, 40)}\n    ${parsed.slice(40)} end`,
+          `wrapped password: ${written.slice(0, 5)}\r\n\t${written.slice(5)} end`,
+          "real error",
+        ].join("\n"),
+      },
+      attempts: 1,
+      transient: false,
+      databaseUrls: [unparsed, parsed],
+    });
+
+    for (const leak of ["w#rd", "Fk55", "%2fpw", "%2Fpw", "tail", "abcdefgh", "pooler"])
+      expect(report).not.toContain(leak);
+    expect(report.split("\n").slice(1)).toEqual([
+      "[schema-drift] Diff tool stderr, last 5 of 5 line(s):",
+      "> as written: password=[masqué]",
+      "> lower case escapes: [masqué]",
+      "> wrapped url: [masqué] end",
+      "> wrapped password: [masqué] end",
+      "> real error",
+    ]);
+  });
+
+  // The whole script, in local mode, with a stand-in for `npx` (the only thing on its PATH besides the
+  // system tools: nothing is downloaded, no database is reached).
+  function withStandInTool(toolScript, launch) {
+    const directory = mkdtempSync(join(tmpdir(), "immojudis-schema-drift-test-"));
+    try {
+      const standIn = join(directory, "npx");
+      writeFileSync(standIn, `#!/bin/sh\n${toolScript}\n`);
+      chmodSync(standIn, 0o755);
+      return launch({
+        script: join(dirname(fileURLToPath(import.meta.url)), "check-supabase-schema-drift.mjs"),
+        options: {
+          encoding: "utf8",
+          env: { PATH: `${directory}:/usr/bin:/bin`, GITHUB_ACTIONS: "true" },
+        },
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+  const runScriptWithStandInTool = (toolScript) =>
+    withStandInTool(toolScript, ({ script, options }) => {
+      const run = spawnSync(process.execPath, [script], options);
+      return { status: run.status, stdout: run.stdout, stderr: run.stderr.trimEnd().split("\n") };
+    });
+  const wholeScript = { skip: process.platform === "win32", timeout: 30_000 };
+
+  it(
+    "prints the diagnosis first and the end of the tool output to its last line, with the tool status",
+    wholeScript,
+    () => {
+      // stdout: 2 MiB, beyond the default 1 MiB buffer of spawnSync. stderr: its last 200 lines weigh
+      // 90 KiB, beyond the 64 KiB that a pipe holds. The output goes to a real pipe that nobody reads
+      // for one second, as a busy CI log collector does: a script that exits without waiting for its
+      // writes loses what the pipe could not take, the last line first.
+      const printed = withStandInTool(
+        [
+          "seq 1 40000 | sed 's/$/ tool line padded to pass the default buffer of 1 MiB/'",
+          `seq 1 300 | sed 's/$/ error line ${"e".repeat(440)}/' >&2`,
+          'echo "final error line" >&2',
+          "exit 3",
+        ].join("\n"),
+        ({ script, options }) =>
+          spawnSync(
+            "/bin/sh",
+            [
+              "-c",
+              '{ "$0" "$1" 2>&1; echo "status $?"; } | { sleep 1; cat; }',
+              process.execPath,
+              script,
+            ],
+            options,
+          )
+            .stdout.trimEnd()
+            .split("\n"),
+      );
+
+      expect(printed[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+      expect(printed[1]).toMatch(/^::error title=Schema drift tool failed::DIFF TOOL FAILED: /);
+      expect(printed[2]).toBe(
+        `[schema-drift] Diff tool stdout, last ${DIFF_TOOL_FAILURE_TAIL_LINES} of 40000 line(s):`,
+      );
+      expect(printed[3]).toBe(
+        `> ${40000 - DIFF_TOOL_FAILURE_TAIL_LINES + 1} tool line padded to pass the default buffer of 1 MiB`,
+      );
+      expect(printed[3 + DIFF_TOOL_FAILURE_TAIL_LINES]).toBe(
+        `[schema-drift] Diff tool stderr, last ${DIFF_TOOL_FAILURE_TAIL_LINES} of 301 line(s):`,
+      );
+      expect(printed).toHaveLength(
+        3 + DIFF_TOOL_FAILURE_TAIL_LINES + 1 + DIFF_TOOL_FAILURE_TAIL_LINES + 1,
+      );
+      expect(printed.slice(-2)).toEqual(["> final error line", "status 3"]);
+      expect(printed.slice(-DIFF_TOOL_FAILURE_TAIL_LINES).join("\n").length).toBeGreaterThan(
+        80 * 1024,
+      );
+    },
+  );
+
+  it(
+    "fails when the tool is killed by a signal, and never says that the schema matches",
+    wholeScript,
+    () => {
+      const run = runScriptWithStandInTool("kill -9 $$");
+
+      expect(run.status).toBe(1);
+      expect(run.stderr[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+      expect(`${run.stdout}\n${run.stderr.join("\n")}`).not.toContain("matches");
+    },
+  );
+
+  it(
+    "fails and says so when the tool overruns the buffer, whatever its own status",
+    wholeScript,
+    () => {
+      const run = runScriptWithStandInTool("head -c 17000000 /dev/zero | tr '\\0' 'x'\nexit 0");
+
+      expect(run.status).toBe(1);
+      expect(run.stderr[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+      expect(run.stderr[2]).toMatch(/^\[schema-drift\] OUTPUT TRUNCATED BY THE BUFFER: /);
+      expect(run.stderr[3]).toBe(
+        `[schema-drift] Diff tool stdout, last 1 of 1 line(s), cut to their last ${DIFF_TOOL_FAILURE_TAIL_CHARACTERS} characters:`,
+      );
+      expect(run.stderr).toHaveLength(5);
+      expect(`${run.stdout}\n${run.stderr.join("\n")}`).not.toContain("matches");
+    },
+  );
+
+  const writeDiff = (sql) =>
+    `for argument in "$@"; do case "$argument" in --output=*) printf '%b' "${sql}" > "\${argument#--output=}";; esac; done\nexit 0`;
+
+  it(
+    "fails with REAL DRIFT first when the tool succeeds and its diff is not empty",
+    wholeScript,
+    () => {
+      const run = runScriptWithStandInTool(writeDiff("DROP POLICY x ON public.auction_sales;\\n"));
+
+      expect(run.status).toBe(1);
+      expect(run.stdout).toBe("");
+      expect(run.stderr).toEqual([
+        "[schema-drift] REAL DRIFT: Local database differs from committed migrations.",
+        "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
+        "> DROP POLICY x ON public.auction_sales;",
+      ]);
+    },
+  );
+
+  it("copies no line of the diff that GitHub could read as a workflow command", wholeScript, () => {
+    // A comment or a name read from the database may hold anything, line breaks included.
+    const run = runScriptWithStandInTool(
+      writeDiff(
+        "COMMENT ON TABLE public.t IS 'a\\n::error title=Forged::forged\\n##[error]forged\\nb ##[group]c\\r::add-mask::d';\\n",
+      ),
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stderr.slice(2)).toEqual([
+      "> COMMENT ON TABLE public.t IS 'a",
+      "> ::error title=Forged::forged",
+      "> ## [error]forged",
+      "> b ## [group]c",
+      "> ::add-mask::d';",
+    ]);
+  });
+
+  it("masks a connection URL quoted by the diff", wholeScript, () => {
+    // Fictitious URL: in local mode the script knows no target, any Postgres URL is masked all the same.
+    const run = runScriptWithStandInTool(
+      writeDiff(
+        "COMMENT ON TABLE public.t IS 'see postgresql://postgres:Fk55-fake@db.example.invalid:5432/postgres';\\nDROP POLICY x ON public.t;\\n",
+      ),
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stderr.slice(2)).toEqual([
+      "> COMMENT ON TABLE public.t IS 'see [masqué]",
+      "> DROP POLICY x ON public.t;",
+    ]);
+  });
+
+  it("masks the password of the compared database wherever the diff quotes it", () => {
+    // Fictitious URL and password, as the script passes them in --remote mode.
+    const target =
+      "postgresql://postgres.abcdefgh:Fake%2Fpw@aws-0-eu-west-3.pooler.supabase.com:5432/postgres";
+    expect(
+      quoteForeignText(
+        `COMMENT ON TABLE public.t IS 'pw Fake/pw or Fake%2fpw';\n-- ${target}\n##[error]x`,
+        [target],
+      ),
+    ).toBe(
+      "> COMMENT ON TABLE public.t IS 'pw [masqué] or [masqué]';\n> -- [masqué]\n> ## [error]x",
+    );
+  });
+
+  it("masks before cutting, so that a password across the cut shows none of its characters", () => {
+    // Fictitious URL and password. The cut falls after the first four characters of the password.
+    const target = "postgresql://postgres:Fk55-fake-password@db.example.invalid:5432/postgres";
+    const quoted = quoteForeignText(`${"x".repeat(96)}Fk55-fake-password tail`, [target], 100);
+
+    expect(quoted).toBe(`> ${"x".repeat(96)}[mas`);
+    expect(quoted).not.toContain("Fk55");
+  });
+
+  it("cuts the diff to 40 000 characters after masking it, not before", wholeScript, () => {
+    // Fictitious URL, placed so that a cut made before the masking would fall inside it and lose ` tail`.
+    const run = runScriptWithStandInTool(
+      [
+        'for argument in "$@"; do case "$argument" in --output=*)',
+        "  { head -c 39980 /dev/zero | tr '\\0' 'x'",
+        "    printf ' postgresql://postgres:Fk55-fake-password@db.example.invalid:5432/postgres tail\\n'",
+        '  } > "${argument#--output=}";; esac; done',
+        "exit 0",
+      ].join("\n"),
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toHaveLength(3);
+    expect(run.stderr[2]).toBe(`> ${"x".repeat(39_980)} [masqué] tail`);
+  });
+
+  it("does not replace a password of fewer than four characters, but still masks its URL", () => {
+    // Fictitious URL: replacing every `abc` of a log would make it unreadable and tell the password.
+    const target = "postgresql://postgres:abc@db.example.invalid:5432/postgres";
+    const fourCharacters = "postgresql://postgres:abcd@db.example.invalid:5432/postgres";
+
+    expect(quoteForeignText(`abc abcdef\nconnecting to ${target} failed`, [target])).toBe(
+      "> abc abcdef\n> connecting to [masqué] failed",
+    );
+    expect(quoteForeignText("abc abcdef", [fourCharacters])).toBe("> abc [masqué]ef");
+  });
+
+  // The script in --remote mode, which never gets as far as the diff tool in these tests.
+  const runRemoteScript = (databaseUrl) =>
+    withStandInTool("exit 0", ({ script, options }) => {
+      const run = spawnSync(process.execPath, [script, "--remote"], {
+        ...options,
+        env: { ...options.env, SUPABASE_DB_URL: databaseUrl, PGCONNECT_TIMEOUT: "5" },
+      });
+      return { status: run.status, stdout: run.stdout, stderr: run.stderr.trimEnd().split("\n") };
+    });
+
+  // Fictitious values.
+  it.each([
+    // A raw `/` in the password makes the URL parser fail, and its error quotes the input.
+    [
+      "the URL parser rejects",
+      "postgresql://postgres:Fk55/fake-password@db.example.invalid:5432/db",
+    ],
+    // Valid for the URL parser, with no host: not a database.
+    ["has no //", "postgresql:postgres:Fk55-fake-password@db.example.invalid:5432/db"],
+    ["has another protocol", "https://postgres:Fk55-fake-password@db.example.invalid:5432/db"],
+  ])("fails without printing a connection URL that %s", wholeScript, (_case, databaseUrl) => {
+    const run = runRemoteScript(databaseUrl);
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe("");
+    expect(run.stderr).toEqual([
+      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL Postgres valide (postgres:// ou postgresql://, avec un hôte). Sa valeur n'est pas affichée.",
+    ]);
+  });
+
+  it("quotes and masks the error of the concurrent index check", wholeScript, () => {
+    // Fictitious password, and a local port where nothing listens: the driver error is foreign text.
+    const run = runRemoteScript("postgresql://postgres:Fk55-fake-password@127.0.0.1:9/postgres");
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe("");
+    expect(run.stderr[0]).toBe("[schema-drift] Concurrent index check failed:");
+    expect(run.stderr.length).toBeGreaterThan(1);
+    for (const line of run.stderr.slice(1)) expect(line).toMatch(/^> /);
+    expect(run.stderr.join("\n")).not.toContain("Fk55");
+  });
+
+  it("succeeds when the diff holds nothing but the reviewed indexes", wholeScript, () => {
+    const run = runScriptWithStandInTool(
+      writeDiff(
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\\n  WHERE held_fields IS NOT NULL;\\n",
+      ),
+    );
+
+    expect(run).toEqual({
+      status: 0,
+      stdout: "[schema-drift] Local database matches committed migrations.\n",
+      stderr: [""],
+    });
   });
 });
