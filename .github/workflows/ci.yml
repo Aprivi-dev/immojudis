@@ -393,11 +393,29 @@ jobs:
       # Garde d'écho de la collecte face au registre des pièces : une pièce est posée, remplacée ou retirée par la
       # projection pendant qu'un passage a déjà lu la vente, puis la collecte écrit par son vrai chemin (scénarios
       # A, B et C). Ces tests écrivent dans la base locale du job, jamais ailleurs ; sans base, l'étape échoue.
+      # La base tourne dans un conteneur joint par son port publié sur 127.0.0.1 : le serveur dit avoir l'adresse de
+      # son conteneur. Le test n'accepte que le bouclage, ou cette adresse exacte, lue ici sur le conteneur lui-même.
       - name: Replay the collection echo scenarios against the fact registry
         working-directory: services/data-pipeline
         env:
           PIPELINE_REGISTRY_DB_REQUIRED: "1"
-        run: PIPELINE_REGISTRY_DB_URL="$SUPABASE_DB_URL" python -m pytest tests/test_base_echo_registry_postgres.py -q
+        run: |
+          set -euo pipefail
+          mapfile -t containers < <(docker ps --filter 'name=^supabase_db_' --format '{{.Names}}')
+          if [ "${#containers[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one running supabase_db_* container, found ${#containers[@]}."
+            exit 1
+          fi
+          mapfile -t addresses < <(
+            docker inspect --format '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' "${containers[0]}" \
+              | sed '/^[[:space:]]*$/d'
+          )
+          if [ "${#addresses[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one network address for ${containers[0]}, found ${#addresses[@]}."
+            exit 1
+          fi
+          PIPELINE_REGISTRY_DB_SERVER_ADDR="${addresses[0]}" PIPELINE_REGISTRY_DB_URL="$SUPABASE_DB_URL" \
+            python -m pytest tests/test_base_echo_registry_postgres.py -q
       - name: Stop local Supabase
         if: always()
         run: npx --yes supabase@2.110.0 stop --no-backup
