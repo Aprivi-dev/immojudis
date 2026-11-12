@@ -173,6 +173,73 @@ vente, réessayez dans une minute. »
 aujourd'hui tout droit sur ces fonctions, toute fonction qui les enveloppe, toute écriture du jeton de la requête
 par une migration, et épinglent le corps de la fonction de décision par une empreinte.
 
+## Écran de décision
+
+Côté application du lot R2c. Il ne sert à rien tant que la partie base n'a pas ouvert le droit d'exécution des
+quatre fonctions à `authenticated` : d'ici là toute décision répond « Action non autorisée. ».
+
+**Où.** Admin › Agent IA, onglet « Réponses » (`/admin/agent-ia?onglet=reponses`), panneau « Observations à
+décider » (`src/components/admin/AdminFactClaimDecisionPanel.tsx`), sous « Faits à vérifier ». Sans vente choisie,
+la file montre les observations d'origine réservée (réponse d'un professionnel, saisie d'un administrateur). Avec
+l'identifiant ou l'adresse d'une fiche, elle montre toutes les observations de cette vente.
+
+**Ce qui est montré**, par observation : le champ, la valeur proposée, la valeur que la fiche affiche aujourd'hui
+(la colonne de la vente), la nature de la pièce, le lien vers la source s'il est en http(s), la dernière décision
+et les actions permises. Ni citation de la pièce, ni auteur de la décision, ni `held_fields`. L'état affiché est
+la **dernière décision** (« Dernière décision : acceptée »), pas l'état du champ : une pièce acceptée peut ne pas
+tenir le champ (champ hors registre, pièce de rang inférieur, annonce qui l'a délogée). Seul le message qui suit
+une acceptation lit l'état réel rendu par la base. Pour un champ sans colonne connue de l'écran, la valeur
+affichée est dite « Non comparée ici ».
+
+**Actions**, proposées selon la dernière décision (`src/lib/fact-claim-decisions.ts`, seule copie de la table des
+transitions et des motifs côté application ; la base reste juge) :
+
+| Dernière décision                 | Actions proposées          | Saisie demandée                                  |
+| --------------------------------- | -------------------------- | ------------------------------------------------ |
+| aucune, contredite                | accepter, rejeter, opposer | accepter : rattachement au lot ; rejeter : motif |
+| acceptée                          | rejeter, retirer, opposer  | motif                                            |
+| rejetée, retirée                  | accepter, opposer          | rattachement au lot                              |
+| retirée pour autorisation retirée | opposer                    |                                                  |
+| opposition                        | aucune                     |                                                  |
+
+Une opposition et un retrait pour autorisation retirée demandent de cocher « J'ai compris que cette décision est
+définitive. » : aucune annulation n'existe. Une acceptation nomme la décision vue à l'écran
+(`p_supersedes_decision_id`) : si une autre l'a suivie, la base refuse. La correction du lot d'une observation déjà
+acceptée n'est pas proposée par l'écran. L'opposition part avec le motif par défaut de la base.
+
+**Route.** `GET` et `POST /api/admin/fact-claims/decisions` (`src/lib/admin-fact-claim-decisions.ts`). Jeton porteur
+dans l'en-tête `Authorization` (pas de cookie, donc pas de requête intersite possible), rôle administrateur vérifié
+avant la lecture du corps, corps strict. La lecture passe par le rôle de service. **La décision est écrite avec le
+client Supabase de la session** (`auth.supabase`, clé publique et jeton de l'administrateur), jamais avec le client
+de service : la base lit l'auteur dans le jeton. Après chaque décision, réussie ou refusée, l'écran relit la liste.
+Il ne réessaie pas seul.
+
+**Messages.** Une seule traduction des erreurs de la base, `src/lib/fact-claim-database-errors.ts`, partagée avec la
+route de relecture. Le code de la base et son SQLSTATE ne partent jamais vers le navigateur ; une erreur hors liste
+donne le message générique de la route (500), y compris un `55000` au code inconnu : seule la route de relecture
+le lit comme « déjà traité ». Le journal du serveur n'en garde que le SQLSTATE et, s'il a la forme d'un code, le
+message. Le test `src/lib/fact-claim-database-concordance.test.ts` lit les migrations du registre et compare les
+codes levés, les motifs, les rattachements et les natures réservées à leurs copies côté application.
+`decision_in_progress` y est déclaré « annoncé » tant que sa migration n'est pas sur `main`.
+
+| Code de la base                                                     | HTTP | Message                                                                                            |
+| ------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------- |
+| `sale_busy`, `retry`                                                | 409  | Import en cours sur cette vente, réessayez dans une minute.                                        |
+| `invalid_transition`                                                | 409  | Cette observation a déjà été traitée.                                                              |
+| `opposed_final`, `withdrawal_final`                                 | 409  | Décision définitive, elle ne peut plus être modifiée.                                              |
+| `decision_in_progress`                                              | 409  | Une autre décision est en cours avec votre compte. Attendez quelques secondes, puis réessayez.     |
+| `origin_cannot_hold`                                                | 409  | L'origine de cette observation ne permet pas d'afficher sa valeur sur la fiche. […]                |
+| `field_not_applicable`                                              | 409  | Une surface bâtie ne peut pas être acceptée sur une vente de terrain.                              |
+| `claim_detached`                                                    | 409  | Cette observation n'est plus rattachée à une vente (doublons fusionnés). […]                       |
+| `admin_required`                                                    | 403  | Action réservée aux administrateurs.                                                               |
+| `second_factor_required`                                            | 403  | Cette décision demande la double authentification. […]                                             |
+| `rate_limited`                                                      | 429  | Plafond de décisions atteint pour cette heure. Réessayez plus tard.                                |
+| `final_rate_limited`                                                | 429  | Plafond de décisions définitives atteint pour aujourd'hui. Réessayez demain.                       |
+| `claim_not_found`, `sale_not_found`                                 | 404  | Observation introuvable. / Vente introuvable.                                                      |
+| `invalid_reason_code`, `invalid_lot_attachment`, `invalid_argument` | 400  | Motif non reconnu. / Rattachement au lot non reconnu. / Cette valeur ne peut pas être affichée […] |
+| `registry_unavailable`                                              | 503  | Le registre des pièces est indisponible. Aucune décision n'a été enregistrée. […]                  |
+| `registry_write_failed`                                             | 500  | La décision n'a pas pu être enregistrée et rien n'a été modifié. […]                               |
+
 ## La projection
 
 `app_private.project_sale_fields(vente, champs, appliquer, indices)` n'est exécutable par aucun rôle de l'API.
@@ -585,8 +652,9 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
 - Le noyau de l'agent d'information écrit observation, décision et projection ; le pont est retiré.
 - La mention publique lit le registre ; fonction séparée pour les origines autres que l'avocat poursuivant.
 - Refus d'un bloc d'annonce marqué `information_agent_verified` à la première prise (reprise de l'existant).
-- Écran de relecture : valeur d'annonce lue dans le registre (fonction de lecture `get_admin_sale_field_registry`),
-  messages d'erreur, nouvelle tentative seule sur `sale_busy` et `retry`.
+- Écran de décision : fait côté application (voir « Écran de décision »). Restent la valeur d'annonce et l'état du
+  champ lus dans le registre (fonction de lecture `get_admin_sale_field_registry`, qui n'existe pas encore), et la
+  nouvelle tentative seule sur `sale_busy` et `retry`.
 - Droits des quatre fonctions de décision ouverts à `authenticated` seul, après le choix du propriétaire sur le
   second facteur. Liste complète des conditions : `docs/runbooks/registre-des-pieces-r2b.md`, « Conditions du lot
   R2c ».

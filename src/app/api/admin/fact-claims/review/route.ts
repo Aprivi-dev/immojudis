@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { PublicApiError } from "@/lib/api-errors";
 import { apiRouteError } from "@/lib/api-observability";
+import { translateFactClaimDatabaseError } from "@/lib/fact-claim-database-errors";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -51,26 +51,19 @@ async function handlePOST(request: Request): Promise<Response> {
 }
 
 function reviewErrorResponse(error: unknown, request: Request): Response {
-  const code = error && typeof error === "object" && "code" in error ? error.code : null;
   // Database conflicts (trigger 55000) and permission failures (42501) keep their HTTP
   // meaning but are reported with a French message; the driver detail stays in the logs.
   // Since the fact registry (lot R2b) the review locks the sale first, for 3 seconds at most: a
   // collection batch holding the sale gives 55P03 (sale_busy), a merge in progress gives 40001
   // (retry). Both mean "try again", not "already handled".
-  const translated =
-    code === "42501"
-      ? new PublicApiError("Action non autorisée.", 403)
-      : code === "55P03" || code === "40001"
-        ? new PublicApiError("Import en cours sur cette vente, réessayez dans une minute.", 409)
-        : code === "55000"
-          ? new PublicApiError(
-              "Ce fait a déjà été traité ou est en cours de traitement ailleurs.",
-              409,
-            )
-          : error;
-  return apiRouteError(translated, request, "admin.fact-claims.review", {
-    fallbackMessage: "Revue du fait indisponible.",
-  });
+  return apiRouteError(
+    translateFactClaimDatabaseError(error, { reviewStateConflicts: true }),
+    request,
+    "admin.fact-claims.review",
+    {
+      fallbackMessage: "Revue du fait indisponible.",
+    },
+  );
 }
 
 export const GET = withAdminDeadline(handleGET);
