@@ -202,7 +202,9 @@ test.describe("admin information agent", () => {
       .check();
     await confirm.click();
 
-    await expect(panel.getByText("Opposition (définitif)", { exact: true })).toBeVisible();
+    await expect(
+      panel.getByText("Dernière décision : opposition (définitif)", { exact: true }),
+    ).toBeVisible();
     await expect(
       panel.getByText("Aucune action possible : cette décision est définitive."),
     ).toBeVisible();

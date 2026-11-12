@@ -145,25 +145,25 @@ describe("AdminFactClaimDecisionPanel : actions permises par état", () => {
     [
       "acceptée",
       { decision: "accepted", reasonCode: null },
-      "Acceptée",
+      "Dernière décision : acceptée",
       ["Rejeter l’observation", "Retirer de la fiche", "Enregistrer une opposition"],
     ],
     [
       "rejetée",
       { decision: "rejected", reasonCode: "other" },
-      "Rejetée",
+      "Dernière décision : rejetée",
       ["Accepter l’observation", "Enregistrer une opposition"],
     ],
     [
       "retirée",
       { decision: "withdrawn", reasonCode: "entry_error" },
-      "Retirée",
+      "Dernière décision : retirée",
       ["Accepter l’observation", "Enregistrer une opposition"],
     ],
     [
       "autorisation retirée",
       { decision: "withdrawn", reasonCode: "authorization_withdrawn" },
-      "Autorisation retirée (définitif)",
+      "Dernière décision : autorisation retirée (définitif)",
       ["Enregistrer une opposition"],
     ],
   ])("%s", async (_name, latest, badge, actions) => {
@@ -180,11 +180,41 @@ describe("AdminFactClaimDecisionPanel : actions permises par état", () => {
     );
     renderPanel();
 
-    expect(await screen.findByText("Opposition (définitif)")).toBeTruthy();
+    expect(await screen.findByText("Dernière décision : opposition (définitif)")).toBeTruthy();
     expect(actionNames()).toEqual([]);
     expect(
       screen.getByText("Aucune action possible : cette décision est définitive."),
     ).toBeTruthy();
+  });
+});
+
+describe("AdminFactClaimDecisionPanel : états particuliers", () => {
+  it("ne dit pas « définitive » pour un état inconnu", async () => {
+    mocks.list.mockResolvedValue(page([item({ decision: "autre", reasonCode: null })]));
+    renderPanel();
+
+    expect(await screen.findByText("État inconnu")).toBeTruthy();
+    expect(screen.getByText("Aucune action proposée pour cet état.")).toBeTruthy();
+    expect(screen.queryByText(/cette décision est définitive/)).toBeNull();
+  });
+
+  it("dit « Non comparée ici » pour un champ sans colonne connue, pas « Non renseignée »", async () => {
+    const { currentValue: _omitted, ...unknownField } = item();
+    mocks.list.mockResolvedValue(
+      page([{ ...unknownField, fieldKey: "property.property_type", value: "house" }]),
+    );
+    renderPanel();
+
+    const label = await screen.findByText("Valeur affichée aujourd’hui");
+    expect(label.nextElementSibling?.textContent).toBe("Non comparée ici");
+  });
+
+  it("dit « Non renseignée » quand la fiche n'a pas de valeur pour un champ connu", async () => {
+    mocks.list.mockResolvedValue(page([item(null, { currentValue: null })]));
+    renderPanel();
+
+    const label = await screen.findByText("Valeur affichée aujourd’hui");
+    expect(label.nextElementSibling?.textContent).toBe("Non renseignée");
   });
 });
 
@@ -205,7 +235,9 @@ describe("AdminFactClaimDecisionPanel : décisions", () => {
       target: { value: " lot 2 " },
     });
     expect(
-      screen.getByText("La valeur proposée remplacera celle de l’annonce sur la fiche."),
+      screen.getByText(
+        "Si cette observation l’emporte, sa valeur remplacera celle de la fiche. Le résultat s’affiche après l’enregistrement.",
+      ),
     ).toBeTruthy();
     fireEvent.click(confirm);
 
@@ -350,7 +382,7 @@ describe("AdminFactClaimDecisionPanel : décisions", () => {
     );
   });
 
-  it("annule sans rien envoyer", async () => {
+  it("annule sans rien envoyer et rend le focus au titre de l'observation", async () => {
     renderPanel();
 
     fireEvent.click(await screen.findByRole("button", { name: "Enregistrer une opposition" }));
@@ -358,6 +390,44 @@ describe("AdminFactClaimDecisionPanel : décisions", () => {
 
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(mocks.decide).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { level: 3 }));
+  });
+
+  it("rend le focus au titre de l'observation après une réussite", async () => {
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Rejeter l’observation" }));
+    fireEvent.change(screen.getByLabelText("Motif (obligatoire)"), { target: { value: "other" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmer le rejet" }));
+
+    await waitFor(() => expect(mocks.success).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("heading", { level: 3 })),
+    );
+  });
+
+  it("redemande la confirmation d'une décision définitive après un refus", async () => {
+    mocks.decide.mockRejectedValue(
+      new Error("Import en cours sur cette vente, réessayez dans une minute."),
+    );
+    renderPanel();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Enregistrer une opposition" }));
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmer l’opposition définitive" }));
+
+    await waitFor(() => expect(mocks.error).toHaveBeenCalled());
+    await waitFor(() =>
+      expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false),
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Confirmer l’opposition définitive",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(mocks.decide).toHaveBeenCalledTimes(1);
   });
 
   it("affiche le message d'échec du serveur et relit l'état", async () => {
