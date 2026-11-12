@@ -11,6 +11,7 @@ import {
   DIFF_TOOL_FAILURE_TAIL_LINES,
   RECONCILED_CHECK_CONSTRAINTS,
   diffToolFailureReport,
+  quoteForeignText,
   canonicalCheckCondition,
   canonicalConcurrentIndexDefinition,
   checkBody,
@@ -378,7 +379,7 @@ CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)
     );
   });
 
-  // Le rôle `lovable_readonly` est supprimé par la migration 20261118100000 : plus aucune ligne qui le nomme
+  // Le rôle `lovable_readonly` est supprimé par la migration 20261117110000 : plus aucune ligne qui le nomme
   // n'est ignorée, pas même les droits de lecture que le contrôle laissait passer tant qu'il existait.
   it.each([
     "GRANT SELECT ON TABLE public.auction_sales TO lovable_readonly;",
@@ -1014,6 +1015,35 @@ describe("Report of a failed diff tool", () => {
       "> b ## [group]c",
       "> ::add-mask::d';",
     ]);
+  });
+
+  it("masks a connection URL quoted by the diff", wholeScript, () => {
+    // Fictitious URL: in local mode the script knows no target, any Postgres URL is masked all the same.
+    const run = runScriptWithStandInTool(
+      writeDiff(
+        "COMMENT ON TABLE public.t IS 'see postgresql://postgres:Fk55-fake@db.example.invalid:5432/postgres';\\nDROP POLICY x ON public.t;\\n",
+      ),
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stderr.slice(2)).toEqual([
+      "> COMMENT ON TABLE public.t IS 'see [masqué]",
+      "> DROP POLICY x ON public.t;",
+    ]);
+  });
+
+  it("masks the password of the compared database wherever the diff quotes it", () => {
+    // Fictitious URL and password, as the script passes them in --remote mode.
+    const target =
+      "postgresql://postgres.abcdefgh:Fake%2Fpw@aws-0-eu-west-3.pooler.supabase.com:5432/postgres";
+    expect(
+      quoteForeignText(
+        `COMMENT ON TABLE public.t IS 'pw Fake/pw or Fake%2fpw';\n-- ${target}\n##[error]x`,
+        [target],
+      ),
+    ).toBe(
+      "> COMMENT ON TABLE public.t IS 'pw [masqué] or [masqué]';\n> -- [masqué]\n> ## [error]x",
+    );
   });
 
   it("succeeds when the diff holds nothing but the reviewed indexes", wholeScript, () => {

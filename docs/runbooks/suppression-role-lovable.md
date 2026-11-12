@@ -1,7 +1,7 @@
 # Supprimer le rôle PostgreSQL `lovable_readonly`
 
 Décision du propriétaire du 12/11/2026 : ce rôle de lecture venait de l'outil Lovable, qui ne sert plus.
-Migration : `supabase/migrations/20261118100000_drop_lovable_readonly_role.sql`. Seul le propriétaire
+Migration : `supabase/migrations/20261117110000_drop_lovable_readonly_role.sql`. Seul le propriétaire
 l'applique, par le workflow « Apply Supabase Migrations ». Toutes les requêtes de cette page sont en lecture
 seule.
 
@@ -92,7 +92,7 @@ Lovable (dernière section).
 ## Application
 
 1. Fusionner le lot dans `main`, attendre que la CI du commit soit verte.
-2. Vérifier ce qui est en attente : la migration `20261118100000` s'applique avec toutes les migrations en
+2. Vérifier ce qui est en attente : la migration `20261117110000` s'applique avec toutes les migrations en
    attente avant elle, dans l'ordre. Si un autre lot est en attente, suivre aussi son runbook (créneau hors
    collecte, par exemple).
 3. Lancer « Apply Supabase Migrations » depuis `main`, avec `confirm_target` = `production`.
@@ -137,7 +137,7 @@ select
     as sessions_sans_role;
 
 -- C2. La migration est inscrite à l'historique. Attendu : une ligne.
-select version, name from supabase_migrations.schema_migrations where version = '20261118100000';
+select version, name from supabase_migrations.schema_migrations where version = '20261117110000';
 ```
 
 - `sessions_sans_role` supérieur à zéro : une session de l'ancien rôle était ouverte pendant la suppression.

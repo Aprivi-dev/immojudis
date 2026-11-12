@@ -553,7 +553,7 @@ if (
 // below. Five earlier migrations grant it EXECUTE "if the role exists"; they are applied history and stay
 // as they are. No later migration may name the role, comments included: a grant written "if the role
 // exists" would silently give access the day a role of that name is created again.
-const lovableRoleDropMigration = "20261118100000_drop_lovable_readonly_role.sql";
+const lovableRoleDropMigration = "20261117110000_drop_lovable_readonly_role.sql";
 if (!/drop\s+role\b/i.test(migrationSources.get(lovableRoleDropMigration) ?? "")) {
   failures.push(`${lovableRoleDropMigration} must exist and drop the role lovable_readonly`);
 }
