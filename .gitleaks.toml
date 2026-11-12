@@ -40,6 +40,9 @@ paths = [
 '''(?:^|/)supabase/migrations/20261116100500_field_projection_and_hold\.sql''',
 '''(?:^|/)supabase/migrations/20261117100200_field_hold_and_projection_v2\.sql''',
 '''(?:^|/)supabase/migrations/20261117100500_fact_registry_baselines_and_check\.sql''',
+'''(?:^|/)supabase/migrations/20261118100000_field_projection_merge_hints\.sql''',
+'''(?:^|/)supabase/migrations/20261118100100_fact_claim_decision_rpcs\.sql''',
+'''(?:^|/)supabase/migrations/20261118100300_fact_registry_check_pages_and_reprojection\.sql''',
 '''(?:^|/)supabase/tests/370_auction_fact_claims\.sql''',
 '''(?:^|/)supabase/tests/383_ai_review_projection_guard\.sql''',
 '''(?:^|/)supabase/tests/872_catalogue_quality_sentinel\.sql''',
@@ -50,6 +53,7 @@ paths = [
 '''(?:^|/)supabase/tests/882_sale_field_hold\.sql''',
 '''(?:^|/)supabase/tests/883_sale_field_projection\.sql''',
 '''(?:^|/)supabase/tests/885_sale_field_hold_echo\.sql''',
+'''(?:^|/)supabase/tests/887_fact_claim_decision_rpcs\.sql''',
 ]
 regexes = [
 '''^property\.(?:surface_m2|carrez_surface_m2|land_surface_m2)$''',
