@@ -701,8 +701,7 @@ $$;`;
       content:
         "create or replace function public.check_fact_registry_consistency(p_limit integer default 500) returns jsonb language plpgsql stable security definer set search_path = '' as $$ declare v_sale_id uuid; begin return app_private.project_sale_fields(v_sale_id, null, true); end; $$;",
       prefix: ": ",
-      message:
-        "public.check_fact_registry_consistency must call the projection as a simulation only",
+      message: "public.check_fact_registry_consistency applies the projection",
     },
     {
       label:
@@ -712,7 +711,7 @@ $$;`;
         "create or replace function public.sync_fact_registry_alerts(p_limit integer default 500) returns jsonb language plpgsql security definer set search_path = '' as $$ declare v_report jsonb := public.check_fact_registry_consistency(p_limit); begin insert into public.operational_alerts (alert_key, category, severity) values ('anything', 'import', 'critical'); return v_report; end; $$;",
       prefix: ": ",
       message:
-        "public.sync_fact_registry_alerts must take no parameter and only run the check, page by page with a literal bound",
+        "public.sync_fact_registry_alerts must take no parameter and only run the check, page by page",
     },
     {
       label: "une projection qui n'écrit plus les libellés de surface neutres",
@@ -1128,32 +1127,133 @@ $$;`;
       label: "une fonction qui lance la relance planifiée hors de la tâche quotidienne",
       file: migration("reprojection_called_elsewhere"),
       content:
-        "create function public.reproject_now() returns jsonb language sql security definer set search_path = '' as $$ select app_private.reproject_drifted_sales(100000) $$;",
+        "create function public.reproject_now() returns jsonb language sql security definer set search_path = '' as $$ select public.reproject_fact_registry_drift() $$;",
       prefix: ": ",
       message:
-        "public.reproject_now calls app_private.reproject_drifted_sales: only public.sync_fact_registry_alerts may launch the scheduled reprojection",
+        "public.reproject_now calls public.reproject_fact_registry_drift: the scheduled reprojection is launched by the daily job only",
     },
     {
       label: "une migration qui ouvre la relance planifiée",
       file: migration("reprojection_opened"),
       content: "select app_private.set_fact_registry_scheduled_reprojection(true);",
-      message: "opens the scheduled reprojection of the fact registry",
+      message: "names a switch of the fact registry",
     },
     {
       label: "une migration qui ouvre la relance planifiée en écrivant sa table",
       file: migration("reprojection_opened_by_update"),
       content:
         "update app_private.fact_registry_switches set enabled = true where switch_name = 'scheduled_reprojection';",
-      message: "opens the scheduled reprojection of the fact registry",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label:
+        "une migration qui ouvre la relance planifiée sous un alias, par une autre colonne d'abord",
+      file: migration("reprojection_opened_by_alias"),
+      content:
+        "update only app_private.fact_registry_switches as s set updated_by = 'x', enabled = true where s.switch_name is not null;",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label: "une migration qui lève le second facteur des décisions",
+      file: migration("second_factor_lifted"),
+      content:
+        "do $$ begin perform app_private.set_fact_registry_decisions_second_factor(false); end $$;",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label: "une insertion qui rouvre un interrupteur par conflit",
+      file: migration("switch_upsert"),
+      content:
+        "insert into app_private.fact_registry_switches (enabled, switch_name) values (true, 'scheduled_reprojection') on conflict (switch_name) do update set enabled = excluded.enabled;",
+      message: "names a switch of the fact registry",
     },
     {
       label: "une relance planifiée qui ne lit plus son interrupteur",
       file: migration("reprojection_without_switch"),
       content:
-        "create or replace function app_private.reproject_drifted_sales(p_max integer) returns jsonb language plpgsql security definer set search_path = '' as $$ declare v_sale_id uuid; begin perform app_private.project_sale_fields(v_sale_id, null, true); return '{}'::jsonb; end; $$;",
+        "create or replace function public.reproject_fact_registry_drift() returns jsonb language plpgsql security definer set search_path = '' as $$ declare v_sale_id uuid; begin perform app_private.project_sale_fields(v_sale_id, null, true); return '{}'::jsonb; end; $$;",
       prefix: ": ",
       message:
-        "app_private.reproject_drifted_sales must read its switch (closed when absent), do nothing without a decision in the journal",
+        "public.reproject_fact_registry_drift must take no parameter, read its switch (closed when absent), do nothing without a decision in the journal",
+    },
+    {
+      label: "la même fonction de décision : un corps qui n'est plus celui qui a été relu",
+      file: migration("decide_actor_parameter"),
+      content: null,
+      prefix: ": ",
+      message: "the body of app_private.decide_auction_fact_claim is not the reviewed one",
+    },
+    {
+      label: "une fonction qui pose le jeton d'un autre puis appelle une fonction de décision",
+      file: migration("accept_as_someone"),
+      content:
+        "create function public.accept_fact_as(p_who uuid, p_claim_id uuid, p_lot text) returns jsonb language plpgsql security definer set search_path = '' as $$ begin perform pg_catalog.set_config('request.jwt.claims', pg_catalog.jsonb_build_object('sub', p_who, 'role', 'authenticated')::text, true); return public.accept_auction_fact_claim(p_claim_id, p_lot); end; $$;",
+      prefix: ": ",
+      message: "public.accept_fact_as names a decision function of the fact registry",
+    },
+    {
+      label: "la même fonction : le jeton de la requête écrit",
+      file: migration("accept_as_someone"),
+      content: null,
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "une fonction interne qui insère une décision au nom d'un auteur reçu en paramètre",
+      file: migration("decision_inserted_elsewhere"),
+      content:
+        "create function app_private.write_decision(p_who uuid, p_claim uuid, p_sale uuid, p_field text) returns uuid language sql security definer set search_path = '' as $$ insert into public.auction_fact_claim_decisions (claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id) values (p_claim, p_sale, p_field, 'accepted', 'single_lot', 'admin', p_who) returning id $$;",
+      prefix: ": ",
+      message:
+        "app_private.write_decision inserts into public.auction_fact_claim_decisions: only app_private.decide_auction_fact_claim writes a decision",
+    },
+    {
+      label: "une fonction qui pose le jeton par un littéral",
+      file: migration("impersonate_literal"),
+      content:
+        "create function public.impersonate(p_user uuid) returns void language sql security definer set search_path = '' as $$ select pg_catalog.set_config('request.jwt.claims', pg_catalog.json_build_object('sub', p_user)::text, false) $$;",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "un jeton posé par SET LOCAL dans le texte d'un EXECUTE",
+      file: migration("impersonate_set_local"),
+      content:
+        "create function app_private.as_user(p_user uuid) returns void language plpgsql set search_path = '' as $$ begin execute pg_catalog.format('set local request.jwt.claim.sub = %L', p_user); end; $$;",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "un jeton posé sur un rôle",
+      file: migration("impersonate_alter_role"),
+      content:
+        "alter role service_role set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "un jeton posé par la clause SET d'une fonction qui enveloppe une décision",
+      file: migration("impersonate_function_set"),
+      content:
+        "create function public.accept_fact_fixed(p_claim_id uuid, p_lot text) returns jsonb language sql security definer set search_path = '' set request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001' as $$ select public.accept_auction_fact_claim(p_claim_id, p_lot) $$;",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "une application de la projection cachée par des parenthèses imbriquées",
+      file: migration("projection_applied_nested"),
+      content:
+        "create function app_private.apply_nested(p_sale uuid) returns jsonb language sql security definer set search_path = '' as $$ select app_private.project_sale_fields(coalesce(p_sale, gen_random_uuid()), null, (1 = 1)) $$;",
+      prefix: ": ",
+      message: "app_private.apply_nested applies the projection",
+    },
+    {
+      label: "une fonction qui écrit des décisions manuelles hors de la fonction de décision",
+      file: migration("manual_decisions_elsewhere"),
+      content: inFunction(
+        decision(
+          ", publication_mode",
+          "values (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'admin', 'manual')",
+        ),
+      ),
+      prefix: ": ",
+      message:
+        "app_private.registry_test_writer inserts into public.auction_fact_claim_decisions: only app_private.decide_auction_fact_claim writes a decision",
     },
     {
       label: "une fonction de report qui lit la colonne interne de la vente conservée",
@@ -1253,16 +1353,6 @@ $$;`;
         [migration("accepted_recreated_hold")]: holdTrigger(heldColumns, holdWhen),
         [migration("accepted_detach")]:
           "update public.auction_fact_claims set auction_sale_id = null where auction_sale_id = '00000000-0000-4000-8000-000000000001';",
-        [migration("accepted_manual_decisions")]: inFunction(
-          decision(
-            ", publication_mode",
-            "values (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'admin', 'manual'), (gen_random_uuid(), gen_random_uuid(), 'accepted', 'single_lot', 'admin', 'manual')",
-          ) +
-            decision(
-              "",
-              "select claim.id, claim.auction_sale_id, 'accepted', 'single_lot', 'admin' from public.auction_fact_claims claim",
-            ),
-        ),
         [migration("accepted_later_trigger")]:
           "create trigger zzzz_auction_sales_other before update on public.auction_sales for each row execute function app_private.stamp_auction_sale_content_changed_at();",
         [migration("accepted_registry_read")]:
