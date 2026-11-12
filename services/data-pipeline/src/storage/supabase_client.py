@@ -564,9 +564,9 @@ def upsert_sales_to_supabase(
     if _PUBLICATION_CONNECTION.get() is not None:
         # Écriture dans la transaction d'un appelant : c'est lui qui valide ou annule, donc lui qui ouvre la portée.
         return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
-    # Repli REST (hors production) : pas de transaction, l'écriture vaut dès qu'elle est faite.
-    with base_reads.written_scope():
-        return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
+    # Repli REST (hors production) : ni verrou ni lecture sous verrou, la garde d'écho n'y agit pas et rien n'y est
+    # noté pour elle.
+    return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
 
 
 def _write_sale_revisions(
@@ -619,7 +619,7 @@ def _write_sale_revisions(
         # à ce que la base a gardé (``returning``), pas à ce qui a été envoyé : la base peut retenir une valeur.
         # Noté ici en attente ; l'état de référence ne change qu'une fois la transaction validée
         # (``upsert_sales_to_supabase``).
-        kept = _transaction_write("auction_sales", payload, "source_url", returning=base_reads.KEPT_COLUMNS) or []
+        kept = _transaction_write("auction_sales", payload, "source_url", returning=base_reads.KEPT_COLUMNS)
         if len(kept) == len(payload):
             base_reads.stage_written(kept)
         else:
@@ -631,8 +631,6 @@ def _write_sale_revisions(
         _write_fact_claims_postgres(sales, _PUBLICATION_CONNECTION.get())
     else:
         _upsert_with_rest(str(url), str(key), payload)
-        # Repli REST : pas de ``returning`` ; la ligne envoyée est la seule connaissance disponible.
-        base_reads.stage_written({"id": sale.id, **row} for sale, row in zip(sales, payload, strict=True))
         _write_fact_claims_rest(str(url), str(key), sales)
     _sync_normalized_sale_tables_with_rest(
         str(url),

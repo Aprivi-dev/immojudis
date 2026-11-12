@@ -265,13 +265,12 @@ def test_the_mark_is_never_written_to_the_database() -> None:
     assert RELAYED_FIELDS_KEY not in row["observations"][0]["raw_payload"]
 
 
-def test_marks_accumulate_and_an_empty_mark_writes_nothing() -> None:
+def test_a_mark_is_a_sorted_list_and_an_empty_mark_writes_nothing() -> None:
     raw: dict = {}
     mark_relayed(raw, [])
     assert RELAYED_FIELDS_KEY not in raw
 
-    mark_relayed(raw, ["surface_m2"])
-    mark_relayed(raw, ["rooms_count", "surface_m2"])
+    mark_relayed(raw, ["surface_m2", "rooms_count", "surface_m2"])
 
     assert raw[RELAYED_FIELDS_KEY] == ["rooms_count", "surface_m2"]
     assert relayed_fields({RELAYED_FIELDS_KEY: "surface_m2"}) == frozenset()

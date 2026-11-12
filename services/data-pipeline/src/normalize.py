@@ -1221,17 +1221,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         ),
         starting_price_eur=starting_price,
         sale_date=sale_date,
-        visit_dates=_normalize_visit_dates(
-            _field_or_source_block(
-                raw_sale,
-                "visit_dates",
-                "visites",
-                "date_de_visite",
-                "detail_date_de_visite",
-                "visite",
-                "visite_libre",
-            )
-        ),
+        visit_dates=source_visit_dates(raw_sale),
         lawyer_name=normalize_lawyer_name(
             _field_or_source_block(raw_sale, "lawyer_name", "avocat", "notary_name", "notaire", "contact_nom")
         ),
@@ -1750,6 +1740,24 @@ def _looks_like_asset_title(value: str | None) -> bool:
     ):
         return True
     return False
+
+
+def source_visit_dates(raw_sale: dict[str, object]) -> list[str]:
+    """Les visites qu'une vente brute publie : son champ, à défaut ses blocs de source, nettoyées une à une.
+
+    Seule lecture des visites d'une source : ``normalize_sale`` et la garde d'écho (``base_reads``) s'en servent.
+    """
+    return _normalize_visit_dates(
+        _field_or_source_block(
+            raw_sale,
+            "visit_dates",
+            "visites",
+            "date_de_visite",
+            "detail_date_de_visite",
+            "visite",
+            "visite_libre",
+        )
+    )
 
 
 def _normalize_visit_dates(value: object | None) -> list[str]:

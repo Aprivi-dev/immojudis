@@ -846,3 +846,123 @@ def test_the_guard_names_no_registry_object() -> None:
 
     for word in ("held", "claim", "auction_fact", "decision", "project_sale", "registre"):
         assert word not in source, word
+
+
+# --- vérifications finales ------------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "published",
+    [
+        # Espaces parasites, espace insécable : la normalisation les nettoie avant d'écrire la colonne.
+        {"source_factual_snapshot": {"visit_dates": ["  Lundi 8 mars\xa02027   de 14h à 15h "]}},
+        # Les visites ne sont pas dans le champ mais dans un bloc de la source, sous un autre nom de clé.
+        {"source_factual_snapshot": {"visit_dates": None}, "source_blocks": {"visites": "Lundi 8 mars 2027 de 14h à 15h"}},
+        {"source_factual_snapshot": {}, "source_blocks": {"detail": {"Date de visite": "Lundi 8 mars 2027 de 14h à 15h"}}},
+    ],
+    ids=["stray_spaces", "alias_visites", "alias_date_de_visite"],
+)
+def test_visits_the_reread_listing_publishes_are_read_as_normalisation_reads_them(published) -> None:
+    """Condition 3 pour les visites : la valeur de la source se lit par la règle de la normalisation, alias compris."""
+    from src.normalize import source_visit_dates
+
+    written = source_visit_dates({**published["source_factual_snapshot"], "source_blocks": published.get("source_blocks")})
+    assert written == ["Lundi 8 mars 2027 de 14h à 15h"]
+    read(visit_dates=written)
+    locked(visit_dates=["Mardi 9 mars 2027 à 10h"])  # un autre écrivain a changé les visites
+    incoming = sale(published, visit_dates=written)
+
+    assert base_reads.suppress_echo(sale(visit_dates=["Mardi 9 mars 2027 à 10h"]), incoming) is incoming
+
+    # Témoin : la même vente, fiche non relue, n'a fait que relire ces visites en base.
+    unread = sale({**published, "_known_unchanged": True}, visit_dates=written)
+    assert base_reads.suppress_echo(sale(visit_dates=["Mardi 9 mars 2027 à 10h"]), unread).visit_dates == [
+        "Mardi 9 mars 2027 à 10h"
+    ]
+
+
+def test_a_new_surface_next_to_a_reread_one_is_not_an_echo() -> None:
+    """Une colonne de valeur relue en base, l'autre nouvelle : la vente apporte quelque chose, rien n'est retenu."""
+    read(**POSED)
+    locked()
+    mixed = sale({"_known_unchanged": True}, **{**POSED, "app_surface_m2": 62})
+
+    assert base_reads.suppress_echo(sale(), mixed).app_surface_m2 == 62
+    assert (SALE_ID, "surface") not in {(item["sale_id"], item["group"]) for item in base_reads.suppressed_sample(50)}
+
+
+def test_a_write_validated_by_one_thread_survives_the_rollback_of_another() -> None:
+    """Le fil A écrit et valide ; entre son écriture et sa confirmation, le fil B écrit la même ligne puis annule.
+
+    Les notes en attente sont celles de la transaction qui les a faites : l'annulation de B ne jette pas celles de A.
+    """
+    import threading
+
+    read(occupancy_status="occupied")
+    errors: list[BaseException] = []
+
+    def thread_b() -> None:
+        try:
+            rolled_back(occupancy_status="vacant")
+        except BaseException as exc:  # remonté au fil principal par la liste, jamais avalé
+            errors.append(exc)
+
+    with base_reads.written_scope():
+        base_reads.stage_written([row(occupancy_status="rented")])
+        worker = threading.Thread(target=thread_b)
+        worker.start()
+        worker.join()
+    assert errors == []
+
+    locked(occupancy_status="rented")  # ce que A a validé : pas un mouvement
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+    locked(occupancy_status="vacant")  # ce que B avait écrit puis annulé : un autre écrivain, donc un mouvement
+    assert base_reads.moved_groups(SALE_ID) == {"occupancy"}
+
+
+def test_a_locked_read_of_its_own_uncommitted_write_is_not_a_reference_if_the_transaction_fails() -> None:
+    """Relire sous verrou, dans la même transaction, ce qu'on vient d'écrire ne pose pas de référence avant validation."""
+    read(occupancy_status="occupied")
+    with pytest.raises(RuntimeError, match="annulée"), base_reads.written_scope():
+        base_reads.stage_written([row(occupancy_status="rented")])
+        locked(occupancy_status="rented")
+        raise RuntimeError("transaction annulée")
+
+    locked(occupancy_status="occupied")  # la ligne d'avant, intacte
+
+    assert base_reads.moved_groups(SALE_ID) == frozenset()
+
+
+def test_the_surface_group_covers_the_surface_fields_the_collection_takes_from_the_stored_row() -> None:
+    """La garde reprend en bloc ce que la collecte recopie en bloc d'une ligne connue : une colonne de surface ajoutée
+    d'un côté doit l'être de l'autre."""
+    from src import main as pipeline
+
+    surface = next(group for group in base_reads.GROUPS if group.name == "surface")
+    relayed_together = {*pipeline.KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS, *pipeline.KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS}
+
+    assert {*surface.columns, *surface.satellites} == relayed_together
+    assert set(pipeline.KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS) <= set(surface.family)
+
+
+def test_an_aligned_copy_never_gains_a_key_it_did_not_carry() -> None:
+    """La copie de premier niveau qui ne portait que ``surface_m2`` ne reçoit pas les autres colonnes du groupe."""
+    read(**POSED)
+    locked()
+    submitted = sale({"_known_unchanged": True, "surface_m2": 54}, **POSED)
+    guarded = base_reads.suppress_echo(sale(), submitted)
+    result = guarded.model_copy(deep=True)
+
+    base_reads.align_copies(result, submitted, guarded)
+
+    assert result.raw_payload == {"_known_unchanged": True, "surface_m2": 50}
+
+
+def test_the_sample_names_the_withheld_pairs_without_any_value() -> None:
+    read(**POSED)
+    locked()
+    base_reads.suppress_echo(sale(), sale({"_known_unchanged": True}, **POSED))
+
+    assert base_reads.suppressed_count() == 4
+    assert base_reads.suppressed_sample(2) == [{"sale_id": SALE_ID, "group": "land"}, {"sale_id": SALE_ID, "group": "occupancy"}]
+    assert len(base_reads.suppressed_sample(50)) == 4

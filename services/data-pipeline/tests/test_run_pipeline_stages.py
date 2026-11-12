@@ -106,7 +106,7 @@ def test_a_run_reads_the_base_then_publishes_without_echo_and_reports_the_counte
         "city": "Alphaville", "postal_code": "33000", "address": "12 rue des Lilas, 33000 Alphaville",
         "property_type": "house", "title": "Une maison", "description": "Une maison d'habitation.",
         "raw_text": "Une maison d'habitation.", "visit_dates": [], "documents": [], "quality_flags": [],
-        "land_surface_m2": None, "habitable_surface_m2": None, "carrez_surface_m2": None,
+        "land_surface_m2": 800, "habitable_surface_m2": None, "carrez_surface_m2": None,
         "raw_payload": {"source_checks": {}, "source_factual_snapshot": {"source_name": "licitor", "source_url": url}},
         **posed,
     }])
@@ -149,14 +149,24 @@ def test_a_run_reads_the_base_then_publishes_without_echo_and_reports_the_counte
 
     main._apply_admission_and_reports(run)
     run.app_ready[0].investment_summary = "Synthèse ajoutée après la publication anticipée."
+    assert run.app_ready[0].land_surface_m2 == 800
+    base.move(url, land_surface_m2=None)  # un second retrait, après la publication anticipée
     main._publish_run(run)
 
     assert run.final_upserted == 1 and not run.publication_failed
     assert {key: base.rows[url][key] for key in listing} == listing
-    assert run.timings["base_echo_suppressed"] == 3
+    assert base.rows[url]["land_surface_m2"] is None
+    # Le compteur du passage est repris après la publication finale : il compte aussi ce qu'elle a retenu.
+    assert run.timings["base_echo_suppressed"] == 4
     (_run_id, status, summary, _errors), = finished
     assert status == "succeeded"
-    assert summary["timings"]["base_echo_suppressed"] == 3
+    assert summary["timings"]["base_echo_suppressed"] == 4
+    # Le résumé nomme les couples (vente, groupe), sans valeur, dans la limite prévue.
+    sale_id = str(base.rows[url]["id"])
+    assert summary["base_echo_suppressed_sample"] == [
+        {"sale_id": sale_id, "group": group} for group in ("land", "occupancy", "rooms", "surface")
+    ]
+    assert main.BASE_ECHO_SAMPLE_SIZE == 50
 
 
 def test_the_echo_counter_is_reported_as_zero_when_nothing_was_suppressed(monkeypatch) -> None:

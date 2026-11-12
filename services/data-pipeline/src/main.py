@@ -262,6 +262,8 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "pdf_multi_lot_guard",
 )
 
+# Nombre de couples (vente, groupe) retenus par la garde d'écho que le résumé du passage nomme.
+BASE_ECHO_SAMPLE_SIZE = 50
 KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS = (
     "source_name",
     "source_url",
@@ -1007,6 +1009,8 @@ def _publish_run(run: _PipelineRun) -> None:
             # Valeurs seulement relues en base et non réécrites parce que la base avait bougé (publications
             # progressive, anticipée et finale du passage).
             timings["base_echo_suppressed"] = base_reads.suppressed_count()
+            # Lesquels, sans aucune valeur : de quoi retrouver les ventes dans le journal du passage.
+            summary["base_echo_suppressed_sample"] = base_reads.suppressed_sample(BASE_ECHO_SAMPLE_SIZE)
             if app_ready:
                 if run.cadastre_rows:
                     try:
@@ -1298,20 +1302,20 @@ def _preserve_known_enrichment_payloads(
         known = known_details.get(source_url)
         known = known or {}
         known_payload = known.get("raw_payload") or {}
-        if not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed"):
+        if base_reads.was_reread(sale):
             # Un champ que le collecteur a repris de la ligne stockée (Vench, page restreinte) n'est pas ce que la
             # source a publié. Sa clé est absente de l'instantané, qui en garde la liste : « inconnu de la source »
             # n'est pas « vide à la source », et une restauration ne doit pas le remettre à vide.
             relayed = base_reads.relayed_fields(sale) & set(KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS)
-            sale["source_factual_snapshot"] = {
+            sale[base_reads.SOURCE_SNAPSHOT_KEY] = {
                 key: sale.get(key) for key in KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS if key not in relayed
             }
             if relayed:
-                sale["source_factual_snapshot"][base_reads.SNAPSHOT_RELAYED_FIELDS_KEY] = sorted(relayed)
-        elif known_payload.get("source_factual_snapshot"):
-            sale["source_factual_snapshot"] = known_payload["source_factual_snapshot"]
+                sale[base_reads.SOURCE_SNAPSHOT_KEY][base_reads.SNAPSHOT_RELAYED_FIELDS_KEY] = sorted(relayed)
+        elif known_payload.get(base_reads.SOURCE_SNAPSHOT_KEY):
+            sale[base_reads.SOURCE_SNAPSHOT_KEY] = known_payload[base_reads.SOURCE_SNAPSHOT_KEY]
         documents_changed = (
-            not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed")
+            base_reads.was_reread(sale)
             and "documents" in sale
             and document_list_changed(sale.get("documents") or [], known, source_url)
         )
@@ -1324,8 +1328,7 @@ def _preserve_known_enrichment_payloads(
         payload_fields = KNOWN_ENRICHMENT_PAYLOAD_FIELDS
         if (
             sale.get("source_detail_status") == "complete"
-            and not sale.get("_known_unchanged")
-            and not sale.get("_detail_fetch_failed")
+            and base_reads.was_reread(sale)
         ):
             payload_fields = tuple(
                 key
