@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   diffToolFailureReport,
   normalizeDiffWithNotes,
+  quoteForeignText,
   runWithTransientRetry,
   verifyConcurrentIndexes,
 } from "./lib/schema-drift.mjs";
@@ -30,7 +31,20 @@ if (!configuredTarget) {
   process.exit(1);
 }
 
-const target = remote ? withMaintenanceSessionSettings(configuredTarget) : configuredTarget;
+let target = configuredTarget;
+if (remote) {
+  try {
+    target = withMaintenanceSessionSettings(configuredTarget);
+  } catch {
+    // The error of the URL parser quotes the whole value, password included: it is not printed.
+    console.error(
+      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL Postgres valide (postgres:// ou postgresql://, avec un hôte). Sa valeur n'est pas affichée.",
+    );
+    process.exit(1);
+  }
+}
+// What must never reach the log, whatever text quotes it.
+const databaseUrls = remote ? [configuredTarget, target] : [];
 
 // The reviewed concurrent indexes are intentionally outside the migration
 // transaction. Verify their physical catalog definitions separately so a
@@ -39,7 +53,10 @@ if (remote) {
   try {
     await verifyConcurrentIndexes(target);
   } catch (error) {
-    console.error(`[schema-drift] ${String(error?.message || error)}`);
+    // The message may come from the database driver: foreign text, masked and quoted.
+    console.error(
+      `[schema-drift] Concurrent index check failed:\n${quoteForeignText(String(error?.message || error), databaseUrls)}`,
+    );
     process.exit(1);
   }
 }
@@ -104,7 +121,7 @@ try {
         attempts,
         transient,
         githubActions: process.env.GITHUB_ACTIONS === "true",
-        databaseUrls: remote ? [configuredTarget, target] : [],
+        databaseUrls,
       }),
     );
     process.exitCode = result.status ?? 1;
@@ -125,7 +142,8 @@ try {
         console.error(
           "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
         );
-      console.error(diff.slice(0, 40_000));
+      // The diff is SQL read from the database: foreign text, masked and quoted like the output of the tool.
+      console.error(quoteForeignText(diff, databaseUrls, 40_000));
       process.exitCode = 1;
     } else {
       console.log(
@@ -165,6 +183,10 @@ function firstFilledEnv(...values) {
 
 function withMaintenanceSessionSettings(databaseUrl) {
   const url = new URL(databaseUrl);
+  // `postgresql:user:password@host/db` (no `//`) and `https://…` are valid URLs, and are not a database.
+  if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname) {
+    throw new Error("Not a Postgres connection URL.");
+  }
   if (url.hostname.endsWith(".pooler.supabase.com")) url.port = "5432";
   url.searchParams.set("sslmode", "verify-full");
   url.searchParams.set("connect_timeout", process.env.PGCONNECT_TIMEOUT || "600");

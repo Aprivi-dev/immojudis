@@ -7,7 +7,8 @@ import { removeSandboxes, repo, runInvariants } from "./check-security-invariant
 // charge, le délai par défaut de 5 s est trop juste. 20 s pour tout le fichier.
 vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 });
 
-afterAll(removeSandboxes);
+// Le ménage des dépôts factices a pris 24 s pour 69 dépôts sur une machine chargée : délai propre au hook.
+afterAll(removeSandboxes, 120_000);
 
 const accessFunction = (condition) => `
 create or replace function app_private.has_active_analysis_access(p_user_id uuid)
@@ -601,6 +602,75 @@ describe("invariants de sécurité : marché local de la règle pepite-v1.2", ()
     expect(result.stderr).toContain(
       "public.get_commune_market_trends must not be SECURITY DEFINER",
     );
+  });
+});
+
+describe("invariants de sécurité : le rôle lovable_readonly reste supprimé", () => {
+  const dropMigration = "20261117110000_drop_lovable_readonly_role.sql";
+  const conditionalGrant = `
+do $$
+begin
+  if exists (select 1 from pg_catalog.pg_roles where rolname = 'lovable_readonly') then
+    execute 'grant select on public.auction_sales to lovable_readonly';
+  end if;
+end $$;
+`;
+
+  it("refuse une migration postérieure qui nomme le rôle, même sous condition d'existence", () => {
+    const result = runInvariants({ "99990101000000_regrant.sql": conditionalGrant });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `99990101000000_regrant.sql names the role lovable_readonly, dropped by ${dropMigration}`,
+    );
+  });
+
+  it("refuse le nom du rôle dans un simple commentaire d'une migration postérieure", () => {
+    const result = runInvariants({
+      "99990101000000_comment.sql": "-- comme pour LOVABLE_READONLY\nselect 1;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("99990101000000_comment.sql names the role lovable_readonly");
+  });
+
+  it("ne reproche rien aux migrations antérieures ni à une migration postérieure qui ne le nomme pas", () => {
+    const result = runInvariants({
+      "20261117109999_before.sql": "-- droits de lovable_readonly\nselect 1;",
+      "99990101000000_after.sql": "select 1;",
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
+  it("refuse le dépôt sans la migration de suppression", () => {
+    const result = runInvariants({}, [dropMigration]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `${dropMigration} must exist and drop the role lovable_readonly`,
+    );
+  });
+
+  it("refuse une migration de suppression dont le drop role n'est qu'en commentaire", () => {
+    const result = runInvariants(
+      {
+        [dropMigration]:
+          "-- drop role lovable_readonly;\n/* drop role lovable_readonly; */\nselect 1;",
+      },
+      [dropMigration],
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `${dropMigration} must exist and drop the role lovable_readonly (outside comments)`,
+    );
+  });
+
+  it.each([
+    "supabase/repairs/99990101000000_regrant.sql",
+    "supabase/maintenance/99990101000000_regrant.sql",
+    "supabase/functions/demo/index.ts",
+  ])("refuse le nom du rôle dans %s", (path) => {
+    const result = runInvariants({}, [], {}, { [path]: "-- grant select to lovable_readonly\n" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`${path} names the role lovable_readonly`);
   });
 });
 
