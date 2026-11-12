@@ -476,12 +476,15 @@ function secretPattern(secret) {
 // The tool is given the connection URL and may print it back. Removes the given URLs, every form of
 // their password (passwordForms), even wrapped over several lines, and anything that looks like a
 // Postgres connection URL. A URL that is not one of the given ones is masked up to the end of its line.
+// A password shorter than SHORTEST_MASKED_SECRET is not replaced on its own: masking every `ab` of a log
+// makes it unreadable and tells the password by what is missing. The URL that holds it is still masked.
+const SHORTEST_MASKED_SECRET = 4;
 function maskDatabaseUrls(text, databaseUrls) {
   const secrets = new Set(
     databaseUrls.flatMap((databaseUrl) => [databaseUrl, ...passwordForms(databaseUrl)]),
   );
   return [...secrets]
-    .filter(Boolean)
+    .filter((secret) => secret.length >= SHORTEST_MASKED_SECRET)
     .sort((left, right) => right.length - left.length)
     .reduce((masked, secret) => masked.replace(secretPattern(secret), MASKED), text)
     .replace(/\bpostgres(?:ql)?:\/\/\S+/gi, MASKED);
@@ -492,10 +495,12 @@ function maskDatabaseUrls(text, databaseUrls) {
 // neutralises it. `##[command]` is not neutralised by a prefix: it is broken wherever it stands.
 const foreignLines = (text) => text.replaceAll("##[", "## [").split(/\r\n|\r|\n/);
 const quoteLines = (lines) => lines.map((line) => `> ${line}`);
-// The diff itself, as the script prints it: SQL read from the database may quote a connection URL (a
-// foreign server, a comment), which is masked like the output of the tool.
-const quoteForeignText = (text, databaseUrls = []) =>
-  quoteLines(foreignLines(maskDatabaseUrls(text, databaseUrls))).join("\n");
+// What the script itself copies (the diff, an error of the index check): it may quote a connection URL
+// (a foreign server, a comment, a driver error), which is masked like the output of the tool. The text is
+// masked before it is cut to `maxCharacters`: a password that straddles the cut would otherwise show its
+// first characters.
+const quoteForeignText = (text, databaseUrls = [], maxCharacters = Infinity) =>
+  quoteLines(foreignLines(maskDatabaseUrls(text, databaseUrls).slice(0, maxCharacters))).join("\n");
 
 // Everything the script prints when the diff tool failed, as one text: the `[schema-drift]` diagnosis
 // first, so that it is read whatever the length of what follows, then the end of each output of the
