@@ -77,6 +77,8 @@ try {
           PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || "600",
         },
         stdio: ["ignore", "pipe", "pipe"],
+        // Beyond this size the tool is stopped and the run fails with ENOBUFS (reported as such).
+        maxBuffer: 16 * 1024 * 1024,
       },
     );
   };
@@ -102,6 +104,7 @@ try {
         attempts,
         transient,
         githubActions: process.env.GITHUB_ACTIONS === "true",
+        databaseUrls: remote ? [configuredTarget, target] : [],
       }),
     );
     process.exitCode = result.status ?? 1;
@@ -123,12 +126,12 @@ try {
           "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
         );
       console.error(diff.slice(0, 40_000));
-      process.exit(1);
+      process.exitCode = 1;
+    } else {
+      console.log(
+        `[schema-drift] ${remote ? "Production" : "Local database"} matches committed migrations.`,
+      );
     }
-
-    console.log(
-      `[schema-drift] ${remote ? "Production" : "Local database"} matches committed migrations.`,
-    );
   }
 } finally {
   rmSync(temporaryDirectory, { recursive: true, force: true });
