@@ -17,6 +17,7 @@ const CLAIM_ID = "00000000-0000-4000-8000-000000000005";
 const ASSET_ID = "00000000-0000-4000-8000-000000000006";
 const MESSAGE_ID = "00000000-0000-4000-8000-000000000007";
 const REFRESH_ID = "00000000-0000-4000-8000-000000000008";
+const REGISTRY_CLAIM_ID = "00000000-0000-4000-8000-000000000009";
 const adminEmail = "admin.e2e@example.test";
 
 type AgentMockState = {
@@ -24,6 +25,8 @@ type AgentMockState = {
   unexpectedRequests: string[];
   mission: Record<string, unknown> | null;
   claimItems: Array<Record<string, unknown>>;
+  /** Observations du registre des pièces (panneau « Observations à décider »). */
+  decisionItems: Array<Record<string, unknown>>;
   reviewFacts: Array<Record<string, unknown>>;
   reviewAssetRights: "authorized" | "restricted";
   sourceRefresh: Record<string, unknown>;
@@ -176,6 +179,39 @@ test.describe("admin information agent", () => {
         (event) => event.method === "POST" && event.path.endsWith("/auto-publication"),
       ),
     ).toBe(false);
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
+  test("records a final opposition in the fact registry only after an explicit confirmation", async ({
+    page,
+  }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+
+    await page.goto("/admin/agent-ia?onglet=reponses");
+    const panel = page.getByRole("region", { name: "Observations à décider" });
+    await expect(panel.getByText("À décider", { exact: true })).toBeVisible();
+    await expect(panel.getByText("Libre", { exact: true })).toBeVisible();
+    await expect(panel.getByText("Occupé", { exact: true })).toBeVisible();
+
+    await panel.getByRole("button", { name: "Enregistrer une opposition" }).click();
+    await expect(panel.getByText(/Une opposition est définitive\./)).toBeVisible();
+    const confirm = panel.getByRole("button", { name: "Confirmer l’opposition définitive" });
+    await expect(confirm).toBeDisabled();
+    await panel
+      .getByRole("checkbox", { name: "J’ai compris que cette décision est définitive." })
+      .check();
+    await confirm.click();
+
+    await expect(
+      panel.getByText("Dernière décision : opposition (définitif)", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByText("Aucune action possible : cette décision est définitive."),
+    ).toBeVisible();
+    const decision = state.events.find(
+      (event) => event.path === "/api/admin/fact-claims/decisions" && event.method === "POST",
+    );
+    expect(decision?.payload).toEqual({ action: "oppose", claimId: REGISTRY_CLAIM_ID });
     expect(state.unexpectedRequests).toEqual([]);
   });
 
@@ -538,6 +574,7 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     unexpectedRequests: [],
     mission: null,
     claimItems: [factClaimFixture()],
+    decisionItems: [factClaimDecisionFixture()],
     reviewFacts: [informationAgentFactFixture()],
     reviewAssetRights: "restricted",
     sourceRefresh: sourceRefreshFixture(null),
@@ -632,6 +669,34 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     if (path === "/api/admin/fact-claims/review" && method === "POST") {
       state.claimItems = [];
       await route.fulfill({ status: 200, json: { ok: true, result: { status: "rejected" } } });
+      return;
+    }
+    if (path === "/api/admin/fact-claims/decisions" && method === "GET") {
+      const items = state.decisionItems;
+      await route.fulfill({
+        status: 200,
+        json: { ok: true, items, offset, limit: 50, total: items.length, hasMore: false },
+      });
+      return;
+    }
+    if (path === "/api/admin/fact-claims/decisions" && method === "POST") {
+      state.decisionItems = [
+        {
+          ...factClaimDecisionFixture(),
+          latestDecision: {
+            id: "00000000-0000-4000-8000-00000000000a",
+            decision: "opposed",
+            reasonCode: "professional_opposition",
+            lotAttachment: "unknown",
+            decidedAt: "2026-11-12T10:00:00.000Z",
+          },
+          allowedActions: [],
+        },
+      ];
+      await route.fulfill({
+        status: 200,
+        json: { ok: true, result: { claimId: REGISTRY_CLAIM_ID, state: null } },
+      });
       return;
     }
     if (path === "/api/admin/information-agent/missions" && method === "GET") {
@@ -1061,6 +1126,22 @@ function sourceRefreshFixture(requestId: string | null) {
     },
     request,
     history: request ? [request] : [],
+  };
+}
+
+function factClaimDecisionFixture() {
+  return {
+    claimId: REGISTRY_CLAIM_ID,
+    saleId: SALE_ID,
+    fieldKey: "property.occupancy_status",
+    value: "vacant",
+    currentValue: "occupied",
+    origin: "professional_email",
+    sourceUrl: null,
+    capturedAt: "2026-11-10T09:30:00.000Z",
+    sale: { title: "Maison du registre E2E", city: "Libourne", saleDate: "2026-12-02" },
+    latestDecision: null,
+    allowedActions: ["accept", "reject", "oppose"],
   };
 }
 
