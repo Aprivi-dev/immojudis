@@ -1000,62 +1000,68 @@ select ok(
   'the decision function reads only the SQLSTATE and the constraint name of an error, logs these two, and relays no detail'
 );
 
--- Aucune autre fonction de la base n'écrit une décision, ne pose un jeton, ni n'enveloppe ces fonctions -------------------
--- (double des invariants de sécurité, lu dans le catalogue ; les fonctions temporaires de ce fichier sont exclues.)
--- La définition entière de chaque fonction et procédure est lue (pg_get_functiondef : corps « begin atomic » et
--- réglages compris), pas la seule colonne prosrc.
+-- Aucune autre fonction du dépôt n'écrit une décision, ne pose un jeton, ni n'enveloppe ces fonctions -----------------
+-- (double des invariants de sécurité, lu dans le catalogue.) La définition entière de chaque fonction et procédure
+-- est lue (pg_get_functiondef : corps « begin atomic » et réglages compris), pas la seule colonne prosrc.
+-- Portée : les schémas que les migrations du dépôt créent ou remplissent (public, app_private, licitor_ingestion).
+-- LIMITE : les fonctions de la plateforme (auth, realtime, storage, extensions, pgTAP…) ne sont pas lues ici. L'une
+-- d'elles pose le jeton par nature (Realtime rejoue les politiques au nom de l'abonné). Une migration du dépôt ne
+-- peut pas en créer ni en modifier une sans être lue par l'invariant de texte registry-rpc-actor-from-jwt, qui juge
+-- le fichier entier quel que soit le schéma visé.
+-- Chaque assertion nomme les fonctions fautives (schéma et nom), pas seulement leur nombre.
 select results_eq(
   $$select (namespace.nspname::text || '.' || routine.proname::text) collate "default"
       from pg_proc routine
       join pg_namespace namespace on namespace.oid = routine.pronamespace
-      where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
+      where namespace.nspname in ('public', 'app_private', 'licitor_ingestion')
         and routine.prokind in ('f', 'p')
         and pg_get_functiondef(routine.oid)
-          ~* '(insert\s+into|merge\s+into|copy)\s+(only\s+)?("?public"?\.)?"?auction_fact_claim_decisions'$$,
+          ~* '(insert\s+into|merge\s+into|copy)\s+(only\s+)?("?public"?\.)?"?auction_fact_claim_decisions'
+      order by (namespace.nspname::text || '.' || routine.proname::text) collate "C"$$,
   $$values ('app_private.decide_auction_fact_claim')$$,
   'one routine only writes into the decision journal (insert, merge or copy): the decision function'
 );
-select is(
-  (select count(*)::integer
-     from pg_proc routine
-     join pg_namespace namespace on namespace.oid = routine.pronamespace
-     where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
-       and routine.prokind in ('f', 'p')
-       and (pg_get_functiondef(routine.oid) ~* 'set_config\s*\(\s*''request\.jwt'
-            or pg_get_functiondef(routine.oid) ~* 'set\s+(local\s+)?"?request\.jwt'
-            or exists (select 1 from unnest(routine.proconfig) setting where setting ~* '^request\.jwt'))),
-  0,
-  'no function of the database sets the token of the request (request.jwt.claim…): the author cannot be forged from SQL'
+select is_empty(
+  $$select (namespace.nspname::text || '.' || routine.proname::text) collate "default"
+      from pg_proc routine
+      join pg_namespace namespace on namespace.oid = routine.pronamespace
+      where namespace.nspname in ('public', 'app_private', 'licitor_ingestion')
+        and routine.prokind in ('f', 'p')
+        and (pg_get_functiondef(routine.oid) ~* 'set_config\s*\(\s*''request\.jwt'
+             or pg_get_functiondef(routine.oid) ~* 'set\s+(local\s+)?"?request\.jwt'
+             or exists (select 1 from unnest(routine.proconfig) setting where setting ~* '^request\.jwt'))
+      order by (namespace.nspname::text || '.' || routine.proname::text) collate "C"$$,
+  'no function of the repository schemas sets the token of the request (request.jwt.claim…): the author cannot be forged from SQL'
 );
-select is(
-  (select count(*)::integer
-     from pg_db_role_setting role_setting, unnest(role_setting.setconfig) setting
-     where setting ~* '^request\.jwt'),
-  0,
+select is_empty(
+  $$select role_setting.setrole::regrole::text, setting
+      from pg_db_role_setting role_setting, unnest(role_setting.setconfig) setting
+      where setting ~* '^request\.jwt'
+      order by role_setting.setrole::regrole::text collate "C", setting collate "C"$$,
   'and no role carries a token setting'
 );
 select results_eq(
   $$select (namespace.nspname::text || '.' || routine.proname::text) collate "default"
       from pg_proc routine
       join pg_namespace namespace on namespace.oid = routine.pronamespace
-      where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
+      where namespace.nspname in ('public', 'app_private', 'licitor_ingestion')
         and routine.prokind in ('f', 'p')
         and routine.proname <> 'decide_auction_fact_claim'
         and pg_get_functiondef(routine.oid) ~* 'decide_auction_fact_claim\s*\('
-      order by routine.proname::text collate "C"$$,
+      order by (namespace.nspname::text || '.' || routine.proname::text) collate "C"$$,
   $$values ('public.accept_auction_fact_claim'), ('public.oppose_auction_fact_claim'),
            ('public.reject_auction_fact_claim'), ('public.withdraw_auction_fact_claim')$$,
   'the decision function is called by its four public functions only'
 );
-select is(
-  (select count(*)::integer
-     from pg_proc routine
-     join pg_namespace namespace on namespace.oid = routine.pronamespace
-     where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
-       and routine.prokind in ('f', 'p')
-       and routine.proname !~ '^(accept|reject|withdraw|oppose)_auction_fact_claim$'
-       and pg_get_functiondef(routine.oid) ~* '(accept|reject|withdraw|oppose)_auction_fact_claim'),
-  0,
+select is_empty(
+  $$select (namespace.nspname::text || '.' || routine.proname::text) collate "default"
+      from pg_proc routine
+      join pg_namespace namespace on namespace.oid = routine.pronamespace
+      where namespace.nspname in ('public', 'app_private', 'licitor_ingestion')
+        and routine.prokind in ('f', 'p')
+        and routine.proname !~ '^(accept|reject|withdraw|oppose)_auction_fact_claim$'
+        and pg_get_functiondef(routine.oid) ~* '(accept|reject|withdraw|oppose)_auction_fact_claim'
+      order by (namespace.nspname::text || '.' || routine.proname::text) collate "C"$$,
   'and no function wraps one of the four'
 );
 
