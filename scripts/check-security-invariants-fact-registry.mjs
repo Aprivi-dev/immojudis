@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 // Invariants du registre des pièces (plan du 11/11/2026 : lot R1, migrations 20261116100000 à 20261116100500, lot
 // R2a, migrations 20261117100000 à 20261117100700, et lot R2b, migrations 20261118100000 à 20261118100300 ;
 // spécifications : annexes 03-base-de-donnees-arbitrage.md, section 7, et 08-bascule-base-de-donnees.md de
@@ -39,9 +41,12 @@
 //    que son état et la valeur d'annonce (jamais la valeur tenue, la pièce, la décision ni l'origine).
 // 9. fact-registry-check-read-only : le contrôle quotidien n'appelle la projection qu'en simulation et ne
 //    contient aucune écriture ; la fonction qui tient les alertes ne prend aucun paramètre et n'écrit que par le
-//    mécanisme d'alerte, sous des clés fact_registry.*, sans rien refermer sur un rapport tronqué. Lot R2b : elle
-//    lance d'abord la relance planifiée, bornée par un littéral ; la relance lit son interrupteur, ne fait rien
-//    sans décision au journal ni sans les déclencheurs du registre, et aucune migration n'ouvre l'interrupteur.
+//    mécanisme d'alerte, sous des clés fact_registry.*, sans rien refermer sur un rapport tronqué. Lot R2b : la
+//    passe par vente est la seule à simuler la projection ; la fonction des alertes n'écrit aucune fiche ; la
+//    relance planifiée est une fonction à part, sans paramètre, qu'aucune fonction SQL n'appelle, qui lit son
+//    interrupteur, ne fait rien sans décision au journal ni sans les déclencheurs du registre, et ne relaie aucun
+//    message d'erreur ; la table des interrupteurs et ses fonctions de réglage ne sont nommées que par les deux
+//    migrations qui les créent, dans leur sens sûr.
 // 10. registry-neutral-surface-labels : la projection écrit des libellés de surface neutres, sans jamais y
 //    joindre l'origine de la pièce, et la retenue réserve le libellé du registre à la projection.
 // 11. fact-claims-generation-pattern : la vue des observations lit la génération de la collecte par sa fonction
@@ -54,7 +59,11 @@
 // 13. registry-rpc-actor-from-jwt : l'auteur d'une décision est celui du jeton. La fonction de décision n'a aucun
 //    paramètre d'auteur, lit (select auth.uid()) et exige public.is_admin() avant le contrôle des déclencheurs
 //    et avant toute écriture ; les quatre fonctions publiques n'ont aucun paramètre d'auteur et ne font que
-//    l'appeler avec leur type de décision ; aucune n'écrit le mode de publication (verrous auto_locked).
+//    l'appeler avec leur type de décision ; aucune n'écrit le mode de publication (verrous auto_locked). Aucune
+//    autre fonction n'insère une décision, quel que soit son schéma, ni ne nomme une des quatre fonctions
+//    publiques ; aucune migration n'écrit le jeton de la requête (request.jwt.claim…) ; le corps de la fonction
+//    de décision est épinglé par une empreinte. Règle prévue pour le lot R2c : droit d'exécution à authenticated
+//    seul, jamais à service_role ni à anon.
 // 14. registry-rpc-no-error-detail : les fonctions de décision ne lisent d'une erreur que son SQLSTATE et le nom
 //    de la contrainte, et ne relaient ni détail, ni indice, ni message de PostgreSQL.
 // Partout : aucune instruction ALTER FUNCTION ne touche une fonction du registre (mode de sécurité, propriétaire),
@@ -154,8 +163,25 @@ const DECISION_RPCS = new Map([
 const SALE_LOCK_FUNCTION = "app_private.lock_sale_for_registry";
 const REVIEW_FUNCTION = "public.review_auction_fact_claim";
 const MERGE_CARRY_FUNCTION = "app_private.carry_sale_user_data_to_merged_sale";
-const REPROJECTION_FUNCTION = "app_private.reproject_drifted_sales";
-const REPROJECTION_SWITCH_SETTER = "app_private.set_fact_registry_scheduled_reprojection";
+// Relance planifiée : fonction publique sans paramètre, réservée à service_role, appelée par la tâche dans sa
+// propre transaction.
+const REPROJECTION_FUNCTION = "public.reproject_fact_registry_drift";
+const PAGE_CHECKS_FUNCTION = "app_private.fact_registry_page_checks";
+const GLOBAL_CHECKS_FUNCTION = "app_private.fact_registry_global_checks";
+// Interrupteurs du registre : leur table et leurs deux fonctions de réglage ne sont nommées que par les deux
+// migrations qui les créent.
+const SWITCH_TABLE = "fact_registry_switches";
+const SWITCH_SETTERS = [
+  "app_private.set_fact_registry_scheduled_reprojection",
+  "app_private.set_fact_registry_decisions_second_factor",
+];
+const SWITCH_MIGRATIONS = new Set([
+  "20261118100100_fact_claim_decision_rpcs.sql",
+  "20261118100300_fact_registry_check_pages_and_reprojection.sql",
+]);
+// Empreinte (SHA-256) du corps de la fonction de décision, tel que ce module le lit (commentaires retirés).
+// Toute retouche du corps la change : relire la retouche, puis mettre l'empreinte à jour dans le même commit.
+const DECIDE_BODY_SHA256 = "14ca8abdddd37759c0179988664140d2995539c9bdbc6b1b28ced82531896eb6";
 // Seules fonctions qui appliquent la projection (troisième argument autre que le littéral false).
 const PROJECTION_APPLIERS = new Set([DECIDE_FUNCTION, MERGE_CARRY_FUNCTION, REPROJECTION_FUNCTION]);
 // Fonctions internes des lots R2a et R2b : aucune n'est exécutable par un rôle de l'API.
@@ -173,10 +199,13 @@ const INTERNAL_FUNCTIONS = [
   DECIDE_FUNCTION,
   SALE_LOCK_FUNCTION,
   MERGE_CARRY_FUNCTION,
-  REPROJECTION_FUNCTION,
-  REPROJECTION_SWITCH_SETTER,
+  ...SWITCH_SETTERS,
+  PAGE_CHECKS_FUNCTION,
+  GLOBAL_CHECKS_FUNCTION,
   "app_private.fact_registry_candidate_sales",
   "app_private.fact_registry_report_add_page",
+  "app_private.fact_registry_hourly_decision_limit",
+  "app_private.sale_is_land_sale",
 ];
 // Fonctions du registre qu'aucune instruction ALTER FUNCTION ne touche (mode de sécurité, propriétaire, chemin
 // de recherche) : les gardes lisent le rôle appelant, la liste blanche lit le propriétaire de la projection.
@@ -210,7 +239,12 @@ const OWNED_OBJECTS = [
   "fact_registry_seq",
 ];
 // Fonctions publiques du lot R2a : exécutables par service_role seul.
-const SERVER_ONLY_RPCS = [BASELINES_FUNCTION, CHECK_FUNCTION, ALERTS_FUNCTION];
+const SERVER_ONLY_RPCS = [
+  BASELINES_FUNCTION,
+  CHECK_FUNCTION,
+  ALERTS_FUNCTION,
+  REPROJECTION_FUNCTION,
+];
 // Dans src/, seul ce module serveur (et les types générés) nomme ces fonctions.
 const SERVER_RPC_CALLERS = new Set([
   "src/lib/fact-registry-check.ts",
@@ -1232,12 +1266,18 @@ export async function checkFactRegistryInvariants({
   for (const definition of definitions) {
     if (definition.name === PROJECTION_FUNCTION || PROJECTION_APPLIERS.has(definition.name))
       continue;
-    for (const call of definition.body.matchAll(/project_sale_fields\s*\(([^()]*)\)/gi)) {
-      if (!/^[^,]+,[^,]+,\s*false\s*(?:,|$)/i.test(call[1])) {
-        failures.push(
-          `${definition.migration}: ${definition.name} applies the projection: only ${[...PROJECTION_APPLIERS].join(", ")} may (any other function can only simulate it, third argument false)`,
-        );
-      }
+    // Chaque appel doit être une simulation écrite simplement (une vente, null, false) : un appel dont les
+    // arguments ne se lisent pas (parenthèses imbriquées, argument nommé) est tenu pour une application.
+    const calls = [...definition.body.matchAll(/project_sale_fields\s*\(/gi)].length;
+    const simulations = [
+      ...definition.body.matchAll(
+        /project_sale_fields\s*\(\s*[a-z_][a-z0-9_.]*\s*,\s*null\s*,\s*false\s*\)/gi,
+      ),
+    ].length;
+    if (calls !== simulations) {
+      failures.push(
+        `${definition.migration}: ${definition.name} applies the projection: only ${[...PROJECTION_APPLIERS].join(", ")} may (any other function can only simulate it, third argument false)`,
+      );
     }
   }
   for (const [name, sql] of all) {
@@ -1501,7 +1541,14 @@ export async function checkFactRegistryInvariants({
   for (const definition of definitions) {
     if (definition.name.startsWith("public.")) publicFunctions.set(definition.name, definition);
   }
-  const HELD_FIELDS_READERS = new Set([BASELINES_FUNCTION, CHECK_FUNCTION, HISTORY_FUNCTION]);
+  // La relance planifiée lit la colonne avant et après sa projection, pour journaliser les champs changés ;
+  // elle n'en rend rien (compte rendu de comptes et de codes).
+  const HELD_FIELDS_READERS = new Set([
+    BASELINES_FUNCTION,
+    CHECK_FUNCTION,
+    HISTORY_FUNCTION,
+    REPROJECTION_FUNCTION,
+  ]);
   for (const [fn, definition] of publicFunctions) {
     if (
       /\breturns\s+(?:setof\s+)?(?:public\.)?auction_sales\b/i.test(definition.head) ||
@@ -1588,31 +1635,51 @@ export async function checkFactRegistryInvariants({
   // 9. fact-registry-check-read-only ----------------------------------------------------------------------------
   const WRITE_STATEMENT =
     /\binsert\s+into\b|\bupdate\s+(?:only\s+)?[a-z_.]+\s+(?:(?:as\s+)?[a-z_]+\s+)?set\b|\bdelete\s+from\b|\btruncate\b|\bset_config\s*\(|\bnextval\s*\(|\bsetval\s*\(|\balter\s+table\b/i;
+  // Le contrôle : la fonction publique, la passe par vente (la seule à appeler la projection, en simulation) et
+  // les contrôles généraux. Toutes stables, sans instruction d'écriture.
   const check = lastDefinition(CHECK_FUNCTION);
-  if (!check) {
-    failures.push(`${CHECK_FUNCTION} is not defined by a migration`);
+  const pageChecks = lastDefinition(PAGE_CHECKS_FUNCTION);
+  const globalChecks = lastDefinition(GLOBAL_CHECKS_FUNCTION);
+  if (!check) failures.push(`${CHECK_FUNCTION} is not defined by a migration`);
+  if (!globalChecks) failures.push(`${GLOBAL_CHECKS_FUNCTION} is not defined by a migration`);
+  if (!pageChecks) {
+    failures.push(`${PAGE_CHECKS_FUNCTION} is not defined by a migration`);
   } else {
-    const projectionCalls = [...check.body.matchAll(/project_sale_fields\s*\(([^()]*)\)/gi)];
+    const projectionCalls = [...pageChecks.body.matchAll(/project_sale_fields\s*\(([^()]*)\)/gi)];
     // Deux appels : la passe, puis le rejeu des ventes en dérive ; tous deux en simulation.
     if (
       projectionCalls.length !== 2 ||
+      [...pageChecks.body.matchAll(/project_sale_fields\s*\(/gi)].length !== 2 ||
       projectionCalls.some((call) => !/^\s*[a-z_.]+\s*,\s*null\s*,\s*false\s*$/i.test(call[1]))
     ) {
       failures.push(
-        `${check.migration}: ${CHECK_FUNCTION} must call the projection as a simulation only (third argument false, written literally), once in its pass and once in its replay`,
+        `${pageChecks.migration}: ${PAGE_CHECKS_FUNCTION} must call the projection as a simulation only (third argument false, written literally), once in its pass and once in its replay`,
       );
-    }
-    if (WRITE_STATEMENT.test(check.body) || !/\bstable\b/i.test(check.head)) {
-      failures.push(
-        `${check.migration}: ${CHECK_FUNCTION} is not a stable function without any write statement`,
-      );
-    }
-    if (/\b(?:to_jsonb\s*\(\s*sale\s*\)|sale\.\*)/i.test(check.body)) {
-      failures.push(`${check.migration}: ${CHECK_FUNCTION} converts the whole sale row`);
     }
   }
-  // La fonction publique ne prend aucun paramètre (ni borne, ni rapport) : elle lance le contrôle avec sa borne
-  // par défaut et passe le rapport à la fonction interne, seule à toucher les alertes.
+  for (const [fn, definition] of [
+    [CHECK_FUNCTION, check],
+    [PAGE_CHECKS_FUNCTION, pageChecks],
+    [GLOBAL_CHECKS_FUNCTION, globalChecks],
+  ]) {
+    if (!definition) continue;
+    if (WRITE_STATEMENT.test(definition.body) || !/\bstable\b/i.test(definition.head)) {
+      failures.push(
+        `${definition.migration}: ${fn} is not a stable function without any write statement`,
+      );
+    }
+    if (/\b(?:to_jsonb\s*\(\s*sale\s*\)|sale\.\*)/i.test(definition.body)) {
+      failures.push(`${definition.migration}: ${fn} converts the whole sale row`);
+    }
+    if (fn !== PAGE_CHECKS_FUNCTION && /project_sale_fields/i.test(definition.body)) {
+      failures.push(
+        `${definition.migration}: ${fn} names the projection: only ${PAGE_CHECKS_FUNCTION} simulates it for the daily check`,
+      );
+    }
+  }
+  // La fonction publique ne prend aucun paramètre (ni borne, ni rapport) : elle enchaîne les pages du contrôle,
+  // calcule les contrôles généraux et passe le rapport à la fonction interne, seule à toucher les alertes. Elle
+  // n'écrit aucune fiche : la relance planifiée est un appel à part, dans sa propre transaction.
   const alerts = lastDefinition(ALERTS_FUNCTION);
   const alertsFromReport = lastDefinition(ALERTS_FROM_REPORT_FUNCTION);
   if (!alerts) {
@@ -1620,23 +1687,23 @@ export async function checkFactRegistryInvariants({
   } else if (
     !/sync_fact_registry_alerts\s*\(\s*\)\s*returns\b/i.test(alerts.head) ||
     WRITE_STATEMENT.test(alerts.body) ||
-    /project_sale_fields|sync_operational_alert/i.test(alerts.body) ||
-    !/check_fact_registry_consistency\s*\(\s*500\s*,\s*v_after\s*\)/i.test(alerts.body) ||
-    !/app_private\.reproject_drifted_sales\s*\(\s*[0-9]+\s*\)/i.test(alerts.body) ||
-    [...alerts.body.matchAll(/reproject_drifted_sales\s*\(/gi)].length !== 1 ||
+    /project_sale_fields|sync_operational_alert|reproject/i.test(alerts.body) ||
+    !/app_private\.fact_registry_page_checks\s*\(/i.test(alerts.body) ||
+    !/app_private\.fact_registry_global_checks\s*\(/i.test(alerts.body) ||
     !/app_private\.sync_fact_registry_alerts_from_report\s*\(/i.test(alerts.body)
   ) {
     failures.push(
-      `${alerts.migration}: ${ALERTS_FUNCTION} must take no parameter and only run the check, page by page with a literal bound, after one scheduled reprojection bounded by a literal, then hand its report to ${ALERTS_FROM_REPORT_FUNCTION}`,
+      `${alerts.migration}: ${ALERTS_FUNCTION} must take no parameter and only run the check, page by page, then hand its report to ${ALERTS_FROM_REPORT_FUNCTION}; it writes no sale (the scheduled reprojection is a separate call)`,
     );
   }
-  // Relance planifiée (lot R2b) : une écriture de fiche lancée par une tâche. Elle n'est appelée que par la
-  // fonction des alertes, lit son interrupteur, ne fait rien sans décision au journal ni sans les déclencheurs
-  // du registre, n'écrit aucune décision, et aucune migration n'ouvre l'interrupteur.
+  // Relance planifiée (lot R2b) : une écriture de fiche lancée par une tâche. Sans paramètre, elle lit son
+  // interrupteur, ne fait rien sans décision au journal ni sans les déclencheurs du registre, n'écrit aucune
+  // décision, ne rend ni ne journalise le message d'une erreur, et aucune fonction SQL ne l'appelle.
   const reprojection = lastDefinition(REPROJECTION_FUNCTION);
   if (!reprojection) {
     failures.push(`${REPROJECTION_FUNCTION} is not defined by a migration`);
   } else if (
+    !/reproject_fact_registry_drift\s*\(\s*\)\s*returns\b/i.test(reprojection.head) ||
     !/v_enabled\s+boolean\s*:=\s*coalesce\s*\(\s*\(\s*select\s+switch\.enabled\s+from\s+app_private\.fact_registry_switches\s+switch\s+where\s+switch\.switch_name\s*=\s*'scheduled_reprojection'\s*\)\s*,\s*false\s*\)/i.test(
       reprojection.body,
     ) ||
@@ -1646,34 +1713,69 @@ export async function checkFactRegistryInvariants({
     reprojection.body.search(/if\s+v_enabled\s+and\s+exists/i) >
       reprojection.body.search(/project_sale_fields\s*\(/i) ||
     /insert\s+into\s+(?:public\.)?auction_fact_claim_decisions\b/i.test(reprojection.body) ||
-    !/'drift_reprojected'/.test(reprojection.body)
+    !/'drift_reprojected'/.test(reprojection.body) ||
+    /\bdetail\s*=|\bhint\s*=|pg_exception_detail|pg_exception_hint|pg_exception_context|message_text|\bsqlerrm\b/i.test(
+      reprojection.body,
+    )
   ) {
     failures.push(
-      `${reprojection.migration}: ${REPROJECTION_FUNCTION} must read its switch (closed when absent), do nothing without a decision in the journal or without the registry triggers, log drift_reprojected events and write no decision`,
+      `${reprojection.migration}: ${REPROJECTION_FUNCTION} must take no parameter, read its switch (closed when absent), do nothing without a decision in the journal or without the registry triggers, log drift_reprojected events, write no decision and relay no error message`,
     );
   }
   for (const definition of definitions) {
-    if (
-      definition.name !== ALERTS_FUNCTION &&
-      /\breproject_drifted_sales\s*\(/i.test(definition.body)
-    ) {
+    if (/\breproject_fact_registry_drift\s*\(/i.test(definition.body)) {
       failures.push(
-        `${definition.migration}: ${definition.name} calls ${REPROJECTION_FUNCTION}: only ${ALERTS_FUNCTION} may launch the scheduled reprojection`,
+        `${definition.migration}: ${definition.name} calls ${REPROJECTION_FUNCTION}: the scheduled reprojection is launched by the daily job only, in its own transaction`,
       );
     }
   }
+  // Interrupteurs du registre (relance planifiée, second facteur des décisions) : leur table et leurs fonctions
+  // de réglage ne sont nommées que par les deux migrations qui les créent. Toute autre instruction qui les
+  // nomme (appel de la fonction de réglage, mise à jour, insertion, MERGE, sous un alias ou non) est refusée,
+  // quelle que soit sa forme. Dans ces deux migrations, les lignes sont posées dans leur sens sûr, la table
+  // n'est mise à jour que par les fonctions de réglage, et aucune de ces fonctions n'est appelée.
+  const switchWords = new RegExp(
+    `\\b${SWITCH_TABLE}\\b|\\b(?:${SWITCH_SETTERS.map((fn) => fn.slice("app_private.".length)).join("|")})\\b`,
+    "i",
+  );
   for (const [name, sql] of all) {
+    if (!switchWords.test(sql)) continue;
+    if (!SWITCH_MIGRATIONS.has(name)) {
+      failures.push(
+        `${name} names a switch of the fact registry (${SWITCH_TABLE} or one of its setters): the switches are created by ${[...SWITCH_MIGRATIONS].join(" and ")} and changed by the owner only, outside a migration`,
+      );
+      continue;
+    }
+    const inFile = definitions.filter((entry) => entry.migration === name);
+    const settersOf = (index) =>
+      inFile.some(
+        (entry) => SWITCH_SETTERS.includes(entry.name) && index >= entry.start && index < entry.end,
+      );
+    const updates = [
+      ...sql.matchAll(
+        /\b(?:update|delete\s+from|merge\s+into)\s+(?:only\s+)?app_private\.fact_registry_switches\b/gi,
+      ),
+    ];
+    const inserts = [
+      ...sql.matchAll(/insert\s+into\s+app_private\.fact_registry_switches\b[^;]*/gi),
+    ];
     if (
-      /set_fact_registry_scheduled_reprojection\s*\((?!\s*false\s*\)|\s*p_enabled\s+boolean\s*\)|\s*boolean\s*\))/i.test(
+      updates.some((match) => !settersOf(match.index)) ||
+      /\bselect\s+app_private\.set_fact_registry_|\bperform\s+app_private\.set_fact_registry_/i.test(
         sql,
       ) ||
-      /'scheduled_reprojection'\s*,\s*true\b/i.test(sql) ||
-      /update\s+app_private\.fact_registry_switches\s+set\s+enabled\s*=(?!\s*p_enabled\b)/i.test(
-        sql,
+      inserts.some(
+        (match) =>
+          !/values\s*\(\s*'scheduled_reprojection'\s*,\s*false\s*\)\s*on\s+conflict\s*\(\s*switch_name\s*\)\s*do\s+nothing\s*$/i.test(
+            match[0],
+          ) &&
+          !/values\s*\(\s*'decisions_require_second_factor'\s*,\s*true\s*\)\s*on\s+conflict\s*\(\s*switch_name\s*\)\s*do\s+nothing\s*$/i.test(
+            match[0],
+          ),
       )
     ) {
       failures.push(
-        `${name} opens the scheduled reprojection of the fact registry: the switch is closed by default and only an operator opens it, outside a migration`,
+        `${name} sets a switch of the fact registry otherwise than in its safe sense (scheduled reprojection closed, second factor required), or calls a setter`,
       );
     }
   }
@@ -1720,6 +1822,7 @@ export async function checkFactRegistryInvariants({
       !/set\s+search_path\s*=\s*''/i.test(decide.head) ||
       !/v_actor\s+uuid\s*:=\s*\(\s*select\s+auth\.uid\s*\(\s*\)\s*\)\s*;/i.test(decide.body) ||
       [...decide.body.matchAll(/\bv_actor\s*:=/gi)].length !== 0 ||
+      /\binto\s+(?:strict\s+)?(?:[a-z_][a-z0-9_.]*\s*,\s*)*v_actor\b/i.test(decide.body) ||
       adminCheck < 0 ||
       triggerCheck < adminCheck ||
       firstWrite < triggerCheck ||
@@ -1727,6 +1830,14 @@ export async function checkFactRegistryInvariants({
     ) {
       failures.push(
         `${decide.migration}: ${DECIDE_FUNCTION} must take the author from (select auth.uid()), never from a parameter, and require public.is_admin() first, then the registry triggers, before any write`,
+      );
+    }
+    // Le corps est épinglé : une retouche qui garderait la forme de la garde en la rendant sans effet (variable
+    // réaffectée par un autre moyen, condition morte) change l'empreinte.
+    const decideFingerprint = createHash("sha256").update(decide.body).digest("hex");
+    if (decideFingerprint !== DECIDE_BODY_SHA256) {
+      failures.push(
+        `${decide.migration}: the body of ${DECIDE_FUNCTION} is not the reviewed one (fingerprint ${decideFingerprint}): review the change, then update DECIDE_BODY_SHA256 in the same commit`,
       );
     }
     if (/publication_mode|'auto'/i.test(decide.body)) {
@@ -1762,6 +1873,36 @@ export async function checkFactRegistryInvariants({
     ) {
       failures.push(
         `${definition.migration}: ${definition.name} calls ${DECIDE_FUNCTION}: only the four decision functions may`,
+      );
+    }
+    // Aucune fonction n'enveloppe une des quatre fonctions publiques : elle déciderait pour le compte d'un
+    // autre (jeton posé avant l'appel, droits propres).
+    if (/\b(?:accept|reject|withdraw|oppose)_auction_fact_claim\b/i.test(definition.body)) {
+      failures.push(
+        `${definition.migration}: ${definition.name} names a decision function of the fact registry: nothing wraps accept_, reject_, withdraw_ or oppose_auction_fact_claim`,
+      );
+    }
+    // Une seule fonction insère dans le journal des décisions, quel que soit le schéma.
+    if (
+      definition.name !== DECIDE_FUNCTION &&
+      /\binsert\s+into\s+(?:public\.)?auction_fact_claim_decisions\b/i.test(definition.body)
+    ) {
+      failures.push(
+        `${definition.migration}: ${definition.name} inserts into public.auction_fact_claim_decisions: only ${DECIDE_FUNCTION} writes a decision`,
+      );
+    }
+  }
+  // Le jeton de la requête (request.jwt.claim, request.jwt.claims) n'est jamais écrit par une migration :
+  // l'auteur d'une décision est lu dans ce jeton. Sont refusés set_config, SET et SET LOCAL (y compris dans le
+  // texte d'un EXECUTE), la clause SET d'une fonction et ALTER ROLE … SET.
+  for (const [name, sql] of all) {
+    if (!sinceLot(name, REGISTRY_MIGRATION)) continue;
+    if (
+      /set_config\s*\(\s*'request\.jwt/i.test(sql) ||
+      /\bset\s+(?:local\s+|session\s+)?"?request\.jwt/i.test(sql)
+    ) {
+      failures.push(
+        `${name} writes the request token (request.jwt.claim…): the author of a fact registry decision is read from it, no migration may set it`,
       );
     }
   }
