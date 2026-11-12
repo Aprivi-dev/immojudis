@@ -1,15 +1,19 @@
-# Registre des pièces : fondations (lot R1), durcissement (lot R2a), décisions et fusion (lot R2b)
+# Registre des pièces : fondations (lot R1), durcissement (lot R2a), décisions et fusion (lot R2b), ouverture des droits (lot R2c, base)
 
 Plan : `docs/equipe/2026-11-11-registre-des-pieces.md` (section 10 pour le lot R2). Spécifications : annexes
 `03-base-de-donnees-arbitrage.md` (lot R1), `08-bascule-base-de-donnees.md` et `09-bascule-pipeline.md` (lot R2).
 Migrations `20261116100000` à `20261116100500` (lot R1), `20261117100000` à `20261117100700` (lot R2a),
-`20261118100000` à `20261118100300` (lot R2b).
+`20261118100000` à `20261118100300` (lot R2b), `20261119100000` à `20261119100400` (lot R2c, partie base).
 
-**État au lot R2b : toujours inerte.** Aucune fiche ne tient de champ et aucune décision n'est écrite : les
-fonctions de décision existent sans aucun droit d'exécution, et aucun code de l'application ni du pipeline
-n'appelle la projection. Le noyau de publication de l'agent d'information et son pont ne sont pas modifiés (lot
-R2c). Application en production : `docs/runbooks/registre-des-pieces-r2a.md`, puis
-`docs/runbooks/registre-des-pieces-r2b.md`.
+**État au lot R2c (partie base) : la bascule.** Les lots R1 à R2b sont en production et inertes : aucune fiche ne
+tient de champ, aucune décision n'est écrite. La migration `20261119100400` ouvre les quatre fonctions de décision
+au rôle `authenticated` : dès son application, un administrateur connecté peut écrire une décision. Le
+propriétaire a décidé le 12/11/2026 d'ouvrir **sans second facteur et sans plafond** (les deux mécanismes restent,
+levés par réglage) : un mot de passe d'administrateur volé permet un nombre illimité de décisions, dont des
+oppositions et des retraits définitifs. L'écran et les routes sont un autre lot ; le noyau de publication de
+l'agent d'information et son pont ne sont pas modifiés. Application en production :
+`docs/runbooks/registre-des-pieces-r2a.md`, `docs/runbooks/registre-des-pieces-r2b.md`, puis
+`docs/runbooks/registre-des-pieces-r2c.md`.
 
 ## Le principe
 
@@ -41,7 +45,7 @@ acceptée, même après une opposition (question ouverte pour le lot R2c).
 | `aaab_auction_sales_hold_projected_fields`                               | Le déclencheur de retenue. Il écrit aussi `held_fields` : dernière valeur connue de l'annonce, libération d'un champ, échéance de la mémoire d'écho.                                                                                                                                       |
 | `public.get_sale_field_baselines`                                        | Pour la fusion de doublons de la collecte : les colonnes et la valeur d'annonce des champs tenus. Serveur seul.                                                                                                                                                                            |
 | `public.check_fact_registry_consistency`                                 | Le contrôle quotidien, en lecture seule, par page ; `public.sync_fact_registry_alerts` enchaîne les pages et en fait des alertes opérationnelles.                                                                                                                                          |
-| `public.accept_auction_fact_claim`, `reject_…`, `withdraw_…`, `oppose_…` | Les quatre décisions d'un administrateur (lot R2b). Aucun droit d'exécution avant le lot R2c. Elles appellent `app_private.decide_auction_fact_claim`, seule fonction qui écrit une décision.                                                                                              |
+| `public.accept_auction_fact_claim`, `reject_…`, `withdraw_…`, `oppose_…` | Les quatre décisions d'un administrateur (lot R2b). Exécutables par `authenticated` seul depuis le lot R2c. Elles appellent `app_private.decide_auction_fact_claim`, seule fonction qui écrit une décision.                                                                                |
 | `app_private.lock_sale_for_registry`                                     | Le verrou de ligne de la vente, pris avant toute écriture du registre, sous 3 secondes (`sale_busy` au-delà).                                                                                                                                                                              |
 | `public.reproject_fact_registry_drift`                                   | La relance planifiée de la projection, appelée par la tâche quotidienne avant le contrôle, fermée par défaut (`app_private.fact_registry_switches`). Serveur seul.                                                                                                                         |
 
@@ -93,25 +97,31 @@ replica` : les déclencheurs du registre sont en `enable always`.
 
 ## Les décisions
 
-Quatre fonctions publiques, une par décision : accepter, rejeter, retirer, enregistrer une opposition. Elles n'ont
-**aucun droit d'exécution** au lot R2b (ni `anon`, ni `authenticated`, ni `service_role`). Chacune fixe son type de
-décision et appelle `app_private.decide_auction_fact_claim`, seule fonction de la base qui insère dans le journal
-des décisions, et qui fait, dans cet ordre :
+Quatre fonctions publiques, une par décision : accepter, rejeter, retirer, enregistrer une opposition. Depuis le
+lot R2c (migration `20261119100400`), elles sont exécutables par le rôle `authenticated` **seul** : ni `anon`, ni
+`PUBLIC`, ni `service_role`, qui n'a pas d'auteur. Ce droit ne fait pas un administrateur : la fonction de décision
+juge le jeton, et un utilisateur connecté qui n'est pas administrateur reçoit `admin_required`. Chacune fixe son
+type de décision et appelle `app_private.decide_auction_fact_claim` (sans aucun droit d'exécution), seule fonction
+de la base qui insère dans le journal des décisions, et qui fait, dans cet ordre :
 
 1. **L'auteur.** Il est lu dans le jeton, `(select auth.uid())`, jamais dans un paramètre, et
    `public.is_admin()` doit être vrai. Sinon `admin_required`.
 2. **Le second facteur du registre.** Réglage `decisions_require_second_factor` de
-   `app_private.fact_registry_switches`, **exigé par défaut** (une ligne absente vaut « exigé ») : un jeton qui
-   n'est pas `aal2` est refusé (`second_factor_required`), même si l'interrupteur global `admin_mfa_required` est
-   éteint. Seul le propriétaire le lève, sans migration de code, par
-   `select app_private.set_fact_registry_decisions_second_factor(false)`.
+   `app_private.fact_registry_switches` (une ligne absente vaut « exigé ») : exigé, un jeton qui n'est pas `aal2`
+   est refusé (`second_factor_required`), même si l'interrupteur global `admin_mfa_required` est éteint.
+   **Levé par le lot R2c**, sur décision du propriétaire (migration `20261119100100`). Seul le propriétaire le
+   change, sans migration de code, par `select app_private.set_fact_registry_decisions_second_factor(true ou false)`.
 3. **Les déclencheurs.** `app_private.assert_fact_registry_triggers()` : sans retenue en place, rien n'est écrit
    (`registry_unavailable`).
-4. **Les plafonds.** Vingt décisions par administrateur sur l'heure écoulée
-   (`app_private.fact_registry_hourly_decision_limit()`), sinon `rate_limited` ; cinq décisions définitives
-   (opposition, retrait pour autorisation retirée) sur 24 heures
+4. **Les plafonds.** Réglage `decision_rate_limits_enabled` (une ligne absente vaut « appliqués »), lu par
+   `app_private.fact_registry_decision_rate_limits_enabled()`. **Non appliqués depuis le lot R2c**, sur décision
+   du propriétaire ; il les remet par `select app_private.set_fact_registry_decision_rate_limits(true)`. Appliqués :
+   vingt décisions par administrateur sur l'heure écoulée (`app_private.fact_registry_hourly_decision_limit()`),
+   sinon `rate_limited` ; cinq décisions définitives (opposition, retrait pour autorisation retirée) sur 24 heures
    (`app_private.fact_registry_daily_final_decision_limit()`), sinon `final_rate_limited`. Un verrou consultatif de
-   transaction par auteur est pris avant les deux comptes : ils sont exacts, même en rafale.
+   transaction par auteur est pris avant les deux comptes : ils sont exacts, même en rafale. Ce verrou a son
+   propre bloc : une autre décision du même administrateur qui le tient plus de 3 secondes donne
+   `decision_in_progress`. Levés, ni compte ni verrou d'auteur.
 5. **Les verrous.** La vente d'abord (`app_private.lock_sale_for_registry`), puis l'observation. Toute la fonction
    tourne sous un délai de verrou de 3 secondes, réglage de la fonction que PostgreSQL rend à l'appelant à la
    sortie : chaque attente de verrou est bornée à 3 secondes (un verrou de ligne peut en compter deux), `sale_busy`
@@ -146,7 +156,8 @@ des décisions, et qui fait, dans cet ordre :
 `second_factor_required` (42501) ; `invalid_reason_code`, `invalid_lot_attachment`, `invalid_argument` (22023) ;
 `claim_not_found`, `sale_not_found` (P0002) ; `invalid_transition`, `opposed_final`, `withdrawal_final`,
 `claim_detached`, `origin_cannot_hold`, `field_not_applicable`, `registry_unavailable` (55000) ; `rate_limited`,
-`final_rate_limited` (53400) ; `sale_busy` (55P03) ; `retry` (40001) ; `registry_write_failed` (P0001) pour toute autre erreur. La
+`final_rate_limited` (53400) ; `sale_busy`, `decision_in_progress` (55P03 : le message les distingue) ; `retry`
+(40001) ; `registry_write_failed` (P0001) pour toute autre erreur. La
 fonction ne lit d'une erreur que son code et le nom de la contrainte, qu'elle écrit au journal du serveur : le
 détail de PostgreSQL peut porter une ligne entière de `auction_sales`.
 
@@ -168,10 +179,12 @@ et refuse une observation d'origine réservée (professionnel, saisie d'un admin
 journal. Elle ne tient jamais un champ. L'application traduit `55P03` et `40001` en « Import en cours sur cette
 vente, réessayez dans une minute. »
 
-**Règle pour le lot R2c.** Le droit d'exécution des quatre fonctions ira à `authenticated` **seul**, jamais à
-`service_role` ni à `anon` : l'auteur est lu dans le jeton de l'administrateur. Les invariants de sécurité refusent
-aujourd'hui tout droit sur ces fonctions, toute fonction qui les enveloppe, toute écriture du jeton de la requête
-par une migration, et épinglent le corps de la fonction de décision par une empreinte.
+**Règle des droits.** Les invariants de sécurité n'admettent qu'une ouverture : `grant execute … to
+authenticated`, une instruction par fonction, dans la migration `20261119100400` nommément. Tout autre droit
+(`anon`, `PUBLIC`, `service_role`, plusieurs rôles, un autre fichier) est refusé, comme toute fonction qui
+enveloppe ces fonctions et toute écriture du jeton de la requête par une migration ; le corps de la fonction de
+décision est épinglé par une empreinte. L'écran de relecture lit par le serveur (`service_role`) : aucune table du
+registre ni la vue des observations ne s'ouvre à un rôle du navigateur.
 
 ## Écran de décision
 
@@ -307,7 +320,9 @@ et le contrôle quotidien, et qui est celle de l'application : `property_type`, 
 `app_surface_kind` vaut `land`. Quand la surface est tenue, la colonne `app_surface_kind` porte `built` (écrit par
 la projection) : la nature lue est alors celle de l'annonce, gardée dans le bloc `listing` de l'entrée. Sur une
 vente de terrain, la projection ne pose ni ne garde `property.surface_m2` : l'application afficherait la surface
-bâtie d'une pièce comme celle du terrain. État `blocked` (raison `land_sale`). Si une pièce toujours acceptée
+bâtie d'une pièce comme celle du terrain. Depuis le lot R2c, la retenue mémorise la nature de l'annonce à chaque
+écriture où l'annonce parle de la surface principale, même quand sa valeur ne bouge pas (migration
+`20261119100300`). État `blocked` (raison `land_sale`). Si une pièce toujours acceptée
 tenait la surface avant le reclassement de la vente, le champ est libéré (`released_by: blocked`) et la valeur
 d'annonce revient. Tant que personne n'a reprojeté la vente, le contrôle quotidien la signale (dérive et
 `stale_listing`).
@@ -324,7 +339,7 @@ déclencheur de retenue reste passif). Deux relances, depuis le lot R2b :
 
 **La seconde est une écriture de fiche lancée par une tâche planifiée.** Elle ne fait que réappliquer des décisions
 humaines déjà acceptées : elle n'écrit aucune décision, le mode de publication reste `manual`, les verrous de la
-publication automatique ne bougent pas. Elle est **fermée par défaut** : réglage
+publication automatique ne bougent pas. Elle est **fermée par défaut**, et reste fermée au lot R2c : réglage
 `app_private.fact_registry_switches`, ligne `scheduled_reprojection` (une ligne absente vaut « fermé »), que le
 propriétaire ouvre ou referme sans migration de code par
 `select app_private.set_fact_registry_scheduled_reprojection(true ou false)`. Tant qu'elle est ouverte, l'alerte
@@ -335,7 +350,8 @@ sont tenus. Elle est bornée : 30 ventes écrites ou occupées par passe, puis l
 les passes tant qu'il reste du temps pour le contrôle, et le passage suivant reprend le reste ; après trois ventes
 occupées par la collecte, la passe s'arrête aussi. Une vente dont la simulation ou la projection échoue ne compte
 pas dans la borne et n'arrête pas la passe, pour ne pas priver les suivantes de leur tour : elle est rendue avec
-son code SQLSTATE et le nom de la contrainte, sans message. Elle est journalisée (évènement
+son code SQLSTATE et le nom de la contrainte, sans message. Une erreur systémique (classes SQLSTATE 42, 53, 58,
+XX), qui vaudrait pour toutes les ventes, arrête la passe et annule ses écritures. Elle est journalisée (évènement
 `drift_reprojected`, un par champ dont l'entrée a changé, à défaut par champ tenu). Fermée, la dérive reste
 signalée par l'alerte critique `fact_registry.projection_drift`.
 
@@ -446,7 +462,7 @@ d'écho, exacte, à l'écriture. La base garde un **filet** : la mémoire d'éch
 `/api/cron/fact-registry-check` (Vercel Cron, 05:28 UTC, attendue par `cron.stale` toutes les 27 heures) appelle
 `public.reproject_fact_registry_drift()` (la relance, fermée par défaut) puis
 `public.sync_fact_registry_alerts()`, toutes deux sans paramètre. Le contrôle tourne même quand la relance a
-échoué. Treize contrôles (les dix du lot R2a, la relance ouverte, les décisions définitives sur 24 heures et le
+échoué. Treize contrôles (les dix du lot R2a, la relance ouverte, les décisions définitives sur 48 heures et le
 dépassement de leur plafond par un auteur), une alerte opérationnelle
 `fact_registry.<contrôle>` chacun (détail dans `docs/operations/planification.md`) : dérive de la projection,
 mode et fonction des déclencheurs, colonnes tenues, libellé réservé sans surface tenue (ces quatre-là sont
@@ -462,10 +478,19 @@ le test 889). Une vente en dérive est rejouée une fois avant d'être rendue : 
 décision validée pendant la passe ne doit pas lever une alerte critique. En cas de dérive de masse, seules les
 vingt premières ventes en dérive de chaque page sont rejouées : les suivantes sont comptées sans rejeu, pour tenir
 le délai d'instruction (82 s mesurées pour 2 940 ventes en dérive quand toutes étaient rejouées). Une vente dont la
-simulation lève est comptée en dérive, avec son code SQLSTATE, sans arrêter le contrôle. Les champs libérés sont
-regardés comme
-les champs tenus : la valeur d'une pièce retirée ou opposée ne doit rester ni dans une colonne, ni dans une
-copie.
+simulation lève est comptée en dérive, avec son code SQLSTATE, sans arrêter le contrôle. Exception, depuis le lot
+R2c : une erreur systémique (classes SQLSTATE 42, 53, 58 et XX : droit refusé, fonction absente, ressource, erreur
+interne ; une seule définition, `app_private.fact_registry_error_is_systemic`) vaut pour toutes les ventes. Elle
+est relevée telle quelle, le contrôle s'arrête et la tâche échoue avec ce code, au lieu de dire tout le registre
+en dérive. Les champs libérés sont regardés comme les champs tenus : la valeur d'une pièce retirée ou opposée ne
+doit rester ni dans une colonne, ni dans une copie.
+
+**Décisions définitives et réglages.** `final_decisions` (avertissement) compte les décisions définitives des 48
+dernières heures, soit deux passages de la tâche : un passage en échec ne fait pas perdre celles de la veille.
+`final_decisions_over_limit` (critique) compte les auteurs qui, dans cette fenêtre, ont dépassé cinq décisions
+définitives sur une période de 24 heures. Depuis que les plafonds ne sont plus appliqués, ces deux contrôles sont
+la seule trace d'un usage anormal : ils informent, ils ne bloquent pas. Le rapport porte l'état des trois
+réglages : `decisions_second_factor_required`, `decision_rate_limits_enabled`, `scheduled_reprojection_enabled`.
 
 **Pages.** `public.sync_fact_registry_alerts()` lit une fois les ventes du registre, puis enchaîne les pages de
 500 ventes : `app_private.fact_registry_page_checks` rend les cinq contrôles par vente (c'est la seule fonction du
@@ -488,7 +513,10 @@ migration : fonction (nom, schéma `app_private`, mode de sécurité, réglages)
 (les constantes entre apostrophes sont comparées telles quelles). Elle lève aussi quand l'une des six tables du
 registre, `auction_sales` comprise, n'a pas le propriétaire de la projection (signalée `<table>.owner`). Un
 `alter table … disable trigger user` suivi d'un `enable trigger user` les remettrait tous en mode ordinaire sans
-aucune erreur. Remise en état du mode seulement :
+aucune erreur. Deux fonctions antérieures au registre le faisaient (retrait d'une source, recalcul de
+`catalogue_quarantined`) : depuis le lot R2c elles ne suspendent plus que les déclencheurs ordinaires hors
+registre, par leur nom (`app_private.suspend_ordinary_sale_triggers`, `app_private.resume_ordinary_sale_triggers`),
+et un invariant refuse toute fonction qui coupe tous les déclencheurs d'une table. Remise en état du mode seulement :
 `supabase/maintenance/20261117100600_restore_fact_registry_trigger_modes.sql` ; une définition ou un propriétaire
 différents se corrigent par migration. Règle pour un rattrapage : `supabase/repairs/README.md`.
 
@@ -498,6 +526,15 @@ Tout se règle en données, par migration : `hold_enabled` (un champ est-il tena
 (quelle origine tient, et laquelle l'emporte), `on_listing_change`. Ce dernier réglage est recopié dans
 l'entrée de `held_fields` : un changement vaut pour un champ déjà tenu à sa projection suivante. La durée de la
 mémoire d'écho est dans `app_private.sale_field_echo_memory()`.
+
+Trois interrupteurs d'exploitation se changent **sans migration**, par le propriétaire de la base seul, dans
+`app_private.fact_registry_switches`. Une ligne absente vaut toujours le sens le plus strict.
+
+| Réglage                           | État au lot R2c  | Ligne absente | Fonction de réglage                                     |
+| --------------------------------- | ---------------- | ------------- | ------------------------------------------------------- |
+| `decisions_require_second_factor` | `false` (levé)   | exigé         | `app_private.set_fact_registry_decisions_second_factor` |
+| `decision_rate_limits_enabled`    | `false` (levés)  | appliqués     | `app_private.set_fact_registry_decision_rate_limits`    |
+| `scheduled_reprojection`          | `false` (fermée) | fermée        | `app_private.set_fact_registry_scheduled_reprojection`  |
 
 ## Limites connues
 
@@ -538,16 +575,24 @@ mémoire d'écho est dans `app_private.sale_field_echo_memory()`.
   demande l'absorbée, PostgreSQL annule l'une des deux transactions. Le repli REST n'est pas le chemin de
   production.
 - **Reclassement en terrain par la nature seule, surface tenue.** Quand la surface est tenue, la nature lue est
-  celle que l'annonce avait à la dernière mise à jour du bloc `listing`. Si l'annonce change ensuite sa nature en
-  « terrain » sans changer sa valeur, la retenue ne met pas ce bloc à jour : la vente n'est pas vue comme un terrain
-  tant que la valeur d'annonce ne bouge pas. Un reclassement par le type de bien ou par la portée de la surface est
-  vu tout de suite.
-- **Plafonds et sessions simultanées.** Les deux plafonds sont exacts (verrou consultatif par auteur). En rafale,
-  une session qui attend ce verrou plus de 3 secondes reçoit `sale_busy` : un refus de trop, jamais une décision
-  de trop.
+  celle de l'annonce, mémorisée dans le bloc `listing`. Depuis le lot R2c la retenue la met à jour à chaque
+  écriture où la colonne `app_surface_m2` porte la valeur d'annonce connue ou une nouvelle valeur : une annonce qui
+  passe en « terrain » sans changer de valeur est vue. Deux cas restent hors de portée. Une écriture dont cette
+  colonne porte exactement la valeur tenue (la pièce dit la même surface que l'annonce) ou un écho ne se distingue
+  pas d'une relecture de la fiche : sa nature n'est pas mémorisée. Une nature `built` apportée par l'annonce ne se
+  distingue pas du libellé neutre de la colonne : une annonce qui repasse de « terrain » à `built` sans changer de
+  valeur garde « terrain » en mémoire (sens prudent : la surface de la pièce est libérée à la projection
+  suivante). Un reclassement par le type de bien ou par la portée de la surface est vu dans tous les cas.
+- **Sans second facteur ni plafond.** État choisi par le propriétaire au lot R2c. Un mot de passe d'administrateur
+  volé permet un nombre illimité de décisions, dont des oppositions et des retraits pour autorisation retirée, que
+  personne ne peut défaire (aucune procédure d'annulation). Seuls les deux contrôles quotidiens des décisions
+  définitives le signalent, après coup.
+- **Plafonds et sessions simultanées.** Quand ils sont appliqués, les deux plafonds sont exacts (verrou consultatif
+  par auteur). En rafale, une session qui attend ce verrou plus de 3 secondes reçoit `decision_in_progress` : un
+  refus de trop, jamais une décision de trop.
 - **Simulation qui lève.** Une vente dont l'entrée est abîmée fait lever la projection. Ni le contrôle ni la
   relance ne s'arrêtent : la vente est comptée en dérive et rendue avec son code ; les contrôles par entrée ne la
-  lisent pas. La corriger demande une migration.
+  lisent pas. La corriger demande une migration. Une erreur systémique, elle, arrête le contrôle et la relance.
 - **Fusion et interblocage.** La suppression d'une vente fusionnée verrouille cette vente, puis la vente conservée,
   hors de l'ordre par identifiant des lots de la collecte : face à un lot qui tient la vente conservée et demande
   la vente fusionnée, PostgreSQL annule l'une des deux transactions, sans écriture partielle. Fiche d'incident
@@ -630,6 +675,33 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
 - Tâche `fact-registry-check` : résumé avec les pages, la relance et l'état de son réglage ; une erreur de la base
   n'y laisse que son étape et son code.
 
+## Fait au lot R2c (partie base)
+
+- Droits : `grant execute` des quatre fonctions de décision à `authenticated` seul ; rien d'autre n'est ouvert.
+- Décisions du propriétaire (12/11/2026) : second facteur levé, plafonds non appliqués (troisième réglage,
+  `decision_rate_limits_enabled`), relance planifiée fermée, opposition et retrait d'autorisation définitifs sans
+  procédure d'annulation.
+- Code `decision_in_progress` pour l'attente du verrou d'auteur ; heure du compte des plafonds lue une fois.
+- Retrait d'une source et recalcul de `catalogue_quarantined` : déclencheurs ordinaires suspendus par leur nom, les
+  déclencheurs du registre restent en mode `always`.
+- Contrôle quotidien et relance : erreurs systémiques relevées ; décisions définitives sur 48 heures ; état des
+  trois réglages au rapport.
+- Retenue : nature de l'annonce mémorisée à chaque écriture d'annonce.
+- Garde de l'API (`20261119100050`, avant l'ouverture) : `public.enforce_data_api_object_boundary()` refuse à
+  `anon` et `authenticated` tout chemin encodé et tout appel `rpc/` d'une fonction d'extension du schéma `public`.
+  PostGIS y est installé, ses fonctions sont exécutables par ces deux rôles, et l'une d'elles exécute le texte
+  qu'elle reçoit : sans cette garde, seule une règle de PostgREST l'écartait de l'API.
+- Tâche `fact-registry-check` : une fonction interne absente (`42883` qui ne nomme pas la fonction appelée par la
+  tâche) est une erreur, avec son étape et son code, et non plus une « migration en attente ».
+- Invariants durcis après la contre-vérification 3 du lot R2b : identifiants Unicode, `execute` dans une chaîne,
+  `query_to_xml` et fonctions voisines, tâche pg_cron à argument non littéral, table fille ou copie d'une table du
+  registre, écriture du journal des décisions, action sur un déclencheur n'importe où dans un `alter table`,
+  variable de boucle des rattrapages, fonction qui coupe tous les déclencheurs d'une table.
+
+Non fait à ce lot, à la charge du lot « écran et routes » ou du propriétaire : le noyau de l'agent d'information,
+la mention publique, l'écran de relecture, et les conditions du runbook R2b qui ne sont pas levées (tableau du
+runbook R2c).
+
 ## Reporté après le lot R2b
 
 - Côté collecte (étape PB) : copies `properties`, `judicial_sales` et `auction_surfaces` sans les colonnes du
@@ -655,12 +727,11 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
 - Écran de décision : fait côté application (voir « Écran de décision »). Restent la valeur d'annonce et l'état du
   champ lus dans le registre (fonction de lecture `get_admin_sale_field_registry`, qui n'existe pas encore), et la
   nouvelle tentative seule sur `sale_busy` et `retry`.
-- Droits des quatre fonctions de décision ouverts à `authenticated` seul, après le choix du propriétaire sur le
-  second facteur. Liste complète des conditions : `docs/runbooks/registre-des-pieces-r2b.md`, « Conditions du lot
-  R2c ».
+- Les droits des quatre fonctions de décision sont ouverts à `authenticated` seul (partie base, voir plus haut).
+  Liste complète des conditions : `docs/runbooks/registre-des-pieces-r2b.md`, « Conditions du lot R2c ».
 - Le noyau refuse une observation préexistante dont la vente, le champ ou la valeur diffèrent du fait de l'agent
   (l'index unique sur l'identifiant de fait ne garantit que l'unicité, pas le contenu).
-- Relance planifiée : ouverte ou fermée le jour de la bascule, décision du propriétaire.
+- Relance planifiée : fermée le jour de la bascule (décision du propriétaire du 12/11/2026).
 - Une autre pièce de même valeur peut-elle être acceptée après une opposition : à trancher avec le juriste.
 - Surface principale d'une vente de terrain tenue (voir « Limites connues ») : les tris, les filtres et les
   ratios au mètre carré lisent `app_surface_m2`, donc l'annonce, alors que la fiche affiche le terrain de la
@@ -677,13 +748,15 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
 Tests pgTAP `881` (tables, droits, journaux, format du lot), `882` (retenue), `883` (projection), `884`
 (séquence commune, gardes, garde du marqueur, origine forgée, mode et fonction des déclencheurs, historique, RPC,
 index construits dans le test, inertie prouvée), `885` (mémoire d'écho, colonnes voisines, annonce qui se tait,
-indices de fusion, libellé réservé, écriture mixte, note de blocage, vente de terrain, opposition tardive), `887`
-(fonctions de décision : droits, auteur, second facteur, plafond, transitions, refus, provenance, erreurs sans
-détail, reprojection de la vente, observation détachée, verrous), `888` (fusion : report, chaîne, indice sans
-gagnant, contamination exacte, stabilité, opposition, publications, pièce reportée), `889` (valeurs d'annonce,
-contrôle quotidien sur les champs tenus et libérés, alertes, rapport tronqué, pages, relance planifiée), `890` (vue
-des observations par génération), `891` (stabilité de la projection, essai aléatoire à graine fixe) et `442`
-(vues). Invariants de
+indices de fusion, libellé réservé, écriture mixte, note de blocage, vente de terrain, opposition tardive, nature
+de l'annonce mémorisée), `887` (fonctions de décision : droits par rôle, auteur, second facteur, plafonds et leur
+réglage, transitions, refus, provenance, erreurs sans détail, reprojection de la vente, observation détachée,
+verrous), `888` (fusion : report, chaîne, indice sans gagnant, contamination exacte, stabilité, opposition,
+publications, pièce reportée), `889` (valeurs d'annonce, contrôle quotidien sur les champs tenus et libérés,
+alertes, rapport tronqué, pages, relance planifiée, erreurs systémiques, fenêtre de 48 heures, état des
+réglages), `890` (vue des observations par génération), `891` (stabilité de la projection, essai aléatoire à
+graine fixe), `893` (déclencheurs suspendus par leur nom, aucune fonction ne coupe tous les déclencheurs, aucune
+table fille, aucune tâche pg_cron qui décide) et `442` (vues). Invariants de
 `scripts/check-security-invariants-fact-registry.mjs` : `fact-registry-tables-closed`,
 `fact-registry-append-only`, `held-fields-projection-only`, `hold-trigger-present-early`,
 `field-projection-not-callable-by-api`, `fact-claims-never-repointed`, `registry-no-fk-to-auction-sales`,
