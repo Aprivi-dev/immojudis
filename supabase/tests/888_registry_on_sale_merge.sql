@@ -12,6 +12,7 @@
 --   * la contamination se juge à l'égalité exacte, sur chacune des deux colonnes de valeur de la surface ;
 --   * fusion en chaîne : une pièce bloquée sur les deux premières ventes est reportée à la troisième ;
 --   * une pièce reportée est journalisée (merge_carried, vente d'origine) et comptée par le contrôle quotidien ;
+--     une prise ultérieure de la même pièce, hors fusion, ne l'est pas ;
 --   * une opposition suit la fusion, sans échéance ;
 --   * le journal des publications de l'agent d'information suit la vente conservée ;
 --   * rien à reporter, ou pas de vente conservée : la projection n'est pas appelée.
@@ -19,7 +20,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(31);
+select plan(32);
 
 -- Jeu d'essai -----------------------------------------------------------------------------------------------------
 insert into auth.users (id) values ('88800000-0000-4000-8000-0000000000a1');
@@ -354,6 +355,18 @@ select results_eq(
   'a merge in chain reprojects the sale finally kept even when the middle sale carried nothing itself: the decision names a sale it had absorbed'
 );
 
+-- Une prise hors fusion n'est pas un report. Vente 04 : la fusion n'a rien posé (contradiction). Le retrait de la
+-- pièce de la vente conservée laisse la pièce de la vente absorbée prendre le champ, par une décision.
+select public.withdraw_auction_fact_claim(pg_temp.claim('04'), 'entry_error') ->> 'state';
+select results_eq(
+  $$select (sale.held_fields #>> '{property.rooms_count,claim_id}')::uuid,
+           (select count(*)::integer from public.auction_sale_field_hold_events event
+              where event.sale_id = sale.id and event.event = 'merge_carried')
+      from public.auction_sales sale where sale.id = pg_temp.sale('04')$$,
+  $$values (pg_temp.claim('03'), 0)$$,
+  'a piece of an absorbed sale that takes the field later, by a decision and not by a merge, is not logged as carried'
+);
+
 -- Le contrôle quotidien compte les pièces reportées sur 24 heures.
 select is(
   app_private.fact_registry_global_checks(null) -> 'merge_carried',
@@ -362,9 +375,9 @@ select is(
     'window_hours', 24),
   'the daily check counts the pieces carried by a merge over 24 hours'
 );
-select ok(
-  (select count(*) >= 5 from public.auction_sale_field_hold_events where event = 'merge_carried'),
-  'every piece posed on a kept sale by the merges above is logged as carried'
+select is(
+  (select count(*)::integer from public.auction_sale_field_hold_events where event = 'merge_carried'), 6,
+  'every piece posed on a kept sale by the merges above is logged as carried, once'
 );
 
 -- 8. Les décisions ne sont pas déplacées --------------------------------------------------------------------------------------
@@ -392,7 +405,9 @@ select is(
 
 -- 9. La fonction de report lit les entrées de la vente absorbée, sans jamais écrire la colonne ---------------------------------
 select ok(
-  (select position('app_private.project_sale_fields(v_target, null, true, old.held_fields)' in prosrc) > 0
+  (select position(
+            'app_private.project_sale_fields(v_target, null, true, coalesce(old.held_fields, ''{}''::jsonb))'
+            in prosrc) > 0
           and prosrc !~* 'held_fields\s*(:=|=[^=])'
           and position('insert into app_private.auction_sale_merges' in prosrc)
               < position('app_private.project_sale_fields' in prosrc)

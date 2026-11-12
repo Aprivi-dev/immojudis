@@ -17,7 +17,11 @@ set local statement_timeout = '60s';
 --        * scheduled_reprojection (20261118100300).
 --      Les fonctions de réglage lèvent si leur ligne manque : un réglage ne se perd pas en silence.
 --      app_private.fact_registry_hourly_decision_limit() : plafond de décisions par administrateur et par heure
---      (20), une seule constante.
+--      (20), une seule constante. app_private.fact_registry_daily_final_decision_limit() : plafond des décisions
+--      DÉFINITIVES (opposition, retrait pour autorisation retirée) par administrateur et par 24 heures (5), une
+--      seule constante à côté de la première. Le propriétaire n'active pas la double authentification pour
+--      l'instant : ce second plafond borne le dégât d'un mot de passe volé, il pourra le relever par migration.
+--      Index (actor_id, decided_at) sur le journal des décisions, pour le compte des plafonds.
 --      PRÉSÉANCE : l'origine « document » passe à can_hold = false dans public.auction_fact_source_precedence.
 --      Une pièce de document ne s'accepte pas avant le lot R3, qui la repassera à true par sa propre migration ;
 --      la fonction de décision ne nomme aucune origine, elle lit cette table.
@@ -34,7 +38,10 @@ set local statement_timeout = '60s';
 --           42501 « admin_required » ; puis le second facteur du registre (point 0) ;
 --        b. app_private.assert_fact_registry_triggers() : sans retenue active, rien n'est écrit (55000
 --           « registry_unavailable ») ;
---        c. plafond : 20 décisions par administrateur sur l'heure écoulée, sinon 53400 « rate_limited » ;
+--        c. plafonds, EXACTS : un verrou consultatif de transaction par auteur est pris avant le compte, deux
+--           sessions du même administrateur passent donc l'une après l'autre. 20 décisions sur l'heure écoulée,
+--           sinon 53400 « rate_limited » ; 5 décisions définitives sur 24 heures, sinon 53400
+--           « final_rate_limited » ;
 --        d. la vente de l'observation est lue sans verrou, puis verrouillée (1), puis l'observation est verrouillée
 --           et relue : si elle a changé de vente entre-temps, 40001 « retry ». Une observation détachée par une
 --           fusion se décide pour la vente que nomme sa dernière décision, et c'est la vente conservée
@@ -74,7 +81,8 @@ set local statement_timeout = '60s';
 --      ERREURS : liste fermée, message = code, sans DETAIL ni HINT. 42501 admin_required, second_factor_required ;
 --      22023 invalid_reason_code, invalid_lot_attachment, invalid_argument ; P0002 claim_not_found,
 --      sale_not_found ; 55000 invalid_transition, opposed_final, withdrawal_final, claim_detached,
---      origin_cannot_hold, field_not_applicable, registry_unavailable ; 53400 rate_limited ; 55P03 sale_busy ;
+--      origin_cannot_hold, field_not_applicable, registry_unavailable ; 53400 rate_limited,
+--      final_rate_limited ; 55P03 sale_busy ;
 --      40001 retry ; P0001 registry_write_failed (toute autre erreur : la fonction ne lit que son code SQLSTATE et
 --      le nom de la contrainte, jamais son message ni son détail, qui peuvent porter une ligne de auction_sales ;
 --      ces deux éléments, et eux seuls, sont écrits au journal du serveur par RAISE LOG).
@@ -99,8 +107,11 @@ set local statement_timeout = '60s';
 -- « manual » (valeur par défaut de la colonne).
 --
 -- Verrous : création et remplacement de fonctions, création d'une petite table de réglage dans app_private, une
--- mise à jour de cinq lignes de public.auction_fact_source_precedence (que seule la projection lit). Aucun verrou
--- sur auction_sales ni sur auction_fact_claims. Possible pendant un import.
+-- mise à jour de cinq lignes de public.auction_fact_source_precedence (que seule la projection lit), et la
+-- création d'un index sur public.auction_fact_claim_decisions : SHARE sur ce journal le temps de la construction
+-- (table vide en production, aucun écrivain avant le lot R2c ; les lectures passent). À une seconde application,
+-- l'index existe : le même verrou est repris un instant, sans construction. Aucun verrou sur auction_sales ni sur
+-- auction_fact_claims. Possible pendant un import.
 --
 -- Retour arrière, par une nouvelle migration (tant qu'aucun droit n'a été ouvert, sans effet) :
 --   drop function if exists public.accept_auction_fact_claim(uuid, text, text, uuid);
@@ -112,6 +123,9 @@ set local statement_timeout = '60s';
 --   -- 20261118100300, qui appelle la fonction de verrou et lit la table de réglage) :
 --   drop function if exists app_private.lock_sale_for_registry(uuid);
 --   drop function if exists app_private.fact_registry_hourly_decision_limit();
+--   drop function if exists app_private.fact_registry_daily_final_decision_limit();
+--   drop function if exists app_private.fact_registry_decisions_second_factor_required();
+--   drop index if exists public.auction_fact_claim_decisions_actor_decided_idx;
 --   drop function if exists app_private.set_fact_registry_decisions_second_factor(boolean);
 --   drop table if exists app_private.fact_registry_switches;
 --   update public.auction_fact_source_precedence set can_hold = true where source_kind = 'document';
@@ -160,6 +174,28 @@ begin
 end;
 $$;
 
+-- Le second facteur est-il exigé pour une décision ? Ligne absente : exigé. Une seule lecture, pour la fonction de
+-- décision et pour le contrôle quotidien (qui rend l'état du réglage : sa levée doit se voir).
+create or replace function app_private.fact_registry_decisions_second_factor_required()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(
+    (select switch.enabled from app_private.fact_registry_switches switch
+      where switch.switch_name = 'decisions_require_second_factor'),
+    true
+  );
+$$;
+
+comment on function app_private.fact_registry_decisions_second_factor_required() is
+  'Registre des pièces : le second facteur est-il exigé pour une décision (réglage decisions_require_second_factor ; ligne absente = exigé) ? Seule lecture du réglage.';
+
+revoke all on function app_private.fact_registry_decisions_second_factor_required()
+  from public, anon, authenticated, service_role;
+
 comment on function app_private.set_fact_registry_decisions_second_factor(boolean) is
   'Registre des pièces : exige (true) ou lève (false) le second facteur pour les décisions du registre. Réservée au propriétaire (rôle de migration). Lève si la ligne du réglage manque.';
 
@@ -178,6 +214,24 @@ $$;
 
 revoke all on function app_private.fact_registry_hourly_decision_limit()
   from public, anon, authenticated, service_role;
+
+-- Plafond des décisions définitives (opposition, retrait pour autorisation retirée) par administrateur et par
+-- 24 heures. Une seule constante.
+create or replace function app_private.fact_registry_daily_final_decision_limit()
+returns integer
+language sql
+immutable
+set search_path = ''
+as $$
+  select 5;
+$$;
+
+revoke all on function app_private.fact_registry_daily_final_decision_limit()
+  from public, anon, authenticated, service_role;
+
+-- Compte des plafonds : les décisions d'un auteur sur une fenêtre de temps.
+create index if not exists auction_fact_claim_decisions_actor_decided_idx
+  on public.auction_fact_claim_decisions (actor_id, decided_at desc);
 
 -- Une pièce de document ne s'accepte pas avant le lot R3 : la préséance le dit, la décision la lit.
 update public.auction_fact_source_precedence
@@ -250,11 +304,7 @@ begin
     raise exception using errcode = '42501', message = 'admin_required';
   end if;
   -- Second facteur du registre : exigé tant que le propriétaire ne l'a pas levé (ligne absente = exigé).
-  if coalesce(
-      (select switch.enabled from app_private.fact_registry_switches switch
-        where switch.switch_name = 'decisions_require_second_factor'),
-      true
-    )
+  if app_private.fact_registry_decisions_second_factor_required()
     and coalesce((select auth.jwt() ->> 'aal'), 'aal1') <> 'aal2'
   then
     raise exception using errcode = '42501', message = 'second_factor_required';
@@ -277,13 +327,27 @@ begin
       raise exception 'refused';
     end;
 
-    -- c. Plafond par administrateur, sur l'heure écoulée.
+    -- c. Plafonds par administrateur. Le verrou consultatif (de transaction, par auteur) fait passer l'une après
+    --    l'autre les sessions d'un même administrateur : le compte est exact, même en rafale.
+    perform pg_catalog.pg_advisory_xact_lock(
+      pg_catalog.hashtextextended('immojudis:fact_registry_decisions:' || v_actor::text, 0)
+    );
     if (
       select count(*) from public.auction_fact_claim_decisions decision
       where decision.actor_id = v_actor
         and decision.decided_at > pg_catalog.clock_timestamp() - interval '1 hour'
     ) >= app_private.fact_registry_hourly_decision_limit() then
       v_refusal := 'rate_limited';
+      raise exception 'refused';
+    end if;
+    -- Décisions définitives : plafond propre, sur 24 heures.
+    if app_private.fact_decision_is_final(p_decision, p_reason_code) and (
+      select count(*) from public.auction_fact_claim_decisions decision
+      where decision.actor_id = v_actor
+        and app_private.fact_decision_is_final(decision.decision, decision.reason_code)
+        and decision.decided_at > pg_catalog.clock_timestamp() - interval '24 hours'
+    ) >= app_private.fact_registry_daily_final_decision_limit() then
+      v_refusal := 'final_rate_limited';
       raise exception 'refused';
     end if;
 
@@ -308,11 +372,7 @@ begin
       v_refusal := 'claim_detached';
       raise exception 'refused';
     end if;
-    v_target := coalesce(
-      (select merge.canonical_sale_id from app_private.auction_sale_merges merge
-        where merge.old_sale_id = v_decision_sale),
-      v_decision_sale
-    );
+    v_target := app_private.fact_registry_kept_sale(v_decision_sale);
 
     -- La vente d'abord, puis l'observation. Si l'une des deux a bougé entre la lecture et le verrou (fusion en
     -- cours), l'appelant réessaie.
@@ -321,11 +381,8 @@ begin
         when exists (
           select 1 from public.auction_fact_claims claim
           where claim.id = p_claim_id and claim.auction_sale_id is not distinct from v_claim.auction_sale_id
-        ) and v_target is not distinct from coalesce(
-          (select merge.canonical_sale_id from app_private.auction_sale_merges merge
-            where merge.old_sale_id = v_decision_sale),
-          v_decision_sale
-        ) then 'sale_not_found'
+        ) and v_target is not distinct from app_private.fact_registry_kept_sale(v_decision_sale)
+        then 'sale_not_found'
         else 'retry'
       end;
       raise exception 'refused';
@@ -348,15 +405,15 @@ begin
     order by decision.seq desc
     limit 1;
     v_has_latest := found;
-    if v_has_latest and v_latest.decision = 'opposed' then
-      v_refusal := case when p_decision = 'accepted' then 'opposed_final' else 'invalid_transition' end;
+    -- Après une décision définitive (opposition, autorisation d'affichage retirée) : plus jamais d'acceptation.
+    if v_has_latest and p_decision = 'accepted'
+      and app_private.fact_decision_is_final(v_latest.decision, v_latest.reason_code)
+    then
+      v_refusal := case when v_latest.decision = 'opposed' then 'opposed_final' else 'withdrawal_final' end;
       raise exception 'refused';
     end if;
-    -- Autorisation d'affichage retirée : définitif, comme une opposition.
-    if v_has_latest and p_decision = 'accepted'
-      and v_latest.decision = 'withdrawn' and v_latest.reason_code = 'authorization_withdrawn'
-    then
-      v_refusal := 'withdrawal_final';
+    if v_has_latest and v_latest.decision = 'opposed' then
+      v_refusal := 'invalid_transition';
       raise exception 'refused';
     end if;
     v_allowed := case p_decision
@@ -462,7 +519,7 @@ begin
           when v_refusal in ('invalid_lot_attachment', 'invalid_argument') then '22023'
           when v_refusal in ('claim_not_found', 'sale_not_found') then 'P0002'
           when v_refusal = 'retry' then '40001'
-          when v_refusal = 'rate_limited' then '53400'
+          when v_refusal in ('rate_limited', 'final_rate_limited') then '53400'
           else '55000'
         end;
     end if;

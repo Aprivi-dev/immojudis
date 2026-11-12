@@ -39,10 +39,17 @@ set local statement_timeout = '60s';
 --    projection a écrit « built » dans app_surface_kind : la nature lue est alors celle de l'annonce, gardée dans
 --    le bloc « listing » de l'entrée. La projection reste donc stable d'un passage à l'autre. La fonction sert à
 --    la projection, à la fonction de décision (20261118100100) et au contrôle quotidien (20261118100300).
--- 6. PIÈCE REPORTÉE PAR UNE FUSION : évènement « merge_carried ». Quand la projection pose sur une vente une pièce
---    dont la décision nomme une AUTRE vente (une vente absorbée), elle journalise, en plus de projection_held, un
---    évènement merge_carried : valeur posée, décision, et vente d'origine dans incoming_value
---    ({"from_sale_id": …}). Le contrôle quotidien les compte sur 24 heures.
+-- 6. PIÈCE REPORTÉE PAR UNE FUSION : évènement « merge_carried ». Quand la projection est appelée par une fusion
+--    (indice fourni, même vide) et pose sur la vente conservée une pièce dont la décision nomme une AUTRE vente
+--    (une vente absorbée), elle journalise, en plus de projection_held, un évènement merge_carried : valeur posée,
+--    décision, et vente d'origine dans incoming_value ({"from_sale_id": …}). Une prise ultérieure de la même pièce
+--    (après une contradiction levée, une relance) n'est pas une fusion : pas d'évènement. Le contrôle quotidien les
+--    compte sur 24 heures : c'est le nombre de pièces reportées par des fusions.
+-- 7. TROIS RÈGLES, UNE DÉFINITION CHACUNE, lues par la projection, la fonction de décision et le contrôle :
+--    app_private.fact_lot_attachment_holds(rattachement) : seul un lot identifié (single_lot, matched) tient un
+--    champ ; app_private.fact_registry_kept_sale(vente) : la vente conservée d'une vente absorbée par fusion
+--    (elle-même sinon) ; app_private.fact_decision_is_final(décision, motif) : une opposition, ou un retrait pour
+--    autorisation retirée, est définitive.
 --    La contrainte de la colonne event est recréée avec « merge_carried » et « drift_reprojected » (relance
 --    planifiée, 20261118100300), par la méthode de 20261117100100.
 --
@@ -53,8 +60,9 @@ set local statement_timeout = '60s';
 --
 -- Retour arrière, par une nouvelle migration : réappliquer la définition de app_private.project_sale_fields de
 -- 20261117100200 (après le retour arrière de 20261118100200, qui est son seul appelant avec un indice), puis
--- supprimer app_private.sale_is_land_sale(text, text, text, jsonb). Les deux valeurs d'évènement restent admises
--- par la contrainte (un journal en ajout seul ne perd pas une valeur écrite).
+-- supprimer app_private.sale_is_land_sale(text, text, text, jsonb), app_private.fact_lot_attachment_holds(text),
+-- app_private.fact_decision_is_final(text, text) et app_private.fact_registry_kept_sale(uuid). Les deux valeurs d'évènement restent admises par la contrainte (un
+-- journal en ajout seul ne perd pas une valeur écrite).
 
 -- Évènements merge_carried et drift_reprojected -----------------------------------------------------------------------
 set local lock_timeout = '2s';
@@ -114,6 +122,64 @@ comment on function app_private.sale_is_land_sale(text, text, text, jsonb) is
   'Registre des pièces : la vente est-elle un terrain (type de bien, portée ou nature de la surface à « land ») ? Quand la surface est tenue, la nature lue est celle de l''annonce (bloc listing de l''entrée). Seule définition, pour la décision, la projection et le contrôle quotidien.';
 
 revoke all on function app_private.sale_is_land_sale(text, text, text, jsonb)
+  from public, anon, authenticated, service_role;
+
+-- Rattachement au lot qui permet de tenir un champ : un lot identifié, et rien d'autre. Une seule définition.
+create or replace function app_private.fact_lot_attachment_holds(p_lot_attachment text)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(p_lot_attachment in ('single_lot', 'matched'), false);
+$$;
+
+comment on function app_private.fact_lot_attachment_holds(text) is
+  'Registre des pièces : le rattachement au lot permet-il de tenir un champ (lot unique ou lot reconnu) ? Seule définition, pour la projection et pour la liste des ventes du registre.';
+
+revoke all on function app_private.fact_lot_attachment_holds(text)
+  from public, anon, authenticated, service_role;
+
+-- Décision définitive : une opposition, ou un retrait pour autorisation d'affichage retirée. L'observation n'est
+-- plus jamais acceptée et sa valeur reste en mémoire d'écho sans échéance. Une seule définition.
+create or replace function app_private.fact_decision_is_final(p_decision text, p_reason_code text)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(
+    p_decision = 'opposed' or (p_decision = 'withdrawn' and p_reason_code = 'authorization_withdrawn'),
+    false
+  );
+$$;
+
+comment on function app_private.fact_decision_is_final(text, text) is
+  'Registre des pièces : la décision est-elle définitive (opposition, ou retrait pour autorisation d''affichage retirée) ? Seule définition, pour la projection, la fonction de décision et le contrôle quotidien.';
+
+revoke all on function app_private.fact_decision_is_final(text, text)
+  from public, anon, authenticated, service_role;
+
+-- Vente conservée d'une vente : celle qui l'a absorbée par fusion, elle-même sinon. La table des fusions est tenue
+-- à plat (une vente absorbée pointe toujours la vente conservée finale). Une seule définition.
+create or replace function app_private.fact_registry_kept_sale(p_sale_id uuid)
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(
+    (select merge.canonical_sale_id from app_private.auction_sale_merges merge
+      where merge.old_sale_id = p_sale_id),
+    p_sale_id
+  );
+$$;
+
+comment on function app_private.fact_registry_kept_sale(uuid) is
+  'Registre des pièces : vente conservée d''une vente absorbée par fusion (la vente elle-même si elle ne l''a pas été). Seule définition, pour la fonction de décision et pour la liste des ventes du registre.';
+
+revoke all on function app_private.fact_registry_kept_sale(uuid)
   from public, anon, authenticated, service_role;
 
 create or replace function app_private.project_sale_fields(
@@ -446,9 +512,7 @@ begin
       -- après l'expiration de la précédente (une opposition bloque le retour pour la vie de la vente). La valeur
       -- d'une pièce jamais affichée ne crée pas d'entrée à elle seule. La décision ne se lit pas sur l'entrée
       -- d'avant la passe seule : la projection doit être stable en une application.
-      if v_candidate.decision = 'opposed'
-        or (v_candidate.decision = 'withdrawn' and v_candidate.reason_code = 'authorization_withdrawn')
-      then
+      if app_private.fact_decision_is_final(v_candidate.decision, v_candidate.reason_code) then
         if v_value is not null then
           v_opposed := v_opposed || jsonb_build_array(jsonb_build_object(
             'seq', v_candidate.seq, 'value', v_value, 'bound', v_stored is not null or v_candidate.was_held
@@ -459,7 +523,7 @@ begin
       continue when not (
         v_field.hold_enabled
         and v_candidate.decision = 'accepted'
-        and v_candidate.lot_attachment in ('single_lot', 'matched')
+        and app_private.fact_lot_attachment_holds(v_candidate.lot_attachment)
         and v_candidate.can_hold
         and not v_candidate.dislodged
       );
@@ -677,8 +741,9 @@ begin
           'field_key', v_field.field_key, 'event', 'projection_held', 'held_value', v_winner_value,
           'listing_value', v_listing_value, 'decision_id', v_winner_decision_id
         )));
-        -- Pièce reportée par une fusion : sa décision nomme une vente absorbée.
-        if v_winner_sale_id is distinct from p_sale_id then
+        -- Pièce reportée par une fusion (appel avec un indice, même vide) : sa décision nomme une vente
+        -- absorbée. Une prise hors fusion n'est pas un report.
+        if p_listing_hints is not null and v_winner_sale_id is distinct from p_sale_id then
           v_events := v_events || jsonb_build_array(jsonb_build_object(
             'field_key', v_field.field_key, 'event', 'merge_carried', 'held_value', v_winner_value,
             'incoming_value', jsonb_build_object('from_sale_id', v_winner_sale_id),

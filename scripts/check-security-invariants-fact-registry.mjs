@@ -62,8 +62,12 @@ import { createHash } from "node:crypto";
 //    l'appeler avec leur type de décision ; aucune n'écrit le mode de publication (verrous auto_locked). Aucune
 //    autre fonction n'insère une décision, quel que soit son schéma, ni ne nomme une des quatre fonctions
 //    publiques ; aucune migration n'écrit le jeton de la requête (request.jwt.claim…) ; le corps de la fonction
-//    de décision est épinglé par une empreinte. Règle prévue pour le lot R2c : droit d'exécution à authenticated
-//    seul, jamais à service_role ni à anon.
+//    de décision est épinglé par une empreinte. Ces règles jugent aussi le TEXTE ENTIER de chaque fichier : hors
+//    de la migration des décisions, aucun fichier ne nomme la fonction de décision ni une des quatre fonctions
+//    publiques, ni n'écrit le journal des décisions (insert, merge, copy) ; depuis le lot, aucun ne nomme
+//    request.jwt. Depuis le lot R2b, un EXECUTE dont l'argument n'est pas un seul littéral est refusé (son texte
+//    ne se lit pas). Les deux lectures des interrupteurs gardent leur sens sûr. Règle prévue pour le lot R2c :
+//    droit d'exécution à authenticated seul, jamais à service_role ni à anon.
 // 14. registry-rpc-no-error-detail : les fonctions de décision ne lisent d'une erreur que son SQLSTATE et le nom
 //    de la contrainte, et ne relaient ni détail, ni indice, ni message de PostgreSQL.
 // Partout : aucune instruction ALTER FUNCTION ne touche une fonction du registre (mode de sécurité, propriétaire),
@@ -75,7 +79,9 @@ import { createHash } from "node:crypto";
 // sous une seule forme (minuscules hors des chaînes, pas d'espace autour du point d'un nom qualifié) : une
 // instruction en majuscules ou « public . auction_sales » est lue comme les autres ; les droits sont cherchés
 // partout, y compris dans un bloc DO ou dans le texte d'un EXECUTE. Les rattrapages (supabase/repairs/) et les
-// fichiers de maintenance (supabase/maintenance/) sont lus comme des migrations.
+// fichiers de maintenance (supabase/maintenance/) sont lus comme des migrations. Toute routine est lue (fonction
+// ou procédure ; corps entre dollars, entre apostrophes, « begin atomic » ou « return ») : une routine dont le
+// corps ne se lit pas fait échouer le contrôle. Un droit se cherche avec ou sans le schéma devant le nom.
 
 export const factRegistryInvariantNames = [
   "fact-registry-tables-closed",
@@ -179,9 +185,34 @@ const SWITCH_MIGRATIONS = new Set([
   "20261118100100_fact_claim_decision_rpcs.sql",
   "20261118100300_fact_registry_check_pages_and_reprojection.sql",
 ]);
+// Lectures des deux interrupteurs : une fonction chacune, dont le corps est tenu à sa forme (sens sûr quand la
+// ligne manque).
+const SWITCH_READERS = new Map([
+  ["app_private.fact_registry_scheduled_reprojection_enabled", ["scheduled_reprojection", "false"]],
+  [
+    "app_private.fact_registry_decisions_second_factor_required",
+    ["decisions_require_second_factor", "true"],
+  ],
+]);
 // Empreinte (SHA-256) du corps de la fonction de décision, tel que ce module le lit (commentaires retirés).
-// Toute retouche du corps la change : relire la retouche, puis mettre l'empreinte à jour dans le même commit.
-const DECIDE_BODY_SHA256 = "14ca8abdddd37759c0179988664140d2995539c9bdbc6b1b28ced82531896eb6";
+// Toute retouche du corps la change : relire la retouche, puis mettre l'empreinte à jour dans le même commit
+// (procédure : docs/runbooks/registre-des-pieces-r2b.md, « Retoucher la fonction de décision »).
+const DECIDE_BODY_SHA256 = "b6ade477ad8fb54b905c169cc9cd4d99277a6dff3451908bbf96f47691b687fa";
+// Première migration du lot R2b. Depuis elle, un EXECUTE ne prend qu'un littéral.
+const R2B_MIGRATION = "20261118100000";
+// Seule migration qui nomme la fonction de décision et ses quatre fonctions publiques, et qui écrit le journal
+// des décisions. Une retouche légitime dans une nouvelle migration ajoute son fichier ici, dans le même commit
+// que la nouvelle empreinte.
+const DECISION_MIGRATIONS = new Set(["20261118100100_fact_claim_decision_rpcs.sql"]);
+// Seule routine dont le corps ne se lit pas, admise par son nom : cette migration, antérieure au registre,
+// recrée la fonction à partir de son corps lu au catalogue (« as %L »). Elle ne touche pas au registre.
+const UNREADABLE_ROUTINES = new Map([
+  ["20260929235000_materialize_source_checks.sql", "public.enqueue_due_source_details_unlocked"],
+]);
+// Seul SQL dynamique admis depuis le lot R2b, mot pour mot : un rattrapage qui écrit auction_sales coupe puis
+// rétablit, par leur nom lu au catalogue, les déclencheurs ordinaires hors registre (invariant 4).
+const DYNAMIC_EXECUTE_ALLOWED =
+  /^\s*(?:pg_catalog\.)?format\(\s*'alter table public\.auction_sales (?:disable|enable) trigger %I'\s*,\s*v_trigger\s*\)\s*;/;
 // Seules fonctions qui appliquent la projection (troisième argument autre que le littéral false).
 const PROJECTION_APPLIERS = new Set([DECIDE_FUNCTION, MERGE_CARRY_FUNCTION, REPROJECTION_FUNCTION]);
 // Fonctions internes des lots R2a et R2b : aucune n'est exécutable par un rôle de l'API.
@@ -205,7 +236,13 @@ const INTERNAL_FUNCTIONS = [
   "app_private.fact_registry_candidate_sales",
   "app_private.fact_registry_report_add_page",
   "app_private.fact_registry_hourly_decision_limit",
+  "app_private.fact_registry_daily_final_decision_limit",
   "app_private.sale_is_land_sale",
+  "app_private.fact_lot_attachment_holds",
+  "app_private.fact_registry_kept_sale",
+  "app_private.fact_decision_is_final",
+  "app_private.fact_registry_failure",
+  ...SWITCH_READERS.keys(),
 ];
 // Fonctions du registre qu'aucune instruction ALTER FUNCTION ne touche (mode de sécurité, propriétaire, chemin
 // de recherche) : les gardes lisent le rôle appelant, la liste blanche lit le propriétaire de la projection.
@@ -404,28 +441,122 @@ const stripSql = (text) =>
     .replace(/"([A-Za-z_][A-Za-z0-9_$]*)"/g, (_quoted, identifier) => identifier.toLowerCase())
     .replace(/\b([A-Za-z_][A-Za-z0-9_$]*)\s*\.\s*(?=[A-Za-z_])/g, "$1.");
 
-/** Définitions `create [or replace] function` d'un fichier : nom qualifié, en-tête, corps, bornes. */
+/**
+ * Le même texte, où le contenu de chaque chaîne entre apostrophes est remplacé par des espaces (les positions
+ * sont gardées) : un mot-clé cherché dans ce texte est du code, pas une valeur. Un corps entre dollars est du
+ * code, lu de la même façon.
+ */
+function maskSqlStrings(text) {
+  const token = /'|\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/g;
+  let out = "";
+  let index = 0;
+  while (index < text.length) {
+    token.lastIndex = index;
+    const match = token.exec(text);
+    if (!match) {
+      out += text.slice(index);
+      break;
+    }
+    out += text.slice(index, match.index);
+    if (match[0] === "'") {
+      const escaped = /(?:^|[^A-Za-z0-9_])[eE]$/.test(
+        text.slice(Math.max(0, match.index - 2), match.index),
+      );
+      let end = match.index + 1;
+      while (end < text.length) {
+        if (escaped && text[end] === "\\") end += 2;
+        else if (text[end] !== "'") end += 1;
+        else if (text[end + 1] === "'") end += 2;
+        else break;
+      }
+      end = Math.min(end, text.length);
+      out += `'${" ".repeat(end - match.index - 1)}${end < text.length ? "'" : ""}`;
+      index = end + 1;
+    } else {
+      const bodyStart = match.index + match[0].length;
+      const close = text.indexOf(match[0], bodyStart);
+      if (close < 0) {
+        out += text.slice(match.index);
+        break;
+      }
+      out += match[0] + maskSqlStrings(text.slice(bodyStart, close)) + match[0];
+      index = close + match[0].length;
+    }
+  }
+  return out;
+}
+
+/**
+ * Définitions `create [or replace] function|procedure` d'un fichier : nom qualifié, en-tête, corps, bornes. Le
+ * corps est lu sous ses quatre formes : entre dollars (balise avec chiffres comprise), entre apostrophes,
+ * « begin atomic … end », « return … ; ». Une routine dont le corps ne se lit pas est rendue dans `unreadable` :
+ * l'appelant échoue, il ne l'ignore pas.
+ */
 function functionDefinitions(sql) {
   const definitions = [];
-  const header =
-    /create\s+(?:or\s+replace\s+)?function\s+([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?)\s*\(/gi;
-  const bodyOpening = /\bas\s+(\$[a-z_]*\$)/gi;
-  for (const match of sql.matchAll(header)) {
-    bodyOpening.lastIndex = match.index;
-    const opening = bodyOpening.exec(sql);
-    if (!opening) continue;
-    const bodyStart = opening.index + opening[0].length;
-    const bodyEnd = sql.indexOf(opening[1], bodyStart);
-    if (bodyEnd < 0) continue;
+  const unreadable = [];
+  const masked = maskSqlStrings(sql);
+  const headers = [
+    ...masked.matchAll(
+      /create\s+(?:or\s+replace\s+)?(?:function|procedure)\s+([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?)\s*\(/gi,
+    ),
+  ];
+  headers.forEach((match, position) => {
+    const name = match[1].toLowerCase();
+    const limit = headers[position + 1]?.index ?? sql.length;
+    const opening =
+      /\bas\s+(\$(?:[a-z_][a-z0-9_]*)?\$)|\bas\s+(e?')|\b(begin\s+atomic)\b|\breturn\s/gi;
+    opening.lastIndex = match.index;
+    const found = opening.exec(masked);
+    if (!found || found.index >= limit) {
+      unreadable.push(name);
+      return;
+    }
+    const bodyStart = found.index + found[0].length;
+    let bodyEnd = -1;
+    let end = -1;
+    let body = "";
+    if (found[1]) {
+      bodyEnd = sql.indexOf(found[1], bodyStart);
+      end = bodyEnd + found[1].length;
+      body = sql.slice(bodyStart, Math.max(bodyEnd, bodyStart));
+    } else if (found[2]) {
+      // Le texte masqué garde l'apostrophe fermante à sa place : c'est la première après l'ouverture.
+      bodyEnd = masked.indexOf("'", bodyStart);
+      end = bodyEnd + 1;
+      body = sql.slice(bodyStart, Math.max(bodyEnd, bodyStart)).replaceAll("''", "'");
+    } else if (found[3]) {
+      // « begin atomic … end » : la fin est le END qui referme le bloc (un CASE … END en ouvre un autre).
+      const word = /\b(?:case|end)\b/gi;
+      word.lastIndex = bodyStart;
+      let depth = 1;
+      for (let token = word.exec(masked); token; token = word.exec(masked)) {
+        depth += token[0].toLowerCase() === "case" ? 1 : -1;
+        if (depth === 0) {
+          bodyEnd = token.index;
+          end = token.index + token[0].length;
+          break;
+        }
+      }
+      body = sql.slice(bodyStart, Math.max(bodyEnd, bodyStart));
+    } else {
+      bodyEnd = masked.indexOf(";", bodyStart);
+      end = bodyEnd + 1;
+      body = sql.slice(bodyStart, Math.max(bodyEnd, bodyStart));
+    }
+    if (bodyEnd < 0) {
+      unreadable.push(name);
+      return;
+    }
     definitions.push({
-      name: match[1].toLowerCase(),
+      name,
       head: sql.slice(match.index, bodyStart),
-      body: sql.slice(bodyStart, bodyEnd),
+      body,
       start: match.index,
-      end: bodyEnd + opening[1].length,
+      end,
     });
-  }
-  return definitions;
+  });
+  return { definitions, unreadable };
 }
 
 /**
@@ -505,9 +636,22 @@ export async function checkFactRegistryInvariants({
   const lowered = new Map(all.map(([name, sql]) => [name, sql.toLowerCase()]));
   const mentions = (name, word) => lowered.get(name).includes(word);
   const allSql = all.map(([, sql]) => sql).join("\n");
-  const definitions = all.flatMap(([name, sql]) =>
-    functionDefinitions(sql).map((definition) => ({ ...definition, migration: name })),
-  );
+  const definitions = [];
+  for (const [name, sql] of all) {
+    const read = functionDefinitions(sql);
+    for (const definition of read.definitions) definitions.push({ ...definition, migration: name });
+    for (const routine of read.unreadable) {
+      if (UNREADABLE_ROUTINES.get(name) === routine) continue;
+      failures.push(
+        `${name}: the body of the routine ${routine} cannot be read (dollar-quoted, quoted, begin atomic or return): the fact registry checks refuse what they cannot read`,
+      );
+    }
+  }
+  // Un droit se cherche avec ou sans le schéma devant le nom de la fonction (« grant … on function f(…) »).
+  const optionallyQualified = (fn) => {
+    const [schema, bare] = fn.split(".");
+    return `(?<![a-z0-9_.])(?:${schema}\\.)?${bare}\\b`;
+  };
   const lastDefinition = (name) => definitions.filter((entry) => entry.name === name).at(-1);
   const lastStatement = (pattern) => [...allSql.matchAll(new RegExp(pattern, "gi"))].at(-1);
 
@@ -1219,7 +1363,7 @@ export async function checkFactRegistryInvariants({
     }
     for (const [name, sql] of all) {
       for (const grant of sql.matchAll(/\bgrant\b[^;]*/gi)) {
-        if (!new RegExp(`\\b${escapeRegExp(fn)}\\b`, "i").test(grant[0])) continue;
+        if (!new RegExp(optionallyQualified(fn), "i").test(grant[0])) continue;
         if (
           !new RegExp(
             `^grant\\s+execute\\s+on\\s+function\\s+${signature}\\s+to\\s+service_role\\s*$`,
@@ -1253,7 +1397,7 @@ export async function checkFactRegistryInvariants({
     for (const [name, sql] of all) {
       if (
         new RegExp(
-          `\\bgrant\\b[^;]*\\bon\\s+(?:function|routine|procedure)\\s+[^;]*\\b${escapeRegExp(fn)}\\b`,
+          `\\bgrant\\b[^;]*\\bon\\s+(?:function|routine|procedure)\\s+[^;]*${optionallyQualified(fn)}`,
           "i",
         ).test(sql)
       ) {
@@ -1704,9 +1848,10 @@ export async function checkFactRegistryInvariants({
     failures.push(`${REPROJECTION_FUNCTION} is not defined by a migration`);
   } else if (
     !/reproject_fact_registry_drift\s*\(\s*\)\s*returns\b/i.test(reprojection.head) ||
-    !/v_enabled\s+boolean\s*:=\s*coalesce\s*\(\s*\(\s*select\s+switch\.enabled\s+from\s+app_private\.fact_registry_switches\s+switch\s+where\s+switch\.switch_name\s*=\s*'scheduled_reprojection'\s*\)\s*,\s*false\s*\)/i.test(
+    !/v_enabled\s+boolean\s*:=\s*app_private\.fact_registry_scheduled_reprojection_enabled\s*\(\s*\)\s*;/i.test(
       reprojection.body,
     ) ||
+    /\bv_enabled\s*:=/i.test(reprojection.body) ||
     !/if\s+v_enabled\s+and\s+exists\s*\(\s*select\s+1\s+from\s+public\.auction_fact_claim_decisions\s*\)\s+and\s+pg_catalog\.cardinality\s*\(\s*app_private\.fact_registry_triggers_not_always\s*\(\s*\)\s*\)\s*=\s*0\s+then/i.test(
       reprojection.body,
     ) ||
@@ -1726,6 +1871,21 @@ export async function checkFactRegistryInvariants({
     if (/\breproject_fact_registry_drift\s*\(/i.test(definition.body)) {
       failures.push(
         `${definition.migration}: ${definition.name} calls ${REPROJECTION_FUNCTION}: the scheduled reprojection is launched by the daily job only, in its own transaction`,
+      );
+    }
+  }
+  // Lecture d'un interrupteur : une fonction, dont tout le corps est la lecture de sa ligne avec son sens sûr.
+  for (const [fn, [switchName, safe]] of SWITCH_READERS) {
+    const reader = lastDefinition(fn);
+    if (
+      !reader ||
+      !new RegExp(
+        `^\\s*select\\s+coalesce\\s*\\(\\s*\\(\\s*select\\s+switch\\.enabled\\s+from\\s+app_private\\.fact_registry_switches\\s+switch\\s+where\\s+switch\\.switch_name\\s*=\\s*'${switchName}'\\s*\\)\\s*,\\s*${safe}\\s*\\)\\s*;\\s*$`,
+        "i",
+      ).test(reader.body)
+    ) {
+      failures.push(
+        `${reader?.migration ?? "no migration"}: ${fn} must only read the switch ${switchName}, and answer ${safe} when its row is missing`,
       );
     }
   }
@@ -1892,6 +2052,55 @@ export async function checkFactRegistryInvariants({
       );
     }
   }
+  // Les mêmes règles, jugées sur le TEXTE ENTIER du fichier (chaînes comprises, quelle que soit la forme de la
+  // routine ou de l'instruction) : hors de la migration des décisions, aucun fichier ne nomme la fonction de
+  // décision ni une des quatre fonctions publiques, ni n'écrit le journal des décisions.
+  for (const [name, sql] of all) {
+    if (DECISION_MIGRATIONS.has(name)) continue;
+    if (
+      /\bdecide_auction_fact_claim\b|\b(?:accept|reject|withdraw|oppose)_auction_fact_claim\b/i.test(
+        sql,
+      )
+    ) {
+      failures.push(
+        `${name} names a decision function of the fact registry: only ${[...DECISION_MIGRATIONS].join(", ")} may (nothing wraps, grants or redefines them elsewhere)`,
+      );
+    }
+    if (
+      /\b(?:insert\s+into|merge\s+into|copy)\s+(?:only\s+)?(?:public\.)?auction_fact_claim_decisions\b/i.test(
+        sql,
+      )
+    ) {
+      failures.push(
+        `${name} writes public.auction_fact_claim_decisions (insert, merge or copy): only ${DECIDE_FUNCTION}, in ${[...DECISION_MIGRATIONS].join(", ")}, writes a decision`,
+      );
+    }
+  }
+  // Depuis le lot R2b, un EXECUTE ne prend qu'un littéral : le texte d'une instruction assemblée (format,
+  // concaténation, variable) ne se lit pas, et les règles ci-dessus ne le verraient pas. Les corps écrits entre
+  // apostrophes sont lus aussi.
+  const dynamicExecutes = (sql) => {
+    const masked = maskSqlStrings(sql);
+    const found = [];
+    for (const match of masked.matchAll(/\bexecute\b(?!\s+(?:function|procedure|on)\b)/gi)) {
+      const argument = sql.slice(match.index + match[0].length);
+      if (/^\s*'(?:[^']|'')*'\s*(?:;|into\b|using\b)/i.test(argument)) continue;
+      found.push(argument);
+    }
+    return found;
+  };
+  for (const [name, sql] of all) {
+    if (!sinceLot(name, R2B_MIGRATION)) continue;
+    const quotedBodies = definitions
+      .filter((entry) => entry.migration === name && /'\s*$/.test(entry.head))
+      .map((entry) => entry.body);
+    for (const argument of [sql, ...quotedBodies].flatMap(dynamicExecutes)) {
+      if (name.startsWith(REPAIRS_PREFIX) && DYNAMIC_EXECUTE_ALLOWED.test(argument)) continue;
+      failures.push(
+        `${name} runs dynamic SQL (execute) whose text is not a single string literal: the fact registry checks cannot read it`,
+      );
+    }
+  }
   // Le jeton de la requête (request.jwt.claim, request.jwt.claims) n'est jamais écrit par une migration :
   // l'auteur d'une décision est lu dans ce jeton. Sont refusés set_config, SET et SET LOCAL (y compris dans le
   // texte d'un EXECUTE), la clause SET d'une fonction et ALTER ROLE … SET.
@@ -1903,6 +2112,11 @@ export async function checkFactRegistryInvariants({
     ) {
       failures.push(
         `${name} writes the request token (request.jwt.claim…): the author of a fact registry decision is read from it, no migration may set it`,
+      );
+    } else if (sinceLot(name, R2B_MIGRATION) && /request\.jwt/i.test(sql)) {
+      // Même lu : le jeton se lit par auth.uid() et auth.jwt(), jamais par son nom de réglage.
+      failures.push(
+        `${name} names the request token (request.jwt): since the decision functions of the fact registry, the token is read through auth.uid() and auth.jwt() only`,
       );
     }
   }

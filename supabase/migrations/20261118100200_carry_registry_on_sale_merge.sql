@@ -233,7 +233,9 @@ begin
   -- conservée est reprojetée seulement s'il existe une pièce ou une mémoire à reporter ; les entrées de la fiche
   -- fusionnée servent d'indice (valeur d'annonce, mémoire d'écho). old.held_fields est lue, jamais écrite.
   if v_carries_registry then
-    perform app_private.project_sale_fields(v_target, null, true, old.held_fields);
+    -- L'indice est toujours fourni, même vide : c'est lui qui dit à la projection qu'elle est appelée par une
+    -- fusion (évènement merge_carried).
+    perform app_private.project_sale_fields(v_target, null, true, coalesce(old.held_fields, '{}'::jsonb));
   end if;
 
   return old;

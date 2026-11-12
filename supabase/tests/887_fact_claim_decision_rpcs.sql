@@ -24,7 +24,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(97);
+select plan(110);
 
 -- Droits ----------------------------------------------------------------------------------------------------------
 select is(
@@ -39,6 +39,11 @@ select is(
        'app_private.lock_sale_for_registry(uuid)',
        'app_private.set_fact_registry_decisions_second_factor(boolean)',
        'app_private.fact_registry_hourly_decision_limit()',
+       'app_private.fact_registry_daily_final_decision_limit()',
+       'app_private.fact_registry_decisions_second_factor_required()',
+       'app_private.fact_lot_attachment_holds(text)',
+       'app_private.fact_registry_kept_sale(uuid)',
+       'app_private.fact_decision_is_final(text, text)',
        'app_private.sale_is_land_sale(text, text, text, jsonb)']) routine(signature)
      where has_function_privilege(api_role.name, routine.signature, 'EXECUTE')),
   0,
@@ -88,16 +93,43 @@ select results_eq(
 );
 
 select is(app_private.fact_registry_hourly_decision_limit(), 20, 'the hourly ceiling is twenty decisions');
+select is(
+  app_private.fact_registry_daily_final_decision_limit(), 5,
+  'the ceiling of final decisions (opposition, withdrawn authorization) is five per 24 hours'
+);
+
+-- Les plafonds sont exacts : un verrou consultatif par auteur est pris avant le compte, que sert un index.
+select ok(
+  (select position('pg_catalog.pg_advisory_xact_lock(' in prosrc) > 0
+          and position('pg_catalog.pg_advisory_xact_lock(' in prosrc)
+              < position('where decision.actor_id = v_actor' in prosrc)
+     from pg_proc
+     where oid = 'app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)'::regprocedure)
+  and pg_get_indexdef('public.auction_fact_claim_decisions_actor_decided_idx'::regclass)
+      ~ 'USING btree \(actor_id, decided_at DESC\)$',
+  'the decision function takes an advisory lock before it counts the decisions of the author, and the journal has an index on author and date'
+);
+
+-- Le verrou de la vente laisse passer les insertions d'observations : jamais FOR UPDATE.
+select ok(
+  (select prosrc ~* 'for\s+no\s+key\s+update' and prosrc !~* 'for\s+(update|share|key\s+share)'
+     from pg_proc where oid = 'app_private.lock_sale_for_registry(uuid)'::regprocedure),
+  'the sale lock is FOR NO KEY UPDATE only: an import that inserts a claim of the sale (foreign key, FOR KEY SHARE) is never blocked by a decision'
+);
 
 -- Jeu d'essai -----------------------------------------------------------------------------------------------------
--- (Le plafond horaire est relevé pour le fichier : il est essayé à part, plus bas.)
+-- (Les deux plafonds sont relevés pour le fichier : ils sont essayés à part, plus bas.)
 create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
+create or replace function app_private.fact_registry_daily_final_decision_limit()
 returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
 
 insert into auth.users (id) values
-  ('88700000-0000-4000-8000-0000000000a1'), ('88700000-0000-4000-8000-0000000000b1');
+  ('88700000-0000-4000-8000-0000000000a1'), ('88700000-0000-4000-8000-0000000000b1'),
+  ('88700000-0000-4000-8000-0000000000c1');
 insert into public.user_profiles (user_id, email, user_role) values
   ('88700000-0000-4000-8000-0000000000a1', 'registre-admin-887@example.test', 'admin'),
+  ('88700000-0000-4000-8000-0000000000c1', 'registre-admin-bis-887@example.test', 'admin'),
   ('88700000-0000-4000-8000-0000000000b1', 'registre-membre-887@example.test', 'user')
 on conflict (user_id) do update set user_role = excluded.user_role;
 
@@ -146,6 +178,15 @@ from (
     ('62', '6', 'property.surface_m2', '54'::jsonb),
     ('71', '7', 'property.rooms_count', '6'::jsonb),
     ('72', '7', 'property.occupancy_status', '"vacant"'::jsonb),
+    ('73', '7', 'property.surface_m2', '54'::jsonb),
+    ('2a', '2', 'property.rooms_count', '4'::jsonb),
+    ('2b', '2', 'property.land_surface_m2', '500'::jsonb),
+    ('2c', '2', 'property.occupancy_status', '"vacant"'::jsonb),
+    ('2d', '2', 'property.surface_m2', '60'::jsonb),
+    ('2e', '2', 'property.rooms_count', '8'::jsonb),
+    ('2f', '2', 'property.land_surface_m2', '510'::jsonb),
+    ('26', '2', 'property.surface_m2', '62'::jsonb),
+    ('27', '2', 'property.rooms_count', '9'::jsonb),
     ('81', '8', 'property.surface_m2', '54'::jsonb),
     ('91', '9', 'property.rooms_count', '5'::jsonb),
     ('92', '9', 'property.land_surface_m2', '410'::jsonb),
@@ -189,6 +230,24 @@ create function pg_temp.last_decision(p_suffix text) returns uuid
 language sql as $function$
   select decision.id from public.auction_fact_claim_decisions decision
   where decision.claim_id = pg_temp.claim(p_suffix) order by decision.seq desc limit 1
+$function$;
+
+-- Une décision ancienne du second administrateur (c1), pour essayer les fenêtres des plafonds : la date d'une
+-- décision est imposée par le déclencheur de validation, suspendu le temps de cette seule écriture.
+create function pg_temp.old_decision(p_suffix text, p_decision text, p_age interval) returns void
+language plpgsql as $function$
+begin
+  alter table public.auction_fact_claim_decisions disable trigger auction_fact_claim_decisions_validate;
+  insert into public.auction_fact_claim_decisions (
+    claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code, seq, decided_at
+  )
+  select claim.id, claim.auction_sale_id, claim.field_key, p_decision, 'unknown', 'admin',
+    '88700000-0000-4000-8000-0000000000c1',
+    case p_decision when 'opposed' then 'professional_opposition' else 'other' end,
+    nextval('app_private.fact_registry_seq'), clock_timestamp() - p_age
+  from public.auction_fact_claims claim where claim.id = pg_temp.claim(p_suffix);
+  alter table public.auction_fact_claim_decisions enable always trigger auction_fact_claim_decisions_validate;
+end;
 $function$;
 
 create temporary table results (label text primary key, result jsonb) on commit drop;
@@ -570,6 +629,25 @@ select throws_ok(
   '53400', 'rate_limited',
   'an administrator who has reached the hourly ceiling decides nothing more'
 );
+-- Le compte est celui de l'auteur : un second administrateur, qui n'a rien décidé, passe sous le même plafond. Son
+-- verrou consultatif n'est pas encore pris ; celui du premier l'est depuis sa première décision.
+select results_eq(
+  $$select actor.label, exists (
+             select 1 from pg_locks held
+             where held.locktype = 'advisory' and held.pid = pg_backend_pid() and held.objsubid = 1
+               and ((held.classid::bigint << 32) | held.objid::bigint)
+                 = hashtextextended('immojudis:fact_registry_decisions:88700000-0000-4000-8000-0000000000'
+                     || actor.label, 0))
+      from (values ('a1'), ('c1')) actor(label) order by actor.label collate "C"$$,
+  $$values ('a1', true), ('c1', false)$$,
+  'the advisory lock of the ceilings is taken per author, and held until the end of the transaction'
+);
+select pg_temp.sign_in('c1');
+select lives_ok(
+  $$insert into results select 'c1 reject 2a', public.reject_auction_fact_claim(pg_temp.claim('2a'), 'other')$$,
+  'the ceiling is counted per author: another administrator still decides'
+);
+select pg_temp.sign_in('a1');
 create or replace function app_private.fact_registry_hourly_decision_limit()
 returns integer language sql stable set search_path = '' as $function$
   select count(*)::integer + 1 from public.auction_fact_claim_decisions
@@ -579,8 +657,72 @@ select lives_ok(
   $$insert into results select 'accept 94', public.accept_auction_fact_claim(pg_temp.claim('94'), 'single_lot')$$,
   'one decision under the ceiling still passes'
 );
+-- La fenêtre est d'une heure. Second administrateur : une décision à l'instant (2a), une vieille de 61 minutes.
+select pg_temp.old_decision('2b', 'rejected', interval '61 minutes');
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 2 $function$;
+select pg_temp.sign_in('c1');
+select lives_ok(
+  $$insert into results select 'c1 reject 2c', public.reject_auction_fact_claim(pg_temp.claim('2c'), 'other')$$,
+  'a decision older than one hour no longer counts: one recent decision under a ceiling of two'
+);
+-- Deux décisions récentes, plus une de 59 minutes : trois, pour un plafond de trois.
+select pg_temp.old_decision('2d', 'rejected', interval '59 minutes');
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 3 $function$;
+select throws_ok(
+  $$select public.reject_auction_fact_claim(pg_temp.claim('2e'), 'other')$$,
+  '53400', 'rate_limited',
+  'while a decision of 59 minutes ago still counts'
+);
 create or replace function app_private.fact_registry_hourly_decision_limit()
 returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
+
+-- Plafond des décisions définitives ---------------------------------------------------------------------------------------
+-- Premier administrateur : au plafond (le plafond est remplacé par le compte de ses décisions définitives).
+select pg_temp.sign_in('a1');
+create or replace function app_private.fact_registry_daily_final_decision_limit()
+returns integer language sql stable set search_path = '' as $function$
+  select count(*)::integer from public.auction_fact_claim_decisions decision
+  where decision.actor_id = '88700000-0000-4000-8000-0000000000a1'
+    and (decision.decision = 'opposed' or decision.reason_code = 'authorization_withdrawn')
+$function$;
+select throws_ok(
+  $$select public.oppose_auction_fact_claim(pg_temp.claim('2e'))$$,
+  '53400', 'final_rate_limited',
+  'an administrator who has reached the ceiling of final decisions opposes nothing more'
+);
+select throws_ok(
+  $$select public.withdraw_auction_fact_claim(pg_temp.claim('94'), 'authorization_withdrawn')$$,
+  '53400', 'final_rate_limited',
+  'nor withdraws for a withdrawn authorization'
+);
+select lives_ok(
+  $$insert into results select 'withdraw 94', public.withdraw_auction_fact_claim(pg_temp.claim('94'), 'entry_error')$$,
+  'a decision that is not final still passes: this ceiling counts the final ones only'
+);
+-- Second administrateur : aucune décision définitive récente (une opposition vieille de 25 heures, des rejets
+-- récents). Sous un plafond de un, sa première opposition passe.
+select pg_temp.old_decision('2f', 'opposed', interval '25 hours');
+create or replace function app_private.fact_registry_daily_final_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 1 $function$;
+select pg_temp.sign_in('c1');
+select lives_ok(
+  $$insert into results select 'c1 oppose 2e', public.oppose_auction_fact_claim(pg_temp.claim('2e'))$$,
+  'the ceiling of final decisions is counted per author, over 24 hours, and on final decisions only'
+);
+-- Une opposition récente, plus une de 23 heures : deux, pour un plafond de deux.
+select pg_temp.old_decision('26', 'opposed', interval '23 hours');
+create or replace function app_private.fact_registry_daily_final_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 2 $function$;
+select throws_ok(
+  $$select public.oppose_auction_fact_claim(pg_temp.claim('27'))$$,
+  '53400', 'final_rate_limited',
+  'while a final decision of 23 hours ago still counts'
+);
+create or replace function app_private.fact_registry_daily_final_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
+select pg_temp.sign_in('a1');
 
 -- Refus propres à l'acceptation ---------------------------------------------------------------------------------------
 select throws_ok(
@@ -646,9 +788,11 @@ select results_eq(
              '{"property.surface_m2": {"state": "held", "listing": {"app_surface_kind": "habitable"}}}'::jsonb),
            app_private.sale_is_land_sale('house', null, 'land',
              '{"property.surface_m2": {"state": "released"}}'::jsonb),
+           app_private.sale_is_land_sale('house', null, 'built',
+             '{"property.surface_m2": {"state": "conflicted", "listing": {"app_surface_kind": "land"}}}'::jsonb),
            app_private.sale_is_land_sale(null, null, null, null)$$,
-  $$values (false, true, true, true, true, false, true, false)$$,
-  'a land sale: property type, surface scope or surface kind says land; for a held surface the kind read is the one of the listing, kept in the entry'
+  $$values (false, true, true, true, true, false, true, true, false)$$,
+  'a land sale: property type, surface scope or surface kind says land; for a held surface, conflicted or not, the kind read is the one of the listing, kept in the entry'
 );
 -- La projection lit la même définition : une acceptation écrite au journal sans passer par la fonction de décision
 -- (vente 6, nature « terrain » ; vente 8, portée « terrain ») est bloquée, pas posée.
@@ -743,6 +887,7 @@ alter table public.auction_sales drop constraint pgtap_887_refused_land;
 -- Observation détachée par une fusion ------------------------------------------------------------------------------------
 -- Vente 7 : la pièce 71 est acceptée (6 pièces), la pièce 72 n'est jamais décidée ; puis la vente 8 l'absorbe.
 insert into results select 'accept 71', public.accept_auction_fact_claim(pg_temp.claim('71'), 'single_lot');
+insert into results select 'reject 73', public.reject_auction_fact_claim(pg_temp.claim('73'), 'other');
 update public.auction_sales
 set source_urls = '["https://example.test/887/sale-8", "https://example.test/887/sale-7"]'::jsonb
 where id = pg_temp.sale('8');
@@ -764,6 +909,13 @@ select results_eq(
   'a withdrawal after a merge: the decision carries the absorbed sale, the kept sale is locked, reprojected and gets its listing value back'
 );
 
+-- Le terrain se juge sur la vente conservée (vente 8, portée « terrain »), pas sur la vente absorbée (une maison).
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('73'), 'single_lot', null, pg_temp.last_decision('73'))$$,
+  '55000', 'field_not_applicable',
+  'after a merge the land rule is judged on the kept sale: a built surface decided on the absorbed house is not accepted on the land sale that kept it'
+);
+
 -- Vente supprimée sans vente conservée : l'observation décidée n'a plus de vente.
 delete from public.auction_sales where id = pg_temp.sale('5');
 select throws_ok(
@@ -780,8 +932,8 @@ select ok(
   and not exists (
     select 1 from public.auction_fact_claim_decisions
     where claim_id::text like '88700000-2000-%' and (publication_mode <> 'manual' or actor_kind <> 'admin'
-      or actor_id <> '88700000-0000-4000-8000-0000000000a1')),
-  'the automatic publication locks are in place, and every decision written here is a manual one of the signed-in administrator'
+      or actor_id not in ('88700000-0000-4000-8000-0000000000a1', '88700000-0000-4000-8000-0000000000c1'))),
+  'the automatic publication locks are in place, and every decision written here is a manual one of a signed-in administrator'
 );
 
 -- public.review_auction_fact_claim, retouchée ----------------------------------------------------------------------------
@@ -850,21 +1002,27 @@ select ok(
 
 -- Aucune autre fonction de la base n'écrit une décision, ne pose un jeton, ni n'enveloppe ces fonctions -------------------
 -- (double des invariants de sécurité, lu dans le catalogue ; les fonctions temporaires de ce fichier sont exclues.)
+-- La définition entière de chaque fonction et procédure est lue (pg_get_functiondef : corps « begin atomic » et
+-- réglages compris), pas la seule colonne prosrc.
 select results_eq(
   $$select (namespace.nspname::text || '.' || routine.proname::text) collate "default"
       from pg_proc routine
       join pg_namespace namespace on namespace.oid = routine.pronamespace
       where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
-        and routine.prosrc ~* 'insert\s+into\s+(public\.)?auction_fact_claim_decisions'$$,
+        and routine.prokind in ('f', 'p')
+        and pg_get_functiondef(routine.oid)
+          ~* '(insert\s+into|merge\s+into|copy)\s+(only\s+)?("?public"?\.)?"?auction_fact_claim_decisions'$$,
   $$values ('app_private.decide_auction_fact_claim')$$,
-  'one function only inserts into the decision journal: the decision function'
+  'one routine only writes into the decision journal (insert, merge or copy): the decision function'
 );
 select is(
   (select count(*)::integer
      from pg_proc routine
      join pg_namespace namespace on namespace.oid = routine.pronamespace
      where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
-       and (routine.prosrc ~* 'set_config\s*\(\s*''request\.jwt' or routine.prosrc ~* 'set\s+(local\s+)?"?request\.jwt'
+       and routine.prokind in ('f', 'p')
+       and (pg_get_functiondef(routine.oid) ~* 'set_config\s*\(\s*''request\.jwt'
+            or pg_get_functiondef(routine.oid) ~* 'set\s+(local\s+)?"?request\.jwt'
             or exists (select 1 from unnest(routine.proconfig) setting where setting ~* '^request\.jwt'))),
   0,
   'no function of the database sets the token of the request (request.jwt.claim…): the author cannot be forged from SQL'
@@ -881,7 +1039,9 @@ select results_eq(
       from pg_proc routine
       join pg_namespace namespace on namespace.oid = routine.pronamespace
       where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
-        and routine.prosrc ~* 'decide_auction_fact_claim\s*\('
+        and routine.prokind in ('f', 'p')
+        and routine.proname <> 'decide_auction_fact_claim'
+        and pg_get_functiondef(routine.oid) ~* 'decide_auction_fact_claim\s*\('
       order by routine.proname::text collate "C"$$,
   $$values ('public.accept_auction_fact_claim'), ('public.oppose_auction_fact_claim'),
            ('public.reject_auction_fact_claim'), ('public.withdraw_auction_fact_claim')$$,
@@ -892,7 +1052,9 @@ select is(
      from pg_proc routine
      join pg_namespace namespace on namespace.oid = routine.pronamespace
      where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
-       and routine.prosrc ~* '(accept|reject|withdraw|oppose)_auction_fact_claim'),
+       and routine.prokind in ('f', 'p')
+       and routine.proname !~ '^(accept|reject|withdraw|oppose)_auction_fact_claim$'
+       and pg_get_functiondef(routine.oid) ~* '(accept|reject|withdraw|oppose)_auction_fact_claim'),
   0,
   'and no function wraps one of the four'
 );
