@@ -235,6 +235,8 @@ select is(
 -- Vente 2, absorbée par la vente 6 (qui ne tient rien). L'évènement de libération de la vente 2 nomme la décision
 -- de sa pièce d'avocat ; il ne nomme pas celle de sa pièce de document, qu'il suit. Sur la vente conservée,
 -- aucune des deux ne prend le champ : une libération écarte toute décision antérieure de SA vente, nommée ou non.
+-- Depuis le lot R2b la fusion reprojette elle-même la vente conservée : elle n'y pose rien, et y reporte la
+-- mémoire d'écho de la vente absorbée (entrée libérée, released_by « merge »).
 update public.auction_sales
 set source_urls = '["https://example.test/884/sale-6", "https://example.test/884/sale-2"]'::jsonb
 where id = '88400000-1000-4000-8000-000000000006';
@@ -244,9 +246,11 @@ delete from public.auction_sales where id = '88400000-1000-4000-8000-00000000000
 select results_eq(
   $$select app_private.project_sale_fields(sale.id, array['property.rooms_count'], true)
              #> '{fields,property.rooms_count}',
-           sale.rooms_count, sale.held_fields is null
+           sale.rooms_count,
+           sale.held_fields #>> '{property.rooms_count,state}',
+           sale.held_fields #>> '{property.rooms_count,released_by}'
       from public.auction_sales sale where sale.id = '88400000-1000-4000-8000-000000000006'$$,
-  $$values ('{"state": "pass_through"}'::jsonb, 2, true)$$,
+  $$values ('{"state": "pass_through"}'::jsonb, 2, 'released', 'merge')$$,
   'on the kept sale, neither piece of the absorbed sale takes the field back: its release dislodged the decision it names and the earlier one it does not name'
 );
 
@@ -1075,6 +1079,17 @@ select throws_ok(
 -- Inertie prouvée --------------------------------------------------------------------------------------------------
 -- La fonction de retenue est remplacée par une fonction qui lève : si le déclencheur l'appelait pour une vente
 -- qui ne tient rien, l'écriture échouerait. (En dernier : les fonctions restent remplacées jusqu'au rollback.)
+-- Une vente neuve : depuis le lot R2b, la vente 6 mémorise l'écho de la vente qu'elle a absorbée.
+insert into public.auction_sales (
+  id, source_name, source_url, status, sale_date, city, property_type, starting_price_eur,
+  raw_payload, sale_procedure, sale_venue_type,
+  surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence,
+  rooms_count, bedrooms_count, occupancy_status, visit_dates
+) values (
+  '88400000-1000-4000-8000-000000000007', 'licitor', 'https://example.test/884/sale-7',
+  'upcoming', current_timestamp + interval '20 days', 'Alphaville', 'house', 90000, '{}'::jsonb,
+  '{}'::jsonb, 'tribunal', 50, 50, 'habitable', 'listing_text', 0.7, 2, 1, 'occupied', '[]'::jsonb
+);
 create or replace function app_private.hold_projected_sale_fields()
 returns trigger language plpgsql security definer set search_path = '' as $function$
 begin
@@ -1088,7 +1103,7 @@ select lives_ok(
       set surface_m2 = 51, app_surface_m2 = 51, app_surface_kind = 'carrez', surface_source = 'pdf',
           surface_confidence = 0.9, habitable_surface_m2 = 51, carrez_surface_m2 = 51, land_surface_m2 = 10,
           rooms_count = 4, bedrooms_count = 2, occupancy_status = 'vacant', visit_dates = '["2026-12-01"]'::jsonb
-      where id = '88400000-1000-4000-8000-000000000006'$$,
+      where id = '88400000-1000-4000-8000-000000000007'$$,
   'inert: a write of every watched column of a sale that holds nothing never calls the hold function'
 );
 select throws_ok(
@@ -1112,7 +1127,7 @@ select lives_ok(
   $$update public.auction_sales
       set surface_m2 = 52, app_surface_m2 = 52, habitable_surface_m2 = 52, rooms_count = 5, bedrooms_count = 2,
           occupancy_status = 'occupied'
-      where id = '88400000-1000-4000-8000-000000000006'$$,
+      where id = '88400000-1000-4000-8000-000000000007'$$,
   'no cost when nothing is held: the marker guard is not called either'
 );
 select throws_ok(
