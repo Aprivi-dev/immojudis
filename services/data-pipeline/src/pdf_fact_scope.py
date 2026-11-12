@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
+from src.base_reads import SOURCE_SNAPSHOT_KEY, snapshot_relayed_fields
 from src.lot_scope import is_lot_scoped
 from src.normalize import (
     clean_text,
@@ -223,7 +224,7 @@ _LOT_WRITTEN_SNAPSHOT_FIELDS = frozenset({
 _UNREADABLE = object()
 
 
-def _pdf_source_reader(sale: Any, snapshot: dict[str, object]) -> Callable[[str], object]:
+def pdf_source_reader(sale: Any, snapshot: dict[str, object]) -> Callable[[str], object]:
     """Rend la lecture d'un champ de l'instantané de la source : la valeur que la collecte a écrite, ou vide.
 
     ``source_factual_snapshot`` garde le texte de la page, avant normalisation. Remis tel quel à chaque
@@ -308,10 +309,39 @@ def _pdf_source_reader(sale: Any, snapshot: dict[str, object]) -> Callable[[str]
 
 
 def _pdf_set_source_value(sale: Any, field: str, value: object) -> None:
-    """Remet une valeur déjà lue par la collecte (``_pdf_source_reader``) : elle a le type du champ."""
+    """Remet une valeur déjà lue par la collecte (``pdf_source_reader``) : elle a le type du champ."""
     if value is None and isinstance(getattr(sale, field, None), list):
         value = []
     setattr(sale, field, value)
+
+
+def _pdf_restore_value_before_document(
+    sale: Any,
+    field: str,
+    snapshot: dict[str, object],
+    read_source: Callable[[str], object],
+    trace: object = None,
+) -> bool:
+    """Remet dans ``field`` la valeur d'avant la pièce ; rend ``False``, sans rien toucher, si elle est inconnue.
+
+    Seule règle de restauration, pour une projection tracée, pour une ancienne liste de candidats et pour une
+    pièce remplacée :
+
+    * l'instantané de la fiche porte le champ : la valeur que la collecte en a écrite (``read_source``) ;
+    * sinon la trace garde la valeur d'avant la pièce (``baseline``) : celle-là ;
+    * sinon la page ne donnait pas ce champ (Vench, page restreinte : liste ``fields_from_stored_row`` de
+      l'instantané) : la valeur d'avant la pièce est inconnue, pas vide. La projection reste en place ;
+    * sinon : vide.
+    """
+    if field in snapshot:
+        _pdf_set_source_value(sale, field, read_source(field))
+    elif isinstance(trace, dict) and "baseline" in trace:
+        _pdf_set_projected_value(sale, field, trace["baseline"])
+    elif field in snapshot_relayed_fields(snapshot):
+        return False
+    else:
+        _pdf_set_projected_value(sale, field, None)
+    return True
 
 
 def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
@@ -564,9 +594,9 @@ def _clear_pdf_fact_projections(
     if isinstance(refreshed_provenance, dict):
         provenance = refreshed_provenance
     selected = _pdf_projection_scope_fields(fields)
-    snapshot = raw_payload.get("source_factual_snapshot")
+    snapshot = raw_payload.get(SOURCE_SNAPSHOT_KEY)
     snapshot = snapshot if isinstance(snapshot, dict) else {}
-    read_source = _pdf_source_reader(sale, snapshot)
+    read_source = pdf_source_reader(sale, snapshot)
     cleared: set[str] = set()
     preserved: set[str] = set(independent_derived_fields)
     removed_payload_keys: set[str] = set()
@@ -587,10 +617,12 @@ def _clear_pdf_fact_projections(
             preserved.add(field)
             retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
             continue
-        if field in snapshot:
-            _pdf_set_source_value(sale, field, read_source(field))
-        else:
-            _pdf_set_projected_value(sale, field, trace["baseline"] if "baseline" in trace else None)
+        if not _pdf_restore_value_before_document(sale, field, snapshot, read_source, trace):
+            # Sans valeur à remettre, la projection et sa trace restent en place.
+            remaining[field] = trace
+            preserved.add(field)
+            retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
+            continue
         cleared.add(field)
         removed_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
     for key in removed_payload_keys - retained_payload_keys:
@@ -616,10 +648,9 @@ def _clear_pdf_fact_projections(
         current = getattr(sale, field, None)
         if len(values) != 1 or not _pdf_values_match(current, next(iter(values))):
             continue
-        if field in snapshot:
-            _pdf_set_source_value(sale, field, read_source(field))
-        else:
-            _pdf_set_projected_value(sale, field, None)
+        if not _pdf_restore_value_before_document(sale, field, snapshot, read_source):
+            preserved.add(field)
+            continue
         raw_payload.pop(candidate_key, None)
         cleared.add(field)
     return {"cleared": cleared, "preserved": preserved}

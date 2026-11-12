@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline, licitor_lot_count
 from src.asset_normalization import normalize_asset_features
+from src.base_reads import SOURCE_SNAPSHOT_KEY
 from src.cadastre_references import resolve_sale_cadastre
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
@@ -41,14 +42,30 @@ from src.sources.encheres_publiques_extraction import refresh_encheres_publiques
 from src.sources.licitor import LicitorClient, parse_licitor_detail_html
 from src.sources.licitor_extraction import refresh_licitor_raw_sale
 from src.sources.petites_affiches import refresh_petites_affiches_raw_sale
+from src.storage.column_sets import UPSERT_COLUMNS
+from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT
 from src.storage.supabase_client import _postgrest_request_with_retries, upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
 # Full rows per request (raw source pages are heavy) and identifiers per request.
 PAGE_SIZE = 25
+# Colonnes lues pour un recalcul, nommées une à une : celles du modèle, et aucune autre. ``select=*`` rendait aussi
+# les colonnes internes de la table, qui finissaient recopiées dans ``raw_payload`` à l'écriture.
+RECOMPUTE_SALE_SELECT = DATA_REFRESH_SALE_SELECT
+# Colonnes de la ligne versées dans la vente brute renormalisée, donc dans ``raw_payload`` : celles que la collecte
+# écrit. Toute autre clé de la ligne est ignorée.
+RECOMPUTE_PAYLOAD_COLUMNS = frozenset(UPSERT_COLUMNS) - {"raw_payload"}
+# Identifiant et dates techniques : lus pour le modèle, jamais versés, et retirés de la mémoire brute où un recalcul
+# antérieur à la liste explicite les avait recopiés.
+RECOMPUTE_ROW_ONLY_COLUMNS = frozenset(RECOMPUTE_SALE_SELECT.split(",")) - RECOMPUTE_PAYLOAD_COLUMNS - {"raw_payload"}
 # Champs de la source qu'une colonne vide ne doit pas effacer au recalcul (voir ``_sale_from_storage_row``).
 STORAGE_FALLBACK_SOURCE_FIELDS = ("sale_date", "starting_price_eur", "visit_dates")
+# Parmi eux, ceux pour lesquels l'instantané de la fiche fait foi quand il existe. La clé de premier niveau de
+# ``raw_payload`` n'est pas fiable pour les visites : la collecte d'une annonce inchangée et le recalcul précédent y
+# recopient la colonne, donc une valeur retirée de la colonne y resterait et reviendrait ici. Une vente sans
+# instantané (jamais relue depuis qu'il existe) n'a que cette clé : elle garde alors le repli d'origine.
+SNAPSHOT_FIRST_FALLBACK_FIELDS = frozenset({"visit_dates"})
 ID_PAGE_SIZE = 1_000
 SALE_VENUE_TYPES = {"tribunal", "notary", "state", "online", "unknown"}
 SALE_LEGAL_FRAMEWORKS = {
@@ -595,7 +612,8 @@ def _fetch_sales(
     rows: list[dict[str, Any]] = []
     for start in range(0, len(ids), PAGE_SIZE):
         chunk = ids[start : start + PAGE_SIZE]
-        by_id = {str(row.get("id")): row for row in get({"select": "*", "id": f"in.({','.join(chunk)})"})}
+        page = get({"select": RECOMPUTE_SALE_SELECT, "id": f"in.({','.join(chunk)})"})
+        by_id = {str(row.get("id")): row for row in page}
         # A row deleted between the two passes is simply absent.
         rows.extend(by_id[sale_id] for sale_id in chunk if sale_id in by_id)
     return rows
@@ -604,13 +622,26 @@ def _fetch_sales(
 def _sale_from_storage_row(row: dict[str, Any]):
     original_payload = dict(row.get("raw_payload")) if isinstance(row.get("raw_payload"), dict) else {}
     original_payload.pop("raw_payload", None)
-    row_payload = {key: value for key, value in row.items() if key != "raw_payload"}
+    for column in RECOMPUTE_ROW_ONLY_COLUMNS:
+        original_payload.pop(column, None)
+    row_payload = {key: value for key, value in row.items() if key in RECOMPUTE_PAYLOAD_COLUMNS}
+    snapshot = original_payload.get(SOURCE_SNAPSHOT_KEY)
+    snapshot = snapshot if isinstance(snapshot, dict) and snapshot else None
     # Une colonne restée vide d'un ancien passage ne masque pas la valeur lue par la source : sans cela la date et
     # la mise à prix d'Avoventes 319c133c (« mardi 01 septembre 2026 à 13h30 », « 120 000,00 € ») ou les visites
     # d'Enchères Publiques ne revenaient jamais au recalcul. La normalisation repasse ses garde-fous dessus.
+    unused_copies: dict[str, Any] = {}
     for field in STORAGE_FALLBACK_SOURCE_FIELDS:
-        if row_payload.get(field) in (None, "", []) and original_payload.get(field) not in (None, "", []):
-            row_payload[field] = original_payload[field]
+        if row_payload.get(field) not in (None, "", []):
+            continue
+        copy = original_payload.get(field)
+        source_value = snapshot.get(field) if snapshot is not None and field in SNAPSHOT_FIRST_FALLBACK_FIELDS else copy
+        if source_value not in (None, "", []):
+            row_payload[field] = source_value
+        elif copy not in (None, "", []):
+            # L'instantané dit que la source ne donne pas ce champ : la copie de premier niveau n'est pas rejouée,
+            # mais une colonne vide que le recalcul n'a pas remplie ne l'écrase pas non plus.
+            unused_copies[field] = copy
     raw_sale = {**original_payload, **row_payload}
     # Stored titles are display titles generated by the pipeline. Surface
     # reconciliation needs the original editorial title and description.
@@ -653,6 +684,9 @@ def _sale_from_storage_row(row: dict[str, Any]):
     if "multi_lot_sale" in normalized_flags and sale.source_name == "licitor" and licitor_lot_count(raw_sale) > 1:
         sale.quality_flags.append("multi_lot_sale")
     sale.raw_payload = raw_sale
+    for field, copy in unused_copies.items():
+        if not getattr(sale, field):
+            sale.raw_payload[field] = copy
     return sale
 
 

@@ -27,6 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - GitHub Actions installs psycop
     sql = None
     Jsonb = None
 
+from src import base_reads
 from src.admission import catalogue_write_rejection, has_price_or_surface, is_expired, quarantine_reason
 from src.asset_normalization import (
     build_auction_features_row,
@@ -264,10 +265,22 @@ def _fetch_reviewed_alias_registry(supabase_url: str, api_key: str) -> ReviewedA
         raise ReviewedAliasRegistryError("Malformed reviewed-alias RPC response") from exc
 
 
-def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict: str | None = None, *, ignore_conflicts: bool = False) -> None:
+def _transaction_write(
+    table: str,
+    payload: list[dict[str, object]],
+    on_conflict: str | None = None,
+    *,
+    ignore_conflicts: bool = False,
+    returning: tuple[str, ...] = (),
+) -> list[dict[str, object]]:
+    """Écrit ``payload`` dans la transaction de publication ; rend les colonnes ``returning`` des lignes écrites.
+
+    ``returning`` donne la ligne telle que la base l'a gardée, après ses déclencheurs, et non telle qu'elle a été
+    envoyée.
+    """
     connection = _PUBLICATION_CONNECTION.get()
     if not payload:
-        return
+        return []
     columns = list(dict.fromkeys(key for row in payload for key in row))
     names = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
     statement = sql.SQL("insert into {} ({}) select {} from jsonb_populate_recordset(null::{}, %s)").format(
@@ -282,8 +295,13 @@ def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict
         statement += (sql.SQL("do update set ") + sql.SQL(", ").join(
             sql.SQL("{} = excluded.{}").format(sql.Identifier(column), sql.Identifier(column)) for column in updates
         )) if updates else sql.SQL("do nothing")
+    if returning:
+        statement += sql.SQL(" returning ") + sql.SQL(", ").join(sql.Identifier(column) for column in returning)
     LOGGER.info("Publication write table=%s rows=%s", table, len(payload))
-    connection.execute(statement, (Jsonb(_sanitize_postgrest_payload(payload)),))
+    result = connection.execute(statement, (Jsonb(_sanitize_postgrest_payload(payload)),))
+    if not returning:
+        return []
+    return [dict(zip(returning, row, strict=True)) for row in result.fetchall()]
 
 
 def pdf_enrichment_input_hash_for_sale(
@@ -511,7 +529,9 @@ def upsert_sales_to_supabase(
         # All product tables for each bounded batch commit together. A failed transaction never falls
         # back to partially committed REST writes.
         submitted_sales = sales
-        with _postgres_connect(str(db_url)) as connection:
+        # La portée entoure la transaction : ce que la base a gardé des lignes écrites ne devient l'état de
+        # référence de la garde d'écho qu'une fois la transaction validée, et n'en laisse rien si elle est annulée.
+        with base_reads.written_scope(), _postgres_connect(str(db_url)) as connection:
             connection.execute("select set_config('app.pipeline_queue_owner', 'python', true)")
             connection.execute("set local lock_timeout = '15s'")
             connection.execute("set local statement_timeout = '120s'")
@@ -541,6 +561,9 @@ def upsert_sales_to_supabase(
             if sale.source_url in written_urls:
                 sale.updated_at = written_at
         return result
+    # Deux cas sans portée ouverte ici. Écriture dans la transaction d'un appelant : c'est lui qui valide ou annule,
+    # donc lui qui ouvre la portée. Repli REST (hors production) : ni verrou ni lecture sous verrou, la garde d'écho
+    # n'y agit pas et rien n'y est noté pour elle.
     return _write_sale_revisions(sales, settings, refresh_last_seen=refresh_last_seen)
 
 
@@ -590,9 +613,23 @@ def _write_sale_revisions(
             on_conflict="code",
         )
     if _PUBLICATION_CONNECTION.get() is not None:
-        _transaction_write("auction_sales", payload, "source_url")
+        # L'écriture de ce processus n'est pas un mouvement de la base. La garde d'écho compare la lecture suivante
+        # à ce que la base a gardé (``returning``), pas à ce qui a été envoyé : la base peut retenir une valeur.
+        # Noté ici en attente ; l'état de référence ne change qu'une fois la transaction validée
+        # (``upsert_sales_to_supabase``).
+        kept = _transaction_write("auction_sales", payload, "source_url", returning=base_reads.KEPT_COLUMNS)
+        if len(kept) == len(payload):
+            base_reads.stage_written(kept)
+        else:
+            # La base n'a pas rendu une ligne par ligne envoyée : rien n'est noté pour ce lot. La lecture sous
+            # verrou suivante comparera à l'ancienne référence, ce qui ne peut que retenir une valeur relue.
+            LOGGER.warning(
+                "Publication write returned %s rows for %s sent; echo reference left unchanged", len(kept), len(payload)
+            )
         _write_fact_claims_postgres(sales, _PUBLICATION_CONNECTION.get())
     else:
+        # Hors production : la collecte exige la connexion directe. À voir dans le journal si cela arrive.
+        LOGGER.warning("REST fallback wrote %s sales without transaction, lock or echo guard", len(payload))
         _upsert_with_rest(str(url), str(key), payload)
         _write_fact_claims_rest(str(url), str(key), sales)
     _sync_normalized_sale_tables_with_rest(
@@ -3100,6 +3137,9 @@ def fetch_known_sale_details(
         if not isinstance(row, dict):
             raise ReviewedAliasRegistryError("Malformed auction_sales detail row")
         row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"), row.get("status"))
+        # Ces valeurs seront recopiées dans des ventes écrites plus tard : la garde d'écho doit savoir qu'elles
+        # viennent de la base.
+        base_reads.note(row)
 
     details: dict[str, dict[str, Any]] = {}
     rows_by_id = {

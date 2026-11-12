@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.base_reads import SOURCE_SNAPSHOT_KEY, relayed_fields, was_reread
 from src.display_invalidation import (
     OPERATIONAL_CHANGE,
     capture_fingerprints,
@@ -125,15 +126,22 @@ def record_source_checks(raw_sales: list, known: dict, *, capture: str = "collec
         previous = (known.get(url, {}).get("raw_payload") or {}).get("source_checks") or {}
         payload = sale
         payload["source_checks"] = dict(previous)
-        if sale.get("_known_unchanged") or sale.get("_detail_fetch_failed"):
+        if not was_reread(sale):
             continue
-        snapshot = sale.get('source_factual_snapshot') or {}
-        content = {key: snapshot[key] if key in snapshot else sale.get(key) for key in SOURCE_FACT_FIELDS}
+        snapshot = sale.get(SOURCE_SNAPSHOT_KEY) or {}
+        # Un champ repris de la ligne stockée (Vench, page restreinte ou pauvre) n'est pas un fait de la page : s'il
+        # entrait dans l'empreinte, tout changement de la base passerait pour un changement de la source.
+        relayed = relayed_fields(sale)
+        published = sale
+        if relayed:
+            published = {key: value for key, value in sale.items() if key not in relayed}
+            snapshot = {key: value for key, value in snapshot.items() if key not in relayed}
+        content = {key: snapshot[key] if key in snapshot else published.get(key) for key in SOURCE_FACT_FIELDS}
         fingerprint = hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
         evidence_fingerprint = source_evidence_fingerprint(content)
         old = previous.get(url) or {}
         kind = capture_kind(sale, capture)
-        fingerprints = capture_fingerprints(sale, snapshot, SOURCE_OPERATIONAL_FIELDS)
+        fingerprints = capture_fingerprints(published, snapshot, SOURCE_OPERATIONAL_FIELDS)
         check = {
             "checked_at": sale.get("_checkpoint_checked_at") or datetime.now(UTC).isoformat(),
             "source_name": sale.get("source_name"),
