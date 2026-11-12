@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   diffToolFailureReport,
   normalizeDiffWithNotes,
+  quoteForeignText,
   runWithTransientRetry,
   verifyConcurrentIndexes,
 } from "./lib/schema-drift.mjs";
@@ -125,7 +126,8 @@ try {
         console.error(
           "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
         );
-      console.error(diff.slice(0, 40_000));
+      // The diff is SQL read from the database: foreign text, quoted like the output of the tool.
+      console.error(quoteForeignText(diff.slice(0, 40_000)));
       process.exitCode = 1;
     } else {
       console.log(
