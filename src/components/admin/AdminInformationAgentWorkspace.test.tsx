@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   review: vi.fn(),
   unrouted: vi.fn(),
   claims: vi.fn(),
+  decisions: vi.fn(),
   operations: vi.fn(),
   template: vi.fn(),
   missions: vi.fn(),
@@ -30,6 +31,8 @@ vi.mock("@/lib/client-api", () => ({
   fetchAdminInformationAgentReview: mocks.review,
   fetchAdminInformationAgentUnrouted: mocks.unrouted,
   fetchAdminAuctionFactClaimReview: mocks.claims,
+  fetchAdminFactClaimDecisions: mocks.decisions,
+  decideAdminFactClaimClient: vi.fn(),
   fetchAdminInformationAgentOperations: mocks.operations,
   fetchAdminInformationAgentEmailTemplate: mocks.template,
   fetchAdminInformationAgentMissions: mocks.missions,
@@ -78,6 +81,7 @@ beforeEach(() => {
   mocks.review.mockResolvedValue(review(0));
   mocks.unrouted.mockResolvedValue(unrouted(0));
   mocks.claims.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50, hasMore: false });
+  mocks.decisions.mockResolvedValue({ items: [], total: 0, offset: 0, limit: 50, hasMore: false });
   mocks.operations.mockResolvedValue(operations());
   mocks.template.mockResolvedValue(templateWorkspace());
   mocks.missions.mockResolvedValue({ ok: true, missions: [], facts: [] });

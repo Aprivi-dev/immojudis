@@ -9,6 +9,11 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useEffect, useState } from "react";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
+import {
+  factFieldLabel,
+  formatFactDate,
+  formatFactValue,
+} from "@/components/admin/fact-claim-format";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {
   fetchAdminAuctionFactClaimReview,
@@ -207,7 +212,7 @@ function ClaimLine({
               )}
               {item.status === "conflicted" ? "Conflit" : "À confirmer"}
             </span>
-            <span className="text-xs text-brand-navy/55">{fieldLabel(item.fieldKey)}</span>
+            <span className="text-xs text-brand-navy/55">{factFieldLabel(item.fieldKey)}</span>
             <span className="font-mono text-[11px] text-brand-navy/45">
               {shortId(item.claimId)}
             </span>
@@ -216,19 +221,19 @@ function ClaimLine({
             {item.sale.title || item.sale.city || `Vente ${shortId(item.saleId)}`}
           </h3>
           <p className="mt-1 text-xs text-brand-navy/55">
-            {[item.sale.city, item.sale.saleDate ? formatDate(item.sale.saleDate) : null]
+            {[item.sale.city, item.sale.saleDate ? formatFactDate(item.sale.saleDate) : null]
               .filter(Boolean)
               .join(" · ")}
           </p>
           <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
             <div className="rounded-lg border bg-amber-50/60 p-3">
               <dt className="text-xs font-medium text-brand-navy/60">Valeur extraite</dt>
-              <dd className="mt-1 font-semibold text-amber-900">{formatValue(item.value)}</dd>
+              <dd className="mt-1 font-semibold text-amber-900">{formatFactValue(item.value)}</dd>
             </div>
             <div className="rounded-lg border bg-slate-50 p-3">
               <dt className="text-xs font-medium text-brand-navy/60">Valeur canonique actuelle</dt>
               <dd className="mt-1 font-semibold text-brand-navy">
-                {formatValue(item.currentCanonicalValue)}
+                {formatFactValue(item.currentCanonicalValue)}
               </dd>
             </div>
           </dl>
@@ -252,7 +257,7 @@ function ClaimLine({
                   ? "non renseignée"
                   : `${Math.round(item.evidence.confidence * 100)} %`}
               </span>
-              <span>Capturé le {formatDate(item.evidence.capturedAt)}</span>
+              <span>Capturé le {formatFactDate(item.evidence.capturedAt)}</span>
             </div>
           </div>
         </div>
@@ -340,43 +345,6 @@ function ClaimLine({
       ) : null}
     </article>
   );
-}
-
-function fieldLabel(fieldKey: string): string {
-  return (
-    {
-      "sale.sale_date": "Date de vente",
-      "sale.starting_price_eur": "Mise à prix",
-      "property.surface_m2": "Surface",
-      "property.habitable_surface_m2": "Surface habitable",
-      "property.carrez_surface_m2": "Surface Carrez",
-      "property.land_surface_m2": "Surface terrain",
-      "property.occupancy_status": "Occupation",
-    }[fieldKey] ?? fieldKey
-  );
-}
-
-function formatValue(value: unknown): string {
-  if (value == null || value === "") return "—";
-  if (typeof value === "number") {
-    return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value);
-  }
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return "Valeur non affichable";
-  }
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Europe/Paris",
-  }).format(date);
 }
 
 function evidenceQuote(item: AdminAuctionFactClaimReviewItem): string | null {

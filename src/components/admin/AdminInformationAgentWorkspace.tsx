@@ -7,6 +7,7 @@ import {
 } from "@/components/admin/AdminCatalogueReadinessPanel";
 import { AdminCatalogueReadinessSettings } from "@/components/admin/AdminCatalogueReadinessSettings";
 import { AdminAuctionFactClaimReviewPanel } from "@/components/admin/AdminAuctionFactClaimReviewPanel";
+import { AdminFactClaimDecisionPanel } from "@/components/admin/AdminFactClaimDecisionPanel";
 import { AdminInformationAgentAutopilotPanel } from "@/components/admin/AdminInformationAgentAutopilotPanel";
 import { AdminInformationAgentAutoPublicationPanel } from "@/components/admin/AdminInformationAgentAutoPublicationPanel";
 import { AdminInformationAgentMissionsList } from "@/components/admin/AdminInformationAgentMissionsList";
@@ -177,6 +178,7 @@ export function AdminInformationAgentWorkspace() {
         <>
           <AdminInformationAgentReviewPanel />
           <AdminAuctionFactClaimReviewPanel />
+          <AdminFactClaimDecisionPanel />
           <AdminInformationAgentUnroutedPanel />
         </>,
       )}
