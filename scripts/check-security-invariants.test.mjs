@@ -7,7 +7,8 @@ import { removeSandboxes, repo, runInvariants } from "./check-security-invariant
 // charge, le délai par défaut de 5 s est trop juste. 20 s pour tout le fichier.
 vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 });
 
-afterAll(removeSandboxes);
+// Le ménage des dépôts factices a pris 24 s pour 69 dépôts sur une machine chargée : délai propre au hook.
+afterAll(removeSandboxes, 120_000);
 
 const accessFunction = (condition) => `
 create or replace function app_private.has_active_analysis_access(p_user_id uuid)
@@ -646,6 +647,30 @@ end $$;
     expect(result.stderr).toContain(
       `${dropMigration} must exist and drop the role lovable_readonly`,
     );
+  });
+
+  it("refuse une migration de suppression dont le drop role n'est qu'en commentaire", () => {
+    const result = runInvariants(
+      {
+        [dropMigration]:
+          "-- drop role lovable_readonly;\n/* drop role lovable_readonly; */\nselect 1;",
+      },
+      [dropMigration],
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `${dropMigration} must exist and drop the role lovable_readonly (outside comments)`,
+    );
+  });
+
+  it.each([
+    "supabase/repairs/99990101000000_regrant.sql",
+    "supabase/maintenance/99990101000000_regrant.sql",
+    "supabase/functions/demo/index.ts",
+  ])("refuse le nom du rôle dans %s", (path) => {
+    const result = runInvariants({}, [], {}, { [path]: "-- grant select to lovable_readonly\n" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`${path} names the role lovable_readonly`);
   });
 });
 

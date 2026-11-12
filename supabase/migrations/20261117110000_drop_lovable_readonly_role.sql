@@ -9,8 +9,8 @@ set local statement_timeout = '60s';
 -- 20261111030117). Aucune migration postérieure à celle-ci ne doit le nommer (invariant
 -- lovable-readonly-role-stays-dropped).
 --
--- Mesure en production le 12/11/2026 (lecture seule) : connexion permise, sans expiration, ni superutilisateur
--- ni BYPASSRLS, aucune session ouverte, aucune politique RLS, aucun objet possédé ; 199 SELECT sur des tables
+-- Mesure en production le 12/11/2026 (lecture seule, PostgreSQL 17.11) : connexion permise, sans expiration,
+-- ni superutilisateur ni BYPASSRLS, aucune session ouverte, aucune politique RLS, aucun objet possédé ; 199 SELECT sur des tables
 -- de public, 5 EXECUTE sur des fonctions, USAGE sur le schéma public, un privilège par défaut posé par postgres
 -- (tables de public), une appartenance (postgres est membre du rôle) : 206 dépendances au catalogue partagé.
 --
@@ -19,7 +19,7 @@ set local statement_timeout = '60s';
 -- Rôle présent : tout se passe dans la transaction de la migration. Au premier refus, rien n'est appliqué.
 --   1. Gardes, avant toute écriture : le rôle qui applique peut supprimer celui-ci (superutilisateur, ou
 --      CREATEROLE avec l'option ADMIN sur le rôle : exigence de PostgreSQL 16 et 17) ; le rôle ne possède
---      aucun objet, n'est nommé par aucune politique, n'a de dépendance dans aucune autre base, et ses droits
+--      aucun objet, n'est nommé par aucune politique, n'a de droit ni dans une autre base ni sur un objet partagé (CONNECT sur la base, par exemple), et ses droits
 --      portent sur les seules sortes d'objets mesurées (tables, vues ou séquences, fonctions, schémas,
 --      privilèges par défaut). Tout autre cas lève : la migration ne devine pas.
 --   2. Révocations une à une, dans la liste que le catalogue donne (pg_shdepend), et non `drop owned by` :
@@ -33,13 +33,18 @@ set local statement_timeout = '60s';
 --      révoque pas (PostgreSQL n'émet qu'un avertissement) : il reste dans le catalogue, et la migration lève.
 --   4. `drop role`. Il retire lui-même les appartenances, dont celle de postgres. Cette appartenance ne se
 --      retire pas avant : c'est elle qui porte l'option ADMIN exigée par `drop role`, et postgres ne peut pas
---      révoquer une appartenance accordée par le superutilisateur d'amorçage.
+--      révoquer une appartenance accordée par le superutilisateur (supabase_admin en production).
 --
 -- Verrous. GRANT et REVOKE ne verrouillent pas la table elle-même : ils modifient sa ligne dans pg_class (et
--- pg_proc, pg_namespace, pg_default_acl), ligne tenue jusqu'au commit. Les lectures et les écritures de la
--- collecte ne sont donc ni bloquées ni attendues. Seule une opération de schéma concurrente sur un des mêmes
--- objets attendrait la fin de cette transaction, ou la ferait attendre (lock_timeout : 5 s, puis échec sans
--- effet, à relancer).
+-- pg_proc, pg_namespace, pg_default_acl), ligne tenue jusqu'au commit. Les lectures et les écritures de
+-- données ne sont donc ni bloquées ni attendues. Ce qui modifie la même ligne de catalogue, en revanche,
+-- attend la fin de cette transaction ou la fait attendre :
+--   * une opération de schéma sur un des mêmes objets. Il y en a hors migrations : l'import DVF crée, renomme
+--     et supprime des tables dans public (services/data-pipeline/src/dvf_import.py). À NE PAS APPLIQUER
+--     PENDANT UN IMPORT DVF ;
+--   * un autovacuum ou un ANALYZE qui termine sur une de ces tables et y inscrit ses statistiques.
+-- Dans les deux cas la migration attend au plus 5 s (lock_timeout) puis échoue, ou échoue aussitôt avec
+-- « tuple concurrently updated ». Rien n'est alors appliqué : il suffit de la relancer.
 --
 -- Pas de retour arrière : le rôle ne se recrée pas (docs/runbooks/suppression-role-lovable.md).
 
@@ -87,6 +92,8 @@ begin
                when dependency.deptype = 'o' then 'objet possédé'
                when dependency.deptype = 'r' then 'politique qui nomme le rôle'
                when dependency.deptype <> 'a' then 'dépendance de type ' || dependency.deptype::text
+               when dependency.dbid = 0 then
+                 'droit sur un objet partagé (base, tablespace, paramètre, appartenance accordée par ce rôle)'
                when dependency.dbid <> (
                  select d.oid from pg_catalog.pg_database d where d.datname = current_database()
                ) then 'droit hors de la base courante'
@@ -168,7 +175,10 @@ begin
          where d.refclassid = 'pg_catalog.pg_authid'::regclass
            and d.refobjid = v_role_oid
       ) dependency
-     -- Les privilèges par défaut d'abord : aucune table créée entre-temps ne reçoit de droit pour ce rôle.
+     -- Les privilèges par défaut d'abord, par simple ordre de lecture : cela ne protège de rien. Jusqu'au commit,
+     -- les autres sessions voient encore le privilège par défaut, et une table qu'elles créent reçoit le droit.
+     -- La protection est dans `drop role` : il verrouille le rôle en exclusif, puis refuse s'il reste une
+     -- dépendance. La migration échoue alors sans effet et se relance.
      order by (dependency.classid <> 'pg_catalog.pg_default_acl'::regclass), dependency.classid, dependency.objid
   loop
     -- Un objet supprimé par une autre session depuis la lecture de la liste donne une instruction nulle :
@@ -190,7 +200,7 @@ begin
     ) remaining;
   if v_blocking is not null then
     raise exception
-      'Suppression de % refusée : des droits restent après révocation (%), accordés par un autre rôle que % ou accordés par % lui-même. Rien n''est appliqué.',
+      'Suppression de % refusée : des droits restent après révocation (%), accordés par un autre rôle que %, accordés par % lui-même, ou posés entre-temps sur un objet créé par une autre session (relancer). Rien n''est appliqué.',
       v_role, v_blocking, current_user, v_role;
   end if;
 
