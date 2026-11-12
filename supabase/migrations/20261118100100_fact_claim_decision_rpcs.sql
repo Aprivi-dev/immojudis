@@ -7,64 +7,100 @@ set local statement_timeout = '60s';
 -- quatre fonctions de décision existent SANS AUCUN DROIT D'EXÉCUTION (ni anon, ni authenticated, ni service_role).
 -- Personne ne peut écrire une décision tant que le lot R2c n'a pas ouvert ces droits aux administrateurs.
 --
+--   0. RÉGLAGES DU REGISTRE. Table app_private.fact_registry_switches (même forme que
+--      app_private.security_switches, 20261010002000), deux lignes possibles :
+--        * decisions_require_second_factor, posée ici à TRUE : la fonction de décision refuse un jeton qui n'est
+--          pas « aal2 » (42501 « second_factor_required »). Indépendant de l'interrupteur global
+--          admin_mfa_required, que public.is_admin() lit de son côté. Le sens sûr est « exigé » : une ligne
+--          absente vaut « exigé », et seul le propriétaire le lève, sans migration de code, par
+--          select app_private.set_fact_registry_decisions_second_factor(false) ;
+--        * scheduled_reprojection (20261118100300).
+--      Les fonctions de réglage lèvent si leur ligne manque : un réglage ne se perd pas en silence.
+--      app_private.fact_registry_hourly_decision_limit() : plafond de décisions par administrateur et par heure
+--      (20), une seule constante.
+--      PRÉSÉANCE : l'origine « document » passe à can_hold = false dans public.auction_fact_source_precedence.
+--      Une pièce de document ne s'accepte pas avant le lot R3, qui la repassera à true par sa propre migration ;
+--      la fonction de décision ne nomme aucune origine, elle lit cette table.
 --   1. app_private.lock_sale_for_registry(vente) : le verrou de ligne de la vente (FOR NO KEY UPDATE), pris AVANT
---      toute autre écriture du registre, sous un délai de 3 secondes. Un lot de publication de la collecte tient ce
---      verrou 20 à 29 secondes : au-delà de 3 secondes l'appelant reçoit 55P03 « sale_busy » et réessaie. Rend
---      false si la vente n'existe pas.
---   2. app_private.decide_auction_fact_claim(…) : la seule fonction qui écrit une décision. Dans l'ordre :
---        a. l'auteur est (select auth.uid()), JAMAIS un paramètre, et public.is_admin() doit être vrai (second
---           facteur compris quand l'interrupteur est actif), sinon 42501 « admin_required » ;
+--      toute autre écriture du registre. Le délai de 3 secondes est un réglage de la fonction elle-même (clause
+--      SET) : PostgreSQL le pose à l'entrée et rend la valeur de l'appelant à la sortie, réussite ou échec. Un
+--      lot de publication de la collecte tient ce verrou 20 à 29 secondes : au-delà de 3 secondes l'appelant
+--      reçoit 55P03 « sale_busy » et réessaie. Rend false si la vente n'existe pas.
+--   2. app_private.decide_auction_fact_claim(…) : la seule fonction qui écrit une décision. Toute la fonction
+--      tourne sous lock_timeout = 3 s (clause SET) : verrou de la vente, verrou de l'observation, verrous de la
+--      projection. Chaque attente de verrou est bornée à 3 secondes ; un verrou de ligne peut en compter deux
+--      (la ligne, puis la transaction qui la tient). Dans l'ordre :
+--        a. l'auteur est (select auth.uid()), JAMAIS un paramètre, et public.is_admin() doit être vrai, sinon
+--           42501 « admin_required » ; puis le second facteur du registre (point 0) ;
 --        b. app_private.assert_fact_registry_triggers() : sans retenue active, rien n'est écrit (55000
 --           « registry_unavailable ») ;
---        c. la vente de l'observation est lue sans verrou, puis verrouillée (1), puis l'observation est verrouillée
+--        c. plafond : 20 décisions par administrateur sur l'heure écoulée, sinon 53400 « rate_limited » ;
+--        d. la vente de l'observation est lue sans verrou, puis verrouillée (1), puis l'observation est verrouillée
 --           et relue : si elle a changé de vente entre-temps, 40001 « retry ». Une observation détachée par une
 --           fusion se décide pour la vente que nomme sa dernière décision, et c'est la vente conservée
 --           (app_private.auction_sale_merges) qui est verrouillée et projetée ; détachée et jamais décidée : 55000
 --           « claim_detached » (la collecte la réémet pour la vente conservée) ;
---        d. la transition est contrôlée contre la DERNIÈRE décision de l'observation (ordre de seq) :
+--        e. la transition est contrôlée contre la DERNIÈRE décision de l'observation (ordre de seq) :
 --             accepter   : aucune décision ; ou rejected, withdrawn, contradicted, accepted (correction du lot), en
---                          nommant cette décision dans p_supersedes_decision_id ; après opposed : « opposed_final » ;
+--                          nommant cette décision dans p_supersedes_decision_id ; jamais après une opposition
+--                          (« opposed_final ») ni après un retrait pour autorisation retirée
+--                          (« withdrawal_final ») : ces deux décisions sont définitives, comme dans la projection,
+--                          qui garde leur valeur en mémoire d'écho sans échéance ;
 --             rejeter    : aucune, accepted, contradicted ;
 --             retirer    : accepted ;
 --             opposition : toute sauf opposed ;
 --           sinon 55000 « invalid_transition » ;
---        e. refus propres à l'acceptation : origine « document » (55000 « origin_not_open », ouverte au lot R3) ;
---           annonce ou origine non classée (« origin_cannot_hold ») ; property.surface_m2 sur une vente de terrain
---           (« field_not_applicable » : un terrain se tient par property.land_surface_m2) ; valeur que le registre
---           ne peut pas tenir (22023 « invalid_argument ») ;
---        f. la décision est insérée (actor_kind « admin »). Pour rejeter, retirer ou s'opposer, lot_attachment
+--        f. refus propres à l'acceptation : origine qui ne peut pas tenir (55000 « origin_cannot_hold » : origine
+--           non classée, ou can_hold à false dans la table de préséance pour ce champ ; pour un champ que le
+--           registre ne tient pas, l'origine doit pouvoir tenir au moins un champ) ; property.surface_m2 sur une
+--           vente de terrain (« field_not_applicable », app_private.sale_is_land_sale : un terrain se tient par
+--           property.land_surface_m2) ; valeur que le registre ne peut pas tenir (22023 « invalid_argument ») ;
+--        g. la décision est insérée (actor_kind « admin »). Pour rejeter, retirer ou s'opposer, lot_attachment
 --           reprend celui de la dernière décision, sinon « unknown ». Le fait de l'agent, la nature du destinataire
---           et la date de réception de la dernière décision sont repris : une correction du lot ne fait pas tomber
---           la provenance. lot_ref suit le contrat de docs/architecture/registre-des-pieces.md : espaces insécables
---           remplacées, suites d'espaces réduites, bords retirés, puis NULL si le libellé ne passe pas la
---           contrainte (jamais d'échec, jamais de troncature) ;
---        g. la projection de TOUTE la vente est appliquée dans la même transaction : une décision relance donc
+--           et la date de réception de la dernière décision sont repris (une correction du lot ne fait pas tomber
+--           la provenance), SAUF quand l'autorisation d'affichage est retirée : ni le retrait
+--           authorization_withdrawn ni les décisions qui le suivent ne reprennent la provenance. lot_ref suit le
+--           contrat de docs/architecture/registre-des-pieces.md : espaces insécables remplacées, suites d'espaces
+--           réduites, bords retirés, puis NULL si le libellé ne passe pas la contrainte (jamais d'échec, jamais de
+--           troncature) ;
+--        h. la projection de TOUTE la vente est appliquée dans la même transaction : une décision relance donc
 --           aussi les champs que la collecte a fait dériver (reclassement en terrain, nombre de chambres).
---      Les listes fermées (motifs, rattachements, format du lot) ne sont pas recopiées ici : ce sont les
---      contraintes de la table qui jugent, et la fonction traduit leur nom en code.
---      ERREURS : liste fermée, message = code, sans DETAIL ni HINT. 42501 admin_required ; 22023
---      invalid_reason_code, invalid_lot_attachment, invalid_argument ; P0002 claim_not_found, sale_not_found ;
---      55000 invalid_transition, opposed_final, claim_detached, origin_not_open, origin_cannot_hold,
---      field_not_applicable, registry_unavailable ; 55P03 sale_busy ; 40001 retry ; P0001 registry_write_failed
---      (toute autre erreur : la fonction ne lit que son code SQLSTATE et le nom de la contrainte, jamais son
---      message ni son détail, qui peuvent porter une ligne de auction_sales).
+--      Les listes fermées (motifs, rattachements, format du lot, origines) ne sont pas recopiées ici : ce sont les
+--      contraintes et les données de la table qui jugent, et la fonction traduit leur nom en code.
+--      CHAMP QUE LE REGISTRE NE TIENT PAS (mise à prix, date de vente, type de bien) : la décision est ADMISE et
+--      enregistrée, rien n'est affiché (« state » nul). C'est la règle écrite du plan (section 10, « choix faits
+--      par délégation » : « enregistrés, non affichés ») et de l'annexe 08 (point 1, tableau des clés : observation
+--      oui, décision accepted, projection non). La refuser ici empêcherait le noyau du lot R2c de l'appliquer.
+--      ERREURS : liste fermée, message = code, sans DETAIL ni HINT. 42501 admin_required, second_factor_required ;
+--      22023 invalid_reason_code, invalid_lot_attachment, invalid_argument ; P0002 claim_not_found,
+--      sale_not_found ; 55000 invalid_transition, opposed_final, withdrawal_final, claim_detached,
+--      origin_cannot_hold, field_not_applicable, registry_unavailable ; 53400 rate_limited ; 55P03 sale_busy ;
+--      40001 retry ; P0001 registry_write_failed (toute autre erreur : la fonction ne lit que son code SQLSTATE et
+--      le nom de la contrainte, jamais son message ni son détail, qui peuvent porter une ligne de auction_sales ;
+--      ces deux éléments, et eux seuls, sont écrits au journal du serveur par RAISE LOG).
+--      Le code « origin_not_open » de l'annexe 08 n'existe plus : l'origine « document » est fermée par la table
+--      de préséance, comme toute autre origine qui ne tient pas.
 --      Retour : claim_id, decision_id, decision, sale_id (la vente projetée), field_key, state (état du champ
 --      rendu par la projection ; nul pour un champ que le registre ne tient pas). Aucune colonne de la vente.
 --   3. Quatre fonctions publiques, qui fixent chacune le type de décision et n'ont AUCUN paramètre d'auteur :
 --      public.accept_auction_fact_claim, reject_auction_fact_claim, withdraw_auction_fact_claim,
 --      oppose_auction_fact_claim.
 --   4. public.review_auction_fact_claim (20260928180000), retouchée : la vente est verrouillée AVANT l'observation
---      (même fonction de verrou, FOR NO KEY UPDATE, même délai) ; la vente est lue par colonnes nommées (plus de
---      « sale.* », qui lisait raw_payload et held_fields) ; une observation d'origine professionnelle, ou déjà
---      décidée au journal du registre, est refusée (55000). Signature, droits (service_role) et messages existants
---      inchangés. Cette fonction ne tient jamais un champ.
+--      (même fonction de verrou, FOR NO KEY UPDATE, même délai, posé sur toute la fonction) ; la vente est lue par
+--      colonnes nommées (plus de « sale.* », qui lisait raw_payload et held_fields) ; une observation d'origine
+--      réservée (email ou formulaire d'un professionnel, saisie d'un administrateur), ou déjà décidée au journal
+--      du registre, est refusée (55000). Signature, droits (service_role) et messages existants inchangés. Cette
+--      fonction ne tient jamais un champ. EFFET VISIBLE DÈS L'APPLICATION : pendant un lot de publication qui
+--      tient la vente, l'écran de relecture reçoit 55P03 au lieu d'attendre ; la route de l'application le
+--      traduit en « Import en cours sur cette vente, réessayez dans une minute. ».
 --
 -- Publication automatique : rien ne change. Les contraintes auction_fact_claim_decisions_auto_locked et
 -- auction_fact_claim_decisions_accepted_by_admin ne sont pas touchées, et ces fonctions n'écrivent que le mode
 -- « manual » (valeur par défaut de la colonne).
 --
--- Verrous : création et remplacement de fonctions seulement. Aucun verrou sur auction_sales ni sur
--- auction_fact_claims. Possible pendant un import.
+-- Verrous : création et remplacement de fonctions, création d'une petite table de réglage dans app_private, une
+-- mise à jour de cinq lignes de public.auction_fact_source_precedence (que seule la projection lit). Aucun verrou
+-- sur auction_sales ni sur auction_fact_claims. Possible pendant un import.
 --
 -- Retour arrière, par une nouvelle migration (tant qu'aucun droit n'a été ouvert, sans effet) :
 --   drop function if exists public.accept_auction_fact_claim(uuid, text, text, uuid);
@@ -72,9 +108,81 @@ set local statement_timeout = '60s';
 --   drop function if exists public.withdraw_auction_fact_claim(uuid, text);
 --   drop function if exists public.oppose_auction_fact_claim(uuid, text);
 --   drop function if exists app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid);
---   -- rétablir public.review_auction_fact_claim de 20260928180000, puis :
+--   -- rétablir public.review_auction_fact_claim de 20260928180000, puis (après le retour arrière de
+--   -- 20261118100300, qui appelle la fonction de verrou et lit la table de réglage) :
 --   drop function if exists app_private.lock_sale_for_registry(uuid);
---   (après le retour arrière de 20261118100300, qui appelle la fonction de verrou.)
+--   drop function if exists app_private.fact_registry_hourly_decision_limit();
+--   drop function if exists app_private.set_fact_registry_decisions_second_factor(boolean);
+--   drop table if exists app_private.fact_registry_switches;
+--   update public.auction_fact_source_precedence set can_hold = true where source_kind = 'document';
+
+-- 0. Réglages du registre -------------------------------------------------------------------------------------------
+create table if not exists app_private.fact_registry_switches (
+  switch_name text primary key check (
+    switch_name in ('decisions_require_second_factor', 'scheduled_reprojection')
+  ),
+  -- Pas de valeur par défaut : chaque ligne est posée par sa migration, dans son sens sûr.
+  enabled boolean not null,
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
+
+comment on table app_private.fact_registry_switches is
+  'Registre des pièces : interrupteurs d''exploitation, changés par le propriétaire sans migration de code. decisions_require_second_factor : une décision exige un jeton aal2 (vrai par défaut ; ligne absente = exigé). scheduled_reprojection : la tâche planifiée fact-registry-check réapplique la projection aux ventes en dérive (faux par défaut ; ligne absente = fermé).';
+
+alter table app_private.fact_registry_switches enable row level security;
+revoke all on table app_private.fact_registry_switches from public, anon, authenticated, service_role;
+
+insert into app_private.fact_registry_switches (switch_name, enabled)
+values ('decisions_require_second_factor', true)
+on conflict (switch_name) do nothing;
+
+create or replace function app_private.set_fact_registry_decisions_second_factor(p_required boolean)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if p_required is null then
+    raise exception using errcode = '22023', message = 'The switch is set to true or false.';
+  end if;
+  update app_private.fact_registry_switches
+     set enabled = p_required,
+         updated_at = pg_catalog.now(),
+         updated_by = current_user
+   where switch_name = 'decisions_require_second_factor';
+  if not found then
+    raise exception using errcode = '55000',
+      message = 'The switch decisions_require_second_factor has no row: restore it by a migration.';
+  end if;
+  return p_required;
+end;
+$$;
+
+comment on function app_private.set_fact_registry_decisions_second_factor(boolean) is
+  'Registre des pièces : exige (true) ou lève (false) le second facteur pour les décisions du registre. Réservée au propriétaire (rôle de migration). Lève si la ligne du réglage manque.';
+
+revoke all on function app_private.set_fact_registry_decisions_second_factor(boolean)
+  from public, anon, authenticated, service_role;
+
+-- Plafond de décisions par administrateur et par heure. Une seule constante.
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer
+language sql
+immutable
+set search_path = ''
+as $$
+  select 20;
+$$;
+
+revoke all on function app_private.fact_registry_hourly_decision_limit()
+  from public, anon, authenticated, service_role;
+
+-- Une pièce de document ne s'accepte pas avant le lot R3 : la préséance le dit, la décision la lit.
+update public.auction_fact_source_precedence
+   set can_hold = false
+ where source_kind = 'document' and can_hold;
 
 -- 1. Verrou de la vente -------------------------------------------------------------------------------------------
 create or replace function app_private.lock_sale_for_registry(p_sale_id uuid)
@@ -83,26 +191,18 @@ language plpgsql
 volatile
 security invoker
 set search_path = ''
+set lock_timeout = '3s'
 as $$
-declare
-  v_previous text := pg_catalog.current_setting('lock_timeout');
-  v_found boolean;
 begin
-  perform pg_catalog.set_config('lock_timeout', '3s', true);
-  begin
-    perform 1 from public.auction_sales sale where sale.id = p_sale_id for no key update;
-    v_found := found;
-  exception when lock_not_available then
-    perform pg_catalog.set_config('lock_timeout', v_previous, true);
-    raise exception using errcode = '55P03', message = 'sale_busy';
-  end;
-  perform pg_catalog.set_config('lock_timeout', v_previous, true);
-  return v_found;
+  perform 1 from public.auction_sales sale where sale.id = p_sale_id for no key update;
+  return found;
+exception when lock_not_available then
+  raise exception using errcode = '55P03', message = 'sale_busy';
 end;
 $$;
 
 comment on function app_private.lock_sale_for_registry(uuid) is
-  'Registre des pièces : verrouille la ligne de la vente (FOR NO KEY UPDATE) avant toute écriture du registre, sous un délai de 3 secondes ; 55P03 « sale_busy » au-delà. Rend false si la vente n''existe pas.';
+  'Registre des pièces : verrouille la ligne de la vente (FOR NO KEY UPDATE) avant toute écriture du registre, sous un délai de 3 secondes posé par la fonction elle-même ; 55P03 « sale_busy » au-delà. Rend false si la vente n''existe pas.';
 
 revoke all on function app_private.lock_sale_for_registry(uuid)
   from public, anon, authenticated, service_role;
@@ -121,6 +221,7 @@ language plpgsql
 volatile
 security definer
 set search_path = ''
+set lock_timeout = '3s'
 as $$
 declare
   v_actor uuid := (select auth.uid());
@@ -135,8 +236,10 @@ declare
   v_decision_sale uuid;
   v_target uuid;
   v_locked_sale uuid;
+  v_tracked boolean;
   v_source_kind text;
   v_land boolean;
+  v_carries boolean;
   v_lot_attachment text;
   v_lot_ref text;
   v_attempt integer;
@@ -145,6 +248,16 @@ declare
 begin
   if v_actor is null or not public.is_admin() then
     raise exception using errcode = '42501', message = 'admin_required';
+  end if;
+  -- Second facteur du registre : exigé tant que le propriétaire ne l'a pas levé (ligne absente = exigé).
+  if coalesce(
+      (select switch.enabled from app_private.fact_registry_switches switch
+        where switch.switch_name = 'decisions_require_second_factor'),
+      true
+    )
+    and coalesce((select auth.jwt() ->> 'aal'), 'aal1') <> 'aal2'
+  then
+    raise exception using errcode = '42501', message = 'second_factor_required';
   end if;
 
   begin
@@ -164,7 +277,17 @@ begin
       raise exception 'refused';
     end;
 
-    -- c. L'observation et sa vente, sans verrou.
+    -- c. Plafond par administrateur, sur l'heure écoulée.
+    if (
+      select count(*) from public.auction_fact_claim_decisions decision
+      where decision.actor_id = v_actor
+        and decision.decided_at > pg_catalog.clock_timestamp() - interval '1 hour'
+    ) >= app_private.fact_registry_hourly_decision_limit() then
+      v_refusal := 'rate_limited';
+      raise exception 'refused';
+    end if;
+
+    -- d. L'observation et sa vente, sans verrou.
     select claim.auction_sale_id, claim.field_key, claim.value_jsonb, claim.evidence_kind, claim.extractor_name,
       claim.evidence_locator
     into v_claim
@@ -216,9 +339,9 @@ begin
       raise exception 'refused';
     end if;
 
-    -- d. Transition, contre la dernière décision de l'observation (lue sous le verrou de la vente).
-    select decision.id, decision.decision, decision.lot_attachment, decision.information_agent_fact_id,
-      decision.recipient_kind, decision.received_at
+    -- e. Transition, contre la dernière décision de l'observation (lue sous le verrou de la vente).
+    select decision.id, decision.decision, decision.reason_code, decision.lot_attachment,
+      decision.information_agent_fact_id, decision.recipient_kind, decision.received_at
     into v_latest
     from public.auction_fact_claim_decisions decision
     where decision.claim_id = p_claim_id
@@ -227,6 +350,13 @@ begin
     v_has_latest := found;
     if v_has_latest and v_latest.decision = 'opposed' then
       v_refusal := case when p_decision = 'accepted' then 'opposed_final' else 'invalid_transition' end;
+      raise exception 'refused';
+    end if;
+    -- Autorisation d'affichage retirée : définitif, comme une opposition.
+    if v_has_latest and p_decision = 'accepted'
+      and v_latest.decision = 'withdrawn' and v_latest.reason_code = 'authorization_withdrawn'
+    then
+      v_refusal := 'withdrawal_final';
       raise exception 'refused';
     end if;
     v_allowed := case p_decision
@@ -242,26 +372,32 @@ begin
       raise exception 'refused';
     end if;
 
-    -- e. Refus propres à l'acceptation.
+    -- f. Refus propres à l'acceptation.
     if p_decision = 'accepted' then
       if p_lot_attachment is null then
         v_refusal := 'invalid_lot_attachment';
         raise exception 'refused';
       end if;
+      v_tracked := exists (
+        select 1 from public.auction_fact_fields field where field.field_key = v_claim.field_key
+      );
+      -- L'origine doit pouvoir tenir : ce champ s'il est du registre, au moins un champ sinon (décision
+      -- enregistrée, non affichée). La table de préséance juge, aucune origine n'est nommée ici.
       v_source_kind := app_private.fact_claim_source_kind(
         v_claim.evidence_kind, v_claim.extractor_name, v_claim.evidence_locator
       );
-      if v_source_kind = 'document' then
-        v_refusal := 'origin_not_open';
-        raise exception 'refused';
-      end if;
-      if v_source_kind is null or v_source_kind = 'listing' then
+      if v_source_kind is null or not exists (
+        select 1 from public.auction_fact_source_precedence precedence
+        where precedence.source_kind = v_source_kind
+          and precedence.can_hold
+          and (not v_tracked or precedence.field_key = v_claim.field_key)
+      ) then
         v_refusal := 'origin_cannot_hold';
         raise exception 'refused';
       end if;
       if v_claim.field_key = 'property.surface_m2' then
-        select coalesce(
-          sale.property_type = 'land' or sale.app_surface_kind = 'land' or sale.surface_scope = 'land', false
+        select app_private.sale_is_land_sale(
+          sale.property_type, sale.surface_scope, sale.app_surface_kind, sale.held_fields
         ) into v_land
         from public.auction_sales sale
         where sale.id = v_target;
@@ -270,15 +406,14 @@ begin
           raise exception 'refused';
         end if;
       end if;
-      if exists (
-        select 1 from public.auction_fact_fields field where field.field_key = v_claim.field_key
-      ) and app_private.sale_field_claim_value(v_claim.field_key, v_claim.value_jsonb) is null then
+      if v_tracked and app_private.sale_field_claim_value(v_claim.field_key, v_claim.value_jsonb) is null then
         v_refusal := 'invalid_argument';
         raise exception 'refused';
       end if;
     end if;
 
-    -- f. La décision. lot_ref : forme normalisée d'abord ; si la contrainte de format la refuse, NULL.
+    -- g. La décision. lot_ref : forme normalisée d'abord ; si la contrainte de format la refuse, NULL. La
+    --    provenance de la dernière décision est reprise, sauf autour d'un retrait de l'autorisation d'affichage.
     v_lot_attachment := case
       when p_decision = 'accepted' then p_lot_attachment
       when v_has_latest then v_latest.lot_attachment
@@ -290,6 +425,9 @@ begin
       ), ' '),
       ''
     ) end;
+    v_carries := v_has_latest
+      and p_reason_code is distinct from 'authorization_withdrawn'
+      and v_latest.reason_code is distinct from 'authorization_withdrawn';
     for v_attempt in 1..2 loop
       begin
         insert into public.auction_fact_claim_decisions (
@@ -298,9 +436,9 @@ begin
         ) values (
           p_claim_id, v_decision_sale, v_claim.field_key, p_decision, v_lot_attachment,
           case when v_attempt = 1 then v_lot_ref end, 'admin', v_actor, p_reason_code,
-          case when v_has_latest then v_latest.information_agent_fact_id end,
-          case when v_has_latest then v_latest.recipient_kind end,
-          case when v_has_latest then v_latest.received_at end,
+          case when v_carries then v_latest.information_agent_fact_id end,
+          case when v_carries then v_latest.recipient_kind end,
+          case when v_carries then v_latest.received_at end,
           p_supersedes_decision_id
         )
         returning id into v_decision_id;
@@ -313,7 +451,7 @@ begin
       end;
     end loop;
 
-    -- g. Projection de toute la vente, dans la même transaction.
+    -- h. Projection de toute la vente, dans la même transaction.
     v_projection := app_private.project_sale_fields(v_target, null, true);
   exception when others then
     get stacked diagnostics v_sqlstate = returned_sqlstate, v_constraint = constraint_name;
@@ -324,6 +462,7 @@ begin
           when v_refusal in ('invalid_lot_attachment', 'invalid_argument') then '22023'
           when v_refusal in ('claim_not_found', 'sale_not_found') then 'P0002'
           when v_refusal = 'retry' then '40001'
+          when v_refusal = 'rate_limited' then '53400'
           else '55000'
         end;
     end if;
@@ -339,6 +478,9 @@ begin
     if v_sqlstate = '23514' and v_constraint = 'auction_fact_claim_decisions_lot_attachment_check' then
       raise exception using errcode = '22023', message = 'invalid_lot_attachment';
     end if;
+    -- Erreur inattendue : son code et le nom de la contrainte vont au journal du serveur, rien d'autre.
+    raise log 'fact registry decision failed: sqlstate %, constraint %',
+      v_sqlstate, coalesce(nullif(v_constraint, ''), '-');
     raise exception using errcode = 'P0001', message = 'registry_write_failed';
   end;
 
@@ -354,7 +496,7 @@ end;
 $$;
 
 comment on function app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid) is
-  'Registre des pièces : seule fonction qui écrit une décision d''administrateur (acceptée, rejetée, retirée, opposition). Auteur tiré de auth.uid(), jamais d''un paramètre ; public.is_admin() en tête ; contrôle des déclencheurs ; vente verrouillée d''abord ; transition contrôlée ; projection de toute la vente. Erreurs en liste fermée, sans détail. Exécutable par aucun rôle de l''API.';
+  'Registre des pièces : seule fonction qui écrit une décision d''administrateur (acceptée, rejetée, retirée, opposition). Auteur tiré de auth.uid(), jamais d''un paramètre ; public.is_admin() en tête, puis second facteur du registre ; contrôle des déclencheurs ; plafond horaire ; vente verrouillée d''abord ; transition contrôlée ; projection de toute la vente. Erreurs en liste fermée, sans détail. Exécutable par aucun rôle de l''API.';
 
 revoke all on function app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)
   from public, anon, authenticated, service_role;
@@ -440,6 +582,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path = ''
+set lock_timeout = '3s'
 as $function$
 declare
   v_claim public.auction_fact_claims%rowtype;
@@ -514,13 +657,14 @@ begin
     raise exception using errcode = '40001', message = 'retry';
   end if;
 
-  -- Le registre des pièces décide seul des observations d'un professionnel, et de celles qu'il a déjà décidées.
+  -- Le registre des pièces décide seul des observations d'origine réservée (professionnel, saisie d'un
+  -- administrateur), et de celles qu'il a déjà décidées.
   if app_private.fact_claim_source_kind(
     v_claim.evidence_kind, v_claim.extractor_name, v_claim.evidence_locator
-  ) in ('lawyer_email', 'lawyer_form') then
+  ) in ('lawyer_email', 'lawyer_form', 'admin') then
     raise exception using
       errcode = '55000',
-      message = 'A professional fact claim is decided through the fact registry.';
+      message = 'A professional or administrator fact claim is decided through the fact registry.';
   end if;
 
   if exists (
@@ -621,7 +765,7 @@ grant execute on function public.review_auction_fact_claim(uuid, uuid, text, tex
 to service_role;
 
 comment on function public.review_auction_fact_claim(uuid, uuid, text, text) is
-  'Atomically resolves one source-backed fact candidate after an admin decision; accepted values must still match auction_sales. The sale row is locked before the claim; professional claims and claims already decided in the fact registry are refused.';
+  'Atomically resolves one source-backed fact candidate after an admin decision; accepted values must still match auction_sales. The sale row is locked before the claim (3 s at most per lock wait); professional and administrator claims, and claims already decided in the fact registry, are refused.';
 
 notify pgrst, 'reload schema';
 
