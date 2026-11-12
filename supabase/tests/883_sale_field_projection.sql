@@ -1175,8 +1175,8 @@ select results_eq(
 select is(
   (app_private.project_sale_fields('88300000-1000-4000-8000-000000000004', null, true)
     #> '{fields,property.rooms_count}') - 'decision_id',
-  '{"state": "held", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000501"}'::jsonb,
-  'the kept sale is held by the piece accepted on the sale it absorbed'
+  '{"state": "unchanged", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000501"}'::jsonb,
+  'the kept sale is held by the piece accepted on the sale it absorbed: the merge itself projected it (lot R2b), a further projection changes nothing'
 );
 
 select is(
@@ -1208,8 +1208,8 @@ select results_eq(
 select is(
   (app_private.project_sale_fields('88300000-1000-4000-8000-000000000007', null, true)
     #> '{fields,property.rooms_count}') - 'decision_id',
-  '{"state": "held", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000901"}'::jsonb,
-  'the piece accepted on the first absorbed sale holds on the sale finally kept'
+  '{"state": "unchanged", "value": 4, "claim_id": "88300000-2000-4000-8000-000000000901"}'::jsonb,
+  'the piece accepted on the first absorbed sale holds on the sale finally kept, posed by the two merges themselves'
 );
 
 -- La libération d'une vente absorbée ne déloge pas les pièces de la vente conservée -----------------------------

@@ -11,11 +11,48 @@
 --   * public.sync_fact_registry_alerts : sans paramètre ; une alerte opérationnelle par contrôle, clé et gravité
 --     fixées, refermée quand l'écart disparaît, jamais refermée par un rapport tronqué ;
 --   * la tâche fact-registry-check est attendue par cron.stale toutes les 27 heures.
+-- 20261118100300 (lot R2b) : le contrôle est paginé (p_after, next_after) et l'addition des pages vaut le rapport
+-- d'une seule page ; la relance planifiée de la projection est fermée par défaut, sans effet tant que le journal
+-- des décisions est vide ou qu'un déclencheur manque, bornée, journalisée (drift_reprojected), et une vente dont
+-- la projection échoue n'arrête pas la passe.
 begin;
 
 set local timezone = 'UTC';
 
-select plan(54);
+select plan(69);
+
+-- Relance planifiée, journal des décisions vide (lot R2b) ----------------------------------------------------------
+-- À faire avant toute décision du jeu d'essai. La lecture des ventes du registre est remplacée par une fonction qui
+-- lève : interrupteur ouvert, la relance ne doit même pas la lire tant qu'aucune décision n'existe.
+select is(
+  (select enabled from app_private.fact_registry_switches where switch_name = 'scheduled_reprojection'),
+  false,
+  'the scheduled reprojection is closed by default'
+);
+
+create temporary table saved_definitions on commit drop as
+select pg_get_functiondef('app_private.fact_registry_candidate_sales()'::regprocedure) as definition;
+
+create or replace function app_private.fact_registry_candidate_sales()
+returns setof uuid language plpgsql stable security definer set search_path = '' as $function$
+begin
+  raise exception 'registry sales read';
+end;
+$function$;
+
+select app_private.set_fact_registry_scheduled_reprojection(true);
+select is(
+  app_private.reproject_drifted_sales(50),
+  '{"enabled": true, "max": 50, "drifted": 0, "applied": 0, "busy": 0, "failed": 0, "deferred": 0}'::jsonb,
+  'opened, with an empty decision journal, the scheduled reprojection does not even read the sales of the registry'
+);
+select app_private.set_fact_registry_scheduled_reprojection(false);
+
+do $restore$
+begin
+  execute (select definition from saved_definitions);
+end;
+$restore$;
 
 -- Fonctions et droits ---------------------------------------------------------------------------------------------
 select ok(
@@ -28,7 +65,7 @@ select ok(
 select ok(
   (select prosecdef and proconfig @> array['search_path=""']::text[] and provolatile = 's'
           and pg_get_function_result(oid) = 'jsonb'
-     from pg_proc where oid = 'public.check_fact_registry_consistency(integer)'::regprocedure),
+     from pg_proc where oid = 'public.check_fact_registry_consistency(integer, uuid)'::regprocedure),
   'the daily check is a stable function: its own statements are read-only'
 );
 
@@ -39,19 +76,19 @@ select ok(
           and (select count(*) from regexp_matches(
                  prosrc, 'app_private\.project_sale_fields\(v_sale_id, null, false\)', 'g')) = 2
           and prosrc !~* '\m(insert|update|delete|truncate|set_config|nextval)\M'
-     from pg_proc where oid = 'public.check_fact_registry_consistency(integer)'::regprocedure),
+     from pg_proc where oid = 'public.check_fact_registry_consistency(integer, uuid)'::regprocedure),
   'the daily check only simulates the projection (apply = false, written literally, in the pass and in its replay) and has no write statement'
 );
 
 select is(
   (select array_agg(routine.signature || ':' || api_role.name order by routine.signature collate "C", api_role.name collate "C")
      from unnest(array[
-       'public.get_sale_field_baselines(uuid[])', 'public.check_fact_registry_consistency(integer)',
+       'public.get_sale_field_baselines(uuid[])', 'public.check_fact_registry_consistency(integer, uuid)',
        'public.sync_fact_registry_alerts()']) routine(signature)
      cross join unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
      where has_function_privilege(api_role.name, routine.signature, 'execute')),
   array[
-    'public.check_fact_registry_consistency(integer):service_role',
+    'public.check_fact_registry_consistency(integer, uuid):service_role',
     'public.get_sale_field_baselines(uuid[]):service_role',
     'public.sync_fact_registry_alerts():service_role'
   ],
@@ -624,13 +661,22 @@ insert into public.properties (source_url, source_name, occupancy_status) values
   ('https://example.test/889/sale-a', 'licitor', 'vacant');
 -- Vente c : la portée de la surface devient « terrain » (colonne que la retenue ne surveille pas).
 update public.auction_sales set surface_scope = 'land' where id = '88900000-1000-4000-8000-00000000000c';
--- Vente e : une acceptation jamais projetée, puis la vente est absorbée par la vente d.
-execute decide('e1', 'accepted');
+-- Vente e : absorbée par la vente d, avec une acceptation que personne n'a projetée. Depuis le lot R2b la fusion
+-- reprojette elle-même la vente conservée : pour laisser une dérive, l'acceptation est écrite APRÈS la fusion, sur
+-- l'observation détachée, que sa première décision (un retrait) rattache à la vente e.
+execute decide('e1', 'withdrawn');
 update public.auction_sales
 set source_urls = '["https://example.test/889/sale-d", "https://example.test/889/sale-e"]'::jsonb
 where id = '88900000-1000-4000-8000-00000000000d';
 select count(*) > 0 from public.bridge_auction_sales_to_outcome_graph();
 delete from public.auction_sales where id = '88900000-1000-4000-8000-00000000000e';
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, recipient_kind, received_at
+)
+select claim.id, '88900000-1000-4000-8000-00000000000e', claim.field_key, 'accepted', 'single_lot', 'admin',
+  '88900000-0000-4000-8000-0000000000a1', 'source_lawyer', '2026-11-01 09:00:00+00'
+from public.auction_fact_claims claim
+where claim.id = '88900000-2000-4000-8000-0000000000e1';
 
 create temporary table drift_marks on commit drop as
 select
@@ -835,7 +881,7 @@ alter table public.auction_fact_claims enable always trigger auction_fact_claims
 select ok(
   to_regprocedure('public.sync_fact_registry_alerts(integer)') is null
   and pg_get_function_arguments('public.sync_fact_registry_alerts()'::regprocedure) = ''
-  and (select prosrc ~ 'public\.check_fact_registry_consistency\(\)'
+  and (select prosrc ~ 'public\.check_fact_registry_consistency\(500, v_after\)'
               and prosrc ~ 'app_private\.sync_fact_registry_alerts_from_report\(v_report\)'
          from pg_proc where oid = 'public.sync_fact_registry_alerts()'::regprocedure),
   'the alert function takes no parameter: the caller chooses neither the bound nor the report'
@@ -880,6 +926,206 @@ select results_eq(
       from (select public.check_fact_registry_consistency() as report) bounded$$,
   $$values (false, true, 20)$$,
   'a control lists twenty sales at most and still counts them all: twenty-one more drifting sales, a complete report'
+);
+
+-- Pagination (lot R2b) ----------------------------------------------------------------------------------------------
+select results_eq(
+  $$select (page.report ->> 'truncated')::boolean, (page.report ->> 'sales_checked')::integer,
+           (page.report ->> 'next_after')::uuid = (
+             select candidate.id from app_private.fact_registry_candidate_sales() candidate(id)
+             order by candidate.id offset 6 limit 1)
+      from (select public.check_fact_registry_consistency(7) as report) page$$,
+  $$values (true, 7, true)$$,
+  'a page of seven sales says where the next page starts: the identifier of its last sale'
+);
+
+select results_eq(
+  $$select (page.report ->> 'truncated')::boolean, page.report ? 'next_after',
+           (page.report ->> 'sales_checked')::integer = (page.report ->> 'candidate_sales')::integer - 7
+      from (
+        select public.check_fact_registry_consistency(5000, (
+          select candidate.id from app_private.fact_registry_candidate_sales() candidate(id)
+          order by candidate.id offset 6 limit 1)) as report
+      ) page$$,
+  $$values (false, false, true)$$,
+  'the page after an identifier examines the sales that follow it, and the last page names no next one'
+);
+
+-- Toutes les pages de sept ventes, additionnées, valent le rapport d'une seule page.
+create temporary table paged_report (report jsonb, pages integer) on commit drop;
+do $pages$
+declare
+  v_report jsonb;
+  v_page jsonb;
+  v_after uuid;
+  v_pages integer := 0;
+begin
+  loop
+    v_page := public.check_fact_registry_consistency(7, v_after);
+    v_report := case
+      when v_report is null then v_page else app_private.fact_registry_report_add_page(v_report, v_page) end;
+    v_pages := v_pages + 1;
+    v_after := (v_page ->> 'next_after')::uuid;
+    exit when v_after is null or v_pages >= 100;
+  end loop;
+  insert into paged_report values (v_report, v_pages);
+end;
+$pages$;
+
+select ok(
+  (select pages >= 4 and pages < 100 from paged_report)
+  and (select report - 'limit' - 'checked_at' - 'next_after' from paged_report)
+    = (public.check_fact_registry_consistency(5000) - 'limit' - 'checked_at'),
+  'the pages of seven sales, added up, give the report of a single page: same counts, same first twenty sales, same controls that do not depend on a sale'
+);
+
+-- Relance planifiée de la projection (lot R2b) -------------------------------------------------------------------------
+-- Fermée : la tâche ne touche aucune fiche, et le dit dans son rapport.
+set local role service_role;
+insert into check_reports select 'closed', public.sync_fact_registry_alerts();
+reset role;
+
+select results_eq(
+  $$select report -> 'reprojection', (report ->> 'truncated')::boolean, (report ->> 'pages')::integer,
+           report ? 'next_after',
+           (select count(*)::integer from public.auction_sales
+              where id::text like '88900000-1000-4000-8000-0000000001%' and rooms_count = 2),
+           (select count(*)::integer from public.auction_sale_field_hold_events where event = 'drift_reprojected')
+      from check_reports where step = 'closed'$$,
+  $$values ('{"enabled": false, "max": 50, "drifted": 0, "applied": 0, "busy": 0, "failed": 0, "deferred": 0}'::jsonb,
+            false, 1, false, 21, 0)$$,
+  'closed by default: the daily job reprojects nothing, writes no event, and its report says so'
+);
+
+select app_private.set_fact_registry_scheduled_reprojection(true);
+
+-- Ouverte, mais un déclencheur du registre manque : rien n'est écrit.
+alter table public.auction_fact_claims disable trigger auction_fact_claims_no_truncate;
+select is(
+  app_private.reproject_drifted_sales(50) - 'enabled' - 'max',
+  '{"drifted": 0, "applied": 0, "busy": 0, "failed": 0, "deferred": 0}'::jsonb,
+  'opened, with a registry trigger out of its mode, the scheduled reprojection writes nothing'
+);
+alter table public.auction_fact_claims enable always trigger auction_fact_claims_no_truncate;
+
+-- Une vente dont la projection échoue (contrainte posée pour l'essai) n'arrête pas la passe.
+alter table public.auction_sales add constraint pgtap_889_refused_projection check (
+  id <> '88900000-1000-4000-8000-000000000101' or rooms_count <> 3
+) not valid;
+
+create temporary table reprojection_runs (label text, report jsonb) on commit drop;
+insert into reprojection_runs
+select 'bounded', app_private.reproject_drifted_sales(0);
+insert into reprojection_runs
+select 'first', app_private.reproject_drifted_sales((
+  select count(*)::integer from app_private.fact_registry_candidate_sales() candidate(id)
+  where candidate.id <= '88900000-1000-4000-8000-000000000105'
+    and (app_private.project_sale_fields(candidate.id, null, false) ->> 'changed')::boolean
+));
+
+select results_eq(
+  $$select (report ->> 'applied')::integer, (report ->> 'deferred')::integer = (report ->> 'drifted')::integer,
+           (report ->> 'drifted')::integer >= 21
+      from reprojection_runs where label = 'bounded'$$,
+  $$values (0, true, true)$$,
+  'bounded: with a bound of zero every drifting sale is counted as deferred and none is written'
+);
+
+select results_eq(
+  $$select (report ->> 'failed')::integer, (report ->> 'deferred')::integer > 0,
+           (report ->> 'applied')::integer + (report ->> 'failed')::integer + (report ->> 'deferred')::integer
+             = (report ->> 'drifted')::integer,
+           (select count(*)::integer from public.auction_sales
+              where id::text like '88900000-1000-4000-8000-0000000001%' and rooms_count = 3)
+      from reprojection_runs where label = 'first'$$,
+  $$values (1, true, true, 4)$$,
+  'a pass bounded to the first sales, in the order of their identifier: the sale whose projection fails is counted and does not stop the pass, the four that follow it are reprojected, the others are deferred'
+);
+
+select results_eq(
+  $$select count(*)::integer, count(distinct event.sale_id)::integer,
+           bool_and(event.field_key = 'property.rooms_count' and event.held_value = '3'::jsonb
+                    and event.decision_id is not null)
+      from public.auction_sale_field_hold_events event
+      where event.event = 'drift_reprojected'
+        and event.sale_id::text like '88900000-1000-4000-8000-0000000001%'$$,
+  $$values (4, 4, true)$$,
+  'logged: one drift_reprojected event per reprojected sale, on the field whose entry changed, with the decision that holds it'
+);
+
+select is(
+  (select count(*)::integer from public.auction_fact_claim_decisions),
+  (select count(*)::integer from public.auction_fact_claim_decisions
+     where publication_mode = 'manual' and actor_kind = 'admin'),
+  'the scheduled reprojection writes no decision: every decision of the journal is still a manual one of an administrator'
+);
+
+-- Passage suivant, par la tâche : les ventes reportées sont reprises ; celle qui échoue reste en dérive et le contrôle
+-- la signale.
+alter table public.auction_sales drop constraint pgtap_889_refused_projection;
+alter table public.auction_sales add constraint pgtap_889_refused_projection check (
+  id <> '88900000-1000-4000-8000-000000000121' or rooms_count <> 3
+) not valid;
+
+set local role service_role;
+insert into check_reports select 'opened', public.sync_fact_registry_alerts();
+reset role;
+
+select results_eq(
+  $$select (report #>> '{reprojection,enabled}')::boolean, (report #>> '{reprojection,failed}')::integer,
+           (report #>> '{reprojection,deferred}')::integer,
+           report #> '{checks,projection_drift,sale_ids}' ? '88900000-1000-4000-8000-000000000121',
+           (select count(*)::integer from public.auction_sales
+              where id::text like '88900000-1000-4000-8000-0000000001%' and rooms_count = 3
+                and held_fields #>> '{property.rooms_count,state}' = 'held')
+      from check_reports where step = 'opened'$$,
+  $$values (true, 1, 0, true, 20)$$,
+  'the next pass takes the deferred sales: twenty of the twenty-one hold their piece; the one that fails stays in drift, and the check that follows reports it'
+);
+
+alter table public.auction_sales drop constraint pgtap_889_refused_projection;
+
+-- Une dérive qui libère : un retrait écrit au journal sans projection (vente 102, que la relance a fait tenir).
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code
+)
+select claim.id, claim.auction_sale_id, claim.field_key, 'withdrawn', 'single_lot', 'admin',
+  '88900000-0000-4000-8000-0000000000a1', 'entry_error'
+from public.auction_fact_claims claim
+where claim.id = '88900000-2000-4000-8000-000000000102';
+
+-- Stable : un passage de plus applique la dernière vente, puis plus rien ne change.
+insert into reprojection_runs select 'last', app_private.reproject_drifted_sales(50);
+
+select results_eq(
+  $$select sale.rooms_count, sale.held_fields #>> '{property.rooms_count,state}',
+           (select count(*)::integer from public.auction_sale_field_hold_events event
+              where event.sale_id = sale.id and event.event = 'drift_reprojected' and event.held_value is null)
+      from public.auction_sales sale where sale.id = '88900000-1000-4000-8000-000000000102'$$,
+  $$values (2, 'released', 1)$$,
+  'a drift that releases a field is reprojected too, and logged on the field whose entry changed, without a held value'
+);
+insert into reprojection_runs select 'idle', app_private.reproject_drifted_sales(50);
+
+select results_eq(
+  $$select (select (report ->> 'applied')::integer >= 1 from reprojection_runs where label = 'last'),
+           (select report - 'enabled' - 'max' from reprojection_runs where label = 'idle')$$,
+  $$values (true, '{"drifted": 0, "applied": 0, "busy": 0, "failed": 0, "deferred": 0}'::jsonb)$$,
+  'once every sale is reprojected, a further pass finds no drift and writes nothing'
+);
+
+select ok(
+  (select count(*) = 0 from unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
+     cross join unnest(array[
+       'app_private.reproject_drifted_sales(integer)', 'app_private.fact_registry_candidate_sales()',
+       'app_private.fact_registry_report_add_page(jsonb, jsonb)',
+       'app_private.set_fact_registry_scheduled_reprojection(boolean)']) routine(signature)
+     where has_function_privilege(api_role.name, routine.signature, 'EXECUTE'))
+  and (select count(*) = 0 from unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
+     cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE']) privilege(name)
+     where has_table_privilege(api_role.name, 'app_private.fact_registry_switches', privilege.name))
+  and (select relrowsecurity from pg_class where oid = 'app_private.fact_registry_switches'::regclass),
+  'no API role can run the reprojection, read the sales of the registry, or read or flip the switch'
 );
 
 -- cron.stale ------------------------------------------------------------------------------------------------------
