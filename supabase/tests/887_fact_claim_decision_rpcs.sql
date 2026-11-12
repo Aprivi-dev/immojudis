@@ -22,7 +22,9 @@
 --   * le délai de verrou de 3 secondes est un réglage des fonctions, rendu à l'appelant à la sortie ;
 --   * public.review_auction_fact_claim : vente verrouillée d'abord, colonnes nommées, observation d'origine
 --     réservée ou déjà décidée au journal refusée, vente disparue refusée ;
---   * aucune autre fonction de la base n'écrit une décision, ne pose un jeton, ni n'enveloppe ces fonctions.
+--   * aucune autre fonction de la base n'écrit une décision, ne pose un jeton, ni n'enveloppe ces fonctions ;
+--   * arrêt d'urgence (runbook R2c) : le retrait du rôle d'un administrateur qui a relu une preuve statistique est
+--     refusé ; les quatre « revoke execute » ferment les décisions à coup sûr.
 -- Les cas à deux sessions (sale_busy, délai de 3 secondes) sont décrits au runbook R2b.
 -- En local, auth.jwt() du script d'amorçage rend {} : les assertions « aal2 » demandent la définition de Supabase
 -- (docs/runbooks/registre-des-pieces-r2b.md, « Échecs locaux connus »).
@@ -30,7 +32,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(127);
+select plan(132);
 
 -- Droits ----------------------------------------------------------------------------------------------------------
 -- Lot R2c : la seule ouverture est authenticated sur les quatre fonctions publiques. « public » est le droit
@@ -1233,6 +1235,57 @@ create or replace function app_private.fact_registry_hourly_decision_limit()
 returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
 create or replace function app_private.fact_registry_daily_final_decision_limit()
 returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
+select pg_temp.sign_in('a1');
+
+-- Lot R2c : arrêt d'urgence -----------------------------------------------------------------------------------------
+-- Retirer le rôle admin d'un compte compromis peut être refusé : l'identité d'un relecteur statistique est
+-- immuable après une relecture (20260731143651), et un compte volé peut se donner cette protection par une seule
+-- relecture. La relecture est posée ici sans sa preuve (clé étrangère retirée pour le fichier, annulé par le
+-- rollback) : le graphe des résultats n'est pas le sujet.
+alter table public.evidence_reviews drop constraint evidence_reviews_evidence_id_fkey;
+select pg_temp.sign_in('d1');
+insert into public.evidence_reviews (evidence_id, reviewer_user_id, review_type, decision)
+values ('88700000-4000-4000-8000-000000000001', '88700000-0000-4000-8000-0000000000d1', 'primary', 'approved');
+select throws_ok(
+  $$update public.user_profiles set user_role = 'user'
+     where user_id = '88700000-0000-4000-8000-0000000000d1'$$,
+  '55000', 'A statistical reviewer identity and administrator role are immutable after review.',
+  'the administrator role of an account that reviewed statistical evidence cannot be withdrawn: this emergency step can be refused'
+);
+set local role authenticated;
+select lives_ok(
+  $$select public.reject_auction_fact_claim('88700000-2000-4000-8000-000000000023', 'other')$$,
+  'and that account still decides'
+);
+reset role;
+-- Les quatre « revoke » du runbook : le seul arrêt certain.
+revoke execute on function public.accept_auction_fact_claim(uuid, text, text, uuid) from authenticated;
+revoke execute on function public.reject_auction_fact_claim(uuid, text) from authenticated;
+revoke execute on function public.withdraw_auction_fact_claim(uuid, text) from authenticated;
+revoke execute on function public.oppose_auction_fact_claim(uuid, text) from authenticated;
+select is(
+  (select count(*)::integer
+     from unnest(array['public', 'anon', 'authenticated', 'service_role']) api_role(name)
+     cross join unnest(array[
+       'public.accept_auction_fact_claim(uuid, text, text, uuid)', 'public.reject_auction_fact_claim(uuid, text)',
+       'public.withdraw_auction_fact_claim(uuid, text)', 'public.oppose_auction_fact_claim(uuid, text)'])
+       routine(signature)
+     where has_function_privilege(api_role.name, routine.signature, 'EXECUTE')),
+  0,
+  'the four revoke statements of the runbook leave no API role able to execute a decision function'
+);
+set local role authenticated;
+select throws_ok(
+  $$select public.oppose_auction_fact_claim('88700000-2000-4000-8000-000000000023', 'other')$$,
+  '42501', 'permission denied for function oppose_auction_fact_claim',
+  'after them the same account, still an administrator, records no opposition'
+);
+select throws_ok(
+  $$select public.accept_auction_fact_claim('88700000-2000-4000-8000-000000000023', 'single_lot')$$,
+  '42501', 'permission denied for function accept_auction_fact_claim',
+  'nor accepts anything: the switch-over is closed'
+);
+reset role;
 select pg_temp.sign_in('a1');
 
 -- Verrous : course avec une fusion, vente disparue (en dernier : la fonction de verrou reste remplacée) ----------------

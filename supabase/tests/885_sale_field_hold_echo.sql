@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(91);
+select plan(92);
 
 -- Fonctions pures -------------------------------------------------------------------------------------------------
 select is(app_private.sale_field_echo_memory(), interval '7 days', 'the echo memory lasts seven days');
@@ -1363,6 +1363,15 @@ select results_eq(
       from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-000000000010'$$,
   $$values (54::numeric, 'built', 'habitable')$$,
   'a write that carries the held value does not speak for the listing: the remembered kind of the listing stays'
+);
+
+-- L'annonce réécrite sans nature : une nature vide n'efface pas la nature mémorisée.
+execute reimport('10', 50, 50, null, 'listing_text', 0.7, 50, null, null, 2, 1, 'occupied');
+select is(
+  (select sale.held_fields #>> '{property.surface_m2,listing,app_surface_kind}'
+     from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-000000000010'),
+  'habitable',
+  'a listing write without any kind does not erase the remembered kind'
 );
 
 -- La collecte réécrit l'annonce : même valeur (50 m²), nature « terrain ».
