@@ -238,10 +238,10 @@ describe("getAdminPilotage", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("answers « non mesuré » everywhere when the database function is not deployed yet", async () => {
+  it("raises a missing database function like any other error", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202", message: "not found" } });
 
-    await expect(getAdminPilotage("token")).resolves.toEqual(unavailablePilotage());
+    await expect(getAdminPilotage("token")).rejects.toMatchObject({ code: "PGRST202" });
   });
 
   it("raises any other database error", async () => {

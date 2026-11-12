@@ -6,7 +6,7 @@ import {
 import { PublicApiError } from "@/lib/api-errors";
 import { parseApiResponse } from "@/lib/api-error-detail";
 import { apiRoute } from "@/lib/api-route";
-import { assertFeatureEntitlementVia } from "@/lib/property-reports";
+import { assertFeatureEntitlementVia } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {

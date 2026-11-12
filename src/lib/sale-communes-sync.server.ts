@@ -1,6 +1,5 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { isBusyWriteError } from "@/lib/write-busy";
 
 /**
@@ -46,8 +45,6 @@ export type SaleCommuneSyncResult = {
   rejected: number;
   /** La synchronisation n'a pas pu s'exécuter (base occupée, délai dépassé) : elle reprend à la passe suivante. */
   busy: boolean;
-  /** La table n'existe pas encore (migration non appliquée). */
-  notMigrated: boolean;
 };
 
 type PipelineCommune = {
@@ -83,32 +80,17 @@ export function pipelineCommuneOf(value: unknown): PipelineCommune | null {
 
 type SyncRow = { n_with_code: number; n_changed: number; n_written: number };
 
-/**
- * Lance la recopie. Avant la migration 20261108110100 (fonction absente), elle est sautée sans erreur tant que la table
- * est lisible : les codes posés par le remplissage initial restent utilisables. `now` n'est plus utilisé : la date de
- * pose est celle de la base.
- */
-export async function syncSaleCommunes(_now: Date = new Date()): Promise<SaleCommuneSyncResult> {
+/** Lance la recopie. La date de pose est celle de la base. */
+export async function syncSaleCommunes(): Promise<SaleCommuneSyncResult> {
   const result: SaleCommuneSyncResult = {
     withCode: 0,
     written: 0,
     deferred: 0,
     rejected: 0,
     busy: false,
-    notMigrated: false,
   };
   const { data, error } = await supabaseAdmin.rpc("sync_sale_communes");
   if (error) {
-    if (isMissingDatabaseObject(error)) {
-      const probe = await supabaseAdmin.from("auction_sale_communes").select("sale_id").limit(1);
-      if (probe.error) {
-        if (isMissingDatabaseObject(probe.error)) return { ...result, notMigrated: true };
-        throw new Error(
-          `Lecture des communes de ventes refusée (code ${probe.error.code ?? "inconnu"})`,
-        );
-      }
-      return result;
-    }
     // Verrou ou délai dépassé : ce n'est pas une panne, la recopie reprend à la passe suivante.
     if (isBusyWriteError(error)) return { ...result, busy: true };
     // Le message d'erreur peut citer une ligne : seul le code remonte.

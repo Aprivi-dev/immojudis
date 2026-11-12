@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { isMissingDatabaseObject } from "./postgrest-errors";
 import { listPepiteSaleIds } from "./pepite-sale-ids";
 
 const client = (result: { data: unknown; error: unknown }) => ({
@@ -14,10 +13,10 @@ describe("lecture de la liste des pépites", () => {
   });
 
   it.each(["PGRST202", "PGRST205", "42883", "42P01"])(
-    "une fonction absente (%s) vaut aucune pépite",
+    "lève une fonction absente (%s) au lieu de rendre « aucune pépite »",
     async (code) => {
-      expect(isMissingDatabaseObject({ code })).toBe(true);
-      await expect(listPepiteSaleIds(client({ data: null, error: { code } }))).resolves.toEqual([]);
+      const failure = { code };
+      await expect(listPepiteSaleIds(client({ data: null, error: failure }))).rejects.toBe(failure);
     },
   );
 

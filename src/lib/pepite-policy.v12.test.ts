@@ -9,7 +9,6 @@ import {
   PEPITE_CRITERIA,
   PEPITE_DPE_MIN_CONFIDENCE,
   PEPITE_ENERGY_RENOVATION_EUR_PER_M2,
-  PEPITE_LATEST_RULE_VERSION,
   PEPITE_MARKET_MAX_DECLINE_SHARE,
   PEPITE_MARKET_MIN_SALES_12_MONTHS,
   PEPITE_MARKET_TREND_MIN_SALES_PER_YEAR,
@@ -110,13 +109,12 @@ const evaluate = (input: PepiteInput, version: PepiteRuleVersion = PEPITE_V1_2_R
   evaluatePepite(input, version);
 
 describe("versions et table de capacités", () => {
-  it("nomme les cinq versions et fait de pepite-v2.1 la version courante", () => {
+  it("nomme les cinq versions", () => {
     expect(PEPITE_V1_RULE_VERSION).toBe("pepite-v1");
     expect(PEPITE_V1_1_RULE_VERSION).toBe("pepite-v1.1");
     expect(PEPITE_V2_RULE_VERSION).toBe("pepite-v2");
     expect(PEPITE_V1_2_RULE_VERSION).toBe("pepite-v1.2");
     expect(PEPITE_V2_1_RULE_VERSION).toBe("pepite-v2.1");
-    expect(PEPITE_LATEST_RULE_VERSION).toBe(PEPITE_V2_1_RULE_VERSION);
     expect(Object.keys(PEPITE_RULE_CAPABILITIES).sort()).toEqual([
       "pepite-v1",
       "pepite-v1.1",

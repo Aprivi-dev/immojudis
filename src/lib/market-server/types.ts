@@ -1,5 +1,6 @@
 import "server-only";
 import type { Database } from "@/integrations/supabase/types";
+import type { MarketEstimateErrorCode } from "@/lib/market-server/errors";
 import type {
   MarketComparableMode,
   MarketEngineCandidate,
@@ -178,14 +179,7 @@ export type MarketContext = {
   computedAt?: string | null;
 };
 
-export type MarketEstimateErrorCode =
-  | "INVALID_INPUT"
-  | "MISSING_LOCATION"
-  | "MISSING_SURFACE"
-  | "UNSUPPORTED_SEGMENT"
-  | "NO_COMPARABLES"
-  | "UPSTREAM_UNAVAILABLE"
-  | "INTERNAL_ERROR";
+export type { MarketEstimateErrorCode };
 
 export type ResolvedMarketLocation = {
   lat: number;

@@ -16,6 +16,7 @@ import {
   projectOnFranceMap,
 } from "./department-geography";
 import { haversineKm } from "./geo";
+import { resolveFrenchGeoSearch } from "./search/french-geo-search";
 
 const OVERSEAS = ["971", "972", "973", "974", "976"];
 const METROPOLE = DEPARTMENTS.map((department) => department.code).filter(
@@ -30,6 +31,22 @@ describe("régions des départements", () => {
     expect(DEPARTMENT_REGIONS).toHaveLength(14);
     expect(DEPARTMENT_REGIONS.filter((region) => region.inseeCode)).toHaveLength(13);
     expect(DEPARTMENT_REGIONS.at(-1)?.name).toBe("Outre-mer");
+  });
+
+  it("concorde avec les régions de la recherche (`search/french-geo-search.ts`)", () => {
+    // Deux tables écrites à part : la recherche ajoute des sigles (IDF, PACA…) et range chaque
+    // département d'outre-mer dans sa propre région. Le découpage, lui, doit rester le même.
+    for (const region of DEPARTMENT_REGIONS.filter((item) => item.inseeCode)) {
+      expect(resolveFrenchGeoSearch(region.name), region.name).toEqual({
+        kind: "region",
+        departments: [...region.departments],
+      });
+    }
+    const overseas = DEPARTMENT_REGIONS.find((region) => region.inseeCode == null)!;
+    for (const code of overseas.departments) {
+      const name = DEPARTMENTS.find((department) => department.code === code)!.name;
+      expect(resolveFrenchGeoSearch(name), name).toMatchObject({ departments: [code] });
+    }
   });
 
   it("nomme la région d'un département", () => {

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
+import { serverEnv } from "@/lib/env";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { publicRentalYield } from "@/lib/public-rental-yield";
 import { lookupPublicSale } from "@/lib/public-sale.server";
@@ -160,7 +161,7 @@ export default async function Page({ params }: PageProps) {
         // favoris ou les ventes débloquées sont sensibles à la casse (adresse saisie en majuscules).
         id={id.toLowerCase()}
         initialData={{ sale: null, preview: sale }}
-        adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
+        adjudicationStatisticsEnabled={serverEnv().adjudicationPriceStatisticsEnabled}
         openFeeRegimes={openFeeRegimesFromEnv()}
         rentReference={rentReference}
         housingTension={housingTension}

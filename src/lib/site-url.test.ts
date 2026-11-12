@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isNonProductionVercelDeployment, resolveSiteOrigin } from "@/lib/site-url";
+import { ConfigurationError } from "@/lib/api-errors";
 
 describe("canonical site URL", () => {
   it("uses one normalized origin with explicit precedence", () => {
@@ -38,15 +39,18 @@ describe("canonical site URL", () => {
     ).toBe("https://immojudis.com");
   });
 
-  it("rejects unsupported protocols and embedded credentials", () => {
+  it("rejects unsupported protocols and embedded credentials as a configuration error", () => {
     expect(() => resolveSiteOrigin({ SITE_URL: "javascript:alert(1)" })).toThrow(
-      "URL canonique invalide",
+      "Invalid canonical URL",
     );
     expect(() => resolveSiteOrigin({ SITE_URL: "https://user:secret@example.test" })).toThrow(
-      "URL canonique non autorisée",
+      "Canonical URL not allowed",
     );
     expect(() => resolveSiteOrigin({ SITE_URL: "https://example.test/app" })).toThrow(
-      "sans chemin",
+      "without a path",
+    );
+    expect(() => resolveSiteOrigin({ SITE_URL: "https://example.test/app" })).toThrow(
+      ConfigurationError,
     );
   });
 

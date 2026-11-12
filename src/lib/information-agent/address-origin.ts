@@ -8,7 +8,7 @@ import {
   type InformationAgentAddressSourceKind,
   type InformationAgentFooterStructure,
 } from "@/lib/information-agent-compliance";
-import { normalizedEmail } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import {
   INFORMATION_AGENT_EXCLUDED_SOURCE_MESSAGE,
   isInformationAgentExcludedSourceUrl,

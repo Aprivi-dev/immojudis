@@ -14,6 +14,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { rpc: mocks.rpc, from: mocks.from },
 }));
 
+import { PublicApiError } from "@/lib/api-errors";
 import { getDvfComparables, dvfComparablesQuerySchema } from "@/lib/dvf-comparables";
 
 const NOW = new Date("2026-10-31T12:00:00.000Z");
@@ -40,7 +41,7 @@ function rpcRows(count: number) {
   }));
 }
 
-function authContext() {
+function authContext(sale: Record<string, unknown> = {}) {
   return {
     userId: "user-1",
     supabase: {
@@ -65,6 +66,7 @@ function authContext() {
                   rooms_count: 3,
                   latitude: 44.84,
                   longitude: -0.58,
+                  ...sale,
                 },
                 error: null,
               }),
@@ -97,6 +99,21 @@ beforeEach(() => {
 });
 
 describe("comparables DVF détaillés (n° 23)", () => {
+  it("refuse une vente non géocodée en 422, avec un message montrable", async () => {
+    const failure = getDvfComparables({
+      auth: authContext({ latitude: null }),
+      input: dvfComparablesQuerySchema.parse({ saleId: SALE_ID }),
+      now: NOW,
+    });
+
+    await expect(failure).rejects.toBeInstanceOf(PublicApiError);
+    await expect(failure).rejects.toMatchObject({
+      status: 422,
+      message: "Comparables DVF indisponibles : la vente n'est pas géocodée.",
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it("interroge la recherche par segment et distance, pas une requête sans type de bien", async () => {
     await getDvfComparables({
       auth: authContext(),

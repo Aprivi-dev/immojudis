@@ -4,7 +4,7 @@ import {
   isInformationAgentContactBlocked,
   loadInformationAgentContactRegistry,
   persistInformationAgentContactObservations,
-} from "@/lib/information-agent";
+} from "@/lib/information-agent/contacts";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn() }));
 

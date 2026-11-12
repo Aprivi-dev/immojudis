@@ -13,7 +13,8 @@ import {
   type ProfessionalErasureReport,
 } from "@/lib/information-agent-professional-rights";
 import { privacyDeadlineStatus, type PrivacyDeadlineStatus } from "@/lib/privacy-deadline";
-import { PublicApiError } from "@/lib/api-errors";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { normalizeEmail } from "@/lib/account";
 
 const privacyRequestTypeSchema = z.enum([
   "access",
@@ -131,7 +132,7 @@ export async function createPrivacyRequest({
   input: z.output<typeof privacyRequestInputSchema>;
 }): Promise<PrivacyRequestSummary> {
   const requesterEmail = typeof auth.claims.email === "string" ? auth.claims.email.trim() : "";
-  if (!requesterEmail) throw new Error("Une adresse email vérifiée est requise.");
+  if (!requesterEmail) throw new PublicApiError("Une adresse email vérifiée est requise.", 400);
 
   const { count, error: countError } = await supabaseAdmin
     .from("data_subject_requests")
@@ -305,27 +306,6 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
   ["user_profiles", "user_id"],
 ];
 
-/**
- * Tables créées par les migrations 20261030110100, 20261030120100, 20261030120200, 20261102140000 et
- * 20261110210000 (journal des envois). Tant qu'une
- * migration n'est pas appliquée (code déployé avant elle), sa table n'existe pas : il n'y a alors aucune
- * donnée à effacer, et l'effacement ne doit pas échouer pour autant. Pour toute autre table, une table
- * absente reste une erreur (liste d'effacement fausse ou schéma incomplet).
- */
-const ERASURE_TABLES_FROM_RECENT_MIGRATIONS: ReadonlySet<string> = new Set([
-  "email_send_log",
-  "sale_signal_feedback",
-  "weekly_digest_dispatches",
-  "sale_result_dispatches",
-  "launch_offer_end_notices",
-  "launch_offer_end_notice_optouts",
-]);
-
-/** « La table n'existe pas » : `PGRST205` (cache du schéma de PostgREST) ou `42P01` (PostgreSQL). */
-function isMissingTableError(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST205" || error?.code === "42P01";
-}
-
 const ERASURE_STORAGE_BUCKETS = ["listing-request-documents"] as const;
 
 type DeleteBuilder = {
@@ -361,24 +341,33 @@ export async function executePrivacyErasure({
   const request = row as Pick<PrivacyRequestRow, AdminColumn>;
 
   if (request.request_type !== "erasure") {
-    throw new Error("Cette demande n'est pas une demande d'effacement.");
+    throw new PublicApiError("Cette demande n'est pas une demande d'effacement.", 409);
   }
   if (request.status === "completed" || request.status === "rejected") {
-    throw new Error("Cette demande est déjà clôturée.");
+    throw new PublicApiError("Cette demande est déjà clôturée.", 409);
   }
   if (request.identity_status !== "verified") {
-    throw new Error("Vérifiez l'identité du demandeur avant d'exécuter l'effacement.");
+    throw new PublicApiError(
+      "Vérifiez l'identité du demandeur avant d'exécuter l'effacement.",
+      409,
+    );
   }
   if (isProfessionalRequest(request)) {
     return executeProfessionalErasure({ auth, input, request });
   }
   const userId = request.user_id;
-  if (!userId) throw new Error("Le compte de ce demandeur n'existe plus.");
+  if (!userId) throw new NotFoundError("Le compte de ce demandeur n'existe plus.");
   if (userId === auth.userId) {
-    throw new Error("Un administrateur ne peut pas effacer son propre compte depuis cet écran.");
+    throw new PublicApiError(
+      "Un administrateur ne peut pas effacer son propre compte depuis cet écran.",
+      409,
+    );
   }
-  if (input.confirmEmail.trim().toLowerCase() !== request.requester_email.trim().toLowerCase()) {
-    throw new Error("L'adresse de confirmation ne correspond pas à celle du demandeur.");
+  if (normalizeEmail(input.confirmEmail) !== normalizeEmail(request.requester_email)) {
+    throw new PublicApiError(
+      "L'adresse de confirmation ne correspond pas à celle du demandeur.",
+      400,
+    );
   }
 
   const { data: profile, error: profileError } = await supabaseAdmin
@@ -388,7 +377,10 @@ export async function executePrivacyErasure({
     .maybeSingle();
   if (profileError) throw profileError;
   if (profile?.user_role === "admin") {
-    throw new Error("Un compte administrateur ne peut pas être effacé automatiquement.");
+    throw new PublicApiError(
+      "Un compte administrateur ne peut pas être effacé automatiquement.",
+      409,
+    );
   }
 
   const stripeCustomerDeleted = await deleteStripeCustomer(userId);
@@ -399,14 +391,7 @@ export async function executePrivacyErasure({
       .from(table)
       .delete({ count: "exact" })
       .eq(column, userId);
-    if (error) {
-      // Table d'une migration pas encore appliquée : rien à effacer.
-      if (ERASURE_TABLES_FROM_RECENT_MIGRATIONS.has(table) && isMissingTableError(error)) {
-        deletedRows[`${table}.${column}`] = 0;
-        continue;
-      }
-      throw new Error(`Effacement impossible dans ${table}: ${error.message ?? "erreur"}`);
-    }
+    if (error) throw new Error(`Erasure failed in ${table}: ${error.message ?? "unknown error"}`);
     deletedRows[`${table}.${column}`] = count ?? 0;
   }
 
@@ -418,13 +403,13 @@ export async function executePrivacyErasure({
   )
     .from("email_send_log")
     .delete({ count: "exact" })
-    .eq("to_address", request.requester_email.trim().toLowerCase());
-  if (emailLogError && !isMissingTableError(emailLogError)) {
+    .eq("to_address", normalizeEmail(request.requester_email));
+  if (emailLogError) {
     throw new Error(
-      `Effacement impossible dans email_send_log: ${emailLogError.message ?? "erreur"}`,
+      `Erasure failed in email_send_log: ${emailLogError.message ?? "unknown error"}`,
     );
   }
-  deletedRows["email_send_log.to_address"] = emailLogError ? 0 : (emailLogByAddress ?? 0);
+  deletedRows["email_send_log.to_address"] = emailLogByAddress ?? 0;
 
   let storageObjectsRemoved = 0;
   for (const bucket of ERASURE_STORAGE_BUCKETS) {
@@ -493,10 +478,13 @@ export async function exportProfessionalPrivacyData({
     !isProfessionalRequest(request) ||
     !["access", "portability"].includes(request.request_type)
   ) {
-    throw new Error("Cette demande n'est pas une demande d'accès d'un professionnel.");
+    throw new PublicApiError(
+      "Cette demande n'est pas une demande d'accès d'un professionnel.",
+      409,
+    );
   }
   if (request.identity_status !== "verified") {
-    throw new Error("Vérifiez l'identité du demandeur avant d'exporter ses données.");
+    throw new PublicApiError("Vérifiez l'identité du demandeur avant d'exporter ses données.", 409);
   }
   return collectProfessionalData(request.requester_email);
 }
@@ -514,8 +502,11 @@ async function executeProfessionalErasure({
   input: z.output<typeof privacyErasureExecuteSchema>;
   request: Pick<PrivacyRequestRow, AdminColumn>;
 }): Promise<PrivacyErasureReport> {
-  if (input.confirmEmail.trim().toLowerCase() !== request.requester_email.trim().toLowerCase()) {
-    throw new Error("L'adresse de confirmation ne correspond pas à celle du demandeur.");
+  if (normalizeEmail(input.confirmEmail) !== normalizeEmail(request.requester_email)) {
+    throw new PublicApiError(
+      "L'adresse de confirmation ne correspond pas à celle du demandeur.",
+      400,
+    );
   }
   const erased: ProfessionalErasureReport = await eraseProfessionalData(request.requester_email);
   const report = {

@@ -326,8 +326,18 @@ describe("eraseProfessionalData", () => {
 
   it("n'efface rien si la mise en file des fichiers échoue", async () => {
     state.failTable = "sale_retention_storage_queue";
-    await expect(eraseProfessionalData(EMAIL)).rejects.toThrow("Mise en file");
+    await expect(eraseProfessionalData(EMAIL)).rejects.toThrow("storage queue failed");
     expect(state.log.filter((entry) => entry.startsWith("delete:"))).toEqual([]);
+    expect(state.tables.information_agent_cases).toHaveLength(2);
+  });
+
+  it("échoue franchement si le journal des envois ne peut pas être effacé, sans recopier l'erreur de la base", async () => {
+    state.failTable = "email_send_log";
+    const failure = await eraseProfessionalData(EMAIL).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("Professional erasure failed on email_send_log");
+    expect((failure as Error).message).not.toContain("boom");
+    // Les dossiers ne sont pas effacés : l'administrateur relance après correction.
     expect(state.tables.information_agent_cases).toHaveLength(2);
   });
 

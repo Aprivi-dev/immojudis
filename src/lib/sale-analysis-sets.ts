@@ -3,7 +3,7 @@ import { createShareToken, hashShareToken, normalizeShareToken } from "@/lib/sha
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
@@ -16,6 +16,7 @@ import {
 import { asRecord } from "@/lib/guards";
 import { asRecord as normalizeJsonObject } from "@/lib/guards";
 import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
 
 type AnalysisSetRow = Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
 type AnalysisSetInsert = Database["public"]["Tables"]["user_sale_analysis_sets"]["Insert"];
@@ -722,10 +723,6 @@ function sumOrNull(values: number[]): number | null {
 function averageOrNull(values: number[]): number | null {
   if (!values.length) return null;
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
-}
-
-function asJson(value: unknown): Json {
-  return value as Json;
 }
 
 async function prepareAnalysisSetInput(

@@ -2,7 +2,7 @@ import Stripe from "stripe";
 import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { nullableRpcArg } from "@/lib/rpc-args";
 import { resolveSiteOrigin } from "@/lib/site-url";
@@ -35,6 +35,7 @@ import {
   resolveAnalysisOfferLabel,
   STRIPE_CHECKOUT_TRIAL_OFFERED,
 } from "@/lib/analysis-offer";
+import { asJson } from "@/lib/supabase-json";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
 
@@ -53,17 +54,8 @@ type StripePaymentLifecycleState = "disputed" | "dispute_lost" | "cleared" | "re
 type StripeReconciledPlanStatus = "active" | "paused" | "cancelled" | "expired";
 
 const STRIPE_API_VERSION = "2026-06-24.dahlia";
-export {
-  ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
-  ANALYSIS_OFFER_CODE,
-  ANALYSIS_RECURRING_PRICE_CENTS,
-  ANALYSIS_SUBSCRIPTION_BILLING_MODEL,
-  ANALYSIS_SUBSCRIPTION_OFFER_CODE,
-  ANALYSIS_TRIAL_DAYS,
-} from "@/lib/analysis-offer";
+/** Legacy one-time access (30 days) retained for validating historical webhooks. */
 export const ANALYSIS_ACCESS_DAYS = 30;
-/** Legacy one-time constants retained for validating historical webhooks. */
-export const ANALYSIS_PRICE_CENTS = ANALYSIS_RECURRING_PRICE_CENTS;
 
 function resolveAnalysisPriceId(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
   const priceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
@@ -81,6 +73,9 @@ function resolveAnalysisPriceId(env: Pick<NodeJS.ProcessEnv, string> = process.e
 }
 
 let stripeClient: Stripe | undefined;
+
+const ANALYSIS_ALREADY_ATTACHED_MESSAGE =
+  "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.";
 
 function stripeSecretKey(): string {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -153,9 +148,7 @@ export async function createPlanCheckoutSession({
     reserved = await reserveAnalyseCheckout(auth.userId, reservationToken);
   }
   if (!reserved) {
-    throw new Error(
-      "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.",
-    );
+    throw new PublicApiError(ANALYSIS_ALREADY_ATTACHED_MESSAGE, 409);
   }
   const acceptanceId = randomUUID();
 
@@ -171,9 +164,7 @@ export async function createPlanCheckoutSession({
         ["trialing", "active", "past_due", "paused", "incomplete"].includes(subscription.status),
       )
     ) {
-      throw new Error(
-        "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.",
-      );
+      throw new PublicApiError(ANALYSIS_ALREADY_ATTACHED_MESSAGE, 409);
     }
     const trialAvailable =
       STRIPE_CHECKOUT_TRIAL_OFFERED &&
@@ -201,7 +192,7 @@ export async function createPlanCheckoutSession({
       }),
     );
 
-    if (!session.url) throw new Error("Session de paiement Stripe indisponible.");
+    if (!session.url) throw new Error("Stripe Checkout session has no URL.");
     await recordCommercialAcceptance({
       acceptanceId,
       auth,
@@ -406,7 +397,9 @@ async function resolveConfiguredAnalysisPrice(
     price.recurring.interval !== ANALYSIS_RECURRING_INTERVAL ||
     price.recurring.interval_count !== ANALYSIS_RECURRING_INTERVAL_COUNT
   ) {
-    throw new Error("Le Price Stripe Analyse doit être actif et récurrent à 59 € / mois en EUR.");
+    throw new ConfigurationError(
+      "Le Price Stripe Analyse doit être actif et récurrent à 59 € / mois en EUR.",
+    );
   }
   // TVA (n° 45) : le tarif de 59 € est le prix final payé. Un Price « exclusive » ou sans comportement
   // fiscal (« unspecified ») pourrait faire ajouter une taxe au-dessus de 59 €, en contradiction avec
@@ -416,7 +409,7 @@ async function resolveConfiguredAnalysisPrice(
   // (pied de facture du client Stripe, voir `ensureStripeCustomer`). En cas de sortie de la franchise,
   // brancher un taux ici et retirer la mention.
   if (price.tax_behavior !== "inclusive") {
-    throw new Error(
+    throw new ConfigurationError(
       "Le Price Stripe Analyse doit avoir un comportement fiscal « inclusive » (prix de 59 € TTC).",
     );
   }
@@ -428,7 +421,7 @@ async function reserveAnalyseCheckout(userId: string, checkoutToken: string): Pr
     p_checkout_token: checkoutToken,
     p_user_id: userId,
   });
-  if (error) throw new Error(error.message || "Réservation du checkout Analyse impossible.");
+  if (error) throw new Error(error.message || "Analyse checkout reservation failed.");
   return data === true;
 }
 
@@ -437,7 +430,7 @@ async function releaseAnalyseCheckout(userId: string, checkoutToken: string): Pr
     p_checkout_token: checkoutToken,
     p_user_id: userId,
   });
-  if (error) throw new Error(error.message || "Libération du checkout Analyse impossible.");
+  if (error) throw new Error(error.message || "Analyse checkout release failed.");
 }
 
 export function billingPortalReturnUrl(appOrigin: string): string {
@@ -495,14 +488,17 @@ export async function createBillingPortalSession({
   const subscription = await getUserSubscription(auth);
 
   if (!subscription?.stripe_customer_id) {
-    throw new Error("Aucun compte Stripe n'est encore associé à ce compte.");
+    throw new PublicApiError("Aucun compte Stripe n'est encore associé à ce compte.", 409);
   }
 
   let cancelSubscriptionId: string | null = null;
   if (intent === "cancel") {
     cancelSubscriptionId = subscription.stripe_subscription_id;
     if (!cancelSubscriptionId || !CANCELLABLE_SUBSCRIPTION_STATUSES.includes(subscription.status)) {
-      throw new Error("Aucun abonnement Analyse à résilier n'est associé à ce compte.");
+      throw new PublicApiError(
+        "Aucun abonnement Analyse à résilier n'est associé à ce compte.",
+        409,
+      );
     }
   }
 
@@ -524,7 +520,7 @@ export async function handleStripeWebhook({
   payload: string;
   signature: string | null;
 }): Promise<StripeWebhookResult> {
-  if (!signature) throw new Error("Signature Stripe manquante.");
+  if (!signature) throw new Error("Stripe webhook signature is missing.");
 
   const stripe = getStripe();
   const event = stripe.webhooks.constructEvent(payload, signature, stripeWebhookSecret());
@@ -703,7 +699,7 @@ export const VAT_EXEMPTION_INVOICE_MENTION = "TVA non applicable, art. 293 B du 
 
 export function stripeCustomerIdempotencyKey(userId: string): string {
   const normalizedUserId = userId.trim();
-  if (!normalizedUserId) throw new Error("Identifiant utilisateur Stripe manquant.");
+  if (!normalizedUserId) throw new Error("Stripe customer: user id is missing.");
   return `immojudis-customer-${normalizedUserId}`;
 }
 
@@ -735,9 +731,9 @@ async function ensureStripeCustomer(
     p_user_id: auth.userId,
   });
   if (error) {
-    throw new Error(error.message || "Association du compte Stripe impossible.");
+    throw new Error(error.message || "Stripe customer attachment failed.");
   }
-  if (!data) throw new Error("Association du compte Stripe impossible.");
+  if (!data) throw new Error("Stripe customer attachment returned no row.");
   return data;
 }
 
@@ -762,7 +758,12 @@ async function handleCheckoutCompleted(
   if (session.mode === "payment") {
     if (session.payment_status !== "paid") return false;
     if (normalizePlanCode(session.metadata?.plan_code) !== "analyse") return false;
-    if (session.amount_total !== ANALYSIS_PRICE_CENTS || session.currency !== "eur") return false;
+    if (
+      session.amount_total !== ANALYSIS_RECURRING_PRICE_CENTS ||
+      session.currency !== ANALYSIS_RECURRING_CURRENCY
+    ) {
+      return false;
+    }
     if (session.metadata?.access_duration_days !== String(ANALYSIS_ACCESS_DAYS)) return false;
     const paymentIntentId = stripeObjectId(session.payment_intent);
     if (!paymentIntentId) return false;
@@ -850,7 +851,7 @@ async function beginStripeWebhookEvent(event: Stripe.Event): Promise<boolean> {
     p_event_type: event.type,
     p_livemode: event.livemode,
   });
-  if (error) throw new Error(error.message || "Journal Stripe indisponible.");
+  if (error) throw new Error(error.message || "Stripe webhook journal read failed.");
   return data === true;
 }
 
@@ -860,7 +861,7 @@ async function readStripeWebhookEventStatus(eventId: string): Promise<string | n
     .select("processing_status")
     .eq("event_id", eventId)
     .maybeSingle();
-  if (error) throw new Error(error.message || "Journal Stripe indisponible.");
+  if (error) throw new Error(error.message || "Stripe webhook journal read failed.");
   return data?.processing_status ?? null;
 }
 
@@ -874,7 +875,7 @@ async function completeStripeWebhookEvent(
     p_event_id: eventId,
     p_processing_status: status,
   });
-  if (error) throw new Error(error.message || "Mise à jour du journal Stripe impossible.");
+  if (error) throw new Error(error.message || "Stripe webhook journal update failed.");
 }
 
 async function handleChargeRefunded(charge: Stripe.Charge, event: Stripe.Event): Promise<boolean> {
@@ -1006,7 +1007,7 @@ export async function enforceSingleTrialPerCard(
     p_fingerprint_hash: createHash("sha256").update(fingerprint).digest("hex"),
     p_user_id: userId,
   });
-  if (error) throw new Error(error.message || "Contrôle de l'essai par carte impossible.");
+  if (error) throw new Error(error.message || "Card trial check failed.");
   if (data === true) return "claimed";
 
   await stripe.subscriptions.update(subscription.id, { trial_end: "now" });
@@ -1131,7 +1132,7 @@ async function recordStripePaymentState({
     p_state: state,
     p_user_id: userId,
   });
-  if (error) throw new Error(error.message || "Réconciliation du paiement Stripe impossible.");
+  if (error) throw new Error(error.message || "Stripe payment reconciliation failed.");
   return data?.[0]?.recorded === true;
 }
 
@@ -1196,7 +1197,7 @@ async function userHasOpenPaymentDispute(userId: string): Promise<boolean> {
     .eq("user_id", userId)
     .eq("state", "disputed")
     .limit(1);
-  if (error) throw new Error(error.message || "Lecture des litiges Stripe impossible.");
+  if (error) throw new Error(error.message || "Stripe dispute read failed.");
   return (data?.length ?? 0) > 0;
 }
 
@@ -1277,7 +1278,7 @@ async function syncStripeSubscription(
     p_stripe_subscription_id: current.id,
     p_user_id: userId,
   });
-  if (error) throw new Error(error.message || "Synchronisation de l'abonnement Stripe impossible.");
+  if (error) throw new Error(error.message || "Stripe subscription sync failed.");
   const result = data?.[0];
   if (result?.applied && current.status === "trialing") {
     try {
@@ -1445,8 +1446,4 @@ function stripeObjectId(value: unknown): string | null {
 
 function unixToIso(value: number | null | undefined): string | null {
   return value ? new Date(value * 1000).toISOString() : null;
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

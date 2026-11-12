@@ -379,7 +379,7 @@ describe("admin information-agent sale loader", () => {
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it("uses raw source presence only while the projection relation is absent", async () => {
+  it("never falls back to raw source presence, even when the projection relation is reported absent", async () => {
     setup({
       sale: quarantinedInternalSale,
       sourcePresenceError: {
@@ -388,9 +388,9 @@ describe("admin information-agent sale loader", () => {
       },
     });
 
-    const sale = await loadAdminInformationAgentSale({ auth, saleId });
-
-    expect(sale.source_presence).toEqual(quarantinedInternalSale.raw_payload.source_presence);
+    await expect(loadAdminInformationAgentSale({ auth, saleId })).rejects.toMatchObject({
+      code: "PGRST205",
+    });
   });
 
   it("does not fall back to stale raw presence when the projection is empty", async () => {

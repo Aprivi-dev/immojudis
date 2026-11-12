@@ -3,18 +3,19 @@ import { z } from "zod";
 import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import {
   dispatchQueuedEmailAlertNotifications,
   resolveEmailAlertDeliveryConfig,
 } from "@/lib/email-alerts";
 import { alertNotificationsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { emailAlertConsentEnabled } from "@/lib/notification-preferences";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { UserAlert } from "@/lib/types";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { stringArrayValue as arrayOfStrings } from "@/lib/guards";
+import { asJson } from "@/lib/supabase-json";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 type NotificationInsert = Database["public"]["Tables"]["user_alert_notifications"]["Insert"];
@@ -780,10 +781,6 @@ function notificationRowToSummary(row: NotificationRow): AlertNotificationSummar
     dismissedAt: row.dismissed_at,
     createdAt: row.created_at,
   };
-}
-
-function asJson(value: Record<string, unknown>): Json {
-  return value as Json;
 }
 
 function clampLimit(value: number, max: number): number {

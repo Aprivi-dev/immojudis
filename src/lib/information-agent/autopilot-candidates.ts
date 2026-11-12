@@ -28,12 +28,14 @@ import {
 import { loadExcludedIdentityKeys } from "@/lib/information-agent/autopilot-settings";
 import {
   assertInformationAgentContactAllowed,
+  persistInformationAgentContactObservations,
+} from "@/lib/information-agent/contacts";
+import {
   discoverInformationAgentContacts,
   INFORMATION_AGENT_PIPELINE_CHANNEL,
-  normalizedEmail,
-  persistInformationAgentContactObservations,
   selectInformationAgentContact,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import {
   personIdentityKeys,
   recipientOppositionKeys,

@@ -6,9 +6,7 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   mode: vi.fn(),
   latest: vi.fn(),
-  NotInstalled: class NotInstalled extends Error {},
 }));
-const NotInstalled = mocks.NotInstalled;
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.from, rpc: vi.fn() },
@@ -17,7 +15,6 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/information-agent/auto-publication-store", () => ({
-  AutoPublicationNotInstalledError: mocks.NotInstalled,
   loadAutoPublicationMode: mocks.mode,
   loadLatestAutoPublicationDecisions: mocks.latest,
 }));
@@ -139,10 +136,10 @@ describe("annotations de l'onglet Réponses", () => {
     expect(mocks.latest).not.toHaveBeenCalled();
   });
 
-  it("migration absente : rien n'est affiché, sans erreur", async () => {
-    mocks.mode.mockRejectedValue(new NotInstalled());
+  it("table absente : « simulation indisponible », jamais « arrêt » à tort", async () => {
+    mocks.mode.mockRejectedValue(Object.assign(new Error("missing"), { code: "PGRST205" }));
     expect(await loadAutoPublicationReviewAnnotations([pending("fact-1")])).toEqual({
-      mode: "off",
+      mode: "unavailable",
     });
   });
 

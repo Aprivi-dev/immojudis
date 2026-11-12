@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   assertEntitlement: vi.fn(),
   getStatistics: vi.fn(),
   recordUsage: vi.fn(),
+  adminFrom: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
@@ -16,7 +17,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
 
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   assertFeatureEntitlement: mocks.assertEntitlement,
 }));
 
@@ -27,6 +28,15 @@ vi.mock("@/lib/adjudication-price-statistics-repository", () => ({
 vi.mock("@/lib/usage", () => ({
   recordFeatureUsageEvent: mocks.recordUsage,
 }));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: mocks.adminFrom },
+}));
+
+/** The real measurement (`@/lib/usage`), writing through `mocks.adminFrom`. */
+async function useRealUsageRecording() {
+  const usage = await vi.importActual<typeof import("@/lib/usage")>("@/lib/usage");
+  mocks.recordUsage.mockImplementation(usage.recordFeatureUsageEvent);
+}
 
 import { GET } from "@/app/api/v1/sales/[id]/adjudication-statistics/route";
 
@@ -176,7 +186,10 @@ describe("GET /api/v1/sales/:id/adjudication-statistics", () => {
   });
 
   it("ne fait pas échouer la lecture si la télémétrie asynchrone échoue", async () => {
-    mocks.recordUsage.mockRejectedValue(new Error("telemetry unavailable"));
+    await useRealUsageRecording();
+    mocks.adminFrom.mockReturnValue({
+      insert: vi.fn().mockResolvedValue({ error: { message: "telemetry unavailable" } }),
+    });
 
     const response = await request();
 

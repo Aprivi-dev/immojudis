@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Resend } from "resend";
 import sharp from "sharp";
-import { fetchInboundAttachments, readBoundedAttachment } from "@/lib/information-agent-inbound";
+import {
+  fetchInboundAttachments,
+  readBoundedAttachment,
+} from "@/lib/information-agent-inbound/attachments";
 import {
   MAX_PUBLISHED_PHOTO_BYTES,
   optimizeInformationAgentPhoto,

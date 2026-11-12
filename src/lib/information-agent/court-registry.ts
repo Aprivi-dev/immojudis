@@ -3,16 +3,15 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   courtRegistryDailyCap,
   courtRegistryFallbackEmails,
-  COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD,
   INFORMATION_AGENT_COURT_REGISTRY_FALLBACK,
   type CourtRegistryFallbackSale,
 } from "@/lib/information-agent/court-registry-fallback";
 import {
   isInformationAgentContactBlocked,
   loadInformationAgentContactRegistry,
-  normalizedEmail,
-  type InformationAgentContactCandidate,
 } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
+import { type InformationAgentContactCandidate } from "@/lib/information-agent/contact-resolution";
 import { formatInformationAgentOriginDate } from "@/lib/information-agent-compliance";
 import { startOfParisDay } from "@/lib/information-agent/paris-time";
 
@@ -122,7 +121,7 @@ export function courtRegistryFallbackOfMission(
   };
   const code = metadata.court_registry_fallback?.court_code;
   if (
-    metadata.contact_discovery?.method !== COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD ||
+    metadata.contact_discovery?.method !== INFORMATION_AGENT_COURT_REGISTRY_FALLBACK ||
     typeof code !== "string" ||
     !code ||
     normalizedEmail(mission.recipient_email) !== normalizedEmail(recipientEmail)
@@ -216,5 +215,3 @@ export async function assertCourtRegistryFallbackLimits({
     );
   }
 }
-
-export { startOfParisDay };

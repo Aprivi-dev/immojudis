@@ -3,17 +3,10 @@ import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { PublicTribunalActivitySection } from "@/components/PublicTribunalActivity";
 import { TribunalJudicialActivityExplorer } from "@/components/TribunalJudicialActivityExplorer";
 import { TribunalSectorAlert } from "@/components/TribunalSectorAlert";
+import { serverEnv } from "@/lib/env";
 import { pageMetadata } from "@/lib/page-metadata";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 import { loadAmbiguousTribunalCodes } from "@/lib/tribunal-ambiguity.server";
-
-/**
- * The adjudication prices (Licitor results) are announced only once the statistics are open.
- * Same switch as the sale page and `getAdjudicationPriceStatisticsForSale`.
- */
-function adjudicationStatisticsEnabled(): boolean {
-  return process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true";
-}
 
 // The page is rendered ahead of time and then refreshed by Next.js. Without an explicit value a
 // render made during an outage (empty list, no figures) would be kept until the next deploy.
@@ -23,7 +16,8 @@ export const revalidate = 300;
 
 export async function generateMetadata(): Promise<Metadata> {
   const activity = await loadPublicTribunalActivity();
-  const adjudication = adjudicationStatisticsEnabled();
+  // The adjudication prices (Licitor results) are announced only once the statistics are open.
+  const adjudication = serverEnv().adjudicationPriceStatisticsEnabled;
   return {
     ...pageMetadata({
       path: "/tribunaux",
@@ -45,7 +39,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function Page() {
   const activity = await loadPublicTribunalActivity();
   const publicActivity = activity.status === "ok" ? activity.items : [];
-  const adjudication = adjudicationStatisticsEnabled();
+  const adjudication = serverEnv().adjudicationPriceStatisticsEnabled;
   const ambiguousCodes = await loadAmbiguousTribunalCodes(publicActivity);
   return (
     <>

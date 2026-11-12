@@ -77,7 +77,7 @@ function AccountAlerts({ userId }: { userId: string }) {
     queryFn: () => fetchWatchedZones({ includeInactive: true }),
   });
   const plan = useQuery({
-    queryKey: ["feature-entitlements", userId, "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(userId),
     queryFn: fetchAccessPlan,
     staleTime: 5 * 60_000,
     retry: false,

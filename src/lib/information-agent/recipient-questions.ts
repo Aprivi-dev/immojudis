@@ -10,6 +10,7 @@
  * Rien n'est demandé sur le vendeur, le débiteur, l'origine du bien ou la procédure. Le texte du message de
  * chaque destinataire est dans `recipient-templates.ts`.
  */
+import { PublicApiError } from "@/lib/api-errors";
 import {
   INFORMATION_AGENT_QUESTIONS,
   informationAgentQuestionText,
@@ -152,6 +153,6 @@ export function assertInformationAgentQuestionsAllowed(
   if (audience === "lawyer" || audience === "other") return;
   const allowed: readonly string[] = INFORMATION_AGENT_QUESTION_KEYS_BY_AUDIENCE[audience];
   if (questionKeys.some((key) => !allowed.includes(key))) {
-    throw new Error(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE, 400);
   }
 }

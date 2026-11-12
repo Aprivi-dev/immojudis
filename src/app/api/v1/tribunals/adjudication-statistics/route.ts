@@ -4,7 +4,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { getAdjudicationPriceStatisticsDirectory } from "@/lib/adjudication-price-statistics-repository";
 import { apiRoute } from "@/lib/api-route";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -30,20 +30,16 @@ export const GET = apiRoute(
       "Statistiques d’adjudication réservées à l’offre Analyse.",
     );
     const statistics = await getAdjudicationPriceStatisticsDirectory();
-    try {
-      void recordFeatureUsageEvent({
-        auth,
-        eventKey: "tribunal.statistics_viewed",
-        subjectType: "tribunal_statistics",
-        metadata: {
-          national_sample_size: statistics.national.sampleSize,
-          tribunal_count: statistics.tribunals.length,
-          experimental: true,
-        },
-      }).catch(() => undefined);
-    } catch {
-      // Telemetry cannot block a premium read.
-    }
+    recordFeatureUsageEvent({
+      auth,
+      eventKey: "tribunal.statistics_viewed",
+      subjectType: "tribunal_statistics",
+      metadata: {
+        national_sample_size: statistics.national.sampleSize,
+        tribunal_count: statistics.tribunals.length,
+        experimental: true,
+      },
+    });
     return statistics;
   },
 );

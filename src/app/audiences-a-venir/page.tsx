@@ -11,24 +11,22 @@ import {
   isHearingsPageIndexable,
   windowHearings,
 } from "@/lib/upcoming-hearings";
-import {
-  mustFailOnHearingsReadError,
-  tryLoadUpcomingHearings,
-} from "@/lib/upcoming-hearings.server";
+import { isProductionRuntime } from "@/lib/runtime-phase";
+import { tryLoadUpcomingHearings } from "@/lib/upcoming-hearings.server";
 import { HearingsView } from "./hearings-view";
 
 // Comme la fiche d'une vente et les pages département : page rendue à l'avance, servie depuis le
 // cache et rafraîchie au plus toutes les heures (Next.js veut un littéral ici ; il doit rester égal
 // à PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS, un test le vérifie). Une régénération qui ne peut
 // pas lire la base lève une erreur : la dernière bonne page reste servie (voir
-// `mustFailOnHearingsReadError`).
+// `isProductionRuntime`).
 export const revalidate = 3600;
 
 /** Les audiences, ou `null` quand la lecture a échoué pendant le build (page produite sans liste). */
 async function loadWindows() {
   const read = await tryLoadUpcomingHearings();
   if (read.status === "error") {
-    if (mustFailOnHearingsReadError()) throw new Error("Audiences à venir indisponibles.");
+    if (isProductionRuntime()) throw new Error("Audiences à venir indisponibles.");
     return null;
   }
   const now = new Date();

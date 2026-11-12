@@ -35,15 +35,6 @@ const PASS_TIME_BUDGET_MS = 60_000;
 /** La boucle d'écriture s'arrête après ce nombre d'échecs consécutifs du même code. */
 const MAX_SAME_ERROR_STREAK = 3;
 
-/** Codes d'une table ou d'une fonction absente (migration pas encore appliquée). */
-const NOT_INSTALLED_CODES = new Set(["PGRST205", "PGRST202", "42P01", "42883"]);
-
-export class AutoPublicationNotInstalledError extends Error {
-  constructor() {
-    super("Publication automatique non installée (migration 20261115100000 absente).");
-  }
-}
-
 /** Échec d'une lecture d'état global : la passe s'arrête sans rien écrire (code seul, sans détail). */
 export class AutoPublicationPassError extends Error {
   readonly code: string;
@@ -62,8 +53,6 @@ export type AutoPublicationDecisionRow = {
 
 export type AutoPublicationSimulationResult =
   | { status: "inactive"; mode: AutoPublicationMode }
-  /** Code déployé avant la migration : rien n'est fait, le cron ne doit pas échouer. */
-  | { status: "not_installed" }
   | {
       /** `time_limit_reached` : la limite de temps a arrêté l'écriture (visible, pas un échec). */
       status: "done" | "time_limit_reached";
@@ -100,24 +89,14 @@ function logFailure(stage: string, error: unknown) {
   );
 }
 
-function isNotInstalled(error: unknown): boolean {
-  return NOT_INSTALLED_CODES.has(errorCode(error));
-}
-
-/**
- * Mode courant. Table absente : `AutoPublicationNotInstalledError`. Ligne absente ou valeur inconnue :
- * erreur (l'appelant ne décide alors rien).
- */
+/** Mode courant. Ligne absente ou valeur inconnue : erreur (l'appelant ne décide alors rien). */
 export async function loadAutoPublicationMode(): Promise<AutoPublicationMode> {
   const { data, error } = await supabaseAdmin
     .from("information_agent_auto_publication_settings")
     .select("mode")
     .eq("singleton", true)
     .maybeSingle();
-  if (error) {
-    if (isNotInstalled(error)) throw new AutoPublicationNotInstalledError();
-    throw error;
-  }
+  if (error) throw error;
   const mode = data?.mode;
   if (!mode || !(AUTO_PUBLICATION_MODES as readonly string[]).includes(mode)) {
     throw new Error("Réglage de publication automatique absent ou illisible.");
@@ -536,8 +515,7 @@ function sameDecision(
  * valeurs, pièce) qui échoue ou est tronquée donne « relecture » (motif `input_unreadable`) pour ce fait et
  * est signalée. Une lecture d'état global (mode, liste des faits, dernières décisions, compteurs) qui
  * échoue ou est tronquée arrête la passe en échec SANS RIEN ÉCRIRE : une telle relecture défèrait le gel
- * des faits et gonflerait le journal. Une table absente (migration pas encore appliquée) rend
- * `not_installed`. Une passe arrêtée par sa limite de temps rend `time_limit_reached`.
+ * des faits et gonflerait le journal. Une passe arrêtée par sa limite de temps rend `time_limit_reached`.
  */
 export async function runAutoPublicationSimulation({
   now = new Date(),
@@ -549,13 +527,7 @@ export async function runAutoPublicationSimulation({
   clock?: () => number;
 } = {}): Promise<AutoPublicationSimulationResult> {
   const started = clock();
-  let mode: AutoPublicationMode;
-  try {
-    mode = await loadAutoPublicationMode();
-  } catch (error) {
-    if (error instanceof AutoPublicationNotInstalledError) return { status: "not_installed" };
-    throw error;
-  }
+  const mode = await loadAutoPublicationMode();
   if (mode !== "simulation") return { status: "inactive", mode };
 
   const { rows: candidates, truncated } = await loadOpenCandidates(now);

@@ -1,3 +1,4 @@
+import { PARIS_TIME_ZONE, parisDateKey } from "@/lib/paris-time";
 import { departmentCode } from "@/lib/department-code";
 import { FRENCH_DEPARTMENTS } from "@/lib/departments";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
@@ -311,24 +312,10 @@ export function normalizeDepartmentCity(city: string | null | undefined): string
 
 // ── Dates d'une liste de ventes (heure de Paris) ─────────────────────────
 
-const PARIS_TIME_ZONE = "Europe/Paris";
-
-const PARIS_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  timeZone: PARIS_TIME_ZONE,
-});
-
-/** Jour calendaire à Paris, `AAAA-MM-JJ`. */
-function parisDayKey(time: number): string {
-  return PARIS_DAY_FORMAT.format(new Date(time));
-}
-
 /** Vrai quand la date tombe le même jour calendaire que `now`, à Paris. */
 export function isParisToday(value: string | null, now: Date = new Date()): boolean {
   const time = timestamp(value);
-  return time != null && parisDayKey(time) === parisDayKey(now.getTime());
+  return time != null && parisDateKey(new Date(time)) === parisDateKey(now);
 }
 
 /** Pavé de date d'une ligne de liste : « 6 » et « nov. », à Paris. `null` sans date. */
@@ -357,7 +344,7 @@ export function parisWeekday(value: string | null): string | null {
 
 /** Lundi de la semaine (à Paris) d'un instant, en jour UTC à minuit. */
 function parisWeekStart(time: number): Date {
-  const [year, month, day] = parisDayKey(time).split("-").map(Number);
+  const [year, month, day] = parisDateKey(new Date(time)).split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   const fromMonday = (date.getUTCDay() + 6) % 7;
   date.setUTCDate(date.getUTCDate() - fromMonday);
@@ -383,7 +370,7 @@ export function groupDepartmentSalesByWeek(
 ): DepartmentSaleWeek[] {
   const current = parisWeekStart(now.getTime());
   const currentKey = current.toISOString().slice(0, 10);
-  const currentYear = Number(parisDayKey(now.getTime()).slice(0, 4));
+  const currentYear = Number(parisDateKey(now).slice(0, 4));
   const weeks = new Map<string, DepartmentSaleWeek>();
   const later: DepartmentSale[] = [];
   for (const sale of sales) {

@@ -1,9 +1,11 @@
 import "server-only";
+import { after } from "next/server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json } from "@/integrations/supabase/types";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { parisMonthWindow } from "@/lib/paris-month";
 import type { PlanLimits } from "@/lib/plans";
+import { asJson } from "@/lib/supabase-json";
 
 export type UsageEventKey =
   | "property_report.created"
@@ -48,14 +50,6 @@ type UsagePlanLike = {
   limits: Pick<PlanLimits, "propertyReportsPerMonth" | "pdfExportsPerMonth">;
 };
 
-/** Mois civil de l'heure de Paris : remise à zéro le 1er à 00 h 00 (Europe/Paris), pas en UTC. */
-export function currentMonthUsageWindow(now = new Date()): {
-  periodStart: string;
-  periodEnd: string;
-} {
-  return parisMonthWindow(now);
-}
-
 export function buildUsageLimitState({
   eventKey,
   label,
@@ -91,7 +85,8 @@ export async function getPlanUsageSummary({
   plan: UsagePlanLike;
   now?: Date;
 }): Promise<PlanUsageSummary> {
-  const { periodStart, periodEnd } = currentMonthUsageWindow(now);
+  // Mois civil de l'heure de Paris : remise à zéro le 1er à 00 h 00 (Europe/Paris), pas en UTC.
+  const { periodStart, periodEnd } = parisMonthWindow(now);
   const [reportCreations, pdfExports] = await Promise.all([
     getUsageQuantity({
       auth,
@@ -131,47 +126,48 @@ export async function getPlanUsageSummary({
   };
 }
 
-export async function assertUsageLimitAvailable({
-  auth,
-  eventKey,
-  limit,
-  label,
-  planLabel,
-  now = new Date(),
-}: {
-  auth: SupabaseAuthContext;
+export type FeatureUsageEvent = {
+  auth: Pick<SupabaseAuthContext, "userId">;
   eventKey: UsageEventKey;
-  limit: number | null;
-  label: string;
-  planLabel: string;
-  now?: Date;
-}) {
-  if (limit == null) return;
+  quantity?: number;
+  subjectType?: string | null;
+  subjectId?: string | null;
+  metadata?: Record<string, unknown> | null;
+};
 
-  const { periodStart, periodEnd } = currentMonthUsageWindow(now);
-  const used = await getUsageQuantity({ auth, eventKey, periodStart, periodEnd });
-  if (used >= limit) {
-    throw new Error(
-      `Quota ${label} atteint pour l’offre ${planLabel}. Passez à l’offre Analyse pour continuer sans limite.`,
-    );
+/**
+ * Records one usage event without ever delaying or failing the caller: the measurement must not
+ * undo an answer or a write that succeeded. Inside a request the insert runs once the response is
+ * sent (`after()`); elsewhere (scripts, tests) it starts at once. A failed insert is logged.
+ */
+export function recordFeatureUsageEvent(event: FeatureUsageEvent): void {
+  const write = () =>
+    insertFeatureUsageEvent(event).catch((error: unknown) => {
+      console.warn(
+        JSON.stringify({
+          scope: "feature-usage",
+          event: "record_failed",
+          eventKey: event.eventKey,
+          error: errorDetailForLog(error),
+        }),
+      );
+    });
+  try {
+    after(write);
+  } catch {
+    // Outside a request scope `after()` throws: the insert runs now, still without being awaited.
+    void write();
   }
 }
 
-export async function recordFeatureUsageEvent({
+async function insertFeatureUsageEvent({
   auth,
   eventKey,
   quantity = 1,
   subjectType,
   subjectId,
   metadata,
-}: {
-  auth: SupabaseAuthContext;
-  eventKey: UsageEventKey;
-  quantity?: number;
-  subjectType?: string | null;
-  subjectId?: string | null;
-  metadata?: Record<string, unknown> | null;
-}) {
+}: FeatureUsageEvent): Promise<void> {
   const { error } = await supabaseAdmin.from("feature_usage_events").insert({
     user_id: auth.userId,
     event_key: eventKey,
@@ -204,8 +200,4 @@ async function getUsageQuantity({
 
   if (error) throw error;
   return (data ?? []).reduce((sum, event) => sum + event.quantity, 0);
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

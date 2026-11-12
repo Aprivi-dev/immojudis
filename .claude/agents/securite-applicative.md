@@ -154,7 +154,7 @@ code est un constat. Puis vérifie :
   Analytics, Mapbox, géocodage) absent du registre. Pseudonymiser n'est pas anonymiser.
 - **Opposition appliquée au point d'écriture** : `src/lib/audience-opt-out.ts`,
   `src/lib/product-events.ts`, `src/lib/email-unsubscribe-token.ts`,
-  `src/lib/notification-preferences.ts`, `src/lib/information-agent-opt-out.ts`.
+  `src/lib/notification-preferences.ts`, `src/lib/information-agent-signed-link.ts`.
 - **Demandes de droits** (`src/app/mes-droits/`, `src/app/api/privacy/requests/`,
   `src/lib/privacy-requests.ts`, `src/lib/privacy-deadline.ts`) : l'effacement atteint
   tables, Storage, copies dénormalisées et sous-traitants, et trace ce qui est gardé.

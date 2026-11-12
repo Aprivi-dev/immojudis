@@ -144,6 +144,6 @@ describe("email des rappels d'audience", () => {
   });
 
   it("refuse de construire un email sans rappel", () => {
-    expect(() => build([])).toThrow("Aucun rappel à envoyer.");
+    expect(() => build([])).toThrow("Sale reminder email: no item to send.");
   });
 });

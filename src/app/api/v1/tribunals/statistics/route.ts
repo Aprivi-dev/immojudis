@@ -3,14 +3,14 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { apiRoute } from "@/lib/api-route";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   getTribunalStatistics,
   tribunalStatisticsQuerySchema,
 } from "@/lib/tribunal-statistics-repository";
-import { recordUsageSafely } from "@/lib/record-usage-safely.server";
+import { recordFeatureUsageEvent } from "@/lib/usage";
 
 export const GET = apiRoute(
   {
@@ -39,9 +39,7 @@ export const GET = apiRoute(
     );
     const statistics = await getTribunalStatistics(input);
 
-    // This is deliberately fire-and-forget: a slow or unavailable telemetry
-    // store must never delay or fail an otherwise valid premium read.
-    recordUsageSafely({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "tribunal.statistics_viewed",
       subjectType: "tribunal_statistics",

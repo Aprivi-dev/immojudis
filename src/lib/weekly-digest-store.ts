@@ -6,10 +6,9 @@ import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import { createSupabaseSaleReminderStore } from "@/lib/sale-reminders-store";
 import type { NewSaleSummary, WeeklyDigestStore } from "@/lib/weekly-digest";
 import { chunks } from "@/lib/chunks";
+import { EMAIL_PASS_MAX_CONSENTING_USERS } from "@/lib/email-campaign-pass";
 
 const PAGE_SIZE = 1_000;
-/** Garde-fou : au-delà, le passage s'arrête là (les comptes suivants attendent le suivant). */
-const MAX_CONSENTING_USERS = 10_000;
 /** Ventes récentes lues par passage et par compte pour compter les nouvelles ventes. */
 const NEW_SALES_SCAN_LIMIT = 100;
 
@@ -31,7 +30,7 @@ export function createSupabaseWeeklyDigestStore(): WeeklyDigestStore {
 
     async listConsentingUsers() {
       const users: Array<{ userId: string; weekday: number }> = [];
-      for (let from = 0; from < MAX_CONSENTING_USERS; from += PAGE_SIZE) {
+      for (let from = 0; from < EMAIL_PASS_MAX_CONSENTING_USERS; from += PAGE_SIZE) {
         // Consentement actif, daté par la base ET texte présenté connu (posé par la route serveur) :
         // une écriture directe sans version ne vaut pas consentement.
         const { data, error } = await supabaseAdmin

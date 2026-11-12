@@ -6,6 +6,7 @@ import {
   ALERT_DETAIL_COLUMNS,
   ALERT_EVALUATION_COLUMNS,
   DETAIL_VIEW,
+  DISCOVERY_VIEW as DISCOVERY_VIEW_NAME,
   SALE_LIST_COLUMNS,
   SEARCH_DETAIL_COLUMNS,
   SEARCH_SCAN_COLUMNS,
@@ -25,7 +26,7 @@ export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-querie
 export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
 
-const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
+const DISCOVERY_VIEW = DISCOVERY_VIEW_NAME as typeof DETAIL_VIEW;
 const UNLOCKED_SALE_VIEW = UNLOCKED_VIEW as typeof DETAIL_VIEW;
 const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
 const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
@@ -79,11 +80,6 @@ const SALE_CARD_COLUMN_NAMES = [
 
 export const SALE_CARD_COLUMNS = SALE_CARD_COLUMN_NAMES.join(",");
 
-/** Les mêmes colonnes sans le palier de complétude (base où sa migration n'est pas appliquée). */
-const SALE_CARD_COLUMNS_WITHOUT_TIER = SALE_CARD_COLUMN_NAMES.filter(
-  (column) => column !== "completeness_tier",
-).join(",");
-
 const SALE_PREVIEW_COLUMNS = [
   "id",
   "starting_price_eur",
@@ -124,45 +120,16 @@ type OrderableQuery<TQuery> = {
   order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => TQuery;
 };
 
-/**
- * Applique le tri complet d'une recherche sur une vue `_search` (voir `SORT_CLAUSES`). Sans
- * `withTier`, le palier de complétude est ignoré (repli d'une base qui n'a pas la colonne).
- */
+/** Applique le tri complet d'une recherche sur une vue `_search` (voir `SORT_CLAUSES`). */
 function applySearchOrder<TQuery extends OrderableQuery<TQuery>>(
   query: TQuery,
   sort: SortKey,
-  withTier = true,
 ): TQuery {
   let ordered = query.order("coordinates_rank", { ascending: true });
   for (const clause of SORT_CLAUSES[sort]) {
-    if (!withTier && clause.column === "completeness_tier") continue;
     ordered = ordered.order(clause.column, { ascending: clause.ascending, nullsFirst: false });
   }
   return ordered.order("id", { ascending: true });
-}
-
-/**
- * La colonne `completeness_tier` n'existe pas encore (migration pas appliquée, déploiement
- * échelonné) : PostgreSQL répond 42703, PostgREST une erreur `PGRST…` qui nomme la colonne.
- */
-function isMissingCompletenessTier(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const { code, message } = error as { code?: unknown; message?: unknown };
-  const missingColumn = code === "42703" || (typeof code === "string" && code.startsWith("PGRST"));
-  return missingColumn && typeof message === "string" && message.includes("completeness_tier");
-}
-
-/**
- * Lance la recherche avec le palier de complétude ; si la base ne l'a pas encore, la relance sans
- * la colonne et sans ce tri plutôt que d'afficher une erreur de recherche.
- */
-async function withCompletenessTierFallback<T>(run: (withTier: boolean) => Promise<T>): Promise<T> {
-  try {
-    return await run(true);
-  } catch (error) {
-    if (!isMissingCompletenessTier(error)) throw error;
-    return run(false);
-  }
 }
 
 type FilterableQuery = {
@@ -349,9 +316,8 @@ async function fetchSearchResultIds(
   limit: number,
   sort: SortKey,
   offset: number,
-  withTier: boolean,
 ): Promise<string[]> {
-  let q = applySearchOrder(db.from(catalogView).select("id"), sort, withTier).range(
+  let q = applySearchOrder(db.from(catalogView).select("id"), sort).range(
     offset,
     offset + limit - 1,
   );
@@ -393,18 +359,16 @@ export async function getSales(
   }
 
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
-  return withCompletenessTierFallback(async (withTier) => {
-    let q = applySearchOrder(db.from(catalogView).select(SALE_LIST_COLUMNS), sort, withTier).range(
-      offset,
-      offset + limit - 1,
-    );
+  let q = applySearchOrder(db.from(catalogView).select(SALE_LIST_COLUMNS), sort).range(
+    offset,
+    offset + limit - 1,
+  );
 
-    q = applyAuthenticatedSaleFilters(q, filters);
+  q = applyAuthenticatedSaleFilters(q, filters);
 
-    const { data, error } = await q;
-    if (error) throw error;
-    return saleRows(data);
-  });
+  const { data, error } = await q;
+  if (error) throw error;
+  return saleRows(data);
 }
 
 /**
@@ -422,7 +386,6 @@ export async function getSalesForAlertEvaluation(
   let q = applySearchOrder(
     options.client.from(catalogView).select(ALERT_EVALUATION_COLUMNS),
     "date_asc",
-    false,
   ).range(offset, offset + limit - 1);
   q = applyAuthenticatedSaleFilters(q, filters);
 
@@ -455,17 +418,14 @@ export async function getSalesForCompleteSearch(
   if (!options.client && !assertCloudConfigured()) return [];
   const db = options.client ?? (await getSupabase());
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
-  return withCompletenessTierFallback(async (withTier) => {
-    let q = applySearchOrder(
-      db.from(catalogView).select(SEARCH_SCAN_COLUMNS),
-      sort,
-      withTier,
-    ).range(offset, offset + limit - 1);
-    q = applyAuthenticatedSaleFilters(q, filters);
-    const { data, error } = await q;
-    if (error) throw error;
-    return saleRows(data);
-  });
+  let q = applySearchOrder(db.from(catalogView).select(SEARCH_SCAN_COLUMNS), sort).range(
+    offset,
+    offset + limit - 1,
+  );
+  q = applyAuthenticatedSaleFilters(q, filters);
+  const { data, error } = await q;
+  if (error) throw error;
+  return saleRows(data);
 }
 
 /**
@@ -485,15 +445,7 @@ export async function getSaleRowsByIds(
   if (columns === "detail") {
     return fetchSaleRowsByIds(db, catalogView, SEARCH_DETAIL_COLUMNS, {}, ids);
   }
-  return withCompletenessTierFallback((withTier) =>
-    fetchSaleRowsByIds(
-      db,
-      catalogView,
-      withTier ? SALE_CARD_COLUMNS : SALE_CARD_COLUMNS_WITHOUT_TIER,
-      {},
-      ids,
-    ),
-  );
+  return fetchSaleRowsByIds(db, catalogView, SALE_CARD_COLUMNS, {}, ids);
 }
 
 export async function getSalesForSearch(
@@ -508,48 +460,36 @@ export async function getSalesForSearch(
   const db = options.client ?? (await getSupabase());
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
 
-  return withCompletenessTierFallback(async (withTier) => {
-    const cardColumns = withTier ? SALE_CARD_COLUMNS : SALE_CARD_COLUMNS_WITHOUT_TIER;
-
-    // The discovery view is a security barrier. EXPLAIN shows that selecting
-    // IDs and then re-reading the barrier doubles its materialization cost, so
-    // keep its existing single request. The app search view is invoker-safe and
-    // can prune the heavy lateral projections when the first request selects
-    // only IDs.
-    if (!options.discovery) {
-      const ids = await fetchSearchResultIds(
-        db,
-        catalogView,
-        filters,
-        limit,
-        sort,
-        offset,
-        withTier,
-      );
-      if (ids.length === 0) return [];
-      // Les identifiants lus sont déjà dans la liste `filters.ids` : on ne la renvoie pas une seconde fois
-      // dans l'URL (jusqu'à 100 identifiants pour « Pépites seulement »).
-      const rows = await fetchSaleRowsByIds(
-        db,
-        catalogView,
-        cardColumns,
-        { ...filters, ids: undefined },
-        ids,
-      );
-      return orderSalesByIds(rows, ids);
-    }
-
-    let q = applySearchOrder(db.from(catalogView).select(cardColumns), sort, withTier).range(
-      offset,
-      offset + limit - 1,
+  // The discovery view is a security barrier. EXPLAIN shows that selecting
+  // IDs and then re-reading the barrier doubles its materialization cost, so
+  // keep its existing single request. The app search view is invoker-safe and
+  // can prune the heavy lateral projections when the first request selects
+  // only IDs.
+  if (!options.discovery) {
+    const ids = await fetchSearchResultIds(db, catalogView, filters, limit, sort, offset);
+    if (ids.length === 0) return [];
+    // Les identifiants lus sont déjà dans la liste `filters.ids` : on ne la renvoie pas une seconde fois
+    // dans l'URL (jusqu'à 100 identifiants pour « Pépites seulement »).
+    const rows = await fetchSaleRowsByIds(
+      db,
+      catalogView,
+      SALE_CARD_COLUMNS,
+      { ...filters, ids: undefined },
+      ids,
     );
+    return orderSalesByIds(rows, ids);
+  }
 
-    q = applyAuthenticatedSaleFilters(q, filters);
+  let q = applySearchOrder(db.from(catalogView).select(SALE_CARD_COLUMNS), sort).range(
+    offset,
+    offset + limit - 1,
+  );
 
-    const { data, error } = await q;
-    if (error) throw error;
-    return saleRows(data);
-  });
+  q = applyAuthenticatedSaleFilters(q, filters);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return saleRows(data);
 }
 
 export async function getSalesCount(
@@ -613,21 +553,10 @@ export async function getSaleById(
 export async function getSalePreviewById(id: string): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
   // Card-level facts of the public catalogue (type, surface, city, hearing date…).
-  // `unsupported` means the database function is not deployed yet: keep the
-  // minimal preview below so the page still works during a staggered release.
   const supabase = await getSupabase();
   const summary = await fetchPublicSaleSummary(supabase, id);
-  if (summary.kind === "found") {
-    return withPhotoMirror(summary.sale, await mirrorClient(), mirrorOptions);
-  }
   if (summary.kind === "missing") return null;
-  const { data, error } = await supabase
-    .from(PUBLIC_PREVIEW_VIEW)
-    .select(SALE_PREVIEW_COLUMNS)
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return data as AuctionSale | null;
+  return withPhotoMirror(summary.sale, await mirrorClient(), mirrorOptions);
 }
 
 /** Colonnes minimales d'un point de carte : identifiant, position et de quoi étiqueter la pastille. */

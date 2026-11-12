@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   daily: vi.fn(),
   launchOffer: vi.fn(),
   confirmedEmail: vi.fn(),
-  usageLimit: vi.fn(),
   from: vi.fn(),
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceDailyOperationLimits: mocks.daily }));
@@ -20,10 +19,7 @@ vi.mock("@/lib/launch-offer.server", () => ({
   }),
 }));
 vi.mock("@/lib/sale-unlocks.server", () => ({ hasUnlockedSale: vi.fn() }));
-vi.mock("@/lib/usage", () => ({
-  assertUsageLimitAvailable: mocks.usageLimit,
-  recordFeatureUsageEvent: vi.fn(),
-}));
+vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: { from: mocks.from } }));
 
 import { exportPropertyReportPdf, savePropertyReport } from "@/lib/property-reports";
@@ -93,7 +89,7 @@ describe("plafonds journaliers des rapports enregistrés et de leur export PDF",
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it("applique le plafond d'export PDF avant le quota mensuel et la lecture du rapport", async () => {
+  it("applique le plafond d'export PDF avant la lecture du rapport", async () => {
     const { auth, supabaseFrom } = account({ isAdmin: true });
     mocks.daily.mockRejectedValue(
       new RateLimitError(undefined, 600, "Limite quotidienne atteinte."),
@@ -108,7 +104,6 @@ describe("plafonds journaliers des rapports enregistrés et de leur export PDF",
       operation: "propertyReportPdf",
       launchOffer: false,
     });
-    expect(mocks.usageLimit).not.toHaveBeenCalled();
     expect(supabaseFrom).not.toHaveBeenCalled();
   });
 

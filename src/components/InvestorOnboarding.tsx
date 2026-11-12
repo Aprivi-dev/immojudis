@@ -20,7 +20,7 @@ import { firstSearchToUrl, SALE_CEILING_ANCHOR, type FirstSearch } from "@/lib/o
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatPrice } from "@/lib/format";
-import type { PlanEntitlements } from "@/lib/property-reports";
+import type { PlanEntitlements } from "@/lib/plans";
 import { MONTHLY_UNLOCKS_TEXT, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];

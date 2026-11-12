@@ -17,8 +17,9 @@ import {
   type SaleReminderItem,
   type SaleReminderKind,
 } from "@/lib/sale-reminder-emails";
-import { saleRemindersMode, type SaleRemindersMode } from "@/lib/sale-reminders-mode";
+import { saleRemindersMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { saleHearingTime, seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
+import { EMAIL_PASS_BUDGET_MS, EMAIL_PASS_USER_CONCURRENCY } from "@/lib/email-campaign-pass";
 
 /**
  * Rappels d'audience (J-7, J-1) et avertissements graves sur les ventes qu'une personne suit
@@ -71,8 +72,6 @@ const MAX_FOLLOWED_SALES_PER_USER = 300;
 const MAX_SOURCE_CHECK_AGE_HOURS = 36;
 /** Au-delà de cette part de rappels d'audience écartés faute de vérification récente, le passage échoue. */
 const MAX_STALE_SKIP_SHARE = 0.2;
-const PROCESSING_BUDGET_MS = 50_000;
-const USER_CONCURRENCY = 4;
 const PARIS_TIME_ZONE = "Europe/Paris";
 const DATE_TO_CONFIRM = "Nouvelle date à confirmer auprès de l’avocat poursuivant.";
 
@@ -126,7 +125,7 @@ export interface SaleReminderStore {
     saleId: string;
     kind: SaleReminderKind;
     dedupeKey: string;
-    mode: Exclude<SaleRemindersMode, "off">;
+    mode: Exclude<EmailFeatureMode, "off">;
     payload: Record<string, unknown>;
   }): Promise<string | null>;
   markSent(ids: string[], args: { messageId: string | null; at: Date }): Promise<void>;
@@ -137,7 +136,7 @@ export interface SaleReminderStore {
 }
 
 export type SaleReminderRunSummary = {
-  mode: SaleRemindersMode;
+  mode: EmailFeatureMode;
   /** Vrai quand l'envoi d'emails est configuré (clé Resend, expéditeur, adresse du site). */
   configured: boolean;
   consentingUsers: number;
@@ -164,7 +163,7 @@ export type SaleReminderRunSummary = {
   skipped: "off" | "not_configured" | null;
 };
 
-function emptySummary(mode: SaleRemindersMode): SaleReminderRunSummary {
+function emptySummary(mode: EmailFeatureMode): SaleReminderRunSummary {
   return {
     mode,
     configured: false,
@@ -494,7 +493,7 @@ export async function runSaleReminders({
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
   fetchImpl?: typeof fetch;
-  mode?: SaleRemindersMode;
+  mode?: EmailFeatureMode;
   /** Passage de rattrapage (09:15) : il part de l'autre moitié de l'ordre des personnes. */
   catchUp?: boolean;
 }): Promise<SaleReminderRunSummary> {
@@ -519,7 +518,7 @@ export async function runSaleReminders({
   summary.recipients = recipients.length;
   recipients = rotateRecipients(recipients, now, catchUp);
 
-  const deadline = Date.now() + PROCESSING_BUDGET_MS;
+  const deadline = Date.now() + EMAIL_PASS_BUDGET_MS;
   async function processUser(userId: string) {
     const detected = await detectRemindersForUser({ store, userId, now, stats: summary });
     summary.candidates += detected.length;
@@ -617,12 +616,12 @@ export async function runSaleReminders({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += USER_CONCURRENCY) {
+  for (let index = 0; index < recipients.length; index += EMAIL_PASS_USER_CONCURRENCY) {
     if (Date.now() > deadline) {
       summary.truncated = true;
       break;
     }
-    const batch = recipients.slice(index, index + USER_CONCURRENCY);
+    const batch = recipients.slice(index, index + EMAIL_PASS_USER_CONCURRENCY);
     const settled = await Promise.allSettled(batch.map((userId) => processUser(userId)));
     const failure = settled.find((result) => result.status === "rejected");
     if (failure && failure.status === "rejected") {
@@ -630,7 +629,7 @@ export async function runSaleReminders({
       // échoue pour être vu et rejoué, le journal empêchant tout doublon.
       throw failure.reason instanceof Error
         ? failure.reason
-        : new Error("Rappels d'audience : lecture impossible.");
+        : new Error("Sale reminders: user processing failed.");
     }
   }
 

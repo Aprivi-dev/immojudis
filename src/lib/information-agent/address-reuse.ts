@@ -5,7 +5,7 @@ import {
   isInformationAgentExcludedSourceUrl,
 } from "@/lib/information-agent/excluded-addresses";
 import { normalizeInformationAgentIdentityName } from "@/lib/information-agent/identity";
-import { normalizedEmail } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { emailRecallsName, isGenericEmailLocal } from "@/lib/information-agent/firm-site-extract";
 import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
 

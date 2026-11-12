@@ -4,7 +4,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { apiRoute } from "@/lib/api-route";
 import { getCourtAuctionSummaries } from "@/lib/auction-scenarios.server";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 

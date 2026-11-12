@@ -312,24 +312,21 @@ describe("buildCrossSourceDuplicates (D12)", () => {
   const plainText = (value: unknown) => JSON.stringify(value).replace(/\s/g, " ");
 
   it("reprend les groupes, les lignes, les seuils de la base et les groupes à trois sources", () => {
-    const view = buildCrossSourceDuplicates(
-      {
-        groups: 72,
-        lines: 152,
-        thresholds: { warning_groups: 100, critical_groups: 200 },
-        three_source_groups: 1,
-        three_source_examples: [
-          {
-            sale_day: "2026-12-12",
-            starting_price_eur: 95000,
-            city_key: "lyon",
-            line_count: 3,
-            source_count: 3,
-          },
-        ],
-      },
-      { kind: "function" },
-    )!;
+    const view = buildCrossSourceDuplicates({
+      groups: 72,
+      lines: 152,
+      thresholds: { warning_groups: 100, critical_groups: 200 },
+      three_source_groups: 1,
+      three_source_examples: [
+        {
+          sale_day: "2026-12-12",
+          starting_price_eur: 95000,
+          city_key: "lyon",
+          line_count: 3,
+          source_count: 3,
+        },
+      ],
+    })!;
     expect(view.groups).toBe("72");
     expect(view.lines).toBe("152");
     expect(view.threshold).toBe("Alerte à partir de 100 groupes (critique : 200)");
@@ -342,21 +339,19 @@ describe("buildCrossSourceDuplicates (D12)", () => {
   });
 
   it("passe au rouge au seuil d'avertissement de la base, sans le changer", () => {
-    const view = buildCrossSourceDuplicates(
-      { groups: 100, lines: 210, warning_groups: 100, critical_groups: 200 },
-      { kind: "alert", seenAt: "2026-11-07T10:00:00Z" },
-    )!;
+    const view = buildCrossSourceDuplicates({
+      groups: 100,
+      lines: 210,
+      thresholds: { warning_groups: 100, critical_groups: 200 },
+    })!;
     expect(view.state).toBe("alert");
     expect(view.threshold).toBe("Alerte à partir de 100 groupes (critique : 200)");
     expect(view.threeSourceGroups).toBe("—");
-    expect(view.note).toContain("attend la migration 20261112100100");
   });
 
   it("ne rend rien sans mesure", () => {
-    expect(buildCrossSourceDuplicates(null, { kind: "function" })).toBeNull();
-    expect(
-      buildCrossSourceDuplicates({ groups: null, lines: null }, { kind: "function" }),
-    ).toBeNull();
+    expect(buildCrossSourceDuplicates(null)).toBeNull();
+    expect(buildCrossSourceDuplicates({ groups: null, lines: null })).toBeNull();
   });
 });
 
@@ -490,7 +485,8 @@ describe("getAdminCatalogueQuality", () => {
     ).not.toContain("update");
   });
 
-  it("lit le dernier passage de l'alerte tant que la fonction n'est pas déployée", async () => {
+  it("sans la fonction, la mesure des doublons est indisponible : aucun repli sur l'alerte", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     mocks.auth.mockResolvedValue({ isAdmin: true });
     const builder = (result: unknown) => {
       const query: Record<string, unknown> = {};
@@ -519,8 +515,7 @@ describe("getAdminCatalogueQuality", () => {
 
     const view = await getAdminCatalogueQuality("token", new Date("2026-11-05T09:30:00Z"));
 
-    expect(view.crossSourceDuplicates).toMatchObject({ groups: "120", state: "alert" });
-    expect(view.crossSourceDuplicates?.note).toContain("Dernier passage de l’alerte");
+    expect(view.crossSourceDuplicates).toBeNull();
     expect(view.ceilingCoverage).toBeNull();
   });
 });

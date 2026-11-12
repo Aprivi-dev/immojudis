@@ -23,7 +23,9 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceUserRateLimit: mocks.enforceUser,
   enforceIpRateLimit: mocks.enforceIp,
 }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlementVia: mocks.assertEntitlement }));
+vi.mock("@/lib/entitlements.server", () => ({
+  assertFeatureEntitlementVia: mocks.assertEntitlement,
+}));
 vi.mock("@/lib/supabase-public.server", () => ({ createPublicSupabaseClient: () => ({}) }));
 vi.mock("@/lib/sale-pepite.server", () => ({
   isPublishedPepite: mocks.isPublished,

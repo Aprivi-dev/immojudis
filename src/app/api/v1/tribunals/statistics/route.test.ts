@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   assertEntitlement: vi.fn(),
   getStatistics: vi.fn(),
   recordUsage: vi.fn(),
+  adminFrom: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
@@ -15,7 +16,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
 
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   assertFeatureEntitlement: mocks.assertEntitlement,
 }));
 
@@ -27,6 +28,15 @@ vi.mock("@/lib/tribunal-statistics-repository", async (importOriginal) => {
 vi.mock("@/lib/usage", () => ({
   recordFeatureUsageEvent: mocks.recordUsage,
 }));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: mocks.adminFrom },
+}));
+
+/** The real measurement (`@/lib/usage`), writing through `mocks.adminFrom`. */
+async function useRealUsageRecording() {
+  const usage = await vi.importActual<typeof import("@/lib/usage")>("@/lib/usage");
+  mocks.recordUsage.mockImplementation(usage.recordFeatureUsageEvent);
+}
 
 import { GET } from "@/app/api/v1/tribunals/statistics/route";
 
@@ -160,20 +170,21 @@ describe("GET /api/v1/tribunals/statistics", () => {
   });
 
   it("reste disponible lorsque la télémétrie non critique échoue", async () => {
-    mocks.recordUsage.mockRejectedValue(new Error("usage store unavailable"));
+    await useRealUsageRecording();
+    mocks.adminFrom.mockReturnValue({
+      insert: vi.fn().mockRejectedValue(new Error("usage store unavailable")),
+    });
 
     const response = await request();
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(statistics);
+    expect(mocks.adminFrom).toHaveBeenCalledWith("feature_usage_events");
   });
 
   it("n’attend pas une télémétrie qui ne répond jamais", async () => {
-    let resolveTelemetry: (() => void) | undefined;
-    const telemetry = new Promise<void>((resolve) => {
-      resolveTelemetry = resolve;
-    });
-    mocks.recordUsage.mockReturnValue(telemetry);
+    await useRealUsageRecording();
+    mocks.adminFrom.mockReturnValue({ insert: () => new Promise<never>(() => undefined) });
 
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const winner = await Promise.race([
@@ -183,14 +194,14 @@ describe("GET /api/v1/tribunals/statistics", () => {
       }),
     ]);
     if (timeout) clearTimeout(timeout);
-    resolveTelemetry?.();
 
     expect(winner).not.toBe("timeout");
     expect((winner as Response).status).toBe(200);
   });
 
   it("reste disponible si l’adaptateur de télémétrie lève synchroniquement", async () => {
-    mocks.recordUsage.mockImplementation(() => {
+    await useRealUsageRecording();
+    mocks.adminFrom.mockImplementation(() => {
       throw new Error("synchronous telemetry adapter failure");
     });
 

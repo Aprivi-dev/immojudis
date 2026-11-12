@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/cron-jobs", () => ({
   runMonitoredCron: mocks.runMonitoredCron,
-  positiveNumberFromEnv: () => undefined,
 }));
 vi.mock("@/lib/alert-matches", () => ({
   runSmartAlertEvaluationBatch: mocks.runBatch,

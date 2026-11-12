@@ -51,7 +51,8 @@ import {
   type SalesSearchParams,
   type SalesSearchUrlRecord,
 } from "@/lib/search/search-url-state";
-import { parisToday, upcomingWeekScope } from "@/lib/search/sales-week";
+import { parisDateKey } from "@/lib/paris-time";
+import { upcomingWeekScope } from "@/lib/search/sales-week";
 import { isOutOfRangeSearchError } from "@/lib/search/search-errors";
 import {
   fetchPepiteFloodExposedIds,
@@ -488,8 +489,8 @@ export function SearchPage({
 
   // « dont M cette semaine » (titre) : la même recherche bornée aux sept prochains jours, comptée à
   // part (voir `upcomingWeekScope`). Le jour vient du serveur pour l'hydratation, puis du navigateur.
-  const [today, setToday] = useState(() => serverToday ?? parisToday());
-  useEffect(() => setToday(parisToday()), []);
+  const [today, setToday] = useState(() => serverToday ?? parisDateKey(new Date()));
+  useEffect(() => setToday(parisDateKey(new Date())), []);
   const week = useMemo(() => upcomingWeekScope(search, today), [search, today]);
   const weekSignature = week.kind === "count" ? salesSearchSignature(week.search) : "";
   const { data: connectedWeekCount } = useQuery({

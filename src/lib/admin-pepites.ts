@@ -3,8 +3,9 @@ import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { adminDeadlineSignal } from "@/lib/admin-route-deadline";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { asRecord, asRecordOrNull } from "@/lib/guards";
+import { asRecord, asRecordOrNull, numberValue, stringValue } from "@/lib/guards";
 import { matchProsecutedSales, type ProsecutionLawyer } from "@/lib/lawyer-prosecuted-sales";
 import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
 import { PUBLIC_SALES_CACHE_TAG } from "@/lib/public-sale.server";
@@ -16,7 +17,6 @@ import {
   PEPITE_TARGET_RATE_MAX,
   PEPITE_TARGET_RATE_MIN,
 } from "@/lib/pepite-policy";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import type { CeilingCoverageSale } from "@/lib/admin-catalogue-quality";
 
 /**
@@ -27,8 +27,7 @@ import type { CeilingCoverageSale } from "@/lib/admin-catalogue-quality";
  * Lecture, plus un seul geste d'écriture : l'arrêt d'urgence `suspendAdminPepites` (de « on » vers « shadow » ou
  * « off », jamais l'inverse ; voir plus bas et `docs/runbooks/pepites-arret-urgence.md`). Jeton de session vérifié et
  * rôle administrateur exigé avant toute lecture ; les lectures se font avec le client de service
- * (`admin_list_sale_pepites`, service_role seul). Avant la migration
- * 20261104100000 (fonction ou table absente), la réponse dit « pas migré » au lieu d'échouer.
+ * (`admin_list_sale_pepites`, service_role seul).
  *
  * Le contrôle d'indépendance (proposition n° 21) lit les encarts d'avocats pour mesurer la part des pépites
  * dont l'avocat poursuivant est sponsorisé : il vit ici, côté administration, et n'entre JAMAIS dans la règle
@@ -155,24 +154,12 @@ export type AdminPepitesResponse = {
   /**
    * Ventes à venir en attente de réobservation d'inondation (une tentative a échoué : `failure_count > 0`), donc
    * « inconnu par panne » et non par position imprécise. La règle v2 est prête côté inondation quand il est nul.
-   * `null` : non mesuré (fonction absente avant la migration 20261108100100, ou lecture impossible).
+   * `null` : non mesuré (lecture impossible).
    */
   floodReobservationPending: number | null;
 };
 
 const VENUES: readonly PepiteVenue[] = ["tribunal", "notary", "other"];
-
-function integer(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function numberOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function textOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
 
 function venueOf(value: unknown): PepiteVenue {
   return VENUES.includes(value as PepiteVenue) ? (value as PepiteVenue) : "other";
@@ -185,14 +172,14 @@ function parseCounters(raw: unknown): AdminPepiteCounters[] {
     return {
       venue,
       label: PEPITE_VENUE_LABELS[venue],
-      evaluated: integer(entry.evaluated),
-      pepites: integer(entry.pepites),
-      pending: integer(entry.pending),
-      notPepite: integer(entry.not_pepite),
-      notApplicable: integer(entry.not_applicable),
-      insufficient: integer(entry.insufficient),
-      evaluable: integer(entry.evaluable),
-      onlyGapGuard: integer(entry.only_gap_guard),
+      evaluated: numberValue(entry.evaluated) ?? 0,
+      pepites: numberValue(entry.pepites) ?? 0,
+      pending: numberValue(entry.pending) ?? 0,
+      notPepite: numberValue(entry.not_pepite) ?? 0,
+      notApplicable: numberValue(entry.not_applicable) ?? 0,
+      insufficient: numberValue(entry.insufficient) ?? 0,
+      evaluable: numberValue(entry.evaluable) ?? 0,
+      onlyGapGuard: numberValue(entry.only_gap_guard) ?? 0,
     };
   });
 }
@@ -262,14 +249,14 @@ export function pepiteFeesDefaultStat(rows: readonly AdminPepiteRow[]): PepiteFe
 /** Le marché local d'une évaluation (`details.market`), en une phrase pour l'administration. */
 function describeMarketNote(market: Record<string, unknown> | null): string | null {
   if (!market) return null;
-  const propertyType = textOrNull(market.propertyType);
+  const propertyType = stringValue(market.propertyType);
   if (market.aggregateAbsent === true) {
     return propertyType
       ? `Marché local : aucune donnée DVF pour la commune (${propertyType}), critères réussis faute de donnée`
       : "Marché local : type de bien sans agrégat, critères réussis faute de donnée";
   }
-  const sales = numberOrNull(market.sales12Months);
-  const decline = numberOrNull(market.declinePct);
+  const sales = numberValue(market.sales12Months);
+  const decline = numberValue(market.declinePct);
   const parts = [`${sales ?? "?"} vente${sales === 1 ? "" : "s"} sur 12 mois`];
   parts.push(
     market.trendEvaluated === true && decline != null
@@ -281,7 +268,7 @@ function describeMarketNote(market: Record<string, unknown> | null): string | nu
 
 export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
   const row = asRecordOrNull(raw);
-  const saleId = textOrNull(row?.sale_id);
+  const saleId = stringValue(row?.sale_id);
   if (!row || !saleId) return null;
   const details = asRecord(row.details);
   const codes = Array.isArray(row.reason_codes)
@@ -294,35 +281,35 @@ export function parseAdminPepiteRow(raw: unknown): AdminPepiteRow | null {
   return {
     saleId,
     category: isPepite ? "pepite" : row.status === "pepite" ? "pending" : "near",
-    title: textOrNull(row.title),
-    city: textOrNull(row.city),
-    tribunal: textOrNull(row.tribunal),
+    title: stringValue(row.title),
+    city: stringValue(row.city),
+    tribunal: stringValue(row.tribunal),
     venue,
     venueLabel: PEPITE_VENUE_LABELS[venue],
-    saleDate: textOrNull(row.sale_date),
-    startingPriceEur: numberOrNull(row.starting_price_eur),
-    referenceCeilingEur: numberOrNull(details.referenceCeilingEur),
-    probablePriceEur: numberOrNull(details.probablePriceEur),
-    rangeLowEur: numberOrNull(details.rangeLowEur),
-    rangeHighEur: numberOrNull(details.rangeHighEur),
-    chanceShare: numberOrNull(details.chanceShare),
+    saleDate: stringValue(row.sale_date),
+    startingPriceEur: numberValue(row.starting_price_eur),
+    referenceCeilingEur: numberValue(details.referenceCeilingEur),
+    probablePriceEur: numberValue(details.probablePriceEur),
+    rangeLowEur: numberValue(details.rangeLowEur),
+    rangeHighEur: numberValue(details.rangeHighEur),
+    chanceShare: numberValue(details.chanceShare),
     chanceAtLeast: details.chanceAtLeast === true,
-    costRatio: numberOrNull(details.costRatio),
+    costRatio: numberValue(details.costRatio),
     feesDefault: details.feesDefault === true,
-    dpeClass: textOrNull(details.dpeClass),
-    energyRenovationEur: numberOrNull(details.energyRenovationEur),
+    dpeClass: stringValue(details.dpeClass),
+    energyRenovationEur: numberValue(details.energyRenovationEur),
     marketNote: describeMarketNote(asRecordOrNull(details.market)),
     badges: Array.isArray(details.badges)
       ? details.badges.flatMap((badge) => {
-          const label = textOrNull(asRecordOrNull(badge)?.label);
+          const label = stringValue(asRecordOrNull(badge)?.label);
           return label ? [label] : [];
         })
       : [],
     passed: reasons.passed,
     missed: reasons.missed,
     stability: reasons.stability,
-    evaluatedAt: textOrNull(row.evaluated_at) ?? "",
-    frozenAt: textOrNull(row.frozen_at),
+    evaluatedAt: stringValue(row.evaluated_at) ?? "",
+    frozenAt: stringValue(row.frozen_at),
     href: `/sales/${encodeURIComponent(saleId)}`,
   };
 }
@@ -345,7 +332,7 @@ export function unavailablePepites(): AdminPepitesResponse {
   };
 }
 
-/** Le compteur ne fait jamais tomber la page : fonction absente, erreur ou réponse inattendue valent « non mesuré ». */
+/** Le compteur ne fait jamais tomber la page : erreur ou réponse inattendue valent « non mesuré ». */
 async function readFloodReobservationPending(now: Date): Promise<number | null> {
   try {
     const { data, error } = await supabaseAdmin.rpc("admin_count_flood_reobservation_pending", {
@@ -402,7 +389,9 @@ export async function computePepiteIndependence(
 ): Promise<PepiteIndependence> {
   // Entre deux lectures, on s'arrête dès que le délai est dépassé (la page affichera « non mesuré »).
   const checkpoint = () => {
-    if (signal?.aborted) throw new Error("Contrôle d'indépendance interrompu : délai dépassé.");
+    if (signal?.aborted) {
+      throw new ServiceUnavailableError("Independence check interrupted: deadline exceeded.");
+    }
   };
   const evaluable = await readIndependenceSales();
   checkpoint();
@@ -528,10 +517,7 @@ export async function getAdminPepites(
     p_now: now.toISOString(),
     p_limit: 300,
   });
-  if (error) {
-    if (isMissingDatabaseObject(error)) return unavailablePepites();
-    throw error;
-  }
+  if (error) throw error;
 
   const body = asRecord(data);
   const counters = parseCounters(body.counters);
@@ -547,7 +533,7 @@ export async function getAdminPepites(
 
   return {
     migrated: true,
-    generatedAt: textOrNull(body.generated_at),
+    generatedAt: stringValue(body.generated_at),
     mode,
     ruleVersion: activePepiteRuleVersion(),
     counters,

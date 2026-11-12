@@ -1,4 +1,5 @@
 import "server-only";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
@@ -65,7 +66,7 @@ export type ArchivedHearing = {
   lawyerLabel: string | null;
 };
 
-export class TribunalOutcomeGraphHistoryUnavailableError extends Error {
+export class TribunalOutcomeGraphHistoryUnavailableError extends ServiceUnavailableError {
   constructor(message = "L’historique archivé des tribunaux est temporairement indisponible.") {
     super(message);
     this.name = "TribunalOutcomeGraphHistoryUnavailableError";

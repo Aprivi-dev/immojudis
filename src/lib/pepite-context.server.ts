@@ -1,7 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { mapDocumentReading } from "@/lib/document-reading";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { pepiteDpeDiagnostic } from "@/lib/pepite-energy";
 import type { PepiteV12Source } from "@/lib/pepite-input";
 import {
@@ -74,7 +73,7 @@ async function readReadingPoints(saleIds: readonly string[]) {
   return bySale;
 }
 
-/** Code DVF de la commune de chaque vente ; vide quand la table des communes n'existe pas encore. */
+/** Code DVF de la commune de chaque vente. */
 async function readDvfInseeCodes(saleIds: readonly string[]) {
   const codes = new Map<string, string>();
   if (!saleIds.length) return codes;
@@ -82,10 +81,7 @@ async function readDvfInseeCodes(saleIds: readonly string[]) {
     .from("auction_sale_communes")
     .select("sale_id, commune_insee, arrondissement_insee")
     .in("sale_id", [...saleIds]);
-  if (error) {
-    if (isMissingDatabaseObject(error)) return codes;
-    throw error;
-  }
+  if (error) throw error;
   for (const row of data ?? []) {
     const code = dvfInseeCode({
       communeInsee: row.commune_insee,
@@ -96,7 +92,7 @@ async function readDvfInseeCodes(saleIds: readonly string[]) {
   return codes;
 }
 
-/** Agrégats de marché de ces communes, par `commune|type` ; vide quand la fonction n'existe pas encore. */
+/** Agrégats de marché de ces communes, par `commune|type`. */
 async function readMarketAggregates(inseeCodes: readonly string[]) {
   const aggregates = new Map<string, PepiteMarketAggregate>();
   const wanted = [...new Set(inseeCodes)];
@@ -104,10 +100,7 @@ async function readMarketAggregates(inseeCodes: readonly string[]) {
   const { data, error } = await supabaseAdmin.rpc("get_commune_market_trends", {
     p_insee_codes: wanted,
   });
-  if (error) {
-    if (isMissingDatabaseObject(error)) return aggregates;
-    throw error;
-  }
+  if (error) throw error;
   for (const raw of Array.isArray(data) ? (data as MarketTrendRow[]) : []) {
     const parsed = parseMarketTrendRow(raw);
     if (parsed) aggregates.set(parsed.key, parsed.aggregate);

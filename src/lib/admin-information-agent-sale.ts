@@ -9,7 +9,7 @@ import {
   INFORMATION_AGENT_PIPELINE_CHANNEL,
   selectInformationAgentContact,
   type InformationAgentRegistryContact,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import { informationAgentAddressHygieneIssue } from "@/lib/information-agent/address-hygiene";
 import { informationAgentAddressCheckEnabled } from "@/lib/information-agent/address-deliverability";
 import { findCourtRegistryFallback } from "@/lib/information-agent/court-registry";
@@ -20,7 +20,7 @@ import {
   type InformationAgentListingContactBlock,
   type InformationAgentOrganizerType,
 } from "@/lib/information-agent/listing-contacts";
-import { NotFoundError } from "@/lib/api-errors";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 /**
  * The admin information workflow is allowed to inspect a sale that is kept out
@@ -157,12 +157,15 @@ export async function loadAdminInformationAgentSale({
 
   const status = nullableString(row.status);
   if (!isAvailableInformationAgentStatus(status)) {
-    throw new Error("Cette vente n'est plus disponible pour une demande d'informations.");
+    throw new PublicApiError(
+      "Cette vente n'est plus disponible pour une demande d'informations.",
+      409,
+    );
   }
 
   const [documents, sourcePresence, registryContacts] = await Promise.all([
     loadAdminInformationAgentDocuments(saleSourceUrls(row)),
-    loadAdminInformationAgentSourcePresence(saleId, row.raw_payload),
+    loadAdminInformationAgentSourcePresence(saleId),
     loadAdminInformationAgentRegistryContacts(saleId),
   ]);
   return {
@@ -433,26 +436,13 @@ async function loadAdminInformationAgentDocuments(
 
 async function loadAdminInformationAgentSourcePresence(
   saleId: string,
-  rawPayload: unknown,
 ): Promise<AuctionSale["source_presence"]> {
   const { data, error } = await supabaseAdmin
     .from("auction_sale_source_presence")
     .select("source_name,availability,state,attempted_at,checked_at,run_id,extras")
     .eq("sale_id", saleId);
-  if (error) {
-    // The web rollout may precede the single atomic migration. Keep the
-    // quarantined admin path available only while the projection relation is
-    // genuinely absent; any other projection error must fail closed.
-    if (isMissingSourcePresenceProjection(error)) {
-      return sourcePresenceObject(asRecord(rawPayload).source_presence);
-    }
-    throw error;
-  }
+  if (error) throw error;
   return sourcePresenceRows(data);
-}
-
-function isMissingSourcePresenceProjection(error: { code?: string; message: string }): boolean {
-  return error.code === "PGRST205" || error.code === "42P01";
 }
 
 function toInformationAgentSale(
@@ -770,15 +760,6 @@ function sourcePresenceRows(value: unknown): AuctionSale["source_presence"] {
     output[key] = normalized;
   }
   return Object.keys(output).length ? output : null;
-}
-
-function sourcePresenceObject(value: unknown): AuctionSale["source_presence"] {
-  const input = asRecord(value);
-  const rows = Object.entries(input).map(([source_name, raw]) => ({
-    source_name,
-    ...asRecord(raw),
-  }));
-  return sourcePresenceRows(rows);
 }
 
 function asSaleRow(value: unknown): AdminInformationAgentSaleRow | null {

@@ -100,8 +100,8 @@ describe("flux /api/sales/feed : filtres « Pépites seulement » et « sous la 
     await expect(feedIds({ belowRange: "1" })).rejects.toMatchObject({ code: "57014" });
   });
 
-  it("une base sans la fonction des pépites (migration pas appliquée) : aucune pépite", async () => {
+  it("une base sans la fonction des pépites : l'erreur remonte, aucun flux vide servi", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202" } });
-    expect(await feedIds({ pepite: "1" })).toEqual([]);
+    await expect(feedIds({ pepite: "1" })).rejects.toMatchObject({ code: "PGRST202" });
   });
 });

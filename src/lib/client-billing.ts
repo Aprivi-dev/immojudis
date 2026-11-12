@@ -6,8 +6,7 @@ import {
   type OfferOpeningSurveyProfile,
 } from "@/lib/offer-opening-consent";
 import type { OfferOpeningNotificationResponse } from "@/lib/offer-opening-notification";
-import type { PlanCode } from "@/lib/plans";
-import type { PlanEntitlements } from "@/lib/property-reports";
+import type { PlanCode, PlanEntitlements } from "@/lib/plans";
 import { authHeaders, readJson } from "@/lib/client-api-core";
 
 export type BillingOfferResponse = {

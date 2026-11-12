@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import { assertAdmin } from "@/lib/admin-auth.server";
 import type { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
@@ -57,15 +58,17 @@ import {
 import { informationAgentAudienceTemplate } from "@/lib/information-agent/recipient-templates";
 import {
   assertInformationAgentContactAllowed,
-  contactCandidateSnapshot,
   INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
   INFORMATION_AGENT_STRUCTURE_OPPOSED_MESSAGE,
   loadOpposedInformationAgentIdentityKeys,
-  normalizedEmail,
   persistInformationAgentContactObservations,
-  selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
-import { COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD } from "@/lib/information-agent/court-registry-fallback";
+import {
+  contactCandidateSnapshot,
+  selectInformationAgentContact,
+} from "@/lib/information-agent/contact-resolution";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
+import { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
 import {
   assertCourtRegistryDraftAllowed,
   COURT_REGISTRY_DRAFT_OPTIONS,
@@ -295,7 +298,10 @@ export async function createAdminInformationAgentDraft({
           : INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
       );
     }
-    throw new Error(missingRecipientMessage(contactCandidates.length, search.noAddressNote));
+    throw new PublicApiError(
+      missingRecipientMessage(contactCandidates.length, search.noAddressNote),
+      400,
+    );
   }
   const selectedByEmail =
     courtFallback?.candidate ??
@@ -346,7 +352,7 @@ export async function createAdminInformationAgentDraft({
   if (
     requestedQuestionKeys?.some((key) => !isInformationAgentQuestionAllowed(questionAudience, key))
   ) {
-    throw new Error(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE);
+    throw new PublicApiError(INFORMATION_AGENT_QUESTION_NOT_ALLOWED_MESSAGE, 400);
   }
   const questionKeys =
     requestedQuestionKeys ??
@@ -430,7 +436,7 @@ export async function createAdminInformationAgentDraft({
           method: explicitRecipientEmail
             ? "admin_override"
             : courtFallback
-              ? COURT_REGISTRY_FALLBACK_DISCOVERY_METHOD
+              ? INFORMATION_AGENT_COURT_REGISTRY_FALLBACK
               : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
           selected_email: selectedByEmail?.email ?? explicitRecipientEmail ?? null,
           candidates: (courtFallback ? [courtFallback.candidate] : contactCandidates)

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ConfigurationError } from "@/lib/api-errors";
 
 import {
   SALE_FLOOD_RISK_WORKFLOW,
@@ -64,7 +65,9 @@ describe("déclenchement du workflow d'inondation", () => {
     vi.stubEnv("GITHUB_ACTIONS_DISPATCH_TOKEN", "");
     const fetcher = vi.fn<typeof fetch>();
 
-    await expect(dispatchSaleFloodRiskWorkflow(fetcher)).rejects.toThrow(/Jeton de déclenchement/);
+    const failure = dispatchSaleFloodRiskWorkflow(fetcher);
+    await expect(failure).rejects.toThrow(/Jeton de déclenchement/);
+    await expect(failure).rejects.toBeInstanceOf(ConfigurationError);
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

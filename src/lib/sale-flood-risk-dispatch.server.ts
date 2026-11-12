@@ -1,4 +1,5 @@
 import "server-only";
+import { ConfigurationError } from "@/lib/api-errors";
 import { serverEnv } from "@/lib/env";
 import { postGitHubWorkflowDispatch } from "@/lib/github-workflow-dispatch.server";
 
@@ -22,8 +23,11 @@ export async function dispatchSaleFloodRiskWorkflow(
   fetcher: typeof fetch = fetch,
 ): Promise<Record<string, unknown>> {
   const { githubToken: token, repository, ref } = serverEnv().pipeline;
-  if (!token)
-    throw new Error("Jeton de déclenchement GitHub absent : traitement d'inondation non déclenché");
+  if (!token) {
+    throw new ConfigurationError(
+      "Jeton de déclenchement GitHub absent : traitement d'inondation non déclenché",
+    );
+  }
   const response = await postGitHubWorkflowDispatch({
     token,
     repository,

@@ -109,8 +109,3 @@ async function succeededRecently(jobName: string, windowHours: number): Promise<
     return false;
   }
 }
-
-export function positiveNumberFromEnv(name: string): number | undefined {
-  const parsed = Number(process.env[name]);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}

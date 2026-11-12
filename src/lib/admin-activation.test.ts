@@ -13,7 +13,6 @@ import {
   getAdminActivation,
   parseActivationWindows,
   parseUnlockThreshold,
-  unavailableActivation,
 } from "./admin-activation";
 
 const activationRaw = {
@@ -139,22 +138,20 @@ describe("getAdminActivation", () => {
     expect(result.unlockThreshold.months[0].reachedThree).toBe(6);
   });
 
-  it("says « non mesuré » while the migration is not applied", async () => {
+  it("rethrows a missing database function: the migration is applied, it is an outage", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202" } });
-    expect(await getAdminActivation("token")).toEqual(unavailableActivation());
+    await expect(getAdminActivation("token")).rejects.toMatchObject({ code: "PGRST202" });
   });
 
-  it("keeps one indicator when the other is missing, and rethrows any other failure", async () => {
+  it("rethrows the failure of either indicator", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     mocks.rpc.mockImplementation(async (name: string) =>
       name === "admin_pilotage_activation"
         ? { data: activationRaw, error: null }
         : { data: null, error: { code: "42883" } },
     );
-    const partial = await getAdminActivation("token");
-    expect(partial.windows[1].activated).toBe(33);
-    expect(partial.unlockThreshold.discoveryAccounts).toBeNull();
+    await expect(getAdminActivation("token")).rejects.toMatchObject({ code: "42883" });
 
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "boom" } });
     await expect(getAdminActivation("token")).rejects.toMatchObject({ code: "XX000" });

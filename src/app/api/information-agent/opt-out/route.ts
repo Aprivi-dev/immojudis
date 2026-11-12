@@ -7,7 +7,10 @@ import { informationAgentPage } from "@/lib/information-agent-public-page";
 import { logInformationAgentRouteError } from "@/lib/information-agent-route-log";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { verifiedOptOutLink as verifiedOptOut } from "@/lib/information-agent-opt-out-link.server";
+import {
+  informationAgentRightsPath,
+  verifiedSignedEmailLink,
+} from "@/lib/information-agent-signed-link";
 
 /**
  * Opposition depuis le pied d'un e-mail de l'agent d'information.
@@ -28,7 +31,7 @@ export async function GET(request: Request) {
       bucketKey: "information-agent.opt-out.get",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-    const verified = verifiedOptOut(request);
+    const verified = verifiedSignedEmailLink(request);
     if (!verified) return invalidLink();
     const action = new URL(request.url);
     const structure = await oppositionCoversStructure(verified.email, "GET");
@@ -57,7 +60,7 @@ export async function POST(request: Request) {
       bucketKey: "information-agent.opt-out.post",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-    const verified = verifiedOptOut(request);
+    const verified = verifiedSignedEmailLink(request);
     if (!verified) return invalidLink();
     // Lu avant l'écriture : la page reste exacte même si la ligne du registre change avec l'opposition.
     const structure = await oppositionCoversStructure(verified.email, "POST");
@@ -72,7 +75,6 @@ export async function POST(request: Request) {
       { onConflict: "scope_sale_id,normalized_email" },
     );
     if (error) throw error;
-    const action = new URL(request.url);
     return informationAgentPage({
       title: "Opposition enregistrée",
       message: structure
@@ -81,7 +83,7 @@ export async function POST(request: Request) {
       status: 200,
       links: [
         {
-          href: `/api/information-agent/rights${action.search}`,
+          href: informationAgentRightsPath(verified.email),
           label: "Obtenir une copie de vos données ou demander leur effacement",
         },
       ],

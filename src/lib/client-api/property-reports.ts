@@ -62,10 +62,7 @@ export async function exportPropertyReportPdf(args: {
     headers: await authHeaders(),
   });
 
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
-  }
+  if (!response.ok) await readJson<unknown>(response);
 
   const filename =
     response.headers

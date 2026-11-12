@@ -27,6 +27,7 @@ import {
 } from "@/lib/sale-result-emails";
 import { seoPropertyLabel, tribunalDisplayName } from "@/lib/seo";
 import { surenchereWindow } from "@/lib/surenchere-window";
+import { EMAIL_PASS_BUDGET_MS, EMAIL_PASS_USER_CONCURRENCY } from "@/lib/email-campaign-pass";
 
 /**
  * Alerte de résultat ou de remise en vente d'une vente suivie (favoris et ventes débloquées),
@@ -58,8 +59,6 @@ const STATUS_LOOKBACK_HOURS = 72;
  * au passage suivant tant que l'instantané ou l'événement est dans sa fenêtre de relecture.
  */
 export const MAX_RESULT_ITEMS_PER_EMAIL = 10;
-const PROCESSING_BUDGET_MS = 50_000;
-const USER_CONCURRENCY = 4;
 /** Statuts qui annoncent une remise en vente quand la vente repasse « à venir » depuis l'un d'eux. */
 const RELIST_FROM = new Set(["past", "adjudicated", "withdrawn", "cancelled", "canceled"]);
 
@@ -385,7 +384,7 @@ export async function runSaleResults({
   summary.recipients = recipients.length;
   recipients = rotateRecipients(recipients, now);
 
-  const deadline = Date.now() + PROCESSING_BUDGET_MS;
+  const deadline = Date.now() + EMAIL_PASS_BUDGET_MS;
   async function processUser(userId: string) {
     const detected = await detectSaleResultsForUser({ store, userId, now, stats: summary });
     summary.candidates += detected.length;
@@ -479,12 +478,12 @@ export async function runSaleResults({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += USER_CONCURRENCY) {
+  for (let index = 0; index < recipients.length; index += EMAIL_PASS_USER_CONCURRENCY) {
     if (Date.now() > deadline) {
       summary.truncated = true;
       break;
     }
-    const batch = recipients.slice(index, index + USER_CONCURRENCY);
+    const batch = recipients.slice(index, index + EMAIL_PASS_USER_CONCURRENCY);
     const settled = await Promise.allSettled(batch.map((userId) => processUser(userId)));
     const failure = settled.find((result) => result.status === "rejected");
     if (failure && failure.status === "rejected") {
@@ -492,7 +491,7 @@ export async function runSaleResults({
       // pour être vu et rejoué, le journal empêchant tout doublon.
       throw failure.reason instanceof Error
         ? failure.reason
-        : new Error("Alertes de résultat : lecture impossible.");
+        : new Error("Sale results: user processing failed.");
     }
   }
   return summary;

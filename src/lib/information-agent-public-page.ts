@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/email-brand";
+import { escapeHtml } from "@/lib/guards";
 
 /** Pages HTML minimales des liens signés de l'agent d'information (opposition, accès, effacement). */
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
-}
 
 type InformationAgentPageForm = {
   /** Cible du formulaire (chemin relatif, avec le lien signé). */

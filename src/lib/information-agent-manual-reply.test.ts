@@ -13,10 +13,10 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
-vi.mock("@/lib/information-agent-inbound", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/information-agent-inbound")>(
-    "@/lib/information-agent-inbound",
-  );
+vi.mock("@/lib/information-agent-inbound/attachments", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/information-agent-inbound/attachments")
+  >("@/lib/information-agent-inbound/attachments");
   return { ...actual, persistFactCandidates: mocks.persistFactCandidates };
 });
 

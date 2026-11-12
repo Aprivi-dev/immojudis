@@ -13,8 +13,8 @@ import type { SaleSignal } from "@/lib/sale-signal-feedback";
  * vérifier) y ont leur ligne.
  *
  * Même protection que le reste du pilotage : jeton de session vérifié, rôle administrateur, lecture avec
- * le client de service. Une mesure impossible (migration pas encore appliquée, panne) vaut `null` et
- * s'affiche « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
+ * le client de service. Une lecture en échec remonte ; la route de pilotage répond alors
+ * `unavailableSaleSignalFeedback()`, tout « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
 /** Un nombre exact, ou `null` : « non mesuré » (comme `PilotageCount`). */
 type FeedbackCount = number | null;
@@ -29,7 +29,7 @@ export type SignalFeedbackCounts = {
   reasons: Record<string, FeedbackCount>;
   /**
    * Retours par version de la règle de la vente à la lecture (signal `pepite` seulement ; `unknown` : vente sans
-   * ligne de pépite). Vide pour les autres signaux ou quand la migration 20261108180100 n'est pas appliquée.
+   * ligne de pépite). Vide pour les autres signaux.
    */
   ruleVersions: Record<string, number>;
 };
@@ -117,11 +117,6 @@ export function parseSaleSignalFeedbackSummary(raw: unknown): SaleSignalFeedback
   };
 }
 
-/** Fonction de base absente (migration pas encore appliquée) : rien n'est mesuré. */
-function isMissingFunction(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST202" || error?.code === "42883";
-}
-
 /** Comme `getAdminPilotage` : jeton et rôle administrateur vérifiés, puis lecture avec le client de service. */
 export async function getAdminSaleSignalFeedback(
   authToken: string,
@@ -132,10 +127,7 @@ export async function getAdminSaleSignalFeedback(
   const { data, error } = await supabaseAdmin.rpc("admin_sale_signal_feedback_summary", {
     p_now: now.toISOString(),
   });
-  if (error) {
-    if (isMissingFunction(error)) return unavailableSaleSignalFeedback();
-    throw error;
-  }
+  if (error) throw error;
   return parseSaleSignalFeedbackSummary(data);
 }
 
@@ -220,9 +212,6 @@ export async function getAdminSaleFeedbackBySale(
     p_now: now.toISOString(),
     p_limit: 100,
   });
-  if (error) {
-    if (isMissingFunction(error)) return unavailableSaleFeedbackBySale();
-    throw error;
-  }
+  if (error) throw error;
   return parseSaleFeedbackBySale(data);
 }

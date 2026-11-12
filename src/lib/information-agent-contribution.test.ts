@@ -5,6 +5,7 @@ import {
   prepareInformationAgentContributionUpload,
   submitInformationAgentContribution,
 } from "@/lib/information-agent-contribution";
+import { ConfigurationError, RateLimitError } from "@/lib/api-errors";
 import { createInformationAgentContributionToken } from "@/lib/information-agent-contribution-token";
 
 const mocks = vi.hoisted(() => ({
@@ -32,10 +33,10 @@ vi.mock("@/lib/site-url", () => ({
   resolveSiteOrigin: mocks.resolveSiteOrigin,
 }));
 
-vi.mock("@/lib/information-agent-inbound", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/information-agent-inbound")>(
-    "@/lib/information-agent-inbound",
-  );
+vi.mock("@/lib/information-agent-inbound/attachments", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/information-agent-inbound/attachments")
+  >("@/lib/information-agent-inbound/attachments");
   return { ...actual, persistFactCandidates: mocks.persistFactCandidates };
 });
 
@@ -317,7 +318,7 @@ describe("information agent contribution integration", () => {
         },
         ENV,
       ),
-    ).toThrow("HTTPS");
+    ).toThrow(ConfigurationError);
   });
 
   it("accepts a valid contribution, stores the file and sends extracted facts to candidates", async () => {
@@ -404,6 +405,24 @@ describe("information agent contribution integration", () => {
       message: expect.stringContaining("La capacité de dépôt de ce dossier est atteinte"),
     });
     expect(state.storage.createSignedUploadUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("répond 429 à la limite de débit du dossier, reconnue à son type et non à son texte", async () => {
+    fixture();
+    const prepare = () =>
+      prepareInformationAgentContributionUpload({
+        missionId: MISSION_ID,
+        input: { token: TOKEN, filename: "cahier.pdf", mimeType: "application/pdf", size: 1024 },
+        env: ENV,
+      });
+    mocks.enforceRateLimit.mockRejectedValueOnce(new RateLimitError());
+    await expect(prepare()).rejects.toMatchObject({
+      status: 429,
+      message: "Limite de dépôts atteinte pour ce dossier.",
+    });
+    const unrelated = new Error("Trop de demandes au fournisseur");
+    mocks.enforceRateLimit.mockRejectedValueOnce(unrelated);
+    await expect(prepare()).rejects.toBe(unrelated);
   });
 
   it("rend la capacité des envois abandonnés, objet orphelin supprimé d'abord", async () => {

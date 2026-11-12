@@ -41,7 +41,7 @@ beforeEach(() => {
   mocks.publicationResult.mockResolvedValue({
     requests: [],
     pendingCount: 0,
-    totalCount: 0,
+    total: 0,
     hasMore: false,
   });
 });
@@ -65,7 +65,7 @@ describe("AdminPublicationsPage", () => {
       })),
       offset,
       limit,
-      totalCount: 120,
+      total: 120,
       pendingCount: 120,
       hasMore: offset + limit < 120,
     }));

@@ -1,7 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord } from "@/lib/guards";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import type { PublicSupabaseClient } from "@/lib/supabase-public.server";
 
 /**
@@ -17,11 +16,7 @@ export async function isPublishedPepite(
   saleId: string,
 ): Promise<boolean> {
   const { data, error } = await client.rpc("get_public_sale_pepite", { p_sale_id: saleId });
-  if (error) {
-    // Fonction absente (migration pas encore appliquée) : « pas de pépite ».
-    if (isMissingDatabaseObject(error)) return false;
-    throw error;
-  }
+  if (error) throw error;
   return data === true;
 }
 
@@ -38,10 +33,7 @@ export async function readStoredPepite(saleId: string): Promise<StoredPepite | n
     .eq("sale_id", saleId)
     .eq("is_pepite", true)
     .maybeSingle();
-  if (error) {
-    if (isMissingDatabaseObject(error)) return null;
-    throw error;
-  }
+  if (error) throw error;
   if (!data) return null;
   return {
     reasonCodes: Array.isArray(data.reason_codes)

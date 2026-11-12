@@ -3,6 +3,7 @@ import { assertAdmin } from "@/lib/admin-auth.server";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { PublicApiError } from "@/lib/api-errors";
 import { getStripe } from "@/lib/billing";
 import {
   updatePrivacyRequestForAdmin,
@@ -93,12 +94,14 @@ export async function executeContractWithdrawal({
     .single();
   if (requestError) throw requestError;
   if (request.request_type !== "contract_withdrawal") {
-    throw new Error("Cette demande n'est pas une rétractation.");
+    throw new PublicApiError("Cette demande n'est pas une rétractation.", 409);
   }
   if (request.status === "completed" || request.status === "rejected") {
-    throw new Error("Cette demande est déjà clôturée.");
+    throw new PublicApiError("Cette demande est déjà clôturée.", 409);
   }
-  if (!request.user_id) throw new Error("La demande n'est rattachée à aucun compte.");
+  if (!request.user_id) {
+    throw new PublicApiError("La demande n'est rattachée à aucun compte.", 409);
+  }
 
   const { data: subscription, error: subscriptionError } = await supabaseAdmin
     .from("user_subscriptions")

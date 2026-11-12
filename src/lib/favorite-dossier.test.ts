@@ -326,43 +326,33 @@ describe("saveFavoriteDossier", () => {
     expect(response.dossier.userSurfaceM2).toBe(54.5);
   });
 
-  it("relit le dossier sans la surface tant que la colonne n'est pas migrée", async () => {
+  it("remonte l'absence de la colonne de surface, en lecture comme en écriture, sans relire", async () => {
     const missing = {
       code: "42703",
       message: "column user_favorites.user_surface_m2 does not exist",
     };
-    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: missing }).mockResolvedValueOnce({
-      data: {
-        sale_id: SALE_ID,
-        personal_status: "won",
-        personal_status_updated_at: null,
-        bid_ceiling_eur: null,
-        bid_ceiling_saved_at: null,
-      },
-      error: null,
-    });
-    const response = await getFavoriteDossier({ auth: auth(), saleId: SALE_ID });
-    expect(response.dossier).toMatchObject({ personalStatus: "won", userSurfaceM2: null });
-    expect(mocks.select).toHaveBeenLastCalledWith(expect.not.stringContaining("user_surface_m2"));
-
     mocks.maybeSingle.mockResolvedValue({ data: null, error: missing });
+    await expect(getFavoriteDossier({ auth: auth(), saleId: SALE_ID })).rejects.toBe(missing);
+    expect(mocks.maybeSingle).toHaveBeenCalledTimes(1);
+
     await expect(
       saveFavoriteDossier({ auth: auth(), input: { saleId: SALE_ID, userSurfaceM2: 60 } }),
-    ).rejects.toMatchObject({ name: "PublicApiError", status: 503 });
+    ).rejects.toBe(missing);
+    expect(mocks.maybeSingle).toHaveBeenCalledTimes(2);
   });
 
-  it("lit la surface saisie pour le calcul, et rien hors bornes ni sans colonne", async () => {
+  it("lit la surface saisie pour le calcul, rien hors bornes, et remonte une erreur de la base", async () => {
     mocks.maybeSingle.mockResolvedValueOnce({ data: { user_surface_m2: 75 }, error: null });
     await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).resolves.toBe(75);
     mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).resolves.toBeNull();
     mocks.maybeSingle.mockResolvedValueOnce({ data: { user_surface_m2: 0 }, error: null });
     await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).resolves.toBeNull();
-    mocks.maybeSingle.mockResolvedValueOnce({
-      data: null,
-      error: { code: "PGRST204", message: "Could not find the 'user_surface_m2' column" },
-    });
-    await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).resolves.toBeNull();
+    const missing = { code: "PGRST204", message: "Could not find the 'user_surface_m2' column" };
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: missing });
+    await expect(getFavoriteEnteredSurface({ auth: auth(), saleId: SALE_ID })).rejects.toBe(
+      missing,
+    );
   });
 
   it("reste ouvert au compte Découverte, sans ouvrir les outils d'analyse", () => {

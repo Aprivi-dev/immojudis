@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { processInformationAgentInboundWebhook } from "@/lib/information-agent-inbound";
+import {
+  INFORMATION_AGENT_WEBHOOK_EVENTS,
+  processInformationAgentInboundWebhook,
+} from "@/lib/information-agent-inbound";
 
 const mocks = vi.hoisted(() => ({
   verify: vi.fn(),
@@ -498,7 +501,8 @@ describe("information-agent offline inbound scenarios", () => {
       expect.objectContaining({ email: "contact@example.test", bounce_status: "permanent" }),
       { onConflict: "scope_sale_id,normalized_email" },
     );
-    expect(mocks.get).not.toHaveBeenCalled();
+    expect(mocks.get).not.toHaveBeenCalled(); // Traité ici : l'onglet « Adresses » doit donc exiger l'abonnement du webhook à cet évènement.
+    expect(INFORMATION_AGENT_WEBHOOK_EVENTS).toContain("email.bounced");
   });
 
   it("writes the contact registry BEFORE the send log, and a log failure comes back as an error to replay", async () => {
@@ -550,6 +554,7 @@ describe("information-agent offline inbound scenarios", () => {
       const result = await webhook(vi.fn(), "signed", {}, false, {}, recordDelivery);
       expect(result).toEqual({ accepted: true, ignored: true });
       expect(recordDelivery).toHaveBeenCalledWith(expect.objectContaining({ type }));
+      expect(INFORMATION_AGENT_WEBHOOK_EVENTS).not.toContain(type);
     }
     expect(mocks.from).not.toHaveBeenCalled();
   });

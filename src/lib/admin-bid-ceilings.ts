@@ -13,8 +13,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * il mesure l'usage de la fonction payante, offre ou non. Nombres exacts, aucun nom, aucune vente nommée.
  *
  * Même protection que le reste du pilotage : jeton de session vérifié, rôle administrateur, lecture avec
- * le client de service. Une mesure impossible (migration pas encore appliquée, panne) vaut `null` et
- * s'affiche « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
+ * le client de service. Une lecture en échec remonte ; la route de pilotage répond alors
+ * `unavailableBidCeilings()`, tout « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
 type BidCeilingCount = number | null;
 
@@ -73,11 +73,6 @@ export function parseBidCeilings(raw: unknown): BidCeilingSummary {
   };
 }
 
-/** Fonction de base absente (migration pas encore appliquée) : rien n'est mesuré. */
-function isMissingFunction(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST202" || error?.code === "42883";
-}
-
 /** Comme `getAdminPilotage` : jeton et rôle administrateur vérifiés, puis lecture avec le client de service. */
 export async function getAdminBidCeilings(
   authToken: string,
@@ -88,9 +83,6 @@ export async function getAdminBidCeilings(
   const { data, error } = await supabaseAdmin.rpc("admin_pilotage_bid_ceilings", {
     p_now: now.toISOString(),
   });
-  if (error) {
-    if (isMissingFunction(error)) return unavailableBidCeilings();
-    throw error;
-  }
+  if (error) throw error;
   return parseBidCeilings(data);
 }

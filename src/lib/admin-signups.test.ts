@@ -1,4 +1,4 @@
-import { AdminRequiredError } from "@/lib/api-errors";
+import { AdminRequiredError, PublicApiError } from "@/lib/api-errors";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -40,26 +40,16 @@ const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")
 type Row = Record<string, unknown>;
 
 /**
- * Table factice : `.select().order().range()` (lecture paginée) ou `.select().in()`, puis les écritures
- * `.insert()` et `.update().eq().eq().select()` de la prolongation.
+ * Table factice : `.select().order().range()` (lecture paginée) ou `.select().in()`. `.insert()` et
+ * `.update()` sont espionnés : la prolongation ne doit jamais écrire la table directement.
  */
-function tables(
-  rows: Record<string, Row[]>,
-  {
-    updated = [{ user_id: "écrit" }] as Row[],
-    writeError = null as { message: string } | null,
-  } = {},
-) {
+function tables(rows: Record<string, Row[]>) {
   const writes = {
     selected: [] as string[],
-    insert: vi.fn(async (_row: Row) => ({ error: writeError })),
-    update: vi.fn((_row: Row) => {
-      const chain = {
-        eq: (_column: string, _value: unknown) => chain,
-        select: async () => ({ data: writeError ? null : updated, error: writeError }),
-      };
-      return chain;
-    }),
+    insert: vi.fn(async (_row: Row) => ({ error: null })),
+    update: vi.fn((_row: Row) => ({
+      eq: () => ({ select: async () => ({ data: [], error: null }) }),
+    })),
   };
   mocks.from.mockImplementation((table: string) => {
     const data = rows[table] ?? [];
@@ -84,20 +74,17 @@ function tables(
 /** `get_signup_trial` : la fin de l'essai de chaque compte, et si l'essai est ouvert pour lui. */
 function trialRpc(
   trials: Record<string, { endsAt: string | null; gateOpen?: boolean }> = {},
-  recordError: { message: string } | null = null,
-  /** Réponse de `extend_trial_with_note` ; absente : la migration n'est pas appliquée (ancien chemin). */
-  extend: { data: unknown; error: { code?: string; message: string } | null } | null = null,
+  /** Réponse de `extend_trial_with_note` (par défaut : écrite). */
+  extend: { data: unknown; error: { code?: string; message: string } | null } = {
+    data: "written",
+    error: null,
+  },
 ) {
   mocks.rpc.mockImplementation(async (name: string, args: { p_user_id: string }) => {
     if (name === "admin_signup_usage") {
-      return { data: null, error: { code: "PGRST202", message: "absent" } };
+      return { data: null, error: { code: "XX000", message: "lecture impossible" } };
     }
-    if (name === "extend_trial_with_note") {
-      return extend ?? { data: null, error: { code: "PGRST202", message: "absent" } };
-    }
-    if (name === "record_trial_extension") {
-      return recordError ? { data: null, error: recordError } : { data: "note-1", error: null };
-    }
+    if (name === "extend_trial_with_note") return extend;
     const trial = trials[args.p_user_id];
     return {
       data: trial ? [{ ends_at: trial.endsAt, gate_open: trial.gateOpen ?? true }] : [],
@@ -375,9 +362,9 @@ describe("listAdminSignups", () => {
       last30Days: 2,
       byAccess: { trial: 1, decouverte: 2 },
     });
-    expect(response.filteredCount).toBe(3);
+    expect(response.total).toBe(3);
     expect(response.launchOfferActive).toBe(true);
-    // Fonction d'usage absente (migration pas appliquée) : « non mesuré », la page reste utilisable.
+    // Lecture d'usage en échec : « non mesuré », la page reste utilisable.
     expect(response.usageAvailable).toBe(false);
     expect(response.accounts.every((account) => account.usage === null)).toBe(true);
     expect(response.summary.trialEndedIdle).toBeNull();
@@ -432,7 +419,7 @@ describe("listAdminSignups", () => {
       NOW,
     );
     expect(idle.accounts.map((account) => account.userId)).toEqual([id(1)]);
-    expect(idle.filteredCount).toBe(1);
+    expect(idle.total).toBe(1);
   });
 
   it("filtre par type d'accès et par email, puis pagine", async () => {
@@ -589,6 +576,13 @@ describe("extendAdminSignupTrials", () => {
     tables({});
     await expect(run({ endsAt: "2026-10-01T00:00:00.000Z" })).rejects.toThrow(/futur/);
     await expect(run({ endsAt: "2027-01-30T00:00:00.000Z" })).rejects.toThrow(/90 jours/);
+    // Refus métier : 422 et message montré tel quel.
+    await expect(run({ endsAt: "2026-10-01T00:00:00.000Z" })).rejects.toMatchObject({
+      status: 422,
+    });
+    await expect(run({ endsAt: "2026-10-01T00:00:00.000Z" })).rejects.toBeInstanceOf(
+      PublicApiError,
+    );
     // 90 jours exactement à compter de NOW : accepté.
     tables({ user_profiles: [], user_subscriptions: [] });
     usersById();
@@ -605,8 +599,8 @@ describe("extendAdminSignupTrials", () => {
     expect(writes.update).not.toHaveBeenCalled();
   });
 
-  it("crée une ligne d'essai : motif en table privée, historique vide, ni note ni adresse dans la ligne", async () => {
-    const writes = tables({ user_profiles: [confirmedProfile(1)], user_subscriptions: [] });
+  it("crée une ligne d'essai : motif à part, historique vide, ni note ni adresse dans la ligne", async () => {
+    tables({ user_profiles: [confirmedProfile(1)], user_subscriptions: [] });
     usersById();
     trialRpc();
 
@@ -615,21 +609,15 @@ describe("extendAdminSignupTrials", () => {
     expect(response.results).toEqual([
       { userId: id(1), email: "compte1@exemple.fr", outcome: "extended", reason: null },
     ]);
-    expect(mocks.rpc).toHaveBeenCalledWith("record_trial_extension", {
+    const call = mocks.rpc.mock.calls.find(([name]) => name === "extend_trial_with_note");
+    const args = call?.[1] as Row;
+    expect(args).toMatchObject({
       p_user_id: id(1),
       p_granted_by: ADMIN_ID,
       p_ends_at: "2026-11-15T22:59:00.000Z",
       p_note: "Bêta-testeur",
-    });
-    expect(writes.update).not.toHaveBeenCalled();
-    expect(writes.insert).toHaveBeenCalledTimes(1);
-    const row = writes.insert.mock.calls[0][0];
-    expect(row).toMatchObject({
-      user_id: id(1),
-      plan_code: "analyse",
-      status: "trialing",
-      current_period_end: "2026-11-15T22:59:00.000Z",
-      metadata: {
+      p_expected_updated_at: undefined,
+      p_metadata: {
         manual_grant: {
           source: TRIAL_EXTENSION_SOURCE,
           granted_by: ADMIN_ID,
@@ -639,7 +627,7 @@ describe("extendAdminSignupTrials", () => {
         manual_grant_history: [],
       },
     });
-    const serialized = JSON.stringify(row);
+    const serialized = JSON.stringify(args.p_metadata);
     expect(serialized).not.toContain("Bêta-testeur");
     expect(serialized).not.toContain("target_email");
     expect(serialized).not.toContain("compte1@exemple.fr");
@@ -661,7 +649,7 @@ describe("extendAdminSignupTrials", () => {
       ],
     });
     usersById();
-    trialRpc({}, null, { data: "written", error: null });
+    trialRpc({}, { data: "written", error: null });
 
     const response = await run();
 
@@ -681,7 +669,6 @@ describe("extendAdminSignupTrials", () => {
     expect(JSON.stringify(mocks.rpc.mock.calls.map((call) => call[1]?.p_metadata))).not.toContain(
       "Bêta-testeur",
     );
-    expect(mocks.rpc).not.toHaveBeenCalledWith("record_trial_extension", expect.anything());
     expect(writes.insert).not.toHaveBeenCalled();
     expect(writes.update).not.toHaveBeenCalled();
   });
@@ -689,18 +676,17 @@ describe("extendAdminSignupTrials", () => {
   it("rapporte « changé » sans repli quand la fonction refuse la ligne, et « échec » sur une autre erreur", async () => {
     const writes = tables({ user_profiles: [confirmedProfile(1)], user_subscriptions: [] });
     usersById();
-    trialRpc({}, null, { data: "changed", error: null });
+    trialRpc({}, { data: "changed", error: null });
     const changed = await run();
     expect(changed.results[0]).toMatchObject({
       outcome: "skipped",
       reason: expect.stringContaining("a changé"),
     });
 
-    trialRpc({}, null, { data: null, error: { code: "XX000", message: "boom" } });
+    trialRpc({}, { data: null, error: { code: "XX000", message: "boom" } });
     const failed = await run();
     expect(failed.results[0]).toMatchObject({ outcome: "skipped", reason: "Écriture impossible." });
     // Aucun repli : ni motif orphelin, ni écriture de la ligne.
-    expect(mocks.rpc).not.toHaveBeenCalledWith("record_trial_extension", expect.anything());
     expect(writes.insert).not.toHaveBeenCalled();
   });
 
@@ -738,8 +724,9 @@ describe("extendAdminSignupTrials", () => {
     await run();
 
     expect(writes.insert).not.toHaveBeenCalled();
-    const [update] = writes.update.mock.calls[0] as [{ metadata: Row }];
-    const metadata = update.metadata as {
+    expect(writes.update).not.toHaveBeenCalled();
+    const call = mocks.rpc.mock.calls.find(([name]) => name === "extend_trial_with_note");
+    const metadata = (call?.[1] as Row).p_metadata as {
       manual_grant: Row;
       manual_grant_history: Row[];
       analyse_checkout_reservation_token: string;
@@ -756,28 +743,30 @@ describe("extendAdminSignupTrials", () => {
   });
 
   it("ne remplace pas une ligne modifiée entre la lecture et l'écriture (webhook Stripe)", async () => {
-    tables(
-      {
-        user_profiles: [confirmedProfile(1)],
-        user_subscriptions: [
-          {
-            user_id: id(1),
-            plan_code: "decouverte",
-            status: "expired",
-            current_period_end: null,
-            stripe_subscription_id: null,
-            updated_at: "2026-10-02T00:00:00.000Z",
-            metadata: {},
-          },
-        ],
-      },
-      { updated: [] },
-    );
+    tables({
+      user_profiles: [confirmedProfile(1)],
+      user_subscriptions: [
+        {
+          user_id: id(1),
+          plan_code: "decouverte",
+          status: "expired",
+          current_period_end: null,
+          stripe_subscription_id: null,
+          updated_at: "2026-10-02T00:00:00.000Z",
+          metadata: {},
+        },
+      ],
+    });
     usersById();
-    trialRpc();
+    // La fonction compare `updated_at` à la valeur lue et refuse la ligne modifiée entre-temps.
+    trialRpc({}, { data: "changed", error: null });
 
     const response = await run();
 
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "extend_trial_with_note",
+      expect.objectContaining({ p_expected_updated_at: "2026-10-02T00:00:00.000Z" }),
+    );
     expect(response.results[0]).toMatchObject({
       outcome: "skipped",
       reason: expect.stringContaining("a changé"),
@@ -814,19 +803,19 @@ describe("extendAdminSignupTrials", () => {
     expect(response.results[2].reason).toMatch(/fin naturelle/);
     expect(writes.insert).not.toHaveBeenCalled();
     expect(writes.update).not.toHaveBeenCalled();
-    expect(mocks.rpc).not.toHaveBeenCalledWith("record_trial_extension", expect.anything());
+    expect(mocks.rpc).not.toHaveBeenCalledWith("extend_trial_with_note", expect.anything());
   });
 
   it("écarte un compte premium et rapporte l'échec d'une écriture sans exposer la base", async () => {
-    tables(
-      {
-        user_profiles: [confirmedProfile(1), confirmedProfile(2, { account_tier: "premium" })],
-        user_subscriptions: [],
-      },
-      { writeError: { message: "duplicate key value violates unique constraint" } },
-    );
+    tables({
+      user_profiles: [confirmedProfile(1), confirmedProfile(2, { account_tier: "premium" })],
+      user_subscriptions: [],
+    });
     usersById();
-    trialRpc();
+    trialRpc(
+      {},
+      { data: null, error: { message: "duplicate key value violates unique constraint" } },
+    );
 
     const response = await run({ userIds: [id(1), id(2)] });
 
@@ -849,7 +838,7 @@ describe("extendAdminSignupTrials", () => {
   it("n'écrit rien quand le motif n'a pas pu être enregistré", async () => {
     const writes = tables({ user_profiles: [confirmedProfile(1)], user_subscriptions: [] });
     usersById();
-    trialRpc({}, { message: "boom" });
+    trialRpc({}, { data: null, error: { message: "boom" } });
 
     const response = await run();
 
@@ -858,6 +847,7 @@ describe("extendAdminSignupTrials", () => {
       reason: "Écriture impossible.",
     });
     expect(writes.insert).not.toHaveBeenCalled();
+    expect(writes.update).not.toHaveBeenCalled();
   });
 
   it("journalise chaque prolongation sans adresse ni motif", async () => {
@@ -905,7 +895,7 @@ describe("extendAdminSignupTrials", () => {
 
     expect(response.results[0].reason).toMatch(/au-delà/);
     expect(writes.update).not.toHaveBeenCalled();
-    expect(mocks.rpc).not.toHaveBeenCalledWith("record_trial_extension", expect.anything());
+    expect(mocks.rpc).not.toHaveBeenCalledWith("extend_trial_with_note", expect.anything());
   });
 });
 

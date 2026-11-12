@@ -1,4 +1,5 @@
-import { positiveNumberFromEnv, runMonitoredCron } from "@/lib/cron-jobs";
+import { runMonitoredCron } from "@/lib/cron-jobs";
+import { serverEnv } from "@/lib/env";
 import { runSalePepitesBatch } from "@/lib/sale-pepites-batch";
 
 export const maxDuration = 300;
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
     "sale-pepites",
     () =>
       runSalePepitesBatch({
-        limit: positiveNumberFromEnv("SALE_PEPITES_BATCH_LIMIT") ?? 300,
+        limit: serverEnv().batchLimits.salePepites,
       }),
     { retryDelaysMs: [] },
   );

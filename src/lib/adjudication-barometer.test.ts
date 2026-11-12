@@ -88,7 +88,8 @@ describe("baromètre descriptif", () => {
     const narrow = wilsonShareInterval(0.7, 200)!;
     expect(narrow.high - narrow.low).toBeLessThan(wide.high - wide.low);
     expect(wilsonShareInterval(0.5, 0)).toBeNull();
-    expect(wilsonShareInterval(1.2, 10)).toBeNull();
+    // Une part hors de 0 à 1 est ramenée dans l'intervalle (règle commune de `stats.ts`).
+    expect(wilsonShareInterval(1.2, 10)).toEqual(wilsonShareInterval(1, 10));
     expect(wilsonShareInterval(Number.NaN, 10)).toBeNull();
   });
   it("ne propose plus de tri par multiple médian, l'ordre par effectif est le tri de départ", () => {

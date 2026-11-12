@@ -111,26 +111,20 @@ describe("agent d'information : aucun envoi automatique", () => {
     );
     expect(routerUsers.sort()).toEqual(
       [
-        path.join("src", "lib", "admin-information-agent.ts"),
+        path.join("src", "app", "api", "admin", "information-agent", "missions", "route.ts"),
         // Exception nommée T2 : le pilote automatique, avec `trigger: autopilot`.
         AUTOPILOT_EXECUTOR,
         FACADE,
       ].sort(),
     );
-    const tokenUsers = sourceFiles.filter((file) =>
-      /\brunAdminInformationAgentMissionActionForToken\b/.test(read(file)),
-    );
-    expect(tokenUsers.sort()).toEqual(
-      [
-        path.join("src", "app", "api", "admin", "information-agent", "missions", "route.ts"),
-        path.join("src", "lib", "admin-information-agent.ts"),
-      ].sort(),
-    );
-    // La route n'expose l'action qu'en PATCH administrateur, avec une confirmation explicite.
+    // La route n'expose l'action qu'en PATCH administrateur (garde admin d'abord), avec une confirmation
+    // explicite, et sans déclencheur : seul le pilote en passe un.
     const route = read("src/app/api/admin/information-agent/missions/route.ts");
-    expect(route).toMatch(
-      /export const PATCH = adminRoute\([\s\S]*runAdminInformationAgentMissionActionForToken/,
+    const patch = route.slice(route.indexOf("export const PATCH = adminRoute("));
+    expect(patch).toMatch(
+      /const auth = await assertAdminAuth\(authToken\);\s*return runAdminInformationAgentAction\(\{ auth, input \}\);/,
     );
+    expect(route.match(/runAdminInformationAgentAction\(/g)).toHaveLength(1);
     const schemas = read(SCHEMAS_MODULE);
     expect(schemas).toMatch(/approvalConfirmed: z\.literal\(true\)/);
     expect(schemas).toMatch(/previewFingerprint: z\.string\(\)\.regex/);

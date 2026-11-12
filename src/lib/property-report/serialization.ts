@@ -1,4 +1,3 @@
-import type { Json } from "@/integrations/supabase/types";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import { type SourceTraceEntry } from "@/lib/source-traceability";
 import type {
@@ -9,12 +8,8 @@ import type {
   SaleScoreFactor,
 } from "@/lib/types";
 import { buildCeilingSnapshot } from "./analysis";
-import {
-  AppSaleRow,
-  PlanEntitlements,
-  SavedPropertyReport,
-  SavedReportRow,
-} from "../property-reports";
+import { AppSaleRow, SavedPropertyReport, SavedReportRow } from "../property-reports";
+import type { PlanEntitlements } from "@/lib/plans";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 import { redactPersonalText, redactSaleTexts } from "@/lib/personal-data-filter";
 import { rentabilityLabel } from "@/lib/profitability";
@@ -156,10 +151,6 @@ export function saleLocation(sale: AuctionSale): string | null {
 export function emptyToNull(value: string | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
-}
-
-export function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }
 
 export function normalizeSourceTrace(value: unknown): SourceTraceEntry[] {

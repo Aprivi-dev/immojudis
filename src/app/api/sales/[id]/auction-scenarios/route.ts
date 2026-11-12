@@ -1,52 +1,16 @@
-import { after } from "next/server";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { NotFoundError } from "@/lib/api-errors";
 import { apiRoute } from "@/lib/api-route";
-import type { AuctionScenariosResponse } from "@/lib/auction-scenarios";
 import { getAuctionScenarios } from "@/lib/auction-scenarios.server";
-import { assertFeatureEntitlementVia } from "@/lib/property-reports";
+import { assertFeatureEntitlementVia, readSaleThroughDoor } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 const saleIdSchema = z.string().guid();
-
-/**
- * The usage event is written once the response is sent (`after()`): a slow or failing write never
- * delays or breaks the answer, including when the call itself throws before returning a promise.
- */
-function recordUsageAfterResponse(
-  auth: Parameters<typeof recordFeatureUsageEvent>[0]["auth"],
-  saleId: string,
-  body: AuctionScenariosResponse,
-): void {
-  try {
-    after(async () => {
-      try {
-        await recordFeatureUsageEvent({
-          auth,
-          eventKey: "sales.statistics_viewed",
-          subjectType: "auction_sale",
-          subjectId: saleId,
-          metadata: {
-            view: "auction_scenarios",
-            court_sample: body.scenarios?.courtSample ?? 0,
-            dvf_sample: body.history.dvf?.sample ?? 0,
-          },
-        });
-      } catch {
-        // Measurement only: nothing to report to the member.
-      }
-    });
-  } catch {
-    // `after()` unavailable (called outside a request): the answer does not depend on it.
-  }
-}
 
 /**
  * « Scénarios d'enchères » (offre Analyse) : répartition observée des issues et
@@ -78,17 +42,26 @@ export const GET = apiRoute<{ id: string }>(
     if (entitlement.status === "rejected") throw entitlement.reason;
     if (rateLimit.status === "rejected") throw rateLimit.reason;
     const { door } = entitlement.value;
-    const { data: sale, error } = await auth.supabase
-      .from(door === "plan" ? DETAIL_VIEW : DISCOVERY_VIEW)
-      .select("id, tribunal, tribunal_code, starting_price_eur, property_type")
-      .eq("id", saleId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!sale) throw new NotFoundError("Vente introuvable.");
+    const sale = await readSaleThroughDoor<Parameters<typeof getAuctionScenarios>[0]>(
+      auth,
+      saleId,
+      door,
+      "id, tribunal, tribunal_code, starting_price_eur, property_type",
+    );
 
     // Only after the sale is known to be visible: the figures are cached per (court, band, type).
-    const body = await getAuctionScenarios(sale as Parameters<typeof getAuctionScenarios>[0]);
-    recordUsageAfterResponse(auth, saleId, body);
+    const body = await getAuctionScenarios(sale);
+    recordFeatureUsageEvent({
+      auth,
+      eventKey: "sales.statistics_viewed",
+      subjectType: "auction_sale",
+      subjectId: saleId,
+      metadata: {
+        view: "auction_scenarios",
+        court_sample: body.scenarios?.courtSample ?? 0,
+        dvf_sample: body.history.dvf?.sample ?? 0,
+      },
+    });
     return body;
   },
 );

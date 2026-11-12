@@ -2,8 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { nullableRpcArg } from "@/lib/rpc-args";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { adminPageQueryShape } from "@/lib/admin-page-query";
-import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE } from "@/lib/admin-pagination";
+import { adminPageQueryShape, type AdminPageQuery } from "@/lib/admin-page-query";
+import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import type { Json } from "@/integrations/supabase/types";
 import {
   classifyInformationAgentSaleContacts,
@@ -52,7 +52,11 @@ export type CatalogueReadinessQueueItem = {
   overrideExpiresAt: string | null;
 };
 
-export type CatalogueReadinessOverview = {
+/**
+ * Page de la file des dossiers à reprendre : `total` compte ceux pour lesquels l'agent a un contact
+ * (classes A, B et C), toutes pages.
+ */
+export type CatalogueReadinessOverview = AdminPageMeta & {
   policy: {
     enforcementEnabled: boolean;
     policyVersion: string;
@@ -64,10 +68,6 @@ export type CatalogueReadinessOverview = {
   activeSales: number;
   pendingEvaluations: number;
   canEnableEnforcement: boolean;
-  /** Dossiers à reprendre pour lesquels l'agent a un contact (classes A, B et C), toutes pages. */
-  queueTotal: number;
-  queueOffset: number;
-  queueLimit: number;
   items: CatalogueReadinessQueueItem[];
   /** Nombre de dossiers par classe de contact (approximation SQL, la page est revérifiée). */
   classCounts?: Record<InformationAgentSaleContactClass, number>;
@@ -142,11 +142,9 @@ export type AdminCatalogueReadinessAction = z.output<typeof adminCatalogueReadin
 
 export async function getAdminCatalogueReadinessOverview(
   authToken: string,
-  options: { offset?: number; limit?: number } = {},
+  { offset = 0, limit = ADMIN_PAGE_SIZE }: Partial<AdminPageQuery> = {},
 ): Promise<CatalogueReadinessOverview> {
   await assertAdminAuth(authToken);
-  const offset = Math.max(0, options.offset ?? 0);
-  const limit = Math.max(1, Math.min(ADMIN_PAGE_MAX_LIMIT, options.limit ?? ADMIN_PAGE_SIZE));
   const [
     { data: policy, error: policyError },
     { data: queueData, error: queueError },
@@ -213,9 +211,7 @@ export async function getAdminCatalogueReadinessOverview(
     activeSales: activeCount,
     pendingEvaluations,
     canEnableEnforcement: pendingEvaluations === 0,
-    queueTotal: queue.total,
-    queueOffset: offset,
-    queueLimit: limit,
+    ...adminPageMeta({ offset, limit, total: queue.total }),
     items,
     classCounts: queue.counts,
     impossibleItems,

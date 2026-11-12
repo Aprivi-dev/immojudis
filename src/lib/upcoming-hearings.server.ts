@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
+import { tryPublicLoad, type PublicLoadResult } from "@/lib/public-load-result";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   HEARINGS_RPC_DAYS,
@@ -69,26 +70,9 @@ const cachedUpcomingHearings = unstable_cache(readUpcomingHearings, ["upcoming-h
   tags: [HEARINGS_CACHE_TAG],
 });
 
-export type UpcomingHearingsResult =
-  | ({ status: "ok" } & UpcomingHearingsRead)
-  | { status: "error" };
+export type UpcomingHearingsResult = PublicLoadResult<UpcomingHearingsRead>;
 
-/** Ne lève pas : la fonction peut manquer (migration pas encore appliquée) ou la base être en panne. */
-export async function tryLoadUpcomingHearings(): Promise<UpcomingHearingsResult> {
-  try {
-    return { status: "ok", ...(await cachedUpcomingHearings()) };
-  } catch (error) {
-    console.warn("[audiences] Audiences à venir indisponibles:", error);
-    return { status: "error" };
-  }
+/** Ne lève pas : une base en panne donne `error`. */
+export function tryLoadUpcomingHearings(): Promise<UpcomingHearingsResult> {
+  return tryPublicLoad("[audiences] Audiences à venir indisponibles:", cachedUpcomingHearings);
 }
-
-/**
- * Vrai quand une lecture en échec doit faire échouer le rendu : en production, hors `next build`
- * (règle partagée avec `/sales`, voir `isProductionRuntime`). Pendant une régénération ISR, lever
- * l'erreur laisse la dernière bonne page en place (et la régénération est retentée à la requête
- * suivante), au lieu de la remplacer pendant une heure par une page « indisponible ». Pendant
- * `next build` (sans base dans l'environnement de la CI) le build ne doit pas échouer : la page est
- * produite avec son message, en `noindex`.
- */
-export { isProductionRuntime as mustFailOnHearingsReadError } from "@/lib/runtime-phase";

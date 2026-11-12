@@ -3,7 +3,9 @@ import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Tables } from "@/integrations/supabase/types";
-import { NotFoundError } from "@/lib/api-errors";
+import { adminPageLimit, adminPageQueryShape } from "@/lib/admin-page-query";
+import { adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 type PublicationRequestRow = Tables<"listing_publication_requests">;
 /** Colonne `status` protégée par une contrainte CHECK : le type généré est string. */
@@ -16,22 +18,21 @@ type PublicationSaleInsert = Database["public"]["Tables"]["auction_sales"]["Inse
 
 const adminPublicationStatusSchema = z.enum(["all", "pending", "approved", "rejected"]);
 
+/** Demandes de publication par page sans paramètre (plus courte que la page admin commune). */
+const PUBLICATION_REQUESTS_PAGE_SIZE = 30;
+
 export const adminPublicationQuerySchema = z.object({
   status: adminPublicationStatusSchema.default("all"),
   search: z.string().trim().max(120).default(""),
-  offset: z.coerce.number().int().min(0).max(100_000).default(0),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  ...adminPageQueryShape,
+  limit: adminPageLimit(PUBLICATION_REQUESTS_PAGE_SIZE),
 });
 
 export type AdminPublicationQuery = z.output<typeof adminPublicationQuerySchema>;
 
-export type AdminPublicationRequestsResponse = {
+export type AdminPublicationRequestsResponse = AdminPageMeta & {
   requests: PublicationRequest[];
-  totalCount: number;
   pendingCount: number;
-  offset: number;
-  limit: number;
-  hasMore: boolean;
 };
 
 export const adminPublicationReviewInputSchema = z.object({
@@ -84,15 +85,10 @@ export async function listAdminPublicationRequests({
   if (error) throw error;
   if (pendingError) throw pendingError;
 
-  const requests = (data ?? []) as PublicationRequest[];
-  const totalCount = count ?? 0;
   return {
-    requests,
-    totalCount,
+    requests: (data ?? []) as PublicationRequest[],
     pendingCount: pendingCount ?? 0,
-    offset: input.offset,
-    limit: input.limit,
-    hasMore: input.offset + requests.length < totalCount,
+    ...adminPageMeta({ offset: input.offset, limit: input.limit, total: count ?? 0 }),
   };
 }
 
@@ -115,7 +111,7 @@ export async function reviewAdminPublicationRequest({
 
   if (input.status === "rejected") {
     if (existing.published_sale_id) {
-      throw new Error("Cette demande est déjà liée à une vente publiée.");
+      throw new PublicApiError("Cette demande est déjà liée à une vente publiée.", 409);
     }
     return {
       request: await updatePublicationRequestStatus({
@@ -209,7 +205,7 @@ async function createPublicationSale(
     if (concurrentError) throw concurrentError;
     if (concurrent) return concurrent;
   }
-  throw error ?? new Error("Impossible de créer la vente publiée.");
+  throw error ?? new Error("Publication sale insert returned no row.");
 }
 
 function publicationSalePayload(
@@ -265,11 +261,14 @@ function publicationSalePayload(
 
 export function assertPublicationDateIsPublishable(hearingDate: string | null): string {
   if (!hearingDate) {
-    throw new Error("Impossible de publier cette demande sans date de vente.");
+    throw new PublicApiError("Impossible de publier cette demande sans date de vente.", 422);
   }
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(hearingDate);
   if (!match) {
-    throw new Error("La date de vente doit être une date civile valide au format AAAA-MM-JJ.");
+    throw new PublicApiError(
+      "La date de vente doit être une date civile valide au format AAAA-MM-JJ.",
+      422,
+    );
   }
   const year = Number(match[1]);
   const month = Number(match[2]);
@@ -280,11 +279,17 @@ export function assertPublicationDateIsPublishable(hearingDate: string | null): 
     parsed.getUTCMonth() !== month - 1 ||
     parsed.getUTCDate() !== day
   ) {
-    throw new Error("La date de vente doit être une date civile valide au format AAAA-MM-JJ.");
+    throw new PublicApiError(
+      "La date de vente doit être une date civile valide au format AAAA-MM-JJ.",
+      422,
+    );
   }
   const todayInParis = parisCivilDate();
   if (hearingDate < todayInParis) {
-    throw new Error("Impossible de publier une demande dont la date de vente est passée.");
+    throw new PublicApiError(
+      "Impossible de publier une demande dont la date de vente est passée.",
+      422,
+    );
   }
   return hearingDate;
 }
@@ -304,6 +309,9 @@ function parisCivilDate(now = new Date()): string {
 }
 
 function publicationSourceUrl(requestId: string): string {
+  // Cette URL est la clé d'idempotence de la vente publiée : elle garde l'origine qu'elle a toujours eue
+  // (`NEXT_PUBLIC_SITE_URL`). La faire suivre `resolveSiteOrigin` (`SITE_URL` d'abord) détacherait les
+  // ventes déjà publiées si les deux variables diffèrent ; à ne changer qu'après avoir comparé les valeurs.
   const origin = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://immojudis.com";
   return `${origin.replace(/\/$/, "")}/publications/professional/${encodeURIComponent(requestId)}`;
 }

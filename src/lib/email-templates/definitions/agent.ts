@@ -1,3 +1,5 @@
+import { INFORMATION_AGENT_OPT_OUT_PATH } from "@/lib/information-agent-link-paths";
+import { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
 import { SAMPLE_APP_URL, SAMPLE_SALE_A } from "../samples";
 import type { EmailSampleVariant, EmailTemplateDefinition } from "../types";
 
@@ -8,7 +10,7 @@ import type { EmailSampleVariant, EmailTemplateDefinition } from "../types";
  */
 
 const CONTRIBUTION_URL = `${SAMPLE_APP_URL}/contribuer/mission#jeton-prive`;
-const OPT_OUT_URL = `${SAMPLE_APP_URL}/api/information-agent/opt-out?e=exemple&t=${"a".repeat(64)}`;
+const OPT_OUT_URL = `${SAMPLE_APP_URL}${INFORMATION_AGENT_OPT_OUT_PATH}?e=exemple&t=${"a".repeat(64)}`;
 const REPLY_TO = "enquete+exemple@reponses.immojudis.com";
 
 const SAMPLE_SALE = {
@@ -38,7 +40,7 @@ async function renderRequest(options: {
   ]);
   const origin = options.court
     ? informationAgentAddressOrigin({
-        sourceKind: "court_registry_fallback",
+        sourceKind: INFORMATION_AGENT_COURT_REGISTRY_FALLBACK,
         sourceName: "Tribunal judiciaire de Bordeaux",
         observedAt: "2026-10-14",
       })
@@ -87,7 +89,7 @@ const agentRequest: EmailTemplateDefinition = {
   sender: "INFORMATION_AGENT_EMAIL_FROM",
   level: "readonly",
   async sample() {
-    const { buildInformationRequestDraft } = await import("@/lib/information-agent");
+    const { buildInformationRequestDraft } = await import("@/lib/information-agent/draft");
     const draft = buildInformationRequestDraft({
       sale: SAMPLE_SALE,
       recipientName: "Maître Jean Dupont",
@@ -118,7 +120,7 @@ const agentCourtRegistry: EmailTemplateDefinition = {
       { buildInformationRequestDraft },
       { COURT_REGISTRY_EMAIL_TEMPLATE, COURT_REGISTRY_QUESTION },
     ] = await Promise.all([
-      import("@/lib/information-agent"),
+      import("@/lib/information-agent/draft"),
       import("@/lib/information-agent/court-registry-template"),
     ]);
     const draft = buildInformationRequestDraft({

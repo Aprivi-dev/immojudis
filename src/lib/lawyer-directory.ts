@@ -14,7 +14,7 @@ import {
 import { LAWYER_DIRECTORY_PAGE_SIZE } from "@/lib/rate-limit-policies";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
-import { NotFoundError } from "@/lib/api-errors";
+import { ConfigurationError, NotFoundError } from "@/lib/api-errors";
 
 export { resolveCnbDatasetBarKey };
 
@@ -161,7 +161,7 @@ export async function listLawyerDirectory(
     try {
       sale = await getSaleSector(query.saleId);
     } catch (error) {
-      if (process.env.NODE_ENV !== "development" || !isMissingSupabaseServerConfiguration(error)) {
+      if (process.env.NODE_ENV !== "development" || !(error instanceof ConfigurationError)) {
         throw error;
       }
     }
@@ -195,7 +195,7 @@ export async function listLawyerDirectory(
     if (response.error) throw response.error;
     data = response.data;
   } catch (error) {
-    if (process.env.NODE_ENV === "development" && isMissingSupabaseServerConfiguration(error)) {
+    if (process.env.NODE_ENV === "development" && error instanceof ConfigurationError) {
       const demo = demoLawyerDirectory(query, sale);
       const demoPage = paginateLawyerDirectory(demo.lawyers, query.page);
       return { ...demo, lawyers: demoPage.items, pagination: demoPage.pagination };
@@ -705,10 +705,6 @@ function safeWebsiteUrl(value: string | null): string | null {
   } catch {
     return null;
   }
-}
-
-function isMissingSupabaseServerConfiguration(error: unknown) {
-  return error instanceof Error && error.message.includes("Missing Supabase environment variable");
 }
 
 function clean(value: string | null | undefined) {

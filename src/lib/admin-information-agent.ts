@@ -7,101 +7,13 @@ import { adminPageQueryShape } from "@/lib/admin-page-query";
 import { ADMIN_PAGE_SIZE, adminPageMeta } from "@/lib/admin-pagination";
 import { optimizeInformationAgentPhoto } from "@/lib/information-agent-image";
 import { flattenPdfForPublication } from "@/lib/information-agent-pdf";
-import {
-  normalizedEmail,
-  recordInformationAgentContactOpposition,
-} from "@/lib/information-agent/contacts";
+import { recordInformationAgentContactOpposition } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
-import {
-  createAdminInformationAgentDraft,
-  informationAgentAdminActionSchema,
-  informationAgentCreateSchema,
-  informationAgentListQuerySchema,
-  informationAgentPreviewSchema,
-  listAdminInformationAgentMissions,
-  prepareAdminInformationAgentDraft,
-  previewAdminInformationAgentMission,
-  runAdminInformationAgentAction,
-  type InformationAgentAdminActionPayload,
-  type InformationAgentAdminListResponse,
-  type InformationAgentAdminMissionPage,
-  type InformationAgentAdminResponse,
-  type InformationAgentPrepareResponse,
-  type InformationAgentPreviewInput,
-  type InformationAgentPreviewResponse,
-} from "@/lib/information-agent";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { loadAutoPublicationReviewAnnotations } from "@/lib/admin-information-agent-auto-publication";
 import { asRecord as recordOrEmpty } from "@/lib/guards";
-import { NotFoundError } from "@/lib/api-errors";
-
-export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
-export const adminInformationAgentActionSchema = informationAgentAdminActionSchema;
-export const adminInformationAgentListQuerySchema = informationAgentListQuerySchema;
-export const adminInformationAgentPreviewSchema = informationAgentPreviewSchema;
-
-export type AdminInformationAgentAction = InformationAgentAdminActionPayload;
-
-export async function listAdminInformationAgentMissionsForToken({
-  authToken,
-  saleId,
-  offset,
-  limit,
-}: {
-  authToken: string;
-  saleId?: string;
-  offset?: number;
-  limit?: number;
-}): Promise<InformationAgentAdminMissionPage> {
-  const auth = await assertAdminAuth(authToken);
-  return listAdminInformationAgentMissions({ auth, saleId, offset, limit });
-}
-
-export async function createAdminInformationAgentMissionForToken({
-  authToken,
-  input,
-}: {
-  authToken: string;
-  input: z.output<typeof adminInformationAgentCreateSchema>;
-}): Promise<InformationAgentAdminResponse> {
-  const auth = await assertAdminAuth(authToken);
-  return createAdminInformationAgentDraft({ auth, input });
-}
-
-/** Brouillon (créé ou retrouvé) et aperçu exact dans la même réponse. N'envoie rien. */
-export async function prepareAdminInformationAgentMissionForToken({
-  authToken,
-  input,
-}: {
-  authToken: string;
-  input: z.output<typeof adminInformationAgentCreateSchema>;
-}): Promise<InformationAgentPrepareResponse> {
-  const auth = await assertAdminAuth(authToken);
-  return prepareAdminInformationAgentDraft({ auth, input });
-}
-
-export async function runAdminInformationAgentMissionActionForToken({
-  authToken,
-  input,
-}: {
-  authToken: string;
-  input: AdminInformationAgentAction;
-}): Promise<InformationAgentAdminListResponse> {
-  const auth = await assertAdminAuth(authToken);
-  return runAdminInformationAgentAction({ auth, input });
-}
-
-/** Aperçu exact de l'e-mail : rien n'est enregistré ni envoyé. */
-export async function previewAdminInformationAgentMissionForToken({
-  authToken,
-  input,
-}: {
-  authToken: string;
-  input: InformationAgentPreviewInput;
-}): Promise<InformationAgentPreviewResponse> {
-  const auth = await assertAdminAuth(authToken);
-  return previewAdminInformationAgentMission({ auth, input });
-}
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 export const adminInformationAgentReviewSchema = z.object({
   factId: z.string().guid(),
@@ -318,7 +230,9 @@ export async function runAdminInformationAgentMessageAction({
 
   const opposedEmails: string[] = [];
   if (input.action === "wrong_recipient") {
-    if (!message.case_id) throw new Error("Cette réponse n'est rattachée à aucun dossier.");
+    if (!message.case_id) {
+      throw new PublicApiError("Cette réponse n'est rattachée à aucun dossier.", 409);
+    }
     await applyWrongRecipient({
       caseId: message.case_id,
       source: "admin",
@@ -346,7 +260,9 @@ export async function runAdminInformationAgentMessageAction({
       await recordInformationAgentContactOpposition({ email });
       opposedEmails.push(email);
     }
-    if (!opposedEmails.length) throw new Error("Aucune adresse à opposer pour cette réponse.");
+    if (!opposedEmails.length) {
+      throw new PublicApiError("Aucune adresse à opposer pour cette réponse.", 400);
+    }
   }
 
   const { error: updateError } = await supabaseAdmin
@@ -513,7 +429,7 @@ async function stageApprovedEvidencePublication(
   if (factError) throw factError;
   if (fact.fact_key !== "document" && fact.fact_key !== "photo") return null;
   if (!fact.evidence_asset_id || (fact.status !== "pending" && fact.status !== "conflict")) {
-    throw new Error("Pièce jointe non publiable dans son état actuel.");
+    throw new PublicApiError("Pièce jointe non publiable dans son état actuel.", 409);
   }
   const { data: informationCase, error: caseError } = await supabaseAdmin
     .from("information_agent_cases")
@@ -522,7 +438,7 @@ async function stageApprovedEvidencePublication(
     .single();
   if (caseError) throw caseError;
   if (!reviewableCaseStatuses.has(informationCase.status)) {
-    throw new Error("Le dossier n’est plus ouvert pour cette revue.");
+    throw new PublicApiError("Le dossier n’est plus ouvert pour cette revue.", 409);
   }
 
   const { data: asset, error: assetError } = await supabaseAdmin
@@ -532,7 +448,10 @@ async function stageApprovedEvidencePublication(
     .single();
   if (assetError) throw assetError;
   if (asset.rights_status !== "authorized") {
-    throw new Error("Les droits de diffusion de cette pièce doivent d’abord être autorisés.");
+    throw new PublicApiError(
+      "Les droits de diffusion de cette pièce doivent d’abord être autorisés.",
+      409,
+    );
   }
   const { data: extraction, error: extractionError } = await supabaseAdmin
     .from("information_agent_evidence_extractions")
@@ -540,7 +459,7 @@ async function stageApprovedEvidencePublication(
     .eq("asset_id", asset.id)
     .single();
   if (extractionError || extraction?.status !== "completed") {
-    throw new Error("L’analyse de la pièce doit être terminée avant sa publication.");
+    throw new PublicApiError("L’analyse de la pièce doit être terminée avant sa publication.", 409);
   }
 
   // Mandatory human step: someone checked that personal data is redacted on the visible pages.
@@ -549,8 +468,9 @@ async function stageApprovedEvidencePublication(
   }
   const publishable = publicRenditionKind(fact.fact_key, asset.mime_type);
   if (!publishable) {
-    throw new Error(
+    throw new PublicApiError(
       "Ce format de pièce ne peut pas être publié : seuls les PDF et les images le sont.",
+      400,
     );
   }
   const { error: redactionError } = await supabaseAdmin

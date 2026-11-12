@@ -130,7 +130,7 @@ export async function requestDataRefresh({
     requests.push(rowToRefreshItem(request, admission.reused));
   }
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "data_refresh.requested",
     subjectType: "sale",

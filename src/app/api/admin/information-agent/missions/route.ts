@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import {
-  adminInformationAgentActionSchema,
-  adminInformationAgentCreateSchema,
-  adminInformationAgentListQuerySchema,
-  createAdminInformationAgentMissionForToken,
-  listAdminInformationAgentMissionsForToken,
-  runAdminInformationAgentMissionActionForToken,
-} from "@/lib/admin-information-agent";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { adminRoute } from "@/lib/admin-route-deadline";
+import {
+  listAdminInformationAgentMissions,
+  runAdminInformationAgentAction,
+} from "@/lib/information-agent";
+import { createAdminInformationAgentDraft } from "@/lib/information-agent/draft";
+import {
+  informationAgentAdminActionSchema,
+  informationAgentCreateSchema,
+  informationAgentListQuerySchema,
+} from "@/lib/information-agent/schemas";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
@@ -19,11 +22,12 @@ export const GET = adminRoute(
     fallbackMessage: "Missions indisponibles",
   },
   async (request) => {
-    const input = adminInformationAgentListQuerySchema.parse(
+    const input = informationAgentListQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
-    return listAdminInformationAgentMissionsForToken({
-      authToken: bearerTokenFromRequest(request),
+    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
+    return listAdminInformationAgentMissions({
+      auth,
       saleId: input.saleId,
       offset: input.offset,
       limit: input.limit,
@@ -38,8 +42,9 @@ export const POST = adminRoute(
   },
   async (request) => {
     const authToken = bearerTokenFromRequest(request);
-    const input = adminInformationAgentCreateSchema.parse(await request.json());
-    const response = await createAdminInformationAgentMissionForToken({ authToken, input });
+    const input = informationAgentCreateSchema.parse(await request.json());
+    const auth = await assertAdminAuth(authToken);
+    const response = await createAdminInformationAgentDraft({ auth, input });
     return NextResponse.json(response, { status: 201 });
   },
 );
@@ -51,7 +56,8 @@ export const PATCH = adminRoute(
   },
   async (request) => {
     const authToken = bearerTokenFromRequest(request);
-    const input = adminInformationAgentActionSchema.parse(await request.json());
-    return runAdminInformationAgentMissionActionForToken({ authToken, input });
+    const input = informationAgentAdminActionSchema.parse(await request.json());
+    const auth = await assertAdminAuth(authToken);
+    return runAdminInformationAgentAction({ auth, input });
   },
 );

@@ -14,7 +14,6 @@ import {
   getAdminOfferOpeningSurvey,
   parseOfferOpeningInterviewees,
   parseOfferOpeningSurvey,
-  unavailableOfferOpeningSurvey,
 } from "./admin-offer-opening-survey";
 
 const raw = {
@@ -80,9 +79,9 @@ describe("getAdminOfferOpeningSurvey", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("rend « non mesuré » quand la fonction n'existe pas encore", async () => {
+  it("lève quand la fonction est introuvable : plus de « non mesuré » silencieux", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202", message: "absent" } });
-    expect(await getAdminOfferOpeningSurvey("token")).toEqual(unavailableOfferOpeningSurvey());
+    await expect(getAdminOfferOpeningSurvey("token")).rejects.toMatchObject({ code: "PGRST202" });
   });
 
   it("lève sur une autre erreur de la base", async () => {
@@ -152,11 +151,10 @@ describe("liste des personnes ayant accepté un entretien", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("rend une liste vide et un total inconnu quand la fonction n'existe pas encore", async () => {
+  it("lève quand la fonction est introuvable, au lieu d'une liste vide", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "42883", message: "absent" } });
-    expect(await getAdminOfferOpeningInterviewees("token")).toEqual({
-      total: null,
-      interviewees: [],
+    await expect(getAdminOfferOpeningInterviewees("token")).rejects.toMatchObject({
+      code: "42883",
     });
   });
 

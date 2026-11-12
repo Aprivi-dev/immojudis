@@ -45,7 +45,7 @@ function formatDate(value: string | null | undefined): string | null {
 export function AccountPage() {
   const { user } = useAuth();
   const planQuery = useQuery({
-    queryKey: ["feature-entitlements", user?.id ?? "anonymous", "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
     queryFn: fetchAccessPlan,
     enabled: Boolean(user),
     staleTime: 60_000,

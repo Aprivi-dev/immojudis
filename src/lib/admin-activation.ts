@@ -2,7 +2,6 @@ import "server-only";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { isMissingRpcError } from "@/lib/postgrest-errors";
 
 /**
  * Deux indicateurs de lecture pour la page admin « Pilotage », sur les données déjà enregistrées
@@ -15,8 +14,8 @@ import { isMissingRpcError } from "@/lib/postgrest-errors";
  *   avant de toucher au prix de l'offre Analyse).
  *
  * Même protection que le reste du pilotage : jeton de session vérifié, rôle administrateur, lecture avec
- * le client de service. Une mesure impossible (migration pas encore appliquée, panne) vaut `null` et
- * s'affiche « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
+ * le client de service. Une lecture en échec remonte ; la route de pilotage répond alors
+ * `unavailableActivation()`, tout « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
 type ActivationCount = number | null;
 
@@ -165,17 +164,13 @@ export async function getAdminActivation(
     supabaseAdmin.rpc("admin_pilotage_activation", { p_now: now.toISOString() }),
     supabaseAdmin.rpc("admin_pilotage_unlock_threshold", { p_now: now.toISOString() }),
   ]);
-  // Une fonction absente (migration pas encore appliquée) ne mesure rien ; toute autre erreur remonte.
   for (const { error } of [activation, threshold]) {
-    if (error && !isMissingRpcError(error)) throw error;
+    if (error) throw error;
   }
-  const fallback = unavailableActivation();
-  const windows = activation.error ? null : parseActivationWindows(activation.data);
+  const windows = parseActivationWindows(activation.data);
   return {
-    generatedAt: windows?.generatedAt ?? null,
-    windows: windows?.windows ?? fallback.windows,
-    unlockThreshold: threshold.error
-      ? fallback.unlockThreshold
-      : parseUnlockThreshold(threshold.data),
+    generatedAt: windows.generatedAt,
+    windows: windows.windows,
+    unlockThreshold: parseUnlockThreshold(threshold.data),
   };
 }

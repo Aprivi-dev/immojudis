@@ -1,4 +1,4 @@
-import { parisDateKey } from "@/lib/sale-countdown";
+import { addDays } from "@/lib/calendar-day";
 import { hasClientOnlyFilters } from "./search-filters";
 import type { SalesSearchParams } from "./search-url-state";
 
@@ -15,17 +15,6 @@ import type { SalesSearchParams } from "./search-url-state";
  */
 const UPCOMING_WEEK_DAYS = 7;
 
-/** Jour calendaire de Paris (« 2026-11-06 ») : celui que comptent la semaine et le compte à rebours. */
-export function parisToday(now: Date = new Date()): string {
-  return parisDateKey(now);
-}
-
-function addDays(day: string, days: number): string {
-  const date = new Date(`${day}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
 export type UpcomingWeekScope =
   /** Recherche à compter : celle de la page, bornée aux sept prochains jours (sans page ni tri). */
   | { kind: "count"; search: SalesSearchParams }
@@ -36,7 +25,7 @@ export type UpcomingWeekScope =
 
 /**
  * La recherche à compter pour « cette semaine », à partir de la recherche affichée et du jour
- * (`today`, jour de Paris au format AAAA-MM-JJ). Les dates choisies par la personne sont croisées
+ * (`today`, jour de Paris au format AAAA-MM-JJ : `parisDateKey`). Les dates choisies par la personne sont croisées
  * avec la semaine : « du 1er au 3 » reste « du 1er au 3 » si ces jours sont dans la semaine.
  */
 export function upcomingWeekScope(search: SalesSearchParams, today: string): UpcomingWeekScope {

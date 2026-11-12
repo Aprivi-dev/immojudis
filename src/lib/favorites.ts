@@ -131,7 +131,7 @@ export async function addFavoriteSale({
   const [favorite] = joinFavoriteRowsToSales([row], sales);
 
   if (created) {
-    await recordFeatureUsageEvent({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "sales.favorite_added",
       subjectType: "sale",
@@ -168,7 +168,7 @@ export async function removeFavoriteSale({
   if (error) throw error;
 
   if (data) {
-    await recordFeatureUsageEvent({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "sales.favorite_removed",
       subjectType: "sale",
@@ -302,7 +302,7 @@ async function insertFavoriteRow(
 
   const existing = await loadFavoriteRow(auth, saleId);
   if (!existing) {
-    throw error ?? new Error("Favori introuvable après insertion.");
+    throw error ?? new Error("Favorite row missing after insert.");
   }
 
   return { row: existing, created: false };

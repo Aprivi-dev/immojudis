@@ -33,9 +33,10 @@ function overview(enforcementEnabled = true) {
     activeSales: 5,
     pendingEvaluations: 0,
     canEnableEnforcement: true,
-    queueTotal: 0,
-    queueOffset: 0,
-    queueLimit: 50,
+    total: 0,
+    offset: 0,
+    limit: 50,
+    hasMore: false,
     items: [],
   };
 }

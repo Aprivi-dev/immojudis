@@ -10,11 +10,13 @@ import {
 } from "@/lib/tribunal-publication-thresholds";
 import {
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
-  MARKET_GAP_BAND_MIN_COMPARABLES,
-  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
   MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
   passesPublicMarketGapGate,
 } from "@/lib/market-gap-band";
+import {
+  MARKET_JACKKNIFE_MIN_COMPARABLES,
+  MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
+} from "@/lib/market-comparable-minimums";
 import {
   tribunalJudicialActivityHistoryMonthsSchema,
   type TribunalJudicialActivityHistoryMonths,
@@ -555,7 +557,7 @@ export function buildTribunalListingStatistics(input: {
       limitations: [
         "La cohorte regroupe les annonces publiées ou découvertes par Immojudis pendant la période demandée; elle ne prétend pas à l’exhaustivité nationale.",
         "Les annonces sans date de publication fiable utilisent first_seen_at et sont comptées séparément.",
-        `Les ratios DVF utilisent uniquement les estimations pré-calculées, fraîches, actionnables et issues de DVF qui passent la porte de la bande publique de la fiche : au moins ${MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE} ventes comparables avec la méthode jackknife (${MARKET_GAP_BAND_MIN_COMPARABLES} sinon), échantillon effectif d’au moins ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}, fourchette d’au plus ${MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la valeur, rayon borné.`,
+        `Les ratios DVF utilisent uniquement les estimations pré-calculées, fraîches, actionnables et issues de DVF qui passent la porte de la bande publique de la fiche : au moins ${MARKET_JACKKNIFE_MIN_COMPARABLES} ventes comparables avec la méthode jackknife (${MARKET_NON_JACKKNIFE_MIN_COMPARABLES} sinon), échantillon effectif d’au moins ${MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}, fourchette d’au plus ${MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la valeur, rayon borné.`,
         "Les taux de surenchère reposent uniquement sur des occurrences factuelles explicites; l’absence de preuve reste inconnue. Le taux n’est publié que si au moins la moitié des annonces ont une réponse connue.",
         `Les médianes et les taux sont publiés à partir de ${TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE} observations ; de ${TRIBUNAL_LISTING_STATISTICS_RANGE_MIN_SAMPLE} à ${TRIBUNAL_LISTING_STATISTICS_MIN_SAMPLE - 1}, seule la fourchette observée (minimum et maximum) est montrée. Les parts portent leur intervalle de Wilson à 95 % ; la répartition par type de bien exige ${TRIBUNAL_LISTING_STATISTICS_MIN_SUBGROUP_SAMPLE} observations.`,
         "Deux délais sont distincts : « publication → audience » part de la date de publication fournie par la source ; « première détection → audience » part du jour où Immojudis a repéré l’annonce pour la première fois, et peut donc être plus court.",

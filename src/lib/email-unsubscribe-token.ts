@@ -1,25 +1,20 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Signed, expiring unsubscribe links. The token names the user and what to
  * switch off, so a link scanner that merely opens it can neither unsubscribe
  * anyone nor guess another user's link.
  */
-export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
 /**
- * Même durée, nom d'origine conservé. Tous les emails reviennent pendant des mois (alertes, rappels
- * d'audience, récapitulatif, alerte de résultat) : un lien de désinscription ne doit pas devenir
- * inutilisable pendant que les emails continuent (c'est aussi le lien d'en-tête List-Unsubscribe).
- * Les alertes étaient les seules à 60 jours : un lien d'un ancien email affichait « lien expiré » au
- * lieu de désinscrire.
+ * Durée de validité d'un lien de désinscription, la même pour toutes les portées. Tous les emails
+ * reviennent pendant des mois (alertes, rappels d'audience, récapitulatif, alerte de résultat) : un lien
+ * de désinscription ne doit pas devenir inutilisable pendant que les emails continuent (c'est aussi le
+ * lien d'en-tête List-Unsubscribe). Les alertes étaient les seules à 60 jours : un lien d'un ancien email
+ * affichait « lien expiré » au lieu de désinscrire.
  */
-export const REMINDERS_UNSUBSCRIBE_TOKEN_TTL_DAYS = UNSUBSCRIBE_TOKEN_TTL_DAYS;
-
-/** Durée de validité d'un lien de désinscription, la même pour toutes les portées. */
-function unsubscribeTokenTtlDays(_scope: UnsubscribeScope): number {
-  return UNSUBSCRIBE_TOKEN_TTL_DAYS;
-}
+export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 365;
 
 export type UnsubscribeScope =
   | { kind: "alerts" }
@@ -50,8 +45,7 @@ function signingKey(env: Pick<NodeJS.ProcessEnv, string> = process.env): string 
   // Same order as the rest of the code: the legacy service-role key first, then
   // the new-format secret key, so links already sent keep verifying.
   const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || env.SUPABASE_SECRET_KEY?.trim();
-  if (!serviceRole)
-    throw new Error("Aucun secret disponible pour signer les liens de désinscription.");
+  if (!serviceRole) throw new ConfigurationError("No secret available to sign unsubscribe links.");
   // Derived from the service key with a fixed label, so the raw key never signs
   // anything directly and no extra configuration is needed.
   return createHmac("sha256", serviceRole).update("immojudis:email-unsubscribe:v1").digest("hex");
@@ -92,7 +86,7 @@ export function createUnsubscribeToken({
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
 }): string {
-  const expiresAt = Math.floor(now.getTime() / 1000) + unsubscribeTokenTtlDays(scope) * 86_400;
+  const expiresAt = Math.floor(now.getTime() / 1000) + UNSUBSCRIBE_TOKEN_TTL_DAYS * 86_400;
   const payload = Buffer.from(
     JSON.stringify({ u: userId, s: scopeToString(scope), e: expiresAt }),
   ).toString("base64url");

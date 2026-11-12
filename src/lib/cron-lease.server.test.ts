@@ -26,17 +26,19 @@ describe("claimCronLease", () => {
   });
 
   it.each(["PGRST202", "42883", "PGRST205", "42P01"])(
-    "fonction absente (%s) : « unavailable », le traitement continue sans verrou",
+    "fonction absente (%s) : lève, aucune passe sans bail",
     async (code) => {
       mocks.rpc.mockResolvedValue({ data: null, error: { code, message: "absente" } });
-      expect(await claimCronLease("sale-pepites", 360)).toEqual({ kind: "unavailable" });
+      await expect(claimCronLease("sale-pepites", 360)).rejects.toThrow(
+        `Cron lease sale-pepites refused (code ${code})`,
+      );
     },
   );
 
   it("une autre erreur lève, avec le code seul", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000", message: "secret détail" } });
     await expect(claimCronLease("sale-pepites", 360)).rejects.toThrow(
-      "Bail sale-pepites refusé (code XX000)",
+      "Cron lease sale-pepites refused (code XX000)",
     );
   });
 });

@@ -18,7 +18,7 @@ import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { propertyTypeFamily } from "@/lib/property-type-family";
 import { round } from "@/lib/rounding";
 import { averageRounded } from "@/lib/rounding";
-import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { ForbiddenError, NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
@@ -146,7 +146,7 @@ export async function getValuationBacktest({
   const latitude = finiteNumber(sale.latitude);
   const longitude = finiteNumber(sale.longitude);
   if (latitude == null || longitude == null) {
-    throw new Error("Backtest indisponible : la vente n'est pas géocodée.");
+    throw new PublicApiError("Backtest indisponible : la vente n'est pas géocodée.", 422);
   }
 
   const transactions = await fetchBacktestTransactions({

@@ -1,12 +1,10 @@
-export const SITE_URL_ENV_NAMES = [
-  "SITE_URL",
-  "NEXT_PUBLIC_SITE_URL",
-  "NEXT_PUBLIC_APP_URL",
-  "APP_URL",
-  "VERCEL_URL",
-] as const;
+import { ConfigurationError } from "@/lib/api-errors";
+import { serverEnv, type EnvSource } from "@/lib/env";
 
-type SiteUrlEnv = Readonly<Record<string, string | undefined>>;
+// Compared with `EXPLICIT_SITE_URL_ENV_NAMES` by scripts/verify-required-env.test.mjs.
+export { SITE_URL_ENV_NAMES } from "@/lib/env";
+
+type SiteUrlEnv = EnvSource;
 
 /**
  * Vrai pour un déploiement Vercel qui n'est pas la production (aperçu, développement) :
@@ -23,13 +21,9 @@ export function resolveSiteOrigin(
   fallback: string | null = null,
 ): string | null {
   // `VERCEL_URL` est l'adresse propre au déploiement (xxx.vercel.app), jamais le domaine public :
-  // en production elle ne doit pas devenir l'origine canonique. Le domaine doit y être déclaré
+  // en production elle ne compte pas (voir `siteUrl` dans env.ts). Le domaine doit y être déclaré
   // explicitement (`SITE_URL`).
-  const names = SITE_URL_ENV_NAMES.filter(
-    (name) => name !== "VERCEL_URL" || env.VERCEL_ENV?.trim() !== "production",
-  );
-  const configured = names.map((name) => env[name]).find(isFilled);
-  const rawValue = configured ?? fallback;
+  const rawValue = serverEnv(env).siteUrl ?? fallback;
   if (!rawValue) return null;
   const raw = rawValue.trim();
 
@@ -38,17 +32,13 @@ export function resolveSiteOrigin(
   try {
     url = new URL(candidate);
   } catch {
-    throw new Error(`URL canonique invalide: ${raw}`);
+    throw new ConfigurationError(`Invalid canonical URL: ${raw}`);
   }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
-    throw new Error(`URL canonique non autorisée: ${raw}`);
+    throw new ConfigurationError(`Canonical URL not allowed: ${raw}`);
   }
   if (url.pathname !== "/" || url.search || url.hash) {
-    throw new Error(`L'URL canonique doit être une origine sans chemin: ${raw}`);
+    throw new ConfigurationError(`Canonical URL must be an origin without a path: ${raw}`);
   }
   return url.origin;
-}
-
-function isFilled(value: string | undefined): value is string {
-  return typeof value === "string" && value.trim().length > 0;
 }

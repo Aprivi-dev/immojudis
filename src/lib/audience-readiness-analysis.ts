@@ -1,4 +1,5 @@
 import type { AuctionCostAnalysis } from "@/lib/auction-cost-analysis";
+import { calendarDaysBetween } from "@/lib/calendar-day";
 import type { LegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
 import type { OccupancyAnalysis } from "@/lib/occupation-analysis";
 import type { RenovationAnalysis } from "@/lib/renovation-analysis";
@@ -42,6 +43,7 @@ export type AudienceReadinessAnalysis = {
 import { publishedDay, sourceVisitExcerpt, visitHasPassed } from "./listing-evidence";
 import { safeDocumentUrl } from "./documents";
 import { dedupeStrings } from "@/lib/dedupe-strings";
+import { parisDateKey } from "@/lib/paris-time";
 
 export function buildAudienceReadinessAnalysis({
   sale,
@@ -445,17 +447,7 @@ function parseDate(value: string | null): Date | null {
 
 function daysUntil(date: Date | null, now: Date): number | null {
   if (!date || !Number.isFinite(now.getTime())) return null;
-  const calendarDay = (value: Date) => {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Paris",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(value);
-    const part = (type: string) => Number(parts.find((item) => item.type === type)?.value);
-    return Date.UTC(part("year"), part("month") - 1, part("day"));
-  };
-  return (calendarDay(date) - calendarDay(now)) / (24 * 60 * 60 * 1000);
+  return calendarDaysBetween(parisDateKey(now), parisDateKey(date));
 }
 
 function formatMoney(value: number): string {

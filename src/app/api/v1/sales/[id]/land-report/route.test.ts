@@ -16,7 +16,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "bearer",
   requireSupabaseAuthContext: mocks.auth,
 }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: mocks.entitlement }));
+vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.entitlement }));
 vi.mock("@/lib/property-report/repository", () => ({
   getSale: mocks.sale,
   getCadastralParcels: mocks.parcels,

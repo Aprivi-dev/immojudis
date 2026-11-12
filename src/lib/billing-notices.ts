@@ -5,6 +5,7 @@ import {
   resolveTransactionalEmailConfig,
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
+import { escapeHtml } from "@/lib/guards";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import {
@@ -22,14 +23,6 @@ const dateFormat = new Intl.DateTimeFormat("fr-FR", {
   year: "numeric",
   timeZone: "Europe/Paris",
 });
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
 
 /** Formule de politesse des trois messages (même texte qu'avant, seulement mise en forme). */
 const SIGNATURE = emailParagraph("Cordialement,<br />L’équipe Immojudis", { marginBottom: 0 });

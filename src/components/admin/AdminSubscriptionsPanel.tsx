@@ -37,7 +37,7 @@ export function AdminSubscriptionsPanel() {
   });
 
   const subscriptions = subscriptionsQuery.data?.subscriptions ?? [];
-  const totalCount = subscriptionsQuery.data?.totalCount ?? subscriptions.length;
+  const totalCount = subscriptionsQuery.data?.total ?? subscriptions.length;
 
   const grantMutation = useMutation({
     mutationFn: () => grantAdminSubscription({ data: formToInput(form) }),

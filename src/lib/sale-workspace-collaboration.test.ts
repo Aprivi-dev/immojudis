@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { normalizeEmail } from "@/lib/account";
 import {
   acceptSaleWorkspaceInvitation,
   collaboratorInviteSchema,
-  normalizeEmail,
   workspaceAnnotationCreateSchema,
   workspaceAnnotationUpdateSchema,
 } from "@/lib/sale-workspace-collaboration";
@@ -117,7 +117,10 @@ describe("sale workspace collaboration schemas", () => {
         auth: collaboratorAuth(),
         input: { collaboratorId: COLLABORATOR_ID },
       }),
-    ).rejects.toThrow("Confirmez votre adresse email");
+    ).rejects.toMatchObject({
+      status: 403,
+      message: expect.stringContaining("Confirmez votre adresse email"),
+    });
 
     expect(collaboration.current.status).toBe("invited");
   });
@@ -131,7 +134,10 @@ describe("sale workspace collaboration schemas", () => {
         auth: { ...collaboratorAuth(), isAdmin: true, userRole: "admin" } as SupabaseAuthContext,
         input: { collaboratorId: COLLABORATOR_ID },
       }),
-    ).rejects.toThrow("Cette invitation ne correspond pas à votre email.");
+    ).rejects.toMatchObject({
+      status: 400,
+      message: "Cette invitation ne correspond pas à votre email.",
+    });
 
     expect(collaboration.current).toMatchObject({ status: "invited", collaborator_user_id: null });
   });
@@ -144,7 +150,7 @@ describe("sale workspace collaboration schemas", () => {
         auth: collaboratorAuth(),
         input: { collaboratorId: COLLABORATOR_ID },
       }),
-    ).rejects.toThrow("Cette invitation n'est plus disponible.");
+    ).rejects.toMatchObject({ status: 409, message: "Cette invitation n'est plus disponible." });
 
     expect(collaboration.current).toMatchObject({
       collaborator_user_id: null,

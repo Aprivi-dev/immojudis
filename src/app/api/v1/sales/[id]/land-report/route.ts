@@ -4,7 +4,7 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { apiRoute } from "@/lib/api-route";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { getCadastralParcels, getSale } from "@/lib/property-report/repository";
 import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-limit";
 import { landLocationInputFromSale } from "@/lib/land-report-input";

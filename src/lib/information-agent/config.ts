@@ -82,7 +82,3 @@ export function informationAgentAppOrigin(
 ): string {
   return resolveSiteOrigin(env, "https://immojudis.com") ?? "https://immojudis.com";
 }
-
-export function informationAgentCaseReference(caseId: string): string {
-  return `IJ-${caseId.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
-}

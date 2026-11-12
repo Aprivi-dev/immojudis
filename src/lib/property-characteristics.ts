@@ -369,7 +369,18 @@ export function getPropertyCharacteristics(sale: AuctionSale): PropertyCharacter
 
 export type StateListingStatus = { label: string; detail: string | null };
 
-const TERMINAL_STATUSES = new Set(["past", "adjudicated", "cancelled", "withdrawn", "quarantined"]);
+const CLOSED_SALE_STATUSES = new Set([
+  "past",
+  "adjudicated",
+  "cancelled",
+  "withdrawn",
+  "quarantined",
+]);
+
+/** Vente passée, adjugée, annulée, retirée ou mise en quarantaine : plus rien n'est à venir. */
+export function isClosedSaleStatus(status: string | null | undefined): boolean {
+  return CLOSED_SALE_STATUSES.has((status ?? "").toLowerCase());
+}
 
 /**
  * Libellé d'une cession de l'État encore en ligne sans échéance publiée.
@@ -382,7 +393,7 @@ export function stateListingStatus(
 ): StateListingStatus | null {
   if (sale.sale_date) return null;
   const state = sale.sale_venue_type === "state" || STATE_SOURCES.has(sale.source_name ?? "");
-  if (!state || TERMINAL_STATUSES.has((sale.status ?? "").toLowerCase())) return null;
+  if (!state || isClosedSaleStatus(sale.status)) return null;
   const blocks = asRecordOrNull(sale.source_blocks);
   const block = asRecordOrNull(blocks?.caracteristiques_bien);
   const procedure = asRecordOrNull(block?.procedure);

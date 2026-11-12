@@ -1,4 +1,4 @@
-import { AuthRequiredError } from "@/lib/api-errors";
+import { AuthRequiredError, ServiceUnavailableError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Row = Record<string, unknown>;
@@ -747,14 +747,16 @@ describe("getAdminPepites", () => {
     const controller = new AbortController();
     controller.abort();
 
-    await expect(computePepiteIndependence(NOW, controller.signal)).rejects.toThrow(/délai/);
+    await expect(computePepiteIndependence(NOW, controller.signal)).rejects.toThrow(
+      ServiceUnavailableError,
+    );
   });
 
-  it("avant la migration (fonction absente) : « pas migré », sans erreur", async () => {
+  it("une fonction ou une table absente remonte comme toute erreur de la base", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     for (const code of ["PGRST202", "42883", "PGRST205", "42P01"]) {
       mocks.rpc.mockResolvedValue({ data: null, error: { code, message: "absent" } });
-      expect(await getAdminPepites("jeton", NOW)).toEqual(unavailablePepites());
+      await expect(getAdminPepites("jeton", NOW)).rejects.toMatchObject({ code });
     }
     expect(unavailablePepites()).toMatchObject({
       migrated: false,

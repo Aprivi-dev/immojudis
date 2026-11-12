@@ -2,10 +2,8 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import type { AutopilotSettings, AutopilotStats } from "@/lib/information-agent/autopilot-rules";
-import {
-  assertInformationAgentControllerIdentity,
-  informationAgentPortalSecret,
-} from "@/lib/information-agent/message-guards";
+import { informationAgentPortalSecret } from "@/lib/information-agent-signed-link";
+import { assertInformationAgentControllerIdentity } from "@/lib/information-agent/message-guards";
 
 /**
  * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ. Fixée volontairement

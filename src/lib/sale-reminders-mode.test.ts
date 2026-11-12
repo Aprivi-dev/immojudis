@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { saleRemindersMode, saleRemindersOfferedTo } from "./sale-reminders-mode";
+import { saleRemindersMode, saleRemindersOfferedTo } from "./email-feature-mode";
 
 describe("saleRemindersMode", () => {
   it("vaut off par défaut", () => {

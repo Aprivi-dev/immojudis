@@ -1,23 +1,31 @@
 import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 import {
+  featureIncluded,
   isPlanPeriodActive,
+  isSaleUnlockFeature,
   isTrialExtensionRow,
   normalizePlanCode,
   pastDueGraceEnd,
   PLAN_LIMITS,
+  type FeatureKey,
   type PlanBilling,
+  type PlanEntitlements,
   type PlanStatus,
 } from "@/lib/plans";
 import { readSignupTrial } from "@/lib/launch-offer.server";
-import type { PlanEntitlements } from "@/lib/property-reports";
 import { buildPlanEntitlements } from "@/lib/property-report/entitlements";
+import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
+import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
+import { DETAIL_VIEW, DISCOVERY_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
 
 /**
- * Résolution serveur des droits d'un compte (plan, essai, offre de lancement, administrateur).
- * Déplacée depuis `property-reports.ts` sans changement de comportement. Les règles d'accès Analyse
- * ont un miroir SQL (`app_private.has_active_analysis_access`) : `entitlements.server.parity.test.ts`
- * rejoue les cas des tests pgTAP 740, 774, 775 et 850 contre cette fonction.
+ * Résolution serveur des droits d'un compte (plan, essai, offre de lancement, administrateur), et
+ * la porte qui ouvre un droit pour une vente (l'offre, ou le déblocage de cette vente). Les règles
+ * d'accès Analyse ont un miroir SQL (`app_private.has_active_analysis_access`) :
+ * `entitlements.server.parity.test.ts` rejoue les cas des tests pgTAP 740, 774, 775 et 850 contre
+ * `resolvePlanEntitlements`.
  */
 
 const ADMIN_PLAN_LIMITS: PlanEntitlements["limits"] = {
@@ -125,4 +133,94 @@ function latestIso(...values: Array<string | null | undefined>): string | null {
     if (latest === null || Date.parse(value) > Date.parse(latest)) latest = value;
   }
   return latest;
+}
+
+/** The door that opens a right for a sale: the offer itself, or the unlock of this very sale. */
+export type SaleFeatureDoor = "plan" | "unlock";
+
+/**
+ * The one rule: the offer opens `feature` for every sale; otherwise an unlock opens the rights of
+ * `SALE_UNLOCK_FEATURES`, for the sale the database confirms (unlocked and still online) only.
+ */
+async function doorFor(
+  auth: SupabaseAuthContext,
+  plan: PlanEntitlements,
+  feature: FeatureKey,
+  saleId: string | undefined,
+): Promise<SaleFeatureDoor | null> {
+  if (featureIncluded(plan.plan, feature)) return "plan";
+  if (saleId && isSaleUnlockFeature(feature) && (await hasUnlockedSale(auth, saleId))) {
+    return "unlock";
+  }
+  return null;
+}
+
+/**
+ * Which door opens `feature` for this sale, or null when neither does. Routes that serve a teaser
+ * to the other accounts use it to choose what they return (document reading, sale history).
+ */
+export async function saleFeatureDoor(
+  auth: SupabaseAuthContext,
+  feature: FeatureKey,
+  saleId: string,
+): Promise<SaleFeatureDoor | null> {
+  return doorFor(auth, await resolvePlanEntitlements(auth), feature, saleId);
+}
+
+/**
+ * Refuse a right the caller's offer does not include, and say which door opened it. With
+ * `saleId`, an unlock of that sale opens the rights of `SALE_UNLOCK_FEATURES`, for that sale only.
+ */
+export async function assertFeatureEntitlementVia(
+  auth: SupabaseAuthContext,
+  feature: FeatureKey,
+  message = "Fonctionnalité réservée à l’offre Analyse.",
+  options: { saleId?: string } = {},
+): Promise<{ plan: PlanEntitlements; door: SaleFeatureDoor }> {
+  const plan = await resolvePlanEntitlements(auth);
+  const door = await doorFor(auth, plan, feature, options.saleId);
+  if (!door) throw new ForbiddenError(message);
+  return { plan, door };
+}
+
+export async function assertFeatureEntitlement(
+  auth: SupabaseAuthContext,
+  feature: FeatureKey,
+  message = "Fonctionnalité réservée à l’offre Analyse.",
+  options: { saleId?: string } = {},
+): Promise<PlanEntitlements> {
+  return (await assertFeatureEntitlementVia(auth, feature, message, options)).plan;
+}
+
+/**
+ * The catalogue view each door reads: the full one for the offer, the account's unlocked sales for
+ * an unlock, the redacted one otherwise.
+ */
+const DOOR_VIEWS = {
+  plan: DETAIL_VIEW,
+  unlock: UNLOCKED_VIEW,
+  none: DISCOVERY_VIEW,
+} as const;
+
+/**
+ * Reads the sale as the caller sees it through `door` (its own session, so row-level security
+ * applies), then the same publication check as the sale page for every door: an administrator's
+ * session bypasses row-level security, and a quarantined sale must stay hidden all the same.
+ * Absent or hidden: `NotFoundError`.
+ */
+export async function readSaleThroughDoor<Row = Record<string, unknown>>(
+  auth: SupabaseAuthContext,
+  saleId: string,
+  door: SaleFeatureDoor | null,
+  columns: string,
+): Promise<Row> {
+  const { data, error } = await auth.supabase
+    .from(DOOR_VIEWS[door ?? "none"] as typeof DETAIL_VIEW)
+    .select(columns)
+    .eq("id", saleId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new NotFoundError("Vente introuvable.");
+  await assertSalePublicationVisible(saleId);
+  return data as Row;
 }

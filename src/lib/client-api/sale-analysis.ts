@@ -1,4 +1,4 @@
-import { authHeaders, readJson } from "@/lib/client-api-core";
+import { authHeaders, readJson, responseError } from "@/lib/client-api-core";
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
@@ -180,7 +180,7 @@ export async function fetchPrecomputedMarketEstimate(args: {
 
   const payload = (await response.json().catch(() => null)) as SaleMarketContext | null;
   if (response.status === 401 || response.status === 403 || !payload) {
-    throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
+    throw responseError(response.status, payload);
   }
   return payload;
 }
@@ -271,10 +271,7 @@ export async function exportSalesCsv(args: {
     headers: await authHeaders(),
   });
 
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
-  }
+  if (!response.ok) await readJson<unknown>(response);
 
   const filename =
     response.headers

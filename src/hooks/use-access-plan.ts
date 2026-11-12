@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchAccessPlan } from "@/lib/client-billing";
-import type { PlanEntitlements } from "@/lib/property-reports";
+import type { PlanEntitlements } from "@/lib/plans";
 import * as queryKeys from "@/lib/query-keys";
 
 /**

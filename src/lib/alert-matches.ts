@@ -28,9 +28,9 @@ import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
 import type { AuctionSale, SaleFilters, UserAlert, UserWatchedZone } from "@/lib/types";
 import { normalizeWatchedZone } from "@/lib/watched-zones";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { documentSignatureParts } from "@/lib/document-signature";
 import { ForbiddenError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
 
@@ -533,8 +533,6 @@ const ALERT_MATCHES_DEFERRED_CODE = "55P03";
  * `auction_sales` attendait le verrou jusqu'au délai de la requête (57014), puis l'alerte entière échouait. Une vente
  * sautée lève une erreur de code 55P03 APRÈS l'écriture des autres lignes du lot : l'alerte n'est pas marquée évaluée
  * et est rejouée à la passe suivante sans doublon (upsert), comme pour toute autre erreur d'écriture.
- *
- * Sans la migration (fonction absente, déploiement avant migration), repli sur l'upsert d'origine.
  */
 async function upsertAlertMatchRows(
   batch: Database["public"]["Tables"]["user_alert_matches"]["Insert"][],
@@ -542,25 +540,15 @@ async function upsertAlertMatchRows(
   const { data, error } = await supabaseAdmin.rpc("upsert_user_alert_matches", {
     p_rows: batch as unknown as Json,
   });
-  if (!error) {
-    const written = (data ?? []) as AlertMatchRow[];
-    if (written.length < batch.length) {
-      throw Object.assign(
-        new Error(
-          `${batch.length - written.length} correspondance(s) différée(s) : vente verrouillée ou disparue`,
-        ),
-        { code: ALERT_MATCHES_DEFERRED_CODE },
-      );
-    }
-    return written;
+  if (error) throw error;
+  const written = (data ?? []) as AlertMatchRow[];
+  if (written.length < batch.length) {
+    throw Object.assign(
+      new Error(`${batch.length - written.length} alert match(es) deferred: sale locked or gone`),
+      { code: ALERT_MATCHES_DEFERRED_CODE },
+    );
   }
-  if (!isMissingDatabaseObject(error)) throw error;
-  const fallback = await supabaseAdmin
-    .from("user_alert_matches")
-    .upsert(batch, { onConflict: "alert_id,sale_id" })
-    .select("*");
-  if (fallback.error) throw fallback.error;
-  return fallback.data ?? [];
+  return written;
 }
 
 /**
@@ -1284,8 +1272,4 @@ function roundNumber(value: number | null | undefined): number | null {
 
 function roundPercent(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

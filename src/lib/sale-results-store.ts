@@ -3,10 +3,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import { createSupabaseSaleReminderStore } from "@/lib/sale-reminders-store";
 import type { FollowedSnapshot, SaleResultStore } from "@/lib/sale-results";
+import { EMAIL_PASS_MAX_CONSENTING_USERS } from "@/lib/email-campaign-pass";
 
 const PAGE_SIZE = 1_000;
-/** Garde-fou : au-delà, le passage s'arrête là (les comptes suivants attendent le suivant). */
-const MAX_CONSENTING_USERS = 10_000;
 /** Instantanés lus au plus par compte et par passage. */
 const MAX_SNAPSHOTS_PER_USER = 200;
 
@@ -29,7 +28,7 @@ export function createSupabaseSaleResultStore(): SaleResultStore {
 
     async listConsentingUserIds() {
       const ids: string[] = [];
-      for (let from = 0; from < MAX_CONSENTING_USERS; from += PAGE_SIZE) {
+      for (let from = 0; from < EMAIL_PASS_MAX_CONSENTING_USERS; from += PAGE_SIZE) {
         // Consentement actif, daté par la base ET texte présenté connu (posé par la route serveur) :
         // une écriture directe sans version ne vaut pas consentement.
         const { data, error } = await supabaseAdmin

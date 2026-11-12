@@ -10,7 +10,7 @@ import {
 import { PROPERTY_TAX_NOT_COUNTED } from "@/lib/bid-ceiling-engine";
 import { DEFAULT_OPEN_FEE_REGIMES, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { analysisForOpenRegimes, ceilingForOpenRegimes } from "./ceiling-switch";
-import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
+import { sanitizeReportSnapshotForPlan } from "./entitlements";
 import { reportWording } from "./report-wording";
 import { RENT_SOURCE_URL, rentSourceNotice } from "@/lib/rent-source-notice";
 import { reportRentReference } from "./rent-notice";
@@ -19,7 +19,8 @@ import {
   FINANCING_NOT_PROVIDED,
   financingDossierLines,
 } from "./financing-dossier";
-import { PlanEntitlements, SavedReportRow } from "../property-reports";
+import type { SavedReportRow } from "../property-reports";
+import { featureIncluded, type PlanEntitlements } from "@/lib/plans";
 import {
   formatPercent as formatKnownPercent,
   formatRenovationBudgetRange,
@@ -259,12 +260,12 @@ export function reportToPdfLines(
     audienceReadinessAnalysis.checklist,
   );
   const audienceReadinessActions = normalizeStringList(audienceReadinessAnalysis.nextActions);
-  const canShowSoldComparables = featureUnlocked(plan.features.soldComparables);
-  const canShowSaleHistory = featureUnlocked(plan.features.saleHistory);
-  const canShowUrbanPlanning = featureUnlocked(plan.features.urbanPlanning);
-  const canShowStreetFacade = featureUnlocked(plan.features.streetFacade);
-  const canShowNeighborhood = featureUnlocked(plan.features.neighborhoodAnalysis);
-  const canShowActiveComparables = featureUnlocked(plan.features.activeComparables);
+  const canShowSoldComparables = featureIncluded(plan.plan, "property.soldComparables");
+  const canShowSaleHistory = featureIncluded(plan.plan, "property.saleHistory");
+  const canShowUrbanPlanning = featureIncluded(plan.plan, "property.urbanPlanning");
+  const canShowStreetFacade = featureIncluded(plan.plan, "property.streetFacade");
+  const canShowNeighborhood = featureIncluded(plan.plan, "property.neighborhoodAnalysis");
+  const canShowActiveComparables = featureIncluded(plan.plan, "property.activeComparables");
 
   return [
     `Plan: ${plan.label}`,

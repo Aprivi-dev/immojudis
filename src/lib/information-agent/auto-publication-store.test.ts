@@ -206,10 +206,15 @@ describe("passe de simulation : modes", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("migration absente : « not_installed », sans échec du cron", async () => {
+  it("table absente : un échec comme un autre, avec son seul code (plus de tolérance de migration)", async () => {
     failures.information_agent_auto_publication_settings = { code: "PGRST205" };
-    expect(await runAutoPublicationSimulation({ now: NOW })).toEqual({ status: "not_installed" });
-    expect(await runAutoPublicationSimulationForCron()).toEqual({ status: "not_installed" });
+    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toMatchObject({
+      code: "PGRST205",
+    });
+    expect(await runAutoPublicationSimulationForCron()).toEqual({
+      status: "failed",
+      code: "PGRST205",
+    });
   });
 
   it("toute autre erreur du réglage est un échec, avec son seul code", async () => {

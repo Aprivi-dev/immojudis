@@ -7,7 +7,7 @@ import type { AdminActivation } from "@/lib/admin-activation";
 import type { BidCeilingSummary } from "@/lib/admin-bid-ceilings";
 import type { OfferOpeningSurveySummary } from "@/lib/admin-offer-opening-survey";
 import type { SaleSignalFeedbackSummary } from "@/lib/admin-sale-signal-feedback";
-import { parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKeyOrNull } from "@/lib/paris-time";
 
 /**
  * Page admin « Pilotage » (point 65) : agrégats sur 7 et 30 jours glissants, lus dans la base par
@@ -17,8 +17,7 @@ import { parisDateKey } from "@/lib/sale-countdown";
  * double authentification (`auth.isAdmin`), puis lecture avec le client de service. Un compte sans
  * le rôle n'obtient rien.
  *
- * Un nombre absent vaut `null` et s'affiche « non mesuré » : migration pas encore appliquée, début de
- * la mesure inconnu. Il n'est jamais remplacé par zéro. La règle « moins de 5 » est une règle
+ * Un nombre absent vaut `null` et s'affiche « non mesuré » : début de la mesure inconnu. Il n'est jamais remplacé par zéro. La règle « moins de 5 » est une règle
  * d'affichage : la page masque les petits nombres (voir `admin-pilotage-page.tsx`).
  *
  * Depuis la migration 20261029120200 : administrateurs exclus, semaine précédente (fenêtre
@@ -325,11 +324,6 @@ export function parseAdminPilotage(raw: unknown): AdminPilotage {
   };
 }
 
-/** Fonction de base absente (migration pas encore appliquée) : rien n'est mesuré. */
-function isMissingFunction(error: { code?: string } | null): boolean {
-  return error?.code === "PGRST202" || error?.code === "42883";
-}
-
 export async function getAdminPilotage(
   authToken: string,
   now = new Date(),
@@ -339,10 +333,7 @@ export async function getAdminPilotage(
   const { data, error } = await supabaseAdmin.rpc("admin_pilotage_summary", {
     p_now: now.toISOString(),
   });
-  if (error) {
-    if (isMissingFunction(error)) return unavailablePilotage();
-    throw error;
-  }
+  if (error) throw error;
   return parseAdminPilotage(data);
 }
 
@@ -435,12 +426,6 @@ export function unavailableSaleReminderAccuracy(
   };
 }
 
-function parisDayOrNull(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? parisDateKey(date) : null;
-}
-
 /**
  * Calcule le taux de rappels contredits. Un rappel compte s'il a été envoyé dans la fenêtre et depuis
  * plus de 72 h (on ne juge pas un rappel dont le délai de contradiction court encore). Il est contredit
@@ -464,8 +449,8 @@ export function computeSaleReminderAccuracy({
 
   const movedByKey = new Map<string, number[]>();
   for (const change of changes) {
-    const previousDay = parisDayOrNull(change.previousDate);
-    const currentDay = parisDayOrNull(change.currentDate);
+    const previousDay = parisDateKeyOrNull(change.previousDate);
+    const currentDay = parisDateKeyOrNull(change.currentDate);
     if (!previousDay || !currentDay || previousDay === currentDay) continue;
     const detected = Date.parse(change.detectedAt);
     if (!Number.isFinite(detected)) continue;

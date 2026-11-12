@@ -7,7 +7,8 @@ import { weeklyDigestMode, type EmailFeatureMode } from "@/lib/email-feature-mod
 import { recentSaleChanges, type SaleChangeTopic } from "@/lib/sale-change-display";
 import type { SaleChangeEventSummary } from "@/lib/sale-change-monitor";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
-import { calendarDaysBetween, nextParisMidnight, parisDateKey } from "@/lib/sale-countdown";
+import { parisDateKey, startOfParisDay } from "@/lib/paris-time";
+import { addDays, calendarDaysBetween } from "@/lib/calendar-day";
 import {
   isSourceCheckStale,
   publicLocation,
@@ -23,6 +24,7 @@ import {
   type WeeklyDigestContent,
   type WeeklyDigestSaleItem,
 } from "@/lib/weekly-digest-emails";
+import { EMAIL_PASS_BUDGET_MS, EMAIL_PASS_USER_CONCURRENCY } from "@/lib/email-campaign-pass";
 
 /**
  * Récapitulatif hebdomadaire « Ma semaine » : un seul email par semaine et par compte, envoyé par le
@@ -61,17 +63,10 @@ const MAX_EXAMINED_SALES = 30;
 /** Départements d'alertes pris en compte par personne. */
 const MAX_DEPARTMENTS = 3;
 const DAY_MS = 86_400_000;
-const PROCESSING_BUDGET_MS = 50_000;
-const USER_CONCURRENCY = 4;
 /** Les changements montrent seulement leur libellé : jamais de montant ni de date (voir la fiche). */
 const MASKED_TOPICS: ReadonlySet<SaleChangeTopic> = new Set<SaleChangeTopic>(["price", "date"]);
 
 // -- Calendrier ---------------------------------------------------------------------------------------
-
-function addDays(dayKey: string, days: number): string {
-  const [year, month, day] = dayKey.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
-}
 
 /** Jour de la semaine d'un jour civil (AAAA-MM-JJ), ISO 8601 : 1 = lundi ... 7 = dimanche. */
 export function isoWeekday(dayKey: string): number {
@@ -102,11 +97,6 @@ export function dueDigest(
   if (lag > MAX_DEFERRAL_DAYS) return null;
   const dueDay = addDays(today, -lag);
   return { dueDay, weekKey: isoWeekKey(dueDay), lag };
-}
-
-/** Début du jour civil courant à Paris : sert à savoir si un email est déjà parti aujourd'hui. */
-export function parisDayStart(now: Date): Date {
-  return nextParisMidnight(addDays(parisDateKey(now), -1));
 }
 
 // -- Accès aux données ---------------------------------------------------------------------------------
@@ -454,7 +444,7 @@ export async function runWeeklyDigest({
   // récapitulatif au lendemain (voir l'en-tête du fichier).
   const emailedToday = await store.usersEmailedSince(
     pending.map(({ userId }) => userId),
-    parisDayStart(now),
+    startOfParisDay(now),
   );
   const weekKeyOf = new Map(pending.map(({ userId, weekKey }) => [userId, weekKey]));
   const sendable = pending.filter(({ userId }) => !emailedToday.has(userId));
@@ -464,7 +454,7 @@ export async function runWeeklyDigest({
     now,
   );
 
-  const deadline = Date.now() + PROCESSING_BUDGET_MS;
+  const deadline = Date.now() + EMAIL_PASS_BUDGET_MS;
   async function processUser(userId: string) {
     const weekKey = weekKeyOf.get(userId) as string;
     const content = await buildDigestContent({ store, userId, now, stats: summary });
@@ -546,12 +536,12 @@ export async function runWeeklyDigest({
     }
   }
 
-  for (let index = 0; index < recipients.length; index += USER_CONCURRENCY) {
+  for (let index = 0; index < recipients.length; index += EMAIL_PASS_USER_CONCURRENCY) {
     if (Date.now() > deadline) {
       summary.truncated = true;
       break;
     }
-    const batch = recipients.slice(index, index + USER_CONCURRENCY);
+    const batch = recipients.slice(index, index + EMAIL_PASS_USER_CONCURRENCY);
     const settledBatch = await Promise.allSettled(batch.map((userId) => processUser(userId)));
     const failure = settledBatch.find((result) => result.status === "rejected");
     if (failure && failure.status === "rejected") {
@@ -559,7 +549,7 @@ export async function runWeeklyDigest({
       // pour être vu et rejoué, le journal empêchant tout doublon.
       throw failure.reason instanceof Error
         ? failure.reason
-        : new Error("Récapitulatif hebdomadaire : lecture impossible.");
+        : new Error("Weekly digest: user processing failed.");
     }
   }
   return summary;

@@ -6,7 +6,7 @@ import {
   INFORMATION_AGENT_QUESTIONS,
   type InformationAgentQuestionKey,
 } from "@/lib/information-agent-questions";
-import type { InformationAgentRecipientKind } from "@/lib/information-agent/contacts";
+import type { InformationAgentRecipientKind } from "@/lib/information-agent/contact-resolution";
 import { courtRegistryRecipientOrigin } from "@/lib/information-agent/court-registry-mission";
 import { informationAgentRecipientProfile } from "@/lib/information-agent/recipient-profile";
 import {
@@ -14,7 +14,7 @@ import {
   type InformationAgentFact,
   type InformationAgentMission,
 } from "@/lib/information-agent/schemas";
-import { NotFoundError } from "@/lib/api-errors";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 // Accès aux missions et aux dossiers de l'agent, partagés par le brouillon, l'envoi et l'aperçu.
 // Extraits de `information-agent.ts` sans changement de comportement.
@@ -30,7 +30,10 @@ export async function cancelMission({
 }) {
   const mission = await loadOwnedMission(adminId, missionId);
   if (!(["draft", "failed"] as MissionRow["status"][]).includes(mission.status)) {
-    throw new Error("Requête invalide : un message déjà envoyé ne peut pas être annulé.");
+    throw new PublicApiError(
+      "Requête invalide : un message déjà envoyé ne peut pas être annulé.",
+      409,
+    );
   }
   await updateMissionOrThrow(mission.id, mission.user_id, {
     status: "cancelled",

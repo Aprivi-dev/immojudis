@@ -10,7 +10,6 @@ import * as policy from "@/lib/pepite-policy";
 import {
   PEPITE_METHOD_PATH,
   PEPITE_RULE_PARAMS,
-  PEPITE_LATEST_RULE_VERSION,
   PEPITE_V12_RULE_PARAMS,
   PEPITE_V1_1_RULE_VERSION,
   PEPITE_V1_2_RULE_VERSION,
@@ -103,7 +102,6 @@ describe("page « Comment repérons-nous les pépites ? »", () => {
   });
 
   it("reprend les seuils du module de calcul : la page n'annonce que ce que le calcul applique", () => {
-    expect(PEPITE_LATEST_RULE_VERSION).toBe(policy.PEPITE_LATEST_RULE_VERSION);
     expect(PEPITE_RULE_PARAMS).toEqual({
       chanceMinPct: policy.PEPITE_CHANCE_MIN_SHARE * 100,
       chanceMinWilsonLowPct: policy.PEPITE_CHANCE_MIN_WILSON_LOW * 100,

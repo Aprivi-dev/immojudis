@@ -1,17 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createAdminInformationAgentDraft,
-  previewAdminInformationAgentMission,
-  runAdminInformationAgentAction,
-  informationAgentPreviewFingerprint,
-} from "@/lib/information-agent";
+import { runAdminInformationAgentAction } from "@/lib/information-agent";
+import { createAdminInformationAgentDraft } from "@/lib/information-agent/draft";
+import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
+import { informationAgentPreviewFingerprint } from "@/lib/information-agent/message-guards";
 import { assertInformationAgentContactAllowed } from "@/lib/information-agent/contacts";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import {
   assertCourtRegistryFallbackLimits,
   courtRegistryFallbackOfMission,
-  startOfParisDay,
 } from "@/lib/information-agent/court-registry";
+import { startOfParisDay } from "@/lib/paris-time";
 import {
   courtRegistryDailyCap,
   COURT_REGISTRY_DAILY_CAP_DEFAULT,

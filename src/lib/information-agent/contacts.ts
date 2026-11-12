@@ -17,22 +17,6 @@ import {
   informationAgentExcludedAddressReason,
 } from "@/lib/information-agent/excluded-addresses";
 
-export { normalizedEmail };
-// La résolution (pure) est dans `contact-resolution.ts` ; ces noms existaient ici avant ce découpage et
-// restent importables d'ici par les modules et les tests qui les utilisaient déjà.
-export {
-  contactCandidateSnapshot,
-  discoverInformationAgentContacts,
-  INFORMATION_AGENT_PIPELINE_CHANNEL,
-  selectInformationAgentContact,
-} from "@/lib/information-agent/contact-resolution";
-export type {
-  InformationAgentContactCandidate,
-  InformationAgentContactSale,
-  InformationAgentRecipientKind,
-  InformationAgentRegistryContact,
-} from "@/lib/information-agent/contact-resolution";
-
 type InformationAgentContactRegistryRow =
   Database["public"]["Tables"]["information_agent_contacts"]["Row"];
 

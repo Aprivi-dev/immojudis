@@ -29,10 +29,9 @@ export type TribunalSaleRow = {
   /**
    * Identifiant de groupe : le plus petit identifiant des lignes de la liste qui partagent une adresse
    * source normalisée (de proche en proche). Il reconnaît la même vente publiée deux fois sans rien
-   * révéler de l'adresse. Absent tant que la migration 20261031100100 n'est pas appliquée : la liste
-   * fonctionne alors sans dédoublonnage.
+   * révéler de l'adresse.
    */
-  source_group?: unknown;
+  source_group: string;
 };
 
 type TribunalRpcClient = {
@@ -137,9 +136,8 @@ const cachedTribunalSales = unstable_cache(readTribunalSales, ["tribunal-pages",
 export type TribunalSalesResult = ({ status: "ok" } & ReadTribunalSales) | { status: "error" };
 
 /**
- * Les prochaines ventes d'un tribunal. Ne lève pas : la fonction peut manquer (migration pas
- * encore appliquée) ou la base être indisponible ; la page garde alors ses chiffres, qui viennent
- * d'ailleurs, et renvoie vers la recherche.
+ * Les prochaines ventes d'un tribunal. Ne lève pas : la base peut être indisponible ; la page garde
+ * alors ses chiffres, qui viennent d'ailleurs, et renvoie vers la recherche.
  */
 export async function tryLoadTribunalSales(tribunalCode: string): Promise<TribunalSalesResult> {
   try {

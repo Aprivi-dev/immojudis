@@ -4,8 +4,11 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { PublicApiError } from "@/lib/api-errors";
-import { saleResultsOfferedTo, weeklyDigestOfferedTo } from "@/lib/email-feature-mode";
-import { saleRemindersOfferedTo } from "@/lib/sale-reminders-mode";
+import {
+  saleRemindersOfferedTo,
+  saleResultsOfferedTo,
+  weeklyDigestOfferedTo,
+} from "@/lib/email-feature-mode";
 
 type NotificationPreferenceRow =
   Database["public"]["Tables"]["user_notification_preferences"]["Row"];

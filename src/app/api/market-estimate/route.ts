@@ -7,9 +7,9 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { NotFoundError, PublicApiError } from "@/lib/api-errors";
-import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
-import { assertFeatureEntitlementVia, featureIncludedForSale } from "@/lib/property-reports";
+import { PublicApiError } from "@/lib/api-errors";
+import { assertFeatureEntitlementVia, readSaleThroughDoor } from "@/lib/entitlements.server";
+import { featureIncluded } from "@/lib/plans";
 import { ceilingMarketContext } from "@/lib/market-estimate-ceiling";
 import {
   estimateSaleValueWithEnteredSurface,
@@ -55,29 +55,20 @@ export const POST = apiRoute(
       ...RATE_LIMIT_POLICIES.compute,
     });
     const { saleId, enteredSurface } = requestSchema.parse(await request.json());
-    // Analyse reads the detailed estimate. A Découverte account that unlocked this very sale
-    // (« 3 déblocages par mois ») gets the reference value under the bid-ceiling right, reduced to
-    // what the ceiling reads: the detailed estimate (range, quartiles, comparables) stays with
-    // Analyse.
-    const detailed = await featureIncludedForSale(auth, "property.valueEstimate", saleId);
-    if (!detailed) {
-      await assertFeatureEntitlementVia(
-        auth,
-        "property.bidCeiling",
-        "Estimation de marché réservée à l’offre Analyse.",
-        { saleId },
-      );
-    }
-    // Same visibility rule as the sale page: the sale must be readable by this user in
-    // the catalogue view (published and ready), not merely present in auction_sales. An unlock
-    // reads the redacted catalogue view; its right to the sale was confirmed just above.
-    const { data: visibleSale, error: visibilityError } = await auth.supabase
-      .from(detailed ? DETAIL_VIEW : DISCOVERY_VIEW)
-      .select("id")
-      .eq("id", saleId)
-      .maybeSingle();
-    if (visibilityError) throw visibilityError;
-    if (!visibleSale) throw new NotFoundError("Vente introuvable.");
+    // One read of the plan: the bid-ceiling right opens the reference value (the offer, or a
+    // Découverte account that unlocked this very sale, « 3 déblocages par mois »), reduced to what
+    // the ceiling reads. The detailed estimate (range, quartiles, comparables) stays with the offer
+    // that includes it.
+    const { plan, door } = await assertFeatureEntitlementVia(
+      auth,
+      "property.bidCeiling",
+      "Estimation de marché réservée à l’offre Analyse.",
+      { saleId },
+    );
+    const detailed = door === "plan" && featureIncluded(plan.plan, "property.valueEstimate");
+    // Same visibility rule as the sale page: readable by this user in the view of its door
+    // (published and ready), not merely present in auction_sales.
+    await readSaleThroughDoor(auth, saleId, door, "id");
     if (enteredSurface) {
       // Surface lue dans les pièces par ce compte : la valeur n'est ni stockée, ni journalisée, ni
       // comptée (aucun événement d'usage) ; elle ne sert qu'au plafond de ce compte. Toujours la
@@ -94,7 +85,7 @@ export const POST = apiRoute(
     }
     const response = await refreshSaleValuationOnDemand(saleId);
     if (response.estimate) {
-      await recordFeatureUsageEvent({
+      recordFeatureUsageEvent({
         auth,
         eventKey: "valuation.estimated",
         subjectType: "auction_sale",

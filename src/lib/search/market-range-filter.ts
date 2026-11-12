@@ -21,18 +21,11 @@ const CACHE_MS = 5 * 60_000;
 
 let cached: { at: number; ids: Promise<ReadonlySet<string>> } | null = null;
 
-/** Fonction de base absente (migration pas encore appliquée). */
-function isMissingFunction(error: { code?: unknown } | null): boolean {
-  return error?.code === "PGRST202" || error?.code === "42883";
-}
-
 async function readUnderRangeSaleIds(): Promise<ReadonlySet<string>> {
   const client = await getSupabase();
   const { data, error } = await client.rpc("list_public_sale_ids_under_market_range");
   if (error) {
-    if (!isMissingFunction(error)) {
-      console.warn("[search] liste des ventes sous la fourchette indisponible:", error.code);
-    }
+    console.warn("[search] liste des ventes sous la fourchette indisponible:", error.code);
     throw new Error(UNDER_RANGE_FILTER_UNAVAILABLE_MESSAGE);
   }
   const ids = Array.isArray(data) ? data : [];
