@@ -1,7 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
-import { isTransientError, TransientJobError } from "@/lib/monitored-job.server";
+import { DEFAULT_RETRY_DELAYS_MS, TransientJobError } from "@/lib/monitored-job.server";
 
 /**
  * Contrôle quotidien du registre des pièces (plan du 11/11/2026, lots R2a et R2b ; migrations
@@ -59,6 +59,35 @@ type JobStep = "reprojection" | "check";
  */
 export const REPROJECTION_PASS_START_BUDGET_MS = 45_000;
 
+/** Durée maximale de la route (`maxDuration` de `/api/cron/fact-registry-check`, qui veut un littéral). */
+const ROUTE_MAX_DURATION_MS = 300_000;
+/** Une tentative lancée hors du délai des passes : une passe (120 s) puis le contrôle (120 s). */
+const LATE_ATTEMPT_MAX_MS = 240_000;
+const RETRY_MARGIN_MS = 5_000;
+
+/**
+ * Une exécution de la tâche, reprises comprises : son début et le nombre de tentatives. La route la crée une
+ * fois ; `runMonitoredCron` rappelle la tâche avec la même à chaque reprise.
+ */
+export type FactRegistryCheckRun = { startedAt: number; attempts: number };
+
+/**
+ * Reste-t-il la place d'une tentative entière avant la coupure de la route ? Il faut attendre le délai de la
+ * prochaine reprise de `runMonitoredCron`, puis une passe et le contrôle. Au-delà, la plateforme couperait la
+ * tâche : l'exécution resterait « running » et son erreur ne serait jamais enregistrée.
+ */
+function hasRoomForRetry(run: FactRegistryCheckRun): boolean {
+  const wait = DEFAULT_RETRY_DELAYS_MS[run.attempts - 1];
+  return (
+    wait !== undefined &&
+    Date.now() - run.startedAt + wait + LATE_ATTEMPT_MAX_MS <=
+      ROUTE_MAX_DURATION_MS - RETRY_MARGIN_MS
+  );
+}
+
+/** Erreur de la base qui vaut d'être retentée, d'après son code seul. */
+class RetryableDatabaseError extends Error {}
+
 /** « La fonction n'existe pas » : `PGRST202` (cache du schéma de PostgREST) ou `42883` (PostgreSQL). */
 function isMissingFunctionError(error: { code?: string }): boolean {
   return error.code === "PGRST202" || error.code === "42883";
@@ -71,8 +100,9 @@ function jsonRecord(value: Json | undefined): Record<string, Json | undefined> |
 /**
  * Erreur de la base : l'étape et le code, rien d'autre. Le message de PostgreSQL peut porter une
  * ligne entière d'une table, et ce texte est recopié dans `operational_job_runs.error_message`.
- * La panne passagère se reconnaît au message d'origine : elle est classée ici, avant qu'il ne soit
- * remplacé (une erreur sans code est une panne de réseau), pour que la tâche soit reprise.
+ * La panne passagère se reconnaît au CODE SEUL, jamais au texte : une erreur sans code est une panne de
+ * réseau ; `40001` et `40P01` (conflit, interblocage) passent à la tentative suivante. Le délai d'instruction
+ * (`57014`) n'en est pas une : rejouer une tâche qui a déjà pris 120 s dépasserait la durée de la route.
  */
 function databaseError(step: JobStep, error: { code?: string }): Error {
   const code =
@@ -80,8 +110,8 @@ function databaseError(step: JobStep, error: { code?: string }): Error {
       ? error.code
       : "inconnu";
   const message = `Contrôle du registre des pièces : étape ${step}, code ${code}.`;
-  return !error.code || isTransientError(error)
-    ? new TransientJobError(message)
+  return !error.code || error.code === "40001" || error.code === "40P01"
+    ? new RetryableDatabaseError(message)
     : new Error(message);
 }
 
@@ -235,22 +265,29 @@ function checkOutcomeText(check: StepOutcome): string {
  * - Rapport illisible, ou tronqué (plus de ventes que la borne du contrôle) : la tâche échoue. Un
  *   rapport partiel ne passe pas pour un contrôle complet ; la base, de son côté, n'a alors refermé
  *   aucune alerte (elle ne synchronise que les contrôles actifs d'un rapport tronqué).
- * - Panne passagère de l'une des deux étapes : l'erreur le dit à `runMonitoredCron`, qui reprend la
- *   tâche entière (la relance et le contrôle se rejouent sans dommage).
+ * - Panne passagère de l'une des deux étapes (erreur sans code, `40001`, `40P01`) : l'erreur le dit à
+ *   `runMonitoredCron`, qui reprend la tâche entière (la relance et le contrôle se rejouent sans dommage),
+ *   seulement s'il reste la place d'une tentative entière dans la durée de la route. Sinon c'est une erreur
+ *   ordinaire, enregistrée avec son étape et son code.
  */
-export async function runFactRegistryCheckJob(): Promise<Record<string, unknown>> {
-  const startedAt = Date.now();
-  const reprojection = await runReprojection(startedAt).catch((error: unknown) => ({ error }));
+export async function runFactRegistryCheckJob(
+  run: FactRegistryCheckRun = { startedAt: Date.now(), attempts: 0 },
+): Promise<Record<string, unknown>> {
+  run.attempts += 1;
+  const reprojection = await runReprojection(run.startedAt).catch((error: unknown) => ({ error }));
   const check = await runCheck().catch((error: unknown) => ({ error }));
 
-  if ("error" in reprojection) {
-    const message = `${errorMessage(reprojection.error)} ${checkOutcomeText(check)}`;
-    throw isTransientError(reprojection.error) ||
-      ("error" in check && isTransientError(check.error))
-      ? new TransientJobError(message)
-      : new Error(message);
+  if ("error" in reprojection || "error" in check) {
+    const failed = [reprojection, check].flatMap((step) => ("error" in step ? [step.error] : []));
+    const message =
+      "error" in reprojection
+        ? `${errorMessage(reprojection.error)} ${checkOutcomeText(check)}`
+        : errorMessage(failed[0]);
+    if (failed.some((error) => error instanceof RetryableDatabaseError) && hasRoomForRetry(run)) {
+      throw new TransientJobError(message);
+    }
+    throw new Error(message);
   }
-  if ("error" in check) throw check.error;
   if ("skipped" in check) return { skipped: "migration_pending" };
   return {
     ...check.summary,

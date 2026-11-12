@@ -16,5 +16,7 @@ export const maxDuration = 300;
  * (la tâche classe la panne passagère avant de nettoyer le message de l'erreur).
  */
 export async function GET(request: Request) {
-  return runMonitoredCron(request, "fact-registry-check", () => runFactRegistryCheckJob());
+  // Une seule exécution pour toutes les reprises : la tâche sait ce qu'il lui reste de `maxDuration`.
+  const run = { startedAt: Date.now(), attempts: 0 };
+  return runMonitoredCron(request, "fact-registry-check", () => runFactRegistryCheckJob(run));
 }
