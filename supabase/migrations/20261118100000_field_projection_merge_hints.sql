@@ -28,12 +28,93 @@ set local statement_timeout = '60s';
 --    champ). Un indice à l'état « released » n'apporte que sa mémoire d'écho, avec ses propres échéances.
 -- 3. STABILITÉ. Une valeur déjà en mémoire n'est pas rajoutée : son échéance ne bouge pas. Rappeler la projection
 --    avec le même indice rend « changed » à false (au lot R2a, chaque appel prolongeait l'échéance).
+-- 4. CONTAMINATION JUGÉE À L'ÉGALITÉ EXACTE. « Une colonne porte déjà la valeur de la pièce » se juge sans tolérance :
+--    une annonce à 53,5 m² n'est pas la pièce à 54 m² recopiée par la fusion, et la prendre pour telle remplacerait
+--    une vraie valeur d'annonce par celle de la vente absorbée.
+-- 5. VENTE DE TERRAIN, UNE SEULE DÉFINITION : app_private.sale_is_land_sale(type de bien, portée de la surface,
+--    nature de la surface, held_fields), celle de l'annexe 08 (point 2) et de l'application (src/lib/surface.ts) :
+--    property_type, surface_scope ou app_surface_kind vaut « land ». Au lot R2a la projection ne lisait pas la
+--    nature de la surface, que la fonction de décision lisait : une maison dont l'annonce dit « terrain » pour la
+--    nature était refusée à la décision et aurait été tenue par la projection. Quand la surface est tenue, la
+--    projection a écrit « built » dans app_surface_kind : la nature lue est alors celle de l'annonce, gardée dans
+--    le bloc « listing » de l'entrée. La projection reste donc stable d'un passage à l'autre. La fonction sert à
+--    la projection, à la fonction de décision (20261118100100) et au contrôle quotidien (20261118100300).
+-- 6. PIÈCE REPORTÉE PAR UNE FUSION : évènement « merge_carried ». Quand la projection pose sur une vente une pièce
+--    dont la décision nomme une AUTRE vente (une vente absorbée), elle journalise, en plus de projection_held, un
+--    évènement merge_carried : valeur posée, décision, et vente d'origine dans incoming_value
+--    ({"from_sale_id": …}). Le contrôle quotidien les compte sur 24 heures.
+--    La contrainte de la colonne event est recréée avec « merge_carried » et « drift_reprojected » (relance
+--    planifiée, 20261118100300), par la méthode de 20261117100100.
 --
--- Verrous : remplacement d'une fonction. Aucun verrou sur auction_sales ni sur auction_fact_claims. Possible
--- pendant un import.
+-- Verrous : ACCESS EXCLUSIVE bref sur public.auction_sale_field_hold_events, à la première application seulement
+-- (table vide en production : le contrôle de la contrainte est immédiat ; seuls la retenue et la projection y
+-- écrivent, pour une vente du registre), sous un lock_timeout de 2 s. Puis remplacement de fonctions. Aucun verrou
+-- sur auction_sales ni sur auction_fact_claims. Possible pendant un import.
 --
 -- Retour arrière, par une nouvelle migration : réappliquer la définition de app_private.project_sale_fields de
--- 20261117100200 (après le retour arrière de 20261118100200, qui est son seul appelant avec un indice).
+-- 20261117100200 (après le retour arrière de 20261118100200, qui est son seul appelant avec un indice), puis
+-- supprimer app_private.sale_is_land_sale(text, text, text, jsonb). Les deux valeurs d'évènement restent admises
+-- par la contrainte (un journal en ajout seul ne perd pas une valeur écrite).
+
+-- Évènements merge_carried et drift_reprojected -----------------------------------------------------------------------
+set local lock_timeout = '2s';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_catalog.pg_constraint constraint_row
+    where constraint_row.conrelid = 'public.auction_sale_field_hold_events'::regclass
+      and constraint_row.conname = 'auction_sale_field_hold_events_event_check'
+      and pg_catalog.pg_get_constraintdef(constraint_row.oid) like '%drift_reprojected%'
+      and pg_catalog.pg_get_constraintdef(constraint_row.oid) like '%merge_carried%'
+  ) then
+    alter table public.auction_sale_field_hold_events
+      drop constraint if exists auction_sale_field_hold_events_event_check;
+    alter table public.auction_sale_field_hold_events
+      add constraint auction_sale_field_hold_events_event_check check (
+        event in (
+          'listing_changed_kept', 'listing_changed_released', 'projection_held', 'projection_released',
+          'projection_blocked', 'conflicted', 'echo_suppressed', 'drift_reprojected', 'merge_carried'
+        )
+      );
+  end if;
+end;
+$$;
+
+comment on table public.auction_sale_field_hold_events is
+  'Registre des pièces : file de relecture en ajout seul des champs tenus (l''annonce a changé sur un champ tenu, pièce posée, retirée ou refusée par la fiche, contradiction, retour écarté d''une ancienne valeur tenue, pièce reportée par une fusion, projection réappliquée par la tâche planifiée). Valeurs de champs seulement (occupation : vacant, occupied ou rented) : ni extrait, ni email, ni nom.';
+
+-- Vente de terrain : une seule définition -----------------------------------------------------------------------------
+create or replace function app_private.sale_is_land_sale(
+  p_property_type text,
+  p_surface_scope text,
+  p_app_surface_kind text,
+  p_held_fields jsonb
+)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(
+    p_property_type = 'land'
+      or p_surface_scope = 'land'
+      or case
+        -- Surface tenue : la colonne porte « built », écrit par la projection ; la nature de l'annonce est dans
+        -- le bloc « listing » de l'entrée.
+        when p_held_fields #>> '{property.surface_m2,state}' in ('held', 'conflicted')
+          then p_held_fields #>> '{property.surface_m2,listing,app_surface_kind}'
+        else p_app_surface_kind
+      end = 'land',
+    false
+  );
+$$;
+
+comment on function app_private.sale_is_land_sale(text, text, text, jsonb) is
+  'Registre des pièces : la vente est-elle un terrain (type de bien, portée ou nature de la surface à « land ») ? Quand la surface est tenue, la nature lue est celle de l''annonce (bloc listing de l''entrée). Seule définition, pour la décision, la projection et le contrôle quotidien.';
+
+revoke all on function app_private.sale_is_land_sale(text, text, text, jsonb)
+  from public, anon, authenticated, service_role;
 
 create or replace function app_private.project_sale_fields(
   p_sale_id uuid,
@@ -59,6 +140,8 @@ declare
   v_has_winner boolean;
   v_winner_claim_id uuid;
   v_winner_decision_id uuid;
+  -- Vente que nomme la décision gagnante : une autre vente que celle-ci après une fusion.
+  v_winner_sale_id uuid;
   v_winner_source_kind text;
   v_winner_rank smallint;
   v_winner_received_at timestamptz;
@@ -81,8 +164,8 @@ declare
   v_hint jsonb;
   v_hint_echo jsonb;
   -- Indice de fusion : v_hint_holds, la vente absorbée tenait le champ ; v_hint_listing, sa valeur d'annonce (colonnes
-  -- du champ seulement) ; v_hint_contaminated, une colonne de valeur de cette vente porte déjà la valeur ou un écho de
-  -- l'indice (la fusion a écrit la vente conservée avant de supprimer l'absorbée) ; v_merge_release, le champ est
+  -- du champ seulement) ; v_hint_contaminated, une colonne de valeur de cette vente porte déjà, exactement, la valeur
+  -- ou un écho de l'indice (la fusion a écrit la vente conservée avant de supprimer l'absorbée) ; v_merge_release, le champ est
   -- libéré au nom de l'indice (aucune pièce ne le prend).
   v_hint_holds boolean;
   v_hint_listing jsonb;
@@ -161,7 +244,9 @@ begin
   if not found then
     raise exception using errcode = 'P0002', message = 'Auction sale not found.';
   end if;
-  v_land_sale := coalesce(v_sale.property_type = 'land' or v_sale.surface_scope = 'land', false);
+  v_land_sale := app_private.sale_is_land_sale(
+    v_sale.property_type, v_sale.surface_scope, v_sale.app_surface_kind, v_sale.held_fields
+  );
 
   t_surface_m2 := v_sale.surface_m2;
   t_app_surface_m2 := v_sale.app_surface_m2;
@@ -198,6 +283,7 @@ begin
     v_has_winner := false;
     v_winner_claim_id := null;
     v_winner_decision_id := null;
+    v_winner_sale_id := null;
     v_winner_source_kind := null;
     v_winner_rank := null;
     v_winner_received_at := null;
@@ -266,9 +352,9 @@ begin
             union all
             select to_jsonb(v_sale.surface_m2) where v_field.field_key = 'property.surface_m2'
           ) displayed
+          -- Égalité exacte (tolérances nulles) : une valeur proche est une autre valeur d'annonce.
           where app_private.sale_field_incoming_class(
-            v_field.field_key, displayed.value, v_hint -> 'value', null, v_hint_echo,
-            v_field.abs_tolerance, v_field.rel_tolerance
+            v_field.field_key, displayed.value, v_hint -> 'value', null, v_hint_echo, 0, 0
           ) in ('held', 'echo')
         );
       end if;
@@ -296,6 +382,7 @@ begin
       )
       select
         latest.id as decision_id,
+        latest.sale_id as decision_sale_id,
         latest.claim_id,
         latest.decision,
         latest.reason_code,
@@ -388,6 +475,7 @@ begin
         v_has_winner := true;
         v_winner_claim_id := v_candidate.claim_id;
         v_winner_decision_id := v_candidate.decision_id;
+        v_winner_sale_id := v_candidate.decision_sale_id;
         v_winner_source_kind := v_candidate.source_kind;
         v_winner_rank := v_candidate.rank;
         v_winner_received_at := v_candidate.received_at;
@@ -589,6 +677,14 @@ begin
           'field_key', v_field.field_key, 'event', 'projection_held', 'held_value', v_winner_value,
           'listing_value', v_listing_value, 'decision_id', v_winner_decision_id
         )));
+        -- Pièce reportée par une fusion : sa décision nomme une vente absorbée.
+        if v_winner_sale_id is distinct from p_sale_id then
+          v_events := v_events || jsonb_build_array(jsonb_build_object(
+            'field_key', v_field.field_key, 'event', 'merge_carried', 'held_value', v_winner_value,
+            'incoming_value', jsonb_build_object('from_sale_id', v_winner_sale_id),
+            'decision_id', v_winner_decision_id
+          ));
+        end if;
       end if;
     elsif v_current is not null then
       -- 6. La pièce qui tenait le champ n'est plus acceptée et aucune autre ne la remplace (plus de pièce, des
