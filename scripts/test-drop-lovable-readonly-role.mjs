@@ -7,7 +7,8 @@
 // privilège par défaut), puis exécute le fichier de migration lui-même, sans en recopier le SQL, et vérifie
 // qu'il ne reste rien du rôle. Runbook : docs/runbooks/suppression-role-lovable.md.
 //
-// Il refuse toute base qui n'est pas sur la machine locale. À retirer, avec son étape de CI, une fois la
+// Il refuse toute base qui n'est pas sur la machine locale, et toute base où le rôle de connexion est
+// superutilisateur ou où supautils n'est pas chargé (la preuve n'y vaudrait rien). À retirer, avec son étape de CI, une fois la
 // migration appliquée en production : il n'a alors plus rien à prouver.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -18,19 +19,6 @@ import postgres from "postgres";
 const ROLE = "lovable_readonly";
 const databaseUrl =
   process.env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-
-let hostname;
-try {
-  hostname = new URL(databaseUrl).hostname;
-} catch {
-  hostname = "";
-}
-if (!["127.0.0.1", "localhost", "[::1]"].includes(hostname)) {
-  console.error(
-    "[role-drop-test] Refusé : ce test crée puis supprime un rôle, il ne tourne que sur une base locale (127.0.0.1, localhost ou ::1).",
-  );
-  process.exit(1);
-}
 
 const migrationsDirectory = join(
   dirname(dirname(fileURLToPath(import.meta.url))),
@@ -48,7 +36,21 @@ if (migrationFiles.length !== 1) {
 }
 const migration = readFileSync(join(migrationsDirectory, migrationFiles[0]), "utf8");
 
+// Le client ne se connecte qu'à la première requête. La garde lit les hôtes que le pilote a retenus, et non
+// ceux qu'un autre analyseur d'URL croirait lire : `u@distant,x:1@127.0.0.1` se lit `127.0.0.1` par `new URL`,
+// alors que le pilote se connecterait à `distant`. Aucun socket Unix non plus.
 const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
+const hosts = [sql.options.host].flat();
+if (
+  sql.options.path ||
+  hosts.length === 0 ||
+  !hosts.every((host) => ["127.0.0.1", "localhost", "::1"].includes(host))
+) {
+  console.error(
+    "[role-drop-test] Refusé : ce test crée puis supprime un rôle, il ne tourne que sur une base locale (127.0.0.1, localhost ou ::1).",
+  );
+  process.exit(1);
+}
 
 // Ce qui nomme encore le rôle, par son nom ou par son identifiant resté sans rôle.
 const leftovers = (roleOid) => sql`
@@ -72,6 +74,12 @@ try {
       from pg_catalog.pg_roles r
      where r.rolname = current_user
   `;
+  // La preuve ne vaut que sous le régime de la production : un rôle non superutilisateur, sous supautils.
+  if (context.superuser !== false || context.supautils_settings === 0) {
+    throw new Error(
+      `cette base ne ressemble pas à la production : la preuve ne vaut pas (${JSON.stringify(context)})`,
+    );
+  }
   if ((await leftovers(0))[0].role !== 0) {
     throw new Error(`le rôle ${ROLE} existe déjà dans cette base : le test n'y touche pas.`);
   }

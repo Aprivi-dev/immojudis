@@ -32,12 +32,15 @@ postérieur (`npm run check:migrations` le vérifie).
 - PostgreSQL 17 sous la pile Supabase locale (extension `supautils`, `postgres` non superutilisateur) : l'étape
   « Drop the lovable_readonly role when it exists » du job CI « Supabase migrations + pgTAP »
   (`npm run test:db-role-drop`) crée le rôle, exécute le fichier de migration lui-même et vérifie qu'il ne reste
-  rien. **Ne pas appliquer en production tant que cette étape n'est pas verte sur le commit de `main`.** Sa
-  sortie donne la version, le rôle qui applique et s'il est superutilisateur : vérifier qu'elle dit
-  `"superuser":false` et un nombre non nul de réglages `supautils`, sinon la preuve ne vaut pas pour la
-  production.
-- Ce que la CI ne reproduit pas : le donneur de l'appartenance (`supabase_admin` en production) et le volume
-  (206 objets).
+  rien. Elle échoue d'elle-même si le rôle qui applique est superutilisateur ou si `supautils` n'est pas
+  chargé. **Ne pas appliquer en production tant que cette étape n'est pas verte sur le commit de `main`.**
+  Résultat sur le commit `e7ff3980` : verte, PostgreSQL 17.6, `postgres` non superutilisateur avec
+  `CREATEROLE`, 18 réglages `supautils`, 6 dépendances et 1 appartenance avant, zéro après.
+- Portée de cette preuve : elle exécute le fichier brut, alors que la production passe par
+  `scripts/apply-supabase-migrations.mjs`, qui retire `begin` et `commit` et ajoute l'inscription à
+  l'historique dans la même transaction (ce chemin-là n'a tourné que sur la base PostgreSQL 16 jetable). Elle
+  ne couvre ni la version 17.11, ni le donneur de l'appartenance (`supabase_admin` en production), ni le volume
+  de 206 objets, ni les réglages `supautils` de la production.
 
 ## Avant : mesures en lecture seule
 

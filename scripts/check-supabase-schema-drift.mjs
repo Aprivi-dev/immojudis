@@ -38,7 +38,7 @@ if (remote) {
   } catch {
     // The error of the URL parser quotes the whole value, password included: it is not printed.
     console.error(
-      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL valide. Sa valeur n'est pas affichée.",
+      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL Postgres valide (postgres:// ou postgresql://, avec un hôte). Sa valeur n'est pas affichée.",
     );
     process.exit(1);
   }
@@ -183,6 +183,10 @@ function firstFilledEnv(...values) {
 
 function withMaintenanceSessionSettings(databaseUrl) {
   const url = new URL(databaseUrl);
+  // `postgresql:user:password@host/db` (no `//`) and `https://…` are valid URLs, and are not a database.
+  if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname) {
+    throw new Error("Not a Postgres connection URL.");
+  }
   if (url.hostname.endsWith(".pooler.supabase.com")) url.port = "5432";
   url.searchParams.set("sslmode", "verify-full");
   url.searchParams.set("connect_timeout", process.env.PGCONNECT_TIMEOUT || "600");

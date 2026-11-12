@@ -340,7 +340,9 @@ jobs:
       # Le rejeu des migrations ne parcourt jamais le chemin « rôle présent » de la migration
       # 20261117110000 (le rôle n'existe pas ici). Ce test crée le rôle sur la base locale, exécute le
       # fichier de migration lui-même et vérifie qu'il ne reste rien. À retirer une fois la migration
-      # appliquée en production (docs/runbooks/suppression-role-lovable.md).
+      # appliquée en production (docs/runbooks/suppression-role-lovable.md). Doit rester APRÈS « Run
+      # database tests » : les tests pgTAP lisent la base telle que les migrations la laissent, et un
+      # échec ici laisserait le rôle dans la base.
       - name: Drop the lovable_readonly role when it exists (migration 20261117110000)
         run: npm run test:db-role-drop
       - name: Check public catalogue over HTTP
