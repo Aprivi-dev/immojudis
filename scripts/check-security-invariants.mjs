@@ -549,6 +549,22 @@ if (
   failures.push("function default privileges still grant EXECUTE to PUBLIC");
 }
 
+// The role `lovable_readonly` (read access for a tool that is no longer used) is dropped by the migration
+// below. Five earlier migrations grant it EXECUTE "if the role exists"; they are applied history and stay
+// as they are. No later migration may name the role, comments included: a grant written "if the role
+// exists" would silently give access the day a role of that name is created again.
+const lovableRoleDropMigration = "20261118100000_drop_lovable_readonly_role.sql";
+if (!/drop\s+role\b/i.test(migrationSources.get(lovableRoleDropMigration) ?? "")) {
+  failures.push(`${lovableRoleDropMigration} must exist and drop the role lovable_readonly`);
+}
+for (const [name, source] of migrationSources) {
+  if (name > lovableRoleDropMigration && /lovable_readonly/i.test(source)) {
+    failures.push(
+      `${name} names the role lovable_readonly, dropped by ${lovableRoleDropMigration}`,
+    );
+  }
+}
+
 // P4-11: approved evidence is served through signed URLs from a private bucket.
 const privateBucketMigration = await readFile(
   new URL(
@@ -2482,6 +2498,7 @@ console.log(
       "competent-court-reconciliation-exact-evidence",
       "auction-sales-column-grants",
       "function-default-privileges",
+      "lovable-readonly-role-stays-dropped",
       "approved-evidence-private-bucket",
       "raw-columns-not-revoked-without-definer-view",
       "personal-data-filter-write-boundary",

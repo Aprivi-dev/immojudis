@@ -604,6 +604,51 @@ describe("invariants de sécurité : marché local de la règle pepite-v1.2", ()
   });
 });
 
+describe("invariants de sécurité : le rôle lovable_readonly reste supprimé", () => {
+  const dropMigration = "20261118100000_drop_lovable_readonly_role.sql";
+  const conditionalGrant = `
+do $$
+begin
+  if exists (select 1 from pg_catalog.pg_roles where rolname = 'lovable_readonly') then
+    execute 'grant select on public.auction_sales to lovable_readonly';
+  end if;
+end $$;
+`;
+
+  it("refuse une migration postérieure qui nomme le rôle, même sous condition d'existence", () => {
+    const result = runInvariants({ "99990101000000_regrant.sql": conditionalGrant });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `99990101000000_regrant.sql names the role lovable_readonly, dropped by ${dropMigration}`,
+    );
+  });
+
+  it("refuse le nom du rôle dans un simple commentaire d'une migration postérieure", () => {
+    const result = runInvariants({
+      "99990101000000_comment.sql": "-- comme pour LOVABLE_READONLY\nselect 1;",
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("99990101000000_comment.sql names the role lovable_readonly");
+  });
+
+  it("ne reproche rien aux migrations antérieures ni à une migration postérieure qui ne le nomme pas", () => {
+    const result = runInvariants({
+      "20261118099999_before.sql": "-- droits de lovable_readonly\nselect 1;",
+      "99990101000000_after.sql": "select 1;",
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+  });
+
+  it("refuse le dépôt sans la migration de suppression", () => {
+    const result = runInvariants({}, [dropMigration]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `${dropMigration} must exist and drop the role lovable_readonly`,
+    );
+  });
+});
+
 describe("invariants de sécurité : surfaces ajoutées après le 03/11/2026", () => {
   const source = (path) => readFileSync(join(repo, path), "utf8");
   const table = (name, extra = "") => `
