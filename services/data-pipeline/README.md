@@ -196,12 +196,18 @@ Trois conditions, par groupe :
 3. **La source ne vient pas de la publier** : une fiche réellement relue qui donne
    la valeur n'est jamais retenue, même si la base a déjà rendu la même valeur.
    « Ce que la source publie » se lit par la règle de la restauration des pièces
-   (`pdf_fact_scope._pdf_source_reader` : l'instantané `source_factual_snapshot` et
+   (`pdf_fact_scope.pdf_source_reader` : l'instantané `source_factual_snapshot` et
    son contexte, relus par `normalize_sale`). La valeur peut donc venir d'une clé de
    l'instantané comme du texte de la page (surface, pièces ou occupation lues dans
    la description, visites lues dans un bloc de la source).
 
 Un faux écho fige une donnée périmée : dans le doute, la garde laisse écrire.
+
+Revers de ce compromis, connu : pour une fiche relue dont la page est muette sur le
+champ, un vrai écho venu d'une colonne voisine repasse. Deux cas : une surface de 54 m² déduite de l'habitable relu en base, alors
+que la base est passée à 60 m² ; un terrain de 300 m² relu en base et repris comme
+surface. La garde ne peut pas les distinguer d'une valeur nouvelle de la page. La
+même vente, fiche non relue, est bien retenue.
 
 Ce que la garde note d'une écriture :
 
@@ -218,6 +224,11 @@ Ce que la garde note d'une écriture :
 - les écritures en attente de toutes les portées ouvertes sont visibles des lectures
   sous verrou : un autre fil qui relit une ligne entre la validation en base et la
   sortie de la portée n'y voit pas un mouvement ;
+- deux cas théoriques, tous deux dans le sens prudent (la garde laisse écrire, ou
+  retient une valeur relue, jamais l'inverse) : des portées imbriquées sorties dans
+  le désordre versent leurs notes dans une portée qui n'est plus la bonne ; un autre
+  écrivain qui écrit exactement l'état en attente d'une portée ensuite annulée n'est
+  pas vu comme un mouvement tant que cette portée est ouverte ;
 - c'est celui qui valide ou annule la transaction qui ouvre la portée
   (`base_reads.written_scope()`, autour de la transaction) : `upsert_sales_to_supabase`
   pour sa propre transaction, `source_detail.publish_source_revision`,
@@ -251,7 +262,7 @@ Hors périmètre de la garde, à connaître :
   correction dans ce lot ; suite possible : relancer `normalize_asset_features` sur
   les seules ventes que la garde a modifiées, après la résolution d'identité ;
 - **annonce Licitor à plusieurs lots dont le lot n'est plus désigné** : la lecture de
-  la source s'y limite à la clé de l'instantané (règle de `_pdf_source_reader`). Une
+  la source s'y limite à la clé de l'instantané (règle de `pdf_source_reader`). Une
   valeur que la page ne donne que dans son texte n'y est pas reconnue comme publiée
   et peut être retenue à tort si la base a porté la même valeur dans la même
   colonne pendant le passage ;
@@ -398,8 +409,22 @@ Ce lot n'est pas sans effet tant qu'aucune vente n'est tenue. Dès sa mise en li
    n'émet aucune observation de cette version : rien n'y distingue ce que l'annonce a
    publié de ce que la collecte a relu en base, et une seule observation de version 3
    masquerait toutes ses candidates de version 2. Celles-ci restent donc visibles
-   jusqu'à la prochaine relecture de la fiche. **Coût** : d'ici là, les faits d'un
-   document nouveau ne sont pas enregistrés pour ces ventes.
+   jusqu'à la prochaine relecture de la fiche. La règle vaut aussi pour un instantané
+   qui est celui d'une autre fiche, ou qui ne liste que des champs repris de la ligne
+   stockée. **Coût** : d'ici là, les faits d'un document nouveau ne sont pas
+   enregistrés pour ces ventes.
+   - **Cela peut être définitif** pour une vente sortie des listes ou passée (plus
+     jamais relue), pour une fiche en échec permanent, et pour la ligne canonique
+     d'une fusion restée sans instantané : celle-là fait taire aussi l'autre source
+     de la vente. S'y ajoute la relecture de fiche à empreinte identique
+     (`source_detail.prepare_source_revision`, branche « inchangée ») : elle repart de
+     la ligne stockée et ne garde pas l'instantané qu'elle vient de relire. Suite
+     possible : y poser l'instantané relu quand la ligne stockée n'en a pas.
+   - Une vente nouvelle dont la fiche échoue n'émet rien non plus ; elle est relue au
+     passage suivant.
+   - Effet favorable : sans cette règle, `scripts/backfill_fact_claims.py` aurait
+     émis des observations de version 3 pour tout le catalogue passé et masqué ses
+     observations de version 2.
 
 Comptage du 12/11/2026 en production (lecture seule, vers 12:00 UTC, requête
 ci-dessous, avant la règle du point 6), en couples (vente, fait) des ventes à venir
@@ -548,9 +573,17 @@ rejouées ; ils écrivent dans cette base et refusent toute base non locale. Le 
 `PIPELINE_REGISTRY_DB_REQUIRED=1` : l'absence de base y est un échec, pas un saut.
 
 ```bash
+PIPELINE_REGISTRY_DB_SERVER_ADDR="$(docker inspect --format \
+  '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' supabase_db_<projet>)" \
 PIPELINE_REGISTRY_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
   python -m pytest -s tests/test_base_echo_registry_postgres.py
 ```
+
+Ces tests n'acceptent qu'un hôte de connexion en bouclage, sans `PGHOSTADDR` ni
+`PGSERVICE`, et vérifient avant toute écriture l'adresse que le serveur dit avoir :
+bouclage, ou exactement `PIPELINE_REGISTRY_DB_SERVER_ADDR` (l'adresse du conteneur
+d'une base locale jointe par son port publié ; inutile pour un PostgreSQL local hors
+conteneur). Aucune plage d'adresses n'est admise.
 
 Le pipeline conserve `auction_sales` comme table de compatibilité historique,
 mais alimente aussi le modèle produit normalisé demandé pour l'offre Pro :
