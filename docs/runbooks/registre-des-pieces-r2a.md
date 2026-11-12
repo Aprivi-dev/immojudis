@@ -424,6 +424,15 @@ jetable : une pièce « 3 pièces » bloquée parce que la fiche compte 6 chambr
 lève au passage suivant. Ce n'est pas une corruption : la fiche montre encore l'annonce. La réponse (qui relance
 la projection) est une question ouverte du lot R2b, voir la note d'architecture.
 
+## Garde d'écho de la collecte : où lire son compteur
+
+La collecte ne réécrit pas une valeur qu'elle n'a fait que relire quand la base a bougé pendant le passage
+(`services/data-pipeline/README.md`, « Valeur relue en base : la garde d'écho »). Son compteur est
+`base_echo_suppressed`, dans `auction_runs.summary -> 'timings'` de chaque passage ; les 50 premiers couples
+(vente, groupe) sont dans `auction_runs.summary -> 'base_echo_suppressed_sample'`, sans valeur. Un compteur
+supérieur à zéro est normal (la file des documents écrit en parallèle) : ce n'est pas une alerte. L'indicateur
+d'un chemin que cette garde a oublié reste l'évènement `echo_suppressed` de la base.
+
 ## À dire dans la description de la PR
 
 À reprendre tel quel, pour que le relecteur ne découvre pas un `grant` à `authenticated` dans un lot annoncé
