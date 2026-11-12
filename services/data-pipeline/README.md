@@ -34,7 +34,6 @@ La source prioritaire est Avoventes. Licitor est collecté normalement (source d
     `coverage.fallback.incomplete_reasons`.
   - `src/sources/encheres_immobilieres.py` : scraper Enchères Immobilières via les données Next publiques.
   - `src/sources/notaires.py` : scraper Immobilier.notaires.fr via l'API publique des annonces VAE/VNI.
-  - `src/sources/cabinet_generic.py` : point d'extension pour les pages de cabinets locaux.
 
 ## Installation
 

@@ -217,11 +217,6 @@ def apply_catalogue_readiness(sale: AuctionSale) -> CatalogueReadiness:
     return result
 
 
-def calculate_catalogue_readiness(sale: AuctionSale) -> CatalogueReadiness:
-    """Backward-friendly public entry point that also stores the result."""
-    return apply_catalogue_readiness(sale)
-
-
 def _status_for(score: int, blockers: list[str], confidence: Decimal | None) -> str:
     if score < NEEDS_ENRICHMENT_THRESHOLD:
         return "internal_only"

@@ -22,6 +22,8 @@ from src.catalogue_readiness import apply_catalogue_readiness
 from src.collection_evidence import identity as collection_identity
 from src.collection_evidence import record_items, record_sale_decisions
 from src.config import (
+    PROCESS_ISOLATED_SOURCES,
+    SOURCE_NAMES,
     EncheresPubliquesAccessNotAuthorized,
     encheres_publiques_access_enabled,
     load_settings,
@@ -130,19 +132,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )
 LOGGER = logging.getLogger(__name__)
-SOURCE_NAMES = (
-    "avoventes",
-    "licitor",
-    "vench",
-    "info_encheres",
-    "encheres_publiques",
-    "petites_affiches",
-    "cessions_etat",
-    "agrasc",
-    "encheres_immobilieres",
-    "notaires",
-)
-
 KNOWN_UNCHANGED_BACKFILL_FIELDS = (
     "source_urls",
     "tribunal",
@@ -1515,9 +1504,7 @@ def _run_scraper(
     result.
     """
 
-    isolated_sources = settings.get(
-        "source_process_isolation_sources", ("vench", "avoventes", "petites_affiches")
-    )
+    isolated_sources = settings.get("source_process_isolation_sources", PROCESS_ISOLATED_SOURCES)
     if isinstance(isolated_sources, str):
         isolated_sources = tuple(
             source.strip().lower() for source in isolated_sources.split(",") if source.strip()

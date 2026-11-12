@@ -2781,3 +2781,21 @@ def test_partial_manifest_without_an_advancing_pdf_job_waits_six_hours(monkeypat
     assert "manifest is still partial" in str(error)
     wait = (error.next_attempt_at - datetime.now(UTC)).total_seconds()
     assert 5.9 * 3600 < wait <= 6 * 3600
+
+
+def test_a_job_is_finished_only_for_the_attempt_this_worker_claimed(monkeypatch) -> None:
+    finished: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "finish_auction_enrichment_job_in_supabase",
+        lambda job_id, **kwargs: finished.append((job_id, kwargs)) or True,
+    )
+
+    claimed = {"id": "job-1", "attempt_count": "2", "locked_at": "2026-11-12T08:00:00+00:00"}
+    assert queued_runner._finish_job(claimed, succeeded=True, attempt_count=9) is True
+    assert queued_runner._finish_job({"id": "job-2"}, succeeded=False, error_message="boom") is True
+
+    assert finished == [
+        ("job-1", {"succeeded": True, "attempt_count": 2, "locked_at": "2026-11-12T08:00:00+00:00"}),
+        ("job-2", {"succeeded": False, "error_message": "boom"}),
+    ]

@@ -83,10 +83,6 @@ def cessions_tls_context() -> ssl.SSLContext:
     return context
 
 
-def scrape_cessions_etat_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_cessions_etat_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_cessions_etat_aquitaine_result(
     max_pages: int | None = None, known: dict[str, str] | None = None
 ) -> ScrapeResult:

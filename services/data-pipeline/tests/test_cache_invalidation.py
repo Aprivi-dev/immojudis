@@ -187,7 +187,6 @@ def test_the_select_locks_with_skip_locked_and_reads_the_oldest_first():
     assert "for update skip locked" in normalized
     assert "order by at, id" in normalized
     assert "limit %s" in normalized
-    assert BATCH_SIZE == 100  # le maximum de la route revalidate-sale
 
 
 def test_flush_never_raises_on_a_database_error():

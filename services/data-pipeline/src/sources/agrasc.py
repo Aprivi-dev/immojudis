@@ -67,10 +67,6 @@ def agrasc_tls_context() -> ssl.SSLContext:
     return context
 
 
-def scrape_agrasc_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_agrasc_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_agrasc_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
     settings = load_settings()
     client = PoliteHttpClient(

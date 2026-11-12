@@ -3,8 +3,10 @@
 Dernier recours de ``infer_missing_department`` quand ni le géocodage ni le code postal ne donnent le
 département : une annonce de Petites Affiches peut n'avoir que la ville. Un nom qui désigne plusieurs
 communes (« Saint-Martin », « La Chapelle ») ne donne rien. La table est celle que remplit
-``python -m src.reference_data communes`` ; elle est lue une fois par processus, en lecture seule, et son
-absence (pas de ``SUPABASE_DB_URL``, base injoignable) laisse simplement le département vide.
+``python -m src.reference_data communes`` ; elle est lue une fois par processus, en lecture seule. Sans
+``SUPABASE_DB_URL``, le département reste vide. Une lecture en échec est journalisée en erreur et le repli reste
+coupé pour le reste du processus : il ne fait pas échouer la collecte, la file ou le recalcul qui l'appellent
+(``fill_tribunal``, une fois par vente).
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ _INDEX: dict[str, str] | None = None
 
 
 def load_unique_commune_departments() -> dict[str, str]:
-    """``{nom normalisé: département}`` des noms portés par une seule commune ; vide si la base manque."""
+    """``{nom normalisé: département}`` des noms portés par une seule commune ; vide sans ``SUPABASE_DB_URL``."""
     db_url = str(load_settings().get("supabase_db_url") or "")
     if not db_url:
         return {}
@@ -61,7 +63,7 @@ def _index() -> dict[str, str]:
         if _INDEX is None:
             try:
                 _INDEX = load_unique_commune_departments()
-            except Exception as exc:  # une table de référence absente ne doit jamais bloquer une collecte
-                LOGGER.warning("reference_communes unavailable, no department inferred from the city name: %s", exc)
+            except Exception as exc:  # un repli facultatif ne fait pas échouer la collecte
+                LOGGER.error("reference_communes unreadable, no department inferred from the city name: %s", exc)
                 _INDEX = {}
         return _INDEX

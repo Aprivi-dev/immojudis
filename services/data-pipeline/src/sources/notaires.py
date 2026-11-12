@@ -81,10 +81,6 @@ PROPERTY_BLOCK_KEYS = {
 }
 
 
-def scrape_notaires_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_notaires_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_notaires_aquitaine_result(max_pages: int | None = None, known: dict[str, str] | None = None) -> ScrapeResult:
     settings = load_settings()
     client = PoliteHttpClient(

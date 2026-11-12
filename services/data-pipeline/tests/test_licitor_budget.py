@@ -165,16 +165,15 @@ def test_the_scheduled_run_gives_licitor_a_budget_below_its_hard_kill(monkeypatc
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
         lambda command, **kwargs: subprocess_calls.append((command, kwargs)) or SimpleNamespace(returncode=0),
     )
 
-    autonomous_runner.execute(run_id)
+    autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb()))
 
     kwargs = subprocess_calls[0][1]
     assert kwargs["timeout"] == 50 * 60

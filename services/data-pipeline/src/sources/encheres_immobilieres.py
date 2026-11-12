@@ -101,10 +101,6 @@ MONTH_NUMBERS = {
 }
 
 
-def scrape_encheres_immobilieres_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_encheres_immobilieres_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_encheres_immobilieres_aquitaine_result(
     max_pages: int | None = None,
     known: dict[str, str] | None = None,

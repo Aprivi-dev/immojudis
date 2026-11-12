@@ -1,4 +1,7 @@
-"""Commune name normalisation, mirrored by ``src/lib/commune-names.ts``."""
+"""Commune name normalisation, mirrored by ``src/lib/commune-names.ts``.
+
+Shared cases: ``tests/fixtures/commune_names_cases.json``.
+"""
 
 from __future__ import annotations
 

@@ -64,10 +64,9 @@ class _Db:
 def _finish(monkeypatch, *, source="agrasc", status="succeeded", coverage, decisions=None, **db_options):
     db = _Db(source=source, status=status, coverage=coverage, decisions=decisions or {"published": 5}, **db_options)
     presence, withdrawals = [], []
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda url: nullcontext(db))
     monkeypatch.setattr(autonomous_runner, "record_source_presence", lambda *args: presence.append(args[-1]))
     monkeypatch.setattr(autonomous_runner, "withdraw_missing_sales", lambda *a, **k: withdrawals.append(a) or None)
-    autonomous_runner.finish_source("db", "run-1")
+    autonomous_runner.finish_source("db", "run-1", connect=lambda url: nullcontext(db))
     return db, presence, withdrawals
 
 

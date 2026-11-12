@@ -39,9 +39,9 @@ def _migration(path: Path) -> str:
 
 
 def _test_root_dsn() -> str:
-    dsn = os.getenv("LLM_TEST_DATABASE_URL") or os.getenv("PIPELINE_TEST_DB_URL")
+    dsn = os.getenv("PIPELINE_TEST_DB_URL")
     if not dsn:
-        pytest.skip("Set LLM_TEST_DATABASE_URL to the disposable local PostgreSQL root")
+        pytest.skip("Set PIPELINE_TEST_DB_URL to the disposable local PostgreSQL root")
     info = conninfo_to_dict(dsn)
     host = str(info.get("host") or "").split(",", 1)[0]
     if host not in LOCAL_TEST_HOSTS:

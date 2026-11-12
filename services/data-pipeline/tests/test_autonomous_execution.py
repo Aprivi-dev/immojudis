@@ -32,16 +32,15 @@ def test_automatic_run_keeps_publication_budget_and_partial_result(
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
         lambda command, **kwargs: subprocess_calls.append((command, kwargs)) or SimpleNamespace(returncode=returncode),
     )
 
-    assert autonomous_runner.execute(run_id) == returncode
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == returncode
     assert subprocess_calls[0][1]["timeout"] == expected_budget
     assert updates[0][2].obj["completion_status"] == expected_completion
     assert updates[0][0] == ("failed" if returncode else "succeeded")
@@ -74,16 +73,15 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
         lambda command, **kwargs: subprocess_calls.append((command, kwargs)) or SimpleNamespace(returncode=0),
     )
 
-    assert autonomous_runner.execute(run_id) == 0
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == 0
     assert updates[0][0] == "succeeded"
     assert updates[0][2].obj["enrichment_jobs_exhausted"] == exhausted
     assert updates[0][2].obj["enrichment_jobs_completed"] == 31
@@ -147,9 +145,8 @@ def test_systemic_worker_failure_keeps_nonzero_code_with_exhausted_signal(monkey
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     commands = []
     monkeypatch.setattr(
         autonomous_runner.subprocess,
@@ -157,7 +154,7 @@ def test_systemic_worker_failure_keeps_nonzero_code_with_exhausted_signal(monkey
         lambda command, **_kwargs: commands.append(command) or SimpleNamespace(returncode=7),
     )
 
-    assert autonomous_runner.execute(run_id) == 7
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == 7
     # A failed worker: neither the document reading nor the address positions run (they wait for the next tick).
     modules = [command[2] for command in commands if len(command) > 2]
     assert "src.document_backlog" not in modules
@@ -195,16 +192,15 @@ def test_exhausted_enrichment_without_completed_job_stays_failed(monkeypatch) ->
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
         lambda _command, **_kwargs: SimpleNamespace(returncode=0),
     )
 
-    assert autonomous_runner.execute(run_id) == 1
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == 1
     assert updates[0][0] == "failed"
     assert updates[0][1].obj["runner"] == [
         "Exhausted enrichment jobs reported without worker progress"
@@ -227,9 +223,8 @@ def test_worker_timeout_remains_failed_and_visible(monkeypatch) -> None:
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
@@ -238,7 +233,7 @@ def test_worker_timeout_remains_failed_and_visible(monkeypatch) -> None:
         ),
     )
 
-    assert autonomous_runner.execute(run_id) == 1
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == 1
     assert updates[0][0] == "failed"
     assert updates[0][1].obj["runner"] == [
         "Execution budget exceeded; committed checkpoints preserved"
@@ -263,9 +258,8 @@ def test_worker_watchdog_exit_is_explained_and_armed_before_the_hard_kill(monkey
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess,
         "run",
@@ -273,7 +267,7 @@ def test_worker_watchdog_exit_is_explained_and_armed_before_the_hard_kill(monkey
         or SimpleNamespace(returncode=autonomous_runner.WATCHDOG_EXIT_CODE),
     )
 
-    assert autonomous_runner.execute(run_id) == autonomous_runner.WATCHDOG_EXIT_CODE
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == autonomous_runner.WATCHDOG_EXIT_CODE
 
     budget = subprocess_calls[0][1]["timeout"]
     watchdog = int(subprocess_calls[0][1]["env"][autonomous_runner.WATCHDOG_ENV])

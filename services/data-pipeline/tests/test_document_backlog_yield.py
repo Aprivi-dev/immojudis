@@ -116,8 +116,7 @@ def test_no_pass_means_no_partial_share() -> None:
 
 
 class _Db:
-    def __init__(self, deployed: bool = True, fail: bool = False) -> None:
-        self.deployed = deployed
+    def __init__(self, fail: Exception | None = None) -> None:
         self.fail = fail
         self.calls: list[tuple[str, tuple]] = []
 
@@ -129,13 +128,9 @@ class _Db:
 
     def execute(self, sql: str, parameters: tuple = ()):
         self.calls.append((sql, parameters))
-        if self.fail:
-            raise RuntimeError("connection reset")
-        self._row = (yield_module.FUNCTION if self.deployed else None,) if "to_regprocedure" in sql else (None,)
+        if self.fail is not None:
+            raise self.fail
         return self
-
-    def fetchone(self):
-        return self._row
 
 
 def _forbidden(_db_url):
@@ -149,7 +144,7 @@ def test_a_low_yield_opens_the_alert_through_the_dedicated_function() -> None:
 
     assert yield_module.sync_low_yield_alert("postgres://x", summary, evaluation, connect=lambda _url: db) == "opened"
 
-    sql, parameters = db.calls[-1]
+    (sql, parameters), = db.calls
     assert sql == "select app_private.sync_documents_backlog_low_yield_alert(%s, %s::jsonb)"
     assert parameters[0] is True
     details = json.loads(parameters[1])
@@ -170,18 +165,23 @@ def test_a_healthy_long_drain_reports_the_condition_clear() -> None:
     assert db.calls[-1][1][0] is False
 
 
-def test_a_database_without_the_function_or_unreachable_never_fails_the_drain() -> None:
+class _UndefinedFunction(Exception):
+    sqlstate = "42883"
+
+
+def test_a_database_error_or_an_unreachable_database_never_fails_the_drain(caplog) -> None:
     summary = _summary(elapsed=2 * HOUR, sales_read=0)
     evaluation = yield_module.evaluate_low_yield(summary)
 
-    missing = _Db(deployed=False)
+    missing = _Db(fail=_UndefinedFunction("function app_private.sync_documents_backlog_low_yield_alert does not exist"))
     assert yield_module.sync_low_yield_alert("postgres://x", summary, evaluation, connect=lambda _url: missing) == (
-        "not_deployed"
-    )
-    assert len(missing.calls) == 1
-    assert yield_module.sync_low_yield_alert("postgres://x", summary, evaluation, connect=lambda _url: _Db(fail=True)) == (
         "error"
     )
+    assert len(missing.calls) == 1
+    assert "alert sync failed (_UndefinedFunction" in caplog.text
+    assert yield_module.sync_low_yield_alert(
+        "postgres://x", summary, evaluation, connect=lambda _url: _Db(fail=RuntimeError("connection reset"))
+    ) == "error"
     assert yield_module.sync_low_yield_alert("", summary, evaluation, connect=_forbidden) == "skipped"
 
 
@@ -199,4 +199,3 @@ def test_the_migration_records_this_key_only_with_the_common_mechanism() -> None
         "revoke all on function app_private.sync_documents_backlog_low_yield_alert(boolean, jsonb, timestamptz)"
         " from public, anon, authenticated, service_role;"
     ) in body
-    assert yield_module.FUNCTION == "app_private.sync_documents_backlog_low_yield_alert(boolean,jsonb,timestamptz)"

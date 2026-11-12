@@ -64,10 +64,6 @@ DETAIL_OVERRIDE_FIELDS = {
 }
 
 
-def scrape_encheres_publiques_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_encheres_publiques_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_encheres_publiques_aquitaine_result(
     max_pages: int | None = None, known: dict[str, str] | None = None
 ) -> ScrapeResult:

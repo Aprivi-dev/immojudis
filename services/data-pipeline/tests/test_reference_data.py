@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 import zipfile
 from datetime import date
 from decimal import Decimal
@@ -14,14 +15,14 @@ from src.reference_data import download as download_module
 from src.reference_data.download import ReferenceDownloadError, validate_reference_url
 from src.reference_data.names import department_from_insee, normalize_commune_name
 
+COMMUNE_NAME_CASES = json.loads(
+    (Path(__file__).parent / "fixtures" / "commune_names_cases.json").read_text(encoding="utf-8")
+)["normalize"]
 
-def test_commune_names_are_normalized_like_the_web_lookup() -> None:
-    assert normalize_commune_name("Saint-Étienne") == "saint etienne"
-    assert normalize_commune_name("ST ETIENNE") == "saint etienne"
-    assert normalize_commune_name("Ste-Foy-lès-Lyon") == "sainte foy les lyon"
-    assert normalize_commune_name("L'Haÿ-les-Roses") == "l hay les roses"
-    assert normalize_commune_name("Fontaine-St-Martin") == "fontaine saint martin"
-    assert normalize_commune_name(None) == ""
+
+@pytest.mark.parametrize("case", COMMUNE_NAME_CASES, ids=lambda case: repr(case["input"]))
+def test_commune_names_are_normalized_like_the_web_lookup(case: dict[str, str | None]) -> None:
+    assert normalize_commune_name(case["input"]) == case["expected"]
 
 
 def test_department_of_corsican_and_overseas_communes() -> None:

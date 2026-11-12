@@ -12,6 +12,9 @@ from src.reviewed_aliases import registry_from_rows
 from src.sources.common import should_fetch_detail
 
 URL = "https://www.vench.fr/vente-165184-une-maison-ondres.html"
+# The autouse fixture replaces both: these tests reach the real loader and switch.
+REAL_LOAD = rejected_listings._load
+REAL_ACTIVE = rejected_listings._active
 NOW = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
 
 
@@ -166,6 +169,63 @@ def test_the_cache_table_is_purged_after_30_days_by_the_loader() -> None:
 
     source = inspect.getsource(rejected_listings)
     assert "purge_rejected_listings" in source
+
+
+class _SqlError(Exception):
+    def __init__(self, sqlstate: str) -> None:
+        super().__init__(sqlstate)
+        self.sqlstate = sqlstate
+
+
+class _FailingDb:
+    """Connection whose cache query fails: the loader never asks whether the table exists."""
+
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def transaction(self):
+        return _Transaction()
+
+    def execute(self, query, params=()):
+        self.statements.append(query)
+        if "rejected_listings" in query:
+            raise _SqlError("42P01")
+
+
+def test_a_failed_cache_read_is_logged_and_the_pages_are_read(monkeypatch, caplog) -> None:
+    db = _FailingDb()
+    monkeypatch.setattr(rejected_listings, "_db_url", lambda: "postgresql://test")
+    monkeypatch.setattr("src.storage.supabase_client.connect", lambda *_args, **_kwargs: db)
+    REAL_LOAD.cache_clear()
+
+    assert REAL_LOAD() == {}
+
+    assert "Rejected listings cache unavailable" in caplog.text
+    assert not any("to_regclass" in statement for statement in db.statements)
+    REAL_LOAD.cache_clear()
+
+
+def test_a_failed_write_never_fails_the_publication_nor_switches_the_cache_off(monkeypatch) -> None:
+    class FailingCursor(_Cursor):
+        def executemany(self, query, rows):
+            super().executemany(query, rows)
+            raise _SqlError("42P01")
+
+    connection = _Connection()
+    connection.cursor = lambda: FailingCursor(connection.calls)
+    monkeypatch.setattr(rejected_listings, "_active", REAL_ACTIVE)
+    monkeypatch.setenv(rejected_listings.ENV, "on")
+
+    assert rejected_listings.remember(connection, [refused()]) == 0
+    assert rejected_listings.remember(connection, [refused()]) == 0
+    assert len(connection.calls) == 2
+    assert REAL_ACTIVE() is True
 
 
 # ------------------------------------------------- clés techniques : jamais écrites en base
