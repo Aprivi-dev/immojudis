@@ -7,7 +7,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  diffToolFailureReport,
   normalizeDiffWithNotes,
+  quoteForeignText,
   runWithTransientRetry,
   verifyConcurrentIndexes,
 } from "./lib/schema-drift.mjs";
@@ -29,7 +31,20 @@ if (!configuredTarget) {
   process.exit(1);
 }
 
-const target = remote ? withMaintenanceSessionSettings(configuredTarget) : configuredTarget;
+let target = configuredTarget;
+if (remote) {
+  try {
+    target = withMaintenanceSessionSettings(configuredTarget);
+  } catch {
+    // The error of the URL parser quotes the whole value, password included: it is not printed.
+    console.error(
+      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL Postgres valide (postgres:// ou postgresql://, avec un hôte). Sa valeur n'est pas affichée.",
+    );
+    process.exit(1);
+  }
+}
+// What must never reach the log, whatever text quotes it.
+const databaseUrls = remote ? [configuredTarget, target] : [];
 
 // The reviewed concurrent indexes are intentionally outside the migration
 // transaction. Verify their physical catalog definitions separately so a
@@ -38,7 +53,10 @@ if (remote) {
   try {
     await verifyConcurrentIndexes(target);
   } catch (error) {
-    console.error(`[schema-drift] ${String(error?.message || error)}`);
+    // The message may come from the database driver: foreign text, masked and quoted.
+    console.error(
+      `[schema-drift] Concurrent index check failed:\n${quoteForeignText(String(error?.message || error), databaseUrls)}`,
+    );
     process.exit(1);
   }
 }
@@ -76,6 +94,8 @@ try {
           PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || "600",
         },
         stdio: ["ignore", "pipe", "pipe"],
+        // Beyond this size the tool is stopped and the run fails with ENOBUFS (reported as such).
+        maxBuffer: 16 * 1024 * 1024,
       },
     );
   };
@@ -93,43 +113,44 @@ try {
   });
 
   if (result.status !== 0) {
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
-    if (result.error) console.error(`[schema-drift] ${result.error.message}`);
-    const message = transient
-      ? `TOOL UNREACHABLE: the diff tool could not connect to the database after ${attempts} attempts. The schema was not compared: this is NOT a schema drift. Re-run the workflow, or run "npm run check:schema-drift -- --remote".`
-      : "DIFF TOOL FAILED: the diff tool exited with an error that is not a connection timeout (not retried). The schema was not compared.";
-    console.error(`[schema-drift] ${message}`);
-    if (process.env.GITHUB_ACTIONS === "true")
-      console.error(
-        `::error title=${transient ? "Schema drift tool unreachable" : "Schema drift tool failed"}::${message}`,
-      );
-    process.exit(result.status ?? 1);
-  }
-
-  const rawDiff = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "";
-  const { diff, unusedReconciledChecks } = normalizeDiffWithNotes(rawDiff);
-  if (remote && unusedReconciledChecks.length) {
-    const notice = `RECONCILED_CHECK_CONSTRAINTS (scripts/lib/schema-drift.mjs) lists ${unusedReconciledChecks.length} constraint(s) with no DROP/ADD pair in this diff: ${unusedReconciledChecks.join(", ")}. Remove the entries once the shadow database image matches the production Postgres minor version.`;
-    console.warn(`[schema-drift] Warning: ${notice}`);
-    if (process.env.GITHUB_ACTIONS === "true")
-      console.warn(`::warning title=Stale schema-drift exceptions::${notice}`);
-  }
-  if (diff) {
+    // One write, then a natural exit: `process.exit` right after a long write to a pipe dropped the
+    // end of the output, the `[schema-drift]` line included.
     console.error(
-      `[schema-drift] REAL DRIFT: ${remote ? "Production" : "Local database"} differs from committed migrations.`,
+      diffToolFailureReport({
+        result,
+        attempts,
+        transient,
+        githubActions: process.env.GITHUB_ACTIONS === "true",
+        databaseUrls,
+      }),
     );
-    if (process.env.GITHUB_ACTIONS === "true")
+    process.exitCode = result.status ?? 1;
+  } else {
+    const rawDiff = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "";
+    const { diff, unusedReconciledChecks } = normalizeDiffWithNotes(rawDiff);
+    if (remote && unusedReconciledChecks.length) {
+      const notice = `RECONCILED_CHECK_CONSTRAINTS (scripts/lib/schema-drift.mjs) lists ${unusedReconciledChecks.length} constraint(s) with no DROP/ADD pair in this diff: ${unusedReconciledChecks.join(", ")}. Remove the entries once the shadow database image matches the production Postgres minor version.`;
+      console.warn(`[schema-drift] Warning: ${notice}`);
+      if (process.env.GITHUB_ACTIONS === "true")
+        console.warn(`::warning title=Stale schema-drift exceptions::${notice}`);
+    }
+    if (diff) {
       console.error(
-        "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
+        `[schema-drift] REAL DRIFT: ${remote ? "Production" : "Local database"} differs from committed migrations.`,
       );
-    console.error(diff.slice(0, 40_000));
-    process.exit(1);
+      if (process.env.GITHUB_ACTIONS === "true")
+        console.error(
+          "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
+        );
+      // The diff is SQL read from the database: foreign text, masked and quoted like the output of the tool.
+      console.error(quoteForeignText(diff, databaseUrls, 40_000));
+      process.exitCode = 1;
+    } else {
+      console.log(
+        `[schema-drift] ${remote ? "Production" : "Local database"} matches committed migrations.`,
+      );
+    }
   }
-
-  console.log(
-    `[schema-drift] ${remote ? "Production" : "Local database"} matches committed migrations.`,
-  );
 } finally {
   rmSync(temporaryDirectory, { recursive: true, force: true });
 }
@@ -162,6 +183,10 @@ function firstFilledEnv(...values) {
 
 function withMaintenanceSessionSettings(databaseUrl) {
   const url = new URL(databaseUrl);
+  // `postgresql:user:password@host/db` (no `//`) and `https://…` are valid URLs, and are not a database.
+  if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname) {
+    throw new Error("Not a Postgres connection URL.");
+  }
   if (url.hostname.endsWith(".pooler.supabase.com")) url.port = "5432";
   url.searchParams.set("sslmode", "verify-full");
   url.searchParams.set("connect_timeout", process.env.PGCONNECT_TIMEOUT || "600");
