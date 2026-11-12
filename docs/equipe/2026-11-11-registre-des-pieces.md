@@ -332,3 +332,12 @@ Consigne du propriétaire appliquée à tous les lots, y compris ceux sans effet
 - Les questions déjà ouvertes : quarantaine des 13 ventes d'Enchères Publiques, double authentification administrateur avant R2c, webhook Resend, durée de validité d'une lecture et ordre de passage (lot R6).
 
 **Suite.** Application du lot R2a en base, puis fusion de sa partie collecte ; migration de la file `admin_information_agent_queue` pour qu'elle lise les nouveaux blocs de contact ; mesure à blanc des destinataires sur la production ; étape 2 des contacts (recherche sur le site du cabinet) ; série suivante du lot R6, en commençant par la perte de `source_lot_selection` à la republication.
+
+## 14. Décision du 12/11/2026 : envois aux notaires ouverts
+
+Le propriétaire indique avoir échangé avec les notaires, qui sont d'accord : on peut les contacter pour l'enrichissement des annonces, sans courrier de demande d'autorisation. La fermeture par défaut prise la veille par délégation est donc levée.
+
+- `INFORMATION_AGENT_NOTARY_SEND_ENABLED` vaut `true` en production sur Vercel depuis le 12/11/2026. Elle prend effet au déploiement suivant.
+- Rien d'autre ne change : chaque envoi reste validé un par un par un administrateur, le pilote automatique reste éteint et n'écrit qu'aux avocats, la liste de questions d'un notaire reste la liste courte, et l'opposition d'une étude vaut pour toutes ses adresses.
+- Pour refermer : retirer la variable ou lui donner une autre valeur que `true`, puis redéployer.
+- Comme pour Licitor, garder au dossier la trace écrite de cet accord. Les textes à mettre à jour avant publication (annexe 14, section 5) restent à faire relire par un avocat : le registre des traitements classe encore notaires.fr « désactivé sans autorisation écrite ».
