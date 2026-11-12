@@ -1,7 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import type { AccountTier, UserRole } from "@/lib/account";
 import { isAdminMfaRequired, sessionAssuranceLevel } from "@/lib/admin-mfa";
-import { AuthRequiredError, ConfigurationError, PublicApiError } from "@/lib/api-errors";
+import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
+import { serverEnv } from "@/lib/env";
+import { supabaseConfigurationError } from "@/lib/supabase-configuration-error";
 import type { Database } from "./types";
 
 type Claims = Record<string, unknown> & {
@@ -25,23 +27,16 @@ export type SupabaseAuthContext = {
   hasProfile?: boolean;
 };
 
-function supabasePublicEnv() {
-  const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const SUPABASE_PUBLISHABLE_KEY =
-    process.env.SUPABASE_PUBLISHABLE_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
+/** URL and publishable key of the user-session client (`serverEnv().supabase`). */
+function supabaseSessionEnv() {
+  const { adminUrl: SUPABASE_URL, sessionPublishableKey: SUPABASE_PUBLISHABLE_KEY } =
+    serverEnv().supabase;
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    const missing = [
+    throw supabaseConfigurationError([
       ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
       ...(!SUPABASE_PUBLISHABLE_KEY ? ["SUPABASE_PUBLISHABLE_KEY"] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Configure these variables in Vercel or your local environment.`;
-    console.error(`[Supabase] ${message}`);
-    throw new ConfigurationError(message);
+    ]);
   }
-
   return { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY };
 }
 
@@ -57,7 +52,7 @@ export function bearerTokenFromRequest(request: Request): string {
 }
 
 export async function requireSupabaseAuthContext(token: string): Promise<SupabaseAuthContext> {
-  const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } = supabasePublicEnv();
+  const { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } = supabaseSessionEnv();
   const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     global: {
       headers: {

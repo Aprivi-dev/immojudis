@@ -9,10 +9,10 @@ import {
   LAUNCH_OFFER_SHORT_TEXT,
   LAUNCH_OFFER_VISITOR_TEXT,
   launchOfferText,
-  parseLaunchOfferResponse,
   SIGNUP_TRIAL_DENIED_TEXT,
   signupTrialStatusText,
 } from "@/lib/launch-offer";
+import { parseLaunchOfferResponse } from "@/lib/launch-offer-response";
 import { FREE_ACCESS_LINE, freeAccessLine } from "@/lib/sale-unlocks";
 import { PLAN_LIMITS } from "@/lib/plans";
 

@@ -1,11 +1,12 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { UserWatchedZone } from "@/lib/types";
 import { WATCHED_ZONE_KINDS } from "@/lib/watched-zones-shared";
 import { ForbiddenError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
 
 type WatchedZoneRow = Database["public"]["Tables"]["user_watched_zones"]["Row"];
 type WatchedZoneInsert = Database["public"]["Tables"]["user_watched_zones"]["Insert"];
@@ -322,8 +323,4 @@ function mergeWatchedZone(
 function cleanString(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
-}
-
-function asJson(value: unknown): Json {
-  return value as Json;
 }

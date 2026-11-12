@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 import type { TribunalStatisticsPayload } from "@/lib/tribunal-statistics";
 
 const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
@@ -75,9 +76,9 @@ describe("tribunal statistics repository", () => {
   it("bloque avant toute lecture lorsque le kill switch est fermé", async () => {
     process.env.TRIBUNAL_STATISTICS_ENABLED = "false";
 
-    await expect(getTribunalStatistics({ windowMonths: 36 })).rejects.toThrow(
-      "tribunal statistics are disabled",
-    );
+    const failure = getTribunalStatistics({ windowMonths: 36 });
+    await expect(failure).rejects.toThrow("tribunal statistics are disabled");
+    await expect(failure).rejects.toBeInstanceOf(ServiceUnavailableError);
     expect(serverFrom).not.toHaveBeenCalled();
   });
 

@@ -2,7 +2,6 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import type { FloodPositionInput, FloodProbePoint, StoredFloodRisk } from "@/lib/flood-risk";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 
 /**
  * Lectures et écritures du verdict d'inondation par vente : table privée `auction_sale_flood_risk` (service_role
@@ -109,8 +108,23 @@ async function readPositionExtras(): Promise<Map<string, PositionExtras>> {
   }
 }
 
-/** Verdicts stockés ; `null` : la table n'existe pas encore. */
-export async function readStoredFloodRisks(): Promise<StoredFloodRow[] | null> {
+/**
+ * Refus de la base sur la table d'inondation ou son bail. Seul le code SQL est gardé : le message de la base peut
+ * citer une ligne.
+ */
+export class FloodRiskStoreError extends Error {
+  readonly code: string;
+
+  constructor(operation: string, code: string | undefined) {
+    const known = code || "unknown";
+    super(`Flood risk ${operation} refused (code ${known})`);
+    this.name = "FloodRiskStoreError";
+    this.code = known;
+  }
+}
+
+/** Verdicts stockés. */
+export async function readStoredFloodRisks(): Promise<StoredFloodRow[]> {
   const rows: StoredFloodRow[] = [];
   for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
     const { data, error } = await supabaseAdmin
@@ -120,10 +134,7 @@ export async function readStoredFloodRisks(): Promise<StoredFloodRow[] | null> {
       )
       .order("sale_id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
-    if (error) {
-      if (isMissingDatabaseObject(error)) return null;
-      throw error;
-    }
+    if (error) throw error;
     for (const row of data ?? []) {
       rows.push({
         saleId: row.sale_id,
@@ -144,8 +155,8 @@ export async function readStoredFloodRisks(): Promise<StoredFloodRow[] | null> {
   throw new Error("Trop de verdicts d'inondation stockés.");
 }
 
-/** Code commune de chaque vente ; `null` : la table n'existe pas encore. */
-export async function readSaleCommunes(): Promise<Map<string, SaleCommune> | null> {
+/** Code commune de chaque vente. */
+export async function readSaleCommunes(): Promise<Map<string, SaleCommune>> {
   const communes = new Map<string, SaleCommune>();
   for (let from = 0; from < MAX_ROWS; from += PAGE_SIZE) {
     const { data, error } = await supabaseAdmin
@@ -153,10 +164,7 @@ export async function readSaleCommunes(): Promise<Map<string, SaleCommune> | nul
       .select("sale_id, commune_insee, arrondissement_insee")
       .order("sale_id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
-    if (error) {
-      if (isMissingDatabaseObject(error)) return null;
-      throw error;
-    }
+    if (error) throw error;
     for (const row of data ?? []) {
       communes.set(row.sale_id, {
         communeInsee: row.commune_insee,
@@ -231,67 +239,47 @@ export function floodPositionOf(
   };
 }
 
-/** Écrit des verdicts (insertion ou remplacement complet de la ligne). Rend `false` si la table n'existe pas. */
-export async function upsertFloodRisks(rows: FloodRiskInsert[]): Promise<boolean> {
-  if (rows.length === 0) return true;
+/** Écrit des verdicts (insertion ou remplacement complet de la ligne). */
+export async function upsertFloodRisks(rows: FloodRiskInsert[]): Promise<void> {
+  if (rows.length === 0) return;
   // Un paquet mêle des verdicts complets et des tentatives « inconnu » sans observation : sans
   // `defaultToNull: false`, PostgREST mettrait NULL dans les colonnes absentes d'une ligne (tri_scenarios,
   // ppri_checked, NOT NULL) au lieu de leur valeur par défaut, et tout le paquet serait refusé (23502).
   const { error } = await supabaseAdmin
     .from("auction_sale_flood_risk")
     .upsert(rows, { onConflict: "sale_id", defaultToNull: false });
-  if (error) {
-    if (isMissingDatabaseObject(error)) return false;
-    // Le message d'erreur peut citer une ligne : seul le code remonte.
-    throw new Error(`Écriture des verdicts d'inondation refusée (code ${error.code ?? "inconnu"})`);
-  }
-  return true;
+  if (error) throw new FloodRiskStoreError("write", error.code);
 }
 
 /** Met à jour une ligne existante sans toucher à son verdict (échec de la source). */
-export async function updateFloodRisk(saleId: string, changes: FloodRiskUpdate): Promise<boolean> {
+export async function updateFloodRisk(saleId: string, changes: FloodRiskUpdate): Promise<void> {
   const { error } = await supabaseAdmin
     .from("auction_sale_flood_risk")
     .update(changes)
     .eq("sale_id", saleId);
-  if (error) {
-    if (isMissingDatabaseObject(error)) return false;
-    throw new Error(
-      `Mise à jour du verdict d'inondation refusée (code ${error.code ?? "inconnu"})`,
-    );
-  }
-  return true;
+  if (error) throw new FloodRiskStoreError("update", error.code);
 }
 
-/** Le code d'une erreur du magasin (`… refusée (code 23514)`), ou `unknown` : de quoi journaliser sans donnée. */
+/** Le code d'une erreur du magasin, ou `unknown` : de quoi journaliser sans donnée. */
 export function storeErrorCode(error: unknown): string {
-  const message = error instanceof Error ? error.message : "";
-  const match = /\(code ([A-Za-z0-9_]{1,12})\)/.exec(message);
-  return match ? match[1] : "unknown";
+  return error instanceof FloodRiskStoreError ? error.code : "unknown";
 }
 
 /** Durée du bail du traitement d'inondation : au-delà de `maxDuration` (300 s), il expire seul si la passe meurt. */
 const FLOOD_LEASE_SECONDS = 360;
 
-export type FloodLease =
-  | { kind: "held"; token: string }
-  | { kind: "busy" }
-  /** La fonction de bail n'existe pas encore (migration en retard) : le traitement continue sans verrou. */
-  | { kind: "unavailable" };
+export type FloodLease = { kind: "held"; token: string } | { kind: "busy" };
 
 /** Prend le bail du traitement d'inondation (voir la migration 20261106100500) ; `busy` : une autre passe court. */
 export async function claimFloodRiskLease(): Promise<FloodLease> {
   const { data, error } = await supabaseAdmin.rpc("claim_sale_flood_risk_lease", {
     p_ttl_seconds: FLOOD_LEASE_SECONDS,
   });
-  if (error) {
-    if (isMissingDatabaseObject(error)) return { kind: "unavailable" };
-    throw new Error(`Bail du traitement d'inondation refusé (code ${error.code ?? "inconnu"})`);
-  }
+  if (error) throw new FloodRiskStoreError("lease claim", error.code);
   return typeof data === "string" && data ? { kind: "held", token: data } : { kind: "busy" };
 }
 
-/** Rend le bail. Sans effet (et sans erreur) si la passe l'a déjà perdu ou si la fonction manque. */
+/** Rend le bail. Sans effet (et sans erreur) si la passe l'a déjà perdu. */
 export async function releaseFloodRiskLease(token: string): Promise<void> {
   try {
     await supabaseAdmin.rpc("release_sale_flood_risk_lease", { p_token: token });

@@ -8,7 +8,7 @@ vi.mock("@/lib/email-alerts", () => ({
   resolveEmailAlertDeliveryConfig: vi.fn(),
 }));
 vi.mock("@/lib/notification-preferences", () => ({ emailAlertConsentEnabled: vi.fn() }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: mocks.entitlement }));
+vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.entitlement }));
 
 import { PublicApiError } from "@/lib/api-errors";
 import { updateAlertNotificationState } from "@/lib/alert-notifications";

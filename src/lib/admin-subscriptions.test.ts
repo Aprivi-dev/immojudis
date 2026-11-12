@@ -211,11 +211,11 @@ describe("admin subscriptions", () => {
       );
     });
 
-    it("avec un motif et sans la fonction : refuse, sans jamais remettre le motif dans la ligne", async () => {
+    it("avec un motif et une fonction en échec : l'erreur remonte, sans jamais remettre le motif dans la ligne", async () => {
       const { upsert } = arrange();
       mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202", message: "absent" } });
 
-      await expect(grant("Geste commercial")).rejects.toThrow(/migration en attente/);
+      await expect(grant("Geste commercial")).rejects.toMatchObject({ code: "PGRST202" });
       expect(upsert).not.toHaveBeenCalled();
     });
 

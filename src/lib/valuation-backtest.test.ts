@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { PublicApiError } from "@/lib/api-errors";
 import {
   buildValuationBacktest,
   buildValuationBacktestForSale,
+  getValuationBacktest,
+  valuationBacktestQuerySchema,
   type DvfBacktestTransaction,
 } from "@/lib/valuation-backtest";
 
@@ -86,6 +89,37 @@ describe("valuation backtest", () => {
         status: "missing",
         usableTests: 0,
       },
+    });
+  });
+
+  it("refuse a non-geocoded sale with a 422 and a displayable message", async () => {
+    const saleId = "6f0f8d0e-6b1e-4b5e-9a39-0d7a4c1a1b11";
+    const auth = {
+      userId: "admin-1",
+      isAdmin: true,
+      supabase: {
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: saleId, department: "33", latitude: null, longitude: null },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      },
+    } as never;
+
+    const failure = getValuationBacktest({
+      auth,
+      input: valuationBacktestQuerySchema.parse({ saleId }),
+    });
+
+    await expect(failure).rejects.toBeInstanceOf(PublicApiError);
+    await expect(failure).rejects.toMatchObject({
+      status: 422,
+      message: "Backtest indisponible : la vente n'est pas géocodée.",
     });
   });
 });

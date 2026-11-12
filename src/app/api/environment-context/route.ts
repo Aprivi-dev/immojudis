@@ -10,7 +10,7 @@ import {
 } from "@/lib/environmental-context";
 import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 
 export const POST = apiRoute(
   {

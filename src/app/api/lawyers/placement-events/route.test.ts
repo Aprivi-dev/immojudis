@@ -5,7 +5,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
   requireSupabaseAuthContext: mocks.auth,
 }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: mocks.entitlement }));
+vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.entitlement }));
 vi.mock("@/lib/lawyer-placement-events", () => ({
   lawyerPlacementEventInputSchema: { parse: (value: unknown) => value },
   recordLawyerPlacementEvent: mocks.record,

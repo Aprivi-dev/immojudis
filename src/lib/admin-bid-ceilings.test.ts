@@ -72,10 +72,11 @@ describe("getAdminBidCeilings", () => {
     expect(result.windows[0]?.accounts).toBe(12);
   });
 
-  it("says « non mesuré » while the migration is not applied", async () => {
+  it("rethrows a missing database function instead of « non mesuré »", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: true });
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202" } });
-    expect(await getAdminBidCeilings("token")).toEqual(unavailableBidCeilings());
+    await expect(getAdminBidCeilings("token")).rejects.toMatchObject({ code: "PGRST202" });
+    expect(unavailableBidCeilings().windows.every((window) => window.accounts === null)).toBe(true);
   });
 
   it("lets another database error through", async () => {

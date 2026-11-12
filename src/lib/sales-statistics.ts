@@ -106,7 +106,7 @@ export async function getSalesStatistics({
     rents: await rentSession.load(filteredSales),
   });
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "sales.statistics_viewed",
     subjectType: "sale_search",

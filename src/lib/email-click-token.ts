@@ -1,5 +1,6 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Lien suivi d'un email (alertes, rappels d'audience, récapitulatif hebdomadaire, alerte de résultat) : redirection de suivi signée (point 65).
@@ -46,7 +47,7 @@ function signingKey(env: Pick<NodeJS.ProcessEnv, string> = process.env): string 
   const dedicated = env.EMAIL_UNSUBSCRIBE_SECRET?.trim();
   const base =
     dedicated || env.SUPABASE_SERVICE_ROLE_KEY?.trim() || env.SUPABASE_SECRET_KEY?.trim();
-  if (!base) throw new Error("Aucun secret disponible pour signer les liens suivis.");
+  if (!base) throw new ConfigurationError("No secret available to sign tracked links.");
   return createHmac("sha256", base).update("immojudis:email-click:v1").digest("hex");
 }
 

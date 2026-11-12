@@ -12,12 +12,12 @@ import {
 } from "@/lib/dvf-market-statistics";
 import { recordValuationEstimate } from "@/lib/valuation-model-registry";
 import { fetchCadastreSurfaceAtPoint } from "@/lib/market-cadastre";
-import type {
-  BuildEstimateInput,
-  MarketContext,
-  MarketEstimate,
-  MarketEstimateErrorCode,
-} from "@/lib/market-server/types";
+import type { BuildEstimateInput, MarketContext, MarketEstimate } from "@/lib/market-server/types";
+import {
+  MarketEstimateError,
+  isTransientMarketEstimateFailure,
+  type MarketEstimateErrorCode,
+} from "@/lib/market-server/errors";
 import {
   HISTORY_YEARS,
   inputSchema,
@@ -53,7 +53,10 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
     surfaceScope: input.surfaceScope,
   });
   if (resolvedSegment === "unsupported") {
-    throw new Error("segment de bien non pris en charge par l'estimation résidentielle");
+    throw new MarketEstimateError(
+      "UNSUPPORTED_SEGMENT",
+      "segment de bien non pris en charge par l'estimation résidentielle",
+    );
   }
   const segment = resolvedSegment;
   const subjectBuiltSurface =
@@ -73,7 +76,10 @@ async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate>
     }
   }
   if ((segment === "land" && !subjectLandSurface) || (segment !== "land" && !subjectBuiltSurface)) {
-    throw new Error("surface compatible manquante pour le segment de bien");
+    throw new MarketEstimateError(
+      "MISSING_SURFACE",
+      "surface compatible manquante pour le segment de bien",
+    );
   }
   const subjectSurface = segment === "land" ? subjectLandSurface : subjectBuiltSurface;
   const commune = await fetchCommune(lat, lng);
@@ -558,18 +564,15 @@ export async function getMarketEstimate(
   } catch (err) {
     const message = err instanceof Error ? err.message : "erreur inconnue";
     const code = marketEstimateErrorCode(err);
+    const transient = isTransientMarketEstimateFailure(code);
     logMarketEstimateFailure(code, message, err);
     return {
       ok: false,
-      error:
-        code !== "UPSTREAM_UNAVAILABLE" && code !== "INTERNAL_ERROR"
-          ? `Estimation automatique indisponible : ${message}.`
-          : "Estimation de marché temporairement indisponible.",
+      error: transient
+        ? "Estimation de marché temporairement indisponible."
+        : `Estimation automatique indisponible : ${message}.`,
       estimate: null,
-      status:
-        code === "UPSTREAM_UNAVAILABLE" || code === "INTERNAL_ERROR"
-          ? "failed"
-          : "insufficient_data",
+      status: transient ? "failed" : "insufficient_data",
       code,
       retryAfterSeconds: code === "UPSTREAM_UNAVAILABLE" ? 3600 : null,
       computedAt: null,
@@ -587,22 +590,16 @@ export function logMarketEstimateFailure(
   message: string,
   error: unknown,
 ): void {
-  if (code === "UPSTREAM_UNAVAILABLE" || code === "INTERNAL_ERROR") {
+  if (isTransientMarketEstimateFailure(code)) {
     console.error("DVF fetch failed", error);
     return;
   }
   console.info(JSON.stringify({ scope: "market-estimate", level: "info", code, message }));
 }
 
+/** Le code d'un échec : celui d'une `MarketEstimateError`, `INVALID_INPUT` pour une entrée refusée, sinon une panne. */
 export function marketEstimateErrorCode(error: unknown): MarketEstimateErrorCode {
   if (error instanceof z.ZodError) return "INVALID_INPUT";
-  const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  if (/segment de bien|non pris en charge/.test(message)) return "UNSUPPORTED_SEGMENT";
-  if (/surface compatible|surface.*manquante/.test(message)) return "MISSING_SURFACE";
-  if (/adresse|coordonn|géocod|geocod/.test(message)) return "MISSING_LOCATION";
-  if (/aucune vente|comparable|échantillon|echantillon/.test(message)) return "NO_COMPARABLES";
-  if (/timeout|fetch|http |réseau|network|indisponible/.test(message))
-    return "UPSTREAM_UNAVAILABLE";
+  if (error instanceof MarketEstimateError) return error.code;
   return "INTERNAL_ERROR";
 }

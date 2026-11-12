@@ -35,12 +35,15 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceIpRateLimit: mocks.enforceIp,
   enforceDailyOperationLimits: mocks.enforceDaily,
 }));
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   assertFeatureEntitlement: mocks.entitlement,
-  assertFeatureEntitlementVia: mocks.entitlement,
-  featureIncludedForSale: async () => true,
-  getSharedPropertyReport: mocks.sharedReport,
+  assertFeatureEntitlementVia: async (...args: unknown[]) => ({
+    plan: await mocks.entitlement(...args),
+    door: "plan",
+  }),
+  readSaleThroughDoor: async () => ({ id: "11111111-1111-4111-8111-111111111111" }),
 }));
+vi.mock("@/lib/property-reports", () => ({ getSharedPropertyReport: mocks.sharedReport }));
 vi.mock("@/lib/sale-analysis-sets", () => ({
   getSharedSaleComparison: mocks.sharedComparison,
 }));

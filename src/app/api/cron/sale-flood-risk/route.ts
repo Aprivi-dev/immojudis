@@ -8,15 +8,6 @@ import {
 
 export const maxDuration = 300;
 
-/** Taille de lot par défaut (ventes observées par passe) ; `SALE_FLOOD_RISK_BATCH_LIMIT` la remplace. */
-const DEFAULT_BATCH_LIMIT = 150;
-
-/** La taille de lot de l'environnement (circuit commun `serverEnv`), ou la valeur par défaut. */
-function batchLimit(): number {
-  const parsed = Number(serverEnv().saleFloodRisk.batchLimit);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_BATCH_LIMIT;
-}
-
 /**
  * Observe le risque d'inondation des ventes à venir et le stocke (voir `src/lib/sale-flood-risk-batch.ts` : TRI
  * `tri_zonage` de Géorisques et périmètre PPRi du Géoportail de l'urbanisme, 2 à 3 appels par seconde, un 429
@@ -39,7 +30,7 @@ export async function GET(request: Request) {
   return runMonitoredCron(
     request,
     "sale-flood-risk",
-    () => runSaleFloodRiskBatch({ limit: batchLimit() }),
+    () => runSaleFloodRiskBatch({ limit: serverEnv().batchLimits.saleFloodRisk }),
     { retryDelaysMs: [] },
   );
 }

@@ -7,52 +7,12 @@
  * serveur : utilisable côté serveur, dans le navigateur et dans les tests.
  */
 
-const PARIS_TIME_ZONE = "Europe/Paris";
+import { PARIS_TIME_ZONE, parisDateKey, parisMidnightUtc } from "@/lib/paris-time";
 
-const PARIS_PARTS = new Intl.DateTimeFormat("en-CA", {
-  timeZone: PARIS_TIME_ZONE,
-  hourCycle: "h23",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-});
-
-type ParisParts = { year: number; month: number; day: number };
-
-function parisParts(instant: Date): ParisParts & { asUtcMs: number } {
-  const values: Record<string, number> = {};
-  for (const part of PARIS_PARTS.formatToParts(instant)) {
-    if (part.type !== "literal") values[part.type] = Number(part.value);
-  }
-  return {
-    year: values.year,
-    month: values.month,
-    day: values.day,
-    asUtcMs: Date.UTC(
-      values.year,
-      values.month - 1,
-      values.day,
-      values.hour,
-      values.minute,
-      values.second,
-    ),
-  };
-}
-
-/** Instant UTC correspondant au 1er du mois (0 h 00, heure de Paris) de `year`/`month` (1-12). */
+/** Instant UTC du 1er du mois (0 h 00, heure de Paris) de `year`/`month` (1-12 ; 13 : janvier suivant). */
 function parisMonthStart(year: number, month: number): Date {
-  // Normalise le dépassement de mois (13 -> janvier de l'année suivante).
-  const wallClockUtc = Date.UTC(year, month - 1, 1, 0, 0, 0);
-  let candidate = wallClockUtc;
-  // Deux passes suffisent : le décalage de Paris ne change qu'à des dates qui ne sont jamais un 1er.
-  for (let pass = 0; pass < 2; pass += 1) {
-    const offset = parisParts(new Date(candidate)).asUtcMs - candidate;
-    candidate = wallClockUtc - offset;
-  }
-  return new Date(candidate);
+  const first = new Date(Date.UTC(year, month - 1, 1)).toISOString().slice(0, 10);
+  return parisMidnightUtc(first);
 }
 
 export type ParisMonthWindow = {
@@ -63,7 +23,7 @@ export type ParisMonthWindow = {
 };
 
 export function parisMonthWindow(now: Date = new Date()): ParisMonthWindow {
-  const { year, month } = parisParts(now);
+  const [year, month] = parisDateKey(now).split("-").map(Number);
   return {
     periodStart: parisMonthStart(year, month).toISOString(),
     periodEnd: parisMonthStart(year, month + 1).toISOString(),

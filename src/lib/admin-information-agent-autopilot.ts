@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -64,12 +65,19 @@ export type AdminAutopilotAction = z.output<typeof adminAutopilotActionSchema>;
  * Erreur d'une RPC du pilote : seuls les refus métier voulus par les fonctions (droit, paramètre, état) sont montrés ;
  * toute autre erreur de la base devient un message générique (le détail reste dans le journal serveur).
  */
+/** Refus voulus par les fonctions de la base (droit, paramètre, état), écrits pour l'administrateur. */
+const RPC_REFUSAL_STATUS: Readonly<Record<string, number>> = {
+  "42501": 403,
+  "22023": 400,
+  "55000": 409,
+};
+
 function rpcFailure(error: { code?: string; message?: string }): Error {
-  if (error.code === "42501" || error.code === "22023" || error.code === "55000") {
-    return new Error(error.message ?? "Action refusée.");
-  }
+  const status = error.code ? RPC_REFUSAL_STATUS[error.code] : undefined;
+  if (status)
+    return new PublicApiError(error.message ?? "Action refusée.", status, { cause: error });
   console.error(JSON.stringify({ scope: "admin.autopilot", code: error.code ?? null }));
-  return new Error("Action impossible.");
+  return new Error("Database call failed", { cause: error });
 }
 
 async function readiness(now: Date, env: Readonly<Record<string, string | undefined>>) {
@@ -145,8 +153,9 @@ export async function runAdminAutopilotAction({
       const { report } = await readiness(new Date(), env);
       if (!report.ready) {
         const failed = report.checks.filter((check) => !check.ok).map((check) => check.label);
-        throw new Error(
+        throw new PublicApiError(
           `Mode réel refusé, contrôle de préparation non satisfait : ${failed.join(" ; ")}.`,
+          409,
         );
       }
     }

@@ -4,24 +4,35 @@ import {
   MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
   MARKET_WIDEN_UNTIL_COMPARABLES,
 } from "@/lib/market-comparable-minimums";
-import {
-  MARKET_GAP_BAND_MIN_COMPARABLES,
-  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
-} from "@/lib/market-gap-band";
+import { passesPublicMarketGapGate } from "@/lib/market-gap-band";
 import { shouldWidenRadius } from "@/lib/market-server/radius-widening";
 
 const base = { segment: "apartment", areaKind: "urban" as const };
 
-describe("constantes partagées moteur / porte publique", () => {
-  it("la porte publique relit les mêmes effectifs que le moteur", () => {
-    expect(MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE).toBe(MARKET_JACKKNIFE_MIN_COMPARABLES);
-    expect(MARKET_GAP_BAND_MIN_COMPARABLES).toBe(MARKET_NON_JACKKNIFE_MIN_COMPARABLES);
+/** Une estimation qui franchit la porte publique sur tous les autres critères. */
+const passesGate = (intervalMethod: string, comparableCount: number) =>
+  passesPublicMarketGapGate({
+    ...base,
+    actionable: true,
+    intervalMethod,
+    comparableCount,
+    effectiveSampleSize: comparableCount,
+    p10: 95,
+    p50: 100,
+    p90: 105,
+    radiusM: 150,
   });
 
-  it("l'élargissement vise au moins l'effectif qui donne l'intervalle jackknife", () => {
-    expect(MARKET_WIDEN_UNTIL_COMPARABLES).toBeGreaterThanOrEqual(
-      MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
-    );
+describe("constantes partagées moteur / porte publique", () => {
+  it("la porte publique exige les effectifs du moteur, avec ou sans intervalle jackknife", () => {
+    expect(passesGate("local_jackknife", MARKET_JACKKNIFE_MIN_COMPARABLES)).toBe(true);
+    expect(passesGate("local_jackknife", MARKET_JACKKNIFE_MIN_COMPARABLES - 1)).toBe(false);
+    expect(passesGate("segment_fallback", MARKET_NON_JACKKNIFE_MIN_COMPARABLES)).toBe(true);
+    expect(passesGate("segment_fallback", MARKET_NON_JACKKNIFE_MIN_COMPARABLES - 1)).toBe(false);
+  });
+
+  it("l'élargissement s'arrête à un effectif qui franchit la porte avec un intervalle jackknife", () => {
+    expect(passesGate("local_jackknife", MARKET_WIDEN_UNTIL_COMPARABLES)).toBe(true);
     expect(MARKET_WIDEN_UNTIL_COMPARABLES).toBeGreaterThan(4);
   });
 });

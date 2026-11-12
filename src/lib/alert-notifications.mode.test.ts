@@ -15,7 +15,7 @@ vi.mock("@/lib/email-alerts", () => ({
   resolveEmailAlertDeliveryConfig: mocks.resolveConfig,
 }));
 vi.mock("@/lib/notification-preferences", () => ({ emailAlertConsentEnabled: vi.fn() }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: vi.fn() }));
+vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: vi.fn() }));
 
 import {
   dispatchDueAlertNotifications,

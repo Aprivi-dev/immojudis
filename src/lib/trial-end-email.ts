@@ -52,7 +52,7 @@ const DAY_FORMAT = new Intl.DateTimeFormat("fr-FR", {
 /** « 14 novembre 2026 » (« 1er novembre 2026 »), le jour de Paris. */
 export function trialEndDayLabel(endsAt: string | Date): string {
   const date = endsAt instanceof Date ? endsAt : new Date(endsAt);
-  if (Number.isNaN(date.getTime())) throw new Error("Date de fin d’essai invalide.");
+  if (Number.isNaN(date.getTime())) throw new Error("Trial end email: invalid end date.");
   return DAY_FORMAT.format(date).replace(/^1 /, "1er ");
 }
 

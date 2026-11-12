@@ -145,7 +145,7 @@ export async function getDpeExplorer({
   const mapPoints = input.includeMap ? buildDpeMapPoints(items) : [];
   const summary = buildDpeExplorerSummary(items, mapPoints);
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "dpe.explorer_viewed",
     subjectType: "dpe_explorer_scope",

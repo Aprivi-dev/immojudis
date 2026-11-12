@@ -467,7 +467,7 @@ async function cancelQueuedEmailNotifications({
     .eq("delivery_status", "queued");
   if (alertId) query = query.eq("alert_id", alertId);
   const { error } = await query;
-  if (error) throw new Error(`Annulation des emails en attente impossible (${reason}).`);
+  if (error) throw new Error(`Cancelling queued alert emails failed (${reason})`, { cause: error });
 }
 
 const PEPITE_REASON = "pépite";

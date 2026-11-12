@@ -44,7 +44,7 @@ export function AdminLawyerReferralRequestsPanel() {
     requests.filter((request) =>
       ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
     ).length;
-  const totalCount = requestsQuery.data?.totalCount ?? requests.length;
+  const totalCount = requestsQuery.data?.total ?? requests.length;
 
   const updateMutation = useMutation({
     mutationFn: (data: AdminLawyerReferralUpdateInput) =>

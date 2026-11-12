@@ -16,7 +16,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
 
-vi.mock("@/lib/property-reports", () => ({
+vi.mock("@/lib/entitlements.server", () => ({
   assertFeatureEntitlement: mocks.assertEntitlement,
 }));
 

@@ -13,10 +13,12 @@ import {
   INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
   loadInformationAgentContactRegistry,
   loadOpposedInformationAgentIdentityKeys,
-  normalizedEmail,
+} from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
+import {
   type InformationAgentContactCandidate,
   type InformationAgentContactSale,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import { firmSiteStartUrls } from "@/lib/information-agent/firm-site-extract";
 import {
   informationAgentSearchUserAgent,

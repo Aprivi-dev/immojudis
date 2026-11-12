@@ -6,7 +6,6 @@ import { resolveNoReplyEmailConfig, type ResendEmailMessage } from "@/lib/email-
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { asRecord, escapeHtml } from "@/lib/guards";
-import { isMissingRpcError } from "@/lib/postgrest-errors";
 import { emailButton, emailLayout, emailNoReplyText, emailParagraph } from "@/lib/email-layout";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
 
@@ -180,23 +179,14 @@ export function buildOfferOpeningMessage({
 
 const REQUESTS = "offer_opening_notifications" as const;
 
-/**
- * Une demande à envoyer. `attempts` / `attemptedAt` : le suivi des essais de la file en base ; `null`
- * quand la file vient de l'ancienne sélection (migration 20261031100300 pas encore appliquée).
- */
-type QueueEntry = { userId: string; attempts: number | null; attemptedAt: string | null };
+/** Une demande à envoyer. `attempts` / `attemptedAt` : le suivi des essais de la file en base. */
+type QueueEntry = { userId: string; attempts: number; attemptedAt: string | null };
 type OfferOpeningQueue = { recipients: QueueEntry[]; total: number; needsReview: number };
 
-/**
- * La file d'envoi lue en base. `null` quand la fonction n'existe pas encore (code déployé avant la
- * migration) : l'appelant revient alors à l'ancienne sélection, sans suivi des essais.
- */
-async function readQueue(limit: number): Promise<OfferOpeningQueue | null> {
+/** La file d'envoi lue en base. */
+async function readQueue(limit: number): Promise<OfferOpeningQueue> {
   const { data, error } = await supabaseAdmin.rpc("get_offer_opening_queue", { p_limit: limit });
-  if (error) {
-    if (isMissingRpcError(error)) return null;
-    throw error;
-  }
+  if (error) throw error;
   const document = asRecord(data);
   const recipients: QueueEntry[] = [];
   for (const item of Array.isArray(document.recipients) ? document.recipients : []) {
@@ -215,15 +205,12 @@ async function readQueue(limit: number): Promise<OfferOpeningQueue | null> {
   };
 }
 
-async function countRequests(notified: boolean): Promise<number> {
-  let query = supabaseAdmin
+async function countNotifiedRequests(): Promise<number> {
+  const { count, error } = await supabaseAdmin
     .from(REQUESTS)
     .select("user_id", { count: "exact", head: true })
-    .eq("offer_code", "analyse");
-  query = notified
-    ? query.not("notified_at", "is", null)
-    : query.eq("notify_enabled", true).is("notified_at", null);
-  const { count, error } = await query;
+    .eq("offer_code", "analyse")
+    .not("notified_at", "is", null);
   if (error) throw error;
   return count ?? 0;
 }
@@ -238,9 +225,7 @@ export async function getOfferOpeningAudience({
 }): Promise<OfferOpeningAudience> {
   await assertAdminAuth(authToken);
   const config = resolveNoReplyEmailConfig(env);
-  const [queue, alreadyNotified] = await Promise.all([readQueue(1), countRequests(true)]);
-  // Sans la fonction (migration pas encore appliquée), l'ancien décompte : toutes les demandes actives.
-  const recipients = queue ? queue.total : await countRequests(false);
+  const [queue, alreadyNotified] = await Promise.all([readQueue(1), countNotifiedRequests()]);
   const preview = buildOfferOpeningMessage({
     recipientEmail: "destinataire@exemple.fr",
     from: config.from ?? "Immojudis",
@@ -248,8 +233,8 @@ export async function getOfferOpeningAudience({
     unsubscribeUrl: "[lien de désinscription personnel et signé]",
   });
   return {
-    recipients,
-    needsReview: queue?.needsReview ?? 0,
+    recipients: queue.total,
+    needsReview: queue.needsReview,
     alreadyNotified,
     batchSize: OFFER_OPENING_BATCH_SIZE,
     configured: config.configured,
@@ -346,27 +331,7 @@ export async function sendOfferOpeningBatch({
   const config = requireDeliveryConfig(env);
   const size = Math.min(Math.max(1, Math.trunc(limit)), OFFER_OPENING_BATCH_SIZE);
 
-  const readQueued = await readQueue(size);
-  let entries: QueueEntry[];
-  if (readQueued) {
-    entries = readQueued.recipients;
-  } else {
-    // Migration 20261031100300 pas encore appliquée : l'ancienne sélection, sans suivi des essais.
-    const { data: candidates, error } = await supabaseAdmin
-      .from(REQUESTS)
-      .select("user_id")
-      .eq("offer_code", "analyse")
-      .eq("notify_enabled", true)
-      .is("notified_at", null)
-      .order("consented_at", { ascending: true })
-      .limit(size);
-    if (error) throw error;
-    entries = (candidates ?? []).map((row) => ({
-      userId: row.user_id,
-      attempts: null,
-      attemptedAt: null,
-    }));
-  }
+  const { recipients: entries } = await readQueue(size);
 
   const markedAt = now.toISOString();
   const counts = { sent: 0, failed: 0, skipped: 0 };
@@ -386,17 +351,13 @@ export async function sendOfferOpeningBatch({
    * compte l'essai (le premier essai de la série date la clé d'idempotence de Resend).
    */
   async function claim(entry: QueueEntry): Promise<boolean> {
-    const patch =
-      entry.attempts === null
-        ? { notified_at: markedAt }
-        : {
-            notified_at: markedAt,
-            notify_attempts: entry.attempts + 1,
-            notify_attempted_at: entry.attemptedAt ?? markedAt,
-          };
     const { data, error: claimError } = await supabaseAdmin
       .from(REQUESTS)
-      .update(patch)
+      .update({
+        notified_at: markedAt,
+        notify_attempts: entry.attempts + 1,
+        notify_attempted_at: entry.attemptedAt ?? markedAt,
+      })
       .eq("user_id", entry.userId)
       .eq("offer_code", "analyse")
       .eq("notify_enabled", true)
@@ -483,7 +444,7 @@ export async function sendOfferOpeningBatch({
     }),
   );
 
-  const remaining = readQueued ? ((await readQueue(1))?.total ?? 0) : await countRequests(false);
+  const remaining = (await readQueue(1)).total;
   console.info(
     JSON.stringify({
       scope: "admin.offer-opening-notifier",

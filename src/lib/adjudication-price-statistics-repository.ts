@@ -1,7 +1,9 @@
 import "server-only";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 import { z } from "zod";
 import { adjudicationEnrichmentSchema } from "@/lib/adjudication-distributions";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverEnv } from "@/lib/env";
 import {
   ADJUDICATION_PRICE_STATISTICS_WARNING,
   adjudicationPriceStatisticsDirectoryResponseSchema,
@@ -83,23 +85,17 @@ const storedSaleSchema = z
   })
   .strict();
 
-class AdjudicationPriceStatisticsUnavailableError extends Error {
+class AdjudicationPriceStatisticsUnavailableError extends ServiceUnavailableError {
   constructor(message = "Adjudication price statistics are temporarily unavailable.") {
     super(message);
     this.name = "AdjudicationPriceStatisticsUnavailableError";
   }
 }
 
-export function adjudicationPriceStatisticsEnabled(
-  value = process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED,
-): boolean {
-  return value === "true";
-}
-
 export async function getAdjudicationPriceStatisticsForSale(
   saleId: string,
 ): Promise<AdjudicationPriceStatisticsResponse> {
-  if (!adjudicationPriceStatisticsEnabled()) {
+  if (!serverEnv().adjudicationPriceStatisticsEnabled) {
     throw new AdjudicationPriceStatisticsUnavailableError(
       "Configuration: adjudication price statistics are disabled.",
     );
@@ -159,7 +155,7 @@ export async function getAdjudicationPriceStatisticsForSale(
 }
 
 export async function getAdjudicationPriceStatisticsDirectory(): Promise<AdjudicationPriceStatisticsDirectoryResponse> {
-  if (!adjudicationPriceStatisticsEnabled()) {
+  if (!serverEnv().adjudicationPriceStatisticsEnabled) {
     throw unavailable("Configuration: adjudication price statistics are disabled.");
   }
   const pinnedBuildId = process.env.ADJUDICATION_PRICE_STATISTICS_BUILD_ID?.trim() || null;

@@ -73,14 +73,6 @@ import {
 import { ConfigurationError } from "@/lib/api-errors";
 import { readVerifiedResendWebhook } from "@/lib/resend-webhook";
 
-export {
-  fetchInboundAttachments,
-  readBoundedAttachment,
-  persistFactCandidates,
-} from "@/lib/information-agent-inbound/attachments";
-
-export { extractInformationAgentFacts } from "@/lib/information-agent-inbound/fact-extraction";
-
 import {
   detectPossibleInformationAgentContactOptOut,
   detectWrongRecipientSignal,
@@ -88,20 +80,6 @@ import {
 import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
 import { detectPossiblePromptInjection } from "@/lib/information-agent-inbound/prompt-injection";
 import { isAutomaticReply, replyMentionsLot } from "@/lib/information-agent-inbound/reply-signals";
-
-export {
-  findInboundToken,
-  detectInformationAgentContactOptOut,
-  classifyInformationAgentReplyIntent,
-} from "@/lib/information-agent-inbound/reply-intent";
-
-export {
-  replyTextForExtraction,
-  htmlToPlainText,
-  normalizeEmail,
-} from "@/lib/information-agent-inbound/text";
-
-export type { InformationAgentInboundResult } from "@/lib/information-agent-inbound/types";
 
 /**
  * Provider fields the Resend SDK types do not (reliably) expose. Every field is
@@ -139,6 +117,24 @@ function parseProviderMessageId(data: unknown): string | null {
   return parsed.success ? parsed.data.message_id : null;
 }
 
+/** Rebonds et plaintes des emails de l'agent : écrits sur le registre de contacts, qui coupe l'envoi. */
+const AGENT_DELIVERY_EVENTS = ["email.bounced", "email.complained"] as const;
+
+/**
+ * Évènements que ce webhook traite, à abonner dans Resend (l'onglet « Adresses » le vérifie) : les réponses
+ * reçues, puis les rebonds et plaintes. Les autres sont seulement écrits au journal des envois.
+ */
+export const INFORMATION_AGENT_WEBHOOK_EVENTS: readonly string[] = [
+  "email.received",
+  ...AGENT_DELIVERY_EVENTS,
+];
+
+function isAgentDeliveryEvent<T extends { type: string }>(
+  event: T,
+): event is Extract<T, { type: (typeof AGENT_DELIVERY_EVENTS)[number] }> {
+  return (AGENT_DELIVERY_EVENTS as readonly string[]).includes(event.type);
+}
+
 export async function processInformationAgentInboundWebhook({
   request,
   env = process.env,
@@ -170,8 +166,7 @@ export async function processInformationAgentInboundWebhook({
     const logFailure = await captureFailure(() => recordDelivery(event));
     if (logFailure) throw logFailure.error;
   };
-  // Rebonds et plaintes des emails de l'agent : écrits sur le registre de contacts, qui coupe l'envoi.
-  if (event.type === "email.bounced" || event.type === "email.complained") {
+  if (isAgentDeliveryEvent(event)) {
     const processed = await processDeliveryEvent(event, env, markInformationAgentCaseDelivery);
     await logDelivery();
     return processed;

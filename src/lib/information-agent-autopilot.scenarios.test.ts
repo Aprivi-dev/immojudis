@@ -39,7 +39,11 @@ vi.mock("@/lib/admin-information-agent-email-template", () => ({
 }));
 vi.mock("@/lib/information-agent", () => ({
   runAdminInformationAgentAction: mocks.runAction,
+}));
+vi.mock("@/lib/information-agent/draft", () => ({
   createAdminInformationAgentDraft: mocks.createDraft,
+}));
+vi.mock("@/lib/information-agent/preview", () => ({
   previewAdminInformationAgentMission: mocks.preview,
 }));
 vi.mock("@/lib/information-agent/mission-store", () => ({

@@ -12,7 +12,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: () => "token",
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: mocks.assertEntitlement }));
+vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.assertEntitlement }));
 vi.mock("@/lib/adjudication-price-statistics-repository", () => ({
   getAdjudicationPriceStatisticsDirectory: mocks.getDirectory,
 }));

@@ -14,6 +14,7 @@ import {
   type SaleWorkspacePrivateNotes,
   type SaleWorkspaceStatus,
 } from "@/lib/sale-workspace-shared";
+import { asJson } from "@/lib/supabase-json";
 
 type SaleWorkspaceRow = Database["public"]["Tables"]["sale_workspaces"]["Row"];
 type SaleWorkspaceInsert = Database["public"]["Tables"]["sale_workspaces"]["Insert"];
@@ -260,10 +261,6 @@ function normalizeStatus(value: string): SaleWorkspaceStatus {
   return SALE_WORKSPACE_STATUSES.includes(value as SaleWorkspaceStatus)
     ? (value as SaleWorkspaceStatus)
     : "watching";
-}
-
-function asJson(value: unknown): Json {
-  return value as Json;
 }
 
 function hasInput<K extends keyof SaleWorkspacePayload>(

@@ -1,6 +1,7 @@
 // zod/mini : le scénario locatif est validé dans le navigateur (fiche de la vente). Mêmes règles que
 // l'écriture chaînée de zod, avec bien moins de code envoyé au navigateur.
 import { z } from "zod/mini";
+import { PublicApiError } from "@/lib/api-errors";
 import { buildCeilingSnapshot, NO_CEILING_REGIME_REASON } from "./property-report/ceiling-snapshot";
 import type { FeeRegimeKey } from "./fee-regime-open";
 import { listingValuationConflict } from "./listing-evidence";
@@ -173,7 +174,7 @@ export function computeReportRentalScenario(
   inputs: ReportRentalScenario,
 ): ReportRentalScenarioSnapshot {
   const result = calculateReportRentalScenario(inputs);
-  if (!result) throw new Error("Les hypothèses locatives sont invalides.");
+  if (!result) throw new PublicApiError("Les hypothèses locatives sont invalides.", 400);
   return { inputs, result };
 }
 
@@ -240,7 +241,7 @@ export function computeReportSimulation(
   rentReference: RentReference | null = null,
 ) {
   const conflict = listingValuationConflict(sale);
-  if (conflict) throw new Error(conflict);
+  if (conflict) throw new PublicApiError(conflict, 400);
   const snapshot = buildCeilingSnapshot(
     sale,
     market?.actionable ? market : null,
@@ -248,10 +249,11 @@ export function computeReportSimulation(
     regimes,
     rentReference,
   );
-  if (snapshot.regime == null) throw new Error(NO_CEILING_REGIME_REASON);
+  if (snapshot.regime == null) throw new PublicApiError(NO_CEILING_REGIME_REASON, 400);
   if (!snapshot.available || snapshot.maxBid !== input.expectedMaxBid) {
-    throw new Error(
+    throw new PublicApiError(
       "Les données du scénario ont changé. Actualisez la fiche avant de sauvegarder le rapport.",
+      409,
     );
   }
   return {

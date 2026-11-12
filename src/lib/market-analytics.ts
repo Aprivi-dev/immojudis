@@ -208,7 +208,7 @@ export async function getMarketAnalytics({
     },
   };
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "market.analytics_viewed",
     subjectType: input.saleId ? "auction_sale" : "market_scope",

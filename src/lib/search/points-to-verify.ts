@@ -1,5 +1,5 @@
-import { parisDateKey } from "@/lib/sale-countdown";
-import { stateListingStatus } from "@/lib/property-characteristics";
+import { isPastParisDay } from "@/lib/paris-time";
+import { isClosedSaleStatus, stateListingStatus } from "@/lib/property-characteristics";
 import { getDisplaySurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -28,8 +28,6 @@ export type PointToVerify = {
   label: string;
 };
 
-const CLOSED_STATUSES = new Set(["past", "adjudicated", "cancelled", "withdrawn", "quarantined"]);
-
 /** Occupation sans information : les valeurs que `occupancyLabel` affiche « Non renseigné » / « À confirmer ». */
 function occupancyUnknown(status: string | null | undefined): boolean {
   if (!status) return true;
@@ -37,18 +35,12 @@ function occupancyUnknown(status: string | null | undefined): boolean {
   return value === "" || value === "unknown" || value === "inconnu";
 }
 
-function isPast(saleDate: string, now: Date): boolean {
-  const date = new Date(saleDate);
-  return Number.isFinite(date.getTime()) && parisDateKey(date) < parisDateKey(now);
-}
-
 export function pointsToVerify(
   sale: AuctionSale,
   options: { occupancyVisible: boolean; now?: Date },
 ): PointToVerify[] {
   const now = options.now ?? new Date();
-  if (CLOSED_STATUSES.has((sale.status ?? "").toLowerCase())) return [];
-  if (sale.sale_date && isPast(sale.sale_date, now)) return [];
+  if (isClosedSaleStatus(sale.status) || isPastParisDay(sale.sale_date, now)) return [];
 
   const points: PointToVerify[] = [];
   if (sale.app_surface_m2 !== undefined && getDisplaySurface(sale).value == null) {

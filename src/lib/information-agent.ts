@@ -20,79 +20,21 @@ import type {
   InformationAgentSendTrigger,
 } from "@/lib/information-agent/schemas";
 
-// Façade de l'agent d'information. La logique vit dans `information-agent/` :
-//   schemas.ts (schémas et types), draft.ts (brouillon), preview.ts (aperçu), send.ts (envoi),
-//   mission-store.ts (accès aux missions), config.ts (configuration d'envoi).
-// Les ré-exports ci-dessous gardent les imports existants (routes, tests, panneaux) inchangés.
+// Liste des missions et routeur des actions administrateur de l'agent d'information. Le reste vit dans
+// `information-agent/` : schemas.ts, draft.ts (brouillon), preview.ts (aperçu), send.ts (envoi),
+// mission-store.ts (accès aux missions), config.ts (configuration d'envoi).
 
-export {
-  assertInformationAgentControllerIdentity,
-  informationAgentPreviewFingerprint,
-} from "@/lib/information-agent/message-guards";
-// Ré-exports : ces fonctions vivaient dans ce module (et ses tests les importent d'ici).
-export { INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE } from "@/lib/information-agent/address-origin";
-export { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
-export {
-  INFORMATION_AGENT_NO_QUESTION_MESSAGE,
-  withoutProfessionSuffix,
-  withSignature,
-} from "@/lib/information-agent/draft-checks";
-
-export {
-  discoverInformationAgentContacts,
-  selectInformationAgentContact,
-  isInformationAgentContactBlocked,
-  loadInformationAgentContactRegistry,
-  persistInformationAgentContactObservations,
-  assertInformationAgentContactAllowed,
-} from "@/lib/information-agent/contacts";
-
-// Ré-exports : ces éléments vivaient dans ce module (et ses tests les importent d'ici).
-export {
-  detectInformationGaps,
-  INFORMATION_AGENT_QUESTIONS,
-  informationAgentQuestionText,
-  selectDefaultInformationAgentQuestionKeys,
-} from "@/lib/information-agent-questions";
-export type { InformationAgentQuestionKey } from "@/lib/information-agent-questions";
-
-export {
-  informationAgentAdminActionSchema,
-  informationAgentCreateSchema,
-  informationAgentListQuerySchema,
-  informationAgentPreviewSchema,
-} from "@/lib/information-agent/schemas";
+// Types encore importés d'ici par `src/components/admin/` et `src/lib/client-api/` (hors de ce lot).
 export type {
   InformationAgentAdminActionPayload,
   InformationAgentAdminListResponse,
   InformationAgentAdminMissionPage,
-  InformationAgentAdminResponse,
   InformationAgentCreateInput,
   InformationAgentMission,
   InformationAgentPreviewInput,
-  InformationAgentSendTrigger,
 } from "@/lib/information-agent/schemas";
-export {
-  assertInformationAgentCanaryRecipient,
-  assertInformationAgentOutboundEnabled,
-  informationAgentAppOrigin,
-} from "@/lib/information-agent/config";
-export {
-  buildInformationRequestDraft,
-  createAdminInformationAgentDraft,
-} from "@/lib/information-agent/draft";
-export {
-  prepareAdminInformationAgentDraft,
-  type InformationAgentPrepareResponse,
-} from "@/lib/information-agent/prepare";
-export {
-  previewAdminInformationAgentMission,
-  type InformationAgentPreviewResponse,
-} from "@/lib/information-agent/preview";
-export {
-  assertUnverifiedSendWithinIdempotencyWindow,
-  omitUnverifiedSendOutcome,
-} from "@/lib/information-agent/send";
+export type { InformationAgentPrepareResponse } from "@/lib/information-agent/prepare";
+export type { InformationAgentPreviewResponse } from "@/lib/information-agent/preview";
 
 export async function listAdminInformationAgentMissions({
   auth,

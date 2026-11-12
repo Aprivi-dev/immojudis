@@ -31,15 +31,13 @@ export type PublicSaleSummaryResult =
       kind: "found";
       sale: AuctionSale;
       /**
-       * Verdict of the database on whether the page may be indexed (only when asked for and the
-       * function is deployed). `undefined`: decide with `isIndexablePublicSale`.
+       * Verdict of the database on whether the page may be indexed (only when asked for).
+       * `undefined`: decide with `isIndexablePublicSale`.
        */
       indexable?: boolean;
     }
   /** The sale does not exist or is not publicly visible. */
-  | { kind: "missing" }
-  /** The database function is not deployed yet: use the minimal legacy preview. */
-  | { kind: "unsupported" };
+  | { kind: "missing" };
 
 type SummaryRow = {
   id: string;
@@ -57,10 +55,10 @@ type SummaryRow = {
   bathrooms_count: number | null;
   tribunal_name: string | null;
   tribunal_city: string | null;
-  /** Code du tribunal (adresse de sa page) ; absent tant que la migration 20261029180100 n'est pas appliquée. */
+  /** Code du tribunal (adresse de sa page). */
   tribunal_code?: string | null;
   thumbnail_url: string | null;
-  /** Date of the last visible change; absent while the database function is not migrated yet. */
+  /** Date of the last visible change. */
   content_changed_at?: string | null;
 };
 
@@ -83,13 +81,6 @@ type DetailsRow = {
   document_count: number | null;
 };
 
-function isMissingFunction(error: ErrorLike, fn = "get_public_sale_summary"): boolean {
-  if (!error) return false;
-  return (
-    error.code === "PGRST202" || error.code === "42883" || new RegExp(fn).test(error.message ?? "")
-  );
-}
-
 function mapPublicSaleDetails(row: DetailsRow): Partial<AuctionSale> {
   return {
     land_surface_m2: row.land_surface_m2,
@@ -106,44 +97,35 @@ function mapPublicSaleDetails(row: DetailsRow): Partial<AuctionSale> {
   } as Partial<AuctionSale>;
 }
 
-/** The details are an enrichment: a database without the function keeps the summary alone. */
 async function fetchPublicSaleDetails(
   client: PublicSaleSummaryClient,
   id: string,
 ): Promise<Partial<AuctionSale>> {
   const { data, error } = await client.rpc("get_public_sale_details", { p_sale_id: id });
-  if (error) {
-    if (isMissingFunction(error as ErrorLike, "get_public_sale_details")) return {};
-    throw error;
-  }
+  if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as DetailsRow | null | undefined;
   return row ? mapPublicSaleDetails(row) : {};
 }
 
 /**
  * The database's own verdict (`app_private.is_indexable_public_sale`, the predicate the sitemap
- * uses too), or `undefined` while the function is not deployed.
+ * uses too), or `undefined` for an answer outside the contract.
  */
 async function fetchPublicSaleIndexability(
   client: PublicSaleSummaryClient,
   id: string,
 ): Promise<boolean | undefined> {
   const { data, error } = await client.rpc("get_public_sale_indexability", { p_sale_id: id });
-  if (error) {
-    if (isMissingFunction(error as ErrorLike, "get_public_sale_indexability")) return undefined;
-    throw error;
-  }
+  if (error) throw error;
   return typeof data === "boolean" ? data : undefined;
 }
 
 /**
  * Écart de la mise à prix au marché local, en trois bandes (`get_public_sale_market_gap_band`), ou
- * `undefined` : fonction pas encore déployée, erreur, ou réponse hors contrat. C'est un
- * enrichissement : sa panne ne change ni la fiche ni son statut, elle supprime seulement la bande
- * (jamais un chiffre à la place). Une base qui n'a rien à dire répond `null`.
- *
- * Seule une fonction absente (base pas encore migrée) reste silencieuse ; toute autre erreur est
- * journalisée (`console.warn`, une ligne JSON) pour qu'une bande qui disparaît ne passe pas inaperçue.
+ * `undefined` : erreur, ou réponse hors contrat. C'est un enrichissement : sa panne ne change ni la
+ * fiche ni son statut, elle supprime seulement la bande (jamais un chiffre à la place). Une base qui
+ * n'a rien à dire répond `null`. Toute erreur est journalisée (`console.warn`, une ligne JSON) pour
+ * qu'une bande qui disparaît ne passe pas inaperçue.
  */
 async function fetchPublicSaleMarketGapBand(
   client: PublicSaleSummaryClient,
@@ -153,9 +135,7 @@ async function fetchPublicSaleMarketGapBand(
     const { data, error } = await client.rpc("get_public_sale_market_gap_band", { p_sale_id: id });
     if (error) {
       const { code, message } = error as NonNullable<ErrorLike>;
-      // Fonction absente : le code PostgREST ou PostgreSQL, pas le nom dans le message (une erreur de
-      // droits ou de délai le cite aussi).
-      if (code !== "PGRST202" && code !== "42883") warnMarketGapBand(id, code, message);
+      warnMarketGapBand(id, code, message);
       return undefined;
     }
     return isPublicMarketGapBand(data) ? data : undefined;
@@ -168,8 +148,7 @@ async function fetchPublicSaleMarketGapBand(
 /**
  * Repère « Pépite » (`get_public_sale_pepite`) : vrai seulement quand le mode des pépites est « on » et que la
  * vente est une pépite publiable (gardes à la lecture, voir la migration 20261104100000). Jamais un montant.
- * `false` pour tout le reste : mode « shadow » ou « off », fonction pas encore déployée (`PGRST202`, `42883`),
- * erreur ou réponse hors contrat. C'est un enrichissement : sa panne ne change ni la fiche ni son statut,
+ * `false` pour tout le reste : mode « shadow » ou « off », erreur ou réponse hors contrat. C'est un enrichissement : sa panne ne change ni la fiche ni son statut,
  * elle supprime seulement le repère.
  */
 async function fetchPublicSalePepite(
@@ -186,7 +165,7 @@ async function fetchPublicSalePepite(
 
 /**
  * Nom de la source d'origine de l'annonce (`get_public_sale_source_name`), seulement quand c'est une
- * source connue (`knownSourceLabel`) ; `undefined` sinon, y compris fonction absente ou en erreur :
+ * source connue (`knownSourceLabel`) ; `undefined` sinon, y compris en erreur :
  * c'est un enrichissement, sa panne ne change ni la fiche ni son statut.
  */
 async function fetchPublicSaleSourceLabel(
@@ -255,10 +234,7 @@ export async function fetchPublicSaleSummary(
       fetchPublicSaleSourceLabel(client, id),
       fetchPublicSalePepite(client, id),
     ]);
-  if (error) {
-    if (isMissingFunction(error as ErrorLike)) return { kind: "unsupported" };
-    throw error;
-  }
+  if (error) throw error;
   const row = (Array.isArray(data) ? data[0] : data) as SummaryRow | null | undefined;
   return row
     ? {

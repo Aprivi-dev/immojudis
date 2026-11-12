@@ -3,10 +3,12 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import { featureIncluded } from "@/lib/plans";
+import { normalizeEmail } from "@/lib/account";
+import { featureIncluded, type PlanEntitlements } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
-import type { PlanEntitlements } from "@/lib/property-reports";
-import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { ForbiddenError, NotFoundError, PublicApiError } from "@/lib/api-errors";
+
+const INVITATION_UNAVAILABLE_MESSAGE = "Cette invitation n'est plus disponible.";
 
 type SaleWorkspaceRow = Database["public"]["Tables"]["sale_workspaces"]["Row"];
 type CollaboratorRow = Database["public"]["Tables"]["sale_workspace_collaborators"]["Row"];
@@ -157,11 +159,11 @@ export async function acceptSaleWorkspaceInvitation({
   if (error) throw error;
   if (!invitation) throw new NotFoundError("Invitation introuvable.");
   if (invitation.status !== "invited") {
-    throw new Error("Cette invitation n'est plus disponible.");
+    throw new PublicApiError(INVITATION_UNAVAILABLE_MESSAGE, 409);
   }
   // No administrator override: only the invited, verified address can accept.
   if (normalizeEmail(invitation.invited_email) !== email) {
-    throw new Error("Cette invitation ne correspond pas à votre email.");
+    throw new PublicApiError("Cette invitation ne correspond pas à votre email.", 400);
   }
 
   const now = new Date().toISOString();
@@ -180,7 +182,7 @@ export async function acceptSaleWorkspaceInvitation({
     .maybeSingle();
 
   if (updateError) throw updateError;
-  if (!data) throw new Error("Cette invitation n'est plus disponible.");
+  if (!data) throw new PublicApiError(INVITATION_UNAVAILABLE_MESSAGE, 409);
   return { collaborator: data };
 }
 
@@ -190,13 +192,11 @@ export async function acceptSaleWorkspaceInvitation({
  */
 async function confirmedAccountEmail(userId: string): Promise<string> {
   const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
-  if (error || !data.user) {
-    throw new Error("Invitation impossible à accepter sans email authentifié.");
-  }
-  const email = normalizeEmail(data.user.email ?? "");
-  if (!email) throw new Error("Invitation impossible à accepter sans email authentifié.");
-  if (!data.user.email_confirmed_at) {
-    throw new Error("Confirmez votre adresse email avant d'accepter cette invitation.");
+  if (error) throw error;
+  const email = normalizeEmail(data.user?.email);
+  if (!email) throw new ForbiddenError("Invitation impossible à accepter sans email authentifié.");
+  if (!data.user?.email_confirmed_at) {
+    throw new ForbiddenError("Confirmez votre adresse email avant d'accepter cette invitation.");
   }
   return email;
 }
@@ -239,7 +239,7 @@ export async function createSaleWorkspaceAnnotation({
     };
   }
   if (accessible.role === "viewer") {
-    throw new Error("Votre rôle permet la lecture, pas l'ajout d'annotations.");
+    throw new ForbiddenError("Votre rôle permet la lecture, pas l'ajout d'annotations.");
   }
 
   const payload: AnnotationInsert = {
@@ -292,10 +292,6 @@ export async function updateSaleWorkspaceAnnotation({
   return { annotation: data };
 }
 
-export function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
 async function assertWorkspaceCollaborationAvailable(
   auth: SupabaseAuthContext,
 ): Promise<PlanEntitlements> {
@@ -326,7 +322,7 @@ async function assertCollaboratorLimitAvailable({
 
   if (error) throw error;
   if ((count ?? 0) >= limit) {
-    throw new Error(`Quota collaborateurs atteint pour ce dossier (${limit}).`);
+    throw new ForbiddenError(`Quota collaborateurs atteint pour ce dossier (${limit}).`);
   }
 }
 

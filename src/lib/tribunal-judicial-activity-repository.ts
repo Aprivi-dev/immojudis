@@ -1,5 +1,5 @@
 import "server-only";
-import { NotFoundError } from "@/lib/api-errors";
+import { NotFoundError, ServiceUnavailableError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -105,7 +105,7 @@ const storedDirectorySaleSchema = storedSaleSchema.extend({
   tribunal_code: z.string().min(1),
 });
 
-export class TribunalJudicialActivityUnavailableError extends Error {
+export class TribunalJudicialActivityUnavailableError extends ServiceUnavailableError {
   constructor(message = "Tribunal judicial activity is temporarily unavailable.") {
     super(message);
     this.name = "TribunalJudicialActivityUnavailableError";
@@ -227,7 +227,17 @@ function archivedHearingSale(hearing: ArchivedHearing): TribunalJudicialActivity
   };
 }
 
+export type JudicialSaleCourt = z.infer<typeof storedSaleCourtSchema>;
+
 export async function resolveCourtCodeFromSale(saleId: string): Promise<string> {
+  return courtCodeOfJudicialSale(saleId, await readJudicialSaleCourt(saleId));
+}
+
+/**
+ * Ce qui rattache une vente à son tribunal, lu une fois : 404 pour une vente absente ou en quarantaine, 503 pour
+ * une vente qui n'est pas au tribunal.
+ */
+export async function readJudicialSaleCourt(saleId: string): Promise<JudicialSaleCourt> {
   const result = await supabaseAdmin
     .from("auction_sales")
     .select(
@@ -253,7 +263,17 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
       "The sale is not identified as a judicial tribunal sale.",
     );
   }
+  return sale;
+}
 
+/**
+ * Code du tribunal d'une vente judiciaire : son code, sinon l'affectation vérifiée, sinon (vente vérifiée) son nom
+ * canonique exact ou d'empreinte unique. `TribunalCourtUnresolvedError` au-delà.
+ */
+export async function courtCodeOfJudicialSale(
+  saleId: string,
+  sale: JudicialSaleCourt,
+): Promise<string> {
   if (sale.tribunal_code) return normalizeCourtCode(sale.tribunal_code);
 
   const assignmentResult = await supabaseAdmin
@@ -320,7 +340,7 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
   );
 }
 
-function normalizeCourtCode(value: string): string {
+export function normalizeCourtCode(value: string): string {
   return value.trim().toLocaleLowerCase("fr-FR");
 }
 

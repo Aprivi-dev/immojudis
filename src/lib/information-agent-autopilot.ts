@@ -4,11 +4,9 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
 import { claimCronLease, releaseCronLease, type CronLease } from "@/lib/cron-lease.server";
-import {
-  createAdminInformationAgentDraft,
-  previewAdminInformationAgentMission,
-  runAdminInformationAgentAction,
-} from "@/lib/information-agent";
+import { runAdminInformationAgentAction } from "@/lib/information-agent";
+import { createAdminInformationAgentDraft } from "@/lib/information-agent/draft";
+import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
 import {
   findAutopilotCandidates,
   type AutopilotCandidate,
@@ -368,7 +366,6 @@ export async function runInformationAgentAutopilot(
 
   const lease = await deps.claimLease();
   if (lease.kind === "busy") return finish("skipped", "busy");
-  if (lease.kind === "unavailable") return finish("skipped", "lease_unavailable");
 
   try {
     let stats = await deps.loadStats(now);

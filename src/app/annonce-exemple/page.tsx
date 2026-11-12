@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { exampleCeilingChoices, getExampleSaleRecords, isExampleSaleKey } from "@/lib/example-sale";
+import { serverEnv } from "@/lib/env";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
 import { pageMetadata } from "@/lib/page-metadata";
 import { ExampleSalePage } from "./example-sale-page";
@@ -29,7 +30,7 @@ export default async function Page({ searchParams }: PageProps) {
     <ExampleSalePage
       example={getExampleSaleRecords()[key]}
       ceilingChoices={exampleCeilingChoices(key)}
-      adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
+      adjudicationStatisticsEnabled={serverEnv().adjudicationPriceStatisticsEnabled}
       openFeeRegimes={openFeeRegimesFromEnv()}
     />
   );

@@ -28,23 +28,21 @@ vi.mock("@/integrations/supabase/client.server", () => {
 vi.mock("@/lib/email-alerts", () => ({ sendResendEmail: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ enforceIpRateLimit: mocks.ip }));
 
-import {
-  assertInformationAgentControllerIdentity,
-  assertInformationAgentRecipientCooldown,
-} from "./information-agent";
+import { assertInformationAgentControllerIdentity } from "@/lib/information-agent/message-guards";
+import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import {
   describeInformationAgentAddressOrigin,
   informationAgentAddressOrigin,
   informationAgentControllerIdentity,
   informationAgentLegalFooterLines,
 } from "./information-agent-compliance";
-import { classifyInformationAgentReplyIntent } from "./information-agent-inbound";
+import { classifyInformationAgentReplyIntent } from "@/lib/information-agent-inbound/reply-intent";
 import {
   buildInformationAgentOptOutUrl,
   createInformationAgentOptOutToken,
   parseOptOutEmail,
   verifyInformationAgentOptOutToken,
-} from "./information-agent-opt-out";
+} from "./information-agent-signed-link";
 import {
   GET as optOutPage,
   POST as optOutConfirm,

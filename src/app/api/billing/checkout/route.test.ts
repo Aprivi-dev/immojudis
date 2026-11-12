@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthRequiredError, ForbiddenError, RateLimitError } from "@/lib/api-errors";
+import {
+  AuthRequiredError,
+  ConfigurationError,
+  ForbiddenError,
+  PublicApiError,
+  RateLimitError,
+} from "@/lib/api-errors";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 
 const mocks = vi.hoisted(() => ({
@@ -132,6 +138,32 @@ describe("POST /api/billing/checkout", () => {
       code: "INVALID_REQUEST",
     });
     expect(mocks.checkout).not.toHaveBeenCalled();
+  });
+
+  it("answers 409 with the refusal itself when a subscription or a checkout is already attached", async () => {
+    // Le texte cite Stripe : sans le type, l'heuristique le prendrait pour une panne (500).
+    const refusal =
+      "Un abonnement Analyse ou un checkout est déjà associé à ce compte. Gérez-le depuis le portail Stripe.";
+    mocks.checkout.mockRejectedValue(new PublicApiError(refusal, 409));
+
+    const response = await post({ plan: "analysis", consent });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: refusal, code: "CONFLICT" });
+  });
+
+  it("answers 503 without detail when the Stripe price is misconfigured", async () => {
+    mocks.checkout.mockRejectedValue(
+      new ConfigurationError("Le Price Stripe Analyse doit être actif et récurrent."),
+    );
+
+    const response = await post({ plan: "analysis", consent });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: "Service temporairement indisponible.",
+      code: "CONFIGURATION_ERROR",
+    });
   });
 
   it("answers 500 with the generic message when the checkout fails for an unknown reason", async () => {

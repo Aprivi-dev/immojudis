@@ -98,10 +98,12 @@ const invalidMapboxToken =
   configuredMapboxToken && !isValidMapboxPublicToken(configuredMapboxToken);
 const outboundInformationAgentEnabled = process.env.INFORMATION_AGENT_OUTBOUND_ENABLED === "true";
 const portalSecret = firstValue(["INFORMATION_AGENT_PORTAL_SECRET"]);
+// Même seuil que `src/lib/information-agent-signed-link.ts` (son test le vérifie).
+const INFORMATION_AGENT_PORTAL_SECRET_MIN_BYTES = 32;
 const invalidPortalSecret =
   outboundInformationAgentEnabled &&
   !declaredProductionNames.has("INFORMATION_AGENT_PORTAL_SECRET") &&
-  Buffer.byteLength(portalSecret?.trim() || "", "utf8") < 32;
+  Buffer.byteLength(portalSecret?.trim() || "", "utf8") < INFORMATION_AGENT_PORTAL_SECRET_MIN_BYTES;
 const stripeEnabled = Boolean(firstPresent(["STRIPE_SECRET_KEY"]));
 const legalNames = [
   "NEXT_PUBLIC_LEGAL_ENTITY_NAME",

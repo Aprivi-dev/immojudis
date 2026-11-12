@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { discoverInformationAgentContacts } from "@/lib/information-agent/contacts";
+import { discoverInformationAgentContacts } from "@/lib/information-agent/contact-resolution";
 import {
   emailInTextPattern,
   findEmailsInText,

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiRoute } from "@/lib/api-route";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
-import { PUBLIC_DIRECTORY_CACHE_SECONDS, RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   featuredLawyerQuerySchema,
   getFeaturedReferencedLawyerForSale,
@@ -26,7 +26,8 @@ export const GET = apiRoute(
 
     return NextResponse.json(await getFeaturedReferencedLawyerForSale(query), {
       headers: {
-        "cache-control": `public, s-maxage=${PUBLIC_DIRECTORY_CACHE_SECONDS}, stale-while-revalidate=300`,
+        // Same for every visitor of the sale: the edge may keep it for an hour.
+        "cache-control": "public, s-maxage=3600, stale-while-revalidate=300",
       },
     });
   },

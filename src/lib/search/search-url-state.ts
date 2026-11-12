@@ -1,4 +1,4 @@
-import { validSaleDate } from "./sale-date-range";
+import { validCalendarDay } from "@/lib/calendar-day";
 import { asFiniteNumber } from "@/lib/types";
 import { parseSaleType, type SaleTypeFilter } from "@/lib/sale-types";
 import { textValue } from "@/lib/guards";
@@ -25,7 +25,7 @@ const SEARCH_SORT_KEYS = [
 
 export type SearchSortKey = (typeof SEARCH_SORT_KEYS)[number];
 
-const TRANSACTION_TYPES = ["for_sale", "for_rent", "sold"] as const;
+const TRANSACTION_TYPES = ["for_sale", "sold"] as const;
 type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
 export type SalesSearchParams = {
@@ -187,8 +187,8 @@ function parseTransactionType(value: unknown): TransactionType | undefined {
 
 export function validateSalesSearch(search: Record<string, unknown>): SalesSearchParams {
   return {
-    minSaleDate: validSaleDate(search.minSaleDate),
-    maxSaleDate: validSaleDate(search.maxSaleDate),
+    minSaleDate: validCalendarDay(search.minSaleDate),
+    maxSaleDate: validCalendarDay(search.maxSaleDate),
     saleType: parseSaleType(search.saleType),
     city: optionalText(search.city),
     department: optionalText(search.department),

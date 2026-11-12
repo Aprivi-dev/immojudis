@@ -1,4 +1,5 @@
-import { saleDateBoundary, validSaleDate } from "./search/sale-date-range";
+import { validCalendarDay } from "./calendar-day";
+import { saleDateBoundary } from "./search/sale-date-range";
 import { departmentCode } from "@/lib/department-code";
 import { dpeMatches, extractDpe } from "@/lib/dpe";
 import { getSaleProcedure } from "@/lib/sale-procedure";
@@ -56,8 +57,8 @@ export function alertMatchesSale(
   context: AlertMatchContext = {},
 ): AlertMatchResult {
   const reasons: string[] = [];
-  const minSaleDate = validSaleDate(alert.advanced_criteria?.min_sale_date);
-  const maxSaleDate = validSaleDate(alert.advanced_criteria?.max_sale_date);
+  const minSaleDate = validCalendarDay(alert.advanced_criteria?.min_sale_date);
+  const maxSaleDate = validCalendarDay(alert.advanced_criteria?.max_sale_date);
   if (minSaleDate || maxSaleDate) {
     const saleTime = sale.sale_date ? Date.parse(sale.sale_date) : NaN;
     if (

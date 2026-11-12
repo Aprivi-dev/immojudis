@@ -100,7 +100,7 @@ export async function deliverOperationalAlertNotifications({
 
   const timestamp = now.toISOString();
   const { data, error } = await client.rpc("claim_operational_alert_notifications", {
-    p_limit: positiveInteger(env.OPERATIONS_ALERT_DELIVERY_LIMIT, 10, 20),
+    p_limit: serverEnv(env).alerts.deliveryLimit,
     p_now: timestamp,
   });
   if (error) throw new Error(error.message || "Unable to claim operational alerts.");
@@ -426,11 +426,6 @@ async function completeDelivery(
     p_success: success,
   });
   if (error) throw new Error(error.message || "Unable to complete operational alert delivery.");
-}
-
-function positiveInteger(value: string | undefined, fallback: number, maximum: number): number {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, maximum) : fallback;
 }
 
 function logDelivery(level: "info" | "warn" | "error", fields: Record<string, unknown>) {

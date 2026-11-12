@@ -1,4 +1,5 @@
 import "server-only";
+import { informationAgentPortalSecret } from "@/lib/information-agent-signed-link";
 
 /**
  * Seules variables d'environnement que le module « Emails » lit, une par une et par leur nom écrit
@@ -53,7 +54,8 @@ export function readEmailSecretsConfigured(): Record<EmailSecretVariable, boolea
     RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY?.trim()),
     RESEND_WEBHOOK_SECRET: Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim()),
     RESEND_ACCOUNT_WEBHOOK_SECRET: Boolean(process.env.RESEND_ACCOUNT_WEBHOOK_SECRET?.trim()),
-    INFORMATION_AGENT_PORTAL_SECRET: Boolean(process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim()),
+    // Renseigné et assez long pour signer les liens (même seuil que l'envoi et le dépôt).
+    INFORMATION_AGENT_PORTAL_SECRET: informationAgentPortalSecret() !== null,
   };
 }
 

@@ -1,5 +1,4 @@
 import { ForbiddenError } from "@/lib/api-errors";
-import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { buildActiveComparablesAnalysis } from "@/lib/active-comparables-analysis";
 import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
 import {
@@ -7,15 +6,14 @@ import {
   featureIncluded,
   PLAN_LABELS,
   PLAN_LIMITS,
-  type FeatureAccess,
   type FeatureKey,
   type PlanBilling,
   type PlanCode,
+  type PlanEntitlements,
 } from "@/lib/plans";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import { buildUrbanPlanningAnalysis } from "@/lib/urban-planning-analysis";
-import { assertUsageLimitAvailable } from "@/lib/usage";
-import { ActiveComparableSales, PlanEntitlements } from "../property-reports";
+import type { ActiveComparableSales } from "../property-reports";
 import { asRecord } from "@/lib/guards";
 export function buildPlanEntitlements(
   plan: PlanCode,
@@ -88,10 +86,6 @@ export function assertEntitlementIncluded(
   if (!featureIncluded(plan.plan, feature)) throw new ForbiddenError(message);
 }
 
-export function featureUnlocked(access: FeatureAccess): boolean {
-  return access !== "locked";
-}
-
 export function emptyActiveComparableSales(): ActiveComparableSales {
   return {
     scopeLabel: "Réservé à l’offre Analyse",
@@ -112,19 +106,19 @@ export function sanitizeReportSnapshotForPlan(
     ),
   };
 
-  if (!featureUnlocked(plan.features.soldComparables)) {
+  if (!featureIncluded(plan.plan, "property.soldComparables")) {
     sanitizedAnalysis.valuationBacktest = null;
   }
-  if (!featureUnlocked(plan.features.urbanPlanning)) {
+  if (!featureIncluded(plan.plan, "property.urbanPlanning")) {
     sanitizedAnalysis.urbanPlanningAnalysis = lockedUrbanPlanningAnalysis();
   }
-  if (!featureUnlocked(plan.features.streetFacade)) {
+  if (!featureIncluded(plan.plan, "property.streetFacade")) {
     sanitizedAnalysis.streetFacadeAnalysis = lockedStreetFacadeAnalysis();
   }
-  if (!featureUnlocked(plan.features.neighborhoodAnalysis)) {
+  if (!featureIncluded(plan.plan, "property.neighborhoodAnalysis")) {
     sanitizedAnalysis.neighborhoodAnalysis = lockedNeighborhoodAnalysis();
   }
-  if (!featureUnlocked(plan.features.activeComparables)) {
+  if (!featureIncluded(plan.plan, "property.activeComparables")) {
     sanitizedAnalysis.activeComparablesAnalysis = lockedActiveComparablesAnalysis();
   }
 
@@ -141,8 +135,8 @@ export function gateMarketComparablesAnalysis<T extends object>(
 ): T {
   return {
     ...analysis,
-    ...(!featureUnlocked(plan.features.soldComparables) ? { retainedComparables: [] } : {}),
-    ...(!featureUnlocked(plan.features.saleHistory) ? { addressHistory: [] } : {}),
+    ...(!featureIncluded(plan.plan, "property.soldComparables") ? { retainedComparables: [] } : {}),
+    ...(!featureIncluded(plan.plan, "property.saleHistory") ? { addressHistory: [] } : {}),
   } as T;
 }
 
@@ -215,27 +209,4 @@ export function lockedActiveComparablesAnalysis(): ReturnType<
     nextActions: [],
     limitations: [],
   };
-}
-
-export async function assertPdfExportAvailable(auth: SupabaseAuthContext, plan: PlanEntitlements) {
-  await assertUsageLimitAvailable({
-    auth,
-    eventKey: "property_report.pdf_exported",
-    limit: plan.limits.pdfExportsPerMonth,
-    label: "PDF",
-    planLabel: plan.label,
-  });
-}
-
-export async function assertReportCreationAvailable(
-  auth: SupabaseAuthContext,
-  plan: PlanEntitlements,
-) {
-  await assertUsageLimitAvailable({
-    auth,
-    eventKey: "property_report.created",
-    limit: plan.limits.propertyReportsPerMonth,
-    label: "rapports mensuels",
-    planLabel: plan.label,
-  });
 }

@@ -13,11 +13,11 @@ import {
   MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
   MARKET_GAP_BAND_MAX_RADIUS_OTHER_M,
   MARKET_GAP_BAND_MAX_RADIUS_URBAN_APARTMENT_M,
-  MARKET_GAP_BAND_MIN_COMPARABLES,
-  MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE,
   MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE,
 } from "@/lib/market-gap-band";
 import {
+  MARKET_JACKKNIFE_MIN_COMPARABLES,
+  MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
   MARKET_WIDEN_UNTIL_COMPARABLES,
   VALUATION_MODEL_MIN_COVERAGE_PCT,
 } from "@/lib/market-comparable-minimums";
@@ -242,8 +242,8 @@ function PageContent() {
           </p>
           <p>
             Le repère n’apparaît que si l’estimation est jugée fiable (critères ci-dessus) et passe
-            une porte plus stricte : au moins {MARKET_GAP_BAND_MIN_COMPARABLES_JACKKNIFE} ventes
-            comparables ({MARKET_GAP_BAND_MIN_COMPARABLES} quand la fourchette vient d’un modèle
+            une porte plus stricte : au moins {MARKET_JACKKNIFE_MIN_COMPARABLES} ventes comparables
+            ({MARKET_NON_JACKKNIFE_MIN_COMPARABLES} quand la fourchette vient d’un modèle
             statistique plutôt que des ventes elles-mêmes), un échantillon effectif d’au moins{" "}
             {MARKET_GAP_BAND_MIN_EFFECTIVE_SAMPLE}, une fourchette dont la largeur (écart entre ses
             deux bornes, rapporté à la valeur centrale) ne dépasse pas{" "}

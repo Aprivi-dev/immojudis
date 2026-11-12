@@ -1,4 +1,4 @@
-import { AdminRequiredError } from "@/lib/api-errors";
+import { AdminRequiredError, PublicApiError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -252,7 +252,9 @@ describe("panneau du pilote (serveur)", () => {
       input: { action: "emergency_stop", reason: "Arrêt demandé" },
       env: {},
     });
-    await expect(failure).rejects.toThrow("Action impossible.");
+    // Message interne neutre : la route le remplace par son message générique, sans le texte brut.
+    await expect(failure).rejects.toThrow("Database call failed");
+    await expect(failure).rejects.not.toBeInstanceOf(PublicApiError);
     await expect(failure).rejects.not.toThrow(/avocat@|constraint/);
   });
 
@@ -267,6 +269,6 @@ describe("panneau du pilote (serveur)", () => {
         input: { action: "attest_aipd", version: "v1", reason: "AIPD signée le 02/11" },
         env: {},
       }),
-    ).rejects.toMatchObject({ message: "Attestation d'AIPD manquante" });
+    ).rejects.toMatchObject({ message: "Attestation d'AIPD manquante", status: 409 });
   });
 });

@@ -99,12 +99,10 @@ const send = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/email-alerts", () => ({ sendResendEmail: send }));
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  INFORMATION_AGENT_NO_QUESTION_MESSAGE,
-  INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
-  previewAdminInformationAgentMission,
-  runAdminInformationAgentAction,
-} from "@/lib/information-agent";
+import { runAdminInformationAgentAction } from "@/lib/information-agent";
+import { INFORMATION_AGENT_NO_QUESTION_MESSAGE } from "@/lib/information-agent/draft-checks";
+import { INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE } from "@/lib/information-agent/address-origin";
+import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
 
 const ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ADMIN = { isAdmin: true, userId: ADMIN_ID } as never;

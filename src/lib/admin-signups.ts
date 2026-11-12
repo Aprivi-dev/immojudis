@@ -10,11 +10,14 @@ import {
   type AdminSignupAccess,
 } from "@/lib/admin-signups-format";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { asRecord } from "@/lib/guards";
+import { PublicApiError } from "@/lib/api-errors";
+import { adminPageQueryShape } from "@/lib/admin-page-query";
+import { adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import { withManualGrant } from "@/lib/admin-subscriptions";
 import { signupTrialDateLabel } from "@/lib/launch-offer";
 import { readLaunchOfferState } from "@/lib/launch-offer.server";
 import { isPlanPeriodActive, TRIAL_EXTENSION_SOURCE } from "@/lib/plans";
-import { isMissingRpcError } from "@/lib/postgrest-errors";
 
 /**
  * Vue admin « Inscriptions » : tous les comptes créés (gratuits compris), avec leur date
@@ -77,7 +80,7 @@ export type AdminSignupAccount = {
   trialEndsAt: string | null;
   /** Faux pour un compte premium ou un abonnement Stripe en cours : rien à prolonger ici. */
   extendable: boolean;
-  /** Usage du compte ; `null` : non mesuré (migration pas encore appliquée, panne). */
+  /** Usage du compte ; `null` : non mesuré (lecture en échec). */
   usage: AdminSignupUsage | null;
 };
 
@@ -91,14 +94,10 @@ export type AdminSignupSummary = {
   trialEndedIdle: number | null;
 };
 
-export type AdminSignupListResponse = {
+/** `total` : comptes qui répondent à la recherche et au filtre (`summary.total` : tous les comptes). */
+export type AdminSignupListResponse = AdminPageMeta & {
   accounts: AdminSignupAccount[];
   summary: AdminSignupSummary;
-  /** Comptes qui répondent à la recherche et au filtre. */
-  filteredCount: number;
-  offset: number;
-  limit: number;
-  hasMore: boolean;
   /** L'essai à l'inscription est ouvert (interrupteur de l'offre de lancement). */
   launchOfferActive: boolean;
   /** Vrai si la lecture des comptes a atteint sa limite : la liste est incomplète. */
@@ -109,8 +108,7 @@ export type AdminSignupListResponse = {
 };
 
 export const adminSignupListQuerySchema = z.object({
-  offset: z.coerce.number().int().min(0).max(100_000).default(0),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  ...adminPageQueryShape,
   q: z.string().trim().max(320).default(""),
   access: z.enum(["all", ...ADMIN_SIGNUP_ACCESS]).default("all"),
   /** `trial_ended_idle` : essai fini sans activité (Découverte, aucun déblocage, plafond, favori ni fiche). */
@@ -201,7 +199,7 @@ export async function listAdminSignups(
     .filter((user) => profileByUser.get(user.id)?.user_role !== "admin")
     .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
 
-  // L'essai n'est lu en base (règle unique `get_signup_trial_end`) que pour les comptes qui peuvent
+  // L'essai n'est lu en base (règle unique `get_signup_trial`) que pour les comptes qui peuvent
   // encore y être, puis pour les lignes affichées.
   const trialEnds = await readTrialEnds(
     accounts
@@ -266,10 +264,7 @@ export async function listAdminSignups(
   return {
     accounts: page.map((account) => classify(userById.get(account.userId)!)),
     summary,
-    filteredCount: filtered.length,
-    offset: query.offset,
-    limit: query.limit,
-    hasMore: query.offset + page.length < filtered.length,
+    ...adminPageMeta({ offset: query.offset, limit: query.limit, total: filtered.length }),
     launchOfferActive: launchOffer.active,
     truncated,
     usageAvailable: usageRows !== null,
@@ -289,13 +284,19 @@ export async function extendAdminSignupTrials({
   const auth = await assertAdminAuth(authToken);
   const endsAt = Date.parse(input.endsAt);
   if (endsAt <= now.getTime()) {
-    throw new Error("La nouvelle date de fin doit être dans le futur.");
+    throw new PublicApiError("La nouvelle date de fin doit être dans le futur.", 422);
   }
   if (endsAt > now.getTime() + TRIAL_EXTENSION_MAX_DAYS * DAY_MS) {
-    throw new Error(`Une prolongation ne peut pas dépasser ${TRIAL_EXTENSION_MAX_DAYS} jours.`);
+    throw new PublicApiError(
+      `Une prolongation ne peut pas dépasser ${TRIAL_EXTENSION_MAX_DAYS} jours.`,
+      422,
+    );
   }
   if (input.userIds.length > TRIAL_EXTENSION_MAX_ACCOUNTS) {
-    throw new Error(`Une prolongation vise ${TRIAL_EXTENSION_MAX_ACCOUNTS} comptes au plus.`);
+    throw new PublicApiError(
+      `Une prolongation vise ${TRIAL_EXTENSION_MAX_ACCOUNTS} comptes au plus.`,
+      422,
+    );
   }
 
   const userIds = Array.from(new Set(input.userIds));
@@ -366,8 +367,7 @@ export async function extendAdminSignupTrials({
  * Écrit une prolongation : le motif (table privée) et la ligne d'essai dans une même transaction
  * (`extend_trial_with_note`). La mise à jour d'une ligne existante est conditionnée à son `updated_at`
  * lu : un webhook Stripe arrivé entre la lecture et l'écriture n'est pas écrasé (`changed`, sans motif
- * écrit). Tant que la fonction est absente, repli sur l'ancien chemin : motif d'abord (une prolongation
- * sans motif ne doit jamais exister), puis la ligne.
+ * écrit).
  */
 async function writeTrialExtension({
   adminId,
@@ -405,7 +405,7 @@ async function writeTrialExtension({
   );
 
   // Une seule fonction écrit le motif et la ligne dans la même transaction (aucun motif orphelin si la ligne
-  // échoue, aucun doublon à la relance). Absente (migration 20261108190000 pas encore appliquée) : ancien chemin.
+  // échoue, aucun doublon à la relance).
   const extended = await supabaseAdmin.rpc("extend_trial_with_note", {
     p_user_id: userId,
     p_granted_by: adminId,
@@ -414,39 +414,9 @@ async function writeTrialExtension({
     p_metadata: metadata,
     p_expected_updated_at: subscription?.updated_at ?? undefined,
   });
-  if (!extended.error) {
-    if (extended.data === "written" || extended.data === "changed") return extended.data;
-    return fail("extend", { message: "Réponse inattendue de extend_trial_with_note." });
-  }
-  if (!isMissingRpcError(extended.error)) return fail("extend", extended.error);
-
-  const recorded = await supabaseAdmin.rpc("record_trial_extension", {
-    p_user_id: userId,
-    p_granted_by: adminId,
-    p_ends_at: endsAt,
-    p_note: note,
-  });
-  if (recorded.error) return fail("note", recorded.error);
-
-  if (!subscription) {
-    const { error } = await supabaseAdmin.from("user_subscriptions").insert({
-      user_id: userId,
-      plan_code: "analyse",
-      status: "trialing",
-      current_period_end: endsAt,
-      metadata,
-    });
-    return error ? fail("insert", error) : "written";
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from("user_subscriptions")
-    .update({ plan_code: "analyse", status: "trialing", current_period_end: endsAt, metadata })
-    .eq("user_id", userId)
-    .eq("updated_at", subscription.updated_at)
-    .select("user_id");
-  if (error) return fail("update", error);
-  return data && data.length > 0 ? "written" : "changed";
+  if (extended.error) return fail("extend", extended.error);
+  if (extended.data === "written" || extended.data === "changed") return extended.data;
+  return fail("extend", { message: "Réponse inattendue de extend_trial_with_note." });
 }
 
 /** L'accès du compte à cet instant, avec la même priorité que les droits en base. */
@@ -490,7 +460,7 @@ export function resolveSignupAccess({
 function isTrialExtension(
   subscription: Pick<SubscriptionRow, "status" | "current_period_end" | "metadata">,
 ): boolean {
-  const grant = jsonObject(jsonObject(subscription.metadata).manual_grant as Json);
+  const grant = asRecord(asRecord(subscription.metadata).manual_grant);
   return (
     grant.source === TRIAL_EXTENSION_SOURCE &&
     subscription.status === "trialing" &&
@@ -708,14 +678,13 @@ async function readAllPages<T>(
 
 type TrialInfo = {
   endsAt: string | null;
-  /** L'essai est ouvert pour ce compte ; `null` : la base ne le dit pas (migration absente). */
+  /** L'essai est ouvert pour ce compte ; `null` : la base ne le dit pas (aucune ligne, lecture en échec). */
   gateOpen: boolean | null;
 };
 
 /**
  * Fin de l'essai de chaque compte et « l'essai est ouvert pour lui » (`get_signup_trial`, même règle
- * que les droits en base ; avant la migration 20261108130100, `get_signup_trial_end` seule). Une
- * lecture en échec laisse le compte sans essai connu, sans faire échouer la page.
+ * que les droits en base). Une lecture en échec laisse le compte sans essai connu, sans faire échouer la page.
  */
 async function readTrialEnds(userIds: string[]): Promise<Map<string, TrialInfo>> {
   const ends = new Map<string, TrialInfo>();
@@ -732,19 +701,9 @@ async function readTrialEnds(userIds: string[]): Promise<Map<string, TrialInfo>>
 async function readTrialInfo(userId: string): Promise<TrialInfo> {
   const unknown: TrialInfo = { endsAt: null, gateOpen: null };
   const trialWindow = await supabaseAdmin.rpc("get_signup_trial", { p_user_id: userId });
-  if (!trialWindow.error) {
-    const row = Array.isArray(trialWindow.data) ? trialWindow.data[0] : null;
-    return { endsAt: row?.ends_at || null, gateOpen: row ? row.gate_open === true : null };
-  }
-  if (!isMissingRpcError(trialWindow.error)) {
-    return logTrialReadError(userId, trialWindow.error, unknown);
-  }
-
-  const { data, error } = await supabaseAdmin.rpc("get_signup_trial_end", { p_user_id: userId });
-  if (error) {
-    return isMissingRpcError(error) ? unknown : logTrialReadError(userId, error, unknown);
-  }
-  return { endsAt: typeof data === "string" && data ? data : null, gateOpen: null };
+  if (trialWindow.error) return logTrialReadError(userId, trialWindow.error, unknown);
+  const row = Array.isArray(trialWindow.data) ? trialWindow.data[0] : null;
+  return { endsAt: row?.ends_at || null, gateOpen: row ? row.gate_open === true : null };
 }
 
 function logTrialReadError(userId: string, error: { message: string }, fallback: TrialInfo) {
@@ -753,9 +712,8 @@ function logTrialReadError(userId: string, error: { message: string }, fallback:
 }
 
 /**
- * Usage et fin d'essai de chaque compte (`admin_signup_usage`, une lecture). Une lecture en échec, ou la
- * fonction absente (migration pas encore appliquée), rend `null` : les colonnes disent « non mesuré » et la
- * page reste utilisable.
+ * Usage et fin d'essai de chaque compte (`admin_signup_usage`, une lecture). Une lecture en échec rend
+ * `null` : les colonnes disent « non mesuré » et la page reste utilisable.
  */
 async function readSignupUsage(): Promise<Map<
   string,
@@ -775,9 +733,7 @@ async function readSignupUsage(): Promise<Map<
   }
   const { data, error } = result;
   if (error) {
-    if (!isMissingRpcError(error)) {
-      console.error(JSON.stringify({ scope: "admin.signups.usage", error: error.message }));
-    }
+    console.error(JSON.stringify({ scope: "admin.signups.usage", error: error.message }));
     return null;
   }
   if (!Array.isArray(data)) return null;
@@ -795,10 +751,6 @@ async function readSignupUsage(): Promise<Map<
       },
     ]),
   );
-}
-
-function jsonObject(value: Json | null | undefined): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
 }
 
 function asJson(value: unknown): Json {

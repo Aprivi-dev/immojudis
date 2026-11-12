@@ -1,56 +1,12 @@
 /**
- * Heure de Paris, module pur (aucun accès réseau ni base), utilisable côté serveur comme dans les règles
- * pures du pilote automatique.
+ * Calendrier d'envoi du pilote automatique à l'heure de Paris (jours fériés, plage d'envoi), module
+ * pur (aucun accès réseau ni base).
  */
-/**
- * Début du jour (heure de Paris) qui contient `now`. Le plafond quotidien suit le jour calendaire
- * français, pas une fenêtre glissante de 24 heures.
- */
-export function startOfParisDay(now: Date): Date {
-  const { year, month, day } = parisClock(now);
-  const midnightAsUtc = Date.UTC(year, month - 1, day);
-  // Le décalage de Paris est celui de minuit, pas celui de l'instant donné : les jours de changement
-  // d'heure, ils diffèrent d'une heure. Deux passes suffisent (minuit n'est jamais dans l'heure sautée).
-  let start = midnightAsUtc - parisOffsetMs(now);
-  start = midnightAsUtc - parisOffsetMs(new Date(start));
-  return new Date(start);
-}
+import { PARIS_TIME_ZONE } from "@/lib/paris-time";
 
-function parisClock(at: Date) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(at);
-  const part = (type: string) => Number(parts.find((item) => item.type === type)?.value);
-  return {
-    year: part("year"),
-    month: part("month"),
-    day: part("day"),
-    hour: part("hour"),
-    minute: part("minute"),
-    second: part("second"),
-  };
-}
-
-/** Décalage de l'heure de Paris sur UTC à l'instant donné (une ou deux heures), en millisecondes. */
-function parisOffsetMs(at: Date): number {
-  const clock = parisClock(at);
-  const localAsUtc = Date.UTC(
-    clock.year,
-    clock.month - 1,
-    clock.day,
-    clock.hour,
-    clock.minute,
-    clock.second,
-  );
-  return localAsUtc - Math.floor(at.getTime() / 1000) * 1000;
-}
+// Le plafond quotidien du pilote suit le jour civil de Paris, pas une fenêtre glissante de 24 heures.
+// Repris par les modules du pilote qui le lisaient ici avant `@/lib/paris-time`.
+export { startOfParisDay } from "@/lib/paris-time";
 
 type ParisParts = {
   year: number;
@@ -62,36 +18,29 @@ type ParisParts = {
   weekday: number;
 };
 
-const PARIS_WEEKDAYS: Record<string, number> = {
-  Mon: 1,
-  Tue: 2,
-  Wed: 3,
-  Thu: 4,
-  Fri: 5,
-  Sat: 6,
-  Sun: 7,
-};
+// Heure et minute à Paris : seul le pilote en a besoin, le module commun ne donne que le jour civil.
+const PARIS_WALL_CLOCK = new Intl.DateTimeFormat("en-CA", {
+  timeZone: PARIS_TIME_ZONE,
+  hourCycle: "h23",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 /** Date et heure civiles à Paris (heure d'été et changement d'heure compris). */
 function parisParts(now: Date): ParisParts {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    weekday: "short",
-    hourCycle: "h23",
-  }).formatToParts(now);
-  const value = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  const values: Record<string, number> = {};
+  for (const part of PARIS_WALL_CLOCK.formatToParts(now)) values[part.type] = Number(part.value);
+  const { year, month, day, hour, minute } = values;
   return {
-    year: Number(value("year")),
-    month: Number(value("month")),
-    day: Number(value("day")),
-    hour: Number(value("hour")),
-    minute: Number(value("minute")),
-    weekday: PARIS_WEEKDAYS[value("weekday")] ?? 1,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    weekday: new Date(Date.UTC(year, month - 1, day)).getUTCDay() || 7,
   };
 }
 

@@ -440,7 +440,7 @@ export function AdminSignupsPanel() {
           label="comptes inscrits"
           offset={offset}
           limit={PAGE_SIZE}
-          total={data.filteredCount}
+          total={data.total}
           shown={accounts.length}
           busy={query.isFetching}
           onOffsetChange={setOffset}

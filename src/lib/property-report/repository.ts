@@ -408,7 +408,7 @@ export async function recordPdfExport(auth: SupabaseAuthContext, report: SavedRe
     .eq("user_id", auth.userId);
   if (updateError) throw updateError;
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "property_report.pdf_exported",
     subjectType: "saved_property_report",

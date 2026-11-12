@@ -45,8 +45,8 @@ export function AdminCatalogueReadinessPanel({
   // Après traitement des dernières lignes d'une page, revient sur la dernière page non vide.
   useEffect(() => {
     const data = query.data;
-    if (data && data.items.length === 0 && data.queueOffset > 0) {
-      setPageOffset(adminClampOffset(data.queueOffset, data.queueLimit, data.queueTotal));
+    if (data && data.items.length === 0 && data.offset > 0) {
+      setPageOffset(adminClampOffset(data.offset, data.limit, data.total));
     }
   }, [query.data]);
   const action = useMutation({
@@ -83,8 +83,8 @@ export function AdminCatalogueReadinessPanel({
         <div className="border-b px-5 py-4">
           <h2 className="font-semibold">File d’enrichissement</h2>
           <p className="mt-1 text-sm text-brand-navy/60">
-            {overview.queueTotal} dossier{overview.queueTotal > 1 ? "s" : ""} à reprendre avec un
-            contact : avocats, puis greffes, puis adresses à confirmer.
+            {overview.total} dossier{overview.total > 1 ? "s" : ""} à reprendre avec un contact :
+            avocats, puis greffes, puis adresses à confirmer.
           </p>
           {overview.classCounts ? (
             <p className="mt-1 text-xs text-brand-navy/55">
@@ -110,9 +110,9 @@ export function AdminCatalogueReadinessPanel({
         )}
         <AdminPagination
           label="file d’enrichissement"
-          offset={overview.queueOffset}
-          limit={overview.queueLimit}
-          total={overview.queueTotal}
+          offset={overview.offset}
+          limit={overview.limit}
+          total={overview.total}
           shown={overview.items.length}
           busy={query.isFetching}
           onOffsetChange={setPageOffset}

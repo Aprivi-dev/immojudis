@@ -109,7 +109,7 @@ export function buildWeeklyDigestMessage({
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
 }): ResendEmailMessage & { unsubscribeUrl: string } {
-  if (weeklyDigestIsEmpty(content)) throw new Error("Aucun contenu pour le récapitulatif.");
+  if (weeklyDigestIsEmpty(content)) throw new Error("Weekly digest email: no content to send.");
   const unsubscribeUrl = `${appUrl}/api/notification-preferences/unsubscribe?token=${encodeURIComponent(
     createUnsubscribeToken({ userId, scope: { kind: "weekly-digest" }, now, env }),
   )}`;

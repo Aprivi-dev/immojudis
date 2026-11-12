@@ -313,11 +313,13 @@ describe("GET /api/sales/ai-review", () => {
     expect(userFrom).not.toHaveBeenCalledWith("v_auction_sales_unlocked");
   });
 
-  it("treats a database without the unlocked view as having no unlocked sale", async () => {
+  it("answers the neutral unavailability when the unlocked view cannot be read", async () => {
     setup({ visibleIds: [], unlockedError: { code: "PGRST205" } });
     const response = await request();
-    expect(response.status).toBe(200);
-    expect((await response.json()).projections[0]).toMatchObject({ sale_unavailable: true });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      error: "La relecture IA de cette annonce est momentanément indisponible.",
+    });
   });
 
   it("blocks every field when a sampled visible sale has no AI projection row", async () => {

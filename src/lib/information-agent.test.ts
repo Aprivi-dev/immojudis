@@ -1,24 +1,33 @@
 import { AdminRequiredError } from "@/lib/api-errors";
 import { describe, expect, it, vi } from "vitest";
+import { runAdminInformationAgentAction } from "@/lib/information-agent";
 import {
   assertInformationAgentCanaryRecipient,
-  assertUnverifiedSendWithinIdempotencyWindow,
   assertInformationAgentOutboundEnabled,
+  informationAgentAppOrigin,
+} from "@/lib/information-agent/config";
+import {
+  assertUnverifiedSendWithinIdempotencyWindow,
+  omitUnverifiedSendOutcome,
+} from "@/lib/information-agent/send";
+import {
   buildInformationRequestDraft,
   createAdminInformationAgentDraft,
+} from "@/lib/information-agent/draft";
+import {
   detectInformationGaps,
-  discoverInformationAgentContacts,
-  informationAgentAdminActionSchema,
-  informationAgentAppOrigin,
-  informationAgentCreateSchema,
-  informationAgentPreviewFingerprint,
-  omitUnverifiedSendOutcome,
-  runAdminInformationAgentAction,
-  selectInformationAgentContact,
   selectDefaultInformationAgentQuestionKeys,
-  withoutProfessionSuffix,
-  withSignature,
-} from "@/lib/information-agent";
+} from "@/lib/information-agent-questions";
+import {
+  discoverInformationAgentContacts,
+  selectInformationAgentContact,
+} from "@/lib/information-agent/contact-resolution";
+import {
+  informationAgentAdminActionSchema,
+  informationAgentCreateSchema,
+} from "@/lib/information-agent/schemas";
+import { informationAgentPreviewFingerprint } from "@/lib/information-agent/message-guards";
+import { withoutProfessionSuffix, withSignature } from "@/lib/information-agent/draft-checks";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { AuctionSale } from "@/lib/types";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";

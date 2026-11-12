@@ -60,12 +60,12 @@ describe("getAdminLawyerStatement", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("says that the migration is missing when the function does not exist yet", async () => {
+  it("lets a missing database function through like any other error", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202", message: "not found" } });
 
-    await expect(getAdminLawyerStatement("token", "2026-11")).rejects.toThrow(
-      "migration à appliquer",
-    );
+    await expect(getAdminLawyerStatement("token", "2026-11")).rejects.toMatchObject({
+      code: "PGRST202",
+    });
   });
 
   it("lets other database errors through", async () => {

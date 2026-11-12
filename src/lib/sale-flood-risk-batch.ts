@@ -36,6 +36,7 @@ import {
 } from "@/lib/land-risks-provider";
 import { syncSaleCommunes } from "@/lib/sale-communes-sync.server";
 import { parseTimestamp as time } from "@/lib/timestamp";
+import { isBusyWriteError } from "@/lib/write-busy";
 
 /**
  * Observe le risque d'inondation des ventes à venir et le stocke (table `auction_sale_flood_risk`, migration
@@ -83,12 +84,6 @@ const COMMUNE_TRI_CACHE_MS = 24 * 3_600_000;
 const MAX_REPORTED_ERRORS = 5;
 /** Les verdicts sont écrits par paquets de 25 ventes pendant la passe (20 à 25 : ni trop tard, ni trop souvent). */
 export const WRITE_CHUNK = 25;
-/**
- * Écriture bloquée par un verrou de ligne : la publication du pipeline tient des ventes `FOR UPDATE` le temps de sa
- * transaction, et la clé étrangère d'un verdict attend ce verrou jusqu'au délai de la requête (57014). Le paquet
- * est réessayé en fin de passe, puis laissé à la passe suivante : ces ventes restent en attente.
- */
-const BUSY_WRITE_CODES = new Set(["57014", "55P03", "40P01"]);
 /** `maxDuration` de la route `/api/cron/sale-flood-risk`. */
 export const FLOOD_MAX_DURATION_MS = 300_000;
 /** Marge minimale avant `maxDuration` pour démarrer une sonde (une sonde dure au plus ~17 s, plus l'écriture). */
@@ -124,7 +119,7 @@ const FLOOD_PACER = createStartPacer(FLOOD_MIN_INTERVAL_MS);
 const COMMUNE_TRI_CACHE = new Map<string, { hasTri: boolean; at: number }>();
 
 export type SaleFloodRiskBatchResult = {
-  skipped: "not_migrated" | "busy" | null;
+  skipped: "busy" | null;
   deriveVersion: string;
   /** Ventes à venir examinées. */
   upcoming: number;
@@ -349,7 +344,7 @@ export async function runSaleFloodRiskBatch(
   try {
     return await runPass(options);
   } finally {
-    if (lease.kind === "held") await releaseFloodRiskLease(lease.token);
+    await releaseFloodRiskLease(lease.token);
   }
 }
 
@@ -443,8 +438,7 @@ async function runPass({
     timeoutMs: api.timeoutMs ?? FLOOD_CALL_TIMEOUT_MS,
   };
 
-  const synced = await syncSaleCommunes(now);
-  if (synced.notMigrated) return { ...result, skipped: "not_migrated" };
+  const synced = await syncSaleCommunes();
   result.communesWritten = synced.written;
   result.communesRejected = synced.rejected;
   result.communesDeferred = synced.deferred;
@@ -455,7 +449,6 @@ async function runPass({
     readStoredFloodRisks(),
     readSaleCommunes(),
   ]);
-  if (storedRows == null || communes == null) return { ...result, skipped: "not_migrated" };
   const stored = new Map(storedRows.map((row) => [row.saleId, row]));
   result.upcoming = sales.filter((sale) => isUpcoming(sale, now)).length;
 
@@ -481,41 +474,41 @@ async function runPass({
   let controlPassed = false;
 
   /**
-   * Écrit un paquet. Verrou de ligne (57014, 55P03, 40P01) : le paquet est différé. Autre refus : le paquet est
-   * coupé par moitiés jusqu'à isoler la ou les lignes fautives, comme `writeRows` du calcul des pépites ; trop de
-   * lignes refusées (`FLOOD_MAX_REJECTED_ROWS`) : la panne n'est plus isolée, la passe échoue. `false` : la table
-   * n'existe pas.
+   * Écrit un paquet. Verrou de ligne (`isBusyWriteError` : la publication du pipeline tient des ventes `FOR UPDATE`
+   * et la clé étrangère d'un verdict attend ce verrou) : le paquet est différé, réessayé en fin de passe, puis laissé
+   * à la passe suivante. Autre refus : le paquet est coupé par moitiés jusqu'à isoler la ou les lignes fautives,
+   * comme `writeRows` du calcul des pépites ; trop de lignes refusées (`FLOOD_MAX_REJECTED_ROWS`) : la panne n'est
+   * plus isolée, la passe échoue.
    */
-  const writeRows = async (rows: FloodRiskInsert[]): Promise<boolean> => {
+  const writeRows = async (rows: FloodRiskInsert[]): Promise<void> => {
     try {
-      const done = await upsertFloodRisks(rows);
-      if (done) writtenRows += rows.length;
-      return done;
+      await upsertFloodRisks(rows);
+      writtenRows += rows.length;
     } catch (error) {
-      const code = storeErrorCode(error);
-      if (BUSY_WRITE_CODES.has(code)) {
+      if (isBusyWriteError(error)) {
         deferred.push(...rows);
-        return true;
+        return;
       }
       if (rows.length === 1) {
+        const code = storeErrorCode(error);
         result.writeRejected += 1;
         rejectedCodes.add(code);
         if (result.errors.length < MAX_REPORTED_ERRORS) result.errors.push(`write_refused_${code}`);
         if (result.writeRejected > FLOOD_MAX_REJECTED_ROWS) throw error;
-        return true;
+        return;
       }
       const middle = Math.ceil(rows.length / 2);
-      if (!(await writeRows(rows.slice(0, middle)))) return false;
-      return writeRows(rows.slice(middle));
+      await writeRows(rows.slice(0, middle));
+      await writeRows(rows.slice(middle));
     }
   };
 
-  /** Écrit le paquet en cours ; `false` si la table n'existe pas. */
-  const flush = async (): Promise<boolean> => {
-    if (toWrite.length === 0) return true;
+  /** Écrit le paquet en cours. */
+  const flush = async (): Promise<void> => {
+    if (toWrite.length === 0) return;
     const rows = toWrite;
     toWrite = [];
-    return writeRows(rows);
+    await writeRows(rows);
   };
 
   /** Une tentative sans verdict : jamais d'écrasement d'un verdict connu (seule la tentative est consignée). */
@@ -656,17 +649,15 @@ async function runPass({
     }
 
     // Écriture par paquets pendant la passe : un arrêt brutal ne perd que le paquet en cours.
-    if (toWrite.length >= WRITE_CHUNK && !(await flush())) {
-      return { ...result, skipped: "not_migrated" };
-    }
+    if (toWrite.length >= WRITE_CHUNK) await flush();
   }
 
-  if (!(await flush())) return { ...result, skipped: "not_migrated" };
+  await flush();
   if (deferred.length > 0) {
     // Dernier essai des paquets bloqués ; s'ils le sont encore, la passe suivante reprend ces ventes.
     toWrite = deferred;
     deferred = [];
-    if (!(await flush())) return { ...result, skipped: "not_migrated" };
+    await flush();
     if (deferred.length > 0) {
       result.writeBusy = deferred.length;
       if (result.errors.length < MAX_REPORTED_ERRORS) {

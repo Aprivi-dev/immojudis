@@ -124,4 +124,29 @@ describe("executeContractWithdrawal", () => {
       }),
     );
   });
+
+  it.each([
+    ["another request type", { request_type: "erasure" }, "pas une rétractation"],
+    ["a closed request", { status: "completed" }, "déjà clôturée"],
+    ["a request without an account", { user_id: null }, "aucun compte"],
+  ])("refuses %s with a 409, before any Stripe call", async (_label, override, message) => {
+    mocks.from.mockImplementation(() =>
+      chain({
+        data: {
+          id: REQUEST_ID,
+          request_type: "contract_withdrawal",
+          status: "in_progress",
+          user_id: USER_ID,
+          ...override,
+        },
+        error: null,
+      }),
+    );
+
+    await expect(
+      executeContractWithdrawal({ auth, input: { requestId: REQUEST_ID, refundMode: "full" } }),
+    ).rejects.toMatchObject({ status: 409, message: expect.stringContaining(message) });
+    expect(mocks.subscriptionsRetrieve).not.toHaveBeenCalled();
+    expect(mocks.refundsCreate).not.toHaveBeenCalled();
+  });
 });

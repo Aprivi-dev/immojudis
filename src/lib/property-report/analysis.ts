@@ -37,14 +37,14 @@ import { buildValuationAudit } from "@/lib/valuation-audit";
 import { type ValuationBacktestResult } from "@/lib/valuation-backtest";
 import type { AuctionSale } from "@/lib/types";
 import {
-  featureUnlocked,
   gateMarketComparablesAnalysis,
   lockedActiveComparablesAnalysis,
   lockedNeighborhoodAnalysis,
   lockedStreetFacadeAnalysis,
   lockedUrbanPlanningAnalysis,
 } from "./entitlements";
-import { ActiveComparableSales, PlanEntitlements } from "../property-reports";
+import type { ActiveComparableSales } from "../property-reports";
+import { featureIncluded, type PlanEntitlements } from "@/lib/plans";
 import { listingAddress } from "../sale-listing";
 import {
   dpeFromSourceBlocks,
@@ -266,10 +266,10 @@ export function buildReportSnapshot({
   });
   const occupancyAnalysis = buildOccupancyAnalysis(sale);
   const renovationAnalysis = buildRenovationAnalysis({ sale, surfaceM2: surface.value });
-  const streetFacadeAnalysis = featureUnlocked(plan.features.streetFacade)
+  const streetFacadeAnalysis = featureIncluded(plan.plan, "property.streetFacade")
     ? buildStreetFacadeAnalysis(sale)
     : lockedStreetFacadeAnalysis();
-  const neighborhoodAnalysis = featureUnlocked(plan.features.neighborhoodAnalysis)
+  const neighborhoodAnalysis = featureIncluded(plan.plan, "property.neighborhoodAnalysis")
     ? buildNeighborhoodAnalysis({
         sale,
         marketEstimate,
@@ -278,7 +278,7 @@ export function buildReportSnapshot({
         environmentalContext,
       })
     : lockedNeighborhoodAnalysis();
-  const activeComparablesAnalysis = featureUnlocked(plan.features.activeComparables)
+  const activeComparablesAnalysis = featureIncluded(plan.plan, "property.activeComparables")
     ? buildActiveComparablesAnalysis({
         sale,
         candidates: activeComparables.sales,
@@ -289,7 +289,7 @@ export function buildReportSnapshot({
     sale,
     acquisition: ceilingSnapshot.acquisition,
   });
-  const urbanPlanningAnalysis = featureUnlocked(plan.features.urbanPlanning)
+  const urbanPlanningAnalysis = featureIncluded(plan.plan, "property.urbanPlanning")
     ? buildUrbanPlanningAnalysis({
         sale,
         documents,
@@ -365,7 +365,9 @@ export function buildReportSnapshot({
         : null,
       marketComparablesAnalysis,
       valuationAudit,
-      valuationBacktest: featureUnlocked(plan.features.soldComparables) ? valuationBacktest : null,
+      valuationBacktest: featureIncluded(plan.plan, "property.soldComparables")
+        ? valuationBacktest
+        : null,
       cadastralAnalysis,
       dpe: {
         ...dpeAnalysis,

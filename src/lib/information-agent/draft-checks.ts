@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { isAvailableInformationAgentStatus } from "@/lib/admin-information-agent-sale";
 import { formatInformationAgentOriginDate } from "@/lib/information-agent-compliance";
-import { normalizedEmail } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 
 /**
  * Contrôles d'un brouillon de l'agent d'information avant l'aperçu et l'envoi (vente relue, au

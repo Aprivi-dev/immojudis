@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import type Stripe from "stripe";
 import { isPlanPeriodActive } from "@/lib/plans";
 import {
-  ANALYSIS_ACCESS_DAYS,
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
   ANALYSIS_OFFER_CODE,
+  ANALYSIS_RECURRING_PRICE_CENTS,
   ANALYSIS_SUBSCRIPTION_BILLING_MODEL,
   ANALYSIS_SUBSCRIPTION_OFFER_CODE,
-  ANALYSIS_PRICE_CENTS,
   ANALYSIS_TRIAL_DAYS,
+} from "@/lib/analysis-offer";
+import {
+  ANALYSIS_ACCESS_DAYS,
   billingPortalReturnUrl,
   buildAnalysisCheckoutSessionParams,
   canReleaseCheckoutReservationAfterFailure,
@@ -122,7 +124,7 @@ describe("billing helpers", () => {
   });
 
   it("keeps the historical one-time constants for webhook compatibility", () => {
-    expect(ANALYSIS_PRICE_CENTS).toBe(5_900);
+    expect(ANALYSIS_RECURRING_PRICE_CENTS).toBe(5_900);
     expect(ANALYSIS_ACCESS_DAYS).toBe(30);
   });
 

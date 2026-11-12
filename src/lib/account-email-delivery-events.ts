@@ -7,9 +7,14 @@ import {
   revokeWeeklyDigestConsent,
 } from "@/lib/email-alerts";
 import { informationAgentSenderAddress } from "@/lib/information-agent-inbound/delivery-events";
-import { captureFailure, recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
+import {
+  captureFailure,
+  EMAIL_DELIVERY_LOG_EVENTS,
+  recordEmailDeliveryEvent,
+} from "@/lib/email-delivery-log";
 import { ConfigurationError } from "@/lib/api-errors";
 import { readVerifiedResendWebhook } from "@/lib/resend-webhook";
+import { normalizeEmail } from "@/lib/account";
 
 /**
  * Rebonds et plaintes des emails envoyés aux comptes (alertes, rappels d'audience, récapitulatif,
@@ -35,6 +40,12 @@ import { readVerifiedResendWebhook } from "@/lib/resend-webhook";
  * Les journaux ne portent aucune adresse.
  */
 
+/**
+ * Évènements à abonner sur ce webhook dans Resend (l'onglet « Adresses » le vérifie) : rebonds et plaintes,
+ * plus les évènements du journal des envois, que ce webhook écrit tous.
+ */
+export const ACCOUNT_EMAIL_WEBHOOK_EVENTS: readonly string[] = EMAIL_DELIVERY_LOG_EVENTS;
+
 export type AccountEmailDeliveryAction = {
   kind: "bounce_permanent" | "complaint";
   emails: string[];
@@ -48,15 +59,11 @@ export type AccountEmailWebhookResult = {
   revokedAccounts?: number;
 };
 
-function normalizeAddress(value: string | null | undefined): string {
-  return (value ?? "").trim().toLowerCase();
-}
-
 /** Adresse nue d'un expéditeur (« Immojudis <alertes@immojudis.com> » donne l'adresse seule). */
 function bareAddress(value: string | null | undefined): string {
   const text = value ?? "";
   const match = /<([^<>]+)>/.exec(text);
-  return normalizeAddress(match ? match[1] : text);
+  return normalizeEmail(match ? match[1] : text);
 }
 
 /**

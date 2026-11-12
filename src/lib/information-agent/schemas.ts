@@ -12,7 +12,7 @@ import {
 import type {
   InformationAgentContactCandidate,
   InformationAgentRecipientKind,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import type { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
 import type { InformationAgentRecipientProfile } from "@/lib/information-agent/recipient-profile";
 

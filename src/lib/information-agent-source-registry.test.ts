@@ -4,8 +4,8 @@ import {
   loadOpposedInformationAgentIdentityKeys,
   persistInformationAgentContactObservations,
   recordInformationAgentAdminAddressEntry,
-  type InformationAgentContactCandidate,
 } from "@/lib/information-agent/contacts";
+import { type InformationAgentContactCandidate } from "@/lib/information-agent/contact-resolution";
 
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),

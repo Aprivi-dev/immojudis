@@ -150,7 +150,7 @@ describe("Supabase sale search query", () => {
     expect(secondIn).toEqual([["in", "id", ["p1"]]]);
   });
 
-  describe("base sans la colonne completeness_tier (migration pas encore appliquée)", () => {
+  describe("colonne completeness_tier introuvable : l'erreur remonte, sans relance", () => {
     const missingTier = {
       code: "42703",
       message: "column v_auction_sales_discovery_search.completeness_tier does not exist",
@@ -158,53 +158,45 @@ describe("Supabase sale search query", () => {
     const selected = (builder: QueryRecorder) =>
       String(builder.calls.find((call) => call[0] === "select")?.[1]).split(",");
 
-    it("relance la recherche sans la colonne ni ce tri (offre Découverte)", async () => {
+    it("ne relance pas la recherche sans la colonne (offre Découverte)", async () => {
       const client = new QueryClient([[], [{ id: "d" }]], [missingTier]);
-      const rows = await getSalesForSearch({}, 24, "completeness_desc", 0, {
-        discovery: true,
-        client: client as never,
-      });
-      expect(rows.map((row) => row.id)).toEqual(["d"]);
-      expect(client.builders).toHaveLength(2);
+      await expect(
+        getSalesForSearch({}, 24, "completeness_desc", 0, {
+          discovery: true,
+          client: client as never,
+        }),
+      ).rejects.toEqual(missingTier);
+      expect(client.builders).toHaveLength(1);
       expect(selected(client.builders[0])).toContain("completeness_tier");
-      expect(selected(client.builders[1])).not.toContain("completeness_tier");
-      expect(orderCalls(client.builders[1])).toEqual([
-        ["coordinates_rank", { ascending: true }],
-        ["sale_date", { ascending: true, nullsFirst: false }],
-        ["id", { ascending: true }],
-      ]);
     });
 
-    it("relance les deux phases de l'offre Analyse sans la colonne", async () => {
-      const client = new QueryClient(
-        [[], [{ id: "a" }], [{ id: "a" }]],
-        [{ code: "PGRST204", message: "Could not find the 'completeness_tier' column" }],
+    it("ne relance pas les deux phases de l'offre Analyse", async () => {
+      const missingColumn = {
+        code: "PGRST204",
+        message: "Could not find the 'completeness_tier' column",
+      };
+      const client = new QueryClient([[], [{ id: "a" }], [{ id: "a" }]], [missingColumn]);
+      await expect(
+        getSalesForSearch({}, 24, "completeness_desc", 0, { client: client as never }),
+      ).rejects.toEqual(missingColumn);
+      expect(client.builders).toHaveLength(1);
+    });
+
+    it("ne relance pas le balayage des filtres avancés", async () => {
+      const client = new QueryClient([[], [{ id: "s" }]], [missingTier]);
+      await expect(
+        getSalesForCompleteSearch({}, 100, "completeness_desc", 0, { client: client as never }),
+      ).rejects.toEqual(missingTier);
+      expect(client.builders).toHaveLength(1);
+    });
+
+    it("lit les colonnes de la carte de résultat avec le palier, sans relance", async () => {
+      const client = new QueryClient([[], [{ id: "s" }]], [missingTier]);
+      await expect(getSaleRowsByIds(["s"], "card", { client: client as never })).rejects.toEqual(
+        missingTier,
       );
-      const rows = await getSalesForSearch({}, 24, "completeness_desc", 0, {
-        client: client as never,
-      });
-      expect(rows.map((row) => row.id)).toEqual(["a"]);
-      expect(client.builders).toHaveLength(3);
-      expect(orderCalls(client.builders[1]).flat().join()).not.toContain("completeness_tier");
-      expect(selected(client.builders[2])).not.toContain("completeness_tier");
-    });
-
-    it("relance le balayage des filtres avancés sans ce tri", async () => {
-      const client = new QueryClient([[], [{ id: "s" }]], [missingTier]);
-      const rows = await getSalesForCompleteSearch({}, 100, "completeness_desc", 0, {
-        client: client as never,
-      });
-      expect(rows.map((row) => row.id)).toEqual(["s"]);
-      expect(client.builders).toHaveLength(2);
-      expect(orderCalls(client.builders[1]).flat().join()).not.toContain("completeness_tier");
-    });
-
-    it("relit les colonnes de la carte de résultat sans le palier", async () => {
-      const client = new QueryClient([[], [{ id: "s" }]], [missingTier]);
-      await getSaleRowsByIds(["s"], "card", { client: client as never });
-      expect(client.builders).toHaveLength(2);
+      expect(client.builders).toHaveLength(1);
       expect(selected(client.builders[0])).toContain("completeness_tier");
-      expect(selected(client.builders[1])).not.toContain("completeness_tier");
     });
 
     it("ne masque ni une autre colonne absente ni une autre erreur", async () => {

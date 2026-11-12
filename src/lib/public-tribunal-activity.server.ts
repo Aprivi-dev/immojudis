@@ -6,6 +6,7 @@ import {
   type PublicTribunalPriceFigureRow,
 } from "@/lib/public-tribunal-activity";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { tryPublicLoad, type PublicLoadResult } from "@/lib/public-load-result";
 
 export const PUBLIC_TRIBUNAL_ACTIVITY_REVALIDATE_SECONDS = 3_600;
 /** Étiquette du cache de données de l'activité des tribunaux (purgée par `revalidate-sale`). */
@@ -47,18 +48,16 @@ export const PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS = 5 * 60_000;
  * must not treat the second like the first: it would remove the page from the index and the
  * sitemap because of a passing outage.
  */
-export type PublicTribunalActivityResult =
-  | { status: "ok"; items: PublicTribunalActivity[] }
-  | { status: "error" };
+export type PublicTribunalActivityResult = PublicLoadResult<{ items: PublicTribunalActivity[] }>;
 
-// Per server instance: while the function is missing or the database is down, every request
+// Per server instance: while the database is down, every request
 // (page, metadata, sitemap) would otherwise repeat the failing call. Successes are cached an
 // hour by `unstable_cache`, which never stores a thrown error.
 let lastFailureAt: number | null = null;
 
 /**
  * Public figures of the courts, shared by every visitor and cached for an hour.
- * An unavailable database (or a function not deployed yet) yields `{ status: "error" }`,
+ * An unavailable database yields `{ status: "error" }`,
  * and the failure is remembered for a few minutes so the database is not hit again
  * by every request: the page then shows the Analyse barometer alone, as before.
  */
@@ -68,13 +67,9 @@ export async function loadPublicTribunalActivity(
   if (lastFailureAt !== null && now - lastFailureAt < PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS) {
     return { status: "error" };
   }
-  try {
-    const items = await cachedPublicTribunalActivity();
-    lastFailureAt = null;
-    return { status: "ok", items };
-  } catch (error) {
-    lastFailureAt = now;
-    console.warn("[tribunaux] Activité publique indisponible:", error);
-    return { status: "error" };
-  }
+  const result = await tryPublicLoad("[tribunaux] Activité publique indisponible:", async () => ({
+    items: await cachedPublicTribunalActivity(),
+  }));
+  lastFailureAt = result.status === "error" ? now : null;
+  return result;
 }

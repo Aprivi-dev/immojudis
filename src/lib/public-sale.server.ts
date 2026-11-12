@@ -18,7 +18,7 @@ export type PublicSaleLookup =
   | {
       status: "found";
       sale: AuctionSale;
-      /** Database verdict on indexing; absent while the function is not deployed. */
+      /** Database verdict on indexing; absent for an answer outside the contract. */
       indexable?: boolean;
     }
   /**
@@ -31,25 +31,6 @@ export type PublicSaleLookup =
   /** The server cannot reach the database (not configured): let the browser decide. */
   | { status: "unavailable" };
 
-const PREVIEW_VIEW = "v_auction_sales_app_preview";
-
-/**
- * Minimal public facts, read from the anonymous preview view. Only used while
- * `get_public_sale_summary` is not deployed on the database yet.
- */
-async function legacyPreview(
-  client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
-  id: string,
-): Promise<AuctionSale | null> {
-  const { data, error } = await client
-    .from(PREVIEW_VIEW)
-    .select("id,starting_price_eur,sale_venue_type,sale_verification_status")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as AuctionSale | null) ?? null;
-}
-
 type MergedSaleClient = {
   rpc: (
     fn: "get_merged_sale_target",
@@ -60,7 +41,6 @@ type MergedSaleClient = {
 /**
  * The kept sale of an identifier that a duplicate merge removed (`get_merged_sale_target`: the
  * identifier only, and only when the kept sale is visible in the public catalogue), or `null`.
- * A database that does not have the function yet answers like a sale that was never merged.
  */
 async function fetchMergedSaleTarget(
   client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
@@ -70,13 +50,7 @@ async function fetchMergedSaleTarget(
     "get_merged_sale_target",
     { p_sale_id: id },
   );
-  if (error) {
-    const { code, message } = error as { code?: string; message?: string };
-    if (code === "PGRST202" || code === "42883" || /get_merged_sale_target/.test(message ?? "")) {
-      return null;
-    }
-    throw error;
-  }
+  if (error) throw error;
   if (typeof data !== "string" || !SALE_ID_PATTERN.test(data)) return null;
   const targetId = data.toLowerCase();
   return targetId === id ? null : targetId;
@@ -111,17 +85,12 @@ async function readPublicSale(
   // Le contenu d'une source retirée (photo d'une vente fusionnée) ne sort pas, y compris côté serveur.
   await loadWithdrawnSources(client);
   const summary = await fetchPublicSaleSummary(client, id, { withIndexability: true });
-  if (summary.kind === "found") {
-    return {
-      status: "found",
-      sale: summary.sale,
-      ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
-    };
-  }
   if (summary.kind === "missing") return missingOrMerged(client, id);
-
-  const sale = await legacyPreview(client, id);
-  return sale ? { status: "found", sale } : missingOrMerged(client, id);
+  return {
+    status: "found",
+    sale: summary.sale,
+    ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
+  };
 }
 
 /** A sale that is not public: a merged duplicate redirects to the sale that was kept, else 404. */

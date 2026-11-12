@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
@@ -29,14 +30,14 @@ import {
   assertInformationAgentCanaryRecipient,
   assertInformationAgentNotarySendAllowed,
   assertInformationAgentOutboundEnabled,
-  informationAgentCaseReference,
   resolveInformationAgentEmailConfig,
 } from "@/lib/information-agent/config";
+import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
 import {
   assertInformationAgentContactAllowed,
   recordInformationAgentAdminAddressEntry,
-  normalizedEmail,
 } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { assertCourtRegistryFallbackLimits } from "@/lib/information-agent/court-registry";
 import {
   assertCourtRegistryFallbackOriginIntact,
@@ -90,7 +91,7 @@ export async function approveAndSendMission({
   assertIssuedAutopilotTrigger(trigger);
   const mission = await loadOwnedMission(adminId, input.missionId);
   if (mission.status !== "draft" && mission.status !== "failed") {
-    throw new Error("Requête invalide : cette enquête ne peut plus être modifiée.");
+    throw new PublicApiError("Requête invalide : cette enquête ne peut plus être modifiée.", 409);
   }
   assertUnverifiedSendWithinIdempotencyWindow(mission);
   // Envoi strictement manuel : l'administrateur a affiché l'aperçu de ce contenu exact.
@@ -237,7 +238,7 @@ export async function approveAndSendMission({
     messageHash,
     trigger ? undefined : adminDailyApprovalCap(),
   );
-  if (!approval) throw new Error("Approbation de l'enquête impossible.");
+  if (!approval) throw new Error("Mission approval returned no row");
   if (!approval.should_send) {
     // The shared case already left the draft stage (another mission sent it): saying « updated »
     // would let the admin believe this email went out.

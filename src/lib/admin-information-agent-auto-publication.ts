@@ -1,4 +1,5 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
@@ -14,7 +15,6 @@ import {
   type AutoPublicationReason,
 } from "@/lib/information-agent/auto-publication-policy";
 import {
-  AutoPublicationNotInstalledError,
   loadAutoPublicationMode,
   loadLatestAutoPublicationDecisions,
 } from "@/lib/information-agent/auto-publication-store";
@@ -65,12 +65,19 @@ export type AutoPublicationView = {
   changes: Array<{ at: string; label: string }>;
 };
 
+/** Refus voulus par les fonctions de la base (droit, paramètre, état), écrits pour l'administrateur. */
+const RPC_REFUSAL_STATUS: Readonly<Record<string, number>> = {
+  "42501": 403,
+  "22023": 400,
+  "55000": 409,
+};
+
 function rpcFailure(error: { code?: string; message?: string }): Error {
-  if (error.code === "42501" || error.code === "22023" || error.code === "55000") {
-    return new Error(error.message ?? "Action refusée.");
-  }
+  const status = error.code ? RPC_REFUSAL_STATUS[error.code] : undefined;
+  if (status)
+    return new PublicApiError(error.message ?? "Action refusée.", status, { cause: error });
   console.error(JSON.stringify({ scope: "admin.auto_publication", code: error.code ?? "unknown" }));
-  return new Error("Action impossible.");
+  return new Error("Database call failed", { cause: error });
 }
 
 function modeLabel(mode: string): string {
@@ -180,7 +187,6 @@ export async function loadAutoPublicationReviewAnnotations(
     }
     return { mode: "simulation", decisions };
   } catch (error) {
-    if (error instanceof AutoPublicationNotInstalledError) return { mode: "off" };
     console.error(
       JSON.stringify({
         scope: "admin.auto_publication.review",

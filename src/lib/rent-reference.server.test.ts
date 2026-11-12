@@ -295,7 +295,7 @@ describe("loadRentLookup", () => {
     expect(lookup({ id: "raw-only" })?.communeCode).toBe("33063");
   });
 
-  it("keeps reading the raw payload when the commune table does not exist yet", async () => {
+  it("reports a missing commune table instead of falling back to the raw payload", async () => {
     state.anilRows = [anil("33063", "apt_all")];
     state.saleRows = [
       { id: "sale-d", postal_code: null, citycode: "33063", accepted: "true", commune: null },
@@ -307,7 +307,8 @@ describe("loadRentLookup", () => {
       { id: "sale-d", department: "33", property_type: "apartment" },
     ]);
 
-    expect(lookup({ id: "sale-d" })?.communeCode).toBe("33063");
+    expect(lookup({ id: "sale-d" })?.communeCode).toBeUndefined();
+    expect(console.error).toHaveBeenCalled();
   });
 
   it("serves the department rent to a sale whose geocode is rejected or missing", async () => {
@@ -595,7 +596,7 @@ describe("fallbacks before the hard-coded department table", () => {
     );
   });
 
-  it("treats a function that is not migrated yet as no fallback, silently", async () => {
+  it("reports a missing fallback function like any other fallback failure", async () => {
     state.rpcError = { code: "PGRST202" };
 
     const lookup = await loadRentLookup([
@@ -611,7 +612,7 @@ describe("fallbacks before the hard-coded department table", () => {
 
     expect(lookup({ id: "sale-a" })).toMatchObject({ source: "department_estimate" });
     expect(lookup({ id: "sale-b" })).toBeNull();
-    expect(console.error).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalled();
   });
 
   it("keeps the communes it found when an optional fallback fails", async () => {
@@ -688,14 +689,14 @@ describe("rent lookup session", () => {
     expect(session.unavailable([found, missing])).toBe(true);
   });
 
-  it("ne dit pas « indisponible » quand un repli est absent de la base (migration en attente)", async () => {
+  it("dit « indisponible » quand la fonction d'un repli est absente de la base", async () => {
     state.rpcError = { code: "PGRST202" };
     const missing = withGeocode("sale-b", "02077", { rooms_count: 3, department: "02" });
     const session = createRentLookupSession();
 
     await session.load([missing]);
 
-    expect(session.unavailable([missing])).toBe(false);
+    expect(session.unavailable([missing])).toBe(true);
   });
 
   it("n'est jamais « indisponible » pour un bien qui n'est pas un logement, ni pour une liste vide", async () => {
@@ -863,7 +864,7 @@ describe("loadSaleHousingTension", () => {
     expect(result?.zoning).toBe("touristique_tendue");
   });
 
-  it("rend null sans commune, sans ligne, avec un zonage illisible ou une table absente", async () => {
+  it("rend null sans commune, sans ligne, avec un zonage illisible ou une lecture en échec", async () => {
     expect(
       await loadSaleHousingTension({ id: "sale-z", department: "33", property_type: "apartment" }),
     ).toBeNull();

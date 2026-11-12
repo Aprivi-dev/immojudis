@@ -7,12 +7,11 @@ import { saleChangeEventRowToSummary } from "@/lib/sale-change-monitor";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import type { SaleReminderStore } from "@/lib/sale-reminders";
 import { chunks } from "@/lib/chunks";
+import { EMAIL_PASS_MAX_CONSENTING_USERS } from "@/lib/email-campaign-pass";
 
 const PAGE_SIZE = 1_000;
 /** Pages lues au plus pour les favoris puis pour les ventes débloquées d'une personne. */
 const MAX_FOLLOWED_PAGES = 5;
-/** Garde-fou : au-delà, le passage s'arrête là (les personnes suivantes attendent le suivant). */
-const MAX_CONSENTING_USERS = 10_000;
 
 /**
  * Dernière vérification d'une vente à la source : la plus récente entre `last_seen_at` (vente revue
@@ -48,7 +47,7 @@ export function createSupabaseSaleReminderStore(): SaleReminderStore {
   return {
     async listConsentingUserIds() {
       const ids: string[] = [];
-      for (let from = 0; from < MAX_CONSENTING_USERS; from += PAGE_SIZE) {
+      for (let from = 0; from < EMAIL_PASS_MAX_CONSENTING_USERS; from += PAGE_SIZE) {
         const { data, error } = await supabaseAdmin
           .from("user_notification_preferences")
           .select("user_id")

@@ -65,4 +65,22 @@ describe("userMessage", () => {
       ),
     ).toBe("Paiement indisponible");
   });
+
+  it("montre tel quel le message choisi par le serveur quand l'enveloppe de l'API porte un code", () => {
+    const api = (status: number, code: string, message: string) =>
+      Object.assign(new Error(message), { status, code });
+    // Le serveur a déjà jugé ce message public : le navigateur ne le remplace plus.
+    expect(
+      userMessage(api(429, "RATE_LIMITED", "Limite quotidienne atteinte, réessayez demain.")),
+    ).toBe("Limite quotidienne atteinte, réessayez demain.");
+    expect(userMessage(api(503, "INTERNAL_ERROR", "Catalogue indisponible."))).toBe(
+      "Catalogue indisponible.",
+    );
+    expect(userMessage(api(400, "INVALID_REQUEST", ""), "Oups")).toBe("Oups");
+    // Un code qui n'est pas celui de l'enveloppe (Supabase, PostgreSQL) garde les règles du navigateur.
+    expect(userMessage({ code: "PGRST116", message: "JSON object requested" })).toBe(
+      GENERIC_ERROR_MESSAGE,
+    );
+    expect(userMessage({ code: "toString", message: "relation x" })).toBe(GENERIC_ERROR_MESSAGE);
+  });
 });

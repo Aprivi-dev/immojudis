@@ -13,6 +13,7 @@ import {
   sharedMailDomainOf,
   type InformationAgentCapStructure,
 } from "@/lib/information-agent/contact-structure";
+import { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
 import { isWithinAutopilotSendWindow, startOfParisDay } from "@/lib/information-agent/paris-time";
 
 export type AutopilotMode = "off" | "simulation" | "live";
@@ -405,7 +406,9 @@ export function evaluateAutopilotCandidate(
   const no = (code: string): AutopilotCandidateVerdict => ({ ok: false, code });
   const at = now.getTime();
   const daysSince = (iso: string | null) => (iso ? (at - Date.parse(iso)) / DAY_MS : Infinity);
-  if (facts.sourceKind === "court_registry_fallback") return no("court_registry_refused");
+  if (facts.sourceKind === INFORMATION_AGENT_COURT_REGISTRY_FALLBACK) {
+    return no("court_registry_refused");
+  }
   if (facts.sourceKind !== "sale_listing") return no("source_not_sale_listing");
   if (facts.recipientRole !== "lawyer") return no("role_not_lawyer");
   if (!facts.selectedUnambiguously) return no("contact_ambiguous");

@@ -11,6 +11,7 @@ import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { trialEndEmailMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
 import { parisDateKey } from "@/lib/sale-countdown";
 import { buildTrialEndMessage } from "@/lib/trial-end-email";
+import { EMAIL_PASS_BUDGET_MS } from "@/lib/email-campaign-pass";
 
 /**
  * Envoi de l'email unique de fin d'essai (J+5), appelé chaque jour par `/api/cron/trial-end-email`.
@@ -41,8 +42,6 @@ import { buildTrialEndMessage } from "@/lib/trial-end-email";
  */
 
 const PAGE_LIMIT = 200;
-/** Marge sous les 60 s de la route : le passage s'arrête de lui-même et échoue pour être vu. */
-const TRIAL_END_BUDGET_MS = 50_000;
 
 export type TrialEndNoticeSummary = {
   mode: EmailFeatureMode;
@@ -154,7 +153,7 @@ export async function runTrialEndNotices({
   now = new Date(),
   fetchImpl = fetch,
   config = resolveNoReplyEmailConfig(),
-  budgetMs = TRIAL_END_BUDGET_MS,
+  budgetMs = EMAIL_PASS_BUDGET_MS,
 }: {
   mode?: EmailFeatureMode;
   now?: Date;
@@ -259,9 +258,9 @@ export function assertTrialEndNoticesComplete(summary: TrialEndNoticeSummary): v
     );
   }
   if (summary.failed > 0) {
-    throw new Error(`Fin d'essai : ${summary.failed} envoi(s) en échec sur ${summary.due}.`);
+    throw new Error(`Trial end notices: ${summary.failed} of ${summary.due} sends failed.`);
   }
   if (summary.interrupted) {
-    throw new Error("Fin d'essai : passage interrompu par le délai, la suite sera reprise.");
+    throw new Error("Trial end notices: pass stopped by its time budget, resumed next run.");
   }
 }

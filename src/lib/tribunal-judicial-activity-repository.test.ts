@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 
 const { serverFrom, serverRpc } = vi.hoisted(() => ({ serverFrom: vi.fn(), serverRpc: vi.fn() }));
 
@@ -409,12 +410,12 @@ describe("tribunal judicial activity repository", () => {
     const salesQuery = fakeQuery({ data: null, error: { message: "database unavailable" } });
     serverFrom.mockReturnValueOnce(courtQuery.query).mockReturnValueOnce(salesQuery.query);
 
-    await expect(
-      getTribunalJudicialActivity(
-        { courtCode: "justice_tj_1_59", historyMonths: 36 },
-        { asOf: AS_OF },
-      ),
-    ).rejects.toThrow("Judicial sale activity lookup failed");
+    const failure = getTribunalJudicialActivity(
+      { courtCode: "justice_tj_1_59", historyMonths: 36 },
+      { asOf: AS_OF },
+    );
+    await expect(failure).rejects.toThrow("Judicial sale activity lookup failed");
+    await expect(failure).rejects.toBeInstanceOf(ServiceUnavailableError);
   });
 
   it("charge l’annuaire en deux lectures bornées sans exposer les lignes sources", async () => {

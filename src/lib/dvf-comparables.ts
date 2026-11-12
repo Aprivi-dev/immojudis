@@ -15,7 +15,7 @@ import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
-import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { ForbiddenError, NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfComparableRow =
@@ -91,7 +91,7 @@ export async function getDvfComparables({
   const latitude = finiteNumber(sale.latitude);
   const longitude = finiteNumber(sale.longitude);
   if (latitude == null || longitude == null) {
-    throw new Error("Comparables DVF indisponibles : la vente n'est pas géocodée.");
+    throw new PublicApiError("Comparables DVF indisponibles : la vente n'est pas géocodée.", 422);
   }
 
   const surface = getSaleSurface(sale);
@@ -126,7 +126,7 @@ export async function getDvfComparables({
   });
   const analysis = await withDisplayDetails(rawAnalysis, rowIdByCandidateId);
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "dvf.comparables_viewed",
     subjectType: "auction_sale",

@@ -6,12 +6,10 @@ import {
 } from "@/lib/ai-review-guard";
 
 /**
- * Lecture serveur de la relecture IA d'une vente : les colonnes lues, l'assainissement des lignes de
- * projection, les lignes de couverture manquante et la dérive de la valeur canonique. Déplacé tel quel
- * de `src/app/api/sales/ai-review/route.ts` pour que le traitement planifié de la pépite
- * (`sale-pepites-batch.ts`) lise la relecture IA exactement comme la fiche, sans copie du code. La
- * route garde l'accès (jeton, vues visibles du compte) et les lignes « vente indisponible » ; ce
- * module ne lit aucune donnée.
+ * Relecture IA d'une vente : les colonnes lues, l'assainissement des lignes de projection, les lignes
+ * de couverture manquante et la dérive de la valeur canonique. La lecture elle-même, commune à la
+ * route `/api/sales/ai-review` et au calcul des pépites, est `readAiReviewProjections`
+ * (`ai-review-projections.server.ts`) ; ce module ne lit aucune donnée.
  */
 
 export const PROJECTION_COLUMNS =
@@ -165,12 +163,10 @@ type AiReviewCaseStatusRow = {
 export function canonicalMismatchKeys(
   projections: AiReviewProjectionReadModel[],
   publishableRows: unknown[] | null,
-  canonicalRows: unknown[] | null,
+  canonicalRows: readonly CanonicalSaleRow[],
 ): Set<string> {
   const canonicalBySaleId = new Map<string, CanonicalSaleRow>();
-  for (const candidate of canonicalRows ?? []) {
-    if (!candidate || typeof candidate !== "object") continue;
-    const row = candidate as CanonicalSaleRow;
+  for (const row of canonicalRows) {
     if (typeof row.id === "string") canonicalBySaleId.set(row.id, row);
   }
 

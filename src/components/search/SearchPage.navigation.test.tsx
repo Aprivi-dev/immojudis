@@ -367,8 +367,8 @@ describe("/sales : adresse nettoyée", () => {
 
 describe("/sales : page hors bornes", () => {
   it("dit que la page n'existe pas et renvoie à la page 1, sans parler de panne ni rejouer", async () => {
-    state.fetchSearchResults.mockRejectedValue(new SearchRejectedError("Page hors limites."));
-    state.fetchSearchCount.mockRejectedValue(new SearchRejectedError("Page hors limites."));
+    state.fetchSearchResults.mockRejectedValue(new SearchRejectedError("Page hors limites.", true));
+    state.fetchSearchCount.mockRejectedValue(new SearchRejectedError("Page hors limites.", true));
     renderSales("/sales?page=999&city=Pau", {
       client: new QueryClient({ defaultOptions: { queries: { retry: retryUnlessRefused } } }),
     });

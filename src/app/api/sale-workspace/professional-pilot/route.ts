@@ -3,7 +3,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { professionalPilotSaveSchema, saveProfessionalPilot } from "@/lib/sale-workspaces";
 
 export const PUT = apiRoute(

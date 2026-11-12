@@ -60,7 +60,7 @@ function listResponse(accounts: AdminSignupAccount[]): AdminSignupListResponse {
       },
       trialEndedIdle: 2,
     },
-    filteredCount: accounts.length,
+    total: accounts.length,
     offset: 0,
     limit: 50,
     hasMore: false,

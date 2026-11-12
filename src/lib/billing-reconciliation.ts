@@ -3,8 +3,8 @@ import { assertAdminAuth } from "@/lib/admin-auth.server";
 import type Stripe from "stripe";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
+import { ANALYSIS_RECURRING_PRICE_CENTS } from "@/lib/analysis-offer";
 import {
-  ANALYSIS_RECURRING_PRICE_CENTS,
   analysisSubscriptionPriceIds,
   getStripe,
   stripeAccessPeriodEndIso,

@@ -7,7 +7,7 @@ import {
   lawyerPlacementEventInputSchema,
   recordLawyerPlacementEvent,
 } from "@/lib/lawyer-placement-events";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 
 export const POST = apiRoute(
   {

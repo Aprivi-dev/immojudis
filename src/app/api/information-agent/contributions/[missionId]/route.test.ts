@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { verifyInformationAgentOptOutToken } from "@/lib/information-agent-opt-out";
+import {
+  MAX_FILE_BYTES,
+  MAX_FILES,
+  MAX_SUBMISSION_BYTES,
+} from "@/lib/information-agent-contribution";
+import { INFORMATION_AGENT_QUESTIONS } from "@/lib/information-agent-questions";
+import { verifyInformationAgentOptOutToken } from "@/lib/information-agent-signed-link";
+import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
 import { POST } from "./route";
 
 const SECRET = "portal-secret-that-is-at-least-32-characters-long";
@@ -31,7 +38,9 @@ beforeEach(() => {
     mission: {
       id: MISSION_ID,
       recipient_email: "Cabinet@Example.test",
-      body_text: "Bonjour,\n\n- Quelle est la date de visite ?\n- Le bien est-il libre ?\n\nMerci",
+      // Le texte rendu ne sert plus : les questions viennent des clés enregistrées avec la mission.
+      body_text: "Bonjour,\n\n- Texte libre réécrit par l'administrateur\n\nMerci",
+      question_keys: ["visit", "occupancy", "inconnue"],
     },
   });
   vi.stubEnv("INFORMATION_AGENT_PORTAL_SECRET", SECRET);
@@ -46,8 +55,21 @@ describe("information agent contribution session", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     const body = await response.json();
-    expect(body.caseReference).toBe("ABCDEF12");
-    expect(body.questions).toEqual(["Quelle est la date de visite ?", "Le bien est-il libre ?"]);
+    // Même référence que celle de l'email (« Référence de suivi »).
+    expect(body.caseReference).toBe(
+      informationAgentCaseReference("abcdef12-0000-4000-8000-000000000000"),
+    );
+    expect(body.caseReference).toBe("IJ-ABCDEF12");
+    expect(body.questions).toEqual([
+      INFORMATION_AGENT_QUESTIONS.visit.question,
+      INFORMATION_AGENT_QUESTIONS.occupancy.question,
+    ]);
+    // Les limites affichées et contrôlées par la page sont celles du serveur.
+    expect(body).toMatchObject({
+      maxFiles: MAX_FILES,
+      maxFileBytes: MAX_FILE_BYTES,
+      maxSubmissionBytes: MAX_SUBMISSION_BYTES,
+    });
     expect(body.optOutPath).toMatch(/^\/api\/information-agent\/opt-out\?e=[\w-]+&t=[a-f0-9]{64}$/);
     const params = new URL(body.optOutPath, "https://immojudis.test").searchParams;
     const email = Buffer.from(params.get("e") ?? "", "base64url").toString("utf8");
@@ -56,13 +78,13 @@ describe("information agent contribution session", () => {
     expect(JSON.stringify(body)).not.toContain(TOKEN);
   });
 
-  it("omits the objection path, without failing the deposit, when the secret is missing", async () => {
+  it("answers 503 when the secret is missing, as the deposit itself cannot work without it", async () => {
     vi.stubEnv("INFORMATION_AGENT_PORTAL_SECRET", "");
 
     const response = await call();
 
-    expect(response.status).toBe(200);
-    expect((await response.json()).optOutPath).toBeNull();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Dépôt temporairement indisponible." });
   });
 
   it("does not leak the objection path when the token is rejected", async () => {

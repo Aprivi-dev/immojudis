@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { PublicationRequestStatus } from "@/lib/publication-requests-client";
 import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { normalizeEmail } from "@/lib/account";
 
 export const PUBLICATION_DOCUMENT_BUCKET = "listing-request-documents" as const;
 const PUBLICATION_DOCUMENT_URL_TTL_SECONDS = 5 * 60;
@@ -152,7 +153,8 @@ export async function createPublicationUploadTargets({
       const { data, error } = await supabaseAdmin.storage
         .from(PUBLICATION_DOCUMENT_BUCKET)
         .createSignedUploadUrl(path);
-      if (error || !data?.token) throw error ?? new Error("Impossible de préparer la pièce.");
+      if (error || !data?.token)
+        throw error ?? new Error("Publication request: upload URL not created.");
       uploads.push({
         bucket: PUBLICATION_DOCUMENT_BUCKET,
         path,
@@ -310,7 +312,9 @@ export async function getPublicationRequest({
 }
 
 async function assertApprovedProfessional(auth: SupabaseAuthContext): Promise<string> {
-  const claimEmail = normalizeEmail(auth.claims.email);
+  const claimEmail = normalizeEmail(
+    typeof auth.claims.email === "string" ? auth.claims.email : null,
+  );
   if (!claimEmail) {
     throw new ForbiddenError("Une adresse email confirmée est obligatoire avant tout dépôt.");
   }
@@ -493,10 +497,6 @@ export async function removePublicationRequestUploads({
     .from(PUBLICATION_DOCUMENT_BUCKET)
     .remove(paths)
     .catch(() => undefined);
-}
-
-function normalizeEmail(value: unknown): string {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
 function safeStorageFileName(fileName: string): string {

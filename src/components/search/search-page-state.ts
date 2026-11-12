@@ -1,4 +1,4 @@
-import { validSaleDate } from "@/lib/search/sale-date-range";
+import { validCalendarDay } from "@/lib/calendar-day";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { DPE_CLASSES, extractDpe, type DpeClass } from "@/lib/dpe";
@@ -134,8 +134,8 @@ export function emptySearchDraft(): SearchDraft {
 
 export function draftToSearch(draft: SearchDraft, current: SalesSearchParams): SalesSearchParams {
   return {
-    minSaleDate: validSaleDate(draft.minSaleDate),
-    maxSaleDate: validSaleDate(draft.maxSaleDate),
+    minSaleDate: validCalendarDay(draft.minSaleDate),
+    maxSaleDate: validCalendarDay(draft.maxSaleDate),
     saleType: parseSaleType(draft.saleType),
     sort: current.sort,
     viewport: current.viewport,

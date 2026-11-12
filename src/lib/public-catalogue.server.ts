@@ -11,13 +11,14 @@ import { isPhotoMirrorEnabled, withPhotoMirrors, type PhotoMirrorClient } from "
 import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { salesSearchSignature, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { publicSupabaseConfigurationError } from "@/lib/supabase-configuration-error";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import {
   loadWithdrawnSources,
   stripWithdrawnSourceContent,
   type WithdrawnSourcesClient,
 } from "@/lib/withdrawn-sources";
-import { ConfigurationError, ServiceUnavailableError } from "@/lib/api-errors";
+import { ServiceUnavailableError } from "@/lib/api-errors";
 
 /** First page of the catalogue as seen by a signed-out visitor. */
 export type InitialCatalogue = {
@@ -86,7 +87,7 @@ const PEPITE_SCAN_REVALIDATE_SECONDS = 120;
 
 async function defaultSearch(search: SalesSearchParams): Promise<PreviewSearchResponse> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw publicSupabaseConfigurationError();
   const rpcClient = client as unknown as PreviewRpcClient;
   if (search.pepite) {
     const base = { ...search, pepite: undefined, page: undefined, limit: undefined };

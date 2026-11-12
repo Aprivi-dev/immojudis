@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
+import type { Database } from "@/integrations/supabase/types";
 import { isLaunchOfferActive } from "@/lib/launch-offer.server";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
@@ -25,6 +25,7 @@ import { recordFeatureUsageEvent } from "@/lib/usage";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { documentSignatureParts } from "@/lib/document-signature";
 import { ForbiddenError } from "@/lib/api-errors";
+import { asJson } from "@/lib/supabase-json";
 
 const SALE_WATCH_KINDS = ["alert_match", "favorite", "workspace"] as const;
 const SALE_CHANGE_EVENT_KINDS = [
@@ -339,7 +340,7 @@ export async function monitorUserSaleChanges({
   await upsertWatchSnapshots(snapshotRows);
   const insertedRows = await insertChangeEvents(eventRows);
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "sale_changes.monitored",
     subjectType: "sale_change_monitor",
@@ -1062,8 +1063,4 @@ function cleanString(value: string | null | undefined): string | null {
 
 function finiteNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function asJson(value: unknown): Json {
-  return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }

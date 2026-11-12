@@ -1,7 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { LAUNCH_OFFER_CACHE_SECONDS } from "@/lib/launch-offer";
-import { isMissingRpcError } from "@/lib/postgrest-errors";
+import { LAUNCH_OFFER_CACHE_SECONDS } from "@/lib/launch-offer-response";
 
 /**
  * État de l'offre de lancement, lu dans la base (RPC `get_launch_offer_status`, rôle service_role)
@@ -77,7 +76,6 @@ export function resetLaunchOfferCache(): void {
   cached = null;
   inflight = null;
   eligibilityReads.clear();
-  fallbackWarned = false;
 }
 
 /**
@@ -87,7 +85,7 @@ export function resetLaunchOfferCache(): void {
  * `active` : l'essai du compte est en cours. `endsAt` : sa fin (ISO), même passée, ou `null` si le
  * compte n'a pas droit à l'essai (pas d'adresse confirmée, adresse jetable, ou un compte plus ancien
  * de la même adresse canonique l'a déjà eu). `denied` : la base a répondu « pas d'essai » (jamais
- * après une erreur ni par l'ancienne règle).
+ * après une erreur).
  *
  * L'interrupteur est déjà appliqué : couper l'essai ne ferme que les NOUVEAUX essais. Un compte dont
  * l'adresse a été confirmée avant la coupure garde ses 7 jours (migration 20261108130100) ; un compte
@@ -108,16 +106,11 @@ const NOT_ELIGIBLE_CACHE_MS = 30_000;
 const ELIGIBILITY_CACHE_MAX = 1_000;
 const eligibilityReads = new Map<string, { read: TrialRead; expiresAt: number }>();
 
-/**
- * Lecture en base : `endsAt` et `gateOpen` (fonction `get_signup_trial`, migration 20261108130100),
- * ou `endsAt` seul (`get_signup_trial_end`, migration 20261103100000), ou, avant elle, l'ancienne
- * éligibilité sans durée (`fallbackActive`).
- */
+/** Lecture en base (fonction `get_signup_trial`). */
 type TrialRead = {
   endsAt: string | null;
   /** L'essai est ouvert pour ce compte (interrupteur actif, ou adresse confirmée avant la coupure). */
-  gateOpen?: boolean;
-  fallbackActive?: boolean;
+  gateOpen: boolean;
 };
 
 const NO_TRIAL: SignupTrial = { active: false, endsAt: null };
@@ -127,24 +120,19 @@ const NO_TRIAL: SignupTrial = { active: false, endsAt: null };
  * la règle de `app_private.signup_trial_ends_at` : profil, adresse email confirmée, domaine non
  * jetable, plus ancien compte confirmé de son adresse canonique, et 7 jours à compter de la
  * confirmation. Les écrans et les droits en base répondent ainsi pareil, sans seconde copie de la
- * règle. Fermé en cas d'erreur : l'accès normal (abonnement, premium, administrateur) n'en dépend
- * pas.
- *
- * Ordre de déploiement : tant que la migration 20261103100000 n'est pas appliquée (`PGRST202` ou
- * `42883`), la base applique encore l'offre de lancement sans durée ; on lit alors la même règle
- * qu'elle (`get_launch_offer_account_eligibility`, puis l'adresse confirmée avant 20261029110000).
- * Le repli ne s'applique qu'à l'absence de la fonction, jamais à une autre erreur (qui reste fermée).
+ * règle. La base applique aussi l'interrupteur (elle connaît la date de la coupure). Fermé en cas
+ * d'erreur : l'accès normal (abonnement, premium, administrateur) n'en dépend pas.
  */
 export async function readSignupTrial(
   userId: string,
   now: number = Date.now(),
 ): Promise<SignupTrial> {
   const known = eligibilityReads.get(userId);
-  if (known && known.expiresAt > now) return await applyGate(known.read, now);
+  if (known && known.expiresAt > now) return trialAt(known.read, now);
   try {
     const read = await readTrialFromDatabase(userId);
     rememberEligibility(userId, read, now);
-    return await applyGate(read, now);
+    return trialAt(read, now);
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -164,66 +152,17 @@ export async function hasActiveSignupTrial(
   return (await readSignupTrial(userId, now)).active;
 }
 
-/**
- * L'interrupteur : lu dans la base avec l'essai (`get_signup_trial`, qui connaît la date de la
- * coupure). Avant la migration 20261108130100, seule l'ancienne règle existe : l'interrupteur
- * global, lu ici à chaque appel (jamais mis dans le cache du compte).
- */
-async function applyGate(read: TrialRead, now: number): Promise<SignupTrial> {
-  const gateOpen = read.gateOpen ?? (await isLaunchOfferActive(now));
-  return gateOpen ? trialAt(read, now) : NO_TRIAL;
-}
-
 function trialAt(read: TrialRead, now: number): SignupTrial {
+  if (!read.gateOpen) return NO_TRIAL;
   if (read.endsAt) return { active: Date.parse(read.endsAt) > now, endsAt: read.endsAt };
-  if (read.fallbackActive === undefined) return { active: false, endsAt: null, denied: true };
-  return { active: read.fallbackActive, endsAt: null };
+  return { active: false, endsAt: null, denied: true };
 }
 
 async function readTrialFromDatabase(userId: string): Promise<TrialRead> {
-  const trialWindow = await supabaseAdmin.rpc("get_signup_trial", { p_user_id: userId });
-  if (!trialWindow.error) {
-    const row = Array.isArray(trialWindow.data) ? trialWindow.data[0] : null;
-    return { endsAt: row?.ends_at || null, gateOpen: row?.gate_open === true };
-  }
-  if (!isMissingRpcError(trialWindow.error)) throw trialWindow.error;
-  const { data, error } = await supabaseAdmin.rpc("get_signup_trial_end", {
-    p_user_id: userId,
-  });
-  if (!error) return { endsAt: typeof data === "string" && data ? data : null };
-  if (!isMissingRpcError(error)) throw error;
-  return { endsAt: null, fallbackActive: await readEligibility(userId) };
-}
-
-async function readEligibility(userId: string): Promise<boolean> {
-  const { data, error } = await supabaseAdmin.rpc("get_launch_offer_account_eligibility", {
-    p_user_id: userId,
-  });
-  if (!error) return data === true;
-  if (!isMissingRpcError(error)) throw error;
-  warnEligibilityFallback();
-  return readConfirmedEmailFromAuth(userId);
-}
-
-/** L'ancienne règle : l'adresse email du compte est confirmée (`auth.users.email_confirmed_at`). */
-async function readConfirmedEmailFromAuth(userId: string): Promise<boolean> {
-  const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+  const { data, error } = await supabaseAdmin.rpc("get_signup_trial", { p_user_id: userId });
   if (error) throw error;
-  return Boolean(data?.user?.email_confirmed_at);
-}
-
-let fallbackWarned = false;
-function warnEligibilityFallback(): void {
-  if (fallbackWarned) return;
-  fallbackWarned = true;
-  console.warn(
-    JSON.stringify({
-      scope: "launch-offer.eligibility",
-      fallback: "auth-email-confirmed",
-      reason:
-        "get_launch_offer_account_eligibility absente : appliquer la migration 20261029110000",
-    }),
-  );
+  const row = Array.isArray(data) ? data[0] : null;
+  return { endsAt: row?.ends_at || null, gateOpen: row?.gate_open === true };
 }
 
 function rememberEligibility(userId: string, read: TrialRead, now: number): void {
@@ -236,7 +175,7 @@ function rememberEligibility(userId: string, read: TrialRead, now: number): void
     eligibilityReads.delete(oldest);
   }
   // Une lecture « essai fermé pour ce compte » ne reste que 30 s : rétablir l'essai doit se voir vite.
-  const known = (read.endsAt != null && read.gateOpen !== false) || read.fallbackActive === true;
+  const known = read.endsAt != null && read.gateOpen;
   eligibilityReads.set(userId, {
     read,
     expiresAt: now + (known ? ELIGIBLE_CACHE_MS : NOT_ELIGIBLE_CACHE_MS),

@@ -1,17 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import {
-  CASE_STATUS_COLUMNS,
-  PROJECTION_COLUMNS,
-  PUBLISHABLE_COLUMNS,
-  canonicalMismatchKeys,
-  missingProjectionRows,
-  sampledSaleIds,
-  sanitizeProjectionRows,
-  type CanonicalSaleRow,
-} from "@/lib/ai-review-projection-rows";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
+import { readAiReviewProjections } from "@/lib/ai-review-projections.server";
 import { getAuctionScenarios } from "@/lib/auction-scenarios.server";
 import { CEILING_ENGINE_VERSION } from "@/lib/bid-ceiling-engine";
 import { claimCronLease, releaseCronLease } from "@/lib/cron-lease.server";
@@ -28,7 +19,6 @@ import {
   type SaleCommune,
   type StoredFloodRow,
 } from "@/lib/flood-risk-store.server";
-import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { evaluateSaleForPepite, type PepiteSaleFacts } from "@/lib/pepite-input";
 import { activePepiteRuleVersion } from "@/lib/pepite-rule-switch.server";
 import { readPepiteV12Sources } from "@/lib/pepite-context.server";
@@ -66,16 +56,12 @@ import { parseTimestamp as time } from "@/lib/timestamp";
  * Règle appliquée : `pepite-v1.2` tant que l'interrupteur serveur `PEPITE_RULE_V2_ENABLED` est fermé (défaut : le
  * traitement ne lit alors pas la table d'inondation) ; `pepite-v2.1` quand il est ouvert : le verdict d'inondation
  * de chaque vente est lu dans la table privée alimentée par `/api/cron/sale-flood-risk` (jamais un appel réseau
- * ici). Sans cette table ni celle des communes, la passe se termine proprement (`skipped: "not_migrated"`). Voir
- * `pepite-rule-switch.server.ts`. Les versions v1.2 et v2.1 lisent en plus, par lot de ventes, le DPE, les pièces
+ * ici). Voir `pepite-rule-switch.server.ts`. Les versions v1.2 et v2.1 lisent en plus, par lot de ventes, le DPE, les pièces
  * lues, l'agrégat de marché de la commune et le loyer de référence des badges (`pepite-context.server.ts`).
  *
  * Mode (`app_private.sale_pepite_settings`) : `off`, la passe ne fait rien ; `shadow`, les résultats sont
  * calculés et stockés mais rien n'est visible du public ; `on`, les fonctions publiques de lecture
  * rendent les pépites. Le mode ne change pas le calcul.
- *
- * Avant la migration, la passe se termine proprement sans rien faire (`skipped: "not_migrated"`) : la
- * lecture publique, elle, ne rendra « pas de pépite ».
  *
  * Ce traitement n'écrit jamais l'événement `bid_ceiling_calculated` ni aucune mesure d'audience, et
  * n'écrit aucun montant dans les journaux : ni la sortie du traitement ni ses erreurs n'en portent.
@@ -157,7 +143,7 @@ export function currentPepiteVersions(
 
 export type SalePepitesBatchResult = {
   mode: string;
-  skipped: "mode_off" | "not_migrated" | "busy" | null;
+  skipped: "mode_off" | "busy" | null;
   ruleVersion: string;
   online: number;
   pending: number;
@@ -492,24 +478,10 @@ export function buildNotApplicableRow(
   });
 }
 
-/** Colonne inconnue de la base ou du cache de schéma PostgREST (migration pas encore appliquée). */
-function isUnknownColumn(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  return code === "PGRST204" || code === "42703";
-}
-
-function withoutEstimateVersions(row: PepiteTableInsert): PepiteTableInsert {
-  const { estimate_model_version: _model, estimate_engine_kind: _engine, ...legacy } = row;
-  return legacy;
-}
-
-/** Mode de la fonction `get_sale_pepite_mode` ; `null` : la migration n'est pas appliquée. */
-async function readMode(): Promise<string | null> {
+/** Mode de la fonction `get_sale_pepite_mode`. */
+async function readMode(): Promise<string> {
   const { data, error } = await supabaseAdmin.rpc("get_sale_pepite_mode");
-  if (error) {
-    if (isMissingDatabaseObject(error)) return null;
-    throw error;
-  }
+  if (error) throw error;
   return typeof data === "string" ? data : "off";
 }
 
@@ -573,8 +545,7 @@ async function readOnlineSales(): Promise<OnlineSale[]> {
   return sales;
 }
 
-/** Évaluations stockées ; `null` : la table n'existe pas encore. */
-async function readStoredEvaluations(): Promise<StoredEvaluation[] | null> {
+async function readStoredEvaluations(): Promise<StoredEvaluation[]> {
   const rows: StoredEvaluation[] = [];
   for (let from = 0; from < MAX_ONLINE_SALES; from += PAGE_SIZE) {
     const { data, error } = await supabaseAdmin
@@ -584,10 +555,7 @@ async function readStoredEvaluations(): Promise<StoredEvaluation[] | null> {
       )
       .order("sale_id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
-    if (error) {
-      if (isMissingDatabaseObject(error)) return null;
-      throw error;
-    }
+    if (error) throw error;
     for (const row of data ?? []) {
       rows.push({
         saleId: row.sale_id,
@@ -646,54 +614,12 @@ async function readEstimateDates(): Promise<Map<string, string | null>> {
   throw new Error("Trop d'estimations stockées pour l'évaluation des pépites.");
 }
 
-/**
- * La relecture IA des ventes lues, comme `/api/sales/ai-review` la sert (mêmes lectures, même
- * assainissement, même dérive de la valeur canonique), avec le rôle de service : le traitement ne
- * lit pas pour un compte, il lit toutes les ventes en ligne.
- */
+/** La relecture IA des ventes lues (`readAiReviewProjections`, comme la fiche), par vente. */
 async function loadAiReviewProjections(
   sales: readonly AuctionSale[],
 ): Promise<Map<string, AiReviewProjectionReadModel[]>> {
   const grouped = new Map<string, AiReviewProjectionReadModel[]>();
-  const ids = sales.map((sale) => sale.id);
-  if (!ids.length) return grouped;
-  const visibleSaleIds = new Set(ids);
-
-  const { data: projections, error: projectionError } = await supabaseAdmin
-    .from("v_auction_ai_review_projection_read_model")
-    .select(PROJECTION_COLUMNS)
-    .in("auction_sale_id", ids);
-  if (projectionError) throw projectionError;
-  const { data: caseStatuses, error: caseStatusError } = await supabaseAdmin
-    .from("auction_ai_review_case_status")
-    .select(CASE_STATUS_COLUMNS)
-    .in("auction_sale_id", ids);
-  if (caseStatusError) throw caseStatusError;
-
-  const safeProjections = sanitizeProjectionRows(projections, visibleSaleIds);
-  const missingRows = missingProjectionRows(
-    sampledSaleIds(caseStatuses, visibleSaleIds),
-    safeProjections,
-  );
-  let canonicalMismatches = new Set<string>();
-  if (
-    safeProjections.some((projection) => projection.is_publishable && projection.auction_sale_id)
-  ) {
-    const { data: publishableRows, error: publishableError } = await supabaseAdmin
-      .from("v_auction_ai_review_publishable")
-      .select(PUBLISHABLE_COLUMNS)
-      .in("auction_sale_id", ids);
-    if (publishableError) throw publishableError;
-    canonicalMismatches = canonicalMismatchKeys(
-      safeProjections,
-      publishableRows,
-      sales as unknown as CanonicalSaleRow[],
-    );
-  }
-  for (const projection of [
-    ...sanitizeProjectionRows(projections, visibleSaleIds, canonicalMismatches),
-    ...missingRows,
-  ]) {
+  for (const projection of await readAiReviewProjections(sales)) {
     if (!projection.auction_sale_id) continue;
     const list = grouped.get(projection.auction_sale_id) ?? [];
     list.push(projection);
@@ -736,8 +662,8 @@ type SalePepitesBatchOptions = {
 /**
  * Une passe, sous bail : une seconde passe simultanée (pg_cron à :35 et filet quotidien de Vercel, ou rejeu manuel)
  * rend `skipped: "busy"` sans rien lire ni écrire. Le bail est rendu à la fin, même en cas d'erreur ; il expire seul
- * au bout de `SALE_PEPITES_LEASE_SECONDS` si la passe meurt. Sans la migration (fonction de bail absente), la passe
- * continue sans verrou.
+ * au bout de `SALE_PEPITES_LEASE_SECONDS` si la passe meurt. Sans bail (erreur de la base), la passe ne tourne pas :
+ * l'erreur est levée pour que la supervision la voie.
  */
 export async function runSalePepitesBatch(
   options: SalePepitesBatchOptions = {},
@@ -749,7 +675,7 @@ export async function runSalePepitesBatch(
   try {
     return await runPass(options);
   } finally {
-    if (lease.kind === "held") await releaseCronLease("sale-pepites", lease.token);
+    await releaseCronLease("sale-pepites", lease.token);
   }
 }
 
@@ -786,14 +712,12 @@ async function runPass({
     if (result.errors.length < MAX_REPORTED_ERRORS) result.errors.push(errorMessage(error));
   };
 
-  // Avant la migration (fonction ou table absente) ou en mode « off » : rien n'est lu ni écrit.
+  // En mode « off » : rien n'est lu ni écrit.
   const mode = await readMode();
-  if (mode == null) return { ...result, skipped: "not_migrated" };
   result.mode = mode;
   if (mode === "off") return { ...result, skipped: "mode_off" };
 
   const [online, stored] = await Promise.all([readOnlineSales(), readStoredEvaluations()]);
-  if (stored == null) return { ...result, skipped: "not_migrated" };
   const estimateDates = await readEstimateDates();
 
   // Règles v2 et v2.1 : le verdict d'inondation de chaque vente, lu dans la table privée (aucun appel réseau).
@@ -812,7 +736,6 @@ async function runPass({
       readStoredFloodRisks(),
       readSaleCommunes(),
     ]);
-    if (floodRows == null || communes == null) return { ...result, skipped: "not_migrated" };
     flood = {
       stored: new Map(floodRows.map((row) => [row.saleId, row])),
       communes,
@@ -984,29 +907,21 @@ async function runPass({
   let written = 0;
   let deferred: PepiteTableInsert[] = [];
   const writeDeadlineReached = () => Date.now() - startedAt > SALE_PEPITES_WRITE_DEADLINE_MS;
-  // Code déployé avant la migration 20261108140000 : les deux colonnes de version de l'estimation n'existent pas
-  // encore. L'écriture est retentée sans elles (rien n'est perdu d'autre que les versions archivées).
-  let legacyColumns = false;
-  const writeRows = async (rows: PepiteTableInsert[]): Promise<"missing" | void> => {
+  const writeRows = async (rows: PepiteTableInsert[]): Promise<void> => {
     if (writeDeadlineReached()) {
       deferred.push(...rows);
       return;
     }
     const { error } = await supabaseAdmin
       .from("auction_sale_pepites")
-      .upsert(legacyColumns ? rows.map(withoutEstimateVersions) : rows, { onConflict: "sale_id" });
+      .upsert(rows, { onConflict: "sale_id" });
     if (!error) {
       written += rows.length;
       return;
     }
-    if (isMissingDatabaseObject(error)) return "missing";
     if (isBusyWriteError(error)) {
       deferred.push(...rows);
       return;
-    }
-    if (!legacyColumns && isUnknownColumn(error)) {
-      legacyColumns = true;
-      return writeRows(rows);
     }
     if (rows.length === 1) {
       fail(
@@ -1016,22 +931,18 @@ async function runPass({
       return;
     }
     const middle = Math.ceil(rows.length / 2);
-    if ((await writeRows(rows.slice(0, middle))) === "missing") return "missing";
-    return writeRows(rows.slice(middle));
+    await writeRows(rows.slice(0, middle));
+    await writeRows(rows.slice(middle));
   };
   for (let index = 0; index < toWrite.length; index += 200) {
-    if ((await writeRows(toWrite.slice(index, index + 200))) === "missing") {
-      return { ...result, skipped: "not_migrated" };
-    }
+    await writeRows(toWrite.slice(index, index + 200));
   }
   if (deferred.length > 0) {
     // Dernier essai des paquets bloqués ; s'ils le sont encore, la passe suivante reprend ces ventes.
     const retry = deferred;
     deferred = [];
     for (let index = 0; index < retry.length; index += 200) {
-      if ((await writeRows(retry.slice(index, index + 200))) === "missing") {
-        return { ...result, skipped: "not_migrated" };
-      }
+      await writeRows(retry.slice(index, index + 200));
     }
   }
   result.deferred = deferred.length;

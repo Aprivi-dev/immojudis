@@ -15,7 +15,8 @@ import {
   type PreviewSearchRow,
 } from "@/lib/search/preview-search";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
-import { ConfigurationError } from "@/lib/api-errors";
+import { tryPublicLoad, type PublicLoadResult } from "@/lib/public-load-result";
+import { publicSupabaseConfigurationError } from "@/lib/supabase-configuration-error";
 
 /**
  * Catalogue des ventes à venir par département, lu comme le visiteur de `/sales` : le même client
@@ -119,7 +120,7 @@ async function readPostponedSaleIds(client: PreviewRpcClient): Promise<Set<strin
 
 async function readDepartmentCatalogue(): Promise<DepartmentCatalogue> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw publicSupabaseConfigurationError();
   const rpcClient = client as unknown as PreviewRpcClient;
   const postponedIds = await readPostponedSaleIds(rpcClient);
   const rows = await readAllPublicSales(async (page) => {
@@ -168,16 +169,11 @@ export function loadDepartmentCatalogue(): Promise<DepartmentCatalogue> {
   return inFlight;
 }
 
-export type DepartmentCatalogueResult =
-  | { status: "ok"; catalogue: DepartmentCatalogue }
-  | { status: "error" };
+export type DepartmentCatalogueResult = PublicLoadResult<{ catalogue: DepartmentCatalogue }>;
 
 /** Variante qui ne lève pas : pour le sitemap et l'index, qui doivent rester disponibles. */
-export async function tryLoadDepartmentCatalogue(): Promise<DepartmentCatalogueResult> {
-  try {
-    return { status: "ok", catalogue: await loadDepartmentCatalogue() };
-  } catch (error) {
-    console.warn("[departements] Catalogue indisponible:", error);
-    return { status: "error" };
-  }
+export function tryLoadDepartmentCatalogue(): Promise<DepartmentCatalogueResult> {
+  return tryPublicLoad("[departements] Catalogue indisponible:", async () => ({
+    catalogue: await loadDepartmentCatalogue(),
+  }));
 }

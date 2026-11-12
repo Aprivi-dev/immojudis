@@ -1,5 +1,6 @@
 import type { AdjudicationPriceStatisticsScope } from "./adjudication-price-statistics";
 import type { AdjudicationDistribution } from "./adjudication-distributions";
+import { wilsonInterval95 } from "./stats";
 
 export const propertyTypeLabels: Record<string, string> = {
   apartment: "Appartement",
@@ -22,28 +23,15 @@ export function distributionRates(distribution: AdjudicationDistribution) {
   };
 }
 
-// TODO: utiliser src/lib/stats.ts après fusion du lot 4a
-/** Quantile 0,975 de la loi normale : intervalle de Wilson à 95 %. */
-const WILSON_Z_95 = 1.959964;
-
 /** Une part (0 à 1) et son intervalle de confiance de Wilson à 95 %, bornes comprises entre 0 et 1. */
 export type ShareInterval = { low: number; high: number };
 
 /**
- * Intervalle de Wilson à 95 % d'une part observée sur `total` résultats. Il reste correct pour de
- * petits effectifs et près de 0 ou de 1. `null` sans dénominateur ou pour une part hors de 0 à 1.
+ * Intervalle de Wilson à 95 % (`wilsonInterval95`) d'une part observée sur `total` résultats. Les parts
+ * affichées viennent de distributions validées (`adjudication-distributions.ts`) : toujours entre 0 et 1.
  */
-export function wilsonShareInterval(share: number, total: number): ShareInterval | null {
-  if (!Number.isFinite(share) || !Number.isFinite(total) || total <= 0) return null;
-  if (share < 0 || share > 1) return null;
-  const z2 = WILSON_Z_95 * WILSON_Z_95;
-  const denominator = 1 + z2 / total;
-  const centre = (share + z2 / (2 * total)) / denominator;
-  const margin =
-    (WILSON_Z_95 * Math.sqrt((share * (1 - share)) / total + z2 / (4 * total * total))) /
-    denominator;
-  return { low: Math.max(0, centre - margin), high: Math.min(1, centre + margin) };
-}
+export const wilsonShareInterval: (share: number, total: number) => ShareInterval | null =
+  wilsonInterval95;
 
 /**
  * Tris proposés pour comparer les tribunaux. Il n'y a volontairement pas de tri par multiple médian : sur

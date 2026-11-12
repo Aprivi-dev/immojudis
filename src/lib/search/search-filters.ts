@@ -13,6 +13,7 @@ import {
   matchesFrenchSearchText,
   resolveFrenchGeoSearch,
 } from "./french-geo-search";
+import { isPastParisDay } from "@/lib/paris-time";
 import { pointsToVerify } from "./points-to-verify";
 import type { SalesSearchParams, SearchSortKey, ViewportBounds } from "./search-url-state";
 
@@ -229,10 +230,9 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     search.visitSoon ||
     search.yearBuilt ||
     // Croisé avec la liste publique des pépites (`pepite-filter.ts`), comme « sous la fourchette ».
-    search.pepite ||
     // « Distance » n'a pas besoin de balayage sans adresse (rien à mesurer) : elle suit déjà
     // `aroundAddress` ci-dessus. « Chambres » se trie côté serveur (`beds_desc`).
-    search.transactionType === "for_rent",
+    search.pepite,
   );
 }
 
@@ -271,8 +271,7 @@ export function applyClientSearchFilters(
     ) {
       return false;
     }
-    if (search.transactionType === "for_rent") return false;
-    if (search.transactionType === "sold" && !isSoldLike(sale)) return false;
+    if (search.transactionType === "sold" && !isSoldLike(sale, context.now)) return false;
 
     const saleSurface = getSaleSurface(sale);
     const surface = saleSurface.value;
@@ -405,11 +404,11 @@ function matchesStatus(value: string | null | undefined, accepted: string[]) {
   });
 }
 
-function isSoldLike(sale: AuctionSale) {
+/** Même règle que « Date de vente passée » de la fiche : le jour de la vente, à Paris, est passé. */
+function isSoldLike(sale: AuctionSale, now: Date | undefined) {
   const status = sale.status?.toLowerCase();
   if (status && ["sold", "adjudicated", "past"].includes(status)) return true;
-  if (!sale.sale_date) return false;
-  return new Date(sale.sale_date).getTime() < Date.now();
+  return isPastParisDay(sale.sale_date, now);
 }
 
 function intersectDepartmentScopes(

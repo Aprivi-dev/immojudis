@@ -149,7 +149,7 @@ export async function getSaleHistory({
     },
   };
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "sale_history.viewed",
     subjectType: input.saleId ? "auction_sale" : "sale_history_scope",

@@ -1,18 +1,10 @@
 import "server-only";
+import { PublicApiError } from "@/lib/api-errors";
 import { assertAdmin } from "@/lib/admin-auth.server";
 import { renderInformationRequestEmail } from "../../../emails/information-request";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import {
-  informationAgentAiProvider,
-  type InformationAgentAiProvider,
-} from "@/lib/information-agent-ai-provider";
 import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
-import {
-  informationAgentControllerIdentity,
-  type InformationAgentFooterStructure,
-  type InformationAgentLegalFooter,
-} from "@/lib/information-agent-compliance";
-import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
+import type { InformationAgentFooterStructure } from "@/lib/information-agent-compliance";
 import {
   assertAgentFoundOriginIntact,
   assertInformationAgentSearchedAddressAllowed,
@@ -30,14 +22,11 @@ import {
   assertInformationAgentNotarySendAllowed,
   assertInformationAgentOutboundEnabled,
   informationAgentAppOrigin,
-  informationAgentCaseReference,
   resolveInformationAgentEmailConfig,
 } from "@/lib/information-agent/config";
-import {
-  assertInformationAgentContactAllowed,
-  normalizedEmail,
-} from "@/lib/information-agent/contacts";
-import { courtRegistryDailyCap } from "@/lib/information-agent/court-registry-fallback";
+import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
+import { assertInformationAgentContactAllowed } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 import {
   assertCourtRegistryFallbackOriginIntact,
   courtRegistryMissionChecks,
@@ -48,8 +37,7 @@ import {
   saleSourceTexts,
 } from "@/lib/information-agent/draft-checks";
 import {
-  assertInformationAgentControllerIdentity,
-  informationAgentPortalSecret,
+  buildInformationAgentLegalFooter,
   informationAgentPreviewFingerprint,
 } from "@/lib/information-agent/message-guards";
 import { assertInformationAgentQuestionsAllowed } from "@/lib/information-agent/recipient-questions";
@@ -58,9 +46,6 @@ import { missionRecipient, missionSaleReference } from "@/lib/information-agent/
 import { loadOwnedMission } from "@/lib/information-agent/mission-store";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import type { InformationAgentPreviewInput } from "@/lib/information-agent/schemas";
-
-// Aperçu exact d'un e-mail avant son envoi. Extrait de `information-agent.ts` sans changement de
-// comportement.
 
 export type InformationAgentPreviewResponse = {
   ok: true;
@@ -104,7 +89,9 @@ export async function previewAdminInformationAgentMission({
   assertAdmin(auth);
   const mission = await loadOwnedMission(auth.userId, input.missionId);
   const recipient = normalizedEmail(input.recipientEmail);
-  if (!recipient) throw new Error("Requête invalide : adresse email du destinataire invalide.");
+  if (!recipient) {
+    throw new PublicApiError("Requête invalide : adresse email du destinataire invalide.", 400);
+  }
   const blockers: string[] = [];
   const collect = async (check: () => unknown) => {
     try {
@@ -175,32 +162,22 @@ export async function previewAdminInformationAgentMission({
   await collect(() => assertInformationAgentAddressDeliverable(recipient));
   await collect(() => assertAdminDailyApprovalCap(auth.userId, { env }));
   await collect(() => resolveInformationAgentEmailConfig(env));
-  await collect(() => assertInformationAgentControllerIdentity(env));
 
   const appUrl = informationAgentAppOrigin(env);
-  const controller = informationAgentControllerIdentity(env);
-  const secret = informationAgentPortalSecret(env);
-  if (!secret) blockers.push("Secret du lien d'opposition non configuré : envoi impossible.");
-  const legalFooter: InformationAgentLegalFooter = {
-    controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
-    controllerAddress: controller?.address ?? "[Adresse à configurer]",
-    contactEmail: controller?.contactEmail ?? "[Contact à configurer]",
+  // Identité du responsable, secret du lien d'opposition et prestataire d'IA : repères et motifs de blocage.
+  const legalFooter = buildInformationAgentLegalFooter({
+    appUrl,
+    email: recipient,
+    addressOrigin: addressOrigin.origin,
     saleReference: missionSaleReference(mission),
-    addressOrigin: addressOrigin.origin.text,
-    courtRegistryDailyCap: addressOrigin.origin.courtRegistry ? courtRegistryDailyCap(env) : null,
-    addressOriginUrl: addressOrigin.origin.url,
-    automatedSearch: addressOrigin.origin.automated,
-    automatedSearchSource: addressOrigin.origin.searchSource,
-    structureAddress: addressOrigin.origin.structureAddress ?? null,
     structureOpposition: courtFallback ? null : missionTarget.structureOpposition,
-    aiProvider: previewAiProvider(env, blockers),
-    privacyUrl: new URL("/privacy", appUrl).toString(),
-    optOutUrl: secret
-      ? buildInformationAgentOptOutUrl({ appUrl, email: recipient, secret })
-      : new URL("/api/information-agent/opt-out", appUrl).toString(),
-  };
+    env,
+    preview: { blockers },
+  });
+  // Sans domaine de réception, `resolveInformationAgentEmailConfig` a déjà ajouté le motif de blocage.
   const inboundDomain =
-    env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase() || "reponses.immojudis.com";
+    env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase() ||
+    "[domaine de réception à configurer]";
   const replyTo = `enquete+jeton-attribue-a-l-envoi@${inboundDomain}`;
   const rendered = await renderInformationRequestEmail({
     subject: input.subject,
@@ -235,17 +212,4 @@ export async function previewAdminInformationAgentMission({
     addressOrigin: { ...addressOrigin.origin, known: addressOrigin.known },
     fingerprint: informationAgentPreviewFingerprint({ adminId: auth.userId, ...input }, env),
   };
-}
-
-/** Prestataire d'IA du pied ; une configuration inconnue devient un motif de blocage de l'aperçu. */
-function previewAiProvider(
-  env: Readonly<Record<string, string | undefined>>,
-  blockers: string[],
-): InformationAgentAiProvider {
-  try {
-    return informationAgentAiProvider(env);
-  } catch (error) {
-    blockers.push(error instanceof Error ? error.message : "Prestataire d’IA non identifié.");
-    return informationAgentAiProvider({});
-  }
 }

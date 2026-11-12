@@ -96,7 +96,7 @@ export function AdminPublicationsPage() {
     >
       <AdminPublications
         requests={publicationRequests}
-        totalRequests={publicationPage?.totalCount ?? null}
+        totalRequests={publicationPage?.total ?? null}
         pendingCount={publicationPage?.pendingCount ?? null}
         loading={publicationRequestsQuery.isLoading}
         error={publicationRequestsQuery.error}

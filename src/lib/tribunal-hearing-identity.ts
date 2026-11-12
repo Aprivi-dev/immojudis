@@ -1,5 +1,8 @@
 import { labelFingerprint } from "@/lib/label-fingerprint";
+import { parisDateKey } from "@/lib/paris-time";
 export { labelFingerprint };
+// Repris par `tribunal-judicial-activity.ts`, qui le lisait ici avant `@/lib/paris-time`.
+export { parisDateKey as parisDayKey };
 /**
  * Conservative identity of one judicial lot across announcements.
  *
@@ -12,17 +15,6 @@ export { labelFingerprint };
  * hearing day in Europe/Paris, the exact positive starting price and the
  * normalized commune. A row without price or commune is never merged.
  */
-
-const PARIS_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Europe/Paris",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-export function parisDayKey(value: Date): string {
-  return PARIS_DAY_FORMAT.format(value);
-}
 
 export function hearingIdentityKey(input: {
   courtCode: string | null | undefined;
@@ -43,5 +35,5 @@ export function hearingIdentityKey(input: {
   ) {
     return null;
   }
-  return [courtCode, parisDayKey(input.saleAt), Math.round(price * 100), city].join("|");
+  return [courtCode, parisDateKey(input.saleAt), Math.round(price * 100), city].join("|");
 }

@@ -5,10 +5,10 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { getAdjudicationPriceStatisticsForSale } from "@/lib/adjudication-price-statistics-repository";
 import { apiRoute } from "@/lib/api-route";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { recordUsageSafely } from "@/lib/record-usage-safely.server";
+import { recordFeatureUsageEvent } from "@/lib/usage";
 
 const paramsSchema = z.object({ id: z.string().guid() });
 
@@ -39,7 +39,7 @@ export const GET = apiRoute<{ id: string }>(
     const { id: saleId } = paramsSchema.parse(params);
     const statistics = await getAdjudicationPriceStatisticsForSale(saleId);
 
-    recordUsageSafely({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "tribunal.statistics_viewed",
       subjectType: "auction_sale",

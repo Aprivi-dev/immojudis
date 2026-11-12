@@ -5,7 +5,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { apiRoute } from "@/lib/api-route";
 import { getOutcomeGraphForecastForSale } from "@/lib/outcome-graph-repository";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -34,7 +34,7 @@ export const GET = apiRoute<{ id: string }>(
     const { id: saleId } = paramsSchema.parse(params);
     const forecast = await getOutcomeGraphForecastForSale(saleId);
 
-    await recordFeatureUsageEvent({
+    recordFeatureUsageEvent({
       auth,
       eventKey: "outcome_graph.viewed",
       subjectType: "auction_sale",

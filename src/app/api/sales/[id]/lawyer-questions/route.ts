@@ -3,18 +3,16 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 import { apiRoute } from "@/lib/api-route";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
 import { buildLawyerQuestions } from "@/lib/lawyer-questions";
 import type { LawyerQuestionsResponse } from "@/lib/lawyer-questions-text";
-import { saleFeatureDoor } from "@/lib/property-reports";
+import { assertFeatureEntitlementVia, readSaleThroughDoor } from "@/lib/entitlements.server";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 import { saleRow } from "@/lib/sale-rows";
-import { DETAIL_VIEW, SALE_LIST_COLUMNS, UNLOCKED_VIEW } from "@/lib/sale-views";
+import { SALE_LIST_COLUMNS } from "@/lib/sale-views";
 
 const saleIdSchema = z.string().guid();
 
@@ -40,23 +38,19 @@ export const GET = apiRoute<{ id: string }>(
       bucketKey: "lawyer-questions",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    const door = await saleFeatureDoor(auth, "property.documentReading", saleId);
-    if (!door) {
-      throw new ForbiddenError("Les questions pour l’avocat sont réservées à l’offre Analyse.");
-    }
+    const { door } = await assertFeatureEntitlementVia(
+      auth,
+      "property.documentReading",
+      "Les questions pour l’avocat sont réservées à l’offre Analyse.",
+      { saleId },
+    );
     // Analyse : la fiche complète ; un déblocage : les colonnes de la vue débloquée.
-    const { data: sale, error } =
-      door === "plan"
-        ? await auth.supabase
-            .from(DETAIL_VIEW)
-            .select(SALE_LIST_COLUMNS)
-            .eq("id", saleId)
-            .maybeSingle()
-        : await auth.supabase.from(UNLOCKED_VIEW).select("*").eq("id", saleId).maybeSingle();
-    if (error) throw error;
-    if (!sale) throw new NotFoundError("Vente introuvable.");
-    // Un JWT administrateur contourne la sécurité par ligne : même contrôle de publication que la fiche.
-    await assertSalePublicationVisible(saleId);
+    const sale = await readSaleThroughDoor(
+      auth,
+      saleId,
+      door,
+      door === "plan" ? SALE_LIST_COLUMNS : "*",
+    );
 
     const row = saleRow(sale);
     // Les preuves rattachées à la fiche (offre Analyse) précisent les faits clés ; sans elles, la fiche seule.

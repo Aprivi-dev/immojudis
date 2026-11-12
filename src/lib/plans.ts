@@ -271,6 +271,66 @@ export type PlanBilling = {
   graceEndsAt: string | null;
 };
 
+/**
+ * Droits d'un compte tels que le serveur les résout (`resolvePlanEntitlements`) et que l'interface
+ * les lit.
+ */
+export type PlanEntitlements = {
+  plan: PlanCode;
+  label: string;
+  hasAnalysisAccess: boolean;
+  currentPeriodEnd: string | null;
+  billing?: PlanBilling;
+  /**
+   * Le plan est Analyse grâce à l'essai gratuit de 7 jours à l'inscription (le mécanisme de l'offre
+   * de lancement : compte gratuit surclassé pendant son essai, tant que `app_private.launch_offer`
+   * est active). Absent pour un abonné, un compte premium ou un administrateur.
+   */
+  launchOffer?: true;
+  /** Fin de l'essai en cours (ISO), quand la base la connaît. */
+  trialEndsAt?: string;
+  /** L'essai a été prolongé par l'administrateur : `trialEndsAt` est la fin de la prolongation. */
+  trialExtension?: true;
+  /** Fin d'un essai terminé (ISO) : le compte est revenu à Découverte. */
+  trialEndedAt?: string;
+  /** La base refuse l'essai à ce compte (pas le premier de son adresse, adresse jetable). */
+  trialDenied?: true;
+  limits: PlanLimits;
+  features: {
+    salesStatistics: FeatureAccess;
+    saleFavorites: FeatureAccess;
+    salesCsvExport: FeatureAccess;
+    salesApiAccess: FeatureAccess;
+    multiPropertyAnalysis: FeatureAccess;
+    smartAlerts: FeatureAccess;
+    realtimeAlertChanges: FeatureAccess;
+    watchedZones: FeatureAccess;
+    dpeExplorer: FeatureAccess;
+    marketDemographics: FeatureAccess;
+    marketPriceDistribution: FeatureAccess;
+    valueEstimate: FeatureAccess;
+    cadastralAnalysis: FeatureAccess;
+    nearbyServices: FeatureAccess;
+    savedReports: FeatureAccess;
+    pdfExport: FeatureAccess;
+    reportEditing: FeatureAccess;
+    urbanPlanning: FeatureAccess;
+    streetFacade: FeatureAccess;
+    saleHistory: FeatureAccess;
+    soldComparables: FeatureAccess;
+    activeComparables: FeatureAccess;
+    neighborhoodAnalysis: FeatureAccess;
+    outcomeGraph: FeatureAccess;
+    bidCeiling: FeatureAccess;
+    advancedBidScenarios: FeatureAccess;
+    dpeMap: FeatureAccess;
+    lawyerDirectory: FeatureAccess;
+    lawyerReferrals: FeatureAccess;
+    audienceTracking: FeatureAccess;
+    workspaceCollaboration: FeatureAccess;
+  };
+};
+
 /** Statuses that mean Stripe holds a live subscription the customer can still manage. */
 const STRIPE_SUBSCRIPTION_STATUSES: readonly string[] = [
   "past_due",

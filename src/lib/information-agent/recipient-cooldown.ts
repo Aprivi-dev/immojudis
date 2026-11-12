@@ -4,7 +4,7 @@ import {
   formatInformationAgentOriginDate,
   INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS,
 } from "@/lib/information-agent-compliance";
-import { normalizedEmail } from "@/lib/information-agent/contacts";
+import { normalizedEmail } from "@/lib/information-agent/email-address";
 
 const COOLDOWN_BLOCKING_MISSION_STATUSES = [
   "approved",

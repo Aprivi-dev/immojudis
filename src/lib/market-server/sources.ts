@@ -21,6 +21,7 @@ import {
   PAGE_CACHE_TTL_MS,
   pageCache,
 } from "@/lib/market-server/constants";
+import { MarketEstimateError } from "@/lib/market-server/errors";
 import { bboxAround, sleep } from "@/lib/market-server/geometry";
 
 // ─── Récupération réseau ────────────────────────────────────────────────────
@@ -87,7 +88,9 @@ export async function resolveMarketLocation(input: {
         .join(" "),
     )
     .filter((query, index, all) => Boolean(query) && all.indexOf(query) === index);
-  if (!queries.length) throw new Error("adresse ou coordonnées manquantes");
+  if (!queries.length) {
+    throw new MarketEstimateError("MISSING_LOCATION", "adresse ou coordonnées manquantes");
+  }
 
   for (let queryIndex = 0; queryIndex < queries.length; queryIndex += 1) {
     const query = queries[queryIndex];
@@ -138,7 +141,7 @@ export async function resolveMarketLocation(input: {
       geocodeCache.set(key, { expiresAt: Date.now() + PAGE_CACHE_TTL_MS, value: null });
     }
   }
-  throw new Error("adresse non géocodable");
+  throw new MarketEstimateError("MISSING_LOCATION", "adresse non géocodable");
 }
 
 export async function fetchDvfYear(

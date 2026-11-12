@@ -7,6 +7,7 @@ import {
 } from "@/lib/property-report/ceiling-snapshot";
 import {
   buildReportRentalScenario,
+  computeReportRentalScenario,
   computeReportSimulation,
   reportSimulationSchema,
   type ReportRentalScenario,
@@ -34,6 +35,27 @@ describe("report simulation", () => {
 
   it("rejects an obsolete or forged ceiling instead of exporting a different result", () => {
     expect(() => computeReportSimulation(sale, null, input, ALL_OPEN)).toThrow(/ont changé/);
+    // Scénario périmé : la fiche a changé depuis le calcul du navigateur (409), ce n'est pas une
+    // requête mal formée.
+    expect(() => computeReportSimulation(sale, null, input, ALL_OPEN)).toThrow(
+      expect.objectContaining({ name: "PublicApiError", status: 409 }),
+    );
+  });
+
+  it("refuse un scénario locatif incalculable comme une requête invalide (400)", () => {
+    const scenario: ReportRentalScenario = {
+      acquisitionCost: 100_000,
+      monthlyRent: 800,
+      vacancyRatePct: 150,
+      annualNonRecoverableCharges: 0,
+      annualPropertyTax: 0,
+      annualLandlordInsurance: 0,
+      monthlyDebtService: null,
+      missingExpenseFields: [],
+    };
+    expect(() => computeReportRentalScenario(scenario)).toThrow(
+      expect.objectContaining({ name: "PublicApiError", status: 400 }),
+    );
   });
 
   it("validates finite nonnegative financial inputs", () => {
@@ -54,7 +76,9 @@ describe("report simulation", () => {
         input,
         ALL_OPEN,
       ),
-    ).toThrow(/contradictoire/);
+    ).toThrow(
+      expect.objectContaining({ status: 400, message: expect.stringMatching(/contradictoire/) }),
+    );
   });
 
   it("refuses to save a ceiling for a sale without an open fee regime (server control)", () => {
@@ -81,7 +105,7 @@ describe("report simulation", () => {
         input,
         ["tribunal"],
       ),
-    ).toThrow(NO_CEILING_REGIME_REASON);
+    ).toThrow(expect.objectContaining({ status: 400, message: NO_CEILING_REGIME_REASON }));
   });
 
   it("accepts the notarial fields of the personal choices", () => {

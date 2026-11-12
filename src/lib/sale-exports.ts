@@ -1,7 +1,6 @@
 import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Json } from "@/integrations/supabase/types";
 import { extractDpe } from "@/lib/dpe";
 import { formatDate } from "@/lib/format";
 import { estimateSaleGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
@@ -50,6 +49,7 @@ import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import { cleanScalarText as cleanString } from "@/lib/dpe";
+import { asJson } from "@/lib/supabase-json";
 
 const EXPORT_SOURCE_LIMIT = 1_000;
 const EXPORT_ROW_LIMIT = 500;
@@ -505,7 +505,7 @@ async function recordSalesDataExport({
   });
   if (error) throw error;
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: exportKind === "sales_csv" ? "sales.csv_exported" : "sales.api_feed_requested",
     subjectType: "sale_search",
@@ -800,8 +800,4 @@ function csvCell(value: string | number | null | undefined): string {
     typeof value === "string" && /^[=+\-@]/.test(normalized) ? `'${normalized}` : normalized;
   if (!/[",\n;]/.test(text)) return text;
   return `"${text.replace(/"/g, '""')}"`;
-}
-
-function asJson(value: unknown): Json {
-  return value as Json;
 }

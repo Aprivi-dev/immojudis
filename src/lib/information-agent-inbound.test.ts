@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   detectInformationAgentContactOptOut,
-  extractInformationAgentFacts,
   findInboundToken,
+} from "@/lib/information-agent-inbound/reply-intent";
+import { extractInformationAgentFacts } from "@/lib/information-agent-inbound/fact-extraction";
+import {
   htmlToPlainText,
   normalizeEmail,
   replyTextForExtraction,
-} from "@/lib/information-agent-inbound";
+} from "@/lib/information-agent-inbound/text";
 
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: vi.fn(), storage: { from: vi.fn() } },

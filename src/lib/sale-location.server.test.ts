@@ -45,6 +45,8 @@ describe("loadVisibleSaleLocation", () => {
     ["catalogue quarantine", { ...row, catalogue_quarantined: true }],
     ["publication quarantine marker", { ...row, publication_quarantine: "conflict" }],
     ["quarantined status", { ...row, status: "quarantined" }],
+    ["publication identity conflict", { ...row, publication_identity_conflict: "other-sale" }],
+    ["source identity mismatch", { ...row, source_identity_mismatch: "true" }],
   ])("refuses a %s sale", async (_, data) => {
     mocks.maybeSingle.mockResolvedValue({ data, error: null });
 

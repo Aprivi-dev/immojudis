@@ -1,5 +1,6 @@
 import { formatDateTime } from "@/lib/format/dates";
 import { finiteNumberFromNumberOrText as num } from "@/lib/finite-number";
+import { asRecord } from "@/lib/guards";
 
 /**
  * Panneau « Contrôles qualité du catalogue » de /admin/quality : la sentinelle de qualité (migration
@@ -72,7 +73,7 @@ export type CrossSourceDuplicatesView = {
   threeSourceGroups: string;
   /** Les premiers groupes à trois sources ou plus (« 12/12/2026 · lyon · 95 000 € · 3 sources, 3 lignes »). */
   threeSourceExamples: string[];
-  /** Origine de la mesure (fonction de la base, ou dernier passage de l'alerte avant la migration). */
+  /** Origine de la mesure. */
   note: string;
 };
 
@@ -90,7 +91,7 @@ export type AdminCatalogueQualityView = {
   alerts: CatalogueQualityAlert[];
   /** Null : mesure indisponible (lecture en échec ou aucune évaluation). */
   ceilingCoverage?: CeilingCoverageView | null;
-  /** Null : mesure indisponible (fonction de la base pas encore déployée et aucune alerte passée). */
+  /** Null : mesure indisponible (lecture en échec). */
   crossSourceDuplicates?: CrossSourceDuplicatesView | null;
 };
 
@@ -130,10 +131,6 @@ const STATE_LABELS: Record<CatalogueQualityState, string> = {
 
 type Json = Record<string, unknown>;
 
-function record(value: unknown): Json {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Json) : {};
-}
-
 const integer = (value: number) => new Intl.NumberFormat("fr-FR").format(value);
 const percent = (ratio: number) =>
   new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 }).format(ratio);
@@ -167,13 +164,13 @@ function row(
 
 /** Lignes du panneau à partir des mesures et des seuils enregistrés dans le cliché. */
 export function catalogueQualityRows(metricsPayload: unknown): CatalogueQualityRow[] {
-  const payload = record(metricsPayload);
-  const metrics = record(payload.metrics);
-  const thresholds = record(payload.thresholds);
+  const payload = asRecord(metricsPayload);
+  const metrics = asRecord(payload.metrics);
+  const thresholds = asRecord(payload.thresholds);
   const liveSales = num(payload.live_sales);
 
   return Object.keys(CATALOGUE_QUALITY_LABELS).map((key) => {
-    const metric = record(metrics[key]);
+    const metric = asRecord(metrics[key]);
     const count = num(metric.count) ?? 0;
     if (INVARIANTS.has(key)) {
       return row(key, metric, "Alerte dès 1 vente", count > 0 ? "alert" : "ok");
@@ -239,7 +236,7 @@ export function buildAdminCatalogueQualityView(
   const observed = snapshot ? new Date(snapshot.observed_at) : null;
   const isToday =
     observed != null && !Number.isNaN(observed.getTime()) && sameUtcDay(observed, now);
-  const liveSales = snapshot ? num(record(snapshot.metrics).live_sales) : null;
+  const liveSales = snapshot ? num(asRecord(snapshot.metrics).live_sales) : null;
 
   return {
     snapshot: snapshot
@@ -257,7 +254,7 @@ export function buildAdminCatalogueQualityView(
       const key = alert.alert_key.startsWith(CATALOGUE_QUALITY_ALERT_PREFIX)
         ? alert.alert_key.slice(CATALOGUE_QUALITY_ALERT_PREFIX.length)
         : alert.alert_key;
-      const details = record(alert.details);
+      const details = asRecord(alert.details);
       const count = countText(details);
       return {
         key: alert.alert_key,
@@ -412,8 +409,6 @@ export type CrossSourceDuplicatesPayload = {
   groups?: unknown;
   lines?: unknown;
   thresholds?: unknown;
-  warning_groups?: unknown;
-  critical_groups?: unknown;
   three_source_groups?: unknown;
   three_source_examples?: CrossSourceDuplicateGroup[] | null;
 };
@@ -430,22 +425,17 @@ function dayText(value: string): string {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
 }
 
-/**
- * Vue D12 : `payload` vient de public.admin_cross_source_duplicates_summary (migration 20261112100100) ou, tant
- * qu'elle n'est pas appliquée, du détail du dernier passage de l'alerte `catalogue.duplicates.cross_source`
- * (`source` dit lequel ; ce détail porte les seuils à plat). Null sans mesure.
- */
+/** Vue D12 : `payload` vient de public.admin_cross_source_duplicates_summary. Null sans mesure. */
 export function buildCrossSourceDuplicates(
   payload: CrossSourceDuplicatesPayload | null,
-  source: { kind: "function" } | { kind: "alert"; seenAt: string },
 ): CrossSourceDuplicatesView | null {
   if (!payload) return null;
   const groups = num(payload.groups);
   if (groups == null) return null;
   const lines = num(payload.lines);
-  const thresholds = record(payload.thresholds);
-  const warning = num(thresholds.warning_groups ?? payload.warning_groups);
-  const critical = num(thresholds.critical_groups ?? payload.critical_groups);
+  const thresholds = asRecord(payload.thresholds);
+  const warning = num(thresholds.warning_groups);
+  const critical = num(thresholds.critical_groups);
   const state: CatalogueQualityState =
     warning == null ? "trend" : groups >= warning ? "alert" : "ok";
   const threeSources = num(payload.three_source_groups);
@@ -468,9 +458,6 @@ export function buildCrossSourceDuplicates(
         `${integer(num(group.source_count) ?? 0)} sources, ${integer(num(group.line_count) ?? 0)} lignes`,
       ].join(" · ");
     }),
-    note:
-      source.kind === "function"
-        ? "Mesure à l’instant, même définition que l’alerte. La fusion des doublons reste coupée."
-        : `Dernier passage de l’alerte le ${formatDateTime(source.seenAt)} : la mesure à l’instant attend la migration 20261112100100. La fusion des doublons reste coupée.`,
+    note: "Mesure à l’instant, même définition que l’alerte. La fusion des doublons reste coupée.",
   };
 }

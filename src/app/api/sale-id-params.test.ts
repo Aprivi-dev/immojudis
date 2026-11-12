@@ -29,7 +29,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: vi.fn(async () => 1) }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: mocks.entitlement }));
+vi.mock("@/lib/entitlements.server", () => ({ assertFeatureEntitlement: mocks.entitlement }));
 vi.mock("@/lib/sale-analysis-sets", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sale-analysis-sets")>()),
   updateSaleAnalysisSet: mocks.updateSet,

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiRoute } from "@/lib/api-route";
 import { lawyerDirectoryQuerySchema, listLawyerDirectory } from "@/lib/lawyer-directory";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
-import { PUBLIC_DIRECTORY_CACHE_SECONDS, RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
 export const GET = apiRoute(
   {
@@ -34,7 +34,7 @@ export const GET = apiRoute(
     return NextResponse.json(directory, {
       headers: {
         // The directory is identical for every visitor, so the edge may keep it for an hour.
-        "cache-control": `public, s-maxage=${PUBLIC_DIRECTORY_CACHE_SECONDS}, stale-while-revalidate=300`,
+        "cache-control": "public, s-maxage=3600, stale-while-revalidate=300",
       },
     });
   },

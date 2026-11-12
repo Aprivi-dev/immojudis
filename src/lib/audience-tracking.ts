@@ -150,7 +150,7 @@ export async function getAudienceTracking({
     },
   });
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "workspace.audience_tracking_viewed",
     subjectType: "workspace_dashboard",

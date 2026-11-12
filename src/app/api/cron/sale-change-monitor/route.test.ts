@@ -3,12 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   runBatch: vi.fn(),
   runMonitoredCron: vi.fn(),
-  positiveNumberFromEnv: vi.fn(() => 25),
 }));
 
 vi.mock("@/lib/cron-jobs", () => ({
   runMonitoredCron: mocks.runMonitoredCron,
-  positiveNumberFromEnv: mocks.positiveNumberFromEnv,
 }));
 vi.mock("@/lib/sale-change-monitor", () => ({ runSaleChangeMonitorBatch: mocks.runBatch }));
 
@@ -18,6 +16,7 @@ describe("sale change monitor cron route", () => {
   afterEach(() => {
     mocks.runBatch.mockReset();
     mocks.runMonitoredCron.mockReset();
+    vi.unstubAllEnvs();
   });
 
   it("passe par la supervision des tâches planifiées, avec son rattrapage de 08:45", async () => {
@@ -26,6 +25,7 @@ describe("sale change monitor cron route", () => {
         Response.json(await handler()),
     );
     mocks.runBatch.mockResolvedValueOnce({ ok: true });
+    vi.stubEnv("SALE_CHANGE_CRON_USER_LIMIT", "25");
     await GET(new Request("https://example.test/api/cron/sale-change-monitor"));
     const [, jobName, , options] = mocks.runMonitoredCron.mock.calls[0];
     expect(jobName).toBe("sale-change-monitor");

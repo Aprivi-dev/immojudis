@@ -1,9 +1,8 @@
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import {
-  adminInformationAgentPreviewSchema,
-  previewAdminInformationAgentMissionForToken,
-} from "@/lib/admin-information-agent";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { adminRoute } from "@/lib/admin-route-deadline";
+import { previewAdminInformationAgentMission } from "@/lib/information-agent/preview";
+import { informationAgentPreviewSchema } from "@/lib/information-agent/schemas";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
@@ -20,7 +19,8 @@ export const POST = adminRoute(
   },
   async (request) => {
     const authToken = bearerTokenFromRequest(request);
-    const input = adminInformationAgentPreviewSchema.parse(await request.json());
-    return previewAdminInformationAgentMissionForToken({ authToken, input });
+    const input = informationAgentPreviewSchema.parse(await request.json());
+    const auth = await assertAdminAuth(authToken);
+    return previewAdminInformationAgentMission({ auth, input });
   },
 );

@@ -154,10 +154,10 @@ describe("getAdminSaleSignalFeedback", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("rend « non mesuré » quand la fonction n'existe pas encore (migration non appliquée)", async () => {
+  it("lève quand la fonction est introuvable : plus de « non mesuré » silencieux", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202", message: "absent" } });
 
-    expect(await getAdminSaleSignalFeedback("token")).toEqual(unavailableSaleSignalFeedback());
+    await expect(getAdminSaleSignalFeedback("token")).rejects.toMatchObject({ code: "PGRST202" });
   });
 
   it("lève sur une autre erreur de la base", async () => {
@@ -253,8 +253,9 @@ describe("getAdminSaleFeedbackBySale", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("rend « non mesuré » quand la fonction n'existe pas encore", async () => {
+  it("lève quand la fonction est introuvable", async () => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "42883", message: "absent" } });
-    expect(await getAdminSaleFeedbackBySale("token")).toEqual(unavailableSaleFeedbackBySale());
+    await expect(getAdminSaleFeedbackBySale("token")).rejects.toMatchObject({ code: "42883" });
+    expect(unavailableSaleFeedbackBySale()).toMatchObject({ rows: [], measured: false });
   });
 });

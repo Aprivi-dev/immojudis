@@ -1,3 +1,5 @@
+import type { ApiErrorCode } from "@/lib/api-errors";
+
 export const GENERIC_ERROR_MESSAGE = "Une erreur est survenue. Réessayez dans un instant.";
 /** Adresse déjà inscrite : erreur Supabase traduite, ou inscription sans erreur sans identité créée. */
 export const ACCOUNT_EXISTS_MESSAGE = "Un compte existe déjà avec cette adresse.";
@@ -9,7 +11,25 @@ type ErrorLike = {
   name?: unknown;
 };
 
-// Anything that smells like infrastructure or SQL must never reach a visitor.
+/**
+ * Codes de l'enveloppe d'erreur de l'API (`{ ok: false, error, code, requestId }`). Le compilateur
+ * vérifie cette liste contre `API_ERROR_CODES` sans l'importer : aucune classe d'erreur n'entre ainsi
+ * dans le JavaScript du navigateur.
+ */
+const API_ENVELOPE_CODES: Record<ApiErrorCode, true> = {
+  AUTH_REQUIRED: true,
+  FORBIDDEN: true,
+  NOT_FOUND: true,
+  CONFLICT: true,
+  INVALID_REQUEST: true,
+  COURT_UNRESOLVED: true,
+  RATE_LIMITED: true,
+  CONFIGURATION_ERROR: true,
+  INTERNAL_ERROR: true,
+};
+
+// Erreurs nées hors de l'API (Supabase dans le navigateur, réseau, code local) : anything that
+// smells like infrastructure or SQL must never reach a visitor.
 const TECHNICAL_MARKER =
   /\b(pgrst|postgrest|postgres|supabase|stripe|jwt|relation|column|constraint|violates|syntax error|rpc|policy|schema|undefined|null|typeerror|referenceerror|econn|enotfound|etimedout|stack|sql)\b|[{}[\]]/i;
 const FRENCH_SENTENCE =
@@ -67,13 +87,17 @@ function readMessage(error: unknown): string {
 
 /**
  * Turn any thrown value into a sentence that is safe and useful to show to a
- * visitor. Messages written by the application itself (French, no technical
- * vocabulary) pass through; everything else is translated or replaced.
+ * visitor. A message that comes with an API envelope code was already chosen by the server
+ * (`classifyApiError`): it is shown as is. Otherwise, messages written by the application
+ * itself (French, no technical vocabulary) pass through; everything else is translated or replaced.
  */
 export function userMessage(error: unknown, fallback: string = GENERIC_ERROR_MESSAGE): string {
   const message = readMessage(error).trim();
   const status = error && typeof error === "object" ? (error as ErrorLike).status : undefined;
   const code = error && typeof error === "object" ? (error as ErrorLike).code : undefined;
+  if (typeof code === "string" && Object.hasOwn(API_ENVELOPE_CODES, code)) {
+    return message || fallback;
+  }
   const haystack = [message, typeof code === "string" ? code : "", status === 429 ? "429" : ""]
     .filter(Boolean)
     .join(" ");

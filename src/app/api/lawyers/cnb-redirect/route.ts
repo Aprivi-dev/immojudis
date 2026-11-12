@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { EMAIL_COLORS, EMAIL_FONT_STACK } from "@/lib/email-brand";
+import { escapeHtml } from "@/lib/guards";
 import {
   CNB_DIRECTORY_URL,
   CNB_REAL_ESTATE_SPECIALIZATION_CODE,
@@ -29,14 +30,14 @@ export async function GET(request: Request) {
   <body>
     <main>
       <p>Ouverture des avocats en droit immobilier du barreau sélectionné…</p>
-      <form id="cnb-search" method="post" action="${CNB_SEARCH_URL}">
+      <form id="cnb-search" method="post" action="${escapeHtml(CNB_SEARCH_URL)}">
         <input type="hidden" name="form" value="formulaireRecherche">
         <input type="hidden" name="nomAvocat" value="">
         <input type="hidden" name="prenomAvocat" value="">
-        <input type="hidden" name="barreau" value="${cnbBar.code}">
+        <input type="hidden" name="barreau" value="${escapeHtml(cnbBar.code)}">
         <input type="hidden" name="ville" value="">
         <input type="hidden" name="codePostal" value="">
-        <input type="hidden" name="mentions" value="${CNB_REAL_ESTATE_SPECIALIZATION_CODE}">
+        <input type="hidden" name="mentions" value="${escapeHtml(CNB_REAL_ESTATE_SPECIALIZATION_CODE)}">
         <input type="hidden" name="langues" value="nonRenseigne">
         <noscript><button type="submit">Continuer vers l'annuaire du CNB</button></noscript>
       </form>

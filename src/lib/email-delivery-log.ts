@@ -9,13 +9,15 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * liste d'opposition se lisent dans l'évènement lui-même, jamais dans `email_send_log`
  * (`email-delivery-log.test.ts` le vérifie dans le code). Les journaux applicatifs ne portent aucune adresse.
  */
-const LOGGED_EVENTS = new Set([
+export const EMAIL_DELIVERY_LOG_EVENTS = [
   "email.delivered",
   "email.delivery_delayed",
   "email.failed",
   "email.bounced",
   "email.complained",
-]);
+] as const;
+
+const LOGGED_EVENTS = new Set<string>(EMAIL_DELIVERY_LOG_EVENTS);
 
 export type DeliveryLogEvent = { type: string; created_at?: string; data?: unknown };
 

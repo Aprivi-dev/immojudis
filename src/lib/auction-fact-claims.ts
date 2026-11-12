@@ -61,30 +61,26 @@ const CLAIM_FIELD_KEYS = [
 
 /**
  * Reads the private claim view with a service role and keeps the result inside
- * server workflows. `claimsBacked` distinguishes an empty migrated view from
- * a pre-migration or temporarily unavailable environment.
+ * server workflows. A failed read is thrown: an outage is never mistaken for
+ * a sale without claims.
  */
 export async function readSaleFactClaims(saleId: string): Promise<{
   claims: AuctionFactClaimSummary[];
   claimsBacked: boolean;
 }> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("v_auction_fact_claims_read_model")
-      .select("field_key,fact_status,value_jsonb,confidence_score,captured_at")
-      .eq("auction_sale_id", saleId)
-      .in("field_key", CLAIM_FIELD_KEYS);
-    if (error) return { claims: [], claimsBacked: false };
+  const { data, error } = await supabaseAdmin
+    .from("v_auction_fact_claims_read_model")
+    .select("field_key,fact_status,value_jsonb,confidence_score,captured_at")
+    .eq("auction_sale_id", saleId)
+    .in("field_key", CLAIM_FIELD_KEYS);
+  if (error) throw error;
 
-    return {
-      claims: (data ?? [])
-        .map(parseClaimSummary)
-        .filter((claim): claim is AuctionFactClaimSummary => claim != null),
-      claimsBacked: true,
-    };
-  } catch {
-    return { claims: [], claimsBacked: false };
-  }
+  return {
+    claims: (data ?? [])
+      .map(parseClaimSummary)
+      .filter((claim): claim is AuctionFactClaimSummary => claim != null),
+    claimsBacked: true,
+  };
 }
 
 /**

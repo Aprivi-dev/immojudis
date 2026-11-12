@@ -7,7 +7,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import { apiRoute } from "@/lib/api-route";
-import { assertFeatureEntitlementVia } from "@/lib/property-reports";
+import { assertFeatureEntitlementVia } from "@/lib/entitlements.server";
 import { enforceIpRateLimit, enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {

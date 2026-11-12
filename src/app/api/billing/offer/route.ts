@@ -12,7 +12,7 @@ import { apiRoute } from "@/lib/api-route";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { resolveAnalysisCheckoutAvailability } from "@/lib/billing";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
-import { BILLING_OFFER_CACHE_SECONDS, RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
 /**
  * Exposes only the non-sensitive presentation state needed before checkout.
@@ -49,7 +49,7 @@ export const GET = apiRoute(
     if (personalized) return body;
     return NextResponse.json(body, {
       headers: {
-        "cache-control": `public, s-maxage=${BILLING_OFFER_CACHE_SECONDS}, stale-while-revalidate=60`,
+        "cache-control": "public, s-maxage=300, stale-while-revalidate=60",
       },
     });
   },

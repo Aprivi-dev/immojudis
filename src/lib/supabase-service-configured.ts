@@ -1,6 +1,7 @@
-/** Vrai si l'URL Supabase et la clé de service sont configurées. */
+import { serverEnv } from "@/lib/env";
+
+/** Vrai si l'URL Supabase et la clé de service sont configurées (mêmes chaînes que le client de service). */
 export function supabaseServiceRoleConfigured(): boolean {
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SECRET_KEY;
-  return Boolean(url?.trim() && key?.trim());
+  const { adminUrl, serviceRoleKey } = serverEnv().supabase;
+  return Boolean(adminUrl && serviceRoleKey);
 }

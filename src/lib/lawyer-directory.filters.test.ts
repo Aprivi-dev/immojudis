@@ -12,6 +12,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.from },
 }));
 
+import { ConfigurationError } from "@/lib/api-errors";
 import { lawyerDirectoryQuerySchema, listLawyerDirectory } from "@/lib/lawyer-directory";
 
 const SALE_ID = "52d72de3-d795-492e-be50-58eb72d2eb47";
@@ -192,5 +193,26 @@ describe("filtres de l'annuaire des avocats", () => {
     expect(callsOn("cnb_lawyer_directory", "eq")).toEqual([["bar_key", "saint etienne"]]);
     expect(directory.sectorLabel).toBe("Barreau de Saint-Étienne");
     expect(mocks.calls.some((call) => call.table === "tribunals")).toBe(false);
+  });
+
+  it("montre la démo en développement seulement quand la base n'est pas configurée", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    try {
+      mocks.from.mockImplementation(() => {
+        throw new ConfigurationError("SUPABASE_URL missing");
+      });
+      const demo = await listLawyerDirectory(lawyerDirectoryQuerySchema.parse({ bar: "Paris" }));
+      expect(demo.isDemo).toBe(true);
+
+      // Une autre panne remonte, même si son texte parle de configuration.
+      mocks.from.mockImplementation(() => {
+        throw new Error("Missing Supabase environment variable(s): SUPABASE_URL");
+      });
+      await expect(
+        listLawyerDirectory(lawyerDirectoryQuerySchema.parse({ bar: "Paris" })),
+      ).rejects.toThrow("Missing Supabase");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

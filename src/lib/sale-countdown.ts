@@ -1,6 +1,11 @@
 import type { AuctionSale } from "./types";
+import { addDays, calendarDaysBetween, isCalendarDay } from "@/lib/calendar-day";
 import { parseSaleWindow } from "./sale-window";
 import { asRecordOrNull } from "@/lib/guards";
+import { isPastParisDay, parisDateKey, parisMidnightUtc } from "@/lib/paris-time";
+
+// Repris par les modules qui les lisaient ici avant `@/lib/paris-time` (à migrer, puis à retirer).
+export { calendarDaysBetween, parisDateKey, isPastParisDay as isPastSaleDay };
 
 export type SaleCountdownTarget = {
   target: Date | null;
@@ -9,7 +14,6 @@ export type SaleCountdownTarget = {
   deadlineKnown?: boolean;
 };
 
-const PARIS_TIME_ZONE = "Europe/Paris";
 const DATE_ONLY_PRECISIONS = new Set([
   "day",
   "date",
@@ -39,7 +43,7 @@ export function resolveSaleCountdownTarget(
   }
 
   if (!sale.sale_date) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(sale.sale_date) && isoDateUtc(sale.sale_date) == null) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(sale.sale_date) && !isCalendarDay(sale.sale_date)) return null;
   const rawPrecision = rawPayload?.date_precision ?? rawPayload?.sale_date_precision;
   const rawDate = typeof rawPayload?.sale_date === "string" ? rawPayload.sale_date.trim() : "";
   const saleDate = new Date(sale.sale_date);
@@ -64,65 +68,7 @@ export function resolveSaleCountdownTarget(
   return { target: saleDate, kind: "instant" };
 }
 
-export function parisDateKey(value: Date): string {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: PARIS_TIME_ZONE,
-    year: "numeric",
-  }).formatToParts(value);
-  const fields = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
-  return `${fields.year}-${fields.month}-${fields.day}`;
-}
-
-export function calendarDaysBetween(fromDate: string, toDate: string): number | null {
-  const from = isoDateUtc(fromDate);
-  const to = isoDateUtc(toDate);
-  if (from == null || to == null) return null;
-  return Math.round((to - from) / 86_400_000);
-}
-
 /** Following Paris midnight, including DST transitions. */
 export function nextParisMidnight(dateOnly: string): Date {
-  const [year, month, day] = dateOnly.split("-").map(Number);
-  const localWallClockAsUtc = Date.UTC(year, month - 1, day + 1);
-  const firstGuess = new Date(localWallClockAsUtc);
-  const firstOffset = parisOffsetMinutes(firstGuess);
-  const firstUtc = localWallClockAsUtc - firstOffset * 60_000;
-  const correctedOffset = parisOffsetMinutes(new Date(firstUtc));
-  return new Date(localWallClockAsUtc - correctedOffset * 60_000);
-}
-
-function isoDateUtc(value: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  const check = new Date(timestamp).toISOString().slice(0, 10);
-  return check === value ? timestamp : null;
-}
-
-function parisOffsetMinutes(value: Date): number {
-  const part = new Intl.DateTimeFormat("en-US", {
-    timeZone: PARIS_TIME_ZONE,
-    timeZoneName: "longOffset",
-  })
-    .formatToParts(value)
-    .find(({ type }) => type === "timeZoneName")?.value;
-  const match = /^GMT([+-])(\d{2}):(\d{2})$/.exec(part ?? "");
-  if (!match) throw new Error("Décalage Europe/Paris indisponible.");
-  const minutes = Number(match[2]) * 60 + Number(match[3]);
-  return match[1] === "+" ? minutes : -minutes;
-}
-
-/**
- * Le jour de la vente (heure de Paris) est derrière nous : même règle que « Vente passée » des
- * cartes et du compte à rebours, au jour près (une vente d'aujourd'hui n'est pas passée).
- */
-export function isPastSaleDay(
-  saleDate: string | null | undefined,
-  now: Date = new Date(),
-): boolean {
-  if (!saleDate) return false;
-  const date = new Date(saleDate);
-  return Number.isFinite(date.getTime()) && parisDateKey(date) < parisDateKey(now);
+  return parisMidnightUtc(addDays(dateOnly, 1));
 }

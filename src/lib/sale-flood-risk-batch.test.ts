@@ -851,20 +851,20 @@ describe("runSaleFloodRiskBatch : cadence et file", () => {
   });
 });
 
-describe("runSaleFloodRiskBatch : avant les migrations", () => {
-  it("sans la table des verdicts : se termine sans appel externe", async () => {
+describe("runSaleFloodRiskBatch : table absente de la base", () => {
+  it("sans la table des verdicts : la passe échoue sans appel externe", async () => {
     db.sales = [sale("a")];
     db.floodRows = null;
     const api = makeApi();
-    expect(await run(api)).toMatchObject({ skipped: "not_migrated", observed: 0 });
+    await expect(run(api)).rejects.toMatchObject({ code: "PGRST205" });
     expect(api.calls).toHaveLength(0);
   });
 
-  it("sans la table des communes : même réponse", async () => {
+  it("sans la table des communes : même échec", async () => {
     db.sales = [sale("a")];
     db.communeRows = null;
     const api = makeApi();
-    expect(await run(api)).toMatchObject({ skipped: "not_migrated" });
+    await expect(run(api)).rejects.toMatchObject({ code: "PGRST205" });
     expect(api.calls).toHaveLength(0);
   });
 });
@@ -1331,15 +1331,14 @@ describe("runSaleFloodRiskBatch : une seule passe à la fois", () => {
     ]);
   });
 
-  it("bail pas encore migré : la passe continue sans verrou (ordre de déploiement tolérant)", async () => {
+  it("fonction de bail absente : la passe échoue sans rien lire ni appeler (jamais sans verrou)", async () => {
     db.sales = [sale("a")];
     db.leaseHeld = "missing";
-    const result = await run(makeApi());
-    expect(result.observed).toBe(1);
-    expect(db.rpcCalls.map((call) => call.name)).toEqual([
-      "claim_sale_flood_risk_lease",
-      "sync_sale_communes",
-    ]);
+    const api = makeApi();
+    await expect(run(api)).rejects.toThrow("Flood risk lease claim refused (code PGRST202)");
+    expect(api.calls).toHaveLength(0);
+    expect(db.tables).toEqual([]);
+    expect(db.rpcCalls.map((call) => call.name)).toEqual(["claim_sale_flood_risk_lease"]);
   });
 });
 

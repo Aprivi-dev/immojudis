@@ -47,11 +47,11 @@ describe("fetchUnderRangeSaleIds", () => {
     expect((await fetchUnderRangeSaleIds(0)).size).toBe(0);
   });
 
-  it("lève un message lisible quand la fonction n'existe pas encore, sans le garder", async () => {
+  it("traite une fonction absente comme toute panne : message lisible, trace, rien de gardé", async () => {
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST202", message: "absent" } });
 
     await expect(fetchUnderRangeSaleIds(0)).rejects.toThrow(UNDER_RANGE_FILTER_UNAVAILABLE_MESSAGE);
-    expect(console.warn).not.toHaveBeenCalled();
+    expect(console.warn).toHaveBeenCalledWith(expect.any(String), "PGRST202");
 
     // Une panne n'est jamais gardée : l'appel suivant relit.
     expect([...(await fetchUnderRangeSaleIds(1))]).toEqual(["aaa", "bbb"]);

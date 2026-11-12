@@ -116,7 +116,7 @@ describe("email du récapitulatif hebdomadaire", () => {
       newSales: { departments: ["33"], total: 0, items: [] },
     };
     expect(weeklyDigestIsEmpty({ ...content, ...empty })).toBe(true);
-    expect(() => build(empty)).toThrow("Aucun contenu");
+    expect(() => build(empty)).toThrow("no content to send");
   });
 
   it("n'annonce que les rubriques non vides dans l'objet", () => {

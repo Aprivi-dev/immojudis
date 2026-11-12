@@ -1,5 +1,6 @@
 import "server-only";
 import { assertAdmin } from "@/lib/admin-auth.server";
+import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -83,13 +84,13 @@ export async function requestAdminSourceRefresh({
   if (error) throw mapAdmissionError(error);
   const admission = data?.[0];
   if (!admission?.job_id) {
-    throw new Error("Le refresh source n’a pas pu être admis.");
+    throw new Error("Source refresh admission returned no job.");
   }
 
   const history = await loadAdminSourceRefreshHistory(input.saleId);
   const request = history.find((item) => item.id === admission.job_id) ?? null;
   if (!request) {
-    throw new Error("Le refresh source a été admis mais son statut est indisponible.");
+    throw new Error("Admitted source refresh job is missing from the history.");
   }
 
   return {
@@ -165,26 +166,29 @@ function rowToRefreshItem(
   };
 }
 
+/** Refus de l'admission (`ADMIN_SOURCE_DETAIL_*`) : 409, message montré ; toute autre erreur reste interne. */
 function mapAdmissionError(error: { code?: string; message?: string }): Error {
   const message = error.message ?? "";
   if (message.includes("ADMIN_SOURCE_DETAIL_")) {
     if (message.includes("PAUSED")) {
-      return new Error("Le refresh source est désactivé dans le contrôle du pipeline.");
+      return new PublicApiError(
+        "Le refresh source est désactivé dans le contrôle du pipeline.",
+        409,
+      );
     }
     if (message.includes("SUSPENDED")) {
-      return new Error("Cette source est temporairement suspendue après des refus d’accès.");
+      return new PublicApiError(
+        "Cette source est temporairement suspendue après des refus d’accès.",
+        409,
+      );
     }
     if (message.includes("DISABLED")) {
-      return new Error("Cette source n’est pas activée pour la lecture détaillée.");
+      return new PublicApiError("Cette source n’est pas activée pour la lecture détaillée.", 409);
     }
-    return new Error(
+    return new PublicApiError(
       "Le refresh source est temporairement limité. Réessayez dans quelques minutes.",
+      409,
     );
   }
-  if (message.includes("Could not find the function") || message.includes("does not exist")) {
-    return new Error(
-      "Le refresh source administrateur n’est pas encore activé sur cet environnement.",
-    );
-  }
-  return new Error(message || "Le refresh source n’a pas pu être admis.");
+  return new Error("Source refresh admission failed.", { cause: error });
 }

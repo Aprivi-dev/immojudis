@@ -2,6 +2,7 @@ import "server-only";
 import { fetchDataGouvParkingCommune, type DataGouvParkingSale } from "@/lib/dvf-data-gouv";
 import type { BuildEstimateInput, MarketEstimate } from "@/lib/market-server/types";
 import { URBAN_POPULATION_THRESHOLD } from "@/lib/market-server/constants";
+import { MarketEstimateError } from "@/lib/market-server/errors";
 import { haversineMeters } from "@/lib/market-server/geometry";
 import { quantile, roundTo } from "@/lib/market-server/numbers";
 import { fetchCommune, officialDvfCommuneCode } from "@/lib/market-server/sources";
@@ -11,7 +12,7 @@ import { salesSamplePeriod } from "@/lib/market-server/sample-period";
 export async function buildParkingEstimate(input: BuildEstimateInput): Promise<MarketEstimate> {
   const commune = await fetchCommune(input.lat, input.lng);
   if (!commune?.departmentCode) {
-    throw new Error("commune introuvable pour le stationnement");
+    throw new MarketEstimateError("INTERNAL_ERROR", "commune introuvable pour le stationnement");
   }
   const areaKind: "urban" | "rural" =
     commune.population >= URBAN_POPULATION_THRESHOLD ? "urban" : "rural";
@@ -20,7 +21,10 @@ export async function buildParkingEstimate(input: BuildEstimateInput): Promise<M
     location: { code: detailedCommuneCode, departmentCode: commune.departmentCode },
   });
   if (!collection?.sales.length) {
-    throw new Error("aucune vente unitaire de stationnement exploitable dans la commune");
+    throw new MarketEstimateError(
+      "NO_COMPARABLES",
+      "aucune vente unitaire de stationnement exploitable dans la commune",
+    );
   }
 
   const radii = input.radiusOverride
@@ -41,7 +45,10 @@ export async function buildParkingEstimate(input: BuildEstimateInput): Promise<M
     nearby = datedSales.filter((sale) => sale.distanceM <= radiusM);
   }
   if (!nearby.length) {
-    throw new Error("aucune vente unitaire de stationnement assez proche");
+    throw new MarketEstimateError(
+      "NO_COMPARABLES",
+      "aucune vente unitaire de stationnement assez proche",
+    );
   }
 
   const filtered = filterParkingOutliers(nearby);

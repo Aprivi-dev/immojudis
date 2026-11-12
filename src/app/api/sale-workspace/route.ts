@@ -9,7 +9,7 @@ import {
   saleWorkspaceInputSchema,
   upsertSaleWorkspace,
 } from "@/lib/sale-workspaces";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlement } from "@/lib/entitlements.server";
 
 const saleIdSchema = z.string().guid();
 

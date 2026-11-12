@@ -364,3 +364,43 @@ describe("market estimate failure logging", () => {
     error.mockRestore();
   });
 });
+
+describe("market estimate failure codes", () => {
+  it("lit le code porté par l'erreur, jamais son texte", async () => {
+    const { marketEstimateErrorCode } = await import("./market.server");
+    const { MarketEstimateError } = await import("./market-server/errors");
+
+    expect(marketEstimateErrorCode(new MarketEstimateError("NO_COMPARABLES", "texte libre"))).toBe(
+      "NO_COMPARABLES",
+    );
+    // Un texte qui ressemble à un cas métier ne suffit plus : sans code, c'est une panne.
+    expect(marketEstimateErrorCode(new Error("adresse non géocodable"))).toBe("INTERNAL_ERROR");
+    expect(marketEstimateErrorCode(new Error("fetch failed"))).toBe("INTERNAL_ERROR");
+  });
+
+  it("rend le cas métier et son message, sans appel réseau", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const unsupported = await getMarketEstimate({ lat: 48.85, lng: 2.35, propertyType: "péniche" });
+    const noSurface = await getMarketEstimate({
+      lat: 48.85,
+      lng: 2.35,
+      propertyType: "appartement",
+    });
+    const noLocation = await getMarketEstimate({ propertyType: "appartement", surfaceM2: 40 });
+
+    expect(unsupported).toMatchObject({
+      ok: false,
+      status: "insufficient_data",
+      code: "UNSUPPORTED_SEGMENT",
+      error:
+        "Estimation automatique indisponible : segment de bien non pris en charge par l'estimation résidentielle.",
+    });
+    expect(noSurface).toMatchObject({ status: "insufficient_data", code: "MISSING_SURFACE" });
+    expect(noLocation).toMatchObject({ status: "insufficient_data", code: "MISSING_LOCATION" });
+    expect(fetch).not.toHaveBeenCalled();
+    info.mockRestore();
+  });
+});

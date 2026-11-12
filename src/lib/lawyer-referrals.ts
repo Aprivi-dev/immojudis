@@ -11,7 +11,7 @@ import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseTimestamp as parseDateTime } from "@/lib/timestamp";
-import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { ForbiddenError, NotFoundError, PublicApiError } from "@/lib/api-errors";
 import { SalePublicationUnavailableError } from "@/lib/sale-publication-guard";
 
 type SupabaseClient = SupabaseAuthContext["supabase"];
@@ -239,7 +239,7 @@ export async function createLawyerReferralRequest({
 
   if (error) throw error;
 
-  await recordFeatureUsageEvent({
+  recordFeatureUsageEvent({
     auth,
     eventKey: "lawyer.referral_requested",
     subjectType: "lawyer_referral_request",
@@ -392,8 +392,9 @@ async function resolveReferralRecipient(
       prosecutingLawyerName: sale.lawyer_name,
     })
   ) {
-    throw new Error(
+    throw new PublicApiError(
       "Cet avocat n'est pas proposé pour cette vente : seuls les avocats du barreau du tribunal, hors avocat poursuivant, peuvent être sollicités.",
+      400,
     );
   }
   return chosen;

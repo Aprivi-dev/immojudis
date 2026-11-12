@@ -1,4 +1,9 @@
-import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
+import { FRENCH_DEPARTMENTS } from "@/lib/departments";
+import { labelFingerprint } from "@/lib/label-fingerprint";
+
+const CODE_BY_NAME = new Map(
+  FRENCH_DEPARTMENTS.map(({ code, name }) => [labelFingerprint(name), code]),
+);
 
 /**
  * Code officiel d'un département à partir de la valeur stockée : le code
@@ -8,8 +13,9 @@ export function departmentCode(value: string | null | undefined): string | null 
   const raw = value?.trim();
   if (!raw) return null;
   if (/^(\d{2,3}|2[AB])$/i.test(raw)) return raw.toUpperCase();
-  const resolved = resolveFrenchGeoSearch(raw);
-  return resolved.kind === "department" && resolved.departments.length === 1
-    ? resolved.departments[0]
-    : null;
+  // « département de la Gironde », « dept Gironde » : même préfixe que la recherche géographique.
+  const name = labelFingerprint(raw)
+    .replace(/^(?:departement|dept)\s+/, "")
+    .replace(/^(?:du|de la|de l|des|de|d)\s+/, "");
+  return CODE_BY_NAME.get(name) ?? null;
 }

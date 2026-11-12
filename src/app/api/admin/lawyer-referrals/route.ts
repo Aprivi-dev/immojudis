@@ -4,6 +4,7 @@ import {
   listAdminLawyerReferralRequests,
   updateAdminLawyerReferralRequest,
 } from "@/lib/admin-lawyer-referrals";
+import { adminPageQuerySchema } from "@/lib/admin-page-query";
 import { adminRoute } from "@/lib/admin-route-deadline";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
@@ -15,19 +16,11 @@ export const GET = adminRoute(
     fallbackMessage: "Mises en relation indisponibles",
   },
   async (request) => {
-    const url = new URL(request.url);
-    const offset = Number(url.searchParams.get("offset") ?? 0);
-    const limit = Number(url.searchParams.get("limit") ?? 50);
-    if (
-      !Number.isInteger(offset) ||
-      offset < 0 ||
-      !Number.isInteger(limit) ||
-      limit < 1 ||
-      limit > 100
-    ) {
-      throw new Error("Pagination des mises en relation invalide.");
-    }
-    return listAdminLawyerReferralRequests(bearerTokenFromRequest(request), { offset, limit });
+    const authToken = bearerTokenFromRequest(request);
+    const page = adminPageQuerySchema.parse(
+      Object.fromEntries(new URL(request.url).searchParams.entries()),
+    );
+    return listAdminLawyerReferralRequests(authToken, page);
   },
 );
 

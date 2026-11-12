@@ -4,7 +4,7 @@ import { loadAdminInformationAgentSale } from "@/lib/admin-information-agent-sal
 import {
   discoverInformationAgentContacts,
   type InformationAgentContactCandidate,
-} from "@/lib/information-agent/contacts";
+} from "@/lib/information-agent/contact-resolution";
 import {
   assertCourtRegistryFallbackAddress,
   assertCourtRegistryFallbackLimits,

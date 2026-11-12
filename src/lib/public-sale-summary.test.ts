@@ -41,7 +41,7 @@ describe("public sale summary", () => {
     expect(result.sale).not.toHaveProperty("address");
   });
 
-  it("carries the code of the tribunal (the address of its page), or none while the function is not migrated", async () => {
+  it("carries the code of the tribunal (the address of its page), or none when the row has no code", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [{ ...row, sale_venue_type: "tribunal", tribunal_code: "justice_tj_1_93" }],
       error: null,
@@ -68,7 +68,7 @@ describe("public sale summary", () => {
     expect(result.sale).not.toHaveProperty("updated_at");
   });
 
-  it("has no modification date when the sale never changed, or while the function is not migrated", async () => {
+  it("has no modification date when the sale never changed, or when the row omits it", async () => {
     for (const data of [
       { ...row, content_changed_at: null },
       (({ content_changed_at: _omitted, ...rest }) => rest)(row),
@@ -93,15 +93,21 @@ describe("public sale summary", () => {
     expect(SALE_ID_PATTERN.test("00000000-0000-0000-0000-000000000000")).toBe(true);
   });
 
-  it("asks for the legacy preview while the function is not deployed", async () => {
-    const rpc = vi.fn().mockResolvedValue({
-      data: null,
-      error: {
-        code: "PGRST202",
-        message: "Could not find the function public.get_public_sale_summary",
-      },
-    });
-    expect(await fetchPublicSaleSummary({ rpc }, ID)).toEqual({ kind: "unsupported" });
+  it("throws when the function is missing: no legacy preview any more", async () => {
+    const rpc = vi.fn((fn: string) =>
+      Promise.resolve(
+        fn === "get_public_sale_summary"
+          ? {
+              data: null,
+              error: {
+                code: "PGRST202",
+                message: "Could not find the function public.get_public_sale_summary",
+              },
+            }
+          : { data: null, error: null },
+      ),
+    );
+    await expect(fetchPublicSaleSummary({ rpc }, ID)).rejects.toMatchObject({ code: "PGRST202" });
   });
 
   it("throws on any other error: a transient failure must not become a 404", async () => {
@@ -142,7 +148,7 @@ describe("public sale summary", () => {
     expect(result.sale).not.toHaveProperty("visit_dates");
   });
 
-  it("keeps the summary alone while the details function is not deployed", async () => {
+  it("throws when the details function is missing, like any other read error", async () => {
     const rpc = vi.fn((fn: string) =>
       Promise.resolve(
         fn === "get_public_sale_details"
@@ -156,9 +162,7 @@ describe("public sale summary", () => {
           : { data: [row], error: null },
       ),
     );
-    const result = await fetchPublicSaleSummary({ rpc }, ID);
-    expect(result.kind).toBe("found");
-    if (result.kind === "found") expect(result.sale).not.toHaveProperty("photo_count");
+    await expect(fetchPublicSaleSummary({ rpc }, ID)).rejects.toMatchObject({ code: "PGRST202" });
   });
 
   describe("market gap band", () => {
@@ -226,13 +230,13 @@ describe("public sale summary", () => {
       }
     });
 
-    it("stays silent when the function is not deployed yet", async () => {
+    it("logs a missing function too: a band that disappears never goes unnoticed", async () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
         for (const code of ["PGRST202", "42883"]) {
           await fetchPublicSaleSummary({ rpc: answer(null, { code, message: "absent" }) }, ID);
         }
-        expect(warn).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledTimes(2);
       } finally {
         warn.mockRestore();
       }
@@ -304,11 +308,11 @@ describe("public sale summary", () => {
       }
     });
 
-    it("is left undefined while the function is not deployed", async () => {
+    it("throws when the function is missing, instead of leaving the verdict undefined", async () => {
       const rpc = answer(null, { code: "PGRST202", message: "Could not find the function" });
-      const result = await fetchPublicSaleSummary({ rpc }, ID, { withIndexability: true });
-      expect(result.kind).toBe("found");
-      expect(result).not.toHaveProperty("indexable");
+      await expect(
+        fetchPublicSaleSummary({ rpc }, ID, { withIndexability: true }),
+      ).rejects.toMatchObject({ code: "PGRST202" });
     });
 
     it("throws on any other error", async () => {
@@ -371,7 +375,7 @@ describe("repère « Pépite » du résumé public", () => {
     vi.fn(async (fn: string) => {
       if (fn === "get_public_sale_summary") return { data: [row], error: null };
       if (fn === "get_public_sale_pepite") return pepite;
-      return { data: null, error: { code: "PGRST202" } };
+      return { data: null, error: null };
     });
 
   it("est lu avec les autres fonctions publiques (une seule fois, par vente)", async () => {
@@ -388,7 +392,7 @@ describe("repère « Pépite » du résumé public", () => {
       { data: false, error: null },
       { data: null, error: null },
       { data: "true", error: null },
-      // Fonction absente (migration pas appliquée) ou panne : « pas de pépite », sans erreur.
+      // Fonction en erreur ou panne : « pas de pépite », sans erreur.
       { data: null, error: { code: "PGRST202", message: "absente" } },
       { data: null, error: { code: "42883", message: "absente" } },
       { data: null, error: { code: "57014", message: "timeout" } },
@@ -403,7 +407,7 @@ describe("repère « Pépite » du résumé public", () => {
     const rpc = vi.fn(async (fn: string) => {
       if (fn === "get_public_sale_pepite") throw new Error("réseau");
       if (fn === "get_public_sale_summary") return { data: [row], error: null };
-      return { data: null, error: { code: "PGRST202" } };
+      return { data: null, error: null };
     });
     const result = await fetchPublicSaleSummary({ rpc }, ID);
     expect(result.kind).toBe("found");
