@@ -1322,7 +1322,7 @@ $$;`;
       file: migration("cv2_nx06"),
       content: null,
       message:
-        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql, 20261119100100_fact_decision_limits_switch_and_author_lock.sql, 20261119100400_fact_claim_decision_grants.sql may",
+        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql,",
     },
     {
       label: "le même fichier : un EXECUTE dont le texte est assemblé",
@@ -1413,7 +1413,7 @@ $$;`;
       file: migration("cv2_nc02"),
       content: null,
       message:
-        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql, 20261119100100_fact_decision_limits_switch_and_author_lock.sql, 20261119100400_fact_claim_decision_grants.sql may",
+        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql,",
     },
     {
       label: "un jeton posé par un EXECUTE format (Na16)",
