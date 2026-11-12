@@ -4,7 +4,11 @@ This operator command reads only evidence that is already persisted in
 ``auction_sales.raw_payload``, ``auction_sales.observations`` and the
 source-scoped ``auction_observations`` table.  It deliberately does not read
 the flattened catalogue columns: those values have no field-level provenance
-and must not be turned into claims after the fact.
+and must not be turned into claims after the fact.  The same holds for the
+copies of those columns that the collection leaves at the top level of
+``raw_payload``: a ``source_field`` claim is read from
+``raw_payload.source_factual_snapshot`` only (``src.fact_claims``, version
+``auction_fact_claims_v3``), for the sale and for each persisted observation.
 
 The command is read-only by default.  ``--apply`` is required before it can
 append candidate rows to ``auction_fact_claims``.  Rows are materialized with

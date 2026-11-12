@@ -47,7 +47,7 @@ def test_build_ignores_flattened_values_when_persisted_payload_has_no_proof() ->
     # auction_sales row may have starting_price_eur/surface_m2 populated, but
     # this operator must not copy those fields into raw_payload.
     result = backfill.build_batch_candidates(
-        [sale_row(raw_payload={}, observations=[])],
+        [sale_row(raw_payload={"source_factual_snapshot": {"source_url": SALE_URL}}, observations=[])],
         {},
     )
 
@@ -217,6 +217,7 @@ def test_dry_run_never_executes_insert_and_advances_keyset_checkpoint(tmp_path: 
                         fetchall=lambda: [
                             sale_row(
                                 raw_payload={
+                                    "source_factual_snapshot": {"source_url": SALE_URL},
                                     "source_blocks": {
                                         "mise_a_prix": "100 000 euros",
                                     }
@@ -320,3 +321,72 @@ def test_canonical_id_verification_drops_deleted_targets() -> None:
     verified = backfill.verify_canonical_sale_ids(Connection(), [SALE_ID, SALE_ID_2])
 
     assert verified == {SALE_ID_2}
+
+
+# --- Registre des pièces, étape PA : le rattrapage partage la règle de la collecte ----------------------------------------
+
+
+def test_backfill_claims_nothing_from_columns_copied_into_the_persisted_payload() -> None:
+    """``raw_payload`` garde au premier niveau les colonnes que la collecte a relues en base : ce n'est pas une preuve."""
+    copied = {"surface_m2": 54, "land_surface_m2": 800, "occupancy_status": "rented", "starting_price_eur": 90000,
+              "source_factual_snapshot": {"source_url": SALE_URL}}
+
+    result = backfill.build_batch_candidates([sale_row(raw_payload=copied)], {})
+
+    assert result.rows == ()
+    assert result.skipped_by_reason == {"no_persisted_proof": 1}
+
+
+def test_backfill_claims_the_source_snapshot_and_marks_rows_v3() -> None:
+    payload = {
+        "surface_m2": 54,
+        "starting_price_eur": 90000,
+        "source_factual_snapshot": {"surface_m2": "50 m²", "starting_price_eur": "85 000 €"},
+    }
+
+    result = backfill.build_batch_candidates([sale_row(raw_payload=payload)], {})
+
+    claimed = {row["field_key"]: row for row in result.rows}
+    assert {field: row["value_jsonb"] for field, row in claimed.items()} == {
+        "property.surface_m2": 50.0,
+        "sale.starting_price_eur": 85000.0,
+    }
+    assert {row["extractor_version"] for row in result.rows} == {"auction_fact_claims_v3"}
+    assert {row["evidence_kind"] for row in result.rows} == {"source_listing"}
+    assert {row["evidence_locator"]["kind"] for row in result.rows} == {"source_field"}
+
+
+def test_backfill_reads_a_persisted_observation_through_its_own_snapshot() -> None:
+    """Une observation d'une autre source ne vaut que par l'instantané qu'elle porte, jamais par ses scalaires."""
+    secondary = "https://secondary.example/sale-1"
+    observations = {
+        SALE_URL: [
+            {
+                "source_url": secondary,
+                "source_name": "source-b",
+                "canonical_source_url": SALE_URL,
+                "raw_payload": {
+                    "starting_price_eur": 90000,
+                    "source_factual_snapshot": {"starting_price_eur": "85 000 €"},
+                },
+                "observed_at": datetime(2026, 9, 28, 11, tzinfo=UTC),
+                "updated_at": datetime(2026, 9, 28, 11, tzinfo=UTC),
+            },
+            {
+                "source_url": "https://third.example/sale-1",
+                "source_name": "source-c",
+                "canonical_source_url": SALE_URL,
+                "raw_payload": {"starting_price_eur": 95000},
+                "observed_at": datetime(2026, 9, 28, 11, tzinfo=UTC),
+                "updated_at": datetime(2026, 9, 28, 11, tzinfo=UTC),
+            },
+        ]
+    }
+
+    read_listing = sale_row(raw_payload={"source_factual_snapshot": {"source_url": SALE_URL}})
+    result = backfill.build_batch_candidates([read_listing], observations)
+
+    assert [(row["source_url"], row["value_jsonb"]) for row in result.rows] == [(secondary, 85000.0)]
+
+    # La même vente sans instantané de sa propre fiche : rien n'est émis, ses observations d'avant restent visibles.
+    assert list(backfill.build_batch_candidates([sale_row()], observations).rows) == []
