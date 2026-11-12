@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { toast } from "@/lib/toast";
 import { AdminInformationAgentMissionsList } from "./AdminInformationAgentMissionsList";
 import {
   AdminInformationAgentMissionsPanel,
@@ -385,6 +386,268 @@ describe("AdminInformationAgentMissionsPanel", () => {
 
     expect(screen.queryByRole("note")).toBeNull();
     expect(screen.queryByText(/retrouvée automatiquement/)).toBeNull();
+  });
+
+  it("« Régénérer le brouillon » recrée le brouillon d'une vente de la file au lieu de rouvrir l'ancien", async () => {
+    // Scénario réel : l'ancien brouillon de la vente est dans la liste. La sélection le rouvre sans rien
+    // créer ; seul le bouton, qui force la création, en produit un nouveau.
+    mocks.list.mockResolvedValue({ ok: true, missions: [mission("draft")], facts: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: {
+        ...mission("draft"),
+        id: "55555555-5555-4555-8555-555555555555",
+        subject: "Objet régénéré",
+      },
+      gaps: [],
+      facts: [],
+    });
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(mocks.create).not.toHaveBeenCalled();
+    const button = screen.getByRole("button", { name: "Régénérer le brouillon" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toEqual({
+      saleId: "11111111-1111-4111-8111-111111111111",
+      recipientEmail: "cabinet@example.test",
+      recipientName: "Maître Dupont",
+    });
+    await waitFor(() =>
+      expect((screen.getByRole("textbox", { name: "Objet" }) as HTMLInputElement).value).toBe(
+        "Objet régénéré",
+      ),
+    );
+  });
+
+  it("depuis la file, un refus du serveur à la régénération est notifié, jamais muet", async () => {
+    const error = vi.spyOn(toast, "error").mockImplementation(() => "");
+    mocks.list.mockResolvedValue({ ok: true, missions: [mission("draft")], facts: [] });
+    mocks.create.mockRejectedValue(new Error("Cette structure s'est opposée à être contactée."));
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    fireEvent.click(screen.getByRole("button", { name: "Régénérer le brouillon" }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Cette structure s'est opposée à être contactée."),
+    );
+    // Le brouillon ouvert reste affiché tel quel, et le bouton redevient utilisable.
+    expect((screen.getByRole("textbox", { name: "Objet" }) as HTMLInputElement).value).toBe(
+      "Demande de pièces",
+    );
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Régénérer le brouillon" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+  });
+
+  it("« Régénérer le brouillon » vaut aussi pour un brouillon ouvert depuis la liste des envois", async () => {
+    // Cas réel : un brouillon d'avant le lot, que l'aperçu refuse en demandant de le régénérer.
+    const legacy = mission("draft");
+    mocks.list.mockResolvedValue({ ok: true, missions: [legacy], facts: [] });
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: {
+        ...legacy,
+        id: "55555555-5555-4555-8555-555555555555",
+        subject: "Objet régénéré",
+      },
+      gaps: [],
+      facts: [],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel
+          selection={null}
+          onClose={vi.fn()}
+          openRequest={{ mission: legacy as never, nonce: 1 }}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Régénérer le brouillon" }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0]).toEqual({
+      saleId: legacy.saleId,
+      recipientEmail: "cabinet@example.test",
+      recipientName: "Maître Dupont",
+    });
+    await waitFor(() =>
+      expect((screen.getByRole("textbox", { name: "Objet" }) as HTMLInputElement).value).toBe(
+        "Objet régénéré",
+      ),
+    );
+  });
+
+  /** Brouillon ouvert depuis la liste des envois (aucune sélection de la file). */
+  function openFromList(opened: ReturnType<typeof mission>, nonce = 1) {
+    mocks.list.mockResolvedValue({ ok: true, missions: [opened], facts: [] });
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = (shown: typeof opened, at: number) => (
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel
+          selection={null}
+          onClose={vi.fn()}
+          openRequest={{ mission: shown as never, nonce: at }}
+        />
+      </QueryClientProvider>
+    );
+    const view = render(tree(opened, nonce));
+    return { open: (next: typeof opened, at: number) => view.rerender(tree(next, at)) };
+  }
+  const regeneratedDraft = {
+    ...mission("draft"),
+    id: "55555555-5555-4555-8555-555555555555",
+    subject: "Objet régénéré",
+  };
+  const subjectValue = () =>
+    (screen.getByRole("textbox", { name: "Objet" }) as HTMLInputElement).value;
+
+  it("liste des envois : le bouton est désactivé pendant la régénération, et un double clic ne crée qu'un brouillon", async () => {
+    let resolve: (value: unknown) => void = () => undefined;
+    mocks.create.mockReturnValue(new Promise((done) => (resolve = done)));
+    openFromList(mission("draft"));
+
+    const button = await screen.findByRole("button", { name: "Régénérer le brouillon" });
+    // Deux clics dans le même tour, avant tout nouveau rendu : la garde par référence n'en laisse passer qu'un.
+    fireEvent.click(button);
+    fireEvent.click(button);
+    const pending = await screen.findByRole("button", { name: "Régénération…" });
+    expect((pending as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(pending);
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+
+    resolve({ ok: true, mission: regeneratedDraft, gaps: [], facts: [] });
+    await waitFor(() => expect(subjectValue()).toBe("Objet régénéré"));
+    expect(
+      (screen.getByRole("button", { name: "Régénérer le brouillon" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  it("liste des envois : un refus du serveur est notifié et le brouillon ouvert reste en place", async () => {
+    const error = vi.spyOn(toast, "error").mockImplementation(() => "");
+    mocks.create.mockRejectedValue(new Error("Cette structure s'est opposée à être contactée."));
+    openFromList(mission("draft"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Régénérer le brouillon" }));
+
+    await waitFor(() =>
+      expect(error).toHaveBeenCalledWith("Cette structure s'est opposée à être contactée."),
+    );
+    expect(subjectValue()).toBe("Demande de pièces");
+    // La régénération peut être relancée après le refus.
+    mocks.create.mockResolvedValue({ ok: true, mission: regeneratedDraft, gaps: [], facts: [] });
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Régénérer le brouillon" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Régénérer le brouillon" }));
+    await waitFor(() => expect(subjectValue()).toBe("Objet régénéré"));
+  });
+
+  it("liste des envois : une autre mission ouverte pendant la régénération n'est pas écrasée", async () => {
+    let resolve: (value: unknown) => void = () => undefined;
+    mocks.create.mockReturnValue(new Promise((done) => (resolve = done)));
+    const view = openFromList(mission("draft"));
+    fireEvent.click(await screen.findByRole("button", { name: "Régénérer le brouillon" }));
+    await screen.findByRole("button", { name: "Régénération…" });
+
+    // L'administrateur ouvre une autre mission avant la réponse du serveur.
+    const other = {
+      ...mission("draft", "99999999-9999-4999-8999-999999999999", "autre@example.test"),
+      id: "66666666-6666-4666-8666-666666666666",
+      subject: "Autre demande",
+    };
+    view.open(other, 2);
+    await waitFor(() => expect(subjectValue()).toBe("Autre demande"));
+
+    resolve({ ok: true, mission: regeneratedDraft, gaps: [], facts: [] });
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Régénérer le brouillon" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    expect(subjectValue()).toBe("Autre demande");
+    expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).value).toBe(
+      "autre@example.test",
+    );
+  });
+
+  it("aucun bouton « Régénérer le brouillon » sur une mission envoyée", async () => {
+    const sent = mission("sent");
+    mocks.list.mockResolvedValue({ ok: true, missions: [sent], facts: [] });
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel
+          selection={null}
+          onClose={vi.fn()}
+          openRequest={{ mission: sent as never, nonce: 1 }}
+        />
+      </QueryClientProvider>,
+    );
+    await screen.findByText(/Brouillon pour cabinet@example.test/);
+    expect(screen.queryByRole("button", { name: "Régénérer le brouillon" })).toBeNull();
+  });
+
+  it("montre le rôle du destinataire proposé, l'origine de l'adresse et sa nature", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: {
+        ...mission("draft"),
+        recipientProfile: {
+          roleLabel: "Notaire",
+          addressKind: "generic",
+          addressKindLabel: "Adresse générique de la structure",
+          originLabel: "Adresse publiée dans l’annonce",
+          originSourceName: "notaires",
+          originUrl: "https://annonces.example.test/notaires/vente-1",
+        },
+      },
+      gaps: [],
+      facts: [],
+    });
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    const profile = screen.getByTestId("recipient-profile");
+    expect(profile.textContent).toContain("Notaire");
+    expect(profile.textContent).toContain("Adresse publiée dans l’annonce (notaires)");
+    expect(profile.textContent).toContain("Adresse générique de la structure");
+    expect(within(profile).getByRole("link", { name: "voir l’annonce" }).getAttribute("href")).toBe(
+      "https://annonces.example.test/notaires/vente-1",
+    );
+
+    // L'administrateur saisit une autre adresse : le profil ne la décrit plus, il disparaît.
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
+      target: { value: "autre.adresse@example.test" },
+    });
+    expect(screen.queryByTestId("recipient-profile")).toBeNull();
+  });
+
+  it("n'affiche aucun profil quand le brouillon n'en porte pas", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(screen.queryByTestId("recipient-profile")).toBeNull();
   });
 
   it("shows the inventory of the fiche with what is missing and what is known", async () => {

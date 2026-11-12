@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertInformationAgentContactAllowed,
-  assertInformationAgentIdentityAllowed,
   loadOpposedInformationAgentIdentityKeys,
   persistInformationAgentContactObservations,
   recordInformationAgentAdminAddressEntry,
@@ -215,9 +214,13 @@ describe("opposition par identité", () => {
         identityKeys: ["lawyer|bordeaux|dupont", "lawyer|bordeaux|dupont jean"],
       }),
     ).rejects.toThrow("s'est opposé à être contacté");
-    await expect(assertInformationAgentIdentityAllowed(["lawyer|bordeaux|dupont"])).rejects.toThrow(
-      "opposition enregistrée sous une autre adresse",
-    );
+    await expect(
+      assertInformationAgentContactAllowed({
+        saleId: SALE_ID,
+        email: "autre-adresse@example.test",
+        identityKeys: ["lawyer|bordeaux|dupont"],
+      }),
+    ).rejects.toThrow("opposition enregistrée sous une autre adresse");
   });
 
   it("laisse passer une identité non opposée et ne lit rien sans clé", async () => {

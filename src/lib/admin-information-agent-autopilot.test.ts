@@ -153,6 +153,27 @@ describe("panneau du pilote (serveur)", () => {
     expect(view.readiness.ready).toBe(false);
   });
 
+  it("compte par structure incomplet : l'écran le dit au lieu d'échouer", async () => {
+    const at = { env: {}, now: new Date("2026-11-03T09:30:00Z") };
+    mocks.stats.mockResolvedValue({
+      ...parseAutopilotStats({}),
+      sharedStructureCountsComplete: false,
+    });
+    const degraded = await getAdminAutopilotView("token", at);
+    expect(degraded.notice).toEqual({
+      tone: "warn",
+      text: expect.stringContaining("Compte des envois par office ou service incomplet"),
+    });
+    // Les autres compteurs restent affichés.
+    expect(degraded.sentToday).toBe("0 sur 5");
+
+    mocks.stats.mockResolvedValue({
+      ...parseAutopilotStats({}),
+      sharedStructureCountsComplete: true,
+    });
+    expect((await getAdminAutopilotView("token", at)).notice).toBeNull();
+  });
+
   it("refuse un compte qui n'est pas administrateur", async () => {
     mocks.auth.mockResolvedValue({ isAdmin: false, userId: "u" });
     await expect(getAdminAutopilotView("token")).rejects.toThrow("accès administrateur");

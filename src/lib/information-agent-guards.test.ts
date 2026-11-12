@@ -19,7 +19,8 @@ vi.mock("@/integrations/supabase/client.server", () => {
   return {
     supabaseAdmin: {
       from: (table: string) =>
-        table === "information_agent_contacts" ? { upsert: mocks.upsert } : query,
+        // La page d'opposition lit aussi les clés d'identité de l'adresse (lecture seule).
+        table === "information_agent_contacts" ? { ...query, upsert: mocks.upsert } : query,
       rpc: vi.fn(),
     },
   };
@@ -241,6 +242,9 @@ describe("one-click objection link (P4-12)", () => {
     mocks.ip.mockReset();
     mocks.ip.mockResolvedValue(undefined);
     mocks.upsert.mockResolvedValue({ error: null });
+    // Clés d'identité de l'adresse, lues par la page : aucune ici.
+    mocks.missions.mockReset();
+    mocks.missions.mockResolvedValue({ data: [], error: null });
     vi.stubEnv("INFORMATION_AGENT_PORTAL_SECRET", SECRET);
   });
 

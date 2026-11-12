@@ -36,17 +36,114 @@ function fakeSql(rows) {
 }
 
 describe("Supabase concurrent index operation allowlist", () => {
-  it("keeps exactly the four reviewed hot-path operations and the DVF commune market one", () => {
+  it("keeps exactly the four reviewed hot-path operations, the DVF commune market one and the two of the fact registry", () => {
     expect(operations.map((operation) => operation.indexName)).toEqual([
       "auction_sales_source_urls_gin_idx",
       "auction_sales_postal_code_idx",
       "auction_collection_items_run_source_url_idx",
       "auction_collection_items_run_canonical_source_url_idx",
       "dvf_transactions_insee_type_sale_date_idx",
+      "auction_sales_held_fields_idx",
+      "auction_fact_claims_agent_fact_key",
     ]);
     expect(
-      operations.every((operation) => operation.createSql.includes("create index concurrently")),
+      operations.every((operation) =>
+        /^create (?:unique )?index concurrently if not exists "/.test(operation.createSql),
+      ),
     ).toBe(true);
+    // Seule l'opération qui se déclare unique crée un index unique.
+    expect(
+      operations.filter((operation) => operation.createSql.startsWith("create unique index")),
+    ).toEqual(operations.filter((operation) => operation.unique === true));
+  });
+
+  describe("fact registry indexes (partial, expression, unique)", () => {
+    const heldFields = operations.find(
+      (item) => item.indexName === "auction_sales_held_fields_idx",
+    );
+    const agentFact = operations.find(
+      (item) => item.indexName === "auction_fact_claims_agent_fact_key",
+    );
+    const heldFieldsCatalog = {
+      index_def:
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales USING btree (id) WHERE (held_fields IS NOT NULL)",
+      access_method: "btree",
+      key_columns: ["id"],
+      is_partial: true,
+      has_expressions: false,
+      is_unique: false,
+      predicate: "(held_fields IS NOT NULL)",
+      expressions: null,
+    };
+    const agentFactCatalog = {
+      index_def:
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims USING btree (((evidence_locator ->> 'information_agent_fact_id'::text))) WHERE (evidence_locator ? 'information_agent_fact_id'::text)",
+      access_method: "btree",
+      key_columns: [],
+      is_partial: true,
+      has_expressions: true,
+      is_unique: true,
+      predicate: "(evidence_locator ? 'information_agent_fact_id'::text)",
+      expressions: "(evidence_locator ->> 'information_agent_fact_id'::text)",
+    };
+
+    it("registers them under the key of their migration, with the reviewed SQL", () => {
+      expect(heldFields.operationKey).toBe("20261117100450:auction_sales_held_fields_idx");
+      expect(heldFields.createSql).toBe(
+        'create index concurrently if not exists "auction_sales_held_fields_idx" on "public"."auction_sales" ("id") where ("held_fields" is not null)',
+      );
+      expect(agentFact.operationKey).toBe("20261117100450:auction_fact_claims_agent_fact_key");
+      expect(agentFact.createSql).toBe(
+        'create unique index concurrently if not exists "auction_fact_claims_agent_fact_key" on "public"."auction_fact_claims" (("evidence_locator" ->> \'information_agent_fact_id\')) where ("evidence_locator" ? \'information_agent_fact_id\')',
+      );
+    });
+
+    it("accepts the exact catalog definition of each index", () => {
+      expect(indexMatches(heldFields, heldFieldsCatalog)).toBe(true);
+      expect(indexMatches(agentFact, agentFactCatalog)).toBe(true);
+    });
+
+    it.each([
+      ["not partial", { is_partial: false, predicate: null }],
+      ["another predicate", { predicate: "(held_fields IS NULL)" }],
+      ["unique", { is_unique: true }],
+      ["on an expression", { has_expressions: true, expressions: "(lower(id::text))" }],
+      ["on another column", { key_columns: ["source_url"] }],
+    ])("rejects a held_fields index that is %s", (_label, change) => {
+      expect(indexMatches(heldFields, { ...heldFieldsCatalog, ...change })).toBe(false);
+    });
+
+    it.each([
+      ["not unique", { is_unique: false }],
+      ["not partial", { is_partial: false, predicate: null }],
+      ["on another predicate", { predicate: "(evidence_locator ? 'case_id'::text)" }],
+      ["on another expression", { expressions: "(evidence_locator ->> 'case_id'::text)" }],
+      ["on a plain column", { has_expressions: false, expressions: null, key_columns: ["id"] }],
+    ])("rejects an agent-fact index that is %s", (_label, change) => {
+      expect(indexMatches(agentFact, { ...agentFactCatalog, ...change })).toBe(false);
+    });
+
+    it("still refuses a partial, expression or unique index for the earlier operations", () => {
+      const [, postalCode] = operations;
+      const catalog = {
+        index_def:
+          "CREATE INDEX auction_sales_postal_code_idx ON public.auction_sales USING btree (postal_code)",
+        access_method: "btree",
+        key_columns: ["postal_code"],
+        is_partial: false,
+        has_expressions: false,
+        is_unique: false,
+      };
+      expect(indexMatches(postalCode, catalog)).toBe(true);
+      expect(indexMatches(postalCode, { ...catalog, is_unique: true })).toBe(false);
+      expect(
+        indexMatches(postalCode, {
+          ...catalog,
+          is_partial: true,
+          predicate: "(postal_code IS NOT NULL)",
+        }),
+      ).toBe(false);
+    });
   });
 
   it("accepts only exact catalog definitions for the reviewed operation", () => {

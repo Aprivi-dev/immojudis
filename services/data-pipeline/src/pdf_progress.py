@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,9 @@ from src.normalize import clean_text
 
 PDF_TEXT_CACHE_VERSION = "pdf_text_v4_mixed_image_ocr"
 PDF_PROGRESS_SCHEMA_VERSION = 1
+# Durée de validité d'une vérification HTTP persistée : celle de ``freshness.timestamp_is_fresh`` par défaut, que
+# tests/test_pdf_pass_outcomes.py compare à cette constante (un changement de l'une sans l'autre y échoue).
+HTTP_REVALIDATION_WINDOW = timedelta(hours=24)
 # Status of a page of photographs or a plan settled without text (same value as
 # pdf_page_analysis.PICTURE_PAGE_STATUS; this leaf module does not import it).
 PICTURE_PAGE_STATUS = "picture_page_excluded"
@@ -500,13 +504,18 @@ def modern_progress_entries(analysis: object, documents: list[dict[str, Any]]) -
     return result
 
 
-def stale_complete_document_urls(
+def _persisted_http_checks(
     analysis: object,
     documents: list[dict[str, Any]],
-    cache_dir: Path,
-    document_filename: Callable[[dict[str, Any]], str],
-) -> set[str]:
-    """Return complete or terminal URLs whose HTTP revalidation window expired."""
+) -> tuple[set[str], dict[str, object]]:
+    """URL à revalider (lues ou terminales, hors liens écartés) et date de leur dernière vérification persistée.
+
+    La date vient du manifeste enregistré (preuve de la pièce, sinon ``http_checked_at_by_url``), jamais du fichier
+    de suivi local ``.http.json`` : celui-ci ne sert qu'à la requête conditionnelle du téléchargement. La lecture
+    en avance du vidage le rafraîchit sans rien écrire en base ; jugée sur lui, la passe sous verrou ne reprenait
+    aucune pièce d'un manifeste de plus de 24 h alors que le texte persisté n'était plus restaurable (11/11/2026 :
+    points d'étape refusés ``no_progress_entries`` sur des ventes déjà lues).
+    """
 
     entries = modern_progress_entries(analysis, documents)
     complete_urls = {
@@ -543,9 +552,7 @@ def stale_complete_document_urls(
     # HTTP observations and must be checked again after their per-URL TTL.
     revalidation_urls = (complete_urls | blocked_urls | terminal_urls) - skipped_urls
     if not revalidation_urls:
-        if isinstance(analysis, dict):
-            analysis["http_revalidation_pending_urls"] = []
-        return set()
+        return set(), {}
     proof = analysis.get("cache_proof") if isinstance(analysis, dict) else None
     proof_documents = proof.get("documents") if isinstance(proof, dict) else None
     proof_by_url = {
@@ -554,25 +561,28 @@ def stale_complete_document_urls(
         if isinstance(item, dict) and document_url(item)
     }
     checked_at_by_url = analysis.get("http_checked_at_by_url") if isinstance(analysis, dict) else None
-    stale_urls: set[str] = set()
+    checks: dict[str, object] = {}
     for document in documents:
         url = document_url(document)
         if url not in revalidation_urls:
             continue
-        file_path = cache_dir / document_filename(document)
-        metadata_path = file_path.with_suffix(file_path.suffix + ".http.json")
-        try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, TypeError, UnicodeError, ValueError, json.JSONDecodeError):
-            metadata = {}
-        checked_at = metadata.get("checked_at") if isinstance(metadata, dict) else None
-        if not checked_at:
-            proof_entry = proof_by_url.get(url)
-            checked_at = proof_entry.get("http_checked_at") if isinstance(proof_entry, dict) else None
+        proof_entry = proof_by_url.get(url)
+        checked_at = proof_entry.get("http_checked_at") if isinstance(proof_entry, dict) else None
         if not checked_at and isinstance(checked_at_by_url, dict):
             checked_at = checked_at_by_url.get(url)
-        if not timestamp_is_fresh(checked_at):
-            stale_urls.add(url)
+        checks[url] = checked_at
+    return revalidation_urls, checks
+
+
+def stale_complete_document_urls(analysis: object, documents: list[dict[str, Any]]) -> set[str]:
+    """Return complete or terminal URLs whose persisted HTTP revalidation window expired."""
+
+    revalidation_urls, checks = _persisted_http_checks(analysis, documents)
+    if not revalidation_urls:
+        if isinstance(analysis, dict):
+            analysis["http_revalidation_pending_urls"] = []
+        return set()
+    stale_urls = {url for url, checked_at in checks.items() if not timestamp_is_fresh(checked_at)}
     if isinstance(analysis, dict):
         previous_pending = analysis.get("http_revalidation_pending_urls")
         retained_pending = {
@@ -589,6 +599,20 @@ def stale_complete_document_urls(
         # locked pass never selected those URLs again and the manifest stayed partial forever (53 empty passes).
         stale_urls |= retained_pending & revalidation_urls
     return stale_urls
+
+
+def persisted_revalidation_due_at(analysis: object, documents: list[dict[str, Any]]) -> datetime | None:
+    """Instant où la première vérification HTTP persistée expire, tant que toutes sont encore fraîches.
+
+    ``None`` s'il n'y a rien à revalider, ou si une URL est déjà à revalider (vérification absente, illisible ou
+    périmée) : la prochaine passe la reprend, il n'y a rien à attendre.
+    """
+
+    _, checks = _persisted_http_checks(analysis, documents)
+    if not checks or any(not timestamp_is_fresh(checked_at) for checked_at in checks.values()):
+        return None
+    oldest = min(datetime.fromisoformat(str(checked_at).replace("Z", "+00:00")) for checked_at in checks.values())
+    return oldest + HTTP_REVALIDATION_WINDOW
 
 
 def complete_or_terminal_urls(analysis: object, documents: list[dict[str, Any]]) -> set[str]:

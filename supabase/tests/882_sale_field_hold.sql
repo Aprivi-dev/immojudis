@@ -1,4 +1,6 @@
--- 20261116100500 : déclencheur de retenue aaab_auction_sales_hold_projected_fields (lot R1, étape M4).
+-- 20261116100500 puis 20261117100200 : déclencheur de retenue aaab_auction_sales_hold_projected_fields (lot R1,
+-- étape M4 ; version 2 au lot R2a : valeurs neutres dans les libellés de surface, entrée « released » gardée
+-- après une libération, annonce qui se tait notée dans l'entrée ; la mémoire d'écho est testée dans 885).
 --   * chemin rapide : une vente qui ne tient rien se réécrit comme avant, sans évènement ;
 --   * vente tenue, ré-import par le rôle de la collecte (insert … on conflict (source_url) do update) :
 --     même valeur d'annonce, écho de la valeur tenue, valeur qui ne dit rien : la pièce reste, sans évènement ;
@@ -13,14 +15,21 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(80);
+select plan(83);
 
 -- Déclencheurs : forme et ordre -----------------------------------------------------------------------------------
 select ok(
   (select pg_get_triggerdef(oid) from pg_trigger
      where tgrelid = 'public.auction_sales'::regclass and tgname = 'aaab_auction_sales_hold_projected_fields')
-    ~ 'BEFORE UPDATE OF surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates, held_fields ON public\.auction_sales FOR EACH ROW WHEN \(\(\(old\.held_fields IS NOT NULL\) OR \(new\.held_fields IS DISTINCT FROM old\.held_fields\)\)\) EXECUTE FUNCTION app_private\.hold_projected_sale_fields\(\)',
-  'the hold trigger fires before an update of the held columns, only for a sale that holds a field'
+    ~ 'BEFORE UPDATE OF surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2, carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates, held_fields ON public\.auction_sales FOR EACH ROW WHEN \(\(\(old\.held_fields IS NOT NULL\) OR \(new\.held_fields IS DISTINCT FROM old\.held_fields\) OR \(new\.surface_source = ''fact_registry''::text\)\)\) EXECUTE FUNCTION app_private\.hold_projected_sale_fields\(\)',
+  'the hold trigger fires before an update of the held columns and their two neighbours, only for a sale of the registry or a write that brings the reserved label'
+);
+
+select ok(
+  (select pg_get_triggerdef(oid) from pg_trigger
+     where tgrelid = 'public.auction_sales'::regclass and tgname = 'aaab_auction_sales_held_fields_marker_guard')
+    ~ 'BEFORE UPDATE OF surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2, carrez_surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, visit_dates ON public\.auction_sales FOR EACH ROW WHEN \(\(\(old\.held_fields IS NOT NULL\) OR \(new\.surface_source = ''fact_registry''::text\)\)\) EXECUTE FUNCTION app_private\.refuse_sale_field_projection_marker\(\)',
+  'the marker guard fires before an update of the same columns, only for a sale of the registry or the reserved label'
 );
 
 select is(
@@ -28,12 +37,12 @@ select is(
      select tgname from pg_trigger
      where tgrelid = 'public.auction_sales'::regclass and not tgisinternal
        and (tgtype & 2) = 2 and (tgtype & 16) = 16
-     order by tgname limit 3) first_triggers),
+     order by tgname limit 4) first_triggers),
   array[
-    'aaaa_auction_sales_retention_tombstone_guard_update', 'aaab_auction_sales_held_fields_role_guard',
-    'aaab_auction_sales_hold_projected_fields'
+    'aaaa_auction_sales_retention_tombstone_guard_update', 'aaab_auction_sales_held_fields_marker_guard',
+    'aaab_auction_sales_held_fields_role_guard', 'aaab_auction_sales_hold_projected_fields'
   ],
-  'the role guard then the hold run right after the retention guard, before every other BEFORE UPDATE trigger'
+  'the marker guard, the role guard then the hold run right after the retention guard, before every other BEFORE UPDATE trigger'
 );
 
 select ok(
@@ -54,9 +63,11 @@ select ok(
 select ok(
   (select not prosecdef from pg_proc
      where oid = 'app_private.refuse_api_role_held_fields_write()'::regprocedure)
+  and (select not prosecdef and proconfig @> array['search_path=""']::text[] from pg_proc
+         where oid = 'app_private.refuse_sale_field_projection_marker()'::regprocedure)
   and (select prosecdef and proconfig @> array['search_path=""']::text[]
          from pg_proc where oid = 'app_private.hold_projected_sale_fields()'::regprocedure),
-  'the role guard reads the calling role (security invoker); the hold writes the queue (security definer)'
+  'the role guard and the marker guard read the calling role (security invoker); the hold writes the queue (security definer)'
 );
 
 select is(
@@ -64,6 +75,7 @@ select is(
      from unnest(array[
        'app_private.hold_projected_sale_fields()', 'app_private.refuse_inserted_held_fields()',
        'app_private.refuse_api_role_held_fields_write()', 'app_private.refuse_api_role_registry_origin()',
+       'app_private.refuse_sale_field_projection_marker()',
        'app_private.stamp_fact_registry_event()']) routine(signature)
      cross join unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
      where has_function_privilege(api_role.name, routine.signature, 'execute')),
@@ -138,13 +150,13 @@ select results_eq(
   $$select surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence,
            land_surface_m2, rooms_count, occupancy_status
       from public.auction_sales where id = '88200000-1000-4000-8000-000000000001'$$,
-  $$values (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email',
+  $$values (54::numeric, 54::numeric, 'built', 'fact_registry',
             0.85::numeric, 800::numeric, 3, 'vacant')$$,
   'the projection wrote the four pieces of the lawyer on the kept sale'
 );
 
 select is(
-  (select array_agg(field.key || ':' || (field.value ->> 'on_listing_change') order by field.key)
+  (select array_agg(field.key || ':' || (field.value ->> 'on_listing_change') order by field.key collate "C")
      from public.auction_sales sale, jsonb_each(sale.held_fields) field
      where sale.id = '88200000-1000-4000-8000-000000000001'),
   array[
@@ -232,9 +244,9 @@ select results_eq(
       where id in ('88200000-1000-4000-8000-000000000001', '88200000-1000-4000-8000-000000000002')
       order by id$$,
   $$values
-      (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email', 0.85::numeric,
+      (54::numeric, 54::numeric, 'built', 'fact_registry', 0.85::numeric,
         800::numeric, 3, 'vacant'),
-      (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email', 0.85::numeric,
+      (54::numeric, 54::numeric, 'built', 'fact_registry', 0.85::numeric,
         800::numeric, 3, 'vacant')$$,
   '(a) an unchanged listing does not erase the pieces, in either setting'
 );
@@ -252,9 +264,9 @@ select results_eq(
       where id in ('88200000-1000-4000-8000-000000000001', '88200000-1000-4000-8000-000000000002')
       order by id$$,
   $$values
-      (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email', 0.85::numeric,
+      (54::numeric, 54::numeric, 'built', 'fact_registry', 0.85::numeric,
         800::numeric, 3, 'vacant'),
-      (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email', 0.85::numeric,
+      (54::numeric, 54::numeric, 'built', 'fact_registry', 0.85::numeric,
         800::numeric, 3, 'vacant')$$,
   '(b) an echo of the held value, exact or within tolerance, keeps the piece and its whole surface group'
 );
@@ -274,9 +286,9 @@ select results_eq(
       where id in ('88200000-1000-4000-8000-000000000001', '88200000-1000-4000-8000-000000000002')
       order by id$$,
   $$values
-      (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email', 0.85::numeric,
+      (54::numeric, 54::numeric, 'built', 'fact_registry', 0.85::numeric,
         800::numeric, 3, 'vacant'),
-      (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email', 0.85::numeric,
+      (54::numeric, 54::numeric, 'built', 'fact_registry', 0.85::numeric,
         800::numeric, 3, 'vacant')$$,
   '(c) a listing that says nothing (null, zero or negative surface, unknown occupancy) keeps the pieces'
 );
@@ -289,11 +301,13 @@ select is(
   '(a) (b) (c) write no review event'
 );
 
+-- (c) note seulement que l'annonce se tait (listing_silent_since, voir 885) : rien d'autre ne bouge.
 select is(
   (select count(*)::integer from public.auction_sales sale join hold_marks mark using (id)
-     where sale.held_fields is distinct from mark.held_fields),
+     where (select jsonb_object_agg(field.key, field.value - 'listing_silent_since')
+              from jsonb_each(sale.held_fields) field) is distinct from mark.held_fields),
   0,
-  '(a) (b) (c) leave held_fields untouched'
+  '(a) (b) (c) leave the held entries untouched, apart from the note that the listing went silent'
 );
 
 select is(
@@ -312,7 +326,7 @@ select results_eq(
   $$select surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence,
            land_surface_m2, rooms_count, bedrooms_count, occupancy_status
       from public.auction_sales where id = '88200000-1000-4000-8000-000000000001'$$,
-  $$values (54::numeric, 54::numeric, 'fact_registry_lawyer_email', 'fact_registry_lawyer_email',
+  $$values (54::numeric, 54::numeric, 'built', 'fact_registry',
             0.85::numeric, 800::numeric, 3, 1, 'vacant')$$,
   '(d) keep_and_review: the changed listing does not replace the pieces'
 );
@@ -321,7 +335,7 @@ select results_eq(
   $$select field_key, event, held_value, listing_value, incoming_value, decision_id is not null
       from public.auction_sale_field_hold_events
       where sale_id = '88200000-1000-4000-8000-000000000001' and event like 'listing_changed%'
-      order by field_key$$,
+      order by field_key collate "C"$$,
   $$values
       ('property.land_surface_m2', 'listing_changed_kept', '800'::jsonb, null::jsonb, '900'::jsonb, true),
       ('property.occupancy_status', 'listing_changed_kept', '"vacant"'::jsonb, '"occupied"'::jsonb,
@@ -440,10 +454,13 @@ select results_eq(
 );
 
 select is(
-  (select array_agg(field.key order by field.key)
-     from public.auction_sales sale, jsonb_object_keys(sale.held_fields) field(key)
+  (select array_agg(field.key || ':' || (field.value ->> 'state') order by field.key collate "C")
+     from public.auction_sales sale, jsonb_each(sale.held_fields) field
      where sale.id = '88200000-1000-4000-8000-000000000002'),
-  array['property.land_surface_m2', 'property.occupancy_status', 'property.rooms_count'],
+  array[
+    'property.land_surface_m2:held', 'property.occupancy_status:held', 'property.rooms_count:held',
+    'property.surface_m2:released'
+  ],
   '(d) listing_wins_and_review: the surface is released, the three other fields are still held'
 );
 
@@ -470,9 +487,9 @@ select is(
 );
 
 select results_eq(
-  $$select surface_m2, app_surface_m2, held_fields ? 'property.surface_m2'
+  $$select surface_m2, app_surface_m2, held_fields #>> '{property.surface_m2,state}'
       from public.auction_sales where id = '88200000-1000-4000-8000-000000000002'$$,
-  $$values (60::numeric, 60::numeric, false)$$,
+  $$values (60::numeric, 60::numeric, 'released')$$,
   'the listing value that won stays displayed'
 );
 
@@ -507,10 +524,15 @@ execute reimport('https://example.test/882/released', 70, 70, 'carrez', 'pdf', 0
 reset role;
 
 select results_eq(
-  $$select surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status, held_fields
+  $$select surface_m2, land_surface_m2, rooms_count, bedrooms_count, occupancy_status,
+           (select array_agg(field.key || ':' || (field.value ->> 'state') || ':' || (field.value ? 'value')
+                     order by field.key collate "C")
+              from jsonb_each(held_fields) field)
       from public.auction_sales where id = '88200000-1000-4000-8000-000000000002'$$,
-  $$values (70::numeric, 900::numeric, 4, 2, 'rented', null::jsonb)$$,
-  '(d) listing_wins_and_review: once every field is released, held_fields is null again'
+  $$values (70::numeric, 900::numeric, 4, 2, 'rented', array[
+      'property.land_surface_m2:released:false', 'property.occupancy_status:released:false',
+      'property.rooms_count:released:false', 'property.surface_m2:released:false'])$$,
+  '(d) listing_wins_and_review: once every field is released, nothing is held: only the echo memory stays'
 );
 
 select is(
@@ -571,9 +593,10 @@ select results_eq(
 update public.auction_sales set surface_m2 = 70 where id = '88200000-1000-4000-8000-000000000006';
 
 select results_eq(
-  $$select surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, held_fields
+  $$select surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence,
+           held_fields #>> '{property.surface_m2,state}', held_fields #> '{property.surface_m2,value}'
       from public.auction_sales where id = '88200000-1000-4000-8000-000000000006'$$,
-  $$values (70::numeric, 50::numeric, 'habitable', 'listing_text', 0.7::numeric, null::jsonb)$$,
+  $$values (70::numeric, 50::numeric, 'habitable', 'listing_text', 0.7::numeric, 'released', null::jsonb)$$,
   'a partial write that releases the surface gives the untouched columns their listing value back'
 );
 
@@ -584,7 +607,7 @@ where id = '88200000-1000-4000-8000-000000000001';
 select results_eq(
   $$select app_surface_kind, surface_confidence from public.auction_sales
       where id = '88200000-1000-4000-8000-000000000001'$$,
-  $$values ('fact_registry_lawyer_email', 0.85::numeric)$$,
+  $$values ('built', 0.85::numeric)$$,
   'a direct write of one label of the surface group is held: the group stays consistent'
 );
 
@@ -696,13 +719,13 @@ select lives_ok(
 );
 
 select results_eq(
-  $$select id, rooms_count, bedrooms_count, held_fields
+  $$select id, rooms_count, bedrooms_count, held_fields #>> '{property.rooms_count,state}'
       from public.auction_sales
       where id in ('88200000-1000-4000-8000-000000000004', '88200000-1000-4000-8000-000000000005')
       order by id$$,
   $$values
-      ('88200000-1000-4000-8000-000000000004'::uuid, null::integer, 5, null::jsonb),
-      ('88200000-1000-4000-8000-000000000005'::uuid, 6, 5, null::jsonb)$$,
+      ('88200000-1000-4000-8000-000000000004'::uuid, null::integer, 5, 'released'),
+      ('88200000-1000-4000-8000-000000000005'::uuid, 6, 5, 'released')$$,
   'listing_wins_and_review: the field is released to the listing room count when it fits, to nothing otherwise'
 );
 
@@ -776,11 +799,25 @@ select throws_ok(
 );
 select set_config('app.sale_field_projection', '88200000-1000-4000-8000-000000000001', true);
 select throws_ok(
-  $$update public.auction_sales set held_fields = null, surface_m2 = 99
+  $$update public.auction_sales set held_fields = null
       where id = '88200000-1000-4000-8000-000000000001'$$,
   '42501',
   'auction_sales.held_fields cannot be written by an API role.',
   'forged write: the server role cannot open held_fields by setting the projection marker itself'
+);
+select throws_ok(
+  $$update public.auction_sales set held_fields = null, surface_m2 = 99
+      where id = '88200000-1000-4000-8000-000000000001'$$,
+  '42501',
+  'The sale field projection marker is reserved to app_private.project_sale_fields.',
+  'forged write: with the marker set, the server role cannot write a held column either, with or without held_fields'
+);
+select throws_ok(
+  $$update public.auction_sales set surface_m2 = 99, app_surface_m2 = 99
+      where id = '88200000-1000-4000-8000-000000000001'$$,
+  '42501',
+  'The sale field projection marker is reserved to app_private.project_sale_fields.',
+  'forged write: the marker does not open the held columns of a sale of the registry to the server role'
 );
 select throws_ok(
   $$update public.auction_sales set held_fields = '{"property.rooms_count": {"value": 9}}'::jsonb

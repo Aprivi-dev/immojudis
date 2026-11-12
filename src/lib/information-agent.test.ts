@@ -103,8 +103,14 @@ describe("supervised information agent", () => {
         select: vi.fn(),
         eq: vi.fn(),
         is: vi.fn(),
+        // Opposition de la structure du destinataire (liste d'opposition par identité).
+        in: vi.fn(),
         single: vi.fn().mockResolvedValue({
-          data: { id: "22222222-2222-4222-8222-222222222222", status: "draft" },
+          data: {
+            id: "22222222-2222-4222-8222-222222222222",
+            status: "draft",
+            metadata: { question_audience: "other" },
+          },
           error: null,
         }),
         then: vi.fn((onFulfilled: (value: { data: never[]; error: null }) => unknown) =>
@@ -114,6 +120,7 @@ describe("supervised information agent", () => {
       query.select.mockReturnValue(query);
       query.eq.mockReturnValue(query);
       query.is.mockReturnValue(query);
+      query.in.mockReturnValue(query);
       vi.mocked(supabaseAdmin.from).mockReturnValue(query as never);
       const fetchImpl = vi.fn();
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", enabled);
@@ -145,7 +152,8 @@ describe("supervised information agent", () => {
           }),
         ).rejects.toThrow(expectedError);
         expect(fetchImpl).not.toHaveBeenCalled();
-        expect(supabaseAdmin.from).toHaveBeenCalledTimes(2);
+        // Mission, registre des contacts, puis opposition de la structure : trois lectures, aucune écriture.
+        expect(supabaseAdmin.from).toHaveBeenCalledTimes(3);
         expect(supabaseAdmin.rpc).not.toHaveBeenCalled();
         expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
       } finally {
@@ -155,7 +163,16 @@ describe("supervised information agent", () => {
     },
   );
 
-  it.each(["opposition", "sent", "record_fails", "already_sent", "timeout"] as const)(
+  it.each([
+    "opposition",
+    "structure_opposition",
+    "structure_opposition_before_provider",
+    "sent",
+    "notary_sent",
+    "record_fails",
+    "already_sent",
+    "timeout",
+  ] as const)(
     "rechecks the registry and records manual delivery correctly (%s)",
     async (scenario) => {
       const opposition = scenario === "opposition";
@@ -178,11 +195,27 @@ describe("supervised information agent", () => {
         body_text: "Bonjour, pourriez-vous transmettre les pièces du dossier ?",
         question_keys: ["documents"],
         missing_information: ["documents"],
-        metadata: {},
+        metadata:
+          scenario === "notary_sent"
+            ? { question_audience: "notary", contact_identity: { role: "notary" } }
+            : { question_audience: "other" },
       };
+      // La structure s'oppose après le premier contrôle (avant l'approbation) : le deuxième contrôle, juste
+      // après l'approbation, ou le troisième, juste avant l'appel au fournisseur, doit arrêter l'envoi.
+      const structureOppositionFromRead =
+        scenario === "structure_opposition"
+          ? 1
+          : scenario === "structure_opposition_before_provider"
+            ? 2
+            : null;
       let contactReads = 0;
+      // La structure du destinataire s'oppose APRÈS le premier contrôle : seul le contrôle rejoué après
+      // l'approbation, avec les clés de la structure, peut encore arrêter l'envoi.
+      let oppositionReads = 0;
+      const structureKey = "structure|domain|example.test";
 
       class ApprovalQuery {
+        private requested: unknown[] = [];
         constructor(private readonly table: string) {}
 
         select() {
@@ -197,7 +230,8 @@ describe("supervised information agent", () => {
           return this;
         }
 
-        in() {
+        in(_column: string, values: unknown[]) {
+          this.requested = values;
           return this;
         }
 
@@ -284,7 +318,17 @@ describe("supervised information agent", () => {
                     : [],
                   error: null,
                 }
-              : { data: null, error: null };
+              : this.table === "information_agent_identity_oppositions"
+                ? {
+                    data:
+                      structureOppositionFromRead !== null &&
+                      oppositionReads++ >= structureOppositionFromRead &&
+                      this.requested.includes(structureKey)
+                        ? [{ identity_key: structureKey }]
+                        : [],
+                    error: null,
+                  }
+                : { data: null, error: null };
           return Promise.resolve(result).then(onFulfilled);
         }
       }
@@ -322,6 +366,7 @@ describe("supervised information agent", () => {
       }
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_ENABLED", "true");
       vi.stubEnv("INFORMATION_AGENT_OUTBOUND_CANARY_ONLY", "false");
+      if (scenario === "notary_sent") vi.stubEnv("INFORMATION_AGENT_NOTARY_SEND_ENABLED", "true");
       vi.stubEnv("RESEND_API_KEY", "test-resend-key");
       vi.stubEnv("INFORMATION_AGENT_EMAIL_FROM", "agent@example.test");
       vi.stubEnv("INFORMATION_AGENT_INBOUND_DOMAIN", "reply.example.test");
@@ -350,7 +395,13 @@ describe("supervised information agent", () => {
             }),
           },
         });
-        if (opposition) {
+        if (structureOppositionFromRead !== null) {
+          await expect(operation).rejects.toThrow("Cette structure");
+          // Trois lectures de la liste d'opposition au plus tard : aucune après celle qui refuse.
+          expect(oppositionReads).toBe(structureOppositionFromRead + 1);
+          expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
+          expect(mission.status).toBe("failed");
+        } else if (opposition) {
           await expect(operation).rejects.toThrow("opposé");
           expect(emailMocks.sendResendEmail).not.toHaveBeenCalled();
           expect(mission.status).toBe("failed");
@@ -396,6 +447,17 @@ describe("supervised information agent", () => {
             text: expect.stringContaining("Responsable de traitement"),
           });
           const sent = emailMocks.sendResendEmail.mock.calls[0][0].message.text as string;
+          const html = emailMocks.sendResendEmail.mock.calls[0][0].message.html as string;
+          if (scenario === "notary_sent") {
+            // Message réellement envoyé à un notaire : aucune invitation à déposer des pièces.
+            for (const output of [sent, html]) {
+              expect(output).not.toContain("Déposer des pièces");
+              expect(output).not.toContain("/contribuer/");
+            }
+          } else {
+            expect(sent).toContain("Déposer des pièces");
+            expect(html).toContain("/contribuer/");
+          }
           expect(sent).toContain("Immojudis SAS");
           expect(sent).toContain("https://immojudis.example/privacy");
           expect(sent).toContain("https://immojudis.example/api/information-agent/opt-out?e=");
@@ -418,7 +480,7 @@ describe("supervised information agent", () => {
         // Registry reads: the recipient check before approval (two scopes), the origin lookup, the
         // admin-entry record (read + write), then the checks after approval and just before sending;
         // an opposition stops at the second one.
-        expect(contactReads).toBe(opposition ? 7 : 9);
+        expect(contactReads).toBe(opposition || scenario === "structure_opposition" ? 7 : 9);
         expect(mission.recipient_kind).toBe("manual_professional");
       } finally {
         vi.unstubAllEnvs();
@@ -587,10 +649,12 @@ describe("supervised information agent", () => {
       "cabinet@example.test",
       "etude@example.test",
     ]);
+    // Organisateur de la vente inconnu et aucun bloc avocat : le nom du champ `lawyer_contact` ne fait pas
+    // un avocat, c'est un contact de l'annonce.
     expect(candidates[0]).toMatchObject({
       name: "Me Dupont",
-      role: "lawyer",
-      recipientKind: "source_lawyer",
+      role: "source_contact",
+      recipientKind: "source_contact",
       confidence: "high",
     });
     expect(candidates[0]?.provenance[0]).toMatchObject({

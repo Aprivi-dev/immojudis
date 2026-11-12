@@ -183,6 +183,18 @@ describe("revérification des règles du pilote juste avant l'envoi", () => {
       "art14_unknown",
     ],
     [
+      "notaire ou service de l'État lus dans l'annonce : le pilote reste réservé à l'avocat",
+      () => undefined,
+      { recipientKind: "source_contact", identityKeys: ["notary|bordeaux|martin jean"] },
+      "role_not_lawyer",
+    ],
+    [
+      "adresse générique sans identité du professionnel : la clé de structure ne suffit pas",
+      () => undefined,
+      { identityKeys: ["structure|domain|cabinet-dupont.fr"] },
+      "identity_incomplete",
+    ],
+    [
       "adresse Licitor décodée sans réglage",
       () =>
         mocks.registry.mockResolvedValue({

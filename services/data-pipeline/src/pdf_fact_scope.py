@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -9,17 +11,20 @@ from decimal import Decimal
 from typing import Any
 
 from src.base_reads import snapshot_relayed_fields
+from src.lot_scope import is_lot_scoped
 from src.normalize import (
     clean_text,
     has_rented_occupancy_signal,
     no_lease_occupancy_status,
+    normalize_sale,
     normalize_status,
     parse_french_datetime,
-    parse_price,
     source_sale_timezone,
     strip_accents,
 )
 from src.pdf_document_types import _canonical_document_type, _normalize_document_classifier_text
+
+LOGGER = logging.getLogger(__name__)
 
 _PDF_SCALAR_CANDIDATE_KEYS = (
     "pdf_surface_candidates",
@@ -197,7 +202,125 @@ def _pdf_get_projected_value(sale: Any, field: str) -> object:
     return getattr(sale, field, None)
 
 
+# Ce que la collecte lit dans la vente brute pour établir ses faits et que l'instantané ne porte pas : le lot de
+# l'URL (src.lot_scope), les drapeaux, le titre, les blocs de la fiche, la précision et le fuseau des dates.
+_SOURCE_READING_CONTEXT = (
+    "source_lot_selection",
+    "quality_flags",
+    "title",
+    "source_blocks",
+    "source_property_features",
+    "date_precision",
+    "sale_date_precision",
+    "sale_timezone",
+)
+# Annonce Licitor à plusieurs lots dont le lot n'est plus désigné : seuls champs de l'instantané encore sûrs,
+# ceux que la lecture du lot écrit elle-même (sources.licitor_lots._LOT_FIELDS, visites) et ceux de toute la
+# page (audience). Les autres (justificatif de surface, chambres) ont pu être lus sur un autre lot.
+_LOT_WRITTEN_SNAPSHOT_FIELDS = frozenset({
+    "description", "property_type", "starting_price_eur", "surface_m2", "habitable_surface_m2",
+    "carrez_surface_m2", "land_surface_m2", "rooms_count", "occupancy_status", "visit_dates", "sale_date", "status",
+})
+_UNREADABLE = object()
+
+
+def _pdf_source_reader(sale: Any, snapshot: dict[str, object]) -> Callable[[str], object]:
+    """Rend la lecture d'un champ de l'instantané de la source : la valeur que la collecte a écrite, ou vide.
+
+    ``source_factual_snapshot`` garde le texte de la page, avant normalisation. Remis tel quel à chaque
+    relecture complète, il a donné le 11/11/2026 « libre » hors de la contrainte d'occupation et « 85,5 » en
+    chaîne dans une surface. Il est donc relu par ``normalize_sale``, la règle de la collecte.
+
+    Règle de fond : restaurer ne fait jamais apparaître une valeur que la collecte n'aurait pas écrite pour
+    cette vente. L'instantané ne porte que 22 champs ; lu seul, son ``raw_text`` est celui de toute la page, et
+    sur une annonce à plusieurs lots un champ vide recevait la valeur d'un autre lot (mise à prix du premier
+    lot sur un lot incertain, défaut du 03/11/2026). D'où trois lectures :
+
+    * **avec le contexte de la collecte** : les clés de ``_SOURCE_READING_CONTEXT`` sont reprises du
+      ``raw_payload`` de la vente (la vente brute de sa dernière publication) et le titre, à défaut, de la
+      vente. Un champ que l'instantané laisse vide est alors lu dans le texte, comme à la collecte ;
+    * **valeur explicite seule** quand ce contexte ne suffit pas : pas d'instantané, ou annonce Licitor à
+      plusieurs lots dont le lot n'est plus désigné (``source_lot_selection`` n'est pas repris par la collecte
+      quand elle republie une vente sans relire sa fiche). Seul ce que l'instantané porte pour le champ est
+      lu, et pour les seuls champs de ``_LOT_WRITTEN_SNAPSHOT_FIELDS`` ; un champ vide reste vide, comme
+      avant le lot R6. Limite : un instantané pris avant la lecture lot par lot (03/11/2026) porte les valeurs
+      du premier lot, et rien ici ne permet de le reconnaître ;
+    * **vide** si l'instantané ne se lit pas (exception) : journalisé, la passe de la vente continue.
+
+    ``normalize_sale`` n'appelle ni base ni réseau ; elle écrit dans son entrée, d'où les copies.
+    """
+    state: dict[str, Any] = {}
+
+    def raw_from(keys: tuple[str, ...] | None) -> dict[str, object]:
+        raw = {key: copy.deepcopy(value) for key, value in snapshot.items() if keys is None or key in keys}
+        for key in ("source_name", "source_url"):
+            if not raw.get(key):
+                raw[key] = getattr(sale, key, None)
+        return raw
+
+    def with_context() -> Any:
+        if not snapshot:
+            return None
+        raw = raw_from(None)
+        payload = getattr(sale, "raw_payload", None)
+        payload = payload if isinstance(payload, dict) else {}
+        for key in _SOURCE_READING_CONTEXT:
+            if key not in raw and key in payload:
+                raw[key] = copy.deepcopy(payload[key])
+        if not raw.get("title") and getattr(sale, "title", None):
+            raw["title"] = sale.title
+        normalized = normalize_sale(raw)
+        flags = {*(normalized.quality_flags or []), *(getattr(sale, "quality_flags", None) or [])}
+        if raw.get("source_name") == "licitor" and "multi_lot_sale" in flags and not is_lot_scoped(raw):
+            return None
+        return normalized
+
+    def status_by_date(value: object) -> str:
+        # Un statut n'est jamais vide : sans statut lu, c'est la date de la vente qui le donne, comme toujours.
+        return normalize_status(value, getattr(sale, "sale_date", None))
+
+    def explicit(field: str) -> object:
+        if field == "status":
+            return status_by_date(snapshot.get("status"))
+        if field not in _LOT_WRITTEN_SNAPSHOT_FIELDS or snapshot.get(field) in (None, "", [], {}):
+            return None
+        return getattr(normalize_sale(raw_from((field,))), field, None)
+
+    def value(field: str) -> object:
+        try:
+            if "reading" not in state:
+                state["reading"] = _UNREADABLE
+                state["reading"] = with_context()
+            if state["reading"] is _UNREADABLE:
+                raise ValueError("source snapshot unreadable")
+            if state["reading"] is None:
+                return explicit(field)
+            return getattr(state["reading"], field, None)
+        except Exception as exc:
+            LOGGER.warning(
+                "Source snapshot unreadable for %s: field %s restored empty (%s)",
+                getattr(sale, "source_url", None),
+                field,
+                type(exc).__name__,
+            )
+            return status_by_date(None) if field == "status" else None
+
+    return value
+
+
+def _pdf_set_source_value(sale: Any, field: str, value: object) -> None:
+    """Remet une valeur déjà lue par la collecte (``_pdf_source_reader``) : elle a le type du champ."""
+    if value is None and isinstance(getattr(sale, field, None), list):
+        value = []
+    setattr(sale, field, value)
+
+
 def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
+    """Remet la ligne de base d'une trace : une valeur de la vente sérialisée par ``_pdf_provenance_value``.
+
+    Un décimal y est écrit en notation décimale (« 45000.00 »), pas comme sur une page (« 45.000 ») : ``Decimal``
+    le relit exactement. Ce qui ne se relit pas rend vide, jamais une chaîne dans un champ numérique.
+    """
     if field.startswith("raw_payload:"):
         key = field.split(":", 1)[1]
         if value is None:
@@ -214,9 +337,7 @@ def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
         try:
             value = Decimal(str(value))
         except (ArithmeticError, TypeError, ValueError):
-            parsed = parse_price(value)
-            if parsed is not None:
-                value = parsed
+            value = None
     elif value is not None and isinstance(current, datetime) and not isinstance(value, datetime):
         value = parse_french_datetime(
             value,
@@ -226,7 +347,7 @@ def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
         try:
             value = int(value)
         except (TypeError, ValueError):
-            pass
+            value = None
     setattr(sale, field, value)
 
 
@@ -447,6 +568,7 @@ def _clear_pdf_fact_projections(
     snapshot = raw_payload.get("source_factual_snapshot")
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     unknown_from_source = snapshot_relayed_fields(snapshot)
+    read_source = _pdf_source_reader(sale, snapshot)
     cleared: set[str] = set()
     preserved: set[str] = set(independent_derived_fields)
     removed_payload_keys: set[str] = set()
@@ -468,10 +590,8 @@ def _clear_pdf_fact_projections(
             retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
             continue
         if field in snapshot:
-            source_value = snapshot[field]
-        elif "baseline" in trace:
-            source_value = trace["baseline"]
-        elif field in unknown_from_source:
+            _pdf_set_source_value(sale, field, read_source(field))
+        elif "baseline" not in trace and field in unknown_from_source:
             # La page de la source ne donnait pas ce champ (Vench, page restreinte) : la valeur d'avant la pièce
             # est inconnue, pas vide. Sans valeur à remettre, la projection et sa trace restent en place.
             remaining[field] = trace
@@ -479,8 +599,7 @@ def _clear_pdf_fact_projections(
             retained_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
             continue
         else:
-            source_value = None
-        _pdf_set_projected_value(sale, field, source_value)
+            _pdf_set_projected_value(sale, field, trace["baseline"] if "baseline" in trace else None)
         cleared.add(field)
         removed_payload_keys.update(str(key) for key in (trace.get("payload_keys") or []))
     for key in removed_payload_keys - retained_payload_keys:
@@ -506,7 +625,10 @@ def _clear_pdf_fact_projections(
         current = getattr(sale, field, None)
         if len(values) != 1 or not _pdf_values_match(current, next(iter(values))):
             continue
-        _pdf_set_projected_value(sale, field, snapshot[field] if field in snapshot else None)
+        if field in snapshot:
+            _pdf_set_source_value(sale, field, read_source(field))
+        else:
+            _pdf_set_projected_value(sale, field, None)
         raw_payload.pop(candidate_key, None)
         cleared.add(field)
     return {"cleared": cleared, "preserved": preserved}
