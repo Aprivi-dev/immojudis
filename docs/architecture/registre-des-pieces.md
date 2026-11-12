@@ -107,8 +107,11 @@ des décisions, et qui fait, dans cet ordre :
    `select app_private.set_fact_registry_decisions_second_factor(false)`.
 3. **Les déclencheurs.** `app_private.assert_fact_registry_triggers()` : sans retenue en place, rien n'est écrit
    (`registry_unavailable`).
-4. **Le plafond.** Vingt décisions par administrateur sur l'heure écoulée
-   (`app_private.fact_registry_hourly_decision_limit()`), sinon `rate_limited`.
+4. **Les plafonds.** Vingt décisions par administrateur sur l'heure écoulée
+   (`app_private.fact_registry_hourly_decision_limit()`), sinon `rate_limited` ; cinq décisions définitives
+   (opposition, retrait pour autorisation retirée) sur 24 heures
+   (`app_private.fact_registry_daily_final_decision_limit()`), sinon `final_rate_limited`. Un verrou consultatif de
+   transaction par auteur est pris avant les deux comptes : ils sont exacts, même en rafale.
 5. **Les verrous.** La vente d'abord (`app_private.lock_sale_for_registry`), puis l'observation. Toute la fonction
    tourne sous un délai de verrou de 3 secondes, réglage de la fonction que PostgreSQL rend à l'appelant à la
    sortie : chaque attente de verrou est bornée à 3 secondes (un verrou de ligne peut en compter deux), `sale_busy`
@@ -142,8 +145,8 @@ des décisions, et qui fait, dans cet ordre :
 **Erreurs.** Liste fermée, le message est le code, sans détail ni indice : `admin_required`,
 `second_factor_required` (42501) ; `invalid_reason_code`, `invalid_lot_attachment`, `invalid_argument` (22023) ;
 `claim_not_found`, `sale_not_found` (P0002) ; `invalid_transition`, `opposed_final`, `withdrawal_final`,
-`claim_detached`, `origin_cannot_hold`, `field_not_applicable`, `registry_unavailable` (55000) ; `rate_limited`
-(53400) ; `sale_busy` (55P03) ; `retry` (40001) ; `registry_write_failed` (P0001) pour toute autre erreur. La
+`claim_detached`, `origin_cannot_hold`, `field_not_applicable`, `registry_unavailable` (55000) ; `rate_limited`,
+`final_rate_limited` (53400) ; `sale_busy` (55P03) ; `retry` (40001) ; `registry_write_failed` (P0001) pour toute autre erreur. La
 fonction ne lit d'une erreur que son code et le nom de la contrainte, qu'elle écrit au journal du serveur : le
 détail de PostgreSQL peut porter une ligne entière de `auction_sales`.
 
@@ -203,9 +206,10 @@ absorbées. Depuis le lot R2b, `app_private.carry_sale_user_data_to_merged_sale`
 vente absorbée) appelle elle-même la projection de la vente conservée, avec les entrées `held_fields` de la vente
 absorbée en **indice** (quatrième paramètre). L'appel n'a lieu que si la vente absorbée tient ou mémorise un champ,
 ou si une décision la nomme, elle ou une vente qu'elle avait elle-même absorbée (fusion en chaîne). Le journal
-`information_agent_fact_publications` suit la vente conservée. Quand la projection pose ainsi une pièce dont la
-décision nomme une autre vente, elle journalise un évènement `merge_carried` (valeur, décision, vente d'origine) ;
-le contrôle quotidien les compte sur 24 heures.
+`information_agent_fact_publications` suit la vente conservée. Quand la projection, appelée par une fusion, pose
+ainsi une pièce dont la décision nomme une autre vente, elle journalise un évènement `merge_carried` (valeur,
+décision, vente d'origine) ; le contrôle quotidien les compte sur 24 heures. Une prise ultérieure de la même pièce,
+par une décision ou par la relance, n'est pas une fusion : elle n'émet pas cet évènement.
 
 Une fusion écrit la vente conservée avant de supprimer l'absorbée : ses colonnes peuvent déjà porter la valeur que
 tenait l'absorbée (colonne « contaminée »). La contamination se juge à l'égalité exacte, sur chacune des colonnes
@@ -258,10 +262,13 @@ publication automatique ne bougent pas. Elle est **fermée par défaut** : régl
 propriétaire ouvre ou referme sans migration de code par
 `select app_private.set_fact_registry_scheduled_reprojection(true ou false)`. Tant qu'elle est ouverte, l'alerte
 `fact_registry.reprojection_enabled` le rappelle. Elle ne fait rien tant que le journal des décisions est vide ni
-quand un déclencheur du registre manque. Elle est bornée : 30 ventes écrites ou occupées par passage, puis la
-passe s'arrête et le passage suivant reprend ; après trois ventes occupées par la collecte, elle s'arrête aussi.
-Une vente dont la projection échoue ne compte pas dans la borne, pour ne pas priver les suivantes de leur tour :
-elle est rendue avec son code SQLSTATE et le nom de la contrainte, sans message. Elle est journalisée (évènement
+quand un déclencheur du registre manque. Elle travaille en deux temps : elle simule d'abord toutes les ventes du
+registre sans aucun verrou, puis applique la projection aux ventes en dérive, seul moment où des verrous de ligne
+sont tenus. Elle est bornée : 30 ventes écrites ou occupées par passe, puis la passe s'arrête ; la tâche enchaîne
+les passes tant qu'il reste du temps pour le contrôle, et le passage suivant reprend le reste ; après trois ventes
+occupées par la collecte, la passe s'arrête aussi. Une vente dont la simulation ou la projection échoue ne compte
+pas dans la borne et n'arrête pas la passe, pour ne pas priver les suivantes de leur tour : elle est rendue avec
+son code SQLSTATE et le nom de la contrainte, sans message. Elle est journalisée (évènement
 `drift_reprojected`, un par champ dont l'entrée a changé, à défaut par champ tenu). Fermée, la dérive reste
 signalée par l'alerte critique `fact_registry.projection_drift`.
 
@@ -371,7 +378,9 @@ d'écho, exacte, à l'écriture. La base garde un **filet** : la mémoire d'éch
 
 `/api/cron/fact-registry-check` (Vercel Cron, 05:28 UTC, attendue par `cron.stale` toutes les 27 heures) appelle
 `public.reproject_fact_registry_drift()` (la relance, fermée par défaut) puis
-`public.sync_fact_registry_alerts()`, toutes deux sans paramètre. Onze contrôles, une alerte opérationnelle
+`public.sync_fact_registry_alerts()`, toutes deux sans paramètre. Le contrôle tourne même quand la relance a
+échoué. Treize contrôles (les dix du lot R2a, la relance ouverte, les décisions définitives sur 24 heures et le
+dépassement de leur plafond par un auteur), une alerte opérationnelle
 `fact_registry.<contrôle>` chacun (détail dans `docs/operations/planification.md`) : dérive de la projection,
 mode et fonction des déclencheurs, colonnes tenues, libellé réservé sans surface tenue (ces quatre-là sont
 critiques), valeur d'une pièce dans une colonne voisine, une copie ou un champ libéré, colonne interne recopiée
@@ -383,7 +392,11 @@ laisse que son étape et son code.
 Le contrôle n'écrit rien : il n'appelle la projection qu'en simulation (`false` écrit en dur ; une fonction
 stable peut appeler une fonction volatile, la garantie vient donc de ce littéral, vérifié par un invariant et par
 le test 889). Une vente en dérive est rejouée une fois avant d'être rendue : la simulation lit sans verrou, une
-décision validée pendant la passe ne doit pas lever une alerte critique. Les champs libérés sont regardés comme
+décision validée pendant la passe ne doit pas lever une alerte critique. En cas de dérive de masse, seules les
+vingt premières ventes en dérive de chaque page sont rejouées : les suivantes sont comptées sans rejeu, pour tenir
+le délai d'instruction (82 s mesurées pour 2 940 ventes en dérive quand toutes étaient rejouées). Une vente dont la
+simulation lève est comptée en dérive, avec son code SQLSTATE, sans arrêter le contrôle. Les champs libérés sont
+regardés comme
 les champs tenus : la valeur d'une pièce retirée ou opposée ne doit rester ni dans une colonne, ni dans une
 copie.
 
@@ -462,8 +475,12 @@ mémoire d'écho est dans `app_private.sale_field_echo_memory()`.
   « terrain » sans changer sa valeur, la retenue ne met pas ce bloc à jour : la vente n'est pas vue comme un terrain
   tant que la valeur d'annonce ne bouge pas. Un reclassement par le type de bien ou par la portée de la surface est
   vu tout de suite.
-- **Plafond horaire et sessions simultanées.** Le plafond de vingt décisions par heure est lu avant le verrou de la
-  vente : deux sessions du même administrateur peuvent le dépasser d'une décision.
+- **Plafonds et sessions simultanées.** Les deux plafonds sont exacts (verrou consultatif par auteur). En rafale,
+  une session qui attend ce verrou plus de 3 secondes reçoit `sale_busy` : un refus de trop, jamais une décision
+  de trop.
+- **Simulation qui lève.** Une vente dont l'entrée est abîmée fait lever la projection. Ni le contrôle ni la
+  relance ne s'arrêtent : la vente est comptée en dérive et rendue avec son code ; les contrôles par entrée ne la
+  lisent pas. La corriger demande une migration.
 - **Fusion et interblocage.** La suppression d'une vente fusionnée verrouille cette vente, puis la vente conservée,
   hors de l'ordre par identifiant des lots de la collecte : face à un lot qui tient la vente conservée et demande
   la vente fusionnée, PostgreSQL annule l'une des deux transactions, sans écriture partielle. Fiche d'incident
@@ -537,7 +554,12 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
   conservée ; indice de fusion sans gagnant, contamination exacte, mémoire de l'indice, stabilité au rappel ;
   évènement `merge_carried`.
 - Relance de la projection : par toute décision, et par la tâche quotidienne (appel à part, fermée par défaut).
-- Contrôle quotidien par pages, contrôles généraux calculés une fois, onzième contrôle (relance ouverte).
+- Contrôle quotidien par pages, contrôles généraux calculés une fois, treize contrôles (relance ouverte, décisions
+  définitives sur 24 heures, plafond dépassé), état du second facteur dans le rapport, rejeu borné aux vingt
+  premières ventes en dérive d'une page.
+- Plafonds exacts (verrou consultatif par auteur), plafond des décisions définitives, index du journal.
+- Une définition par règle : terrain, lot qui tient un champ, vente conservée, décision définitive, lecture de
+  chacun des deux réglages.
 - Tâche `fact-registry-check` : résumé avec les pages, la relance et l'état de son réglage ; une erreur de la base
   n'y laisse que son étape et son code.
 

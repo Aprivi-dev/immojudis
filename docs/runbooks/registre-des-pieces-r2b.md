@@ -13,20 +13,26 @@ runbook R2a ont donné le résultat attendu. Sinon, ne pas appliquer ce lot.
 
 ## Ce qui est appliqué
 
-| Ordre | Migration                                                   | Contenu                                                                                                                                                         | Verrou le plus fort                                                                               | Pendant un lot de publication |
-| ----- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------- |
-| B0    | `20261118100000_field_projection_merge_hints`               | Projection : indice de fusion sans gagnant, contamination exacte, pièce reportée (`merge_carried`) ; définition unique de la vente de terrain ; deux évènements | ACCESS EXCLUSIVE bref sur `auction_sale_field_hold_events` (vide), première application seulement | Oui                           |
-| B1    | `20261118100100_fact_claim_decision_rpcs`                   | Réglages du registre, verrou de la vente, fonction de décision, quatre fonctions publiques sans droit, `review_auction_fact_claim`, origine « document » fermée | Aucun sur une table existante (fonctions, nouvelle table de réglage, cinq lignes de préséance)    | Oui                           |
-| B2    | `20261118100200_carry_registry_on_sale_merge`               | La fusion reporte le journal des publications et reprojette la vente conservée                                                                                  | Aucun (remplacement d'une fonction ; le déclencheur n'est pas touché)                             | **Non**                       |
-| B3    | `20261118100300_fact_registry_check_pages_and_reprojection` | Contrôle quotidien par pages, contrôles généraux calculés une fois, relance planifiée fermée (appel à part), onzième contrôle                                   | Aucun (fonctions, une ligne de réglage)                                                           | Oui                           |
+| Ordre | Migration                                                   | Contenu                                                                                                                                                                                                   | Verrou le plus fort                                                                               | Pendant un lot de publication |
+| ----- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------- |
+| B0    | `20261118100000_field_projection_merge_hints`               | Projection : indice de fusion sans gagnant, contamination exacte, pièce reportée (`merge_carried`) ; définitions uniques (terrain, lot qui tient, vente conservée, décision définitive) ; deux évènements | ACCESS EXCLUSIVE bref sur `auction_sale_field_hold_events` (vide), première application seulement | Oui                           |
+| B1    | `20261118100100_fact_claim_decision_rpcs`                   | Réglages du registre, verrou de la vente, fonction de décision et ses deux plafonds, quatre fonctions publiques sans droit, `review_auction_fact_claim`, origine « document » fermée, index du journal    | SHARE sur `auction_fact_claim_decisions` (vide) le temps de créer l'index                         | Oui                           |
+| B2    | `20261118100200_carry_registry_on_sale_merge`               | La fusion reporte le journal des publications et reprojette la vente conservée                                                                                                                            | Aucun (remplacement d'une fonction ; le déclencheur n'est pas touché)                             | **Non**                       |
+| B3    | `20261118100300_fact_registry_check_pages_and_reprojection` | Contrôle quotidien par pages, contrôles généraux calculés une fois, relance planifiée fermée (appel à part), treize contrôles                                                                             | Aucun (fonctions, une ligne de réglage)                                                           | Oui                           |
 
 **Aucune migration du lot ne prend de verrou sur `auction_sales` ni sur `auction_fact_claims`.** `lock_timeout`
 vaut 5 s, ramené à 2 s dans B0 avant la contrainte de la file d'évènements. Chaque migration est sa propre
-transaction et se rejoue sans dommage (seconde application : aucun ACCESS EXCLUSIVE sur une table existante).
+transaction et se rejoue sans dommage. Seconde application, relevée sur base jetable : B0 ne prend plus d'ACCESS
+EXCLUSIVE ; B1 reprend un instant le verrou SHARE du journal des décisions (l'index existe, rien n'est construit)
+et un ACCESS EXCLUSIVE bref sur sa propre table de réglage `app_private.fact_registry_switches` (son
+`alter table … enable row level security` est rejoué), que seules la fonction de décision, la relance et le contrôle
+lisent.
 
 Le workflow « Apply Supabase Migrations » applique tout ce qui est en attente, dans l'ordre. **À lancer entre deux
-lots de publication de la collecte**, à cause de B2 : une fusion en cours changerait de fonction en route. Aucun
-index n'est construit par ce lot.
+lots de publication de la collecte**, à cause de B2 : une fusion en cours changerait de fonction en route. Un seul
+index est construit, par B1, dans sa transaction : `auction_fact_claim_decisions_actor_decided_idx`
+(`actor_id, decided_at`), sur le journal des décisions, vide. Il prend un verrou SHARE sur ce journal le temps de la
+construction : les lectures passent, aucune écriture n'existe avant le lot R2c.
 
 ## Ordre de déploiement
 
@@ -48,11 +54,17 @@ Le lot est inerte pour le registre, mais deux choses déjà en service changent.
   réponse 409 : « Import en cours sur cette vente, réessayez dans une minute. » L'administrateur réessaie. La
   fonction refuse aussi une observation d'origine réservée (professionnel, saisie d'un administrateur) et une
   observation déjà décidée au journal du registre (aucune n'existe en production à ce jour).
-- **La tâche `fact-registry-check`** fait deux appels au lieu d'un : la relance planifiée (fermée : elle ne fait
-  rien), puis le contrôle. Son résumé dans `operational_job_runs.summary` porte en plus `pages`,
-  `mergeCarried24h` et `reprojection` (état de l'interrupteur, comptes, codes des ventes en échec, jamais un
-  identifiant de vente). En cas d'erreur de la base, `error_message` ne porte plus que l'étape et le code
-  (« étape check, code 57014 »), jamais le message de PostgreSQL.
+- **La tâche `fact-registry-check`** appelle la relance planifiée (fermée : une passe, qui ne fait rien), puis le
+  contrôle. Ouverte, la relance enchaîne ses passes de 30 ventes tant que la base dit qu'il en reste, que la passe
+  a écrit quelque chose et que 45 secondes ne sont pas écoulées (`REPROJECTION_PASS_START_BUDGET_MS` : la route
+  dure 300 s au plus, une passe et le contrôle 120 s chacun). **Le contrôle tourne toujours**, même après une
+  relance en échec ; la tâche échoue alors à la fin, et `error_message` dit les deux étapes. Son résumé dans
+  `operational_job_runs.summary` porte en plus `pages`, `mergeCarried24h`, `decisionsSecondFactorRequired` (état
+  du réglage du second facteur), `simulationFailureCodes` (codes des ventes dont la simulation lève) et
+  `reprojection` (état de l'interrupteur, `passes`, comptes, codes des ventes en échec, jamais un identifiant de
+  vente). En cas d'erreur de la base, `error_message` ne porte plus que l'étape et le code (« étape check, code
+  57014 »), jamais le message de PostgreSQL. Une panne passagère (réseau, délai d'instruction) est reconnue avant
+  ce nettoyage : la tâche entière est reprise par `runMonitoredCron`, comme les autres.
 - **L'origine « document » ne peut plus tenir un champ** (`auction_fact_source_precedence.can_hold` à `false`,
   cinq lignes). Sans effet : aucune décision n'existe. Le lot R3 la rouvrira par sa propre migration.
 
@@ -74,8 +86,24 @@ n'est pas `aal2` (`second_factor_required`), même si l'interrupteur global `adm
 une décision du propriétaire, à prendre avant le lot R2c : enrôler un second facteur (`/admin/securite`) et garder
 l'exigence, ou la lever.
 
-**Plafond.** Vingt décisions par administrateur et par heure (`app_private.fact_registry_hourly_decision_limit()`,
-une constante, changée par migration) ; au-delà, `rate_limited`.
+**Plafonds.** Deux constantes, changées par migration :
+
+- vingt décisions par administrateur et par heure (`app_private.fact_registry_hourly_decision_limit()`) ; au-delà,
+  `rate_limited` ;
+- cinq décisions **définitives** (opposition, retrait pour autorisation retirée) par administrateur et par
+  24 heures (`app_private.fact_registry_daily_final_decision_limit()`) ; au-delà, `final_rate_limited`. Personne ne
+  peut défaire une décision définitive : ce plafond borne le dégât d'un mot de passe volé tant que le second
+  facteur n'est pas enrôlé.
+
+Les deux comptes sont exacts : la fonction de décision prend un verrou consultatif de transaction par auteur avant
+de compter, deux sessions du même administrateur passent donc l'une après l'autre. Mesuré sur base jetable, 60
+sessions simultanées du même administrateur qui avait déjà décidé deux fois dans l'heure : 18 décisions écrites, 42
+refus `rate_limited`, 20 au journal (23 sans le verrou). Cette attente est bornée par le délai de verrou de 3
+secondes de la fonction : au-delà, la réponse est `sale_busy`, jamais une décision de trop.
+
+Le contrôle quotidien suit ces décisions : `fact_registry.final_decisions` (avertissement, pour information) dès
+qu'une décision définitive a été écrite sur 24 heures, `fact_registry.final_decisions_over_limit` (critique) si un
+auteur dépasse le plafond, ce que la fonction de décision interdit.
 
 ## Relance planifiée de la projection
 
@@ -94,12 +122,18 @@ humaines déjà acceptées : aucune décision n'est écrite, le mode de publicat
 - **Fermée par défaut** (réglage `scheduled_reprojection`). Tant qu'elle est ouverte, l'alerte
   `fact_registry.reprojection_enabled` (avertissement) reste ouverte : l'état ouvert ne s'oublie pas.
 - **Sans effet** tant que le journal des décisions est vide, et quand un déclencheur du registre manque.
-- **Bornée** : 30 ventes écrites ou occupées par passage. Dès la borne atteinte la passe s'arrête (`bounded` à
-  `true`) et le passage suivant reprend. Une vente tenue par un lot de la collecte est comptée (`busy`) ; après
-  trois ventes occupées la passe s'arrête. Chaque attente de verrou est bornée à 3 secondes.
-- **Une vente dont la projection échoue ne compte pas dans la borne** : elle ne prive pas les suivantes de leur
-  tour. Elle est comptée (`failed`) et rendue avec son code SQLSTATE et le nom de la contrainte, sans message. Le
-  contrôle qui suit la signale en dérive.
+- **En deux temps** : la passe simule d'abord toutes les ventes du registre, sans aucun verrou, puis applique la
+  projection aux ventes en dérive. Les verrous de ligne ne sont pris qu'au second temps. Mesuré sur base jetable,
+  3 000 ventes tenues dont 30 en dérive réparties : verrous tenus 10,2 s avant cette correction (la première vente
+  écrite restait verrouillée pendant la simulation des suivantes), 0,1 s après ; la passe dure 13,7 s.
+- **Bornée** : 30 ventes écrites ou occupées par passe. Dès la borne atteinte la passe s'arrête (`bounded` à
+  `true`) ; la tâche enchaîne une autre passe s'il reste du temps, sinon le passage du lendemain reprend. Une vente
+  tenue par un lot de la collecte est comptée (`busy`) ; après trois ventes occupées la passe s'arrête. Chaque
+  attente de verrou est bornée à 3 secondes.
+- **Une vente dont la simulation ou la projection échoue ne compte pas dans la borne** et n'arrête pas la passe :
+  elle ne prive pas les suivantes de leur tour. Elle est comptée (`failed`) et rendue avec son code SQLSTATE et le
+  nom de la contrainte, sans message. Le contrôle qui suit la signale en dérive, avec son code
+  (`simulation_failures` dans le rapport, `simulationFailureCodes` dans le résumé de la tâche).
 - **Journalisée** : un évènement `drift_reprojected` par champ dont l'entrée a changé (à défaut, par champ tenu),
   dans `auction_sale_field_hold_events`.
 - **Fermée, ou vente non appliquée** : le contrôle lève l'alerte critique `fact_registry.projection_drift`, comme
@@ -183,17 +217,24 @@ where (namespace.nspname = 'app_private'
 
 ### P5. Fenêtre libre, juste avant de lancer le workflow
 
-Attendu : aucune ligne. Un lot de publication de la collecte tient un verrou consultatif pendant toute sa durée,
-et des verrous de ligne sur `auction_sales` ; B0 attend la file d'évènements.
+Attendu : aucune ligne. Un lot de publication de la collecte tient un verrou consultatif pendant toute sa durée
+(clé `immojudis:outcome_catalogue_bridge:v1`), et des verrous de ligne sur `auction_sales`. B0 demande un ACCESS
+EXCLUSIVE sur la file d'évènements : même une simple lecture de cette table (`AccessShareLock`) le fait attendre,
+elle est donc listée. Les verrous des autres bases et les verrous consultatifs sans rapport ne le sont pas.
 
 ```sql
 select lock_row.locktype, lock_row.mode, lock_row.granted, lock_row.pid, relation.relname
 from pg_locks lock_row
 left join pg_class relation on relation.oid = lock_row.relation
 where lock_row.pid <> pg_backend_pid()
+  and lock_row.database = (select oid from pg_database where datname = current_database())
   and (
-    lock_row.locktype = 'advisory'
-    or (relation.relname in ('auction_sales', 'auction_sale_field_hold_events')
+    (lock_row.locktype = 'advisory'
+      and lock_row.objsubid = 1
+      and ((lock_row.classid::bigint << 32) | lock_row.objid::bigint)
+          = hashtextextended('immojudis:outcome_catalogue_bridge:v1', 0))
+    or (lock_row.locktype = 'relation' and relation.relname = 'auction_sale_field_hold_events')
+    or (lock_row.locktype = 'relation' and relation.relname = 'auction_sales'
         and lock_row.mode <> 'AccessShareLock')
   )
 order by lock_row.pid, lock_row.locktype;
@@ -214,8 +255,17 @@ limit 7;
 ### P7. Délais des rôles
 
 À relever, pour savoir quel délai d'instruction s'applique à la tâche (rôle `service_role`, via `authenticator`).
-Les deux fonctions appelées par la tâche demandent 120 s (réglage de fonction, que PostgREST applique à la
-transaction de l'appel) ; à vérifier sur la durée réelle au contrôle A8.
+
+**Le délai de 120 s ne vaut que par PostgREST.** Les deux fonctions appelées par la tâche portent
+`set statement_timeout = '120s'`. Un réglage de fonction ne peut pas allonger le délai de l'instruction qui
+l'appelle : c'est PostgREST qui lit ce réglage et le pose sur la transaction de l'appel (`db-hoisted-tx-settings`,
+qui contient `statement_timeout` par défaut). Appelées depuis l'éditeur SQL ou par `pg_cron`, ces fonctions
+gardent le délai de la session. **Ce hissage n'est pas prouvé en production** : c'est une condition du lot R2c
+(plus bas), à vérifier sur la durée réelle au contrôle A8.
+
+Volumes mesurés sur base jetable par la contre-vérification, pour situer ce délai : 0,9 s pour un registre vide ;
+28 à 38 s pour 3 000 ventes tenues ; 82 s avec 2 940 ventes en dérive avant que le rejeu soit borné aux vingt
+premières de chaque page.
 
 ```sql
 select role_row.rolname, setting
@@ -230,6 +280,10 @@ order by 1, 2;
 
 À relever : nombre d'observations, de ventes à venir, de fusions sur 30 jours, et les cinq lignes de préséance de
 l'origine « document » (attendu : `can_hold` à `true` avant B1).
+
+**Rôle requis : `postgres`** (éditeur SQL de Supabase, par le propriétaire). La première requête lit
+`app_private.auction_sale_merges` : `service_role` et le rôle de lecture seule n'ont aucun droit sur le schéma
+`app_private`. La seconde se lit avec n'importe quel rôle du serveur.
 
 ```sql
 select
@@ -248,9 +302,10 @@ order by field_key;
 
 ### A1. Les fonctions du lot, leur mode de sécurité et leurs réglages
 
-Attendu : vingt lignes. `prosecdef` à `true` sauf pour `lock_sale_for_registry`, les deux fonctions de réglage,
-`fact_registry_report_add_page`, `fact_registry_hourly_decision_limit` et `sale_is_land_sale`. `proconfig` contient
-partout `search_path=""`, et en plus :
+Attendu : vingt-sept lignes. `prosecdef` à `true` sauf pour `lock_sale_for_registry`, les deux fonctions de réglage,
+`fact_registry_report_add_page`, `fact_registry_failure`, les deux plafonds (`fact_registry_hourly_decision_limit`,
+`fact_registry_daily_final_decision_limit`), `sale_is_land_sale`, `fact_lot_attachment_holds` et
+`fact_decision_is_final`. `proconfig` contient partout `search_path=""`, et en plus :
 
 - `lock_timeout=3s` pour `lock_sale_for_registry` et `decide_auction_fact_claim` ;
 - `statement_timeout=120s` pour `sync_fact_registry_alerts` et `reproject_fact_registry_drift`.
@@ -261,9 +316,12 @@ from pg_proc routine
 join pg_namespace namespace on namespace.oid = routine.pronamespace
 where (namespace.nspname = 'app_private' and routine.proname in (
          'decide_auction_fact_claim', 'lock_sale_for_registry', 'sale_is_land_sale',
-         'fact_registry_hourly_decision_limit', 'set_fact_registry_decisions_second_factor',
-         'set_fact_registry_scheduled_reprojection', 'fact_registry_candidate_sales',
-         'fact_registry_page_checks', 'fact_registry_global_checks', 'fact_registry_report_add_page',
+         'fact_lot_attachment_holds', 'fact_registry_kept_sale', 'fact_decision_is_final',
+         'fact_registry_hourly_decision_limit', 'fact_registry_daily_final_decision_limit',
+         'fact_registry_decisions_second_factor_required', 'set_fact_registry_decisions_second_factor',
+         'fact_registry_scheduled_reprojection_enabled', 'set_fact_registry_scheduled_reprojection',
+         'fact_registry_candidate_sales', 'fact_registry_failure', 'fact_registry_page_checks',
+         'fact_registry_global_checks', 'fact_registry_report_add_page',
          'carry_sale_user_data_to_merged_sale', 'sync_fact_registry_alerts_from_report',
          'project_sale_fields'))
    or (namespace.nspname = 'public' and routine.proname in (
@@ -275,45 +333,56 @@ order by 1, 2;
 
 ### A2. Aucun droit d'exécution ouvert
 
+Les droits se lisent dans la colonne `pg_proc.proacl`, comparée comme un texte : ni `has_function_privilege` ni
+`aclexplode`, que la lecture seule peut refuser. Une liste de droits a la forme `{rôle=X/donneur,…}` ; une entrée
+qui commence par `=` est le droit donné à tout le monde (`PUBLIC`), et une colonne vide (`NULL`) vaut le droit par
+défaut, donc `PUBLIC`.
+
 Attendu : trois lignes, `check_fact_registry_consistency`, `reproject_fact_registry_drift` et
-`sync_fact_registry_alerts` pour `service_role`. Toute autre ligne est un droit ouvert par erreur : le retirer par
-une migration avant toute autre chose.
+`sync_fact_registry_alerts`, dont les droits ne nomment que `service_role` (et le propriétaire). Toute autre ligne
+est un droit ouvert par erreur : le retirer par une migration avant toute autre chose.
 
 ```sql
-select namespace.nspname, routine.proname, api_role.rolname
+select namespace.nspname, routine.proname, routine.proacl::text as droits
 from pg_proc routine
 join pg_namespace namespace on namespace.oid = routine.pronamespace
-cross join (select rolname from pg_roles where rolname in ('anon', 'authenticated', 'service_role')) api_role
 where ((namespace.nspname = 'app_private' and routine.proname in (
           'decide_auction_fact_claim', 'lock_sale_for_registry', 'sale_is_land_sale',
-          'fact_registry_hourly_decision_limit', 'set_fact_registry_decisions_second_factor',
-          'set_fact_registry_scheduled_reprojection', 'fact_registry_candidate_sales',
-          'fact_registry_page_checks', 'fact_registry_global_checks', 'fact_registry_report_add_page',
+          'fact_lot_attachment_holds', 'fact_registry_kept_sale', 'fact_decision_is_final',
+          'fact_registry_hourly_decision_limit', 'fact_registry_daily_final_decision_limit',
+          'fact_registry_decisions_second_factor_required', 'set_fact_registry_decisions_second_factor',
+          'fact_registry_scheduled_reprojection_enabled', 'set_fact_registry_scheduled_reprojection',
+          'fact_registry_candidate_sales', 'fact_registry_failure', 'fact_registry_page_checks',
+          'fact_registry_global_checks', 'fact_registry_report_add_page',
           'carry_sale_user_data_to_merged_sale', 'sync_fact_registry_alerts_from_report',
           'project_sale_fields'))
     or (namespace.nspname = 'public' and routine.proname in (
           'accept_auction_fact_claim', 'reject_auction_fact_claim', 'withdraw_auction_fact_claim',
           'oppose_auction_fact_claim', 'check_fact_registry_consistency', 'sync_fact_registry_alerts',
           'reproject_fact_registry_drift')))
-  and has_function_privilege(api_role.rolname, routine.oid, 'EXECUTE')
-order by 1, 2, 3;
+  and (routine.proacl is null
+       or routine.proacl::text ~ '[{,](=|anon=|authenticated=|service_role=)')
+order by 1, 2;
 ```
 
 ### A3. Droits de la relecture inchangés
 
-Attendu : une ligne, `service_role` ; `proconfig` contient `lock_timeout=3s`.
+Attendu : une ligne ; `droits` nomme `service_role` et le propriétaire, ni `anon=`, ni `authenticated=`, ni une
+entrée qui commence par `=` ; `proconfig` contient `lock_timeout=3s`.
 
 ```sql
-select api_role.rolname, routine.proconfig
+select routine.proacl::text as droits, routine.proconfig
 from pg_proc routine
 join pg_namespace namespace on namespace.oid = routine.pronamespace
-cross join (select rolname from pg_roles where rolname in ('anon', 'authenticated', 'service_role')) api_role
 where namespace.nspname = 'public'
-  and routine.proname = 'review_auction_fact_claim'
-  and has_function_privilege(api_role.rolname, routine.oid, 'EXECUTE');
+  and routine.proname = 'review_auction_fact_claim';
 ```
 
 ### A4. Les réglages dans leur sens sûr
+
+**Rôle requis : `postgres`** (éditeur SQL de Supabase, par le propriétaire) : aucun autre rôle ne lit
+`app_private.fact_registry_switches`. Sans ce rôle, l'état du second facteur se lit dans le résumé de la tâche
+(`decisionsSecondFactorRequired`, contrôle A8) et celui de la relance dans `reprojection.enabled`.
 
 Attendu : deux lignes, `decisions_require_second_factor` à `true`, `scheduled_reprojection` à `false`.
 
@@ -323,22 +392,34 @@ from app_private.fact_registry_switches
 order by switch_name;
 ```
 
-### A5. La file d'évènements admet les deux nouveaux évènements, l'origine « document » est fermée
+### A5. La file d'évènements admet les deux nouveaux évènements, l'origine « document » est fermée, l'index existe
 
-Attendu : une ligne, puis cinq lignes à `false`.
+Attendu : une ligne, `convalidated` et `deux_evenements` à `true` ; puis cinq lignes à `false` ; puis une ligne.
+La contrainte se lit dans `pg_constraint`, comme au contrôle P3. Si la lecture seule refuse
+`pg_get_constraintdef`, retirer la colonne `deux_evenements` et faire lire la définition par le propriétaire depuis
+l'éditeur SQL de Supabase.
 
 ```sql
-select constraint_name
-from information_schema.check_constraints
-where constraint_schema = 'public'
-  and constraint_name = 'auction_sale_field_hold_events_event_check'
-  and check_clause like '%drift_reprojected%'
-  and check_clause like '%merge_carried%';
+select constraint_row.conname, constraint_row.convalidated,
+       pg_get_constraintdef(constraint_row.oid) like '%drift_reprojected%merge_carried%' as deux_evenements
+from pg_constraint constraint_row
+join pg_class relation on relation.oid = constraint_row.conrelid
+join pg_namespace namespace on namespace.oid = relation.relnamespace
+where namespace.nspname = 'public'
+  and relation.relname = 'auction_sale_field_hold_events'
+  and constraint_row.conname = 'auction_sale_field_hold_events_event_check';
 
 select field_key, can_hold
 from public.auction_fact_source_precedence
 where source_kind = 'document'
 order by field_key;
+
+select index_relation.relname
+from pg_class index_relation
+join pg_namespace namespace on namespace.oid = index_relation.relnamespace
+where namespace.nspname = 'public'
+  and index_relation.relkind = 'i'
+  and index_relation.relname = 'auction_fact_claim_decisions_actor_decided_idx';
 ```
 
 ### A6. Corps remplacés
@@ -381,8 +462,9 @@ where namespace.nspname = 'public'
 
 ### A8. Au passage suivant de la tâche
 
-Attendu : `status` à `success` ; dans `summary`, les onze contrôles, `pages` à 1, `reprojection.enabled` à
-`false` ; `duration_ms` du même ordre que la mesure P6 ; aucune alerte `fact_registry.*` ouverte. Un résumé
+Attendu : `status` à `success` ; dans `summary`, les treize contrôles, `pages` à 1, `reprojection.enabled` à
+`false` et `reprojection.passes` à 1, `decisionsSecondFactorRequired` à `true`, `simulationFailureCodes` vide ;
+`duration_ms` du même ordre que la mesure P6 ; aucune alerte `fact_registry.*` ouverte. Un résumé
 `skipped`, ou `reprojection.skipped`, veut dire que PostgREST ne voit pas une fonction : recharger le schéma
 (`notify pgrst, 'reload schema';`) et vérifier le passage suivant.
 
@@ -404,9 +486,11 @@ where alert_key like 'fact\_registry.%' and status = 'open';
   Relancer le workflow entre deux lots de publication.
 - **B0 échoue sur la contrainte** : un évènement d'un type inconnu existe dans la file. Ne pas forcer ; relever les
   types présents (`select event, count(*) from public.auction_sale_field_hold_events group by event;`).
-- **La tâche échoue après B3** : lire `error_message` (étape et code). Étape `check`, rapport partiel : le
+- **La tâche échoue après B3** : lire `error_message` (étape et code). Étape `reprojection` : le contrôle a tourné
+  quand même, et le message dit ce qu'il a donné ; les alertes sont à jour. Étape `check`, rapport partiel : le
   registre compte plus de 20 000 ventes ; aucune alerte n'a été refermée. Code `57014` : le délai d'instruction a
-  été atteint ; relever la durée et revenir vers le plan.
+  été atteint (la tâche a été reprise trois fois avant d'échouer) ; relever la durée et revenir vers le plan : le
+  hissage du délai de 120 s par PostgREST est alors à vérifier (P7).
 
 ### Fiche d'incident : suppression de doublons en échec
 
@@ -453,16 +537,20 @@ qu'aucune décision n'existe, chaque retour est sans effet sur les fiches. Ordre
    `public.sync_fact_registry_alerts()`, `app_private.sync_fact_registry_alerts_from_report(jsonb)` et
    `public.check_fact_registry_consistency(integer)` de `20261117100500`, puis supprimer
    `public.reproject_fact_registry_drift()`, les fonctions `fact_registry_page_checks`,
-   `fact_registry_global_checks`, `fact_registry_report_add_page`, `fact_registry_candidate_sales` et
+   `fact_registry_global_checks`, `fact_registry_report_add_page`, `fact_registry_candidate_sales`,
+   `fact_registry_failure`, `fact_registry_scheduled_reprojection_enabled` et
    `set_fact_registry_scheduled_reprojection`.
 2. **B2** : rétablir `app_private.carry_sale_user_data_to_merged_sale()` de `20261029150000`, entre deux lots de
    publication.
 3. **B1** : supprimer les quatre fonctions publiques et `app_private.decide_auction_fact_claim`, rétablir
    `public.review_auction_fact_claim` de `20260928180000`, puis supprimer `lock_sale_for_registry`,
-   `fact_registry_hourly_decision_limit`, `set_fact_registry_decisions_second_factor` et la table
-   `app_private.fact_registry_switches` ; repasser l'origine « document » à `can_hold = true`.
+   `fact_registry_hourly_decision_limit`, `fact_registry_daily_final_decision_limit`,
+   `fact_registry_decisions_second_factor_required`, `set_fact_registry_decisions_second_factor`, l'index
+   `auction_fact_claim_decisions_actor_decided_idx` et la table `app_private.fact_registry_switches` ; repasser
+   l'origine « document » à `can_hold = true`.
 4. **B0** : rétablir `app_private.project_sale_fields` de `20261117100200`, après le retour de B2, puis supprimer
-   `app_private.sale_is_land_sale`. Les deux valeurs d'évènement restent admises par la contrainte.
+   `app_private.sale_is_land_sale`, `app_private.fact_lot_attachment_holds`, `app_private.fact_decision_is_final`
+   et `app_private.fact_registry_kept_sale`. Les deux valeurs d'évènement restent admises par la contrainte.
 
 Dès qu'une décision existe (après le lot R2c), ne plus revenir sur B0 ni sur B2 : les journaux sont gardés, et le
 retour se fait par retrait des pièces, comme le prévoit le plan pour la bascule.
@@ -478,6 +566,8 @@ Rejoués sur base jetable pour ce lot (transcription dans le dossier de travail 
 | Fusion par le repli REST : la suppression tient la vente absorbée et attend la vente conservée, tenue par un lot SQL | Si le lot demande ensuite la vente absorbée, PostgreSQL détecte l'interblocage en 1 s et annule l'une des deux transactions (dans l'essai : le lot SQL), sans écriture partielle |
 | Même fusion, le lot SQL ne demande pas la vente absorbée                                                             | La suppression attend la fin du lot, puis la vente conservée tient la pièce                                                                                                      |
 | Relance planifiée (ouverte pour l'essai) pendant qu'un lot tient une vente en dérive                                 | `busy: 1`, `applied: 1` après 3,0 s ; au passage suivant la vente est reprise                                                                                                    |
+| Rafale : 60 sessions simultanées du même administrateur, deux décisions déjà écrites dans l'heure                    | 18 décisions écrites, 42 refus `rate_limited`, 20 au journal : le plafond est exact. Sans le verrou consultatif par auteur (définition précédente) : 23                          |
+| Relance planifiée, 3 000 ventes tenues dont 30 en dérive réparties : durée des verrous de ligne                      | 0,1 s (les verrous ne sont pris qu'après la simulation de tout le registre) ; 10,2 s avec la définition précédente. Passe : 13,7 s                                               |
 
 Essais manuels à refaire avant le lot R2c, sur base jetable, parce qu'aucun test automatique à une session ne les
 couvre :
@@ -510,6 +600,7 @@ update;`. Session B, avec un jeton d'administrateur `aal2` : `select public.acce
 | Retirer les copies (`properties`, `auction_surfaces`, `judicial_sales`) du contrôle quotidien | L'étape PB de la collecte est en production : ces copies ne reçoivent plus les colonnes du registre |
 | Index partiel de la liste de relecture d'administration                                       | Le contrôle A4 du runbook R2a, mesuré en production, montre un écart de plus de 100 ms              |
 | Retirer la tolérance `skipped: migration_pending` de la tâche                                 | Après l'application de ce lot : le code est déployé avant la migration                              |
+| Supprimer `OPTIONAL_FACT_REGISTRY_CHECKS` (exiger les trois contrôles du lot dans le rapport) | Après l'application de ce lot, pour la même raison                                                  |
 | Droits d'exécution des quatre fonctions de décision ; lecture pour l'écran de relecture       | Lot R2c                                                                                             |
 | Ouvrir l'origine « document »                                                                 | Lot R3, par une migration qui repasse `can_hold` à `true`                                           |
 
@@ -518,7 +609,9 @@ update;`. Session B, avec un jeton d'administrateur `aal2` : `select public.acce
 À lever une par une, noir sur blanc, avant d'ouvrir un droit d'exécution :
 
 1. **Second facteur** : choix du propriétaire sur le réglage `decisions_require_second_factor` (enrôler et garder
-   l'exigence, ou la lever), en plus de l'interrupteur global `admin_mfa_required`.
+   l'exigence, ou la lever), en plus de l'interrupteur global `admin_mfa_required`. Le propriétaire n'active pas
+   la double authentification pour l'instant : s'il lève l'exigence, le plafond de cinq décisions définitives par
+   24 heures et les deux alertes `fact_registry.final_decisions*` sont ce qui borne un mot de passe volé.
 2. **Droits** : `grant execute` des quatre fonctions de décision à `authenticated` **seul**, jamais à
    `service_role` ni à `anon`. L'auteur est lu dans le jeton de l'administrateur ; un appel par le rôle de service
    n'a pas d'auteur. Les invariants de sécurité refusent aujourd'hui tout droit sur ces fonctions : la règle du
@@ -539,6 +632,47 @@ update;`. Session B, avec un jeton d'administrateur `aal2` : `select public.acce
 9. **Relance planifiée** : ouverte ou fermée le jour de la bascule, décision du propriétaire.
 10. Conditions déjà au plan (section 10) : indicateur d'écho à zéro en production ; répétition complète sur base
     jetable (import, pose, retrait, fusion) ; essais manuels à deux sessions ci-dessus.
+11. **Limite « terrain »** : pour une surface tenue, la nature lue est celle de l'annonce mémorisée à la prise du
+    champ. Si l'annonce passe en terrain par sa seule nature (`app_surface_kind`) alors que la valeur d'annonce
+    mémorisée ne bouge pas, le registre ne le voit pas. Le déclencheur de retenue doit mettre à jour la nature
+    mémorisée à chaque écriture de l'annonce.
+12. **Reclassement en terrain et relance ouverte** : la relance libère une surface bâtie acceptée dès que la vente
+    est reclassée en terrain (par le type de bien ou la portée), sans décision humaine. À confirmer par le
+    propriétaire avant d'ouvrir la relance.
+13. **Acceptation sur un champ que le registre ne tient pas** : elle est enregistrée et n'affiche rien. Le jour où
+    ce champ entre au registre, elle devient une pièce à projeter, sans nouvelle décision. À recenser avant tout
+    ajout de champ.
+14. **Qui peut créer une observation d'origine `admin`** (`evidence_kind = 'admin_entry'`) : aujourd'hui le
+    propriétaire de la base seulement (garde d'origine). Le chemin de saisie du lot R2c est à définir et à relire.
+15. **Annuler une opposition ou un retrait abusif** : aucune procédure n'existe, la décision est définitive pour
+    tous. Décision du propriétaire, avec la condition 4.
+16. **Relecture humaine obligatoire des migrations** (`CODEOWNERS`) : décision du propriétaire. Rien n'est ajouté à
+    ce lot. Les invariants de sécurité épinglent la fonction de décision, mais ils sont modifiables par le même
+    commit qu'une migration.
+17. **Délai de 120 s** : prouver en production que PostgREST hisse le `statement_timeout` des deux fonctions de la
+    tâche sur la transaction de l'appel (`db-hoisted-tx-settings`), par la durée réelle d'un passage ou par une
+    lecture de la configuration (P7).
+
+## Retoucher la fonction de décision
+
+La fonction `app_private.decide_auction_fact_claim` est épinglée par les invariants de sécurité
+(`scripts/check-security-invariants-fact-registry.mjs`) : l'empreinte de son corps, et la liste des fichiers qui
+ont le droit de la nommer. Une retouche légitime suit ces étapes, dans un seul commit :
+
+1. Écrire une **nouvelle migration** qui redéfinit la fonction entière par `create or replace` (jamais
+   `alter function`, que les invariants refusent), avec ses `revoke`.
+2. Lancer `npm run test:security-invariants`. Il échoue et nomme la nouvelle empreinte. Relire la différence entre
+   les deux corps, ligne par ligne : l'auteur lu par `(select auth.uid())`, `public.is_admin()` avant tout, le
+   contrôle des déclencheurs, puis les plafonds sous leur verrou consultatif.
+3. Mettre à jour `DECIDE_BODY_SHA256`, et ajouter le nom du fichier à `DECISION_MIGRATIONS` (seuls fichiers qui
+   nomment la fonction de décision, les quatre fonctions publiques, ou qui écrivent le journal des décisions).
+4. Si la migration nomme la table des réglages ou une fonction de réglage, l'ajouter aussi à `SWITCH_MIGRATIONS`.
+   Les deux lectures de réglage (`fact_registry_decisions_second_factor_required`,
+   `fact_registry_scheduled_reprojection_enabled`) sont tenues à leur forme : leur sens sûr ne se change pas.
+5. Adapter le test `supabase/tests/887_fact_claim_decision_rpcs.sql`, et déclarer le chemin de la migration dans
+   l'exception de recherche de secrets si elle porte des clés de champ (`field_key … 'property.surface_m2'`).
+6. Faire relire le commit par une personne : les invariants et la migration changent ensemble, la relecture
+   humaine est la seule garde de ce commit (condition 16).
 
 ## Ce qui ne doit pas être fait
 
