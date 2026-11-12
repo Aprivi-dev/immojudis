@@ -173,9 +173,12 @@ pgTAP. Le workflow de migration applique les changements en production, provisio
 Vault du scheduler et lance le même contrôle de dérive contre la base distante.
 
 Le contrôle compare uniquement les objets applicatifs. Il ignore le schéma d’installation non
-relocalisable de `pg_net`, géré hors migrations. Toute autre différence reste bloquante. Les droits
+relocalisable de `pg_net`, géré hors migrations, les douze contraintes `CHECK` réconciliées (même
+définition, écrite différemment par deux versions mineures de PostgreSQL) et les index concurrents
+gérés, vérifiés à part dans le catalogue (`scripts/lib/schema-drift.mjs`). Toute autre différence
+reste bloquante. Les droits
 de l’ancien connecteur externe `lovable_readonly` ne sont plus ignorés : le rôle est supprimé par la
-migration `20261118100000_drop_lovable_readonly_role` (runbook
+migration `20261117110000_drop_lovable_readonly_role` (runbook
 `docs/runbooks/suppression-role-lovable.md`), et toute ligne qui le nomme est une dérive. Le
 bootstrap historique
 `services/data-pipeline/sql/schema.sql` est limité aux bases locales jetables et refuse les URL

@@ -1,4 +1,4 @@
--- 20261118100000 : le rôle lovable_readonly est supprimé. Sur la base éphémère de la CI il n'a jamais existé :
+-- 20261117110000 : le rôle lovable_readonly est supprimé. Sur la base éphémère de la CI il n'a jamais existé :
 -- la migration n'y fait rien, et ce test garantit qu'aucune migration ne le crée ni ne lui réserve de droit.
 -- Le chemin « rôle présent » (révocations, refus, suppression) se rejoue sur une base jetable :
 -- docs/runbooks/suppression-role-lovable.md.

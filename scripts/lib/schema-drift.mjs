@@ -492,7 +492,10 @@ function maskDatabaseUrls(text, databaseUrls) {
 // neutralises it. `##[command]` is not neutralised by a prefix: it is broken wherever it stands.
 const foreignLines = (text) => text.replaceAll("##[", "## [").split(/\r\n|\r|\n/);
 const quoteLines = (lines) => lines.map((line) => `> ${line}`);
-const quoteForeignText = (text) => quoteLines(foreignLines(text)).join("\n");
+// The diff itself, as the script prints it: SQL read from the database may quote a connection URL (a
+// foreign server, a comment), which is masked like the output of the tool.
+const quoteForeignText = (text, databaseUrls = []) =>
+  quoteLines(foreignLines(maskDatabaseUrls(text, databaseUrls))).join("\n");
 
 // Everything the script prints when the diff tool failed, as one text: the `[schema-drift]` diagnosis
 // first, so that it is read whatever the length of what follows, then the end of each output of the

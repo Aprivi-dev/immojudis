@@ -605,7 +605,7 @@ describe("invariants de sécurité : marché local de la règle pepite-v1.2", ()
 });
 
 describe("invariants de sécurité : le rôle lovable_readonly reste supprimé", () => {
-  const dropMigration = "20261118100000_drop_lovable_readonly_role.sql";
+  const dropMigration = "20261117110000_drop_lovable_readonly_role.sql";
   const conditionalGrant = `
 do $$
 begin
@@ -633,7 +633,7 @@ end $$;
 
   it("ne reproche rien aux migrations antérieures ni à une migration postérieure qui ne le nomme pas", () => {
     const result = runInvariants({
-      "20261118099999_before.sql": "-- droits de lovable_readonly\nselect 1;",
+      "20261117109999_before.sql": "-- droits de lovable_readonly\nselect 1;",
       "99990101000000_after.sql": "select 1;",
     });
     expect(result.stderr).toBe("");
