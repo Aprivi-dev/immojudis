@@ -1,5 +1,4 @@
 import { publicEnv } from "@/lib/env";
-import { ConfigurationError } from "@/lib/api-errors";
 
 const CONFIGURATION_ERROR =
   "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
@@ -20,5 +19,5 @@ export function assertCloudConfigured() {
   // callers can short-circuit with empty results and let the browser
   // refetch once the user session and env are available.
   if (typeof window === "undefined") return false;
-  throw new ConfigurationError(CONFIGURATION_ERROR);
+  throw new Error(CONFIGURATION_ERROR);
 }

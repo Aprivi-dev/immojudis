@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {

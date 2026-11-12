@@ -53,7 +53,7 @@ import {
 } from "@/lib/sale-market-estimates";
 import type { AuctionSale } from "@/lib/types";
 import { isBusyWriteError } from "@/lib/write-busy";
-import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
+import { errorDetailForLog as errorMessage } from "@/lib/error-detail-for-log";
 import { parseTimestamp as time } from "@/lib/timestamp";
 
 /**

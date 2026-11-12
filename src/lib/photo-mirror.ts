@@ -1,7 +1,7 @@
 import { publicEnv } from "@/lib/env";
 import { propertyImages, shouldRejectPropertyImageSize } from "@/lib/sale-media";
 import type { AuctionSale, SaleMedia, SaleMediaMirror } from "@/lib/types";
-import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
+import { errorDetailForLog as errorMessage } from "@/lib/error-detail-for-log";
 
 /**
  * Copies hébergées des photos principales (test d'hébergement). Le pipeline copie la photo en WebP

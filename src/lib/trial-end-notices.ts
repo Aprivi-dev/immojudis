@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { ConfigurationError, errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import {
   readUserEmail,
   resolveNoReplyEmailConfig,

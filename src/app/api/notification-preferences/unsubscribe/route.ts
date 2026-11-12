@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { EMAIL_BRAND_NAME, EMAIL_COLORS, EMAIL_FONT_STACK } from "@/lib/email-brand";
 import {
   deactivateAlertForUser,

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 import { z as zm } from "zod/mini";
-import { NotFoundError, PublicApiError, RateLimitError, isPublicErrorMessage } from "./api-errors";
+import { NotFoundError, PublicApiError, RateLimitError } from "./api-errors";
+import { isPublicErrorMessage } from "./api-error-detail";
 import { apiRouteError } from "./api-observability";
 import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 

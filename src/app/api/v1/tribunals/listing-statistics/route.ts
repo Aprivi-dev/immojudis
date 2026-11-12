@@ -3,7 +3,8 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { PublicApiError, parseApiResponse } from "@/lib/api-errors";
+import { PublicApiError } from "@/lib/api-errors";
+import { parseApiResponse } from "@/lib/api-error-detail";
 import { apiRoute } from "@/lib/api-route";
 import { assertFeatureEntitlementVia } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";

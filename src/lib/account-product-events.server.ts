@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 
 /**
  * Mesure du parcours par compte, côté serveur (point 65). Complète `product-events.ts` (navigateur,
