@@ -159,8 +159,8 @@ select results_eq(
       from public.auction_fact_source_precedence group by 1, 2, 3 order by 2$$,
   $$values
       ('admin', 10, true, 5), ('lawyer_form', 20, true, 5), ('lawyer_email', 30, true, 5),
-      ('document', 50, true, 5), ('listing', 60, false, 5)$$,
-  'starting precedence: every origin but the listing can hold, for each of the five fields'
+      ('document', 50, false, 5), ('listing', 60, false, 5)$$,
+  'precedence: the administrator and the lawyer can hold, for each of the five fields; the listing never does, and the document not before lot R3 (closed by lot R2b)'
 );
 
 select throws_ok(

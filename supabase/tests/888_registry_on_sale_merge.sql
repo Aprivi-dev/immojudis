@@ -9,6 +9,9 @@
 --     l'indice revient, l'entrée est libérée au nom de la fusion, la valeur tenue entre en mémoire d'écho ;
 --   * sans gagnant et sans colonne contaminée : seule la mémoire est reprise ;
 --   * rappeler la projection avec le même indice ne change rien ;
+--   * la contamination se juge à l'égalité exacte, sur chacune des deux colonnes de valeur de la surface ;
+--   * fusion en chaîne : une pièce bloquée sur les deux premières ventes est reportée à la troisième ;
+--   * une pièce reportée est journalisée (merge_carried, vente d'origine) et comptée par le contrôle quotidien ;
 --   * une opposition suit la fusion, sans échéance ;
 --   * le journal des publications de l'agent d'information suit la vente conservée ;
 --   * rien à reporter, ou pas de vente conservée : la projection n'est pas appelée.
@@ -16,7 +19,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(25);
+select plan(31);
 
 -- Jeu d'essai -----------------------------------------------------------------------------------------------------
 insert into auth.users (id) values ('88800000-0000-4000-8000-0000000000a1');
@@ -25,9 +28,10 @@ insert into public.user_profiles (user_id, email, user_role) values
 on conflict (user_id) do update set user_role = excluded.user_role;
 select set_config(
   'request.jwt.claims',
-  '{"sub":"88800000-0000-4000-8000-0000000000a1","role":"authenticated","aal":"aal1"}', true);
+  '{"sub":"88800000-0000-4000-8000-0000000000a1","role":"authenticated","aal":"aal2"}', true);
 
--- Vingt ventes : maison, 50 m², 2 pièces, 1 chambre. Vente 11 : 7 pièces, 6 chambres. Vente 13 : un terrain.
+-- Vingt-sept ventes : maison, 50 m², 2 pièces, 1 chambre. Ventes 11, 21 et 22 : 7 pièces, 6 chambres. Vente 13 :
+-- un terrain.
 insert into public.auction_sales (
   id, source_name, source_url, status, sale_date, city, property_type, starting_price_eur,
   raw_payload, sale_procedure, sale_venue_type,
@@ -39,8 +43,9 @@ select
   'https://example.test/888/sale-' || n, 'upcoming', current_timestamp + interval '20 days', 'Alphaville',
   case when n = 13 then 'land' else 'house' end, 90000, '{}'::jsonb,
   '{}'::jsonb, 'tribunal', 50, 50, 'habitable', 'listing_text', 0.7,
-  case when n = 11 then 7 else 2 end, case when n = 11 then 6 else 1 end, 'occupied', '[]'::jsonb
-from generate_series(1, 20) n;
+  case when n in (11, 21, 22) then 7 else 2 end, case when n in (11, 21, 22) then 6 else 1 end, 'occupied',
+  '[]'::jsonb
+from generate_series(1, 27) n;
 
 -- Une pièce par vente utile, chacune d'un dossier d'avocat distinct (origines différentes, même rang).
 insert into public.auction_fact_claims (
@@ -64,7 +69,10 @@ from (
     ('10', 'property.rooms_count', '3'::jsonb),
     ('12', 'property.surface_m2', '54'::jsonb),
     ('14', 'property.rooms_count', '5'::jsonb),
-    ('18', 'property.rooms_count', '5'::jsonb)
+    ('18', 'property.rooms_count', '5'::jsonb),
+    ('21', 'property.rooms_count', '3'::jsonb),
+    ('24', 'property.surface_m2', '54'::jsonb),
+    ('27', 'property.surface_m2', '54'::jsonb)
 ) as piece (sale, field_key, value);
 
 create function pg_temp.sale(p_suffix text) returns uuid
@@ -111,11 +119,15 @@ select results_eq(
 );
 
 select results_eq(
-  $$select event.event, event.held_value, event.listing_value
+  $$select event.event, event.held_value, event.listing_value, event.incoming_value,
+           event.decision_id = (select decision.id from public.auction_fact_claim_decisions decision
+                                 where decision.claim_id = pg_temp.claim('01'))
       from public.auction_sale_field_hold_events event
       where event.sale_id = pg_temp.sale('02') order by event.seq$$,
-  $$values ('projection_held', '5'::jsonb, '2'::jsonb)$$,
-  'the take is logged for the kept sale'
+  $$values ('projection_held', '5'::jsonb, '2'::jsonb, null::jsonb, true),
+           ('merge_carried', '5'::jsonb, null::jsonb,
+            jsonb_build_object('from_sale_id', pg_temp.sale('01')), true)$$,
+  'the take is logged for the kept sale, and a merge_carried event names the sale the piece comes from and its decision'
 );
 
 select results_eq(
@@ -294,6 +306,67 @@ select is(
   'a write of the opposed value on the kept sale is set aside'
 );
 
+-- 7 bis. Contamination : égalité exacte, sur chacune des deux colonnes de valeur de la surface -----------------------------
+-- Vente 25 : son annonce dit 53,5 m², dans la tolérance de la pièce de 54 m² que tenait la vente 24. Ce n'est pas
+-- la valeur de la pièce recopiée par la fusion : la valeur d'annonce mémorisée est 53,5, pas celle de la vente 24.
+select public.accept_auction_fact_claim(pg_temp.claim('24'), 'single_lot') ->> 'state';
+select pg_temp.merge('24', '25', 'surface_m2 = 53.5, app_surface_m2 = 53.5');
+select results_eq(
+  $$select sale.app_surface_m2, sale.held_fields #>> '{property.surface_m2,state}',
+           sale.held_fields #> '{property.surface_m2,listing,app_surface_m2}',
+           sale.held_fields #> '{property.surface_m2,listing,surface_m2}'
+      from public.auction_sales sale where sale.id = pg_temp.sale('25')$$,
+  $$values (54::numeric, 'held', '53.5'::jsonb, '53.5'::jsonb)$$,
+  'a listing value close to the piece, within its tolerance, is not the piece copied by the merge: it stays the listing value remembered'
+);
+
+-- Vente 26 : la fusion a écrit la valeur de la pièce dans surface_m2 seulement (app_surface_m2 garde 50).
+select public.accept_auction_fact_claim(pg_temp.claim('27'), 'single_lot') ->> 'state';
+select pg_temp.merge('27', '26', 'surface_m2 = 54');
+select results_eq(
+  $$select sale.held_fields #>> '{property.surface_m2,state}',
+           sale.held_fields #> '{property.surface_m2,listing,surface_m2}',
+           sale.held_fields #> '{property.surface_m2,listing,app_surface_m2}'
+      from public.auction_sales sale where sale.id = pg_temp.sale('26')$$,
+  $$values ('held', '50'::jsonb, '50'::jsonb)$$,
+  'the value of the piece written in surface_m2 alone is seen too: the listing block is the one of the absorbed sale'
+);
+
+-- 7 ter. Fusion en chaîne : la pièce est bloquée sur les deux premières ventes (6 chambres), aucune ne tient rien -------------
+select public.accept_auction_fact_claim(pg_temp.claim('21'), 'single_lot') ->> 'state';
+select pg_temp.merge('21', '22');
+select results_eq(
+  $$select sale.rooms_count, sale.held_fields is null,
+           (select count(*)::integer from public.auction_fact_claim_decisions decision
+              where decision.sale_id = sale.id)
+      from public.auction_sales sale where sale.id = pg_temp.sale('22')$$,
+  $$values (7, true, 0)$$,
+  'before the second merge: the middle sale holds nothing, remembers nothing, and no decision names it'
+);
+select pg_temp.merge('22', '23');
+select results_eq(
+  $$select sale.rooms_count, sale.held_fields #>> '{property.rooms_count,state}',
+           (sale.held_fields #>> '{property.rooms_count,claim_id}')::uuid,
+           (select event.incoming_value from public.auction_sale_field_hold_events event
+              where event.sale_id = sale.id and event.event = 'merge_carried')
+      from public.auction_sales sale where sale.id = pg_temp.sale('23')$$,
+  $$values (3, 'held', pg_temp.claim('21'), jsonb_build_object('from_sale_id', pg_temp.sale('21')))$$,
+  'a merge in chain reprojects the sale finally kept even when the middle sale carried nothing itself: the decision names a sale it had absorbed'
+);
+
+-- Le contrôle quotidien compte les pièces reportées sur 24 heures.
+select is(
+  app_private.fact_registry_global_checks(null) -> 'merge_carried',
+  jsonb_build_object(
+    'count', (select count(*)::integer from public.auction_sale_field_hold_events where event = 'merge_carried'),
+    'window_hours', 24),
+  'the daily check counts the pieces carried by a merge over 24 hours'
+);
+select ok(
+  (select count(*) >= 5 from public.auction_sale_field_hold_events where event = 'merge_carried'),
+  'every piece posed on a kept sale by the merges above is logged as carried'
+);
+
 -- 8. Les décisions ne sont pas déplacées --------------------------------------------------------------------------------------
 select results_eq(
   $$select count(*)::integer, count(*) filter (where claim.auction_sale_id is null)::integer,
@@ -310,7 +383,8 @@ select results_eq(
 select is(
   (select count(*)::integer from public.auction_sales sale
      where sale.id in (pg_temp.sale('02'), pg_temp.sale('04'), pg_temp.sale('07'), pg_temp.sale('09'),
-       pg_temp.sale('11'), pg_temp.sale('13'), pg_temp.sale('15'))
+       pg_temp.sale('11'), pg_temp.sale('13'), pg_temp.sale('15'), pg_temp.sale('23'), pg_temp.sale('25'),
+       pg_temp.sale('26'))
        and (app_private.project_sale_fields(sale.id, null, false) ->> 'changed')::boolean),
   0,
   'after these merges no kept sale drifts: the daily check has nothing to report'
