@@ -341,13 +341,15 @@ Chaque passage réessaie 3 fois (5 s, 20 s, 60 s) sur une erreur réseau ou 5xx.
 ## Contrôle quotidien du registre des pièces (lot R2a, 11/11/2026)
 
 `/api/cron/fact-registry-check` (Vercel Cron, 05:28 UTC) appelle `public.sync_fact_registry_alerts()`, sans
-paramètre, qui lance `public.check_fact_registry_consistency` (lecture seule : la projection n'y est appelée qu'en
-simulation) page par page, puis ouvre ou referme une alerte opérationnelle par contrôle. Le rapport ne porte que
-des comptes et des identifiants de vente (20 au plus), jamais une valeur.
+paramètre, qui lance le contrôle (lecture seule : la projection n'y est appelée qu'en simulation) page par page,
+puis ouvre ou referme une alerte opérationnelle par contrôle. Le rapport ne porte que des comptes et des
+identifiants de vente (20 au plus), jamais une valeur. Le résumé gardé dans `operational_job_runs` ne porte que
+des comptes et des codes ; une erreur de la base n'y laisse que son étape et son code.
 
-Depuis le lot R2b, la même fonction commence par la **relance planifiée de la projection**
-(`app_private.reproject_drifted_sales`, 50 ventes au plus par passage) : pour une vente du registre dont la
-simulation changerait la fiche, elle applique la projection. C'est une écriture de fiche lancée par cette tâche ;
+Depuis le lot R2b, la tâche fait d'abord un autre appel, dans sa propre transaction : la **relance planifiée de la
+projection** (`public.reproject_fact_registry_drift()`, 30 ventes au plus par passage). Pour une vente du registre
+dont la simulation changerait la fiche, elle applique la projection. C'est une écriture de fiche lancée par cette
+tâche ;
 elle ne fait que réappliquer des décisions humaines déjà acceptées. Elle est **fermée par défaut** et ne s'ouvre
 que par une décision du propriétaire (`docs/runbooks/registre-des-pieces-r2b.md`, « Relance planifiée de la
 projection »).
@@ -364,6 +366,7 @@ projection »).
 | `fact_registry.echo_suppressed`        | La base a écarté le retour d'une ancienne valeur tenue dans les 48 heures : un chemin de la collecte a échappé à sa garde d'écho. Doit rester à zéro                                                                                                                                  | avertissement |
 | `fact_registry.echo_blocked`           | Un champ libéré a retenu une écriture comme un écho il y a moins de 7 jours. Si l'alerte dure, l'annonce dit vraiment cette valeur et la fiche en affiche une ancienne : à relire                                                                                                     | avertissement |
 | `fact_registry.stale_listing`          | L'annonce s'est tue sur un champ tenu (valeur d'annonce mémorisée peut-être périmée), ou une surface est encore tenue sur une vente devenue un terrain                                                                                                                                | avertissement |
+| `fact_registry.reprojection_enabled`   | La relance planifiée de la projection est ouverte (lot R2b) : la tâche peut écrire des fiches. Reste ouverte tant que le propriétaire ne l'a pas refermée                                                                                                                             | avertissement |
 
 - **Supervision.** La tâche est dans la liste attendue de `cron.stale` (27 heures, migration `20261117100600`).
   Mise en production sans manipuler de secret : fusionner, laisser Vercel déployer, attendre un passage planifié
@@ -373,10 +376,11 @@ projection »).
   rien contrôler et le dit (`skipped: migration_pending` dans le journal des exécutions). **Après la migration,
   la réponse doit porter `counts`** : un `skipped` veut alors dire que PostgREST ne voit pas la fonction, et que
   rien n'est contrôlé. Cette tolérance sera retirée au lot R2b.
-- **Borne.** 500 ventes au plus par passage. Au-delà, le rapport est marqué tronqué : la base ne synchronise que
-  les contrôles actifs (aucune alerte n'est refermée par un rapport partiel) et la tâche échoue.
-- **Tant que rien n'est tenu** (lots R2a et R2b), les dix contrôles sont à zéro : seuls `triggers_not_always`
-  et `registry_label` peuvent se lever.
+- **Borne.** 20 000 ventes du registre au plus par passage (40 pages de 500, depuis le lot R2b). Au-delà, le
+  rapport est marqué tronqué : la base ne synchronise que les contrôles actifs (aucune alerte n'est refermée par
+  un rapport partiel) et la tâche échoue.
+- **Tant que rien n'est tenu** (lots R2a et R2b), les contrôles sont à zéro : seuls `triggers_not_always` et
+  `registry_label` peuvent se lever, et `reprojection_enabled` si le propriétaire ouvre la relance.
 
 ## Plan Vercel Hobby : ordre des tâches et seuil de `cron.stale`
 
