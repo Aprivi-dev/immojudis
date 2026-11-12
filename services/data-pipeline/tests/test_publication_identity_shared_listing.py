@@ -3,6 +3,7 @@
 import os
 
 import pytest
+from sale_table_columns import add_model_columns
 
 from src.dedupe import merge_duplicate_sales
 from src.normalize import normalize_sale
@@ -36,6 +37,7 @@ def db():
                 raw_payload jsonb default '{}',status text default 'active',
                 quality_flags jsonb default '[]',updated_at timestamptz)"""
             )
+            add_model_columns(connection)
             yield connection
         finally:
             connection.rollback()

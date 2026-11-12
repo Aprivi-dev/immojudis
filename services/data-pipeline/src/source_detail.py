@@ -196,9 +196,11 @@ def publish_source_revision(sale, job: dict, settings: dict) -> bool:
     are inadmissible. This path therefore checks both the task lease and the
     existing catalogue version before using the shared table writer.
     """
+    from src import base_reads
     from src.storage import supabase_client as storage
 
-    with storage.connect(str(settings['supabase_db_url'])) as db:
+    # La portée entoure la transaction : l'écriture ne devient la référence de la garde d'écho qu'une fois validée.
+    with base_reads.written_scope(), storage.connect(str(settings['supabase_db_url'])) as db:
         db.execute("set local lock_timeout = '15s'")
         db.execute("set local statement_timeout = '120s'")
         db.execute("select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1',0))")

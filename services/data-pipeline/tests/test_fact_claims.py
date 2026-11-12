@@ -4,10 +4,21 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import normalize
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.models import AuctionSale
-from src.normalize import normalize_sale
 from src.storage import supabase_client
+
+
+def normalize_sale(raw: dict) -> AuctionSale:
+    """Une vente telle que la collecte la publie : sa fiche a été lue, elle porte donc un instantané.
+
+    La collecte le pose avant la normalisation (``main._preserve_known_enrichment_payloads``). Ici il ne nomme que
+    sa source, sauf si le test donne le sien : aucun champ n'y est ajouté.
+    """
+    sale = normalize.normalize_sale(raw)
+    sale.raw_payload.setdefault("source_factual_snapshot", {"source_url": sale.source_url})
+    return sale
 
 
 def test_source_fields_and_blocks_create_candidates_without_accepting_them() -> None:
@@ -51,6 +62,7 @@ def test_pdf_extraction_provenance_is_field_typed() -> None:
             {"url": "https://source.example/cadastre.pdf", "label": "Cadastre"},
         ],
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "surface_extraction": {
                 "value_m2": 90,
                 "evidence": "Surface habitable : 90 m²",
@@ -89,6 +101,7 @@ def test_document_evidence_must_match_a_current_attachment() -> None:
         source_url="https://source.example/listing-with-foreign-pdf",
         documents=[{"url": "https://source.example/current.pdf", "label": "PV actuel"}],
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "starting_price_extraction": {
                 "value_eur": 100000,
                 "evidence": "Mise à prix : 100 000 €",
@@ -110,6 +123,7 @@ def test_document_evidence_hash_must_match_attachment_or_cache_proof() -> None:
         source_url="https://source.example/listing-with-hashed-pdf",
         documents=[{"url": document_url, "label": "PV actuel", "sha256": attachment_hash}],
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "starting_price_extraction": {
                 "value_eur": 100000,
                 "evidence": "Mise à prix : 100 000 €",
@@ -147,6 +161,7 @@ def test_missing_field_provenance_does_not_create_a_claim() -> None:
         starting_price_eur=100000,
         surface_m2=80,
         occupancy_status="vacant",
+        raw_payload={"source_factual_snapshot": {"source_name": "fiche lue"}},
     )
 
     assert build_fact_claim_candidates(sale) == []
@@ -167,7 +182,8 @@ def test_generated_completeness_projection_is_not_independent_source_evidence(in
     sale = AuctionSale(
         source_name="info_encheres",
         source_url="https://source.example/completeness-projection",
-        raw_payload={"source_blocks": blocks},
+        raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},"source_blocks": blocks},
     )
 
     candidates = build_fact_claim_candidates(sale)
@@ -184,7 +200,8 @@ def test_surface_excerpt_only_claims_the_surface_kind_named_by_the_excerpt() -> 
         surface_m2=80,
         habitable_surface_m2=80,
         land_surface_m2=420,
-        raw_payload={"surface_evidence": "Surface habitable : 90 m²"},
+        raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},"surface_evidence": "Surface habitable : 90 m²"},
     )
 
     candidates = build_fact_claim_candidates(sale)
@@ -201,6 +218,7 @@ def test_document_evidence_without_a_scalar_does_not_reuse_the_canonical_value()
         source_url="https://source.example/document-without-value",
         habitable_surface_m2=80,
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "surface_extraction": {
                 "evidence": "Surface habitable à confirmer",
                 "document_url": "https://source.example/document.pdf",
@@ -217,6 +235,7 @@ def test_document_evidence_without_exact_document_url_is_not_attributed_to_listi
         source_url="https://source.example/listing-with-unlocated-pdf",
         starting_price_eur=100000,
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "starting_price_extraction": {
                 "value_eur": 100000,
                 "evidence": "Mise à prix : 100 000 €",
@@ -235,6 +254,7 @@ def test_document_evidence_rejects_non_https_document_url() -> None:
         source_url="https://source.example/listing-with-insecure-pdf",
         starting_price_eur=100000,
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "starting_price_extraction": {
                 "value_eur": 100000,
                 "evidence": "Mise à prix : 100 000 €",
@@ -252,7 +272,8 @@ def test_occupancy_text_claim_uses_the_status_in_its_quote() -> None:
         source_name="licitor",
         source_url="https://source.example/occupancy-evidence",
         occupancy_status="rented",
-        raw_payload={"raw_text": "Maison libre de toute occupation."},
+        raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},"raw_text": "Maison libre de toute occupation."},
     )
 
     candidates = build_fact_claim_candidates(sale)
@@ -277,7 +298,7 @@ def test_observations_keep_source_specific_candidates_and_versions_are_stable() 
             "source_name": "licitor",
             "source_url": "https://source.example/secondary",
             "starting_price_eur": "105 000 euros",
-            "raw_payload": {"starting_price_eur": "105 000 euros"},
+            "raw_payload": {"source_factual_snapshot": {"starting_price_eur": "105 000 euros"}},
         }
     )
 
@@ -292,7 +313,11 @@ def test_observations_keep_source_specific_candidates_and_versions_are_stable() 
     assert [row["id"] for row in first] == [row["id"] for row in second]
     assert all(row["claim_status"] == "candidate" for row in first)
 
-    sale.observations[-1]["starting_price_eur"] = "106 000 euros"
+    # Le scalaire du résumé d'observation vient du modèle normalisé : il ne fait pas une observation à lui seul.
+    sale.observations[-1]["starting_price_eur"] = "999 000 euros"
+    assert materialize_fact_claim_rows(sale, "00000000-0000-4000-8000-000000000001") == first
+
+    sale.observations[-1]["raw_payload"]["source_factual_snapshot"]["starting_price_eur"] = "106 000 euros"
     changed = materialize_fact_claim_rows(sale, "00000000-0000-4000-8000-000000000001")
     old_secondary = next(row for row in price_rows if row["source_url"].endswith("secondary"))
     new_secondary = next(row for row in changed if row["source_url"].endswith("secondary"))
@@ -588,7 +613,7 @@ def test_rest_writer_queues_only_sales_missing_from_an_incomplete_target_lookup(
             "source_name": "licitor",
             "source_url": "https://source.example/shared-observation",
             "starting_price_eur": "100 000 euros",
-            "raw_payload": {"starting_price_eur": "100 000 euros"},
+            "raw_payload": {"source_factual_snapshot": {"starting_price_eur": "100 000 euros"}},
         }
     )
     sales[1].observations.append(
@@ -596,7 +621,7 @@ def test_rest_writer_queues_only_sales_missing_from_an_incomplete_target_lookup(
             "source_name": "licitor",
             "source_url": "https://source.example/shared-observation",
             "starting_price_eur": "200 000 euros",
-            "raw_payload": {"starting_price_eur": "200 000 euros"},
+            "raw_payload": {"source_factual_snapshot": {"starting_price_eur": "200 000 euros"}},
         }
     )
     calls: list[dict[str, object]] = []
@@ -693,3 +718,386 @@ def test_rest_writer_queues_when_canonical_sale_lookup_fails(monkeypatch) -> Non
     ) == 0
     assert len(queued) == 1
     assert queued[0]["json"][0]["job_type"] == "fact_claims"
+
+
+# --- Registre des pièces, étape PA : aucune observation tirée d'une colonne relue en base -------------------------------
+
+LICITOR_URL = "https://www.licitor.com/annonce/09/99/99/vente-aux-encheres/une-maison/alphaville/gironde/099999.html"
+# Colonnes telles que la collecte les relit en base : posées par un autre écrivain que l'annonce.
+REREAD_COLUMNS = {
+    "surface_m2": 54,
+    "app_surface_m2": 54,
+    "land_surface_m2": 800,
+    "occupancy_status": "rented",
+    "starting_price_eur": 90000,
+    "sale_date": "2026-12-15T13:30:00+00:00",
+}
+
+
+def _source_field_claims(sale: AuctionSale) -> dict[str, object]:
+    return {
+        candidate["field_key"]: candidate["value_jsonb"]
+        for candidate in build_fact_claim_candidates(sale)
+        if candidate["evidence_locator"]["kind"] == "source_field"
+    }
+
+
+def test_fact_claims_version_is_v3() -> None:
+    from src.fact_claims import FACT_CLAIMS_VERSION
+
+    assert FACT_CLAIMS_VERSION == "auction_fact_claims_v3"
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url=LICITOR_URL,
+        raw_payload={"source_factual_snapshot": {"surface_m2": "50 m²"}},
+    )
+    (row,) = materialize_fact_claim_rows(sale, "00000000-0000-4000-8000-000000000001")
+    assert row["extractor_version"] == "auction_fact_claims_v3"
+
+
+def test_a_column_copied_into_the_raw_payload_is_not_a_source_field_claim() -> None:
+    """Le premier niveau du ``raw_payload`` est la vente brute entière, colonnes relues comprises : pas une preuve."""
+    sale = AuctionSale(
+        source_name="licitor", source_url=LICITOR_URL, raw_payload={**REREAD_COLUMNS, "source_factual_snapshot": {"source_name": "fiche lue"}}
+    )
+
+    assert build_fact_claim_candidates(sale) == []
+
+
+def test_source_field_claims_carry_the_values_of_the_source_snapshot_only() -> None:
+    snapshot = {
+        "source_name": "licitor",
+        "source_url": LICITOR_URL,
+        "surface_m2": "50 m²",
+        "land_surface_m2": None,
+        "occupancy_status": "Occupé",
+        "starting_price_eur": "85 000 €",
+        "sale_date": "2026-12-15T13:30:00+00:00",
+    }
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url=LICITOR_URL,
+        raw_payload={**REREAD_COLUMNS, "source_factual_snapshot": snapshot},
+    )
+
+    candidates = build_fact_claim_candidates(sale)
+
+    assert _source_field_claims(sale) == {
+        "property.surface_m2": 50.0,
+        "property.occupancy_status": "occupied",
+        "sale.starting_price_eur": 85000.0,
+        "sale.sale_date": "2026-12-15T13:30:00+00:00",
+    }
+    surface = next(candidate for candidate in candidates if candidate["field_key"] == "property.surface_m2")
+    assert surface["evidence_kind"] == "source_listing"
+    assert surface["source_url"] == LICITOR_URL
+    assert surface["evidence_locator"]["quote"] == "50 m²"
+    # Rien ne porte les valeurs relues en base.
+    assert not {54.0, 800.0, "rented", 90000.0} & {candidate["value_jsonb"] for candidate in candidates}
+
+
+@pytest.mark.parametrize("snapshot", [None, {}, [], "surface_m2", {"surface_m2": None, "occupancy_status": ""}])
+def test_no_source_field_claim_without_a_usable_source_snapshot(snapshot) -> None:
+    payload = dict(REREAD_COLUMNS)
+    if snapshot is not None:
+        payload["source_factual_snapshot"] = snapshot
+    sale = AuctionSale(source_name="licitor", source_url=LICITOR_URL, raw_payload=payload)
+
+    assert _source_field_claims(sale) == {}
+
+
+def test_an_unchanged_listing_hydrated_from_the_base_claims_nothing_for_the_reread_columns() -> None:
+    """Annonce Licitor muette, sur une vente dont la base porte 54 m², 800 m² de terrain et « loué »."""
+    from src import main as pipeline
+    from src.freshness import record_source_checks
+
+    known_row = {
+        "id": "99900000-1000-4000-8000-000000000001",
+        "source_url": LICITOR_URL,
+        "source_urls": [LICITOR_URL],
+        "status": "upcoming",
+        "city": "Alphaville",
+        "title": "Une maison",
+        "description": "Une maison d'habitation.",
+        "raw_text": "Une maison d'habitation.",
+        "surface_source": "declared",
+        "surface_confidence": 0.9,
+        "rooms_count": 3,
+        **REREAD_COLUMNS,
+        "raw_payload": {
+            "source_checks": {},
+            "source_factual_snapshot": {"source_name": "licitor", "source_url": LICITOR_URL, "surface_m2": None},
+        },
+    }
+    card = {
+        "source_name": "licitor",
+        "source_url": LICITOR_URL,
+        "sale_date": REREAD_COLUMNS["sale_date"],
+        "starting_price_eur": 90000,
+        "status": "upcoming",
+        "city": "Alphaville",
+        "_known_unchanged": True,
+    }
+    known = {LICITOR_URL: known_row}
+    pipeline._hydrate_known_unchanged_sales([card], known)
+    pipeline._preserve_known_enrichment_payloads([card], known)
+    record_source_checks([card], known)
+    sale = normalize_sale(card)
+    # La vente garde les valeurs de la base : la collecte continue de juger la fiche sur ce qui est affiché.
+    assert (sale.surface_m2, sale.land_surface_m2, sale.occupancy_status) == (54, 800, "rented")
+    assert sale.raw_payload["surface_m2"] == 54
+
+    candidates = build_fact_claim_candidates(sale)
+
+    assert not [candidate for candidate in candidates if candidate["field_key"].startswith("property.")]
+    assert _source_field_claims(sale) == {}
+
+
+def test_a_recomputed_row_claims_what_the_snapshot_says_not_what_its_columns_hold() -> None:
+    from src.recompute_scoring import _recomputed_sale_from_storage_row
+
+    row = {
+        "id": "99900000-1000-4000-8000-000000000001",
+        "source_name": "licitor",
+        "source_url": LICITOR_URL,
+        "source_urls": [LICITOR_URL],
+        "status": "upcoming",
+        "city": "Alphaville",
+        "property_type": "house",
+        "title": "Une maison",
+        "description": "Une maison de 50 m².",
+        "raw_text": "Une maison de 50 m².",
+        "surface_source": "declared",
+        "surface_confidence": 0.9,
+        "visit_dates": [],
+        "documents": [],
+        **REREAD_COLUMNS,
+        "raw_payload": {
+            "source_name": "licitor",
+            "source_url": LICITOR_URL,
+            "title": "Une maison",
+            "description": "Une maison de 50 m².",
+            "raw_text": "Une maison de 50 m².",
+            "source_factual_snapshot": {"surface_m2": "50", "starting_price_eur": 85000},
+        },
+    }
+
+    sale = _recomputed_sale_from_storage_row(row)
+
+    # Le recalcul verse les colonnes dans la vente brute : elles n'en deviennent pas des faits de l'annonce.
+    assert sale.raw_payload["land_surface_m2"] == 800
+    assert _source_field_claims(sale) == {"property.surface_m2": 50.0, "sale.starting_price_eur": 85000.0}
+    values = {candidate["value_jsonb"] for candidate in build_fact_claim_candidates(sale)}
+    assert not {54.0, 800.0, "rented", 90000.0} & values
+
+
+def test_an_observation_summary_scalar_is_not_a_claim_without_the_observation_snapshot() -> None:
+    sale = AuctionSale(
+        source_name="avoventes", source_url="https://source.example/primary-only", raw_payload={"source_factual_snapshot": {"source_name": "fiche lue"}}
+    )
+    sale.observations.append(
+        {
+            "source_name": "licitor",
+            "source_url": "https://source.example/secondary-scalar",
+            "starting_price_eur": 105000.0,
+            "sale_date": "2026-12-15T13:30:00+00:00",
+            "raw_payload": {"starting_price_eur": "105 000 euros", "surface_m2": 54},
+        }
+    )
+
+    assert build_fact_claim_candidates(sale) == []
+
+
+def test_the_pipeline_only_writes_listing_and_document_claims() -> None:
+    """Test statique : les seules natures d'observation que la collecte émet sont l'annonce et le document.
+
+    Les natures réservées (réponse d'un professionnel, formulaire, saisie d'un administrateur) et les autres
+    natures admises par la base n'apparaissent dans aucun fichier du pipeline qui écrit la table.
+    """
+    import ast
+    from pathlib import Path
+
+    from src import fact_claims
+
+    allowed = {"source_listing", "source_document"}
+    root = Path(fact_claims.__file__).resolve().parents[1]
+
+    # 1. Dans le constructeur d'observations, chaque provenance ajoutée nomme une des deux natures.
+    tree = ast.parse(Path(fact_claims.__file__).read_text(encoding="utf-8"))
+    kinds: list[object] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "append"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "provenances"
+        ):
+            (argument,) = node.args
+            assert isinstance(argument, ast.Tuple)
+            first = argument.elts[0]
+            kinds.append(first.value if isinstance(first, ast.Constant) else ast.dump(first))
+    assert len(kinds) >= 4
+    assert set(kinds) == allowed
+
+    # 2. Aucun fichier du pipeline qui nomme la table ne nomme une autre nature.
+    other_kinds = {
+        "source_record", "email_attachment", "portal_upload", "manual_review", "agent_research",
+        "professional_email", "professional_form", "admin_entry",
+    }
+    writers = sorted(
+        path
+        for folder in (root / "src", root / "scripts")
+        for path in folder.rglob("*.py")
+        if "auction_fact_claims" in path.read_text(encoding="utf-8")
+    )
+    assert {path.relative_to(root).as_posix() for path in writers} == {
+        "scripts/backfill_fact_claims.py",
+        "src/fact_claims.py",
+        "src/storage/fact_claim_rows.py",
+        "src/storage/supabase_client.py",
+    }
+    for path in writers:
+        literals = {
+            node.value
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        assert not literals & other_kinds, path.name
+
+    # 3. Et les observations réellement produites, toutes voies confondues, portent une des deux natures.
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url=LICITOR_URL,
+        surface_m2=80,
+        documents=[{"url": "https://source.example/pv.pdf", "label": "PV"}],
+        raw_payload={
+            "source_factual_snapshot": {"surface_m2": "80 m²", "occupancy_status": "libre"},
+            "source_blocks": {"mise_a_prix": "100 000 euros"},
+            "surface_evidence": "superficie de 80 m²",
+            "raw_text": "Maison de 80 m², libre de toute occupation.",
+            "surface_extraction": {
+                "value_m2": "80", "evidence": "surface de 80 m²", "document_url": "https://source.example/pv.pdf",
+            },
+        },
+    )
+    produced = build_fact_claim_candidates(sale)
+    assert {candidate["evidence_kind"] for candidate in produced} == allowed
+    assert {candidate["evidence_locator"]["kind"] for candidate in produced} >= {
+        "source_field", "source_block", "document_extraction",
+    }
+
+
+def _unread_secondary_card(snapshot_owner: str) -> AuctionSale:
+    """Carte Licitor non relue d'une vente fusionnée dont la ligne canonique est celle d'Avoventes."""
+    from src import main as pipeline
+
+    canonical = "https://www.avoventes.fr/vente/12345"
+    secondary = "https://www.licitor.com/annonce/09/99/99/vente-aux-encheres/une-maison/alphaville/gironde/000000001.html"
+    stored = {
+        "id": "99900000-1000-4000-8000-000000000001", "source_name": "avoventes", "source_url": canonical,
+        "source_urls": [canonical, secondary], "surface_m2": 54, "starting_price_eur": 90000,
+        "city": "Alphaville", "postal_code": "33000",
+        "raw_payload": {"source_factual_snapshot": {
+            "source_name": "avoventes", "source_url": {"canonical": canonical, "secondary": secondary}[snapshot_owner],
+            "surface_m2": "54 m²", "starting_price_eur": "90 000 €", "occupancy_status": "libre",
+        }},
+    }
+    known = {canonical: stored, secondary: stored}  # chaque URL de la vente désigne la ligne canonique
+    card = {"source_name": "licitor", "source_url": secondary, "city": "Alphaville", "postal_code": "33000",
+            "title": "Une maison", "_known_unchanged": True, "sale_date": "2026-12-15T14:00:00+01:00",
+            "starting_price_eur": 90000}
+    pipeline._hydrate_known_unchanged_sales([card], known)
+    pipeline._preserve_known_enrichment_payloads([card], known)
+    assert card["source_factual_snapshot"]["surface_m2"] == "54 m²"  # l'instantané stocké est bien posé sur la carte
+    return normalize_sale(card)
+
+
+def _source_fields(sale: AuctionSale) -> set[str]:
+    return {
+        candidate["field_key"]
+        for candidate in build_fact_claim_candidates(sale)
+        if candidate["evidence_locator"].get("kind") == "source_field"
+    }
+
+
+def test_an_unread_secondary_card_of_a_merged_sale_claims_nothing_from_the_snapshot_of_another_source() -> None:
+    """L'instantané de la ligne canonique est celui d'Avoventes : Licitor n'a pas publié ces valeurs.
+
+    La table des observations est immuable et sans purge : une attribution fausse y resterait.
+    """
+    assert _source_fields(_unread_secondary_card("canonical")) == set()
+
+
+def test_an_unread_card_still_claims_the_fields_of_its_own_snapshot() -> None:
+    """Témoin : le même instantané, quand il est celui de la carte, donne ses observations."""
+    assert _source_fields(_unread_secondary_card("secondary")) == {
+        "property.surface_m2", "sale.starting_price_eur", "property.occupancy_status",
+    }
+
+
+def test_a_replayed_claim_snapshot_is_labelled_with_the_version_of_its_identifier() -> None:
+    """Reprise de file après un changement de version : l'identifiant est de la version courante, l'étiquette aussi."""
+    from src.fact_claims import FACT_CLAIMS_VERSION
+    from src.storage.fact_claim_rows import _materialize_fact_claim_snapshot
+
+    sale = normalize_sale({
+        "source_name": "info_encheres", "source_url": "https://source.example/reprise",
+        "source_blocks": {"occupation": "Libre de toute occupation"},
+    })
+    sale_id = "00000000-0000-4000-8000-000000000021"
+    (current,) = materialize_fact_claim_rows(sale, sale_id)
+    queued = [{**current, "extractor_version": "auction_fact_claims_v2"}]  # candidat mis en file par l'ancienne version
+
+    (replayed,) = _materialize_fact_claim_snapshot(queued, sale_id)
+
+    assert replayed["id"] == current["id"]
+    assert replayed["extractor_version"] == FACT_CLAIMS_VERSION == current["extractor_version"]
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        None,
+        {},
+        "illisible",
+        # L'instantané d'une autre fiche (ligne canonique d'une fusion) n'est pas celui de cette vente.
+        {"source_url": "https://autre-source.example/vente-1", "starting_price_eur": "118 000 €"},
+        # La page n'a rien donné : tout ce que la vente porte vient de la ligne stockée.
+        {"fields_from_stored_row": ["starting_price_eur", "surface_m2"]},
+    ],
+    ids=["absent", "empty", "not_an_object", "of_another_listing", "only_fields_from_the_stored_row"],
+)
+def test_a_sale_whose_listing_has_no_snapshot_emits_nothing_at_all(snapshot) -> None:
+    """Jamais relue depuis que l'instantané existe : ni bloc de source, ni document, ni observation d'une autre source.
+
+    Une seule observation de cette version masquerait à la lecture toutes celles de la précédente, dont les
+    ``source_field`` que cette vente ne peut plus émettre.
+    """
+    other = "https://autre-source.example/vente-1"
+    raw = {
+        "source_name": "info_encheres", "source_url": "https://source.example/sans-instantane",
+        "starting_price_eur": "120 000 €", "surface_m2": 62,
+        "source_blocks": {"mise_a_prix": "120 000 euros", "occupation": "Libre de toute occupation"},
+    }
+    if snapshot is not None:
+        raw["source_factual_snapshot"] = snapshot
+    sale = normalize.normalize_sale(raw)
+    sale.observations = [{
+        "source_name": "autre", "source_url": other,
+        "raw_payload": {"source_factual_snapshot": {"source_url": other, "starting_price_eur": "118 000 €"}},
+    }]
+
+    assert build_fact_claim_candidates(sale) == []
+
+    # Témoin : la même vente, fiche lue. Son instantané ne donne aucun champ, mais tout le reste est émis.
+    sale.raw_payload["source_factual_snapshot"] = {"source_url": sale.source_url}
+    emitted = {
+        (candidate["field_key"], candidate["evidence_locator"]["kind"], candidate["source_url"])
+        for candidate in build_fact_claim_candidates(sale)
+    }
+    assert emitted == {
+        ("sale.starting_price_eur", "source_block", sale.source_url),
+        ("property.occupancy_status", "source_block", sale.source_url),
+        ("sale.starting_price_eur", "source_field", other),
+    }
