@@ -101,6 +101,7 @@ def test_document_evidence_must_match_a_current_attachment() -> None:
         source_url="https://source.example/listing-with-foreign-pdf",
         documents=[{"url": "https://source.example/current.pdf", "label": "PV actuel"}],
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "starting_price_extraction": {
                 "value_eur": 100000,
                 "evidence": "Mise à prix : 100 000 €",
@@ -160,6 +161,7 @@ def test_missing_field_provenance_does_not_create_a_claim() -> None:
         starting_price_eur=100000,
         surface_m2=80,
         occupancy_status="vacant",
+        raw_payload={"source_factual_snapshot": {"source_name": "fiche lue"}},
     )
 
     assert build_fact_claim_candidates(sale) == []
@@ -216,6 +218,7 @@ def test_document_evidence_without_a_scalar_does_not_reuse_the_canonical_value()
         source_url="https://source.example/document-without-value",
         habitable_surface_m2=80,
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "surface_extraction": {
                 "evidence": "Surface habitable à confirmer",
                 "document_url": "https://source.example/document.pdf",
@@ -232,6 +235,7 @@ def test_document_evidence_without_exact_document_url_is_not_attributed_to_listi
         source_url="https://source.example/listing-with-unlocated-pdf",
         starting_price_eur=100000,
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "starting_price_extraction": {
                 "value_eur": 100000,
                 "evidence": "Mise à prix : 100 000 €",
@@ -250,6 +254,7 @@ def test_document_evidence_rejects_non_https_document_url() -> None:
         source_url="https://source.example/listing-with-insecure-pdf",
         starting_price_eur=100000,
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "starting_price_extraction": {
                 "value_eur": 100000,
                 "evidence": "Mise à prix : 100 000 €",
@@ -752,7 +757,9 @@ def test_fact_claims_version_is_v3() -> None:
 
 def test_a_column_copied_into_the_raw_payload_is_not_a_source_field_claim() -> None:
     """Le premier niveau du ``raw_payload`` est la vente brute entière, colonnes relues comprises : pas une preuve."""
-    sale = AuctionSale(source_name="licitor", source_url=LICITOR_URL, raw_payload=dict(REREAD_COLUMNS))
+    sale = AuctionSale(
+        source_name="licitor", source_url=LICITOR_URL, raw_payload={**REREAD_COLUMNS, "source_factual_snapshot": {"source_name": "fiche lue"}}
+    )
 
     assert build_fact_claim_candidates(sale) == []
 
@@ -885,7 +892,9 @@ def test_a_recomputed_row_claims_what_the_snapshot_says_not_what_its_columns_hol
 
 
 def test_an_observation_summary_scalar_is_not_a_claim_without_the_observation_snapshot() -> None:
-    sale = AuctionSale(source_name="avoventes", source_url="https://source.example/primary-only")
+    sale = AuctionSale(
+        source_name="avoventes", source_url="https://source.example/primary-only", raw_payload={"source_factual_snapshot": {"source_name": "fiche lue"}}
+    )
     sale.observations.append(
         {
             "source_name": "licitor",
@@ -1046,7 +1055,19 @@ def test_a_replayed_claim_snapshot_is_labelled_with_the_version_of_its_identifie
     assert replayed["extractor_version"] == FACT_CLAIMS_VERSION == current["extractor_version"]
 
 
-@pytest.mark.parametrize("snapshot", [None, {}, "illisible"], ids=["absent", "empty", "not_an_object"])
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        None,
+        {},
+        "illisible",
+        # L'instantané d'une autre fiche (ligne canonique d'une fusion) n'est pas celui de cette vente.
+        {"source_url": "https://autre-source.example/vente-1", "starting_price_eur": "118 000 €"},
+        # La page n'a rien donné : tout ce que la vente porte vient de la ligne stockée.
+        {"fields_from_stored_row": ["starting_price_eur", "surface_m2"]},
+    ],
+    ids=["absent", "empty", "not_an_object", "of_another_listing", "only_fields_from_the_stored_row"],
+)
 def test_a_sale_whose_listing_has_no_snapshot_emits_nothing_at_all(snapshot) -> None:
     """Jamais relue depuis que l'instantané existe : ni bloc de source, ni document, ni observation d'une autre source.
 
