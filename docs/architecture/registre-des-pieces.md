@@ -1,13 +1,15 @@
-# Registre des pièces : fondations (lot R1) et durcissement (lot R2a)
+# Registre des pièces : fondations (lot R1), durcissement (lot R2a), décisions et fusion (lot R2b)
 
 Plan : `docs/equipe/2026-11-11-registre-des-pieces.md` (section 10 pour le lot R2). Spécifications : annexes
 `03-base-de-donnees-arbitrage.md` (lot R1), `08-bascule-base-de-donnees.md` et `09-bascule-pipeline.md` (lot R2).
-Migrations `20261116100000` à `20261116100500` (lot R1), `20261117100000` à `20261117100700` (lot R2a).
+Migrations `20261116100000` à `20261116100500` (lot R1), `20261117100000` à `20261117100700` (lot R2a),
+`20261118100000` à `20261118100300` (lot R2b).
 
-**État au lot R2a : toujours inerte.** Aucune fiche ne tient de champ, aucune décision n'est écrite, aucun code de
-l'application ni du pipeline n'appelle la projection. Le noyau de publication de l'agent d'information, son pont et
-`review_auction_fact_claim` ne sont pas modifiés (lots R2b et R2c). Application en production :
-`docs/runbooks/registre-des-pieces-r2a.md`.
+**État au lot R2b : toujours inerte.** Aucune fiche ne tient de champ et aucune décision n'est écrite : les
+fonctions de décision existent sans aucun droit d'exécution, et aucun code de l'application ni du pipeline
+n'appelle la projection. Le noyau de publication de l'agent d'information et son pont ne sont pas modifiés (lot
+R2c). Application en production : `docs/runbooks/registre-des-pieces-r2a.md`, puis
+`docs/runbooks/registre-des-pieces-r2b.md`.
 
 ## Le principe
 
@@ -24,18 +26,21 @@ souvient des anciennes valeurs tenues (mémoire d'écho) et écarte leur retour.
 
 ## Les objets
 
-| Objet                                      | Rôle                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `auction_fact_fields`                      | Les cinq champs (surface, terrain, nombre de pièces, occupation, dates de visite), leurs colonnes, leurs tolérances, `hold_enabled` et `on_listing_change`. Les visites sont verrouillées par contrainte (non tenables).                                                                   |
-| `auction_fact_source_precedence`           | Rang et droit de tenir par origine : administrateur 10, formulaire d'avocat 20, email d'avocat 30, document 50 ; l'annonce (60) ne tient jamais (contrainte).                                                                                                                              |
-| `auction_fact_claim_decisions`             | Journal en ajout seul des décisions (acceptée, rejetée, retirée, opposition, contredite), avec le rattachement au lot. Le statut d'une observation est sa **dernière** décision, dans l'ordre de `seq`. Aucun texte libre.                                                                 |
-| `auction_sale_field_hold_events`           | File de relecture en ajout seul : l'annonce a changé sur un champ tenu, pièce posée, retirée ou refusée par la fiche, contradiction, retour écarté d'une ancienne valeur tenue (`echo_suppressed`).                                                                                        |
-| `app_private.fact_registry_seq`            | Séquence commune aux deux journaux : l'ordre entre une décision et un évènement se lit dans `seq`, jamais dans une date.                                                                                                                                                                   |
-| `auction_sales.held_fields`                | Par champ : une entrée tenue (valeur, pièce, décision, origine, rang, jour de réception, tolérance, réglage, bloc `listing`, colonnes voisines, mémoire d'écho) ou une entrée libérée (mémoire d'écho, valeurs rendues, colonnes voisines, note de blocage). Nulle si rien n'est mémorisé. |
-| `app_private.project_sale_fields`          | La projection : pose et retire les pièces.                                                                                                                                                                                                                                                 |
-| `aaab_auction_sales_hold_projected_fields` | Le déclencheur de retenue. Il écrit aussi `held_fields` : dernière valeur connue de l'annonce, libération d'un champ, échéance de la mémoire d'écho.                                                                                                                                       |
-| `public.get_sale_field_baselines`          | Pour la fusion de doublons de la collecte : les colonnes et la valeur d'annonce des champs tenus. Serveur seul.                                                                                                                                                                            |
-| `public.check_fact_registry_consistency`   | Le contrôle quotidien, en lecture seule ; `public.sync_fact_registry_alerts` en fait des alertes opérationnelles.                                                                                                                                                                          |
+| Objet                                                                    | Rôle                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `auction_fact_fields`                                                    | Les cinq champs (surface, terrain, nombre de pièces, occupation, dates de visite), leurs colonnes, leurs tolérances, `hold_enabled` et `on_listing_change`. Les visites sont verrouillées par contrainte (non tenables).                                                                   |
+| `auction_fact_source_precedence`                                         | Rang et droit de tenir par origine : administrateur 10, formulaire d'avocat 20, email d'avocat 30, document 50 ; l'annonce (60) ne tient jamais (contrainte).                                                                                                                              |
+| `auction_fact_claim_decisions`                                           | Journal en ajout seul des décisions (acceptée, rejetée, retirée, opposition, contredite), avec le rattachement au lot. Le statut d'une observation est sa **dernière** décision, dans l'ordre de `seq`. Aucun texte libre.                                                                 |
+| `auction_sale_field_hold_events`                                         | File de relecture en ajout seul : l'annonce a changé sur un champ tenu, pièce posée, retirée ou refusée par la fiche, contradiction, retour écarté d'une ancienne valeur tenue (`echo_suppressed`).                                                                                        |
+| `app_private.fact_registry_seq`                                          | Séquence commune aux deux journaux : l'ordre entre une décision et un évènement se lit dans `seq`, jamais dans une date.                                                                                                                                                                   |
+| `auction_sales.held_fields`                                              | Par champ : une entrée tenue (valeur, pièce, décision, origine, rang, jour de réception, tolérance, réglage, bloc `listing`, colonnes voisines, mémoire d'écho) ou une entrée libérée (mémoire d'écho, valeurs rendues, colonnes voisines, note de blocage). Nulle si rien n'est mémorisé. |
+| `app_private.project_sale_fields`                                        | La projection : pose et retire les pièces.                                                                                                                                                                                                                                                 |
+| `aaab_auction_sales_hold_projected_fields`                               | Le déclencheur de retenue. Il écrit aussi `held_fields` : dernière valeur connue de l'annonce, libération d'un champ, échéance de la mémoire d'écho.                                                                                                                                       |
+| `public.get_sale_field_baselines`                                        | Pour la fusion de doublons de la collecte : les colonnes et la valeur d'annonce des champs tenus. Serveur seul.                                                                                                                                                                            |
+| `public.check_fact_registry_consistency`                                 | Le contrôle quotidien, en lecture seule, par page ; `public.sync_fact_registry_alerts` enchaîne les pages et en fait des alertes opérationnelles.                                                                                                                                          |
+| `public.accept_auction_fact_claim`, `reject_…`, `withdraw_…`, `oppose_…` | Les quatre décisions d'un administrateur (lot R2b). Aucun droit d'exécution avant le lot R2c. Elles appellent `app_private.decide_auction_fact_claim`, seule fonction qui écrit une décision.                                                                                              |
+| `app_private.lock_sale_for_registry`                                     | Le verrou de ligne de la vente, pris avant toute écriture du registre, sous 3 secondes (`sale_busy` au-delà).                                                                                                                                                                              |
+| `app_private.reproject_drifted_sales`                                    | La relance planifiée de la projection, fermée par défaut (`app_private.fact_registry_switches`).                                                                                                                                                                                           |
 
 Les quatre tables sont fermées aux rôles de l'API (RLS sans politique, lecture seule pour `service_role`),
 n'ont aucune clé étrangère vers `auction_sales` (le journal survit à une fusion et à la purge de la vente) et ne
@@ -83,6 +88,61 @@ replica` : les déclencheurs du registre sont en `enable always`.
   « premier lot », « lot B » ou d'un numéro de lot à quatre chiffres est voulu : le motif n'est pas élargi pour
   eux, ils donnent NULL. La fonction ne tronque pas et ne réécrit pas un libellé pour le faire passer.
 
+## Les décisions
+
+Quatre fonctions publiques, une par décision : accepter, rejeter, retirer, enregistrer une opposition. Elles n'ont
+**aucun droit d'exécution** au lot R2b (ni `anon`, ni `authenticated`, ni `service_role`) ; le lot R2c les ouvrira
+aux administrateurs. Chacune fixe son type de décision et appelle `app_private.decide_auction_fact_claim`, qui
+fait, dans cet ordre :
+
+1. **L'auteur.** Il est lu dans le jeton, `(select auth.uid())`, jamais dans un paramètre, et
+   `public.is_admin()` doit être vrai (second facteur compris quand l'interrupteur `admin_mfa_required` est
+   actif). Sinon `admin_required`.
+2. **Les déclencheurs.** `app_private.assert_fact_registry_triggers()` : sans retenue en place, rien n'est écrit
+   (`registry_unavailable`).
+3. **Les verrous.** La vente d'abord (`app_private.lock_sale_for_registry`, 3 secondes, `sale_busy` au-delà : un
+   lot de publication de la collecte tient une vente 20 à 29 secondes, l'écran réessaie), puis l'observation. Si
+   l'observation a changé de vente entre la lecture et le verrou, `retry`.
+4. **La transition**, jugée sur la dernière décision de l'observation :
+
+   | Décision   | Dernière décision admise                                                                                       |
+   | ---------- | -------------------------------------------------------------------------------------------------------------- |
+   | accepter   | aucune ; ou `rejected`, `withdrawn`, `contradicted`, `accepted` (correction du lot), en nommant cette décision |
+   | rejeter    | aucune, `accepted`, `contradicted`                                                                             |
+   | retirer    | `accepted`                                                                                                     |
+   | opposition | toute sauf `opposed`                                                                                           |
+
+   Sinon `invalid_transition`. Après une opposition, plus aucune acceptation : `opposed_final`.
+
+5. **Les refus propres à l'acceptation** : une pièce de document (`origin_not_open`, ouverte au lot R3) ; une
+   annonce ou une origine non classée (`origin_cannot_hold`) ; une surface sur une vente de terrain
+   (`field_not_applicable`) ; une valeur que le registre ne peut pas tenir (`invalid_argument`).
+6. **L'écriture.** Pour rejeter, retirer ou s'opposer, le rattachement au lot reprend celui de la dernière
+   décision. Le fait de l'agent, la nature du destinataire et la date de réception de la dernière décision sont
+   repris, pour qu'une correction du lot ne fasse pas tomber la provenance. Les motifs, les rattachements et le
+   format de `lot_ref` ne sont pas recopiés dans la fonction : les contraintes de la table jugent.
+7. **La projection de toute la vente**, dans la même transaction.
+
+**Erreurs.** Liste fermée, le message est le code, sans détail ni indice : `admin_required` (42501) ;
+`invalid_reason_code`, `invalid_lot_attachment`, `invalid_argument` (22023) ; `claim_not_found`, `sale_not_found`
+(P0002) ; `invalid_transition`, `opposed_final`, `claim_detached`, `origin_not_open`, `origin_cannot_hold`,
+`field_not_applicable`, `registry_unavailable` (55000) ; `sale_busy` (55P03) ; `retry` (40001) ;
+`registry_write_failed` (P0001) pour toute autre erreur. La fonction ne lit d'une erreur que son code et le nom de
+la contrainte : le détail de PostgreSQL peut porter une ligne entière de `auction_sales`.
+
+**Retour.** `claim_id`, `decision_id`, `decision`, `sale_id` (la vente projetée), `field_key`, `state` (état du
+champ après la projection ; nul pour un champ que le registre ne tient pas, par exemple la mise à prix : la
+décision est enregistrée, rien n'est affiché).
+
+**Observation détachée.** Après une fusion, l'observation n'a plus de vente. Elle se décide pour la vente que nomme
+sa dernière décision (la vente absorbée), et c'est la vente conservée qui est verrouillée et projetée. Une
+observation détachée jamais décidée ne peut plus l'être (`claim_detached`) : la collecte la réémet pour la vente
+conservée.
+
+**`public.review_auction_fact_claim`** (relecture des observations de la collecte, déjà en service) verrouille la
+vente avant l'observation, par la même fonction de verrou, lit la vente par colonnes nommées, et refuse une
+observation d'origine professionnelle ou déjà décidée au journal. Elle ne tient jamais un champ.
+
 ## La projection
 
 `app_private.project_sale_fields(vente, champs, appliquer, indices)` n'est exécutable par aucun rôle de l'API.
@@ -110,11 +170,30 @@ Avec `appliquer = false` (défaut) elle simule sans rien écrire. Pour chaque ch
 reste dans `held_fields` : ces deux colonnes sont lues par les vues publiques. Greffe, notaire, document : aucune
 origine nommée ne devient publique.
 
-**Indices de fusion.** Le quatrième paramètre reçoit les entrées `held_fields` d'une vente absorbée. Une fusion
-écrit la vente conservée avant de supprimer l'absorbée : ses colonnes peuvent déjà porter la valeur que tenait
-l'absorbée. À la première prise d'un champ, si une colonne de valeur égale la valeur ou une valeur d'écho de
-l'indice, le bloc `listing` est celui de l'indice (la vraie valeur d'annonce) ; sinon c'est l'instantané des
-colonnes. La mémoire d'écho de l'indice est reprise. Aucun appelant au lot R2a.
+**Fusion de doublons.** Rien n'est déplacé dans le registre : les décisions gardent l'identifiant de la vente
+absorbée, les observations sont détachées, et la projection de la vente conservée lit les ventes qu'elle a
+absorbées. Depuis le lot R2b, `app_private.carry_sale_user_data_to_merged_sale` (déclencheur avant suppression de la
+vente absorbée) appelle elle-même la projection de la vente conservée, avec les entrées `held_fields` de la vente
+absorbée en **indice** (quatrième paramètre). L'appel n'a lieu que si la vente absorbée tient ou mémorise un champ,
+ou si une décision la nomme. Le journal `information_agent_fact_publications` suit la vente conservée.
+
+Une fusion écrit la vente conservée avant de supprimer l'absorbée : ses colonnes peuvent déjà porter la valeur que
+tenait l'absorbée (colonne « contaminée »). L'indice sert à ne pas prendre cette valeur pour une valeur d'annonce :
+
+| Situation                                                                        | Effet sur la vente conservée                                                                                                                                |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Une pièce prend le champ, une colonne porte la valeur ou un écho de l'indice     | Champ tenu ; le bloc `listing` est celui de l'indice (la vraie valeur d'annonce), pas l'instantané des colonnes                                             |
+| Une pièce prend le champ, aucune colonne contaminée                              | Champ tenu ; le bloc `listing` est l'instantané des colonnes                                                                                                |
+| Aucune pièce ne prend le champ, l'absorbée le tenait, une colonne est contaminée | Les colonnes du champ reprennent le bloc `listing` de l'indice ; entrée `released`, `released_by: merge`, avec `restored` ; évènement `projection_released` |
+| Aucune pièce ne prend le champ, aucune colonne contaminée                        | Colonnes inchangées ; entrée `released`, `released_by: merge`, sans `restored` : seule la mémoire est reprise                                               |
+| La vente conservée tient déjà le champ, les deux pièces se contredisent          | Rien ne bascule (`conflicted`), relecture                                                                                                                   |
+| L'indice est à l'état `released`                                                 | Seule sa mémoire d'écho est reprise, avec ses échéances ; rien n'est affirmé des colonnes                                                                   |
+
+« Aucune pièce ne prend le champ » : la pièce de l'absorbée est délogée par l'annonce de la vente conservée,
+contredite, refusée par le nombre de chambres, ou la vente conservée est un terrain. Dans tous les cas, la valeur
+que tenait l'absorbée entre en mémoire d'écho (7 jours ; sans échéance si sa pièce a reçu une opposition), sauf si
+c'est elle qui tient le champ. Une valeur déjà en mémoire n'est pas rajoutée : rappeler la projection avec le même
+indice ne change rien.
 
 Elle n'échoue jamais sur la contrainte « pièces >= chambres ». Une pièce qui compte moins de pièces que la fiche
 ne compte de chambres n'est pas posée : état `blocked`, évènement `projection_blocked`, et les autres champs
@@ -125,6 +204,25 @@ pose ni ne garde `property.surface_m2` : l'application afficherait la surface b�
 terrain. État `blocked` (raison `land_sale`). Si une pièce toujours acceptée tenait la surface avant le
 reclassement de la vente, le champ est libéré (`released_by: blocked`) et la valeur d'annonce revient. Tant que
 personne n'a reprojeté la vente, le contrôle quotidien la signale (dérive et `stale_listing`).
+
+**Qui relance la projection.** La projection lit des colonnes que la retenue ne tient pas : un reclassement en
+terrain, ou une écriture de `bedrooms_count` par la collecte (une pièce « 3 pièces » bloquée par 6 chambres tient
+le champ dès que les chambres passent à 2), change ce qu'elle déciderait. Aucun déclencheur ne la rappelle (le
+déclencheur de retenue reste passif). Deux relances, depuis le lot R2b :
+
+- toute décision d'administrateur reprojette la vente entière ;
+- la tâche quotidienne `fact-registry-check` appelle `app_private.reproject_drifted_sales` avant le contrôle :
+  pour chaque vente du registre dont la simulation rend `changed`, elle applique la projection.
+
+**La seconde est une écriture de fiche lancée par une tâche planifiée.** Elle ne fait que réappliquer des décisions
+humaines déjà acceptées : elle n'écrit aucune décision, le mode de publication reste `manual`, les verrous de la
+publication automatique ne bougent pas. Elle est **fermée par défaut** : réglage
+`app_private.fact_registry_switches`, ligne `scheduled_reprojection`, que le propriétaire ouvre ou referme sans
+migration de code par `select app_private.set_fact_registry_scheduled_reprojection(true ou false)`. Elle ne fait
+rien tant que le journal des décisions est vide ni quand un déclencheur du registre manque. Elle est bornée (50
+ventes par passage ; les suivantes, une vente occupée par la collecte et une vente dont la projection échoue sont
+comptées et reprises au passage suivant ; après trois ventes occupées, le reste de la passe est reporté) et journalisée (évènement `drift_reprojected`, un par champ dont l'entrée
+a changé). Fermée, la dérive reste signalée par l'alerte critique `fact_registry.projection_drift`.
 
 Une entrée marquée `conflicted` garde la valeur affichée tant que la pièce qui la porte est encore acceptée ;
 quand la contradiction cesse, l'entrée repasse à `held` avec un évènement `projection_held`. Un simple
@@ -245,9 +343,16 @@ décision validée pendant la passe ne doit pas lever une alerte critique. Les c
 les champs tenus : la valeur d'une pièce retirée ou opposée ne doit rester ni dans une colonne, ni dans une
 copie.
 
-**Rapport tronqué.** Au-delà de 500 ventes candidates le rapport est partiel. La base ne synchronise alors que
-les contrôles actifs (aucune alerte n'est refermée), et la tâche échoue au lieu de tenir un rapport partiel pour
-complet.
+**Pages.** Le contrôle examine une page de ventes du registre (500 par défaut), dans l'ordre de leur identifiant,
+après celui passé en second paramètre ; il rend `next_after` quand il reste une page.
+`public.sync_fact_registry_alerts()` enchaîne les pages et additionne leurs rapports : les contrôles par vente
+s'additionnent (compte, vingt premiers identifiants), les contrôles qui ne dépendent pas d'une vente (déclencheurs,
+libellé réservé, file d'évènements) sont ceux de la première page. Le rapport rendu à la tâche porte aussi `pages`
+et `reprojection` (compte rendu de la relance planifiée).
+
+**Rapport tronqué.** Au-delà de 40 pages (20 000 ventes du registre) le rapport est partiel. La base ne synchronise
+alors que les contrôles actifs (aucune alerte n'est refermée), et la tâche échoue au lieu de tenir un rapport
+partiel pour complet.
 
 **Mode des déclencheurs.** `app_private.assert_fact_registry_triggers()` lève `registry_unavailable` si l'un
 des douze déclencheurs du registre manque, n'est plus en mode `always`, ou n'a plus la définition de sa
@@ -296,7 +401,16 @@ mémoire d'écho est dans `app_private.sale_field_echo_memory()`.
 - **Restauration de données seules.** Les déclencheurs du registre sont en mode `always` : la garde
   d'insertion refuse une vente restaurée avec `held_fields`, et les déclencheurs de validation et d'horodatage
   renuméroteraient et redateraient les deux journaux. Procédure dans le runbook.
-- **Borne du contrôle.** Au-delà de 500 ventes candidates, la tâche échoue chaque jour, sans pagination.
+- **Borne du contrôle.** Au-delà de 20 000 ventes du registre (40 pages), la tâche échoue chaque jour.
+- **Indice de fusion à l'état libéré.** Si la vente absorbée avait déjà libéré le champ (retrait, opposition) et que
+  la fusion a écrit l'ancienne valeur de la pièce dans la vente conservée, la colonne n'est pas corrigée : seule la
+  mémoire est reprise. Le contrôle quotidien le signale (`echo_suspected`).
+- **Fusion par le repli REST.** La suppression de la vente absorbée verrouille la vente conservée après l'absorbée,
+  hors de l'ordre par identifiant des lots SQL de la collecte : face à un lot qui tient la vente conservée et
+  demande l'absorbée, PostgreSQL annule l'une des deux transactions. Le repli REST n'est pas le chemin de
+  production.
+- **Relance planifiée et résumé de la tâche.** Le compte rendu de la relance est dans le rapport rendu par la base,
+  que la tâche ne recopie pas encore dans `operational_job_runs`. La trace est l'évènement `drift_reprojected`.
 
 ## Fait au lot R2a (points reportés par le lot R1)
 
@@ -353,52 +467,32 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
   fonctions de génération, `set_config` avec un nom littéral seulement (`set-config-literal-name`, doublé par
   une assertion du test 884 sur le corps des fonctions en base).
 
-## Reste pour le lot R2b
+## Fait au lot R2b
 
-- RPC d'administration (accepter, rejeter, retirer, opposition), sans droit d'exécution ouvert.
-- Report des pièces lors d'une fusion : `carry_sale_user_data_to_merged_sale` appelle la projection avec les
-  indices ; `information_agent_fact_publications` suit la vente conservée.
-- Ordre de verrouillage (la vente d'abord) et délai d'attente de la RPC pendant un import.
-- Côté collecte : copies `properties`, `judicial_sales` et `auction_surfaces` sans les colonnes du registre ;
-  fusion sur les valeurs d'annonce.
-- Indices de fusion, avec leur appelant : un indice sans gagnant (pièce de l'absorbée délogée ou contredite) ou à
-  l'état `released` ne rend pas la valeur d'annonce de l'indice et ne mémorise pas la valeur que tenait
-  l'absorbée ; rappeler la projection avec le même indice prolonge une échéance (`changed = true` à chaque
-  appel).
-- Retirer les copies (`properties`, `judicial_sales`, `auction_surfaces`) du contrôle quotidien une fois l'étape
-  PB de la collecte livrée : des copies figées y donneraient un faux positif permanent.
-- Retirer la tolérance `skipped: migration_pending` de la tâche `fact-registry-check` : une fonction absente
-  (cache de schéma périmé, signature changée, retour arrière partiel) doit devenir un échec, pas un succès.
-- Paginer le contrôle quotidien dès le lot R2b, et non au lot R3 : dès que des pièces seront acceptées en
-  nombre, la borne de 500 ventes candidates fera échouer la tâche chaque jour.
+- Quatre fonctions de décision (accepter, rejeter, retirer, opposition), sans droit d'exécution ; auteur tiré de
+  `auth.uid()` ; contrat de `lot_ref` (normalisé, NULL hors motif) tenu par la contrainte de la table.
+- Ordre de verrouillage (la vente d'abord) et délai de 3 secondes, pour les décisions et pour
+  `review_auction_fact_claim`.
+- Report des pièces lors d'une fusion ; `information_agent_fact_publications` suit la vente conservée ; indice de
+  fusion sans gagnant, mémoire de l'indice, stabilité au rappel.
+- Relance de la projection : par toute décision, et par la tâche quotidienne (fermée par défaut).
+- Contrôle quotidien paginé.
+
+## Reporté après le lot R2b
+
+- Côté collecte (étape PB) : copies `properties`, `judicial_sales` et `auction_surfaces` sans les colonnes du
+  registre ; fusion sur les valeurs d'annonce. **Ensuite seulement** : retirer ces copies du contrôle quotidien
+  (des copies figées y donneraient un faux positif permanent ; les retirer avant ôterait une détection réelle).
+- Tâche `fact-registry-check` (lot TypeScript, après l'application du lot R2a) : retirer la tolérance
+  `skipped: migration_pending` ; réduire à un code le message d'erreur recopié dans
+  `operational_job_runs.error_message` ; recopier `pages` et `reprojection` dans le résumé.
+- Index partiel pour la liste de relecture d'administration, si l'écart mesuré en production avant et après la
+  migration `20261117100700` dépasse 100 ms (contrôle A4 du runbook R2a).
 - Levée ou restitution après une opposition bloquante : une valeur d'annonce légitime, égale ou proche (à la
-  tolérance du champ) de la valeur opposée, est retenue pour la vie de la vente. Il faut un geste d'administration
-  qui lève le blocage, ou la restitution de la valeur d'annonce (voir le lot R2c).
-- Qui relance la projection quand une écriture de la collecte change ce qu'elle déciderait. La projection lit
-  des colonnes que la retenue ne surveille pas ou ne tient pas, et aucune écriture de la collecte ne l'appelle.
-  Deux cas connus, tous deux prouvés sur base jetable :
-  - un reclassement en terrain (`property_type` ou `surface_scope`) : la surface tenue n'est libérée qu'à la
-    projection suivante ;
-  - une écriture de `bedrooms_count` : une pièce « 3 pièces » acceptée sur une vente à 7 pièces et 6 chambres
-    est bloquée (plus de chambres que de pièces) ; la collecte corrige ensuite les chambres à 2, sans autre
-    écriture, et la simulation répond dès lors `changed = true` : la pièce tiendrait le champ, personne ne
-    l'applique.
-
-  D'ici la projection suivante, le contrôle quotidien lève l'alerte critique `fact_registry.projection_drift`.
-  La dérive ne suit donc pas `property_type` seul. À décider au lot R2b : la RPC de décision relance, la collecte
-  signale les ventes à reprojeter, ou le contrôle quotidien applique lui-même.
-
+  tolérance du champ) de la valeur opposée, est retenue pour la vie de la vente (voir le lot R2c).
 - Faux positif de `echo_suspected` quand une colonne voisine est écrite APRÈS la première prise avec une valeur
   que la retenue n'écarte pas (par exemple la valeur d'annonce d'un autre champ égale à la pièce, ou une valeur
   déjà en place qu'une pièce de remplacement vient égaler) : le relevé `neighbors` date de la première prise.
-- `actor_id` d'une décision tiré de `auth.uid()`, jamais d'un paramètre de la RPC : aujourd'hui la base
-  vérifie seulement que l'identifiant nommé est celui d'un administrateur existant.
-- Tâche `fact-registry-check` : le message d'erreur de PostgreSQL est recopié dans
-  `operational_job_runs.error_message` et dans les journaux, comme pour les autres tâches ; le réduire à un code.
-- Index partiel pour la liste de relecture d'administration, si l'écart mesuré en production avant et après la
-  migration `20261117100700` dépasse 100 ms (contrôle A4 du runbook).
-- Le noyau refuse une observation préexistante dont la vente, le champ ou la valeur diffèrent du fait de
-  l'agent (l'index unique sur l'identifiant de fait ne garantit que l'unicité, pas le contenu).
 - Invariant `pipeline-no-wildcard-sale-read` : la collecte ne lit jamais la ligne entière d'une vente
   (`select=*`, `return=representation` sans liste de colonnes).
 
@@ -407,8 +501,12 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
 - Le noyau de l'agent d'information écrit observation, décision et projection ; le pont est retiré.
 - La mention publique lit le registre ; fonction séparée pour les origines autres que l'avocat poursuivant.
 - Refus d'un bloc d'annonce marqué `information_agent_verified` à la première prise (reprise de l'existant).
-- Écran de relecture : valeur d'annonce lue dans le registre, messages d'erreur.
-- Droits des RPC ouverts aux administrateurs, après vérification du second facteur.
+- Écran de relecture : valeur d'annonce lue dans le registre (fonction de lecture `get_admin_sale_field_registry`),
+  messages d'erreur, nouvelle tentative seule sur `sale_busy` et `retry`.
+- Droits des quatre fonctions de décision ouverts aux administrateurs, après vérification du second facteur.
+- Le noyau refuse une observation préexistante dont la vente, le champ ou la valeur diffèrent du fait de l'agent
+  (l'index unique sur l'identifiant de fait ne garantit que l'unicité, pas le contenu).
+- Relance planifiée : ouverte ou fermée le jour de la bascule, décision du propriétaire.
 - Surface principale d'une vente de terrain tenue (voir « Limites connues ») : les tris, les filtres et les
   ratios au mètre carré lisent `app_surface_m2`, donc l'annonce, alors que la fiche affiche le terrain de la
   pièce.
@@ -424,14 +522,18 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
 Tests pgTAP `881` (tables, droits, journaux, format du lot), `882` (retenue), `883` (projection), `884`
 (séquence commune, gardes, garde du marqueur, origine forgée, mode et fonction des déclencheurs, historique, RPC,
 index construits dans le test, inertie prouvée), `885` (mémoire d'écho, colonnes voisines, annonce qui se tait,
-indices de fusion, libellé réservé, écriture mixte, note de blocage, vente de terrain, opposition tardive), `889`
-(valeurs d'annonce, contrôle quotidien sur les champs tenus et libérés, alertes, rapport tronqué), `890` (vue
+indices de fusion, libellé réservé, écriture mixte, note de blocage, vente de terrain, opposition tardive), `887`
+(fonctions de décision : droits, auteur, transitions, refus, erreurs sans détail, reprojection de la vente,
+observation détachée), `888` (fusion : report, indice sans gagnant, stabilité, opposition, publications), `889`
+(valeurs d'annonce, contrôle quotidien sur les champs tenus et libérés, alertes, rapport tronqué, pages, relance
+planifiée), `890` (vue
 des observations par génération), `891` (stabilité de la projection, essai aléatoire à graine fixe) et `442`
 (vues). Invariants de
 `scripts/check-security-invariants-fact-registry.mjs` : `fact-registry-tables-closed`,
 `fact-registry-append-only`, `held-fields-projection-only`, `hold-trigger-present-early`,
 `field-projection-not-callable-by-api`, `fact-claims-never-repointed`, `registry-no-fk-to-auction-sales`,
 `held-fields-never-returned`, `fact-registry-check-read-only`, `registry-neutral-surface-labels`,
-`fact-claims-generation-pattern`, `set-config-literal-name`. La publication automatique reste verrouillée
+`fact-claims-generation-pattern`, `set-config-literal-name`, `registry-rpc-actor-from-jwt`,
+`registry-rpc-no-error-detail`. La publication automatique reste verrouillée
 (`auction_fact_claim_decisions_auto_locked`, `auction_fact_claim_decisions_accepted_by_admin`), les dates de
 visite aussi (`auction_fact_fields_visit_dates_locked`).
