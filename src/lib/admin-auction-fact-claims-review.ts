@@ -193,14 +193,15 @@ function requireAdmin(auth: SupabaseAuthContext): void {
   if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
-async function loadSaleSummaries(ids: string[]): Promise<Map<string, SaleSummary>> {
+/** Résumé et valeurs affichées aujourd'hui des ventes d'une page d'observations. */
+export async function loadSaleSummaries(ids: string[]): Promise<Map<string, SaleSummary>> {
   const uniqueIds = [...new Set(ids)];
   if (!uniqueIds.length) return new Map();
 
   const { data, error } = await supabaseAdmin
     .from("auction_sales")
     .select(
-      "id,title,city,sale_date,starting_price_eur,surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,occupancy_status",
+      "id,title,city,sale_date,starting_price_eur,surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,occupancy_status,rooms_count,visit_dates",
     )
     .in("id", uniqueIds);
   if (error) throw error;
@@ -218,12 +219,14 @@ async function loadSaleSummaries(ids: string[]): Promise<Map<string, SaleSummary
         carrezSurfaceM2: row.carrez_surface_m2,
         landSurfaceM2: row.land_surface_m2,
         occupancyStatus: row.occupancy_status,
+        roomsCount: row.rooms_count,
+        visitDates: row.visit_dates,
       },
     ]),
   );
 }
 
-type SaleSummary = {
+export type SaleSummary = {
   title: string | null;
   city: string | null;
   saleDate: string | null;
@@ -233,6 +236,8 @@ type SaleSummary = {
   carrezSurfaceM2: number | null;
   landSurfaceM2: number | null;
   occupancyStatus: string | null;
+  roomsCount: number | null;
+  visitDates: unknown;
 };
 
 function toReviewItem(row: ClaimReadRow, sale: SaleSummary): AdminAuctionFactClaimReviewItem {
@@ -268,7 +273,8 @@ function toReviewItem(row: ClaimReadRow, sale: SaleSummary): AdminAuctionFactCla
   };
 }
 
-function canonicalValue(fieldKey: string, sale: SaleSummary): unknown {
+/** Valeur que la fiche affiche aujourd'hui pour ce champ ; nulle si le champ n'a pas de colonne connue ici. */
+export function canonicalValue(fieldKey: string, sale: SaleSummary): unknown {
   switch (fieldKey) {
     case "sale.sale_date":
       return sale.saleDate;
@@ -284,6 +290,10 @@ function canonicalValue(fieldKey: string, sale: SaleSummary): unknown {
       return sale.landSurfaceM2;
     case "property.occupancy_status":
       return sale.occupancyStatus;
+    case "property.rooms_count":
+      return sale.roomsCount;
+    case "sale.visit_dates":
+      return sale.visitDates;
     default:
       return null;
   }
