@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -41,6 +42,10 @@ from src.storage import supabase_client as storage
 
 DB_URL_ENV = "PIPELINE_REGISTRY_DB_URL"
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+# Variables que le pilote lit en plus de l'adresse et qui changent l'hôte réellement joint.
+REDIRECTING_ENV = ("PGHOSTADDR", "PGSERVICE")
+# Réglage par défaut de ``auction_fact_fields.on_listing_change`` (migrations du registre).
+DEFAULT_ON_LISTING_CHANGE = "keep_and_review"
 REQUIRED_ENV = "PIPELINE_REGISTRY_DB_REQUIRED"
 ROOMS = "property.rooms_count"
 SURFACE = "property.surface_m2"
@@ -57,6 +62,12 @@ def _db_url() -> str:
     hosts = _connection_hosts(url)
     if not hosts or not set(hosts) <= LOCAL_HOSTS:
         pytest.fail(f"{DB_URL_ENV} doit désigner une base locale (hôtes {hosts!r} refusés) : ces tests écrivent.")
+    redirecting = [name for name in REDIRECTING_ENV if os.getenv(name)]
+    if redirecting:
+        pytest.fail(
+            f"{', '.join(redirecting)} est posée : le pilote joindrait un autre hôte que celui de {DB_URL_ENV}. "
+            "Ces tests écrivent et n'acceptent qu'une base locale."
+        )
     return url
 
 
@@ -82,10 +93,17 @@ def _connection_hosts(url: str) -> list[str]:
 
 
 def _require_projection_owner(db: Any) -> None:
-    """Les scénarios posent des pièces comme le fait la projection : il faut être son propriétaire.
+    """Avant la première écriture : la base jointe est locale, et le rôle est le propriétaire de la projection.
 
-    Les gardes par rôle du registre refusent tout autre rôle. On ne les contourne pas : on le dit.
+    L'adresse est vérifiée du côté du serveur (ce que la connexion a réellement joint, quoi qu'en dise son
+    adresse) : bouclage, ou nulle pour une socket. Les scénarios posent des pièces comme le fait la projection, et
+    les gardes par rôle du registre refusent tout autre rôle : on ne les contourne pas, on le dit.
     """
+    import ipaddress
+
+    server = db.execute("select pg_catalog.host(pg_catalog.inet_server_addr())").fetchone()[0]
+    if server is not None and not ipaddress.ip_address(server).is_loopback:
+        pytest.fail(f"La connexion a joint {server}, qui n'est pas une base locale : ces tests écrivent.")
     found = db.execute(
         """select pg_catalog.pg_get_userbyid(routine.proowner), current_user
            from pg_catalog.pg_proc routine
@@ -138,12 +156,39 @@ def test_a_database_that_is_not_local_is_refused(monkeypatch, url) -> None:
         _db_url()
 
 
+@pytest.mark.parametrize("name", ["PGHOSTADDR", "PGSERVICE"])
+def test_a_local_address_redirected_by_the_environment_is_refused(monkeypatch, name) -> None:
+    """``PGHOSTADDR`` l'emporte sur l'hôte de l'adresse, ``PGSERVICE`` peut le remplacer : le pilote joindrait ailleurs."""
+    monkeypatch.setenv(DB_URL_ENV, "postgresql://postgres@127.0.0.1:55600/replay")
+    monkeypatch.setenv(name, "203.0.113.7" if name == "PGHOSTADDR" else "ailleurs")
+    with pytest.raises(pytest.fail.Exception, match=name):
+        _db_url()
+
+
+def test_a_server_that_is_not_on_the_loopback_is_refused_before_any_write() -> None:
+    """Le contrôle se fait sur ce que le serveur dit de lui-même, pas sur l'adresse demandée."""
+
+    class _Elsewhere:
+        statements: list[str] = []
+
+        def execute(self, statement: str):
+            self.statements.append(statement)
+            return type("Rows", (), {"fetchone": lambda _self: ("203.0.113.7",)})()
+
+    db = _Elsewhere()
+    with pytest.raises(pytest.fail.Exception, match="203.0.113.7"):
+        _require_projection_owner(db)
+    assert len(db.statements) == 1 and "inet_server_addr" in db.statements[0]
+
+
 @pytest.mark.parametrize(
     "url",
     ["postgresql://postgres@127.0.0.1:55600/replay", "postgresql://postgres:mot@localhost:54322/postgres?hostaddr=127.0.0.1"],
 )
 def test_a_local_database_is_accepted(monkeypatch, url) -> None:
     monkeypatch.setenv(DB_URL_ENV, url)
+    for name in REDIRECTING_ENV:
+        monkeypatch.delenv(name, raising=False)
     assert _db_url() == url
 
 
@@ -178,13 +223,16 @@ class Registry:
         import psycopg
 
         self.db = psycopg.connect(url, autocommit=True)
+        self.admin = str(uuid.uuid4())
+        self.case = str(uuid.uuid4())
         try:
             _require_projection_owner(self.db)
+            self._create_admin()
         except BaseException:
             self.db.close()
             raise
-        self.admin = str(uuid.uuid4())
-        self.case = str(uuid.uuid4())
+
+    def _create_admin(self) -> None:
         self.db.execute("insert into auth.users (id) values (%s)", (self.admin,))
         self.db.execute(
             """insert into public.user_profiles (user_id, email, user_role) values (%s, %s, 'admin')
@@ -195,10 +243,18 @@ class Registry:
     def close(self) -> None:
         self.db.close()
 
-    def setting(self, field: str) -> str:
-        return self.db.execute(
-            "select on_listing_change from public.auction_fact_fields where field_key = %s", (field,)
-        ).fetchone()[0]
+    @contextmanager
+    def listing_change(self, field: str, value: str) -> Iterator[None]:
+        """Joue un scénario sous ce réglage, puis remet le réglage par défaut du registre.
+
+        Le défaut connu, pas la valeur lue en entrant : deux exécutions en même temps se rendraient sinon l'une à
+        l'autre un réglage de test, et il resterait en place.
+        """
+        self.set_setting(field, value)
+        try:
+            yield
+        finally:
+            self.set_setting(field, DEFAULT_ON_LISTING_CHANGE)
 
     def set_setting(self, field: str, value: str) -> None:
         self.db.execute(
@@ -449,28 +505,26 @@ def _scenario_replacement(registry: Registry, label: str) -> tuple[str, str, str
 
 
 def test_scenario_b_a_replaced_value_is_not_reported_as_a_listing_change(registry, sent) -> None:
-    assert registry.setting(ROOMS) == "keep_and_review"
-    say("\n=== B. Remplacement pendant l'import, réglage keep_and_review, avec la garde d'écho ===")
-    sale_id, first, second = _scenario_replacement(registry, "B")
+    with registry.listing_change(ROOMS, "keep_and_review"):
+        say("\n=== B. Remplacement pendant l'import, réglage keep_and_review, avec la garde d'écho ===")
+        sale_id, first, second = _scenario_replacement(registry, "B")
 
-    assert registry.row(sale_id)["rooms_count"] == 4
-    assert registry.listing_events(sale_id) == []
-    assert registry.listing_memory(sale_id, ROOMS) == {"rooms_count": 2}
-    assert sent[-1]["rooms_count"] == 4
-    assert registry.echo_events(sale_id) == []
-    assert base_reads.suppressed_count() == 1
+        assert registry.row(sale_id)["rooms_count"] == 4
+        assert registry.listing_events(sale_id) == []
+        assert registry.listing_memory(sale_id, ROOMS) == {"rooms_count": 2}
+        assert sent[-1]["rooms_count"] == 4
+        assert registry.echo_events(sale_id) == []
+        assert base_reads.suppressed_count() == 1
 
-    registry.withdraw(sale_id, first, second)
-    say(f"B8 après retrait des deux pièces  : {registry.describe(sale_id)}")
-    # La fiche revient à ce que dit l'annonce : la valeur mémorisée n'a pas été faussée par l'écho.
-    assert registry.row(sale_id)["rooms_count"] == 2
-    assert registry.held(sale_id) == set()
+        registry.withdraw(sale_id, first, second)
+        say(f"B8 après retrait des deux pièces  : {registry.describe(sale_id)}")
+        # La fiche revient à ce que dit l'annonce : la valeur mémorisée n'a pas été faussée par l'écho.
+        assert registry.row(sale_id)["rooms_count"] == 2
+        assert registry.held(sale_id) == set()
 
 
 def test_scenario_c_a_replaced_value_does_not_release_the_field(registry, sent) -> None:
-    previous = registry.setting(ROOMS)
-    registry.set_setting(ROOMS, "listing_wins_and_review")
-    try:
+    with registry.listing_change(ROOMS, "listing_wins_and_review"):
         say("\n=== C. Remplacement pendant l'import, réglage listing_wins_and_review, avec la garde d'écho ===")
         sale_id, _first, _second = _scenario_replacement(registry, "C")
 
@@ -486,8 +540,6 @@ def test_scenario_c_a_replaced_value_does_not_release_the_field(registry, sent) 
         assert state in {"held", "unchanged"}
         assert registry.row(sale_id)["rooms_count"] == 4
         assert registry.row(sale_id)["held_fields"][ROOMS]["value"] == 4
-    finally:
-        registry.set_setting(ROOMS, previous)
 
 
 @pytest.mark.parametrize("setting", ["keep_and_review", "listing_wins_and_review"])
@@ -496,17 +548,13 @@ def test_scenarios_b_and_c_without_the_guard_the_collection_sends_the_replaced_v
 ) -> None:
     """Témoin des scénarios B et C sans la garde : la valeur remplacée repart, le filet de la base l'écarte."""
     without_the_guard(monkeypatch)
-    previous = registry.setting(ROOMS)
-    registry.set_setting(ROOMS, setting)
-    try:
+    with registry.listing_change(ROOMS, setting):
         say(f"\n=== {'B' if setting == 'keep_and_review' else 'C'} (témoin). Même scénario sans la garde ({setting}) ===")
         sale_id, first, second = _scenario_replacement(registry, "T")
         assert sent[-1]["rooms_count"] == 3
         assert [field for field, _value in registry.echo_events(sale_id)] == [ROOMS]
         registry.withdraw(sale_id, first, second)
         say(f"T8 après retrait des deux pièces  : {registry.describe(sale_id)}")
-    finally:
-        registry.set_setting(ROOMS, previous)
 
 
 # --- Régime permanent : rien ne bouge, la collecte écrit comme avant -----------------------------------------------------
@@ -639,3 +687,39 @@ def test_scenario_d_a_piece_posed_during_the_import_survives_a_sale_merged_from_
     # La collecte a renvoyé la valeur de l'annonce, que la base connaît : ce n'est pas un « changement de l'annonce ».
     assert registry.listing_events(sale_id) == []
     assert registry.listing_memory(sale_id, ROOMS) == {"rooms_count": 2}
+
+
+def test_the_scenario_connection_is_closed_when_its_setup_fails(monkeypatch) -> None:
+    """Le contrôle du rôle passe, puis une insertion échoue : la connexion ne reste pas ouverte."""
+    import psycopg
+
+    opened: list[Any] = []
+    real_connect = psycopg.connect
+
+    def connect(*args, **kwargs):
+        opened.append(real_connect(*args, **kwargs))
+        return opened[-1]
+
+    def failing_setup(self) -> None:
+        raise RuntimeError("insertion refusée")
+
+    monkeypatch.setattr(psycopg, "connect", connect)
+    monkeypatch.setattr(Registry, "_create_admin", failing_setup)
+    with pytest.raises(RuntimeError, match="insertion refusée"):
+        Registry(_db_url())
+
+    assert [connection.closed for connection in opened] == [True]
+
+
+def test_a_scenario_setting_goes_back_to_the_registry_default_even_when_the_scenario_fails(registry) -> None:
+    def setting() -> str:
+        return registry.db.execute(
+            "select on_listing_change from public.auction_fact_fields where field_key = %s", (ROOMS,)
+        ).fetchone()[0]
+
+    registry.set_setting(ROOMS, "listing_wins_and_review")  # laissé par une autre exécution, au même moment
+    with pytest.raises(RuntimeError, match="scénario"), registry.listing_change(ROOMS, "listing_wins_and_review"):
+        assert setting() == "listing_wins_and_review"
+        raise RuntimeError("scénario en échec")
+
+    assert setting() == DEFAULT_ON_LISTING_CHANGE
