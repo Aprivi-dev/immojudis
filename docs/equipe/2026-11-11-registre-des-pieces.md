@@ -341,3 +341,56 @@ Le propriétaire indique avoir échangé avec les notaires, qui sont d'accord : 
 - Rien d'autre ne change : chaque envoi reste validé un par un par un administrateur, le pilote automatique reste éteint et n'écrit qu'aux avocats, la liste de questions d'un notaire reste la liste courte, et l'opposition d'une étude vaut pour toutes ses adresses.
 - Pour refermer : retirer la variable ou lui donner une autre valeur que `true`, puis redéployer.
 - Comme pour Licitor, garder au dossier la trace écrite de cet accord. Les textes à mettre à jour avant publication (annexe 14, section 5) restent à faire relire par un avocat : le registre des traitements classe encore notaires.fr « désactivé sans autorisation écrite ».
+
+## 15. Journal du 12/11/2026 : fin de la bascule R2
+
+**État en fin de journée.** Les trois étapes du lot R2 sont en production. Les décisions du registre sont ouvertes aux administrateurs connectés depuis 16:34 UTC. Le registre est encore vide (0 vente tenue, 0 décision) : la première décision reste à faire par le propriétaire.
+
+| PR   | Objet                                                                    | État                            |
+| ---- | ------------------------------------------------------------------------ | ------------------------------- |
+| #490 | Contrôle de dérive : index sur deux lignes, messages lisibles            | En production                   |
+| #491 | Contrôle anti-secrets : fichiers du lot R2b                              | Fusionnée                       |
+| #492 | Suppression du rôle `lovable_readonly`                                   | Appliquée à 12:16 UTC, vérifiée |
+| #493 | Lot R2a côté collecte (garde d'écho, observations en version 3)          | Fusionnée à 13:00 UTC           |
+| #494 | Lot R2b (fonctions de décision sans droit, report à la fusion, contrôle) | Appliquée à 13:53 UTC, vérifiée |
+| #495 | Lot R2c, écran de décision                                               | Fusionnée                       |
+| #496 | Lot R2c, base (ouverture des droits, durcissement, garde de l'API)       | Appliquée à 16:34 UTC, vérifiée |
+| #497 | Contrôle anti-secrets : fichiers du lot R2c                              | Fusionnée                       |
+
+**Lot R2a côté base.** Appliqué le 12/11 à 08:50 UTC. L'étape de contrôle de dérive a échoué sur une fausse alerte (deux index imprimés sur deux lignes), corrigée par la PR #490.
+
+**Décisions du propriétaire (12/11).**
+
+- Pas de double authentification pour l'instant. Il prévoit de mieux sécuriser son compte administrateur.
+- Pas de plafond sur les décisions pour l'instant.
+- Lovable n'est plus utilisé : suppression du compte de lecture en base.
+- Refonte `untangle-codebase` zone par zone après la bascule R2.
+- Travailler plus vite : plus de nouveau tour de corrections pour les remarques mineures, fusion dès que la CI est verte et qu'aucun point important ne reste ouvert. Les relectures indépendantes sont gardées.
+
+**Risque accepté.** Sans second facteur ni plafond, un mot de passe administrateur volé permet un nombre illimité de décisions, dont des oppositions et des retraits d'autorisation, qui sont définitifs. Les deux mécanismes existent en base et se rallument par un réglage (`decisions_require_second_factor`, `decision_rate_limits_enabled`). La tâche quotidienne alerte sur toute décision définitive. Procédure d'urgence : `docs/runbooks/registre-des-pieces-r2c.md`, « Retour arrière » (refermer les quatre droits d'abord).
+
+**Suppression du rôle Lovable.** La migration a été éprouvée en CI sur la pile Supabase (PostgreSQL 17, `postgres` non superutilisateur, supautils chargé) avant d'être appliquée. En production : rôle absent, aucun droit ni privilège par défaut restant, contrôle de dérive vert. Reste à la main du propriétaire : désinstaller l'application GitHub de Lovable (173 commits de son robot en mai 2026) et déconnecter le projet côté Lovable.
+
+**Lot R2a côté collecte.** Mesure en production avant fusion (lecture seule, ventes à venir, couples vente et fait) : 68 couples où l'ancienne observation n'était qu'une recopie, 26 sur des ventes sans instantané, 19 non évalués. Choix prudent : une vente sans instantané n'émet rien en version 3 et garde ses observations de version 2. Premier passage après fusion (Cessions de l'État, 13:31 UTC) : 179 ventes écrites, 433 observations en version 3, compteur d'écho à 0, 23 minutes ; passage marqué incomplet pour une erreur 502 du relais sur une fiche, sans rapport avec le lot.
+
+**Bilan des 24 heures d'observation du lot R1.** Registre inerte. Trois passages interrompus le 11/11 : deux par la panne de paquets déjà décrite, le troisième (20:30 UTC) par un échec de démarrage côté GitHub. Aucun n'est dû à un lot.
+
+**Lot R2c.** Les quatre fonctions de décision sont ouvertes à `authenticated` seul ; la fonction vérifie le rôle administrateur dans `user_profiles`. L'écran est dans Admin, Agent IA, onglet Réponses. Contrôles après application : le site répond comme avant (recherche à 791 ventes), droits et réglages conformes, déclencheurs du registre en mode `always`.
+
+**Garde de l'API contre les fonctions d'extension.** PostGIS est installé dans `public` et ses fonctions sont exécutables par les rôles de l'API. `st_findextent` est une injection SQL complète (prouvée en local) : appelée, elle permettrait d'usurper un administrateur. Elle n'était pas appelable par `/rpc` (vérifié en production, 404), mais cette protection ne tenait qu'à une règle de PostgREST. La migration `20261119100050` refuse désormais, pour `anon` et `authenticated`, tout chemin encodé et tout appel d'une fonction d'extension. Au passage, une faille existante est fermée : `spatial%5Fref%5Fsys` était lisible avant l'application (200), refusée après (42501). Correction de fond reportée : sortir PostGIS de `public`.
+
+**Erreur d'ordre du chef d'orchestre.** Le contrôle anti-secrets parcourt l'historique de toutes les branches. Deux branches ont été poussées avant la déclaration de leurs fichiers, ce qui a fait échouer ce contrôle sur toutes les PR ouvertes pendant une heure. Règle à tenir : déclarer d'abord, pousser ensuite.
+
+**Garde-fou de lecture seule.** Plusieurs contrôles des runbooks appellent des fonctions que le hook refuse aux agents (`aclexplode`, `current_database`, `has_function_privilege`, `fact_registry_triggers_not_always`, `check_fact_registry_consistency`). Ils n'ont pas été contournés ; des mesures équivalentes par lecture du catalogue les ont remplacés.
+
+**Suites, par ordre de priorité.**
+
+1. Première décision d'essai par le propriétaire, puis contrôle de la tâche quotidienne `fact-registry-check` (05:28 UTC).
+2. Contournements des invariants encore ouverts (liste dans le rapport de sécurité de R2c) et droits trop larges non détectés par le script (`grant ... on all functions`).
+3. Sortir PostGIS de `public`.
+4. Collecte : poser l'instantané relu quand la fiche est inchangée (quatre lignes déjà écrites puis retirées) ; score calculé sur la valeur en mémoire quand un groupe est repris de la base ; suppression des doublons vente par vente.
+5. Écran : valeur d'annonce et état du champ lus dans le registre (`get_admin_sale_field_registry`), tri de la file, formats de date et de prix, état des plafonds au résumé de la tâche.
+6. Fiabilité : passage resté ouvert 60 à 90 minutes après un échec de démarrage GitHub, sans alerte ; aucune alerte sur une tâche d'enrichissement bloquée (une tâche PDF l'est depuis le 11/11 12:58 UTC).
+7. Lovable : retirer l'étape de CI et le script d'essai de la suppression du rôle ; question du registre des traitements pour la période passée (`juridique-rgpd`).
+8. Décisions du propriétaire : annulation d'une opposition ou d'un retrait, ouverture de la relance planifiée, relecture humaine obligatoire des migrations (`CODEOWNERS`), signalement CodeQL classé sur la PR #490 à fermer dans l'onglet Sécurité.
+9. Refonte `untangle-codebase` zone par zone, en commençant par l'outil de sollicitation.
