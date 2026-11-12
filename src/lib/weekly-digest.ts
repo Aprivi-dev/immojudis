@@ -50,7 +50,7 @@ export const MAX_DEFERRAL_DAYS = 2;
 /** Fenêtre des audiences annoncées. */
 export const AUDIENCE_WINDOW_DAYS = 14;
 /** Les changements et les nouvelles ventes plus anciens ne sont pas repris. */
-export const LOOKBACK_DAYS = 7;
+const LOOKBACK_DAYS = 7;
 /** Éléments listés par rubrique : au-delà, « … et N autres » et le lien vers « Mes favoris ». */
 export const MAX_AUDIENCES = 10;
 export const MAX_CHANGES = 10;
@@ -110,7 +110,7 @@ export function parisDayStart(now: Date): Date {
 
 // -- Accès aux données ---------------------------------------------------------------------------------
 
-export type WeeklyDigestSettings = { userId: string; weekday: number };
+type WeeklyDigestSettings = { userId: string; weekday: number };
 
 export type NewSaleSummary = {
   id: string;
@@ -167,7 +167,7 @@ export interface WeeklyDigestStore {
 }
 
 /** Raison courte d'un envoi en échec, conservée au journal à la place du texte d'erreur. */
-export const WEEKLY_DIGEST_FAILURE_CODES = [
+const WEEKLY_DIGEST_FAILURE_CODES = [
   "email_unavailable",
   "email_lookup_failed",
   "message_build_failed",

@@ -55,13 +55,11 @@ export const valuationBacktestQuerySchema = z.object({
   months: z.coerce.number().int().min(12).max(84).default(48),
   maxTests: z.coerce.number().int().min(5).max(80).default(30),
 });
-
-export type ValuationBacktestQueryInput = z.input<typeof valuationBacktestQuerySchema>;
 export type ValuationBacktestQuery = z.output<typeof valuationBacktestQuerySchema>;
 
-export type ValuationBacktestStatus = "strong" | "usable" | "fragile" | "missing";
+type ValuationBacktestStatus = "strong" | "usable" | "fragile" | "missing";
 
-export type ValuationBacktestPoint = {
+type ValuationBacktestPoint = {
   transactionId: string;
   saleDate: string;
   city: string | null;
@@ -82,7 +80,7 @@ export type ValuationBacktestPoint = {
   distanceM: number | null;
 };
 
-export type ValuationBacktestSummary = {
+type ValuationBacktestSummary = {
   status: ValuationBacktestStatus;
   confidenceLabel: string;
   testedTransactions: number;

@@ -163,7 +163,7 @@ const LISTING_PLAIN_CONTACT_SCORE = 76;
 /** Un rôle établi (avocat, notaire, organisateur) vaut quatre points de plus qu'un simple contact de l'annonce. */
 const ESTABLISHED_ROLE_BONUS = 4;
 /** Écart de score qui fait choisir un contact seul, et que la préférence générique donne à l'adresse générique. */
-export const INFORMATION_AGENT_SELECTION_MARGIN = 12;
+const INFORMATION_AGENT_SELECTION_MARGIN = 12;
 const LISTING_BLOCK_NAMES: readonly InformationAgentListingBlockName[] = [
   "contact",
   "manager",

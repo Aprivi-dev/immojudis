@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -7,23 +6,13 @@ import {
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getPlanUsageSummary } from "@/lib/usage";
 
-const PRIVATE_AUTH_HEADERS = {
-  "cache-control": "private, no-store",
-  vary: "authorization",
-};
-
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.feature-entitlements", fallbackMessage: "Accès indisponible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const plan = await resolvePlanEntitlements(auth);
-    if (new URL(request.url).searchParams.get("scope") === "plan") {
-      return NextResponse.json({ plan }, { headers: PRIVATE_AUTH_HEADERS });
-    }
+    if (new URL(request.url).searchParams.get("scope") === "plan") return { plan };
     const usage = await getPlanUsageSummary({ auth, plan });
-    return NextResponse.json({ plan, usage }, { headers: PRIVATE_AUTH_HEADERS });
-  } catch (error) {
-    return apiRouteError(error, request, "feature-entitlements", {
-      fallbackMessage: "Accès indisponible",
-    });
-  }
-}
+    return { plan, usage };
+  },
+);

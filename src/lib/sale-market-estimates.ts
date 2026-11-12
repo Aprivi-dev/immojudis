@@ -208,7 +208,7 @@ export async function getPrecomputedMarketEstimate(saleId: string): Promise<Mark
   return (await getStoredSaleMarketContext(saleId)).estimate;
 }
 
-export async function enqueueSaleValuation(
+async function enqueueSaleValuation(
   saleId: string,
   {
     priority = 100,
@@ -287,7 +287,7 @@ export async function runSaleValuationPrecomputeBatch({
   return processClaimedValuations(claimedRows ?? [], now);
 }
 
-export async function runSaleValuationPrecomputeForSale(
+async function runSaleValuationPrecomputeForSale(
   saleId: string,
   now = new Date(),
 ): Promise<SaleValuationPrecomputeResult> {

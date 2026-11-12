@@ -18,7 +18,7 @@ import {
 } from "@/lib/information-agent/contact-structure";
 import { normalizeInformationAgentIdentityName } from "@/lib/information-agent/identity";
 
-export const INFORMATION_AGENT_ORGANIZER_TYPES = [
+const INFORMATION_AGENT_ORGANIZER_TYPES = [
   "pursuing_lawyer",
   "notary",
   "state_service",
@@ -30,7 +30,7 @@ export type InformationAgentOrganizerType = (typeof INFORMATION_AGENT_ORGANIZER_
 export type InformationAgentListingBlockName = "contact" | "manager" | "lawyer";
 
 /** Une adresse publiée et la personne (ou le service) à laquelle l'annonce l'associe. */
-export type InformationAgentListingContactRecord = {
+type InformationAgentListingContactRecord = {
   email: string;
   name: string | null;
   /** Chemin du champ lu, pour la provenance (`source_property_features.contact.email`…). */

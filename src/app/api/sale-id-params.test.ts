@@ -50,8 +50,8 @@ vi.mock("@/lib/sale-workspaces", async (importOriginal) => ({
 vi.mock("@/lib/privacy-requests", () => ({
   exportProfessionalPrivacyData: mocks.exportProfessional,
 }));
-vi.mock("@/lib/admin-route-deadline", () => ({
-  withAdminDeadline: <T>(handler: T) => handler,
+vi.mock("@/lib/admin-route-deadline", async () => ({
+  adminRoute: (await import("@/lib/api-route")).apiRoute,
 }));
 vi.mock("@/lib/sale-market-estimates", () => ({ getPrecomputedMarketEstimate: mocks.estimate }));
 

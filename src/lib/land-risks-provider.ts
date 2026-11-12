@@ -42,13 +42,8 @@ import {
   summarizeCappedFindings,
 } from "@/lib/land-risks/parsers";
 
-export const GEORISQUES_BASE_URL = "https://www.georisques.gouv.fr";
-export const GEORISQUES_OPENAPI_VERSION = "1.12.2";
-export const GEORISQUES_V1_QUOTAS = {
-  standardPerSecond: 5,
-  reportPerSecond: 1,
-} as const;
-export const GEORISQUES_V2_QUOTA_PER_SECOND = 20;
+const GEORISQUES_BASE_URL = "https://www.georisques.gouv.fr";
+const GEORISQUES_OPENAPI_VERSION = "1.12.2";
 
 const DEFAULT_TIMEOUT_MS = 2_500;
 const DEFAULT_RADIUS_METERS = 1_000;
@@ -281,12 +276,12 @@ export async function fetchLandRisks(
 }
 
 /** Résultat d'un appel d'inondation : jamais l'URL, ni une coordonnée, ni le corps de la réponse d'erreur. */
-export type FloodApiFailure = {
+type FloodApiFailure = {
   kind: "failure";
   /** `http_<statut>`, `invalid_json`, `timeout` ou `network_<cause>` : de quoi journaliser sans donnée de la vente. */
   code: string;
 };
-export type FloodApiRateLimited = { kind: "rate_limited" };
+type FloodApiRateLimited = { kind: "rate_limited" };
 
 export type TriZonageResult =
   | {

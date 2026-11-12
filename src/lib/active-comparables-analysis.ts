@@ -3,7 +3,7 @@ import { isActiveComparableSale } from "@/lib/sale-window";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
-export type ActiveComparableItem = {
+type ActiveComparableItem = {
   id: string;
   title: string | null;
   city: string | null;

@@ -11,19 +11,19 @@ import { randomUUID } from "node:crypto";
  */
 
 export type FakeRow = Record<string, unknown>;
-export type FakeFilter = {
+type FakeFilter = {
   op: "eq" | "neq" | "in" | "is" | "gt" | "gte" | "lt" | "lte";
   column: string;
   value: unknown;
 };
-export type FakeAction = "select" | "insert" | "update" | "delete" | "upsert";
-export type FakeQuery = {
+type FakeAction = "select" | "insert" | "update" | "delete" | "upsert";
+type FakeQuery = {
   table: string;
   action: FakeAction;
   filters: FakeFilter[];
   payload?: unknown;
 };
-export type FakeResult = {
+type FakeResult = {
   data: unknown;
   error: { code: string; message: string; details?: string; hint?: string | null } | null;
   count: number | null;

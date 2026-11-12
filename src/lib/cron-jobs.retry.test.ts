@@ -22,7 +22,8 @@ vi.mock("@/lib/operational-alerts", () => ({
   deliverOperationalAlertNotifications: vi.fn(),
 }));
 
-import { isTransientError, operationalErrorMessage, runMonitoredCron } from "@/lib/cron-jobs";
+import { runMonitoredCron } from "@/lib/cron-jobs";
+import { isTransientError, operationalErrorMessage } from "@/lib/monitored-job.server";
 
 const gatewayPage = `<!DOCTYPE html><html><head><title>sgpakxtyvenlpeihuucm.supabase.co | 522: Connection timed out</title></head><body><h1>Connection timed out Error code 522</h1></body></html>`;
 
@@ -121,9 +122,7 @@ describe("cron retries and catch-up", () => {
     mocks.recentSuccess = true;
     const handler = vi.fn();
 
-    const response = await runMonitoredCron(cronRequest("15 8 * * *"), "smart-alerts", handler, {
-      catchUpSchedule: "15 8 * * *",
-    });
+    const response = await runMonitoredCron(cronRequest("15 8 * * *"), "smart-alerts", handler);
 
     expect(await response.json()).toMatchObject({ ok: true, skipped: "already_succeeded" });
     expect(handler).not.toHaveBeenCalled();
@@ -135,12 +134,11 @@ describe("cron retries and catch-up", () => {
     const handler = vi.fn().mockResolvedValue({ evaluated: 1 });
 
     const response = await runMonitoredCron(cronRequest("15 8 * * *"), "smart-alerts", handler, {
-      catchUpSchedule: "15 8 * * *",
       retryDelaysMs: [0],
     });
 
     expect(response.status).toBe(200);
-    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({ catchUp: true });
   });
 
   it("le rattrapage peut s'appuyer sur le succès d'une autre tâche (route qui ne fait que déclencher)", async () => {
@@ -151,7 +149,7 @@ describe("cron retries and catch-up", () => {
       cronRequest("35 5 * * *"),
       "sale-flood-risk-dispatch",
       handler,
-      { catchUpSchedule: "35 5 * * *", catchUpSuccessJobName: "sale-flood-risk" },
+      { catchUpOf: "sale-flood-risk" },
     );
 
     expect(await response.json()).toMatchObject({ ok: true, skipped: "already_succeeded" });
@@ -165,12 +163,10 @@ describe("cron retries and catch-up", () => {
     const handler = vi.fn().mockResolvedValue({ evaluated: 1 });
 
     const response = await runMonitoredCron(cronRequest(), "sale-pepites", handler, {
-      catchUpSchedule: "42 5 * * *",
-      catchUpSuccessWindowHours: 2,
       retryDelaysMs: [],
     });
 
     expect(response.status).toBe(200);
-    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith({ catchUp: false });
   });
 });

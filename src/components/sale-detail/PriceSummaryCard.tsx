@@ -35,8 +35,8 @@ export type PriceSummaryCeiling =
  * Pourquoi la valeur n'est pas « estimée » pour ce bien mais celle d'un bien libre comparable : elle
  * s'appuie sur des ventes de biens libres (règle de `market-gap.ts`).
  */
-export const FREE_VALUE_LABEL = "Valeur d’un bien libre comparable";
-export const FREE_VALUE_REASON: Record<"occupied" | "occupancy_unknown", string> = {
+const FREE_VALUE_LABEL = "Valeur d’un bien libre comparable";
+const FREE_VALUE_REASON: Record<"occupied" | "occupancy_unknown", string> = {
   occupied: "Bien occupé : cette valeur s’appuie sur des ventes de biens libres.",
   occupancy_unknown:
     "Occupation non précisée : cette valeur s’appuie sur des ventes de biens libres.",

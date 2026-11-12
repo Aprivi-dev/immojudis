@@ -8,65 +8,50 @@ import {
   listAdminInformationAgentMissionsForToken,
   runAdminInformationAgentMissionActionForToken,
 } from "@/lib/admin-information-agent";
-import { adminErrorResponse } from "@/lib/api-route-errors";
-import { withAdminDeadline } from "@/lib/admin-route-deadline";
+import { adminRoute } from "@/lib/admin-route-deadline";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
 
-async function handleGET(request: Request) {
-  try {
-    const url = new URL(request.url);
+export const GET = adminRoute(
+  {
+    scope: "admin.information-agent.missions.read",
+    fallbackMessage: "Missions indisponibles",
+  },
+  async (request) => {
     const input = adminInformationAgentListQuerySchema.parse(
-      Object.fromEntries(url.searchParams.entries()),
+      Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
-    const response = await listAdminInformationAgentMissionsForToken({
+    return listAdminInformationAgentMissionsForToken({
       authToken: bearerTokenFromRequest(request),
       saleId: input.saleId,
       offset: input.offset,
       limit: input.limit,
     });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return adminErrorResponse(error);
-  }
-}
+  },
+);
 
-async function handlePOST(request: Request) {
-  try {
+export const POST = adminRoute(
+  {
+    scope: "admin.information-agent.missions.create",
+    fallbackMessage: "Mission non créée",
+  },
+  async (request) => {
     const authToken = bearerTokenFromRequest(request);
     const input = adminInformationAgentCreateSchema.parse(await request.json());
-    const response = await createAdminInformationAgentMissionForToken({
-      authToken,
-      input,
-    });
-    return NextResponse.json(response, {
-      status: 201,
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return adminErrorResponse(error);
-  }
-}
+    const response = await createAdminInformationAgentMissionForToken({ authToken, input });
+    return NextResponse.json(response, { status: 201 });
+  },
+);
 
-async function handlePATCH(request: Request) {
-  try {
+export const PATCH = adminRoute(
+  {
+    scope: "admin.information-agent.missions.action",
+    fallbackMessage: "Action sur la mission impossible",
+  },
+  async (request) => {
     const authToken = bearerTokenFromRequest(request);
     const input = adminInformationAgentActionSchema.parse(await request.json());
-    const response = await runAdminInformationAgentMissionActionForToken({
-      authToken,
-      input,
-    });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return adminErrorResponse(error);
-  }
-}
-
-export const GET = withAdminDeadline(handleGET);
-export const POST = withAdminDeadline(handlePOST);
-export const PATCH = withAdminDeadline(handlePATCH);
+    return runAdminInformationAgentMissionActionForToken({ authToken, input });
+  },
+);

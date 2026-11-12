@@ -7,7 +7,7 @@ import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 import { dedupeNormalizedStrings as dedupeStrings } from "@/lib/analysis-text";
 import { matchesAnyPattern as matches } from "@/lib/analysis-text";
 
-export type DemographicSignalKind =
+type DemographicSignalKind =
   | "population"
   | "income"
   | "age"
@@ -18,9 +18,9 @@ export type DemographicSignalKind =
   | "local_services"
   | "market_depth";
 
-export type DemographicSignalStatus = "source_signal" | "proxy";
+type DemographicSignalStatus = "source_signal" | "proxy";
 
-export type DemographicSignal = {
+type DemographicSignal = {
   key: string;
   kind: DemographicSignalKind;
   label: string;

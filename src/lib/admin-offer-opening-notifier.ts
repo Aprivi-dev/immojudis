@@ -46,7 +46,7 @@ const SEND_CONCURRENCY = 4;
 /** Après ce délai, aucun nouvel envoi n'est commencé (la route admin coupe à 28 s). */
 const SEND_TIME_BUDGET_MS = 20_000;
 
-export const OFFER_OPENING_EMAIL_SUBJECT = "Immojudis : l’ouverture de l’offre Analyse";
+const OFFER_OPENING_EMAIL_SUBJECT = "Immojudis : l’ouverture de l’offre Analyse";
 
 export const offerOpeningNotifierActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("test") }).strict(),
@@ -60,7 +60,6 @@ export const offerOpeningNotifierActionSchema = z.discriminatedUnion("action", [
     })
     .strict(),
 ]);
-export type OfferOpeningNotifierAction = z.infer<typeof offerOpeningNotifierActionSchema>;
 
 export type OfferOpeningAudience = {
   /** Demandes actives, à adresse confirmée, jamais prévenues et envoyables : les destinataires d'un envoi. */

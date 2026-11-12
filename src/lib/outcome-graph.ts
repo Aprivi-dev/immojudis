@@ -4,7 +4,7 @@ import {
   MARKET_GAP_NOT_SIGNIFICANT_LABEL,
   marketDiscountPct,
 } from "@/lib/market-gap";
-export type OutcomeGraphHorizon = "T-30" | "T-14" | "T-7" | "T-1" | "T-2h";
+type OutcomeGraphHorizon = "T-30" | "T-14" | "T-7" | "T-1" | "T-2h";
 
 export type OutcomeGraphConfidenceLabel = "faible" | "moyen" | "élevé";
 

@@ -54,7 +54,7 @@ export type EmailAlertDeliveryConfig = {
   missing: string[];
 };
 
-export type EmailAlertDeliveryOutcome = {
+type EmailAlertDeliveryOutcome = {
   notificationId: string;
   status: "sent" | "failed";
   recipient: string | null;
@@ -681,7 +681,7 @@ export function buildAlertDigestMessage({
 }
 
 /** La notification porte la mention « pépite » dans les motifs de sa correspondance. */
-export function mentionsPepite(notification: Pick<NotificationRow, "notification_snapshot">) {
+function mentionsPepite(notification: Pick<NotificationRow, "notification_snapshot">) {
   return arrayOfStrings(
     asRecord(asRecord(notification.notification_snapshot).match).reasons,
   ).includes(PEPITE_REASON);
@@ -694,9 +694,9 @@ export function mentionsPepite(notification: Pick<NotificationRow, "notification
  * illisible retire la mention (on n'affirme rien qu'on n'a pas pu vérifier). Une notification sans mention n'est pas
  * touchée et ne déclenche aucune lecture.
  */
-export async function withCurrentPepiteMentions<
-  T extends Pick<NotificationRow, "notification_snapshot">,
->(notifications: T[]): Promise<T[]> {
+async function withCurrentPepiteMentions<T extends Pick<NotificationRow, "notification_snapshot">>(
+  notifications: T[],
+): Promise<T[]> {
   const mentions = (notification: T) => mentionsPepite(notification);
   if (!notifications.some(mentions)) return notifications;
   let current: ReadonlySet<string>;

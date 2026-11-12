@@ -51,10 +51,8 @@ describe("listing completeness cron route", () => {
 
     await runHandler();
 
-    expect(mocks.runMonitoredCron.mock.calls[0][3]).toEqual({
-      catchUpSchedule: "50 5 * * *",
-      catchUpSuccessWindowHours: 2,
-    });
+    // Le rattrapage vient du registre (`CRON_JOBS["listing-completeness"]`), sous le nom de la tâche.
+    expect(mocks.runMonitoredCron.mock.calls[0][1]).toBe("listing-completeness");
   });
 
   it("lit la taille du lot dans l'environnement", async () => {

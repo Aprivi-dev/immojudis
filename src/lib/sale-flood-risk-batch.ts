@@ -79,7 +79,7 @@ import { parseTimestamp as time } from "@/lib/timestamp";
 /** Intervalle minimal entre deux appels : 400 ms, soit 2,5 appels par seconde. */
 export const FLOOD_MIN_INTERVAL_MS = 400;
 /** Les communes (a-t-elle un TRI ?) changent rarement : un jour de cache. */
-export const COMMUNE_TRI_CACHE_MS = 24 * 3_600_000;
+const COMMUNE_TRI_CACHE_MS = 24 * 3_600_000;
 const MAX_REPORTED_ERRORS = 5;
 /** Les verdicts sont écrits par paquets de 25 ventes pendant la passe (20 à 25 : ni trop tard, ni trop souvent). */
 export const WRITE_CHUNK = 25;
@@ -98,13 +98,13 @@ export const FLOOD_DEFAULT_TIME_BUDGET_MS = FLOOD_MAX_DURATION_MS - FLOOD_MIN_RE
 /** Délai d'un appel (TRI, GASPAR ou PM1) : 8 s. */
 export const FLOOD_CALL_TIMEOUT_MS = 8_000;
 /** Part d'appels en échec à partir de laquelle la passe est « dégradée » : la moitié. */
-export const FLOOD_DEGRADED_RATE = 0.5;
+const FLOOD_DEGRADED_RATE = 0.5;
 /** Nombre d'appels (réussis ou non) en dessous duquel un taux d'échec ne dit rien : 20. */
-export const FLOOD_DEGRADED_MIN_CALLS = 20;
+const FLOOD_DEGRADED_MIN_CALLS = 20;
 /** Coupe-circuit : la passe s'arrête après 5 pannes réseau (ou délais dépassés) consécutives. */
-export const FLOOD_NETWORK_FAILURE_LIMIT = 5;
+const FLOOD_NETWORK_FAILURE_LIMIT = 5;
 /** Au-delà de ce nombre de lignes refusées une à une par la base, la panne n'est plus isolée : la passe échoue. */
-export const FLOOD_MAX_REJECTED_ROWS = 5;
+const FLOOD_MAX_REJECTED_ROWS = 5;
 /** Au plus ce nombre de codes d'échec distincts dans `failedByCode` (le reste va sous `other`). */
 const MAX_FAILURE_CODES = 20;
 
@@ -116,9 +116,9 @@ const MAX_FAILURE_CODES = 20;
  * l'API qui a changé (paramètre ignoré ou inversé, réponse vide) et aucun verdict « hors zone » ne doit être écrit.
  */
 export const FLOOD_CONTROL_POINT = { latitude: 43.6026, longitude: 1.4314 };
-export const FLOOD_CONTROL_SCENARIO = "01For";
+const FLOOD_CONTROL_SCENARIO = "01For";
 /** Code de l'erreur levée quand le point de contrôle ne répond pas comme prévu. */
-export const FLOOD_SOURCE_DEGRADED_CODE = "source_degraded";
+const FLOOD_SOURCE_DEGRADED_CODE = "source_degraded";
 
 const FLOOD_PACER = createStartPacer(FLOOD_MIN_INTERVAL_MS);
 const COMMUNE_TRI_CACHE = new Map<string, { hasTri: boolean; at: number }>();
@@ -394,7 +394,7 @@ function isSourceFailureCode(code: string): boolean {
  * Interroge le point de contrôle connu. `null` : la source répond comme prévu (scénario `01For`) ; sinon le code
  * de ce qu'elle a rendu (`no_scenario`, `rate_limited`, `network_…`, `http_…`), jamais de coordonnée.
  */
-export async function checkFloodControlPoint(api: FloodApiOptions): Promise<string | null> {
+async function checkFloodControlPoint(api: FloodApiOptions): Promise<string | null> {
   const response = await fetchTriZonage(FLOOD_CONTROL_POINT, api);
   if (response.kind === "rate_limited") return "rate_limited";
   if (response.kind === "failure") return response.code;

@@ -131,7 +131,7 @@ function mapArchivedHearing(row: z.infer<typeof archivedHearingRowSchema>): Arch
 }
 
 /** Outcome Graph lot occupation → catalogue occupancy vocabulary. */
-export function catalogueOccupancyStatus(value: string | null | undefined): string | null {
+function catalogueOccupancyStatus(value: string | null | undefined): string | null {
   switch (value?.trim().toLocaleLowerCase("fr-FR")) {
     case "vacant":
       return "vacant";

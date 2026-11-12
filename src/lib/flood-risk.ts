@@ -38,15 +38,15 @@ export const FLOOD_VERDICTS = ["high", "exposed", "none_found", "no_signal", "un
 export type FloodVerdict = (typeof FLOOD_VERDICTS)[number];
 
 /** Scénario « forte probabilité » (crue fréquente) de la cartographie des TRI : code de l'API Géorisques. */
-export const FLOOD_HIGH_SCENARIO_CODE = "01For";
+const FLOOD_HIGH_SCENARIO_CODE = "01For";
 /** Précisions de position qui permettent de tester un point : adresse et parcelle (la rue passe par un tampon). */
-export const FLOOD_POINT_PRECISIONS: readonly string[] = ["address", "parcel"];
-export const FLOOD_STREET_PRECISION = "street";
+const FLOOD_POINT_PRECISIONS: readonly string[] = ["address", "parcel"];
+const FLOOD_STREET_PRECISION = "street";
 /**
  * Drapeaux de qualité de position qui rendent le point douteux : la position compte alors comme imprécise.
  * Les deux de la décision du fondateur (`services/data-pipeline/src/position_quality.py`).
  */
-export const FLOOD_DOUBTFUL_POSITION_FLAGS: readonly string[] = [
+const FLOOD_DOUBTFUL_POSITION_FLAGS: readonly string[] = [
   "unverified_source_coordinates",
   "implausible_coordinates",
   "geocode_outside_department",
@@ -54,7 +54,7 @@ export const FLOOD_DOUBTFUL_POSITION_FLAGS: readonly string[] = [
 /** Un numéro de la BAN dont le score est inférieur compte pour approximatif (l'inondation seulement). */
 export const FLOOD_ADDRESS_MIN_SCORE = 0.8;
 /** Type de résultat de la BAN pour un lieu-dit : rangé « rue » par le pipeline, approximatif pour l'inondation. */
-export const FLOOD_LOCALITY_GEOCODE_TYPE = "locality";
+const FLOOD_LOCALITY_GEOCODE_TYPE = "locality";
 /** Une parcelle multiple est sondée centroïde par centroïde, au plus 5 appels. */
 export const FLOOD_PARCEL_MAX_PROBES = 5;
 /** Rayon du tampon appliqué à une position « rue », en mètres. */

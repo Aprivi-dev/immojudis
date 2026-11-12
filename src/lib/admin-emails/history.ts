@@ -28,7 +28,7 @@ const REFRESH_MAX_AGE_MS = 72 * 3_600_000;
 const REFRESH_DEADLINE_MS = 18_000;
 
 export type HistoryBox = "sent" | "received";
-export type HistoryRow = {
+type HistoryRow = {
   /** `log:` (envoyé), `case:` (réponse à l'agent) ou `unrouted:` (sans dossier ouvert), puis l'identifiant. */
   id: string;
   at: string;

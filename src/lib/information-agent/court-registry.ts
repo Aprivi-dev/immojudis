@@ -28,7 +28,7 @@ import { startOfParisDay } from "@/lib/information-agent/paris-time";
  * tribunal et par vente, et un plafond par tribunal et par jour (3 par défaut, réglable).
  */
 
-export type CourtRegistryContact = {
+type CourtRegistryContact = {
   courtCode: string;
   name: string;
   emails: string[];
@@ -37,9 +37,7 @@ export type CourtRegistryContact = {
 export type CourtRegistryFallbackSaleInput = CourtRegistryFallbackSale & { id: string };
 
 /** Ligne du référentiel d'un tribunal, ou null s'il n'y est pas. Une erreur de base est propagée. */
-export async function loadCourtRegistryContact(
-  courtCode: string,
-): Promise<CourtRegistryContact | null> {
+async function loadCourtRegistryContact(courtCode: string): Promise<CourtRegistryContact | null> {
   const { data, error } = await supabaseAdmin
     .from("court_registry_contacts")
     .select("court_code,name,emails")
@@ -135,7 +133,7 @@ export function courtRegistryFallbackOfMission(
   return { courtCode: code, courtName: typeof name === "string" ? name : null };
 }
 
-export const COURT_REGISTRY_ADDRESS_CHANGED_MESSAGE =
+const COURT_REGISTRY_ADDRESS_CHANGED_MESSAGE =
   "Cette adresse n’est plus celle du greffe indiquée par le référentiel des tribunaux : annulez ce brouillon et relancez la préparation.";
 
 /** L'adresse figure toujours dans le référentiel pour ce tribunal (relue à l'aperçu et à l'envoi). */

@@ -14,7 +14,7 @@ export type FactReliabilityStatus = "observed" | "inferred" | "to_confirm" | "co
  * missing value from an automatically collected value that lacks a linked
  * check, or from a concrete reservation that needs review.
  */
-export type FactReliabilityReasonCode =
+type FactReliabilityReasonCode =
   | "source_conflict"
   | "missing_value"
   | "derived_display"
@@ -24,7 +24,7 @@ export type FactReliabilityReasonCode =
   | "source_unlinked"
   | "candidate_claim";
 
-export type FactPresentationKind =
+type FactPresentationKind =
   | "documented"
   | "reported"
   | "missing"

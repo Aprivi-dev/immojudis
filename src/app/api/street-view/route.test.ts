@@ -34,7 +34,7 @@ describe("street view panorama route", () => {
 
     const response = await GET(request("lat=44.8&lng=-0.5"));
 
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it.each(["", "lat=91&lng=2", "lat=x&lng=2", "lat=45"])(
@@ -43,6 +43,10 @@ describe("street view panorama route", () => {
       const response = await GET(request(query));
 
       expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: "Coordonnées invalides.",
+        code: "INVALID_REQUEST",
+      });
       expect(mocks.enforceIp).not.toHaveBeenCalled();
     },
   );

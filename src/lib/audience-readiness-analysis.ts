@@ -4,12 +4,12 @@ import type { OccupancyAnalysis } from "@/lib/occupation-analysis";
 import type { RenovationAnalysis } from "@/lib/renovation-analysis";
 import type { AuctionSale, SaleDocumentRich } from "@/lib/types";
 
-export type AudienceReadinessStatus = "ready" | "needs_work" | "urgent" | "missing_date" | "past";
+type AudienceReadinessStatus = "ready" | "needs_work" | "urgent" | "missing_date" | "past";
 
-export type AudienceReadinessItemStatus = "done" | "to_do" | "watch";
-export type AudienceReadinessPriority = "high" | "medium" | "low";
+type AudienceReadinessItemStatus = "done" | "to_do" | "watch";
+type AudienceReadinessPriority = "high" | "medium" | "low";
 
-export type AudienceReadinessItem = {
+type AudienceReadinessItem = {
   key: string;
   label: string;
   status: AudienceReadinessItemStatus;

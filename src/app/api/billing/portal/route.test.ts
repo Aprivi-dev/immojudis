@@ -79,4 +79,18 @@ describe("POST /api/billing/portal", () => {
     expect(response.status).toBeLessThan(500);
     expect(mocks.portal).not.toHaveBeenCalled();
   });
+
+  it("answers 500 with the generic message when the portal fails for an unknown reason", async () => {
+    mocks.portal.mockRejectedValue(new Error("stripe portal timeout"));
+
+    const response = await post();
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: "Portail de paiement indisponible.",
+      code: "INTERNAL_ERROR",
+    });
+  });
 });

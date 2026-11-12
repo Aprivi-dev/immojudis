@@ -28,7 +28,7 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_SUBMISSION_BYTES = 40 * 1024 * 1024;
 const MAX_FILES = 10;
 const UPLOAD_TICKET_LIFETIME_MS = 2 * 60 * 60 * 1000;
-export const PORTAL_UPLOAD_RESERVATION_BYTES = 40 * 1024 * 1024;
+const PORTAL_UPLOAD_RESERVATION_BYTES = 40 * 1024 * 1024;
 export const PORTAL_UPLOAD_QUOTA_FILES = 12;
 export const PORTAL_UPLOAD_QUOTA_BYTES =
   PORTAL_UPLOAD_RESERVATION_BYTES * PORTAL_UPLOAD_QUOTA_FILES;
@@ -269,7 +269,7 @@ const RELEASE_GRACE_MS = 15 * 60 * 1000;
  * exister : l'objet orphelin est d'abord supprimé du stockage, la réservation n'est libérée
  * qu'ensuite. Sans cela, douze essais suffisaient à fermer le dépôt d'un dossier pour toujours.
  */
-export async function releaseExpiredInformationAgentPortalUploads(
+async function releaseExpiredInformationAgentPortalUploads(
   caseId: string,
   now = new Date(),
 ): Promise<number> {
@@ -737,7 +737,7 @@ function displayFilename(value: string): string {
   );
 }
 
-export function matchesFileSignature(bytes: Uint8Array, mimeType: string): boolean {
+function matchesFileSignature(bytes: Uint8Array, mimeType: string): boolean {
   if (!bytes.length) return false;
   if (mimeType === "application/pdf") {
     return bytes.length >= 5 && new TextDecoder().decode(bytes.subarray(0, 5)) === "%PDF-";

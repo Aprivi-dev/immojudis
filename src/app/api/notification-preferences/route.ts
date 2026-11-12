@@ -1,5 +1,4 @@
-import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -10,31 +9,19 @@ import {
   updateNotificationPreferences,
 } from "@/lib/notification-preferences";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.notification-preferences.read", fallbackMessage: "Préférences indisponibles" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await getNotificationPreferences({ auth });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "notification-preferences", {
-      fallbackMessage: "Préférences indisponibles",
-    });
-  }
-}
+    return getNotificationPreferences({ auth });
+  },
+);
 
-export async function PATCH(request: Request) {
-  try {
+export const PATCH = apiRoute(
+  { scope: "api.notification-preferences.update", fallbackMessage: "Préférences impossibles" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = notificationPreferenceUpdateSchema.parse(await request.json());
-    const response = await updateNotificationPreferences({ auth, input });
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "notification-preferences", {
-      fallbackMessage: "Préférences impossibles",
-    });
-  }
-}
+    return updateNotificationPreferences({ auth, input });
+  },
+);

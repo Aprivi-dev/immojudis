@@ -11,7 +11,7 @@ import {
 } from "@/lib/rent-reference";
 
 /** Raison d'un rendement indisponible faute de prix d'acquisition. */
-export const RENTABILITY_PRICE_MISSING = "Prix manquant";
+const RENTABILITY_PRICE_MISSING = "Prix manquant";
 
 // ─── Barème des émoluments de l'avocat poursuivant ───────────────────────
 // Article A444-191 du Code de commerce, qui renvoie au barème proportionnel
@@ -111,7 +111,7 @@ export const DEFAULTS = {
   lawyerFees: 1_500,
 };
 
-export const REFRESH_WORKS_PRICE_PER_M2 = 500;
+const REFRESH_WORKS_PRICE_PER_M2 = 500;
 
 export const WORKS_SCENARIOS = [
   {
@@ -148,7 +148,7 @@ export function estimateWorksBudget(
   return scenario ? Math.round(cleanSurface * scenario.pricePerM2) : 0;
 }
 
-export type TaxRegime = "registration" | "vat";
+type TaxRegime = "registration" | "vat";
 
 /** Hypothèses de frais communes à tous les calculs de coût d'acquisition. */
 export type AcquisitionCostOptions = {
@@ -281,7 +281,7 @@ function clampRate(value: number): number {
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
 }
 
-export type RentabilityScoreFactor = {
+type RentabilityScoreFactor = {
   key: string;
   label: string;
   delta: number;

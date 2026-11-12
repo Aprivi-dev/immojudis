@@ -339,7 +339,7 @@ export type FirmAddressChoice =
  * domaine parent n'est jamais admis : `cabinet.over-blog.com` ne donne pas droit aux adresses de
  * `over-blog.com`.
  */
-export function isFirmDomainEmail(email: string, host: string): boolean {
+function isFirmDomainEmail(email: string, host: string): boolean {
   const domain = siteHost(email.slice(email.lastIndexOf("@") + 1));
   const site = siteHost(host);
   return domain === site || domain.endsWith(`.${site}`);

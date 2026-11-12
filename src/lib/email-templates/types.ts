@@ -48,7 +48,7 @@ export type EmailSampleVariant = {
  * Zone de texte modifiable d'un gabarit. Réservé au lot 5 (surcharges de textes) : aucun gabarit n'en
  * déclare encore, le type garde seulement la place.
  */
-export type EmailEditableZone = {
+type EmailEditableZone = {
   key: string;
   label: string;
   maxLength: number;

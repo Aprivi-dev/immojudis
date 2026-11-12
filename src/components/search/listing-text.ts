@@ -70,7 +70,7 @@ export const LISTING_DETAIL_LINE = "Voir le détail";
 export const LISTING_LAUNCH_OFFER_LINE = `Inscription gratuite : ${ANALYSIS_TRIAL_DAYS} jours d’offre Analyse`;
 
 /** Mention d'une cession domaniale dont la source ne publie aucun prix. */
-export const STATE_PRICE_NOT_PUBLISHED = "Prix non publié";
+const STATE_PRICE_NOT_PUBLISHED = "Prix non publié";
 
 /** Cession domaniale (`venueType` « state ») sans prix publié : `starting_price_eur` absent ou nul. */
 export function stateSaleWithoutPrice(sale: AuctionSale): boolean {

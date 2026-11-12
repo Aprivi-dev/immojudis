@@ -27,7 +27,7 @@ import {
   getSharedPropertyReport,
   shareOwnerKeepsSavedReports,
 } from "./property-reports";
-import { hashShareToken } from "./property-report/serialization";
+import { hashShareToken } from "@/lib/share-token";
 import { SharedReportUnavailableError } from "./property-report/share-unavailable";
 
 const TOKEN = "abcDEF123_-abcDEF123_-abcDEF123";

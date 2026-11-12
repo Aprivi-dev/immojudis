@@ -41,7 +41,7 @@ import { resolveSiteOrigin } from "@/lib/site-url";
  *   s'il y a au moins une réponse ou un message à relire.
  */
 
-export const REPLIES_REVIEW_DIGEST_MODES = ["off", "preview", "on"] as const;
+const REPLIES_REVIEW_DIGEST_MODES = ["off", "preview", "on"] as const;
 export type RepliesReviewDigestMode = (typeof REPLIES_REVIEW_DIGEST_MODES)[number];
 
 /** Lignes listées au plus par catégorie : le reste n'est que compté. */
@@ -59,8 +59,8 @@ export function repliesReviewDigestMode(env: Env = process.env): RepliesReviewDi
   return mode === "preview" || mode === "on" ? mode : "off";
 }
 
-export type RepliesReviewDigestEntry = { sender: string; subject: string };
-export type RepliesReviewDigestSection = {
+type RepliesReviewDigestEntry = { sender: string; subject: string };
+type RepliesReviewDigestSection = {
   total: number;
   entries: RepliesReviewDigestEntry[];
 };

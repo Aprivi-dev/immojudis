@@ -193,7 +193,6 @@ const familyFileSchema = z
   .strict();
 
 export type EvaluationCase = z.infer<typeof caseSchema>;
-export type FieldTruth = z.infer<typeof fieldTruth>;
 export type EvaluationField = AutoPublicationEligibleField;
 export const EVALUATION_FIELDS: readonly EvaluationField[] = AUTO_PUBLICATION_ELIGIBLE_FIELDS;
 

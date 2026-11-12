@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -12,11 +11,12 @@ import {
   updateSaleChangeEventState,
 } from "@/lib/sale-change-monitor";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "sale-change-events", fallbackMessage: "Changements indisponibles" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
-    const response = await listSaleChangeEvents({
+    return listSaleChangeEvents({
       auth,
       limit: Number(url.searchParams.get("limit") ?? 80),
       includeDismissed: url.searchParams.get("includeDismissed") === "true",
@@ -26,48 +26,26 @@ export async function GET(request: Request) {
         .optional()
         .parse(url.searchParams.get("saleId") ?? undefined),
     });
+  },
+);
 
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-change-events", {
-      fallbackMessage: "Changements indisponibles",
-    });
-  }
-}
-
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  { scope: "sale-change-events", fallbackMessage: "Monitoring des changements impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const response = await monitorUserSaleChanges({ auth });
+    return monitorUserSaleChanges({ auth });
+  },
+);
 
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-change-events", {
-      fallbackMessage: "Monitoring des changements impossible",
-    });
-  }
-}
-
-export async function PATCH(request: Request) {
-  try {
+export const PATCH = apiRoute(
+  { scope: "sale-change-events", fallbackMessage: "Changement impossible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = saleChangeEventActionSchema.parse(await request.json());
-    const response = await updateSaleChangeEventState({
+    return updateSaleChangeEventState({
       auth,
       eventId: input.eventId,
       action: input.action,
     });
-
-    return NextResponse.json(response, {
-      headers: { "cache-control": "private, no-store" },
-    });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-change-events", {
-      fallbackMessage: "Changement impossible",
-    });
-  }
-}
+  },
+);

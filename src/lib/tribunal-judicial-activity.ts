@@ -23,8 +23,8 @@ export class TribunalCourtUnresolvedError extends PublicApiError {
   }
 }
 
-export const TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION = "tribunal_judicial_activity_v3" as const;
-export const TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE = TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE;
+const TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION = "tribunal_judicial_activity_v3" as const;
+const TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE = TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE;
 
 const isoDateTimeSchema = z.string().check(z.iso.datetime({ offset: true }));
 // Entier positif ou nul ; entier strictement positif ; part entre 0 et 1 ; libellé non vide.
@@ -285,7 +285,7 @@ export type TribunalJudicialActivityHistoryMonths = z.infer<
   typeof tribunalJudicialActivityHistoryMonthsSchema
 >;
 export type TribunalJudicialActivityQuery = z.infer<typeof tribunalJudicialActivityQuerySchema>;
-export type TribunalJudicialActivityMetric = z.infer<typeof tribunalJudicialActivityMetricSchema>;
+type TribunalJudicialActivityMetric = z.infer<typeof tribunalJudicialActivityMetricSchema>;
 export type TribunalJudicialActivityRangeMetric = z.infer<
   typeof tribunalJudicialActivityRangeMetricSchema
 >;

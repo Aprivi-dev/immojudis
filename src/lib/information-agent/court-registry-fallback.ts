@@ -82,7 +82,7 @@ export function courtRegistryFallbackEmails(
 /** Plafond par défaut de sollicitations de greffes, par tribunal et par jour (valeur prudente). */
 export const COURT_REGISTRY_DAILY_CAP_DEFAULT = 3;
 /** Variable d'environnement qui règle le plafond quotidien par tribunal (0 : aucun envoi aux greffes). */
-export const COURT_REGISTRY_DAILY_CAP_ENV = "INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP";
+const COURT_REGISTRY_DAILY_CAP_ENV = "INFORMATION_AGENT_COURT_REGISTRY_DAILY_CAP";
 const COURT_REGISTRY_DAILY_CAP_MAX = 100;
 
 /**

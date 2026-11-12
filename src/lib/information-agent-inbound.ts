@@ -16,7 +16,6 @@ import {
   mergeJsonObject,
   normalizeEmail,
   replyTextForExtraction,
-  requiredHeader,
   stringArray,
 } from "@/lib/information-agent-inbound/text";
 import {
@@ -72,6 +71,7 @@ import {
   updateOpenInformationAgentCase,
 } from "@/lib/information-agent-inbound/case-updates";
 import { ConfigurationError } from "@/lib/api-errors";
+import { readVerifiedResendWebhook } from "@/lib/resend-webhook";
 
 export {
   fetchInboundAttachments,
@@ -80,7 +80,6 @@ export {
 } from "@/lib/information-agent-inbound/attachments";
 
 export { extractInformationAgentFacts } from "@/lib/information-agent-inbound/fact-extraction";
-export type { ExtractedInformationAgentFact } from "@/lib/information-agent-inbound/fact-extraction";
 
 import {
   detectPossibleInformationAgentContactOptOut,
@@ -93,11 +92,8 @@ import { isAutomaticReply, replyMentionsLot } from "@/lib/information-agent-inbo
 export {
   findInboundToken,
   detectInformationAgentContactOptOut,
-  detectPossibleInformationAgentContactOptOut,
   classifyInformationAgentReplyIntent,
 } from "@/lib/information-agent-inbound/reply-intent";
-export { isAutomaticReply, replyMentionsLot } from "@/lib/information-agent-inbound/reply-signals";
-export type { InformationAgentReplyIntent } from "@/lib/information-agent-inbound/reply-intent";
 
 export {
   replyTextForExtraction,
@@ -106,7 +102,6 @@ export {
 } from "@/lib/information-agent-inbound/text";
 
 export type { InformationAgentInboundResult } from "@/lib/information-agent-inbound/types";
-const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
 
 /**
  * Provider fields the Resend SDK types do not (reliably) expose. Every field is
@@ -144,20 +139,6 @@ function parseProviderMessageId(data: unknown): string | null {
   return parsed.success ? parsed.data.message_id : null;
 }
 
-export class InvalidInformationAgentWebhookSignatureError extends Error {
-  constructor() {
-    super("Signature webhook invalide.");
-    this.name = "InvalidInformationAgentWebhookSignatureError";
-  }
-}
-
-export class InformationAgentWebhookPayloadTooLargeError extends Error {
-  constructor() {
-    super("Corps du webhook trop volumineux.");
-    this.name = "InformationAgentWebhookPayloadTooLargeError";
-  }
-}
-
 export async function processInformationAgentInboundWebhook({
   request,
   env = process.env,
@@ -180,22 +161,8 @@ export async function processInformationAgentInboundWebhook({
     throw new ConfigurationError("Configuration de réception de l’agent incomplète.");
   }
 
-  const rawPayload = await readBoundedWebhookBody(request);
+  const event = await readVerifiedResendWebhook(request, webhookSecret);
   const resend = new Resend(apiKey);
-  let event: ReturnType<typeof resend.webhooks.verify>;
-  try {
-    event = resend.webhooks.verify({
-      payload: rawPayload,
-      headers: {
-        id: requiredHeader(request, "svix-id"),
-        timestamp: requiredHeader(request, "svix-timestamp"),
-        signature: requiredHeader(request, "svix-signature"),
-      },
-      webhookSecret,
-    });
-  } catch {
-    throw new InvalidInformationAgentWebhookSignatureError();
-  }
   // Évènements de livraison (remis, différé, échec, rebond, plainte) : le journal des envois, qui ne décide de
   // rien, passe APRÈS le traitement des rebonds et plaintes (3 s au plus). Sa panne remonte (500) une fois le
   // registre de contacts à jour, pour que le fournisseur rejoue l'évènement.
@@ -1179,45 +1146,6 @@ export async function runInformationAgentInboundQueue({
     expiredLinkRisk,
     errors,
   };
-}
-
-async function readBoundedWebhookBody(request: Request): Promise<string> {
-  const contentLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BODY_BYTES) {
-    throw new InformationAgentWebhookPayloadTooLargeError();
-  }
-  if (!request.body) return "";
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      totalBytes += value.byteLength;
-      if (totalBytes > MAX_WEBHOOK_BODY_BYTES) {
-        try {
-          await reader.cancel();
-        } catch {
-          // The size error is the actionable outcome even if the client disconnects.
-        }
-        throw new InformationAgentWebhookPayloadTooLargeError();
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const body = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(body);
 }
 
 /**

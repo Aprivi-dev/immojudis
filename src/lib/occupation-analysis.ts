@@ -6,9 +6,9 @@ import { cleanText } from "@/lib/clean-text";
 import { addCleanTextCandidate as addCandidate } from "@/lib/clean-text";
 import { riskTexts } from "@/lib/sale-risk-texts";
 
-export type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
+type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
 
-export type OccupancyEvidence = {
+type OccupancyEvidence = {
   status: Exclude<OccupancyStatusKind, "conflicting">;
   label: string;
   excerpt: string;

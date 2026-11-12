@@ -4,7 +4,7 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { PublicApiError, parseApiResponse } from "@/lib/api-errors";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { assertFeatureEntitlementVia } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -14,13 +14,18 @@ import {
 } from "@/lib/tribunal-listing-statistics";
 import { getTribunalListingStatistics } from "@/lib/tribunal-listing-statistics-repository";
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "tribunal.listing_statistics");
-  try {
+export const GET = apiRoute(
+  {
+    scope: "tribunal.listing_statistics",
+    fallbackMessage: "Statistiques des annonces du tribunal temporairement indisponibles.",
+    fallbackStatus: 503,
+    versionedApi: true,
+  },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
-      context,
+      context: api,
       bucketKey: "v1.tribunal-listing-statistics",
       ...RATE_LIMIT_POLICIES.compute,
     });
@@ -53,19 +58,6 @@ export async function GET(request: Request) {
     // (title, city, occupation, visit): that list stays with Analyse. The page does not show it
     // to an unlocked account either.
     if (door === "unlock") statistics.activity.upcomingListings = [];
-    return apiJson(statistics, context, {
-      headers: {
-        "cache-control": "private, no-store",
-        vary: "authorization",
-      },
-    });
-  } catch (error) {
-    const response = apiError(error, context, {
-      fallbackMessage: "Statistiques des annonces du tribunal temporairement indisponibles.",
-      fallbackStatus: 503,
-    });
-    response.headers.set("cache-control", "private, no-store");
-    response.headers.set("vary", "authorization");
-    return response;
-  }
-}
+    return statistics;
+  },
+);

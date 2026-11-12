@@ -20,7 +20,7 @@ type RefreshSaleRow = Pick<AuctionSaleRow, "id" | "title" | "city" | "department
   source_url: string;
 };
 
-export const DATA_REFRESH_KINDS = ["cadastre", "dpe", "full"] as const;
+const DATA_REFRESH_KINDS = ["cadastre", "dpe", "full"] as const;
 export type DataRefreshKind = (typeof DATA_REFRESH_KINDS)[number];
 export const DATA_REFRESH_REQUESTS_PER_MINUTE = 5;
 
@@ -36,12 +36,10 @@ export const dataRefreshListQuerySchema = z.object({
   saleId: z.string().guid().optional(),
   status: z.enum(["queued", "running", "completed", "failed", "cancelled"]).optional(),
 });
-
-export type DataRefreshRequestInput = z.input<typeof dataRefreshRequestSchema>;
 export type DataRefreshRequestPayload = z.output<typeof dataRefreshRequestSchema>;
 export type DataRefreshListQuery = z.output<typeof dataRefreshListQuerySchema>;
 
-export type DataRefreshSaleSnapshot = {
+type DataRefreshSaleSnapshot = {
   id: string;
   sourceUrl: string;
   title: string | null;
@@ -49,7 +47,7 @@ export type DataRefreshSaleSnapshot = {
   department: string | null;
 };
 
-export type DataRefreshRequestItem = {
+type DataRefreshRequestItem = {
   id: string;
   saleId: string;
   sourceUrl: string;
@@ -198,7 +196,7 @@ export function normalizeDataRefreshKindList(value: unknown): DataRefreshKind[] 
   return normalizeRequestedKinds(kinds);
 }
 
-export function normalizeRequestedKinds(kinds: readonly DataRefreshKind[]): DataRefreshKind[] {
+function normalizeRequestedKinds(kinds: readonly DataRefreshKind[]): DataRefreshKind[] {
   const normalized: DataRefreshKind[] = [
     ...new Set<DataRefreshKind>(kinds.length ? kinds : ["full"]),
   ];

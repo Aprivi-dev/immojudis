@@ -3,11 +3,11 @@ import { EMAIL_COLORS, EMAIL_FONT_STACK, emailBrandHeaderHtml } from "@/lib/emai
 
 /** Pages HTML minimales des liens signés de l'agent d'information (opposition, accès, effacement). */
 
-export function escapeHtml(value: string): string {
+function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
-export type InformationAgentPageForm = {
+type InformationAgentPageForm = {
   /** Cible du formulaire (chemin relatif, avec le lien signé). */
   action: string;
   buttons: ReadonlyArray<{ label: string; name?: string; value?: string }>;

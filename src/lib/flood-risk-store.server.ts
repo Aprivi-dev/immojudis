@@ -271,7 +271,7 @@ export function storeErrorCode(error: unknown): string {
 }
 
 /** Durée du bail du traitement d'inondation : au-delà de `maxDuration` (300 s), il expire seul si la passe meurt. */
-export const FLOOD_LEASE_SECONDS = 360;
+const FLOOD_LEASE_SECONDS = 360;
 
 export type FloodLease =
   | { kind: "held"; token: string }

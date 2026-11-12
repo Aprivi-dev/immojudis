@@ -59,7 +59,7 @@ const optionalPlacementDateSchema = optionalTextSchema.refine(
   { message: "La fenêtre de placement doit contenir une date valide." },
 );
 
-export const adminReferencedLawyerCoverageInputSchema = z
+const adminReferencedLawyerCoverageInputSchema = z
   .object({
     id: z.string().guid().optional(),
     tribunalCode: optionalTextSchema,
@@ -120,7 +120,7 @@ export const adminReferencedLawyerInputSchema = z
 export type AdminReferencedLawyerInput = z.input<typeof adminReferencedLawyerInputSchema>;
 export type AdminReferencedLawyerPayload = z.output<typeof adminReferencedLawyerInputSchema>;
 
-export type AdminReferencedLawyerCoverage = {
+type AdminReferencedLawyerCoverage = {
   id: string;
   tribunalCode: string | null;
   tribunalName: string | null;

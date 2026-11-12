@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 /** Repère de la synthèse de la fiche visiteur (prix et inscription), observé par la barre du bas. */
-export const SALE_PUBLIC_SYNTHESIS_ATTRIBUTE = "data-sale-synthesis";
+const SALE_PUBLIC_SYNTHESIS_ATTRIBUTE = "data-sale-synthesis";
 
 /**
  * Barre du bas de la fiche visiteur (mobile et tablette ; la feuille de style la masque sur

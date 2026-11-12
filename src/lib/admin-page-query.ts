@@ -12,4 +12,3 @@ export const adminPageQueryShape = {
 };
 
 export const adminPageQuerySchema = z.object(adminPageQueryShape);
-export type AdminPageQuery = z.output<typeof adminPageQuerySchema>;

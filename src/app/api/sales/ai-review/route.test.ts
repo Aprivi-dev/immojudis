@@ -408,7 +408,10 @@ describe("GET /api/sales/ai-review", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({
+      ok: false,
       error: "Authentification requise.",
+      code: "AUTH_REQUIRED",
+      requestId: expect.any(String),
     });
     expect(mocks.adminFrom).not.toHaveBeenCalled();
   });
@@ -577,6 +580,10 @@ describe("GET /api/sales/ai-review", () => {
     const response = await request(["not-a-uuid"]);
 
     expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Identifiants de vente invalides.",
+      code: "INVALID_REQUEST",
+    });
     expect(mocks.auth).not.toHaveBeenCalled();
   });
 
@@ -592,8 +599,12 @@ describe("GET /api/sales/ai-review", () => {
     const response = await request([saleId, secondSaleId]);
 
     expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     await expect(response.json()).resolves.toEqual({
+      ok: false,
       error: "La relecture IA de cette annonce est momentanément indisponible.",
+      code: "INTERNAL_ERROR",
+      requestId: expect.any(String),
     });
   });
 });

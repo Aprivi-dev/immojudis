@@ -5,13 +5,13 @@ import { normalizeFrenchSearchText, resolveFrenchGeoSearch } from "@/lib/search/
  * The catalogue draws this shape as a reading aid only; it never replaces the
  * sale query or invents a geometry from the positions of the results.
  */
-export type GeographicBoundaryLevel = "commune" | "department" | "region";
+type GeographicBoundaryLevel = "commune" | "department" | "region";
 
-export type GeographicBoundaryGeometry =
+type GeographicBoundaryGeometry =
   | { type: "Polygon"; coordinates: number[][][] }
   | { type: "MultiPolygon"; coordinates: number[][][][] };
 
-export type GeographicBoundaryFeature = {
+type GeographicBoundaryFeature = {
   type: "Feature";
   geometry: GeographicBoundaryGeometry;
   properties: {
@@ -169,7 +169,7 @@ export function buildGeographicBoundaryUrl(request: BoundaryRequest): string {
   return `${GEO_API_ORIGIN}/communes?${params.toString()}`;
 }
 
-export function parseGeographicBoundary(
+function parseGeographicBoundary(
   payload: unknown,
   request: BoundaryRequest,
   requestedLabel: string,

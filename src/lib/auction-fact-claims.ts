@@ -12,7 +12,7 @@ import type {
  * values. A draft generator can use this to prioritize questions without
  * treating a candidate as verified.
  */
-export type SaleFactSignal = {
+type SaleFactSignal = {
   saleId: string;
   field: KeyFact;
   status: FactReliabilityStatus;

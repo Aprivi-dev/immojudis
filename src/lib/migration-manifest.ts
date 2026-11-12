@@ -8,7 +8,7 @@ const MIGRATION_VERSION_PATTERN = /^(\d{14})_.+\.sql$/;
  * Keep this value aligned with the checked-in manifest below; local runtimes resolve
  * the actual latest file so a new migration cannot silently leave readiness stale.
  */
-export const MIGRATION_MANIFEST = {
+const MIGRATION_MANIFEST = {
   source: "supabase/migrations",
   fallbackLatestVersion: "20261006095220",
 } as const;

@@ -197,6 +197,7 @@ describe("critical API route contracts", () => {
     );
 
     expect(response.status).toBe(403);
+    expect(response.headers.get("retry-after")).toBeNull();
     await expect(response.json()).resolves.toMatchObject({ code: "FORBIDDEN" });
   });
 });

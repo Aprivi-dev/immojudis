@@ -16,9 +16,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * le client de service. Une mesure impossible (migration pas encore appliquée, panne) vaut `null` et
  * s'affiche « non mesuré », jamais zéro. La règle « moins de 5 » est une règle d'affichage de la page.
  */
-export type BidCeilingCount = number | null;
+type BidCeilingCount = number | null;
 
-export type BidCeilingWindow = {
+type BidCeilingWindow = {
   days: 7 | 30;
   /** Comptes distincts à qui une estimation a été servie. */
   accounts: BidCeilingCount;

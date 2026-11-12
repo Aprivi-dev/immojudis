@@ -10,7 +10,7 @@ import {
   sendAdminOfferOpeningTest,
 } from "@/lib/client-api";
 
-export const OFFER_OPENING_AUDIENCE_QUERY_KEY = ["admin-offer-opening-audience"] as const;
+const OFFER_OPENING_AUDIENCE_QUERY_KEY = ["admin-offer-opening-audience"] as const;
 
 /**
  * « Prévenir la liste d'attente » : les personnes qui ont demandé à être prévenues de l'ouverture de

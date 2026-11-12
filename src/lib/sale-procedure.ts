@@ -101,9 +101,9 @@ export const saleProcedureSchema = z.looseObject({
   }),
 });
 
-export type SaleProcedure = z.infer<typeof saleProcedureSchema>;
-export type SaleProcedureSource = z.infer<typeof sourceSchema>;
-export type StateSaleMethod = z.infer<typeof stateSaleMethodSchema>;
+type SaleProcedure = z.infer<typeof saleProcedureSchema>;
+type SaleProcedureSource = z.infer<typeof sourceSchema>;
+type StateSaleMethod = z.infer<typeof stateSaleMethodSchema>;
 
 export type SaleProcedurePresentation = {
   procedure: SaleProcedure | null;

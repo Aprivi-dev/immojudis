@@ -37,8 +37,6 @@ export const saleHistoryQuerySchema = z
   .refine((value) => value.saleId || value.department || value.city || value.tribunalCode, {
     message: "Indiquez une vente, un département, une ville ou un tribunal.",
   });
-
-export type SaleHistoryQueryInput = z.input<typeof saleHistoryQuerySchema>;
 export type SaleHistoryQuery = z.output<typeof saleHistoryQuerySchema>;
 
 export type SaleHistoryItem = {

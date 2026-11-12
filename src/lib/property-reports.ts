@@ -63,12 +63,9 @@ import {
 import {
   asJson,
   attachPlan,
-  createShareToken,
   defaultReportTitle,
   emptyToNull,
-  hashShareToken,
   normalizeShareExpiresAt,
-  normalizeShareToken,
   normalizeSourceTrace,
   normalizeStringList,
   pdfWatermarkForPlan,
@@ -76,6 +73,7 @@ import {
   saleLocation,
   shareIsExpired,
 } from "./property-report/serialization";
+import { createShareToken, hashShareToken, normalizeShareToken } from "@/lib/share-token";
 import { asRecord, numberValue, stringOrNumberValue, stringValue } from "@/lib/guards";
 import { NotFoundError } from "@/lib/api-errors";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
@@ -211,7 +209,7 @@ export type PropertyReportShareResponse = {
   share: PropertyReportShare;
 };
 
-export type PublicSharedCeiling = {
+type PublicSharedCeiling = {
   available: boolean;
   /** « Enchère plafond (simulation) » ou « Offre plafond (simulation) » ; `null` : rapport ancien. */
   label?: string | null;

@@ -67,7 +67,7 @@ export const PREVIEW_PAGE_SIZES = [24, 50, 100] as const;
  * Plafond des prix de la route, en euros : 100 millions. Aucune mise à prix n'en approche, et une
  * valeur plus grande (`1e30`, `99999999999999`) ne sert qu'à ouvrir une entrée de cache de plus.
  */
-export const MAX_PRICE_FILTER_EUR = 100_000_000;
+const MAX_PRICE_FILTER_EUR = 100_000_000;
 
 function isPageSize(value: number): boolean {
   return (PREVIEW_PAGE_SIZES as readonly number[]).includes(value);

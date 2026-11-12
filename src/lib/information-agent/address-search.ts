@@ -43,16 +43,16 @@ import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent
  * pour l'adresse trouvée. Toute erreur de contrôle écarte l'adresse (jamais d'autorisation par défaut).
  */
 
-export const INFORMATION_AGENT_ADDRESS_SEARCH_BUDGET_MS = 15_000;
+const INFORMATION_AGENT_ADDRESS_SEARCH_BUDGET_MS = 15_000;
 /** Au plus deux sites sont essayés (une annonce cite rarement plus d'un site de cabinet). */
-export const INFORMATION_AGENT_ADDRESS_SEARCH_MAX_SITES = 2;
+const INFORMATION_AGENT_ADDRESS_SEARCH_MAX_SITES = 2;
 /** Début du message de `assertInformationAgentRecipientCooldown` (couplage vérifié par un test). */
 export const RECIPIENT_COOLDOWN_MESSAGE_PREFIX = "Ce destinataire a déjà été sollicité";
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
-export type InformationAgentAddressSearchMethod = "other_listing" | "firm_website";
+type InformationAgentAddressSearchMethod = "other_listing" | "firm_website";
 
-export type InformationAgentAddressSearchAttempt = {
+type InformationAgentAddressSearchAttempt = {
   method: InformationAgentAddressSearchMethod;
   outcome:
     | "found"
@@ -368,16 +368,16 @@ export function isInformationAgentAddressSearchEnabled(
 }
 
 /** Seule l'origine de production consulte des sites tiers (jamais un aperçu ou un poste local). */
-export const INFORMATION_AGENT_ADDRESS_SEARCH_ORIGINS: readonly string[] = [
+const INFORMATION_AGENT_ADDRESS_SEARCH_ORIGINS: readonly string[] = [
   "https://immojudis.com",
   "https://www.immojudis.com",
 ];
 
-export const ADDRESS_SEARCH_DISABLED_NOTE =
+const ADDRESS_SEARCH_DISABLED_NOTE =
   " La recherche automatique d’adresse est désactivée : indiquez l’adresse et la page publique où vous l’avez relevée.";
-export const ADDRESS_SEARCH_NOT_PRODUCTION_NOTE =
+const ADDRESS_SEARCH_NOT_PRODUCTION_NOTE =
   " La recherche automatique d’adresse n’est active que sur le site de production : indiquez l’adresse et la page publique où vous l’avez relevée.";
-export const ADDRESS_SEARCH_SEND_REFUSED_MESSAGE =
+const ADDRESS_SEARCH_SEND_REFUSED_MESSAGE =
   "La recherche automatique d’adresse est désactivée : cette adresse ne peut pas être utilisée pour un envoi.";
 
 /**
@@ -395,7 +395,7 @@ export function assertInformationAgentSearchedAddressAllowed(
 
 export const ADDRESS_NOT_RECORDED_MESSAGE =
   "L’adresse retrouvée n’a pas pu être enregistrée : le brouillon a été annulé, réessayez.";
-export const AGENT_FOUND_ORIGIN_MISSING_MESSAGE =
+const AGENT_FOUND_ORIGIN_MISSING_MESSAGE =
   "L’adresse retrouvée par la recherche automatique n’a plus de ligne de registre de l’agent : l’origine saisie à la main n’est pas admise, annulez ce brouillon et relancez la préparation.";
 
 /**

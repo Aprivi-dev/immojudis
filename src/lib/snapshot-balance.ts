@@ -12,7 +12,7 @@ import { MAX_SIMULATOR_AMOUNT_EUR } from "@/lib/simulator-limits";
  */
 
 /** Les statuts pour lesquels un prix final a un sens : la vente a eu lieu et son résultat est connu. */
-export const FINAL_PRICE_STATUSES = ["won", "lost"] as const;
+const FINAL_PRICE_STATUSES = ["won", "lost"] as const;
 
 export function statusAllowsFinalPrice(status: string | null | undefined): boolean {
   return (FINAL_PRICE_STATUSES as readonly string[]).includes(status ?? "");

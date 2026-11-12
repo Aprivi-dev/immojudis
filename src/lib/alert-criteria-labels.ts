@@ -118,7 +118,7 @@ type AlertSearchCriteria = Pick<
 >;
 
 /** Les critères d'une alerte, dans la forme d'une recherche du catalogue. */
-export function alertToSalesSearch(alert: AlertSearchCriteria): SalesSearchParams {
+function alertToSalesSearch(alert: AlertSearchCriteria): SalesSearchParams {
   const advanced = alert.advanced_criteria ?? {};
   return {
     department: alert.department || undefined,

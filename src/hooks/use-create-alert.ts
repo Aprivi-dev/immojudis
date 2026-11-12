@@ -35,7 +35,7 @@ const ALERTS_PATH = "/alertes";
  * condition de `createAlertFromSearch` (texte libre, occupation, note, rendement, écart avec le
  * marché, DPE, maison avec terrain), puis ce que l'alerte gratuite accepte.
  */
-export const RESERVED_ALERT_CRITERIA_TEXT =
+const RESERVED_ALERT_CRITERIA_TEXT =
   "Les critères avancés (écart avec le marché, rendement, occupation, DPE…) font partie des alertes de l’offre Analyse. Avec le compte gratuit : zone, type de vente, type de bien, budget, surface…";
 
 export type CreateAlertOptions = {

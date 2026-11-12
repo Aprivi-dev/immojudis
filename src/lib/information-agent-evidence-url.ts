@@ -2,7 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 
-export const APPROVED_EVIDENCE_BUCKET = "information-agent-approved";
+const APPROVED_EVIDENCE_BUCKET = "information-agent-approved";
 export const APPROVED_EVIDENCE_URL_TTL_SECONDS = 10 * 60;
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";

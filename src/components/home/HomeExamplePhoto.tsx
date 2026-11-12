@@ -11,7 +11,7 @@ import { useCountTo } from "./use-count-to";
 import { useDemoLoop } from "./use-demo-loop";
 import styles from "./HomePage.module.css";
 
-export type ExamplePhotoPreset = { label: string; button: string; ceiling: number };
+type ExamplePhotoPreset = { label: string; button: string; ceiling: number };
 
 export type ExamplePhotoProps = {
   /** Première photo de l'annonce exemple, la même que sur /annonce-exemple. */

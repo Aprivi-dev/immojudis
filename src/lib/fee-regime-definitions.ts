@@ -19,7 +19,7 @@ import { TRIBUNAL_FEE_REGIME_TERMS, type FeeRegimeTerms } from "@/lib/fee-regime
 import type { FeeRegimeKey } from "@/lib/fee-regime-open";
 
 /** Une ligne du calendrier de trésorerie : quand, quoi, et l'explication. */
-export type CashStepText = { when: string; label: string; detail: string };
+type CashStepText = { when: string; label: string; detail: string };
 
 /**
  * Les textes qui dépendent du régime. Ils servent de repli tant qu'un régime ne les redéfinit pas :
@@ -93,7 +93,7 @@ export type FeeRegimeLabels = FeeRegimeTerms & {
 };
 
 /** Textes du régime tribunal : ceux qui étaient écrits dans le moteur et dans le planificateur. */
-export const TRIBUNAL_FEE_REGIME_LABELS: FeeRegimeLabels = {
+const TRIBUNAL_FEE_REGIME_LABELS: FeeRegimeLabels = {
   ...TRIBUNAL_FEE_REGIME_TERMS,
   referencePriceTerm: "mise à prix",
   bidVerb: "enchérir",
@@ -180,7 +180,7 @@ export type ConsignationRule = {
   estimated?: boolean;
 };
 
-export type EmolumentScale = {
+type EmolumentScale = {
   reference: string;
   /** Date de relevé du barème (jj/mm/aaaa). */
   date: string;

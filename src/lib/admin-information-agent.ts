@@ -253,7 +253,7 @@ export type InformationAgentFactSource = {
   senderMatchesRecipient: boolean | null;
 };
 
-export function informationAgentFactSource(message: FactSourceMessage): InformationAgentFactSource {
+function informationAgentFactSource(message: FactSourceMessage): InformationAgentFactSource {
   const metadata = recordOrEmpty(message.metadata);
   const channel =
     metadata.channel === "portal"
@@ -498,7 +498,7 @@ const callInformationAgentRpc: InformationAgentRpc = (functionName, args) =>
 
 type RedactionCheck = { adminId: string; confirmed: boolean; verifiedBy: string };
 
-export const REDACTION_CHECK_REQUIRED_MESSAGE =
+const REDACTION_CHECK_REQUIRED_MESSAGE =
   "Caviardage vérifié : cochez la case et indiquez le nom de la personne qui a contrôlé la pièce avant de la publier.";
 
 async function stageApprovedEvidencePublication(
@@ -639,10 +639,7 @@ async function abortFailedEvidencePublication(factId: string, publicPath: string
 }
 
 /** What can be published for an attachment: photos and images become WebP, PDFs are flattened. */
-export function publicRenditionKind(
-  factKey: string,
-  mimeType: string,
-): "photo" | "image" | "pdf" | null {
+function publicRenditionKind(factKey: string, mimeType: string): "photo" | "image" | "pdf" | null {
   if (factKey === "photo") return mimeType.startsWith("image/") ? "photo" : null;
   if (mimeType === "application/pdf") return "pdf";
   if (mimeType.startsWith("image/")) return "image";

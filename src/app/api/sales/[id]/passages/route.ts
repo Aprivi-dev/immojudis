@@ -1,11 +1,10 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { PublicApiError } from "@/lib/api-errors";
-import { apiRouteError } from "@/lib/api-observability";
+import { NotFoundError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { saleFeatureDoor } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -21,9 +20,10 @@ const saleIdSchema = z.string().guid();
  * timeline and the earlier passages of the property. Other signed-in accounts:
  * the counts only, as an invitation to the offer. The sale must be visible to the caller first.
  */
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const saleId = saleIdSchema.parse((await context.params).id);
+export const GET = apiRoute<{ id: string }>(
+  { scope: "sale-passages", fallbackMessage: "Historique de la vente indisponible." },
+  async (request, { params }) => {
+    const saleId = saleIdSchema.parse(params.id);
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
@@ -40,7 +40,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       .eq("id", saleId)
       .maybeSingle();
     if (error) throw error;
-    if (!sale) throw new PublicApiError("Vente introuvable.", 404);
+    if (!sale) throw new NotFoundError("Vente introuvable.");
 
     const passages = await getSalePassages(
       saleId,
@@ -58,10 +58,6 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     } else {
       body = { access: "teaser", summary: passages.summary };
     }
-    return NextResponse.json(body, { headers: { "cache-control": "private, no-store" } });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-passages", {
-      fallbackMessage: "Historique de la vente indisponible.",
-    });
-  }
-}
+    return body;
+  },
+);

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { getAudienceTracking } from "@/lib/audience-tracking";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  { scope: "api.audience-tracking", fallbackMessage: "Suivi d'audience indisponible" },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
     const response = await getAudienceTracking({
@@ -17,13 +18,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json(response, {
       headers: {
-        "cache-control": "private, no-store",
         "x-immojudis-audience-workspaces": String(response.summary.totalWorkspaces),
       },
     });
-  } catch (error) {
-    return apiRouteError(error, request, "audience-tracking", {
-      fallbackMessage: "Suivi d'audience indisponible",
-    });
-  }
-}
+  },
+);

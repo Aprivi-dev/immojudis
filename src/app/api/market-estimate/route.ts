@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { recordAccountProductEvent } from "@/lib/account-product-events.server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { PublicApiError } from "@/lib/api-errors";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 import { assertFeatureEntitlementVia, featureIncludedForSale } from "@/lib/property-reports";
 import { ceilingMarketContext } from "@/lib/market-estimate-ceiling";
@@ -41,8 +41,13 @@ function contextStatus(context: MarketContext): number {
 
 export const maxDuration = 60;
 
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  {
+    scope: "market-estimate",
+    fallbackMessage: "Estimation de marché indisponible.",
+    emptyBody: { estimate: null },
+  },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
@@ -72,7 +77,7 @@ export async function POST(request: Request) {
       .eq("id", saleId)
       .maybeSingle();
     if (visibilityError) throw visibilityError;
-    if (!visibleSale) throw new PublicApiError("Vente introuvable.", 404);
+    if (!visibleSale) throw new NotFoundError("Vente introuvable.");
     if (enteredSurface) {
       // Surface lue dans les pièces par ce compte : la valeur n'est ni stockée, ni journalisée, ni
       // comptée (aucun événement d'usage) ; elle ne sert qu'au plafond de ce compte. Toujours la
@@ -85,10 +90,7 @@ export async function POST(request: Request) {
       if (!context) {
         throw new PublicApiError("L’annonce publie déjà la surface de cette vente.", 409);
       }
-      return NextResponse.json(ceilingMarketContext(context), {
-        status: contextStatus(context),
-        headers: { "cache-control": "private, no-store" },
-      });
+      return NextResponse.json(ceilingMarketContext(context), { status: contextStatus(context) });
     }
     const response = await refreshSaleValuationOnDemand(saleId);
     if (response.estimate) {
@@ -116,18 +118,13 @@ export async function POST(request: Request) {
     return NextResponse.json(detailed ? response : ceilingMarketContext(response), {
       status,
       headers: {
-        "cache-control": response.estimate
-          ? "private, max-age=300, stale-while-revalidate=3600"
-          : "no-store",
+        ...(response.estimate
+          ? { "cache-control": "private, max-age=300, stale-while-revalidate=3600" }
+          : {}),
         ...(response.retryAfterSeconds
           ? { "retry-after": String(response.retryAfterSeconds) }
           : {}),
       },
     });
-  } catch (error) {
-    return apiRouteError(error, request, "market-estimate", {
-      fallbackMessage: "Unauthorized",
-      extra: { estimate: null },
-    });
-  }
-}
+  },
+);

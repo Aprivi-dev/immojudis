@@ -4,8 +4,8 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { PublicApiError } from "@/lib/api-errors";
-import { apiRouteError } from "@/lib/api-observability";
+import { NotFoundError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
@@ -19,9 +19,10 @@ const saleIdSchema = z.string().guid();
  * stay with the Analyse offer (`/api/market-estimate`). Only stored estimates
  * are read: a free preview never triggers a new computation.
  */
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const saleId = saleIdSchema.parse((await context.params).id);
+export const GET = apiRoute<{ id: string }>(
+  { scope: "value-preview", fallbackMessage: "Aperçu de la valeur indisponible." },
+  async (request, { params }) => {
+    const saleId = saleIdSchema.parse(params.id);
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
@@ -34,7 +35,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       .eq("id", saleId)
       .maybeSingle();
     if (error) throw error;
-    if (!sale) throw new PublicApiError("Vente introuvable.", 404);
+    if (!sale) throw new NotFoundError("Vente introuvable.");
     const preview = buildValuePreview(
       await getPrecomputedMarketEstimate(saleId),
       (sale as { starting_price_eur: number | null }).starting_price_eur,
@@ -43,7 +44,5 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     return NextResponse.json(preview, {
       headers: { "cache-control": "private, max-age=300, stale-while-revalidate=3600" },
     });
-  } catch (error) {
-    return apiRouteError(error, request, "value-preview", { fallbackMessage: "Unauthorized" });
-  }
-}
+  },
+);

@@ -87,7 +87,7 @@ export async function assertCourtRegistryDraftAllowed(
   await assertCourtRegistryFallbackLimits({ courtCode: fallback.court.code, saleId });
 }
 
-export const COURT_REGISTRY_SALE_CHANGED_MESSAGE =
+const COURT_REGISTRY_SALE_CHANGED_MESSAGE =
   "La vente n’est plus une vente au tribunal qui justifie une demande au greffe";
 
 /**
@@ -96,7 +96,7 @@ export const COURT_REGISTRY_SALE_CHANGED_MESSAGE =
  * `tribunal_inconsistent`), et l'annonce ne doit donner AUCUN email d'avocat ou de cabinet exploitable.
  * Sinon la demande au greffe n'a plus lieu d'être : régénérer le brouillon.
  */
-export async function assertCourtRegistrySaleCurrent({
+async function assertCourtRegistrySaleCurrent({
   saleId,
   courtCode,
 }: {
@@ -157,7 +157,7 @@ export function courtRegistryMissionChecks({
   };
 }
 
-export const COURT_REGISTRY_ORIGIN_MISSING_MESSAGE =
+const COURT_REGISTRY_ORIGIN_MISSING_MESSAGE =
   "L’adresse du greffe n’a plus de ligne de registre issue du référentiel des tribunaux : l’origine saisie à la main n’est pas admise, annulez ce brouillon et relancez la préparation.";
 
 /**

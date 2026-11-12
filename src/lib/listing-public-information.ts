@@ -54,7 +54,7 @@ const LAWYER_DISPLAYED_VALUES: Partial<Record<string, LawyerDisplayedValue>> = {
   sale_date: "sale_date",
 };
 
-export type PublicListingSection = {
+type PublicListingSection = {
   id: string;
   title: string;
   items: PublicListingFact[];

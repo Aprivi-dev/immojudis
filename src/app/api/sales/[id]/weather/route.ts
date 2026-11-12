@@ -1,8 +1,8 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { RateLimitError } from "@/lib/api-errors";
-import { apiRouteError, rateLimitResponse } from "@/lib/api-observability";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { getClimateHistory } from "@/lib/climate-history.server";
 import { resolveSaleCommune, validCoordinates } from "@/lib/commune-risks.server";
 import type { ClimateResult } from "@/lib/environment-reference";
@@ -24,31 +24,20 @@ type SaleWeatherResponse = {
  * route costs no third-party call. Only station-level figures leave the server:
  * the listing coordinates are read with the service role and never returned.
  */
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-): Promise<NextResponse<SaleWeatherResponse | { error: string }>> {
-  const parsedId = saleIdSchema.safeParse((await context.params).id);
-  if (!parsedId.success) {
-    return NextResponse.json({ error: "Identifiant de vente invalide." }, { status: 400 });
-  }
-  try {
+export const GET = apiRoute<{ id: string }>(
+  { scope: "sales.id.weather", fallbackMessage: "Historique météo indisponible" },
+  async (request, { params }) => {
+    const parsedId = saleIdSchema.safeParse(params.id);
+    if (!parsedId.success) throw new PublicApiError("Identifiant de vente invalide.", 400);
     await enforceIpRateLimit({
       request,
       bucketKey: "sales.weather",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-  } catch (error) {
-    if (error instanceof RateLimitError) {
-      return rateLimitResponse(error) as NextResponse<{ error: string }>;
-    }
-    throw error;
-  }
 
-  try {
     // Same rule as the listing page: only missing or quarantined sales are refused.
     const sale = await loadVisibleSaleLocation(parsedId.data);
-    if (!sale) return NextResponse.json({ error: "Vente introuvable." }, { status: 404 });
+    if (!sale) throw new NotFoundError("Vente introuvable.");
 
     let weather: ClimateResult;
     if (validCoordinates(sale.latitude, sale.longitude)) {
@@ -72,20 +61,14 @@ export async function GET(
         : { status: "unavailable", reason: "location_missing" };
     }
 
-    return NextResponse.json(
-      { saleId: parsedId.data, weather },
-      {
-        headers: {
-          "cache-control":
-            weather.status === "ready"
-              ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
-              : "public, max-age=300, s-maxage=300",
-        },
+    const body: SaleWeatherResponse = { saleId: parsedId.data, weather };
+    return NextResponse.json(body, {
+      headers: {
+        "cache-control":
+          weather.status === "ready"
+            ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
+            : "public, max-age=300, s-maxage=300",
       },
-    );
-  } catch (error) {
-    return apiRouteError(error, request, "sales.id.weather", {
-      fallbackMessage: "Historique météo indisponible",
     });
-  }
-}
+  },
+);

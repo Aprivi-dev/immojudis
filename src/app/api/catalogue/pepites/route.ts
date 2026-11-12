@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { NextResponse } from "next/server";
+import { apiRoute } from "@/lib/api-route";
 import {
   listPepiteFloodExposedIds,
   listPepiteSaleIds,
@@ -60,22 +61,21 @@ function errorCode(error: unknown): string {
   return typeof code === "string" && /^[A-Za-z0-9_]{1,16}$/.test(code) ? code : "unknown";
 }
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "api.catalogue.pepites");
-  try {
+export const GET = apiRoute(
+  {
+    scope: "api.catalogue.pepites",
+    fallbackMessage: "Liste des pépites indisponible.",
+    // Panne de la base : 503, jamais gardée. Le navigateur ne la prend pas pour « aucune pépite » (il ne met
+    // rien en cache et réessaie) ; une base sans la fonction, elle, donne 200 `{ ids: [] }`.
+    fallbackStatus: 503,
+  },
+  async (request) => {
+    // Quota atteint : 429, jamais gardé (le navigateur ne le prend pas pour « aucune pépite »).
     await enforceIpRateLimit({
       request,
       bucketKey: "catalogue.pepites",
       ...RATE_LIMIT_POLICIES.catalogPreviewIp,
     });
-  } catch (error) {
-    // Quota atteint : 429, jamais gardé (le navigateur ne le prend pas pour « aucune pépite »).
-    return apiError(error, context, {
-      fallbackMessage: "Liste des pépites indisponible.",
-      fallbackStatus: 503,
-    });
-  }
-  try {
     const ids = await cachedPepiteSaleIds();
     // La mention « exposée » est un complément : son erreur ne coûte jamais la liste des pépites (`ids`), ni un
     // 503. La réponse dégradée porte `exposedIds: []`, n'est gardée ni par le CDN ni par le cache de données, et
@@ -96,18 +96,7 @@ export async function GET(request: Request) {
         }),
       );
     }
-    return apiJson(
-      { ids, exposedIds },
-      context,
-      { headers: { "cache-control": degraded ? "no-store" : PUBLIC_CACHE } },
-      { echoRequestId: false },
-    );
-  } catch (error) {
-    // Panne de la base : 503, jamais gardée. Le navigateur ne la prend pas pour « aucune pépite » (il ne met
-    // rien en cache et réessaie) ; une base sans la fonction, elle, donne 200 `{ ids: [] }` plus haut.
-    return apiError(error, context, {
-      fallbackMessage: "Liste des pépites indisponible.",
-      fallbackStatus: 503,
-    });
-  }
-}
+    if (degraded) return { ids, exposedIds };
+    return NextResponse.json({ ids, exposedIds }, { headers: { "cache-control": PUBLIC_CACHE } });
+  },
+);

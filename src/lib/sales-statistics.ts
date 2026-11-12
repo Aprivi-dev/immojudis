@@ -24,7 +24,7 @@ import { ForbiddenError } from "@/lib/api-errors";
 
 const SALES_STATISTICS_SOURCE_LIMIT = 1_000;
 
-export type SalesStatisticsSegment = {
+type SalesStatisticsSegment = {
   key: string;
   label: string;
   count: number;

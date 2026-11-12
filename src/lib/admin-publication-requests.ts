@@ -7,14 +7,14 @@ import { NotFoundError } from "@/lib/api-errors";
 
 type PublicationRequestRow = Tables<"listing_publication_requests">;
 /** Colonne `status` protégée par une contrainte CHECK : le type généré est string. */
-export type PublicationRequest = Omit<PublicationRequestRow, "status"> & {
+type PublicationRequest = Omit<PublicationRequestRow, "status"> & {
   status: "pending" | "approved" | "rejected";
 };
 type PublicationSaleInsert = Database["public"]["Tables"]["auction_sales"]["Insert"] & {
   description?: string | null;
 };
 
-export const adminPublicationStatusSchema = z.enum(["all", "pending", "approved", "rejected"]);
+const adminPublicationStatusSchema = z.enum(["all", "pending", "approved", "rejected"]);
 
 export const adminPublicationQuerySchema = z.object({
   status: adminPublicationStatusSchema.default("all"),

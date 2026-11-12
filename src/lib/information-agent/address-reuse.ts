@@ -19,7 +19,7 @@ import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
  * Plusieurs adresses différentes chez les annonces concordantes : ambiguïté, rien n'est retenu.
  */
 
-export const ADDRESS_REUSE_MAX_AGE_MONTHS = 6;
+const ADDRESS_REUSE_MAX_AGE_MONTHS = 6;
 const MAX_ROWS = 200;
 const MAX_PHONES = 3;
 /** Durée maximale de la lecture en base quand l'appelant ne fixe pas de budget. */
@@ -77,7 +77,7 @@ function parsedDate(value: string | null | undefined): number | null {
  * Date de référence d'une annonce : la plus récente de sa date de vente et de sa dernière
  * observation. Une vente à venir est donc récente.
  */
-export function listingReferenceTime(row: {
+function listingReferenceTime(row: {
   sale_date?: string | null;
   last_seen_at?: string | null;
 }): number | null {

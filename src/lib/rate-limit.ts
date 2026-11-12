@@ -77,7 +77,7 @@ export async function tryConsumeUserRateLimit(
 }
 
 /** Valeur de `clientIpFromRequest` quand la requête ne porte aucune adresse exploitable. */
-export const UNKNOWN_CLIENT_IP = "unknown";
+const UNKNOWN_CLIENT_IP = "unknown";
 
 /**
  * Best-effort client address. On Vercel, x-real-ip / x-forwarded-for are set by the

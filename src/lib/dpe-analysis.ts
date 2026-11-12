@@ -10,9 +10,9 @@ import { excerpt, flattenKeyValues } from "@/lib/analysis-text";
 import { cleanText } from "@/lib/clean-text";
 import { riskTexts } from "@/lib/sale-risk-texts";
 
-export type DpeImpactLevel = "positive" | "neutral" | "watch" | "risk" | "unknown";
+type DpeImpactLevel = "positive" | "neutral" | "watch" | "risk" | "unknown";
 
-export type DpeEvidence = {
+type DpeEvidence = {
   label: string;
   source: string;
   excerpt: string;

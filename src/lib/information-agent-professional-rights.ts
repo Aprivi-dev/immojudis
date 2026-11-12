@@ -13,7 +13,7 @@ import { normalizeOptOutEmail } from "@/lib/information-agent-opt-out";
  */
 
 export const PROFESSIONAL_PRIVACY_SOURCE = "information_agent_professional_link";
-export const PROFESSIONAL_REQUEST_TYPES = ["access", "erasure"] as const;
+const PROFESSIONAL_REQUEST_TYPES = ["access", "erasure"] as const;
 export type ProfessionalRequestType = (typeof PROFESSIONAL_REQUEST_TYPES)[number];
 
 const PAGE_SIZE = 1000;

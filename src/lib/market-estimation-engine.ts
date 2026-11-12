@@ -32,7 +32,7 @@ export type MarketEngineCandidate = {
   longitude?: number | null;
 };
 
-export type ScoredMarketComparable = MarketEngineCandidate & {
+type ScoredMarketComparable = MarketEngineCandidate & {
   primarySurfaceM2: number;
   monthsOld: number;
   observedPricePerM2: number;
@@ -50,7 +50,7 @@ export type ScoredMarketComparable = MarketEngineCandidate & {
   };
 };
 
-export type MarketPredictionInterval = {
+type MarketPredictionInterval = {
   coverageTarget: 0.8;
   method: "local_jackknife" | "segment_fallback";
   p10PricePerM2: number;
@@ -131,7 +131,7 @@ export function mutationSegmentFromCode(
   return null;
 }
 
-export function primarySurfaceForSegment(
+function primarySurfaceForSegment(
   segment: Exclude<MarketPropertySegment, "unsupported">,
   candidate: Pick<MarketEngineCandidate, "builtSurfaceM2" | "landSurfaceM2">,
 ): number | null {

@@ -1,11 +1,22 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { lawyerDirectoryQuerySchema, listLawyerDirectory } from "@/lib/lawyer-directory";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { PUBLIC_DIRECTORY_CACHE_SECONDS, RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
-export async function GET(request: Request) {
-  try {
+export const GET = apiRoute(
+  {
+    scope: "api.lawyers.directory",
+    fallbackMessage: "Annuaire indisponible",
+    emptyBody: {
+      lawyers: [],
+      sectorLabel: null,
+      barAssociation: null,
+      isDemo: false,
+      officialSource: null,
+    },
+  },
+  async (request) => {
     await enforceIpRateLimit({
       request,
       bucketKey: "lawyers.directory",
@@ -26,16 +37,5 @@ export async function GET(request: Request) {
         "cache-control": `public, s-maxage=${PUBLIC_DIRECTORY_CACHE_SECONDS}, stale-while-revalidate=300`,
       },
     });
-  } catch (error) {
-    return apiRouteError(error, request, "lawyers.directory", {
-      fallbackMessage: "Annuaire indisponible",
-      extra: {
-        lawyers: [],
-        sectorLabel: null,
-        barAssociation: null,
-        isDemo: false,
-        officialSource: null,
-      },
-    });
-  }
-}
+  },
+);

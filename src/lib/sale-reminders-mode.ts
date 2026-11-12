@@ -11,7 +11,7 @@ import { serverEnv, type EnvSource } from "@/lib/env";
  *
  * Un doute sur la valeur ferme l'envoi : une faute de frappe ne peut pas ouvrir l'envoi à tous.
  */
-export const SALE_REMINDERS_MODES = ["off", "internal", "on"] as const;
+const SALE_REMINDERS_MODES = ["off", "internal", "on"] as const;
 export type SaleRemindersMode = (typeof SALE_REMINDERS_MODES)[number];
 
 export function saleRemindersMode(

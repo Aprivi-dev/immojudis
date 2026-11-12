@@ -1,11 +1,10 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { PublicApiError } from "@/lib/api-errors";
-import { apiRouteError } from "@/lib/api-observability";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
 import { buildLawyerQuestions } from "@/lib/lawyer-questions";
@@ -28,9 +27,13 @@ const saleIdSchema = z.string().guid();
  * (« 3 déblocages par mois »), pour cette vente seulement. Les autres comptes reçoivent un refus. La vente
  * doit être visible de l'appelant (sa session, pas le rôle de service) et publiée.
  */
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const saleId = saleIdSchema.parse((await context.params).id);
+export const GET = apiRoute<{ id: string }>(
+  {
+    scope: "sales.id.lawyer-questions",
+    fallbackMessage: "Questions pour l’avocat indisponibles.",
+  },
+  async (request, { params }) => {
+    const saleId = saleIdSchema.parse(params.id);
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
@@ -39,10 +42,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     });
     const door = await saleFeatureDoor(auth, "property.documentReading", saleId);
     if (!door) {
-      throw new PublicApiError(
-        "Les questions pour l’avocat sont réservées à l’offre Analyse.",
-        403,
-      );
+      throw new ForbiddenError("Les questions pour l’avocat sont réservées à l’offre Analyse.");
     }
     // Analyse : la fiche complète ; un déblocage : les colonnes de la vue débloquée.
     const { data: sale, error } =
@@ -54,7 +54,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
             .maybeSingle()
         : await auth.supabase.from(UNLOCKED_VIEW).select("*").eq("id", saleId).maybeSingle();
     if (error) throw error;
-    if (!sale) throw new PublicApiError("Vente introuvable.", 404);
+    if (!sale) throw new NotFoundError("Vente introuvable.");
     // Un JWT administrateur contourne la sécurité par ligne : même contrôle de publication que la fiche.
     await assertSalePublicationVisible(saleId);
 
@@ -65,10 +65,6 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         ? getFactReliabilitiesFromClaims(row, (await readSaleFactClaims(saleId)).claims)
         : undefined;
     const body: LawyerQuestionsResponse = { questions: buildLawyerQuestions(row, facts) };
-    return NextResponse.json(body, { headers: { "cache-control": "private, no-store" } });
-  } catch (error) {
-    return apiRouteError(error, request, "sales.id.lawyer-questions", {
-      fallbackMessage: "Questions pour l’avocat indisponibles.",
-    });
-  }
-}
+    return body;
+  },
+);

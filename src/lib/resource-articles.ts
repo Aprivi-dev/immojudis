@@ -26,7 +26,7 @@ import energyArticle from "@/content/resources/dpe-diagnostics-travaux-bien-ener
 import { GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 
 /** Un terme défini dans un glossaire : une phrase, un renvoi vers l'article détaillé et la source. */
-export interface ResourceGlossaryEntry {
+interface ResourceGlossaryEntry {
   term: string;
   definition: string;
   /** Page du site qui détaille le terme (article, guide, simulateur). */
@@ -36,12 +36,12 @@ export interface ResourceGlossaryEntry {
 }
 
 /** Une question de la FAQ visible d'un article, reprise à l'identique dans le balisage FAQPage. */
-export interface ResourceFaqItem {
+interface ResourceFaqItem {
   question: string;
   answer: string;
 }
 
-export interface ResourceSection {
+interface ResourceSection {
   id: string;
   title: string;
   paragraphs: string[];

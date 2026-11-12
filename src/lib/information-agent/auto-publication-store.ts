@@ -29,7 +29,7 @@ const MAX_CANDIDATES_PER_PASS = 500;
  * lecture demande le total exact (`count: "exact"`) et une lecture dont le total dépasse les lignes reçues
  * est tronquée, donc traitée comme illisible, jamais comme complète.
  */
-export const AUTO_PUBLICATION_REQUEST_ROWS = 1000;
+const AUTO_PUBLICATION_REQUEST_ROWS = 1000;
 /** Temps maximal d'écriture des décisions dans une passe (le cron des réponses dure au plus 300 s). */
 const PASS_TIME_BUDGET_MS = 60_000;
 /** La boucle d'écriture s'arrête après ce nombre d'échecs consécutifs du même code. */

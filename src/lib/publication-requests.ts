@@ -7,10 +7,10 @@ import type { PublicationRequestStatus } from "@/lib/publication-requests-client
 import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 
 export const PUBLICATION_DOCUMENT_BUCKET = "listing-request-documents" as const;
-export const PUBLICATION_DOCUMENT_URL_TTL_SECONDS = 5 * 60;
-export const MAX_PUBLICATION_DOCUMENTS = 20;
-export const MAX_PUBLICATION_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024;
-export const PUBLICATION_REQUEST_PAGE_SIZE = 50;
+const PUBLICATION_DOCUMENT_URL_TTL_SECONDS = 5 * 60;
+const MAX_PUBLICATION_DOCUMENTS = 20;
+const MAX_PUBLICATION_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024;
+const PUBLICATION_REQUEST_PAGE_SIZE = 50;
 
 const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
   "application/pdf",
@@ -40,7 +40,7 @@ const uploadedPublicationDocumentSchema = z.object({
   uploaded_at: z.string().trim().min(1).max(80),
 });
 
-export const publicationRequestFieldsSchema = z.object({
+const publicationRequestFieldsSchema = z.object({
   title: z.string().trim().min(1).max(240),
   location: z.string().trim().min(1).max(240),
   startingPriceEur: z.number().finite().nonnegative().nullable(),
@@ -85,7 +85,7 @@ export const publicationRequestFinalizeSchema = z.object({
   documents: z.array(uploadedPublicationDocumentSchema).max(MAX_PUBLICATION_DOCUMENTS),
 });
 
-export type PublicationDocumentView = Omit<UploadedPublicationDocument, "path" | "bucket"> & {
+type PublicationDocumentView = Omit<UploadedPublicationDocument, "path" | "bucket"> & {
   signedUrl: string | null;
 };
 
@@ -309,7 +309,7 @@ export async function getPublicationRequest({
   };
 }
 
-export async function assertApprovedProfessional(auth: SupabaseAuthContext): Promise<string> {
+async function assertApprovedProfessional(auth: SupabaseAuthContext): Promise<string> {
   const claimEmail = normalizeEmail(auth.claims.email);
   if (!claimEmail) {
     throw new ForbiddenError("Une adresse email confirmée est obligatoire avant tout dépôt.");

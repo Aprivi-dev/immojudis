@@ -38,7 +38,7 @@ describe("smart alerts cron route", () => {
     await runHandler();
     const [, jobName, , options] = mocks.runMonitoredCron.mock.calls[0];
     expect(jobName).toBe("smart-alerts");
-    expect(options).toEqual({ catchUpSchedule: "15 8 * * *" });
+    expect(options).toBeUndefined();
     expect(maxDuration).toBe(300);
   });
 

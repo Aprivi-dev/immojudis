@@ -26,14 +26,14 @@ import {
  * refusé ici, refusé par la RPC, et impossible à enregistrer (contrainte de la table).
  */
 
-export const AUTO_PUBLICATION_MODE_LABELS: Record<AutoPublicationMode, string> = {
+const AUTO_PUBLICATION_MODE_LABELS: Record<AutoPublicationMode, string> = {
   off: "Arrêt",
   simulation: "Simulation",
   auto: "Automatique",
 };
 
 /** Conditions du déverrouillage du mode automatique (étape 6 du plan d'enrichissement). */
-export const AUTO_PUBLICATION_LOCK_REASONS = [
+const AUTO_PUBLICATION_LOCK_REASONS = [
   "textes juridiques mis à jour et publiés",
   "AIPD mise à jour et signée",
   "validation des huit points par un avocat",

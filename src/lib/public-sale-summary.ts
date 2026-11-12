@@ -90,7 +90,7 @@ function isMissingFunction(error: ErrorLike, fn = "get_public_sale_summary"): bo
   );
 }
 
-export function mapPublicSaleDetails(row: DetailsRow): Partial<AuctionSale> {
+function mapPublicSaleDetails(row: DetailsRow): Partial<AuctionSale> {
   return {
     land_surface_m2: row.land_surface_m2,
     parking_count: row.parking_count,
@@ -215,7 +215,7 @@ function warnMarketGapBand(saleId: string, code?: string, message?: string) {
   );
 }
 
-export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
+function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
   return {
     id: row.id,
     starting_price_eur: row.starting_price_eur,

@@ -6,7 +6,7 @@ import { parseFiniteNumber as finiteNumber } from "@/lib/finite-number";
  * Shared by the API route (server) and the sale page (browser).
  */
 
-export type SaleTimelineKind =
+type SaleTimelineKind =
   | "first_seen"
   | "sale_date_changed"
   | "starting_price_changed"
@@ -100,7 +100,7 @@ export function mapSalePassages(
   };
 }
 
-export function summarizeSalePassages(
+function summarizeSalePassages(
   timeline: SaleTimelineEvent[],
   previousPassages: SalePreviousPassage[],
   currentStartingPrice: number | null,

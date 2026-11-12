@@ -852,7 +852,7 @@ export function ListingDescription({
  * `municipality`) ne désigne pas le bien ; un point que le pipeline n'a pas pu recouper avec la source
  * (`unverified_source_coordinates`) est à vérifier. Rien à dire pour une position à l'adresse.
  */
-export function locationPositionNotes(
+function locationPositionNotes(
   sale: Pick<AuctionSale, "location_precision" | "quality_flags">,
 ): string[] {
   const notes: string[] = [];

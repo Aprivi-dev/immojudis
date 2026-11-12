@@ -212,7 +212,7 @@ export function historyModeForDraftChange(previous: SearchDraft, next: SearchDra
     : "replace";
 }
 
-export function stringifyNumber(value: number | undefined) {
+function stringifyNumber(value: number | undefined) {
   return value == null ? "" : String(value);
 }
 
@@ -248,7 +248,7 @@ export function surfaceRangeError(draft: Pick<SearchDraft, "minSqft" | "maxSqft"
   return min != null && max != null && min > max ? MIN_SURFACE_ABOVE_MAX_MESSAGE : null;
 }
 
-export function cleanString(value: string) {
+function cleanString(value: string) {
   return value.trim() || undefined;
 }
 
@@ -323,7 +323,7 @@ export function searchStatisticsFromServer(
   };
 }
 
-export function median(values: number[]): number | null {
+function median(values: number[]): number | null {
   if (!values.length) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
@@ -422,9 +422,7 @@ export async function watchedZoneInputFromSearch(
   return null;
 }
 
-export function alertDefaultsFromSearch(
-  search: SalesSearchParams,
-): WatchedZoneInput["alertDefaults"] {
+function alertDefaultsFromSearch(search: SalesSearchParams): WatchedZoneInput["alertDefaults"] {
   return {
     maxPriceEur: search.maxPrice ?? null,
     minSurfaceM2: search.minSqft ?? null,
@@ -439,6 +437,6 @@ export function alertDefaultsFromSearch(
   };
 }
 
-export function clampZoneName(value: string): string {
+function clampZoneName(value: string): string {
   return value.trim().slice(0, 120) || "Zone surveillée";
 }

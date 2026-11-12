@@ -5,7 +5,7 @@ import { saleDisplayTitle } from "@/lib/sale-title";
 import { hasCoordinates } from "@/lib/search/search-filters";
 import type { AuctionSale } from "@/lib/types";
 
-export type MapboxSaleFeatureProperties = {
+type MapboxSaleFeatureProperties = {
   saleId: string;
   title: string;
   priceLabel: string;
@@ -20,7 +20,7 @@ export type MapboxSaleFeatureProperties = {
   approx: 0 | 1;
 };
 
-export type MapboxSaleFeature = {
+type MapboxSaleFeature = {
   type: "Feature";
   geometry: {
     type: "Point";

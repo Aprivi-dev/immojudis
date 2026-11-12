@@ -7,7 +7,7 @@ import {
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { ConfigurationError } from "@/lib/api-errors";
 
-export const PUBLIC_TRIBUNAL_DIRECTORY_REVALIDATE_SECONDS = 86_400;
+const PUBLIC_TRIBUNAL_DIRECTORY_REVALIDATE_SECONDS = 86_400;
 
 type DirectoryRpcClient = {
   rpc: (fn: "get_public_tribunal_directory") => PromiseLike<{ data: unknown; error: unknown }>;

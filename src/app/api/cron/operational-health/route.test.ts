@@ -6,9 +6,9 @@ const mocks = vi.hoisted(() => ({
   runMonitoredCron: vi.fn(),
 }));
 
-vi.mock("@/lib/cron-jobs", () => ({
+vi.mock("@/lib/cron-jobs", () => ({ runMonitoredCron: mocks.runMonitoredCron }));
+vi.mock("@/lib/operational-health-job", () => ({
   evaluateOperationalHealth: mocks.evaluateOperationalHealth,
-  runMonitoredCron: mocks.runMonitoredCron,
 }));
 vi.mock("@/lib/pipeline-dispatch", () => ({
   dispatchDuePipeline: mocks.dispatchDuePipeline,

@@ -155,7 +155,7 @@ export async function listFactsForCases(caseIds: string[]): Promise<InformationA
   }));
 }
 
-export function isQuestionKey(value: string): value is InformationAgentQuestionKey {
+function isQuestionKey(value: string): value is InformationAgentQuestionKey {
   return value in INFORMATION_AGENT_QUESTIONS;
 }
 

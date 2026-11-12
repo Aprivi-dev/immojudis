@@ -5,9 +5,9 @@ import type { CeilingPlan } from "@/lib/bid-ceiling-engine";
 import { formatPrice } from "@/lib/format";
 
 /** Sous cette part de la mise à prix, l'écart au-dessus de la mise à prix est une marge étroite. */
-export const NARROW_MARGIN_RATIO = 0.05;
+const NARROW_MARGIN_RATIO = 0.05;
 
-export type CeilingStartGapKind = "above" | "narrow" | "below";
+type CeilingStartGapKind = "above" | "narrow" | "below";
 
 export type CeilingStartGap = {
   kind: CeilingStartGapKind;

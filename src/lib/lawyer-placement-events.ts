@@ -18,8 +18,6 @@ export const lawyerPlacementEventInputSchema = z.object({
   pagePath: z.string().trim().max(300).optional(),
   viewport: z.enum(["desktop", "mobile", "unknown"]).default("unknown"),
 });
-
-export type LawyerPlacementEventInput = z.input<typeof lawyerPlacementEventInputSchema>;
 export type LawyerPlacementEventPayload = z.output<typeof lawyerPlacementEventInputSchema>;
 
 export type LawyerPlacementEventResponse = {
@@ -28,7 +26,7 @@ export type LawyerPlacementEventResponse = {
   reason: "recorded" | "not_featured" | "no_featured_lawyer" | "duplicate";
 };
 
-export const PLACEMENT_EVENT_DEDUPE_SECONDS = 86_400;
+const PLACEMENT_EVENT_DEDUPE_SECONDS = 86_400;
 
 export function placementEventDedupeKey(input: LawyerPlacementEventPayload): string {
   return [

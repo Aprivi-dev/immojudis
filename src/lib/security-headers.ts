@@ -9,8 +9,8 @@ type SecurityHeaderOptions = {
 
 export type SecurityHeader = { key: string; value: string };
 
-export const CSP_REPORT_PATH = "/api/csp-report";
-export const CSP_REPORT_GROUP = "csp-endpoint";
+const CSP_REPORT_PATH = "/api/csp-report";
+const CSP_REPORT_GROUP = "csp-endpoint";
 
 /**
  * How the nonce-based CSP is delivered once it is delivered at all (see `strictCspEnabled`).

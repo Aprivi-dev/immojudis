@@ -199,7 +199,7 @@ const storedEstimateSchema = z
   })
   .passthrough();
 
-export class TribunalListingStatisticsUnavailableError extends Error {
+class TribunalListingStatisticsUnavailableError extends Error {
   constructor(
     message = "Les statistiques d’annonces du tribunal sont temporairement indisponibles.",
   ) {

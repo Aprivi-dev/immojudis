@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { apiRoute } from "@/lib/api-route";
 import { DETAIL_VIEW } from "@/lib/sale-views";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
@@ -43,16 +44,12 @@ type SaleFactsResponse = {
   source: "claims" | "legacy";
 };
 
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-): Promise<NextResponse<SaleFactsResponse | { error: string }>> {
-  const parsedId = saleIdSchema.safeParse((await context.params).id);
-  if (!parsedId.success) {
-    return NextResponse.json({ error: "Identifiant de vente invalide." }, { status: 400 });
-  }
+export const GET = apiRoute<{ id: string }>(
+  { scope: "sales.id.facts", fallbackMessage: "Fiabilité des données indisponible" },
+  async (request, { params }) => {
+    const parsedId = saleIdSchema.safeParse(params.id);
+    if (!parsedId.success) throw new PublicApiError("Identifiant de vente invalide.", 400);
 
-  try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const { data: sale, error: saleError } = await auth.supabase
       .from(DETAIL_VIEW)
@@ -63,9 +60,7 @@ export async function GET(
     if (saleError) throw saleError;
     // The access check uses the user's RLS-bound client. The service-role
     // reader below is only reached after the sale is visible to that user.
-    if (!sale) {
-      return NextResponse.json({ error: "Vente introuvable." }, { status: 404 });
-    }
+    if (!sale) throw new NotFoundError("Vente introuvable.");
 
     // Admin JWTs and service-role reads can bypass the catalogue RLS policy.
     // Keep this user-facing facts endpoint subject to the same status and
@@ -74,22 +69,11 @@ export async function GET(
 
     const claimRead = await readSaleFactClaims(parsedId.data);
     const facts = getFactReliabilitiesFromClaims(saleRow(sale), claimRead.claims);
+    const body: SaleFactsResponse = {
+      facts,
+      source: claimRead.claims.length ? "claims" : "legacy",
+    };
 
-    return NextResponse.json(
-      {
-        facts,
-        source: claimRead.claims.length ? "claims" : "legacy",
-      },
-      {
-        headers: {
-          "cache-control": "private, no-store",
-          "referrer-policy": "no-referrer",
-        },
-      },
-    );
-  } catch (error) {
-    return apiRouteError(error, request, "sales.id.facts", {
-      fallbackMessage: "Fiabilité des données indisponible",
-    });
-  }
-}
+    return NextResponse.json(body, { headers: { "referrer-policy": "no-referrer" } });
+  },
+);

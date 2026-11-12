@@ -3,12 +3,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import {
-  apiError,
-  apiJson,
-  createApiRequestContext,
-  withApiHeaders,
-} from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { getCadastralParcels, getSale } from "@/lib/property-report/repository";
 import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-limit";
@@ -25,11 +20,16 @@ const querySchema = z.object({
   refresh: z.enum(["0", "1"]).default("0"),
 });
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const context = createApiRequestContext(request, "land-report.sale");
-  try {
+export const GET = apiRoute<{ id: string }>(
+  {
+    scope: "land-report.sale",
+    fallbackMessage: "L’analyse du PLU et des risques est momentanément indisponible.",
+    fallbackStatus: 503,
+    versionedApi: true,
+  },
+  async (request, { api, params }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    const { id } = paramsSchema.parse(await params);
+    const { id } = paramsSchema.parse(params);
     const query = querySchema.parse(Object.fromEntries(new URL(request.url).searchParams));
     // Les droits sont indépendants : contrôlés ensemble, avant toute lecture de la vente.
     const [plan] = await Promise.all([
@@ -54,7 +54,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const sale = await getSale(auth.supabase, id);
     await enforceUserRateLimit({
       userId: auth.userId,
-      context,
+      context: api,
       bucketKey: "land-report",
       limit: 12,
       windowSeconds: 60,
@@ -71,7 +71,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const report = await getCachedLandReport(landLocationInputFromSale(sale, parcels), {
       refresh: query.refresh === "1",
     });
-    const headers = { "cache-control": "private, no-store", vary: "authorization" };
     if (query.format === "pdf") {
       const address = [sale.address, sale.postal_code, sale.city].filter(Boolean).join(", ");
       const pdf = createTextPdf({
@@ -83,25 +82,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         headings: LAND_REPORT_HEADINGS,
         footer: "Immojudis - preuves officielles et vérifications, ne vaut pas autorisation.",
       });
-      return withApiHeaders(
-        new Response(new Uint8Array(pdf), {
-          headers: {
-            ...headers,
-            "content-type": "application/pdf",
-            "content-disposition": `attachment; filename="immojudis-plu-risques-${id}.pdf"`,
-          },
-        }),
-        context,
-      );
+      return new Response(new Uint8Array(pdf), {
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": `attachment; filename="immojudis-plu-risques-${id}.pdf"`,
+        },
+      });
     }
-    return apiJson({ report }, context, { headers });
-  } catch (error) {
-    const response = apiError(error, context, {
-      fallbackMessage: "L’analyse du PLU et des risques est momentanément indisponible.",
-      fallbackStatus: 503,
-    });
-    response.headers.set("cache-control", "private, no-store");
-    response.headers.set("vary", "authorization");
-    return response;
-  }
-}
+    return { report };
+  },
+);

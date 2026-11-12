@@ -1,8 +1,9 @@
+import { NextResponse } from "next/server";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
@@ -11,35 +12,26 @@ import {
   privacyRequestInputSchema,
 } from "@/lib/privacy-requests";
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "api.privacy.requests.list");
-  try {
+export const GET = apiRoute(
+  { scope: "api.privacy.requests.list", fallbackMessage: "Demandes indisponibles." },
+  async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    return apiJson(await listPrivacyRequests(auth), context);
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Demandes indisponibles.",
-      fallbackStatus: 400,
-    });
-  }
-}
+    return listPrivacyRequests(auth);
+  },
+);
 
-export async function POST(request: Request) {
-  const context = createApiRequestContext(request, "api.privacy.requests.create");
-  try {
+export const POST = apiRoute(
+  { scope: "api.privacy.requests.create", fallbackMessage: "Demande impossible." },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
       bucketKey: "privacy-requests.create",
       ...RATE_LIMIT_POLICIES.formSubmit,
+      context: api,
     });
     const input = privacyRequestInputSchema.parse(await request.json());
     const response = await createPrivacyRequest({ auth, input });
-    return apiJson(response, context, { status: 201 });
-  } catch (error) {
-    return apiError(error, context, {
-      fallbackMessage: "Demande impossible.",
-      fallbackStatus: 400,
-    });
-  }
-}
+    return NextResponse.json(response, { status: 201 });
+  },
+);

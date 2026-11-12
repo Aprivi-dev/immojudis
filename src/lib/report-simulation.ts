@@ -180,7 +180,7 @@ export function computeReportRentalScenario(
 const pct = (max: number) => z.number().check(z.gte(0), z.lte(max));
 const optional = <T extends z.ZodMiniType>(schema: T) => z.optional(z.nullable(schema));
 
-export const ceilingChoicesSchema = z.object({
+const ceilingChoicesSchema = z.object({
   project: z.optional(z.enum(["habiter", "louer", "revendre"])),
   profile: z.optional(z.enum(["prudent", "equilibre", "offensif"])),
   customMarginPct: optional(pct(50)),

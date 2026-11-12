@@ -204,13 +204,14 @@ describe("P4-02 rate limits on costly and public routes", () => {
     }
     expect(mocks.listDirectory).not.toHaveBeenCalled();
     expect(mocks.boundary).not.toHaveBeenCalled();
+    // The four calls run in parallel: their order depends on each route's own awaits.
     expect(
-      mocks.enforceIp.mock.calls.map(([options]) => [options.bucketKey, options.limit]),
+      mocks.enforceIp.mock.calls.map(([options]) => [options.bucketKey, options.limit]).sort(),
     ).toEqual([
+      ["billing.offer", 60],
+      ["geographic-boundary", 60],
       ["lawyers.directory", 60],
       ["lawyers.featured", 60],
-      ["geographic-boundary", 60],
-      ["billing.offer", 60],
     ]);
   });
 
@@ -294,12 +295,14 @@ describe("P4-02 rate limits on costly and public routes", () => {
       bucketKey: "lawyer-referrals.create",
       limit: 10,
       windowSeconds: 3600,
+      context: expect.objectContaining({ scope: "api.lawyer-referrals.create" }),
     });
     expect(mocks.enforceUser).toHaveBeenCalledWith({
       userId: "user-1",
       bucketKey: "privacy-requests.create",
       limit: 10,
       windowSeconds: 3600,
+      context: expect.objectContaining({ scope: "api.privacy.requests.create" }),
     });
 
     mocks.enforceUser.mockRejectedValue(new RateLimitError(undefined, 600));
@@ -319,14 +322,19 @@ describe("P4-02 rate limits on costly and public routes", () => {
     );
     await environmentPost(json({}));
 
-    for (const bucketKey of ["dvf-comparables", "environment-context"]) {
-      expect(mocks.enforceUser).toHaveBeenCalledWith({
-        userId: "user-1",
-        bucketKey,
-        limit: 30,
-        windowSeconds: 60,
-      });
-    }
+    expect(mocks.enforceUser).toHaveBeenCalledWith({
+      userId: "user-1",
+      bucketKey: "dvf-comparables",
+      limit: 30,
+      windowSeconds: 60,
+    });
+    expect(mocks.enforceUser).toHaveBeenCalledWith({
+      userId: "user-1",
+      bucketKey: "environment-context",
+      limit: 30,
+      windowSeconds: 60,
+      context: expect.objectContaining({ scope: "api.environment-context" }),
+    });
   });
 
   it("caps environment-context per day, only for an entitled account, with the daily message", async () => {

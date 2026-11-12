@@ -23,7 +23,7 @@ export type UnroutedInboundReason =
   | "case_not_open"
   | "token_mismatch";
 
-export const UNROUTED_EXCERPT_MAX_CHARS = 1000;
+const UNROUTED_EXCERPT_MAX_CHARS = 1000;
 const UNROUTED_SENDER_MAX_CHARS = 320;
 const UNROUTED_SUBJECT_MAX_CHARS = 500;
 const UNROUTED_ATTACHMENT_COUNT_MAX = 1000;

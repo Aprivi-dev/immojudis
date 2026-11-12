@@ -33,12 +33,7 @@ export {
   saveAdminInformationAgentEmailTemplateDraft,
   publishAdminInformationAgentEmailTemplateDraft,
 } from "@/lib/client-api/admin-information-agent";
-export type {
-  AdminAuctionFactClaimReviewPageParam,
-  AdminInformationAgentReviewPageParam,
-  AdminInformationAgentEvidenceRightsStatus,
-  AdminInformationAgentEvidenceRightsResponse,
-} from "@/lib/client-api/admin-information-agent";
+export type { AdminInformationAgentEvidenceRightsStatus } from "@/lib/client-api/admin-information-agent";
 
 export {
   fetchAdminDashboardRuns,
@@ -153,9 +148,5 @@ export {
   fetchSalesStatistics,
   exportSalesCsv,
 } from "@/lib/client-api/sale-analysis";
-export type {
-  SaleFactReliabilitiesResponse,
-  SaleAiReviewResponse,
-} from "@/lib/client-api/sale-analysis";
 
-export { fetchAccessPlan, openBillingPortal, startAnalyseCheckout } from "@/lib/client-billing";
+export { fetchAccessPlan } from "@/lib/client-billing";

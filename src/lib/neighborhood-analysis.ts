@@ -8,11 +8,11 @@ import { cleanTextDeep as cleanText } from "@/lib/clean-text";
 import { addDeepTextCandidate as addCandidate } from "@/lib/clean-text";
 import { riskTextsWithType as riskTexts } from "@/lib/sale-risk-texts";
 
-export type NeighborhoodStatus = "profiled" | "market_only" | "location_only" | "missing";
-export type NeighborhoodSignalKind = "market" | "services" | "street" | "environment" | "source";
-export type NeighborhoodSignalStatus = "positive" | "watch" | "to_enrich";
+type NeighborhoodStatus = "profiled" | "market_only" | "location_only" | "missing";
+type NeighborhoodSignalKind = "market" | "services" | "street" | "environment" | "source";
+type NeighborhoodSignalStatus = "positive" | "watch" | "to_enrich";
 
-export type NeighborhoodSignal = {
+type NeighborhoodSignal = {
   kind: NeighborhoodSignalKind;
   label: string;
   status: NeighborhoodSignalStatus;

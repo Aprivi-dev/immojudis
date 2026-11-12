@@ -39,8 +39,6 @@ export const marketAnalyticsQuerySchema = z
   .refine((value) => value.saleId || value.department || value.city || value.tribunalCode, {
     message: "Indiquez une vente, un département, une ville ou un tribunal.",
   });
-
-export type MarketAnalyticsQueryInput = z.input<typeof marketAnalyticsQuerySchema>;
 export type MarketAnalyticsQuery = z.output<typeof marketAnalyticsQuerySchema>;
 
 export type MarketAnalyticsItem = {
@@ -63,7 +61,7 @@ export type MarketAnalyticsItem = {
   isUpcoming: boolean;
 };
 
-export type MarketAnalyticsSummary = {
+type MarketAnalyticsSummary = {
   sampleSize: number;
   upcomingCount: number;
   pastCount: number;
@@ -75,7 +73,7 @@ export type MarketAnalyticsSummary = {
   averageDaysToSale: number | null;
 };
 
-export type MarketAnalyticsBucket = {
+type MarketAnalyticsBucket = {
   label: string;
   min: number | null;
   max: number | null;
@@ -83,7 +81,7 @@ export type MarketAnalyticsBucket = {
   sharePct: number;
 };
 
-export type MarketAnalyticsPeriod = {
+type MarketAnalyticsPeriod = {
   period: string;
   count: number;
   medianStartingPriceEur: number | null;
@@ -91,7 +89,7 @@ export type MarketAnalyticsPeriod = {
   averageDaysToSale: number | null;
 };
 
-export type MarketAnalyticsSegment = {
+type MarketAnalyticsSegment = {
   label: string;
   segmentKind: "city" | "property_type";
   count: number;
@@ -100,7 +98,7 @@ export type MarketAnalyticsSegment = {
   averageInvestmentScore: number | null;
 };
 
-export type MarketAnalyticsRotation = {
+type MarketAnalyticsRotation = {
   label: string;
   liquidityLabel: string;
   upcomingCount: number;
@@ -111,7 +109,7 @@ export type MarketAnalyticsRotation = {
   interpretation: string;
 };
 
-export type MarketAnalyticsTrend = {
+type MarketAnalyticsTrend = {
   metric: "price_per_m2" | "volume" | "sale_delay";
   label: string;
   direction: "up" | "down" | "stable" | "missing";

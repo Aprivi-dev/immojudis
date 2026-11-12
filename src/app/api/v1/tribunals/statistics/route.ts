@@ -2,7 +2,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -12,13 +12,18 @@ import {
 } from "@/lib/tribunal-statistics-repository";
 import { recordUsageSafely } from "@/lib/record-usage-safely.server";
 
-export async function GET(request: Request) {
-  const context = createApiRequestContext(request, "tribunal.statistics");
-  try {
+export const GET = apiRoute(
+  {
+    scope: "tribunal.statistics",
+    fallbackMessage: "Statistiques par tribunal temporairement indisponibles.",
+    fallbackStatus: 503,
+    versionedApi: true,
+  },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
-      context,
+      context: api,
       bucketKey: "v1.tribunal-statistics",
       ...RATE_LIMIT_POLICIES.compute,
     });
@@ -49,19 +54,6 @@ export async function GET(request: Request) {
       },
     });
 
-    return apiJson(statistics, context, {
-      headers: {
-        "cache-control": "private, no-store",
-        vary: "authorization",
-      },
-    });
-  } catch (error) {
-    const response = apiError(error, context, {
-      fallbackMessage: "Statistiques par tribunal temporairement indisponibles.",
-      fallbackStatus: 503,
-    });
-    response.headers.set("cache-control", "private, no-store");
-    response.headers.set("vary", "authorization");
-    return response;
-  }
-}
+    return statistics;
+  },
+);

@@ -53,17 +53,17 @@ export { DEFAULT_PRELIMINARY_FEES };
  *   (`carrying.annualPropertyTaxSource`).
  */
 /** Commissaire de justice, serrurier, garde-meubles : ordre de grandeur d'une libération. */
-export const DEFAULT_RELEASE_COST = 3_000;
-export const DEFAULT_RELEASE_MONTHS = 12;
+const DEFAULT_RELEASE_COST = 3_000;
+const DEFAULT_RELEASE_MONTHS = 12;
 export const DEFAULT_RENTED_DISCOUNT_PCT = 10;
 /** Charges de copropriété moyennes, en € par m² et par mois. */
-export const DEFAULT_CONDO_CHARGES_PER_M2 = 2.5;
-export const DEFAULT_MONTHLY_INSURANCE = 15;
-export const DEFAULT_FINANCING_RATE_PCT = 4;
-export const DEFAULT_RESALE_MONTHS = 4;
-export const DEFAULT_SELLING_COSTS_PCT = 5;
-export const DEFAULT_VACANCY_PCT = 5;
-export const DEFAULT_NON_RECOVERABLE_PCT = 7;
+const DEFAULT_CONDO_CHARGES_PER_M2 = 2.5;
+const DEFAULT_MONTHLY_INSURANCE = 15;
+const DEFAULT_FINANCING_RATE_PCT = 4;
+const DEFAULT_RESALE_MONTHS = 4;
+const DEFAULT_SELLING_COSTS_PCT = 5;
+const DEFAULT_VACANCY_PCT = 5;
+const DEFAULT_NON_RECOVERABLE_PCT = 7;
 
 export type CeilingUserChoices = {
   project?: CeilingProject;

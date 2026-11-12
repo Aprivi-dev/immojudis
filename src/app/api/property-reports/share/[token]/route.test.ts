@@ -28,7 +28,7 @@ describe("GET /api/property-reports/share/[token]", () => {
     const response = await call();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     await expect(response.json()).resolves.toEqual({ report: { id: "report-1" } });
   });
 

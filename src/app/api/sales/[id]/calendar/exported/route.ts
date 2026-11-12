@@ -1,11 +1,10 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { recordAccountProductEvent } from "@/lib/account-product-events.server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
@@ -43,29 +42,21 @@ async function isPubliclyExportable(saleId: string): Promise<boolean> {
  * publiquement visible, audience au tribunal à date sourcée) ; et la base plafonne à 50 exports par
  * compte et par jour (`record_account_product_event`, migration 20261029100300).
  */
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  try {
-    const saleId = saleIdSchema.parse((await context.params).id);
+export const POST = apiRoute<{ id: string }>(
+  { scope: "sale-calendar-exported", fallbackMessage: "Mesure indisponible." },
+  async (request, { params }) => {
+    const saleId = saleIdSchema.parse(params.id);
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
       bucketKey: "sale-calendar-exported",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    if (!(await isPubliclyExportable(saleId))) {
-      return NextResponse.json(
-        { recorded: false },
-        { headers: { "cache-control": "private, no-store" } },
-      );
-    }
+    if (!(await isPubliclyExportable(saleId))) return { recorded: false };
     const recorded = await recordAccountProductEvent(auth.userId, {
       type: "calendar_exported",
       saleId,
     });
-    return NextResponse.json({ recorded }, { headers: { "cache-control": "private, no-store" } });
-  } catch (error) {
-    return apiRouteError(error, request, "sale-calendar-exported", {
-      fallbackMessage: "Mesure indisponible.",
-    });
-  }
-}
+    return { recorded };
+  },
+);

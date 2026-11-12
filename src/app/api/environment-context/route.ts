@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
+import { apiRoute } from "@/lib/api-route";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -12,13 +12,19 @@ import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-li
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 
-export async function POST(request: Request) {
-  try {
+export const POST = apiRoute(
+  {
+    scope: "api.environment-context",
+    fallbackMessage: "Contexte indisponible",
+    emptyBody: { context: null },
+  },
+  async (request, { api }) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     await enforceUserRateLimit({
       userId: auth.userId,
       bucketKey: "environment-context",
       ...RATE_LIMIT_POLICIES.compute,
+      context: api,
     });
     const plan = await assertFeatureEntitlement(
       auth,
@@ -39,10 +45,5 @@ export async function POST(request: Request) {
         "cache-control": environmentalContextCacheControl(response),
       },
     });
-  } catch (error) {
-    return apiRouteError(error, request, "environment-context", {
-      fallbackMessage: "Contexte indisponible",
-      extra: { context: null },
-    });
-  }
-}
+  },
+);

@@ -35,7 +35,7 @@ export type AdminSourceRefreshRequestInput = z.input<typeof adminSourceRefreshRe
 export type AdminSourceRefreshRequest = z.output<typeof adminSourceRefreshRequestSchema>;
 export type AdminSourceRefreshStatusQuery = z.output<typeof adminSourceRefreshStatusQuerySchema>;
 
-export type AdminSourceRefreshItem = {
+type AdminSourceRefreshItem = {
   id: string;
   saleId: string;
   kind: "source_detail";

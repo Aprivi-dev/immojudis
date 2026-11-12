@@ -47,7 +47,7 @@ export type PilotageEventCounts = {
 };
 
 /** Occurrences, et à côté les comptes distincts (`count(distinct user_id)`). */
-export type PilotageEvents = PilotageEventCounts & { accounts: PilotageEventCounts };
+type PilotageEvents = PilotageEventCounts & { accounts: PilotageEventCounts };
 
 /** Les chiffres d'une période (hors administrateurs). */
 export type PilotagePeriod = {
@@ -81,7 +81,7 @@ export type PilotageWindow = PilotagePeriod & {
 };
 
 /** État à cet instant, sans fenêtre. */
-export type PilotageSnapshot = {
+type PilotageSnapshot = {
   /** Comptes hors administrateurs, et parmi eux les confirmés. */
   accountsTotal: PilotageCount;
   accountsConfirmed: PilotageCount;
@@ -361,9 +361,9 @@ export async function getAdminPilotage(
  * administrateur. Comme le reste du pilotage : des nombres, jamais de liste de personnes, et une mesure
  * impossible vaut « non mesuré » (`null`), jamais zéro.
  */
-export const REMINDER_ACCURACY_WINDOW_DAYS = 30;
+const REMINDER_ACCURACY_WINDOW_DAYS = 30;
 /** Délai pendant lequel un changement de date contredit un rappel déjà envoyé. */
-export const REMINDER_CONTRADICTION_HOURS = 72;
+const REMINDER_CONTRADICTION_HOURS = 72;
 /** Nombre minimal de rappels mesurés pour conclure. */
 export const REMINDER_ACCURACY_MIN_SAMPLE = 100;
 /** Part maximale (exclue) de rappels contredits pour passer à `on` : moins de 2 %. */

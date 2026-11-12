@@ -13,7 +13,7 @@ import { ConfigurationError } from "@/lib/api-errors";
  * (`/ressources/sitemap.xml`) are listed apart.
  */
 export const SITEMAP_URL_LIMIT = 5_000;
-export const SITEMAP_REVALIDATE_SECONDS = 3_600;
+const SITEMAP_REVALIDATE_SECONDS = 3_600;
 export const SITEMAP_CACHE_TAG = "public-sitemap";
 /** PostgREST returns at most 1 000 rows per request. */
 const DATABASE_PAGE_SIZE = 1_000;

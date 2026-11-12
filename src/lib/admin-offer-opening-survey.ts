@@ -14,7 +14,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
  * impossible (migration pas encore appliquée, panne) vaut `null` et s'affiche « non mesuré », jamais zéro. La
  * règle « moins de 5 » est une règle d'affichage de la page.
  */
-export type SurveyCount = number | null;
+type SurveyCount = number | null;
 
 export type OfferOpeningSurveySummary = {
   generatedAt: string | null;
@@ -131,7 +131,7 @@ export async function getAdminOfferOpeningSurvey(
  * de son accord, le profil qu'elle a déclaré et l'adresse de son compte, pour la contacter. Rien d'autre :
  * ni ses repères de prix, ni l'identifiant du compte.
  */
-export type OfferOpeningInterviewee = {
+type OfferOpeningInterviewee = {
   consentedAt: string;
   profile: string | null;
   email: string;

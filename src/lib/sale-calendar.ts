@@ -137,7 +137,7 @@ function saleCalendarEvent(
  * Durée par défaut d'une visite : 1 h. L'annonce donne le début du créneau, rarement la fin ; la
  * durée est indicative et le fichier le dit.
  */
-export const SALE_VISIT_DEFAULT_DURATION_HOURS = 1;
+const SALE_VISIT_DEFAULT_DURATION_HOURS = 1;
 
 export const SALE_VISIT_DISCLAIMER =
   "Créneau de visite issu de l’annonce, à confirmer auprès de l’avocat poursuivant.";

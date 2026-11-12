@@ -218,7 +218,7 @@ export type SaleFilters = {
   ids?: string[];
 };
 
-export const SORT_KEYS = [
+const SORT_KEYS = [
   "date_asc",
   "date_desc",
   "price_asc",
@@ -338,7 +338,7 @@ export type SaleScoreFactor = {
   evidence_refs?: SaleEvidenceRef[] | unknown;
 };
 
-export type ScoreFactorExplanation = {
+type ScoreFactorExplanation = {
   status?: string | null;
   axis?: string | null;
   axis_label?: string | null;
@@ -356,7 +356,7 @@ export type ScoreFactorExplanation = {
   proof_level?: string | null;
 };
 
-export type SaleEvidenceRef = {
+type SaleEvidenceRef = {
   label?: string | null;
   document_label?: string | null;
   document_type?: string | null;
@@ -365,7 +365,7 @@ export type SaleEvidenceRef = {
   confidence?: number | null;
 };
 
-export type SaleAnalysisFact = {
+type SaleAnalysisFact = {
   status?: string | null;
   statement?: string | null;
   document_label?: string | null;
@@ -374,7 +374,7 @@ export type SaleAnalysisFact = {
   confidence?: number | null;
 };
 
-export type SaleRiskOccurrence = {
+type SaleRiskOccurrence = {
   document_url: string | null;
   document_label: string | null;
   document_type: string | null;
@@ -401,7 +401,7 @@ export type SaleRisk = {
   occurrences?: SaleRiskOccurrence[] | null;
 };
 
-export type RiskEvidenceJson = SaleEvidenceRef & {
+type RiskEvidenceJson = SaleEvidenceRef & {
   source_kind?: string | null;
   matched_terms?: unknown;
   occurrence_count?: number | null;

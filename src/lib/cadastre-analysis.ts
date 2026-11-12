@@ -11,7 +11,7 @@ export type CadastralReference = {
   confidence: "structured" | "direct" | "inferred";
 };
 
-export type CadastralDocument = {
+type CadastralDocument = {
   label: string;
   type: string | null;
   url: string | null;
