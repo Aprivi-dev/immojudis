@@ -39,6 +39,7 @@ Les deux mécanismes restent en place et se remettent sans migration (« Réglag
 | Ordre | Migration                                                    | Contenu                                                                                                                                                                             | Verrou le plus fort                                                           | Pendant un lot de publication |
 | ----- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------- |
 | C0    | `20261119100000_sale_triggers_suspended_by_name`             | Retrait d'une source et recalcul de `catalogue_quarantined` : les déclencheurs ordinaires de `auction_sales` sont suspendus par leur nom, ceux du registre restent en mode `always` | Aucun                                                                         | Oui                           |
+| C0b   | `20261119100050_data_api_guard_extension_functions`          | Garde de l'API : refuse à `anon` et `authenticated` tout chemin encodé (`%`) et tout appel `rpc/` d'une fonction d'extension du schéma `public` (PostGIS)                           | Aucun                                                                         | Oui                           |
 | C1    | `20261119100100_fact_decision_limits_switch_and_author_lock` | Troisième réglage (plafonds), posé à faux ; second facteur passé à faux ; fonction de décision : plafonds selon le réglage, code `decision_in_progress`                             | ACCESS EXCLUSIVE bref sur `app_private.fact_registry_switches` (trois lignes) | Oui                           |
 | C2    | `20261119100200_fact_registry_check_systemic_errors`         | Contrôle et relance : erreurs systémiques relevées ; décisions définitives sur 48 heures ; état des trois réglages au rapport                                                       | Aucun                                                                         | Oui                           |
 | C3    | `20261119100300_hold_memorises_listing_surface_kind`         | Retenue : la nature de l'annonce est mémorisée à chaque écriture d'annonce                                                                                                          | Aucun (remplacement d'une fonction ; le déclencheur n'est pas touché)         | Oui                           |
@@ -48,9 +49,35 @@ Les deux mécanismes restent en place et se remettent sans migration (« Réglag
 pas même en lecture (relevé sur base jetable, juste avant chaque `commit`, à la première et à la seconde
 application). C1 prend un ACCESS EXCLUSIVE sur la table de réglage le temps de recréer sa contrainte : seuls la
 tâche quotidienne (05:28 UTC) et la fonction de décision la lisent. `lock_timeout` vaut 5 s partout. Chaque
-migration est sa propre transaction.
+migration est sa propre transaction. **Ne pas appliquer C1 pendant la tâche quotidienne de 05:28 UTC** : la
+migration attendrait son verrou sur la table des réglages, que la tâche lit pendant tout son passage, et
+échouerait proprement au bout de 5 s (rien n'est changé, relancer le workflow).
 
 Rejouée, C1 remet le second facteur à faux : sans objet en production, où une migration appliquée ne se rejoue pas.
+
+## La garde de l'API (C0b), à appliquer avant l'ouverture
+
+PostGIS est installé dans le schéma `public`. Ses fonctions sont exécutables par `anon` et `authenticated`, et le
+rôle de migration ne peut pas leur retirer ce droit (elles appartiennent à `supabase_admin`). L'une d'elles,
+`st_findextent(text, text)`, exécute le texte qu'elle reçoit : atteinte par l'API, elle permettrait de poser le
+jeton de la requête au nom d'un administrateur puis d'appeler une fonction de décision. Elle n'est pas appelable
+par `/rpc` aujourd'hui, mais seulement parce que ses arguments n'ont pas de nom : une règle de PostgREST, pas une
+barrière du projet.
+
+C0b étend la garde que PostgREST appelle avant chaque requête (`public.enforce_data_api_object_boundary()`). Pour
+`anon` et `authenticated`, elle refuse (`42501`) : tout chemin qui contient `%` ; `spatial_ref_sys` ; tout appel
+`rpc/<nom>` dont le nom, tel quel ou en minuscules, est une fonction du schéma `public` qui appartient à une
+extension. `service_role` n'est pas concerné. Seul le chemin est lu, pas la chaîne de requête : les filtres
+encodés de PostgREST passent comme avant. Aucun code du dépôt n'appelle par l'API une fonction d'extension, ni
+n'envoie de chemin encodé (vérifié sur `src/`, `services/`, `scripts/`, `supabase/functions/`, `e2e/`).
+
+**Coût par requête**, mesuré sur base jetable (100 000 appels par chemin, PostGIS installé, 559 noms de fonctions
+d'extension) : chemin de table 3,8 µs (4,0 µs avant) ; chemin `rpc/` 17 à 19 µs (4,0 µs avant), soit 0,015 ms de
+plus par appel de fonction ; chemin encodé refusé en 5,6 µs. La lecture du catalogue n'a lieu que pour un chemin
+`rpc/`.
+
+**Ce que ce lot ne prouve pas** : la forme exacte de `request.path` en production (chemin brut, sans chaîne de
+requête) est celle que décrit PostgREST ; elle n'a pas été relue sur la plateforme. Contrôle A7.
 
 ## Ordre de déploiement
 
@@ -77,7 +104,9 @@ décisions du 12/11/2026 écrites mot pour mot dans C1.
 | `scheduled_reprojection`          | `false`      | fermée        | `select app_private.set_fact_registry_scheduled_reprojection(true);`  |
 
 Une fonction de réglage lève (`55000`) si sa ligne manque : la rétablir par une migration. L'effet est immédiat,
-pour la décision suivante.
+pour la décision suivante. **Rallumer les plafonds compte aussi les décisions prises pendant qu'ils étaient
+éteints** : un administrateur qui a décidé vingt fois dans l'heure, ou écrit cinq décisions définitives dans les 24
+heures, est refusé aussitôt, jusqu'à ce que ces décisions sortent de la fenêtre.
 
 ## Codes d'erreur rendus à la route
 
@@ -320,7 +349,7 @@ limit 20;
 
 ### A4. Les fonctions sont remplacées
 
-Attendu : cinq lignes, `remplace` à `true` partout.
+Attendu : sept lignes, `remplace` à `true` partout.
 
 ```sql
 select routine.proname,
@@ -331,14 +360,17 @@ select routine.proname,
          when 'repair_catalogue_quarantine_drift' then
            routine.prosrc like '%suspend_ordinary_sale_triggers%' and routine.prosrc not like '%trigger user%'
          when 'fact_registry_page_checks' then routine.prosrc like '%fact_registry_error_is_systemic%'
+         when 'fact_registry_global_checks' then routine.prosrc like '%decision_rate_limits_enabled%'
+         when 'reproject_fact_registry_drift' then routine.prosrc like '%fact_registry_error_is_systemic%'
          when 'hold_projected_sale_fields' then routine.prosrc like '%lot R2c%'
        end as remplace
 from pg_proc routine
 join pg_namespace namespace on namespace.oid = routine.pronamespace
-where namespace.nspname = 'app_private'
-  and routine.proname in ('decide_auction_fact_claim', 'reproject_source_withdrawal',
-                          'repair_catalogue_quarantine_drift', 'fact_registry_page_checks',
-                          'hold_projected_sale_fields')
+where (namespace.nspname = 'app_private'
+       and routine.proname in ('decide_auction_fact_claim', 'reproject_source_withdrawal',
+                               'repair_catalogue_quarantine_drift', 'fact_registry_page_checks',
+                               'fact_registry_global_checks', 'hold_projected_sale_fields'))
+   or (namespace.nspname = 'public' and routine.proname = 'reproject_fact_registry_drift')
 order by 1;
 ```
 
@@ -357,6 +389,32 @@ Attendu : `status` à `success` ; dans `summary`, `decisionsSecondFactorRequired
 `reprojection.enabled` à `false`, `simulationFailureCodes` vide ; aucune alerte `fact_registry.*` ouverte tant
 qu'aucune décision définitive n'existe. Le résumé de la tâche ne porte pas l'état des plafonds : il se lit par A2.
 La requête est celle de P8.
+
+### A7. La garde de l'API refuse les fonctions d'extension
+
+Attendu : `remplace` à `true`, et `garde_posee` à `true` (le rôle `authenticator` appelle toujours la garde avant
+chaque requête).
+
+```sql
+select routine.prosrc like '%deptype = ''e''%' as remplace,
+       (select coalesce(role_row.rolconfig::text, '') like '%pgrst.db_pre_request=public.enforce_data_api_object_boundary%'
+          from pg_roles role_row where role_row.rolname = 'authenticator') as garde_posee
+from pg_proc routine
+join pg_namespace namespace on namespace.oid = routine.pronamespace
+where namespace.nspname = 'public'
+  and routine.proname = 'enforce_data_api_object_boundary';
+```
+
+Puis trois appels de l'API, avec la clé publiable seule (aucun jeton de session), à faire par le propriétaire ou
+par `qualite-donnees` :
+
+- `POST <url du projet>/rest/v1/rpc/st_findextent` : attendu `403` (ou `401`), code `42501`, message « Data API
+  access denied for an extension object ». Avant C0b : `404` `PGRST202` ;
+- `GET <url du projet>/rest/v1/spatial%5Fref%5Fsys` : attendu `42501`, message « Data API access denied for an
+  encoded request path ». Si la réponse est une liste de lignes, la plateforme décode le chemin avant la garde :
+  le dire tout de suite, la garde ne voit alors pas le chemin brut ;
+- une page publique du site qui liste des ventes (elle appelle `rpc/search_auction_sales_preview_v3`) : elle
+  s'affiche comme avant.
 
 ## Première décision d'essai (par le propriétaire)
 
@@ -402,17 +460,38 @@ revoke execute on function public.oppose_auction_fact_claim(uuid, text) from aut
 ```
 
 Cette migration nomme les fonctions de décision : son fichier s'ajoute à `DECISION_MIGRATIONS` dans
-`scripts/check-security-invariants-fact-registry.mjs`, dans le même commit.
+`scripts/check-security-invariants-fact-registry.mjs`, dans le même commit. Elle rend rouges deux tests pgTAP, à
+ajuster dans ce même commit :
+
+- `887` : sept assertions. Les deux assertions des droits (la liste « `authenticated` seul » devient vide) et
+  celles qui décident sous le rôle `authenticated` (elles reçoivent `permission denied` au lieu du refus ou de la
+  décision attendus) ;
+- `441` : une assertion, la liste des fonctions `security definer` ouvertes à `authenticated` (retirer les quatre
+  fonctions de décision).
 
 **En urgence (compte d'administrateur compromis).** Par le propriétaire, dans cet ordre :
 
-1. retirer le rôle `admin` du compte dans `user_profiles` : l'effet est immédiat, la fonction de décision relit
-   le profil à chaque appel. Bannir l'utilisateur dans Supabase ne suffit pas seul : son jeton de session reste
-   valable jusqu'à son expiration ;
-2. si l'attaquant peut être un autre compte, ou si le compte ne se bloque pas tout de suite : lancer les quatre
-   `revoke` ci-dessus depuis l'éditeur SQL, puis les régulariser par la migration identique. C'est une écriture de
-   production hors migration : décision du propriétaire, à noter dans le journal de l'équipe ;
-3. relever les décisions de la période (requête A3, filtrée sur `actor_id`).
+1. **Lancer les quatre `revoke` ci-dessus depuis l'éditeur SQL.** C'est le seul arrêt certain : plus aucun compte
+   ne décide, quel que soit son rôle et quel que soit le jeton. C'est une écriture de production hors migration :
+   décision du propriétaire, à noter dans le journal de l'équipe, puis à régulariser par la migration identique.
+2. **Retirer le rôle `admin` du compte**, pour ses autres droits d'administrateur :
+
+   ```sql
+   update public.user_profiles set user_role = 'user' where user_id = '<identifiant du compte>';
+   ```
+
+   L'effet est immédiat quand l'instruction passe : la fonction de décision relit le profil à chaque appel.
+   **Elle peut être refusée** (`55000`, « A statistical reviewer identity and administrator role are immutable
+   after review. » ou « A Judilibre reviewer identity and administrator role are immutable after decision. ») :
+   deux gardes de `user_profiles` interdisent de retirer le rôle d'un compte qui a relu une preuve statistique ou
+   décidé un rapprochement Judilibre. Un compte volé peut se donner cette protection par une seule relecture.
+   Dans ce cas : les `revoke` de l'étape 1 suffisent à arrêter les décisions du registre ; ne pas contourner la
+   garde (ni déclencheur coupé, ni suppression de la relecture). Lever la garde d'identité des relecteurs pour un
+   compte compromis est une décision du propriétaire, qui n'est pas prévue ici.
+
+3. Bannir l'utilisateur dans Supabase et changer son mot de passe. Seul, cela ne suffit pas : son jeton de session
+   reste valable jusqu'à son expiration.
+4. Relever les décisions de la période (requête A3, filtrée sur `actor_id`).
 
 Les décisions définitives de l'attaquant ne s'annulent pas (voir « Risques acceptés »).
 
@@ -498,6 +577,8 @@ La procédure du runbook R2b vaut toujours. Trois précisions depuis ce lot :
 ## Ce qui ne doit pas être fait
 
 - Donner un droit d'exécution sur une fonction de décision à `anon`, à `PUBLIC` ou à `service_role`.
+- Revenir sur la garde de l'API (C0b), ou appeler par l'API une fonction d'extension du schéma `public`, tant que
+  les fonctions de décision sont ouvertes.
 - Poser un jeton à la main (`request.jwt.claims`) pour décider depuis l'éditeur SQL.
 - Écrire à la main dans `auction_fact_claim_decisions`, `auction_sale_field_hold_events`,
   `auction_fact_source_precedence` ou `app_private.fact_registry_switches` (hors des trois fonctions de réglage,

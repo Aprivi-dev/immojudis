@@ -620,6 +620,12 @@ Après la dernière contre-vérification (exécution, PostgreSQL, sécurité) :
 - Contrôle quotidien et relance : erreurs systémiques relevées ; décisions définitives sur 48 heures ; état des
   trois réglages au rapport.
 - Retenue : nature de l'annonce mémorisée à chaque écriture d'annonce.
+- Garde de l'API (`20261119100050`, avant l'ouverture) : `public.enforce_data_api_object_boundary()` refuse à
+  `anon` et `authenticated` tout chemin encodé et tout appel `rpc/` d'une fonction d'extension du schéma `public`.
+  PostGIS y est installé, ses fonctions sont exécutables par ces deux rôles, et l'une d'elles exécute le texte
+  qu'elle reçoit : sans cette garde, seule une règle de PostgREST l'écartait de l'API.
+- Tâche `fact-registry-check` : une fonction interne absente (`42883` qui ne nomme pas la fonction appelée par la
+  tâche) est une erreur, avec son étape et son code, et non plus une « migration en attente ».
 - Invariants durcis après la contre-vérification 3 du lot R2b : identifiants Unicode, `execute` dans une chaîne,
   `query_to_xml` et fonctions voisines, tâche pg_cron à argument non littéral, table fille ou copie d'une table du
   registre, écriture du journal des décisions, action sur un déclencheur n'importe où dans un `alter table`,
