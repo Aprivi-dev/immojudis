@@ -1093,16 +1093,23 @@ describe("Report of a failed diff tool", () => {
       return { status: run.status, stdout: run.stdout, stderr: run.stderr.trimEnd().split("\n") };
     });
 
-  it("fails without printing a connection URL that is not a valid URL", wholeScript, () => {
-    // Fictitious value. A raw `/` in the password makes the URL parser fail, and its error quotes the input.
-    const run = runRemoteScript(
+  // Fictitious values.
+  it.each([
+    // A raw `/` in the password makes the URL parser fail, and its error quotes the input.
+    [
+      "the URL parser rejects",
       "postgresql://postgres:Fk55/fake-password@db.example.invalid:5432/db",
-    );
+    ],
+    // Valid for the URL parser, with no host: not a database.
+    ["has no //", "postgresql:postgres:Fk55-fake-password@db.example.invalid:5432/db"],
+    ["has another protocol", "https://postgres:Fk55-fake-password@db.example.invalid:5432/db"],
+  ])("fails without printing a connection URL that %s", wholeScript, (_case, databaseUrl) => {
+    const run = runRemoteScript(databaseUrl);
 
     expect(run.status).toBe(1);
     expect(run.stdout).toBe("");
     expect(run.stderr).toEqual([
-      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL valide. Sa valeur n'est pas affichée.",
+      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL Postgres valide (postgres:// ou postgresql://, avec un hôte). Sa valeur n'est pas affichée.",
     ]);
   });
 
