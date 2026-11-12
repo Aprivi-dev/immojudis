@@ -399,6 +399,10 @@ CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)
       "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
       "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO lovable_readonly;",
       'alter default privileges for role "postgres"  in schema "public"\tgrant select on tables to "lovable_readonly" ;',
+      // Le seul droit de schéma lu en production le 12/11/2026.
+      "GRANT USAGE ON SCHEMA public TO lovable_readonly;",
+      "REVOKE USAGE ON SCHEMA public FROM lovable_readonly;",
+      'grant usage  on schema "public" to "lovable_readonly" ;',
     ])("ignores %s", (line) => {
       expect(normalizeDiff(line)).toBe("");
     });
@@ -413,6 +417,15 @@ CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)
       "REVOKE ALL ON TABLE public.auction_sales FROM lovable_readonly;",
       // Autre objet ou autre portée que ceux lus en production.
       "GRANT USAGE ON SCHEMA app_private TO lovable_readonly;",
+      "GRANT USAGE ON SCHEMA public_archive TO lovable_readonly;",
+      "GRANT USAGE ON SCHEMA public, app_private TO lovable_readonly;",
+      "GRANT CREATE ON SCHEMA public TO lovable_readonly;",
+      "GRANT USAGE, CREATE ON SCHEMA public TO lovable_readonly;",
+      "GRANT ALL ON SCHEMA public TO lovable_readonly;",
+      "REVOKE ALL ON SCHEMA public FROM lovable_readonly;",
+      "GRANT USAGE ON SCHEMA public TO lovable_readonly, anon;",
+      "GRANT USAGE ON SCHEMA public TO lovable_readonly WITH GRANT OPTION;",
+      "GRANT USAGE ON SCHEMA public TO anon; GRANT USAGE ON SCHEMA public TO lovable_readonly;",
       "GRANT SELECT ON ALL TABLES IN SCHEMA public TO lovable_readonly;",
       "GRANT SELECT ON TABLE public.users, public.profiles TO lovable_readonly;",
       "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app_private TO lovable_readonly;",

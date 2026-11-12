@@ -404,8 +404,9 @@ function removeManagedConcurrentIndexStatements(text) {
 
 // The only statements ignored for the connector role `lovable_readonly`, each alone on its line, with
 // this role as sole grantee and nothing after it (no WITH GRANT OPTION). What the role holds in
-// production was read on 2026-11-12: SELECT on tables, EXECUTE on functions, and one default privilege
-// set by `postgres` (SELECT on the future tables of `public`).
+// production was read on 2026-11-12: SELECT on tables, EXECUTE on functions, USAGE on the schema
+// `public`, and one default privilege set by `postgres` (SELECT on the future tables of `public`).
+// To be removed with the role: the owner has decided to drop it (it no longer serves), by a migration.
 const CONNECTOR_ROLE_READ_GRANTS = (() => {
   const identifier = String.raw`(?:"[^"]+"|\w+)`;
   const object = String.raw`${identifier}(?:\.${identifier})?`;
@@ -419,6 +420,11 @@ const CONNECTOR_ROLE_READ_GRANTS = (() => {
     // EXECUTE on one function, whose argument types may hold one level of parentheses (numeric(10,2)).
     new RegExp(
       String.raw`^(?:GRANT|REVOKE)\s+EXECUTE\s+ON\s+FUNCTION\s+${object}\s*\((?:[^();]|\([^();]*\))*\)\s+(?:TO|FROM)\s+${role}`,
+      "i",
+    ),
+    // USAGE, and nothing else, on the schema `public` alone: the only schema the role may enter.
+    new RegExp(
+      String.raw`^(?:GRANT|REVOKE)\s+USAGE\s+ON\s+SCHEMA\s+"?public"?\s+(?:TO|FROM)\s+${role}`,
       "i",
     ),
     // The default privilege: SELECT on the future tables of `public`, set by `postgres` or unnamed.
