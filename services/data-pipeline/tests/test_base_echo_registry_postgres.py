@@ -163,6 +163,11 @@ class Registry:
         ).fetchone()
         return dict(zip(columns, values, strict=True))
 
+    def held(self, sale_id: str) -> set[str]:
+        """Les champs qu'une pièce tient. Une entrée libérée (``released``) ne garde que la mémoire d'écho."""
+        entries = self.row(sale_id)["held_fields"] or {}
+        return {field for field, entry in entries.items() if entry.get("state") in ("held", "conflicted")}
+
     def listing_memory(self, sale_id: str, field: str) -> Any:
         """La valeur d'annonce mémorisée pour un champ tenu (bloc ``listing``)."""
         held = self.row(sale_id)["held_fields"] or {}
@@ -175,9 +180,17 @@ class Registry:
             (sale_id,),
         ).fetchall()
 
+    def echo_events(self, sale_id: str) -> list[tuple[str, Any]]:
+        """Les retours écartés par le filet de la base : un chemin que la garde de la collecte n'a pas couvert."""
+        return self.db.execute(
+            """select field_key, incoming_value from public.auction_sale_field_hold_events
+               where sale_id = %s and event = 'echo_suppressed' order by seq""",
+            (sale_id,),
+        ).fetchall()
+
     def describe(self, sale_id: str) -> str:
         row = self.row(sale_id)
-        held = ", ".join(sorted(row["held_fields"] or {})) or "rien"
+        held = ", ".join(sorted(self.held(sale_id))) or "rien"
         return (
             f"pièces={row['rooms_count']} surface={row['surface_m2']}/{row['app_surface_m2']} "
             f"nature={row['app_surface_kind']} source={row['surface_source']} | champs tenus : {held}"
@@ -288,6 +301,7 @@ def _scenario_a(registry: Registry, label: str) -> tuple[str, AuctionSale]:
     say(f"{label}5 après l'écriture collecte  : {registry.describe(sale_id)}")
     say(f"{label}6 évènements « annonce changée » : {registry.listing_events(sale_id)}")
     say(f"{label}7 simulation de projection   : changed={registry.project(sale_id, apply=False)['changed']}")
+    say(f"{label}8 retours écartés par la base : {registry.echo_events(sale_id)}")
     return sale_id, sale
 
 
@@ -298,23 +312,26 @@ def test_scenario_a_a_value_withdrawn_during_the_import_does_not_come_back(regis
     row = registry.row(sale_id)
     assert row["rooms_count"] == 2
     assert (row["surface_m2"], row["app_surface_m2"]) == (50, 50)
-    assert row["surface_source"] != "fact_registry_lawyer_email"
-    assert row["held_fields"] is None
+    assert row["surface_source"] != "fact_registry"  # le libellé réservé à la projection ne reste pas
+    assert registry.held(sale_id) == set()
     assert registry.listing_events(sale_id) == []
+    assert registry.echo_events(sale_id) == []  # le filet de la base n'a rien eu à écarter
     assert registry.project(sale_id, apply=False)["changed"] is False
     # Ce que la collecte a envoyé : la valeur de la base au moment de l'écriture, pas celle lue avant le retrait.
     assert (sent[-1]["rooms_count"], sent[-1]["surface_m2"], sent[-1]["app_surface_m2"]) == (2, 50, 50)
     assert base_reads.suppressed_count() == 2
-    say(f"A8 groupes retenus par la garde   : {base_reads.suppressed_count()} (pièces, surface)")
+    say(f"A9 groupes retenus par la garde   : {base_reads.suppressed_count()} (pièces, surface)")
 
 
 def test_scenario_a_without_the_guard_the_collection_sends_the_withdrawn_value(registry, sent, monkeypatch) -> None:
-    """Témoin : le même scénario sans la garde. Seul l'envoi est affirmé ; l'effet en base dépend de sa retenue."""
+    """Témoin : le même scénario sans la garde. La collecte renvoie la valeur retirée, et c'est le filet de la base
+    (mémoire d'écho) qui l'écarte : l'évènement ``echo_suppressed``, que la garde tient à zéro, apparaît."""
     without_the_guard(monkeypatch)
     say("\n=== A (témoin). Même scénario sans la garde ===")
-    _scenario_a(registry, "A'")
+    sale_id, _sale = _scenario_a(registry, "A'")
 
     assert (sent[-1]["rooms_count"], sent[-1]["surface_m2"], sent[-1]["app_surface_m2"]) == (3, 54, 54)
+    assert {field for field, _value in registry.echo_events(sale_id)} == {ROOMS, SURFACE}
 
 
 # --- B et C. Remplacement pendant l'import ---------------------------------------------------------------------------------
@@ -336,6 +353,7 @@ def _scenario_replacement(registry: Registry, label: str) -> tuple[str, str, str
     say(f"{label}5 après l'écriture collecte  : {registry.describe(sale_id)}")
     say(f"{label}6 évènements « annonce changée » : {registry.listing_events(sale_id)}")
     say(f"{label}7 valeur d'annonce mémorisée : {registry.listing_memory(sale_id, ROOMS)}")
+    say(f"{label}7b retours écartés par la base : {registry.echo_events(sale_id)}")
     return sale_id, first, second
 
 
@@ -348,13 +366,14 @@ def test_scenario_b_a_replaced_value_is_not_reported_as_a_listing_change(registr
     assert registry.listing_events(sale_id) == []
     assert registry.listing_memory(sale_id, ROOMS) == {"rooms_count": 2}
     assert sent[-1]["rooms_count"] == 4
+    assert registry.echo_events(sale_id) == []
     assert base_reads.suppressed_count() == 1
 
     registry.withdraw(sale_id, first, second)
     say(f"B8 après retrait des deux pièces  : {registry.describe(sale_id)}")
     # La fiche revient à ce que dit l'annonce : la valeur mémorisée n'a pas été faussée par l'écho.
     assert registry.row(sale_id)["rooms_count"] == 2
-    assert registry.row(sale_id)["held_fields"] is None
+    assert registry.held(sale_id) == set()
 
 
 def test_scenario_c_a_replaced_value_does_not_release_the_field(registry, sent) -> None:
@@ -366,7 +385,8 @@ def test_scenario_c_a_replaced_value_does_not_release_the_field(registry, sent) 
 
         assert registry.row(sale_id)["rooms_count"] == 4
         assert registry.listing_events(sale_id) == []
-        assert ROOMS in (registry.row(sale_id)["held_fields"] or {})
+        assert ROOMS in registry.held(sale_id)
+        assert registry.echo_events(sale_id) == []
         assert sent[-1]["rooms_count"] == 4
         state = registry.project(sale_id)["fields"][ROOMS]["state"]
         say(f"C8 reprojection                   : état={state} | {registry.describe(sale_id)}")
@@ -383,7 +403,7 @@ def test_scenario_c_a_replaced_value_does_not_release_the_field(registry, sent) 
 def test_scenarios_b_and_c_without_the_guard_the_collection_sends_the_replaced_value(
     registry, sent, monkeypatch, setting
 ) -> None:
-    """Témoin des scénarios B et C sans la garde. Seul l'envoi est affirmé ; l'effet en base est transcrit."""
+    """Témoin des scénarios B et C sans la garde : la valeur remplacée repart, le filet de la base l'écarte."""
     without_the_guard(monkeypatch)
     previous = registry.setting(ROOMS)
     registry.set_setting(ROOMS, setting)
@@ -391,6 +411,7 @@ def test_scenarios_b_and_c_without_the_guard_the_collection_sends_the_replaced_v
         say(f"\n=== {'B' if setting == 'keep_and_review' else 'C'} (témoin). Même scénario sans la garde ({setting}) ===")
         sale_id, first, second = _scenario_replacement(registry, "T")
         assert sent[-1]["rooms_count"] == 3
+        assert [field for field, _value in registry.echo_events(sale_id)] == [ROOMS]
         registry.withdraw(sale_id, first, second)
         say(f"T8 après retrait des deux pièces  : {registry.describe(sale_id)}")
     finally:
@@ -422,6 +443,7 @@ def test_a_held_sale_is_rewritten_without_event_when_nothing_moves(registry, sen
     say(f"P1 après deux passages            : {registry.describe(sale_id)}")
     assert registry.row(sale_id) == before
     assert registry.listing_events(sale_id) == []
+    assert registry.echo_events(sale_id) == []
     assert registry.project(sale_id, apply=False)["changed"] is False
 
 
@@ -464,6 +486,7 @@ def test_a_held_surface_and_a_reread_listing_never_look_like_a_move(registry, se
     row = registry.row(sale_id)
     assert (row["surface_m2"], row["app_surface_m2"]) == (54, 54)
     assert registry.listing_events(sale_id) == []
+    assert registry.echo_events(sale_id) == []
     assert registry.listing_memory(sale_id, SURFACE) == memory
 
 
@@ -520,7 +543,8 @@ def test_scenario_d_a_piece_posed_during_the_import_survives_a_sale_merged_from_
     row = registry.row(sale_id)
     assert row["rooms_count"] == 3
     assert (row["surface_m2"], row["app_surface_m2"]) == (54, 54)
-    assert {ROOMS, SURFACE} <= set(row["held_fields"] or {})
+    assert {ROOMS, SURFACE} <= registry.held(sale_id)
+    assert registry.echo_events(sale_id) == []
     # La collecte a renvoyé la valeur de l'annonce, que la base connaît : ce n'est pas un « changement de l'annonce ».
     assert registry.listing_events(sale_id) == []
     assert registry.listing_memory(sale_id, ROOMS) == {"rooms_count": 2}
