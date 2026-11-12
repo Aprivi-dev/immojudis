@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 
 // Invariants du registre des pièces (plan du 11/11/2026 : lot R1, migrations 20261116100000 à 20261116100500, lot
-// R2a, migrations 20261117100000 à 20261117100700, et lot R2b, migrations 20261118100000 à 20261118100300 ;
+// R2a, migrations 20261117100000 à 20261117100700, lot R2b, migrations 20261118100000 à 20261118100300, et lot
+// R2c, migrations 20261119100000 à 20261119100400 ;
 // spécifications : annexes 03-base-de-donnees-arbitrage.md, section 7, et 08-bascule-base-de-donnees.md de
 // docs/equipe/annexes/2026-11-11-registre-des-pieces/).
 // Appelé par scripts/check-security-invariants.mjs, qui lui passe ses lectures partagées (migrations déjà lues,
@@ -24,14 +25,20 @@ import { createHash } from "node:crypto";
 //    n'acceptent que le propriétaire de la projection ; la garde d'origine des observations couvre le triplet
 //    du pont (extracteur et identifiant de fait de l'agent) ; le contrôle des déclencheurs lit leur mode ET leur
 //    fonction ; un rattrapage qui écrit auction_sales ne coupe que des déclencheurs en mode ordinaire hors
-//    registre et se termine par le contrôle du mode des déclencheurs.
+//    registre et se termine par le contrôle du mode des déclencheurs ; sa variable de boucle ne reçoit un nom
+//    que de la boucle admise, et il ne nomme aucun déclencheur « aaab_ ». Lot R2c : une instruction ALTER TABLE
+//    d'une table du registre ne coupe ni ne rétablit un déclencheur du registre, où que soit l'action dans
+//    l'instruction ; aucune fonction ne coupe plus tous les déclencheurs d'une table (« trigger user », « trigger
+//    all ») ; les deux fonctions qui suspendent par leur nom les déclencheurs ordinaires de auction_sales sont
+//    épinglées par une empreinte.
 // 5. field-projection-not-callable-by-api : la projection et les fonctions internes du registre ne sont
 //    exécutables par aucun rôle de l'API (ni par un droit donné d'un coup sur le schéma public) ; les trois
 //    fonctions publiques du lot R2a ne le sont que par service_role, aucune autre fonction publique ne les
 //    enveloppe ni ne lit une table du registre, et dans l'application seul un module serveur les nomme ; aucun
-//    code ne nomme la projection. Lot R2b : les quatre fonctions de décision n'ont AUCUN droit d'exécution (ils
-//    s'ouvrent au lot R2c), et seules trois fonctions appliquent la projection (décision, report à la fusion,
-//    relance planifiée).
+//    code ne nomme la projection. Lot R2c : les quatre fonctions de décision ne sont exécutables que par
+//    authenticated, par un droit donné dans la seule migration 20261119100400, jamais par anon, PUBLIC ni
+//    service_role ; seules trois fonctions appliquent la projection (décision, report à la fusion, relance
+//    planifiée).
 // 6. fact-claims-never-repointed : une observation n'est jamais rattachée à une autre vente ; sa garde
 //    d'immuabilité garde la clause « détacher seulement ».
 // 7. registry-no-fk-to-auction-sales : aucune clé étrangère du registre vers auction_sales (verrou sur la table
@@ -45,8 +52,10 @@ import { createHash } from "node:crypto";
 //    passe par vente est la seule à simuler la projection ; la fonction des alertes n'écrit aucune fiche ; la
 //    relance planifiée est une fonction à part, sans paramètre, qu'aucune fonction SQL n'appelle, qui lit son
 //    interrupteur, ne fait rien sans décision au journal ni sans les déclencheurs du registre, et ne relaie aucun
-//    message d'erreur ; la table des interrupteurs et ses fonctions de réglage ne sont nommées que par les deux
-//    migrations qui les créent, dans leur sens sûr.
+//    message d'erreur ; la table des interrupteurs et ses fonctions de réglage ne sont nommées que par les
+//    migrations qui les créent, dans leur sens sûr. Seules exceptions, mot pour mot, dans la migration
+//    20261119100100 : les deux décisions du propriétaire du 12/11/2026 (second facteur levé, plafonds non
+//    appliqués).
 // 10. registry-neutral-surface-labels : la projection écrit des libellés de surface neutres, sans jamais y
 //    joindre l'origine de la pièce, et la retenue réserve le libellé du registre à la projection.
 // 11. fact-claims-generation-pattern : la vue des observations lit la génération de la collecte par sa fonction
@@ -66,8 +75,11 @@ import { createHash } from "node:crypto";
 //    de la migration des décisions, aucun fichier ne nomme la fonction de décision ni une des quatre fonctions
 //    publiques, ni n'écrit le journal des décisions (insert, merge, copy) ; depuis le lot, aucun ne nomme
 //    request.jwt. Depuis le lot R2b, un EXECUTE dont l'argument n'est pas un seul littéral est refusé (son texte
-//    ne se lit pas). Les deux lectures des interrupteurs gardent leur sens sûr. Règle prévue pour le lot R2c :
-//    droit d'exécution à authenticated seul, jamais à service_role ni à anon.
+//    ne se lit pas), ainsi que tout EXECUTE écrit dans une chaîne, tout identifiant ou chaîne Unicode (U&), les
+//    fonctions qui lancent le texte d'une requête (query_to_xml, cursor_to_xml, ts_stat, dblink), une tâche
+//    pg_cron dont un argument n'est pas un littéral, une table fille ou une copie de structure d'une table du
+//    registre (INHERITS, LIKE), et toute instruction UPDATE, DELETE ou TRUNCATE du journal des décisions. Les
+//    trois lectures des interrupteurs gardent leur sens sûr.
 // 14. registry-rpc-no-error-detail : les fonctions de décision ne lisent d'une erreur que son SQLSTATE et le nom
 //    de la contrainte, et ne relaient ni détail, ni indice, ni message de PostgreSQL.
 // Partout : aucune instruction ALTER FUNCTION ne touche une fonction du registre (mode de sécurité, propriétaire),
@@ -174,18 +186,22 @@ const MERGE_CARRY_FUNCTION = "app_private.carry_sale_user_data_to_merged_sale";
 const REPROJECTION_FUNCTION = "public.reproject_fact_registry_drift";
 const PAGE_CHECKS_FUNCTION = "app_private.fact_registry_page_checks";
 const GLOBAL_CHECKS_FUNCTION = "app_private.fact_registry_global_checks";
-// Interrupteurs du registre : leur table et leurs deux fonctions de réglage ne sont nommées que par les deux
+// Interrupteurs du registre : leur table et leurs trois fonctions de réglage ne sont nommées que par les
 // migrations qui les créent.
 const SWITCH_TABLE = "fact_registry_switches";
 const SWITCH_SETTERS = [
   "app_private.set_fact_registry_scheduled_reprojection",
   "app_private.set_fact_registry_decisions_second_factor",
+  "app_private.set_fact_registry_decision_rate_limits",
 ];
+// Lot R2c : migration du troisième réglage (plafonds), qui retouche aussi la fonction de décision.
+const LIMITS_SWITCH_MIGRATION = "20261119100100_fact_decision_limits_switch_and_author_lock.sql";
 const SWITCH_MIGRATIONS = new Set([
   "20261118100100_fact_claim_decision_rpcs.sql",
   "20261118100300_fact_registry_check_pages_and_reprojection.sql",
+  LIMITS_SWITCH_MIGRATION,
 ]);
-// Lectures des deux interrupteurs : une fonction chacune, dont le corps est tenu à sa forme (sens sûr quand la
+// Lectures des trois interrupteurs : une fonction chacune, dont le corps est tenu à sa forme (sens sûr quand la
 // ligne manque).
 const SWITCH_READERS = new Map([
   ["app_private.fact_registry_scheduled_reprojection_enabled", ["scheduled_reprojection", "false"]],
@@ -193,17 +209,40 @@ const SWITCH_READERS = new Map([
     "app_private.fact_registry_decisions_second_factor_required",
     ["decisions_require_second_factor", "true"],
   ],
+  [
+    "app_private.fact_registry_decision_rate_limits_enabled",
+    ["decision_rate_limits_enabled", "true"],
+  ],
+]);
+// Décisions du propriétaire du 12/11/2026, écrites par migration, mot pour mot et hors de toute fonction : le
+// second facteur des décisions est levé, les plafonds ne sont pas appliqués. Toute autre instruction qui pose un
+// réglage hors de son sens sûr, ou qui appelle une fonction de réglage, reste refusée.
+const OWNER_SWITCH_STATEMENTS = new Map([
+  [
+    LIMITS_SWITCH_MIGRATION,
+    [
+      /\bselect\s+app_private\.set_fact_registry_decisions_second_factor\(\s*false\s*\)\s*;/gi,
+      /\binsert\s+into\s+app_private\.fact_registry_switches\s*\(\s*switch_name\s*,\s*enabled\s*\)\s*values\s*\(\s*'decision_rate_limits_enabled'\s*,\s*false\s*\)\s*on\s+conflict\s*\(\s*switch_name\s*\)\s*do\s+nothing\s*;/gi,
+    ],
+  ],
 ]);
 // Empreinte (SHA-256) du corps de la fonction de décision, tel que ce module le lit (commentaires retirés).
 // Toute retouche du corps la change : relire la retouche, puis mettre l'empreinte à jour dans le même commit
 // (procédure : docs/runbooks/registre-des-pieces-r2b.md, « Retoucher la fonction de décision »).
-const DECIDE_BODY_SHA256 = "b6ade477ad8fb54b905c169cc9cd4d99277a6dff3451908bbf96f47691b687fa";
+const DECIDE_BODY_SHA256 = "889cccd7fff80bcffe5a357889257aae87844fe7d23a91357ac9e992a17fcd9c";
 // Première migration du lot R2b. Depuis elle, un EXECUTE ne prend qu'un littéral.
 const R2B_MIGRATION = "20261118100000";
-// Seule migration qui nomme la fonction de décision et ses quatre fonctions publiques, et qui écrit le journal
-// des décisions. Une retouche légitime dans une nouvelle migration ajoute son fichier ici, dans le même commit
-// que la nouvelle empreinte.
-const DECISION_MIGRATIONS = new Set(["20261118100100_fact_claim_decision_rpcs.sql"]);
+// Seules migrations qui nomment la fonction de décision et ses quatre fonctions publiques, et qui écrivent le
+// journal des décisions. Une retouche légitime dans une nouvelle migration ajoute son fichier ici, dans le même
+// commit que la nouvelle empreinte. ATTENTION : un fichier de cette liste échappe aux deux règles de texte qui
+// lisent ces noms ; toutes les autres règles le lisent comme les autres.
+// Lot R2c : la migration des droits est la seule à donner un droit sur les quatre fonctions publiques.
+const DECISION_GRANT_MIGRATION = "20261119100400_fact_claim_decision_grants.sql";
+const DECISION_MIGRATIONS = new Set([
+  "20261118100100_fact_claim_decision_rpcs.sql",
+  LIMITS_SWITCH_MIGRATION,
+  DECISION_GRANT_MIGRATION,
+]);
 // Seule routine dont le corps ne se lit pas, admise par son nom : cette migration, antérieure au registre,
 // recrée la fonction à partir de son corps lu au catalogue (« as %L »). Elle ne touche pas au registre.
 const UNREADABLE_ROUTINES = new Map([
@@ -213,6 +252,31 @@ const UNREADABLE_ROUTINES = new Map([
 // rétablit, par leur nom lu au catalogue, les déclencheurs ordinaires hors registre (invariant 4).
 const DYNAMIC_EXECUTE_ALLOWED =
   /^\s*(?:pg_catalog\.)?format\(\s*'alter table public\.auction_sales (?:disable|enable) trigger %I'\s*,\s*v_trigger\s*\)\s*;/;
+// La même suspension, pour une fonction d'une migration (lot R2c) : deux fonctions seulement, dans une migration
+// nommée, dont le corps est épinglé par une empreinte (SHA-256 du corps tel que ce module le lit). Les fonctions
+// qui réécrivent des ventes sans journal les appellent au lieu de couper tous les déclencheurs de la table.
+const TRIGGER_SUSPENSION_MIGRATION = "20261119100000_sale_triggers_suspended_by_name.sql";
+const TRIGGER_SUSPENSION_FUNCTIONS = new Map([
+  [
+    "app_private.suspend_ordinary_sale_triggers",
+    "078bcfbb95194db3d7133c8b2edd093c164591c701e729af48fc2c2666ae3082",
+  ],
+  [
+    "app_private.resume_ordinary_sale_triggers",
+    "9e8a8dca1a868b389a17b81a0ad733bd361cfc5ebb323b14ecfa138dac3ec3bd",
+  ],
+]);
+// Tables dont aucune table fille ni copie de structure n'est créée (INHERITS, LIKE) : une ligne écrite dans une
+// table fille se lit dans la table mère sans passer par aucun de ses déclencheurs.
+const UNINHERITABLE_TABLES = [
+  "auction_fact_fields",
+  "auction_fact_source_precedence",
+  "auction_fact_claim_decisions",
+  "auction_sale_field_hold_events",
+  "auction_fact_claims",
+  "fact_registry_switches",
+  "auction_sales",
+];
 // Seules fonctions qui appliquent la projection (troisième argument autre que le littéral false).
 const PROJECTION_APPLIERS = new Set([DECIDE_FUNCTION, MERGE_CARRY_FUNCTION, REPROJECTION_FUNCTION]);
 // Fonctions internes des lots R2a et R2b : aucune n'est exécutable par un rôle de l'API.
@@ -242,6 +306,8 @@ const INTERNAL_FUNCTIONS = [
   "app_private.fact_registry_kept_sale",
   "app_private.fact_decision_is_final",
   "app_private.fact_registry_failure",
+  "app_private.fact_registry_error_is_systemic",
+  ...TRIGGER_SUSPENSION_FUNCTIONS.keys(),
   ...SWITCH_READERS.keys(),
 ];
 // Fonctions du registre qu'aucune instruction ALTER FUNCTION ne touche (mode de sécurité, propriétaire, chemin
@@ -487,6 +553,47 @@ function maskSqlStrings(text) {
 }
 
 /**
+ * Le texte contient-il une chaîne E'…' où un caractère est écrit par son code (barre oblique inverse suivie de
+ * x, u, U ou d'un chiffre) ? Les corps entre dollars sont lus comme du code, et le contenu d'une chaîne ordinaire
+ * qui porte elle-même des apostrophes doublées est relu comme du SQL (commande pg_cron, texte d'un EXECUTE).
+ */
+function hasCodedEscapeString(text) {
+  const token = /'|\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/g;
+  let index = 0;
+  while (index < text.length) {
+    token.lastIndex = index;
+    const match = token.exec(text);
+    if (!match) return false;
+    if (match[0] === "'") {
+      const escaped = /(?:^|[^A-Za-z0-9_])[eE]$/.test(
+        text.slice(Math.max(0, match.index - 2), match.index),
+      );
+      let end = match.index + 1;
+      while (end < text.length) {
+        if (escaped && text[end] === "\\") {
+          if (/[xuU0-9]/.test(text[end + 1] ?? "")) return true;
+          end += 2;
+        } else if (text[end] !== "'") end += 1;
+        else if (text[end + 1] === "'") end += 2;
+        else break;
+      }
+      const content = text.slice(match.index + 1, end);
+      if (content.includes("''") && hasCodedEscapeString(content.replaceAll("''", "'"))) {
+        return true;
+      }
+      index = end + 1;
+    } else {
+      const bodyStart = match.index + match[0].length;
+      const close = text.indexOf(match[0], bodyStart);
+      if (close < 0) return hasCodedEscapeString(text.slice(bodyStart));
+      if (hasCodedEscapeString(text.slice(bodyStart, close))) return true;
+      index = close + match[0].length;
+    }
+  }
+  return false;
+}
+
+/**
  * Définitions `create [or replace] function|procedure` d'un fichier : nom qualifié, en-tête, corps, bornes. Le
  * corps est lu sous ses quatre formes : entre dollars (balise avec chiffres comprise), entre apostrophes,
  * « begin atomic … end », « return … ; ». Une routine dont le corps ne se lit pas est rendue dans `unreadable` :
@@ -681,9 +788,26 @@ export async function checkFactRegistryInvariants({
           );
         }
       }
-      if (
-        new RegExp(`${alterTable}disable\\s+trigger\\s+(?:${trigger}|all|user)\\b`, "i").test(sql)
-      ) {
+      // Chaque instruction ALTER TABLE de la table est lue en entier : l'action sur le déclencheur peut suivre
+      // d'autres actions (« alter column …, disable trigger … ») ou une étoile après le nom de la table. Un nom
+      // qui ne se lit pas comme un identifiant simple est tenu pour ce déclencheur ; seule exception, le « %I »
+      // de la forme admise des rattrapages, que juge la règle du SQL dynamique.
+      const switches = [
+        ...sql.matchAll(
+          new RegExp(
+            `alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?${qualified}\\b[^;]*`,
+            "gi",
+          ),
+        ),
+      ].flatMap((statement) => [
+        ...statement[0].matchAll(
+          /\b(disable|enable)\s+(always\s+|replica\s+)?trigger\s+([^\s;,]+)/gi,
+        ),
+      ]);
+      const aimsAt = (target) =>
+        [trigger, "all", "user"].includes(target.toLowerCase()) ||
+        (!/^[a-z_][a-z0-9_$]*$/i.test(target) && !/^%i'?$/i.test(target));
+      if (switches.some((action) => action[1].toLowerCase() === "disable" && aimsAt(action[3]))) {
         failures.push(`${name} disables the trigger ${trigger} of public.${table} (${invariant})`);
       }
       if (
@@ -695,10 +819,12 @@ export async function checkFactRegistryInvariants({
       }
       if (!always) continue;
       if (
-        new RegExp(
-          `${alterTable}enable\\s+(?:replica\\s+)?trigger\\s+(?:${trigger}|all|user)\\b`,
-          "i",
-        ).test(sql)
+        switches.some(
+          (action) =>
+            action[1].toLowerCase() === "enable" &&
+            !/^always/i.test(action[2] ?? "") &&
+            aimsAt(action[3]),
+        )
       ) {
         failures.push(
           `${name} puts the trigger ${trigger} of public.${table} back to a mode that replica sessions skip (${invariant})`,
@@ -1260,6 +1386,60 @@ export async function checkFactRegistryInvariants({
         `${name} switches triggers of auction_sales by a computed name without keeping to the ordinary-mode triggers outside the fact registry (tgenabled = 'O', tgname not like 'aaab\\_%')`,
       );
     }
+    // Contre-vérification 3 (N2) : les deux filtres ci-dessus pouvaient figurer dans une requête sans rapport.
+    // Chaque mention de la variable de boucle doit être une des quatre formes admises : sa déclaration sans
+    // valeur, la boucle sur les déclencheurs ordinaires hors registre (ou sur la table où le fichier a noté ceux
+    // qu'il a suspendus), l'argument de la forme admise, la note d'un nom suspendu. Et aucun nom « aaab_ » ne
+    // suit le mot TRIGGER : un rattrapage ne coupe, ne rétablit, ne supprime ni ne recrée un déclencheur du
+    // registre.
+    if (/\btrigger\s+(?:if\s+exists\s+)?aaab_/i.test(sql)) {
+      failures.push(
+        `${name} names a trigger of the fact registry (aaab_…) after TRIGGER: a repair never switches, drops or recreates one`,
+      );
+    }
+    const noted = [
+      ...sql.matchAll(
+        /\binsert\s+into\s+([a-z_][a-z0-9_]*)\s*\(\s*[a-z_][a-z0-9_]*\s*\)\s*values\s*\(\s*v_trigger\s*\)/gi,
+      ),
+    ];
+    const suspendedTables = new Set(
+      noted
+        .map((match) => match[1].toLowerCase())
+        .filter(
+          (table) =>
+            [...sql.matchAll(new RegExp(`\\b(?:insert\\s+into|update|copy)\\s+${table}\\b`, "gi"))]
+              .length === noted.filter((match) => match[1].toLowerCase() === table).length,
+        ),
+    );
+    const loops = [...sql.matchAll(/\bfor\s+v_trigger\s+in\s+([^;]*?)\s+loop\b/gi)];
+    const admittedLoops = loops.filter((loop) => {
+      const query = loop[1];
+      if (/\bv_trigger\b/i.test(query)) return false;
+      const fromNoted =
+        /^select\s+[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\s+from\s+([a-z_][a-z0-9_]*)\s+[a-z_][a-z0-9_]*(?:\s+order\s+by\s+[a-z_][a-z0-9_.]*)?$/i.exec(
+          query.trim(),
+        );
+      if (fromNoted) return suspendedTables.has(fromNoted[1].toLowerCase());
+      return (
+        /\bfrom\s+pg_catalog\.pg_trigger\b/i.test(query) &&
+        /tgenabled\s*=\s*'O'/.test(query) &&
+        /tgname\s+not\s+like\s+'aaab\\_%'/i.test(query) &&
+        !/\b(?:or|union|except|intersect)\b/i.test(query)
+      );
+    });
+    const admittedMentions =
+      [...sql.matchAll(/\bv_trigger\s+name\s*;/gi)].length +
+      admittedLoops.length +
+      [...sql.matchAll(/trigger %I'\s*,\s*v_trigger\s*\)/g)].length +
+      noted.length;
+    if (
+      loops.length !== admittedLoops.length ||
+      [...sql.matchAll(/\bv_trigger\b/gi)].length !== admittedMentions
+    ) {
+      failures.push(
+        `${name} gives its trigger variable v_trigger a name outside the admitted loop (for v_trigger in select … from pg_catalog.pg_trigger with tgenabled = 'O' and tgname not like 'aaab\\_%', or from the table where it noted the triggers it suspended)`,
+      );
+    }
     const lastCommit = [...sql.matchAll(/\bcommit\s*;/gi)].at(-1);
     const lastAssert = [
       ...sql.matchAll(/select\s+app_private\.assert_fact_registry_triggers\s*\(\s*\)\s*;/gi),
@@ -1274,6 +1454,61 @@ export async function checkFactRegistryInvariants({
     ) {
       failures.push(
         `${name} writes auction_sales without ending by select ${ASSERT_TRIGGERS_FUNCTION}(); before its commit`,
+      );
+    }
+  }
+  // Contre-vérification 3 (N3) : « enable trigger user » (ou « all ») remet tous les déclencheurs d'une table en
+  // mode ordinaire, donc sort ceux du registre du mode « always », sans erreur. La DERNIÈRE définition de chaque
+  // fonction est jugée, dans toutes les migrations (pas seulement celles du registre) : une fonction historique
+  // se corrige par une nouvelle définition.
+  const SWITCHES_EVERY_TRIGGER =
+    /\b(?:dis|en)able\s+(?:always\s+|replica\s+)?trigger\s+(?:all|user)\b/i;
+  const orderedSources = [...migrationSources].sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  const parsedSources = new Map();
+  const definitionsOf = (name, source) => {
+    if (!parsedSources.has(name)) {
+      parsedSources.set(name, functionDefinitions(stripSql(source)).definitions);
+    }
+    return parsedSources.get(name);
+  };
+  const everyTriggerSwitchers = new Map();
+  for (const [name, source] of orderedSources) {
+    if (!SWITCHES_EVERY_TRIGGER.test(source)) continue;
+    for (const definition of definitionsOf(name, source)) {
+      if (SWITCHES_EVERY_TRIGGER.test(definition.body)) {
+        everyTriggerSwitchers.set(definition.name, name);
+      }
+    }
+  }
+  for (const [fn, firstMigration] of everyTriggerSwitchers) {
+    const bare = fn.split(".").at(-1);
+    let last = null;
+    for (const [name, source] of orderedSources) {
+      if (name < firstMigration || !source.toLowerCase().includes(bare)) continue;
+      for (const definition of definitionsOf(name, source)) {
+        if (definition.name === fn) last = { ...definition, migration: name };
+      }
+    }
+    if (last && SWITCHES_EVERY_TRIGGER.test(last.body)) {
+      failures.push(
+        `${last.migration}: ${fn} switches every trigger of a table (trigger user or trigger all): the triggers of the fact registry would leave their always mode; suspend the ordinary ones by name (${[...TRIGGER_SUSPENSION_FUNCTIONS.keys()].join(", ")})`,
+      );
+    }
+  }
+  // Les deux fonctions qui suspendent par leur nom les déclencheurs ordinaires hors registre : définies par leur
+  // migration seulement, corps épinglé.
+  for (const [fn, fingerprint] of TRIGGER_SUSPENSION_FUNCTIONS) {
+    const definition = lastDefinition(fn);
+    const actual = definition ? createHash("sha256").update(definition.body).digest("hex") : null;
+    if (
+      !definition ||
+      definition.migration !== TRIGGER_SUSPENSION_MIGRATION ||
+      actual !== fingerprint
+    ) {
+      failures.push(
+        `${definition?.migration ?? "no migration"}: the body of ${fn} is not the reviewed one of ${TRIGGER_SUSPENSION_MIGRATION} (fingerprint ${actual}): it may only switch, by name, the ordinary-mode triggers of auction_sales outside the fact registry`,
       );
     }
   }
@@ -1377,8 +1612,10 @@ export async function checkFactRegistryInvariants({
       }
     }
   }
-  // Les quatre fonctions de décision du lot R2b sont du schéma public mais n'ont aucun droit d'exécution à ce
-  // lot : elles sont contrôlées comme les fonctions internes.
+  // Les quatre fonctions de décision sont du schéma public. Elles sont d'abord fermées comme les fonctions
+  // internes (tout retiré aux quatre rôles) ; le lot R2c les ouvre à authenticated seul, par une instruction
+  // GRANT par fonction, dans la migration des droits et nulle part ailleurs. Tout autre droit (anon, PUBLIC,
+  // service_role, plusieurs rôles, WITH GRANT OPTION, autre fichier) est refusé.
   for (const fn of [
     PROJECTION_FUNCTION,
     HOLD_FUNCTION,
@@ -1394,14 +1631,29 @@ export async function checkFactRegistryInvariants({
     ) {
       failures.push(`${fn} is not revoked from public, anon, authenticated and service_role`);
     }
-    for (const [name, sql] of all) {
-      if (
-        new RegExp(
-          `\\bgrant\\b[^;]*\\bon\\s+(?:function|routine|procedure)\\s+[^;]*${optionallyQualified(fn)}`,
+    const admittedGrant = DECISION_RPCS.has(fn)
+      ? new RegExp(
+          `^grant\\s+execute\\s+on\\s+function\\s+${signature}\\s+to\\s+authenticated\\s*$`,
           "i",
-        ).test(sql)
-      ) {
-        failures.push(`${name} grants a privilege on ${fn}: no API role may execute it`);
+        )
+      : null;
+    for (const [name, sql] of all) {
+      for (const grant of sql.matchAll(/\bgrant\b[^;]*/gi)) {
+        if (
+          !new RegExp(
+            `\\bon\\s+(?:function|routine|procedure)\\s+[^;]*${optionallyQualified(fn)}`,
+            "i",
+          ).test(grant[0])
+        ) {
+          continue;
+        }
+        if (!admittedGrant) {
+          failures.push(`${name} grants a privilege on ${fn}: no API role may execute it`);
+        } else if (name !== DECISION_GRANT_MIGRATION || !admittedGrant.test(grant[0])) {
+          failures.push(
+            `${name} grants a privilege on ${fn}: the only grant admitted is EXECUTE to authenticated alone, in ${DECISION_GRANT_MIGRATION}`,
+          );
+        }
       }
     }
   }
@@ -1911,19 +2163,37 @@ export async function checkFactRegistryInvariants({
       inFile.some(
         (entry) => SWITCH_SETTERS.includes(entry.name) && index >= entry.start && index < entry.end,
       );
+    // Les décisions du propriétaire admises dans ce fichier sont effacées du texte jugé (positions gardées),
+    // si elles sont écrites hors de toute fonction.
+    const judged = (OWNER_SWITCH_STATEMENTS.get(name) ?? []).reduce(
+      (text, admitted) =>
+        text.replace(admitted, (statement, index) =>
+          inFile.some((entry) => index >= entry.start && index < entry.end)
+            ? statement
+            : " ".repeat(statement.length),
+        ),
+      sql,
+    );
     const updates = [
-      ...sql.matchAll(
+      ...judged.matchAll(
         /\b(?:update|delete\s+from|merge\s+into)\s+(?:only\s+)?app_private\.fact_registry_switches\b/gi,
       ),
     ];
     const inserts = [
-      ...sql.matchAll(/insert\s+into\s+app_private\.fact_registry_switches\b[^;]*/gi),
+      ...judged.matchAll(/insert\s+into\s+app_private\.fact_registry_switches\b[^;]*/gi),
     ];
+    // Toute mention d'une fonction de réglage suivie d'une parenthèse est un appel, quelle que soit sa forme
+    // (select …, select true from …(…), values (…), perform), sauf les trois instructions qui la posent : sa
+    // définition, son commentaire, son « revoke ».
+    const setterCalled = [...judged.matchAll(/\bset_fact_registry_[a-z_]+\s*\(/gi)].some(
+      (match) =>
+        !/(?:create\s+(?:or\s+replace\s+)?function|comment\s+on\s+function|revoke\s+all\s+on\s+function)\s+app_private\.$/i.test(
+          judged.slice(Math.max(0, match.index - 80), match.index),
+        ),
+    );
     if (
       updates.some((match) => !settersOf(match.index)) ||
-      /\bselect\s+app_private\.set_fact_registry_|\bperform\s+app_private\.set_fact_registry_/i.test(
-        sql,
-      ) ||
+      setterCalled ||
       inserts.some(
         (match) =>
           !/values\s*\(\s*'scheduled_reprojection'\s*,\s*false\s*\)\s*on\s+conflict\s*\(\s*switch_name\s*\)\s*do\s+nothing\s*$/i.test(
@@ -1935,7 +2205,17 @@ export async function checkFactRegistryInvariants({
       )
     ) {
       failures.push(
-        `${name} sets a switch of the fact registry otherwise than in its safe sense (scheduled reprojection closed, second factor required), or calls a setter`,
+        `${name} sets a switch of the fact registry otherwise than in its safe sense (scheduled reprojection closed, second factor required), or calls a setter, outside the owner decisions admitted word for word in ${[...OWNER_SWITCH_STATEMENTS.keys()].join(", ")}`,
+      );
+    }
+  }
+  // Une fonction de réglage n'est définie qu'une fois : redéfinie avant l'appel admis du propriétaire, elle
+  // ferait autre chose que ce que dit cet appel.
+  for (const setter of SWITCH_SETTERS) {
+    const defined = definitions.filter((entry) => entry.name === setter);
+    if (defined.length !== 1) {
+      failures.push(
+        `${defined.at(-1)?.migration ?? "no migration"}: ${setter} is defined ${defined.length} times: a setter of the fact registry is defined once, by the migration that creates its switch`,
       );
     }
   }
@@ -2085,19 +2365,144 @@ export async function checkFactRegistryInvariants({
     for (const match of masked.matchAll(/\bexecute\b(?!\s+(?:function|procedure|on)\b)/gi)) {
       const argument = sql.slice(match.index + match[0].length);
       if (/^\s*'(?:[^']|'')*'\s*(?:;|into\b|using\b)/i.test(argument)) continue;
-      found.push(argument);
+      found.push({ argument, index: match.index });
     }
     return found;
+  };
+  // Lit un littéral SQL (apostrophes, E'…' ou dollars) qui commence à `index` ; rend la position qui le suit, ou
+  // -1 si ce n'est pas un littéral.
+  const literalEnd = (sql, index) => {
+    const dollar = /^\$(?:[a-z_][a-z0-9_]*)?\$/i.exec(sql.slice(index, index + 80));
+    if (dollar) {
+      const close = sql.indexOf(dollar[0], index + dollar[0].length);
+      return close < 0 ? -1 : close + dollar[0].length;
+    }
+    const escaped = /^e'/i.test(sql.slice(index, index + 2));
+    let end = index + (escaped ? 2 : 1);
+    if (sql[end - 1] !== "'") return -1;
+    while (end < sql.length) {
+      if (escaped && sql[end] === "\\") end += 2;
+      else if (sql[end] !== "'") end += 1;
+      else if (sql[end + 1] === "'") end += 2;
+      else return end + 1;
+    }
+    return -1;
+  };
+  // Tous les arguments d'un appel (position juste après sa parenthèse ouvrante) sont-ils des littéraux ?
+  const onlyLiteralArguments = (sql, index) => {
+    let at = index;
+    for (;;) {
+      at += /^\s*(?:[a-z_][a-z0-9_]*\s*(?:=>|:=)\s*)?/i.exec(sql.slice(at))[0].length;
+      const end = literalEnd(sql, at);
+      if (end < 0) return false;
+      at = end + /^\s*(?:::\s*[a-z_]+\s*)?/i.exec(sql.slice(end))[0].length;
+      if (sql[at] === ")") return true;
+      if (sql[at] !== ",") return false;
+      at += 1;
+    }
   };
   for (const [name, sql] of all) {
     if (!sinceLot(name, R2B_MIGRATION)) continue;
     const quotedBodies = definitions
       .filter((entry) => entry.migration === name && /'\s*$/.test(entry.head))
       .map((entry) => entry.body);
-    for (const argument of [sql, ...quotedBodies].flatMap(dynamicExecutes)) {
-      if (name.startsWith(REPAIRS_PREFIX) && DYNAMIC_EXECUTE_ALLOWED.test(argument)) continue;
+    const suspensionFunctions =
+      name === TRIGGER_SUSPENSION_MIGRATION
+        ? definitions.filter(
+            (entry) => entry.migration === name && TRIGGER_SUSPENSION_FUNCTIONS.has(entry.name),
+          )
+        : [];
+    for (const { argument, index } of [
+      ...dynamicExecutes(sql),
+      ...quotedBodies.flatMap(dynamicExecutes).map((found) => ({ ...found, index: -1 })),
+    ]) {
+      if (
+        DYNAMIC_EXECUTE_ALLOWED.test(argument) &&
+        (name.startsWith(REPAIRS_PREFIX) ||
+          suspensionFunctions.some((entry) => index >= entry.start && index < entry.end))
+      ) {
+        continue;
+      }
       failures.push(
         `${name} runs dynamic SQL (execute) whose text is not a single string literal: the fact registry checks cannot read it`,
+      );
+    }
+    // Contre-vérification 3 (N1) : formes qui passaient les règles ci-dessus, avec effet prouvé en base.
+    // a. Un EXECUTE écrit DANS une chaîne : le littéral admis d'un EXECUTE peut créer une fonction qui assemble
+    //    son SQL, et le contenu d'une chaîne est masqué aux autres règles.
+    const maskedSql = maskSqlStrings(sql);
+    if (
+      [...sql.matchAll(/\bexecute\b(?!\s+(?:function|procedure|on)\b)/gi)].some(
+        (match) =>
+          maskedSql.slice(match.index, match.index + match[0].length).toLowerCase() !== "execute",
+      )
+    ) {
+      failures.push(
+        `${name} writes an EXECUTE inside a string: dynamic SQL nested in a literal cannot be read by the fact registry checks`,
+      );
+    }
+    // b. Identifiant ou chaîne Unicode (U&"…", U&'…') : un nom écrit par ses codes échappe à toutes les règles.
+    if (/\bu&\s*(?:["']|[a-z_])/i.test(sql)) {
+      failures.push(
+        `${name} writes a Unicode-escaped identifier or string (U&): a name spelled by its code points escapes every fact registry check`,
+      );
+    }
+    //    De même une chaîne E'…' qui écrit un caractère par son code (\x6f, o, \U0000006f, \157) : « o »
+    //    écrit \x6f cache un nom à toutes les règles de texte, dans une commande pg_cron comme dans un corps de
+    //    fonction écrit entre apostrophes.
+    if (hasCodedEscapeString(sql)) {
+      failures.push(
+        `${name} writes an escape string E'…' with a character given by its code (\\x, \\u, \\U or octal): a name spelled by its code points escapes every fact registry check`,
+      );
+    }
+    // c. Fonctions qui lancent le texte d'une requête sans EXECUTE.
+    const queryRunner =
+      /\b(?:query_to_xml\w*|cursor_to_xml\w*|ts_stat|ts_rewrite|dblink\w*)\b/i.exec(sql);
+    if (queryRunner) {
+      failures.push(
+        `${name} names ${queryRunner[0]}, which runs the text of a query: dynamic SQL without EXECUTE cannot be read by the fact registry checks`,
+      );
+    }
+    // d. Tâche pg_cron : sa commande est du SQL lancé plus tard par le propriétaire de la base. Tous les
+    //    arguments de cron.schedule sont des littéraux (les règles de texte lisent alors la commande : nom d'une
+    //    fonction de décision, jeton de la requête) ; cron.alter_job ne change pas une commande ; la table des
+    //    tâches n'est pas écrite directement.
+    for (const call of sql.matchAll(/\bcron\.schedule(?:_in_database)?\s*\(/gi)) {
+      if (!onlyLiteralArguments(sql, call.index + call[0].length)) {
+        failures.push(
+          `${name} schedules a pg_cron job whose arguments are not all string literals: its command cannot be read by the fact registry checks`,
+        );
+      }
+    }
+    if (
+      /\bcron\.alter_job\s*\((?!\s*job_id\s*(?:=>|:=))/i.test(sql) ||
+      /\bcron\.alter_job\s*\([^;]*\bcommand\b/i.test(sql) ||
+      /\b(?:update|insert\s+into|merge\s+into|copy)\s+cron\.job\b/i.test(sql)
+    ) {
+      failures.push(
+        `${name} changes the command of a pg_cron job (cron.alter_job, or a write of cron.job): a job is rescheduled by cron.schedule with a literal command`,
+      );
+    }
+    // e. Table fille ou copie de structure d'une table du registre.
+    for (const table of UNINHERITABLE_TABLES) {
+      if (
+        new RegExp(`\\binherits?\\s*\\(?[^;)]*\\b${table}\\b`, "i").test(sql) ||
+        new RegExp(`[(,]\\s*like\\s+(?:[a-z_][a-z0-9_]*\\.)?${table}\\b`, "i").test(sql)
+      ) {
+        failures.push(
+          `${name} creates a child table or a structure copy of ${table} (INHERITS or LIKE): a row written in a child table is read in its parent without any of its triggers`,
+        );
+      }
+    }
+    // f. Le journal des décisions n'est ni modifié, ni vidé, quelle que soit la forme de l'instruction (dans une
+    //    fonction, une chaîne ou seule) : un déclencheur coupé dans la même transaction ne le protège plus.
+    if (
+      /\b(?:update\s+(?:only\s+)?(?:public\.)?auction_fact_claim_decisions\b|delete\s+from\s+(?:only\s+)?(?:public\.)?auction_fact_claim_decisions\b|truncate\s+(?!on\b)[^;]*\bauction_fact_claim_decisions\b)/i.test(
+        sql,
+      )
+    ) {
+      failures.push(
+        `${name} updates, deletes from or truncates public.auction_fact_claim_decisions: the decision journal is append-only, in every statement of every file`,
       );
     }
   }

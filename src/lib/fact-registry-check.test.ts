@@ -219,20 +219,63 @@ describe("contrôle quotidien du registre des pièces", () => {
     expect(JSON.stringify(summary)).not.toContain("88900000-1000-4000-8000-000000000002");
   });
 
+  // Le message de PostgreSQL nomme la fonction absente ; celui de PostgREST (PGRST202) vient de son cache.
+  const missingRpc = (code: string, rpcName: string) => ({
+    data: null,
+    error: { code, message: `function public.${rpcName}() does not exist` },
+  });
+
   it.each(["PGRST202", "42883"])(
     "ne contrôle rien, et le dit, tant que la migration du contrôle n'est pas appliquée (%s)",
     async (code) => {
-      const missing = { data: null, error: { code, message: "missing" } };
-      answer(missing, missing);
+      answer(
+        missingRpc(code, "reproject_fact_registry_drift"),
+        missingRpc(code, "sync_fact_registry_alerts"),
+      );
 
       await expect(runFactRegistryCheckJob()).resolves.toEqual({ skipped: "migration_pending" });
     },
   );
 
+  it("échoue, avec l'étape et le code, quand une fonction interne du contrôle est absente", async () => {
+    answer(
+      { data: reprojection(), error: null },
+      {
+        data: null,
+        error: {
+          code: "42883",
+          message: "function app_private.sale_field_claim_value(text, jsonb) does not exist",
+        },
+      },
+    );
+
+    await expect(runFactRegistryCheckJob()).rejects.toThrow(
+      "Contrôle du registre des pièces : étape check, code 42883.",
+    );
+  });
+
+  it("échoue de même quand une fonction interne de la relance est absente, et contrôle quand même", async () => {
+    answer(
+      {
+        data: null,
+        error: {
+          code: "42883",
+          message:
+            "function app_private.project_sale_fields(uuid, unknown, boolean) does not exist",
+        },
+      },
+      { data: report(), error: null },
+    );
+
+    await expect(runFactRegistryCheckJob()).rejects.toThrow(
+      "étape reprojection, code 42883. Contrôle fait ensuite : aucun contrôle levé.",
+    );
+  });
+
   it.each(["PGRST202", "42883"])(
     "contrôle sans relancer, et le dit, tant que la migration de la relance n'est pas appliquée (%s)",
     async (code) => {
-      answer({ data: null, error: { code, message: "missing" } }, { data: report(), error: null });
+      answer(missingRpc(code, "reproject_fact_registry_drift"), { data: report(), error: null });
 
       const summary = await runFactRegistryCheckJob();
 

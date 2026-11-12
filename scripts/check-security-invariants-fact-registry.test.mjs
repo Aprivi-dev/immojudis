@@ -1,7 +1,10 @@
-// Invariants du registre des pièces (scripts/check-security-invariants-fact-registry.mjs, lots R1, R2a et R2b) et
+// Invariants du registre des pièces (scripts/check-security-invariants-fact-registry.mjs, lots R1, R2a, R2b et
+// R2c) et
 // verrous ajoutés pour lui à information-agent-no-automatic-publication-path.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { removeSandboxes, runInvariants } from "./check-security-invariants-harness.mjs";
+import { removeSandboxes, repo, runInvariants } from "./check-security-invariants-harness.mjs";
 
 // Chaque passage lance le script d'invariants sur un dépôt factice : 20 s pour tout le fichier.
 vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 });
@@ -1057,11 +1060,13 @@ $$;`;
     },
     // Lot R2b : fonctions de décision, report à la fusion, relance planifiée.
     {
-      label: "une fonction de décision ouverte aux comptes connectés",
+      label:
+        "une fonction de décision ouverte aux comptes connectés hors de la migration des droits",
       file: migration("decision_rpc_granted"),
       content:
         "grant execute on function public.accept_auction_fact_claim(uuid, text, text, uuid) to authenticated;",
-      message: "grants a privilege on public.accept_auction_fact_claim: no API role may execute it",
+      message:
+        "grants a privilege on public.accept_auction_fact_claim: the only grant admitted is EXECUTE to authenticated alone, in 20261119100400_fact_claim_decision_grants.sql",
     },
     {
       label: "la fonction de décision interne ouverte au rôle de service",
@@ -1317,7 +1322,7 @@ $$;`;
       file: migration("cv2_nx06"),
       content: null,
       message:
-        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql may",
+        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql,",
     },
     {
       label: "le même fichier : un EXECUTE dont le texte est assemblé",
@@ -1400,14 +1405,15 @@ $$;`;
       file: migration("cv2_nc02"),
       content:
         "grant execute on function accept_auction_fact_claim(uuid, text, text, uuid) to anon;",
-      message: "grants a privilege on public.accept_auction_fact_claim: no API role may execute it",
+      message:
+        "grants a privilege on public.accept_auction_fact_claim: the only grant admitted is EXECUTE to authenticated alone",
     },
     {
       label: "le même fichier : il nomme une fonction de décision",
       file: migration("cv2_nc02"),
       content: null,
       message:
-        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql may",
+        "names a decision function of the fact registry: only 20261118100100_fact_claim_decision_rpcs.sql,",
     },
     {
       label: "un jeton posé par un EXECUTE format (Na16)",
@@ -1459,6 +1465,260 @@ $$;`;
       prefix: ": ",
       message:
         "app_private.fact_registry_scheduled_reprojection_enabled must only read the switch scheduled_reprojection, and answer false when its row is missing",
+    },
+    // Lot R2c. Contre-vérification 3 du lot R2b : les cas P01 à P07 et R_01 de la relecture, tels qu'elle les a
+    // écrits, et formes voisines.
+    {
+      label: "une enveloppe qui nomme une fonction de décision par un identifiant Unicode (P01)",
+      file: migration("cv3_p01"),
+      content:
+        "create function public.registry_batch(p_claim uuid) returns jsonb language sql security definer set search_path = '' as $$ select public.U&\"oppose\\005Fauction_fact_claim\"(p_claim) $$; revoke all on function public.registry_batch(uuid) from public, anon, authenticated; grant execute on function public.registry_batch(uuid) to service_role;",
+      message: "writes a Unicode-escaped identifier or string (U&)",
+    },
+    {
+      label: "une décision insérée dans le journal nommé par un identifiant Unicode (P02)",
+      file: migration("cv3_p02"),
+      content:
+        "create function app_private.registry_note(p_who uuid, p_claim uuid) returns void language sql security definer set search_path = '' as $$ insert into public.U&\"auction_fact_claim\\005Fdecisions\" (claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code) select c.id, c.auction_sale_id, c.field_key, 'opposed', 'unknown', 'admin', p_who, 'other' from public.auction_fact_claims c where c.id = p_claim $$;",
+      message: "writes a Unicode-escaped identifier or string (U&)",
+    },
+    {
+      label: "un EXECUTE d'un littéral qui crée une fonction au SQL assemblé (P03)",
+      file: migration("cv3_p03"),
+      content:
+        "do $$ begin execute 'create function public.registry_batch(p_claim uuid) returns jsonb language plpgsql security definer set search_path = '''' as $f$ declare r jsonb; begin execute pg_catalog.format(''select public.%I($1)'', ''oppose_'' || ''auction_fact_claim'') into r using p_claim; return r; end $f$'; end $$;",
+      message: "writes an EXECUTE inside a string",
+    },
+    {
+      label: "une requête assemblée lancée par query_to_xml (P04)",
+      file: migration("cv3_p04"),
+      content:
+        "create function public.registry_batch(p_claim uuid) returns xml language sql security definer set search_path = '' as $$ select pg_catalog.query_to_xml('select public.oppose_' || 'auction_fact_claim(' || pg_catalog.quote_literal(p_claim::text) || '::uuid)', false, false, '') $$;",
+      message: "names query_to_xml, which runs the text of a query",
+    },
+    {
+      label: "une requête lancée par dblink",
+      file: migration("cv3_dblink"),
+      content: "select extensions.dblink_exec('dbname=postgres', 'select 1');",
+      message: "names dblink_exec, which runs the text of a query",
+    },
+    {
+      label: "une requête lancée par ts_stat",
+      file: migration("cv3_ts_stat"),
+      content: "select * from pg_catalog.ts_stat('select ' || 'to_tsvector(''x'')');",
+      message: "names ts_stat, which runs the text of a query",
+    },
+    {
+      label: "une table fille du journal des décisions (P05)",
+      file: migration("cv3_p05"),
+      content:
+        "create table app_private.decision_notes () inherits (public.auction_fact_claim_decisions);",
+      message:
+        "creates a child table or a structure copy of auction_fact_claim_decisions (INHERITS or LIKE)",
+    },
+    {
+      label: "une copie de structure de la file des évènements",
+      file: migration("cv3_like"),
+      content:
+        "create table app_private.events_copy (like public.auction_sale_field_hold_events including all);",
+      message:
+        "creates a child table or a structure copy of auction_sale_field_hold_events (INHERITS or LIKE)",
+    },
+    {
+      label: "un déclencheur du journal coupé par une action placée après une autre (P06)",
+      file: migration("cv3_p06"),
+      content:
+        "alter table public.auction_fact_claim_decisions alter column reason_code set statistics 100, disable trigger auction_fact_claim_decisions_append_only; update public.auction_fact_claim_decisions set decision = 'rejected', reason_code = 'other' where decision = 'opposed'; alter table public.auction_fact_claim_decisions alter column reason_code set statistics -1, enable always trigger auction_fact_claim_decisions_append_only;",
+      message:
+        "disables the trigger auction_fact_claim_decisions_append_only of public.auction_fact_claim_decisions",
+    },
+    {
+      label: "le même fichier : le journal des décisions réécrit",
+      file: migration("cv3_p06"),
+      content: null,
+      message: "updates, deletes from or truncates public.auction_fact_claim_decisions",
+    },
+    {
+      label: "le déclencheur de validation coupé après une autre action (P06d)",
+      file: migration("cv3_p06d"),
+      content:
+        "alter table public.auction_fact_claim_decisions validate constraint auction_fact_claim_decisions_reason_code_check, disable trigger auction_fact_claim_decisions_validate;",
+      message:
+        "disables the trigger auction_fact_claim_decisions_validate of public.auction_fact_claim_decisions",
+    },
+    {
+      label: "le même déclencheur coupé derrière une étoile (P06e)",
+      file: migration("cv3_p06e"),
+      content:
+        "alter table public.auction_fact_claim_decisions * disable trigger auction_fact_claim_decisions_validate;",
+      message:
+        "disables the trigger auction_fact_claim_decisions_validate of public.auction_fact_claim_decisions",
+    },
+    {
+      label: "le même déclencheur nommé par un identifiant Unicode (P06f)",
+      file: migration("cv3_p06f"),
+      content:
+        'alter table public.auction_fact_claim_decisions disable trigger U&"auction\\005Ffact_claim_decisions_validate";',
+      message:
+        "disables the trigger auction_fact_claim_decisions_validate of public.auction_fact_claim_decisions",
+    },
+    {
+      label: "un déclencheur du registre remis en mode ordinaire après une autre action",
+      file: migration("cv3_enable_after_action"),
+      content:
+        "alter table public.auction_sale_field_hold_events alter column event set statistics 100, enable trigger auction_sale_field_hold_events_stamp;",
+      message:
+        "puts the trigger auction_sale_field_hold_events_stamp of public.auction_sale_field_hold_events back to a mode that replica sessions skip",
+    },
+    {
+      label: "une tâche pg_cron dont la commande est assemblée (P07)",
+      file: migration("cv3_p07"),
+      content:
+        "select cron.schedule('registry-batch', '*/5 * * * *', 'select set_' || 'config(''req'' || ''uest.jwt.claims'', ''{\"sub\":\"88700000-0000-4000-8000-0000000000a1\",\"role\":\"authenticated\",\"aal\":\"aal2\"}'', true), public.opp' || 'ose_auction_fact_claim(c.id) from public.auction_fact_claims c limit 1');",
+      message: "schedules a pg_cron job whose arguments are not all string literals",
+    },
+    {
+      label:
+        "une tâche pg_cron dont la commande littérale pose le jeton et nomme une fonction de décision",
+      file: migration("cv3_cron_literal"),
+      content:
+        "select cron.schedule('registry-batch', '*/5 * * * *', $job$select set_config('request.jwt.claims', '{}', true), public.oppose_auction_fact_claim(c.id) from public.auction_fact_claims c limit 1$job$);",
+      message: "writes the request token (request.jwt.claim",
+    },
+    {
+      label: "le même fichier : il nomme une fonction de décision",
+      file: migration("cv3_cron_literal"),
+      content: null,
+      message: "names a decision function of the fact registry: only",
+    },
+    {
+      label: "la commande d'une tâche pg_cron changée par cron.alter_job",
+      file: migration("cv3_cron_alter"),
+      content: "select cron.alter_job(job_id := 1, command := 'select ' || 'pg_catalog.now()');",
+      message: "changes the command of a pg_cron job",
+    },
+    {
+      label: "une décision supprimée dans une fonction",
+      file: migration("cv3_journal_delete"),
+      content:
+        "create function app_private.forget_decisions() returns void language sql security definer set search_path = '' as $$ delete from public.auction_fact_claim_decisions where reason_code = 'other' $$;",
+      message: "updates, deletes from or truncates public.auction_fact_claim_decisions",
+    },
+    {
+      label: "le journal des décisions vidé par le texte d'un EXECUTE",
+      file: migration("cv3_journal_truncate"),
+      content:
+        "do $$ begin execute 'truncate table public.auction_sale_field_hold_events, public.auction_fact_claim_decisions'; end $$;",
+      message: "updates, deletes from or truncates public.auction_fact_claim_decisions",
+    },
+    {
+      label: "une fonction qui coupe tous les déclencheurs d'une table (N3)",
+      file: migration("cv3_n3_trigger_user"),
+      content:
+        "create function app_private.quiet_rewrite() returns void language plpgsql security definer set search_path = '' as $$ begin alter table public.auction_sales disable trigger user; update public.auction_sales set city = btrim(city); alter table public.auction_sales enable trigger user; end; $$;",
+      prefix: ": ",
+      message:
+        "app_private.quiet_rewrite switches every trigger of a table (trigger user or trigger all)",
+    },
+    {
+      label: "une fonction de suspension des déclencheurs redéfinie hors de sa migration",
+      file: migration("cv3_resume_redefined"),
+      content:
+        "create or replace function app_private.resume_ordinary_sale_triggers(p_triggers name[]) returns void language plpgsql set search_path = '' as $$ declare v_trigger name; begin foreach v_trigger in array p_triggers loop execute pg_catalog.format('alter table public.auction_sales enable trigger %I', v_trigger); end loop; end; $$; revoke all on function app_private.resume_ordinary_sale_triggers(name[]) from public, anon, authenticated, service_role;",
+      prefix: ": ",
+      message:
+        "the body of app_private.resume_ordinary_sale_triggers is not the reviewed one of 20261119100000_sale_triggers_suspended_by_name.sql",
+    },
+    {
+      label:
+        "le même fichier : la forme admise des rattrapages n'est pas admise dans une autre migration",
+      file: migration("cv3_resume_redefined"),
+      content: null,
+      message: "runs dynamic SQL (execute) whose text is not a single string literal",
+    },
+    {
+      label: "une fonction de décision ouverte au rôle de service",
+      file: migration("cv3_grant_service_role"),
+      content:
+        "grant execute on function public.oppose_auction_fact_claim(uuid, text) to service_role;",
+      message:
+        "grants a privilege on public.oppose_auction_fact_claim: the only grant admitted is EXECUTE to authenticated alone",
+    },
+    {
+      label: "les plafonds levés par une autre migration",
+      file: migration("cv3_limits_off_elsewhere"),
+      content: "select app_private.set_fact_registry_decision_rate_limits(false);",
+      message: "names a switch of the fact registry",
+    },
+    {
+      label: "la lecture du réglage des plafonds redéfinie pour ne plus les appliquer",
+      file: migration("cv3_limits_reader_off"),
+      content:
+        "create or replace function app_private.fact_registry_decision_rate_limits_enabled() returns boolean language sql stable security definer set search_path = '' as $$ select coalesce((select switch.enabled from app_private.fact_registry_switches switch where switch.switch_name = 'decision_rate_limits_enabled'), false); $$;",
+      prefix: ": ",
+      message:
+        "app_private.fact_registry_decision_rate_limits_enabled must only read the switch decision_rate_limits_enabled, and answer true when its row is missing",
+    },
+    {
+      label: "un rattrapage qui donne à sa variable le nom d'un déclencheur du registre (R_01)",
+      where: "repair",
+      file: "repairs/99990101000010_cv3_r01.sql",
+      content:
+        "begin;\n-- leurre : les deux mots attendus par le contrôle, dans une requête sans rapport\nselect count(*) from pg_catalog.pg_trigger trigger_row where trigger_row.tgenabled = 'O' and trigger_row.tgname not like 'aaab\\_%';\ndo $suspend$\ndeclare\n  v_trigger name := 'aaab_auction_sales_hold_projected_fields';\nbegin\n  execute pg_catalog.format('alter table public.auction_sales disable trigger %I', v_trigger);\nend;\n$suspend$;\nupdate public.auction_sales set rooms_count = 99 where held_fields is not null;\nalter table public.auction_sales enable always trigger aaab_auction_sales_hold_projected_fields;\nselect app_private.assert_fact_registry_triggers();\ncommit;",
+      message: "gives its trigger variable v_trigger a name outside the admitted loop",
+    },
+    {
+      label: "le même rattrapage : un déclencheur du registre nommé après TRIGGER",
+      where: "repair",
+      file: "repairs/99990101000010_cv3_r01.sql",
+      content: null,
+      message: "names a trigger of the fact registry (aaab_…) after TRIGGER",
+    },
+    {
+      label: "un rattrapage dont la boucle admise est élargie par une union",
+      where: "repair",
+      file: "repairs/99990101000011_cv3_loop_union.sql",
+      content:
+        "begin; do $$ declare v_trigger name; begin for v_trigger in select trigger_row.tgname from pg_catalog.pg_trigger trigger_row where trigger_row.tgenabled = 'O' and trigger_row.tgname not like 'aaab\\_%' union select 'auction_sales_other'::name loop execute format('alter table public.auction_sales disable trigger %I', v_trigger); end loop; end $$; update public.auction_sales set city = btrim(city); select app_private.assert_fact_registry_triggers(); commit;",
+      message: "gives its trigger variable v_trigger a name outside the admitted loop",
+    },
+    // Relecture de sécurité du lot R2c (I2) : cas V1b, V2, V5b et V6 de la relecture, tels qu'elle les a écrits.
+    {
+      label: "une requête assemblée lancée par ts_rewrite (V1b)",
+      file: migration("r2c_v1b"),
+      content:
+        "select pg_catalog.ts_rewrite('a'::tsquery, 'select ''a''::tsquery, ''b''::tsquery from (select set_' || 'config(''req'' || ''uest.jwt.claims'', ''{\"sub\":\"88700000-0000-4000-8000-0000000000a1\",\"role\":\"authenticated\"}'', true), public.opp' || 'ose_auction_fact_claim(''88700000-2000-4000-8000-000000000012'') offset 0) x');",
+      message: "names ts_rewrite, which runs the text of a query",
+    },
+    {
+      label:
+        "une commande pg_cron dont les noms sont écrits par leurs codes dans une chaîne E (V2)",
+      file: migration("r2c_v2"),
+      content:
+        "select cron.schedule('registry-v2', '* * * * *', E'select set_c\\x6fnfig(\\'requ\\x65st.jwt.claims\\', \\'{\"sub\":\"88700000-0000-4000-8000-0000000000a1\",\"role\":\"authenticated\",\"aal\":\"aal2\"}\\', true), public.opp\\x6fse_auction_fact_claim(\\'88700000-2000-4000-8000-000000000012\\')');",
+      message: "writes an escape string E'…' with a character given by its code",
+    },
+    {
+      label: "une enveloppe dont le corps est une chaîne E aux noms écrits par leurs codes (V5b)",
+      file: migration("r2c_v5b"),
+      content:
+        "create function public.tidy_claim(p uuid) returns jsonb language plpgsql security definer set search_path = '' as E'begin perform pg_catalog.set_c\\x6fnfig(\\'requ\\x65st.jwt.claims\\', \\'{\"sub\":\"88700000-0000-4000-8000-0000000000a1\",\"role\":\"authenticated\"}\\', true); return public.opp\\x6fse_auction_fact_claim(p); end'; revoke all on function public.tidy_claim(uuid) from public, anon; grant execute on function public.tidy_claim(uuid) to authenticated;",
+      message: "writes an escape string E'…' with a character given by its code",
+    },
+    {
+      label: "une insertion au journal dont le nom de table est écrit par un code (V6)",
+      file: migration("r2c_v6"),
+      content:
+        "create function public.tidy_journal() returns void language sql security definer set search_path = '' as E'insert into public.auction_fact_claim\\x5fdecisions (claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code) select c.id, c.auction_sale_id, c.field_key, \\'opposed\\', \\'unknown\\', \\'admin\\', \\'88700000-0000-4000-8000-0000000000a1\\', \\'other\\' from public.auction_fact_claims c'; revoke all on function public.tidy_journal() from public, anon, authenticated;",
+      message: "writes an escape string E'…' with a character given by its code",
+    },
+    {
+      label:
+        "une chaîne E à code unicode ou octal, cachée dans la commande littérale d'une tâche pg_cron",
+      file: migration("r2c_estring_nested"),
+      content:
+        "select cron.schedule('registry-nested', '* * * * *', 'select pg_catalog.set_config(E''requ\\u0065st.jwt.claims'', E''\\173\\175'', true)');",
+      message: "writes an escape string E'…' with a character given by its code",
     },
   ];
   const filesOf = (where) =>
@@ -1517,6 +1777,92 @@ $$;`;
     );
   });
 
+  // Lot R2c : la migration des droits et celle des réglages sont admises telles qu'elles sont, et rien de plus.
+  // (Le fichier du dépôt est remplacé par une copie retouchée : un passage par cas.)
+  const withAppended = (file, addition) =>
+    runInvariants(
+      { [file]: readFileSync(join(repo, "supabase/migrations", file), "utf8") + addition },
+      [file],
+    );
+
+  it("refuse, dans la migration des droits elle-même, un droit donné à un autre rôle", () => {
+    const file = "20261119100400_fact_claim_decision_grants.sql";
+    const result = withAppended(
+      file,
+      "\ngrant execute on function public.reject_auction_fact_claim(uuid, text) to authenticated, anon;\n",
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `${file} grants a privilege on public.reject_auction_fact_claim: the only grant admitted is EXECUTE to authenticated alone`,
+    );
+  });
+
+  it("refuse, dans la migration des réglages, un réglage posé hors des deux décisions du propriétaire", () => {
+    const file = "20261119100100_fact_decision_limits_switch_and_author_lock.sql";
+    const opened = withAppended(
+      file,
+      "\nselect app_private.set_fact_registry_scheduled_reprojection(true);\n",
+    );
+    expect(opened.status).toBe(1);
+    expect(opened.stderr).toContain(
+      `${file} sets a switch of the fact registry otherwise than in its safe sense`,
+    );
+    // La décision admise, écrite dans une fonction, redevient un appel de fonction de réglage.
+    const wrapped = withAppended(
+      file,
+      "\ncreate function app_private.lift_second_factor() returns boolean language sql security definer set search_path = '' as $$ select app_private.set_fact_registry_decisions_second_factor(false); $$;\n",
+    );
+    expect(wrapped.status).toBe(1);
+    expect(wrapped.stderr).toContain(
+      `${file} sets a switch of the fact registry otherwise than in its safe sense`,
+    );
+  });
+
+  // Relecture de sécurité du lot R2c (M1) : dans un fichier admis pour les réglages, toute mention d'une fonction
+  // de réglage suivie d'une parenthèse est un appel, quelle que soit sa forme.
+  it.each([
+    [
+      "select true from …",
+      "select true from app_private.set_fact_registry_scheduled_reprojection(true);",
+    ],
+    ["values (…)", "values (app_private.set_fact_registry_scheduled_reprojection(true));"],
+    ["select 1, …", "select 1, app_private.set_fact_registry_scheduled_reprojection(true);"],
+    [
+      "un bloc DO",
+      "do $$ begin perform 1 from app_private.set_fact_registry_decision_rate_limits(false) relaxed; end $$;",
+    ],
+  ])(
+    "refuse, dans la migration des réglages, un appel de fonction de réglage écrit « %s »",
+    (_form, call) => {
+      const file = "20261119100100_fact_decision_limits_switch_and_author_lock.sql";
+      const result = withAppended(file, `\n${call}\n`);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        `${file} sets a switch of the fact registry otherwise than in its safe sense`,
+      );
+    },
+  );
+
+  it("refuse une fonction de réglage redéfinie avant l'appel admis du propriétaire", () => {
+    const file = "20261119100100_fact_decision_limits_switch_and_author_lock.sql";
+    const admitted = "select app_private.set_fact_registry_decisions_second_factor(false);";
+    const source = readFileSync(join(repo, "supabase/migrations", file), "utf8");
+    expect(source.split(admitted)).toHaveLength(2);
+    const result = runInvariants(
+      {
+        [file]: source.replace(
+          admitted,
+          `create or replace function app_private.set_fact_registry_decisions_second_factor(p_required boolean) returns boolean language plpgsql security invoker set search_path = '' as $f$ begin update app_private.fact_registry_switches set enabled = (switch_name = 'scheduled_reprojection'); return p_required; end; $f$;\n${admitted}`,
+        ),
+      },
+      [file],
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `${file}: app_private.set_fact_registry_decisions_second_factor is defined 2 times`,
+    );
+  });
+
   it("accepte les formes permises et annonce les quatorze invariants", () => {
     const result = runInvariants(
       {
@@ -1536,7 +1882,7 @@ $$;`;
           "-- update public.auction_sales set held_fields = null; set session_replication_role = replica;\nselect 1; /* grant all on all tables in schema public to anon; */",
         // Les quatre formes de corps se lisent, et un EXECUTE d'un seul littéral est admis.
         [migration("accepted_routine_forms")]:
-          "create function public.accepted_digit_tag() returns integer language plpgsql set search_path = '' as $f1$ declare v integer; begin execute 'select 1' into v; return v; end; $f1$; create procedure public.accepted_procedure() language sql set search_path = '' as 'select 1'; create function public.accepted_atomic(p integer) returns integer language sql set search_path = '' begin atomic select case when p > 0 then 1 else 0 end; end; create function public.accepted_return(p integer) returns integer language sql set search_path = '' return p + 1;",
+          "select E'une ligne\\nune autre, une barre \\\\ et une apostrophe \\'' as accepted_escape; select cron.schedule('accepted-job', '*/5 * * * *', $job$select 1$job$); select cron.schedule(job_name => 'accepted-job-2', schedule => '0 3 * * *', command => 'select pg_catalog.now()'); create function public.accepted_digit_tag() returns integer language plpgsql set search_path = '' as $f1$ declare v integer; begin execute 'select 1' into v; return v; end; $f1$; create procedure public.accepted_procedure() language sql set search_path = '' as 'select 1'; create function public.accepted_atomic(p integer) returns integer language sql set search_path = '' begin atomic select case when p > 0 then 1 else 0 end; end; create function public.accepted_return(p integer) returns integer language sql set search_path = '' return p + 1;",
         [migration("accepted_projection_writes")]:
           "create or replace function app_private.project_sale_fields(p_sale_id uuid, p_fields text[] default null, p_apply boolean default false, p_listing_hints jsonb default null) returns jsonb language plpgsql security definer set search_path = '' as $$ declare t_surface_source text; t_app_surface_kind text; begin t_surface_source := 'fact_registry'; t_app_surface_kind := 'built'; perform set_config('app.sale_field_projection', p_sale_id::text, true); update public.auction_sales set held_fields = null, surface_source = t_surface_source, app_surface_kind = t_app_surface_kind where id = p_sale_id; return '{}'::jsonb; end; $$;",
       },
