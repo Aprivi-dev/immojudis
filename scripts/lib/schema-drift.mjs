@@ -352,14 +352,25 @@ function normalizeDiffWithNotes(value) {
   return { diff: filterDiffLines(text), unusedReconciledChecks: unused };
 }
 
+// The diff tool wraps a long statement over several lines (production, 2026-11-12: each fact registry
+// index came on two lines, its WHERE on an indented line of its own). An index is therefore matched as a
+// whole statement, from `CREATE [UNIQUE] INDEX` at the start of a line to the next semicolon, never line
+// by line. The statement is removed only when all of it is a reviewed definition
+// (isManagedConcurrentIndexDefinition): a line added, changed or missing leaves every line in the diff.
+const CREATE_INDEX_STATEMENT = /^[ \t]*CREATE\s+(?:UNIQUE\s+)?INDEX\s[^;]*;[ \t]*$/gim;
+
+function removeManagedConcurrentIndexStatements(text) {
+  return text.replace(CREATE_INDEX_STATEMENT, (statement) =>
+    isManagedConcurrentIndexDefinition(statement) ? "" : statement,
+  );
+}
+
 function filterDiffLines(text) {
-  return text
+  return removeManagedConcurrentIndexStatements(text)
     .split(/\r?\n/)
     .filter((line) => {
       const normalized = line.trim();
       if (!normalized) return false;
-
-      if (isManagedConcurrentIndexDefinition(normalized)) return false;
 
       // Supabase installs pg_net in a non-relocatable platform-selected schema.
       // Its presence and behavior are covered by pgTAP, so schema placement is
@@ -378,6 +389,37 @@ function filterDiffLines(text) {
     })
     .join("\n")
     .trim();
+}
+
+// Lines of each output of the diff tool kept when it fails. The tool can print far more than a CI log
+// shows (a job log was cut at 64 KiB, before the real error): only the end, where the error is, is useful.
+const DIFF_TOOL_FAILURE_TAIL_LINES = 200;
+
+// Everything the script prints when the diff tool exited with an error, as one text: the
+// `[schema-drift]` diagnosis first, so that it is read whatever the length of what follows, then the
+// last DIFF_TOOL_FAILURE_TAIL_LINES lines of each output of the tool.
+function diffToolFailureReport({ result, attempts, transient, githubActions = false }) {
+  const message = transient
+    ? `TOOL UNREACHABLE: the diff tool could not connect to the database after ${attempts} attempts. The schema was not compared: this is NOT a schema drift. Re-run the workflow, or run "npm run check:schema-drift -- --remote".`
+    : "DIFF TOOL FAILED: the diff tool exited with an error that is not a connection timeout (not retried). The schema was not compared.";
+  const lines = [`[schema-drift] ${message}`];
+  if (githubActions)
+    lines.push(
+      `::error title=${transient ? "Schema drift tool unreachable" : "Schema drift tool failed"}::${message}`,
+    );
+  if (result.error) lines.push(`[schema-drift] ${result.error.message}`);
+  for (const stream of ["stdout", "stderr"]) {
+    const output = String(result[stream] ?? "")
+      .trimEnd()
+      .split(/\r?\n/);
+    if (output.length === 1 && !output[0]) continue;
+    const kept = output.slice(-DIFF_TOOL_FAILURE_TAIL_LINES);
+    lines.push(
+      `[schema-drift] Diff tool ${stream}, last ${kept.length} of ${output.length} line(s):`,
+      ...kept,
+    );
+  }
+  return lines.join("\n");
 }
 
 // Waits (seconds) before the 2 extra attempts that follow a transient connection
@@ -436,7 +478,9 @@ async function runWithTransientRetry({
 }
 
 export {
+  DIFF_TOOL_FAILURE_TAIL_LINES,
   TRANSIENT_RETRY_DELAYS_SECONDS,
+  diffToolFailureReport,
   isTransientConnectionFailure,
   runWithTransientRetry,
   RECONCILED_CHECK_CONSTRAINTS,

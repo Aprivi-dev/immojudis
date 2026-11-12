@@ -1,11 +1,15 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 import {
+  DIFF_TOOL_FAILURE_TAIL_LINES,
   RECONCILED_CHECK_CONSTRAINTS,
+  diffToolFailureReport,
   canonicalCheckCondition,
   canonicalConcurrentIndexDefinition,
   checkBody,
@@ -160,6 +164,109 @@ CREATE INDEX auction_sales_source_urls_gin_idx ON public.auction_sales USING gin
       ],
     ])("keeps a fact registry index with %s in the diff", (_label, line) => {
       expect(normalizeDiff(line)).toBe(line);
+    });
+
+    // Production, 12/11/2026 08:50 UTC (workflow « Apply Supabase Migrations », lot R2a) : l'outil a imprimé
+    // chaque index sur DEUX lignes, le WHERE à part et indenté. Texte exact du journal.
+    const run20261112 = `CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))
+  WHERE evidence_locator ? 'information_agent_fact_id'::text;
+CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)
+  WHERE held_fields IS NOT NULL;`;
+
+    it("ignores the two reviewed indexes printed on two lines each (production, 12/11/2026)", () => {
+      expect(normalizeDiff(run20261112)).toBe("");
+      expect(normalizeDiff(run20261112.replaceAll("\n", "\r\n"))).toBe("");
+      // Sous les lignes d'en-tête de l'outil, qui ne finissent pas par un point-virgule.
+      expect(
+        normalizeDiff(
+          `-- Migration unit 1: 20261117100450_fact_registry_concurrent_indexes.sql\n\n${run20261112}\n`,
+        ),
+      ).toBe("");
+    });
+
+    it("removes only the reviewed statement and keeps its neighbours", () => {
+      expect(
+        normalizeDiff(
+          `ALTER TABLE public.auction_sales ADD COLUMN extra text;\n${run20261112}\nDROP TABLE public.auction_fact_claims;`,
+        ),
+      ).toBe(
+        "ALTER TABLE public.auction_sales ADD COLUMN extra text;\nDROP TABLE public.auction_fact_claims;",
+      );
+    });
+
+    it.each([
+      [
+        "an index outside the allowlist",
+        "CREATE INDEX unreviewed_extra_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another index name",
+        "CREATE INDEX auction_sales_held_fields_v2_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another table",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_fact_claims (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "unique where it must not be",
+        "CREATE UNIQUE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "not unique where it must be",
+        "CREATE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "another column",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (source_url)\n  WHERE held_fields IS NOT NULL;",
+      ],
+      [
+        "another operator in the expression",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator -> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'information_agent_fact_id'::text;",
+      ],
+      [
+        "another operator in the predicate",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NULL;",
+      ],
+      [
+        "another constant",
+        "CREATE UNIQUE INDEX auction_fact_claims_agent_fact_key ON public.auction_fact_claims ((evidence_locator ->> 'information_agent_fact_id'::text))\n  WHERE evidence_locator ? 'case_id'::text;",
+      ],
+      [
+        "no predicate line",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  ;",
+      ],
+      [
+        "one more predicate line",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL\n  AND id IS NOT NULL;",
+      ],
+      [
+        "no terminator before the next statement",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL\nDROP TABLE public.auction_fact_claims;",
+      ],
+      [
+        "a comment between its two lines",
+        "CREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  -- WHERE held_fields IS NULL\n  WHERE held_fields IS NOT NULL;",
+      ],
+    ])("keeps a two-line index with %s in the diff", (_label, statement) => {
+      expect(normalizeDiff(statement)).toBe(statement);
+    });
+
+    it.each([
+      [
+        "ALTER TABLE",
+        "ALTER TABLE public.auction_sales\n  ADD COLUMN auction_sales_held_fields_idx text;",
+      ],
+      ["DROP INDEX", "DROP INDEX\n  public.auction_sales_held_fields_idx;"],
+      [
+        "CREATE POLICY",
+        "CREATE POLICY held_fields_read ON public.auction_sales\n  USING (held_fields IS NOT NULL);",
+      ],
+      [
+        "COMMENT that quotes the reviewed index",
+        "COMMENT ON TABLE public.auction_sales IS 'see\nCREATE INDEX auction_sales_held_fields_idx ON public.auction_sales (id)\n  WHERE held_fields IS NOT NULL';",
+      ],
+    ])("keeps a multi-line %s statement in the diff", (_label, statement) => {
+      expect(normalizeDiff(statement)).toBe(statement);
     });
 
     it("does not loosen the match of the earlier operations", () => {
@@ -521,4 +628,88 @@ describe("Transient connection failures of the diff tool (run 80)", () => {
     expect(calls).toBe(1);
     expect(outcome.transient).toBe(true);
   });
+});
+
+describe("Report of a failed diff tool", () => {
+  const toolLines = (count) =>
+    Array.from({ length: count }, (_unused, index) => `tool line ${index + 1}`).join("\n");
+
+  it("puts the diagnosis first and keeps only the end of each output", () => {
+    const report = diffToolFailureReport({
+      result: { status: 1, stdout: `${toolLines(5000)}\n`, stderr: "warning\nreal error\n" },
+      attempts: 1,
+      transient: false,
+    }).split("\n");
+
+    expect(report[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+    expect(report[1]).toBe(
+      `[schema-drift] Diff tool stdout, last ${DIFF_TOOL_FAILURE_TAIL_LINES} of 5000 line(s):`,
+    );
+    expect(report[2]).toBe(`tool line ${5000 - DIFF_TOOL_FAILURE_TAIL_LINES + 1}`);
+    expect(report.slice(-4)).toEqual([
+      "tool line 5000",
+      "[schema-drift] Diff tool stderr, last 2 of 2 line(s):",
+      "warning",
+      "real error",
+    ]);
+    expect(report).toHaveLength(1 + 1 + DIFF_TOOL_FAILURE_TAIL_LINES + 1 + 2);
+  });
+
+  it("names an unreachable tool, the GitHub annotation and the spawn error before any output", () => {
+    const report = diffToolFailureReport({
+      result: { status: null, stdout: "", stderr: "", error: new Error("spawnSync npx ENOBUFS") },
+      attempts: 3,
+      transient: true,
+      githubActions: true,
+    }).split("\n");
+
+    expect(report).toHaveLength(3);
+    expect(report[0]).toMatch(/^\[schema-drift\] TOOL UNREACHABLE: .* after 3 attempts\. /);
+    expect(report[1]).toMatch(/^::error title=Schema drift tool unreachable::TOOL UNREACHABLE: /);
+    expect(report[2]).toBe("[schema-drift] spawnSync npx ENOBUFS");
+  });
+
+  // The whole script, with a stand-in `npx` that prints about 750 KiB and fails: far beyond the 64 KiB
+  // at which the CI log of the failed run was cut.
+  it.skipIf(process.platform === "win32")(
+    "prints the diagnosis first, the end of the tool output, and exits with the tool status",
+    () => {
+      const directory = mkdtempSync(join(tmpdir(), "immojudis-schema-drift-test-"));
+      try {
+        const standIn = join(directory, "npx");
+        writeFileSync(
+          standIn,
+          `#!/bin/sh\ni=1\nwhile [ $i -le 20000 ]; do echo "tool line $i padded to pass 64 KiB"; i=$((i+1)); done\necho "real error at the end" >&2\nexit 3\n`,
+        );
+        chmodSync(standIn, 0o755);
+        const run = spawnSync(
+          process.execPath,
+          [join(dirname(fileURLToPath(import.meta.url)), "check-supabase-schema-drift.mjs")],
+          {
+            encoding: "utf8",
+            env: { PATH: `${directory}:/usr/bin:/bin`, GITHUB_ACTIONS: "true" },
+          },
+        );
+        const printed = run.stderr.trimEnd().split("\n");
+
+        expect(run.status).toBe(3);
+        expect(run.stdout).toBe("");
+        expect(printed[0]).toMatch(/^\[schema-drift\] DIFF TOOL FAILED: /);
+        expect(printed[1]).toMatch(/^::error title=Schema drift tool failed::DIFF TOOL FAILED: /);
+        expect(printed[2]).toBe(
+          `[schema-drift] Diff tool stdout, last ${DIFF_TOOL_FAILURE_TAIL_LINES} of 20000 line(s):`,
+        );
+        expect(printed[3]).toBe(
+          `tool line ${20000 - DIFF_TOOL_FAILURE_TAIL_LINES + 1} padded to pass 64 KiB`,
+        );
+        expect(printed.slice(-3)).toEqual([
+          "tool line 20000 padded to pass 64 KiB",
+          "[schema-drift] Diff tool stderr, last 1 of 1 line(s):",
+          "real error at the end",
+        ]);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
 });
