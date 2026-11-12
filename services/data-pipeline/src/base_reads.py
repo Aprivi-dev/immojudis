@@ -44,9 +44,15 @@ LOGGER = logging.getLogger(__name__)
 
 # Traces des valeurs lues dans les pièces : par champ, la valeur projetée et les clés de ``raw_payload`` qui la décrivent.
 _PROVENANCE_KEY = "pdf_fact_provenance"
-# Ce que la source a publié à la dernière lecture de sa fiche.
-_SOURCE_SNAPSHOT_KEY = "source_factual_snapshot"
+# Clé de ``raw_payload`` (et de la vente brute) : ce que la source a publié à la dernière lecture de sa fiche.
+SOURCE_SNAPSHOT_KEY = "source_factual_snapshot"
+# Marqueurs d'une vente brute dont la fiche n'a pas été relue à ce passage : annonce inchangée, fiche en échec.
 _NOT_REREAD_FLAGS = ("_known_unchanged", "_detail_fetch_failed")
+
+
+def was_reread(raw_sale: Any) -> bool:
+    """Vrai si la fiche de cette vente brute (ou de ce ``raw_payload``) a été réellement relue à ce passage."""
+    return isinstance(raw_sale, Mapping) and not any(raw_sale.get(flag) for flag in _NOT_REREAD_FLAGS)
 
 
 @dataclass(frozen=True)
@@ -96,8 +102,6 @@ class _RowReads:
     # État de référence de chaque groupe : première lecture du passage, puis ce que la base a gardé d'une écriture
     # validée de ce processus, puis chaque lecture sous verrou.
     last: dict[str, tuple[Any, ...]] = field(default_factory=dict)
-    # Ce que la base a gardé d'une écriture de ce processus dont la transaction n'est pas encore validée.
-    pending: dict[str, tuple[Any, ...]] = field(default_factory=dict)
     # Groupes que la base a changés pendant le passage, hors écritures de ce processus.
     moved: set[str] = field(default_factory=set)
     # Valeurs lues en base pendant le passage, par groupe.
@@ -107,8 +111,11 @@ class _RowReads:
 _LOCK = threading.Lock()
 _ROWS: dict[str, _RowReads] = {}
 _SUPPRESSED: set[tuple[str, str]] = set()
-# Lignes dont une écriture est en attente dans la transaction en cours de ce fil (voir ``written_scope``).
-_WRITTEN_SCOPE: ContextVar[list[str] | None] = ContextVar("base_reads_written_scope", default=None)
+# Écritures en attente dans la transaction en cours de ce fil (voir ``written_scope``) : par ligne et par groupe, ce
+# que la base en a gardé. Elles ne sont dans la mémoire partagée qu'une fois la transaction validée : un autre fil
+# qui annule la sienne ne peut pas les jeter.
+_Staged = dict[str, dict[str, tuple[Any, ...]]]
+_WRITTEN_SCOPE: ContextVar[_Staged | None] = ContextVar("base_reads_written_scope", default=None)
 
 # Clé technique d'une vente brute, jamais écrite en base : les champs qu'un collecteur a repris de la ligne stockée
 # parce que la page de la source ne les donnait pas (Vench, page restreinte ou pauvre). Ces champs ne sont pas ce
@@ -120,8 +127,8 @@ SNAPSHOT_RELAYED_FIELDS_KEY = "fields_from_stored_row"
 
 
 def mark_relayed(raw_sale: dict[str, Any], fields: Iterable[str]) -> None:
-    """Note dans la vente brute les champs repris de la ligne stockée (cumulé d'un appel à l'autre)."""
-    names = sorted({*relayed_fields(raw_sale), *fields})
+    """Note dans la vente brute les champs repris de la ligne stockée (un appel par vente, par son collecteur)."""
+    names = sorted(set(fields))
     if names:
         raw_sale[RELAYED_FIELDS_KEY] = names
 
@@ -151,6 +158,13 @@ def suppressed_count() -> int:
     """Nombre de couples (ligne, groupe) dont une valeur relue et périmée n'a pas été réécrite pendant le passage."""
     with _LOCK:
         return len(_SUPPRESSED)
+
+
+def suppressed_sample(limit: int) -> list[dict[str, str]]:
+    """Les ``limit`` premiers couples (vente, groupe) retenus, triés : pour le résumé du passage, sans valeur."""
+    with _LOCK:
+        pairs = sorted(_SUPPRESSED)[:limit]
+    return [{"sale_id": row_id, "group": group} for row_id, group in pairs]
 
 
 def moved_groups(row_id: Any) -> frozenset[str]:
@@ -215,13 +229,15 @@ def note(row: Mapping[str, Any]) -> None:
 def note_locked(row: Mapping[str, Any]) -> None:
     """Mémorise une ligne lue sous le verrou de publication : c'est elle qui dit si la base a bougé.
 
-    Un groupe qui n'est ni dans son état de référence, ni dans l'état gardé par une écriture de ce processus en
-    attente de validation, a été changé par un autre écrivain. Il reste marqué jusqu'à la fin du passage, car une
-    copie de l'ancienne valeur peut encore se trouver dans une vente en mémoire.
+    Un groupe qui n'est plus dans son état de référence a été changé par un autre écrivain. Il reste marqué jusqu'à
+    la fin du passage, car une copie de l'ancienne valeur peut encore se trouver dans une vente en mémoire. Un
+    groupe relu dans l'état que cette transaction vient d'écrire ne dit rien : ni mouvement, ni nouvelle référence
+    (c'est la validation de la transaction qui la posera).
     """
     row_id = row.get("id")
     if not row_id:
         return
+    staged = (_WRITTEN_SCOPE.get() or {}).get(str(row_id), {})
     with _LOCK:
         reads = _ROWS.setdefault(str(row_id), _RowReads())
         for group in GROUPS:
@@ -229,8 +245,9 @@ def note_locked(row: Mapping[str, Any]) -> None:
             if not all(column in row for column in group.columns):
                 continue
             state = _state(row, group)
-            ours = reads.pending.pop(group.name, None)
-            if state != ours and group.name in reads.last and reads.last[group.name] != state:
+            if state == staged.get(group.name):
+                continue
+            if group.name in reads.last and reads.last[group.name] != state:
                 reads.moved.add(group.name)
             reads.last[group.name] = state
 
@@ -241,19 +258,22 @@ def stage_written(rows: Iterable[Mapping[str, Any]]) -> None:
     ``rows`` vient du ``returning`` de l'écriture : c'est la ligne telle que la base l'a gardée, pas telle qu'elle a
     été envoyée (la base peut retenir une valeur), sous l'identifiant que la base lui donne (une vente nouvelle n'en
     a pas encore en mémoire). L'état de référence ne change qu'à la sortie sans erreur de ``written_scope``.
+
+    Hors de toute portée, personne ne dira si l'écriture a été validée : rien n'est noté, et la lecture sous verrou
+    suivante tranche seule.
     """
     scope = _WRITTEN_SCOPE.get()
-    with _LOCK:
-        for row in rows:
-            row_id = row.get("id")
-            if not row_id:
-                continue
-            reads = _ROWS.setdefault(str(row_id), _RowReads())
-            for group in GROUPS:
-                if all(column in row for column in group.columns):
-                    reads.pending[group.name] = _state(row, group)
-            if scope is not None:
-                scope.append(str(row_id))
+    if scope is None:
+        LOGGER.warning("Sale write noted outside any written scope; echo reference left unchanged")
+        return
+    for row in rows:
+        row_id = row.get("id")
+        if not row_id:
+            continue
+        staged = scope.setdefault(str(row_id), {})
+        for group in GROUPS:
+            if all(column in row for column in group.columns):
+                staged[group.name] = _state(row, group)
 
 
 @contextmanager
@@ -265,36 +285,31 @@ def written_scope() -> Iterator[None]:
     référence ne change pas. Une écriture faite dans la transaction d'un autre (appel imbriqué) ne décide de rien :
     elle est notée dans la portée de celui qui valide ou annule.
     """
-    staged: list[str] = []
+    staged: _Staged = {}
     token = _WRITTEN_SCOPE.set(staged)
     try:
         yield
-    except BaseException:
-        _settle(staged, committed=False)
-        raise
-    else:
-        _settle(staged, committed=True)
     finally:
         _WRITTEN_SCOPE.reset(token)
-
-
-def _settle(row_ids: list[str], *, committed: bool) -> None:
+    # Atteint seulement à la sortie sans erreur : une transaction annulée ne laisse rien.
     with _LOCK:
-        for row_id in row_ids:
-            reads = _ROWS.get(row_id)
-            if reads is None:
-                continue
-            if committed:
-                reads.last.update(reads.pending)
-            reads.pending.clear()
+        for row_id, states in staged.items():
+            _ROWS.setdefault(row_id, _RowReads()).last.update(states)
 
 
-def _source_value(column: str, raw: Any) -> Any:
-    """Valeur comparable d'un champ de l'instantané, lue comme la normalisation la lit."""
+def _source_value(column: str, snapshot: Mapping[str, Any], payload: Mapping[str, Any]) -> Any:
+    """Valeur comparable d'un champ que la source a publié, lue par la règle de la normalisation.
+
+    Les visites se lisent comme ``normalize_sale`` les lit : dans le champ de l'instantané, à défaut dans les blocs
+    de la source que porte la vente brute relue (« visites », « date de visite »), puis nettoyées une à une.
+    """
+    if column == "visit_dates":
+        from src.normalize import source_visit_dates
+
+        return _canonical(source_visit_dates({column: snapshot.get(column), "source_blocks": payload.get("source_blocks")}))
+    raw = snapshot.get(column)
     if _canonical(raw) is None:
         return None
-    if column == "visit_dates":
-        return _canonical(raw if isinstance(raw, (list, tuple)) else [raw])
     if column == "occupancy_status":
         from src.normalize import normalize_occupancy_status
 
@@ -312,20 +327,20 @@ def _source_value(column: str, raw: Any) -> Any:
 
 def _published_by_source(payload: Any, group: EchoGroup, outgoing: list[Any]) -> bool:
     """Vrai si la fiche a été réellement relue et que son instantané porte chaque valeur sortante du groupe."""
-    if not isinstance(payload, Mapping) or any(payload.get(flag) for flag in _NOT_REREAD_FLAGS):
+    if not was_reread(payload):
         return False
-    snapshot = payload.get(_SOURCE_SNAPSHOT_KEY)
+    snapshot = payload.get(SOURCE_SNAPSHOT_KEY)
     if not isinstance(snapshot, Mapping):
         return False
-    published = {_source_value(column, snapshot.get(column)) for column in group.family} - {None}
+    published = {_source_value(column, snapshot, payload) for column in group.family} - {None}
     return all(value is None or value in published for value in outgoing)
 
 
 def _snapshot_carries(payload: Any, column: str) -> bool:
     """Vrai si la fiche a été réellement relue et que son instantané donne une valeur à cette colonne."""
-    if not isinstance(payload, Mapping) or any(payload.get(flag) for flag in _NOT_REREAD_FLAGS):
+    if not was_reread(payload):
         return False
-    snapshot = payload.get(_SOURCE_SNAPSHOT_KEY)
+    snapshot = payload.get(SOURCE_SNAPSHOT_KEY)
     return isinstance(snapshot, Mapping) and _canonical(snapshot.get(column)) is not None
 
 

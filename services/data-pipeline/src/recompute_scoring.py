@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline, licitor_lot_count
 from src.asset_normalization import normalize_asset_features
+from src.base_reads import SOURCE_SNAPSHOT_KEY
 from src.cadastre_references import resolve_sale_cadastre
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
@@ -624,7 +625,7 @@ def _sale_from_storage_row(row: dict[str, Any]):
     for column in RECOMPUTE_ROW_ONLY_COLUMNS:
         original_payload.pop(column, None)
     row_payload = {key: value for key, value in row.items() if key in RECOMPUTE_PAYLOAD_COLUMNS}
-    snapshot = original_payload.get("source_factual_snapshot")
+    snapshot = original_payload.get(SOURCE_SNAPSHOT_KEY)
     snapshot = snapshot if isinstance(snapshot, dict) and snapshot else None
     # Une colonne restée vide d'un ancien passage ne masque pas la valeur lue par la source : sans cela la date et
     # la mise à prix d'Avoventes 319c133c (« mardi 01 septembre 2026 à 13h30 », « 120 000,00 € ») ou les visites

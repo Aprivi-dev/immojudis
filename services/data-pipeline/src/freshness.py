@@ -6,7 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from src.base_reads import relayed_fields
+from src.base_reads import SOURCE_SNAPSHOT_KEY, relayed_fields, was_reread
 from src.display_invalidation import (
     OPERATIONAL_CHANGE,
     capture_fingerprints,
@@ -126,9 +126,9 @@ def record_source_checks(raw_sales: list, known: dict, *, capture: str = "collec
         previous = (known.get(url, {}).get("raw_payload") or {}).get("source_checks") or {}
         payload = sale
         payload["source_checks"] = dict(previous)
-        if sale.get("_known_unchanged") or sale.get("_detail_fetch_failed"):
+        if not was_reread(sale):
             continue
-        snapshot = sale.get('source_factual_snapshot') or {}
+        snapshot = sale.get(SOURCE_SNAPSHOT_KEY) or {}
         # Un champ repris de la ligne stockée (Vench, page restreinte ou pauvre) n'est pas un fait de la page : s'il
         # entrait dans l'empreinte, tout changement de la base passerait pour un changement de la source.
         relayed = relayed_fields(sale)

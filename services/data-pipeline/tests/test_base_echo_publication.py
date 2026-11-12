@@ -765,36 +765,3 @@ def test_a_write_that_does_not_return_one_row_per_row_sent_is_not_noted(base, mo
     # La référence est restée celle d'avant : la lecture suivante voit un mouvement, ce qui ne peut que retenir.
     storage.upsert_sales_to_supabase([sale])
     assert base_reads.moved_groups(base.rows[URL]["id"]) == {"surface"}
-
-
-def test_the_rest_fallback_notes_and_confirms_what_it_sent(monkeypatch) -> None:
-    """Repli REST, hors production (le workflow exige la connexion directe) : pas de ``returning``, pas de
-    transaction. La ligne envoyée est notée et confirmée dès l'écriture faite ; la garde n'est jamais consultée sur
-    ce chemin (aucune lecture sous verrou), ce test ne fixe que la tenue de la référence : sans note ou sans
-    confirmation, la première lecture sous verrou n'aurait rien à quoi comparer et ne verrait aucun mouvement."""
-    sent: list[dict[str, Any]] = []
-    monkeypatch.setattr(storage, "load_settings", lambda: {
-        "supabase_url": "https://supabase.test", "supabase_service_role_key": "not-a-real-key", "supabase_db_url": None,
-    })
-    monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, payload: sent.extend(payload))
-    monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _sales: [])
-    for name in ("_write_fact_claims_rest", "_sync_normalized_sale_tables_with_rest", "_upsert_asset_tables_with_rest",
-                 "_enqueue_due_enrichment"):
-        monkeypatch.setattr(storage, name, lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *_args, **_kwargs: None)
-    untouched_id, moved_id = "99900000-1000-4000-8000-00000000000a", "99900000-1000-4000-8000-00000000000b"
-    sales = [
-        AuctionSale.model_validate({
-            **{key: value for key, value in stored_row(**POSED).items() if value is not None},
-            "id": sale_id, "source_url": url, "source_urls": [url],
-        })
-        for sale_id, url in ((untouched_id, URL), (moved_id, URL.replace("099999", "099998")))
-    ]
-
-    storage.upsert_sales_to_supabase(sales)
-
-    assert len(sent) == 2
-    base_reads.note_locked({"id": untouched_id, **sent[0]})
-    assert base_reads.moved_groups(untouched_id) == frozenset()
-    base_reads.note_locked({"id": moved_id, **sent[1], "rooms_count": 9})  # un autre écrivain est passé depuis
-    assert base_reads.moved_groups(moved_id) == {"rooms"}
