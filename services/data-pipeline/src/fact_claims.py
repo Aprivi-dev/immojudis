@@ -15,18 +15,17 @@ import unicodedata
 from datetime import datetime
 from uuid import UUID, uuid5
 
+from src.base_reads import SOURCE_SNAPSHOT_KEY
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_occupancy_status, parse_french_datetime, parse_price, parse_surface
 
 # The identity already includes source_url and evidence_locator.  Corrected
 # document claims receive a new UUID without duplicating unchanged v2 claims.
-# v3 : une observation ``source_field`` ne se lit plus que dans l'instantané de la fiche (voir
-# ``_SOURCE_SNAPSHOT_KEY``). Les lignes v2 ont pu attribuer à l'annonce une valeur que la collecte avait seulement
-# relue en base ; un lecteur de la table peut les écarter par leur version.
+# v3 : une observation ``source_field`` ne se lit plus que dans l'instantané de la fiche (``SOURCE_SNAPSHOT_KEY`` :
+# ce que la source a publié à la dernière lecture de sa fiche, pris avant toute reprise de la ligne stockée,
+# ``src.main._preserve_known_enrichment_payloads``). Les lignes v2 ont pu attribuer à l'annonce une valeur que la
+# collecte avait seulement relue en base ; un lecteur de la table peut les écarter par leur version.
 FACT_CLAIMS_VERSION = "auction_fact_claims_v3"
-# Ce que la source a publié à la dernière lecture de sa fiche, pris avant toute reprise de la ligne stockée
-# (``src.main._preserve_known_enrichment_payloads``).
-_SOURCE_SNAPSHOT_KEY = "source_factual_snapshot"
 FACT_CLAIMS_EXTRACTOR = "immojudis.pipeline.fact_claims"
 FACT_CLAIMS_NAMESPACE = UUID("b9866b5e-df4e-4cf4-a7f5-d43cc50a4b73")
 
@@ -154,7 +153,7 @@ def build_fact_claim_candidates(sale: AuctionSale) -> list[dict[str, object]]:
             payload = {}
         for field_key, value_key, aliases in _FIELD_SPECS:
             for evidence_kind, locator, confidence, evidence_value, evidence_source_url in _field_provenances(
-                value_key, aliases, payload, sale=sale
+                value_key, aliases, payload, source_url=source_url, sale=sale
             ):
                 candidate_value = _normalized_value(value_key, evidence_value)
                 if candidate_value is None:
@@ -260,6 +259,20 @@ def _source_snapshots(sale: AuctionSale) -> list[dict[str, object]]:
     return snapshots
 
 
+def _own_snapshot(payload: dict[str, object], source_url: str) -> dict[str, object]:
+    """L'instantané de la fiche de cette source, ou rien s'il est celui d'une autre.
+
+    Une carte secondaire non relue d'une vente fusionnée reçoit l'instantané stocké de la ligne canonique, qui est
+    celui de la source principale : ses valeurs ne sont pas ce que cette source-ci a publié. Un instantané qui ne
+    nomme pas sa source (anciens passages) est gardé.
+    """
+    snapshot = payload.get(SOURCE_SNAPSHOT_KEY)
+    if not isinstance(snapshot, dict):
+        return {}
+    owner = clean_text(snapshot.get("source_url"))
+    return {} if owner and owner != source_url else snapshot
+
+
 def _normalized_value(field: str, fallback: object) -> object | None:
     # Only use a scalar carried by the evidence path itself.  Falling back to
     # the canonical sale value would attach a value extracted from another
@@ -286,14 +299,14 @@ def _field_provenances(
     aliases: tuple[str, ...],
     payload: dict[str, object],
     *,
+    source_url: str,
     sale: AuctionSale,
 ) -> list[_Provenance]:
     provenances: list[_Provenance] = []
     # La clé de premier niveau du ``raw_payload`` n'est pas une preuve : c'est la vente brute entière, donc aussi les
     # colonnes que la collecte ou le recalcul ont recopiées de la base (annonce inchangée, valeur d'un document,
     # valeur posée par un autre écrivain). Sans instantané de la fiche, pas d'observation de ce type.
-    source_snapshot = payload.get(_SOURCE_SNAPSHOT_KEY)
-    source_value = source_snapshot.get(field) if isinstance(source_snapshot, dict) else None
+    source_value = _own_snapshot(payload, source_url).get(field)
     if _has_value(source_value):
         provenances.append(
             (
