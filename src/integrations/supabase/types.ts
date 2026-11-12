@@ -15306,10 +15306,7 @@ export type Database = {
         };
         Returns: boolean;
       };
-      check_fact_registry_consistency: {
-        Args: { p_after?: string; p_limit?: number };
-        Returns: Json;
-      };
+      check_fact_registry_consistency: { Args: { p_limit?: number }; Returns: Json };
       claim_auction_enrichment_jobs: {
         Args: { p_limit?: number };
         Returns: {
@@ -16496,6 +16493,7 @@ export type Database = {
         Args: { p_claim_id: string; p_reason_code: string };
         Returns: Json;
       };
+      reproject_fact_registry_drift: { Args: never; Returns: Json };
       review_auction_fact_claim: {
         Args: {
           p_claim_id: string;

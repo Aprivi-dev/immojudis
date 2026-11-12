@@ -1,13 +1,16 @@
 import { runMonitoredCron } from "@/lib/cron-jobs";
 import { runFactRegistryCheckJob } from "@/lib/fact-registry-check";
 
-// Une lecture par vente qui tient ou mémorise un champ (500 au plus) : quelques secondes. Même plafond que
-// les autres tâches de contrôle. Next.js veut un littéral ici.
+// Deux appels à la base, bornés chacun à 120 s par la fonction appelée : la relance planifiée (30 ventes au
+// plus), puis une lecture par vente du registre. Même plafond que les autres tâches de contrôle. Next.js
+// veut un littéral ici.
 export const maxDuration = 300;
 
 /**
- * Contrôle quotidien du registre des pièces (lot R2a). Lecture seule côté fiches : il ne corrige rien,
- * il ouvre ou referme les alertes opérationnelles `fact_registry.*`. Même protection que les autres
+ * Contrôle quotidien du registre des pièces (lots R2a et R2b). Le contrôle est en lecture seule côté
+ * fiches : il ouvre ou referme les alertes opérationnelles `fact_registry.*`. Avant lui, la relance
+ * planifiée de la projection, fermée par défaut, réapplique aux fiches qui ont dérivé des décisions
+ * humaines déjà acceptées (`docs/runbooks/registre-des-pieces-r2b.md`). Même protection que les autres
  * routes planifiées : jeton `CRON_SECRET`, supervision par `runMonitoredCron`, reprise sur erreur réseau.
  */
 export async function GET(request: Request) {
