@@ -97,7 +97,9 @@ def _materialize_fact_claim_snapshot(
                 "evidence_locator": candidate["evidence_locator"],
                 "confidence_score": candidate["confidence_score"],
                 "extractor_name": candidate["extractor_name"],
-                "extractor_version": candidate["extractor_version"],
+                # La version qui entre dans l'identifiant, pas celle du candidat rejoué : une file reprise après un
+                # changement de version n'écrit pas la nouvelle génération sous l'étiquette de l'ancienne.
+                "extractor_version": FACT_CLAIMS_VERSION,
             }
         )
     return rows

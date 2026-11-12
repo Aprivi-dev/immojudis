@@ -167,6 +167,424 @@ SCHEMA_CONTRACT_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
 
 Le test ne lit que `information_schema` et refuse une base qui n'est pas locale.
 
+#### Valeur relue en base : la garde d'écho
+
+La collecte recopie dans une vente des valeurs qu'elle n'a fait que relire en base
+(annonce inchangée, fiche en échec, valeur établie par un document, page Vench
+restreinte, colonne remplie par la ligne stockée lors d'une fusion). Si la base
+change entre cette lecture et l'écriture, réécrire la valeur lue défait le
+changement. `src/base_reads.py` l'empêche : un groupe de colonnes seulement relu
+n'est pas réécrit si la base a bougé depuis (surface à cinq colonnes, terrain,
+nombre de pièces, occupation, dates de visite). Quand la base n'a pas bougé,
+l'écriture est celle d'avant.
+
+Trois conditions, par groupe :
+
+1. **La base a bougé.** Seule une lecture sous le verrou de publication le dit :
+   la ligne n'est plus dans l'état de référence (première lecture du passage, puis
+   ce que la base a gardé de chaque écriture validée de ce processus). Une lecture
+   sans verrou (`fetch_known_sale_details`) alimente les valeurs lues et ne pose la
+   référence que si elle manque : elle a pu être lue avant une écriture d'un autre
+   fil et notée après.
+2. **La vente n'apporte rien** : chaque colonne de valeur est vide ou égale à une
+   valeur lue en base. Pour une fiche non relue, une valeur lue dans une colonne
+   voisine suffit (la surface affichée se déduit de l'habitable, de la Carrez ou du
+   terrain). Pour une fiche réellement relue, seule compte la valeur lue dans la
+   **même colonne** : un terrain de 65 m² lu en base ne dit rien d'une surface de
+   65 m² que la page vient de donner. Une valeur vide passe toujours (un garde-fou
+   de normalisation doit pouvoir vider une valeur).
+3. **La source ne vient pas de la publier** : une fiche réellement relue qui donne
+   la valeur n'est jamais retenue, même si la base a déjà rendu la même valeur.
+   « Ce que la source publie » se lit par la règle de la restauration des pièces
+   (`pdf_fact_scope.pdf_source_reader` : l'instantané `source_factual_snapshot` et
+   son contexte, relus par `normalize_sale`). La valeur peut donc venir d'une clé de
+   l'instantané comme du texte de la page (surface, pièces ou occupation lues dans
+   la description, visites lues dans un bloc de la source).
+
+Un faux écho fige une donnée périmée : dans le doute, la garde laisse écrire.
+
+Revers de ce compromis, connu : pour une fiche relue dont la page est muette sur le
+champ, un vrai écho venu d'une colonne voisine repasse. Deux cas : une surface de 54 m² déduite de l'habitable relu en base, alors
+que la base est passée à 60 m² ; un terrain de 300 m² relu en base et repris comme
+surface. La garde ne peut pas les distinguer d'une valeur nouvelle de la page. La
+même vente, fiche non relue, est bien retenue.
+
+Ce que la garde note d'une écriture :
+
+- l'écriture de `auction_sales` relit par `returning` les colonnes des groupes : la
+  référence est ce que la base a **gardé**, pas ce qui a été envoyé (la base peut
+  retenir une valeur) ;
+- cette lecture est notée en attente dans la portée de la transaction (propre au
+  fil qui écrit), sous l'identifiant que la base rend (une vente nouvelle n'en a pas
+  encore en mémoire), et ne devient la référence qu'après validation ; une
+  transaction annulée ne laisse aucune trace, et n'efface pas les notes d'un autre
+  fil ;
+- une portée ouverte dans une autre lui verse ses notes : c'est la portée
+  extérieure, celle de la transaction, qui confirme ou jette ;
+- les écritures en attente de toutes les portées ouvertes sont visibles des lectures
+  sous verrou : un autre fil qui relit une ligne entre la validation en base et la
+  sortie de la portée n'y voit pas un mouvement ;
+- deux cas théoriques, tous deux dans le sens prudent (la garde laisse écrire, ou
+  retient une valeur relue, jamais l'inverse) : des portées imbriquées sorties dans
+  le désordre versent leurs notes dans une portée qui n'est plus la bonne ; un autre
+  écrivain qui écrit exactement l'état en attente d'une portée ensuite annulée n'est
+  pas vu comme un mouvement tant que cette portée est ouverte ;
+- c'est celui qui valide ou annule la transaction qui ouvre la portée
+  (`base_reads.written_scope()`, autour de la transaction) : `upsert_sales_to_supabase`
+  pour sa propre transaction, `source_detail.publish_source_revision`,
+  `verify_publication` (toujours annulée). Une écriture faite dans la transaction
+  d'un appelant ne confirme rien elle-même ;
+- si la base ne rend pas une ligne par ligne envoyée, rien n'est noté pour le lot et
+  une ligne de journal le dit ;
+- le repli REST (hors production) n'a ni verrou ni lecture sous verrou : la garde
+  n'y agit pas et rien n'y est noté.
+
+Quand un groupe est repris de la base, ce qui décrit la même valeur le suit : pour
+la surface, `habitable_surface_m2`, `carrez_surface_m2`, `surface_scope`,
+`surface_evidence` ; dans `raw_payload`, la trace de la pièce lue
+(`pdf_fact_provenance` du champ et les clés qu'elle nomme, `surface_extraction`,
+`land_surface_extraction`). Exception : une colonne voisine que la fiche relue vient
+de publier elle-même (son instantané la porte) reste celle de la source. Les copies
+de la valeur retenue prennent la valeur écrite : le premier niveau du `raw_payload`
+de la ligne, et l'observation embarquée de la source soumise. L'observation d'une
+autre source n'est jamais touchée, ni une copie dont la source a réellement publié
+la valeur.
+
+Hors périmètre de la garde, à connaître :
+
+- **colonnes calculées** : quand un groupe est repris de la base, les colonnes
+  calculées plus tôt sur la valeur en mémoire sont écrites à côté de la valeur de la
+  base. Mesuré par l'exécution : `investment_score` écrit à 73,0 pour une surface et
+  une occupation dont le recalcul donne 60,0. `score_factors` est calculé au même
+  endroit, et la synthèse `investment_summary` a pu citer l'ancienne valeur. La
+  complétude (`premium_readiness_*`) est recalculée à l'écriture, elle suit. L'écart
+  dure jusqu'au passage suivant, qui relit la valeur de la base et recalcule. Pas de
+  correction dans ce lot ; suite possible : relancer `normalize_asset_features` sur
+  les seules ventes que la garde a modifiées, après la résolution d'identité ;
+- **annonce Licitor à plusieurs lots dont le lot n'est plus désigné** : la lecture de
+  la source s'y limite à la clé de l'instantané (règle de `pdf_source_reader`). Une
+  valeur que la page ne donne que dans son texte n'y est pas reconnue comme publiée
+  et peut être retenue à tort si la base a porté la même valeur dans la même
+  colonne pendant le passage ;
+- `reconcile_duplicate_sales_in_supabase` réécrit des lignes entières sans passer
+  par la garde ;
+- la mémoire de la garde n'est remise à zéro que par `main._open_run`. Les traitements
+  qui n'ouvrent pas de passage (relecture de fiche, lecture des pièces, vérification)
+  gardent celle de leur processus ;
+- le repli REST (hors production) écrit sans transaction, sans verrou et sans garde ;
+  une ligne de journal (`REST fallback wrote … sales …`) le dit quand il sert ;
+
+- `lawyer_contact` repris de la ligne connue (carte notaires inchangée) n'est pas un
+  groupe de la garde : il est réécrit tel que lu ;
+- une valeur sortante vide n'est jamais retenue : si la base a reçu une valeur
+  pendant le passage et que la vente en mémoire n'en a pas, l'écriture la vide (hors
+  champ tenu, que la base retient) ;
+- au recalcul, `visit_dates` est repris brut de l'instantané
+  (`recompute_scoring._sale_from_storage_row`) : pour un instantané Licitor à
+  plusieurs lots pris avant le 03/11/2026, ce sont les visites de la page entière.
+
+Limite connue : après une fusion entre sources, la vente en mémoire porte le
+`raw_payload` stocké de la ligne canonique, sans marqueur « non relue ». À la
+publication suivante du même passage, la garde peut ne pas retenir une valeur que la
+base a changée entre-temps. La retenue côté base est alors le filet : une pièce posée
+pendant l'import n'est pas écrasée (scénario D de
+`tests/test_base_echo_registry_postgres.py`).
+
+Restes de rangement pour la refonte de la zone collecte (rien n'est déplacé dans ce
+lot) : `source_checkpoint.py` garde sa propre expression de « fiche relue »
+(`_known_unchanged`, `_detail_fetch_failed`) à côté de `base_reads.was_reread` ; et
+six modules importent `base_reads` pour la seule clé `SOURCE_SNAPSHOT_KEY`, qui est
+une clé de `raw_payload` et non une affaire de la garde.
+
+Compteur et journal :
+
+- `timings.base_echo_suppressed` du passage compte les couples (vente, groupe) dont
+  une valeur relue et périmée n'a pas été réécrite. Chaque cas est journalisé sans
+  valeur (`Base echo suppressed sale_id=… group=…`). Une reprise des seuls libellés
+  (même valeur) n'est pas comptée et a sa propre ligne (`Base labels kept …`). Le
+  résumé du passage nomme les 50 premiers couples (`base_echo_suppressed_sample` :
+  identifiant de vente et groupe, jamais de valeur). Le compteur est alimenté à la
+  fusion, avant l'écriture : une transaction annulée et jamais rejouée y reste
+  comptée. Il peut surestimer, jamais sous-estimer.
+- **Ce compteur peut être supérieur à zéro sans aucun champ tenu** : il suffit qu'un
+  autre traitement du pipeline (lecture des pièces, recalcul) ait écrit la vente
+  pendant le passage. Ce n'est pas l'indicateur d'un chemin oublié : celui-là est
+  l'évènement `echo_suppressed` de la base (mémoire d'écho, alerte du contrôle
+  quotidien, `docs/architecture/registre-des-pieces.md`). Il doit rester à zéro :
+  les scénarios A, B et C l'affirment avec la garde, et leurs témoins sans la garde
+  montrent que la base l'émet alors.
+- Les lectures de la ligne entière sont remplacées par des listes de colonnes
+  (`LOCKED_SALE_SELECT`, `RECOMPUTE_SALE_SELECT`) : une colonne interne de la
+  table ne sort pas de la base et ne finit pas dans `raw_payload`.
+
+Vench, page restreinte ou pauvre : les champs que le collecteur reprend de la ligne
+stockée restent dans la vente, mais leur clé est absente de l'instantané de la
+fiche, qui en garde la liste (`fields_from_stored_row`), et ils n'entrent pas dans
+l'empreinte de fraîcheur. Une restauration « valeur de la source » (pièce modifiée)
+ne remet donc pas à vide un champ que la page n'a jamais donné. Cette règle est la
+même pour une projection tracée, une ancienne liste de candidats et une pièce
+remplacée (`pdf_fact_scope._pdf_restore_value_before_document`). **Vague acceptée** :
+l'empreinte de ces pages change une fois. À la première relecture de chacune, la
+collecte y voit un changement de la source et réécrit une seule fois
+`source_content_changed_at`, avec les marqueurs d'invalidation de l'analyse ; les
+relectures suivantes n'y touchent plus. Aucun code de transition. Voir « Effets à la
+mise en ligne » pour le nombre de ventes et le coût.
+
+Au recalcul (`recompute_scoring`), une colonne `visit_dates` vide se reprend dans
+l'instantané de la fiche quand il existe ; sans instantané, dans la clé de premier
+niveau de `raw_payload`, comme avant. Une colonne déjà remplie n'est jamais
+remplacée, et une copie de premier niveau n'est jamais réécrite vide par une colonne
+que le recalcul laisse vide. Pour ce qui est affiché, une date de visite ne peut
+donc **ni disparaître ni changer** au premier recalcul ; seule une **apparition** est
+possible (colonne vide, instantané qui porte des visites). Par rapport à l'ancien
+code, une colonne vide n'est en revanche plus remplie depuis la copie de premier
+niveau quand l'instantané existe et n'en donne pas (deuxième compte ci-dessous).
+
+À compter en production avant le premier recalcul (lecture seule, comptages
+seulement) :
+
+```sql
+select
+  count(*) filter (where column_empty and snapshot_visits) as visites_qui_apparaissent,
+  count(*) filter (where column_empty and has_snapshot and not snapshot_visits and copy_visits)
+    as copies_non_rejouees,
+  count(*) filter (where column_empty and not has_snapshot and copy_visits)
+    as repli_d_origine_sans_instantane
+from (
+  select
+    coalesce(visit_dates, '[]'::jsonb) = '[]'::jsonb as column_empty,
+    jsonb_typeof(raw_payload -> 'source_factual_snapshot') = 'object'
+      and raw_payload -> 'source_factual_snapshot' <> '{}'::jsonb as has_snapshot,
+    coalesce(raw_payload -> 'source_factual_snapshot' -> 'visit_dates', 'null'::jsonb)
+      not in ('null'::jsonb, '[]'::jsonb, '""'::jsonb) as snapshot_visits,
+    coalesce(raw_payload -> 'visit_dates', 'null'::jsonb)
+      not in ('null'::jsonb, '[]'::jsonb, '""'::jsonb) as copy_visits
+  from public.auction_sales
+  where status in ('upcoming', 'active', 'quarantined')
+) sales;
+```
+
+Les deux premiers comptes sont des majorants : la normalisation repasse ses
+garde-fous sur la valeur reprise et peut l'écarter.
+
+#### Effets à la mise en ligne
+
+Ce lot n'est pas sans effet tant qu'aucune vente n'est tenue. Dès sa mise en ligne :
+
+1. **La garde d'écho agit dès le premier jour.** La file de lecture des documents
+   écrit les ventes en parallèle de la collecte : une valeur seulement relue par la
+   collecte n'écrase plus ce que la file vient d'écrire. Un compteur
+   `base_echo_suppressed` supérieur à zéro est attendu, sans aucun champ tenu.
+2. **Observations en version 3.** À la première écriture de chaque vente, par
+   n'importe quel écrivain (collecte, relecture de fiche, lecture des documents,
+   recalcul), ses observations reçoivent un jumeau `auction_fact_claims_v3`. Il n'y a
+   pas de doublement : le plafond est d'environ 13 000 lignes rattachées en plus (27 à
+   33 % des lignes de la collecte, mesure du 12/11/2026). La table est immuable et
+   sans purge : ces lignes restent.
+3. **Vench.** 81 ventes (au 11/11/2026) est un plancher. L'empreinte de fraîcheur de
+   ces pages change à leur première relecture, et l'empreinte « major » peut changer
+   elle aussi : la lecture des pièces et le modèle sont alors relancés pour ces
+   ventes. Budget à prévoir à la reprise de Vench ; sans effet tant que Vench ne
+   tourne pas (aucun passage depuis le 29/10/2026). Les instantanés Vench déjà
+   stockés contiennent encore des valeurs reprises de la ligne (ils ne listent pas
+   `fields_from_stored_row`) : ils restent pollués jusqu'à la relecture de la page, et
+   leurs observations de version 3 en héritent d'ici là.
+4. **`visit_dates` au premier recalcul.** Voir ci-dessus : une apparition possible,
+   jamais une disparition ni un changement d'une date affichée.
+5. **Questions à l'avocat, brouillons, pilote.** La vue
+   `v_auction_fact_claims_read_model` alimente les questions à l'avocat de la fiche
+   (`src/app/api/sales/[id]/lawyer-questions/route.ts`), les brouillons de l'agent
+   d'information et le pilote. Dès qu'une vente porte une observation de version 3,
+   ses candidates de version 2 sont masquées. Quand la version 3 n'émet plus le seul
+   `source_field` d'un champ (vente sans instantané, instantané d'une autre source,
+   surface venue d'un document et non de la page), ce champ n'a plus d'observation
+   visible. Effet sur le site et sur l'outil de sollicitation
+   (`src/lib/fact-reliability.ts`) : un fait clé sans observation visible retombe sur
+   l'ancien contrôle ; des libellés passent de « Non vérifié » à « Documenté » et la
+   question de confirmation correspondante disparaît. Il n'y a jamais de question
+   nouvelle sur un champ rempli. Côté pilote : moins de lacunes signalées, jamais
+   plus.
+6. **Vente sans instantané : rien n'est émis en version 3.** Une vente dont le
+   `raw_payload` n'a aucun instantané de fiche (jamais relue depuis qu'il existe)
+   n'émet aucune observation de cette version : rien n'y distingue ce que l'annonce a
+   publié de ce que la collecte a relu en base, et une seule observation de version 3
+   masquerait toutes ses candidates de version 2. Celles-ci restent donc visibles
+   jusqu'à la prochaine relecture de la fiche. La règle vaut aussi pour un instantané
+   qui est celui d'une autre fiche, ou qui ne liste que des champs repris de la ligne
+   stockée. **Coût** : d'ici là, les faits d'un document nouveau ne sont pas
+   enregistrés pour ces ventes.
+   - **Cela peut être définitif** pour une vente sortie des listes ou passée (plus
+     jamais relue), pour une fiche en échec permanent, et pour la ligne canonique
+     d'une fusion restée sans instantané : celle-là fait taire aussi l'autre source
+     de la vente. S'y ajoute la relecture de fiche à empreinte identique
+     (`source_detail.prepare_source_revision`, branche « inchangée ») : elle repart de
+     la ligne stockée et ne garde pas l'instantané qu'elle vient de relire. Suite
+     possible : y poser l'instantané relu quand la ligne stockée n'en a pas.
+   - Une vente nouvelle dont la fiche échoue n'émet rien non plus ; elle est relue au
+     passage suivant.
+   - Effet favorable : sans cette règle, `scripts/backfill_fact_claims.py` aurait
+     émis des observations de version 3 pour tout le catalogue passé et masqué ses
+     observations de version 2.
+
+Comptage du 12/11/2026 en production (lecture seule, vers 12:00 UTC, requête
+ci-dessous, avant la règle du point 6), en couples (vente, fait) des ventes à venir
+ou actives :
+
+| Raison                                  | Date | Mise à prix | Occupation | Surface | Total |
+| --------------------------------------- | ---- | ----------- | ---------- | ------- | ----- |
+| 1. vente sans instantané                | 4    | 4           | 10         | 8       | 26    |
+| 2. instantané d'une autre URL           | 0    | 0           | 0          | 0       | 0     |
+| 3. instantané présent, champ vide       | 18   | 1           | 28         | 21      | 68    |
+| 4. autre source de la vente, non évalué | 1    | 4           | 3          | 11      | 19    |
+
+Total : 113 couples. C'est un **majorant** : les jumeaux `source_block` que la
+version 2 masquait ne sont pas rejouables en SQL, et tous les couples comptés ont
+des blocs de source. Les 26 couples de la raison 1 sont ceux que la règle du point 6
+garde visibles ; les 68 de la raison 3 sont l'effet voulu.
+
+La requête (une seule instruction `select`, lecture seule), à relancer si la fusion
+tarde. Elle se limite aux quatre faits que l'application lit (date, mise à prix, surface regroupée,
+occupation) et dit pourquoi le fait n'a plus d'observation, par source :
+
+```sql
+with claims as (
+  select
+    claim.auction_sale_id,
+    claim.source_url,
+    claim.evidence_locator ->> 'kind' as kind,
+    claim.evidence_locator ->> 'field' as value_key,
+    case
+      when claim.field_key = 'sale.sale_date' then 'date'
+      when claim.field_key = 'sale.starting_price_eur' then 'mise_a_prix'
+      when claim.field_key = 'property.occupancy_status' then 'occupation'
+      when claim.field_key in (
+        'property.surface_m2', 'property.habitable_surface_m2',
+        'property.carrez_surface_m2', 'property.land_surface_m2'
+      ) then 'surface'
+    end as fait
+  from public.auction_fact_claims claim
+  where claim.extractor_name = 'immojudis.pipeline.fact_claims'
+    and claim.extractor_version = 'auction_fact_claims_v2'
+    and claim.claim_status = 'candidate'
+    and claim.auction_sale_id is not null
+),
+judged as (
+  select
+    sale.id,
+    sale.source_name,
+    claims.fait,
+    coalesce(sale.raw_payload -> 'source_factual_snapshot', 'null'::jsonb)
+      in ('null'::jsonb, '{}'::jsonb) as no_snapshot,
+    coalesce(sale.raw_payload -> 'source_factual_snapshot' ->> 'source_url', sale.source_url)
+      <> sale.source_url as foreign_snapshot,
+    coalesce(sale.raw_payload -> 'source_blocks', 'null'::jsonb)
+      not in ('null'::jsonb, '{}'::jsonb) as has_source_blocks,
+    case
+      when claims.kind is distinct from 'source_field' then true
+      when claims.source_url is distinct from sale.source_url then null
+      else coalesce(sale.raw_payload -> 'source_factual_snapshot' ->> 'source_url', sale.source_url)
+             = sale.source_url
+           and coalesce(sale.raw_payload -> 'source_factual_snapshot' -> claims.value_key, 'null'::jsonb)
+             not in ('null'::jsonb, '""'::jsonb, '[]'::jsonb)
+    end as kept
+  from claims
+  join public.auction_sales sale on sale.id = claims.auction_sale_id
+  where sale.status in ('upcoming', 'active')
+),
+per_sale as (
+  select id, coalesce(bool_or(kept), false) as emits_v3
+  from judged
+  group by id
+),
+per_fact as (
+  select
+    judged.id,
+    judged.source_name,
+    judged.fait,
+    bool_or(judged.no_snapshot) as no_snapshot,
+    bool_or(judged.foreign_snapshot) as foreign_snapshot,
+    bool_or(judged.has_source_blocks) as has_source_blocks,
+    coalesce(bool_or(judged.kept), false) as fact_kept,
+    coalesce(bool_or(judged.kept is null), false) as fact_not_evaluated
+  from judged
+  where judged.fait is not null
+  group by judged.id, judged.source_name, judged.fait
+)
+select
+  per_fact.source_name,
+  per_fact.fait,
+  case
+    when per_fact.fact_not_evaluated then '4. observation d''une autre source de la vente, non évaluée'
+    when per_fact.no_snapshot then '1. vente sans instantané'
+    when per_fact.foreign_snapshot then '2. instantané d''une autre URL'
+    else '3. instantané présent, champ vide'
+  end as raison,
+  count(*) as ventes,
+  count(*) filter (where per_fact.has_source_blocks) as dont_ventes_avec_blocs_de_source
+from per_fact
+join per_sale on per_sale.id = per_fact.id
+where per_sale.emits_v3
+  and not per_fact.fact_kept
+group by 1, 2, 3
+order by 1, 2, 3;
+```
+
+Lecture :
+
+- une ligne par source, fait et raison ; `ventes` compte les ventes qui émettront au
+  moins une observation de version 3 (leurs candidates de version 2 seront masquées)
+  et dont ce fait n'avait que des `source_field` que la version 3 n'émet plus ;
+- les raisons 1 et 2 seraient une perte (aucun instantané de cette source à lire).
+  La règle du point 6 l'évite pour la raison 1 : ces ventes n'émettent rien et
+  gardent leurs observations de version 2. La raison 2 n'avait aucune ligne. La
+  raison 3 est l'effet voulu (la source ne publie pas ce champ : la valeur venait de
+  la base, d'un document ou du texte) ; la raison 4 n'est pas évaluée (l'instantané
+  d'une source secondaire est dans `observations`, hors de portée d'une requête
+  simple) ;
+- **majorant** : la version 2 gardait une seule observation par champ, valeur et URL,
+  le `source_field` masquant son jumeau lu dans un bloc de la source
+  (`fact_claims._deduplicate_candidates`). En version 3 ce jumeau réapparaît et le
+  fait garde une observation. Le SQL ne peut pas rejouer la lecture des blocs (clés
+  normalisées, valeurs relues) : `dont_ventes_avec_blocs_de_source` donne seulement
+  les ventes qui ont des blocs, donc où ce jumeau est possible.
+
+**Condition vérifiée le 12/11/2026.** Une observation de version 2 déjà rejetée
+aurait pu revenir sous son jumeau de version 3. En production, les 40 201
+observations de la collecte étaient toutes `candidate` (aucune acceptée, aucune
+rejetée) : le cas ne se présente pas à la bascule. Requête de contrôle, à relancer
+si la fusion tarde :
+
+```sql
+select claim_status, count(*)
+from public.auction_fact_claims
+where extractor_name = 'immojudis.pipeline.fact_claims'
+group by claim_status
+order by claim_status;
+```
+
+Tests : `tests/test_base_echo_guard.py` (table de vérité),
+`tests/test_base_echo_publication.py` (chemin d'écriture, base simulée, dont la
+preuve d'écriture identique quand rien ne bouge), `tests/test_base_echo_postgres.py`
+(`PIPELINE_TEST_DB_URL`). Les scénarios de bout en bout avec le registre des pièces
+(retrait ou remplacement d'une pièce pendant un import, surface tenue face à une
+fiche relue) demandent une base locale jetable où toutes les migrations sont
+rejouées ; ils écrivent dans cette base et refusent toute base non locale. Le job
+« Supabase migrations + pgTAP » de la CI les lance sur sa base locale, avec
+`PIPELINE_REGISTRY_DB_REQUIRED=1` : l'absence de base y est un échec, pas un saut.
+
+```bash
+PIPELINE_REGISTRY_DB_SERVER_ADDR="$(docker inspect --format \
+  '{{range .NetworkSettings.Networks}}{{println .IPAddress}}{{end}}' supabase_db_<projet>)" \
+PIPELINE_REGISTRY_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
+  python -m pytest -s tests/test_base_echo_registry_postgres.py
+```
+
+Ces tests n'acceptent qu'un hôte de connexion en bouclage, sans `PGHOSTADDR` ni
+`PGSERVICE`, et vérifient avant toute écriture l'adresse que le serveur dit avoir :
+bouclage, ou exactement `PIPELINE_REGISTRY_DB_SERVER_ADDR` (l'adresse du conteneur
+d'une base locale jointe par son port publié ; inutile pour un PostgreSQL local hors
+conteneur). Aucune plage d'adresses n'est admise.
+
 Le pipeline conserve `auction_sales` comme table de compatibilité historique,
 mais alimente aussi le modèle produit normalisé demandé pour l'offre Pro :
 `properties` décrit le bien immobilier et `judicial_sales` décrit le contexte
@@ -225,6 +643,39 @@ backfill opérateur lit uniquement `raw_payload`, `observations` et les lignes
 persistées de `auction_observations`. Il conserve un curseur local par
 `(auction_sales.updated_at, auction_sales.id)`, reprend après chaque lot
 committed et ignore les ventes sans preuve avec un compteur explicite.
+
+Depuis `auction_fact_claims_v3`, une observation de nature `source_field` ne se
+lit que dans `raw_payload.source_factual_snapshot` (ce que la source a publié à la
+dernière lecture de sa fiche), pour la vente comme pour chaque observation d'une
+autre source. Les clés de premier niveau de `raw_payload` portent aussi les
+colonnes que la collecte a relues en base : elles ne font plus une observation.
+Une vente dont le `raw_payload` n'a aucun instantané n'émet rien du tout (ni bloc de
+source, ni document, ni observation d'une autre source : voir « Effets à la mise en
+ligne », point 6). Un instantané qui nomme une autre source que
+celle de l'observation est ignoré : une carte secondaire non relue d'une vente
+fusionnée reçoit l'instantané de la ligne canonique, qui n'est pas ce que sa source
+a publié. Les lignes `auction_fact_claims_v2` déjà écrites restent en base ; un
+lecteur peut les écarter par leur version. Une file de reprise écrit ses lignes
+sous la version courante (`FACT_CLAIMS_VERSION`), celle de leur identifiant.
+
+**Ordre de mise en ligne.** La version entre dans l'identifiant d'une observation :
+à la première écriture de chaque vente, chaque observation existante reçoit un
+jumeau `auction_fact_claims_v3` (une vente relue ou dotée d'un instantané en émet
+autant qu'avant ; une vente sans instantané n'émet rien et garde ses observations
+de version 2). Volume et conséquences : « Effets à la mise en ligne », plus haut. La vue `v_auction_fact_claims_read_model`, lue par
+l'application sans filtre de version, montrerait chaque fait en double sans la
+migration `20261117100700`, qui ne montre que la dernière génération par vente
+(appliquée en production le 12/11/2026). Ce que cette vue attend de la collecte :
+
+- la version reste sous le plafond `app_private.fact_claims_generation_ceiling()`
+  (3). Au-dessus, les observations seraient masquées : une version 4 demande
+  d'abord une migration qui relève le plafond (invariant
+  `fact-claims-generation-pattern`) ;
+- dès qu'une vente porte une observation de version 3, toutes ses candidates de
+  version 2 sont masquées, quel que soit leur champ. C'est pourquoi une vente sans
+  instantané n'émet rien en version 3 : elle garde toutes celles de la version 2 ;
+- les observations d'une vente partent dans la transaction de sa publication, en
+  une fois (le repli REST, hors production, écrit par lots).
 
 Le mode par défaut est une lecture sans écriture Supabase :
 

@@ -15,12 +15,17 @@ import unicodedata
 from datetime import datetime
 from uuid import UUID, uuid5
 
+from src.base_reads import SNAPSHOT_RELAYED_FIELDS_KEY, SOURCE_SNAPSHOT_KEY
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_occupancy_status, parse_french_datetime, parse_price, parse_surface
 
 # The identity already includes source_url and evidence_locator.  Corrected
 # document claims receive a new UUID without duplicating unchanged v2 claims.
-FACT_CLAIMS_VERSION = "auction_fact_claims_v2"
+# v3 : une observation ``source_field`` ne se lit plus que dans l'instantané de la fiche (``SOURCE_SNAPSHOT_KEY`` :
+# ce que la source a publié à la dernière lecture de sa fiche, pris avant toute reprise de la ligne stockée,
+# ``src.main._preserve_known_enrichment_payloads``). Les lignes v2 ont pu attribuer à l'annonce une valeur que la
+# collecte avait seulement relue en base ; un lecteur de la table peut les écarter par leur version.
+FACT_CLAIMS_VERSION = "auction_fact_claims_v3"
 FACT_CLAIMS_EXTRACTOR = "immojudis.pipeline.fact_claims"
 FACT_CLAIMS_NAMESPACE = UUID("b9866b5e-df4e-4cf4-a7f5-d43cc50a4b73")
 
@@ -136,7 +141,19 @@ def build_fact_claim_candidates(sale: AuctionSale) -> list[dict[str, object]]:
     row while retaining source-specific payloads from other publishers.  The
     same candidate can be encountered twice; deterministic materialization
     later collapses exact duplicates by UUID.
+
+    Une vente dont le ``raw_payload`` n'a aucun instantané de fiche (jamais relue depuis qu'il existe) n'émet rien :
+    rien n'y distingue ce que l'annonce a publié de ce que la collecte a relu en base, et la moindre observation de
+    cette version masquerait à la lecture toutes celles de la version précédente. Elles restent donc visibles
+    jusqu'à ce qu'une relecture de la fiche pose l'instantané. Coût : d'ici là, les faits d'un document nouveau ne
+    sont pas enregistrés pour cette vente. Cela peut être définitif : une vente qui n'est plus relue, ou relue à
+    l'identique par ``source_detail.prepare_source_revision``, qui garde la ligne stockée telle quelle.
     """
+    own_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    # L'instantané d'une autre fiche, ou celui d'une page qui n'a rien donné (il ne liste que les champs repris de
+    # la ligne stockée), n'est pas un instantané de cette fiche.
+    if not set(_own_snapshot(own_payload, sale.source_url)) - {SNAPSHOT_RELAYED_FIELDS_KEY}:
+        return []
     candidates: list[dict[str, object]] = []
     for snapshot in _source_snapshots(sale):
         source_url = snapshot["source_url"]
@@ -148,7 +165,7 @@ def build_fact_claim_candidates(sale: AuctionSale) -> list[dict[str, object]]:
             payload = {}
         for field_key, value_key, aliases in _FIELD_SPECS:
             for evidence_kind, locator, confidence, evidence_value, evidence_source_url in _field_provenances(
-                value_key, aliases, payload, sale=sale
+                value_key, aliases, payload, source_url=source_url, sale=sale
             ):
                 candidate_value = _normalized_value(value_key, evidence_value)
                 if candidate_value is None:
@@ -241,16 +258,9 @@ def _source_snapshots(sale: AuctionSale) -> list[dict[str, object]]:
             continue
         payload = observation.get("raw_payload")
         payload = dict(payload) if isinstance(payload, dict) else {}
-        values = {
-            key: observation.get(key)
-            for _, key, _ in _FIELD_SPECS
-            if observation.get(key) is not None
-        }
-        # The compact observation row is the latest source-level snapshot.
-        # Let its explicit scalar win over a stale embedded raw payload when a
-        # refreshed observation reuses the same source URL.
-        for key, value in values.items():
-            payload[key] = value
+        # Les scalaires du résumé d'observation (mise à prix, date) viennent du modèle normalisé, donc aussi des
+        # colonnes relues en base : ils ne font pas une observation. Seul l'instantané de la fiche, porté par le
+        # ``raw_payload`` de l'observation, dit ce que cette source a publié.
         snapshots.append(
             {
                 "source_name": clean_text(observation.get("source_name")) or "unknown",
@@ -259,6 +269,20 @@ def _source_snapshots(sale: AuctionSale) -> list[dict[str, object]]:
         }
         )
     return snapshots
+
+
+def _own_snapshot(payload: dict[str, object], source_url: str) -> dict[str, object]:
+    """L'instantané de la fiche de cette source, ou rien s'il est celui d'une autre.
+
+    Une carte secondaire non relue d'une vente fusionnée reçoit l'instantané stocké de la ligne canonique, qui est
+    celui de la source principale : ses valeurs ne sont pas ce que cette source-ci a publié. Un instantané qui ne
+    nomme pas sa source (anciens passages) est gardé.
+    """
+    snapshot = payload.get(SOURCE_SNAPSHOT_KEY)
+    if not isinstance(snapshot, dict):
+        return {}
+    owner = clean_text(snapshot.get("source_url"))
+    return {} if owner and owner != source_url else snapshot
 
 
 def _normalized_value(field: str, fallback: object) -> object | None:
@@ -287,16 +311,21 @@ def _field_provenances(
     aliases: tuple[str, ...],
     payload: dict[str, object],
     *,
+    source_url: str,
     sale: AuctionSale,
 ) -> list[_Provenance]:
     provenances: list[_Provenance] = []
-    if _has_value(payload.get(field)):
+    # La clé de premier niveau du ``raw_payload`` n'est pas une preuve : c'est la vente brute entière, donc aussi les
+    # colonnes que la collecte ou le recalcul ont recopiées de la base (annonce inchangée, valeur d'un document,
+    # valeur posée par un autre écrivain). Sans instantané de la fiche, pas d'observation de ce type.
+    source_value = _own_snapshot(payload, source_url).get(field)
+    if _has_value(source_value):
         provenances.append(
             (
                 "source_listing",
-                {"kind": "source_field", "quote": _quote(payload.get(field))},
+                {"kind": "source_field", "quote": _quote(source_value)},
                 0.92,
-                payload.get(field),
+                source_value,
                 None,
             )
         )

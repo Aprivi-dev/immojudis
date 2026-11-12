@@ -30,6 +30,7 @@ from functools import lru_cache
 from typing import Any
 from urllib.parse import urldefrag
 
+from src.base_reads import RELAYED_FIELDS_KEY
 from src.config import load_settings
 
 LOGGER = logging.getLogger(__name__)
@@ -123,7 +124,7 @@ def skip_detail(sale: dict[str, Any], *, now: datetime | None = None) -> bool:
 
 
 #: Clés posées dans la vente brute par le collecteur pour le seul passage en cours : jamais écrites en base.
-TECHNICAL_KEYS = ("_list_signature", "_recently_rejected", "_known_unchanged")
+TECHNICAL_KEYS = ("_list_signature", "_recently_rejected", "_known_unchanged", RELAYED_FIELDS_KEY)
 
 
 def persistable_payload(payload: Any) -> Any:
