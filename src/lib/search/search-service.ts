@@ -35,7 +35,6 @@ import {
   dataFiltersFromSearch,
   dataSortFromSearch,
 } from "./search-filters";
-import { NotFoundError } from "@/lib/api-errors";
 
 /** Garde-fou de la lecture complète des filtres avancés : au-delà, la recherche est trop large. */
 const MAX_COMPLETE_SEARCH_ROWS = 10_000;
@@ -274,7 +273,7 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
   const request = (async () => {
     const center = search.aroundAddress ? await geocodeAddress(search.aroundAddress) : null;
     if (search.aroundAddress && !center)
-      throw new NotFoundError("Localisation introuvable. Précisez la ville ou l’adresse.");
+      throw new Error("Localisation introuvable. Précisez la ville ou l’adresse.");
     // Ventes sous la fourchette : la liste vient de la base (elle calcule la bande vente par vente), et
     // une lecture impossible fait échouer la recherche au lieu d'afficher toutes les ventes.
     const underRangeSaleIds = search.belowRange ? await fetchUnderRangeSaleIds() : null;

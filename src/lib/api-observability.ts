@@ -8,10 +8,9 @@ import {
   ConfigurationError,
   PublicApiError,
   RateLimitError,
-  ResponseSchemaViolationError,
   ServiceUnavailableError,
-  isPublicErrorMessage,
 } from "@/lib/api-errors";
+import { ResponseSchemaViolationError, isPublicErrorMessage } from "@/lib/api-error-detail";
 import { resolveRequestId } from "@/lib/request-id";
 
 export type ApiRequestContext = {

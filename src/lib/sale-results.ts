@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { ConfigurationError, errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { saleResultsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";

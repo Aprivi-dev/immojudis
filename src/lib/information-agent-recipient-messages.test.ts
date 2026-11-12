@@ -13,7 +13,7 @@ import {
   renderInformationAgentEmailContent,
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
-import { isPublicErrorMessage } from "@/lib/api-errors";
+import { isPublicErrorMessage } from "@/lib/api-error-detail";
 import { classifyApiError } from "@/lib/api-observability";
 import { INFORMATION_AGENT_QUESTIONS } from "@/lib/information-agent-questions";
 import {

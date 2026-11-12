@@ -1,6 +1,7 @@
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { startAdminScroll } from "@/lib/admin.server";
-import { PublicApiError, isPublicErrorMessage } from "@/lib/api-errors";
+import { PublicApiError } from "@/lib/api-errors";
+import { isPublicErrorMessage } from "@/lib/api-error-detail";
 import { adminRoute } from "@/lib/admin-route-deadline";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).

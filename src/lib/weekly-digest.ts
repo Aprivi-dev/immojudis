@@ -1,5 +1,6 @@
 import "server-only";
-import { ConfigurationError, errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError } from "@/lib/api-errors";
+import { errorDetailForLog } from "@/lib/error-detail-for-log";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { weeklyDigestMode, type EmailFeatureMode } from "@/lib/email-feature-mode";

@@ -9,7 +9,7 @@ import {
 } from "@/lib/listing-completeness-ranking";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
 import type { AuctionSale } from "@/lib/types";
-import { errorDetailForLog as errorMessage } from "@/lib/api-errors";
+import { errorDetailForLog as errorMessage } from "@/lib/error-detail-for-log";
 import { parseTimestamp as time } from "@/lib/timestamp";
 
 /**
