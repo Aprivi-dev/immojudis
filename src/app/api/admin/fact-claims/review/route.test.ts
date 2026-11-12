@@ -94,6 +94,29 @@ describe("admin auction fact claim review route", () => {
     expect(JSON.stringify(body)).not.toContain("canonical");
   });
 
+  it.each([
+    ["55P03", "sale_busy"],
+    ["55P03", "canceling statement due to lock timeout"],
+    ["40001", "retry"],
+  ])("asks to try again when the sale is busy (%s, %s)", async (code, message) => {
+    mocks.review.mockRejectedValue({ code, message });
+
+    const response = await POST(
+      new Request("https://example.test/api/admin/fact-claims/review", {
+        method: "POST",
+        body: JSON.stringify({ claimId, decision: "accepted" }),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      code: "CONFLICT",
+      error: "Import en cours sur cette vente, réessayez dans une minute.",
+    });
+    expect(JSON.stringify(body)).not.toContain(message);
+  });
+
   it("returns unauthorized when the auth middleware rejects the request", async () => {
     mocks.auth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
 
