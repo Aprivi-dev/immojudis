@@ -1,22 +1,30 @@
 -- 20261118100100 : fonctions de décision du registre des pièces (lot R2b, étape B1).
 --   * aucun droit d'exécution : ni anon, ni authenticated, ni service_role (les droits s'ouvrent au lot R2c) ;
---   * l'auteur est celui du jeton (auth.uid()), aucun paramètre ne le fournit ; public.is_admin() en tête, second
---     facteur compris quand l'interrupteur est actif ;
+--   * l'auteur est celui du jeton (auth.uid()), aucun paramètre ne le fournit ; public.is_admin() en tête ; second
+--     facteur du registre exigé par défaut, levé par le propriétaire seulement, ligne absente = exigé ;
 --   * sans déclencheur du registre en place, rien n'est écrit (registry_unavailable) ;
---   * chaque transition admise et refusée ; chaque refus propre à l'acceptation ; motifs et rattachements jugés
---     par les contraintes de la table ; lot_ref normalisé, NULL hors motif ;
---   * retrait : la valeur de l'annonce revient ; opposition : plus d'acceptation ;
+--   * plafond de décisions par administrateur et par heure (rate_limited) ;
+--   * chaque transition admise et refusée ; opposition et retrait de l'autorisation définitifs ; provenance reprise
+--     d'une décision à la suivante, sauf autour d'un retrait de l'autorisation ;
+--   * refus propres à l'acceptation : l'origine est jugée par la table de préséance, le terrain par la fonction
+--     commune (type de bien, portée, nature de la surface) ; motifs et rattachements jugés par les contraintes de
+--     la table ; lot_ref normalisé, NULL hors motif ;
+--   * retrait : la valeur de l'annonce revient ;
 --   * une décision reprojette toute la vente (nombre de chambres corrigé, reclassement en terrain) ;
 --   * observation détachée par une fusion : décidée pour la vente absorbée, projetée sur la vente conservée ;
 --   * une erreur inattendue devient registry_write_failed, sans détail ni indice ;
---   * public.review_auction_fact_claim : vente verrouillée d'abord, colonnes nommées, observation professionnelle
---     ou déjà décidée au journal refusée.
--- Le cas « sale_busy » (vente verrouillée par une autre session) se rejoue à deux sessions : runbook R2b.
+--   * le délai de verrou de 3 secondes est un réglage des fonctions, rendu à l'appelant à la sortie ;
+--   * public.review_auction_fact_claim : vente verrouillée d'abord, colonnes nommées, observation d'origine
+--     réservée ou déjà décidée au journal refusée, vente disparue refusée ;
+--   * aucune autre fonction de la base n'écrit une décision, ne pose un jeton, ni n'enveloppe ces fonctions.
+-- Les cas à deux sessions (sale_busy, délai de 3 secondes) sont décrits au runbook R2b.
+-- En local, auth.jwt() du script d'amorçage rend {} : les assertions « aal2 » demandent la définition de Supabase
+-- (docs/runbooks/registre-des-pieces-r2b.md, « Échecs locaux connus »).
 begin;
 
 set local timezone = 'UTC';
 
-select plan(64);
+select plan(97);
 
 -- Droits ----------------------------------------------------------------------------------------------------------
 select is(
@@ -28,14 +36,17 @@ select is(
        'public.withdraw_auction_fact_claim(uuid, text)',
        'public.oppose_auction_fact_claim(uuid, text)',
        'app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)',
-       'app_private.lock_sale_for_registry(uuid)']) routine(signature)
+       'app_private.lock_sale_for_registry(uuid)',
+       'app_private.set_fact_registry_decisions_second_factor(boolean)',
+       'app_private.fact_registry_hourly_decision_limit()',
+       'app_private.sale_is_land_sale(text, text, text, jsonb)']) routine(signature)
      where has_function_privilege(api_role.name, routine.signature, 'EXECUTE')),
   0,
   'no API role can execute a decision function at this stage: neither anon, nor authenticated, nor service_role'
 );
 
 select ok(
-  (select bool_and(routine.prosecdef and routine.proconfig = array['search_path=""'])
+  (select bool_and(routine.prosecdef and routine.proconfig @> array['search_path=""'])
      from pg_proc routine
      where routine.oid in (
        'public.accept_auction_fact_claim(uuid, text, text, uuid)'::regprocedure,
@@ -57,7 +68,32 @@ select is(
   'none of them takes the author as a parameter'
 );
 
+-- Le délai de verrou est un réglage de chaque fonction qui verrouille : PostgreSQL le pose à l'entrée et rend la
+-- valeur de l'appelant à la sortie.
+select is(
+  (select count(*)::integer from pg_proc routine
+     where routine.oid in (
+       'app_private.lock_sale_for_registry(uuid)'::regprocedure,
+       'app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)'::regprocedure,
+       'public.review_auction_fact_claim(uuid, uuid, text, text)'::regprocedure)
+       and routine.proconfig @> array['lock_timeout=3s']),
+  3,
+  'the sale lock, the decision function and the review function each run under a lock timeout of 3 seconds'
+);
+
+select results_eq(
+  $$select switch_name, enabled from app_private.fact_registry_switches order by switch_name collate "C"$$,
+  $$values ('decisions_require_second_factor', true), ('scheduled_reprojection', false)$$,
+  'the two switches start in their safe sense: the second factor is required, the scheduled reprojection is closed'
+);
+
+select is(app_private.fact_registry_hourly_decision_limit(), 20, 'the hourly ceiling is twenty decisions');
+
 -- Jeu d'essai -----------------------------------------------------------------------------------------------------
+-- (Le plafond horaire est relevé pour le fichier : il est essayé à part, plus bas.)
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
+
 insert into auth.users (id) values
   ('88700000-0000-4000-8000-0000000000a1'), ('88700000-0000-4000-8000-0000000000b1');
 insert into public.user_profiles (user_id, email, user_role) values
@@ -65,18 +101,20 @@ insert into public.user_profiles (user_id, email, user_role) values
   ('88700000-0000-4000-8000-0000000000b1', 'registre-membre-887@example.test', 'user')
 on conflict (user_id) do update set user_role = excluded.user_role;
 
--- Ventes 1 à 9 : maison, 50 m², 2 pièces, 1 chambre, occupée. Vente 3 : un terrain. Vente 4 : 7 pièces, 6 chambres.
+-- Ventes 1 à 9 : maison, 50 m², 2 pièces, 1 chambre, occupée. Vente 3 : un terrain (type de bien). Vente 4 : 7
+-- pièces, 6 chambres. Vente 6 : nature de la surface « terrain ». Vente 8 : portée de la surface « terrain ».
 insert into public.auction_sales (
   id, source_name, source_url, status, sale_date, city, property_type, starting_price_eur,
   raw_payload, sale_procedure, sale_venue_type,
-  surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence,
+  surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, surface_scope,
   rooms_count, bedrooms_count, occupancy_status, visit_dates
 )
 select
   ('88700000-1000-4000-8000-00000000000' || n)::uuid, 'licitor', 'https://example.test/887/sale-' || n,
   'upcoming', current_timestamp + interval '20 days', 'Alphaville',
   case when n = 3 then 'land' else 'house' end, 90000, '{}'::jsonb,
-  '{}'::jsonb, 'tribunal', 50, 50, 'habitable', 'listing_text', 0.7,
+  '{}'::jsonb, 'tribunal', 50, 50, case when n = 6 then 'land' else 'habitable' end, 'listing_text', 0.7,
+  case when n = 8 then 'land' end,
   case when n = 4 then 7 else 2 end, case when n = 4 then 6 else 1 end, 'occupied', '[]'::jsonb
 from generate_series(1, 9) n;
 
@@ -105,12 +143,17 @@ from (
     ('44', '4', 'property.land_surface_m2', '300'::jsonb),
     ('51', '5', 'property.rooms_count', '5'::jsonb),
     ('61', '6', 'property.rooms_count', '5'::jsonb),
+    ('62', '6', 'property.surface_m2', '54'::jsonb),
     ('71', '7', 'property.rooms_count', '6'::jsonb),
     ('72', '7', 'property.occupancy_status', '"vacant"'::jsonb),
-    ('91', '9', 'property.rooms_count', '5'::jsonb)
+    ('81', '8', 'property.surface_m2', '54'::jsonb),
+    ('91', '9', 'property.rooms_count', '5'::jsonb),
+    ('92', '9', 'property.land_surface_m2', '410'::jsonb),
+    ('93', '9', 'property.occupancy_status', '"vacant"'::jsonb),
+    ('94', '9', 'property.surface_m2', '57'::jsonb)
 ) as piece (suffix, sale, field_key, value);
 
--- Vente 2 : une observation de document et une observation d'annonce.
+-- Vente 2 : une observation de document et une observation d'annonce. Vente 9 : une saisie d'administrateur.
 insert into public.auction_fact_claims (
   id, auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, source_url, confidence_score,
   extractor_name, extractor_version
@@ -121,8 +164,15 @@ insert into public.auction_fact_claims (
   ('88700000-2000-4000-8000-000000000022', '88700000-1000-4000-8000-000000000002', 'property.rooms_count',
    '2'::jsonb, 'source_listing', '{}'::jsonb, 'https://example.test/887/sale-2', 0.5,
    'immojudis-fact-claims', 'v1');
+insert into public.auction_fact_claims (
+  id, auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, confidence_score,
+  extractor_name, extractor_version, created_by
+) values (
+  '88700000-2000-4000-8000-000000000095', '88700000-1000-4000-8000-000000000009', 'property.rooms_count',
+  '3'::jsonb, 'admin_entry', '{}'::jsonb, 0.9, 'admin', 'v1', '88700000-0000-4000-8000-0000000000a1'
+);
 
-create function pg_temp.sign_in(p_user text, p_aal text default 'aal1') returns void
+create function pg_temp.sign_in(p_user text, p_aal text default 'aal2') returns void
 language sql as $function$
   select set_config(
     'request.jwt.claims',
@@ -156,22 +206,63 @@ select throws_ok(
   '42501', 'admin_required', 'a signed-in user who is not an administrator decides nothing'
 );
 
-select pg_temp.sign_in('a1');
-update app_private.security_switches set enabled = true where switch_name = 'admin_mfa_required';
+-- Second facteur du registre : exigé par défaut, quel que soit l'interrupteur global.
+select pg_temp.sign_in('a1', 'aal1');
 select throws_ok(
   $$select public.accept_auction_fact_claim(pg_temp.claim('11'), 'single_lot')$$,
-  '42501', 'admin_required', 'with the second-factor switch on, an administrator signed in at aal1 decides nothing'
+  '42501', 'second_factor_required',
+  'by default an administrator signed in at aal1 decides nothing, even with the global second-factor switch off'
 );
 select throws_ok(
   $$select public.oppose_auction_fact_claim(pg_temp.claim('11'))$$,
-  '42501', 'admin_required', 'nor does he record an opposition'
+  '42501', 'second_factor_required', 'nor does he record an opposition'
+);
+select set_config(
+  'request.jwt.claims', '{"sub":"88700000-0000-4000-8000-0000000000a1","role":"authenticated"}', true);
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('11'), 'single_lot')$$,
+  '42501', 'second_factor_required', 'a token without an aal claim is treated as aal1'
 );
 select pg_temp.sign_in('a1', 'aal2');
 select lives_ok(
   $$insert into results select 'mfa', public.reject_auction_fact_claim(pg_temp.claim('91'), 'other')$$,
   'at aal2 the same administrator decides'
 );
+
+-- Seul le propriétaire lève l'exigence, par la fonction de réglage.
+set local role service_role;
+select throws_ok(
+  $$select app_private.set_fact_registry_decisions_second_factor(false)$$,
+  '42501', null, 'an API role cannot lift the second-factor requirement'
+);
+reset role;
+select app_private.set_fact_registry_decisions_second_factor(false);
+select pg_temp.sign_in('a1', 'aal1');
+select lives_ok(
+  $$insert into results select 'aal1 lifted', public.oppose_auction_fact_claim(pg_temp.claim('44'), 'other')$$,
+  'once the owner has lifted the requirement, an administrator at aal1 decides'
+);
+-- L'interrupteur global reste lu par public.is_admin(), indépendamment.
+update app_private.security_switches set enabled = true where switch_name = 'admin_mfa_required';
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('11'), 'single_lot')$$,
+  '42501', 'admin_required',
+  'the global second-factor switch is still read by is_admin(): on, an administrator at aal1 is not one'
+);
 update app_private.security_switches set enabled = false where switch_name = 'admin_mfa_required';
+-- Ligne absente : exigé. La fonction de réglage lève au lieu de ne rien faire.
+delete from app_private.fact_registry_switches where switch_name = 'decisions_require_second_factor';
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('11'), 'single_lot')$$,
+  '42501', 'second_factor_required', 'a missing switch row means required'
+);
+select throws_ok(
+  $$select app_private.set_fact_registry_decisions_second_factor(false)$$,
+  '55000', 'The switch decisions_require_second_factor has no row: restore it by a migration.',
+  'the setter raises when its row is missing instead of doing nothing'
+);
+insert into app_private.fact_registry_switches (switch_name, enabled)
+values ('decisions_require_second_factor', true);
 select pg_temp.sign_in('a1');
 
 set local role service_role;
@@ -219,7 +310,19 @@ select throws_ok(
 );
 
 -- Accepter : la pièce tient le champ, l'auteur est celui du jeton ----------------------------------------------------
+-- Le délai de verrou de l'appelant lui est rendu.
+set local lock_timeout = '7s';
 insert into results select 'accept 11', public.accept_auction_fact_claim(pg_temp.claim('11'), 'single_lot');
+select is(
+  current_setting('lock_timeout'), '7s',
+  'after a decision the caller finds its own lock timeout again'
+);
+select ok(
+  app_private.lock_sale_for_registry(pg_temp.sale('1')) and current_setting('lock_timeout') = '7s'
+  and not app_private.lock_sale_for_registry('88700000-1000-4000-8000-0000000000ff'),
+  'the sale lock returns true for a sale, false for a missing one, and gives the caller its lock timeout back'
+);
+set local lock_timeout = '5s';
 
 select results_eq(
   $$select array_agg(field.key order by field.key collate "C") from results, jsonb_object_keys(result) field(key)
@@ -399,15 +502,90 @@ select throws_ok(
   $$select public.reject_auction_fact_claim(pg_temp.claim('11'), 'other')$$,
   '55000', 'invalid_transition', 'and an opposed claim is not rejected'
 );
-select lives_ok(
-  $$insert into results select 'oppose 44', public.oppose_auction_fact_claim(pg_temp.claim('44'), 'other')$$,
-  'a claim never decided can be opposed'
+select is(
+  (select decision from public.auction_fact_claim_decisions where id = pg_temp.last_decision('44')),
+  'opposed',
+  'a claim never decided can be opposed (done above, at aal1 once the requirement was lifted)'
 );
+
+-- Autorisation d'affichage retirée : définitif aussi --------------------------------------------------------------------
+insert into results select 'accept 92', public.accept_auction_fact_claim(pg_temp.claim('92'), 'single_lot');
+insert into results
+select 'withdraw 92', public.withdraw_auction_fact_claim(pg_temp.claim('92'), 'authorization_withdrawn');
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('92'), 'single_lot', null, pg_temp.last_decision('92'))$$,
+  '55000', 'withdrawal_final',
+  'after a withdrawal for a withdrawn authorization the claim is never accepted again'
+);
+select results_eq(
+  $$select sale.land_surface_m2, sale.held_fields #> '{property.land_surface_m2,echo}'
+      from public.auction_sales sale where sale.id = pg_temp.sale('9')$$,
+  $$values (null::numeric, '[{"value": 410}]'::jsonb)$$,
+  'as in the projection, which remembers its value without a deadline'
+);
+
+-- Provenance : reprise d'une décision à la suivante, sauf autour d'un retrait de l'autorisation ------------------------
+-- La première décision est écrite comme le fera le noyau de l'agent d'information (lot R2c), avec sa provenance.
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, information_agent_fact_id,
+  recipient_kind, received_at
+) values (
+  pg_temp.claim('93'), pg_temp.sale('9'), 'property.occupancy_status', 'accepted', 'unknown', 'admin',
+  '88700000-0000-4000-8000-0000000000a1', '88700000-5000-4000-8000-000000000093', 'source_lawyer',
+  '2026-11-02 09:00:00+00'
+);
+insert into results
+select 'accept 93', public.accept_auction_fact_claim(pg_temp.claim('93'), 'single_lot', null,
+  pg_temp.last_decision('93'));
+select results_eq(
+  $$select decision.information_agent_fact_id, decision.recipient_kind, decision.received_at,
+           sale.held_fields #>> '{property.occupancy_status,recipient_kind}',
+           sale.held_fields #>> '{property.occupancy_status,received_on}'
+      from public.auction_fact_claim_decisions decision, public.auction_sales sale
+      where decision.id = pg_temp.last_decision('93') and sale.id = pg_temp.sale('9')$$,
+  $$values ('88700000-5000-4000-8000-000000000093'::uuid, 'source_lawyer',
+            '2026-11-02 09:00:00+00'::timestamptz, 'source_lawyer', '2026-11-02')$$,
+  'a correction of the lot carries the provenance of the decision it replaces: the fact of the agent, the recipient, the reception date'
+);
+insert into results
+select 'withdraw 93', public.withdraw_auction_fact_claim(pg_temp.claim('93'), 'authorization_withdrawn');
+insert into results select 'oppose 93', public.oppose_auction_fact_claim(pg_temp.claim('93'));
+select results_eq(
+  $$select decision.decision, decision.information_agent_fact_id, decision.recipient_kind, decision.received_at
+      from public.auction_fact_claim_decisions decision
+      where decision.claim_id = pg_temp.claim('93') order by decision.seq desc limit 2$$,
+  $$values ('opposed', null::uuid, null::text, null::timestamptz),
+           ('withdrawn', null::uuid, null::text, null::timestamptz)$$,
+  'once the authorization is withdrawn the provenance is never carried again: neither by the withdrawal nor by what follows it'
+);
+
+-- Plafond horaire --------------------------------------------------------------------------------------------------------
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql stable set search_path = '' as $function$
+  select count(*)::integer from public.auction_fact_claim_decisions
+  where actor_id = '88700000-0000-4000-8000-0000000000a1'
+$function$;
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('94'), 'single_lot')$$,
+  '53400', 'rate_limited',
+  'an administrator who has reached the hourly ceiling decides nothing more'
+);
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql stable set search_path = '' as $function$
+  select count(*)::integer + 1 from public.auction_fact_claim_decisions
+  where actor_id = '88700000-0000-4000-8000-0000000000a1'
+$function$;
+select lives_ok(
+  $$insert into results select 'accept 94', public.accept_auction_fact_claim(pg_temp.claim('94'), 'single_lot')$$,
+  'one decision under the ceiling still passes'
+);
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
 
 -- Refus propres à l'acceptation ---------------------------------------------------------------------------------------
 select throws_ok(
   $$select public.accept_auction_fact_claim(pg_temp.claim('21'), 'single_lot')$$,
-  '55000', 'origin_not_open', 'a document claim is not accepted before lot R3'
+  '55000', 'origin_cannot_hold', 'a document claim is not accepted: the precedence table closes this origin before lot R3'
 );
 select throws_ok(
   $$select public.accept_auction_fact_claim(pg_temp.claim('22'), 'single_lot')$$,
@@ -415,7 +593,15 @@ select throws_ok(
 );
 select throws_ok(
   $$select public.accept_auction_fact_claim(pg_temp.claim('31'), 'single_lot')$$,
-  '55000', 'field_not_applicable', 'a built surface is not accepted on a land sale'
+  '55000', 'field_not_applicable', 'a built surface is not accepted on a land sale (property type)'
+);
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('62'), 'single_lot')$$,
+  '55000', 'field_not_applicable', 'nor on a sale whose surface kind is land'
+);
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('81'), 'single_lot')$$,
+  '55000', 'field_not_applicable', 'nor on a sale whose surface scope is land'
 );
 select throws_ok(
   $$select public.accept_auction_fact_claim(pg_temp.claim('13'), 'single_lot')$$,
@@ -426,6 +612,62 @@ select lives_ok(
   'a document claim can be rejected'
 );
 
+-- La table de préséance juge, pas la fonction, et champ par champ : rouverte pour un autre champ, l'origine reste
+-- fermée pour celui-ci ; rouverte pour ce champ (comme le fera le lot R3), elle passe.
+update public.auction_fact_source_precedence set can_hold = true
+where source_kind = 'document' and field_key = 'property.land_surface_m2';
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('21'), 'single_lot', null, pg_temp.last_decision('21'))$$,
+  '55000', 'origin_cannot_hold', 'an origin opened for another field stays closed for this one'
+);
+update public.auction_fact_source_precedence set can_hold = false
+where source_kind = 'document' and field_key = 'property.land_surface_m2';
+update public.auction_fact_source_precedence set can_hold = true
+where source_kind = 'document' and field_key = 'property.rooms_count';
+select results_eq(
+  $$select result ->> 'state'
+      from (select public.accept_auction_fact_claim(pg_temp.claim('21'), 'single_lot', null,
+              pg_temp.last_decision('21')) as result) accepted$$,
+  $$values ('held')$$,
+  'once the precedence table opens the document origin for the field, the same claim is accepted: the function names no origin'
+);
+update public.auction_fact_source_precedence set can_hold = false
+where source_kind = 'document' and field_key = 'property.rooms_count';
+
+-- Vente de terrain : une seule définition, celle que lisent la décision, la projection et le contrôle.
+select results_eq(
+  $$select app_private.sale_is_land_sale('house', null, 'habitable', null),
+           app_private.sale_is_land_sale('land', null, 'habitable', null),
+           app_private.sale_is_land_sale('house', 'land', null, null),
+           app_private.sale_is_land_sale('house', null, 'land', null),
+           app_private.sale_is_land_sale('house', null, 'built',
+             '{"property.surface_m2": {"state": "held", "listing": {"app_surface_kind": "land"}}}'::jsonb),
+           app_private.sale_is_land_sale('house', null, 'land',
+             '{"property.surface_m2": {"state": "held", "listing": {"app_surface_kind": "habitable"}}}'::jsonb),
+           app_private.sale_is_land_sale('house', null, 'land',
+             '{"property.surface_m2": {"state": "released"}}'::jsonb),
+           app_private.sale_is_land_sale(null, null, null, null)$$,
+  $$values (false, true, true, true, true, false, true, false)$$,
+  'a land sale: property type, surface scope or surface kind says land; for a held surface the kind read is the one of the listing, kept in the entry'
+);
+-- La projection lit la même définition : une acceptation écrite au journal sans passer par la fonction de décision
+-- (vente 6, nature « terrain » ; vente 8, portée « terrain ») est bloquée, pas posée.
+insert into public.auction_fact_claim_decisions (
+  claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id
+)
+select claim.id, claim.auction_sale_id, claim.field_key, 'accepted', 'single_lot', 'admin',
+  '88700000-0000-4000-8000-0000000000a1'
+from public.auction_fact_claims claim
+where claim.id in (pg_temp.claim('62'), pg_temp.claim('81'));
+select results_eq(
+  $$select app_private.project_sale_fields(sale.id, null, false) #>> '{fields,property.surface_m2,state}',
+           app_private.project_sale_fields(sale.id, null, false)
+             #>> '{fields,property.surface_m2,blocked,reason}'
+      from public.auction_sales sale where sale.id in (pg_temp.sale('6'), pg_temp.sale('8'))$$,
+  $$values ('blocked', 'land_sale'), ('blocked', 'land_sale')$$,
+  'the projection reads the same definition as the decision: a surface accepted on such a sale is blocked, not held'
+);
+
 -- Champ que le registre ne tient pas : la décision est enregistrée, rien n'est affiché.
 insert into results select 'accept 14', public.accept_auction_fact_claim(pg_temp.claim('14'), 'single_lot');
 select results_eq(
@@ -433,7 +675,7 @@ select results_eq(
            (select starting_price_eur from public.auction_sales where id = pg_temp.sale('1'))
       from results where label = 'accept 14'$$,
   $$values ('null'::jsonb, 'sale.starting_price_eur', 90000::numeric)$$,
-  'an acceptance on a field the registry does not hold is recorded and changes no column'
+  'an acceptance on a field the registry does not hold is recorded and changes no column (plan, section 10: recorded, not displayed)'
 );
 
 -- Une décision reprojette toute la vente (voie A de la relance) ----------------------------------------------------------
@@ -558,15 +800,27 @@ select ok(
 );
 select throws_ok(
   $$select public.review_auction_fact_claim(
-      '88700000-0000-4000-8000-0000000000a1', pg_temp.claim('91'), 'rejected', 'pgtap 887')$$,
-  '55000', 'A professional fact claim is decided through the fact registry.',
-  'the review of source claims refuses a professional claim'
+      '88700000-0000-4000-8000-0000000000a1', pg_temp.claim('21'), 'rejected', 'pgtap 887')$$,
+  '55000', 'A fact claim already decided in the fact registry cannot be reviewed here.',
+  'the review of source claims refuses a claim that the registry journal has already decided'
 );
 select throws_ok(
   $$select public.review_auction_fact_claim(
-      '88700000-0000-4000-8000-0000000000a1', pg_temp.claim('21'), 'rejected', 'pgtap 887')$$,
-  '55000', 'A fact claim already decided in the fact registry cannot be reviewed here.',
-  'and a claim that the registry journal has already decided'
+      '88700000-0000-4000-8000-0000000000a1', pg_temp.claim('72'), 'rejected', 'pgtap 887')$$,
+  '55000', 'A claim without a current sale target cannot be reviewed.',
+  'and a claim that a merge has detached'
+);
+select throws_ok(
+  $$select public.review_auction_fact_claim(
+      '88700000-0000-4000-8000-0000000000a1', pg_temp.claim('81'), 'rejected', 'pgtap 887')$$,
+  '55000', 'A professional or administrator fact claim is decided through the fact registry.',
+  'a professional claim, even never decided'
+);
+select throws_ok(
+  $$select public.review_auction_fact_claim(
+      '88700000-0000-4000-8000-0000000000a1', pg_temp.claim('95'), 'rejected', 'pgtap 887')$$,
+  '55000', 'A professional or administrator fact claim is decided through the fact registry.',
+  'and an administrator entry'
 );
 select lives_ok(
   $$select public.review_auction_fact_claim(
@@ -579,17 +833,98 @@ select ok(
   (select prosrc !~ 'lots\?' and position('auction_fact_claim_decisions_lot_ref_check' in prosrc) > 0
           and position('auction_fact_claim_decisions_reason_code_check' in prosrc) > 0
           and prosrc !~ 'already_known|entry_error|professional_opposition'
+          and prosrc !~ '''(document|listing|lawyer_email|lawyer_form|admin_entry)'''
      from pg_proc
      where oid = 'app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)'::regprocedure),
-  'the decision function copies neither the lot format nor the reason lists: the constraints of the table judge'
+  'the decision function copies neither the lot format, nor the reason lists, nor a list of origins: the constraints and the data of the tables judge'
 );
 
 -- Erreurs : jamais le détail ni l'indice de PostgreSQL ------------------------------------------------------------------
 select ok(
   (select prosrc !~* 'pg_exception_detail|pg_exception_hint|pg_exception_context|message_text|detail\s*=|hint\s*='
+          and prosrc ~ 'raise log ''fact registry decision failed: sqlstate %, constraint %'''
      from pg_proc
      where oid = 'app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)'::regprocedure),
-  'the decision function reads only the SQLSTATE and the constraint name of an error, and relays no detail'
+  'the decision function reads only the SQLSTATE and the constraint name of an error, logs these two, and relays no detail'
+);
+
+-- Aucune autre fonction de la base n'écrit une décision, ne pose un jeton, ni n'enveloppe ces fonctions -------------------
+-- (double des invariants de sécurité, lu dans le catalogue ; les fonctions temporaires de ce fichier sont exclues.)
+select results_eq(
+  $$select (namespace.nspname::text || '.' || routine.proname::text) collate "default"
+      from pg_proc routine
+      join pg_namespace namespace on namespace.oid = routine.pronamespace
+      where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
+        and routine.prosrc ~* 'insert\s+into\s+(public\.)?auction_fact_claim_decisions'$$,
+  $$values ('app_private.decide_auction_fact_claim')$$,
+  'one function only inserts into the decision journal: the decision function'
+);
+select is(
+  (select count(*)::integer
+     from pg_proc routine
+     join pg_namespace namespace on namespace.oid = routine.pronamespace
+     where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
+       and (routine.prosrc ~* 'set_config\s*\(\s*''request\.jwt' or routine.prosrc ~* 'set\s+(local\s+)?"?request\.jwt'
+            or exists (select 1 from unnest(routine.proconfig) setting where setting ~* '^request\.jwt'))),
+  0,
+  'no function of the database sets the token of the request (request.jwt.claim…): the author cannot be forged from SQL'
+);
+select is(
+  (select count(*)::integer
+     from pg_db_role_setting role_setting, unnest(role_setting.setconfig) setting
+     where setting ~* '^request\.jwt'),
+  0,
+  'and no role carries a token setting'
+);
+select results_eq(
+  $$select (namespace.nspname::text || '.' || routine.proname::text) collate "default"
+      from pg_proc routine
+      join pg_namespace namespace on namespace.oid = routine.pronamespace
+      where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
+        and routine.prosrc ~* 'decide_auction_fact_claim\s*\('
+      order by routine.proname::text collate "C"$$,
+  $$values ('public.accept_auction_fact_claim'), ('public.oppose_auction_fact_claim'),
+           ('public.reject_auction_fact_claim'), ('public.withdraw_auction_fact_claim')$$,
+  'the decision function is called by its four public functions only'
+);
+select is(
+  (select count(*)::integer
+     from pg_proc routine
+     join pg_namespace namespace on namespace.oid = routine.pronamespace
+     where namespace.nspname !~ '^pg_' and namespace.nspname <> 'information_schema'
+       and routine.prosrc ~* '(accept|reject|withdraw|oppose)_auction_fact_claim'),
+  0,
+  'and no function wraps one of the four'
+);
+
+-- Verrous : course avec une fusion, vente disparue (en dernier : la fonction de verrou reste remplacée) ----------------
+-- La vente est supprimée (l'observation détachée par sa clé étrangère) entre la lecture et le verrou : l'appelant réessaie.
+create or replace function app_private.lock_sale_for_registry(p_sale_id uuid)
+returns boolean language plpgsql volatile security definer set search_path = '' as $function$
+begin
+  delete from public.auction_sales where id = p_sale_id;
+  return true;
+end;
+$function$;
+select throws_ok(
+  $$select public.accept_auction_fact_claim(pg_temp.claim('81'), 'single_lot')$$,
+  '40001', 'retry',
+  'a claim detached between the read and the lock (a merge in progress) is not decided: the caller tries again'
+);
+
+-- La vente a disparu entre la lecture et le verrou.
+create or replace function app_private.lock_sale_for_registry(p_sale_id uuid)
+returns boolean language sql volatile set search_path = '' as $function$ select false $function$;
+select throws_ok(
+  $$select public.review_auction_fact_claim(
+      '88700000-0000-4000-8000-0000000000a1', pg_temp.claim('31'), 'rejected', 'pgtap 887')$$,
+  '55000', 'The claim sale no longer exists.',
+  'the review refuses a claim whose sale has disappeared'
+);
+select throws_ok(
+  $$select public.reject_auction_fact_claim(pg_temp.claim('31'), 'other')$$,
+  'P0002', 'sale_not_found',
+  'and the decision function reports the missing sale'
 );
 
 select * from finish();
