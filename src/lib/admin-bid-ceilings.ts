@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
@@ -83,8 +83,7 @@ export async function getAdminBidCeilings(
   authToken: string,
   now = new Date(),
 ): Promise<BidCeilingSummary> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_pilotage_bid_ceilings", {
     p_now: now.toISOString(),

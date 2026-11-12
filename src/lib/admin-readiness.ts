@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import postgres from "postgres";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { analysisCheckoutReadiness } from "@/lib/analysis-checkout-readiness";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { firstFilled, serverEnv } from "@/lib/env";
@@ -222,13 +222,6 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
         : "Configurer OPERATIONS_ALERT_WEBHOOK_URL ou GITHUB_SCROLL_TOKEN.",
     },
   ];
-}
-
-async function assertAdminAuth(authToken: string) {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
-  }
 }
 
 async function readMigrationReadiness(

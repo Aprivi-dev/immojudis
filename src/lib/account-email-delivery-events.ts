@@ -9,6 +9,7 @@ import {
 } from "@/lib/email-alerts";
 import { informationAgentSenderAddress } from "@/lib/information-agent-inbound/delivery-events";
 import { captureFailure, recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Rebonds et plaintes des emails envoyés aux comptes (alertes, rappels d'audience, récapitulatif,
@@ -152,7 +153,8 @@ export async function processAccountEmailDeliveryWebhook({
   recordDelivery?: (event: { type: string; created_at?: string; data?: unknown }) => Promise<void>;
 }): Promise<AccountEmailWebhookResult> {
   const webhookSecret = env.RESEND_ACCOUNT_WEBHOOK_SECRET?.trim();
-  if (!webhookSecret) throw new Error("Configuration du webhook des emails de compte incomplète.");
+  if (!webhookSecret)
+    throw new ConfigurationError("Configuration du webhook des emails de compte incomplète.");
 
   const payload = await readBoundedBody(request);
   let event: { type: string; data?: unknown };

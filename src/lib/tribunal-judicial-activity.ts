@@ -7,10 +7,18 @@ import { TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE } from "@/lib/tribunal-publication
 import { labelFingerprint, parisDayKey } from "@/lib/tribunal-hearing-identity";
 import { mergeDuplicateJudicialAnnouncements } from "@/lib/tribunal-judicial-activity-dedup";
 import { roundWithEpsilon as round } from "@/lib/rounding";
+import { PublicApiError } from "@/lib/api-errors";
 
-export class TribunalCourtUnresolvedError extends Error {
-  constructor(message = "Le rattachement exact au tribunal reste à confirmer.") {
-    super(message);
+/**
+ * 422 `COURT_UNRESOLVED` : la vente n'est pas rattachée avec certitude à un tribunal. La réponse dit
+ * toujours la même chose ; le détail propre à chaque cas reste dans `cause`, pour les journaux.
+ */
+export class TribunalCourtUnresolvedError extends PublicApiError {
+  constructor(detail?: string) {
+    super("Le rattachement exact au tribunal reste à confirmer.", 422, {
+      code: "COURT_UNRESOLVED",
+      cause: detail,
+    });
     this.name = "TribunalCourtUnresolvedError";
   }
 }

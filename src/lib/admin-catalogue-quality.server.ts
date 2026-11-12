@@ -1,5 +1,5 @@
 import "server-only";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   buildAdminCatalogueQualityView,
@@ -93,8 +93,7 @@ export async function getAdminCatalogueQuality(
   authToken: string,
   now = new Date(),
 ): Promise<AdminCatalogueQualityView> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const [snapshotResult, alertsResult, ceilingCoverage, crossSourceDuplicates] = await Promise.all([
     supabaseAdmin

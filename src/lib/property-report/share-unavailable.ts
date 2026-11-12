@@ -1,3 +1,5 @@
+import { NotFoundError } from "@/lib/api-errors";
+
 /**
  * Pourquoi un lien partagé ne s'ouvre plus :
  * - `expired` : la date d'échéance du lien est passée ;
@@ -11,7 +13,7 @@ export type SharedReportUnavailableReason = "expired" | "owner_plan_ended";
  * rapports (fin de l'essai gratuit, abonnement terminé). La page partagée l'explique au
  * destinataire au lieu d'un 404, en disant la vraie raison ; un lien inconnu ou invalide reste un 404.
  */
-export class SharedReportUnavailableError extends Error {
+export class SharedReportUnavailableError extends NotFoundError {
   readonly reason: SharedReportUnavailableReason;
 
   constructor(reason: SharedReportUnavailableReason = "expired") {

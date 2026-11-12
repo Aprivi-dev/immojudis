@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -48,14 +49,14 @@ describe("GET /api/v1/tribunals/auction-summaries", () => {
   });
 
   it("refuse une requête non authentifiée avant toute lecture", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing token"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: missing token"));
     expect((await request()).status).toBe(401);
     expect(mocks.getSummaries).not.toHaveBeenCalled();
   });
 
   it("refuse le plan Découverte", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Les statistiques d’adjudication sont réservées à l’offre Analyse."),
+      new ForbiddenError("Les statistiques d’adjudication sont réservées à l’offre Analyse."),
     );
     expect((await request()).status).toBe(403);
     expect(mocks.getSummaries).not.toHaveBeenCalled();

@@ -5,6 +5,7 @@ import {
   type PublicTribunalDirectoryRow,
 } from "@/lib/public-tribunal-directory";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { ConfigurationError } from "@/lib/api-errors";
 
 export const PUBLIC_TRIBUNAL_DIRECTORY_REVALIDATE_SECONDS = 86_400;
 
@@ -14,7 +15,7 @@ type DirectoryRpcClient = {
 
 async function readPublicTribunalDirectory(): Promise<PublicTribunalDirectoryEntry[]> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
   const { data, error } = await (client as unknown as DirectoryRpcClient).rpc(
     "get_public_tribunal_directory",
   );

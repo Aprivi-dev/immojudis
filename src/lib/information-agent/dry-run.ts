@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { loadInformationAgentContactSales } from "@/lib/admin-information-agent-sale";
 import { informationAgentAddressCheckEnabled } from "@/lib/information-agent/address-deliverability";
@@ -24,7 +25,6 @@ import {
 } from "@/lib/information-agent/contacts";
 import type { InformationAgentOrganizerType } from "@/lib/information-agent/listing-contacts";
 import { saleIdentityPlace } from "@/lib/information-agent/mission-identity";
-import { requireInformationAgentAdmin } from "@/lib/information-agent/mission-store";
 import { recipientOppositionKeys } from "@/lib/information-agent/opposition-keys";
 import {
   informationAgentQuestionAudience,
@@ -121,7 +121,7 @@ export async function measureInformationAgentRecipients({
   auth: SupabaseAuthContext;
   saleIds: readonly string[];
 }): Promise<InformationAgentDryRunReport> {
-  requireInformationAgentAdmin(auth);
+  assertAdmin(auth);
   const ids = [...new Set(saleIds)];
   const rows: InformationAgentDryRunRow[] = [];
   let registryReadable = true;

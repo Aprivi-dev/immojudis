@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import type { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -85,7 +86,6 @@ import {
   listFactsForCases,
   loadOwnedMission,
   missionFromRow,
-  requireInformationAgentAdmin,
 } from "@/lib/information-agent/mission-store";
 import type {
   informationAgentCreateSchema,
@@ -211,7 +211,7 @@ export async function createAdminInformationAgentDraft({
   /** Pilote automatique : jamais de recherche réseau ni de greffe, mission marquée `trigger = autopilot`. */
   trigger?: InformationAgentSendTrigger;
 }): Promise<InformationAgentAdminResponse> {
-  requireInformationAgentAdmin(auth);
+  assertAdmin(auth);
   assertIssuedAutopilotTrigger(trigger);
 
   const [sale, emailTemplate] = await Promise.all([

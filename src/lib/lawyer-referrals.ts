@@ -11,6 +11,8 @@ import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { parseTimestamp as parseDateTime } from "@/lib/timestamp";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
+import { SalePublicationUnavailableError } from "@/lib/sale-publication-guard";
 
 type SupabaseClient = SupabaseAuthContext["supabase"];
 type SaleSnapshotSource = Pick<
@@ -178,7 +180,7 @@ export async function createLawyerReferralRequest({
 }): Promise<LawyerReferralResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "lawyers.referrals")) {
-    throw new Error("Mise en relation avocat réservée à l’offre Analyse.");
+    throw new ForbiddenError("Mise en relation avocat réservée à l’offre Analyse.");
   }
 
   const sale = await getSaleSnapshot(auth.supabase, input.saleId);
@@ -271,7 +273,7 @@ export async function previewLawyerReferralRecipient({
 }): Promise<LawyerReferralPreviewResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "lawyers.referrals")) {
-    throw new Error("Mise en relation avocat réservée à l’offre Analyse.");
+    throw new ForbiddenError("Mise en relation avocat réservée à l’offre Analyse.");
   }
 
   const sale = await getSaleSnapshot(auth.supabase, query.saleId);
@@ -343,7 +345,7 @@ async function getSaleSnapshot(
     .maybeSingle();
 
   if (error) throw error;
-  if (!data?.id) throw new Error("Vente introuvable ou inaccessible.");
+  if (!data?.id) throw new SalePublicationUnavailableError();
   return data as SaleSnapshotSource;
 }
 
@@ -381,7 +383,7 @@ async function resolveReferralRecipient(
   if (!lawyerId) return findMatchingReferencedLawyer(supabase, sale, saleBar);
 
   const chosen = await getReferencedLawyerRecipient(supabase, lawyerId);
-  if (!chosen) throw new Error("Avocat référencé introuvable ou indisponible.");
+  if (!chosen) throw new NotFoundError("Avocat référencé introuvable ou indisponible.");
   // A lawyer chosen by hand obeys the same rules as an automatic match.
   if (
     !isLawyerEligibleForSale({

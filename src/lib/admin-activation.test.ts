@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ requireAuth: vi.fn(), rpc: vi.fn() }));
@@ -116,7 +117,7 @@ describe("parseUnlockThreshold", () => {
 describe("getAdminActivation", () => {
   it("refuses a non-administrator without reading anything", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: false });
-    await expect(getAdminActivation("token")).rejects.toThrow(/accès administrateur/);
+    await expect(getAdminActivation("token")).rejects.toThrow(AdminRequiredError);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 

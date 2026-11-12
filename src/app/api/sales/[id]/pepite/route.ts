@@ -5,7 +5,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { PublicApiError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import { apiRouteError } from "@/lib/api-observability";
 import { assertFeatureEntitlementVia } from "@/lib/property-reports";
 import { enforceIpRateLimit, enforceUserRateLimit } from "@/lib/rate-limit";
@@ -74,7 +74,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+    if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
     if (!(await isPublishedPepite(client, saleId))) {
       throw new PublicApiError("Cette vente n’est pas une pépite.", 404);
     }

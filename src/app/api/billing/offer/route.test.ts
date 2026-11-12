@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -48,7 +49,7 @@ describe("GET /api/billing/offer", () => {
   });
 
   it("ne refuse jamais un en-tête Authorization invalide : la réponse est la même, 200, sans lire le compte", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: invalid token"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: invalid token"));
 
     const response = await request({ authorization: "Bearer jeton-invalide" });
 

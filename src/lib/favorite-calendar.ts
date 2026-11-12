@@ -8,7 +8,7 @@ import {
 } from "@/lib/sale-calendar";
 import { PLANNING_CALENDAR_MAX_SALES } from "@/lib/favorite-planning";
 import { assertSaleFavoritesAvailable } from "@/lib/favorites";
-import { PublicApiError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import { saleDeadlines } from "@/lib/sale-deadlines";
 import { DETAIL_VIEW } from "@/lib/sale-views";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
@@ -64,7 +64,7 @@ async function followedSaleIds(
 
 async function readCalendarRows(saleIds: readonly string[]): Promise<SaleCalendarRow[]> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Base de données non configurée.");
+  if (!client) throw new ConfigurationError("Base de données non configurée.");
   const rows: SaleCalendarRow[] = [];
   for (let start = 0; start < saleIds.length; start += RPC_BATCH_SIZE) {
     const batch = saleIds.slice(start, start + RPC_BATCH_SIZE);
@@ -74,7 +74,7 @@ async function readCalendarRows(saleIds: readonly string[]): Promise<SaleCalenda
     for (const { data, error } of answers) {
       if (error) {
         // La migration n'est pas déployée : pas d'export plutôt qu'une date devinée.
-        if (isMissingFunction(error)) throw new Error("Calendrier non configuré.");
+        if (isMissingFunction(error)) throw new ConfigurationError("Calendrier non configuré.");
         throw error;
       }
       const row = (Array.isArray(data) ? data[0] : data) as SaleCalendarRow | null | undefined;

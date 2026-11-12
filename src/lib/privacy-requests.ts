@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -12,6 +13,7 @@ import {
   type ProfessionalErasureReport,
 } from "@/lib/information-agent-professional-rights";
 import { privacyDeadlineStatus, type PrivacyDeadlineStatus } from "@/lib/privacy-deadline";
+import { PublicApiError } from "@/lib/api-errors";
 
 const privacyRequestTypeSchema = z.enum([
   "access",
@@ -138,7 +140,10 @@ export async function createPrivacyRequest({
     .in("status", ["received", "identity_verification", "in_review"]);
   if (countError) throw countError;
   if ((count ?? 0) >= 5) {
-    throw new Error("Trop de demandes ouvertes. Attendez le traitement d’une demande existante.");
+    throw new PublicApiError(
+      "Trop de demandes ouvertes. Attendez le traitement d’une demande existante.",
+      429,
+    );
   }
 
   const { data, error } = await supabaseAdmin
@@ -629,8 +634,4 @@ function toPrivacyRequestSummary(row: Pick<PrivacyRequestRow, UserColumn>): Priv
     completedAt: row.completed_at,
     resolutionCode: row.resolution_code,
   };
-}
-
-function assertAdmin(auth: SupabaseAuthContext): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }

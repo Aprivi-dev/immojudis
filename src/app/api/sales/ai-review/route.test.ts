@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -401,7 +402,7 @@ describe("GET /api/sales/ai-review", () => {
   });
 
   it("returns unauthorized without touching the private projection reader", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: session required"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: session required"));
 
     const response = await request();
 

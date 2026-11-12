@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn() }));
 
@@ -11,7 +12,9 @@ import { GET as getDetail } from "./[id]/route";
 import { GET as getCollection } from "./route";
 
 beforeEach(() => {
-  mocks.auth.mockRejectedValue(new Error("Unauthorized: No authorization header provided"));
+  mocks.auth.mockRejectedValue(
+    new AuthRequiredError("Unauthorized: No authorization header provided"),
+  );
 });
 
 describe("publication request privacy headers", () => {

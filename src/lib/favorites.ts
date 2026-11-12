@@ -12,6 +12,7 @@ import {
 } from "@/lib/favorite-dossier-shared";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { AuctionSale } from "@/lib/types";
+import { ForbiddenError } from "@/lib/api-errors";
 
 type FavoriteRow = Database["public"]["Tables"]["user_favorites"]["Row"];
 
@@ -248,7 +249,7 @@ export function buildFavoriteSalesSummary(
 export async function assertSaleFavoritesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.favorites")) {
-    throw new Error("Favoris réservés à l’offre Analyse.");
+    throw new ForbiddenError("Favoris réservés à l’offre Analyse.");
   }
   return plan;
 }

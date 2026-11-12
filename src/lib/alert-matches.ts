@@ -30,6 +30,7 @@ import { normalizeWatchedZone } from "@/lib/watched-zones";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { isMissingDatabaseObject } from "@/lib/postgrest-errors";
 import { documentSignatureParts } from "@/lib/document-signature";
+import { ForbiddenError } from "@/lib/api-errors";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
 
@@ -171,7 +172,7 @@ export async function listUserAlertMatches({
 }): Promise<{ matches: AlertMatchSummary[] }> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.advanced")) {
-    throw new Error("Alertes avancées réservées à l’offre Analyse.");
+    throw new ForbiddenError("Alertes avancées réservées à l’offre Analyse.");
   }
 
   let query = auth.supabase

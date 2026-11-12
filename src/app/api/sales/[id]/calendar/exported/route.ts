@@ -10,6 +10,7 @@ import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import type { SaleCalendarRow } from "@/lib/sale-calendar";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { ConfigurationError } from "@/lib/api-errors";
 
 const saleIdSchema = z.string().guid();
 
@@ -20,7 +21,7 @@ const saleIdSchema = z.string().guid();
  */
 async function isPubliclyExportable(saleId: string): Promise<boolean> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Base de données non configurée.");
+  if (!client) throw new ConfigurationError("Base de données non configurée.");
   const { data, error } = await client.rpc("get_public_sale_calendar_event", {
     p_sale_id: saleId.toLowerCase(),
   });

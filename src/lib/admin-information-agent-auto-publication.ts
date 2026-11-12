@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import {
   AUTO_PUBLICATION_CASE_CAP,
   AUTO_PUBLICATION_DAILY_CAP,
@@ -80,7 +80,7 @@ function modeLabel(mode: string): string {
 }
 
 export async function getAdminAutoPublicationView(authToken: string): Promise<AutoPublicationView> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const [mode, changes] = await Promise.all([
     loadAutoPublicationMode(),
     supabaseAdmin
@@ -113,7 +113,7 @@ export async function runAdminAutoPublicationAction({
   authToken: string;
   input: AdminAutoPublicationAction;
 }): Promise<AutoPublicationView> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.action === "set_mode") {
     // Verrou de l'étape 3 : refus avant tout appel à la base (la RPC et la contrainte refusent aussi).
     if (input.mode === "auto") throw new Error(AUTO_PUBLICATION_LOCKED_MESSAGE);

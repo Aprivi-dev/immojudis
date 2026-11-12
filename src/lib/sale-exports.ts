@@ -24,7 +24,7 @@ import { apiAccessAllowed, featureIncluded } from "@/lib/plans";
 import { computeAcquisitionCosts, computeRentabilityScore } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { getSales } from "@/lib/queries";
-import { RateLimitError } from "@/lib/api-errors";
+import { ForbiddenError, RateLimitError } from "@/lib/api-errors";
 import {
   enforceDailyOperationLimits,
   enforceUserRateLimit,
@@ -235,7 +235,7 @@ export async function exportSalesCsv({
 }): Promise<SalesCsvExport> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.csvExport")) {
-    throw new Error("Export CSV réservé à l’offre Analyse.");
+    throw new ForbiddenError("Export CSV réservé à l’offre Analyse.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,
@@ -290,7 +290,7 @@ export async function exportSalesApiFeed({
 }): Promise<SalesApiFeed> {
   const plan = await resolvePlanEntitlements(auth);
   if (!apiAccessAllowed(auth, plan.plan)) {
-    throw new Error("API ventes réservée à l’administration.");
+    throw new ForbiddenError("API ventes réservée à l’administration.");
   }
   await enforceUserRateLimit({
     userId: auth.userId,

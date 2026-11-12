@@ -9,6 +9,7 @@ import type { SelectedRow } from "@/lib/supabase-select";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { roundToTenth as roundedNumber } from "@/lib/rounding";
 import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
+import { ForbiddenError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -110,7 +111,7 @@ export async function getSaleHistory({
 }): Promise<SaleHistoryResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "property.saleHistory")) {
-    throw new Error("Historique des ventes passées réservé à l’offre Analyse.");
+    throw new ForbiddenError("Historique des ventes passées réservé à l’offre Analyse.");
   }
 
   const referenceSale = input.saleId ? await getReferenceSale(auth, input.saleId) : null;

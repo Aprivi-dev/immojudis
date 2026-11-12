@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PublicApiError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({ handle: vi.fn() }));
 
@@ -75,7 +75,7 @@ describe("POST /api/stripe/webhook", () => {
   });
 
   it("answers 503 when the webhook is not configured", async () => {
-    mocks.handle.mockRejectedValue(new Error("Stripe webhook non configuré."));
+    mocks.handle.mockRejectedValue(new ConfigurationError("Stripe webhook non configuré."));
 
     const response = await post();
 

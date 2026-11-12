@@ -5,6 +5,7 @@ import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { TRIBUNAL_PAGE_LISTED_SALES } from "@/lib/tribunal-pages";
 import { dedupeHearings, mapHearingRows, type UpcomingHearingRow } from "@/lib/upcoming-hearings";
 import { parseFiniteNumber as finite } from "@/lib/finite-number";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Prochaines ventes d'un tribunal, lues comme un visiteur anonyme avec la fonction publique
@@ -117,7 +118,7 @@ type ReadTribunalSales = {
 
 async function readTribunalSales(tribunalCode: string): Promise<ReadTribunalSales> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
   const { data, error } = await (client as unknown as TribunalRpcClient).rpc(
     "get_public_tribunal_sales",
     { p_tribunal_code: tribunalCode, p_limit: TRIBUNAL_PAGE_LISTED_SALES },

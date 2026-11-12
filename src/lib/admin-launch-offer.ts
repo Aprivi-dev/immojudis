@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { resetLaunchOfferCache } from "@/lib/launch-offer.server";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 /**
  * Interrupteur de l'offre de lancement pour l'administrateur (page /admin/clients).
@@ -19,7 +19,7 @@ export type AdminLaunchOfferState = { active: boolean };
 
 /** Lecture directe dans la base (sans le cache de 30 s des pages) : l'administrateur voit l'état réel. */
 export async function getAdminLaunchOffer(authToken: string): Promise<AdminLaunchOfferState> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const { data, error } = await supabaseAdmin.rpc("get_launch_offer_status");
   if (error) throw error;
   return { active: data === true };
@@ -32,7 +32,7 @@ export async function setAdminLaunchOffer({
   authToken: string;
   input: AdminLaunchOfferAction;
 }): Promise<AdminLaunchOfferState> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   const { data, error } = await auth.supabase.rpc("set_launch_offer", { p_active: input.active });
   if (error) throw error;
   // Le cache de ce processus est oublié tout de suite ; les autres instances et le CDN

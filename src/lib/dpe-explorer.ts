@@ -18,6 +18,7 @@ import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { SelectedRow } from "@/lib/supabase-select";
 import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToExplorer } from "@/lib/dpe-diagnostic-row";
 import { emptyDpeCounts } from "@/lib/dpe-counts";
+import { ForbiddenError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 const DPE_COLUMNS =
@@ -127,13 +128,13 @@ export async function getDpeExplorer({
 }): Promise<DpeExplorerResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "dpe.latest")) {
-    throw new Error("Explorateur DPE réservé à l’offre Analyse.");
+    throw new ForbiddenError("Explorateur DPE réservé à l’offre Analyse.");
   }
   if (input.dpeClasses.length && !featureIncluded(plan.plan, "dpe.filters")) {
-    throw new Error("Filtres DPE réservés à l’offre Analyse.");
+    throw new ForbiddenError("Filtres DPE réservés à l’offre Analyse.");
   }
   if (input.includeMap && !featureIncluded(plan.plan, "dpe.map")) {
-    throw new Error("Carte DPE réservée à l’offre Analyse.");
+    throw new ForbiddenError("Carte DPE réservée à l’offre Analyse.");
   }
 
   const rows = await queryDpeSales({ auth, input });

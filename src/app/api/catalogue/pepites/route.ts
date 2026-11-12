@@ -9,6 +9,7 @@ import {
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Liste publique des pépites (`list_public_pepite_sale_ids`) pour le navigateur : les identifiants des ventes
@@ -32,7 +33,7 @@ const PUBLIC_CACHE = `public, s-maxage=${CDN_SECONDS}, stale-while-revalidate=30
 const cachedPepiteSaleIds = unstable_cache(
   async () => {
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+    if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
     return listPepiteSaleIds(client as unknown as PepiteIdsClient);
   },
   ["public-catalogue", "pepite-sale-ids", "v2"],
@@ -46,7 +47,7 @@ const cachedPepiteSaleIds = unstable_cache(
 const cachedExposedIds = unstable_cache(
   async () => {
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+    if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
     return listPepiteFloodExposedIds(client as unknown as PepiteFloodIdsClient);
   },
   ["public-catalogue", "pepite-flood-exposed-ids", "v1"],

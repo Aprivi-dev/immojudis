@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { PublicApiError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -108,7 +108,7 @@ export function assertAlertNotificationDispatchComplete(
     const missing = result.emailMissingConfig.length
       ? ` (variable(s) manquante(s) : ${result.emailMissingConfig.join(", ")})`
       : "";
-    throw new Error(
+    throw new ConfigurationError(
       `Alertes e-mail : ${result.emailCandidateCount} envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré${missing}.`,
     );
   }

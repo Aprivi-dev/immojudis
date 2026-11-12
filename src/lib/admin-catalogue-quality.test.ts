@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), from: vi.fn(), rpc: vi.fn() }));
@@ -364,7 +365,7 @@ describe("getAdminCatalogueQuality", () => {
 
   it("ne lit rien pour un compte qui n'est pas administrateur", async () => {
     mocks.auth.mockResolvedValue({ isAdmin: false });
-    await expect(getAdminCatalogueQuality("token")).rejects.toThrow(/Forbidden/);
+    await expect(getAdminCatalogueQuality("token")).rejects.toThrow(AdminRequiredError);
     expect(mocks.from).not.toHaveBeenCalled();
   });
 

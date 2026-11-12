@@ -2,7 +2,6 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { saleNotFoundAsPublicError } from "@/lib/api-sale-not-found";
 import { parseApiResponse } from "@/lib/api-errors";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
@@ -11,7 +10,6 @@ import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   tribunalJudicialActivityQuerySchema,
   tribunalJudicialActivityResponseSchema,
-  TribunalCourtUnresolvedError,
 } from "@/lib/tribunal-judicial-activity";
 import { getTribunalJudicialActivity } from "@/lib/tribunal-judicial-activity-repository";
 
@@ -45,19 +43,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    if (error instanceof TribunalCourtUnresolvedError) {
-      return apiJson(
-        {
-          ok: false,
-          code: "COURT_UNRESOLVED",
-          error: "Le rattachement exact au tribunal reste à confirmer.",
-          requestId: context.requestId,
-        },
-        context,
-        { status: 422 },
-      );
-    }
-    const response = apiError(saleNotFoundAsPublicError(error), context, {
+    const response = apiError(error, context, {
       fallbackMessage: "Activité judiciaire du tribunal temporairement indisponible.",
       fallbackStatus: 503,
     });

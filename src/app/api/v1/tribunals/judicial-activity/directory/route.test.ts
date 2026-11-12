@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-activity-directory";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -59,7 +60,9 @@ describe("GET /api/v1/tribunals/judicial-activity/directory", () => {
   });
 
   it("refuse les visiteurs avant de lire l’annuaire", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
     const response = await request();
 
     expect(response.status).toBe(401);
@@ -68,7 +71,7 @@ describe("GET /api/v1/tribunals/judicial-activity/directory", () => {
 
   it("refuse le plan Découverte avant de lire l’annuaire", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Répertoire des tribunaux réservé à l’offre Analyse."),
+      new ForbiddenError("Répertoire des tribunaux réservé à l’offre Analyse."),
     );
     const response = await request();
 

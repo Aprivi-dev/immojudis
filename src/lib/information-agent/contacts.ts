@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
@@ -11,7 +12,6 @@ import type {
   InformationAgentContactSource,
 } from "@/lib/information-agent/contact-resolution";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
-import { requireInformationAgentAdmin } from "@/lib/information-agent/mission-store";
 import {
   INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
   informationAgentExcludedAddressReason,
@@ -301,7 +301,7 @@ export async function recordInformationAgentStructureOpposition({
   officeCode?: string | null;
   opposedAt?: string;
 }): Promise<string[]> {
-  requireInformationAgentAdmin(auth);
+  assertAdmin(auth);
   const normalized = normalizedEmail(email);
   if (!normalized) throw new Error("Adresse email du contact invalide.");
   const keys = informationAgentStructureKeys({ email: normalized, officeCode });

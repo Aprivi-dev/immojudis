@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord, stringValue } from "@/lib/guards";
 import type { AdminActivation } from "@/lib/admin-activation";
@@ -334,8 +334,7 @@ export async function getAdminPilotage(
   authToken: string,
   now = new Date(),
 ): Promise<AdminPilotage> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_pilotage_summary", {
     p_now: now.toISOString(),
@@ -589,7 +588,6 @@ export async function getAdminSaleReminderAccuracy(
   authToken: string,
   now = new Date(),
 ): Promise<SaleReminderAccuracy> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
   return loadSaleReminderAccuracy(now);
 }

@@ -12,7 +12,7 @@ import {
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
 import { assertAnalysisCheckoutOpen } from "@/lib/analysis-checkout-readiness";
-import { PublicApiError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import type { BillingPortalIntent } from "@/lib/billing-portal-request";
 import {
   sendCancellationConfirmationNotice,
@@ -71,12 +71,14 @@ export const ANALYSIS_PRICE_CENTS = ANALYSIS_RECURRING_PRICE_CENTS;
 export function resolveAnalysisPriceId(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
   const priceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
   if (!priceId) {
-    throw new Error(
+    throw new ConfigurationError(
       "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID manquant pour le tarif validé de 59 € / mois.",
     );
   }
   if (!/^price_[A-Za-z0-9]+$/.test(priceId)) {
-    throw new Error("Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID invalide.");
+    throw new ConfigurationError(
+      "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID invalide.",
+    );
   }
   return priceId;
 }
@@ -85,13 +87,14 @@ let stripeClient: Stripe | undefined;
 
 function stripeSecretKey(): string {
   const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) throw new Error("Stripe n'est pas configuré: STRIPE_SECRET_KEY manquant.");
+  if (!key) throw new ConfigurationError("Stripe n'est pas configuré: STRIPE_SECRET_KEY manquant.");
   return key;
 }
 
 function stripeWebhookSecret(): string {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) throw new Error("Stripe webhook non configuré: STRIPE_WEBHOOK_SECRET manquant.");
+  if (!secret)
+    throw new ConfigurationError("Stripe webhook non configuré: STRIPE_WEBHOOK_SECRET manquant.");
   return secret;
 }
 

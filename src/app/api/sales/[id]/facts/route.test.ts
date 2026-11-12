@@ -1,3 +1,4 @@
+import { NotFoundError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -155,7 +156,7 @@ describe("sale fact reliability route", () => {
   it("does not expose claims for a quarantined sale", async () => {
     const { claimQuery } = setup();
     mocks.assertPublicationVisible.mockRejectedValue(
-      new Error("Vente introuvable ou inaccessible."),
+      new NotFoundError("Vente introuvable ou inaccessible."),
     );
 
     const response = await GET(request(), context);

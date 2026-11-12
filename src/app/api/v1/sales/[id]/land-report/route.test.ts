@@ -1,4 +1,6 @@
+import { SalePublicationUnavailableError } from "@/lib/sale-publication-guard";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError, ForbiddenError, RateLimitError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -74,21 +76,21 @@ describe("dossier PLU et risques premium", () => {
     mocks.report.mockResolvedValue(report);
   });
   it("refuse un visiteur avant toute consultation des sources", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: missing bearer token"));
     expect((await request()).status).toBe(401);
     expect(mocks.sale).not.toHaveBeenCalled();
     expect(mocks.report).not.toHaveBeenCalled();
   });
   it("refuse un compte sans abonnement Analyse", async () => {
     mocks.entitlement.mockRejectedValue(
-      new Error("Cette fonctionnalité est réservée à l’offre Analyse."),
+      new ForbiddenError("Cette fonctionnalité est réservée à l’offre Analyse."),
     );
     expect((await request()).status).toBe(403);
     expect(mocks.sale).not.toHaveBeenCalled();
     expect(mocks.report).not.toHaveBeenCalled();
   });
   it("ne consulte aucune source pour une vente inaccessible", async () => {
-    mocks.sale.mockRejectedValue(new Error("Vente introuvable ou inaccessible."));
+    mocks.sale.mockRejectedValue(new SalePublicationUnavailableError());
     const response = await request();
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ code: "NOT_FOUND" });
@@ -100,7 +102,7 @@ describe("dossier PLU et risques premium", () => {
     expect(mocks.report).not.toHaveBeenCalled();
   });
   it("applique le quota avant l'appel aux sources officielles", async () => {
-    mocks.rate.mockRejectedValue(new Error("Trop de demandes. Réessayez dans quelques instants."));
+    mocks.rate.mockRejectedValue(new RateLimitError());
     expect((await request()).status).toBe(429);
     expect(mocks.report).not.toHaveBeenCalled();
   });

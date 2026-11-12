@@ -11,6 +11,7 @@ import { informationAgentAiProvider } from "@/lib/information-agent-ai-provider"
 import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { courtRegistryDailyCap } from "@/lib/information-agent/court-registry-fallback";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Garde-fous du message sortant de l'agent d'information (identité du responsable de traitement, pied
@@ -22,7 +23,7 @@ export function assertInformationAgentControllerIdentity(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
   if (!informationAgentControllerIdentity(env)) {
-    throw new Error(
+    throw new ConfigurationError(
       "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME, NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS et NEXT_PUBLIC_LEGAL_CONTACT_EMAIL).",
     );
   }
@@ -52,7 +53,8 @@ export function buildInformationAgentLegalFooter({
   const controller = informationAgentControllerIdentity(env);
   if (!controller) assertInformationAgentControllerIdentity(env);
   const secret = informationAgentPortalSecret(env);
-  if (!secret) throw new Error("Secret du lien d'opposition non configuré : envoi impossible.");
+  if (!secret)
+    throw new ConfigurationError("Secret du lien d'opposition non configuré : envoi impossible.");
   const normalized = normalizedEmail(email);
   if (!normalized) throw new Error("Adresse email du contact invalide.");
   return {
@@ -137,7 +139,7 @@ export function assertInformationAgentPreviewFingerprint({
 }): void {
   const expected = informationAgentPreviewFingerprint({ adminId, ...input });
   if (!expected) {
-    throw new Error("Secret du lien d'opposition non configuré : envoi impossible.");
+    throw new ConfigurationError("Secret du lien d'opposition non configuré : envoi impossible.");
   }
   const received = Buffer.from(input.previewFingerprint ?? "", "hex");
   const reference = Buffer.from(expected, "hex");

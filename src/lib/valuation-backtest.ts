@@ -18,6 +18,7 @@ import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { propertyTypeFamily } from "@/lib/property-type-family";
 import { round } from "@/lib/rounding";
 import { averageRounded } from "@/lib/rounding";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfTransactionRow = Database["public"]["Tables"]["dvf_transactions"]["Row"];
@@ -270,7 +271,7 @@ async function assertValuationBacktestAvailable(auth: SupabaseAuthContext) {
       : "decouverte";
 
   if (!featureIncluded(plan, "property.soldComparables")) {
-    throw new Error("Backtest de valorisation réservé à l’offre Analyse.");
+    throw new ForbiddenError("Backtest de valorisation réservé à l’offre Analyse.");
   }
 }
 
@@ -348,7 +349,7 @@ async function getReferenceSale(
     .maybeSingle();
 
   if (error) throw error;
-  if (!data?.id) throw new Error("Vente introuvable ou non accessible.");
+  if (!data?.id) throw new NotFoundError("Vente introuvable ou non accessible.");
   return data as AppSaleRow & { id: string };
 }
 

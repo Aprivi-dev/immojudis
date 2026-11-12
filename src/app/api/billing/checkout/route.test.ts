@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RateLimitError } from "@/lib/api-errors";
+import { AuthRequiredError, ForbiddenError, RateLimitError } from "@/lib/api-errors";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 
 const mocks = vi.hoisted(() => ({
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     if (!request.headers.get("authorization")) {
-      throw new Error("Unauthorized: No authorization header provided");
+      throw new AuthRequiredError("Unauthorized: No authorization header provided");
     }
     return "token";
   },
@@ -66,14 +66,14 @@ describe("POST /api/billing/checkout", () => {
   });
 
   it("answers 401 when the token is rejected", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
 
     expect((await post({ plan: "analysis", consent })).status).toBe(401);
     expect(mocks.checkout).not.toHaveBeenCalled();
   });
 
   it("answers 403 when the account cannot open a checkout", async () => {
-    mocks.checkout.mockRejectedValue(new Error("Paiement réservé aux comptes confirmés."));
+    mocks.checkout.mockRejectedValue(new ForbiddenError("Paiement réservé aux comptes confirmés."));
 
     expect((await post({ plan: "analysis", consent })).status).toBe(403);
   });

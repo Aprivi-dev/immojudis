@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { ADMIN_PAGE_SIZE, adminPageMeta } from "@/lib/admin-pagination";
@@ -10,7 +11,6 @@ import {
   listFactsForCases,
   loadOwnedMission,
   missionFromRow,
-  requireInformationAgentAdmin,
 } from "@/lib/information-agent/mission-store";
 import { approveAndSendMission } from "@/lib/information-agent/send";
 import type {
@@ -131,7 +131,7 @@ export async function listAdminInformationAgentMissions({
   offset?: number;
   limit?: number;
 }): Promise<InformationAgentAdminMissionPage> {
-  requireInformationAgentAdmin(auth);
+  assertAdmin(auth);
   let query = supabaseAdmin
     .from("information_agent_missions")
     .select("*", { count: "exact" })
@@ -203,7 +203,7 @@ export async function runAdminInformationAgentAction({
   /** Interne : le pilote automatique (`information-agent-autopilot.ts`) ; absent pour un administrateur. */
   trigger?: InformationAgentSendTrigger;
 }): Promise<InformationAgentAdminListResponse> {
-  requireInformationAgentAdmin(auth);
+  assertAdmin(auth);
 
   if (input.action === "approve_and_send") {
     await approveAndSendMission({ adminId: auth.userId, input, fetchImpl, trigger });

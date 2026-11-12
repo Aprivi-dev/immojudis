@@ -1,4 +1,5 @@
 import "server-only";
+import { NotFoundError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -15,7 +16,10 @@ import {
   type TribunalJudicialActivityDirectoryResponse,
   type TribunalJudicialActivityDirectorySale,
 } from "@/lib/tribunal-judicial-activity-directory";
-import { isPublicationQuarantinedMarker } from "@/lib/sale-publication-guard";
+import {
+  SALE_PUBLICATION_UNAVAILABLE_MESSAGE,
+  isPublicationQuarantinedMarker,
+} from "@/lib/sale-publication-guard";
 import {
   loadArchivedPastHearings,
   TribunalOutcomeGraphHistoryUnavailableError,
@@ -108,14 +112,10 @@ export class TribunalJudicialActivityUnavailableError extends Error {
   }
 }
 
-/**
- * No visible judicial sale for the identifier: a 404 for the API, whereas the other unavailable
- * cases stay 503. It remains a `TribunalJudicialActivityUnavailableError`, so callers that treat
- * an unresolved court as optional keep working.
- */
-export class TribunalJudicialSaleNotFoundError extends TribunalJudicialActivityUnavailableError {
+/** No visible judicial sale for the identifier: a 404, whereas the unavailable cases stay 503. */
+export class TribunalJudicialSaleNotFoundError extends NotFoundError {
   constructor() {
-    super("No judicial sale is available.");
+    super(SALE_PUBLICATION_UNAVAILABLE_MESSAGE);
     this.name = "TribunalJudicialSaleNotFoundError";
   }
 }

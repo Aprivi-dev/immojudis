@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
@@ -114,8 +114,7 @@ export async function getAdminOfferOpeningSurvey(
   authToken: string,
   now = new Date(),
 ): Promise<OfferOpeningSurveySummary> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_offer_opening_survey_summary", {
     p_now: now.toISOString(),
@@ -179,8 +178,7 @@ export async function getAdminOfferOpeningInterviewees(
   authToken: string,
   limit = 200,
 ): Promise<OfferOpeningInterviewees> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  const auth = await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_offer_opening_interviewees", {
     p_limit: limit,

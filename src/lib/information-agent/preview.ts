@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import { renderInformationRequestEmail } from "../../../emails/information-request";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import {
@@ -54,10 +55,7 @@ import {
 import { assertInformationAgentQuestionsAllowed } from "@/lib/information-agent/recipient-questions";
 import { informationAgentAudienceInvitesDocuments } from "@/lib/information-agent/recipient-templates";
 import { missionRecipient, missionSaleReference } from "@/lib/information-agent/mission-identity";
-import {
-  loadOwnedMission,
-  requireInformationAgentAdmin,
-} from "@/lib/information-agent/mission-store";
+import { loadOwnedMission } from "@/lib/information-agent/mission-store";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 import type { InformationAgentPreviewInput } from "@/lib/information-agent/schemas";
 
@@ -103,7 +101,7 @@ export async function previewAdminInformationAgentMission({
   input: InformationAgentPreviewInput;
   env?: NodeJS.ProcessEnv;
 }): Promise<InformationAgentPreviewResponse> {
-  requireInformationAgentAdmin(auth);
+  assertAdmin(auth);
   const mission = await loadOwnedMission(auth.userId, input.missionId);
   const recipient = normalizedEmail(input.recipientEmail);
   if (!recipient) throw new Error("Requête invalide : adresse email du destinataire invalide.");

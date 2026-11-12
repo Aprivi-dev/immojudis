@@ -4,6 +4,7 @@ import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middlew
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
 import { serverEnv } from "@/lib/env";
+import { AdminRequiredError, ConfigurationError } from "@/lib/api-errors";
 
 const SCROLL_SOURCES = [
   "all",
@@ -231,7 +232,7 @@ async function assertAdminContext(context: AdminContext): Promise<{ email: strin
     return { email: normalizeEmail(email) || "admin" };
   }
 
-  throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
+  throw new AdminRequiredError();
 }
 
 async function countRows(table: string): Promise<number> {
@@ -470,7 +471,7 @@ export async function startAdminScroll(
   const mode = runnerMode();
   const webhookUrl = scrollWebhookUrl();
   if (mode === "queue_worker" || (mode === "webhook" && !webhookUrl)) {
-    throw new Error(
+    throw new ConfigurationError(
       "Aucun runner de collecte n'est configuré. Configurez GITHUB_SCROLL_TOKEN ou SCROLL_WEBHOOK_URL avant de lancer une demande.",
     );
   }
@@ -593,7 +594,7 @@ export async function startAdminScroll(
   }
 
   if (!webhookUrl) {
-    throw new Error(
+    throw new ConfigurationError(
       "Aucun runner de collecte n'est configuré. Configurez GITHUB_SCROLL_TOKEN ou SCROLL_WEBHOOK_URL avant de lancer une demande.",
     );
   }

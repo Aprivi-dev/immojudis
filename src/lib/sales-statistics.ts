@@ -20,6 +20,7 @@ import { recordFeatureUsageEvent } from "@/lib/usage";
 import { emptyDpeCounts } from "@/lib/dpe-counts";
 import { round } from "@/lib/rounding";
 import { averageRounded } from "@/lib/rounding";
+import { ForbiddenError } from "@/lib/api-errors";
 
 const SALES_STATISTICS_SOURCE_LIMIT = 1_000;
 
@@ -76,7 +77,7 @@ export async function getSalesStatistics({
 }): Promise<SalesStatisticsResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.statistics")) {
-    throw new Error("Statistiques immobilières réservées à l’offre Analyse.");
+    throw new ForbiddenError("Statistiques immobilières réservées à l’offre Analyse.");
   }
 
   const center = search.aroundAddress ? await geocodeAddress(search.aroundAddress) : null;

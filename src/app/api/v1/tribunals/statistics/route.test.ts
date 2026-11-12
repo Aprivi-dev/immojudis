@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TribunalStatisticsResponse } from "@/lib/tribunal-statistics";
+import { AuthRequiredError, ConfigurationError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -63,7 +64,7 @@ describe("GET /api/v1/tribunals/statistics", () => {
   });
 
   it("refuse une requête non authentifiée avant entitlement et lecture", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: invalid token"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: invalid token"));
 
     const response = await request();
 
@@ -76,7 +77,7 @@ describe("GET /api/v1/tribunals/statistics", () => {
 
   it("refuse le plan Découverte avant toute lecture de snapshot", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques par tribunal réservées à l’offre Analyse."),
+      new ForbiddenError("Statistiques par tribunal réservées à l’offre Analyse."),
     );
 
     const response = await request();
@@ -102,7 +103,7 @@ describe("GET /api/v1/tribunals/statistics", () => {
 
   it("renvoie 503 lorsque le kill switch ou les snapshots rendent le service indisponible", async () => {
     mocks.getStatistics.mockRejectedValue(
-      new Error("Configuration: tribunal statistics are disabled."),
+      new ConfigurationError("Configuration: tribunal statistics are disabled."),
     );
 
     const response = await request();

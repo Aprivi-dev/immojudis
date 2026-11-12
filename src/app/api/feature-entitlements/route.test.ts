@@ -1,3 +1,4 @@
+import { AuthRequiredError } from "@/lib/api-errors";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
 
@@ -39,7 +40,7 @@ describe("feature entitlements scope", () => {
   });
 
   it("rejects an invalid identity before reading the plan", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized"));
     const response = await GET(new Request("http://localhost/api/feature-entitlements?scope=plan"));
     expect(response.status).toBe(401);
     expect(response.headers.get("cache-control")).toBe("private, no-store");

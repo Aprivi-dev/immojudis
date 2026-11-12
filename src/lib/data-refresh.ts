@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
-import { RateLimitError } from "@/lib/api-errors";
+import { ForbiddenError, NotFoundError, RateLimitError } from "@/lib/api-errors";
 import { enforceIpRateLimit, enforceUserRateLimit, secondsUntilWindowEnds } from "@/lib/rate-limit";
 import {
   DAILY_LIMIT_MESSAGE,
@@ -91,7 +91,7 @@ export async function requestDataRefresh({
 }): Promise<DataRefreshRequestResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "data.onDemandRefresh")) {
-    throw new Error("Le refresh DPE/cadastre à la demande est réservé aux plans Analyse.");
+    throw new ForbiddenError("Le refresh DPE/cadastre à la demande est réservé aux plans Analyse.");
   }
 
   await enforceUserRateLimit({
@@ -213,7 +213,8 @@ async function loadRefreshSale(auth: SupabaseAuthContext, saleId: string): Promi
     .single();
 
   if (error) throw error;
-  if (!data?.source_url) throw new Error("Vente introuvable ou source non rafraîchissable.");
+  if (!data?.source_url)
+    throw new NotFoundError("Vente introuvable ou source non rafraîchissable.");
   return { ...data, source_url: data.source_url };
 }
 
@@ -247,7 +248,7 @@ async function admitRefreshRequest({
       );
     }
     if (error.message?.includes("DATA_REFRESH_")) {
-      throw new Error("Trop de demandes de rafraîchissement. Réessayez dans une minute.");
+      throw new RateLimitError("Trop de demandes de rafraîchissement. Réessayez dans une minute.");
     }
     throw new Error(error.message || "Admission du rafraîchissement indisponible.");
   }

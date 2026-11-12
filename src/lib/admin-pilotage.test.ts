@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AdminRequiredError, AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({ requireAuth: vi.fn(), rpc: vi.fn() }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -224,12 +225,14 @@ describe("getAdminPilotage", () => {
   it("refuses an account without the administrator role, before reading anything", async () => {
     mocks.requireAuth.mockResolvedValue({ userId: "user-1", isAdmin: false });
 
-    await expect(getAdminPilotage("token")).rejects.toThrow("Forbidden");
+    await expect(getAdminPilotage("token")).rejects.toThrow(AdminRequiredError);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("refuses a request without a valid session", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
 
     await expect(getAdminPilotage("")).rejects.toThrow("Unauthorized");
     expect(mocks.rpc).not.toHaveBeenCalled();

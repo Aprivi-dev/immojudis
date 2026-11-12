@@ -6,6 +6,7 @@ import { isLawyerEligibleForSale } from "@/lib/lawyer-bar";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { parseTimestamp as parseDateTime } from "@/lib/timestamp";
+import { NotFoundError } from "@/lib/api-errors";
 
 type SaleSectorSource = Pick<
   Database["public"]["Tables"]["auction_sales"]["Row"],
@@ -70,9 +71,9 @@ export async function getFeaturedReferencedLawyerForSale({
     .maybeSingle();
 
   if (error) throw error;
-  if (!sale?.id) throw new Error("Vente introuvable.");
+  if (!sale?.id) throw new NotFoundError("Vente introuvable.");
   if (isPublicationQuarantined(sale.raw_payload, sale.status)) {
-    throw new Error("Vente introuvable.");
+    throw new NotFoundError("Vente introuvable.");
   }
 
   return {

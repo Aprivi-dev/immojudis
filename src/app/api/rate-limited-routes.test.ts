@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RateLimitError } from "@/lib/api-errors";
+import { ForbiddenError, RateLimitError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -363,7 +363,7 @@ describe("P4-02 rate limits on costly and public routes", () => {
     // Sans droit d'accès : refusé avant le plafond, qui n'est pas consommé.
     mocks.enforceDaily.mockClear();
     mocks.entitlement.mockRejectedValue(
-      new Error("Contexte environnemental réservé à l’offre Analyse."),
+      new ForbiddenError("Contexte environnemental réservé à l’offre Analyse."),
     );
     expect((await environmentPost(json({}))).status).toBe(403);
     expect(mocks.enforceDaily).not.toHaveBeenCalled();

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RateLimitError } from "@/lib/api-errors";
+import { AuthRequiredError, RateLimitError } from "@/lib/api-errors";
 import { createFakeSupabase, type FakeSupabase } from "@/test/fake-supabase";
 
 const mocks = vi.hoisted(() => ({
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     if (!request.headers.get("authorization")) {
-      throw new Error("Unauthorized: No authorization header provided");
+      throw new AuthRequiredError("Unauthorized: No authorization header provided");
     }
     return "token";
   },
@@ -102,7 +102,7 @@ describe("/api/privacy/requests", () => {
   });
 
   it("answers 401 when the token is rejected", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
 
     expect((await GET(request("GET"))).status).toBe(401);
     expect((await POST(request("POST", { requestType: "access" }))).status).toBe(401);

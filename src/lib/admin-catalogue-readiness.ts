@@ -9,7 +9,7 @@ import {
   classifyInformationAgentSaleContacts,
   type InformationAgentSaleContactClass,
 } from "@/lib/admin-information-agent-sale";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { asRecord as jsonObject } from "@/lib/guards";
 
 const ACTIVE_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
@@ -144,7 +144,7 @@ export async function getAdminCatalogueReadinessOverview(
   authToken: string,
   options: { offset?: number; limit?: number } = {},
 ): Promise<CatalogueReadinessOverview> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const offset = Math.max(0, options.offset ?? 0);
   const limit = Math.max(1, Math.min(ADMIN_PAGE_MAX_LIMIT, options.limit ?? ADMIN_PAGE_SIZE));
   const [
@@ -294,7 +294,7 @@ export async function runAdminCatalogueReadinessAction({
   authToken: string;
   input: AdminCatalogueReadinessAction;
 }): Promise<CatalogueReadinessOverview> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.action === "set_enforcement") {
     const { error } = await auth.supabase.rpc("set_catalogue_readiness_enforcement", {
       p_enabled: input.enabled,

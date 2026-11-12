@@ -77,6 +77,7 @@ import {
   shareIsExpired,
 } from "./property-report/serialization";
 import { asRecord, numberValue, stringOrNumberValue, stringValue } from "@/lib/guards";
+import { NotFoundError } from "@/lib/api-errors";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
 export type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 export type SavedReportRow = Database["public"]["Tables"]["saved_property_reports"]["Row"];
@@ -641,7 +642,7 @@ export async function getSharedPropertyReport({
     .maybeSingle();
 
   if (error) throw error;
-  if (!data) throw new Error("Rapport partagé introuvable ou expiré.");
+  if (!data) throw new NotFoundError("Rapport partagé introuvable ou expiré.");
   // Lien connu mais fermé (échéance, fin de l'essai du propriétaire) : la page l'explique.
   if (shareIsExpired(data.share_expires_at)) throw new SharedReportUnavailableError("expired");
   // A link stops working as soon as its owner no longer has an active Analyse plan.

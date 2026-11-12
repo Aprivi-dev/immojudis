@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PropertyReportActions } from "./PropertyReportActions";
+import { ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   user: { id: "investor" } as { id: string } | null,
@@ -164,7 +165,7 @@ describe("report export from the listing", () => {
     expect(mocks.save).not.toHaveBeenCalled();
   });
   it("does not download or announce success after a denied export", async () => {
-    mocks.exportPdf.mockRejectedValue(new Error("Export PDF réservé à l’offre Analyse."));
+    mocks.exportPdf.mockRejectedValue(new ForbiddenError("Export PDF réservé à l’offre Analyse."));
     renderActions();
     fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
     await waitFor(() =>

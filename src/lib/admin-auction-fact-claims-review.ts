@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -125,7 +126,7 @@ export async function listAdminAuctionFactClaims({
   auth: SupabaseAuthContext;
   input: AdminAuctionFactClaimReviewQuery;
 }): Promise<AdminAuctionFactClaimReviewResponse> {
-  requireAdmin(auth);
+  assertAdmin(auth);
   const query = (supabaseAdmin as unknown as PrivateClaimReader)
     .from("v_auction_fact_claims_read_model")
     .select(
@@ -177,7 +178,7 @@ export async function reviewAdminAuctionFactClaim({
   auth: SupabaseAuthContext;
   input: AdminAuctionFactClaimDecision;
 }): Promise<{ ok: true; result: unknown }> {
-  requireAdmin(auth);
+  assertAdmin(auth);
   const client = supabaseAdmin as unknown as ReviewRpcClient;
   const { data, error } = await client.rpc("review_auction_fact_claim", {
     p_reviewer_id: auth.userId,
@@ -187,10 +188,6 @@ export async function reviewAdminAuctionFactClaim({
   });
   if (error) throw error;
   return { ok: true, result: data };
-}
-
-function requireAdmin(auth: SupabaseAuthContext): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
 /** Résumé et valeurs affichées aujourd'hui des ventes d'une page d'observations. */

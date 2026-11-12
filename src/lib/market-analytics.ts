@@ -10,6 +10,7 @@ import type { SelectedRow } from "@/lib/supabase-select";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { roundToTenth as roundedNumber } from "@/lib/rounding";
 import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
+import { ForbiddenError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -168,7 +169,7 @@ export async function getMarketAnalytics({
 }): Promise<MarketAnalyticsResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "market.priceDistribution")) {
-    throw new Error("Analyse de marché avancée réservée à l’offre Analyse.");
+    throw new ForbiddenError("Analyse de marché avancée réservée à l’offre Analyse.");
   }
 
   const referenceSale = input.saleId ? await getReferenceSale(auth, input.saleId) : null;

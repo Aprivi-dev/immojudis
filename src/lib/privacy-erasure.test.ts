@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { privacyDeadlineLabel, privacyDeadlineStatus } from "./privacy-deadline";
@@ -249,7 +250,7 @@ describe("erasure execution (P4-10)", () => {
       "a non-admin caller",
       () => ({ ...admin, isAdmin: false }) as unknown as SupabaseAuthContext,
       {},
-      "Forbidden",
+      AdminRequiredError,
     ],
     [
       "another request type",

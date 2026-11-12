@@ -174,7 +174,10 @@ describe("tribunal judicial activity repository", () => {
         { courtCode: "tribunal-inconnu", historyMonths: 36 },
         { asOf: AS_OF },
       ),
-    ).rejects.toThrow("No active exact official court reference");
+    ).rejects.toMatchObject({
+      code: "COURT_UNRESOLVED",
+      cause: expect.stringContaining("No active exact official court reference"),
+    });
     expect(serverFrom).toHaveBeenCalledOnce();
   });
 
@@ -366,7 +369,10 @@ describe("tribunal judicial activity repository", () => {
         { saleId: "11111111-1111-4111-8111-111111111111", historyMonths: 36 },
         { asOf: AS_OF },
       ),
-    ).rejects.toThrow("no verified exact judicial court assignment");
+    ).rejects.toMatchObject({
+      code: "COURT_UNRESOLVED",
+      cause: expect.stringContaining("no verified exact judicial court assignment"),
+    });
     expect(serverFrom).toHaveBeenCalledTimes(2);
   });
 

@@ -15,7 +15,7 @@ import {
 } from "@/lib/information-agent/autopilot-settings";
 import { buildAutopilotView, type AutopilotView } from "@/lib/information-agent/autopilot-view";
 import { asObject } from "@/lib/information-agent/mission-store";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 /**
  * Panneau du pilote automatique (administrateurs). Lecture : modèle de vue déjà mis en forme. Écriture : les
@@ -121,7 +121,7 @@ export async function getAdminAutopilotView(
     now = new Date(),
   }: { env?: Readonly<Record<string, string | undefined>>; now?: Date } = {},
 ): Promise<AutopilotView> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const [{ settings, stats, report }, events, prepared] = await Promise.all([
     readiness(now, env),
     loadRecentAutopilotEvents(20),
@@ -139,7 +139,7 @@ export async function runAdminAutopilotAction({
   input: AdminAutopilotAction;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<AutopilotView> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.action === "set_mode") {
     if (input.mode === "live") {
       const { report } = await readiness(new Date(), env);

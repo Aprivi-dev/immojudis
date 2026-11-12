@@ -5,13 +5,13 @@ import {
   type InformationAgentIndicatorsRaw,
   type InformationAgentOperationsView,
 } from "@/lib/information-agent/operations-view";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 export async function getAdminInformationAgentOperations(
   authToken: string,
   now = new Date(),
 ): Promise<InformationAgentOperationsView> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const since = new Date(now.getTime() - 30 * 86_400_000).toISOString();
   const [indicators, operations] = await Promise.all([
     supabaseAdmin.rpc("information_agent_indicators", {
@@ -37,7 +37,7 @@ export async function getAdminInformationAgentOperations(
 export async function attestAdminInformationAgentRoundtrip(
   authToken: string,
 ): Promise<InformationAgentOperationsView> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   const { error } = await supabaseAdmin.rpc("attest_information_agent_roundtrip", {
     p_admin_id: auth.userId,
   });

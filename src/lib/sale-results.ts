@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError, errorDetailForLog } from "@/lib/api-errors";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { saleResultsMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
@@ -332,7 +332,7 @@ export function assertSaleResultsComplete(summary: SaleResultRunSummary): void {
     const missing = summary.missingConfig.length
       ? ` (variable(s) manquante(s) : ${summary.missingConfig.join(", ")})`
       : "";
-    throw new Error(
+    throw new ConfigurationError(
       `Alertes de résultat : ${summary.dueUnsent} envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré${missing}.`,
     );
   }

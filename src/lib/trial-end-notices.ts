@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError, errorDetailForLog } from "@/lib/api-errors";
 import {
   readUserEmail,
   resolveNoReplyEmailConfig,
@@ -253,7 +253,7 @@ export async function runTrialEndNotices({
 /** Fait échouer le passage (donc la supervision) quand il n'est pas allé au bout. */
 export function assertTrialEndNoticesComplete(summary: TrialEndNoticeSummary): void {
   if (!summary.configured) {
-    throw new Error(
+    throw new ConfigurationError(
       `Fin d'essai : ${summary.due} message(s) dû(s) mais Resend n'est pas configuré (RESEND_API_KEY, ALERT_EMAIL_FROM, SITE_URL).`,
     );
   }

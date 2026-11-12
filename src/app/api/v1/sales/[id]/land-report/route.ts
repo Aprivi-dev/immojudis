@@ -9,7 +9,6 @@ import {
   createApiRequestContext,
   withApiHeaders,
 } from "@/lib/api-observability";
-import { saleNotFoundAsPublicError } from "@/lib/api-sale-not-found";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { getCadastralParcels, getSale } from "@/lib/property-report/repository";
 import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-limit";
@@ -97,7 +96,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
     return apiJson({ report }, context, { headers });
   } catch (error) {
-    const response = apiError(saleNotFoundAsPublicError(error), context, {
+    const response = apiError(error, context, {
       fallbackMessage: "L’analyse du PLU et des risques est momentanément indisponible.",
       fallbackStatus: 503,
     });

@@ -8,7 +8,7 @@ import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { asRecord, escapeHtml } from "@/lib/guards";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
 import { emailButton, emailLayout, emailNoReplyText, emailParagraph } from "@/lib/email-layout";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 /**
  * Envoi de l'email d'ouverture à la liste d'attente (`offer_opening_notifications`), depuis
@@ -237,7 +237,7 @@ export async function getOfferOpeningAudience({
   authToken: string;
   env?: Pick<NodeJS.ProcessEnv, string>;
 }): Promise<OfferOpeningAudience> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const config = resolveNoReplyEmailConfig(env);
   const [queue, alreadyNotified] = await Promise.all([readQueue(1), countRequests(true)]);
   // Sans la fonction (migration pas encore appliquée), l'ancien décompte : toutes les demandes actives.
@@ -291,7 +291,7 @@ export async function sendOfferOpeningTest({
   env?: Pick<NodeJS.ProcessEnv, string>;
   fetchImpl?: typeof fetch;
 }): Promise<OfferOpeningTestResult> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   const config = requireDeliveryConfig(env);
   const { data, error } = await supabaseAdmin.auth.admin.getUserById(auth.userId);
   if (error) throw error;
@@ -343,7 +343,7 @@ export async function sendOfferOpeningBatch({
   fetchImpl?: typeof fetch;
   clock?: () => number;
 }): Promise<OfferOpeningSendResult> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   const config = requireDeliveryConfig(env);
   const size = Math.min(Math.max(1, Math.trunc(limit)), OFFER_OPENING_BATCH_SIZE);
 

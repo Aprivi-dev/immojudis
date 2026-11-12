@@ -23,7 +23,7 @@ import {
   type InformationAgentEmailTemplateSummary,
   type InformationAgentEmailTemplateWorkspace,
 } from "@/lib/information-agent-email-template";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 
 type TemplateRow = Database["public"]["Tables"]["information_agent_email_templates"]["Row"];
 
@@ -51,7 +51,7 @@ export type AdminInformationAgentEmailTemplateAction = z.output<
 export async function getAdminInformationAgentEmailTemplateWorkspace(
   authToken: string,
 ): Promise<InformationAgentEmailTemplateWorkspace> {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const { data, error } = await supabaseAdmin
     .from("information_agent_email_templates")
     .select("*")
@@ -84,7 +84,7 @@ export async function runAdminInformationAgentEmailTemplateAction({
   authToken: string;
   input: AdminInformationAgentEmailTemplateAction;
 }) {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.action === "preview") {
     return previewTemplate(input.template);
   }

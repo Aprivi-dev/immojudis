@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { ConfigurationError } from "@/lib/api-errors";
 
 vi.mock("@/integrations/supabase/client.server", async () => {
   const { evaluationSupabase } = await import("./fake-supabase");
@@ -201,7 +202,7 @@ describe("étape 3 : moteur de décision", () => {
     const rules = (readEvaluationJson(RULES_STAGE) as { cas: Record<string, RulesStageEntry> }).cas;
     for (const stage of workerStages()) {
       if (stage.rules_stage_sha256 !== rulesHash) {
-        throw new Error(
+        throw new ConfigurationError(
           `${stage.configuration} : étape Python périmée, relancer scripts.information_agent_evaluation --write`,
         );
       }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GENERIC_ERROR_MESSAGE, userMessage } from "./user-messages";
+import { ConfigurationError } from "@/lib/api-errors";
 
 describe("userMessage", () => {
   it("translates Supabase auth errors", () => {
@@ -57,7 +58,9 @@ describe("userMessage", () => {
     expect(userMessage(new Error("Connexion requise."))).toBe("Connectez-vous pour continuer.");
     expect(
       userMessage(
-        new Error("Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID manquant"),
+        new ConfigurationError(
+          "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID manquant",
+        ),
         "Paiement indisponible",
       ),
     ).toBe("Paiement indisponible");

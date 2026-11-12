@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -311,7 +312,7 @@ describe("listAdminSignups", () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: false, userId: id(9) });
     await expect(
       listAdminSignups("token", adminSignupListQuerySchema.parse({}), NOW),
-    ).rejects.toThrow(/Forbidden/);
+    ).rejects.toThrow(AdminRequiredError);
     expect(mocks.listUsers).not.toHaveBeenCalled();
   });
 
@@ -598,7 +599,7 @@ describe("extendAdminSignupTrials", () => {
   it("refuse sans droits administrateur, sans rien lire ni écrire", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: false, userId: id(9) });
     const writes = tables({});
-    await expect(run()).rejects.toThrow(/Forbidden/);
+    await expect(run()).rejects.toThrow(AdminRequiredError);
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(writes.insert).not.toHaveBeenCalled();
     expect(writes.update).not.toHaveBeenCalled();

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { getEmailAddressesReport } from "@/lib/admin-emails/addresses";
 import { buildAddressesView } from "@/lib/admin-emails/views";
 import { adminErrorResponse } from "@/lib/api-route-errors";
@@ -15,7 +15,7 @@ export const maxDuration = 30;
  */
 async function handleGET(request: Request) {
   try {
-    await requireAdmin(bearerTokenFromRequest(request));
+    await assertAdminAuth(bearerTokenFromRequest(request));
     const refresh = new URL(request.url).searchParams.get("refresh") === "1";
     const report = await getEmailAddressesReport({ refresh });
     return NextResponse.json(buildAddressesView(report), {

@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ requireAuth: vi.fn(), rpc: vi.fn() }));
@@ -149,7 +150,7 @@ describe("getAdminSaleSignalFeedback", () => {
   it("refuse un compte qui n'est pas administrateur, sans rien lire", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: false });
 
-    await expect(getAdminSaleSignalFeedback("token")).rejects.toThrow(/Forbidden/);
+    await expect(getAdminSaleSignalFeedback("token")).rejects.toThrow(AdminRequiredError);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
@@ -248,7 +249,7 @@ describe("getAdminSaleFeedbackBySale", () => {
 
   it("refuse un compte qui n'est pas administrateur, sans rien lire", async () => {
     mocks.requireAuth.mockResolvedValue({ isAdmin: false });
-    await expect(getAdminSaleFeedbackBySale("token")).rejects.toThrow(/Forbidden/);
+    await expect(getAdminSaleFeedbackBySale("token")).rejects.toThrow(AdminRequiredError);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 

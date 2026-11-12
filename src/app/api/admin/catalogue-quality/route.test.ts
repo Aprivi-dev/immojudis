@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AdminRequiredError, AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     const header = request.headers.get("authorization");
-    if (!header) throw new Error("Unauthorized: No authorization header provided");
+    if (!header) throw new AuthRequiredError("Unauthorized: No authorization header provided");
     return header.replace("Bearer ", "");
   },
 }));
@@ -41,7 +42,7 @@ describe("GET /api/admin/catalogue-quality", () => {
   });
 
   it("répond 403 à un compte qui n'est pas administrateur", async () => {
-    mocks.get.mockRejectedValue(new Error("Forbidden: accès administrateur requis."));
+    mocks.get.mockRejectedValue(new AdminRequiredError());
     const response = await GET(new Request(url, { headers: { authorization: "Bearer user" } }));
     expect(response.status).toBe(403);
   });

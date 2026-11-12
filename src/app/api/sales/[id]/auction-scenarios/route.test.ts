@@ -1,3 +1,4 @@
+import { ForbiddenError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -81,7 +82,9 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
   });
 
   it("refuses an account that neither subscribes nor unlocked this sale", async () => {
-    mocks.assertEntitlement.mockRejectedValue(new Error("Les scénarios d’enchères sont réservés."));
+    mocks.assertEntitlement.mockRejectedValue(
+      new ForbiddenError("Les scénarios d’enchères sont réservés."),
+    );
     accountSeeing(true);
 
     const response = await call();
@@ -123,7 +126,9 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
 
   it("answers 403, not 429, when the account has no right and is also over the limit", async () => {
     accountSeeing(true);
-    mocks.assertEntitlement.mockRejectedValue(new Error("Les scénarios d’enchères sont réservés."));
+    mocks.assertEntitlement.mockRejectedValue(
+      new ForbiddenError("Les scénarios d’enchères sont réservés."),
+    );
     mocks.enforce.mockRejectedValue(new Error("rate limited"));
 
     expect((await call()).status).toBe(403);

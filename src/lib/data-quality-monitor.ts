@@ -9,6 +9,7 @@ import { getSaleProcedure } from "@/lib/sale-procedure";
 import { getSaleSurface } from "@/lib/surface";
 import { joinColumns } from "@/lib/supabase-select";
 import type { AuctionSale } from "@/lib/types";
+import { AdminRequiredError } from "@/lib/api-errors";
 
 // Leave headroom below PostgREST's statement timeout while workers are active.
 const DATA_QUALITY_PAGE_SIZE = 250;
@@ -241,7 +242,7 @@ function buildPrioritySales(sales: AuctionSale[]): DataQualityPrioritySale[] {
 
 function assertAdmin(context: AdminContext): string {
   if (!context.isAdmin) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
+    throw new AdminRequiredError();
   }
 
   const email = typeof context.claims?.email === "string" ? context.claims.email : null;

@@ -1,8 +1,8 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { adminDeadlineSignal } from "@/lib/admin-route-deadline";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord, asRecordOrNull } from "@/lib/guards";
 import { matchProsecutedSales, type ProsecutionLawyer } from "@/lib/lawyer-prosecuted-sales";
@@ -506,8 +506,7 @@ export async function getAdminPepites(
   now = new Date(),
   { independenceBudgetMs = INDEPENDENCE_BUDGET_MS }: { independenceBudgetMs?: number } = {},
 ): Promise<AdminPepitesResponse> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   // Le contrôle d'indépendance part en même temps que la liste, avec son propre budget de temps et celui de
   // la route : il ne doit jamais faire échouer, ni ralentir au-delà du délai, le reste de la page.
@@ -598,8 +597,7 @@ export async function suspendAdminPepites(
   authToken: string,
   input: AdminPepitesSuspendInput = {},
 ): Promise<{ mode: AdminPepitesResponse["mode"] }> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  const auth = await assertAdminAuth(authToken);
   const { mode } = adminPepitesSuspendSchema.parse(input);
 
   const { data, error } = await supabaseAdmin.rpc("suspend_sale_pepites", {

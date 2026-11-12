@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -69,12 +70,8 @@ describe("indicateurs d'exploitation de l'agent (serveur)", () => {
   it("refuse un compte qui n'est pas administrateur, sans rien lire", async () => {
     mocks.auth.mockResolvedValue({ isAdmin: false, userId: "user-1" });
 
-    await expect(getAdminInformationAgentOperations("token")).rejects.toThrow(
-      "accès administrateur",
-    );
-    await expect(attestAdminInformationAgentRoundtrip("token")).rejects.toThrow(
-      "accès administrateur",
-    );
+    await expect(getAdminInformationAgentOperations("token")).rejects.toThrow(AdminRequiredError);
+    await expect(attestAdminInformationAgentRoundtrip("token")).rejects.toThrow(AdminRequiredError);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 

@@ -5,6 +5,7 @@ import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { UserWatchedZone } from "@/lib/types";
 import { WATCHED_ZONE_KINDS } from "@/lib/watched-zones-shared";
+import { ForbiddenError } from "@/lib/api-errors";
 
 type WatchedZoneRow = Database["public"]["Tables"]["user_watched_zones"]["Row"];
 type WatchedZoneInsert = Database["public"]["Tables"]["user_watched_zones"]["Insert"];
@@ -233,7 +234,7 @@ export function normalizeWatchedZone(row: WatchedZoneRow): UserWatchedZone {
 async function assertWatchedZonesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.watchedZones")) {
-    throw new Error("Zones surveillées réservées à l’offre Analyse.");
+    throw new ForbiddenError("Zones surveillées réservées à l’offre Analyse.");
   }
   return plan;
 }
@@ -248,7 +249,7 @@ async function assertWatchedZoneLimit(auth: SupabaseAuthContext, limit: number |
     .eq("is_active", true);
   if (error) throw error;
   if ((count ?? 0) >= limit) {
-    throw new Error(`Limite de ${limit} zones surveillées actives atteinte.`);
+    throw new ForbiddenError(`Limite de ${limit} zones surveillées actives atteinte.`);
   }
 }
 
