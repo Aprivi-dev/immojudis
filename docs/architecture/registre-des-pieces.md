@@ -185,7 +185,11 @@ l'identifiant ou l'adresse d'une fiche, elle montre toutes les observations de c
 
 **Ce qui est montré**, par observation : le champ, la valeur proposée, la valeur que la fiche affiche aujourd'hui
 (la colonne de la vente), la nature de la pièce, le lien vers la source s'il est en http(s), la dernière décision
-et les actions permises. Ni citation de la pièce, ni auteur de la décision, ni `held_fields`.
+et les actions permises. Ni citation de la pièce, ni auteur de la décision, ni `held_fields`. L'état affiché est
+la **dernière décision** (« Dernière décision : acceptée »), pas l'état du champ : une pièce acceptée peut ne pas
+tenir le champ (champ hors registre, pièce de rang inférieur, annonce qui l'a délogée). Seul le message qui suit
+une acceptation lit l'état réel rendu par la base. Pour un champ sans colonne connue de l'écran, la valeur
+affichée est dite « Non comparée ici ».
 
 **Actions**, proposées selon la dernière décision (`src/lib/fact-claim-decisions.ts`, seule copie de la table des
 transitions et des motifs côté application ; la base reste juge) :
@@ -212,7 +216,11 @@ Il ne réessaie pas seul.
 
 **Messages.** Une seule traduction des erreurs de la base, `src/lib/fact-claim-database-errors.ts`, partagée avec la
 route de relecture. Le code de la base et son SQLSTATE ne partent jamais vers le navigateur ; une erreur hors liste
-donne le message générique de la route.
+donne le message générique de la route (500), y compris un `55000` au code inconnu : seule la route de relecture
+le lit comme « déjà traité ». Le journal du serveur n'en garde que le SQLSTATE et, s'il a la forme d'un code, le
+message. Le test `src/lib/fact-claim-database-concordance.test.ts` lit les migrations du registre et compare les
+codes levés, les motifs, les rattachements et les natures réservées à leurs copies côté application.
+`decision_in_progress` y est déclaré « annoncé » tant que sa migration n'est pas sur `main`.
 
 | Code de la base                                                     | HTTP | Message                                                                                            |
 | ------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------- |
