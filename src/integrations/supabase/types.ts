@@ -15054,6 +15054,15 @@ export type Database = {
         Args: { p_fact_id: string; p_public_path: string };
         Returns: boolean;
       };
+      accept_auction_fact_claim: {
+        Args: {
+          p_claim_id: string;
+          p_lot_attachment: string;
+          p_lot_ref?: string;
+          p_supersedes_decision_id?: string;
+        };
+        Returns: Json;
+      };
       addauth: { Args: { "": string }; Returns: boolean };
       addgeometrycolumn:
         | {
@@ -15297,7 +15306,10 @@ export type Database = {
         };
         Returns: boolean;
       };
-      check_fact_registry_consistency: { Args: { p_limit?: number }; Returns: Json };
+      check_fact_registry_consistency: {
+        Args: { p_after?: string; p_limit?: number };
+        Returns: Json;
+      };
       claim_auction_enrichment_jobs: {
         Args: { p_limit?: number };
         Returns: {
@@ -16476,6 +16488,14 @@ export type Database = {
             };
             Returns: string;
           };
+      oppose_auction_fact_claim: {
+        Args: { p_claim_id: string; p_reason_code?: string };
+        Returns: Json;
+      };
+      reject_auction_fact_claim: {
+        Args: { p_claim_id: string; p_reason_code: string };
+        Returns: Json;
+      };
       review_auction_fact_claim: {
         Args: {
           p_claim_id: string;
@@ -17472,6 +17492,10 @@ export type Database = {
           table_name: string;
         };
         Returns: string;
+      };
+      withdraw_auction_fact_claim: {
+        Args: { p_claim_id: string; p_reason_code: string };
+        Returns: Json;
       };
     };
     Enums: {
