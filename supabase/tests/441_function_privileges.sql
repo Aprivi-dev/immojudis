@@ -37,10 +37,13 @@ select is(
       and has_function_privilege('authenticated', function_row.oid, 'execute')
   ),
   array[
+    'accept_auction_fact_claim(uuid,text,text,uuid)',
     'attest_information_agent_aipd(text,text)',
     'catalogue_readiness_allows_premium(text,text,timestamp with time zone)',
     'clear_auction_sale_readiness_override(uuid)',
     'decide_outcome_claim_eligibility(uuid,text,text,uuid[],text,uuid)',
+    'oppose_auction_fact_claim(uuid,text)',
+    'reject_auction_fact_claim(uuid,text)',
     'review_judilibre_match_candidate(uuid,text,text)',
     'review_outcome_evidence(uuid,text,text,jsonb,text)',
     'set_auction_sale_readiness_override(uuid,text,text,timestamp with time zone)',
@@ -52,7 +55,8 @@ select is(
     'stop_information_agent_auto_publication()',
     'stop_information_agent_autopilot(text)',
     'unlock_sale(uuid)',
-    'update_information_agent_autopilot_settings(jsonb,text)'
+    'update_information_agent_autopilot_settings(jsonb,text)',
+    'withdraw_auction_fact_claim(uuid,text)'
   ]::text[],
   'authenticated executes only the allowlisted SECURITY DEFINER functions'
 );

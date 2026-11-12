@@ -15,7 +15,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(87);
+select plan(91);
 
 -- Fonctions pures -------------------------------------------------------------------------------------------------
 select is(app_private.sale_field_echo_memory(), interval '7 days', 'the echo memory lasts seven days');
@@ -1330,6 +1330,69 @@ select is(
        and (app_private.project_sale_fields(sale.id, null, true) ->> 'changed')::boolean),
   0,
   'a second projection of these sales changes nothing either'
+);
+
+-- Nature de l'annonce mémorisée à chaque écriture de l'annonce (lot R2c, 20261119100300 ; vente 10) --------------
+-- Maison, annonce 50 m² habitables ; une pièce de 54 m² tient la surface : la colonne de la nature porte « built ».
+insert into public.auction_sales (
+  id, source_name, source_url, status, sale_date, city, property_type, starting_price_eur,
+  raw_payload, sale_procedure, sale_venue_type,
+  surface_m2, app_surface_m2, app_surface_kind, surface_source, surface_confidence, habitable_surface_m2,
+  rooms_count, bedrooms_count, occupancy_status, visit_dates
+) values (
+  '88500000-1000-4000-8000-000000000010', 'licitor', 'https://example.test/885/sale-10', 'upcoming',
+  current_timestamp + interval '20 days', 'Alphaville', 'house', 90000, '{}'::jsonb, '{}'::jsonb, 'tribunal',
+  50, 50, 'habitable', 'listing_text', 0.7, 50, 2, 1, 'occupied', '[]'::jsonb
+);
+insert into public.auction_fact_claims (
+  id, auction_sale_id, field_key, value_jsonb, evidence_kind, evidence_locator, confidence_score,
+  extractor_name, extractor_version, created_by
+) values (
+  '88500000-2000-4000-8000-0000000000aa', '88500000-1000-4000-8000-000000000010', 'property.surface_m2',
+  '54'::jsonb, 'professional_email', '{"case_id": "88500000-3000-4000-8000-000000000010"}'::jsonb, 0.6,
+  'information_agent', 'v1', '88500000-0000-4000-8000-0000000000a1'
+);
+execute decide('aa', 'accepted', null, '2026-11-01 09:00:00+00');
+select app_private.project_sale_fields('88500000-1000-4000-8000-000000000010', null, true) ->> 'changed';
+
+-- Une recopie de la fiche (la valeur tenue, avec une autre nature) ne dit rien de l'annonce.
+execute reimport('10', 54, 54, 'carrez', 'listing_text', 0.7, 50, null, null, 2, 1, 'occupied');
+select results_eq(
+  $$select sale.app_surface_m2, sale.app_surface_kind,
+           sale.held_fields #>> '{property.surface_m2,listing,app_surface_kind}'
+      from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-000000000010'$$,
+  $$values (54::numeric, 'built', 'habitable')$$,
+  'a write that carries the held value does not speak for the listing: the remembered kind of the listing stays'
+);
+
+-- La collecte réécrit l'annonce : même valeur (50 m²), nature « terrain ».
+execute reimport('10', 50, 50, 'land', 'listing_text', 0.7, 50, null, null, 2, 1, 'occupied');
+select results_eq(
+  $$select sale.app_surface_m2, sale.app_surface_kind,
+           sale.held_fields #>> '{property.surface_m2,state}',
+           sale.held_fields #>> '{property.surface_m2,listing,app_surface_kind}',
+           (sale.held_fields #>> '{property.surface_m2,listing,app_surface_m2}')::numeric,
+           app_private.sale_is_land_sale(
+             sale.property_type, sale.surface_scope, sale.app_surface_kind, sale.held_fields),
+           (app_private.project_sale_fields(sale.id, null, false) ->> 'changed')::boolean,
+           (select count(*)::integer from public.auction_sale_field_hold_events event
+              where event.sale_id = sale.id and event.event like 'listing_changed%')
+      from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-000000000010'$$,
+  $$values (54::numeric, 'built', 'held', 'land', 50::numeric, true, true, 0)$$,
+  'a listing that becomes land by its kind alone, without changing its value, is remembered as land: the sale is a land sale for the registry and its held surface is a drift'
+);
+
+select is(
+  app_private.project_sale_fields('88500000-1000-4000-8000-000000000010', null, true)
+    #>> '{fields,property.surface_m2,state}',
+  'blocked',
+  'the next projection blocks the surface of the piece on this land sale'
+);
+select results_eq(
+  $$select sale.app_surface_m2, sale.app_surface_kind, sale.held_fields #>> '{property.surface_m2,state}'
+      from public.auction_sales sale where sale.id = '88500000-1000-4000-8000-000000000010'$$,
+  $$values (50::numeric, 'land', 'released')$$,
+  'and gives the listing back, with its land kind'
 );
 
 -- Un état inconnu dans held_fields arrête l'écriture au lieu de laisser un champ sans garde ---------------------
