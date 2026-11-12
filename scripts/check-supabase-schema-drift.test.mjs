@@ -1046,6 +1046,78 @@ describe("Report of a failed diff tool", () => {
     );
   });
 
+  it("masks before cutting, so that a password across the cut shows none of its characters", () => {
+    // Fictitious URL and password. The cut falls after the first four characters of the password.
+    const target = "postgresql://postgres:Fk55-fake-password@db.example.invalid:5432/postgres";
+    const quoted = quoteForeignText(`${"x".repeat(96)}Fk55-fake-password tail`, [target], 100);
+
+    expect(quoted).toBe(`> ${"x".repeat(96)}[mas`);
+    expect(quoted).not.toContain("Fk55");
+  });
+
+  it("cuts the diff to 40 000 characters after masking it, not before", wholeScript, () => {
+    // Fictitious URL, placed so that a cut made before the masking would fall inside it and lose ` tail`.
+    const run = runScriptWithStandInTool(
+      [
+        'for argument in "$@"; do case "$argument" in --output=*)',
+        "  { head -c 39980 /dev/zero | tr '\\0' 'x'",
+        "    printf ' postgresql://postgres:Fk55-fake-password@db.example.invalid:5432/postgres tail\\n'",
+        '  } > "${argument#--output=}";; esac; done',
+        "exit 0",
+      ].join("\n"),
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toHaveLength(3);
+    expect(run.stderr[2]).toBe(`> ${"x".repeat(39_980)} [masqué] tail`);
+  });
+
+  it("does not replace a password of fewer than four characters, but still masks its URL", () => {
+    // Fictitious URL: replacing every `abc` of a log would make it unreadable and tell the password.
+    const target = "postgresql://postgres:abc@db.example.invalid:5432/postgres";
+    const fourCharacters = "postgresql://postgres:abcd@db.example.invalid:5432/postgres";
+
+    expect(quoteForeignText(`abc abcdef\nconnecting to ${target} failed`, [target])).toBe(
+      "> abc abcdef\n> connecting to [masqué] failed",
+    );
+    expect(quoteForeignText("abc abcdef", [fourCharacters])).toBe("> abc [masqué]ef");
+  });
+
+  // The script in --remote mode, which never gets as far as the diff tool in these tests.
+  const runRemoteScript = (databaseUrl) =>
+    withStandInTool("exit 0", ({ script, options }) => {
+      const run = spawnSync(process.execPath, [script, "--remote"], {
+        ...options,
+        env: { ...options.env, SUPABASE_DB_URL: databaseUrl, PGCONNECT_TIMEOUT: "5" },
+      });
+      return { status: run.status, stdout: run.stdout, stderr: run.stderr.trimEnd().split("\n") };
+    });
+
+  it("fails without printing a connection URL that is not a valid URL", wholeScript, () => {
+    // Fictitious value. A raw `/` in the password makes the URL parser fail, and its error quotes the input.
+    const run = runRemoteScript(
+      "postgresql://postgres:Fk55/fake-password@db.example.invalid:5432/db",
+    );
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe("");
+    expect(run.stderr).toEqual([
+      "[schema-drift] SUPABASE_DB_URL (ou POSTGRES_URL_NON_POOLING, POSTGRES_URL) n'est pas une URL valide. Sa valeur n'est pas affichée.",
+    ]);
+  });
+
+  it("quotes and masks the error of the concurrent index check", wholeScript, () => {
+    // Fictitious password, and a local port where nothing listens: the driver error is foreign text.
+    const run = runRemoteScript("postgresql://postgres:Fk55-fake-password@127.0.0.1:9/postgres");
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe("");
+    expect(run.stderr[0]).toBe("[schema-drift] Concurrent index check failed:");
+    expect(run.stderr.length).toBeGreaterThan(1);
+    for (const line of run.stderr.slice(1)) expect(line).toMatch(/^> /);
+    expect(run.stderr.join("\n")).not.toContain("Fk55");
+  });
+
   it("succeeds when the diff holds nothing but the reviewed indexes", wholeScript, () => {
     const run = runScriptWithStandInTool(
       writeDiff(
