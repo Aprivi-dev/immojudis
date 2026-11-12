@@ -961,3 +961,70 @@ def test_the_pipeline_only_writes_listing_and_document_claims() -> None:
     assert {candidate["evidence_locator"]["kind"] for candidate in produced} >= {
         "source_field", "source_block", "document_extraction",
     }
+
+
+def _unread_secondary_card(snapshot_owner: str) -> AuctionSale:
+    """Carte Licitor non relue d'une vente fusionnée dont la ligne canonique est celle d'Avoventes."""
+    from src import main as pipeline
+
+    canonical = "https://www.avoventes.fr/vente/12345"
+    secondary = "https://www.licitor.com/annonce/09/99/99/vente-aux-encheres/une-maison/alphaville/gironde/000000001.html"
+    stored = {
+        "id": "99900000-1000-4000-8000-000000000001", "source_name": "avoventes", "source_url": canonical,
+        "source_urls": [canonical, secondary], "surface_m2": 54, "starting_price_eur": 90000,
+        "city": "Alphaville", "postal_code": "33000",
+        "raw_payload": {"source_factual_snapshot": {
+            "source_name": "avoventes", "source_url": {"canonical": canonical, "secondary": secondary}[snapshot_owner],
+            "surface_m2": "54 m²", "starting_price_eur": "90 000 €", "occupancy_status": "libre",
+        }},
+    }
+    known = {canonical: stored, secondary: stored}  # chaque URL de la vente désigne la ligne canonique
+    card = {"source_name": "licitor", "source_url": secondary, "city": "Alphaville", "postal_code": "33000",
+            "title": "Une maison", "_known_unchanged": True, "sale_date": "2026-12-15T14:00:00+01:00",
+            "starting_price_eur": 90000}
+    pipeline._hydrate_known_unchanged_sales([card], known)
+    pipeline._preserve_known_enrichment_payloads([card], known)
+    assert card["source_factual_snapshot"]["surface_m2"] == "54 m²"  # l'instantané stocké est bien posé sur la carte
+    return normalize_sale(card)
+
+
+def _source_fields(sale: AuctionSale) -> set[str]:
+    return {
+        candidate["field_key"]
+        for candidate in build_fact_claim_candidates(sale)
+        if candidate["evidence_locator"].get("kind") == "source_field"
+    }
+
+
+def test_an_unread_secondary_card_of_a_merged_sale_claims_nothing_from_the_snapshot_of_another_source() -> None:
+    """L'instantané de la ligne canonique est celui d'Avoventes : Licitor n'a pas publié ces valeurs.
+
+    La table des observations est immuable et sans purge : une attribution fausse y resterait.
+    """
+    assert _source_fields(_unread_secondary_card("canonical")) == set()
+
+
+def test_an_unread_card_still_claims_the_fields_of_its_own_snapshot() -> None:
+    """Témoin : le même instantané, quand il est celui de la carte, donne ses observations."""
+    assert _source_fields(_unread_secondary_card("secondary")) == {
+        "property.surface_m2", "sale.starting_price_eur", "property.occupancy_status",
+    }
+
+
+def test_a_replayed_claim_snapshot_is_labelled_with_the_version_of_its_identifier() -> None:
+    """Reprise de file après un changement de version : l'identifiant est de la version courante, l'étiquette aussi."""
+    from src.fact_claims import FACT_CLAIMS_VERSION
+    from src.storage.fact_claim_rows import _materialize_fact_claim_snapshot
+
+    sale = normalize_sale({
+        "source_name": "info_encheres", "source_url": "https://source.example/reprise",
+        "source_blocks": {"occupation": "Libre de toute occupation"},
+    })
+    sale_id = "00000000-0000-4000-8000-000000000021"
+    (current,) = materialize_fact_claim_rows(sale, sale_id)
+    queued = [{**current, "extractor_version": "auction_fact_claims_v2"}]  # candidat mis en file par l'ancienne version
+
+    (replayed,) = _materialize_fact_claim_snapshot(queued, sale_id)
+
+    assert replayed["id"] == current["id"]
+    assert replayed["extractor_version"] == FACT_CLAIMS_VERSION == current["extractor_version"]
