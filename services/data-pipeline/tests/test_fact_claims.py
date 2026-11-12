@@ -4,10 +4,21 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import normalize
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.models import AuctionSale
-from src.normalize import normalize_sale
 from src.storage import supabase_client
+
+
+def normalize_sale(raw: dict) -> AuctionSale:
+    """Une vente telle que la collecte la publie : sa fiche a été lue, elle porte donc un instantané.
+
+    La collecte le pose avant la normalisation (``main._preserve_known_enrichment_payloads``). Ici il ne nomme que
+    sa source, sauf si le test donne le sien : aucun champ n'y est ajouté.
+    """
+    sale = normalize.normalize_sale(raw)
+    sale.raw_payload.setdefault("source_factual_snapshot", {"source_url": sale.source_url})
+    return sale
 
 
 def test_source_fields_and_blocks_create_candidates_without_accepting_them() -> None:
@@ -51,6 +62,7 @@ def test_pdf_extraction_provenance_is_field_typed() -> None:
             {"url": "https://source.example/cadastre.pdf", "label": "Cadastre"},
         ],
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "surface_extraction": {
                 "value_m2": 90,
                 "evidence": "Surface habitable : 90 m²",
@@ -110,6 +122,7 @@ def test_document_evidence_hash_must_match_attachment_or_cache_proof() -> None:
         source_url="https://source.example/listing-with-hashed-pdf",
         documents=[{"url": document_url, "label": "PV actuel", "sha256": attachment_hash}],
         raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},
             "starting_price_extraction": {
                 "value_eur": 100000,
                 "evidence": "Mise à prix : 100 000 €",
@@ -167,7 +180,8 @@ def test_generated_completeness_projection_is_not_independent_source_evidence(in
     sale = AuctionSale(
         source_name="info_encheres",
         source_url="https://source.example/completeness-projection",
-        raw_payload={"source_blocks": blocks},
+        raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},"source_blocks": blocks},
     )
 
     candidates = build_fact_claim_candidates(sale)
@@ -184,7 +198,8 @@ def test_surface_excerpt_only_claims_the_surface_kind_named_by_the_excerpt() -> 
         surface_m2=80,
         habitable_surface_m2=80,
         land_surface_m2=420,
-        raw_payload={"surface_evidence": "Surface habitable : 90 m²"},
+        raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},"surface_evidence": "Surface habitable : 90 m²"},
     )
 
     candidates = build_fact_claim_candidates(sale)
@@ -252,7 +267,8 @@ def test_occupancy_text_claim_uses_the_status_in_its_quote() -> None:
         source_name="licitor",
         source_url="https://source.example/occupancy-evidence",
         occupancy_status="rented",
-        raw_payload={"raw_text": "Maison libre de toute occupation."},
+        raw_payload={
+            "source_factual_snapshot": {"source_name": "fiche lue"},"raw_text": "Maison libre de toute occupation."},
     )
 
     candidates = build_fact_claim_candidates(sale)
@@ -1028,3 +1044,39 @@ def test_a_replayed_claim_snapshot_is_labelled_with_the_version_of_its_identifie
 
     assert replayed["id"] == current["id"]
     assert replayed["extractor_version"] == FACT_CLAIMS_VERSION == current["extractor_version"]
+
+
+@pytest.mark.parametrize("snapshot", [None, {}, "illisible"], ids=["absent", "empty", "not_an_object"])
+def test_a_sale_whose_listing_has_no_snapshot_emits_nothing_at_all(snapshot) -> None:
+    """Jamais relue depuis que l'instantané existe : ni bloc de source, ni document, ni observation d'une autre source.
+
+    Une seule observation de cette version masquerait à la lecture toutes celles de la précédente, dont les
+    ``source_field`` que cette vente ne peut plus émettre.
+    """
+    other = "https://autre-source.example/vente-1"
+    raw = {
+        "source_name": "info_encheres", "source_url": "https://source.example/sans-instantane",
+        "starting_price_eur": "120 000 €", "surface_m2": 62,
+        "source_blocks": {"mise_a_prix": "120 000 euros", "occupation": "Libre de toute occupation"},
+    }
+    if snapshot is not None:
+        raw["source_factual_snapshot"] = snapshot
+    sale = normalize.normalize_sale(raw)
+    sale.observations = [{
+        "source_name": "autre", "source_url": other,
+        "raw_payload": {"source_factual_snapshot": {"source_url": other, "starting_price_eur": "118 000 €"}},
+    }]
+
+    assert build_fact_claim_candidates(sale) == []
+
+    # Témoin : la même vente, fiche lue. Son instantané ne donne aucun champ, mais tout le reste est émis.
+    sale.raw_payload["source_factual_snapshot"] = {"source_url": sale.source_url}
+    emitted = {
+        (candidate["field_key"], candidate["evidence_locator"]["kind"], candidate["source_url"])
+        for candidate in build_fact_claim_candidates(sale)
+    }
+    assert emitted == {
+        ("sale.starting_price_eur", "source_block", sale.source_url),
+        ("property.occupancy_status", "source_block", sale.source_url),
+        ("sale.starting_price_eur", "source_field", other),
+    }

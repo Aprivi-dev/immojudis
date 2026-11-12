@@ -141,7 +141,17 @@ def build_fact_claim_candidates(sale: AuctionSale) -> list[dict[str, object]]:
     row while retaining source-specific payloads from other publishers.  The
     same candidate can be encountered twice; deterministic materialization
     later collapses exact duplicates by UUID.
+
+    Une vente dont le ``raw_payload`` n'a aucun instantané de fiche (jamais relue depuis qu'il existe) n'émet rien :
+    rien n'y distingue ce que l'annonce a publié de ce que la collecte a relu en base, et la moindre observation de
+    cette version masquerait à la lecture toutes celles de la version précédente. Elles restent donc visibles
+    jusqu'à la prochaine relecture de la fiche. Coût : d'ici là, les faits d'un document nouveau ne sont pas
+    enregistrés pour cette vente.
     """
+    own_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    own_snapshot = own_payload.get(SOURCE_SNAPSHOT_KEY)
+    if not isinstance(own_snapshot, dict) or not own_snapshot:
+        return []
     candidates: list[dict[str, object]] = []
     for snapshot in _source_snapshots(sale):
         source_url = snapshot["source_url"]

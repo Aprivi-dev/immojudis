@@ -243,11 +243,13 @@ Hors périmètre de la garde, à connaître :
 
 - **colonnes calculées** : quand un groupe est repris de la base, les colonnes
   calculées plus tôt sur la valeur en mémoire sont écrites à côté de la valeur de la
-  base. Vérifié par l'exécution : `investment_score` et `score_factors` (73,0 écrit
-  pour une surface et une occupation dont le recalcul donne 60,0), et la synthèse
-  `investment_summary` qui a pu citer l'ancienne valeur. La complétude
-  (`premium_readiness_*`) est recalculée à l'écriture, elle suit. L'écart dure
-  jusqu'au passage suivant, qui relit la valeur de la base et recalcule ;
+  base. Mesuré par l'exécution : `investment_score` écrit à 73,0 pour une surface et
+  une occupation dont le recalcul donne 60,0. `score_factors` est calculé au même
+  endroit, et la synthèse `investment_summary` a pu citer l'ancienne valeur. La
+  complétude (`premium_readiness_*`) est recalculée à l'écriture, elle suit. L'écart
+  dure jusqu'au passage suivant, qui relit la valeur de la base et recalcule. Pas de
+  correction dans ce lot ; suite possible : relancer `normalize_asset_features` sur
+  les seules ventes que la garde a modifiées, après la résolution d'identité ;
 - **annonce Licitor à plusieurs lots dont le lot n'est plus désigné** : la lecture de
   la source s'y limite à la clé de l'instantané (règle de `_pdf_source_reader`). Une
   valeur que la page ne donne que dans son texte n'y est pas reconnue comme publiée
@@ -391,20 +393,32 @@ Ce lot n'est pas sans effet tant qu'aucune vente n'est tenue. Dès sa mise en li
    question de confirmation correspondante disparaît. Il n'y a jamais de question
    nouvelle sur un champ rempli. Côté pilote : moins de lacunes signalées, jamais
    plus.
-6. **Perte connue : vente sans instantané, jamais relue, dont l'annonce publiait la
-   valeur.** La version 2 en tirait ses `source_field` (jusqu'à quatre) ; la version 3
-   n'en tire plus que les observations de ses blocs de source. Sans instantané, rien
-   ne distingue ce que l'annonce a publié de ce que la collecte a relu en base : ces
-   observations ne reviennent qu'à la prochaine relecture de la fiche. Ligne
-   « 1. vente sans instantané » de la requête ci-dessous.
+6. **Vente sans instantané : rien n'est émis en version 3.** Une vente dont le
+   `raw_payload` n'a aucun instantané de fiche (jamais relue depuis qu'il existe)
+   n'émet aucune observation de cette version : rien n'y distingue ce que l'annonce a
+   publié de ce que la collecte a relu en base, et une seule observation de version 3
+   masquerait toutes ses candidates de version 2. Celles-ci restent donc visibles
+   jusqu'à la prochaine relecture de la fiche. **Coût** : d'ici là, les faits d'un
+   document nouveau ne sont pas enregistrés pour ces ventes.
 
-Comptage du 12/11/2026 en production, par la première version de cette requête : 953
-ventes à venir avec des observations de version 2, 209 avec au moins un champ sans
-observation de version 3 (302 champs), 35 avec un champ non évalué, 15 qui gardent
-leurs observations de version 2.
+Comptage du 12/11/2026 en production (lecture seule, vers 12:00 UTC, requête
+ci-dessous, avant la règle du point 6), en couples (vente, fait) des ventes à venir
+ou actives :
 
-À relancer avant la fusion (une seule instruction `select`, lecture seule). Elle se
-limite aux quatre faits que l'application lit (date, mise à prix, surface regroupée,
+| Raison                                  | Date | Mise à prix | Occupation | Surface | Total |
+| --------------------------------------- | ---- | ----------- | ---------- | ------- | ----- |
+| 1. vente sans instantané                | 4    | 4           | 10         | 8       | 26    |
+| 2. instantané d'une autre URL           | 0    | 0           | 0          | 0       | 0     |
+| 3. instantané présent, champ vide       | 18   | 1           | 28         | 21      | 68    |
+| 4. autre source de la vente, non évalué | 1    | 4           | 3          | 11      | 19    |
+
+Total : 113 couples. C'est un **majorant** : les jumeaux `source_block` que la
+version 2 masquait ne sont pas rejouables en SQL, et tous les couples comptés ont
+des blocs de source. Les 26 couples de la raison 1 sont ceux que la règle du point 6
+garde visibles ; les 68 de la raison 3 sont l'effet voulu.
+
+La requête (une seule instruction `select`, lecture seule), à relancer si la fusion
+tarde. Elle se limite aux quatre faits que l'application lit (date, mise à prix, surface regroupée,
 occupation) et dit pourquoi le fait n'a plus d'observation, par source :
 
 ```sql
@@ -495,7 +509,9 @@ Lecture :
 - une ligne par source, fait et raison ; `ventes` compte les ventes qui émettront au
   moins une observation de version 3 (leurs candidates de version 2 seront masquées)
   et dont ce fait n'avait que des `source_field` que la version 3 n'émet plus ;
-- les raisons 1 et 2 sont la perte (aucun instantané de cette source à lire) ; la
+- les raisons 1 et 2 seraient une perte (aucun instantané de cette source à lire).
+  La règle du point 6 l'évite pour la raison 1 : ces ventes n'émettent rien et
+  gardent leurs observations de version 2. La raison 2 n'avait aucune ligne. La
   raison 3 est l'effet voulu (la source ne publie pas ce champ : la valeur venait de
   la base, d'un document ou du texte) ; la raison 4 n'est pas évaluée (l'instantané
   d'une source secondaire est dans `observations`, hors de portée d'une requête
@@ -600,7 +616,9 @@ lit que dans `raw_payload.source_factual_snapshot` (ce que la source a publié �
 dernière lecture de sa fiche), pour la vente comme pour chaque observation d'une
 autre source. Les clés de premier niveau de `raw_payload` portent aussi les
 colonnes que la collecte a relues en base : elles ne font plus une observation.
-Sans instantané, pas d'observation. Un instantané qui nomme une autre source que
+Une vente dont le `raw_payload` n'a aucun instantané n'émet rien du tout (ni bloc de
+source, ni document, ni observation d'une autre source : voir « Effets à la mise en
+ligne », point 6). Un instantané qui nomme une autre source que
 celle de l'observation est ignoré : une carte secondaire non relue d'une vente
 fusionnée reçoit l'instantané de la ligne canonique, qui n'est pas ce que sa source
 a publié. Les lignes `auction_fact_claims_v2` déjà écrites restent en base ; un
@@ -610,8 +628,8 @@ sous la version courante (`FACT_CLAIMS_VERSION`), celle de leur identifiant.
 **Ordre de mise en ligne.** La version entre dans l'identifiant d'une observation :
 à la première écriture de chaque vente, chaque observation existante reçoit un
 jumeau `auction_fact_claims_v3` (une vente relue ou dotée d'un instantané en émet
-autant qu'avant ; une vente sans instantané n'émet plus ses `source_field`). Volume
-et conséquences : « Effets à la mise en ligne », plus haut. La vue `v_auction_fact_claims_read_model`, lue par
+autant qu'avant ; une vente sans instantané n'émet rien et garde ses observations
+de version 2). Volume et conséquences : « Effets à la mise en ligne », plus haut. La vue `v_auction_fact_claims_read_model`, lue par
 l'application sans filtre de version, montrerait chaque fait en double sans la
 migration `20261117100700`, qui ne montre que la dernière génération par vente
 (appliquée en production le 12/11/2026). Ce que cette vue attend de la collecte :
@@ -621,9 +639,8 @@ migration `20261117100700`, qui ne montre que la dernière génération par vent
   d'abord une migration qui relève le plafond (invariant
   `fact-claims-generation-pattern`) ;
 - dès qu'une vente porte une observation de version 3, toutes ses candidates de
-  version 2 sont masquées, quel que soit leur champ. Une vente sans instantané qui
-  émet encore d'autres observations perd donc à l'affichage ses anciens
-  `source_field` ; une vente qui n'émet plus rien garde ceux de la version 2 ;
+  version 2 sont masquées, quel que soit leur champ. C'est pourquoi une vente sans
+  instantané n'émet rien en version 3 : elle garde toutes celles de la version 2 ;
 - les observations d'une vente partent dans la transaction de sa publication, en
   une fois (le repli REST, hors production, écrit par lots).
 

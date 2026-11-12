@@ -217,6 +217,7 @@ def test_dry_run_never_executes_insert_and_advances_keyset_checkpoint(tmp_path: 
                         fetchall=lambda: [
                             sale_row(
                                 raw_payload={
+                                    "source_factual_snapshot": {"source_url": SALE_URL},
                                     "source_blocks": {
                                         "mise_a_prix": "100 000 euros",
                                     }
@@ -381,6 +382,10 @@ def test_backfill_reads_a_persisted_observation_through_its_own_snapshot() -> No
         ]
     }
 
-    result = backfill.build_batch_candidates([sale_row()], observations)
+    read_listing = sale_row(raw_payload={"source_factual_snapshot": {"source_url": SALE_URL}})
+    result = backfill.build_batch_candidates([read_listing], observations)
 
     assert [(row["source_url"], row["value_jsonb"]) for row in result.rows] == [(secondary, 85000.0)]
+
+    # La même vente sans instantané de sa propre fiche : rien n'est émis, ses observations d'avant restent visibles.
+    assert list(backfill.build_batch_candidates([sale_row()], observations).rows) == []
