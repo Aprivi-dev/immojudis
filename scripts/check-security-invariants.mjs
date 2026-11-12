@@ -552,16 +552,42 @@ if (
 // The role `lovable_readonly` (read access for a tool that is no longer used) is dropped by the migration
 // below. Five earlier migrations grant it EXECUTE "if the role exists"; they are applied history and stay
 // as they are. No later migration may name the role, comments included: a grant written "if the role
-// exists" would silently give access the day a role of that name is created again.
+// exists" would silently give access the day a role of that name is created again. The same holds for
+// what is run by hand or deployed beside the migrations (repairs, maintenance files, Edge functions),
+// whatever their date: none names the role today.
 const lovableRoleDropMigration = "20261117110000_drop_lovable_readonly_role.sql";
-if (!/drop\s+role\b/i.test(migrationSources.get(lovableRoleDropMigration) ?? "")) {
-  failures.push(`${lovableRoleDropMigration} must exist and drop the role lovable_readonly`);
+if (
+  !/drop\s+role\b/i.test(
+    (migrationSources.get(lovableRoleDropMigration) ?? "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/--[^\n]*/g, ""),
+  )
+) {
+  failures.push(
+    `${lovableRoleDropMigration} must exist and drop the role lovable_readonly (outside comments)`,
+  );
 }
 for (const [name, source] of migrationSources) {
   if (name > lovableRoleDropMigration && /lovable_readonly/i.test(source)) {
     failures.push(
       `${name} names the role lovable_readonly, dropped by ${lovableRoleDropMigration}`,
     );
+  }
+}
+for (const directory of ["supabase/repairs/", "supabase/maintenance/", "supabase/functions/"]) {
+  const directoryUrl = new URL(`../${directory}`, import.meta.url);
+  // A directory that does not exist holds nothing to check.
+  const entries = await readdir(directoryUrl, { recursive: true, withFileTypes: true }).catch(
+    (error) => (error.code === "ENOENT" ? [] : Promise.reject(error)),
+  );
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const path = `${entry.parentPath.replace(/\/$/, "")}/${entry.name}`;
+    if (/lovable_readonly/i.test(await readFile(path, "utf8"))) {
+      failures.push(
+        `${directory}${path.slice(path.indexOf(directory) + directory.length)} names the role lovable_readonly, dropped by ${lovableRoleDropMigration}`,
+      );
+    }
   }
 }
 
