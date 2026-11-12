@@ -25,7 +25,6 @@ from src.normalize import (
     parse_french_datetime,
     parse_price,
     source_sale_timezone,
-    strip_accents,
 )
 from src.pdf_address import apply_pdf_address
 from src.pdf_enrichment import (
@@ -94,6 +93,7 @@ from src.pdf_surface_patterns import (  # noqa: F401  (re-exported)
     _surface_measurement_scope,
 )
 from src.pdf_tribunal import apply_pdf_tribunal
+from src.text_folding import strip_accents
 
 
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:

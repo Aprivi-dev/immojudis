@@ -22,11 +22,10 @@ import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from src.enrichment.display_facts import known_offer_amounts, sale_listing_text, sale_nature
+from src.french_dates import MONTH_NUMBERS, MONTH_PATTERN, PARIS
 
-PARIS = ZoneInfo("Europe/Paris")
 NUMBER = r"(?<![\w.,+])\d+(?:[   ]\d{3})*(?:[.,]\d+)?"
 WORD_VALUES = {
     "un": 1,
@@ -102,26 +101,9 @@ PROCEDURE_TERMS = {
 AUCTION_NATURES = {"judicial", "notarial_judicial", "notarial_auction", "unknown"}
 SOLD = re.compile(r"\b(?P<aux>(?:a|ont)\s+été\s+)?vendu(?P<suffix>es|e|s)?\b", re.I)
 FUTURE_AUXILIARY = re.compile(r"\b(?:sera|seront|être|est|sont|va|vont)\s+$", re.I)
-MONTHS = {
-    "janvier": 1,
-    "février": 2,
-    "fevrier": 2,
-    "mars": 3,
-    "avril": 4,
-    "mai": 5,
-    "juin": 6,
-    "juillet": 7,
-    "août": 8,
-    "aout": 8,
-    "septembre": 9,
-    "octobre": 10,
-    "novembre": 11,
-    "décembre": 12,
-    "decembre": 12,
-}
 DATE = re.compile(
     r"\b(?:(?P<d>\d{1,2})/(?P<m>\d{1,2})/(?P<y>\d{4})|(?P<d2>\d{1,2})(?:er)?\s+(?P<month>"
-    + "|".join(MONTHS)
+    + MONTH_PATTERN
     + r")\s+(?P<y2>\d{4}))\b",
     re.I,
 )
@@ -349,7 +331,7 @@ def _dates(text: str) -> list[date]:
             if match["d"]:
                 found.append(date(int(match["y"]), int(match["m"]), int(match["d"])))
             else:
-                found.append(date(int(match["y2"]), MONTHS[match["month"].lower()], int(match["d2"])))
+                found.append(date(int(match["y2"]), MONTH_NUMBERS[match["month"].lower()], int(match["d2"])))
         except ValueError:
             continue
     return found

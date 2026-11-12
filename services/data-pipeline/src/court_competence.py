@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -18,6 +17,7 @@ from src.official_sources.justice_open_data import (
     parse_justice_structures_csv,
     validate_justice_competence_semantics,
 )
+from src.text_folding import ascii_alnum_words, strip_accents
 
 LOGGER = logging.getLogger(__name__)
 COURT_ASSIGNMENT_SCHEMA_VERSION = "justice_competent_court_assignment_v1"
@@ -453,9 +453,7 @@ def _department_from_insee(insee_code: str) -> str:
 
 
 def _fingerprint(value: object) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    ascii_text = "".join(char for char in text if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", ascii_text.lower()).strip()
+    return ascii_alnum_words(strip_accents(str(value or "")).lower())
 
 
 def _court_names_compatible(left: object, right: object) -> bool:

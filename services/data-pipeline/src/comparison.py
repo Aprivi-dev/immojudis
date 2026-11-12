@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
-import unicodedata
 from pathlib import Path
 
 import pandas as pd
@@ -12,6 +10,7 @@ from src.config import PROCESSED_DIR
 from src.dedupe import compute_content_hash
 from src.models import AuctionSale
 from src.normalize import clean_text
+from src.text_folding import ascii_alnum_words, strip_accents
 
 
 def compare_source_sales(
@@ -167,7 +166,4 @@ def _single_source_row(status: str, item: dict[str, object]) -> dict[str, object
 
 def _fingerprint_text(value: object | None) -> str:
     text = clean_text(value) or ""
-    text = "".join(
-        char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char)
-    )
-    return re.sub(r"[^a-z0-9]+", "", text.lower())
+    return ascii_alnum_words(strip_accents(text).lower(), "")

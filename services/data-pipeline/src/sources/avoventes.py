@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup, Tag
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.listing_location import classify_address
-from src.normalize import clean_text, extract_department, parse_surface, strip_accents
+from src.normalize import clean_text, extract_department, parse_surface
 from src.occupancy_statements import occupancy_from_text
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
@@ -27,6 +27,7 @@ from src.sources.common import (
     parse_html,
 )
 from src.sources.image_candidates import html_image_candidates
+from src.text_folding import strip_accents
 
 BASE_URL = "https://avoventes.fr"
 SEARCH_URL = f"{BASE_URL}/recherche"

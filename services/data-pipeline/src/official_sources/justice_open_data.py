@@ -12,6 +12,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.text_folding import ascii_alnum_words, strip_accents, to_ascii
+
 from .base import canonical_sha256
 
 JUSTICE_COMPETENCES_DATASET_URL = (
@@ -464,8 +466,7 @@ def _record_anomaly(
 
 
 def _field_token(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"[^a-z0-9]+", "_", normalized.lower()).strip("_")
+    return ascii_alnum_words(to_ascii(value).lower(), "_")
 
 
 def _clean_header(value: str) -> str:
@@ -478,9 +479,7 @@ def _clean_text(value: object) -> str:
 
 
 def _court_fingerprint(value: object) -> str:
-    normalized = unicodedata.normalize("NFKD", _clean_text(value))
-    ascii_text = "".join(char for char in normalized if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", " ", ascii_text.lower()).strip()
+    return ascii_alnum_words(strip_accents(_clean_text(value)).lower())
 
 
 def _looks_like_html(text: str) -> bool:

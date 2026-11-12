@@ -18,8 +18,9 @@ Une valeur manquante est acceptable, une valeur fausse ne l'est pas : dans le do
 from __future__ import annotations
 
 import re
-import unicodedata
 from decimal import Decimal
+
+from src.text_folding import ascii_alnum_words, to_ascii
 
 # Ce qui sépare une pièce de la valeur qui suit : fin de phrase, nouvel élément d'une énumération
 # (« , un bureau », « , présentant »), ou un mot qui désigne le bien entier ou un autre local.
@@ -137,8 +138,7 @@ def passage_key(text: str, value_start: int, value: object) -> str:
     donne la même clé ; deux pièces différentes de même surface n'ont pas le même libellé juste avant.
     """
     lead = text[max(0, value_start - 40) : value_start]
-    lead = unicodedata.normalize("NFKD", lead).encode("ascii", "ignore").decode("ascii").lower()
-    lead = re.sub(r"[^a-z0-9]+", " ", lead).strip()
+    lead = ascii_alnum_words(to_ascii(lead).lower())
     return f"{value}|{lead}"
 
 

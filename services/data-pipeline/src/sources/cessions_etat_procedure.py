@@ -16,11 +16,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
-from zoneinfo import ZoneInfo
 
+from src.french_dates import MONTH_NUMBERS, MONTH_PATTERN, PARIS
 from src.sources.cessions_etat_labels import fold
 
-PARIS = ZoneInfo("Europe/Paris")
 METHODS = (
     ("vente_notariale_interactive", "Vente notariale interactive",
      r"vente notariale interactive|\bvni\b|immo[- ]?interactif"),
@@ -29,15 +28,11 @@ METHODS = (
     ("appel_offres", "Appel d'offres", r"appel (?:a )?d'? ?offres?|pli cachete|plis"),
     ("gre_a_gre", "Vente de gré à gré", r"gre a gre|vente amiable"),
 )
-_MONTHS = {
-    "janvier": 1, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6, "juillet": 7,
-    "aout": 8, "septembre": 9, "octobre": 10, "novembre": 11, "decembre": 12,
-}
 _TIME = r"(?:\s*(?:a|à|-|,)?\s*(?P<hour>[01]?\d|2[0-3])\s*(?:h|heures?|:)\s*(?P<minute>[0-5]\d)?)?"
 _NUMERIC_DATE = re.compile(r"\b(?P<day>[0-3]?\d)/(?P<month>[01]?\d)/(?P<year>\d{4}|\d{2})\b" + _TIME, re.I)
 _TEXT_DATE = re.compile(
     r"\b(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?(?P<day>[0-3]?\d)(?:er)?\s+"
-    r"(?P<month>janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre)"
+    rf"(?P<month>{MONTH_PATTERN})"
     r"(?:\s+(?P<year>\d{4}))?" + _TIME,
     re.I,
 )
@@ -71,7 +66,7 @@ _SOLD_RE = re.compile(r"^vendu\s+le\s+(\d{1,2}/\d{1,2}/\d{4})", re.I)
 _DAY_RANGE_RE = re.compile(
     r"\bdu\s+(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?(?P<first>[0-3]?\d)(?:er)?\s+au\s+"
     r"(?P<second>(?:(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?[0-3]?\d(?:er)?\s+"
-    r"(?:janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre))",
+    rf"(?:{MONTH_PATTERN}))",
     re.I,
 )
 
@@ -113,7 +108,7 @@ def find_dates(text: str, reference: date | None = None) -> list[FoundDate]:
 def _match_date(match: re.Match[str], reference: date | None) -> FoundDate | None:
     day = int(match.group("day"))
     raw_month = match.group("month")
-    month = int(raw_month) if raw_month.isdigit() else _MONTHS.get(fold(raw_month))
+    month = int(raw_month) if raw_month.isdigit() else MONTH_NUMBERS.get(fold(raw_month))
     if not month:
         return None
     year_text = match.group("year")

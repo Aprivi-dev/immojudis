@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.normalize import strip_accents
 from src.occupancy_statements import (
     CERTAIN_STATUSES,
     MIXED,
@@ -29,6 +28,7 @@ from src.occupancy_statements import (
     read_occupancy_statement,
 )
 from src.pdf_fact_scope import _pdf_record_fact_projection
+from src.text_folding import strip_accents
 
 # Lower rank: what was seen on site, then the notice, then the sale terms.
 _DOCUMENT_RANK = {

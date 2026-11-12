@@ -9,8 +9,9 @@ est ambiguë.
 from __future__ import annotations
 
 import re
-import unicodedata
 from urllib.parse import urlparse
+
+from src.text_folding import ascii_alnum_words, strip_accents
 
 DEPARTMENT_NAMES: dict[str, str] = {
     "01": "Ain",
@@ -119,9 +120,7 @@ DEPARTMENT_NAMES: dict[str, str] = {
 
 def department_slug(value: object | None) -> str:
     """``"Val-d'Oise"`` et ``"val-d-oise"`` donnent ``"val-d-oise"``."""
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    text = "".join(char for char in text if not unicodedata.combining(char))
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return ascii_alnum_words(strip_accents(str(value or "")).lower(), "-")
 
 
 _CODE_BY_SLUG: dict[str, str] = {department_slug(name): code for code, name in DEPARTMENT_NAMES.items()}

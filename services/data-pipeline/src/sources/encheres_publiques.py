@@ -6,11 +6,11 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin
-from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
 
 from src.config import TARGET_DEPARTMENTS, load_settings, require_encheres_publiques_access
+from src.french_dates import PARIS
 from src.normalize import (
     clean_text,
     extract_department,
@@ -33,7 +33,6 @@ BASE_URL = "https://www.encheres-publiques.com"
 CANONICAL_BASE_URL = "https://encheres-publiques.com"
 NATIONAL_LIST_URL = f"{BASE_URL}/ventes/immobilier"
 LOGGER = logging.getLogger(__name__)
-PARIS_TZ = ZoneInfo("Europe/Paris")
 DETAIL_OVERRIDE_FIELDS = {
     "description",
     "address",
@@ -430,7 +429,7 @@ def _timestamp_to_display(value: object) -> str | None:
         timestamp = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
-    return datetime.fromtimestamp(timestamp, PARIS_TZ).strftime("%d/%m/%Y %H:%M")
+    return datetime.fromtimestamp(timestamp, PARIS).strftime("%d/%m/%Y %H:%M")
 
 
 def _resolve_built_surface(lot: dict[str, Any]) -> str | None:

@@ -35,11 +35,12 @@ avec les mêmes cas.
 from __future__ import annotations
 
 import re
-import unicodedata
 from collections.abc import Callable
 from typing import Any
 
+from src.french_dates import MONTH_PATTERN
 from src.rejected_listings import persistable_observations, persistable_payload
+from src.text_folding import strip_accents
 
 # --- Briques de motifs (identiques dans le miroir TypeScript) -------------------------------------
 _UP = "A-ZÀ-ÖØ-ÞŒ"
@@ -104,7 +105,7 @@ _FIRST_NAMES = (
 def _first_name_form_set() -> frozenset[str]:
     forms: set[str] = set()
     for name in _FIRST_NAMES.split(" "):
-        plain = "".join(c for c in unicodedata.normalize("NFD", name) if not unicodedata.combining(c))
+        plain = strip_accents(name)
         for form in (name, plain):
             forms.add(form)
             forms.add(form.upper())
@@ -188,10 +189,7 @@ _QUICK = re.compile(
     re.IGNORECASE,
 )
 
-_MONTHS = (
-    "janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre"
-)
-_DATE = rf"(?:\d{{1,2}}(?:er)?{_SP}+(?:{_MONTHS}){_SP}+\d{{4}}|\d{{1,2}}[/.\-]\d{{1,2}}[/.\-]\d{{2,4}})"
+_DATE = rf"(?:\d{{1,2}}(?:er)?{_SP}+(?:{MONTH_PATTERN}){_SP}+\d{{4}}|\d{{1,2}}[/.\-]\d{{1,2}}[/.\-]\d{{2,4}})"
 _PLACE = re.compile(
     rf"{_SP}+(?:à|a|au|en){_SP}+(?:(?:Le|La|Les){_SP}+|L{_APOS})?{_TOKEN}"
     rf"(?:(?:{_SP}+|-)(?:(?:de|du|des|sur|sous|en|lès|aux|la|le|les)(?:{_SP}+|-)|d{_APOS})?"

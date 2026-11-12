@@ -428,6 +428,8 @@ def _clean_text(value: object) -> str | None:
 
 
 def _normalize_text(value: str) -> str:
+    # Pas src.text_folding : NFD (et non NFKD) supprime « ² », « ﬁ » et l'espace insécable au lieu de les
+    # traduire, et l'apostrophe « ’ » disparaît dès le passage en ASCII. Sorties figées dans tests/test_text_folding.py.
     return (
         unicodedata.normalize("NFD", value)
         .encode("ascii", "ignore")

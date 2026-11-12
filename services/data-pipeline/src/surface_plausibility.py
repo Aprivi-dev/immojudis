@@ -19,7 +19,8 @@ from collections.abc import Iterable, Iterator
 from decimal import Decimal
 from typing import Any
 
-from src.normalize import SURFACE_VALUE_PATTERN, parse_surface, strip_accents
+from src.normalize import SURFACE_VALUE_PATTERN, parse_surface
+from src.text_folding import strip_accents
 
 # Marqueur posé dans ``raw_payload`` tant que le texte donne deux valeurs sans qualificatif pour le même bien.
 SURFACE_VALUES_CONFLICT_KEY = "surface_values_conflict"

@@ -39,9 +39,10 @@ from src.config import load_settings
 from src.dpe_reading_guard import checked_energy_point, is_energy_point
 from src.enrichment.display_evidence import PUBLIC_EMAIL, PUBLIC_LINK, PUBLIC_PHONE
 from src.enrichment.display_facts import PROPERTY_TYPE_LABELS
-from src.normalize import clean_text, strip_accents
+from src.normalize import clean_text
 from src.occupancy_statements import CERTAIN_STATUSES, fold, occupancy_from_text
 from src.personal_data import redact_personal_text
+from src.text_folding import strip_accents
 
 LOGGER = logging.getLogger(__name__)
 

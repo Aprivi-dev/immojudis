@@ -6,6 +6,7 @@ from typing import Any
 
 from src.outcome_evaluation.metrics import classification_metrics_from_probabilities, price_metrics
 from src.outcome_evaluation.models import OUTCOME_CLASSES, EvaluationRecord, OutcomeClass, PriceQuantiles
+from src.quantiles import linear_quantile
 
 
 def classification_baselines(
@@ -132,20 +133,7 @@ def _group_price_quantiles(records: Sequence[EvaluationRecord], dimension: str) 
 
 def _price_quantiles(values: Sequence[float]) -> PriceQuantiles:
     return PriceQuantiles(
-        p10=_quantile(values, 0.10),
-        p50=_quantile(values, 0.50),
-        p90=_quantile(values, 0.90),
+        p10=linear_quantile(values, 0.10),
+        p50=linear_quantile(values, 0.50),
+        p90=linear_quantile(values, 0.90),
     )
-
-
-def _quantile(values: Sequence[float], probability: float) -> float:
-    ordered = sorted(values)
-    if not ordered:
-        raise ValueError("cannot calculate a quantile of an empty sequence")
-    if len(ordered) == 1:
-        return float(ordered[0])
-    position = (len(ordered) - 1) * probability
-    lower = int(position)
-    upper = min(lower + 1, len(ordered) - 1)
-    fraction = position - lower
-    return float(ordered[lower] * (1 - fraction) + ordered[upper] * fraction)

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import math
 import re
-import unicodedata
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
@@ -17,6 +16,7 @@ from src.official_sources.justice_activity import (
     JusticeJurisdictionActivityRecord,
 )
 from src.storage.supabase_client import connect as connect_postgres
+from src.text_folding import ascii_alnum_words, strip_accents
 
 MatchStatus = Literal["exact_official_reference", "exact_code", "exact_name", "ambiguous", "unmatched"]
 _PUBLISHABLE_CATALOGUE_SAMPLE = 5
@@ -105,9 +105,7 @@ class CoverageReport:
 
 
 def normalize_court_name(value: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", value)
-    ascii_value = "".join(character for character in decomposed if not unicodedata.combining(character))
-    normalized = re.sub(r"[^a-z0-9]+", " ", ascii_value.casefold()).strip()
+    normalized = ascii_alnum_words(strip_accents(value).casefold())
     normalized = re.sub(
         r"^(?:greffe du )?(?:tribunal (?:de grande instance|judiciaire)|tgi|tj)(?: de | d | )",
         "",

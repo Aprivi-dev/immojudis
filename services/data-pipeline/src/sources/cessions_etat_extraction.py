@@ -26,7 +26,7 @@ from src.sources.cessions_etat_labels import (
     lookup_nature,
     parse_bool,
     parse_count,
-    parse_surface,
+    parse_single_surface_with_area_units,
     parse_year,
 )
 from src.sources.cessions_etat_page import CessionsPage, Characteristic, direction_email, parse_cessions_page
@@ -99,7 +99,7 @@ def _typed_value(kind: str, value: str) -> Any:
     if kind == "year":
         return parse_year(value) or value
     if kind == "surface":
-        surface = parse_surface(value)
+        surface = parse_single_surface_with_area_units(value)
         return decimal_text(surface) if surface is not None else value
     if kind == "bool_text":
         # « oui » -> True ; « non constructible » -> {present: False, text} ; texte libre -> texte.
@@ -143,7 +143,7 @@ def _tile_scope(value: Decimal, nature_type: str | None, page: CessionsPage, des
         return "land"
     if "built" in near:
         return "built"
-    land_tile = parse_surface(page.value("land_surface_m2"))
+    land_tile = parse_single_surface_with_area_units(page.value("land_surface_m2"))
     if land_tile is not None and abs(land_tile - value) > 1:
         return "built"
     built_numbers = {number for number, scope in described if scope == "built"}
@@ -175,12 +175,12 @@ def _surfaces(page: CessionsPage, natures: list[tuple[str, str, str]]) -> dict[s
     totals: dict[str, Decimal] = {}
     tiles = [item for item in page.characteristics if item.kind == "surface"]
     if not any(item.key == "surface_m2" for item in tiles) and page.headline_surface:
-        headline = parse_surface(page.headline_surface)
+        headline = parse_single_surface_with_area_units(page.headline_surface)
         if headline is not None:
             tiles.append(Characteristic("surface_m2", "Surface", page.headline_surface, "surfaces", "surface",
                                         page.natures[0] if page.natures else None))
     for item in tiles:
-        value = parse_surface(item.value)
+        value = parse_single_surface_with_area_units(item.value)
         if value is None:
             continue
         if item.key in {"land_surface_m2", "outbuildings_surface_m2"}:

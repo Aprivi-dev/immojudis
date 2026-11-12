@@ -21,6 +21,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 
 from src.document_reading import MIN_QUOTE_CHARS, sold_lot_from_sale
+from src.french_dates import MONTH_ABBREVIATIONS, MONTH_NUMBERS
 from src.information_agent_review_signals import (
     REVIEW_REASON_LABELS,
     ROOMS_FOLLOW_RE,
@@ -1001,35 +1002,7 @@ def _property_type_is_coherent(value: str, excerpt: str) -> bool:
     return False
 
 
-_FRENCH_MONTHS = {
-    "janvier": 1,
-    "janv": 1,
-    "février": 2,
-    "fevrier": 2,
-    "févr": 2,
-    "fevr": 2,
-    "mars": 3,
-    "avril": 4,
-    "avr": 4,
-    "mai": 5,
-    "juin": 6,
-    "juillet": 7,
-    "juil": 7,
-    "août": 8,
-    "aout": 8,
-    "aoû": 8,
-    "aou": 8,
-    "septembre": 9,
-    "sept": 9,
-    "octobre": 10,
-    "oct": 10,
-    "novembre": 11,
-    "nov": 11,
-    "décembre": 12,
-    "decembre": 12,
-    "déc": 12,
-    "dec": 12,
-}
+_FRENCH_MONTHS = MONTH_NUMBERS | MONTH_ABBREVIATIONS
 
 
 def _date_is_grounded(expected: date, evidence_excerpt: str) -> bool:

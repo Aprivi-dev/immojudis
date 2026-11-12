@@ -26,6 +26,7 @@ from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 
 from src.extraction_corpus import CORPUS_SCHEMA_VERSION, classify_outcome, evaluate_corpus, values_equal
 from src.normalize import normalize_occupancy_status, normalize_property_type
+from src.text_folding import strip_accents
 
 SAMPLE_PATH = Path(__file__).resolve().parents[1] / "config" / "qualification-sample-20260912.json"
 LEGACY_REVIEW_SCHEMA_VERSION = "immojudis.real-extraction-review.v1"
@@ -726,8 +727,7 @@ def _ai_values_equal(field: str, first: Any, second: Any) -> bool:
 
     if field == "city" and isinstance(first, str) and isinstance(second, str):
         def folded_city(value: str) -> str:
-            decomposed = unicodedata.normalize("NFKD", value)
-            return re.sub(r"\s+", " ", "".join(char for char in decomposed if not unicodedata.combining(char))).strip().casefold()
+            return re.sub(r"\s+", " ", strip_accents(value)).strip().casefold()
 
         return folded_city(first) == folded_city(second)
     if field == "property_type":

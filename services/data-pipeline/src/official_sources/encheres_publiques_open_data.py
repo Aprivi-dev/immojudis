@@ -5,7 +5,6 @@ import codecs
 import csv
 import io
 import json
-import re
 import unicodedata
 from collections import Counter
 from dataclasses import asdict, dataclass, field
@@ -13,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+
+from src.text_folding import ascii_lower_single_spaced
 
 from .base import canonical_sha256
 
@@ -527,8 +528,7 @@ def _record_anomaly(
 
 
 def _header_token(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
-    return re.sub(r"\s+", " ", normalized.strip().lower())
+    return ascii_lower_single_spaced(value)
 
 
 def _clean_header(value: str) -> str:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 
 from src.commune_department_lookup import unique_department_for_commune
 from src.court_competence import (
@@ -15,6 +14,7 @@ from src.department_inference import department_from_geocode_evidence
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_department
 from src.pdf_tribunal import pdf_tribunal_label
+from src.text_folding import ascii_alnum_words, strip_accents
 from src.tribunal_labels import (
     NOTARIAL_VENUE_PHRASE,
     court_name_candidates,
@@ -494,10 +494,7 @@ def _generic_tribunal_name(text: str) -> str | None:
 
 def _fingerprint(value: object | None) -> str:
     text = clean_text(value) or ""
-    text = "".join(
-        char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char)
-    )
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    return ascii_alnum_words(strip_accents(text).lower())
 
 
 def _add_quality_flag(sale: AuctionSale, flag: str) -> None:

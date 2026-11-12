@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import unicodedata
 from contextvars import ContextVar
 from typing import Any
 from urllib.parse import urlencode
@@ -42,6 +41,7 @@ from src.sources.notaires_inventory import (
 from src.sources.notaires_price_nature import starting_price_nature
 from src.sources.notaires_text_terms import notaires_price_fields, text_offer_schedule, text_sale_date
 from src.sources.source_features import extract_parking_count
+from src.text_folding import to_ascii
 
 BASE_URL = "https://www.immobilier.notaires.fr"
 API_URL = f"{BASE_URL}/pub-services/inotr-www-annonces/v1/annonces"
@@ -934,8 +934,7 @@ def _detail_api_url(sale: dict[str, Any]) -> str | None:
 def _is_page_out_of_range_error(exc: httpx.HTTPStatusError, page: int) -> bool:
     if page <= 1 or exc.response is None or exc.response.status_code != 400:
         return False
-    text = unicodedata.normalize("NFKD", exc.response.text or "")
-    normalized = text.encode("ascii", "ignore").decode("ascii").lower()
+    normalized = to_ascii(exc.response.text or "").lower()
     return "numero de page demande" in normalized and "superieur au nombre de" in normalized
 
 

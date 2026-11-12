@@ -13,6 +13,7 @@ import httpx
 
 from src.config import DEFAULT_USER_AGENT
 from src.official_sources.base import canonical_sha256, has_exact_origin, safe_endpoint_name
+from src.text_folding import strip_accents
 
 STATJUR_INDEX_URL = "https://www.stats.justice.gouv.fr/statjur/html/index.php"
 STATJUR_ENDPOINT_URL = "https://www.stats.justice.gouv.fr/statjur/html/ajaxService.php"
@@ -316,6 +317,4 @@ def _clean_text(value: str) -> str:
 
 
 def _normalize_label(value: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", _clean_text(value))
-    ascii_value = "".join(character for character in decomposed if not unicodedata.combining(character))
-    return re.sub(r"\s+", " ", ascii_value.casefold()).strip()
+    return re.sub(r"\s+", " ", strip_accents(_clean_text(value)).casefold()).strip()

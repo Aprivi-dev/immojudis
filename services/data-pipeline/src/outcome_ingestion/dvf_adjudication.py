@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import unicodedata
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -21,6 +20,7 @@ from src.dvf_import import (
     raw_dvf_mutation_group_signature,
     raw_dvf_mutation_identity_signature,
 )
+from src.text_folding import ascii_alnum_words, strip_accents
 
 DVF_OFFICIAL_SOURCE_NAME = "dvf_dgfip"
 DVF_OFFICIAL_DATASET_URL = "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
@@ -413,9 +413,7 @@ def _is_adjudication_row(row: dict[str, str]) -> bool:
 def _normalized_text(value: str | None) -> str:
     if not value:
         return ""
-    decomposed = unicodedata.normalize("NFKD", value)
-    without_marks = "".join(character for character in decomposed if not unicodedata.combining(character))
-    return re.sub(r"[^a-z0-9]+", " ", without_marks.casefold()).strip()
+    return ascii_alnum_words(strip_accents(value).casefold())
 
 
 def _normalized_parcel_id(value: str | None) -> str:

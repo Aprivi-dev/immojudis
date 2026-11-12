@@ -20,11 +20,9 @@ ne sont jamais repris.
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from src.cadastre_references import designation, parse_cadastral_references
 from src.department_names import (
@@ -32,18 +30,14 @@ from src.department_names import (
     department_from_name,
     departments_named_in_text,
 )
+from src.french_dates import MONTH_NUMBERS, PARIS
 from src.normalize import clean_text, extract_department
 from src.occupancy_statements import read_occupancy_statements, resolve_occupancy
 from src.pdf_document_types import classify_document_type
+from src.text_folding import ascii_lower_single_spaced
 
 FEATURES_SCHEMA_VERSION = "licitor_features_v1"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
-PARIS = ZoneInfo("Europe/Paris")
-
-_MONTHS = {
-    "janvier": 1, "fevrier": 2, "mars": 3, "avril": 4, "mai": 5, "juin": 6, "juillet": 7,
-    "aout": 8, "septembre": 9, "octobre": 10, "novembre": 11, "decembre": 12,
-}
 _NUMBER_WORDS = {
     "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7,
     "huit": 8, "neuf": 9, "dix": 10, "onze": 11, "douze": 12,
@@ -122,8 +116,7 @@ _LAND_TITLE_RE = re.compile(r"\b(?:terrains?|parcelles?|bois|prés?|pâtures?|la
 
 
 def _fold(value: object) -> str:
-    text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii").lower()
-    return re.sub(r"\s+", " ", text).strip()
+    return ascii_lower_single_spaced(str(value or ""))
 
 
 def _amount(text: str | None) -> int | None:
@@ -166,7 +159,7 @@ def _french_date(text: str | None) -> date | None:
     match = re.search(r"\b(\d{1,2})\s*(?:er)?\s+([a-zéûô]+)\s+(20\d{2})\b", _join([text or ""]), re.I)
     if not match:
         return None
-    month = _MONTHS.get(_fold(match.group(2)))
+    month = MONTH_NUMBERS.get(_fold(match.group(2)))
     if not month:
         return None
     try:
@@ -179,7 +172,7 @@ def _sale_datetime(text: str | None) -> datetime | None:
     match = _SALE_DATE_RE.search(_join([text or ""]))
     if not match:
         return None
-    month = _MONTHS.get(_fold(match.group("month")))
+    month = MONTH_NUMBERS.get(_fold(match.group("month")))
     if not month:
         return None
     try:

@@ -13,7 +13,7 @@ from bs4 import Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
-from src.normalize import clean_text, extract_department, strip_accents
+from src.normalize import clean_text, extract_department
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.agrasc_operators import (
@@ -37,6 +37,7 @@ from src.sources.common import (
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
+from src.text_folding import strip_accents
 
 BASE_URL = "https://agrasc.gouv.fr"
 # AGRASC publishes ``?page=0`` as the first page.  The bare path currently
