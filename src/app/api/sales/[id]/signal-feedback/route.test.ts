@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -93,7 +94,7 @@ describe("POST /api/sales/[id]/signal-feedback", () => {
 
   it("has no anonymous measure: without a valid session nothing is recorded", async () => {
     mocks.requireAuth.mockRejectedValue(
-      new Error("Unauthorized: No authorization header provided"),
+      new AuthRequiredError("Unauthorized: No authorization header provided"),
     );
 
     const response = await post({ signal: "market_gap_band", value: "useful" });

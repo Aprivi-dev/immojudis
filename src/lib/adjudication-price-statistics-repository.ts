@@ -14,6 +14,7 @@ import {
 import {
   resolveCourtCodeFromSale,
   TribunalJudicialActivityUnavailableError,
+  TribunalJudicialSaleNotFoundError,
 } from "@/lib/tribunal-judicial-activity-repository";
 import { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
 import {
@@ -253,6 +254,8 @@ async function resolveOptionalCourtCodeFromSale(saleId: string): Promise<string 
   } catch (error) {
     if (
       error instanceof TribunalJudicialActivityUnavailableError ||
+      error instanceof TribunalJudicialSaleNotFoundError ||
+      error instanceof TribunalJudicialSaleNotFoundError ||
       error instanceof TribunalCourtUnresolvedError
     )
       return null;

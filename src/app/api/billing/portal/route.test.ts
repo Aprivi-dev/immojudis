@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -32,7 +33,9 @@ describe("POST /api/billing/portal", () => {
   });
 
   it("requires an authenticated user", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
 
     const response = await post(JSON.stringify({ intent: "cancel" }));
 

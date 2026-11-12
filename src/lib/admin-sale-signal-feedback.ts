@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SaleSignal } from "@/lib/sale-signal-feedback";
 
@@ -127,8 +127,7 @@ export async function getAdminSaleSignalFeedback(
   authToken: string,
   now = new Date(),
 ): Promise<SaleSignalFeedbackSummary> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_sale_signal_feedback_summary", {
     p_now: now.toISOString(),
@@ -215,8 +214,7 @@ export async function getAdminSaleFeedbackBySale(
   authToken: string,
   now = new Date(),
 ): Promise<SaleFeedbackBySale> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const { data, error } = await supabaseAdmin.rpc("admin_sale_signal_feedback_by_sale", {
     p_now: now.toISOString(),

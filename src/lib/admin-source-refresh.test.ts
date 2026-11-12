@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import {
@@ -30,7 +31,7 @@ describe("admin source refresh", () => {
         auth: fakeAuth(false),
         input: { saleId: SALE_ID, force: true },
       }),
-    ).rejects.toThrow("accès administrateur requis");
+    ).rejects.toThrow(AdminRequiredError);
     expect(serverRpc).not.toHaveBeenCalled();
   });
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { unavailablePilotage, unavailableSaleReminderAccuracy } from "@/lib/admin-pilotage";
+import { AdminRequiredError, AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     const header = request.headers.get("authorization");
-    if (!header) throw new Error("Unauthorized: No authorization header provided");
+    if (!header) throw new AuthRequiredError("Unauthorized: No authorization header provided");
     return header.replace("Bearer ", "");
   },
 }));
@@ -195,9 +196,9 @@ describe("GET /api/admin/pilotage", () => {
   });
 
   it("refuse un compte non administrateur", async () => {
-    mocks.get.mockRejectedValue(new Error("Forbidden: accès administrateur requis."));
-    mocks.accuracy.mockRejectedValue(new Error("Forbidden: accès administrateur requis."));
-    mocks.feedback.mockRejectedValue(new Error("Forbidden: accès administrateur requis."));
+    mocks.get.mockRejectedValue(new AdminRequiredError());
+    mocks.accuracy.mockRejectedValue(new AdminRequiredError());
+    mocks.feedback.mockRejectedValue(new AdminRequiredError());
 
     const response = await GET(
       new Request(url, { headers: { authorization: "Bearer user-token" } }),

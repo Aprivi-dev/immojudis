@@ -1,3 +1,5 @@
+import { AdminRequiredError } from "@/lib/api-errors";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn(), courtFallback: vi.fn() }));
@@ -13,7 +15,6 @@ import {
   classifyInformationAgentSaleContacts,
   loadAdminInformationAgentEmailAvailability,
   loadAdminInformationAgentSale,
-  requireAdminInformationAgentSaleAccess,
 } from "./admin-information-agent-sale";
 
 const saleId = "11111111-1111-4111-8111-111111111111";
@@ -374,7 +375,7 @@ describe("admin information-agent sale loader", () => {
   it("refuses a non-admin before touching the service-role data", async () => {
     await expect(
       loadAdminInformationAgentSale({ auth: { isAdmin: false }, saleId }),
-    ).rejects.toThrow("accès administrateur requis");
+    ).rejects.toThrow(AdminRequiredError);
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
@@ -420,10 +421,8 @@ describe("admin information-agent sale loader", () => {
   });
 
   it("exposes the same explicit guard for callers that already have auth context", () => {
-    expect(() => requireAdminInformationAgentSaleAccess({ isAdmin: true })).not.toThrow();
-    expect(() => requireAdminInformationAgentSaleAccess({ isAdmin: false })).toThrow(
-      "accès administrateur requis",
-    );
+    expect(() => assertAdmin({ isAdmin: true })).not.toThrow();
+    expect(() => assertAdmin({ isAdmin: false })).toThrow(AdminRequiredError);
   });
 });
 

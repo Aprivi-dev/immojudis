@@ -1,6 +1,7 @@
 import "server-only";
 import { loadInitialCatalogue, type InitialCatalogue } from "@/lib/public-catalogue.server";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Les deux éléments de la ligne « N ventes à venir · données vérifiées le … » de l'accueil, calculés
@@ -38,7 +39,7 @@ type VerifiedAtClient = {
 /** Lecture minimale : une fonction publique qui rend une seule date. */
 async function defaultVerifiedAt(): Promise<string | null> {
   const client = createPublicSupabaseClient() as unknown as VerifiedAtClient | null;
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
   const { data, error } = await client.rpc("get_public_catalogue_verified_at");
   if (error) throw error;
   return typeof data === "string" ? data : null;

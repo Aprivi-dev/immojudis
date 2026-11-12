@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -71,7 +72,7 @@ export async function requestAdminSourceRefresh({
   auth: SupabaseAuthContext;
   input: AdminSourceRefreshRequest;
 }): Promise<AdminSourceRefreshResponse> {
-  requireAdmin(auth);
+  assertAdmin(auth);
 
   const { data, error } = await supabaseAdmin.rpc(ADMIN_SOURCE_REFRESH_RPC, {
     p_admin_id: auth.userId,
@@ -106,7 +107,7 @@ export async function getAdminSourceRefreshStatus({
   auth: SupabaseAuthContext;
   input: AdminSourceRefreshStatusQuery;
 }): Promise<AdminSourceRefreshResponse> {
-  requireAdmin(auth);
+  assertAdmin(auth);
   const history = await loadAdminSourceRefreshHistory(input.saleId);
   return {
     ok: true,
@@ -114,10 +115,6 @@ export async function getAdminSourceRefreshStatus({
     request: history[0] ?? null,
     history,
   };
-}
-
-function requireAdmin(auth: SupabaseAuthContext): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
 async function loadAdminSourceRefreshHistory(saleId: string): Promise<AdminSourceRefreshItem[]> {

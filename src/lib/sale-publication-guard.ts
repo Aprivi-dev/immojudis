@@ -1,4 +1,5 @@
 import "server-only";
+import { NotFoundError } from "@/lib/api-errors";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 /**
@@ -27,7 +28,7 @@ export const PUBLICATION_QUARANTINE_SELECT =
 export const SALE_PUBLICATION_UNAVAILABLE_MESSAGE = "Vente introuvable ou inaccessible.";
 const PUBLICATION_LOOKUP_BATCH_SIZE = 100;
 
-export class SalePublicationUnavailableError extends Error {
+export class SalePublicationUnavailableError extends NotFoundError {
   constructor(message = SALE_PUBLICATION_UNAVAILABLE_MESSAGE) {
     super(message);
     this.name = "SalePublicationUnavailableError";

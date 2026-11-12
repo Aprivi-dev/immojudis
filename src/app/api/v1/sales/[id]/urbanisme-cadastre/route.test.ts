@@ -1,6 +1,8 @@
+import { SalePublicationUnavailableError } from "@/lib/sale-publication-guard";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -88,7 +90,9 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
   });
 
   it("refuse une requête non authentifiée avant toute lecture", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
 
     const response = await request();
 
@@ -101,7 +105,7 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
 
   it("refuse le plan Découverte avant la résolution de la vente", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Les données cadastrales sont réservées à l’offre Analyse."),
+      new ForbiddenError("Les données cadastrales sont réservées à l’offre Analyse."),
     );
 
     const response = await request();
@@ -149,7 +153,7 @@ describe("GET /api/v1/sales/:id/urbanisme-cadastre", () => {
   });
 
   it("ne lit pas les enrichissements si la vente n’est pas accessible", async () => {
-    mocks.getSale.mockRejectedValue(new Error("Vente introuvable ou inaccessible."));
+    mocks.getSale.mockRejectedValue(new SalePublicationUnavailableError());
 
     const response = await request();
 

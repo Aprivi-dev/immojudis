@@ -15,6 +15,7 @@ import {
 } from "@/lib/search/sale-comparison";
 import { asRecord } from "@/lib/guards";
 import { asRecord as normalizeJsonObject } from "@/lib/guards";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 
 type AnalysisSetRow = Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
 type AnalysisSetInsert = Database["public"]["Tables"]["user_sale_analysis_sets"]["Insert"];
@@ -384,7 +385,7 @@ export async function getSharedSaleComparison(token: string): Promise<PublicShar
     new Date(expiresAt).getTime() <= Date.now() ||
     !items.length
   ) {
-    throw new Error("Comparaison partagée introuvable ou expirée.");
+    throw new NotFoundError("Comparaison partagée introuvable ou expirée.");
   }
 
   // Une vente retirée du catalogue ne fait plus échouer tout le lien : elle quitte la comparaison, qui
@@ -392,7 +393,7 @@ export async function getSharedSaleComparison(token: string): Promise<PublicShar
   const visibleSaleIds = await getPublicationVisibleSaleIds(items.map((item) => item.id));
   const visibleItems = items.filter((item) => visibleSaleIds.has(item.id));
   if (!visibleItems.length) {
-    throw new Error("Comparaison partagée introuvable ou expirée.");
+    throw new NotFoundError("Comparaison partagée introuvable ou expirée.");
   }
 
   return {
@@ -572,7 +573,7 @@ async function assertSaleAnalysisAvailable(
 ) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.multiPropertyAnalysis")) {
-    throw new Error("Analyse multi-biens réservée à l’offre Analyse.");
+    throw new ForbiddenError("Analyse multi-biens réservée à l’offre Analyse.");
   }
   if (analysisKind) assertAnalysisKindAvailable(plan.plan, analysisKind);
   return plan;
@@ -583,7 +584,9 @@ function assertAnalysisKindAvailable(
   analysisKind: (typeof SALE_ANALYSIS_KINDS)[number],
 ) {
   if (plan === "decouverte" && analysisKind !== "comparison") {
-    throw new Error("Les listes de suivi et portefeuilles sont réservés à l’offre Analyse.");
+    throw new ForbiddenError(
+      "Les listes de suivi et portefeuilles sont réservés à l’offre Analyse.",
+    );
   }
 }
 
@@ -604,13 +607,13 @@ async function assertSetLimit(
   const { count, error } = await query;
   if (error) throw error;
   if ((count ?? 0) >= limit) {
-    throw new Error(`Limite de ${limit} analyses multi-biens actives atteinte.`);
+    throw new ForbiddenError(`Limite de ${limit} analyses multi-biens actives atteinte.`);
   }
 }
 
 function assertItemLimit(itemCount: number, limit: number | null) {
   if (limit != null && itemCount > limit) {
-    throw new Error(`Limite de ${limit} biens par analyse atteinte.`);
+    throw new ForbiddenError(`Limite de ${limit} biens par analyse atteinte.`);
   }
 }
 
@@ -774,7 +777,8 @@ export async function buildCanonicalComparisonSnapshot(
 
   const byId = new Map(publicationVisibleRows(data ?? []).map((sale) => [sale.id, sale]));
   const missing = saleIds.filter((saleId) => !byId.has(saleId));
-  if (missing.length) throw new Error("Certains biens à comparer sont introuvables ou expirés.");
+  if (missing.length)
+    throw new NotFoundError("Certains biens à comparer sont introuvables ou expirés.");
 
   const comparedSales: ComparedSale[] = saleIds.map((saleId) => {
     const sale = byId.get(saleId)!;

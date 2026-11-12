@@ -6,6 +6,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import type { PlanEntitlements } from "@/lib/property-reports";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 
 type SaleWorkspaceRow = Database["public"]["Tables"]["sale_workspaces"]["Row"];
 type CollaboratorRow = Database["public"]["Tables"]["sale_workspace_collaborators"]["Row"];
@@ -161,7 +162,7 @@ export async function acceptSaleWorkspaceInvitation({
     .maybeSingle();
 
   if (error) throw error;
-  if (!invitation) throw new Error("Invitation introuvable.");
+  if (!invitation) throw new NotFoundError("Invitation introuvable.");
   if (invitation.status !== "invited") {
     throw new Error("Cette invitation n'est plus disponible.");
   }
@@ -307,7 +308,7 @@ async function assertWorkspaceCollaborationAvailable(
 ): Promise<PlanEntitlements> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "workspace.collaboration") && !auth.isAdmin) {
-    throw new Error("La collaboration de dossier est réservée à l’offre Analyse.");
+    throw new ForbiddenError("La collaboration de dossier est réservée à l’offre Analyse.");
   }
   return plan;
 }

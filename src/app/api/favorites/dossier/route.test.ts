@@ -16,7 +16,7 @@ vi.mock("@/lib/favorite-dossier", () => ({
 }));
 
 import { GET, PUT } from "./route";
-import { PublicApiError } from "@/lib/api-errors";
+import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
 
 const SALE_ID = "7d335032-e935-4550-9347-ed22b0f63449";
 const AUTH = { userId: "user-1" };
@@ -57,7 +57,7 @@ describe("/api/favorites/dossier", () => {
   });
 
   it("exige un compte connecté", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: No token provided"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: No token provided"));
     const response = await GET(
       new Request(`https://immojudis.test/api/favorites/dossier?saleId=${SALE_ID}`),
     );

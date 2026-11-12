@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { AuctionSale, SaleDocumentRich, SaleMedia } from "@/lib/types";
@@ -19,6 +20,7 @@ import {
   type InformationAgentListingContactBlock,
   type InformationAgentOrganizerType,
 } from "@/lib/information-agent/listing-contacts";
+import { NotFoundError } from "@/lib/api-errors";
 
 /**
  * The admin information workflow is allowed to inspect a sale that is kept out
@@ -141,7 +143,7 @@ export async function loadAdminInformationAgentSale({
   auth: AdminInformationAgentSaleAuth;
   saleId: string;
 }): Promise<AdminInformationAgentSale> {
-  requireAdminInformationAgentSaleAccess(auth);
+  assertAdmin(auth);
 
   const { data, error } = await supabaseAdmin
     .from("auction_sales")
@@ -151,7 +153,7 @@ export async function loadAdminInformationAgentSale({
 
   if (error) throw error;
   const row = asSaleRow(data);
-  if (!row?.id) throw new Error("Vente introuvable.");
+  if (!row?.id) throw new NotFoundError("Vente introuvable.");
 
   const status = nullableString(row.status);
   if (!isAvailableInformationAgentStatus(status)) {
@@ -287,7 +289,7 @@ export async function loadInformationAgentContactSales({
   auth: AdminInformationAgentSaleAuth;
   saleIds: readonly string[];
 }): Promise<InformationAgentContactSales> {
-  requireAdminInformationAgentSaleAccess(auth);
+  assertAdmin(auth);
   return readInformationAgentContactSales(saleIds);
 }
 
@@ -381,10 +383,6 @@ async function loadRegistryContactsBySale(
     bySale.set(row.scope_sale_id, list);
   }
   return { contacts: bySale, readable: true };
-}
-
-export function requireAdminInformationAgentSaleAccess(auth: AdminInformationAgentSaleAuth): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
 }
 
 export function isAvailableInformationAgentStatus(

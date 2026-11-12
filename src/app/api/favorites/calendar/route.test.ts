@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -223,7 +224,7 @@ describe("POST /api/favorites/calendar", () => {
   });
 
   it("exige un compte connecté", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: No token provided"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized: No token provided"));
     const response = await post({ saleIds: [A] });
 
     expect(response.status).toBe(401);

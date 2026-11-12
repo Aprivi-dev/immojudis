@@ -104,7 +104,7 @@ describe("agent d'information : aucun envoi automatique", () => {
     expect(router).toMatch(
       /input\.action === "approve_and_send"\)\s*\{\s*await approveAndSendMission\(/,
     );
-    expect(router).toContain("requireInformationAgentAdmin(auth)");
+    expect(router).toContain("assertAdmin(auth)");
 
     const routerUsers = sourceFiles.filter((file) =>
       /\brunAdminInformationAgentAction\b/.test(read(file)),

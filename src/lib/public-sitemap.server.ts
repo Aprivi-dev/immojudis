@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Publicly visible and indexable sales for the sitemap, read with the anonymous client through
@@ -104,7 +105,7 @@ export async function fetchSitemapSalePage(
 const cachedSalePage = unstable_cache(
   async (pageIndex: number): Promise<SitemapSalePage> => {
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+    if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
     return fetchSitemapSalePage(client as unknown as SitemapClient, pageIndex);
   },
   ["public-sitemap", "sales-page", "v2"],

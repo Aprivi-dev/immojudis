@@ -1,15 +1,12 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import type { z } from "zod";
 import { classifyApiError } from "@/lib/api-observability";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
 import { createAdminInformationAgentDraft } from "@/lib/information-agent/draft";
-import {
-  asObject,
-  missionFromRow,
-  requireInformationAgentAdmin,
-} from "@/lib/information-agent/mission-store";
+import { asObject, missionFromRow } from "@/lib/information-agent/mission-store";
 import {
   previewAdminInformationAgentMission,
   type InformationAgentPreviewResponse,
@@ -46,7 +43,7 @@ export async function prepareAdminInformationAgentDraft({
   input: z.output<typeof informationAgentCreateSchema>;
   env?: NodeJS.ProcessEnv;
 }): Promise<InformationAgentPrepareResponse> {
-  requireInformationAgentAdmin(auth);
+  assertAdmin(auth);
   const explicit = Boolean(
     input.recipientEmail || input.recipientName || input.questionKeys?.length,
   );

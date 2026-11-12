@@ -30,9 +30,10 @@ import {
   type InformationAgentPreviewInput,
   type InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { loadAutoPublicationReviewAnnotations } from "@/lib/admin-information-agent-auto-publication";
 import { asRecord as recordOrEmpty } from "@/lib/guards";
+import { NotFoundError } from "@/lib/api-errors";
 
 export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
 export const adminInformationAgentActionSchema = informationAgentAdminActionSchema;
@@ -52,7 +53,7 @@ export async function listAdminInformationAgentMissionsForToken({
   offset?: number;
   limit?: number;
 }): Promise<InformationAgentAdminMissionPage> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   return listAdminInformationAgentMissions({ auth, saleId, offset, limit });
 }
 
@@ -63,7 +64,7 @@ export async function createAdminInformationAgentMissionForToken({
   authToken: string;
   input: z.output<typeof adminInformationAgentCreateSchema>;
 }): Promise<InformationAgentAdminResponse> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   return createAdminInformationAgentDraft({ auth, input });
 }
 
@@ -75,7 +76,7 @@ export async function prepareAdminInformationAgentMissionForToken({
   authToken: string;
   input: z.output<typeof adminInformationAgentCreateSchema>;
 }): Promise<InformationAgentPrepareResponse> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   return prepareAdminInformationAgentDraft({ auth, input });
 }
 
@@ -86,7 +87,7 @@ export async function runAdminInformationAgentMissionActionForToken({
   authToken: string;
   input: AdminInformationAgentAction;
 }): Promise<InformationAgentAdminListResponse> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   return runAdminInformationAgentAction({ auth, input });
 }
 
@@ -98,7 +99,7 @@ export async function previewAdminInformationAgentMissionForToken({
   authToken: string;
   input: InformationAgentPreviewInput;
 }): Promise<InformationAgentPreviewResponse> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   return previewAdminInformationAgentMission({ auth, input });
 }
 
@@ -129,7 +130,7 @@ export async function listAdminInformationAgentReview(
   authToken: string,
   options: AdminInformationAgentReviewListOptions = {},
 ) {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const offset = options.offset ?? 0;
   const limit = options.limit ?? ADMIN_PAGE_SIZE;
   const to = offset + limit - 1;
@@ -305,7 +306,7 @@ export async function runAdminInformationAgentMessageAction({
   authToken: string;
   input: AdminInformationAgentMessageAction;
 }): Promise<{ ok: true; opposedEmails: string[] }> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   const { data: message, error } = await supabaseAdmin
     .from("information_agent_messages")
     .select("id,case_id,from_email,metadata")
@@ -313,7 +314,7 @@ export async function runAdminInformationAgentMessageAction({
     .eq("direction", "inbound")
     .maybeSingle();
   if (error) throw error;
-  if (!message) throw new Error("Réponse introuvable.");
+  if (!message) throw new NotFoundError("Réponse introuvable.");
 
   const opposedEmails: string[] = [];
   if (input.action === "wrong_recipient") {
@@ -384,7 +385,7 @@ export async function listAdminInformationAgentUnrouted(
   authToken: string,
   options: AdminInformationAgentReviewListOptions = {},
 ) {
-  await requireAdmin(authToken);
+  await assertAdminAuth(authToken);
   const offset = options.offset ?? 0;
   const limit = options.limit ?? ADMIN_PAGE_SIZE;
   const { data, count, error } = await supabaseAdmin
@@ -417,14 +418,14 @@ export async function runAdminInformationAgentUnroutedAction({
   authToken: string;
   input: AdminInformationAgentUnroutedAction;
 }): Promise<{ ok: true }> {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   const { data: message, error } = await supabaseAdmin
     .from("information_agent_unrouted_messages")
     .select("id")
     .eq("id", input.messageId)
     .maybeSingle();
   if (error) throw error;
-  if (!message) throw new Error("Message introuvable.");
+  if (!message) throw new NotFoundError("Message introuvable.");
   const { error: updateError } = await supabaseAdmin
     .from("information_agent_unrouted_messages")
     .update({ status: "handled", handled_at: new Date().toISOString(), handled_by: auth.userId })
@@ -445,7 +446,7 @@ export async function reviewAdminInformationAgentFact({
   authToken: string;
   input: AdminInformationAgentReviewInput;
 }) {
-  const auth = await requireAdmin(authToken);
+  const auth = await assertAdminAuth(authToken);
   if (input.decision === "accepted") {
     const publication = await stageApprovedEvidencePublication(input.factId, {
       adminId: auth.userId,
@@ -594,7 +595,8 @@ async function stageApprovedEvidencePublication(
     const { data: original, error: downloadError } = await supabaseAdmin.storage
       .from(asset.storage_bucket)
       .download(asset.storage_path);
-    if (downloadError || !original) throw downloadError ?? new Error("Pièce source introuvable.");
+    if (downloadError || !original)
+      throw downloadError ?? new NotFoundError("Pièce source introuvable.");
     const originalBytes = new Uint8Array(await original.arrayBuffer());
     const isPdf = publishable === "pdf";
     const rendition = isPdf

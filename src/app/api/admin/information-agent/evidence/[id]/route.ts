@@ -1,12 +1,10 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { NextResponse } from "next/server";
 import { PublicApiError } from "@/lib/api-errors";
 import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
-import {
-  bearerTokenFromRequest,
-  requireSupabaseAuthContext,
-} from "@/integrations/supabase/auth-middleware";
+import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
@@ -28,8 +26,7 @@ const publicationRevocationConflict = new PublicApiError(
 
 async function handleGET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+    await assertAdminAuth(bearerTokenFromRequest(request));
     const { id: rawId } = await context.params;
     const id = evidenceAssetIdSchema.parse(rawId);
     const { data: asset, error: assetError } = await supabaseAdmin
@@ -66,8 +63,7 @@ async function handleGET(request: Request, context: { params: Promise<{ id: stri
 
 async function handlePATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
     const { id: rawId } = await context.params;
     const id = evidenceAssetIdSchema.parse(rawId);
     const input = evidenceRightsReviewSchema.parse(await request.json());

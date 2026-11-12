@@ -10,6 +10,7 @@ import {
   replyTextForExtraction,
 } from "@/lib/information-agent-inbound";
 import { recordInformationAgentContactOpposition } from "@/lib/information-agent/contacts";
+import { NotFoundError } from "@/lib/api-errors";
 
 // Réponse reçue hors circuit (téléphone, courrier, autre boîte) consignée par
 // un administrateur : rattachée au dossier partagé, puis extraite comme les
@@ -102,7 +103,7 @@ async function loadManualReplyCase(mission: MissionRow): Promise<CaseRow> {
     .maybeSingle();
   if (error) throw error;
   if (!sharedCase) {
-    throw new Error("Requête invalide : dossier de vente introuvable ou incohérent.");
+    throw new NotFoundError("Dossier de vente introuvable ou incohérent.");
   }
   const { data: subscriber, error: subscriberError } = await supabaseAdmin
     .from("information_agent_case_subscribers")

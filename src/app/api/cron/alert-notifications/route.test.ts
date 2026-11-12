@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ConfigurationError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -67,7 +68,7 @@ describe("alert notifications cron route", () => {
     mocks.dispatch.mockResolvedValueOnce({ emailCandidateCount: 3 });
     mocks.confirmations.mockResolvedValueOnce({});
     mocks.assertComplete.mockImplementationOnce(() => {
-      throw new Error(
+      throw new ConfigurationError(
         "Alertes e-mail : 3 envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré.",
       );
     });

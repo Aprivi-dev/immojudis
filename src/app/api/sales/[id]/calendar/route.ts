@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { PublicApiError } from "@/lib/api-errors";
+import { ConfigurationError, PublicApiError } from "@/lib/api-errors";
 import { apiRouteError, createApiRequestContext, withApiHeaders } from "@/lib/api-observability";
 import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
@@ -49,13 +49,13 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (!SALE_ID_PATTERN.test(id)) throw new PublicApiError("Vente introuvable.", 404);
 
     const client = createPublicSupabaseClient();
-    if (!client) throw new Error("Base de données non configurée.");
+    if (!client) throw new ConfigurationError("Base de données non configurée.");
     const { data, error } = await client.rpc("get_public_sale_calendar_event", {
       p_sale_id: id.toLowerCase(),
     });
     if (error) {
       // The migration is not deployed yet: no export rather than a guess from other columns.
-      if (isMissingFunction(error)) throw new Error("Calendrier non configuré.");
+      if (isMissingFunction(error)) throw new ConfigurationError("Calendrier non configuré.");
       throw error;
     }
     const row = (Array.isArray(data) ? data[0] : data) as SaleCalendarRow | null | undefined;

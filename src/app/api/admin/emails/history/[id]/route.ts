@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { readEmailMessage } from "@/lib/admin-emails/history";
 import { adminErrorResponse } from "@/lib/api-route-errors";
 
@@ -14,7 +14,7 @@ export const maxDuration = 30;
  */
 async function handleGET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const auth = await requireAdmin(bearerTokenFromRequest(request));
+    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
     const { id } = await context.params;
     // Next décode déjà le segment : aucun second décodage.
     const message = await readEmailMessage({ adminUserId: auth.userId, id });

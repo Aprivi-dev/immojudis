@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PublicApiError } from "@/lib/api-errors";
+import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
 
 /**
  * Routes dont l'identifiant (vente, analyse, zone, demande) vient de l'URL ou de la requête, et qui
@@ -194,7 +194,7 @@ describe("transmission de l'identifiant à la bibliothèque", () => {
   });
 
   it("exige la session avant tout, même avec un identifiant mal formé", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: missing bearer token"));
     const response = await setDelete(
       new Request("https://example.test/api/x", { method: "DELETE" }),
       params("pas-un-uuid"),

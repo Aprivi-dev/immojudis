@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminErrorResponse } from "./api-route-errors";
+import { AuthRequiredError, ForbiddenError, NotFoundError } from "@/lib/api-errors";
 
 describe("adminErrorResponse", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("preserves authorization statuses with generic messages and a request id", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const unauthorized = adminErrorResponse(new Error("Unauthorized: session required"));
-    const forbidden = adminErrorResponse(new Error("Forbidden: admin only"));
-    const notFound = adminErrorResponse(new Error("NotFound: item missing"));
+    const unauthorized = adminErrorResponse(
+      new AuthRequiredError("Unauthorized: session required"),
+    );
+    const forbidden = adminErrorResponse(new ForbiddenError("Admin only"));
+    const notFound = adminErrorResponse(new NotFoundError("Item missing"));
 
     expect(unauthorized.status).toBe(401);
     expect(await unauthorized.json()).toMatchObject({

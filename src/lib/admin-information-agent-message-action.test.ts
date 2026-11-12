@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -92,7 +93,7 @@ describe("actions de l'administrateur sur une réponse reçue", () => {
         authToken: "token",
         input: { action: "mark_handled", messageId: MESSAGE_ID },
       }),
-    ).rejects.toThrow("Forbidden");
+    ).rejects.toThrow(AdminRequiredError);
 
     mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
     mocks.message = null;

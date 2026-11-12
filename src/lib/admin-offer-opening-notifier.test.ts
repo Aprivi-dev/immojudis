@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AdminRequiredError, AuthRequiredError } from "@/lib/api-errors";
 
 vi.mock("server-only", () => ({}));
 
@@ -219,15 +220,19 @@ describe("actions acceptées", () => {
 describe("accès administrateur", () => {
   it("refuse un compte qui n'est pas administrateur, sans rien lire ni envoyer", async () => {
     mocks.auth.mockResolvedValue({ ...adminAuth(), isAdmin: false });
-    await expect(getOfferOpeningAudience({ authToken: "t", env })).rejects.toThrow("Forbidden");
-    await expect(sendOfferOpeningTest({ authToken: "t", env })).rejects.toThrow("Forbidden");
-    await expect(sendOfferOpeningBatch({ authToken: "t", env })).rejects.toThrow("Forbidden");
+    await expect(getOfferOpeningAudience({ authToken: "t", env })).rejects.toThrow(
+      AdminRequiredError,
+    );
+    await expect(sendOfferOpeningTest({ authToken: "t", env })).rejects.toThrow(AdminRequiredError);
+    await expect(sendOfferOpeningBatch({ authToken: "t", env })).rejects.toThrow(
+      AdminRequiredError,
+    );
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.send).not.toHaveBeenCalled();
   });
 
   it("refuse une session invalide", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
     await expect(sendOfferOpeningBatch({ authToken: "bad", env })).rejects.toThrow("Unauthorized");
     expect(mocks.send).not.toHaveBeenCalled();
   });

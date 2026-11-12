@@ -15,6 +15,7 @@ import {
   type PreviewSearchRow,
 } from "@/lib/search/preview-search";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Catalogue des ventes à venir par département, lu comme le visiteur de `/sales` : le même client
@@ -118,7 +119,7 @@ async function readPostponedSaleIds(client: PreviewRpcClient): Promise<Set<strin
 
 async function readDepartmentCatalogue(): Promise<DepartmentCatalogue> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
   const rpcClient = client as unknown as PreviewRpcClient;
   const postponedIds = await readPostponedSaleIds(rpcClient);
   const rows = await readAllPublicSales(async (page) => {

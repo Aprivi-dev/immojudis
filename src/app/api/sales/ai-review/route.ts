@@ -6,7 +6,7 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { errorDetailForLog, isUnauthorizedError } from "@/lib/api-errors";
+import { AuthRequiredError, errorDetailForLog } from "@/lib/api-errors";
 import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
 import {
   AI_REVIEW_CEILING_FIELD_KEYS,
@@ -183,7 +183,7 @@ export async function GET(request: Request) {
   } catch (error) {
     // Only the authentication failure is distinguishable; every other failure is the
     // same neutral outage message and the detail goes to the server logs.
-    const unauthorized = isUnauthorizedError(error);
+    const unauthorized = error instanceof AuthRequiredError;
     console.error(
       JSON.stringify({
         scope: "sales.ai-review",

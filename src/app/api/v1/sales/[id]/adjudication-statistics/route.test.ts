@@ -1,5 +1,7 @@
+import { SalePublicationUnavailableError } from "@/lib/sale-publication-guard";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdjudicationPriceStatisticsResponse } from "@/lib/adjudication-price-statistics";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -80,7 +82,9 @@ describe("GET /api/v1/sales/:id/adjudication-statistics", () => {
   });
 
   it("refuse une requête non authentifiée avant toute lecture", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
 
     const response = await request();
 
@@ -91,7 +95,7 @@ describe("GET /api/v1/sales/:id/adjudication-statistics", () => {
 
   it("refuse le plan Découverte avant toute lecture des statistiques", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques d’adjudication réservées à l’offre Analyse."),
+      new ForbiddenError("Statistiques d’adjudication réservées à l’offre Analyse."),
     );
 
     const response = await request();
@@ -161,8 +165,7 @@ describe("GET /api/v1/sales/:id/adjudication-statistics", () => {
   });
 
   it("répond 404 pour une vente inconnue ou retirée, pas 503", async () => {
-    const unknown = new Error("Vente introuvable ou inaccessible.");
-    unknown.name = "SalePublicationUnavailableError";
+    const unknown = new SalePublicationUnavailableError();
     mocks.getStatistics.mockRejectedValue(unknown);
 
     const response = await request();

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -97,7 +98,9 @@ describe("POST /api/market-estimate sale readiness", () => {
     authWithVisibleSale(true);
     mocks.included.mockResolvedValue(false);
     mocks.entitlement.mockRejectedValue(
-      Object.assign(new Error("Estimation de marché réservée à l’offre Analyse."), { status: 403 }),
+      Object.assign(new ForbiddenError("Estimation de marché réservée à l’offre Analyse."), {
+        status: 403,
+      }),
     );
 
     const response = await POST(request());
@@ -241,7 +244,7 @@ describe("POST /api/market-estimate sale readiness", () => {
         authWithVisibleSale(true);
         mocks.included.mockResolvedValue(false);
         mocks.entitlement.mockRejectedValue(
-          Object.assign(new Error("Estimation de marché réservée à l’offre Analyse."), {
+          Object.assign(new ForbiddenError("Estimation de marché réservée à l’offre Analyse."), {
             status: 403,
           }),
         );

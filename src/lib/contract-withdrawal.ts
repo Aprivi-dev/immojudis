@@ -1,4 +1,5 @@
 import "server-only";
+import { assertAdmin } from "@/lib/admin-auth.server";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -83,7 +84,7 @@ export async function executeContractWithdrawal({
   input: ContractWithdrawalInput;
   now?: Date;
 }): Promise<ContractWithdrawalResult> {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  assertAdmin(auth);
 
   const { data: request, error: requestError } = await supabaseAdmin
     .from("data_subject_requests")

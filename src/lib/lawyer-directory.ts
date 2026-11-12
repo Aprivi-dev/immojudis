@@ -14,6 +14,7 @@ import {
 import { LAWYER_DIRECTORY_PAGE_SIZE } from "@/lib/rate-limit-policies";
 import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
+import { NotFoundError } from "@/lib/api-errors";
 
 export { resolveCnbDatasetBarKey };
 
@@ -388,7 +389,7 @@ async function getSaleSector(saleId: string): Promise<SaleSector> {
 
   if (error) throw error;
   if (!data?.id || isPublicationQuarantined(data.raw_payload, data.status)) {
-    throw new Error("Vente introuvable.");
+    throw new NotFoundError("Vente introuvable.");
   }
   return data as SaleSector;
 }

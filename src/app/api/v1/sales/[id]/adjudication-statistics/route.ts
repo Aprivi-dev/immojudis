@@ -3,7 +3,6 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { saleNotFoundAsPublicError } from "@/lib/api-sale-not-found";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { getAdjudicationPriceStatisticsForSale } from "@/lib/adjudication-price-statistics-repository";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
@@ -56,7 +55,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     });
   } catch (error) {
-    const response = apiError(saleNotFoundAsPublicError(error), context, {
+    const response = apiError(error, context, {
       fallbackMessage: "Statistiques d’adjudication temporairement indisponibles.",
       fallbackStatus: 503,
     });

@@ -1,6 +1,7 @@
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { serverEnv } from "@/lib/env";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /**
  * Définition unique de « les paiements sont ouverts » pour l'offre Analyse.
@@ -54,7 +55,7 @@ export function assertAnalysisCheckoutOpen(
 ): void {
   const readiness = analysisCheckoutReadiness(env);
   if (readiness.missing.length > 0) {
-    throw new Error(
+    throw new ConfigurationError(
       `Configuration du paiement incomplète: ${readiness.missing.join(", ")}. Le checkout est suspendu.`,
     );
   }

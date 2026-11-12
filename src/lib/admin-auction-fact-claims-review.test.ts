@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -156,13 +157,13 @@ describe("admin auction fact claim review", () => {
 
     await expect(
       listAdminAuctionFactClaims({ auth: nonAdmin, input: { offset: 0, limit: 10 } }),
-    ).rejects.toThrow("Forbidden");
+    ).rejects.toThrow(AdminRequiredError);
     await expect(
       reviewAdminAuctionFactClaim({
         auth: nonAdmin,
         input: { claimId, decision: "accepted", resolutionNote: null },
       }),
-    ).rejects.toThrow("Forbidden");
+    ).rejects.toThrow(AdminRequiredError);
     expect(mocks.from).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });

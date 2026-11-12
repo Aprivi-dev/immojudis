@@ -1,6 +1,7 @@
 import "server-only";
 import { isNotaryMailDomain } from "@/lib/information-agent/contact-structure";
 import { resolveSiteOrigin } from "@/lib/site-url";
+import { ConfigurationError } from "@/lib/api-errors";
 
 // Configuration d'envoi de l'agent et garde-fous d'environnement (interrupteur, canari). Extraits
 // de `information-agent.ts` sans changement de comportement.
@@ -66,7 +67,7 @@ export function resolveInformationAgentEmailConfig(env: NodeJS.ProcessEnv = proc
   const from = env.INFORMATION_AGENT_EMAIL_FROM?.trim();
   const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
   if (!apiKey || !from || !inboundDomain) {
-    throw new Error("Configuration d'envoi et de réception de l'agent incomplète.");
+    throw new ConfigurationError("Configuration d'envoi et de réception de l'agent incomplète.");
   }
   return { apiKey, from, inboundDomain, appUrl: informationAgentAppOrigin(env) };
 }

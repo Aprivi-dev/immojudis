@@ -71,6 +71,7 @@ import {
   updateInboundReplyCase,
   updateOpenInformationAgentCase,
 } from "@/lib/information-agent-inbound/case-updates";
+import { ConfigurationError } from "@/lib/api-errors";
 
 export {
   fetchInboundAttachments,
@@ -176,7 +177,7 @@ export async function processInformationAgentInboundWebhook({
   const webhookSecret = env.RESEND_WEBHOOK_SECRET?.trim();
   const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
   if (!apiKey || !webhookSecret || !inboundDomain) {
-    throw new Error("Configuration de réception de l’agent incomplète.");
+    throw new ConfigurationError("Configuration de réception de l’agent incomplète.");
   }
 
   const rawPayload = await readBoundedWebhookBody(request);
@@ -1064,7 +1065,7 @@ export async function runInformationAgentInboundQueue({
   const apiKey = env.RESEND_API_KEY?.trim();
   const inboundDomain = env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase();
   if (!apiKey || !inboundDomain) {
-    throw new Error("Configuration de reprise de l’agent incomplète.");
+    throw new ConfigurationError("Configuration de reprise de l’agent incomplète.");
   }
 
   const { data: jobs, error: claimError } = await supabaseAdmin.rpc(

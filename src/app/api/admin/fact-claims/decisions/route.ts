@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiRouteError } from "@/lib/api-observability";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import {
   adminFactClaimDecisionQuerySchema,
   adminFactClaimDecisionSchema,
@@ -27,7 +27,7 @@ const PRIVATE_HEADERS = {
  */
 async function handleGET(request: Request): Promise<Response> {
   try {
-    await requireAdmin(bearerTokenFromRequest(request));
+    await assertAdminAuth(bearerTokenFromRequest(request));
     const input = adminFactClaimDecisionQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
     );
@@ -40,7 +40,7 @@ async function handleGET(request: Request): Promise<Response> {
 
 async function handlePOST(request: Request): Promise<Response> {
   try {
-    const auth = await requireAdmin(bearerTokenFromRequest(request));
+    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
     const input = adminFactClaimDecisionSchema.parse(await request.json());
     const response = await decideAdminFactClaim({ auth, input });
     return NextResponse.json(response, { headers: PRIVATE_HEADERS });

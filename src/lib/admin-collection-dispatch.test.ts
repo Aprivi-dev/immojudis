@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -262,7 +263,9 @@ describe("manual collection includes cloud sources in the existing workflow", ()
 
   it("denies non-admin callers before creating or dispatching a run", async () => {
     mocks.auth.mockResolvedValue({ userId: "member", isAdmin: false });
-    await expect(startAdminScroll("user-token", { source: "all" })).rejects.toThrow("Forbidden");
+    await expect(startAdminScroll("user-token", { source: "all" })).rejects.toThrow(
+      AdminRequiredError,
+    );
     expect(mocks.insert).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });

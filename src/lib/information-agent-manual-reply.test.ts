@@ -366,7 +366,7 @@ describe("manual information agent replies", () => {
           bodyText: "La réponse est reçue et doit être vérifiée par l'équipe.",
         },
       }),
-    ).rejects.toThrow("dossier de vente introuvable ou incohérent");
+    ).rejects.toThrow("Dossier de vente introuvable ou incohérent");
     expect(state.messages).toHaveLength(0);
     expect(mocks.persistFactCandidates).not.toHaveBeenCalled();
   });

@@ -17,6 +17,7 @@ import {
   stripWithdrawnSourceContent,
   type WithdrawnSourcesClient,
 } from "@/lib/withdrawn-sources";
+import { ConfigurationError } from "@/lib/api-errors";
 
 /** First page of the catalogue as seen by a signed-out visitor. */
 export type InitialCatalogue = {
@@ -94,7 +95,7 @@ export const PEPITE_SCAN_REVALIDATE_SECONDS = 120;
 
 async function defaultSearch(search: SalesSearchParams): Promise<PreviewSearchResponse> {
   const client = createPublicSupabaseClient();
-  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  if (!client) throw new ConfigurationError("Supabase n'est pas configuré côté serveur.");
   const rpcClient = client as unknown as PreviewRpcClient;
   if (search.pepite) {
     const base = { ...search, pepite: undefined, page: undefined, limit: undefined };

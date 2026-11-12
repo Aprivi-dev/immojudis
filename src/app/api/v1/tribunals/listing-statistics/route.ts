@@ -9,7 +9,6 @@ import { assertFeatureEntitlementVia } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
-  TribunalCourtUnresolvedError,
   tribunalListingStatisticsQuerySchema,
   tribunalListingStatisticsResponseSchema,
 } from "@/lib/tribunal-listing-statistics";
@@ -61,18 +60,6 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    if (error instanceof TribunalCourtUnresolvedError) {
-      return apiJson(
-        {
-          ok: false,
-          code: "COURT_UNRESOLVED",
-          error: "Le rattachement exact au tribunal reste à confirmer.",
-          requestId: context.requestId,
-        },
-        context,
-        { status: 422 },
-      );
-    }
     const response = apiError(error, context, {
       fallbackMessage: "Statistiques des annonces du tribunal temporairement indisponibles.",
       fallbackStatus: 503,

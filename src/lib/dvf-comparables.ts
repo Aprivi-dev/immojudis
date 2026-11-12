@@ -15,6 +15,7 @@ import { resolvePlanEntitlements } from "@/lib/entitlements.server";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { ForbiddenError, NotFoundError } from "@/lib/api-errors";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfComparableRow =
@@ -85,7 +86,7 @@ export async function getDvfComparables({
 }): Promise<DvfComparablesResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "property.soldComparables")) {
-    throw new Error("Comparables DVF détaillés réservés à l’offre Analyse.");
+    throw new ForbiddenError("Comparables DVF détaillés réservés à l’offre Analyse.");
   }
 
   const sale = await getReferenceSale(auth, input.saleId);
@@ -179,7 +180,7 @@ async function getReferenceSale(
     .maybeSingle();
 
   if (error) throw error;
-  if (!data?.id) throw new Error("Vente introuvable ou non accessible.");
+  if (!data?.id) throw new NotFoundError("Vente introuvable ou non accessible.");
   return data as AppSaleRow & { id: string };
 }
 

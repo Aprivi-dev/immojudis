@@ -3,6 +3,7 @@ import {
   buildTribunalListingStatistics,
   TribunalCourtUnresolvedError,
 } from "@/lib/tribunal-listing-statistics";
+import { AuthRequiredError, ForbiddenError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
@@ -96,7 +97,9 @@ describe("GET /api/v1/tribunals/listing-statistics", () => {
   });
 
   it("refuse les visiteurs avant de lire les statistiques", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
     const response = await request();
 
     expect(response.status).toBe(401);
@@ -105,7 +108,7 @@ describe("GET /api/v1/tribunals/listing-statistics", () => {
 
   it("refuse le plan Découverte avant de lire les statistiques", async () => {
     mocks.assertEntitlement.mockRejectedValue(
-      new Error("Statistiques des annonces judiciaires réservées à l’offre Analyse."),
+      new ForbiddenError("Statistiques des annonces judiciaires réservées à l’offre Analyse."),
     );
     const response = await request();
 
@@ -189,7 +192,7 @@ describe("GET /api/v1/tribunals/listing-statistics", () => {
     const response = await request();
 
     expect(response.status).toBe(422);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.json()).toMatchObject({ code: "COURT_UNRESOLVED" });
   });
 

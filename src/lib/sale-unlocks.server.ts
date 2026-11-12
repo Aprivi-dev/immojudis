@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import { PublicApiError } from "@/lib/api-errors";
+import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
 import { parisMonthWindow } from "@/lib/paris-month";
 import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
 import type { SaleUnlockResult, SaleUnlockStatus, UnlockedSaleSummary } from "@/lib/sale-unlocks";
@@ -194,7 +194,7 @@ export async function unlockSale(
     if (error.code === "P0002") {
       throw new PublicApiError("Vente introuvable ou plus en ligne.", 404);
     }
-    if (error.code === "42501") throw new Error("Unauthorized: Connexion requise.");
+    if (error.code === "42501") throw new AuthRequiredError("Unauthorized: Connexion requise.");
     if (isMissingFunction(error)) {
       throw new PublicApiError("Le déblocage d’une vente n’est pas encore disponible.", 503);
     }

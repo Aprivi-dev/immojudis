@@ -1,8 +1,9 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Tables } from "@/integrations/supabase/types";
+import { NotFoundError } from "@/lib/api-errors";
 
 type PublicationRequestRow = Tables<"listing_publication_requests">;
 /** Colonne `status` protégée par une contrainte CHECK : le type généré est string. */
@@ -52,8 +53,7 @@ export async function listAdminPublicationRequests({
   authToken: string;
   input: AdminPublicationQuery;
 }): Promise<AdminPublicationRequestsResponse> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const search = sanitizeSearch(input.search);
   let pageQuery = supabaseAdmin
@@ -103,8 +103,7 @@ export async function reviewAdminPublicationRequest({
   authToken: string;
   input: AdminPublicationReviewInput;
 }): Promise<AdminPublicationReviewResponse> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  const auth = await assertAdminAuth(authToken);
 
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("listing_publication_requests")
@@ -112,7 +111,7 @@ export async function reviewAdminPublicationRequest({
     .eq("id", input.id)
     .maybeSingle();
   if (existingError) throw existingError;
-  if (!existing) throw new Error("NotFound: demande de publication introuvable.");
+  if (!existing) throw new NotFoundError("Demande de publication introuvable.");
 
   if (input.status === "rejected") {
     if (existing.published_sale_id) {

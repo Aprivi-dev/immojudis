@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
-import { requireAdmin } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { EmailHistoryInputError, listEmailHistory } from "@/lib/admin-emails/history";
 import { adminErrorResponse } from "@/lib/api-route-errors";
 
@@ -31,7 +31,7 @@ const searchSchema = z
  */
 async function handleGET(request: Request) {
   try {
-    const auth = await requireAdmin(bearerTokenFromRequest(request));
+    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
     const params = new URL(request.url).searchParams;
     if (params.has("address")) {
       throw new EmailHistoryInputError("L’adresse se cherche en POST, jamais dans l’URL.");
@@ -52,7 +52,7 @@ async function handleGET(request: Request) {
 /** Liste avec ou sans adresse, paramètres dans le corps JSON. */
 async function handlePOST(request: Request) {
   try {
-    const auth = await requireAdmin(bearerTokenFromRequest(request));
+    const auth = await assertAdminAuth(bearerTokenFromRequest(request));
     if (new URL(request.url).search) {
       throw new EmailHistoryInputError("Aucun paramètre dans l’URL : tout passe par le corps.");
     }

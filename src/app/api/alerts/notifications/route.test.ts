@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PublicApiError } from "@/lib/api-errors";
+import { AuthRequiredError, ForbiddenError, PublicApiError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), update: vi.fn() }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
   bearerTokenFromRequest: (request: Request) => {
     if (!request.headers.get("authorization")) {
-      throw new Error("Unauthorized: No authorization header provided");
+      throw new AuthRequiredError("Unauthorized: No authorization header provided");
     }
     return "token";
   },
@@ -94,7 +94,7 @@ describe("PATCH /api/alerts/notifications", () => {
 
   it("answers 403 when the plan does not include the notifications", async () => {
     mocks.update.mockRejectedValue(
-      new Error("Notifications d'alertes réservées à l’offre Analyse."),
+      new ForbiddenError("Notifications d'alertes réservées à l’offre Analyse."),
     );
 
     expect((await patch({ notificationId: NOTIFICATION_ID, action: "read" })).status).toBe(403);

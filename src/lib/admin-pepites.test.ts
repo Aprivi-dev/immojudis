@@ -1,3 +1,4 @@
+import { AuthRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Row = Record<string, unknown>;
@@ -602,7 +603,7 @@ describe("getAdminPepites", () => {
   });
 
   it("refuse un jeton invalide", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized"));
+    mocks.requireAuth.mockRejectedValue(new AuthRequiredError("Unauthorized"));
 
     await expect(getAdminPepites("jeton", NOW)).rejects.toThrow("Unauthorized");
     expect(mocks.rpc).not.toHaveBeenCalled();

@@ -4,7 +4,7 @@ import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
-import { assertAdminPipelineToken as authorize } from "@/lib/admin-auth.server";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
@@ -18,7 +18,7 @@ function failure(error: unknown, request: Request) {
 }
 async function handleGET(request: Request) {
   try {
-    await authorize(bearerTokenFromRequest(request));
+    await assertAdminAuth(bearerTokenFromRequest(request));
     const [sourcesResult, controlResult, alertsResult, usageResult] = await Promise.all([
       client.from("auction_source_state").select("*").order("source_name"),
       client.from("auction_pipeline_control").select("*").single(),
@@ -73,7 +73,7 @@ async function handleGET(request: Request) {
 }
 async function handlePATCH(request: Request) {
   try {
-    await authorize(bearerTokenFromRequest(request));
+    await assertAdminAuth(bearerTokenFromRequest(request));
     const input = z
       .object({ source: z.string().min(1).max(60), enabled: z.boolean() })
       .strict()

@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -175,7 +176,7 @@ describe("prepareAdminInformationAgentDraft : brouillon et aperçu en une répon
         auth: { isAdmin: false, userId: "x" } as never,
         input: { saleId },
       }),
-    ).rejects.toThrow("accès administrateur");
+    ).rejects.toThrow(AdminRequiredError);
     expect(mocks.from).not.toHaveBeenCalled();
   });
 });

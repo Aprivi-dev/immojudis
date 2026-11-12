@@ -13,6 +13,7 @@ import {
 import { normalizeWorkspace, type SaleWorkspace } from "@/lib/sale-workspaces";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { ForbiddenError } from "@/lib/api-errors";
 
 const AUDIENCE_TRACKING_WORKSPACE_LIMIT = 200;
 
@@ -128,7 +129,7 @@ export async function getAudienceTracking({
 }): Promise<AudienceTrackingResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "workspace.audienceTracking")) {
-    throw new Error("Suivi d'audience réservé à l’offre Analyse.");
+    throw new ForbiddenError("Suivi d'audience réservé à l’offre Analyse.");
   }
 
   const workspaceRows = await loadWorkspaceRows(auth, includeArchived);

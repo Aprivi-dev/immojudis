@@ -3,7 +3,6 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { saleNotFoundAsPublicError } from "@/lib/api-sale-not-found";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { getOutcomeGraphForecastForSale } from "@/lib/outcome-graph-repository";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
@@ -46,7 +45,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     return apiJson({ forecast }, context, { headers: { "cache-control": "private, no-store" } });
   } catch (error) {
-    return apiError(saleNotFoundAsPublicError(error), context, {
+    return apiError(error, context, {
       fallbackMessage: "Prévision de l’audience indisponible.",
     });
   }

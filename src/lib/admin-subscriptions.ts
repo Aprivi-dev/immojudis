@@ -7,7 +7,7 @@ import { normalizeEmail } from "@/lib/account";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
-export { assertAdminAuth };
+import { NotFoundError } from "@/lib/api-errors";
 
 type UserSubscriptionRow = Database["public"]["Tables"]["user_subscriptions"]["Row"];
 type UserSubscriptionInsert = Database["public"]["Tables"]["user_subscriptions"]["Insert"];
@@ -292,7 +292,7 @@ async function findAuthUser(target: string): Promise<User> {
   const normalizedTarget = target.trim();
   if (isUuid(normalizedTarget)) {
     const { data, error } = await supabaseAdmin.auth.admin.getUserById(normalizedTarget);
-    if (error || !data.user) throw new Error("Utilisateur introuvable.");
+    if (error || !data.user) throw new NotFoundError("Utilisateur introuvable.");
     return data.user;
   }
 
@@ -305,7 +305,7 @@ async function findAuthUser(target: string): Promise<User> {
     if (data.users.length < 1000) break;
   }
 
-  throw new Error("Utilisateur introuvable pour cet email.");
+  throw new NotFoundError("Utilisateur introuvable pour cet email.");
 }
 
 async function getEmailsByUserId(userIds: string[]): Promise<Map<string, string | null>> {

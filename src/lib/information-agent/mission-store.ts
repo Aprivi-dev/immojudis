@@ -1,6 +1,5 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { InformationAgentInventoryItem } from "@/lib/information-agent-inventory";
 import {
@@ -15,6 +14,7 @@ import {
   type InformationAgentFact,
   type InformationAgentMission,
 } from "@/lib/information-agent/schemas";
+import { NotFoundError } from "@/lib/api-errors";
 
 // Accès aux missions et aux dossiers de l'agent, partagés par le brouillon, l'envoi et l'aperçu.
 // Extraits de `information-agent.ts` sans changement de comportement.
@@ -38,10 +38,6 @@ export async function cancelMission({
   });
 }
 
-export function requireInformationAgentAdmin(auth: SupabaseAuthContext): void {
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-}
-
 export async function loadOwnedMission(userId: string, missionId: string): Promise<MissionRow> {
   const { data, error } = await supabaseAdmin
     .from("information_agent_missions")
@@ -49,7 +45,7 @@ export async function loadOwnedMission(userId: string, missionId: string): Promi
     .eq("id", missionId)
     .eq("user_id", userId)
     .single();
-  if (error || !data) throw new Error("Requête invalide : enquête introuvable.");
+  if (error || !data) throw new NotFoundError("Enquête introuvable.");
   return data;
 }
 

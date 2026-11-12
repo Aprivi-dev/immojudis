@@ -4,7 +4,6 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
-import { saleNotFoundAsPublicError } from "@/lib/api-sale-not-found";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -52,7 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     });
   } catch (error) {
-    const response = apiError(saleNotFoundAsPublicError(error), context, {
+    const response = apiError(error, context, {
       fallbackMessage: "Données d’urbanisme et cadastrales temporairement indisponibles.",
       fallbackStatus: 503,
     });

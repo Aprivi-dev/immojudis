@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import type Stripe from "stripe";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import {
@@ -225,10 +225,7 @@ export type BillingReconciliationReport = {
 export async function reconcileBillingReadOnly(
   authToken: string,
 ): Promise<BillingReconciliationReport> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) {
-    throw new Error("Forbidden: ce compte n'a pas les droits administrateur Immojudis.");
-  }
+  await assertAdminAuth(authToken);
   return reconcileBillingNow();
 }
 

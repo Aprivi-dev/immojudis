@@ -1,3 +1,4 @@
+import { ForbiddenError } from "@/lib/api-errors";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { buildActiveComparablesAnalysis } from "@/lib/active-comparables-analysis";
 import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
@@ -84,7 +85,7 @@ export function assertEntitlementIncluded(
   feature: FeatureKey,
   message: string,
 ) {
-  if (!featureIncluded(plan.plan, feature)) throw new Error(message);
+  if (!featureIncluded(plan.plan, feature)) throw new ForbiddenError(message);
 }
 
 export function featureUnlocked(access: FeatureAccess): boolean {

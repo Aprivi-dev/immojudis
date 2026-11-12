@@ -1,5 +1,5 @@
 import "server-only";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError, errorDetailForLog } from "@/lib/api-errors";
 import { resolveNoReplyEmailConfig } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import { weeklyDigestMode, type EmailFeatureMode } from "@/lib/email-feature-mode";
@@ -385,7 +385,7 @@ export function assertWeeklyDigestComplete(summary: WeeklyDigestRunSummary): voi
     const missing = summary.missingConfig.length
       ? ` (variable(s) manquante(s) : ${summary.missingConfig.join(", ")})`
       : "";
-    throw new Error(
+    throw new ConfigurationError(
       `Récapitulatif hebdomadaire : ${summary.due} envoi(s) dû(s) mais l'envoi d'e-mails n'est pas configuré${missing}.`,
     );
   }

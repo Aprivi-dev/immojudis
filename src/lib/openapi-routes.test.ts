@@ -65,7 +65,11 @@ function codesFromSource(source: string): { codes: string[]; secured: boolean } 
   if (/enforceUserRateLimit|enforceDailyOperationLimits/.test(source)) codes.add("429");
   // Un schéma zod, un paramètre répété ou une erreur publique 400 donnent un 400.
   if (/\.parse\(|PublicApiError\(/.test(source)) codes.add("400");
-  if (/saleNotFoundAsPublicError/.test(source)) codes.add("404");
+  // Une vente inconnue ou retirée de la publication donne un 404 (`SalePublicationUnavailableError`,
+  // `TribunalJudicialSaleNotFoundError`).
+  if (/getSale\(|get\w+\(\s*saleId|getTribunalJudicialActivity\(/.test(source)) codes.add("404");
+  // Rattachement au tribunal non résolu : 422 `COURT_UNRESOLVED` (`TribunalCourtUnresolvedError`).
+  if (/getTribunal(JudicialActivity|ListingStatistics)\(/.test(source)) codes.add("422");
   for (const status of source.matchAll(/status:\s*(\d{3})/g)) codes.add(status[1]);
   const fallback = source.match(/fallbackStatus:\s*(\d{3})/);
   codes.add(fallback ? fallback[1] : "500");

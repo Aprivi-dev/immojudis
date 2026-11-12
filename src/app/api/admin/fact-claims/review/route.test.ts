@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -118,7 +119,7 @@ describe("admin auction fact claim review route", () => {
   });
 
   it("returns unauthorized when the auth middleware rejects the request", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: Invalid token"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: Invalid token"));
 
     const response = await GET(new Request("https://example.test/api/admin/fact-claims/review"));
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthRequiredError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -60,7 +61,7 @@ describe("/api/investor-profile", () => {
   });
 
   it("exige un compte connecté pour chaque méthode", async () => {
-    mocks.auth.mockRejectedValue(new Error("Unauthorized: No token provided"));
+    mocks.auth.mockRejectedValue(new AuthRequiredError("Unauthorized: No token provided"));
     expect((await GET(new Request(URL_))).status).toBe(401);
     expect((await put({ strategy: "louer" })).status).toBe(401);
     expect((await DELETE(new Request(URL_, { method: "DELETE" }))).status).toBe(401);

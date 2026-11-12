@@ -1,6 +1,6 @@
 import "server-only";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { z } from "zod";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { isMissingRpcError } from "@/lib/postgrest-errors";
 
@@ -159,8 +159,7 @@ export async function getAdminActivation(
   authToken: string,
   now = new Date(),
 ): Promise<AdminActivation> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const [activation, threshold] = await Promise.all([
     supabaseAdmin.rpc("admin_pilotage_activation", { p_now: now.toISOString() }),

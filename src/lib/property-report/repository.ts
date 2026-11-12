@@ -22,10 +22,12 @@ import {
 } from "../property-reports";
 import { appSaleRowToAuctionSale } from "./serialization";
 import {
+  SalePublicationUnavailableError,
   assertSalePublicationVisible,
   getPublicationVisibleSaleIds,
 } from "@/lib/sale-publication-guard";
 import { dpeDiagnosticRowToStructured as dpeDiagnosticRowToAnalysis } from "@/lib/dpe-diagnostic-row";
+import { NotFoundError } from "@/lib/api-errors";
 export { dpeDiagnosticRowToAnalysis };
 
 export async function getSale(supabase: SupabaseClient, saleId: string): Promise<AuctionSale> {
@@ -36,7 +38,7 @@ export async function getSale(supabase: SupabaseClient, saleId: string): Promise
     .maybeSingle();
 
   if (error) throw error;
-  if (!data?.id) throw new Error("Vente introuvable ou inaccessible.");
+  if (!data?.id) throw new SalePublicationUnavailableError();
 
   // Public share links and some server workflows use the service-role client.
   // Re-check the source row outside the curated view so status and the
@@ -369,7 +371,7 @@ export async function getReport(
     .maybeSingle();
 
   if (error) throw error;
-  if (!data) throw new Error("Rapport introuvable.");
+  if (!data) throw new NotFoundError("Rapport introuvable.");
   await assertSalePublicationVisible(data.sale_id);
   return data;
 }

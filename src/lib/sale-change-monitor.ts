@@ -24,6 +24,7 @@ import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { asRecord, numberValue, stringValue } from "@/lib/guards";
 import { documentSignatureParts } from "@/lib/document-signature";
+import { ForbiddenError } from "@/lib/api-errors";
 
 export const SALE_WATCH_KINDS = ["alert_match", "favorite", "workspace"] as const;
 export const SALE_CHANGE_EVENT_KINDS = [
@@ -635,7 +636,7 @@ function addChangeIfDifferent(
 async function assertRealtimeChangesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.realtimeChanges")) {
-    throw new Error("Suivi temps réel des changements réservé à l’offre Analyse.");
+    throw new ForbiddenError("Suivi temps réel des changements réservé à l’offre Analyse.");
   }
 }
 

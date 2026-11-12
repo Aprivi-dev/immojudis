@@ -34,7 +34,7 @@ vi.mock("@/lib/sale-unlocks.server", async () => {
   };
 });
 
-import { PublicApiError } from "@/lib/api-errors";
+import { AuthRequiredError, PublicApiError } from "@/lib/api-errors";
 import { SaleUnlockQuotaError } from "@/lib/sale-unlocks.server";
 import { GET, POST } from "./route";
 
@@ -102,7 +102,9 @@ describe("POST /api/sales/[id]/unlock", () => {
   });
 
   it("requires a signed-in account before touching the quota", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
 
     const response = await post();
 
@@ -169,7 +171,9 @@ describe("GET /api/sales/[id]/unlock", () => {
   });
 
   it("requires a signed-in account", async () => {
-    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    mocks.requireAuth.mockRejectedValue(
+      new AuthRequiredError("Unauthorized: missing bearer token"),
+    );
     const response = await GET(
       new Request(`https://example.test/api/sales/${saleId}/unlock`),
       context(),

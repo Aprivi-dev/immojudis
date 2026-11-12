@@ -9,7 +9,8 @@ import {
   TRIAL_EXTENSION_MAX_DAYS,
   type AdminSignupAccess,
 } from "@/lib/admin-signups-format";
-import { assertAdminAuth, withManualGrant } from "@/lib/admin-subscriptions";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
+import { withManualGrant } from "@/lib/admin-subscriptions";
 import { signupTrialDateLabel } from "@/lib/launch-offer";
 import { readLaunchOfferState } from "@/lib/launch-offer.server";
 import { isPlanPeriodActive, TRIAL_EXTENSION_SOURCE } from "@/lib/plans";

@@ -1,3 +1,4 @@
+import { AdminRequiredError } from "@/lib/api-errors";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertInformationAgentCanaryRecipient,
@@ -850,7 +851,7 @@ describe("supervised information agent", () => {
         auth: { isAdmin: false } as never,
         input: { saleId: "11111111-1111-4111-8111-111111111111" },
       }),
-    ).rejects.toThrow("Forbidden: accès administrateur requis.");
+    ).rejects.toThrow(AdminRequiredError);
   });
 });
 

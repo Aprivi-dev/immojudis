@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { ConfigurationError } from "@/lib/api-errors";
 
 const CONTRIBUTION_TOKEN_VERSION = "v2";
 const CONTRIBUTION_TOKEN_LIFETIME_MS = 45 * 24 * 60 * 60 * 1000;
@@ -40,7 +41,7 @@ export function createInformationAgentContributionToken(
     !Number.isSafeInteger(contributionTokenVersion) ||
     contributionTokenVersion < 1
   ) {
-    throw new Error("Configuration du lien de dépôt invalide.");
+    throw new ConfigurationError("Configuration du lien de dépôt invalide.");
   }
   return createHmac("sha256", secret)
     .update(signedPayload(missionId, createdAt, caseId, recipientEmail, contributionTokenVersion))

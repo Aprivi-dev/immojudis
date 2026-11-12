@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { errorDetailForLog } from "@/lib/api-errors";
+import { ConfigurationError, errorDetailForLog } from "@/lib/api-errors";
 import type { ResendEmailMessage } from "@/lib/email-alerts";
 import { sendTrackedEmail } from "@/lib/send-tracked-email";
 import {
@@ -280,7 +280,7 @@ export async function runRepliesReviewDigest({
 /** Fait échouer le passage (donc la supervision) quand le résumé dû n'est pas parti. */
 export function assertRepliesReviewDigestComplete(summary: RepliesReviewDigestSummary): void {
   if (!summary.configured) {
-    throw new Error(
+    throw new ConfigurationError(
       `Résumé des réponses à relire : ${summary.replies + summary.unrouted} à relire mais le canal email d’exploitation n’est pas configuré (OPERATIONS_ALERT_EMAIL_TO, RESEND_API_KEY, ALERT_EMAIL_FROM).`,
     );
   }

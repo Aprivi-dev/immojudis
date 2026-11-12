@@ -1,5 +1,5 @@
 import "server-only";
-import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
+import { assertAdminAuth } from "@/lib/admin-auth.server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   lawyerStatementMonthSchema,
@@ -18,8 +18,7 @@ export async function getAdminLawyerStatement(
   authToken: string,
   month: string,
 ): Promise<LawyerStatement> {
-  const auth = await requireSupabaseAuthContext(authToken);
-  if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
+  await assertAdminAuth(authToken);
 
   const validMonth = lawyerStatementMonthSchema.parse(month);
   const { data, error } = await supabaseAdmin.rpc("admin_lawyer_monthly_statement", {
