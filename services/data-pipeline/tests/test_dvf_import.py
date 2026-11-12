@@ -643,11 +643,6 @@ def test_finalize_failed_import_reconnects_after_administrator_restart(monkeypat
 
     monkeypatch.setattr(
         dvf_import,
-        "_postgres_connect",
-        lambda _db_url: recovered_connection,
-    )
-    monkeypatch.setattr(
-        dvf_import,
         "_restore_dvf_indexes",
         lambda connection: restored.append(connection),
     )
@@ -658,6 +653,7 @@ def test_finalize_failed_import_reconnects_after_administrator_restart(monkeypat
         "batch-id",
         "terminating connection due to administrator command",
         restore_indexes=True,
+        connect=lambda _db_url: recovered_connection,
     )
 
     assert original_connection.closed

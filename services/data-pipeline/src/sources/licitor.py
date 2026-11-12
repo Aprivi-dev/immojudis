@@ -211,10 +211,6 @@ def _nearest_sales_first(detail_urls: list[str], listing_by_url: dict[str, dict[
     return sorted(detail_urls, key=sale_day)
 
 
-def scrape_licitor_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_licitor_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details: bool = True, known: dict[str, str] | None = None) -> ScrapeResult:
     """Collect Licitor listings as an optional benchmark source."""
     settings = load_settings()

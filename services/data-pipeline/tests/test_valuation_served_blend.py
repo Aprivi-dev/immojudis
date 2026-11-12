@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import json
 import math
-import re
 from pathlib import Path
 
 import numpy as np
@@ -12,77 +12,30 @@ import pytest
 from src import valuation_served_blend as vsb
 from src.valuation_activation_gate import served_blend_reasons
 
-HYBRID_TS = Path(__file__).resolve().parents[3] / "src" / "lib" / "hybrid-market-valuation.ts"
-
-
-def _compact(source: str) -> str:
-    """TypeScript without whitespace nor Prettier's trailing commas, so formatting never matters."""
-    return re.sub(r"\s+", "", source).replace(",)", ")")
-
-
-def _function_body(source: str, name: str) -> str:
-    start = source.index(f"function {name}(")
-    end = source.index("\n}\n", start)
-    return _compact(source[start:end])
+# Shared with src/lib/hybrid-market-valuation.ts: the TypeScript serving code must give the same numbers.
+FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "served_blend_parity.json").read_text("utf-8"))
 
 
 # --- parity with hybrid-market-valuation.ts --------------------------------------------------
 
 
-def test_the_blend_weights_are_those_of_the_typescript_serving_code() -> None:
-    source = HYBRID_TS.read_text(encoding="utf-8")
-    body = _function_body(source, "resolveModelWeight")
-
-    quality = " : ".join(f"qualityScore >= {minimum} ? {weight}" for _, minimum, weight in vsb.QUALITY_WEIGHT_TIERS)
-    caps = " : ".join(f"testMape >= {minimum} ? {cap}" for minimum, cap in vsb.PERFORMANCE_WEIGHT_CAPS)
-    expected = [
-        "const testMape = finiteNumber(metricMap.test_mape_pct);",
-        f"const qualityWeight = {quality} : {vsb.WEAK_QUALITY_MODEL_WEIGHT};",
-        "if (testMape == null) return qualityWeight;",
-        (
-            f"const performanceAdjustment = Math.max({vsb.PERFORMANCE_ADJUSTMENT_MIN}, "
-            f"Math.min({vsb.PERFORMANCE_ADJUSTMENT_MAX}, ({vsb.PERFORMANCE_PIVOT_MAPE_PCT} - testMape) / 100));"
-        ),
-        f"const performanceCap = {caps} : {vsb.PERFORMANCE_DEFAULT_CAP};",
-        (
-            f"return Math.max({vsb.MODEL_WEIGHT_FLOOR}, "
-            "Math.min(performanceCap, qualityWeight + performanceAdjustment));"
-        ),
-    ]
-    for line in expected:
-        assert _compact(line) in body, f"hybrid-market-valuation.ts no longer contains: {line}"
-    # Every number of the TypeScript function is one of ours: a new threshold would go unnoticed otherwise.
-    ours = {
-        *(str(value) for _, minimum, weight in vsb.QUALITY_WEIGHT_TIERS for value in (minimum, weight)),
-        *(str(value) for pair in vsb.PERFORMANCE_WEIGHT_CAPS for value in pair),
-        str(vsb.WEAK_QUALITY_MODEL_WEIGHT),
-        str(vsb.PERFORMANCE_PIVOT_MAPE_PCT),
-        str(abs(vsb.PERFORMANCE_ADJUSTMENT_MIN)),
-        str(vsb.PERFORMANCE_ADJUSTMENT_MAX),
-        str(vsb.PERFORMANCE_DEFAULT_CAP),
-        str(vsb.MODEL_WEIGHT_FLOOR),
-        "100",
-    }
-    assert set(re.findall(r"\d+(?:\.\d+)?", body)) == ours
-
-
-def test_the_blend_formula_is_that_of_the_typescript_serving_code() -> None:
-    source = HYBRID_TS.read_text(encoding="utf-8")
-
-    blend = _function_body(source, "geometricBlend")
-    assert _compact("const comparableWeight = 1 - modelWeight;") in blend
-    assert (
-        _compact("return Math.exp(Math.log(comparable) * comparableWeight + Math.log(model) * modelWeight);")
-        in blend
+@pytest.mark.parametrize("case", FIXTURE["modelWeight"], ids=lambda case: case["label"])
+def test_the_blend_weights_reproduce_the_shared_fixture(case: dict) -> None:
+    assert vsb.resolve_model_weight(case["qualityScore"], case["testMapePct"]) == pytest.approx(
+        case["expected"], abs=1e-12
     )
-    serving = _compact(source)
-    for statement in (
-        "const p50 = geometricBlend(input.comparableMedianPricePerM2, prediction.p50PricePerM2, modelWeight);",
-        "const p10 = Math.min(p50, geometricBlend(input.comparableP10PricePerM2, prediction.p10PricePerM2, modelWeight));",
-        "const p90 = Math.max(p50, geometricBlend(input.comparableP90PricePerM2, prediction.p90PricePerM2, modelWeight));",
-        "const modelWeight = resolveModelWeight(input.comparableQualityScore, model.training_metrics);",
-    ):
-        assert _compact(statement) in serving, f"hybrid-market-valuation.ts no longer contains: {statement}"
+
+
+@pytest.mark.parametrize("case", FIXTURE["blend"], ids=lambda case: case["label"])
+def test_the_blend_formula_reproduces_the_shared_fixture(case: dict) -> None:
+    quantiles = ("p10", "p50", "p90")
+    blended = vsb.blend_quantiles(
+        tuple(np.array([case["comparable"][name]]) for name in quantiles),
+        tuple(np.array([case["model"][name]]) for name in quantiles),
+        case["modelWeight"],
+    )
+    for name, values in zip(quantiles, blended, strict=True):
+        assert values[0] == pytest.approx(case["expected"][name], rel=1e-12), name
 
 
 @pytest.mark.parametrize(

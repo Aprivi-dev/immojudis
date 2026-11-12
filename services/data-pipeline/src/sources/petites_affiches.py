@@ -176,10 +176,6 @@ def _save_page_cursor(
         LOGGER.warning("Unable to persist Petites Affiches cursor for %s", partition, exc_info=True)
 
 
-def scrape_petites_affiches_aquitaine(max_pages: int | None = None) -> list[dict[str, Any]]:
-    return scrape_petites_affiches_aquitaine_result(max_pages=max_pages).sales
-
-
 def scrape_petites_affiches_aquitaine_result(
     max_pages: int | None = None, known: dict[str, str] | None = None
 ) -> ScrapeResult:

@@ -62,10 +62,6 @@ class AvoventesClient(PoliteHttpClient):
                          allowed_redirect_origins=ALLOWED_ORIGINS)
 
 
-def scrape_avoventes_aquitaine() -> list[dict[str, Any]]:
-    return scrape_avoventes_aquitaine_result().sales
-
-
 def scrape_avoventes_aquitaine_result(known: dict[str, str] | None = None) -> ScrapeResult:
     settings = load_settings()
     client = AvoventesClient(

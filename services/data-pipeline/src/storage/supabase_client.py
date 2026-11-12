@@ -1432,34 +1432,6 @@ def record_llm_usage_event(event: dict[str, Any]) -> None:
         LOGGER.warning("Could not persist LLM usage telemetry: %s", exc)
 
 
-def llm_usage_budget_available(max_calls_per_hour: int) -> bool:
-    """Return false when the configured hourly prediction budget is exhausted."""
-    if max_calls_per_hour <= 0:
-        return True
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
-        return True
-    try:
-        response = httpx.get(
-            f"{str(url).rstrip('/')}/rest/v1/llm_usage_events",
-            params={
-                "select": "id",
-                "created_at": f"gte.{(datetime.now(UTC) - timedelta(hours=1)).isoformat()}",
-                "limit": str(max_calls_per_hour + 1),
-            },
-            headers={**_rest_headers(str(key)), "Prefer": "count=exact"},
-            timeout=15,
-        )
-        response.raise_for_status()
-        count_text = response.headers.get("content-range", "").rsplit("/", 1)[-1]
-        return count_text == "*" or int(count_text) < max_calls_per_hour
-    except Exception as exc:
-        LOGGER.warning("Could not check LLM usage budget: %s", exc)
-        return True
-
-
 def finish_auction_enrichment_job_in_supabase(
     job_id: str,
     *,
@@ -3167,65 +3139,6 @@ def fetch_known_sale_signatures() -> dict[str, str]:
         for source_url, row in fetch_known_sale_details().items()
         if row.get("_signature") and row.get("score_version")
     }
-
-
-def touch_last_seen_for_source_urls(source_urls: list[str]) -> int:
-    """Refresh last_seen_at for listings whose detail fetch was skipped. Best effort."""
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    unique = [u for u in {u for u in source_urls if u}]
-    if not url or not key or not unique:
-        return 0
-
-    now = datetime.now(UTC).isoformat()
-    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-    touched = 0
-    for index in range(0, len(unique), 150):
-        batch = unique[index : index + 150]
-        try:
-            response = httpx.patch(
-                endpoint,
-                params={"source_url": _postgrest_in_filter(batch)},
-                headers=_rest_headers(str(key), prefer="return=minimal"),
-                json={"last_seen_at": now},
-                timeout=30,
-            )
-            if not response.is_error:
-                touched += len(batch)
-        except httpx.HTTPError as exc:
-            LOGGER.warning("last_seen touch (source_url) failed: %s", exc)
-    return touched
-
-
-def touch_last_seen_for_content_hashes(content_hashes: list[str]) -> int:
-    """Refresh last_seen_at for listings skipped by the incremental run, so they
-    are not considered stale even though they were not re-upserted. Best effort."""
-    settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    unique = [h for h in {h for h in content_hashes if h}]
-    if not url or not key or not unique:
-        return 0
-
-    now = datetime.now(UTC).isoformat()
-    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
-    touched = 0
-    for index in range(0, len(unique), 150):
-        batch = unique[index : index + 150]
-        try:
-            response = httpx.patch(
-                endpoint,
-                params={"content_hash": _postgrest_in_filter(batch)},
-                headers=_rest_headers(str(key), prefer="return=minimal"),
-                json={"last_seen_at": now},
-                timeout=30,
-            )
-            if not response.is_error:
-                touched += len(batch)
-        except httpx.HTTPError as exc:
-            LOGGER.warning("last_seen touch failed: %s", exc)
-    return touched
 
 
 def mark_past_sales_in_supabase() -> int:

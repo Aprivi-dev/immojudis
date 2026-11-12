@@ -50,6 +50,24 @@ def require_encheres_publiques_access(settings: Mapping[str, object]) -> None:
             "Encheres Publiques is disabled until source access is explicitly authorized"
         )
 
+# Sources collected by ``src.main --source``: the reference list. The choices of ``data-pipeline.yml`` and the
+# admin list ``SCROLL_SOURCES`` of ``src/lib`` are checked against it (tests/test_workflow_security.py,
+# tests/test_typescript_contracts.py).
+SOURCE_NAMES = (
+    "avoventes",
+    "licitor",
+    "vench",
+    "info_encheres",
+    "encheres_publiques",
+    "petites_affiches",
+    "cessions_etat",
+    "agrasc",
+    "encheres_immobilieres",
+    "notaires",
+)
+# Sources collected in a child process unless ``SOURCE_PROCESS_ISOLATION_SOURCES`` says otherwise.
+PROCESS_ISOLATED_SOURCES = ("vench", "avoventes", "petites_affiches")
+
 FRANCE_DEPARTMENTS = (
     *(f"{department:02d}" for department in range(1, 96)),
     "2A",
@@ -157,9 +175,7 @@ def load_settings() -> dict[str, str | float | None]:
         in {"1", "true", "yes", "on"},
         "source_process_isolation_sources": tuple(
             source.strip().lower()
-            for source in os.getenv(
-                "SOURCE_PROCESS_ISOLATION_SOURCES", "vench,avoventes,petites_affiches"
-            ).split(",")
+            for source in os.getenv("SOURCE_PROCESS_ISOLATION_SOURCES", ",".join(PROCESS_ISOLATED_SOURCES)).split(",")
             if source.strip()
         ),
         "source_scrape_timeout_seconds": max(

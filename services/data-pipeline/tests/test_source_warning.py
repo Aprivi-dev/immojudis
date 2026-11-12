@@ -164,13 +164,12 @@ def _autonomous(monkeypatch, returncode: int, source: str = "licitor"):
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
-    monkeypatch.setattr(autonomous_runner, "_postgres_connect", lambda _url: nullcontext(FakeDb()))
     monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
-    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
     monkeypatch.setattr(
         autonomous_runner.subprocess, "run", lambda command, **kwargs: SimpleNamespace(returncode=returncode)
     )
-    return autonomous_runner.execute(run_id), updates
+    return autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())), updates
 
 
 def test_scheduled_run_keeps_its_succeeded_status_but_forwards_the_warning(monkeypatch) -> None:

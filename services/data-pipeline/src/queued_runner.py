@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from src.admission import is_expired
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
-from src.config import PDF_TEXTS_DIR, EncheresPubliquesAccessNotAuthorized, load_settings
+from src.config import PDF_TEXTS_DIR, SOURCE_NAMES, EncheresPubliquesAccessNotAuthorized, load_settings
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
@@ -31,7 +31,6 @@ from src.llm_requests import (
 )
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_scope
 from src.main import (
-    SOURCE_NAMES,
     PipelineOptions,
     run_pipeline,
 )
@@ -53,7 +52,6 @@ from src.pdf_pass_outcomes import (
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import PARTIAL_MANIFEST_DEFERRAL, PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
-from src.queue_job_state import finish_job as _finish_claim
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
@@ -164,12 +162,15 @@ def _log_worker_job_transition(
 
 
 def _finish_job(job: dict[str, object], **kwargs: object) -> bool:
+    """Finish only the claimed attempt and report whether the compare-and-set matched it."""
+    # A worker whose lease expired must not finish a later worker's attempt.
+    arguments = dict(kwargs)
+    if job.get("attempt_count") is not None:
+        arguments["attempt_count"] = int(job["attempt_count"])
+    if job.get("locked_at") is not None:
+        arguments["locked_at"] = job["locked_at"]
     try:
-        persisted = _finish_claim(
-            job,
-            finish_impl=finish_auction_enrichment_job_in_supabase,
-            **kwargs,
-        )
+        persisted = finish_auction_enrichment_job_in_supabase(str(job.get("id") or ""), **arguments)
     except Exception:
         _log_worker_job_transition(job, outcome="finish_failed")
         raise

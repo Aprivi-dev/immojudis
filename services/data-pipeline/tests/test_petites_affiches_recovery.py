@@ -240,9 +240,8 @@ class _Result:
 
 def test_finish_source_reports_partial_scope_and_publication_ledger(monkeypatch) -> None:
     db = _FinishDB()
-    monkeypatch.setattr("src.autonomous_runner._postgres_connect", lambda url: nullcontext(db))
 
-    finish_source("db", "run")
+    finish_source("db", "run", connect=lambda url: nullcontext(db))
 
     assert db.state_update is not None
     assert db.state_update[0] == "partial"

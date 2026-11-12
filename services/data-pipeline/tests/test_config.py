@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src import config
-from src.config import load_settings
+from src.config import PROCESS_ISOLATED_SOURCES, SOURCE_NAMES, load_settings
 
 
 def test_target_departments_default_matches_production_scope(monkeypatch) -> None:
@@ -88,6 +88,8 @@ def test_source_isolation_defaults_cover_petites_affiches_inside_existing_budget
         "avoventes",
         "petites_affiches",
     )
+    assert settings["source_process_isolation_sources"] == PROCESS_ISOLATED_SOURCES
+    assert set(PROCESS_ISOLATED_SOURCES) <= set(SOURCE_NAMES)
     assert settings["source_scrape_timeout_seconds"] == 1800.0
 
 

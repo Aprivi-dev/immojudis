@@ -168,14 +168,6 @@ def excluded_contact_reason(email: str) -> str | None:
     return None
 
 
-def is_court_registry_email(email: str) -> bool:
-    """Adresse d'une juridiction (greffe, accueil du tribunal), jamais sollicitée par l'agent.
-
-    Miroir de ``isCourtRegistryEmail`` (``src/lib/information-agent/excluded-addresses.ts``).
-    """
-    return excluded_contact_reason(email) == "court"
-
-
 @dataclass(frozen=True)
 class ContactBlocklist:
     """Registre de refus (``information_agent_contacts``) : opposition ou rebond permanent.
