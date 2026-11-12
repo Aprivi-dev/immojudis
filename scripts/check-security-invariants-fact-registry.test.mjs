@@ -1682,6 +1682,44 @@ $$;`;
         "begin; do $$ declare v_trigger name; begin for v_trigger in select trigger_row.tgname from pg_catalog.pg_trigger trigger_row where trigger_row.tgenabled = 'O' and trigger_row.tgname not like 'aaab\\_%' union select 'auction_sales_other'::name loop execute format('alter table public.auction_sales disable trigger %I', v_trigger); end loop; end $$; update public.auction_sales set city = btrim(city); select app_private.assert_fact_registry_triggers(); commit;",
       message: "gives its trigger variable v_trigger a name outside the admitted loop",
     },
+    // Relecture de sécurité du lot R2c (I2) : cas V1b, V2, V5b et V6 de la relecture, tels qu'elle les a écrits.
+    {
+      label: "une requête assemblée lancée par ts_rewrite (V1b)",
+      file: migration("r2c_v1b"),
+      content:
+        "select pg_catalog.ts_rewrite('a'::tsquery, 'select ''a''::tsquery, ''b''::tsquery from (select set_' || 'config(''req'' || ''uest.jwt.claims'', ''{\"sub\":\"88700000-0000-4000-8000-0000000000a1\",\"role\":\"authenticated\"}'', true), public.opp' || 'ose_auction_fact_claim(''88700000-2000-4000-8000-000000000012'') offset 0) x');",
+      message: "names ts_rewrite, which runs the text of a query",
+    },
+    {
+      label:
+        "une commande pg_cron dont les noms sont écrits par leurs codes dans une chaîne E (V2)",
+      file: migration("r2c_v2"),
+      content:
+        "select cron.schedule('registry-v2', '* * * * *', E'select set_c\\x6fnfig(\\'requ\\x65st.jwt.claims\\', \\'{\"sub\":\"88700000-0000-4000-8000-0000000000a1\",\"role\":\"authenticated\",\"aal\":\"aal2\"}\\', true), public.opp\\x6fse_auction_fact_claim(\\'88700000-2000-4000-8000-000000000012\\')');",
+      message: "writes an escape string E'…' with a character given by its code",
+    },
+    {
+      label: "une enveloppe dont le corps est une chaîne E aux noms écrits par leurs codes (V5b)",
+      file: migration("r2c_v5b"),
+      content:
+        "create function public.tidy_claim(p uuid) returns jsonb language plpgsql security definer set search_path = '' as E'begin perform pg_catalog.set_c\\x6fnfig(\\'requ\\x65st.jwt.claims\\', \\'{\"sub\":\"88700000-0000-4000-8000-0000000000a1\",\"role\":\"authenticated\"}\\', true); return public.opp\\x6fse_auction_fact_claim(p); end'; revoke all on function public.tidy_claim(uuid) from public, anon; grant execute on function public.tidy_claim(uuid) to authenticated;",
+      message: "writes an escape string E'…' with a character given by its code",
+    },
+    {
+      label: "une insertion au journal dont le nom de table est écrit par un code (V6)",
+      file: migration("r2c_v6"),
+      content:
+        "create function public.tidy_journal() returns void language sql security definer set search_path = '' as E'insert into public.auction_fact_claim\\x5fdecisions (claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code) select c.id, c.auction_sale_id, c.field_key, \\'opposed\\', \\'unknown\\', \\'admin\\', \\'88700000-0000-4000-8000-0000000000a1\\', \\'other\\' from public.auction_fact_claims c'; revoke all on function public.tidy_journal() from public, anon, authenticated;",
+      message: "writes an escape string E'…' with a character given by its code",
+    },
+    {
+      label:
+        "une chaîne E à code unicode ou octal, cachée dans la commande littérale d'une tâche pg_cron",
+      file: migration("r2c_estring_nested"),
+      content:
+        "select cron.schedule('registry-nested', '* * * * *', 'select pg_catalog.set_config(E''requ\\u0065st.jwt.claims'', E''\\173\\175'', true)');",
+      message: "writes an escape string E'…' with a character given by its code",
+    },
   ];
   const filesOf = (where) =>
     Object.fromEntries(
@@ -1780,6 +1818,51 @@ $$;`;
     );
   });
 
+  // Relecture de sécurité du lot R2c (M1) : dans un fichier admis pour les réglages, toute mention d'une fonction
+  // de réglage suivie d'une parenthèse est un appel, quelle que soit sa forme.
+  it.each([
+    [
+      "select true from …",
+      "select true from app_private.set_fact_registry_scheduled_reprojection(true);",
+    ],
+    ["values (…)", "values (app_private.set_fact_registry_scheduled_reprojection(true));"],
+    ["select 1, …", "select 1, app_private.set_fact_registry_scheduled_reprojection(true);"],
+    [
+      "un bloc DO",
+      "do $$ begin perform 1 from app_private.set_fact_registry_decision_rate_limits(false) relaxed; end $$;",
+    ],
+  ])(
+    "refuse, dans la migration des réglages, un appel de fonction de réglage écrit « %s »",
+    (_form, call) => {
+      const file = "20261119100100_fact_decision_limits_switch_and_author_lock.sql";
+      const result = withAppended(file, `\n${call}\n`);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        `${file} sets a switch of the fact registry otherwise than in its safe sense`,
+      );
+    },
+  );
+
+  it("refuse une fonction de réglage redéfinie avant l'appel admis du propriétaire", () => {
+    const file = "20261119100100_fact_decision_limits_switch_and_author_lock.sql";
+    const admitted = "select app_private.set_fact_registry_decisions_second_factor(false);";
+    const source = readFileSync(join(repo, "supabase/migrations", file), "utf8");
+    expect(source.split(admitted)).toHaveLength(2);
+    const result = runInvariants(
+      {
+        [file]: source.replace(
+          admitted,
+          `create or replace function app_private.set_fact_registry_decisions_second_factor(p_required boolean) returns boolean language plpgsql security invoker set search_path = '' as $f$ begin update app_private.fact_registry_switches set enabled = (switch_name = 'scheduled_reprojection'); return p_required; end; $f$;\n${admitted}`,
+        ),
+      },
+      [file],
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `${file}: app_private.set_fact_registry_decisions_second_factor is defined 2 times`,
+    );
+  });
+
   it("accepte les formes permises et annonce les quatorze invariants", () => {
     const result = runInvariants(
       {
@@ -1799,7 +1882,7 @@ $$;`;
           "-- update public.auction_sales set held_fields = null; set session_replication_role = replica;\nselect 1; /* grant all on all tables in schema public to anon; */",
         // Les quatre formes de corps se lisent, et un EXECUTE d'un seul littéral est admis.
         [migration("accepted_routine_forms")]:
-          "select cron.schedule('accepted-job', '*/5 * * * *', $job$select 1$job$); select cron.schedule(job_name => 'accepted-job-2', schedule => '0 3 * * *', command => 'select pg_catalog.now()'); create function public.accepted_digit_tag() returns integer language plpgsql set search_path = '' as $f1$ declare v integer; begin execute 'select 1' into v; return v; end; $f1$; create procedure public.accepted_procedure() language sql set search_path = '' as 'select 1'; create function public.accepted_atomic(p integer) returns integer language sql set search_path = '' begin atomic select case when p > 0 then 1 else 0 end; end; create function public.accepted_return(p integer) returns integer language sql set search_path = '' return p + 1;",
+          "select E'une ligne\\nune autre, une barre \\\\ et une apostrophe \\'' as accepted_escape; select cron.schedule('accepted-job', '*/5 * * * *', $job$select 1$job$); select cron.schedule(job_name => 'accepted-job-2', schedule => '0 3 * * *', command => 'select pg_catalog.now()'); create function public.accepted_digit_tag() returns integer language plpgsql set search_path = '' as $f1$ declare v integer; begin execute 'select 1' into v; return v; end; $f1$; create procedure public.accepted_procedure() language sql set search_path = '' as 'select 1'; create function public.accepted_atomic(p integer) returns integer language sql set search_path = '' begin atomic select case when p > 0 then 1 else 0 end; end; create function public.accepted_return(p integer) returns integer language sql set search_path = '' return p + 1;",
         [migration("accepted_projection_writes")]:
           "create or replace function app_private.project_sale_fields(p_sale_id uuid, p_fields text[] default null, p_apply boolean default false, p_listing_hints jsonb default null) returns jsonb language plpgsql security definer set search_path = '' as $$ declare t_surface_source text; t_app_surface_kind text; begin t_surface_source := 'fact_registry'; t_app_surface_kind := 'built'; perform set_config('app.sale_field_projection', p_sale_id::text, true); update public.auction_sales set held_fields = null, surface_source = t_surface_source, app_surface_kind = t_app_surface_kind where id = p_sale_id; return '{}'::jsonb; end; $$;",
       },
