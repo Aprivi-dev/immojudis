@@ -1,9 +1,15 @@
--- 20261118100100 : fonctions de décision du registre des pièces (lot R2b, étape B1).
---   * aucun droit d'exécution : ni anon, ni authenticated, ni service_role (les droits s'ouvrent au lot R2c) ;
---   * l'auteur est celui du jeton (auth.uid()), aucun paramètre ne le fournit ; public.is_admin() en tête ; second
---     facteur du registre exigé par défaut, levé par le propriétaire seulement, ligne absente = exigé ;
+-- 20261118100100 : fonctions de décision du registre des pièces (lot R2b, étape B1), retouchées et ouvertes par le
+-- lot R2c (20261119100100, 20261119100400).
+--   * droits : les quatre fonctions publiques sont exécutables par authenticated SEUL (ni anon, ni PUBLIC, ni
+--     service_role) ; la fonction de décision et les fonctions internes par aucun rôle de l'API ;
+--   * l'auteur est celui du jeton (auth.uid()), aucun paramètre ne le fournit ; public.is_admin() en tête : un
+--     utilisateur connecté qui n'est pas administrateur est refusé (admin_required) ;
+--   * second facteur du registre : mécanisme gardé, ligne absente = exigé, changé par le propriétaire seulement ;
+--     état livré par le lot R2c : levé ;
 --   * sans déclencheur du registre en place, rien n'est écrit (registry_unavailable) ;
---   * plafond de décisions par administrateur et par heure (rate_limited) ;
+--   * plafonds de décisions par administrateur (rate_limited, final_rate_limited) : mécanisme gardé, ligne absente
+--     = appliqués ; état livré par le lot R2c : non appliqués ; levés, ni compte ni verrou d'auteur ;
+--   * une autre décision du même administrateur en cours : decision_in_progress, et non sale_busy ;
 --   * chaque transition admise et refusée ; opposition et retrait de l'autorisation définitifs ; provenance reprise
 --     d'une décision à la suivante, sauf autour d'un retrait de l'autorisation ;
 --   * refus propres à l'acceptation : l'origine est jugée par la table de préséance, le terrain par la fonction
@@ -24,30 +30,57 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(110);
+select plan(127);
 
 -- Droits ----------------------------------------------------------------------------------------------------------
-select is(
-  (select count(*)::integer
-     from unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
-     cross join unnest(array[
-       'public.accept_auction_fact_claim(uuid, text, text, uuid)',
-       'public.reject_auction_fact_claim(uuid, text)',
-       'public.withdraw_auction_fact_claim(uuid, text)',
-       'public.oppose_auction_fact_claim(uuid, text)',
-       'app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)',
-       'app_private.lock_sale_for_registry(uuid)',
-       'app_private.set_fact_registry_decisions_second_factor(boolean)',
-       'app_private.fact_registry_hourly_decision_limit()',
-       'app_private.fact_registry_daily_final_decision_limit()',
-       'app_private.fact_registry_decisions_second_factor_required()',
-       'app_private.fact_lot_attachment_holds(text)',
-       'app_private.fact_registry_kept_sale(uuid)',
-       'app_private.fact_decision_is_final(text, text)',
-       'app_private.sale_is_land_sale(text, text, text, jsonb)']) routine(signature)
-     where has_function_privilege(api_role.name, routine.signature, 'EXECUTE')),
-  0,
-  'no API role can execute a decision function at this stage: neither anon, nor authenticated, nor service_role'
+-- Lot R2c : la seule ouverture est authenticated sur les quatre fonctions publiques. « public » est le droit
+-- donné à tout le monde.
+select results_eq(
+  $$select routine.signature, api_role.name
+      from unnest(array['public', 'anon', 'authenticated', 'service_role']) api_role(name)
+      cross join unnest(array[
+        'public.accept_auction_fact_claim(uuid, text, text, uuid)',
+        'public.reject_auction_fact_claim(uuid, text)',
+        'public.withdraw_auction_fact_claim(uuid, text)',
+        'public.oppose_auction_fact_claim(uuid, text)',
+        'app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)',
+        'app_private.lock_sale_for_registry(uuid)',
+        'app_private.set_fact_registry_decisions_second_factor(boolean)',
+        'app_private.set_fact_registry_decision_rate_limits(boolean)',
+        'app_private.fact_registry_hourly_decision_limit()',
+        'app_private.fact_registry_daily_final_decision_limit()',
+        'app_private.fact_registry_decisions_second_factor_required()',
+        'app_private.fact_registry_decision_rate_limits_enabled()',
+        'app_private.fact_lot_attachment_holds(text)',
+        'app_private.fact_registry_kept_sale(uuid)',
+        'app_private.fact_decision_is_final(text, text)',
+        'app_private.sale_is_land_sale(text, text, text, jsonb)']) routine(signature)
+      where has_function_privilege(api_role.name, routine.signature, 'EXECUTE')
+      order by routine.signature collate "C", api_role.name collate "C"$$,
+  $$values ('public.accept_auction_fact_claim(uuid, text, text, uuid)', 'authenticated'),
+           ('public.oppose_auction_fact_claim(uuid, text)', 'authenticated'),
+           ('public.reject_auction_fact_claim(uuid, text)', 'authenticated'),
+           ('public.withdraw_auction_fact_claim(uuid, text)', 'authenticated')$$,
+  'authenticated alone executes the four public decision functions: neither anon, nor PUBLIC, nor service_role; no API role executes the decision function or an internal function'
+);
+-- Les droits écrits au catalogue : le propriétaire, et authenticated sans droit de le redonner.
+select results_eq(
+  $$select (routine.proname::text) collate "default",
+           (select array_agg(granted.grantee::regrole::text || ':' || granted.privilege_type
+                             || case when granted.is_grantable then ':grantable' else '' end
+                             order by granted.grantee::regrole::text collate "C")
+              from aclexplode(routine.proacl) granted
+              where granted.grantee <> routine.proowner)
+      from pg_proc routine
+      where routine.pronamespace = 'public'::regnamespace
+        and routine.proname in ('accept_auction_fact_claim', 'reject_auction_fact_claim',
+                                'withdraw_auction_fact_claim', 'oppose_auction_fact_claim')
+      order by routine.proname::text collate "C"$$,
+  $$values ('accept_auction_fact_claim', array['authenticated:EXECUTE']),
+           ('oppose_auction_fact_claim', array['authenticated:EXECUTE']),
+           ('reject_auction_fact_claim', array['authenticated:EXECUTE']),
+           ('withdraw_auction_fact_claim', array['authenticated:EXECUTE'])$$,
+  'beside their owner, the catalogue grants these four functions to authenticated only, without grant option'
 );
 
 select ok(
@@ -86,16 +119,30 @@ select is(
   'the sale lock, the decision function and the review function each run under a lock timeout of 3 seconds'
 );
 
+-- État livré par le lot R2c (décisions du propriétaire du 12/11/2026).
 select results_eq(
   $$select switch_name, enabled from app_private.fact_registry_switches order by switch_name collate "C"$$,
-  $$values ('decisions_require_second_factor', true), ('scheduled_reprojection', false)$$,
-  'the two switches start in their safe sense: the second factor is required, the scheduled reprojection is closed'
+  $$values ('decision_rate_limits_enabled', false), ('decisions_require_second_factor', false),
+           ('scheduled_reprojection', false)$$,
+  'the three switches as delivered: the ceilings are not applied, the second factor is not required, the scheduled reprojection is closed'
 );
 
 select is(app_private.fact_registry_hourly_decision_limit(), 20, 'the hourly ceiling is twenty decisions');
 select is(
   app_private.fact_registry_daily_final_decision_limit(), 5,
   'the ceiling of final decisions (opposition, withdrawn authorization) is five per 24 hours'
+);
+
+-- Une autre décision du même administrateur en cours : le verrou d'auteur a son propre bloc et son propre code. Le
+-- cas à deux sessions est décrit au runbook R2c.
+select ok(
+  (select prosrc ~ 'exception when lock_not_available then\s+v_refusal := ''decision_in_progress'';'
+          and prosrc ~ 'when v_refusal = ''decision_in_progress'' then ''55P03'''
+          and prosrc ~ 'v_counted_at := pg_catalog.clock_timestamp\(\);'
+          and prosrc !~ 'decided_at > pg_catalog.clock_timestamp'
+     from pg_proc
+     where oid = 'app_private.decide_auction_fact_claim(uuid, text, text, text, text, uuid)'::regprocedure),
+  'a wait on the author lock gives decision_in_progress (55P03), not sale_busy, and the ceilings are counted from a time read once, after the lock'
 );
 
 -- Les plafonds sont exacts : un verrou consultatif par auteur est pris avant le compte, que sert un index.
@@ -126,10 +173,11 @@ returns integer language sql immutable set search_path = '' as $function$ select
 
 insert into auth.users (id) values
   ('88700000-0000-4000-8000-0000000000a1'), ('88700000-0000-4000-8000-0000000000b1'),
-  ('88700000-0000-4000-8000-0000000000c1');
+  ('88700000-0000-4000-8000-0000000000c1'), ('88700000-0000-4000-8000-0000000000d1');
 insert into public.user_profiles (user_id, email, user_role) values
   ('88700000-0000-4000-8000-0000000000a1', 'registre-admin-887@example.test', 'admin'),
   ('88700000-0000-4000-8000-0000000000c1', 'registre-admin-bis-887@example.test', 'admin'),
+  ('88700000-0000-4000-8000-0000000000d1', 'registre-admin-ter-887@example.test', 'admin'),
   ('88700000-0000-4000-8000-0000000000b1', 'registre-membre-887@example.test', 'user')
 on conflict (user_id) do update set user_role = excluded.user_role;
 
@@ -187,6 +235,10 @@ from (
     ('2f', '2', 'property.land_surface_m2', '510'::jsonb),
     ('26', '2', 'property.surface_m2', '62'::jsonb),
     ('27', '2', 'property.rooms_count', '9'::jsonb),
+    ('20', '8', 'property.land_surface_m2', '420'::jsonb),
+    ('23', '8', 'property.land_surface_m2', '430'::jsonb),
+    ('28', '8', 'property.land_surface_m2', '440'::jsonb),
+    ('29', '8', 'property.land_surface_m2', '450'::jsonb),
     ('81', '8', 'property.surface_m2', '54'::jsonb),
     ('91', '9', 'property.rooms_count', '5'::jsonb),
     ('92', '9', 'property.land_surface_m2', '410'::jsonb),
@@ -251,6 +303,11 @@ end;
 $function$;
 
 create temporary table results (label text primary key, result jsonb) on commit drop;
+
+-- Le lot R2c livre le second facteur levé et les plafonds non appliqués. Ce fichier essaie les deux mécanismes : il
+-- les remet d'abord en service, comme le ferait le propriétaire ; l'état livré est essayé en fin de fichier.
+select app_private.set_fact_registry_decisions_second_factor(true);
+select app_private.set_fact_registry_decision_rate_limits(true);
 
 -- Qui peut décider -----------------------------------------------------------------------------------------------
 select pg_temp.sign_in(null);
@@ -328,7 +385,7 @@ set local role service_role;
 select throws_ok(
   $$select public.accept_auction_fact_claim('88700000-2000-4000-8000-000000000011', 'single_lot')$$,
   '42501', 'permission denied for function accept_auction_fact_claim',
-  'through an API role the function is not even executable at this stage'
+  'the server role has no author: it cannot execute a decision function'
 );
 reset role;
 
@@ -1064,6 +1121,119 @@ select is_empty(
       order by (namespace.nspname::text || '.' || routine.proname::text) collate "C"$$,
   'and no function wraps one of the four'
 );
+
+-- Lot R2c : droits ouverts à authenticated seul --------------------------------------------------------------------
+-- La fonction de décision juge le jeton, pas le rôle : sous le rôle authenticated, un utilisateur connecté qui
+-- n'est pas administrateur est refusé, un administrateur décide.
+select pg_temp.sign_in('b1');
+set local role authenticated;
+select throws_ok(
+  $$select public.reject_auction_fact_claim('88700000-2000-4000-8000-000000000028', 'other')$$,
+  '42501', 'admin_required',
+  'under the authenticated role, a signed-in user who is not an administrator decides nothing'
+);
+reset role;
+select pg_temp.sign_in('a1', 'aal1');
+set local role authenticated;
+select throws_ok(
+  $$select public.reject_auction_fact_claim('88700000-2000-4000-8000-000000000028', 'other')$$,
+  '42501', 'second_factor_required',
+  'nor an administrator at aal1 while the owner requires the second factor'
+);
+reset role;
+select pg_temp.sign_in('a1');
+set local role authenticated;
+select lives_ok(
+  $$select public.reject_auction_fact_claim('88700000-2000-4000-8000-000000000028', 'other')$$,
+  'under the authenticated role, an administrator decides'
+);
+select throws_ok(
+  $$select app_private.decide_auction_fact_claim(
+      '88700000-2000-4000-8000-000000000029', 'rejected', 'other', null, null, null)$$,
+  '42501', 'permission denied for function decide_auction_fact_claim',
+  'the decision function itself stays closed to authenticated: only the four public functions call it'
+);
+reset role;
+select results_eq(
+  $$select decision.decision, decision.actor_kind, decision.actor_id
+      from public.auction_fact_claim_decisions decision where decision.claim_id = pg_temp.claim('28')$$,
+  $$values ('rejected', 'admin', '88700000-0000-4000-8000-0000000000a1'::uuid)$$,
+  'and the decision carries the author of the token'
+);
+set local role anon;
+select throws_ok(
+  $$select public.reject_auction_fact_claim('88700000-2000-4000-8000-000000000029', 'other')$$,
+  '42501', 'permission denied for function reject_auction_fact_claim',
+  'anon cannot execute a decision function'
+);
+reset role;
+set local role service_role;
+select throws_ok(
+  $$select public.oppose_auction_fact_claim('88700000-2000-4000-8000-000000000029', 'other')$$,
+  '42501', 'permission denied for function oppose_auction_fact_claim',
+  'nor the server role'
+);
+reset role;
+-- Le rôle de service n'a pas d'auteur : aurait-il le droit d'exécution qu'il serait refusé par la fonction (essayé
+-- par le propriétaire, avec le jeton du rôle de service).
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select throws_ok(
+  $$select public.oppose_auction_fact_claim(pg_temp.claim('29'), 'other')$$,
+  '42501', 'admin_required', 'and a token of the server role, which names no user, is refused: admin_required'
+);
+
+-- Lot R2c : plafonds levés par le propriétaire -------------------------------------------------------------------------
+-- Troisième administrateur (d1), qui n'a encore rien décidé. Plafonds à zéro : appliqués, ils refusent tout.
+select pg_temp.sign_in('d1');
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 0 $function$;
+create or replace function app_private.fact_registry_daily_final_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 0 $function$;
+select throws_ok(
+  $$select public.reject_auction_fact_claim(pg_temp.claim('29'), 'other')$$,
+  '53400', 'rate_limited', 'while the ceilings are applied, an administrator at the hourly ceiling decides nothing'
+);
+set local role service_role;
+select throws_ok(
+  $$select app_private.set_fact_registry_decision_rate_limits(false)$$,
+  '42501', null, 'an API role cannot lift the ceilings'
+);
+reset role;
+select app_private.set_fact_registry_decision_rate_limits(false);
+select lives_ok(
+  $$insert into results select 'd1 reject 29', public.reject_auction_fact_claim(pg_temp.claim('29'), 'other')$$,
+  'once the owner has lifted the ceilings, the hourly ceiling no longer applies'
+);
+select lives_ok(
+  $$insert into results select 'd1 oppose 20', public.oppose_auction_fact_claim(pg_temp.claim('20'), 'other')$$,
+  'nor the ceiling of final decisions'
+);
+select ok(
+  not exists (
+    select 1 from pg_locks held
+    where held.locktype = 'advisory' and held.pid = pg_backend_pid() and held.objsubid = 1
+      and ((held.classid::bigint << 32) | held.objid::bigint)
+        = hashtextextended('immojudis:fact_registry_decisions:88700000-0000-4000-8000-0000000000d1', 0)),
+  'and no author lock is taken: it only serves the count of the ceilings'
+);
+-- Ligne absente : plafonds appliqués. La fonction de réglage lève au lieu de ne rien faire.
+delete from app_private.fact_registry_switches where switch_name = 'decision_rate_limits_enabled';
+select throws_ok(
+  $$select public.reject_auction_fact_claim(pg_temp.claim('23'), 'other')$$,
+  '53400', 'rate_limited', 'a missing switch row means that the ceilings are applied'
+);
+select throws_ok(
+  $$select app_private.set_fact_registry_decision_rate_limits(false)$$,
+  '55000', 'The switch decision_rate_limits_enabled has no row: restore it by a migration.',
+  'the setter of the ceilings raises when its row is missing instead of doing nothing'
+);
+insert into app_private.fact_registry_switches (switch_name, enabled)
+values ('decision_rate_limits_enabled', true);
+create or replace function app_private.fact_registry_hourly_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
+create or replace function app_private.fact_registry_daily_final_decision_limit()
+returns integer language sql immutable set search_path = '' as $function$ select 1000 $function$;
+select pg_temp.sign_in('a1');
 
 -- Verrous : course avec une fusion, vente disparue (en dernier : la fonction de verrou reste remplacée) ----------------
 -- La vente est supprimée (l'observation détachée par sa clé étrangère) entre la lecture et le verrou : l'appelant réessaie.

@@ -21,7 +21,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(84);
+select plan(92);
 
 -- Relance planifiée, journal des décisions vide (lot R2b) ----------------------------------------------------------
 -- À faire avant toute décision du jeu d'essai. La lecture des ventes du registre est remplacée par une fonction qui
@@ -259,14 +259,15 @@ select is(
   (select report - 'checks' - 'checked_at' from check_reports where step = 'sound'),
   (select jsonb_build_object(
      'limit', 500, 'truncated', false, 'merge_carried', '{"count": 0, "window_hours": 24}'::jsonb,
-     'simulation_failures', '[]'::jsonb, 'decisions_second_factor_required', true,
+     'simulation_failures', '[]'::jsonb, 'decisions_second_factor_required', false,
+     'decision_rate_limits_enabled', false, 'scheduled_reprojection_enabled', false,
      'candidate_sales', count(*), 'sales_checked', count(*),
      'held_sale_count', count(*) filter (where exists (
        select 1 from jsonb_each(sale.held_fields) field where field.value ->> 'state' in ('held', 'conflicted'))),
      'held_field_count', (select count(*) from public.auction_sales held, jsonb_each(held.held_fields) field
                       where field.value ->> 'state' in ('held', 'conflicted')))
      from public.auction_sales sale where sale.held_fields is not null),
-  'it examines every sale that holds or remembers a field, counts the held ones, and says that the second factor is required for a decision'
+  'it examines every sale that holds or remembers a field, counts the held ones, and gives the state of the three switches as delivered by lot R2c: second factor not required, ceilings not applied, scheduled reprojection closed'
 );
 
 select ok(
@@ -798,9 +799,10 @@ select is(
      'final_decisions', report #> '{checks,final_decisions}',
      'final_decisions_over_limit', report #> '{checks,final_decisions_over_limit}')
      from check_reports where step = 'released'),
-  '{"final_decisions": {"active": true, "count": 4, "window_hours": 24},
-    "final_decisions_over_limit": {"active": false, "count": 0, "limit": 5, "window_hours": 24}}'::jsonb,
-  'final decisions (here four oppositions) are counted over 24 hours and raise their control; under the ceiling per author the second control stays quiet'
+  '{"final_decisions": {"active": true, "count": 4, "window_hours": 48},
+    "final_decisions_over_limit": {"active": false, "count": 0, "limit": 5, "limit_period_hours": 24,
+                                   "window_hours": 48}}'::jsonb,
+  'final decisions (here four oppositions) are counted over 48 hours and raise their control; under the ceiling per author the second control stays quiet'
 );
 
 -- La valeur opposée dans une colonne voisine seule (les colonnes du champ sont remises en ordre).
@@ -1358,18 +1360,76 @@ execute decide('12', 'opposed');
 
 select is(
   app_private.fact_registry_global_checks(null) #> '{checks,final_decisions_over_limit}',
-  '{"active": true, "count": 1, "limit": 5, "window_hours": 24}'::jsonb,
+  '{"active": true, "count": 1, "limit": 5, "limit_period_hours": 24, "window_hours": 48}'::jsonb,
   'an author above the ceiling of final decisions over 24 hours raises the second control'
 );
 
--- Le réglage du second facteur des décisions se lit dans le rapport.
-select app_private.set_fact_registry_decisions_second_factor(false);
-select is(
-  app_private.fact_registry_global_checks(null) -> 'decisions_second_factor_required',
-  'false'::jsonb,
-  'the report says when the second factor is no longer required for a decision'
+-- Fenêtre de 48 heures (lot R2c) : deux passages de la tâche. Un second auteur a dépassé le plafond la veille (six
+-- oppositions d'il y a 26 heures), et n'a rien décidé depuis. La date d'une décision est imposée par le
+-- déclencheur de validation, suspendu le temps de cette seule écriture.
+insert into auth.users (id) values
+  ('88900000-0000-4000-8000-0000000000b1'), ('88900000-0000-4000-8000-0000000000c1');
+create function pg_temp.old_oppositions(p_actor uuid, p_count integer, p_age interval) returns void
+language plpgsql as $function$
+begin
+  alter table public.auction_fact_claim_decisions disable trigger auction_fact_claim_decisions_validate;
+  insert into public.auction_fact_claim_decisions (
+    claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id, reason_code, seq, decided_at
+  )
+  select claim.id, claim.auction_sale_id, claim.field_key, 'opposed', 'unknown', 'admin', p_actor,
+    'professional_opposition', nextval('app_private.fact_registry_seq'),
+    clock_timestamp() - p_age - make_interval(secs => n)
+  from public.auction_fact_claims claim, generate_series(1, p_count) n
+  where claim.id = '88900000-2000-4000-8000-000000000301';
+  alter table public.auction_fact_claim_decisions enable always trigger auction_fact_claim_decisions_validate;
+end;
+$function$;
+create temporary table finals_before on commit drop as
+  select (app_private.fact_registry_global_checks(null) #>> '{checks,final_decisions,count}')::integer as count;
+
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000b1', 6, interval '26 hours');
+select results_eq(
+  $$select (checked.report #>> '{checks,final_decisions,count}')::integer - (select count from finals_before),
+           (checked.report #>> '{checks,final_decisions_over_limit,count}')::integer
+      from (select app_private.fact_registry_global_checks(null) as report) checked$$,
+  $$values (6, 2)$$,
+  'final decisions of the day before are still counted, and an author who went over the ceiling the day before is still reported: the window covers two runs of the job'
 );
+
+select pg_temp.old_oppositions('88900000-0000-4000-8000-0000000000c1', 6, interval '49 hours');
+select results_eq(
+  $$select (checked.report #>> '{checks,final_decisions,count}')::integer - (select count from finals_before),
+           (checked.report #>> '{checks,final_decisions_over_limit,count}')::integer
+      from (select app_private.fact_registry_global_checks(null) as report) checked$$,
+  $$values (6, 2)$$,
+  'beyond 48 hours a final decision is no longer counted'
+);
+
+-- Les trois réglages du registre se lisent dans le rapport.
 select app_private.set_fact_registry_decisions_second_factor(true);
+select app_private.set_fact_registry_decision_rate_limits(true);
+select app_private.set_fact_registry_scheduled_reprojection(true);
+select is(
+  (select jsonb_build_object(
+     'second_factor', checked.report -> 'decisions_second_factor_required',
+     'ceilings', checked.report -> 'decision_rate_limits_enabled',
+     'reprojection', checked.report -> 'scheduled_reprojection_enabled')
+     from (select app_private.fact_registry_global_checks(null) as report) checked),
+  '{"second_factor": true, "ceilings": true, "reprojection": true}'::jsonb,
+  'the report gives the state of the three switches: second factor required, ceilings applied, scheduled reprojection opened'
+);
+select app_private.set_fact_registry_decisions_second_factor(false);
+select app_private.set_fact_registry_decision_rate_limits(false);
+select app_private.set_fact_registry_scheduled_reprojection(false);
+select is(
+  (select jsonb_build_object(
+     'second_factor', checked.report -> 'decisions_second_factor_required',
+     'ceilings', checked.report -> 'decision_rate_limits_enabled',
+     'reprojection', checked.report -> 'scheduled_reprojection_enabled')
+     from (select app_private.fact_registry_global_checks(null) as report) checked),
+  '{"second_factor": false, "ceilings": false, "reprojection": false}'::jsonb,
+  'and says when each of them is lifted or closed'
+);
 
 select ok(
   (select count(*) = 0 from unnest(array['anon', 'authenticated', 'service_role']) api_role(name)
@@ -1378,6 +1438,9 @@ select ok(
        'app_private.fact_registry_global_checks(uuid[])',
        'app_private.fact_registry_report_add_page(jsonb, jsonb)',
        'app_private.fact_registry_failure(uuid, text, text)',
+       'app_private.fact_registry_error_is_systemic(text)',
+       'app_private.fact_registry_decision_rate_limits_enabled()',
+       'app_private.set_fact_registry_decision_rate_limits(boolean)',
        'app_private.fact_registry_scheduled_reprojection_enabled()',
        'app_private.set_fact_registry_scheduled_reprojection(boolean)']) routine(signature)
      where has_function_privilege(api_role.name, routine.signature, 'EXECUTE'))
@@ -1435,6 +1498,55 @@ select is(
   public.evaluate_operational_health('2026-11-17T10:02:00Z') -> 'stale_cron_jobs' ? 'fact-registry-check',
   true,
   'a success 27 hours 01 minute ago is stale'
+);
+
+-- Erreurs systémiques (lot R2c) -------------------------------------------------------------------------------------
+-- (En dernier : la définition commune de la vente de terrain, que la projection appelle pour chaque vente, reste
+-- remplacée par une fonction qui lève le code voulu.)
+select is(
+  (select array_agg(app_private.fact_registry_error_is_systemic(code.value) order by code.position)
+     from unnest(array['42501', '42883', '53200', '58030', 'XX000', '22007', '23514', '40001', '55P03', null])
+       with ordinality code(value, position)),
+  array[true, true, true, true, true, false, false, false, false, false],
+  'systemic errors are the SQLSTATE classes 42, 53, 58 and XX; a data error, a conflict or a busy lock is not one'
+);
+
+create or replace function app_private.sale_is_land_sale(
+  p_property_type text, p_surface_scope text, p_app_surface_kind text, p_held_fields jsonb
+)
+returns boolean language plpgsql stable set search_path = '' as $function$
+begin
+  raise exception using errcode = current_setting('pgtap.raised_code'), message = 'pgtap 889';
+end;
+$function$;
+select app_private.set_fact_registry_scheduled_reprojection(true);
+
+select set_config('pgtap.raised_code', '22023', true);
+select results_eq(
+  $$select (raised.report #>> '{checks,projection_drift,count}')::integer
+             = (raised.report ->> 'candidate_sales')::integer,
+           raised.report #>> '{simulation_failures,0,sqlstate}'
+      from (select public.check_fact_registry_consistency(5000) as report) raised$$,
+  $$values (true, '22023')$$,
+  'an error of a sale (here a data error on every sale) is still kept per sale: the check goes on and returns its code'
+);
+
+select set_config('pgtap.raised_code', '42501', true);
+select throws_ok(
+  $$select public.check_fact_registry_consistency(5000)$$,
+  '42501', 'pgtap 889',
+  'a systemic error (here a missing privilege) is not swallowed sale by sale: the daily check raises it'
+);
+select throws_ok(
+  $$select public.reproject_fact_registry_drift()$$,
+  '42501', 'pgtap 889',
+  'nor by the scheduled reprojection, which stops and writes nothing'
+);
+select set_config('pgtap.raised_code', 'XX000', true);
+select throws_ok(
+  $$select public.sync_fact_registry_alerts()$$,
+  'XX000', 'pgtap 889',
+  'and the job function raises an internal error instead of reporting the whole registry as drifting'
 );
 
 select * from finish();
