@@ -235,8 +235,11 @@ Compteur et journal :
   (même valeur) n'est pas comptée et a sa propre ligne (`Base labels kept …`).
 - **Ce compteur peut être supérieur à zéro sans aucun champ tenu** : il suffit qu'un
   autre traitement du pipeline (lecture des pièces, recalcul) ait écrit la vente
-  pendant le passage. Ce n'est pas l'indicateur d'un chemin oublié : celui-là est le
-  compteur d'évènements de la retenue, côté base.
+  pendant le passage. Ce n'est pas l'indicateur d'un chemin oublié : celui-là est
+  l'évènement `echo_suppressed` de la base (mémoire d'écho, alerte du contrôle
+  quotidien, `docs/architecture/registre-des-pieces.md`). Il doit rester à zéro :
+  les scénarios A, B et C l'affirment avec la garde, et leurs témoins sans la garde
+  montrent que la base l'émet alors.
 - Les lectures de la ligne entière sont remplacées par des listes de colonnes
   (`LOCKED_SALE_SELECT`, `RECOMPUTE_SALE_SELECT`) : une colonne interne de la
   table ne sort pas de la base et ne finit pas dans `raw_payload`.
@@ -378,9 +381,20 @@ au premier passage de chaque source, chaque observation existante reçoit un jum
 `auction_fact_claims_v3` (une vente relue ou dotée d'un instantané en émet autant
 qu'avant, 4 sur 4 dans les essais ; une vente sans instantané n'émet plus ses
 `source_field`, 1 sur 4). La vue `v_auction_fact_claims_read_model`, lue par
-l'application sans filtre de version, montrerait donc chaque fait en double. Ce
-changement ne doit être fusionné qu'**après** l'application de la migration qui
-limite cette vue à la version la plus récente par vente.
+l'application sans filtre de version, montrerait chaque fait en double sans la
+migration `20261117100700`, qui ne montre que la dernière génération par vente
+(appliquée en production le 12/11/2026). Ce que cette vue attend de la collecte :
+
+- la version reste sous le plafond `app_private.fact_claims_generation_ceiling()`
+  (3). Au-dessus, les observations seraient masquées : une version 4 demande
+  d'abord une migration qui relève le plafond (invariant
+  `fact-claims-generation-pattern`) ;
+- dès qu'une vente porte une observation de version 3, toutes ses candidates de
+  version 2 sont masquées, quel que soit leur champ. Une vente sans instantané qui
+  émet encore d'autres observations perd donc à l'affichage ses anciens
+  `source_field` ; une vente qui n'émet plus rien garde ceux de la version 2 ;
+- les observations d'une vente partent dans la transaction de sa publication, en
+  une fois (le repli REST, hors production, écrit par lots).
 
 Le mode par défaut est une lecture sans écriture Supabase :
 
