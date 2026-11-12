@@ -168,7 +168,8 @@ Avant tout compte-rendu, contrôle chaque proposition :
    `developpeur`.
 2. Fais relire le résultat par `code-reviewer` (et par `juridique-rgpd` pour un contenu
    qui contient des informations juridiques). S'il trouve un point Critique, renvoie-le à
-   son auteur une fois, puis signale ce qui reste.
+   son auteur une fois, puis signale ce qui reste. Toute relecture de code applique aussi le
+   critère « rangement du code » (`docs/architecture/rangement-du-code.md`).
 3. Complète le rapport de `docs/equipe/` avec ce qui a été fait.
 4. Rends un bilan : ce qui a été fait, fichiers modifiés, résultat des vérifications,
    points d'attention. Rappelle que les changements sont sur la branche de la session

@@ -14,6 +14,7 @@ import type {
   InformationAgentRecipientKind,
 } from "@/lib/information-agent/contacts";
 import type { INFORMATION_AGENT_COURT_REGISTRY_FALLBACK } from "@/lib/information-agent/court-registry-fallback";
+import type { InformationAgentRecipientProfile } from "@/lib/information-agent/recipient-profile";
 
 // Schémas zod et types de l'agent d'information. Module sans accès réseau ni base, réexporté par
 // `information-agent.ts` (les imports existants ne changent pas).
@@ -129,6 +130,11 @@ export type InformationAgentMission = {
   deliveryState?: EmailDeliveryState | null;
   /** `court_registry_fallback` : le destinataire est le greffe du tribunal (aucun avocat trouvé), pas un avocat. */
   recipientOrigin?: typeof INFORMATION_AGENT_COURT_REGISTRY_FALLBACK | null;
+  /**
+   * Rôle du destinataire proposé, origine de son adresse et nature (générique ou nominative) ; `null` quand
+   * l'adresse n'est pas l'une de celles que le brouillon a proposées.
+   */
+  recipientProfile?: InformationAgentRecipientProfile | null;
 };
 
 export type InformationAgentFact = {

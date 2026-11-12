@@ -40,6 +40,8 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/billing-reconciliation",
   // Résumé quotidien des réponses à relire (REPLIES_REVIEW_DIGEST_MODE=off par défaut) : lit deux compteurs en base, ne collecte aucune donnée.
   "/api/cron/replies-review-digest",
+  // Contrôle quotidien du registre des pièces, en lecture seule (alertes fact_registry.*) : ne collecte aucune donnée.
+  "/api/cron/fact-registry-check",
 ]);
 const allowedDatabaseCronJobs = new Set([
   "immojudis-operational-health",

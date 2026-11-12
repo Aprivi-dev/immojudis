@@ -2221,6 +2221,14 @@ function functionSignature(schema, name, argumentText) {
       table: "auction_fact_source_precedence",
       definition: "check\\s*\\(\\s*not\\s+can_hold\\s+or\\s+source_kind\\s*<>\\s*'listing'\\s*\\)",
     },
+    // Les dates de visite ne sont pas tenables (texte libre dans une file non effaçable) : verrou à lever par
+    // une migration relue, jamais retiré en passant.
+    {
+      name: "auction_fact_fields_visit_dates_locked",
+      table: "auction_fact_fields",
+      definition:
+        "check\\s*\\(\\s*field_key\\s*<>\\s*'sale\\.visit_dates'\\s+or\\s+not\\s+hold_enabled\\s*\\)",
+    },
   ];
   for (const lock of locks) {
     if (!new RegExp(`constraint\\s+${lock.name}\\s+${lock.definition}`, "i").test(allSql)) {

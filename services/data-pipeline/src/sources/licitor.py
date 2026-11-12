@@ -65,6 +65,9 @@ _NOT_A_PROPERTY_ADDRESS = (
     r"\bCabinet\b|[ÉE]tude|Tribunal|Mise\s+à\s+prix"
 )
 
+# Lien d'une annonce dans une liste publique : une carte par lien (lecture des listes et bloc d'une carte).
+_ANNOUNCEMENT_HREF_RE = re.compile(r"/annonce/.+/\d+\.html$")
+
 _LICITOR_DYNAMIC_COUNTER_RE = re.compile(
     r"^\s*🔎(?:\ufe0e|\ufe0f)?\s*\d[\d.,\s]*\s*❤(?:\ufe0e|\ufe0f)?\s*\d[\d.,\s]*\s*$"
 )
@@ -317,7 +320,7 @@ def parse_licitor_list_html(html: str, page_url: str = AQUITAINE_URL) -> tuple[l
         absolute = urljoin(page_url, href)
         if not is_allowed_origin_url(absolute, ALLOWED_ORIGINS):
             continue
-        if re.search(r"/annonce/.+/\d+\.html$", href):
+        if _ANNOUNCEMENT_HREF_RE.search(href):
             detail_urls.append(absolute)
         elif re.search(r"/ventes-aux-encheres-immobilieres/.+/prochaines-ventes\.html\?p=", href):
             next_urls.append(absolute)
@@ -330,7 +333,7 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
     by_url: dict[str, dict[str, Any]] = {}
     for link in soup.find_all("a", href=True):
         href = str(link.get("href"))
-        if not re.search(r"/annonce/.+/\d+\.html$", href):
+        if not _ANNOUNCEMENT_HREF_RE.search(href):
             continue
         source_url = urljoin(page_url, href)
         if not is_allowed_origin_url(source_url, ALLOWED_ORIGINS):
@@ -403,6 +406,10 @@ def decode_protected_emails_enabled() -> bool:
     ``disabled``) ou inconnu : désactivé. Une valeur inconnue est signalée par un avertissement journalisé une
     fois (sans la valeur). Désactivé, les éléments masqués sont tout de même retirés de la page (jamais
     publiés) mais aucune adresse n'est décodée ni écrite au registre.
+
+    La collecte planifiée pose la variable : depuis la décision du propriétaire du 11/11/2026 (accord de Licitor
+    déclaré par le propriétaire), ``.github/workflows/data-pipeline.yml`` l'active quand la variable de dépôt est
+    absente. Ici, rien ne change : sans valeur explicitement vraie, aucun décodage.
     """
     value = (os.getenv(DECODE_ENV) or "").strip().lower()
     if value in _DECODE_ON:
@@ -444,8 +451,9 @@ def parse_licitor_detail_html(
     (voir ``src.sources.licitor_lots``), les cartes de la liste départageant les lots quand l'URL ne suffit pas.
     """
     soup = parse_html(html, "html.parser")
-    # Cloudflare masque les adresses e-mail des avocats. Licitor ayant donné son accord (14/10/2026,
-    # oral, à formaliser par écrit), on les décode dans le HTML déjà récupéré et dans les seuls blocs
+    # Cloudflare masque les adresses e-mail des avocats. Décision du propriétaire du 11/11/2026 (accord de
+    # Licitor déclaré par le propriétaire, pièce à verser au dossier) : interrupteur actif, on les décode
+    # dans le HTML déjà récupéré et dans les seuls blocs
     # des professionnels (``.Trust``) ; chaque élément masqué est retiré de la page (plus de
     # « [email protected] ») et l'adresse est mise à part, pour l'usage interne de l'agent. Une adresse
     # refusée (juridiction, RPVA, Ordre, CARPA, illisible) est retirée ; ailleurs dans la page, rien
@@ -666,12 +674,21 @@ def _start_urls_for_target_departments() -> tuple[str, ...]:
 
 
 def _list_item_container(link: Any) -> Any:
+    """Bloc qui porte le texte de la carte de ``link`` : le lien, ou un parent qui n'a que cette carte.
+
+    Une carte peut ne pas afficher de mise à prix (bloc prix vide d'un lot, 10/11/2026). La remontée s'arrête
+    donc au premier parent qui porte un autre lien d'annonce : son texte serait celui de plusieurs cartes, et
+    la carte prendrait la commune et la mise à prix d'une voisine. La carte reste alors le lien lui-même, celui
+    que lit la preuve de catalogue (``.AdResults a.Ad`` dans ``src.catalogue_proof``).
+    """
     if "Mise à prix" in link.get_text(" ", strip=True) or "Mise a prix" in link.get_text(" ", strip=True):
         return link
     node = link
     for _ in range(5):
         parent = getattr(node, "parent", None)
         if parent is None:
+            break
+        if any(other is not link for other in parent.find_all("a", href=_ANNOUNCEMENT_HREF_RE)):
             break
         text = parent.get_text(" ", strip=True)
         if "Mise à prix" in text or "Mise a prix" in text:

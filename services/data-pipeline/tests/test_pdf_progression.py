@@ -246,12 +246,7 @@ def test_terminal_http_exclusions_revalidate_by_url_but_social_skips_stay_skippe
         "http_revalidation_pending_urls": [],
     }
 
-    stale = stale_complete_document_urls(
-        sale.raw_payload["document_analysis"],
-        sale.documents,
-        tmp_path,
-        lambda document: Path(document["url"]).name,
-    )
+    stale = stale_complete_document_urls(sale.raw_payload["document_analysis"], sale.documents)
     assert stale == {blocked_url, permanent_url, empty_url}
     selected = selection._select_documents_for_extraction(
         sale.documents,
@@ -274,12 +269,7 @@ def test_terminal_http_exclusions_revalidate_by_url_but_social_skips_stay_skippe
     assert timestamp_is_fresh(analysis["http_checked_at_by_url"][blocked_url])
     assert timestamp_is_fresh(analysis["http_checked_at_by_url"][permanent_url])
     assert analysis["http_checked_at_by_url"][empty_url] == old_checked_at
-    assert stale_complete_document_urls(
-        analysis,
-        sale.documents,
-        tmp_path,
-        lambda document: Path(document["url"]).name,
-    ) == {empty_url}
+    assert stale_complete_document_urls(analysis, sale.documents) == {empty_url}
     assert social_url not in analysis["http_revalidation_pending_urls"]
 
 

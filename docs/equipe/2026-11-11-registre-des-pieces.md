@@ -159,6 +159,13 @@ Rapports complets des spécialistes, reproduits tels quels dans
 | `05-formulaire-et-validation.md`       | ux-designer         | Formulaire de l'avocat, file de validation, fiche publique                          |
 | `06-sollicitation-et-pilote.md`        | strategie-email     | Pourquoi rien ne part, pilote réel, messages proposés                               |
 | `07-cadre-juridique.md`                | juridique-rgpd      | Ce qui peut être construit, textes proposés, vingt questions pour un avocat         |
+| `08-bascule-base-de-donnees.md`        | expert-postgres     | Spécification du lot R2 côté base : treize points, plan de migrations, sous-lots    |
+| `09-bascule-pipeline.md`               | data-pipeline       | Spécification du lot R2 côté collecte : écho, autres écrivains, observations, tests |
+| `10-mesures-apres-r1.md`               | qualite-donnees     | Mesures en production après R1 : inertie, durée des lots, second facteur, files     |
+| `11-documents-diagnostic.md`           | data-pipeline       | File de lecture des documents : premier diagnostic, en partie infirmé               |
+| `12-documents-mesures.md`              | qualite-donnees     | File de lecture des documents : mesures en production                               |
+| `13-documents-diagnostic-revise.md`    | data-pipeline       | File de lecture des documents : causes reproduites, correctifs A à N                |
+| `14-contacts-relecture-juridique.md`   | juridique-rgpd      | Contacts de l'agent d'information : conditions par rôle, questions pour l'avocat    |
 
 Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce document qui fait foi.
 
@@ -199,4 +206,138 @@ Ces rapports sont des analyses. En cas d'écart avec ce document, c'est ce docum
 
 **Pour le juriste (s'ajoute à la section 5).** Durée de conservation des deux journaux, qui survivent à la purge de la vente ; sort de l'identifiant de l'administrateur après suppression de son compte ; trace d'une opposition conservée sans limite.
 
-**Suite.** Application des migrations en production hors import, puis au moins 24 heures d'observation (aucun champ tenu, aucun évènement, durée des imports inchangée) avant la bascule R2.
+**Mise en production.** PR #477 fusionnée le 11/11/2026. Migrations appliquées par le workflow officiel le 11/11 à 11:45 UTC, entre deux imports, en 4 secondes ; détection de dérive de schéma verte. Vérifié en lecture seule juste après : six migrations enregistrées, quatre tables sous RLS, onze déclencheurs en mode `always`, cinq champs et vingt-cinq lignes de préséance, 0 vente tenue, 0 décision, 0 évènement.
+
+**Suite.** Au moins 24 heures d'observation, soit pas avant le 12/11 à 11:45 UTC (aucun champ tenu, aucun évènement, durée des imports inchangée), avant toute mise en production du lot R2.
+
+### Constat hors plan : inventaires Licitor en échec (11/11/2026)
+
+En préparant l'application, un import en échec a été relevé. Cause trouvée et reproduite par data-pipeline : depuis le 10/11 à 06:00 UTC, tous les inventaires Licitor échouent (6 sur 6). Une annonce à quatre lots a deux cartes sans mise à prix ; le lecteur (`_list_item_container`, `services/data-pipeline/src/sources/licitor.py`) déborde alors sur les cartes voisines, et la preuve de catalogue refuse à juste titre de certifier l'inventaire. Sans lien avec le registre. Conséquence : les ventes retirées de Licitor avant leur audience ne sont plus repérées depuis le 09/11 à 18:37 UTC. Les deux lots mal lus sont en quarantaine, donc invisibles. Correctif proposé : arrêter la remontée du lecteur dès qu'un parent contient une autre annonce, avec un test ; la preuve de catalogue n'est pas touchée. **En attente de l'accord du propriétaire** (correctif hors plan).
+
+## 10. Le lot R2, découpé en trois étapes
+
+Les deux spécifications (annexes 08 et 09) concluent que R2 est trop gros pour une seule livraison. Découpage retenu, chaque étape étant réversible :
+
+| Étape | Base (annexe 08)                                                                                                                                                     | Collecte (annexe 09)                                                                                                                                                         | Effet sur les fiches                            | Condition pour passer à la suivante                                                                           |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| R2a   | Séquence commune aux deux journaux, gardes par rôle, retenue et projection corrigées, historique et RPC qui n'exposent plus `held_fields`, contrôle quotidien, index | PA : garde d'écho à l'écriture, listes de colonnes explicites, observations tirées du seul instantané de la source (version 3), reprise Vench hors empreinte                 | Aucun : rien n'est tenu                         | Observation de R1 propre ; contrôle quotidien à zéro sur deux passages ; durée des imports inchangée          |
+| R2b   | RPC d'administration (accepter, rejeter, retirer, opposition) sans droit d'exécution ouvert ; report des pièces lors d'une fusion                                    | PB : les copies (`properties`, `judicial_sales`, `auction_surfaces`) ne reçoivent plus les colonnes du registre ; fusion sur les valeurs d'annonce ; rattrapage d'extraction | Aucun                                           | Indicateur d'écho à zéro en production ; répétition complète sur base jetable (import, pose, retrait, fusion) |
+| R2c   | Bascule : le noyau écrit observation, décision, projection ; le pont est retiré ; la mention publique lit le registre ; droits des RPC ouverts aux administrateurs   | Rien à déployer ce jour-là                                                                                                                                                   | La première acceptation réelle devient possible | Première pièce posée : contrôle à zéro, mention affichée, retrait essayé sur une vente interne                |
+
+Le code de R2a se prépare pendant l'observation de R1. Rien de R2 n'est appliqué en production avant la fin de cette observation.
+
+### Arbitrages entre les deux spécifications
+
+- **Écho de la collecte : les deux côtés.** La collecte ne réécrit pas un groupe qu'elle n'a fait que relire en base si la base a bougé depuis (elle seule sait qu'une valeur sortante n'est qu'une relecture). La base garde une mémoire d'écho comme filet ; son compteur doit rester à zéro et signale un chemin oublié.
+- **La collecte continue de juger une vente sur la valeur affichée.** L'exigence de l'annexe 08 « remplacer partout les colonnes tenues par la valeur d'annonce » n'est retenue que pour la fusion de doublons. Essai du spécialiste du pipeline : appliquée partout, une pièce posée ne compterait plus pour la complétude (score de 71 à 60) et certaines ventes cesseraient d'être écrites.
+- **Valeur d'annonce mémorisée quand l'annonce se tait** : la règle de R1 est gardée, avec une alerte, puisque l'arbitrage précédent retire le moyen de distinguer un vrai silence d'un garde-fou.
+- **Copies sans lecteur** : cesser d'y écrire les colonnes du registre plutôt que les aligner, après vérification qu'aucun lecteur ne passe par l'API.
+- **Aucune observation n'est émise depuis une colonne relue en base**, et cela avant le premier champ tenu : la table des observations est immuable et sans purge, une valeur d'avocat y serait attribuée à l'annonce pour toujours.
+- **La collecte ne lit jamais `held_fields`** ; seule exception, une RPC dédiée pour la fusion.
+
+### Choix faits par délégation pour R2, à revoir si besoin
+
+- Valeur venue d'un greffe, d'un notaire ou d'un document : aucune mention nommée tant que le texte n'est pas validé par un avocat ; la valeur est « signalée », sans source.
+- Mise à prix, date de vente et type de bien transmis par un avocat : enregistrés, non affichés, tant que la règle « annonce contre pièce » n'est pas choisie pour ces champs.
+- Pièce jointe acceptée : le noyau la publie aujourd'hui comme document téléchargeable, ce que le choix 6 de la section 6 exclut. L'acceptation de la clé `document` est suspendue jusqu'à décision.
+- Mémoire d'écho : 7 jours hors opposition, vie de la vente après une opposition.
+- Opposition : fin d'affichage et blocage du retour de la valeur ; une demande d'effacement se traite à la main, hors R2.
+- Second facteur des administrateurs : vérifié avant R2c ; s'il n'est pas actif en production, R2c attend.
+- Valeurs déjà publiées par l'ancien noyau (aucune à ce jour) : s'il y en a le jour de la bascule, la valeur d'annonce est rendue et chaque fait est revalidé à la main, rien d'automatique.
+
+### Ce que les mesures en production ajoutent (annexe 10, 11/11 à 12:35 UTC)
+
+- **R1 est inerte sur tout ce qui se mesure** (0 vente tenue, 0 évènement, 0 décision, déclencheurs en mode `always`), mais sur 27 écritures seulement : aucun import de source n'avait encore tourné depuis l'application. Un relevé de référence du coût de l'insertion est pris (199 ms en moyenne par instruction).
+- **Critère d'observation réécrit** : au moins un passage de chaque source qui tourne (agrasc, avoventes, cessions_etat, encheres_immobilieres, info_encheres, licitor, notaires). Vench, Petites Affiches et Enchères Publiques n'ont plus de passage depuis le 29/10, le 30/10 et plus de trente jours ; elles ne comptent pas dans le critère. Ce point est à confirmer avec le propriétaire pour les deux dernières.
+- **Un lot de publication dure 20 à 29 secondes en médiane**, pas quelques secondes. Le verrou est étroit (une vente partage son code postal avec deux autres en moyenne) mais long. Conséquence pour R2b : l'écran d'administration doit réessayer seul quand la vente est occupée, et la réduction du verrou de la collecte est avancée dès qu'une mesure pendant un import la confirme.
+- **Le second facteur des administrateurs n'est ni exigé ni enrôlé** (un administrateur, aucun facteur, interrupteur jamais activé). C'est un préalable de R2c qui dépend d'une action du propriétaire : enrôlement sur `/admin/securite`, puis activation.
+- **Reprise de l'existant** : aucune publication de l'ancien noyau, aucun fait accepté, aucune surface marquée par l'agent. La bascule n'a rien à reprendre.
+- **La file des documents ne se vide pas d'elle-même**, contrairement à ce que supposait le lot R6 : 181 tâches en attente et 71 en échec pour les ventes à venir, dont 62 pour la même cause (« PDF document checkpoint was not persisted »). Le lot R6 passe en diagnostic.
+- Environ 63 % des observations existantes n'ont plus de vente (estimation) : à traiter avec la file de validation du lot R3.
+
+### Questions qui restent au propriétaire ou à un avocat (s'ajoutent à la section 5)
+
+- Pour un avocat : la cessation d'affichage suffit-elle après une opposition, ou faut-il pouvoir effacer la valeur des journaux ; garder la valeur opposée pour reconnaître son retour est-il fondé ; texte affiché pour une valeur venue d'un greffe, d'un notaire ou d'un document ; durée de conservation des journaux.
+- Pour le propriétaire : rendre tenables la mise à prix, la date et le type de bien ; ouvrir un rôle de connexion propre à la collecte (chantier séparé, ne bloque pas R2).
+
+## 11. Lot R6, file de lecture des documents (11/11/2026)
+
+**Pourquoi maintenant.** Le lot R6 supposait que la file se viderait seule. Les mesures de l'annexe 10 ont montré l'inverse (181 tâches en attente, 71 en échec pour les ventes à venir). Les documents déjà possédés sont le premier gisement pour compléter les fiches.
+
+**Ce que les mesures ont établi (annexes 11 à 13).** Un premier diagnostic par lecture du code a été en partie infirmé par les mesures de production, puis révisé. Ce qui est établi :
+
+- **Trois ventes relues en boucle prennent 52 % des lectures** terminées en 48 heures : après chaque lecture réussie, une nouvelle tâche est créée pour la même vente, sans limite.
+- **140 des 180 tâches en attente n'ont rien à lire.** La fraîcheur exigée est de 24 heures alors que la file ne peut revisiter une vente que tous les 6 jours environ.
+- **Les 62 échecs « point d'étape non enregistré » sont des relectures de ventes déjà entièrement lues**, refusées à l'enregistrement, pas des téléchargements en échec.
+- **Quatre échecs viennent d'une valeur brute remise sans normalisation** (« libre », « 85,5 »).
+- Le budget du modèle n'est pas en cause (environ 1,6 USD par jour pour un plafond de 6). 88 % des documents des ventes à venir sont lus : le retard réel porte sur 59 ventes.
+
+**Première série livrée (correctifs A, B, C, D, F, G, H).** Valeur de la source remise par la règle de la collecte ; pas plus de deux lectures du vidage par vente et par jour ; péremption jugée sur la vérification enregistrée ; attente au lieu d'un échec quand il n'y a rien à lire sur un manifeste complet qui porte une pièce écartée ; version des faits posée dès que le manifeste est complet ; motif du refus écrit en clair ; tâche en échec visible, et bornée, quand l'écriture de fin de passe est écartée. Deux relectures indépendantes puis une contre-vérification ; les défauts relevés (dont un type de bien brut remis tel quel, et un prix pouvant être divisé par mille, tous deux antérieurs au lot) sont corrigés dans la série.
+
+**Effet attendu.** Environ 40 % de la capacité de lecture rendue, les 62 échecs disparaissent, le retard réel se résorbe en un à deux jours sans vidage manuel. À mesurer le lendemain de la mise en ligne avec les requêtes de `docs/audits/2026-11-11-file-de-lecture-des-pieces.md`.
+
+**Série suivante, dans l'ordre.** E (restaurer le texte d'un manifeste qui porte des pièces écartées), I (ne pas créer de tâche pour une vente entièrement lue), K et J (statuts des pièces illisibles ; pièces d'une source retirée), N (tâches des ventes entièrement retirées, par une fonction SQL).
+
+**Décisions qui reviennent au propriétaire.**
+
+- **Durée de validité d'une lecture** : 7 jours au lieu de 24 heures pour une pièce lue et inchangée, en gardant 24 heures pour les ventes à moins de 7 jours de leur audience et pour les liens morts. C'est ce qui supprime les 140 tâches sans travail et réduit les requêtes vers les sites sources ; le changement d'une pièce serait vu plus tard. À ne faire qu'après le correctif E.
+- **Ordre de passage** : une vente lointaine attend aujourd'hui 146 heures en moyenne derrière les ventes proches.
+
+## 12. Autres décisions et constats du 11/11/2026
+
+- **Licitor** : correctif du lecteur validé par le propriétaire (« tu peux faire les corrections qui te semblent nécessaires »), relu, PR #480.
+- **Petites Affiches et Enchères Publiques** : leur arrêt est voulu (le propriétaire : ces sites ont bloqué les informations utiles). Elles sortent des critères de suivi, comme Vench.
+- **Constat soumis au propriétaire** : 13 ventes d'Enchères Publiques sont encore « à venir » et hors quarantaine alors que leur dernière vérification date du 23 août 2026, sans autre source. Recommandation : marquer la source comme retirée du catalogue, comme Vench. En attente de sa réponse.
+
+## 13. Journal de la soirée du 11/11/2026
+
+Consigne du propriétaire appliquée à tous les lots, y compris ceux sans effet visible : circuit complet, sans allègement (développement, deux à trois relectures indépendantes, corrections, contre-vérification par l'exécution, CI, fusion).
+
+**En ligne.**
+
+| PR   | Objet                                                                                                           | État                                                                        |
+| ---- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| #482 | Skill `untangle-codebase` et critère permanent « rangement du code » (`docs/architecture/rangement-du-code.md`) | Fusionnée                                                                   |
+| #483 | Décodage des adresses Licitor réactivé ; contact des études notariales conservé                                 | Fusionnée ; valeur `true` constatée dans le journal du passage de 18:30 UTC |
+| #484 | Démarrage de la collecte robuste                                                                                | Fusionnée ; paquets installés en 12 s au premier passage réel               |
+| #485 | Exceptions du contrôle anti-secrets pour le lot R2a                                                             | Fusionnée                                                                   |
+| #486 | Registre des pièces, lot R2a côté base                                                                          | Fusionnée, **non appliquée en base**                                        |
+| #487 | Agent d'information : lecture des contacts en base, tous rôles                                                  | En CI, fusion armée                                                         |
+
+**Panne du 11/11 (14:30 à 17:00 UTC).** Une panne de résolution de noms sur le runner GitHub a fait échouer l'installation des paquets système. Le run restait ouvert jusqu'à l'expiration de son bail d'une heure, et le lanceur manquait le passage suivant. La collecte a repris seule à 17:00 UTC. La PR #484 clôt désormais tout de suite un run qui n'a pas démarré. Note : `docs/audits/2026-11-11-collecte-echec-avant-demarrage.md`. Reste ouvert : une alerte stable en cas de panne durable demande une migration, à décider.
+
+**Observation du lot R1.** Premier import de source après l'application (Info Enchères, 17:00 UTC) : 0 vente tenue, 0 évènement, 0 décision. Fin de l'observation le 12/11 à 11:45 UTC.
+
+**Registre, lot R2a côté base.** Quatre passes de corrections. Une régression (projection non stable en une passe) trouvée par la contre-vérification puis corrigée, rejouée sur 18 graines nouvelles. Trois essais de CI : le test 884 faisait tomber le serveur de test de Supabase (`grant … to current_user`), puis ne voyait plus pgTAP sous le rôle d'essai, et un tri dépendait de la collation. Les trois défauts étaient dans les tests, aucun dans les migrations ; ils ont été reproduits en local avant correction. Application prévue après un passage planifié de `fact-registry-check` et la fin de l'observation, entre deux lots de publication, avec les mesures P1 à P8 et les contrôles A1 à A5 du runbook `docs/runbooks/registre-des-pieces-r2a.md`. La partie collecte du lot (`claude/registre-pieces-r2a-collecte`) ne se fusionne qu'après l'application.
+
+**Contacts, décisions du propriétaire (11/11).**
+
+- L'outil de sollicitation ne contacte pas que des avocats : aussi les notaires et tout professionnel référencé par la source.
+- Trois étapes validées : lire les adresses déjà en base ; allumer la recherche sur le site du cabinet, avec sa validation ; recherche externe en dernier recours. Une adresse générique (contact@) suffit et est préférée.
+- Décodage Licitor réactivé : accord de Licitor déclaré par le propriétaire, pièce à verser au dossier.
+- Resend conservé : il s'agit de demandes d'information sur des annonces publiées, pas de prospection.
+
+**Choix du chef d'orchestre, à revoir si besoin.**
+
+- Une garde ajoutée au point de reprise de Licitor a été retirée après relecture : gain d'au plus 24 heures pour quelques fiches, contre un couplage et des relectures de fiches inutiles.
+- **Envois aux notaires fermés par défaut** (`INFORMATION_AGENT_NOTARY_SEND_ENABLED`, non posée sur Vercel) en attendant la réponse du propriétaire sur l'autorisation de réutilisation des annonces notariales. Brouillon et mesure à blanc restent possibles.
+- Les brouillons créés avant la PR #487 (4 en production) devront être régénérés par le bouton « Régénérer le brouillon ».
+
+**Relecture juridique (annexe 14).** Elle ne bloque pas les lots, aucun email ne partant. Conditions avant un premier envoi réel à un notaire ou à un service de l'État : message par rôle et portée de l'opposition annoncée (faits dans la PR #487) ; position écrite sur les conditions d'immobilier.notaires.fr ; garanties de transfert nommées ; mise à jour de la politique de confidentialité, du registre des traitements et de la mise en balance, à faire relire par un avocat ; purge de `information_agent_cases`.
+
+**À la main du propriétaire.**
+
+- Préparer ou non un courrier de demande d'autorisation à l'éditeur d'immobilier.notaires.fr.
+- Verser au dossier la trace écrite de l'accord de Licitor.
+- Les questions déjà ouvertes : quarantaine des 13 ventes d'Enchères Publiques, double authentification administrateur avant R2c, webhook Resend, durée de validité d'une lecture et ordre de passage (lot R6).
+
+**Suite.** Application du lot R2a en base, puis fusion de sa partie collecte ; migration de la file `admin_information_agent_queue` pour qu'elle lise les nouveaux blocs de contact ; mesure à blanc des destinataires sur la production ; étape 2 des contacts (recherche sur le site du cabinet) ; série suivante du lot R6, en commençant par la perte de `source_lot_selection` à la republication.
+
+## 14. Décision du 12/11/2026 : envois aux notaires ouverts
+
+Le propriétaire indique avoir échangé avec les notaires, qui sont d'accord : on peut les contacter pour l'enrichissement des annonces, sans courrier de demande d'autorisation. La fermeture par défaut prise la veille par délégation est donc levée.
+
+- `INFORMATION_AGENT_NOTARY_SEND_ENABLED` vaut `true` en production sur Vercel depuis le 12/11/2026. Elle prend effet au déploiement suivant.
+- Rien d'autre ne change : chaque envoi reste validé un par un par un administrateur, le pilote automatique reste éteint et n'écrit qu'aux avocats, la liste de questions d'un notaire reste la liste courte, et l'opposition d'une étude vaut pour toutes ses adresses.
+- Pour refermer : retirer la variable ou lui donner une autre valeur que `true`, puis redéployer.
+- Comme pour Licitor, garder au dossier la trace écrite de cet accord. Les textes à mettre à jour avant publication (annexe 14, section 5) restent à faire relire par un avocat : le registre des traitements classe encore notaires.fr « désactivé sans autorisation écrite ».

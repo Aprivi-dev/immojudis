@@ -114,7 +114,8 @@ from unnest(array[
   'cnb-lawyer-directory',
   'sale-reminders',
   'sale-results',
-  'weekly-digest'
+  'weekly-digest',
+  'fact-registry-check'
 ]) as job_name;
 
 -- The inbound worker is checked with a ten-minute freshness window. Keep a

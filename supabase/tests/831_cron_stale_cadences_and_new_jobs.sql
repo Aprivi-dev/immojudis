@@ -10,7 +10,8 @@ select plan(16);
 delete from public.operational_alerts;
 delete from public.operational_job_runs;
 
--- Une exécution réussie de chaque tâche attendue, terminée une minute avant l'instant de l'évaluation.
+-- Une exécution réussie de chaque tâche attendue, terminée une minute avant l'instant de l'évaluation
+-- (fact-registry-check : tâche ajoutée à la liste par 20261117100600, testée dans 889).
 create function pg_temp.fresh_runs(p_at timestamptz, skipped text[] default '{}') returns void
 language sql as $$
   insert into public.operational_job_runs (job_name, status, started_at, finished_at)
@@ -18,7 +19,8 @@ language sql as $$
   from unnest(array[
     'operational-health', 'smart-alerts', 'alert-notifications', 'sale-change-monitor',
     'data-retention', 'sale-retention', 'information-agent-inbound', 'listing-completeness',
-    'sale-pepites', 'sale-flood-risk', 'sale-reminders', 'sale-results', 'weekly-digest'
+    'sale-pepites', 'sale-flood-risk', 'sale-reminders', 'sale-results', 'weekly-digest',
+    'fact-registry-check'
   ]) as job_name
   where not (job_name = any (skipped));
 $$;
