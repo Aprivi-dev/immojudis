@@ -83,3 +83,39 @@ def test_the_value_kept_by_the_trace_wins_over_an_unknown_source_value() -> None
     assert sale.rooms_count == 2
     assert state == {"cleared": {"rooms_count"}, "preserved": set()}
     assert "pdf_fact_provenance" not in sale.raw_payload
+
+
+def test_the_snapshot_of_the_listing_wins_over_the_value_kept_by_the_trace() -> None:
+    """L'instantané dit ce que la source publie aujourd'hui ; la ligne de base de la trace date de la pose."""
+    sale = AuctionSale(
+        source_name="vench", source_url=URL, rooms_count=3,
+        raw_payload={
+            "source_factual_snapshot": {"source_name": "vench", "source_url": URL, "rooms_count": 4},
+            "pdf_fact_provenance": {"rooms_count": {"value": 3, "baseline": 2, "source": "pdf", "payload_keys": []}},
+        },
+    )
+
+    _clear_pdf_fact_projections(sale)
+
+    assert sale.rooms_count == 4
+
+
+def test_a_replaced_document_keeps_the_raw_copy_of_a_field_it_does_not_restore() -> None:
+    """Champ inconnu de la source : la valeur reste, donc sa copie de premier niveau aussi (elles vont ensemble)."""
+    snapshot = {"source_name": "vench", "source_url": URL, "fields_from_stored_row": ["surface_m2"],
+                "land_surface_m2": None}
+    sale = AuctionSale(
+        source_name="vench", source_url=URL, surface_m2=Decimal("48.5"), land_surface_m2=Decimal("300"),
+        surface_source="pdf", documents=[{"label": "Cahier des conditions de vente", "url": DOCUMENT}],
+        raw_payload={
+            "source_factual_snapshot": snapshot, "surface_m2": 48.5, "land_surface_m2": 300,
+            "surface_extraction": {"source": "pdf"}, "land_surface_extraction": {"source": "pdf"},
+            "document_analysis": {"profiles": [{"url": DOCUMENT, "sha256": "ancien"}]},
+        },
+    )
+
+    _invalidate_replaced_document_facts(sale, [{"url": DOCUMENT, "sha256": "nouveau"}])
+
+    assert sale.surface_m2 == Decimal("48.5") and sale.raw_payload["surface_m2"] == 48.5
+    # Témoin : le terrain, que la page a lu vide, est remis à vide et sa copie retirée.
+    assert sale.land_surface_m2 is None and "land_surface_m2" not in sale.raw_payload
