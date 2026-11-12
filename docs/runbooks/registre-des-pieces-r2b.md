@@ -3,6 +3,10 @@
 Plan : `docs/equipe/2026-11-11-registre-des-pieces.md`, section 10. Architecture :
 `docs/architecture/registre-des-pieces.md`. Runbook du lot précédent : `docs/runbooks/registre-des-pieces-r2a.md`.
 
+**Lot suivant.** Les droits s'ouvrent au lot R2c (`docs/runbooks/registre-des-pieces-r2c.md`), qui change aussi
+l'état des réglages décrits ici (second facteur levé, plafonds non appliqués) et dit où en sont les « Conditions
+du lot R2c » de la fin de cette page.
+
 Ce lot ne change aucune fiche. Les fonctions de décision existent **sans aucun droit d'exécution** : personne ne
 peut écrire une décision avant le lot R2c. Sans décision, aucune vente ne tient de champ, la fusion ne reporte rien
 et la relance planifiée ne fait rien.
