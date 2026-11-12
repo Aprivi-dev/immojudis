@@ -22,6 +22,7 @@ le registre change la façon de les écrire (gardes par rôle, fonction d'admini
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import uuid
 from collections.abc import Iterator
@@ -42,6 +43,8 @@ from src.storage import supabase_client as storage
 
 DB_URL_ENV = "PIPELINE_REGISTRY_DB_URL"
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+# Réseaux que Docker attribue par défaut à ses ponts (172.17.0.0/16 puis les suivants).
+DOCKER_BRIDGE = ipaddress.ip_network("172.16.0.0/12")
 # Variables que le pilote lit en plus de l'adresse et qui changent l'hôte réellement joint.
 REDIRECTING_ENV = ("PGHOSTADDR", "PGSERVICE")
 # Réglage par défaut de ``auction_fact_fields.on_listing_change`` (migrations du registre).
@@ -92,18 +95,43 @@ def _connection_hosts(url: str) -> list[str]:
     ]
 
 
+def _server_is_local(server: str | None, connection_host: str | None) -> bool:
+    """Vrai si l'adresse que le serveur dit avoir est celle d'une base locale, pour une connexion faite à cet hôte.
+
+    * bouclage, ou nulle (socket) : local ;
+    * adresse du pont Docker (``DOCKER_BRIDGE``) quand la connexion vise le bouclage : c'est une base dans un
+      conteneur de cette machine, jointe par son port publié (base Supabase locale, job de la CI). Le serveur y
+      voit l'adresse de son conteneur, pas ``127.0.0.1`` ;
+    * tout le reste, dont toute adresse publique : refusé.
+
+    Limite : un tunnel local (port du bouclage relayé vers une base distante dont l'adresse privée tombe dans cette
+    plage) passerait ce contrôle. Restent alors le contrôle du propriétaire de la projection, et le fait que ces
+    tests ne tournent que si ``PIPELINE_REGISTRY_DB_URL`` est posée. La plage est volontairement la seule que
+    Docker emploie par défaut : un Docker configuré sur ``192.168.0.0/16`` ou ``10.0.0.0/8`` sera refusé, plutôt
+    que d'admettre les plages où vivent la plupart des réseaux privés et des bases hébergées.
+    """
+    import ipaddress
+
+    if server is None:
+        return True
+    address = ipaddress.ip_address(server)
+    if address.is_loopback:
+        return True
+    return connection_host in LOCAL_HOSTS and address in DOCKER_BRIDGE
+
+
 def _require_projection_owner(db: Any) -> None:
     """Avant la première écriture : la base jointe est locale, et le rôle est le propriétaire de la projection.
 
     L'adresse est vérifiée du côté du serveur (ce que la connexion a réellement joint, quoi qu'en dise son
-    adresse) : bouclage, ou nulle pour une socket. Les scénarios posent des pièces comme le fait la projection, et
-    les gardes par rôle du registre refusent tout autre rôle : on ne les contourne pas, on le dit.
+    adresse), voir ``_server_is_local``. Les scénarios posent des pièces comme le fait la projection, et les gardes
+    par rôle du registre refusent tout autre rôle : on ne les contourne pas, on le dit.
     """
-    import ipaddress
-
     server = db.execute("select pg_catalog.host(pg_catalog.inet_server_addr())").fetchone()[0]
-    if server is not None and not ipaddress.ip_address(server).is_loopback:
-        pytest.fail(f"La connexion a joint {server}, qui n'est pas une base locale : ces tests écrivent.")
+    if not _server_is_local(server, db.info.host):
+        pytest.fail(
+            f"La connexion (hôte {db.info.host!r}) a joint {server}, qui n'est pas une base locale : ces tests écrivent."
+        )
     found = db.execute(
         """select pg_catalog.pg_get_userbyid(routine.proowner), current_user
            from pg_catalog.pg_proc routine
@@ -165,20 +193,71 @@ def test_a_local_address_redirected_by_the_environment_is_refused(monkeypatch, n
         _db_url()
 
 
-def test_a_server_that_is_not_on_the_loopback_is_refused_before_any_write() -> None:
+class _JoinedServer:
+    """Une connexion faite à ``host`` dont le serveur dit avoir l'adresse ``server``."""
+
+    def __init__(self, host: str, server: str | None):
+        self.info = type("Info", (), {"host": host})()
+        self.server = server
+        self.statements: list[str] = []
+
+    def execute(self, statement: str):
+        self.statements.append(statement)
+        if "inet_server_addr" in statement:
+            return type("Rows", (), {"fetchone": lambda _self: (self.server,)})()
+        return type("Rows", (), {"fetchone": lambda _self: ("postgres", "postgres")})()
+
+
+@pytest.mark.parametrize(
+    ("host", "server"),
+    [
+        ("127.0.0.1", "127.0.0.1"),
+        ("localhost", "::1"),
+        ("127.0.0.1", None),  # socket
+        # Base dans un conteneur de cette machine, jointe par son port publié : Supabase local, job de la CI.
+        ("127.0.0.1", "172.18.0.2"),
+        ("localhost", "172.17.0.3"),
+        ("::1", "172.31.255.254"),
+    ],
+)
+def test_a_local_server_is_accepted(host, server) -> None:
+    db = _JoinedServer(host, server)
+
+    _require_projection_owner(db)
+
+    assert len(db.statements) == 2  # l'adresse du serveur, puis le propriétaire de la projection
+
+
+@pytest.mark.parametrize(
+    ("host", "server"),
+    [
+        # Adresse publique : refusée, même si la connexion vise le bouclage (tunnel, redirection de port).
+        ("127.0.0.1", "203.0.113.7"),
+        ("localhost", "2001:db8::7"),
+        # Plages privées que Docker n'emploie pas par défaut : celles des réseaux privés et des bases hébergées.
+        ("127.0.0.1", "192.168.1.20"),
+        ("127.0.0.1", "10.0.0.5"),
+        ("127.0.0.1", "172.32.0.1"),  # juste au-delà de la plage du pont
+        # L'adresse du pont ne vaut que pour une connexion au bouclage.
+        ("172.18.0.2", "172.18.0.2"),
+        ("db.example.test", "172.18.0.2"),
+    ],
+)
+def test_a_server_that_is_not_local_is_refused_before_any_write(host, server) -> None:
     """Le contrôle se fait sur ce que le serveur dit de lui-même, pas sur l'adresse demandée."""
+    db = _JoinedServer(host, server)
 
-    class _Elsewhere:
-        statements: list[str] = []
-
-        def execute(self, statement: str):
-            self.statements.append(statement)
-            return type("Rows", (), {"fetchone": lambda _self: ("203.0.113.7",)})()
-
-    db = _Elsewhere()
-    with pytest.raises(pytest.fail.Exception, match="203.0.113.7"):
+    with pytest.raises(pytest.fail.Exception, match="n'est pas une base locale"):
         _require_projection_owner(db)
+
     assert len(db.statements) == 1 and "inet_server_addr" in db.statements[0]
+
+
+def test_an_address_on_the_docker_bridge_is_already_refused_as_a_connection_host(monkeypatch) -> None:
+    """En amont du contrôle côté serveur : on ne se connecte qu'au bouclage, jamais directement au conteneur."""
+    monkeypatch.setenv(DB_URL_ENV, "postgresql://postgres@172.18.0.2:5432/postgres")
+    with pytest.raises(pytest.fail.Exception, match="locale"):
+        _db_url()
 
 
 @pytest.mark.parametrize(
