@@ -14,6 +14,8 @@ export {
   runAdminCatalogueReadinessActionClient,
   fetchAdminAuctionFactClaimReview,
   reviewAdminAuctionFactClaimClient,
+  fetchAdminFactClaimDecisions,
+  decideAdminFactClaimClient,
   fetchAdminInformationAgentMissions,
   createAdminInformationAgentMission,
   runAdminInformationAgentMissionAction,
