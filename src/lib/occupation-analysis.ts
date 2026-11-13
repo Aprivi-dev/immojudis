@@ -31,15 +31,40 @@ export type OccupancyAnalysis = {
   limitations: string[];
 };
 
-const OCCUPANCY_KEY = /occup|occupation|occupancy|bail|locataire|tenant|rented|lease|vacant|libre/i;
+const OCCUPANCY_KEY =
+  /occup|occupation|occupancy|bail|locataire|locative|tenant|rented|lease|vacant|libre/i;
 
+/** Ce que vend la vente : « libre » ou « vide » qui le suivent disent son occupation. */
+const PREMISES =
+  "(?:bien|lot|logement|appartement|maison|studio|pavillon|villa|local|locaux|immeuble)s?";
+/**
+ * « libre de » ne dit l'occupation que suivi d'elle (premier motif) : « libre de toute
+ * inscription » ou « libre d'hypothèque » parlent des charges du bien.
+ */
+const NOT_FREE_OF = String.raw`(?!\s+(?:de|du|d)\s)`;
+
+// « libre » et « vide » seuls disent aussi un accès, un parking visiteurs ou un vide sanitaire :
+// ils ne comptent que dans une phrase d'occupation. Un texte qui n'en a pas reste « À confirmer ».
 const FREE_PATTERNS = [
-  /\blibre(?:\s+de\s+toute\s+occupation)?\b/i,
+  /\b(?:libre|vide)s?\s+(?:de\s+tout(?:e|s|es)?\s+|d\s+)(?:occupation|occupant|location|bail)/i,
+  new RegExp(
+    String.raw`\b${PREMISES}\s+(?:(?:est|sont|sera|seront|actuellement|desormais)\s+){0,2}` +
+      String.raw`(?:libre|vide)s?\b${NOT_FREE_OF}`,
+    "i",
+  ),
+  new RegExp(
+    String.raw`\b(?:il|elle)s?\s+(?:est|sont|sera|seront)\s+(?:(?:actuellement|desormais)\s+)?` +
+      String.raw`libres?\b${NOT_FREE_OF}`,
+    "i",
+  ),
+  new RegExp(String.raw`\bvendue?s?\s+libres?\b${NOT_FREE_OF}`, "i"),
+  // Champ de la source nommé d'après l'occupation (« occupation: Libre »,
+  // « situationLocative: LIBRE »).
+  /(?:occup|locative)[\w.[\]]*\s*:\s*libres?\b/i,
   /\bfree\b/i,
   /\bnon\s+occup(?:e|ee|é|ée)\b/i,
   /\binoccup(?:e|ee|é|ée)\b/i,
   /\bvacant\b/i,
-  /\bvide\b/i,
 ];
 
 const RENTED_PATTERNS = [

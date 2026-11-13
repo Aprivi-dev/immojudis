@@ -25,7 +25,8 @@ vi.mock("@/components/admin/AdminSaleFeedbackPanel", () => ({
   AdminSaleFeedbackPanel: () => null,
 }));
 // Les contrôles qualité du catalogue ont leur propre test (AdminCatalogueQualityPanel.test.tsx).
-vi.mock("@/components/admin/AdminCatalogueQualityPanel", () => ({
+vi.mock("@/components/admin/AdminCatalogueQualityPanel", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/admin/AdminCatalogueQualityPanel")>()),
   AdminCatalogueQualityPanel: () => null,
 }));
 afterEach(() => {

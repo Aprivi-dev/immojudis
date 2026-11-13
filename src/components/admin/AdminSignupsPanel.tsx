@@ -27,6 +27,7 @@ import {
 } from "@/lib/admin-signups-format";
 import type { AdminSignupAccount, AdminTrialExtensionResponse } from "@/lib/admin-signups";
 import { toast } from "@/lib/toast";
+import { SUBSCRIPTIONS_QUERY_KEY } from "@/lib/admin-query-keys";
 
 export const SIGNUPS_QUERY_KEY = ["admin-signups"] as const;
 
@@ -94,7 +95,7 @@ export function AdminSignupsPanel() {
       setSelected(new Set());
       setNote("");
       await queryClient.invalidateQueries({ queryKey: SIGNUPS_QUERY_KEY });
-      await queryClient.invalidateQueries({ queryKey: ["admin-subscriptions"] });
+      await queryClient.invalidateQueries({ queryKey: SUBSCRIPTIONS_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(queryErrorMessage(error, "Prolongation impossible"));

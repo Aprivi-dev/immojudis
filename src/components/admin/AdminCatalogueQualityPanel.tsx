@@ -15,13 +15,15 @@ const TONES: Record<string, string> = {
   alert: "bg-danger-tint text-danger",
 };
 
+export const CATALOGUE_QUALITY_QUERY_KEY = ["admin-catalogue-quality"] as const;
+
 /**
  * Contrôles qualité du catalogue : mesures du dernier cliché quotidien de la sentinelle, seuils et alertes
  * `catalogue.quality.*` ouvertes. Tout arrive mis en forme par le serveur (`/api/admin/catalogue-quality`).
  */
 export function AdminCatalogueQualityPanel() {
   const query = useQuery({
-    queryKey: ["admin-catalogue-quality"],
+    queryKey: CATALOGUE_QUALITY_QUERY_KEY,
     queryFn: () => apiRequest<AdminCatalogueQualityView>("/api/admin/catalogue-quality"),
     staleTime: 60_000,
   });

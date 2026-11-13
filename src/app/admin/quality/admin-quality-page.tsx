@@ -12,7 +12,10 @@ import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import type { ReactElement } from "react";
-import { AdminCatalogueQualityPanel } from "@/components/admin/AdminCatalogueQualityPanel";
+import {
+  AdminCatalogueQualityPanel,
+  CATALOGUE_QUALITY_QUERY_KEY,
+} from "@/components/admin/AdminCatalogueQualityPanel";
 import { AdminSaleFeedbackPanel } from "@/components/admin/AdminSaleFeedbackPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminPill } from "@/components/admin/admin-pill";
@@ -23,12 +26,14 @@ import type {
   DataQualityReport,
   DataQualitySourceCoverage,
 } from "@/lib/data-quality-monitor";
-import * as queryKeys from "@/lib/query-keys";
+
+const QUALITY_REPORT_QUERY_KEY = ["admin-quality-report"] as const;
+const VALUATION_OVERVIEW_QUERY_KEY = ["admin-valuation-overview"] as const;
 
 export function AdminQualityPage() {
   const queryClient = useQueryClient();
   const qualityQuery = useQuery({
-    queryKey: queryKeys.adminQualityReport(),
+    queryKey: QUALITY_REPORT_QUERY_KEY,
     queryFn: fetchAdminDataQuality,
     staleTime: 60_000,
   });
@@ -40,7 +45,7 @@ export function AdminQualityPage() {
     isFetching: valuationFetching,
     error: valuationError,
   } = useQuery({
-    queryKey: queryKeys.adminValuationOverview(),
+    queryKey: VALUATION_OVERVIEW_QUERY_KEY,
     queryFn: fetchValuationAdminOverview,
     staleTime: 60_000,
   });
@@ -55,7 +60,7 @@ export function AdminQualityPage() {
       onRefresh={() => {
         void qualityQuery.refetch();
         void refetchValuation();
-        void queryClient.invalidateQueries({ queryKey: ["admin-catalogue-quality"] });
+        void queryClient.invalidateQueries({ queryKey: CATALOGUE_QUALITY_QUERY_KEY });
       }}
       isRefreshing={qualityQuery.isFetching || valuationFetching}
     >

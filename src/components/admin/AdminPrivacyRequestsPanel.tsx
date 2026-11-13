@@ -5,6 +5,7 @@ import Clock from "lucide-react/dist/esm/icons/clock.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
 import { queryErrorMessage } from "@/components/admin/admin-format";
+import { AdminPill } from "@/components/admin/admin-pill";
 import { formatShortDate } from "@/lib/format/dates";
 import { formatPriceWithCents } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
@@ -32,11 +33,13 @@ const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
   { value: "rejected", label: "Rejetée / clôturée" },
 ];
 
+export const PRIVACY_REQUESTS_QUERY_KEY = ["admin-privacy-requests"] as const;
+
 export function AdminPrivacyRequestsPanel() {
   const queryClient = useQueryClient();
   const [offset, setOffset] = useState(0);
   const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ["admin-privacy-requests", offset],
+    queryKey: [...PRIVACY_REQUESTS_QUERY_KEY, offset],
     queryFn: () => fetchAdminPrivacyRequests({ offset }),
     staleTime: 30_000,
   });
@@ -44,7 +47,7 @@ export function AdminPrivacyRequestsPanel() {
     mutationFn: (input: PrivacyRequestAdminUpdate) => updateAdminPrivacyRequest(input),
     onSuccess: async () => {
       toast.success("Demande mise à jour.");
-      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+      await queryClient.invalidateQueries({ queryKey: PRIVACY_REQUESTS_QUERY_KEY });
     },
     onError: (mutationError) => {
       toast.error(queryErrorMessage(mutationError, "Mise à jour impossible"));
@@ -56,7 +59,7 @@ export function AdminPrivacyRequestsPanel() {
       toast.success(
         `Rétractation exécutée : ${formatPriceWithCents(result.refundedCents / 100)} remboursés.`,
       );
-      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+      await queryClient.invalidateQueries({ queryKey: PRIVACY_REQUESTS_QUERY_KEY });
     },
     onError: (mutationError) => {
       toast.error(queryErrorMessage(mutationError, "Rétractation impossible"));
@@ -69,7 +72,7 @@ export function AdminPrivacyRequestsPanel() {
       toast.success(
         "Effacement exécuté : données du demandeur supprimées (compte et client Stripe, s'il en avait).",
       );
-      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+      await queryClient.invalidateQueries({ queryKey: PRIVACY_REQUESTS_QUERY_KEY });
     },
     onError: (mutationError) => {
       toast.error(queryErrorMessage(mutationError, "Effacement impossible"));
@@ -217,17 +220,13 @@ function PrivacyRequestEditor({
         <Clock className="h-3.5 w-3.5 text-gold-text" />
         Reçue le {formatShortDate(request.submittedAt)} · échéance {formatShortDate(request.dueAt)}
         {request.deadline ? (
-          <span
-            className={`rounded-full border px-2 py-0.5 font-semibold ${
-              request.deadline.overdue
-                ? "border-red-300/30 bg-red-400/10 text-red-100"
-                : request.deadline.dueSoon
-                  ? "border-amber-300/30 bg-amber-400/10 text-amber-100"
-                  : "border-white/10 text-muted-foreground"
-            }`}
+          <AdminPill
+            tone={
+              request.deadline.overdue ? "danger" : request.deadline.dueSoon ? "warning" : "neutral"
+            }
           >
             {privacyDeadlineLabel(request.deadline)}
-          </span>
+          </AdminPill>
         ) : null}
       </div>
 

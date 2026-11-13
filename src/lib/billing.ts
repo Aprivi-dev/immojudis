@@ -1171,17 +1171,17 @@ export function isAnalysisSubscriptionPrice(
 
 /**
  * Le Price d'un abonnement ouvre-t-il l'offre Analyse ? Il doit figurer dans la configuration, et le
- * Price COURANT (`STRIPE_ANALYSIS_PRICE_ID`) doit valoir 59 € (5 900 centimes) : un Price courant
- * mal créé n'ouvre pas l'accès. Les anciens Price (`STRIPE_ANALYSIS_LEGACY_PRICE_IDS`) restent
- * acceptés quel que soit leur montant : l'exploitant les a déclarés pour des abonnés qui paient
- * encore un ancien tarif.
+ * Price COURANT (celui que vend le checkout, `analysisPriceId`) doit valoir 59 € (5 900 centimes) :
+ * un Price courant mal créé n'ouvre pas l'accès. Les anciens Price
+ * (`STRIPE_ANALYSIS_LEGACY_PRICE_IDS`) restent acceptés quel que soit leur montant : l'exploitant
+ * les a déclarés pour des abonnés qui paient encore un ancien tarif.
  */
 export function isRecognisedAnalysisPrice(
   price: { id?: string | null; unit_amount?: number | null } | null | undefined,
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): boolean {
   if (!price || !isAnalysisSubscriptionPrice(price.id, env)) return false;
-  if (price.id === serverEnv(env).stripe.analysisPriceId) {
+  if (price.id === analysisPriceId(env)) {
     return price.unit_amount === ANALYSIS_RECURRING_PRICE_CENTS;
   }
   return true;

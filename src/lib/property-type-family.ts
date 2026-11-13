@@ -24,12 +24,19 @@ export type PropertyFamily =
   | "other"
   | "unknown";
 
-const FAMILY_PATTERNS: ReadonlyArray<readonly [PropertyFamily, RegExp]> = [
+/**
+ * Chaque motif se lit sur le texte sans accents, sauf ceux marqués `accented`, lus sur le texte
+ * accentué.
+ */
+const FAMILY_PATTERNS: ReadonlyArray<readonly [PropertyFamily, RegExp, "accented"?]> = [
   [
     "apartment",
     /appartement|apartment|\bappart|\bapt\b|studio|duplex|triplex|loft|\bflat\b|\bt[1-9]\b/,
   ],
-  ["house", /maison|house|villa|pavillon|chalet|\blongere\b|\bferme\b|\bchateau\b|\bmas\b|bastide/],
+  ["house", /maison|house|villa|pavillon|chalet|\blongere\b|\bchateau\b|\bmas\b|bastide/],
+  // Une ferme est une maison, un box ou un garage « fermé » n'en est pas une : seul l'accent
+  // distingue les deux mots. Un texte en capitales sans accent (« BOX FERME ») reste une ferme.
+  ["house", /\bferme\b/, "accented"],
   ["building", /immeuble|batiment|building/],
   ["mixed", /mixte|mixed/],
   ["land", /terrain|\bland\b|parcelle|\bpre\b|\bbois\b|agricole/],
@@ -43,13 +50,14 @@ const FAMILY_PATTERNS: ReadonlyArray<readonly [PropertyFamily, RegExp]> = [
 const UNKNOWN_TYPE = /^(?:unknown|inconnu|non precise?e?)$/;
 
 export function propertyFamily(value: string | null | undefined): PropertyFamily {
-  const text = (value ?? "")
-    .trim()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLocaleLowerCase("fr-FR");
+  const accented = (value ?? "").trim().normalize("NFC").toLocaleLowerCase("fr-FR");
+  const text = accented.normalize("NFD").replace(/\p{Diacritic}/gu, "");
   if (!text || UNKNOWN_TYPE.test(text)) return "unknown";
-  return FAMILY_PATTERNS.find(([, pattern]) => pattern.test(text))?.[0] ?? "other";
+  return (
+    FAMILY_PATTERNS.find(([, pattern, on]) =>
+      pattern.test(on === "accented" ? accented : text),
+    )?.[0] ?? "other"
+  );
 }
 
 /**

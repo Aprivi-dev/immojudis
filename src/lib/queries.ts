@@ -78,7 +78,7 @@ const SALE_CARD_COLUMN_NAMES = [
   "completeness_tier",
 ] as const;
 
-export const SALE_CARD_COLUMNS = SALE_CARD_COLUMN_NAMES.join(",");
+const SALE_CARD_COLUMNS = SALE_CARD_COLUMN_NAMES.join(",");
 
 const SALE_PREVIEW_COLUMNS = [
   "id",
@@ -554,7 +554,7 @@ const SALE_MAP_POINT_COLUMNS = [
 ].join(",");
 const MAP_POINT_PAGE_SIZE = 1000;
 /** Garde-fou : le catalogue entier (quelques milliers de ventes) tient largement dessous. */
-export const MAP_POINTS_HARD_LIMIT = 10_000;
+const MAP_POINTS_HARD_LIMIT = 10_000;
 
 /**
  * Tous les points géolocalisés d'une recherche (et non un échantillon), en colonnes

@@ -16,6 +16,7 @@ import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/adm
 import { TextField } from "@/components/admin/AdminFormFields";
 import { SelectField } from "@/components/admin/AdminFormFields";
 import { AdminPill } from "@/components/admin/admin-pill";
+import { DASHBOARD_QUERY_KEY, SUBSCRIPTIONS_QUERY_KEY } from "@/lib/admin-query-keys";
 
 type SubscriptionFormState = {
   target: string;
@@ -24,8 +25,6 @@ type SubscriptionFormState = {
   currentPeriodEnd: string;
   note: string;
 };
-
-const SUBSCRIPTIONS_QUERY_KEY = ["admin-subscriptions"] as const;
 
 export function AdminSubscriptionsPanel() {
   const queryClient = useQueryClient();
@@ -49,7 +48,7 @@ export function AdminSubscriptionsPanel() {
       );
       setForm(emptySubscriptionForm());
       await queryClient.invalidateQueries({ queryKey: SUBSCRIPTIONS_QUERY_KEY });
-      await queryClient.invalidateQueries({ queryKey: ["admin-dashboard"] });
+      await queryClient.invalidateQueries({ queryKey: DASHBOARD_QUERY_KEY });
     },
     onError: (error) => {
       toast.error(queryErrorMessage(error, "Attribution impossible"));

@@ -19,7 +19,7 @@ import { fetchAdminLaunchOffer, setAdminLaunchOfferClient } from "@/lib/client-a
 import { fetchAdminPilotage } from "@/lib/client-api/admin";
 import { LAUNCH_OFFER_ACCOUNT_TEXT } from "@/lib/launch-offer";
 
-const LAUNCH_OFFER_QUERY_KEY = ["admin-launch-offer"] as const;
+export const LAUNCH_OFFER_QUERY_KEY = ["admin-launch-offer"] as const;
 const LAUNCH_OFFER_ACCOUNTS_QUERY_KEY = ["admin-launch-offer-accounts"] as const;
 
 const CUT_MESSAGE =

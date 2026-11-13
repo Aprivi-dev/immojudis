@@ -217,6 +217,60 @@ describe("occupation analysis", () => {
     expect(analysis.limitations[0]).toContain("ne permet pas encore");
   });
 
+  // Test de caractérisation (lot 11) : des textes réels typiques des annonces et des blocs
+  // source, lus avec un statut inconnu. Colonnes : où le texte se trouve, le texte, le statut
+  // rendu. « libre » et « vide » ne comptent que dans une phrase d'occupation : les lignes sous
+  // « avant : free » étaient de faux « Libre » (relecture juridique du 13/11/2026).
+  it.each([
+    ["description", "Appartement libre.", "free"],
+    ["description", "Maison libre avec jardin.", "free"],
+    ["description", "Le lot 1 est libre de toute occupation", "free"],
+    ["description", "Libre de toute occupation.", "free"],
+    ["description", "Lot vendu libre", "free"],
+    ["description", "Appartement vendu libre de tout occupant.", "free"],
+    ["description", "Maison libre dès la signature de l'acte.", "free"],
+    ["description", "Vendu libre.", "free"],
+    ["description", "Le bien était loué mais il est désormais libre", "free"],
+    ["description", "Logement vide de tout occupant.", "free"],
+    ["description", "Bien inoccupé depuis 2024.", "free"],
+    ["description", "Appartement loué selon bail d'habitation.", "rented"],
+    ["description", "Appartement occupé par le propriétaire.", "occupied"],
+    // avant : free
+    ["description", "Appartement loué vide.", "rented"],
+    ["description", "Maison sur vide sanitaire, chauffage au fioul.", "to_confirm"],
+    ["description", "Vide sanitaire.", "to_confirm"],
+    ["description", "Accès libre au jardin.", "to_confirm"],
+    ["description", "Parking en accès libre devant l'immeuble.", "to_confirm"],
+    ["description", "Présence d'un vide-ordures dans les parties communes.", "to_confirm"],
+    ["description", "Bien vendu libre de toute inscription hypothécaire.", "to_confirm"],
+    // blocs source nommés d'après l'occupation
+    ["occupation", "Libre de toute occupation", "free"],
+    ["occupation", "Libre", "free"],
+    ["situationLocative", "LIBRE", "free"],
+    ["critere_occupation_du_bien", "Libre de toute occupation", "free"],
+  ])("lit « %s : %s » comme %s", (where, text, status) => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "unknown",
+      ...(where === "description" ? { description: text } : { source_blocks: { [where]: text } }),
+    });
+    expect(analysis.status).toBe(status);
+  });
+
+  it("ne fait pas d'un vide sanitaire une hypothèse favorable", () => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "unknown",
+      description: "Maison sur vide sanitaire, accès libre au jardin.",
+    });
+    expect(analysis).toMatchObject({
+      status: "to_confirm",
+      label: "À confirmer",
+      confidenceLabel: "Occupation à confirmer dans les pièces",
+    });
+    expect(analysis.decisionImpact).not.toContain("Hypothèse favorable");
+  });
+
   it("does not read the pipeline's own risk notes back as occupation evidence", () => {
     const analysis = buildOccupancyAnalysis({
       ...cleanSale,

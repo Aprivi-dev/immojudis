@@ -1,18 +1,25 @@
 "use client";
 
-import { AdminLaunchOfferPanel } from "@/components/admin/AdminLaunchOfferPanel";
-import { AdminOfferOpeningPanel } from "@/components/admin/AdminOfferOpeningPanel";
+import {
+  AdminLaunchOfferPanel,
+  LAUNCH_OFFER_QUERY_KEY,
+} from "@/components/admin/AdminLaunchOfferPanel";
+import {
+  AdminOfferOpeningPanel,
+  OFFER_OPENING_AUDIENCE_QUERY_KEY,
+} from "@/components/admin/AdminOfferOpeningPanel";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminSubscriptionsPanel } from "@/components/admin/AdminSubscriptionsPanel";
 import { useAdminRefresh } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
+import { SUBSCRIPTIONS_QUERY_KEY } from "@/lib/admin-query-keys";
 
 export function AdminClientsPage() {
   const { user } = useAuth();
   const { isRefreshing, refresh } = useAdminRefresh([
-    "admin-subscriptions",
-    "admin-launch-offer",
-    "admin-offer-opening-audience",
+    SUBSCRIPTIONS_QUERY_KEY[0],
+    LAUNCH_OFFER_QUERY_KEY[0],
+    OFFER_OPENING_AUDIENCE_QUERY_KEY[0],
   ]);
   return (
     <AdminShell

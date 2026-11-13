@@ -25,10 +25,6 @@ import {
   PEPITE_MIN_VALUE_COMPARABLES,
   PEPITE_PRICE_COURT_ONLY_FROM_SALES,
   PEPITE_SMOOTHING_WEIGHT_SALES,
-  PEPITE_V1_1_RULE_VERSION,
-  PEPITE_V1_2_RULE_VERSION,
-  PEPITE_V1_RULE_VERSION,
-  PEPITE_V2_1_RULE_VERSION,
 } from "@/lib/pepite-policy";
 import { MIN_COURT_SAMPLE, MIN_NATIONAL_SAMPLE } from "@/lib/auction-scenarios";
 
@@ -61,13 +57,6 @@ export const PEPITE_SMOOTHING = {
   smoothingWeightSales: PEPITE_SMOOTHING_WEIGHT_SALES,
   priceCourtOnlyFromSales: PEPITE_PRICE_COURT_ONLY_FROM_SALES,
 } as const;
-
-export {
-  PEPITE_V1_1_RULE_VERSION,
-  PEPITE_V1_2_RULE_VERSION,
-  PEPITE_V1_RULE_VERSION,
-  PEPITE_V2_1_RULE_VERSION,
-};
 
 /**
  * Date d'entrée en vigueur du contrôle du risque d'inondation (règle `pepite-v2.1`, avant elle `pepite-v2`, jamais
