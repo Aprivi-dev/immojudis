@@ -1,6 +1,6 @@
 import json
 
-from src.dedupe import compute_content_hash, dedupe_sales
+from src.dedupe import compute_content_hash, merge_duplicate_sales
 from src.normalize import normalize_sale
 
 
@@ -30,7 +30,7 @@ def test_dedupe_sales_keeps_distinct_publisher_urls_even_with_equal_hash() -> No
         _sale("https://avoventes.fr/enchere/2"),
         _sale("https://avoventes.fr/enchere/3", "2 rue Test 33000 Bordeaux"),
     ]
-    assert len(dedupe_sales(sales)) == 3
+    assert len(merge_duplicate_sales(sales)) == 3
 
 
 def test_dedupe_sales_collapses_cross_source_duplicates() -> None:
@@ -38,7 +38,7 @@ def test_dedupe_sales_collapses_cross_source_duplicates() -> None:
     licitor = _sale("https://www.licitor.com/annonce/1.html")
     licitor.source_name = "licitor"
 
-    result = dedupe_sales([avoventes, licitor])
+    result = merge_duplicate_sales([avoventes, licitor])
 
     assert len(result) == 1
     assert result[0].source_url == "https://avoventes.fr/enchere/1"
@@ -91,7 +91,7 @@ def test_dedupe_keeps_same_address_apart_when_prices_differ() -> None:
         starting_price="105 000 €",
     )
 
-    result = dedupe_sales([avoventes, licitor])
+    result = merge_duplicate_sales([avoventes, licitor])
 
     assert len(result) == 2
 
@@ -100,7 +100,7 @@ def test_dedupe_merges_same_address_across_sources_when_date_and_price_match() -
     avoventes = _make("https://avoventes.fr/enchere/9", address="12 av. de la République 33000 Bordeaux")
     licitor = _make("https://www.licitor.com/annonce/9.html", source_name="licitor")
 
-    result = dedupe_sales([avoventes, licitor])
+    result = merge_duplicate_sales([avoventes, licitor])
 
     assert len(result) == 1
     assert result[0].dedupe_confidence == "address"
@@ -113,9 +113,9 @@ def test_merging_the_same_pair_again_keeps_one_copy_per_source_url() -> None:
     """Each run merged the same listings again and stacked a full payload copy (150 copies in production)."""
     avoventes = _make("https://avoventes.fr/enchere/repeat", address="12 av. de la République 33000 Bordeaux")
     licitor_url = "https://www.licitor.com/annonce/repeat.html"
-    merged = dedupe_sales([avoventes, _make(licitor_url, source_name="licitor")])[0]
+    merged = merge_duplicate_sales([avoventes, _make(licitor_url, source_name="licitor")])[0]
     for _ in range(3):
-        result = dedupe_sales([merged, _make(licitor_url, source_name="licitor")])
+        result = merge_duplicate_sales([merged, _make(licitor_url, source_name="licitor")])
         assert len(result) == 1
         merged = result[0]
 
@@ -137,7 +137,7 @@ def test_a_merged_copy_keeps_only_what_enrichment_reads() -> None:
         score_factors=[{"heavy": True}],
     )
 
-    merged = dedupe_sales([avoventes, licitor])[0]
+    merged = merge_duplicate_sales([avoventes, licitor])[0]
 
     copy = merged.raw_payload["merged_sources"][0]["raw_payload"]
     assert copy["source_blocks"] == {"descriptif": "Appartement"}
@@ -159,7 +159,7 @@ def test_stacked_copies_heal_at_the_next_merge() -> None:
     stale = {"source_name": "licitor", "source_url": "https://www.licitor.com/annonce/old.html", "raw_payload": {}}
     target.raw_payload["merged_sources"] = [stale, dict(stale), {"note": "sans adresse"}, dict(stale)]
 
-    merged = dedupe_sales([target, _make("https://www.licitor.com/annonce/new.html", source_name="licitor")])[0]
+    merged = merge_duplicate_sales([target, _make("https://www.licitor.com/annonce/new.html", source_name="licitor")])[0]
 
     urls = [entry.get("source_url") for entry in merged.raw_payload["merged_sources"]]
     assert urls == [None, "https://www.licitor.com/annonce/old.html", "https://www.licitor.com/annonce/new.html"]
@@ -172,7 +172,7 @@ def test_dedupe_breaks_shared_raw_payload_alias_before_recording_merged_source()
     first.raw_payload = shared_payload
     second.raw_payload = shared_payload
 
-    result = dedupe_sales([first, second])
+    result = merge_duplicate_sales([first, second])
 
     assert len(result) == 1
     merged_payload = result[0].raw_payload["merged_sources"][0]["raw_payload"]
@@ -196,7 +196,7 @@ def test_dedupe_preserves_invalidation_markers_from_secondary_source() -> None:
         source_content_change_reason="source_operational_changed",
     )
 
-    result = dedupe_sales([primary, secondary])
+    result = merge_duplicate_sales([primary, secondary])
 
     assert len(result) == 1
     payload = result[0].raw_payload
@@ -223,7 +223,7 @@ def test_dedupe_merges_same_address_with_abbreviated_street_and_missing_postal_c
         documents=[{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
     )
 
-    result = dedupe_sales([avoventes, licitor])
+    result = merge_duplicate_sales([avoventes, licitor])
 
     assert len(result) == 1
     assert result[0].dedupe_confidence == "address"
@@ -254,7 +254,7 @@ def test_dedupe_merges_merignac_duplicate_with_location_suffixes() -> None:
         surface_m2="94 m²",
     )
 
-    result = dedupe_sales([notaires, encheres_publiques])
+    result = merge_duplicate_sales([notaires, encheres_publiques])
 
     assert len(result) == 1
     assert result[0].dedupe_confidence == "address"
@@ -275,7 +275,7 @@ def test_dedupe_merges_same_address_when_one_is_missing_date_and_price_but_surfa
     )
     assert avoventes.app_surface_m2 == licitor.app_surface_m2 is not None
 
-    result = dedupe_sales([avoventes, licitor])
+    result = merge_duplicate_sales([avoventes, licitor])
 
     assert len(result) == 1
 
@@ -290,7 +290,7 @@ def test_dedupe_keeps_same_address_apart_without_any_matching_evidence() -> None
         sale_date=None,
     )
 
-    assert len(dedupe_sales([avoventes, licitor])) == 2
+    assert len(merge_duplicate_sales([avoventes, licitor])) == 2
 
 
 def test_dedupe_keeps_distinct_lots_at_same_address() -> None:
@@ -307,7 +307,7 @@ def test_dedupe_keeps_distinct_lots_at_same_address() -> None:
         sale_date="15 mars 2027 à 9h00",
     )
 
-    result = dedupe_sales([lot_a, lot_b])
+    result = merge_duplicate_sales([lot_a, lot_b])
 
     assert len(result) == 2
 
@@ -334,7 +334,7 @@ def test_dedupe_merges_duplicate_lots_independently_at_same_address() -> None:
         surface_m2="72 m²",
     )
 
-    result = dedupe_sales([lot_a, lot_b, lot_b_duplicate])
+    result = merge_duplicate_sales([lot_a, lot_b, lot_b_duplicate])
 
     assert len(result) == 2
     merged_lot_b = next(sale for sale in result if "11-b" in " ".join(sale.source_urls))
@@ -361,7 +361,7 @@ def test_dedupe_does_not_merge_city_only_addresses() -> None:
         sale_date="15 mars 2027 à 9h00",
     )
 
-    result = dedupe_sales([first, second])
+    result = merge_duplicate_sales([first, second])
 
     assert len(result) == 2
 
@@ -375,7 +375,7 @@ def test_dedupe_keeps_richest_source_for_cross_source_duplicate() -> None:
         documents=[{"label": "Cahier des conditions", "url": "https://example.test/cdc.pdf"}],
     )
 
-    result = dedupe_sales([poor, rich])
+    result = merge_duplicate_sales([poor, rich])
 
     assert len(result) == 1
     assert result[0].source_url == "https://www.vench.fr/vente-1-maison.html"
@@ -389,7 +389,7 @@ def test_dedupe_sanitizes_documents_hydrated_directly_from_storage() -> None:
         {"label": "PV descriptif", "url": "https://example.test/pv.pdf"},
     ]
 
-    result = dedupe_sales([sale])
+    result = merge_duplicate_sales([sale])
 
     assert result[0].documents == [
         {"label": "PV descriptif", "url": "https://example.test/pv.pdf"}

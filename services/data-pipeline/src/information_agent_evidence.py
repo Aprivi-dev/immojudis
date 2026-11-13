@@ -24,11 +24,8 @@ from src.config import load_settings
 from src.image_dimensions import _isobmff_dimensions, _jpeg_dimensions, _webp_dimensions
 from src.information_agent_fact_candidates import (
     PROCESSOR_VERSION,
-    candidate_facts_for_insertion,
-    conflicts_with_sale,
     fetch_existing_message_fact_values,
     insert_fact_candidates,
-    rest_headers,
 )
 from src.information_agent_semantic import (
     MAX_VISION_IMAGE_BYTES,
@@ -44,6 +41,7 @@ from src.information_agent_semantic import (
 from src.normalize import clean_text
 from src.pdf_enrichment import classify_document_type
 from src.pdf_ocr_child_output import parse_ocr_child_output
+from src.storage.postgrest_helpers import rest_headers
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
@@ -1119,7 +1117,7 @@ def _unsupported(code: str, message: str, detected: str | None = None) -> Eviden
 def _claim_jobs(client: httpx.Client, base_url: str, key: str, limit: int) -> list[dict[str, Any]]:
     response = client.post(
         f"{base_url}/rest/v1/rpc/claim_information_agent_evidence_extractions",
-        headers=_headers(key),
+        headers=rest_headers(key),
         json={"p_limit": limit},
     )
     response.raise_for_status()
@@ -1204,13 +1202,13 @@ def _process_job(
                     isinstance(asset_metadata, dict)
                     and asset_metadata.get("evidence_kind") == "email_body"
                 ):
-                    existing_body_values = _fetch_existing_message_fact_values(
+                    existing_body_values = fetch_existing_message_fact_values(
                         client,
                         base_url,
                         key,
                         str(job.get("message_id") or ""),
                     )
-                _insert_fact_candidates(
+                insert_fact_candidates(
                     client,
                     base_url,
                     key,
@@ -1246,7 +1244,7 @@ def _process_job(
 def _fetch_asset(client: httpx.Client, base_url: str, key: str, asset_id: str) -> dict[str, Any]:
     response = client.get(
         f"{base_url}/rest/v1/information_agent_evidence_assets",
-        headers=_headers(key),
+        headers=rest_headers(key),
         params={
             "select": "id,case_id,message_id,sale_id,storage_bucket,storage_path,original_filename,mime_type,size_bytes,sha256,metadata",
             "id": f"eq.{asset_id}",
@@ -1263,7 +1261,7 @@ def _fetch_asset(client: httpx.Client, base_url: str, key: str, asset_id: str) -
 def _download_asset(client: httpx.Client, base_url: str, key: str, asset: dict[str, Any]) -> bytes:
     bucket = quote(str(asset.get("storage_bucket") or ""), safe="")
     path = quote(str(asset.get("storage_path") or ""), safe="/")
-    response = client.get(f"{base_url}/storage/v1/object/{bucket}/{path}", headers=_headers(key))
+    response = client.get(f"{base_url}/storage/v1/object/{bucket}/{path}", headers=rest_headers(key))
     response.raise_for_status()
     content = response.content
     if len(content) != int(asset.get("size_bytes") or 0):
@@ -1274,19 +1272,10 @@ def _download_asset(client: httpx.Client, base_url: str, key: str, asset: dict[s
     return content
 
 
-# Noms historiques du worker (tests et appelants) : la création des candidats vit dans
-# `information_agent_fact_candidates`.
-_headers = rest_headers
-_fetch_existing_message_fact_values = fetch_existing_message_fact_values
-_insert_fact_candidates = insert_fact_candidates
-_candidate_facts_for_insertion = candidate_facts_for_insertion
-_conflicts_with_sale = conflicts_with_sale
-
-
 def _fetch_sale(client: httpx.Client, base_url: str, key: str, sale_id: str) -> dict[str, Any]:
     response = client.get(
         f"{base_url}/rest/v1/auction_sales",
-        headers=_headers(key),
+        headers=rest_headers(key),
         params={
             "select": "surface_m2,app_surface_m2,land_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur,property_type,address",
             "id": f"eq.{sale_id}",
@@ -1307,7 +1296,7 @@ def _fetch_sale_lot_context(
     """Lots de la vente, pour que la lecture sémantique contrôle le lot dont parle chaque phrase."""
     response = client.get(
         f"{base_url}/rest/v1/auction_sales",
-        headers=_headers(key),
+        headers=rest_headers(key),
         params={
             "select": "quality_flags,source_lot_selection:raw_payload->source_lot_selection",
             "id": f"eq.{sale_id}",
@@ -1326,7 +1315,7 @@ def _fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: s
         return ""
     response = client.get(
         f"{base_url}/rest/v1/information_agent_cases",
-        headers=_headers(key),
+        headers=rest_headers(key),
         params={"select": "status", "id": f"eq.{case_id}", "limit": "1"},
     )
     response.raise_for_status()
@@ -1378,7 +1367,7 @@ def _finish_job(
     }
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_evidence_extractions",
-        headers={**_headers(key), "Prefer": "return=minimal"},
+        headers=rest_headers(key, prefer="return=minimal"),
         params=_processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
         json=payload,
     )
@@ -1398,7 +1387,7 @@ def _fail_job(
     now = datetime.now(UTC)
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_evidence_extractions",
-        headers={**_headers(key), "Prefer": "return=minimal"},
+        headers=rest_headers(key, prefer="return=minimal"),
         params=_processing_lease_params(extraction_id, attempts=attempts, locked_at=locked_at),
         json={
             "status": "failed",
@@ -1434,7 +1423,7 @@ def _mark_case_for_review(client: httpx.Client, base_url: str, key: str, case_id
         return
     response = client.patch(
         f"{base_url}/rest/v1/information_agent_cases",
-        headers={**_headers(key), "Prefer": "return=minimal"},
+        headers=rest_headers(key, prefer="return=minimal"),
         params={"id": f"eq.{case_id}", "status": "in.(replied,review)"},
         json={"status": "review"},
     )
@@ -1455,5 +1444,5 @@ def _run_pdf_ocr_child(argv: list[str]) -> int:
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--ocr-pdf-page":
         raise SystemExit(_run_pdf_ocr_child(sys.argv[1:]))
-    batch_limit = max(1, min(10, int(os.getenv("INFORMATION_AGENT_EVIDENCE_BATCH_SIZE", "5"))))
+    batch_limit = int(load_settings()["information_agent_evidence_batch_size"])
     print(json.dumps({"processed": run_information_agent_evidence_batch(limit=batch_limit)}))

@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup, Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
+from src.french_dates import MONTH_PATTERN
 from src.listing_location import classify_address
 from src.normalize import clean_text, extract_department, parse_surface
 from src.occupancy_statements import occupancy_from_text
@@ -982,8 +983,7 @@ def _extract_detail_sale_date(soup: BeautifulSoup, raw_text: str) -> str | None:
 def _looks_like_date_text(value: str) -> bool:
     return bool(
         re.search(
-            r"(?:\b\d{1,2}\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|"
-            r"septembre|octobre|novembre|décembre|decembre)\s+\d{4}\b|"
+            rf"(?:\b\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+\d{{4}}\b|"
             r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b)",
             value,
             re.I,
@@ -1026,8 +1026,7 @@ def _extract_detail_visit_dates(soup: BeautifulSoup, raw_text: str) -> list[str]
 def _looks_like_visit_text(value: str) -> bool:
     return bool(
         re.search(
-            r"\b(?:\d{1,2}\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|"
-            r"septembre|octobre|novembre|décembre|decembre)\s+\d{4}|"
+            rf"\b(?:\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+\d{{4}}|"
             r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|"
             r"visites?\s+libres?|sur\s+rendez-vous|sur\s+place)\b",
             value,

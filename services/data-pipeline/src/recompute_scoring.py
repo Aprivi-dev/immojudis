@@ -44,7 +44,7 @@ from src.sources.licitor_extraction import refresh_licitor_raw_sale
 from src.sources.petites_affiches import refresh_petites_affiches_raw_sale
 from src.storage.column_sets import UPSERT_COLUMNS
 from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT
-from src.storage.postgrest_helpers import postgrest_request_with_retries
+from src.storage.postgrest_helpers import postgrest_request_with_retries, rest_headers
 from src.storage.supabase_client import upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
@@ -227,12 +227,7 @@ def backfill_catalogue_readiness(
     if not supabase_url or not api_key:
         raise RuntimeError("Supabase URL/service role key are missing")
     endpoint = f"{supabase_url}/rest/v1/auction_sales"
-    headers = {
-        "apikey": api_key,
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal",
-    }
+    headers = rest_headers(api_key, prefer="return=minimal")
     for batch in _chunks(updates, max(1, batch_size)):
         for update in batch:
             params = {"id": f"eq.{update['id']}"}
@@ -557,11 +552,7 @@ def _fetch_sales(
         raise RuntimeError("Supabase URL/service role key are missing")
 
     endpoint = f"{supabase_url}/rest/v1/auction_sales"
-    headers = {
-        "apikey": api_key,
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "application/json",
-    }
+    headers = rest_headers(api_key)
     filters: dict[str, str] = {}
     if source:
         filters["source_name"] = f"eq.{source}"

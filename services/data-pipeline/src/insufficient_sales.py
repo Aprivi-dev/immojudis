@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.information_sufficiency import ContactBlocklist, sufficient_information
+from src.storage.postgrest_helpers import rest_headers
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_MAX_DELETIONS = 100
@@ -105,7 +106,7 @@ def fetch_links(settings: Mapping[str, Any], sale_ids: Sequence[str]) -> dict[st
     key = str(settings.get("supabase_service_role_key") or "")
     if not url or not key:
         raise RuntimeError("Supabase URL/service role key are missing")
-    headers = {"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"}
+    headers = rest_headers(key)
     found: dict[str, dict[str, set[str]]] = {"protecting": defaultdict(set), "informational": defaultdict(set)}
     for kind, links in (("protecting", PROTECTING_LINKS), ("informational", INFORMATIONAL_LINKS)):
         for table, column in links:

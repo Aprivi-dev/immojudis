@@ -15,7 +15,7 @@ from src.information_sufficiency import (
     set_active_blocklist,
     set_active_court_registry,
 )
-from src.listing_minimum import assess, has_contact_email, has_listing_minimum, has_street_or_lieu_dit
+from src.listing_minimum import assess, has_contact_email, has_street_or_lieu_dit
 from src.models import AuctionSale
 from src.position_quality import _ABBREVIATIONS, _LEADING_STREET_TYPES
 from src.publication_identity import resolve_publication_identities
@@ -89,9 +89,9 @@ def test_a_street_alone_is_enough() -> None:
 
 
 def test_a_lawyer_name_or_a_phone_alone_is_not_enough() -> None:
-    assert not has_listing_minimum(sale(lawyer_name="SELARL Cabinet Modèle (Maître Léa MODÈLE)"))
-    assert not has_listing_minimum(sale(lawyer_contact="05 00 00 00 15"))
-    assert not has_listing_minimum(sale(lawyer_name="Maître X", lawyer_contact="05 00 00 00 15 · https://cabinet.example"))
+    assert not assess(sale(lawyer_name="SELARL Cabinet Modèle (Maître Léa MODÈLE)")).ok
+    assert not assess(sale(lawyer_contact="05 00 00 00 15")).ok
+    assert not assess(sale(lawyer_name="Maître X", lawyer_contact="05 00 00 00 15 · https://cabinet.example")).ok
 
 
 def test_an_email_in_the_contact_is_enough() -> None:
@@ -196,13 +196,13 @@ def test_every_cadastre_location_form_of_every_source_counts() -> None:
     ],
 )
 def test_a_cadastre_location_without_a_parcel_is_not_a_location(location) -> None:
-    assert not has_listing_minimum(sale(raw_payload={"cadastre_location": location}))
-    assert not has_listing_minimum(sale(raw_payload={"source_property_features": {"cadastre_location": location}}))
+    assert not assess(sale(raw_payload={"cadastre_location": location})).ok
+    assert not assess(sale(raw_payload={"source_property_features": {"cadastre_location": location}})).ok
 
 
 def test_a_cadastral_block_without_a_parcel_is_not_a_location() -> None:
-    assert not has_listing_minimum(sale(raw_payload={"source_blocks": {"reference_cadastrale": "Ondres"}}))
-    assert not has_listing_minimum(sale(raw_payload={"cadastre_location": {"candidates": [], "designation": "Ondres"}}))
+    assert not assess(sale(raw_payload={"source_blocks": {"reference_cadastrale": "Ondres"}})).ok
+    assert not assess(sale(raw_payload={"cadastre_location": {"candidates": [], "designation": "Ondres"}})).ok
 
 
 def test_another_source_is_enough_by_url_host_or_by_observation() -> None:
@@ -213,8 +213,8 @@ def test_another_source_is_enough_by_url_host_or_by_observation() -> None:
     )
     assert assess(observed).basis == ("other_source",)
     # Deux adresses de la même source n'en font pas deux.
-    assert not has_listing_minimum(sale(source_urls=[VENCH, VENCH.replace("165184", "165185")]))
-    assert not has_listing_minimum(sale(source_urls=[VENCH, VENCH.replace("https://www.", "https://")]))
+    assert not assess(sale(source_urls=[VENCH, VENCH.replace("165184", "165185")])).ok
+    assert not assess(sale(source_urls=[VENCH, VENCH.replace("https://www.", "https://")])).ok
 
 
 def test_a_listing_whose_detail_page_was_not_read_is_not_judged_empty() -> None:

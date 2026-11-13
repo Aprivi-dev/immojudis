@@ -60,6 +60,7 @@ from src.storage.pdf_checkpoint_rules import last_checkpoint_refusal, reset_chec
 from src.storage.supabase_client import (
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
+    close_open_run_in_supabase,
     connect,
     fail_stale_running_runs_in_supabase,
     fetch_next_data_refresh_request_from_supabase,
@@ -67,7 +68,6 @@ from src.storage.supabase_client import (
     fetch_sale_for_data_refresh,
     finish_auction_enrichment_job_in_supabase,
     finish_data_refresh_request_in_supabase,
-    finish_run_in_supabase,
     has_active_running_run_in_supabase,
     has_eligible_pdf_job_for_sale,
     mark_past_sales_in_supabase,
@@ -248,7 +248,7 @@ def main() -> int:
 
     if source not in VALID_SOURCES:
         message = f"Invalid queued source: {source}"
-        finish_run_in_supabase(run_id, "failed", {"runner": "github_actions_queue"}, {"runner": [message]})
+        close_open_run_in_supabase(run_id, "failed", {"runner": "github_actions_queue"}, {"runner": [message]})
         print(message)
         return 1
 
@@ -266,7 +266,9 @@ def main() -> int:
         )
     except Exception as exc:
         LOGGER.exception("Queued run failed: %s", exc)
-        finish_run_in_supabase(
+        # run_pipeline holds the report of its run and closes it itself; this level above only knows the exception,
+        # so it merges into what the worker wrote (progress, or its final report) and never reopens a closed run.
+        close_open_run_in_supabase(
             run_id,
             "failed",
             {"runner": "github_actions_queue"},

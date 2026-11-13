@@ -68,15 +68,9 @@ from src.reviewed_aliases import (
 )
 from src.stage_watchdog import track_stage
 from src.storage import internal_contacts
-from src.storage.column_sets import (
-    JUDICIAL_SALE_COLUMNS,  # noqa: F401  (re-exported)
-    POSTGRES_JSON_COLUMNS,
-    PROPERTY_COLUMNS,  # noqa: F401  (re-exported)
-    UPSERT_COLUMNS,
-)
+from src.storage.column_sets import POSTGRES_JSON_COLUMNS, UPSERT_COLUMNS
 from src.storage.connection_guards import (
     POSTGRES_KEEPALIVE_OPTIONS,
-    DatabaseCallTimeout,  # noqa: F401 - re-exported: tests and callers read it here
     _client_deadline,
     postgres_ssl_options,
     retry_on_disconnect,
@@ -89,22 +83,11 @@ from src.storage.duplicate_sweep import (
     fetch_candidate_rows,
 )
 from src.storage.fact_claim_rows import (
-    FACT_CLAIMS_COLUMNS,  # noqa: F401
     _insert_fact_claim_rows,
     _materialize_fact_claim_snapshot,
     _sale_ids_for_connection,
 )
-from src.storage.known_sale_projection import (
-    DATA_REFRESH_SALE_SELECT,
-    KNOWN_SALE_DETAIL_SELECT,  # noqa: F401  (re-exported)
-    KNOWN_SALE_RAW_PAYLOAD_INDEX_KEYS,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_KEYS,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_PROJECTION,  # noqa: F401
-    KNOWN_SALE_RAW_PAYLOAD_PROJECTION_CHUNK_SIZE,  # noqa: F401
-    _build_known_sale_raw_payload_projection,  # noqa: F401
-    _known_sale_postgres_select,
-)
+from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT, _known_sale_postgres_select
 from src.storage.pdf_checkpoint_rules import (
     _checkpoint_manifest_text_hash,
     _checkpoint_page_coverage_matches,
@@ -124,7 +107,6 @@ from src.storage.pdf_persistence_rows import (
     PDF_EXTRACTION_PROVIDER,
     PDF_EXTRACTION_SCHEMA_VERSION,
     _enrichment_revision_for_sale,
-    _fresh_complete_pdf_fingerprint,  # noqa: F401
     _normalize_persisted_pdf_row,
     _read_persisted_pdf_rows_postgres,
     _rekey_pdf_job_after_checkpoint_with_connection,
@@ -142,14 +124,10 @@ from src.storage.postgrest_helpers import (
     postgrest_request_with_retries,
     rest_headers,
 )
-from src.storage.postgrest_payload import (
-    POSTGREST_MAX_PAYLOAD_DEPTH,  # noqa: F401
-    _sanitize_postgrest_payload,
-)
+from src.storage.postgrest_payload import _sanitize_postgrest_payload
 from src.storage.sale_row_builders import (
     _document_extraction_status,
     _judicial_sale_rows_for_sales,
-    _normalized_source_urls,  # noqa: F401
     _pdf_extraction_confidence,
     _property_rows_for_sales,
     _public_occurrence_row,
@@ -157,8 +135,6 @@ from src.storage.sale_row_builders import (
     _secondary_source_urls,
     _surface_derivation_rows_for_sale,
     _surface_measurement_rows_for_sale,
-    _surface_row_key,  # noqa: F401
-    _unique_rows_by_key,  # noqa: F401
     _unique_rows_by_keys,
     _unique_source_urls,
 )
@@ -1384,8 +1360,8 @@ def finish_run_in_supabase(
 
     ``summary`` and ``errors`` replace the stored ones, like the progress snapshots of
     ``update_run_progress_in_supabase``: the worker is the author of its report, and the final one supersedes every
-    snapshot (a merge would keep keys that a snapshot carried and the final report dropped). A process closing a run
-    it did not execute uses ``close_open_run`` instead.
+    snapshot (a merge would keep keys that a snapshot carried and the final report dropped). A closer that does not
+    hold that report (another process, or ``queued_runner`` around ``run_pipeline``) uses ``close_open_run`` instead.
     """
     if not run_id:
         return
@@ -1419,12 +1395,12 @@ def close_open_run(
     summary: dict[str, Any],
     errors: dict[str, Any],
 ) -> None:
-    """Close, on ``db``, a run that another process executed: merge into its report, only while it is still open.
+    """Close, on ``db``, a run whose report the closer does not hold: merge into it, only while the run is open.
 
-    Shared by every closer that is not the worker itself (``run_finalizer``, ``autonomous_runner``, the stale run
-    cleanup): the worker may have written progress, or closed the run already, and neither must be lost. The lease
-    expiry of the SQL scheduler (``pipeline_dispatch_retries`` migrations) applies the same rule. Repeating it is a
-    no-op once the run is closed.
+    Shared by every closer that is not the worker itself (``run_finalizer``, ``autonomous_runner``, ``queued_runner``
+    around ``run_pipeline``, the stale run cleanup): the worker may have written progress, or closed the run
+    already, and neither must be lost. The lease expiry of the SQL scheduler (``pipeline_dispatch_retries``
+    migrations) applies the same rule. Repeating it is a no-op once the run is closed.
     """
     db.execute(
         """update public.auction_runs set status=%s,finished_at=now(),updated_at=now(),
@@ -1433,6 +1409,41 @@ def close_open_run(
             where id=%s and status in ('queued','running')""",
         (status, Jsonb(_sanitize_postgrest_payload(errors)), Jsonb(_sanitize_postgrest_payload(summary)), run_id),
     )
+
+
+def merge_into_run_report(db: Any, run_id: str, summary: dict[str, Any], errors: dict[str, Any]) -> None:
+    """Add, on ``db``, what a closer knows to the report of a run, whatever its status.
+
+    Follows ``close_open_run`` when the worker may have closed its run already (``autonomous_runner`` around
+    ``src.main``): the status stays the worker's, and the closer's facts and errors are not lost.
+    """
+    db.execute(
+        """update public.auction_runs set summary=coalesce(summary,'{}') || %s,
+            errors=coalesce(errors,'{}') || %s
+            where id=%s""",
+        (Jsonb(_sanitize_postgrest_payload(summary)), Jsonb(_sanitize_postgrest_payload(errors)), run_id),
+    )
+
+
+def close_open_run_in_supabase(
+    run_id: str | None,
+    status: str,
+    summary: dict[str, Any],
+    errors: dict[str, list[str]],
+) -> None:
+    """``close_open_run`` on its own connection, for a closer that holds none (``queued_runner``)."""
+    if not run_id:
+        return
+    settings = load_settings()
+    if not supabase_configured(settings):
+        return
+    db_url = direct_database_url(settings)
+
+    def write() -> None:
+        with _postgres_connect(db_url) as db:
+            close_open_run(db, run_id, status, summary, errors)
+
+    retry_on_disconnect(write, RUN_TRACKING_RETRY_DELAYS, what="Run close")
 
 
 def update_run_progress_in_supabase(

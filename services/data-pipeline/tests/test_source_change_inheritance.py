@@ -7,7 +7,7 @@ collecte : 99 ventes relues dans la journée ont été invalidées de nouveau sa
 
 from __future__ import annotations
 
-from src.dedupe import dedupe_sales
+from src.dedupe import merge_duplicate_sales
 from src.freshness import is_new_source_change, record_source_checks
 from src.normalize import normalize_sale
 from src.publication_identity import merge_revision
@@ -94,7 +94,7 @@ def test_dedupe_does_not_reinvalidate_an_inherited_flag() -> None:
     secondary = _make("https://licitor.com/annonce/inherited-dedupe", source_name="licitor")
     _pending(secondary.raw_payload, at="2026-11-04T01:00:00+00:00")
 
-    result = dedupe_sales([primary, secondary])
+    result = merge_duplicate_sales([primary, secondary])
 
     assert len(result) == 1
     assert result[0].raw_payload.get("document_facts_version") == V5

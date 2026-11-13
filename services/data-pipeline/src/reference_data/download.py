@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import http.client
 import json
-import os
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+from src.config import user_agent
 
 DOWNLOAD_TIMEOUT_SECONDS = 120
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
@@ -68,10 +69,7 @@ class _AllowListedRedirectHandler(urllib.request.HTTPRedirectHandler):
 def _open(url: str, *, timeout: float):  # type: ignore[no-untyped-def]
     validate_reference_url(url)
     opener = urllib.request.build_opener(_AllowListedRedirectHandler())
-    headers = {"Accept-Encoding": "identity"}
-    user_agent = (os.environ.get("AUCTION_USER_AGENT") or "").strip()
-    if user_agent:
-        headers["User-Agent"] = user_agent
+    headers = {"Accept-Encoding": "identity", "User-Agent": user_agent()}
     return opener.open(urllib.request.Request(url, headers=headers), timeout=timeout)
 
 

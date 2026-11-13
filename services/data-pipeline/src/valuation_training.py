@@ -1218,17 +1218,6 @@ def score_active_model(
     }, predicted
 
 
-def evaluate_active_model(
-    active_model: ActiveModel | None,
-    features: pd.DataFrame,
-    actual: np.ndarray,
-    *,
-    h3_module: Any = None,
-) -> dict[str, Any]:
-    """Report of ``score_active_model`` without the predictions."""
-    return score_active_model(active_model, features, actual, h3_module=h3_module)[0]
-
-
 def market_cells(frame: pd.DataFrame, *, resolution: int, h3_module: Any) -> list[str | None]:
     cells: list[str | None] = []
     for latitude, longitude in zip(frame["latitude"], frame["longitude"], strict=True):

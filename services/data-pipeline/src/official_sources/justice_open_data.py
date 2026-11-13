@@ -91,13 +91,6 @@ class JusticeOpenDataSchemaError(ValueError):
     """Raised when a download is not one of the supported Justice CSV schemas."""
 
 
-@dataclass(frozen=True)
-class DetectedCsvFormat:
-    encoding: str
-    delimiter: str
-    headers: tuple[str, ...]
-
-
 @dataclass
 class ParseQualityStats:
     dataset_kind: str

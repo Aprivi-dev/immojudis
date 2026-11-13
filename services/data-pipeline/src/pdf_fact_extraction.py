@@ -15,6 +15,7 @@ from src.enrichment.surface_reasoning import (
     apply_surface_reasoning_to_sale,
     extract_surface_facts_from_text,
 )
+from src.french_dates import MONTH_PATTERN
 from src.models import AuctionSale
 from src.normalize import (
     clean_text,
@@ -1097,9 +1098,8 @@ def _sale_date_candidate_phrases(text: str) -> list[str]:
 
 def _has_sale_date_signal(text: str) -> bool:
     normalized = _normalize_document_classifier_text(text)
-    month_pattern = r"janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre"
     return bool(
-        re.search(rf"\b\d{{1,2}}\s+(?:{month_pattern})\s+\d{{4}}\b", normalized)
+        re.search(rf"\b\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+\d{{4}}\b", normalized)
         or re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", normalized)
     )
 

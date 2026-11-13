@@ -1142,3 +1142,21 @@ def _write_sample(target: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(MOVEMENTS_SAMPLE, encoding="utf-8")
     return target
+
+
+def test_reference_download_identifies_the_crawler_like_the_collection(monkeypatch) -> None:
+    """Sans ``AUCTION_USER_AGENT``, le repli est celui de ``src.config.user_agent`` (et non celui d'urllib)."""
+    monkeypatch.delenv("AUCTION_USER_AGENT", raising=False)
+    sent: list[dict[str, str]] = []
+
+    class Opener:
+        def open(self, request, timeout=None):  # type: ignore[no-untyped-def]
+            sent.append(dict(request.header_items()))
+            raise OSError("no network in tests")
+
+    monkeypatch.setattr(download_module.urllib.request, "build_opener", lambda *handlers: Opener())
+
+    with pytest.raises(OSError):
+        download_module._open("https://files.georisques.fr/GASPAR/gaspar.zip", timeout=1)
+
+    assert sent == [{"Accept-encoding": "identity", "User-agent": "ImmojudisBot/1.0 (+https://immojudis.com/contact)"}]

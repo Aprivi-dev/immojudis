@@ -8,10 +8,10 @@ from src.asset_normalization import (
     MAX_NORMALIZATION_TEXT_CHARS,
     AssetNormalizationInputTooLarge,
     build_auction_features_row,
-    build_auction_risk_rows,
     build_auction_score_factor_rows,
     build_auction_surfaces_row,
     extract_risk_occurrences_from_text,
+    extract_risks,
     normalize_asset_features,
 )
 from src.models import AuctionSale
@@ -457,7 +457,7 @@ def test_asset_rows_are_storage_ready() -> None:
 
     features = build_auction_features_row(sale)
     surfaces = build_auction_surfaces_row(sale)
-    risks = build_auction_risk_rows(sale)
+    risks = extract_risks(sale)
 
     assert features["has_double_glazing"] is True
     assert features["investment_score"] is not None

@@ -73,7 +73,7 @@ def test_queued_runner_refuses_a_leftover_llm_description_backfill_run(monkeypat
         lambda: {"id": "run-backfill", "source": "llm-description-backfill", "summary": {"limit": 11}},
     )
     monkeypatch.setattr(queued_runner, "fetch_next_data_refresh_request_from_supabase", lambda: None)
-    monkeypatch.setattr(queued_runner, "finish_run_in_supabase", lambda *args: finished.append(args))
+    monkeypatch.setattr(queued_runner, "close_open_run_in_supabase", lambda *args: finished.append(args))
     monkeypatch.setattr(
         queued_runner,
         "run_pipeline",
@@ -89,6 +89,23 @@ def test_queued_runner_refuses_a_leftover_llm_description_backfill_run(monkeypat
             {"runner": ["Invalid queued source: llm-description-backfill"]},
         )
     ]
+
+
+def test_queued_runner_merges_a_crashed_pipeline_into_the_report_of_its_run(monkeypatch) -> None:
+    """run_pipeline tient le bilan de son run : le niveau au-dessus fusionne l'exception, sans écraser ni rouvrir."""
+    closed: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(queued_runner, "fail_stale_running_runs_in_supabase", lambda: 0)
+    monkeypatch.setattr(queued_runner, "fetch_next_queued_run_from_supabase", lambda: {"id": "run-1", "source": "all"})
+    monkeypatch.setattr(queued_runner, "close_open_run_in_supabase", lambda *args: closed.append(args))
+
+    def crashing_pipeline(_options):
+        raise RuntimeError("stage crashed")
+
+    monkeypatch.setattr(queued_runner, "run_pipeline", crashing_pipeline)
+
+    assert queued_runner.main() == 1
+    assert closed == [("run-1", "failed", {"runner": "github_actions_queue"}, {"runner": ["stage crashed"]})]
 
 
 def test_queued_runner_defaults_missing_llm_flag_to_automatic(monkeypatch, capsys) -> None:

@@ -107,13 +107,16 @@ def _postgrest_batches(payload: list[dict[str, object]], batch_size: int) -> lis
     return [payload[index : index + batch_size] for index in range(0, len(payload), batch_size)]
 
 
-def rest_headers(api_key: str, prefer: str) -> dict[str, str]:
-    return {
+def rest_headers(api_key: str, prefer: str | None = None) -> dict[str, str]:
+    headers = {
         "apikey": api_key,
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "Prefer": prefer,
+        "Accept": "application/json",
     }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
 
 
 def postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:
