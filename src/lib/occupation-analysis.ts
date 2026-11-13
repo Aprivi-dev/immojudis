@@ -34,7 +34,7 @@ export type OccupancyAnalysis = {
 const OCCUPANCY_KEY =
   /occup|occupation|occupancy|bail|locataire|locative|tenant|rented|lease|vacant|libre/i;
 
-/** Ce que vend la vente : « libre » ou « vide » qui le suivent disent son occupation. */
+/** Ce que vend la vente : « libre », « vide » ou « vacant » qui le suivent disent son occupation. */
 const PREMISES =
   "(?:bien|lot|logement|appartement|maison|studio|pavillon|villa|local|locaux|immeuble)s?";
 /**
@@ -42,14 +42,23 @@ const PREMISES =
  * inscription » ou « libre d'hypothèque » parlent des charges du bien.
  */
 const NOT_FREE_OF = String.raw`(?!\s+(?:de|du|d)\s)`;
+/** « aucun logement libre », « aucun bail en cours », « pas de loyer perçu » disent le contraire. */
+const NOT_DENIED = String.raw`(?<!\b(?:aucun|pas\s+de|sans)\s+)`;
+/**
+ * « part des logements vacants », « taxe sur les logements vacants » : une statistique de la
+ * commune (lue par `demographic-analysis.ts`), pas l'occupation du bien.
+ */
+const NOT_STATISTIC = String.raw`(?<!\b(?:part|taux|nombre|taxe\s+sur)\s+(?:de\s+|des\s+|les\s+)?)`;
 
-// « libre » et « vide » seuls disent aussi un accès, un parking visiteurs ou un vide sanitaire :
-// ils ne comptent que dans une phrase d'occupation. Un texte qui n'en a pas reste « À confirmer ».
+// « libre », « vide » et « vacant » seuls disent aussi un accès, un parking visiteurs, un vide
+// sanitaire ou un terrain vacant : ils ne comptent que dans une phrase d'occupation. Un texte qui
+// n'en a pas reste « À confirmer ».
 const FREE_PATTERNS = [
   /\b(?:libre|vide)s?\s+(?:de\s+tout(?:e|s|es)?\s+|d\s+)(?:occupation|occupant|location|bail)/i,
   new RegExp(
-    String.raw`\b${PREMISES}\s+(?:(?:est|sont|sera|seront|actuellement|desormais)\s+){0,2}` +
-      String.raw`(?:libre|vide)s?\b${NOT_FREE_OF}`,
+    String.raw`${NOT_DENIED}${NOT_STATISTIC}\b${PREMISES}\s+` +
+      String.raw`(?:(?:est|sont|sera|seront|actuellement|desormais)\s+){0,2}` +
+      String.raw`(?:libre|vide|vacante?)s?\b${NOT_FREE_OF}`,
     "i",
   ),
   new RegExp(
@@ -58,24 +67,50 @@ const FREE_PATTERNS = [
     "i",
   ),
   new RegExp(String.raw`\bvendue?s?\s+libres?\b${NOT_FREE_OF}`, "i"),
-  // Champ de la source nommé d'après l'occupation (« occupation: Libre »,
-  // « situationLocative: LIBRE »).
-  /(?:occup|locative)[\w.[\]]*\s*:\s*libres?\b/i,
-  /\bfree\b/i,
+  // Champ de la source nommé d'après l'occupation (« occupation: Libre », « situationLocative:
+  // LIBRE », « occupancy_status: vacant »). « free » ne compte que là : dans un texte, il dit aussi
+  // l'opérateur Free (« fibre Orange, Free, SFR »).
+  /(?:occup|locative)[\w.[\]]*\s*:\s*(?:libres?|free|vacant)\b/i,
   /\bnon\s+occup(?:e|ee|é|ée)\b/i,
   /\binoccup(?:e|ee|é|ée)\b/i,
-  /\bvacant\b/i,
 ];
 
+/** Sortes de bail qui peuvent suivre « bail » (« bail commercial », « bail d'habitation »). */
+const LEASE_KIND = String.raw`(?:\s+(?:commercial|professionnel|d\s+habitation|mixte|rural|meuble))?`;
+/** Désignation d'un bail : « Bail », « Bail commercial », « Contrat de bail d'habitation ». */
+const LEASE_DESIGNATION = String.raw`(?:contrat\s+de\s+)?bail${LEASE_KIND}`;
+
+// « bail » et « loyer » dans une phrase disent aussi un bail passé ou absent (« bail à construction
+// expiré », « aucun bail annexé ») ou un loyer estimé (« loyer de marché estimé », « loyer
+// potentiel ») : ils ne comptent que dans une phrase de location en cours, ou seuls comme désignation
+// d'un bail (texte, valeur d'un champ, pièce du dossier). Un texte qui n'en a pas reste « À confirmer ».
 const RENTED_PATTERNS = [
   /\blou(?:e|ee|é|ée)\b/i,
   /\blocataire\b/i,
-  /\bbail\b/i,
-  /\bloyer\b/i,
+  // Un texte qui n'est que la désignation d'un bail (« Bail commercial. »).
+  new RegExp(String.raw`^${LEASE_DESIGNATION}\s*\.?$`, "i"),
+  // Champ de la source nommé d'après l'occupation ou le bail, dont la valeur est un bail
+  // (« bail: Bail commercial ») ou un locataire (« occupancy: tenant »). « tenant » ne compte que
+  // là : dans un texte français, il dit « en tenant compte de ».
+  new RegExp(
+    String.raw`(?:occup|locative|bail)[\w.[\]]*\s*:\s*(?:${LEASE_DESIGNATION}|tenant)\b`,
+    "i",
+  ),
+  new RegExp(String.raw`${NOT_DENIED}\bbail${LEASE_KIND}\s+en\s+cours\b`, "i"),
+  /\b(?:suivant|selon|en\s+vertu\s+d\s+un|titulaire\s+d\s+un|donnee?s?\s+a)\s+bail\b/i,
+  // Loyer chiffré : « loyer mensuel de 650 € », « loyer actuel : 520 € », « loyer 500 euros ».
+  /\bloyers?\s+(?:(?:mensuel|annuel|trimestriel|actuel)s?\s+)?(?:de\s+|:\s*)?\d/i,
+  new RegExp(
+    String.raw`${NOT_DENIED}\bloyers?\s+(?:percus?|encaisses?|payes?|regles?|verses?|en\s+cours)\b`,
+    "i",
+  ),
+  /\bmoyennant\s+(?:un\s+)?loyer\b/i,
   /\brented\b/i,
-  /\btenant\b/i,
   /\blease\b/i,
 ];
+
+/** Pièce du dossier qui est un bail : son type (`bail`) ou son libellé (« Bail commercial du… »). */
+const LEASE_DOCUMENT = new RegExp(String.raw`^${LEASE_DESIGNATION}\b`, "i");
 
 const OCCUPIED_PATTERNS = [
   /\boccup(?:e|ee|ant|ante|ants|é|ée)\b/i,
@@ -103,7 +138,10 @@ const EVICTION_PATTERNS = [
 export function buildOccupancyAnalysis(sale: AuctionSale): OccupancyAnalysis {
   const candidates = collectTextCandidates(sale);
   const fieldEvidence = evidenceFromOccupancyStatus(sale.occupancy_status);
-  const textEvidence = collectTextEvidence(candidates);
+  const textEvidence = [
+    ...collectTextEvidence(candidates),
+    ...leaseDocumentEvidence(sale.documents_rich),
+  ];
   const allEvidence = dedupeEvidence([...fieldEvidence, ...textEvidence]);
   // Keep each distinct status visible, including contradictions found after the display cap.
   const seenStatuses = new Set<OccupancyEvidence["status"]>();
@@ -191,13 +229,35 @@ function collectTextEvidence(candidates: TextCandidate[]): OccupancyEvidence[] {
   return evidence;
 }
 
+/**
+ * Une pièce dont le type ou le libellé désigne un bail est un indice de location, lu sur la pièce et
+ * non dans son texte : « bail bail Bail », texte de la pièce, n'est pas une phrase.
+ */
+function leaseDocumentEvidence(documents: AuctionSale["documents_rich"]): OccupancyEvidence[] {
+  return (documents ?? [])
+    .filter((document) =>
+      [document.type, document.document_type, document.label].some((value) =>
+        LEASE_DOCUMENT.test(normalizeText(value ?? "")),
+      ),
+    )
+    .map((document) => ({
+      status: "rented",
+      label: statusLabel("rented"),
+      excerpt: excerpt(cleanText(document.label) ?? "Bail"),
+      source: "Pièces du dossier",
+    }));
+}
+
 function detectStatus(value: string): OccupancyEvidence["status"] | null {
   const text = normalizeText(value);
-  if (FREE_PATTERNS.some((pattern) => pattern.test(text))) return "free";
-  if (TO_CONFIRM_PATTERNS.some((pattern) => pattern.test(text))) return "to_confirm";
-  if (RENTED_PATTERNS.some((pattern) => pattern.test(text))) return "rented";
-  if (OCCUPIED_PATTERNS.some((pattern) => pattern.test(text))) return "occupied";
-  return null;
+  const matches = (patterns: RegExp[]) => patterns.some((pattern) => pattern.test(text));
+  if (matches(FREE_PATTERNS)) return "free";
+  // Un doute (« bail non produit », « à confirmer ») retient « Loué », mais pas un occupant déclaré :
+  // « se déclarant occupante ; bail non produit » reste un indice « occupé ».
+  const doubt = matches(TO_CONFIRM_PATTERNS);
+  if (!doubt && matches(RENTED_PATTERNS)) return "rented";
+  if (matches(OCCUPIED_PATTERNS)) return "occupied";
+  return doubt ? "to_confirm" : null;
 }
 
 function resolveStatus(evidence: OccupancyEvidence[]): OccupancyStatusKind {

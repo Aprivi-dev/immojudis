@@ -132,6 +132,15 @@ describe("GET /api/catalogue/preview", () => {
     });
   });
 
+  // Avant le lot 12, `garage` (ancienne valeur d'une adresse partagée) partait tel quel : aucun résultat.
+  it("lit l'ancienne valeur `garage` du type de bien comme le code `parking`", async () => {
+    await GET(request("/api/catalogue/preview?homeTypes=garage,parking"));
+
+    expect(rpcCalls("search_auction_sales_preview_v3")[0]![1]).toMatchObject({
+      p_property_types: ["parking"],
+    });
+  });
+
   it("n'affiche pas les ventes d'exemple de l'accueil et envoie les départements d'une région", async () => {
     mocks.rpc.mockImplementation((name: string) =>
       Promise.resolve(

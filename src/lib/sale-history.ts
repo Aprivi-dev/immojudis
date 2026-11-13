@@ -12,12 +12,8 @@ import { roundToTenth as roundedNumber } from "@/lib/rounding";
 import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
 import { median } from "@/lib/stats";
 import { ForbiddenError } from "@/lib/api-errors";
-import { addUtcCalendarMonths } from "@/lib/tribunal-statistics-dates";
-import {
-  comparisonScopes,
-  filterComparisonScope,
-  type ComparisonScope,
-} from "@/lib/comparison-scopes";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
+import { readComparisonSales } from "@/lib/comparison-scopes";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -109,29 +105,23 @@ export async function getSaleHistory({
   const referenceSale = input.saleId
     ? await readSaleThroughDoor<HistorySaleRow>(auth, input.saleId, "plan", HISTORY_COLUMNS)
     : null;
-  const scopes = comparisonScopes({
-    city: input.city ?? referenceSale?.city,
-    department: input.department ?? referenceSale?.department,
-    tribunalCode: input.tribunalCode ?? referenceSale?.tribunal_code,
-    propertyType: input.propertyType ?? referenceSale?.property_type,
-  });
   const fromDate = addUtcCalendarMonths(now, -input.months).toISOString();
   const toDate = now.toISOString();
-  let selectedScope = scopes[0];
-  let rows: HistorySaleRow[] = [];
-
-  for (const scope of scopes) {
-    rows = await queryPastSales({
-      auth,
-      scope,
-      fromDate,
-      toDate,
-      limit: input.limit,
-      referenceSaleId: input.saleId ?? null,
-    });
-    selectedScope = scope;
-    if (rows.length > 0) break;
-  }
+  const { scope: selectedScope, rows } = await readComparisonSales<HistorySaleRow>({
+    auth,
+    base: {
+      city: input.city ?? referenceSale?.city,
+      department: input.department ?? referenceSale?.department,
+      tribunalCode: input.tribunalCode ?? referenceSale?.tribunal_code,
+      propertyType: input.propertyType ?? referenceSale?.property_type,
+    },
+    columns: HISTORY_COLUMNS,
+    fromDate,
+    toDate,
+    limit: input.limit,
+    referenceSaleId: input.saleId ?? null,
+    minRows: 1,
+  });
 
   const items = rows.map(rowToHistoryItem);
   const response = {
@@ -202,36 +192,6 @@ export function buildSaleHistorySummary(items: SaleHistoryItem[]): SaleHistorySu
     latestSaleDate: saleDates.at(-1) ?? null,
     cities,
   };
-}
-
-async function queryPastSales({
-  auth,
-  scope,
-  fromDate,
-  toDate,
-  limit,
-  referenceSaleId,
-}: {
-  auth: SupabaseAuthContext;
-  scope: ComparisonScope;
-  fromDate: string;
-  toDate: string;
-  limit: number;
-  referenceSaleId: string | null;
-}): Promise<HistorySaleRow[]> {
-  const query = auth.supabase
-    .from("v_auction_sales_app")
-    .select(HISTORY_COLUMNS)
-    .not("id", "is", null)
-    .not("sale_date", "is", null)
-    .gte("sale_date", fromDate)
-    .lte("sale_date", toDate)
-    .order("sale_date", { ascending: false })
-    .limit(limit);
-
-  const { data, error } = await filterComparisonScope(query, scope, referenceSaleId);
-  if (error) throw error;
-  return data ?? [];
 }
 
 function rowToHistoryItem(row: HistorySaleRow): SaleHistoryItem {

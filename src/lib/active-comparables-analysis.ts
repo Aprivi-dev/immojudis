@@ -1,4 +1,5 @@
 import { formatPrice, propertyTypeLabel } from "@/lib/format";
+import { matchesPropertyFamily, propertyFamily } from "@/lib/property-type-family";
 import { isActiveComparableSale } from "@/lib/sale-window";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
@@ -122,8 +123,13 @@ function scoreCandidate({
 }): { score: number; reasons: string[] } {
   let score = 35;
   const reasons: string[] = [];
+  // Un sujet de type inconnu accepte tout candidat (`matchesPropertyFamily`) : rien n'y confirme le
+  // même type.
+  const sameType =
+    propertyFamily(sale.property_type) !== "unknown" &&
+    matchesPropertyFamily(candidate.property_type, sale.property_type);
 
-  if (sale.property_type && candidate.property_type === sale.property_type) {
+  if (sameType) {
     score += 18;
     reasons.push(`Même type : ${propertyTypeLabel(candidate.property_type)}`);
   }
@@ -171,7 +177,7 @@ function scoreCandidate({
     }
   }
 
-  if (!sale.property_type || candidate.property_type !== sale.property_type) {
+  if (!sameType) {
     reasons.unshift("Type de bien différent ou non confirmé");
     score = Math.min(score, 69);
   }

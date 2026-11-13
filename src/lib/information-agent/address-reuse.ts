@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
 import {
   isInformationAgentExcludedAddress,
   isInformationAgentExcludedSourceUrl,
@@ -62,9 +63,7 @@ export function isSameInformationAgentProfessional(
 }
 
 export function addressReuseCutoff(now: Date): Date {
-  const cutoff = new Date(now.getTime());
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - ADDRESS_REUSE_MAX_AGE_MONTHS);
-  return cutoff;
+  return addUtcCalendarMonths(now, -ADDRESS_REUSE_MAX_AGE_MONTHS);
 }
 
 function parsedDate(value: string | null | undefined): number | null {

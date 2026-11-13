@@ -17,7 +17,7 @@ import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { ForbiddenError, PublicApiError } from "@/lib/api-errors";
-import { addUtcCalendarMonths } from "@/lib/tribunal-statistics-dates";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DvfComparableRow =

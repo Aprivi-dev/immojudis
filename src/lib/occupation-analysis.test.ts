@@ -175,9 +175,12 @@ describe("occupation analysis", () => {
     );
   });
 
+  // Jusqu'au lot 12, la contradiction venait d'un risque de l'exemple (« sans bail annexé au
+  // dossier ») lu « Loué », et « bail non produit » masquait l'occupant déclaré : le texte qui
+  // contredit le champ est maintenant seul en jeu.
   it("flags conflicting occupancy signals before bidding assumptions are fixed", () => {
     const analysis = buildOccupancyAnalysis({
-      ...EXAMPLE_SALE,
+      ...cleanSale,
       occupancy_status: "vacant",
       description: "Présence d'une personne se déclarant occupante, bail non produit.",
     });
@@ -243,11 +246,46 @@ describe("occupation analysis", () => {
     ["description", "Parking en accès libre devant l'immeuble.", "to_confirm"],
     ["description", "Présence d'un vide-ordures dans les parties communes.", "to_confirm"],
     ["description", "Bien vendu libre de toute inscription hypothécaire.", "to_confirm"],
+    // « vacant » après le bien vendu (lot 12), sauf nié ou statistique de la commune
+    ["description", "Logement vacant depuis 2023.", "free"],
+    ["description", "Appartement vacant.", "free"],
+    // avant : to_confirm
+    ["description", "Maison vacante.", "free"],
+    // avant : free
+    ["description", "Aucun logement vacant.", "to_confirm"],
+    ["description", "Aucun logement libre.", "to_confirm"],
+    // statistique de la commune, pas l'occupation du bien
+    ["description", "Part des logements vacants dans la commune : 8 %.", "to_confirm"],
+    ["description", "Taxe sur les logements vacants applicable.", "to_confirm"],
+    // désignation seule d'un bail (lot 12)
+    ["description", "Bail commercial.", "rented"],
+    ["description", "Bail d'habitation.", "rented"],
+    // location en cours : « bail » et « loyer » dans une phrase de location (lot 12)
+    ["description", "Studio loué avec bail en cours.", "rented"],
+    ["description", "Local commercial, bail commercial en cours.", "rented"],
+    ["description", "Bail d'habitation en cours.", "rented"],
+    ["description", "Locataire en place.", "rented"],
+    ["description", "Le bien est occupé par un occupant suivant bail du 3 mars 2021.", "rented"],
+    ["description", "Locaux occupés en vertu d'un bail commercial.", "rented"],
+    ["description", "Local commercial donné à bail.", "rented"],
+    ["description", "Loyer mensuel de 650 € hors charges.", "rented"],
+    ["description", "Loyer annuel de 12 000 € HT.", "rented"],
+    ["description", "Moyennant un loyer mensuel de 480 euros.", "rented"],
+    // avant : to_confirm (le pluriel « loyers » n'était pas lu)
+    ["description", "Loyers perçus : 6 000 € par an.", "rented"],
     // blocs source nommés d'après l'occupation
     ["occupation", "Libre de toute occupation", "free"],
     ["occupation", "Libre", "free"],
     ["situationLocative", "LIBRE", "free"],
     ["critere_occupation_du_bien", "Libre de toute occupation", "free"],
+    ["occupancy_status", "vacant", "free"],
+    ["occupancy", "free", "free"],
+    // valeur d'un champ nommé d'après le bail ou l'occupation (lot 12)
+    ["bail", "Bail commercial", "rented"],
+    ["situationLocative", "Bail d'habitation", "rented"],
+    ["occupancy", "tenant", "rented"],
+    // avant : rented
+    ["bail", "aucun", "to_confirm"],
   ])("lit « %s : %s » comme %s", (where, text, status) => {
     const analysis = buildOccupancyAnalysis({
       ...cleanSale,
@@ -255,6 +293,93 @@ describe("occupation analysis", () => {
       ...(where === "description" ? { description: text } : { source_blocks: { [where]: text } }),
     });
     expect(analysis.status).toBe(status);
+  });
+
+  // Lot 12 : « free » hors d'un champ d'occupation, « vacant » hors du bien vendu, « bail » et
+  // « loyer » hors d'une phrase de location en cours ou d'une désignation de bail, « tenant » dans un
+  // texte ne disent rien de l'occupation. Avant, chacune de ces phrases était lue « Libre » (les deux
+  // premières) ou « Loué » avec un signal de bail.
+  it.each([
+    "Appartement T2, éligible à la fibre (Orange, Free, SFR).",
+    "Terrain vacant à proximité, appartement au 2e étage.",
+    "Box fermé, loyer de marché estimé à 80 euros.",
+    "Loyer potentiel de 650 € par mois.",
+    "Loyer mensuel estimé à 600 € charges comprises.",
+    "Terrain ayant fait l'objet d'un bail à construction expiré en 2010.",
+    "Ancien bail commercial résilié en 2019.",
+    "Présence lors du constat, sans bail annexé au dossier.",
+    "Le bail commercial a été signé en 1990 puis résilié.",
+    "Aucun bail en cours.",
+    "Pas de loyer perçu.",
+    "Mise à prix fixée en tenant compte de l'état du bien.",
+  ])("ne lit aucune occupation dans « %s »", (description) => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "unknown",
+      description,
+    });
+    expect(analysis).toMatchObject({
+      status: "to_confirm",
+      label: "À confirmer",
+      hasLeaseSignal: false,
+    });
+  });
+
+  // Avant le lot 12, « bail non produit » (à confirmer) masquait l'occupant déclaré.
+  it("garde l'occupant déclaré quand le bail n'est pas produit", () => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "unknown",
+      description:
+        "Présence d'une personne se déclarant occupante ; bail non produit dans les pièces communiquées.",
+    });
+    expect(analysis.status).toBe("occupied");
+    expect(analysis.evidence).toContainEqual(
+      expect.objectContaining({ status: "occupied", source: "Description annonce" }),
+    );
+  });
+
+  it.each([
+    { type: "bail", document_type: "bail", label: "Bail" },
+    { type: null, label: "Bail commercial du 1er janvier 2015" },
+  ])("lit une pièce du dossier qui est un bail comme un indice de location : %j", (piece) => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "unknown",
+      documents_rich: [{ url: "https://example.test/bail.pdf", extraction_status: null, ...piece }],
+    });
+    expect(analysis).toMatchObject({ status: "rented", hasLeaseSignal: true });
+    expect(analysis.evidence).toContainEqual({
+      status: "rented",
+      label: "Loué",
+      excerpt: piece.label,
+      source: "Pièces du dossier",
+    });
+  });
+
+  it("ne lit pas une autre pièce du dossier comme un bail", () => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "unknown",
+      documents_rich: [
+        {
+          url: "https://example.test/ccv.pdf",
+          extraction_status: null,
+          type: "cahier_conditions_vente",
+          label: "Cahier des conditions de vente",
+        },
+      ],
+    });
+    expect(analysis).toMatchObject({ status: "to_confirm", hasLeaseSignal: false });
+  });
+
+  it("ne lit pas l'opérateur Free comme un démenti d'un bien occupé", () => {
+    const analysis = buildOccupancyAnalysis({
+      ...cleanSale,
+      occupancy_status: "occupied",
+      description: "Appartement T2, éligible à la fibre (Orange, Free, SFR).",
+    });
+    expect(analysis).toMatchObject({ status: "occupied", label: "Occupé" });
   });
 
   it("ne fait pas d'un vide sanitaire une hypothèse favorable", () => {

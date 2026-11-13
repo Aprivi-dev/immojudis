@@ -65,3 +65,33 @@ describe("GET /api/market-analytics : vente de référence en quarantaine", () =
     expect(mocks.serviceRole).not.toHaveBeenCalled();
   });
 });
+
+describe("GET /api/market-analytics : vente de référence sans rien de comparable", () => {
+  it("répond 400 avec un message clair, sans lire aucune vente (avant : 500)", async () => {
+    vi.resetAllMocks();
+    const query = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() };
+    query.select.mockReturnValue(query);
+    query.eq.mockReturnValue(query);
+    query.maybeSingle.mockResolvedValue({
+      data: { id: saleId, city: null, department: null, tribunal_code: null, property_type: null },
+      error: null,
+    });
+    const from = vi.fn(() => query);
+    mocks.auth.mockResolvedValue({ userId: "admin-1", isAdmin: true, supabase: { from } });
+    mocks.publicationVisible.mockResolvedValue(undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const response = await GET(
+      new Request(`https://example.test/api/market-analytics?saleId=${saleId}`),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      code: "INVALID_REQUEST",
+      error:
+        "La vente de référence n'a ni ville, ni département, ni tribunal, ni type de bien : aucun périmètre de comparaison.",
+    });
+    expect(from).toHaveBeenCalledTimes(1);
+  });
+});
