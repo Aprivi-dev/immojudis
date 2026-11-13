@@ -112,7 +112,6 @@ from src.storage.supabase_client import (
     create_run_in_supabase,
     delete_expired_sales_in_supabase,
     delete_secondary_sales_in_supabase,
-    delete_vench_sales_without_surface_in_supabase,
     fetch_enriched_content_hashes,
     fetch_known_sale_details,
     finish_run_in_supabase,
@@ -368,7 +367,6 @@ class _PipelineRun:
     supabase_deleted_secondary: int = 0
     supabase_reconciled_duplicates: int = 0
     supabase_deleted_expired: int = 0
-    supabase_deleted_vench_without_surface: int = 0
     outcome_bridge_scanned: int = 0
     outcome_bridge_created: int = 0
     outcome_bridge_reused: int = 0
@@ -1031,7 +1029,6 @@ def _publish_run(run: _PipelineRun) -> None:
                     summary["merge_guard_refused"] = str(exc)
                 run.supabase_cleaned_past = mark_past_sales_in_supabase()
                 run.supabase_deleted_expired = delete_expired_sales_in_supabase()
-                run.supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
             else:
                 summary["global_cleanup_skipped"] = "targeted_or_bounded_collection"
             timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
@@ -1054,7 +1051,6 @@ def _publish_run(run: _PipelineRun) -> None:
                     "reconciled_duplicate_sales": run.supabase_reconciled_duplicates,
                     "marked_past_in_supabase": run.supabase_cleaned_past,
                     "deleted_expired_sales": run.supabase_deleted_expired,
-                    "deleted_vench_without_surface": run.supabase_deleted_vench_without_surface,
                 }
             )
             summary["completion_status"] = "partial_success" if run.coverage_incomplete or any(errors.values()) or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete"

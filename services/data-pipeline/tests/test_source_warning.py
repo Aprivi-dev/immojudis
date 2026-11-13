@@ -80,7 +80,6 @@ def _run(monkeypatch, scraper, *, upsert=lambda sales, **kwargs: len(sales), pub
     monkeypatch.setattr(main, "build_quality_report", lambda *a, **k: {})
     monkeypatch.setattr(main, "format_quality_report", lambda report: [])
     monkeypatch.setattr(main, "mark_past_sales_in_supabase", lambda: 0)
-    monkeypatch.setattr(main, "delete_vench_sales_without_surface_in_supabase", lambda: 0)
     monkeypatch.setattr(main, "upsert_sales_to_supabase", upsert)
     monkeypatch.setattr(main, "upsert_observations_to_supabase", lambda sales, **k: len(sales))
     return main.run_pipeline(main.PipelineOptions(source="avoventes", use_llm=False, upsert=publish))

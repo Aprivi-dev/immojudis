@@ -37,7 +37,7 @@ def _fake_postgrest(monkeypatch, sales):
         # PostgREST does not keep the order of an in() filter.
         return Response([sale for sale in reversed(sales) if sale["id"] in wanted])
 
-    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(recompute_module, "postgrest_request_with_retries", fake_request)
     return calls
 
 
@@ -57,14 +57,14 @@ def test_fetch_sales_lists_ids_then_reads_full_rows_in_small_batches(monkeypatch
 def test_fetch_sales_limit_keeps_the_most_recent_and_skips_rows_deleted_meanwhile(monkeypatch) -> None:
     sales = [{"id": f"id-{index}"} for index in range(5)]
     calls = _fake_postgrest(monkeypatch, sales)
-    original = recompute_module._postgrest_request_with_retries
+    original = recompute_module.postgrest_request_with_retries
 
     def deleting_request(method, endpoint, *, table, params, **kwargs):
         if params["select"] != "id":
             sales.pop(1)  # deleted between the two passes
         return original(method, endpoint, table=table, params=params, **kwargs)
 
-    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", deleting_request)
+    monkeypatch.setattr(recompute_module, "postgrest_request_with_retries", deleting_request)
 
     rows = recompute_module._fetch_sales(source=None, limit=3)
 
@@ -96,7 +96,7 @@ def test_fetch_sales_can_target_only_active_unassessed_readiness(monkeypatch) ->
         captured.update(kwargs)
         return Response()
 
-    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(recompute_module, "postgrest_request_with_retries", fake_request)
 
     recompute_module._fetch_sales(
         source=None,
@@ -139,7 +139,7 @@ def test_readiness_backfill_persists_incomplete_rows_without_publication_admissi
         writes.append({"method": method, **kwargs})
         return Response()
 
-    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+    monkeypatch.setattr(recompute_module, "postgrest_request_with_retries", fake_request)
 
     assert recompute_module.backfill_catalogue_readiness() == 0
     assert writes[0]["method"] == "PATCH"

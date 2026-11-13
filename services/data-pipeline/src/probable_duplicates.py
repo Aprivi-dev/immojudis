@@ -11,7 +11,7 @@ différents) ; la colonne n'est exposée aux comptes que par la liste blanche de
 * Aucune fusion, aucune suppression : seule la colonne ``quality_flags`` des lignes qui changent est écrite, une ligne
   à la fois (``PATCH``), et uniquement avec ``--write``. Sans cette option, le passage est un essai à blanc.
 * L'écriture passe par REST, hors du verrou d'écriture du catalogue : le workflow ne reçoit pas ``SUPABASE_DB_URL``.
-  Elle se rejoue sur les erreurs passagères (``_postgrest_request_with_retries``) : la liste écrite est complète.
+  Elle se rejoue sur les erreurs passagères (``postgrest_request_with_retries``) : la liste écrite est complète.
 * Le drapeau est retiré dès que la condition disparaît : ligne qui n'est plus candidate (annonce corrigée, groupe
   devenu trop gros, alias relu), ligne conservée après une fusion, ligne qui a quitté les statuts publiés.
 * Un balayage partiel (plafond de lecture atteint, erreur de lecture) ne retire jamais un drapeau : rien ne prouve
@@ -35,8 +35,8 @@ import httpx
 from src.config import load_settings
 from src.position_quality import PROBABLE_DUPLICATE
 from src.storage.duplicate_sweep import DuplicateSweepPlan
-from src.storage.postgrest_helpers import _rest_headers
-from src.storage.supabase_client import _postgrest_request_with_retries, plan_duplicate_reconciliation
+from src.storage.postgrest_helpers import postgrest_request_with_retries, rest_headers
+from src.storage.supabase_client import plan_duplicate_reconciliation
 
 LOGGER = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def fetch_flagged_rows(supabase_url: str, api_key: str) -> list[dict[str, Any]]:
                 "limit": str(_PAGE_SIZE),
                 "offset": str(offset),
             },
-            headers=_rest_headers(api_key, prefer="count=none"),
+            headers=rest_headers(api_key, prefer="count=none"),
             timeout=_TIMEOUT,
         )
         if response.is_error:
@@ -126,13 +126,13 @@ def fetch_flagged_rows(supabase_url: str, api_key: str) -> list[dict[str, Any]]:
 def _write_flags(supabase_url: str, api_key: str, row_id: str, flags: list[str]) -> bool:
     """Écrit la liste ``quality_flags`` d'une ligne ; seule colonne touchée."""
     try:
-        response = _postgrest_request_with_retries(
+        response = postgrest_request_with_retries(
             "PATCH",
             f"{supabase_url.rstrip('/')}/rest/v1/auction_sales",
             "auction_sales",
             params={"id": f"eq.{row_id}"},
             json={"quality_flags": flags},
-            headers=_rest_headers(api_key, prefer="return=minimal"),
+            headers=rest_headers(api_key, prefer="return=minimal"),
             timeout=_TIMEOUT,
         )
     except httpx.HTTPError as exc:
