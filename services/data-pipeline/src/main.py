@@ -468,11 +468,6 @@ def _load_known_sale_details(run: _PipelineRun) -> bool:
         for source_url, row in known_details.items()
         if row.get("_signature") and detail_is_fresh(row, source_url)
     }
-    run.known_payload_urls = (
-        set(known_details)
-        if not settings.get("supabase_db_url")
-        else set()
-    )
     return True
 
 

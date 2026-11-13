@@ -62,12 +62,11 @@ KNOWN_SALE_DETAIL_SELECT = ",".join(
 )
 
 
-# The REST fallback keeps the historical projection above because PostgREST
-# cannot express the JSONB allow-list below.  The direct PostgreSQL preflight
-# only needs fields used by the source fallback and enrichment preservation;
-# forwarding arbitrary scraper payload keys here was the main source of the
-# full-snapshot egress.  Keep the list explicit so a new preservation contract
-# has to opt in rather than silently re-expanding every row.
+# The direct PostgreSQL preflight only needs fields used by the source fallback
+# and enrichment preservation; forwarding arbitrary scraper payload keys here
+# was the main source of the full-snapshot egress.  Keep the list explicit so a
+# new preservation contract has to opt in rather than silently re-expanding
+# every row.
 KNOWN_SALE_RAW_PAYLOAD_KEYS = (
     "source_checks",
     "source_checks_by_source",
