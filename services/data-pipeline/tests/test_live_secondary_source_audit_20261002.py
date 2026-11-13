@@ -23,7 +23,8 @@ import pytest
 
 from src.asset_normalization import normalize_asset_features
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
-from src.normalize import clean_text, normalize_sale
+from src.lot_scope import surface_reasoning_context
+from src.normalize import normalize_sale
 from src.sources.agrasc import parse_agrasc_html
 from src.sources.agrasc_operators import enrich_agrasc_operator
 from src.sources.info_encheres import (
@@ -143,22 +144,12 @@ def _replay_raw(sample_id: str) -> dict[str, Any]:
     return sale
 
 
-def _surface_context(sale: Any) -> str:
-    blocks = sale.raw_payload.get("source_blocks") if isinstance(sale.raw_payload, dict) else {}
-    values = [sale.title, sale.description, sale.raw_text]
-    if isinstance(blocks, dict):
-        values.extend(blocks.values())
-    return "\n".join(
-        dict.fromkeys(clean_text(str(value)) for value in values if clean_text(str(value)))
-    )
-
-
 @cache
 def replay(sample_id: str) -> Replay:
     raw = _replay_raw(sample_id)
     base = normalize_sale(copy.deepcopy(raw))
     final = copy.deepcopy(base)
-    extract_and_apply_deterministic_surface_reasoning(final, _surface_context(final))
+    extract_and_apply_deterministic_surface_reasoning(final, surface_reasoning_context(final))
     normalize_asset_features(final)
     return Replay(raw=raw, base=base, final=final)
 

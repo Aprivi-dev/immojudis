@@ -28,6 +28,7 @@ from src.sources.common import (
     parse_html,
 )
 from src.sources.image_candidates import html_image_candidates
+from src.sources.source_features import merge_documents
 from src.text_folding import strip_accents
 
 BASE_URL = "https://avoventes.fr"
@@ -275,6 +276,8 @@ def _choose_sale_url(links: list[Tag]) -> str | None:
 
 
 def _extract_documents(links: list[Tag], page_url: str) -> list[dict[str, str]]:
+    # Propre au site : quels liens sont des pièces, venues des seules adresses d'Avoventes, et leur libellé.
+    # La fusion des pièces est commune aux sources (source_features.merge_documents).
     documents: list[dict[str, str]] = []
     for link in links:
         href = str(link.get("href"))
@@ -314,7 +317,7 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
     if details.get("title") and _is_generic_title(sale.get("title")):
         sale["title"] = details["title"]
     if details.get("documents"):
-        sale["documents"] = _merge_documents(sale.get("documents", []), details["documents"])
+        sale["documents"] = merge_documents(sale.get("documents", []), details["documents"])
     if details.get("source_images"):
         sale["source_images"] = _merge_text_values(sale.get("source_images"), details["source_images"])
         if not sale.get("raw_image_url") and sale["source_images"]:
@@ -725,21 +728,6 @@ def _append_image(images: list[str], value: object | None, page_url: str) -> Non
     if "/public/uploads/" not in lowered:
         return
     images.append(absolute)
-
-
-def _merge_documents(existing: object, incoming: list[dict[str, str]]) -> list[dict[str, str]]:
-    documents = existing if isinstance(existing, list) else []
-    merged: dict[str, dict[str, str]] = {}
-    for document in [*documents, *incoming]:
-        if isinstance(document, dict) and document.get("url"):
-            merged[str(document["url"])] = {
-                "label": str(document.get("label") or "document"),
-                "url": str(document["url"]),
-                "type": str(
-                    document.get("type") or _document_type(str(document["url"]), str(document.get("label") or ""))
-                ),
-            }
-    return list(merged.values())
 
 
 def _merge_text_values(existing: object, incoming: object) -> list[str]:
