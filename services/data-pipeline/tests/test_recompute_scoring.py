@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from src import recompute_scoring as recompute_module
-from src import stored_sales
+from src import sale_finalization, stored_sales
 from src.asset_normalization import normalize_asset_features
 from src.models import AuctionSale
 from src.recompute_scoring import _validate_persisted_sale_procedure
@@ -253,9 +253,10 @@ def test_recomputed_sale_validates_geocode_before_court_assignment(
         return sale
 
     monkeypatch.setattr(recompute_module, "geocode_sale", fake_geocode)
-    monkeypatch.setattr(recompute_module, "fill_tribunal", fake_tribunal)
-    monkeypatch.setattr(recompute_module, "classify_sale_procedure", lambda sale: calls.append("procedure") or sale)
-    monkeypatch.setattr(recompute_module, "normalize_asset_features", lambda sale: calls.append("assets") or sale)
+    # Étapes communes à la collecte et au recalcul (src.sale_finalization.derive_sale_facts).
+    monkeypatch.setattr(sale_finalization, "fill_tribunal", fake_tribunal)
+    monkeypatch.setattr(sale_finalization, "classify_sale_procedure", lambda sale: calls.append("procedure") or sale)
+    monkeypatch.setattr(sale_finalization, "normalize_asset_features", lambda sale: calls.append("assets") or sale)
 
     sale = recompute_module._recomputed_sale_from_storage_row(
         {

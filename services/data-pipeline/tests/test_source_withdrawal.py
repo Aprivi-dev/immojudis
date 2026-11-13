@@ -247,7 +247,7 @@ def test_documents_hosted_by_a_withdrawn_source_are_not_downloaded(monkeypatch, 
 
     withdraw_licitor(monkeypatch)
     requested: list[str] = []
-    monkeypatch.setattr(pdf_enrichment, "_ensure_pdf_deadline", lambda **_k: None)
+    monkeypatch.setattr(pdf_enrichment, "ensure_pdf_deadline", lambda **_k: None)
     monkeypatch.setattr(pdf_enrichment, "require_ep_documents", lambda *_a: None)
     monkeypatch.setattr(
         pdf_enrichment,

@@ -27,7 +27,7 @@ from src.occupancy_statements import (
     is_template_clause,
     read_occupancy_statement,
 )
-from src.pdf_fact_scope import _pdf_record_fact_projection
+from src.pdf_fact_scope import pdf_record_fact_projection
 from src.text_folding import strip_accents
 
 # Lower rank: what was seen on site, then the notice, then the sale terms.
@@ -116,7 +116,7 @@ def apply_pdf_occupancy(sale: Any, candidates: list[dict[str, object]], *, ambig
     if current in CERTAIN_STATUSES:
         evidence = f"Page source : {current} ; pièces : {evidence}"
     sale.occupancy_status = projected
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale,
         ["occupancy_status"],
         evidence=evidence,

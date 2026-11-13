@@ -64,15 +64,10 @@ def _init_worker(host_delay_seconds: float) -> None:
 def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[str, Any]:
     """Download a sale's documents and read their pages into the local caches. Never writes to the database."""
     from src.config import PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
+    from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, pdf_deadline_scope
     from src.pdf_document_selection import select_documents_for_extraction
     from src.pdf_document_text_cache import read_document_text_cache
-    from src.pdf_enrichment import (
-        PdfEnrichmentStats,
-        download_documents,
-        extract_attached_document,
-        pdf_deadline_scope,
-    )
-    from src.pdf_ocr import PdfDeadlineExceeded, PdfExtractionDeferred
+    from src.pdf_enrichment import PdfEnrichmentStats, download_documents, extract_attached_document
     from src.pdf_progress import restore_pdf_page_caches_from_manifest
     from src.sale_local_files import sale_storage_id
     from src.storage.supabase_client import fetch_sale_for_data_refresh

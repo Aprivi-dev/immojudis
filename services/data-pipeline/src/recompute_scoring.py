@@ -11,15 +11,14 @@ from typing import Any
 import httpx
 
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline
-from src.asset_normalization import normalize_asset_features
 from src.cadastre_references import resolve_sale_cadastre
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import load_env_fallbacks, load_settings, require_encheres_publiques_access
-from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
-from src.extraction_profiles import attach_source_property_features
 from src.geocode import geocode_sale, restore_accepted_geocode, verify_source_coordinates
-from src.lot_scope import fact_sources
-from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
+from src.insufficient_sales import drop_insufficient_sales
+from src.lot_scope import recompute_surface_reasoning_context
+from src.sale_finalization import derive_sale_facts
+from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION
 from src.sources.common import PoliteHttpClient
 from src.sources.encheres_publiques import (
     BASE_URL as ENCHERES_PUBLIQUES_BASE_URL,
@@ -34,7 +33,6 @@ from src.sources.licitor import LicitorClient, parse_licitor_detail_html
 from src.storage.postgrest_helpers import postgrest_request_with_retries, rest_headers
 from src.storage.supabase_client import upsert_sales_to_supabase
 from src.stored_sales import fetch_sales, sale_from_storage_row
-from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
 SALE_VENUE_TYPES = {"tribunal", "notary", "state", "online", "unknown"}
@@ -509,18 +507,10 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
         restore_accepted_geocode(sale)
         # Les coordonnées de la source n'ont jamais été vérifiées : contrôle de cohérence, sans réseau.
         verify_source_coordinates(sale)
-    fill_tribunal(sale)
-    classify_sale_procedure(sale)
-    payload = sale.raw_payload
-    # Annonce Licitor en plusieurs lots : le texte du seul lot de l'URL, pas celui de toute la page.
-    raw_text, blocks = fact_sources(payload, sale.raw_text)
-    values = [sale.title, sale.description, raw_text, payload.get("source_description")]
-    values.extend(value for key, value in blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"})
-    context = "\n".join(dict.fromkeys(str(value).strip() for value in values if value))
-    if context:
-        extract_and_apply_deterministic_surface_reasoning(sale, context)
-    normalize_asset_features(sale)
-    attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
+    # Le reste de la collecte (``finalize_sale_for_app``) n'est pas refait : la description de la source et
+    # l'échéance lue sur la page restent celles de la ligne stockée, l'image n'est pas revérifiée (requête réseau)
+    # et la préparation au catalogue se refait à l'écriture (``upsert_sales_to_supabase``).
+    derive_sale_facts(sale, surface_context=recompute_surface_reasoning_context)
     return sale
 
 
@@ -689,8 +679,6 @@ def main() -> int:
 
 def _run(args: argparse.Namespace) -> int:
     if args.drop_insufficient:
-        from src.insufficient_sales import drop_insufficient_sales
-
         return drop_insufficient_sales(
             source=args.source,
             limit=args.limit,

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src import pdf_enrichment
+from src import pdf_deadline
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.enrichment.llm_client import LLMProviderOutputRefused
 from src.freshness import document_fingerprint
@@ -1490,7 +1490,7 @@ def test_worker_pdf_deadline_is_scoped_and_leaves_finalization_margin(monkeypatc
     observed_remaining: list[float | None] = []
 
     def fake_batch(**_kwargs) -> int:
-        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        observed_remaining.append(pdf_deadline.pdf_deadline_remaining())
         return 0
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
@@ -1502,14 +1502,14 @@ def test_worker_pdf_deadline_is_scoped_and_leaves_finalization_margin(monkeypatc
         and 0 < value <= 1200 - queued_runner.pdf_finalization_margin_seconds(1200)
         for value in observed_remaining
     )
-    assert pdf_enrichment.pdf_deadline_remaining() is None
+    assert pdf_deadline.pdf_deadline_remaining() is None
 
 
 def test_worker_pdf_deadline_scope_resets_when_batch_raises(monkeypatch) -> None:
     observed_remaining: list[float | None] = []
 
     def failing_batch(**_kwargs) -> int:
-        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        observed_remaining.append(pdf_deadline.pdf_deadline_remaining())
         raise RuntimeError("batch failed")
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", failing_batch)
@@ -1517,7 +1517,7 @@ def test_worker_pdf_deadline_scope_resets_when_batch_raises(monkeypatch) -> None
     with pytest.raises(RuntimeError, match="batch failed"):
         queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=1200)
     assert observed_remaining and observed_remaining[0] is not None
-    assert pdf_enrichment.pdf_deadline_remaining() is None
+    assert pdf_deadline.pdf_deadline_remaining() is None
     assert source_task_deadline_remaining() is None
     assert llm_task_deadline_remaining() is None
 
@@ -1602,7 +1602,7 @@ def test_worker_short_budget_keeps_a_scaled_pdf_margin_and_processes_job(monkeyp
     observed_remaining: list[float | None] = []
 
     def fake_batch(**_kwargs) -> int:
-        observed_remaining.append(pdf_enrichment.pdf_deadline_remaining())
+        observed_remaining.append(pdf_deadline.pdf_deadline_remaining())
         return 1
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
@@ -2505,7 +2505,7 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
 
 
 def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) -> None:
-    from src.pdf_ocr import PdfExtractionDeferred
+    from src.pdf_deadline import PdfExtractionDeferred
     from src.pipeline_usage import QueueJobDeferred
 
     sale = normalize_sale(
@@ -2573,7 +2573,7 @@ def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) ->
 
 
 def test_pdf_deadline_deferral_restores_claim_without_consuming_retry(monkeypatch) -> None:
-    from src.pdf_ocr import PdfDeadlineExceeded
+    from src.pdf_deadline import PdfDeadlineExceeded
 
     sale = normalize_sale(
         {

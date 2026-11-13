@@ -5,14 +5,13 @@ import os
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import UTC, datetime, timedelta
 
 import pymupdf as fitz
 
 from src.normalize import clean_text
+from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, ensure_pdf_deadline, pdf_deadline_remaining
 from src.pdf_page_analysis import VISUAL_BLANK_INK_RATIO_MAX, VISUAL_BLANK_INK_THRESHOLD, page_text_confidence
 
 OCR_NO_TEXT_METHOD = "ocr_tesseract_no_text"
@@ -67,29 +66,6 @@ _PDF_DOCUMENT_OCR_DEADLINE: ContextVar[float | None] = ContextVar(
     "pdf_document_ocr_deadline",
     default=None,
 )
-
-
-class PdfExtractionDeferred(ValueError):
-    """A bounded OCR pass stopped after checkpointing and should continue later."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        checkpointed_pages: int,
-        total_pages: int,
-        new_progress_pages: int,
-    ) -> None:
-        super().__init__(message)
-        self.checkpointed_pages = checkpointed_pages
-        self.total_pages = total_pages
-        self.new_progress_pages = new_progress_pages
-        self.progress_made = new_progress_pages > 0
-        self.next_attempt_at = datetime.now(UTC) + timedelta(minutes=30)
-
-
-class PdfDeadlineExceeded(PdfExtractionDeferred):
-    """The worker cutoff was reached; release the claim without spending retry."""
 
 
 class PdfDocumentOcrBudgetExceeded(PdfExtractionDeferred):
@@ -180,14 +156,10 @@ def log_pdf_document_transition(
     )
 
 
-def select_pdf_deadline_exception(
-    message: str,
-    *,
-    worker_remaining: float | None,
-    **kwargs: int,
-) -> BaseException:
+def _deadline_exception(message: str, **kwargs: int) -> BaseException:
     """Choose the worker or document cutoff after an interruptible OCR timeout."""
 
+    worker_remaining = pdf_deadline_remaining()
     if worker_remaining is None or worker_remaining > 0:
         document_remaining = pdf_document_ocr_budget_remaining()
         if document_remaining is not None and document_remaining <= 0:
@@ -198,9 +170,8 @@ def select_pdf_deadline_exception(
     return PdfDeadlineExceeded(message, **kwargs)
 
 
-def ensure_pdf_ocr_deadline(
+def _ensure_ocr_deadline(
     *,
-    worker_deadline: Callable[..., float | None],
     operation: str,
     checkpointed_pages: int = 0,
     total_pages: int = 0,
@@ -208,7 +179,7 @@ def ensure_pdf_ocr_deadline(
 ) -> float | None:
     """Apply the worker and per-document OCR cutoffs to one OCR step."""
 
-    worker_remaining = worker_deadline(
+    worker_remaining = ensure_pdf_deadline(
         operation=operation,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
@@ -227,16 +198,15 @@ def ensure_pdf_ocr_deadline(
 def deadline_bounded_timeout(
     timeout_seconds: float,
     *,
-    ensure_deadline: Callable[..., float | None],
     operation: str,
     checkpointed_pages: int = 0,
     total_pages: int = 0,
     new_progress_pages: int = 0,
 ) -> tuple[float, bool]:
-    """Recompute a subprocess or HTTP timeout after preparation work."""
+    """Recompute a subprocess or HTTP timeout after preparation work (worker cutoff and OCR document budget)."""
 
     requested_timeout = max(0.001, float(timeout_seconds))
-    remaining = ensure_deadline(
+    remaining = _ensure_ocr_deadline(
         operation=operation,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
@@ -252,16 +222,13 @@ def extract_page_text_with_ocr_result(
     fallback: str,
     *,
     settings: dict[str, object],
-    ensure_deadline: Callable[..., object],
-    deadline_bounded_timeout: Callable[..., tuple[float, bool]],
-    deadline_exception_factory: Callable[..., BaseException] | None = None,
     checkpointed_pages: int = 0,
     total_pages: int = 0,
     new_progress_pages: int = 0,
 ) -> dict[str, object]:
-    """Run bounded OCR while keeping the enrichment module's deadline contract."""
+    """Run OCR bounded by the worker cutoff and the OCR document budget."""
     tessdata = settings.get("pdf_ocr_tessdata")
-    remaining = ensure_deadline(
+    remaining = _ensure_ocr_deadline(
         operation="starting OCR",
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
@@ -276,9 +243,6 @@ def extract_page_text_with_ocr_result(
             settings=settings,
             tessdata=tessdata,
             timeout=60.0,
-            ensure_deadline=ensure_deadline,
-            deadline_bounded_timeout=deadline_bounded_timeout,
-            deadline_exception_factory=deadline_exception_factory,
             checkpointed_pages=checkpointed_pages,
             total_pages=total_pages,
             new_progress_pages=new_progress_pages,
@@ -311,9 +275,6 @@ def extract_page_text_with_ocr_result(
         settings=settings,
         tessdata=tessdata,
         timeout=60.0,
-        ensure_deadline=ensure_deadline,
-        deadline_bounded_timeout=deadline_bounded_timeout,
-        deadline_exception_factory=deadline_exception_factory,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
         new_progress_pages=new_progress_pages,
@@ -410,16 +371,13 @@ def _extract_page_text_with_tesseract_result(
     settings: dict[str, object],
     tessdata: object,
     timeout: float,
-    ensure_deadline: Callable[..., object],
-    deadline_bounded_timeout: Callable[..., tuple[float, bool]],
-    deadline_exception_factory: Callable[..., BaseException] | None,
     checkpointed_pages: int,
     total_pages: int,
     new_progress_pages: int,
 ) -> dict[str, object]:
     deadline_bounded = False
     try:
-        ensure_deadline(
+        _ensure_ocr_deadline(
             operation="rendering OCR page",
             checkpointed_pages=checkpointed_pages,
             total_pages=total_pages,
@@ -428,7 +386,7 @@ def _extract_page_text_with_tesseract_result(
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = os.path.join(tmpdir, "page.png")
             pixmap = page.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
-            ensure_deadline(
+            _ensure_ocr_deadline(
                 operation="preparing OCR image",
                 checkpointed_pages=checkpointed_pages,
                 total_pages=total_pages,
@@ -451,7 +409,7 @@ def _extract_page_text_with_tesseract_result(
                 env=env,
                 check=False,
             )
-            ensure_deadline(
+            _ensure_ocr_deadline(
                 operation="finishing OCR subprocess",
                 checkpointed_pages=checkpointed_pages,
                 total_pages=total_pages,
@@ -486,7 +444,7 @@ def _extract_page_text_with_tesseract_result(
                         "retryable": False,
                     }
                 rotated_path = os.path.join(tmpdir, "page-rotated.png")
-                ensure_deadline(
+                _ensure_ocr_deadline(
                     operation="rendering rotated OCR page",
                     checkpointed_pages=checkpointed_pages,
                     total_pages=total_pages,
@@ -510,7 +468,7 @@ def _extract_page_text_with_tesseract_result(
                     env=env,
                     check=False,
                 )
-                ensure_deadline(
+                _ensure_ocr_deadline(
                     operation="finishing rotated OCR subprocess",
                     checkpointed_pages=checkpointed_pages,
                     total_pages=total_pages,
@@ -554,7 +512,7 @@ def _extract_page_text_with_tesseract_result(
                         env=env,
                         check=False,
                     )
-                    ensure_deadline(
+                    _ensure_ocr_deadline(
                         operation="finishing sparse OCR subprocess",
                         checkpointed_pages=checkpointed_pages,
                         total_pages=total_pages,
@@ -594,14 +552,13 @@ def _extract_page_text_with_tesseract_result(
             LOGGER.debug("Tesseract OCR returned %s: %s", result.returncode, result.stderr)
     except subprocess.TimeoutExpired as exc:
         if deadline_bounded:
-            error_factory = deadline_exception_factory or PdfDeadlineExceeded
-            raise error_factory(
+            raise _deadline_exception(
                 "PDF bounded deadline reached during OCR; retry resumes from checkpoint",
                 checkpointed_pages=checkpointed_pages,
                 total_pages=total_pages,
                 new_progress_pages=new_progress_pages,
             ) from exc
-        ensure_deadline(
+        _ensure_ocr_deadline(
             operation="checking deadline after OCR timeout",
             checkpointed_pages=checkpointed_pages,
             total_pages=total_pages,

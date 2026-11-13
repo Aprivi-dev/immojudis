@@ -8,7 +8,6 @@ faits extraits de la source (``src.source_extraction_backfill``).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -28,6 +27,7 @@ from src.sources.petites_affiches import refresh_petites_affiches_raw_sale
 from src.storage.column_sets import UPSERT_COLUMNS
 from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT
 from src.storage.postgrest_helpers import postgrest_request_with_retries, rest_headers
+from src.timestamps import assumed_utc_timestamp
 
 # Full rows per request (raw source pages are heavy) and identifiers per request.
 PAGE_SIZE = 25
@@ -176,10 +176,10 @@ def sale_from_storage_row(row: dict[str, Any]):
     if isinstance(row.get("source_urls"), list):
         sale.source_urls = [str(item) for item in row["source_urls"] if item]
     sale.content_hash = row.get("content_hash")
-    sale.first_seen_at = _parse_datetime(row.get("first_seen_at"))
-    sale.last_seen_at = _parse_datetime(row.get("last_seen_at"))
-    sale.created_at = _parse_datetime(row.get("created_at"))
-    sale.updated_at = _parse_datetime(row.get("updated_at"))
+    sale.first_seen_at = assumed_utc_timestamp(row.get("first_seen_at"))
+    sale.last_seen_at = assumed_utc_timestamp(row.get("last_seen_at"))
+    sale.created_at = assumed_utc_timestamp(row.get("created_at"))
+    sale.updated_at = assumed_utc_timestamp(row.get("updated_at"))
     # Les autres drapeaux se recalculent ; ceux de la position ne se déduisent pas du texte de la vente, ils viennent
     # d'un contrôle ou d'un géocodage passé : on les garde jusqu'à ce qu'une position vérifiée les retire. Même chose pour
     # « probable_duplicate », qui vient d'un rapprochement entre lignes (src.probable_duplicates).
@@ -196,15 +196,3 @@ def sale_from_storage_row(row: dict[str, Any]):
         if not getattr(sale, field):
             sale.raw_payload[field] = copy
     return sale
-
-
-def _parse_datetime(value: object | None):
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(value))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed

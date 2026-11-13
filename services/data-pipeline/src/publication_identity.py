@@ -36,7 +36,7 @@ from src.reviewed_aliases import (
     load_reviewed_aliases,
 )
 from src.storage.known_sale_projection import DATA_REFRESH_SALE_SELECT
-from src.timestamps import aware_timestamp
+from src.timestamps import aware_timestamp, sale_window
 
 LOGGER = logging.getLogger(__name__)
 
@@ -366,16 +366,9 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
     if existing.raw_payload.get('publication_identity_conflict'):
         result.raw_payload['publication_identity_conflict'] = existing.raw_payload['publication_identity_conflict']
         result.quality_flags = sorted(set(result.quality_flags) | {'property_identity_conflict'})
-    if result.source_url == incoming_url:
-        schedule = incoming.raw_payload.get('source_sale_schedule') or {}
-        try:
-            start = datetime.fromisoformat(schedule['opens_at'])
-            end = datetime.fromisoformat(schedule['closes_at'])
-            if start.tzinfo is not None and end.tzinfo is not None and end > start:
-                result.raw_payload['source_conflicts'] = [c for c in result.raw_payload.get('source_conflicts', [])
-                    if not (c.get('code') == 'closing_time_unverified' and c.get('selected_source') == incoming_url)]
-        except (KeyError, TypeError, ValueError):
-            pass
+    if result.source_url == incoming_url and sale_window(incoming.raw_payload.get('source_sale_schedule')):
+        result.raw_payload['source_conflicts'] = [c for c in result.raw_payload.get('source_conflicts') or []
+            if not (c.get('code') == 'closing_time_unverified' and c.get('selected_source') == incoming_url)]
     # Les copies de la valeur retenue (premier niveau de raw_payload, observations embarquées) suivent la valeur écrite.
     base_reads.align_copies(result, submitted, incoming)
     return result

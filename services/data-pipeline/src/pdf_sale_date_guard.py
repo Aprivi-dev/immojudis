@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 
 from src.models import AuctionSale
 from src.normalize import normalize_status
-from src.pdf_fact_scope import _pdf_record_fact_projection
+from src.pdf_fact_scope import pdf_record_fact_projection
 
 # A PDF date already in the past is far more often a misread (judgment date,
 # previous hearing, diagnostic date) than the sale itself: applying it would
@@ -65,13 +65,13 @@ def assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> Non
         return
     sale.sale_date = parsed
     sale.raw_payload["pdf_sale_date_extraction"] = {key: value for key, value in sale_date.items() if key != "value"}
-    _pdf_record_fact_projection(sale, ["sale_date"], candidate=sale_date, payload_keys=("pdf_sale_date_extraction",))
+    pdf_record_fact_projection(sale, ["sale_date"], candidate=sale_date, payload_keys=("pdf_sale_date_extraction",))
     if sale.status in {"", "unknown"} or (sale_date.get("offer_deadline_expired") and sale.status in {"active", "upcoming"}):
         previous_status = sale.status or "unknown"
         projected_status = normalize_status(None, parsed)
         sale.status = projected_status
         if projected_status != previous_status:
-            _pdf_record_fact_projection(
+            pdf_record_fact_projection(
                 sale,
                 ["status"],
                 candidate=sale_date,

@@ -37,6 +37,7 @@ from src.sources.cessions_etat_procedure import (
     published_price,
     select_schedule,
 )
+from src.timestamps import assumed_utc_timestamp
 
 FEATURES_SCHEMA_VERSION = "cessions_etat_features_v2"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -56,14 +57,6 @@ _BUILT_CUE_RE = re.compile(
     r"plateaux?|carrez|construction|villa|pavillon"
 )
 _SERVICE_NAME_RE = re.compile(r"\b(?:service|p[oô]le|prie|direction|ddfip|drfip|dgfip|division|bureau|sgami)\b", re.I)
-
-
-def parse_observed_at(value: object | None) -> datetime | None:
-    try:
-        parsed = datetime.fromisoformat(str(value or ""))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def _natures(page: CessionsPage) -> list[tuple[str, str, str]]:
@@ -461,13 +454,13 @@ def extract_cessions_fields(
 
 def observed_at_for(raw_sale: dict[str, Any]) -> datetime | None:
     """Instant d'observation du texte stocké (pour lire « Fini dans N jours »)."""
-    explicit = parse_observed_at(raw_sale.get("source_page_observed_at"))
+    explicit = assumed_utc_timestamp(raw_sale.get("source_page_observed_at"))
     if explicit:
         return explicit
     checks = raw_sale.get("source_checks") if isinstance(raw_sale.get("source_checks"), dict) else {}
     check = checks.get(str(raw_sale.get("source_url") or "")) if checks else None
     if isinstance(check, dict) and check.get("detail_status") == "complete":
-        return parse_observed_at(check.get("checked_at"))
+        return assumed_utc_timestamp(check.get("checked_at"))
     return None
 
 

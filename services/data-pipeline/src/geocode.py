@@ -52,6 +52,7 @@ from src.source_coordinates import (
     reset_source_promotion,
 )
 from src.text_folding import strip_accents
+from src.timestamps import assumed_utc_timestamp
 
 LOGGER = logging.getLogger(__name__)
 NEGATIVE_GEOCODE_CACHE_TTL = timedelta(days=14)
@@ -554,7 +555,7 @@ def _has_recent_commune_result(sale: AuctionSale, query: str) -> bool:
         return False
     if geocode.get("accepted") is not True or geocode.get("query") != query:
         return False
-    attempted_at = _parse_datetime(geocode.get("attempted_at"))
+    attempted_at = assumed_utc_timestamp(geocode.get("attempted_at"))
     return attempted_at is not None and _utc_now() - attempted_at <= NEGATIVE_GEOCODE_CACHE_TTL
 
 
@@ -734,20 +735,10 @@ def _has_recent_negative_geocode_cache(sale: AuctionSale, query: str) -> bool:
         return False
     if geocode.get("query") != query:
         return False
-    attempted_at = _parse_datetime(geocode.get("attempted_at"))
+    attempted_at = assumed_utc_timestamp(geocode.get("attempted_at"))
     if attempted_at is None:
         return False
     return _utc_now() - attempted_at <= NEGATIVE_GEOCODE_CACHE_TTL
-
-
-def _parse_datetime(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.strip())
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _utc_now() -> datetime:

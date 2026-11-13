@@ -33,7 +33,7 @@ from src.storage.supabase_client import (
     fetch_sale_for_data_refresh,
     finish_auction_enrichment_job_in_supabase,
 )
-from src.timestamps import aware_timestamp
+from src.timestamps import assumed_utc_timestamp, aware_timestamp
 
 LOGGER = logging.getLogger(__name__)
 
@@ -374,16 +374,8 @@ def source_detail_source_enabled(source_name: str, settings: dict[str, Any]) -> 
         return False
     if suspended_until is None:
         return True
-    if isinstance(suspended_until, datetime):
-        deadline = suspended_until
-    else:
-        try:
-            deadline = datetime.fromisoformat(str(suspended_until))
-        except ValueError:
-            return False
-    if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=UTC)
-    return deadline <= datetime.now(UTC)
+    deadline = assumed_utc_timestamp(suspended_until)
+    return deadline is not None and deadline <= datetime.now(UTC)
 
 
 def release_source_detail_job_without_attempt(

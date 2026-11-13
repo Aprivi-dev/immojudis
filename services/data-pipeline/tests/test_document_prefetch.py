@@ -171,7 +171,7 @@ def test_the_drain_waits_for_each_preparation_before_taking_the_lock(monkeypatch
 def test_preparation_reads_pages_without_writing_to_the_database(monkeypatch, tmp_path) -> None:
     from src import config, pdf_document_selection, pdf_document_text_cache, pdf_enrichment, pdf_progress
     from src.models import AuctionSale
-    from src.pdf_ocr import PdfExtractionDeferred
+    from src.pdf_deadline import PdfExtractionDeferred
     from src.storage import supabase_client
 
     sale = AuctionSale(

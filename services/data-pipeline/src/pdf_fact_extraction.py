@@ -37,10 +37,10 @@ from src.pdf_fact_scope import (
     _pdf_has_multiple_units,
     _pdf_lot_scope_labels,
     _pdf_record_candidate_projection,
-    _pdf_record_fact_projection,
     _pdf_scalar_candidates_from_documents,
     _pdf_scalar_scope_is_ambiguous,
     _pdf_text_chunks,
+    pdf_record_fact_projection,
 )
 from src.pdf_fact_scope import (
     _document_land_surface_candidates as _scope_document_land_surface_candidates,
@@ -242,7 +242,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
         if visit_dates:
             sale.visit_dates = list(visit_dates["visit_dates"])
             sale.raw_payload["pdf_visit_dates_extraction"] = visit_dates
-            _pdf_record_fact_projection(sale, ["visit_dates"], candidate=visit_dates, payload_keys=("pdf_visit_dates_extraction",))
+            pdf_record_fact_projection(sale, ["visit_dates"], candidate=visit_dates, payload_keys=("pdf_visit_dates_extraction",))
     apply_pdf_address(sale, pdf_texts)
     apply_pdf_tribunal(sale, pdf_texts)
     # The per-document extractor also handles plain string inputs. Do not fall
@@ -254,7 +254,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
         energy_diagnostics = energy_candidates[0]
     if energy_diagnostics:
         sale.raw_payload["pdf_energy_diagnostics"] = energy_diagnostics
-        _pdf_record_fact_projection(sale, ["raw_payload:pdf_energy_diagnostics"], candidate=energy_diagnostics)
+        pdf_record_fact_projection(sale, ["raw_payload:pdf_energy_diagnostics"], candidate=energy_diagnostics)
     elif complete_texts:
         # A fresh, complete read that no longer contains a diagnostic must not
         # keep projecting a class from an older PDF revision.
@@ -284,7 +284,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             context=combined,
             source="pdf",
         )
-        _pdf_record_fact_projection(sale, ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"), evidence=sale.surface_evidence or combined[:300], payload_keys=("surface_extraction", "surface_analysis"))
+        pdf_record_fact_projection(sale, ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"), evidence=sale.surface_evidence or combined[:300], payload_keys=("surface_extraction", "surface_analysis"))
 
     enriched_marker = "\n\n--- PDF TEXT ENRICHMENT ---\n"
     current_raw = sale.raw_text or ""
@@ -732,7 +732,7 @@ def _assign_pdf_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
         "aggregate_sources": surface.get("aggregate_sources") or [],
         "evidence": evidence,
     }
-    _pdf_record_fact_projection(sale, ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"), candidate=surface, payload_keys=("surface_extraction",))
+    pdf_record_fact_projection(sale, ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"), candidate=surface, payload_keys=("surface_extraction",))
 
 def _assign_pdf_land_surface(sale: AuctionSale, surface: dict[str, object]) -> None:
     value = surface["value"]
@@ -762,7 +762,7 @@ def _assign_pdf_land_surface(sale: AuctionSale, surface: dict[str, object]) -> N
     sale.raw_payload["land_surface_extraction"] = extraction
     if sale.property_type == "land":
         sale.raw_payload["surface_extraction"] = {**extraction, "kind": "surface_m2"}
-    _pdf_record_fact_projection(sale, ("land_surface_m2", "surface_m2", "surface_source", "surface_evidence"), candidate=surface, payload_keys=("land_surface_extraction", "surface_extraction"))
+    pdf_record_fact_projection(sale, ("land_surface_m2", "surface_m2", "surface_source", "surface_evidence"), candidate=surface, payload_keys=("land_surface_extraction", "surface_extraction"))
 
 def _reconcile_pdf_starting_price(sale: AuctionSale, extraction: dict[str, object]) -> None:
     value = extraction.get("value")
@@ -804,7 +804,7 @@ def _reconcile_pdf_starting_price(sale: AuctionSale, extraction: dict[str, objec
         "evidence": clean_text(extraction.get("evidence")),
     }
     if status in {"extracted", "resolved"}:
-        _pdf_record_fact_projection(sale, ["starting_price_eur"], candidate=extraction, payload_keys=("starting_price_extraction",))
+        pdf_record_fact_projection(sale, ["starting_price_eur"], candidate=extraction, payload_keys=("starting_price_extraction",))
 
 def _should_replace_starting_price_with_document(current: Decimal, documented: Decimal) -> bool:
     if current <= 0:

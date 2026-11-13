@@ -18,6 +18,16 @@ from .base import canonical_sha256, has_excessive_controls, looks_like_html
 
 # Nom de la source dans ``data_sources`` : celui des enregistrements produits ici et de leur politique d'ingestion.
 JUSTICE_OPEN_DATA_SOURCE_NAME = "justice_open_data"
+# Version du schéma et nature (``record_kind``) d'un enregistrement stocké, par ``record_type`` produit ici. Écrites
+# par ``src.outcome_ingestion.adapters``, relues par les requêtes de ``src.outcome_ingestion.repository``.
+JUSTICE_SCHEMA_VERSIONS = {
+    "court_competence": "justice_court_competence_v1",
+    "justice_court_structure": "justice_court_structure_v1",
+}
+JUSTICE_RECORD_KINDS = {
+    "court_competence": "territorial_jurisdiction",
+    "justice_court_structure": "court_reference_candidate",
+}
 JUSTICE_COMPETENCES_DATASET_URL = (
     "https://www.data.gouv.fr/datasets/liste-des-juridictions-competentes-pour-les-communes-de-france"
 )

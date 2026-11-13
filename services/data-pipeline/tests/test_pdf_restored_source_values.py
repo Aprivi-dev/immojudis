@@ -29,7 +29,7 @@ from src.models import AuctionSale
 from src.normalize import OCCUPANCY_ENUM, normalize_sale
 from src.pdf_enrichment import _invalidate_replaced_document_facts
 from src.pdf_fact_extraction import enrich_sale_from_pdf_text
-from src.pdf_fact_scope import _clear_pdf_fact_projections, _pdf_record_fact_projection
+from src.pdf_fact_scope import _clear_pdf_fact_projections, pdf_record_fact_projection
 from src.recompute_scoring import _recomputed_sale_from_storage_row
 from src.sources import licitor_lots
 from src.sources.licitor import parse_licitor_detail_html
@@ -104,13 +104,13 @@ def _restore_everything(sale: AuctionSale) -> None:
     """Chaque champ restaurable reçoit une valeur de pièce tracée, puis toutes les projections sont effacées."""
     for field in RESTORABLE:
         setattr(sale, field, _piece_value(sale, field))
-    _pdf_record_fact_projection(sale, RESTORABLE, evidence="pièce", document_url=DOCUMENT_URL)
+    pdf_record_fact_projection(sale, RESTORABLE, evidence="pièce", document_url=DOCUMENT_URL)
     assert _clear_pdf_fact_projections(sale)["cleared"] == set(RESTORABLE)
 
 
 def _restore(sale: AuctionSale, field: str) -> object:
     setattr(sale, field, _piece_value(sale, field))
-    _pdf_record_fact_projection(sale, [field], evidence="pièce", document_url=DOCUMENT_URL)
+    pdf_record_fact_projection(sale, [field], evidence="pièce", document_url=DOCUMENT_URL)
     assert _clear_pdf_fact_projections(sale)["cleared"] == {field}
     return getattr(sale, field)
 
@@ -406,7 +406,7 @@ def test_a_complete_reread_leaves_collection_values_on_the_sale() -> None:
     sale, _ = _published(raw)
     sale.documents = [{"label": "Cahier des charges", "url": DOCUMENT_URL}]
     sale.occupancy_status, sale.surface_m2, sale.property_type, sale.rooms_count = "occupied", Decimal("90"), "house", 5
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale,
         ["occupancy_status", "surface_m2", "property_type", "rooms_count"],
         evidence="ancienne lecture",
@@ -435,10 +435,10 @@ def test_a_trace_baseline_is_restored_as_the_serialized_value_it_is() -> None:
     # Sans instantané, la ligne de base de la trace est remise : un décimal sérialisé, pas un texte de page.
     # « 45000.00 » y vaut 45 000, et n'est pas relu comme un nombre à séparateur de milliers.
     sale = _bare_sale(starting_price_eur=Decimal("52000"), rooms_count=5)
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale, ["starting_price_eur"], evidence="pièce", document_url=DOCUMENT_URL, baseline=Decimal("45000.00")
     )
-    _pdf_record_fact_projection(sale, ["rooms_count"], evidence="pièce", document_url=DOCUMENT_URL, baseline=3)
+    pdf_record_fact_projection(sale, ["rooms_count"], evidence="pièce", document_url=DOCUMENT_URL, baseline=3)
 
     assert _clear_pdf_fact_projections(sale)["cleared"] == {"starting_price_eur", "rooms_count"}
 
@@ -448,10 +448,10 @@ def test_a_trace_baseline_is_restored_as_the_serialized_value_it_is() -> None:
 
 def test_an_unreadable_trace_baseline_is_restored_empty() -> None:
     sale = _bare_sale(starting_price_eur=Decimal("52000"), rooms_count=5)
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale, ["starting_price_eur"], evidence="pièce", document_url=DOCUMENT_URL, baseline="prix sur demande"
     )
-    _pdf_record_fact_projection(sale, ["rooms_count"], evidence="pièce", document_url=DOCUMENT_URL, baseline="T3")
+    pdf_record_fact_projection(sale, ["rooms_count"], evidence="pièce", document_url=DOCUMENT_URL, baseline="T3")
 
     _clear_pdf_fact_projections(sale)
 
@@ -466,7 +466,7 @@ def test_a_snapshot_that_cannot_be_read_restores_empty_and_lets_the_pass_go_on(m
         )
         assert (reference.surface_m2, reference.occupancy_status, reference.status) == (Decimal("85.5"), "vacant", "upcoming")
         sale.surface_m2, sale.occupancy_status, sale.status = Decimal("90"), "occupied", "postponed"
-        _pdf_record_fact_projection(
+        pdf_record_fact_projection(
             sale, ["surface_m2", "occupancy_status", "status"], evidence="pièce", document_url=DOCUMENT_URL
         )
 

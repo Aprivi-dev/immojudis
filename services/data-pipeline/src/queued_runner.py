@@ -35,13 +35,9 @@ from src.main import (
     PipelineOptions,
     run_pipeline,
 )
-from src.pdf_enrichment import (
-    PDF_FINALIZATION_MARGIN_SECONDS,
-    enrich_sale_from_pdfs,
-    pdf_deadline_scope,
-)
+from src.pdf_deadline import PdfDeadlineExceeded, PdfExtractionDeferred, pdf_deadline_scope
+from src.pdf_enrichment import PDF_FINALIZATION_MARGIN_SECONDS, enrich_sale_from_pdfs
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
-from src.pdf_ocr import PdfDeadlineExceeded, PdfExtractionDeferred
 from src.pdf_pass_outcomes import (
     complete_manifest_with_excluded_url,
     discarded_write_ending,

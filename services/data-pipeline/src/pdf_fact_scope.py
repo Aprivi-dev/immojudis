@@ -380,7 +380,7 @@ def _pdf_set_projected_value(sale: Any, field: str, value: object) -> None:
     setattr(sale, field, value)
 
 
-def _pdf_record_fact_projection(
+def pdf_record_fact_projection(
     sale: Any,
     fields: list[str] | tuple[str, ...] | set[str],
     *,
@@ -463,7 +463,7 @@ def _pdf_record_candidate_projection(
     payload_keys: tuple[str, ...] = (),
 ) -> None:
     candidate = candidate or {}
-    _pdf_record_fact_projection(
+    pdf_record_fact_projection(
         sale,
         [field],
         evidence=str(candidate.get("evidence") or fallback_evidence),
@@ -504,7 +504,7 @@ def _trace_derived_pdf_surface(sale: Any, provenance: dict[str, object]) -> set[
         return {"app_surface_m2", "app_surface_kind"}
     missing = [field for field in ("app_surface_m2", "app_surface_kind") if field not in provenance]
     if missing:
-        _pdf_record_fact_projection(sale, missing, candidate=matching)
+        pdf_record_fact_projection(sale, missing, candidate=matching)
     return set()
 
 
@@ -673,7 +673,7 @@ def _apply_pdf_textual_facts(
         value = property_type_extractor(combined)
         if value:
             sale.property_type = value
-            _pdf_record_fact_projection(
+            pdf_record_fact_projection(
                 sale, ["property_type"], evidence=combined[:600],
                 baseline=previous, previous_value=previous,
             )
@@ -682,7 +682,7 @@ def _apply_pdf_textual_facts(
         value = description_extractor(combined)
         if value:
             sale.description = value
-            _pdf_record_fact_projection(
+            pdf_record_fact_projection(
                 sale, ["description"], evidence=combined[:600],
                 baseline=previous, previous_value=previous,
             )
@@ -694,7 +694,7 @@ def _apply_pdf_textual_facts(
         value = clean_text(" | ".join(filter(None, [previous, risk_notes])))
         if value != previous:
             sale.risk_notes = value
-            _pdf_record_fact_projection(
+            pdf_record_fact_projection(
                 sale, ["risk_notes"], evidence=combined[:600],
                 baseline=previous, previous_value=previous,
             )

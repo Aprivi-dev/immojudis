@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from src.french_dates import PARIS
 from src.lot_scope import lot_selected
 from src.models import AuctionSale
-from src.timestamps import aware_timestamp
+from src.timestamps import sale_window
 
 DATE_ONLY_PRECISIONS = {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
 
@@ -64,14 +64,10 @@ def retention_deadline(sale: AuctionSale):
     for schedule in (procedure.get('sale_window'), procedure.get('sale_session'), sale.raw_payload.get('source_sale_schedule')):
         if schedule is None:
             continue
-        try:
-            start = datetime.fromisoformat(schedule['opens_at'])
-            end = datetime.fromisoformat(schedule['closes_at'])
-            if start.tzinfo is None or end.tzinfo is None or end <= start:
-                return None
-            return end.astimezone(UTC) + timedelta(hours=24)
-        except (KeyError, TypeError, ValueError):
-            return None
+        # Le premier créneau présent décide, sans repli sur le suivant ni sur ``sale_date`` (contrairement au
+        # catalogue) : inexploitable, il ne prouve aucune fin et la vente est gardée.
+        window = sale_window(schedule)
+        return window[1].astimezone(UTC) + timedelta(hours=24) if window else None
     if sale.sale_date is None:
         return None
     sale_datetime = sale.sale_date.replace(tzinfo=UTC) if sale.sale_date.tzinfo is None else sale.sale_date
@@ -124,12 +120,10 @@ def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
         procedure.get("sale_session"),
         raw_payload.get("source_sale_schedule"),
     ):
-        if not isinstance(schedule, dict):
-            continue
-        start = aware_timestamp(str(schedule.get("opens_at")))
-        end = aware_timestamp(str(schedule.get("closes_at")))
-        if start is not None and end is not None and end > start:
-            return end
+        # Un créneau inexploitable laisse la main au suivant, puis à ``sale_date``.
+        window = sale_window(schedule)
+        if window is not None:
+            return window[1].astimezone(UTC)
 
     raw_date = str(raw_payload.get("sale_date") or "")
     precision = (

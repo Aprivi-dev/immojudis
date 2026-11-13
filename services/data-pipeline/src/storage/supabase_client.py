@@ -141,7 +141,7 @@ from src.storage.sale_row_builders import (
     _unique_rows_by_keys,
     _unique_source_urls,
 )
-from src.timestamps import aware_timestamp
+from src.timestamps import assumed_utc_timestamp, aware_timestamp
 from src.urban_planning import build_urban_planning_signal_rows
 
 LOGGER = logging.getLogger(__name__)
@@ -2310,20 +2310,6 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
     db_url = direct_database_url(settings)
     now = datetime.now(UTC).isoformat()
 
-    def _as_utc(value: object) -> datetime | None:
-        if isinstance(value, datetime):
-            parsed = value
-        elif value:
-            try:
-                parsed = datetime.fromisoformat(str(value))
-            except (TypeError, ValueError):
-                return None
-        else:
-            return None
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed.astimezone(UTC)
-
     def _content_freshness(observation: dict[str, object], content: object, source_url: str) -> datetime | None:
         # Ranking may use only timestamps carried by this observation. Parent
         # catalogue mutation times are not evidence that its payload is newer.
@@ -2335,7 +2321,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
                 check = checks.get(source_url)
                 if isinstance(check, dict):
                     candidates.append(check.get("checked_at"))
-        parsed = [_as_utc(value) for value in candidates]
+        parsed = [assumed_utc_timestamp(value) for value in candidates]
         valid = [value for value in parsed if value is not None]
         return max(valid) if valid else None
 
@@ -2376,7 +2362,7 @@ def upsert_observations_to_supabase(sales: list[AuctionSale]) -> int:
             content = persistable_payload(observation.get("raw_payload") or observation)
             # Keep the column's ingest/explicit observation meaning; checkpoint
             # evidence ranks duplicates but is not relabeled as observed_at.
-            observed_at = _as_utc(observation.get("observed_at"))
+            observed_at = assumed_utc_timestamp(observation.get("observed_at"))
             row = {
                 "source_name": observation.get("source_name") or sale.source_name,
                 "source_url": source_url,
