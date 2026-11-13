@@ -17,6 +17,7 @@ from src.official_sources.justice_open_data import (
     JUSTICE_STRUCTURES_DATASET_URL,
 )
 from src.outcome_ingestion.dvf_adjudication import (
+    DVF_ADJUDICATION_MUTATION_NATURE,
     DVF_ADJUDICATION_RECORD_KIND,
     DVF_ADJUDICATION_SCHEMA_VERSION,
     DVF_OFFICIAL_SOURCE_NAME,
@@ -68,7 +69,7 @@ def dvf_adjudication_to_json_record(candidate: DvfAdjudicationCandidate) -> Json
         # unknown unless the exact data.gouv resource snapshot supplies it.
         published_at=None,
         request_parameters={
-            "mutation_nature": "Adjudication",
+            "mutation_nature": DVF_ADJUDICATION_MUTATION_NATURE,
             "external_record_id": candidate.external_record_id,
         },
     )

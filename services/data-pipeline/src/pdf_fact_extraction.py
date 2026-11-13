@@ -40,25 +40,11 @@ from src.pdf_fact_scope import (
     _pdf_scalar_candidates_from_documents,
     _pdf_scalar_scope_is_ambiguous,
     _pdf_text_chunks,
+    energy_diagnostic_candidates_from_documents,
+    energy_diagnostics_are_ambiguous,
+    extract_occupancy_candidates,
     pdf_record_fact_projection,
-)
-from src.pdf_fact_scope import (
-    _document_land_surface_candidates as _scope_document_land_surface_candidates,
-)
-from src.pdf_fact_scope import (
-    _document_surface_candidates as _scope_document_surface_candidates,
-)
-from src.pdf_fact_scope import (
-    _energy_diagnostic_candidates_from_documents as _scope_energy_diagnostic_candidates_from_documents,
-)
-from src.pdf_fact_scope import (
-    _energy_diagnostics_are_ambiguous as _scope_energy_diagnostics_are_ambiguous,
-)
-from src.pdf_fact_scope import (
-    _extract_occupancy_candidates as _scope_extract_occupancy_candidates,
-)
-from src.pdf_fact_scope import (
-    _pdf_surface_candidates_with_provenance as _scope_pdf_surface_candidates_with_provenance,
+    pdf_surface_candidates_with_provenance,
 )
 from src.pdf_occupancy import (
     apply_pdf_occupancy,
@@ -146,7 +132,7 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     occupancy_ambiguous = _pdf_scalar_scope_is_ambiguous(scope_text, occupancy_candidates, field="occupancy") and (
         "multi_lot_sale" in sale.quality_flags or not occupancy_statements_agree(occupancy_candidates)
     )
-    energy_ambiguous = _energy_diagnostics_are_ambiguous(pdf_texts, energy_candidates, scope_text=scope_text)
+    energy_ambiguous = energy_diagnostics_are_ambiguous(pdf_texts, energy_candidates, scope_text=scope_text)
     guarded_fields = [
         field
         for field, guarded in (
@@ -299,7 +285,7 @@ def _pdf_surface_candidates_with_provenance(
     *,
     land: bool = False,
 ) -> list[dict[str, object]]:
-    return _scope_pdf_surface_candidates_with_provenance(
+    return pdf_surface_candidates_with_provenance(
         pdf_texts,
         surface_extractor=_extract_surface_candidates_with_evidence,
         land_surface_extractor=_extract_land_surface_candidates_with_evidence,
@@ -310,24 +296,16 @@ def _pdf_surface_candidates_with_provenance(
 def _extract_occupancy_candidates(
     text: str, *, chunk: dict[str, object] | None = None
 ) -> list[dict[str, object]]:
-    return _scope_extract_occupancy_candidates(
+    return extract_occupancy_candidates(
         text, chunk=chunk, occupancy_extractor=_extract_occupancy_status
     )
 
 def _energy_diagnostic_candidates_from_documents(
     pdf_texts: list[dict[str, object]] | list[str],
 ) -> list[dict[str, object]]:
-    return _scope_energy_diagnostic_candidates_from_documents(
+    return energy_diagnostic_candidates_from_documents(
         pdf_texts, diagnostic_extractor=_extract_energy_diagnostics_with_evidence
     )
-
-def _energy_diagnostics_are_ambiguous(
-    pdf_texts: list[dict[str, object]] | list[str],
-    candidates: list[dict[str, object]],
-    *,
-    scope_text: str | None = None,
-) -> bool:
-    return _scope_energy_diagnostics_are_ambiguous(pdf_texts, candidates, scope_text=scope_text)
 
 def _extract_document_surface_assets(
     pdf_texts: list[dict[str, object]] | list[str],
@@ -512,22 +490,11 @@ def _starting_price_document_rank(item: dict[str, object]) -> tuple[int, float, 
     page_number = int(item.get("page_number") or 0)
     return document_score, page_confidence, page_number
 
-def _document_surface_candidates(item: dict[str, object], text: str) -> list[dict[str, object]]:
-    return _scope_document_surface_candidates(
-        item, text, surface_extractor=_extract_surface_candidates_with_evidence,
-        surface_scope_extractor=_surface_measurement_scope,
-    )
-
-def _document_land_surface_candidates(item: dict[str, object], text: str) -> list[dict[str, object]]:
-    return _scope_document_land_surface_candidates(
-        item, text, land_surface_extractor=_extract_land_surface_candidates_with_evidence
-    )
-
 def _extract_energy_diagnostics_from_documents(
     pdf_texts: list[dict[str, object]] | list[str],
 ) -> dict[str, object] | None:
     candidates = _energy_diagnostic_candidates_from_documents(pdf_texts)
-    if not candidates or _energy_diagnostics_are_ambiguous(pdf_texts, candidates):
+    if not candidates or energy_diagnostics_are_ambiguous(pdf_texts, candidates):
         return None
     candidates.sort(key=_energy_diagnostic_rank, reverse=True)
     return candidates[0]

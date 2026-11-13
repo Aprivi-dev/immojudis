@@ -9,13 +9,14 @@ from decimal import Decimal
 import pytest
 
 from src import municipality_location
+from src.admission import retention_deadline
 from src.commune_insee import POSTAL_CODE_INFERENCE_FIELD, record_sale_commune
 from src.lifecycle import mark_past_sales
 from src.normalize import normalize_sale
 from src.sources import info_encheres
 from src.sources.encheres_publiques_extraction import fill_text_schedule, text_event_sale_date
 from src.sources.notaires import parse_notaires_detail_json
-from src.sources.notaires_text_terms import text_sale_date, text_starting_price
+from src.sources.notaires_text_terms import text_offer_schedule, text_sale_date, text_starting_price
 from src.stored_sales import sale_from_storage_row
 from src.tribunal_labels import clean_city_label
 
@@ -209,6 +210,40 @@ def test_notaires_detail_without_api_price_or_date_reads_its_description() -> No
     mark_past_sales([sale], now=datetime(2026, 11, 3, tzinfo=UTC))
     assert sale.starting_price_eur == Decimal("887250")
     assert sale.status == "past"
+
+
+def test_notaires_invalid_json_window_falls_back_to_the_description_window() -> None:
+    """Bornes du JSON présentes mais inversées : la fenêtre de la description est reprise, et la rétention clôt."""
+    payload = json.dumps({
+        "typeTransaction": "VNI",
+        "vni": {
+            "descriptions": [{"langue": "fr", "descCourte": "Maison", "descLongue": VNI_DESCRIPTION}],
+            "dateDebutEncheres": "2026-09-09T15:00:00Z",
+            "dateFinEncheres": "2026-09-08T15:00:00Z",
+            "codePostal": "50840",
+            "ville": "Fermanville",
+        },
+        "bien": {"typeBien": "MAI"},
+    })
+    detail = parse_notaires_detail_json(payload)
+
+    assert detail["source_sale_schedule"] == {
+        "opens_at": "2026-09-08T15:00:00+00:00",
+        "closes_at": "2026-09-09T15:00:00+00:00",
+        "source": "notaires.description",
+    }
+    sale = normalize_sale({**detail, "source_name": "notaires",
+                           "source_url": "https://www.immobilier.notaires.fr/fr/annonce-immo/290ddc8c"})
+    assert retention_deadline(sale) == datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
+
+
+def test_notaires_invalid_json_window_without_description_window_is_kept() -> None:
+    schedule = {"opens_at": "2026-09-09T15:00:00+00:00", "closes_at": "2026-09-08T15:00:00+00:00"}
+
+    assert text_offer_schedule(schedule, "Maison de ville") is schedule
+    assert text_offer_schedule({**schedule, "closes_at": "2026-09-10T15:00:00+00:00"}, VNI_DESCRIPTION)["closes_at"] == (
+        "2026-09-10T15:00:00+00:00"
+    )
 
 
 def test_notaires_relisted_sale_is_not_implausible_against_its_first_publication() -> None:

@@ -23,9 +23,19 @@ from src.official_sources.justice_open_data import (
 )
 from src.outcome_ingestion.artifact_store import StoredRawArtifact
 from src.outcome_ingestion.dvf_adjudication import (
+    DVF_ADJUDICATION_MUTATION_NATURE,
     DVF_ADJUDICATION_RECORD_KIND,
     DVF_ADJUDICATION_SCHEMA_VERSION,
     DVF_OFFICIAL_SOURCE_NAME,
+)
+from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_EVIDENCE_HASH_VERSION,
+    JUDILIBRE_EXTRACTOR_NAME,
+    JUDILIBRE_EXTRACTOR_VERSION,
+    JUDILIBRE_NORMALIZED_SCHEMA,
+    JUDILIBRE_RECORD_KIND,
+    JUDILIBRE_SOURCE_NAME,
+    JUDILIBRE_V3_SAFE_PROJECTION_KEYS,
 )
 from src.sha256_digest import is_lowercase_sha256
 from src.storage.supabase_client import connect as connect_postgres
@@ -33,45 +43,12 @@ from src.storage.supabase_client import connect as connect_postgres
 IngestionChannel = Literal["automated", "manual", "partner"]
 CaptureTransport = Literal["http", "local_file"]
 
-_JUDILIBRE_V3_SAFE_PROJECTION_KEYS = (
-    "schema_version",
-    "record_type",
-    "judilibre_id",
-    "jurisdiction",
-    "location",
-    "chamber",
-    "formation",
-    "number",
-    "numbers",
-    "ecli",
-    "nac",
-    "decision_date",
-    "update_date",
-    "decision_type",
-    "solution",
-    "solution_alt",
-    "publication",
-    "themes",
-    "partial",
-    "to_be_deleted",
-    "raw_representation_sha256",
-    "candidate_grade",
-    "review_status",
-    "training_eligible",
-    "text_storage",
-    "personal_identity_features_allowed",
-    "extraction_status",
-    "extraction_rule_version",
-    "claims",
-    "ambiguous_claim_types",
-    "text_available",
-)
 _JUDILIBRE_V3_SAFE_PROJECTION_SQL = "jsonb_build_object(" + ", ".join(
     f"'{key}', record.normalized_data->'{key}'"
-    for key in _JUDILIBRE_V3_SAFE_PROJECTION_KEYS
+    for key in JUDILIBRE_V3_SAFE_PROJECTION_KEYS
 ) + ")"
 _JUDILIBRE_V3_SAFE_KEYS_SQL = "array[" + ", ".join(
-    f"'{key}'" for key in _JUDILIBRE_V3_SAFE_PROJECTION_KEYS
+    f"'{key}'" for key in JUDILIBRE_V3_SAFE_PROJECTION_KEYS
 ) + "]"
 _JUDILIBRE_V3_SAFE_ALLOWLIST_SQL = (
     "record.normalized_data ?& "
@@ -81,6 +58,15 @@ _JUDILIBRE_V3_SAFE_ALLOWLIST_SQL = (
     + _JUDILIBRE_V3_SAFE_KEYS_SQL
     + ")))"
 )
+# Valeurs du contrat lues par les deux requêtes des candidats v3 (paramètres nommés ``%(source_name)s``...).
+_JUDILIBRE_V3_CANDIDATE_PARAMETERS = {
+    "source_name": JUDILIBRE_SOURCE_NAME,
+    "record_kind": JUDILIBRE_RECORD_KIND,
+    "schema_version": JUDILIBRE_NORMALIZED_SCHEMA,
+    "extractor_name": JUDILIBRE_EXTRACTOR_NAME,
+    "extractor_version": JUDILIBRE_EXTRACTOR_VERSION,
+    "hash_version": JUDILIBRE_EVIDENCE_HASH_VERSION,
+}
 
 
 class OutcomeIngestionError(RuntimeError):
@@ -711,19 +697,17 @@ class OutcomeIngestionRepository:
                     join public.data_sources source on source.id = record.source_id
                     join public.artifact_extractions extraction
                       on extraction.id = record.artifact_extraction_id
-                    where record.id = %s
-                      and record.content_hash = %s
-                      and source.name = 'judilibre'
+                    where record.id = %(source_record_id)s
+                      and record.content_hash = %(content_hash)s
+                      and source.name = %(source_name)s
                       and source.official
                       and source.active
                       and source.legal_review_status = 'approved'
                       and source.ingestion_policy = 'allowed_automated'
-                      and record.record_kind = 'judicial_decision_candidate'
+                      and record.record_kind = %(record_kind)s
                       and not record.training_eligible
-                      and record.normalized_data->>'schema_version'
-                        = 'judilibre_decision_candidate_v3'
-                      and record.normalized_data->>'record_type'
-                        = 'judicial_decision_candidate'
+                      and record.normalized_data->>'schema_version' = %(schema_version)s
+                      and record.normalized_data->>'record_type' = %(record_kind)s
                       and record.normalized_data->>'judilibre_id'
                         = record.external_record_id
                       and lower(record.normalized_data->>'jurisdiction') = 'tj'
@@ -748,12 +732,11 @@ class OutcomeIngestionRepository:
                       and record.normalized_data->>'raw_representation_sha256'
                         ~ '^[0-9a-f]{64}$'
                       and extraction.extraction_status = 'succeeded'
-                      and extraction.extractor_name = 'judilibre_candidate_extraction'
-                      and extraction.extractor_version = '3'
-                      and extraction.schema_version = 'judilibre_decision_candidate_v3'
+                      and extraction.extractor_name = %(extractor_name)s
+                      and extraction.extractor_version = %(extractor_version)s
+                      and extraction.schema_version = %(schema_version)s
                       and extraction.output_hash = record.content_hash
-                      and extraction.field_provenance->>'hash_version'
-                        = 'judilibre-evidence-sha256-v1'
+                      and extraction.field_provenance->>'hash_version' = %(hash_version)s
                       and jsonb_typeof(extraction.field_provenance->'claims') = 'object'
                       and jsonb_typeof(record.normalized_data->'claims') = 'array'
                       and jsonb_array_length(record.normalized_data->'claims') between 1 and 7
@@ -780,7 +763,7 @@ class OutcomeIngestionRepository:
                             extraction.field_provenance->'claims'
                               ->(claim->>'claim_id')->>'hash_version',
                             ''
-                          ) <> 'judilibre-evidence-sha256-v1'
+                          ) <> %(hash_version)s
                       )
                       and not exists (
                         select 1
@@ -805,7 +788,11 @@ class OutcomeIngestionRepository:
                       )
                     for share of record, source, extraction
                     """,
-                    (source_record_id, expected_source_content_hash),
+                    {
+                        **_JUDILIBRE_V3_CANDIDATE_PARAMETERS,
+                        "source_record_id": source_record_id,
+                        "content_hash": expected_source_content_hash,
+                    },
                 )
                 source_row = cursor.fetchone()
                 if source_row is None or not isinstance(source_row[1], date):
@@ -1192,6 +1179,7 @@ class OutcomeIngestionRepository:
                     DVF_OFFICIAL_SOURCE_NAME,
                     DVF_ADJUDICATION_RECORD_KIND,
                     DVF_ADJUDICATION_SCHEMA_VERSION,
+                    DVF_ADJUDICATION_MUTATION_NATURE,
                     *(cursor_position or ()),
                     *((limit,) if limit is not None else ()),
                 )
@@ -1207,7 +1195,7 @@ class OutcomeIngestionRepository:
                       and record.record_kind = %s
                       and not record.training_eligible
                       and record.normalized_data->>'schema_version' = %s
-                      and record.normalized_data->>'mutation_nature' = 'Adjudication'
+                      and record.normalized_data->>'mutation_nature' = %s
                       {cursor_clause}
                       and not exists (
                         select 1
@@ -1341,10 +1329,10 @@ class OutcomeIngestionRepository:
                         from public.judicial_source_records record
                         join public.data_sources source on source.id = record.source_id
                         where record.id = %s::uuid
-                          and source.name = 'judilibre'
+                          and source.name = %s
                         limit 1
                         """,
-                        (normalized_cursor,),
+                        (normalized_cursor, JUDILIBRE_SOURCE_NAME),
                     )
                     cursor_row = cursor.fetchone()
                     if cursor_row is None:
@@ -1361,7 +1349,7 @@ class OutcomeIngestionRepository:
                     if cursor_position is None
                     else (
                         "and (record.created_at, record.id) "
-                        "> (%s::timestamptz, %s::uuid)"
+                        "> (%(cursor_created_at)s::timestamptz, %(cursor_id)s::uuid)"
                     )
                 )
                 cursor.execute(
@@ -1376,18 +1364,16 @@ class OutcomeIngestionRepository:
                     join public.data_sources source on source.id = record.source_id
                     join public.artifact_extractions extraction
                       on extraction.id = record.artifact_extraction_id
-                    where source.name = 'judilibre'
+                    where source.name = %(source_name)s
                       and source.official
                       and source.active
                       and source.legal_review_status = 'approved'
                       and source.ingestion_policy = 'allowed_automated'
-                      and record.record_kind = 'judicial_decision_candidate'
+                      and record.record_kind = %(record_kind)s
                       and not record.training_eligible
                       and record.decision_date is not null
-                      and record.normalized_data->>'schema_version'
-                        = 'judilibre_decision_candidate_v3'
-                      and record.normalized_data->>'record_type'
-                        = 'judicial_decision_candidate'
+                      and record.normalized_data->>'schema_version' = %(schema_version)s
+                      and record.normalized_data->>'record_type' = %(record_kind)s
                       and record.normalized_data->>'judilibre_id'
                         = record.external_record_id
                       and lower(record.normalized_data->>'jurisdiction') = 'tj'
@@ -1397,12 +1383,11 @@ class OutcomeIngestionRepository:
                       and record.normalized_data->>'raw_representation_sha256'
                         ~ '^[0-9a-f]{{64}}$'
                       and extraction.extraction_status = 'succeeded'
-                      and extraction.extractor_name = 'judilibre_candidate_extraction'
-                      and extraction.extractor_version = '3'
-                      and extraction.schema_version = 'judilibre_decision_candidate_v3'
+                      and extraction.extractor_name = %(extractor_name)s
+                      and extraction.extractor_version = %(extractor_version)s
+                      and extraction.schema_version = %(schema_version)s
                       and extraction.output_hash = record.content_hash
-                      and extraction.field_provenance->>'hash_version'
-                        = 'judilibre-evidence-sha256-v1'
+                      and extraction.field_provenance->>'hash_version' = %(hash_version)s
                       and jsonb_typeof(extraction.field_provenance->'claims') = 'object'
                       and record.normalized_data @> '{{
                         "candidate_grade": "C",
@@ -1449,7 +1434,7 @@ class OutcomeIngestionRepository:
                             extraction.field_provenance->'claims'
                               ->(claim->>'claim_id')->>'hash_version',
                             ''
-                          ) <> 'judilibre-evidence-sha256-v1'
+                          ) <> %(hash_version)s
                       )
                       and (
                         select count(*) = count(distinct claim->>'claim_type')
@@ -1484,9 +1469,14 @@ class OutcomeIngestionRepository:
                           )
                       )
                     order by record.created_at, record.id
-                    limit %s
+                    limit %(limit)s
                     """,
-                    (*cursor_position, limit) if cursor_position is not None else (limit,),
+                    {
+                        **_JUDILIBRE_V3_CANDIDATE_PARAMETERS,
+                        "cursor_created_at": cursor_position[0] if cursor_position is not None else None,
+                        "cursor_id": cursor_position[1] if cursor_position is not None else None,
+                        "limit": limit,
+                    },
                 )
                 rows = cursor.fetchall()
         return [

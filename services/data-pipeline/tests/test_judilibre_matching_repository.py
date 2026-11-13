@@ -11,6 +11,16 @@ from src.outcome_ingestion.repository import (
     OutcomeIngestionRepository,
 )
 
+# Contrat d'une décision Judilibre enregistrée (src.outcome_ingestion.judilibre_contract), passé en paramètres.
+JUDILIBRE_CONTRACT = {
+    "source_name": "judilibre",
+    "record_kind": "judicial_decision_candidate",
+    "schema_version": "judilibre_decision_candidate_v3",
+    "extractor_name": "judilibre_candidate_extraction",
+    "extractor_version": "3",
+    "hash_version": "judilibre-evidence-sha256-v1",
+}
+
 
 class QueryCursor:
     def __init__(
@@ -170,19 +180,22 @@ def test_load_judilibre_records_is_current_approved_non_purged_and_claim_bounded
     assert records[0].source_record_id == "record-1"
     assert records[0].decision_date == date(2025, 5, 14)
     statement, parameters = cursor.calls[0]
-    assert "source.name = 'judilibre'" in statement
+    assert "source.name = %(source_name)s" in statement
+    assert "record.record_kind = %(record_kind)s" in statement
+    assert "record.normalized_data->>'record_type' = %(record_kind)s" in statement
     assert "source.official" in statement
     assert "source.active" in statement
     assert "source.legal_review_status = 'approved'" in statement
     assert "source.ingestion_policy = 'allowed_automated'" in statement
     assert "join public.artifact_extractions extraction" in statement
-    assert "extraction.extractor_name = 'judilibre_candidate_extraction'" in statement
+    assert "extraction.extractor_name = %(extractor_name)s" in statement
+    assert "extraction.extractor_version = %(extractor_version)s" in statement
     assert "extraction.output_hash = record.content_hash" in statement
-    assert "judilibre-evidence-sha256-v1" in statement
+    assert "extraction.field_provenance->>'hash_version' = %(hash_version)s" in statement
     assert "evidence_sha256" in statement
     assert "raw_artifact_sha256" in statement
     assert "not record.training_eligible" in statement
-    assert "judilibre_decision_candidate_v3" in statement
+    assert "record.normalized_data->>'schema_version' = %(schema_version)s" in statement
     assert '"ambiguous_claim_types": []' in statement
     assert "record.normalized_data->'ambiguous_claim_types' = '[]'::jsonb" in statement
     assert "jsonb_array_length(record.normalized_data->'claims') between 1 and 7" in statement
@@ -193,8 +206,8 @@ def test_load_judilibre_records_is_current_approved_non_purged_and_claim_bounded
     assert "record.normalized_data ?& array[" in statement
     assert "jsonb_object_keys(record.normalized_data)" in statement
     assert "'raw_text'" not in statement
-    assert statement.endswith("limit %s")
-    assert parameters == (25,)
+    assert statement.endswith("limit %(limit)s")
+    assert parameters == {**JUDILIBRE_CONTRACT, "cursor_created_at": None, "cursor_id": None, "limit": 25}
 
 
 def test_load_judilibre_records_uses_stable_composite_cursor() -> None:
@@ -214,11 +227,11 @@ def test_load_judilibre_records_uses_stable_composite_cursor() -> None:
     cursor_statement, cursor_parameters = cursor.calls[0]
     page_statement, page_parameters = cursor.calls[1]
     assert "record.id = %s::uuid" in cursor_statement
-    assert "source.name = 'judilibre'" in cursor_statement
-    assert cursor_parameters == (cursor_id,)
-    assert "(record.created_at, record.id) > (%s::timestamptz, %s::uuid)" in page_statement
+    assert "source.name = %s" in cursor_statement
+    assert cursor_parameters == (cursor_id, "judilibre")
+    assert "(record.created_at, record.id) > (%(cursor_created_at)s::timestamptz, %(cursor_id)s::uuid)" in page_statement
     assert "order by record.created_at, record.id" in page_statement
-    assert page_parameters == (created_at, cursor_id, 10)
+    assert page_parameters == {**JUDILIBRE_CONTRACT, "cursor_created_at": created_at, "cursor_id": cursor_id, "limit": 10}
 
 
 def test_load_judilibre_records_rejects_unknown_cursor_and_unbounded_page() -> None:
@@ -388,14 +401,14 @@ def test_persist_revalidates_current_source_target_and_signals_in_one_transactio
     assert "public.source_record_matches" in cursor.calls[2][0]
     assert "share row exclusive mode" in cursor.calls[2][0]
     source_statement = cursor.calls[3][0]
-    assert "source.name = 'judilibre'" in source_statement
+    assert "source.name = %(source_name)s" in source_statement
     assert "join public.artifact_extractions extraction" in source_statement
     assert "evidence_sha256" in source_statement
     assert "source.legal_review_status = 'approved'" in source_statement
     assert "newer.record_version > record.record_version" in source_statement
     assert "public.source_purge_events" in source_statement
     assert "for share of record, source" in source_statement
-    assert cursor.calls[3][1] == ("record-1", "a" * 64)
+    assert cursor.calls[3][1] == {**JUDILIBRE_CONTRACT, "source_record_id": "record-1", "content_hash": "a" * 64}
     assert "current_justice_structures" in cursor.calls[5][0]
     assert cursor.calls[5][1][:3] == ("justice_open_data", "court_reference_candidate", "justice_court_structure_v1")
     target_statement = cursor.calls[6][0]

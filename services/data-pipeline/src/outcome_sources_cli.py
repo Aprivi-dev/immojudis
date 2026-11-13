@@ -38,11 +38,11 @@ from src.outcome_ingestion.dvf_matching import (
     DVF_MATCH_PAGE_SIZE_MAX,
     DvfAdjudicationMatchingService,
 )
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_SOURCE_NAME
 from src.outcome_ingestion.judilibre_ingestion import (
     JUDILIBRE_SEARCH_MAX_RESULTS,
     JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW,
     JUDILIBRE_SEARCH_PROFILES,
-    JUDILIBRE_SOURCE_NAME,
     JudilibreOutcomeIngestor,
     validate_judilibre_search_request,
 )

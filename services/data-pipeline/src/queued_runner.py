@@ -9,7 +9,6 @@ from contextvars import ContextVar
 from urllib.parse import urlsplit
 
 from src.admission import is_expired
-from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.config import PDF_TEXTS_DIR, SOURCE_NAMES, EncheresPubliquesAccessNotAuthorized, load_settings
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
@@ -31,6 +30,7 @@ from src.llm_requests import (
     llm_request_context,
 )
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_scope
+from src.lot_scope import surface_reasoning_context
 from src.main import (
     PipelineOptions,
     run_pipeline,
@@ -46,8 +46,8 @@ from src.pdf_pass_outcomes import (
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import PARTIAL_MANIFEST_DEFERRAL, PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
+from src.sale_finalization import derive_sale_facts
 from src.sale_local_files import sale_storage_id
-from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
 from src.source_withdrawal import SaleSourceWithdrawn, deferral_for, require_sale_not_withdrawn
@@ -76,7 +76,6 @@ from src.storage.supabase_client import (
     upsert_dpe_diagnostics_to_supabase,
     upsert_sales_to_supabase,
 )
-from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
@@ -825,9 +824,9 @@ def run_enrichment_queue_batch(
                 sale.raw_payload.pop("source_operational_changed", None)
             if sale_needs_position(sale):
                 geocode_sale(sale)
-            fill_tribunal(sale)
-            classify_sale_procedure(sale)
-            normalize_asset_features(sale)
+            # Étapes communes avec la fin de collecte qui suit les mêmes lectures (``main._checkpoint_enrichment``) :
+            # pièces et faits peuvent changer le type du bien, que relisent surfaces et caractéristiques de la source.
+            derive_sale_facts(sale, surface_context=surface_reasoning_context)
             written = upsert_sales_to_supabase([sale], refresh_last_seen=False)
             pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
             if pdf_jobs and final_write_was_discarded(written, sale):

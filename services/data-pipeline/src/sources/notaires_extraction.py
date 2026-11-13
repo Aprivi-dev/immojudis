@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 
 from src.cadastre_references import ParcelRef, designation, ref_label, references_signature
 from src.normalize import clean_text, parse_french_datetime, parse_surface
+from src.timestamps import sale_window
 
 FEATURES_SCHEMA_VERSION = "notaires_features_v2"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -755,8 +756,10 @@ def build_display(
         procedure["deadline"] = {"at": conditions["session_at"], "kind": "adjudication"}
     elif conditions.get("closes_at"):
         procedure["deadline"] = {"at": conditions["closes_at"], "kind": "sale_window_close"}
-        if conditions.get("opens_at"):
-            procedure["window"] = {"opens_at": conditions.get("opens_at"), "closes_at": conditions["closes_at"]}
+        # Le créneau de la procédure (``src.sources.notaires._sale_schedule``) : bornes du JSON à l'heure de Paris.
+        bounds = {key: parse_french_datetime(conditions.get(key)) for key in ("opens_at", "closes_at")}
+        if sale_window(bounds) is not None:
+            procedure["window"] = {"opens_at": conditions["opens_at"], "closes_at": conditions["closes_at"]}
     terms = [
         _item("starting_price_nature", "Nature de la mise à prix",
               label_for(NATURE_MISE_A_PRIX_LABELS, conditions.get("starting_price_nature")), "procedure"),

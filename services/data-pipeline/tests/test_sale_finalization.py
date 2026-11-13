@@ -1,10 +1,10 @@
-"""Collecte et recalcul : une seule suite d'étapes communes (``src.sale_finalization.derive_sale_facts``)."""
+"""Collecte, file et recalculs : une seule suite d'étapes communes (``src.sale_finalization.derive_sale_facts``)."""
 
 from __future__ import annotations
 
 import pytest
 
-from src import recompute_scoring, sale_finalization
+from src import recompute_scoring, sale_finalization, source_extraction_backfill
 from src.lot_scope import recompute_surface_reasoning_context, surface_reasoning_context
 from src.models import AuctionSale
 
@@ -65,6 +65,16 @@ def test_recompute_runs_the_shared_steps_with_its_own_surface_context(monkeypatc
     recompute_scoring._recomputed_sale_from_storage_row({}, geocode=True)
 
     assert calls == ["position", "tribunal", "procedure", "surfaces:Maison\n  de 90 m²", "assets", "features"]
+
+
+def test_source_fact_backfill_runs_the_shared_steps_like_the_recompute(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    _record_steps(monkeypatch, calls)
+    monkeypatch.setattr(source_extraction_backfill, "sale_from_storage_row", lambda row: _sale())
+
+    source_extraction_backfill._recompute_sale({})
+
+    assert calls == ["tribunal", "procedure", "surfaces:Maison\n  de 90 m²", "assets", "features"]
 
 
 def test_the_two_surface_contexts_read_the_same_fields_and_differ_only_by_line_breaks() -> None:

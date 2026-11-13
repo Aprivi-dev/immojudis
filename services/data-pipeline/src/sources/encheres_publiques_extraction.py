@@ -29,6 +29,7 @@ from typing import Any
 from src.cadastre_references import designation, parse_cadastral_references, ref_label
 from src.french_dates import MONTH_PATTERN
 from src.normalize import clean_text
+from src.timestamps import sale_window
 
 FEATURES_SCHEMA_VERSION = "encheres_publiques_features_v1"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -185,7 +186,8 @@ def extract_encheres_publiques_characteristics(raw_sale: dict[str, Any]) -> dict
     }
     if prices:
         procedure["prices"] = prices
-    if schedule.get("opens_at") and schedule.get("closes_at"):
+    # Même règle que le créneau retenu à la collecte (``encheres_publiques._source_sale_schedule``).
+    if sale_window(schedule) is not None:
         procedure["window"] = {"opens_at": schedule["opens_at"], "closes_at": schedule["closes_at"]}
         procedure["deadline"] = {"at": schedule["closes_at"], "kind": "sale_window_close"}
     elif raw_sale.get("sale_date"):

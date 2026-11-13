@@ -26,6 +26,8 @@ DVF_OFFICIAL_SOURCE_NAME = "dvf_dgfip"
 DVF_OFFICIAL_DATASET_URL = "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
 DVF_ADJUDICATION_RECORD_KIND = "auction_result_candidate"
 DVF_ADJUDICATION_SCHEMA_VERSION = "dvf_adjudication_candidate_v1"
+# Nature de mutation écrite dans la projection, exigée par le dépôt et vérifiée par le rapprochement.
+DVF_ADJUDICATION_MUTATION_NATURE = "Adjudication"
 
 
 @dataclass(frozen=True)
@@ -60,7 +62,7 @@ class DvfAdjudicationCandidate:
         """JSON-safe source projection; money stays decimal text, never float."""
         return {
             "schema_version": DVF_ADJUDICATION_SCHEMA_VERSION,
-            "mutation_nature": "Adjudication",
+            "mutation_nature": DVF_ADJUDICATION_MUTATION_NATURE,
             "sale_date": self.sale_date.isoformat(),
             "total_price_eur": format(self.total_price_eur, "f"),
             "property_type": self.property_type,
