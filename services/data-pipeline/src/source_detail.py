@@ -220,7 +220,7 @@ def publish_source_revision(sale, job: dict, settings: dict) -> bool:
         db.execute("select set_config('app.pipeline_queue_owner', 'python', true)")
         token = storage._PUBLICATION_CONNECTION.set(db)
         try:
-            storage._write_sale_revisions([sale], settings, refresh_last_seen=False)
+            storage._write_sale_revisions([sale], refresh_last_seen=False)
             db.execute("""update public.auction_enrichment_jobs set status='completed',locked_at=null,
               last_error=null,completed_at=now(),updated_at=now() where id=%s""", (job['id'],))
         finally:

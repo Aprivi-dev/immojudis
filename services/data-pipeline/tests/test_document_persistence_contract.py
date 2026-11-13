@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
+from fake_publication import inside_publication
 
 from src.normalize import normalize_sale
 from src.storage import supabase_client
@@ -25,28 +28,31 @@ def _sale(
     return sale
 
 
+class _Publication:
+    """Fake publication transaction: keeps the table writes and the document deletions."""
+
+    def __init__(self) -> None:
+        self.writes: list[tuple[str, list[dict[str, object]], str | None]] = []
+        self.deletes: list[tuple[object, ...]] = []
+
+    def execute(self, statement, params=None):
+        if str(statement).startswith("delete from public.auction_documents"):
+            self.deletes.append(params)
+        return SimpleNamespace(fetchall=lambda: [], fetchone=lambda: None)
+
+
+def _publication(monkeypatch) -> _Publication:
+    publication = _Publication()
+    inside_publication(monkeypatch, publication, lambda *write: publication.writes.append(write))
+    return publication
+
+
 def test_document_upsert_prunes_removed_urls_for_complete_revision(monkeypatch) -> None:
     sale = _sale(
         [{"url": "https://example.test/current.pdf", "label": "PV actuel"}],
         detail_status="complete",
     )
-    upserts: list[list[dict[str, object]]] = []
-    deletes: list[dict[str, str]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, on_conflict: upserts.append(payload),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_delete",
-        lambda _url, _key, _table, params: deletes.append(params),
-    )
+    publication = _publication(monkeypatch)
 
     assert supabase_client.upsert_documents_to_supabase(
         [sale],
@@ -54,35 +60,20 @@ def test_document_upsert_prunes_removed_urls_for_complete_revision(monkeypatch) 
         prune_stale=True,
     ) == 1
 
-    assert len(upserts) == 1
-    assert deletes == [
-        {
-            "source_url": f"eq.{sale.source_url}",
-            "document_url": 'not.in.("https://example.test/current.pdf")',
-        }
-    ]
+    assert len(publication.writes) == 1
+    assert publication.deletes == [(sale.source_url, ["https://example.test/current.pdf"])]
 
 
 def test_document_upsert_does_not_prune_after_failed_detail_fetch(monkeypatch) -> None:
     sale = _sale([], detail_status="failed")
-    deletes: list[dict[str, str]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_delete",
-        lambda _url, _key, _table, params: deletes.append(params),
-    )
+    publication = _publication(monkeypatch)
 
     assert supabase_client.upsert_documents_to_supabase(
         [sale],
         persisted_pdf_texts={sale.source_url: []},
         prune_stale=True,
     ) == 0
-    assert deletes == []
+    assert publication.deletes == []
 
 
 def test_document_upsert_does_not_prune_listing_documents_after_failed_detail_fetch(monkeypatch) -> None:
@@ -90,69 +81,38 @@ def test_document_upsert_does_not_prune_listing_documents_after_failed_detail_fe
         [{"url": "https://example.test/listing-only.pdf", "label": "Pièce"}],
         detail_status="failed",
     )
-    deletes: list[dict[str, str]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_delete",
-        lambda _url, _key, _table, params: deletes.append(params),
-    )
-    monkeypatch.setattr(supabase_client, "_postgrest_upsert", lambda *args, **kwargs: None)
+    publication = _publication(monkeypatch)
 
     assert supabase_client.upsert_documents_to_supabase(
         [sale],
         persisted_pdf_texts={sale.source_url: []},
         prune_stale=True,
     ) == 1
-    assert deletes == []
+    assert publication.deletes == []
 
 
 def test_document_upsert_removes_all_rows_when_complete_revision_has_no_documents(monkeypatch) -> None:
     sale = _sale([], detail_status="complete")
-    deletes: list[dict[str, str]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_delete",
-        lambda _url, _key, _table, params: deletes.append(params),
-    )
+    publication = _publication(monkeypatch)
 
     assert supabase_client.upsert_documents_to_supabase(
         [sale],
         persisted_pdf_texts={sale.source_url: []},
         prune_stale=True,
     ) == 0
-    assert deletes == [{"source_url": f"eq.{sale.source_url}"}]
+    assert publication.deletes == [(sale.source_url,)]
 
 
 def test_document_upsert_keeps_rows_for_restricted_revision(monkeypatch) -> None:
     sale = _sale([], detail_status="restricted")
-    deletes: list[dict[str, str]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_delete",
-        lambda _url, _key, _table, params: deletes.append(params),
-    )
+    publication = _publication(monkeypatch)
 
     assert supabase_client.upsert_documents_to_supabase(
         [sale],
         persisted_pdf_texts={sale.source_url: []},
         prune_stale=True,
     ) == 0
-    assert deletes == []
+    assert publication.deletes == []
 
 
 def test_document_upsert_keeps_rows_for_restricted_subset(monkeypatch) -> None:
@@ -160,25 +120,14 @@ def test_document_upsert_keeps_rows_for_restricted_subset(monkeypatch) -> None:
         [{"url": "https://example.test/current.pdf", "label": "PV actuel"}],
         detail_status="restricted",
     )
-    deletes: list[dict[str, str]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_delete",
-        lambda _url, _key, _table, params: deletes.append(params),
-    )
-    monkeypatch.setattr(supabase_client, "_postgrest_upsert", lambda *args, **kwargs: None)
+    publication = _publication(monkeypatch)
 
     assert supabase_client.upsert_documents_to_supabase(
         [sale],
         persisted_pdf_texts={sale.source_url: []},
         prune_stale=True,
     ) == 1
-    assert deletes == []
+    assert publication.deletes == []
 
 
 @pytest.mark.parametrize("payload", [
@@ -195,19 +144,13 @@ def test_unmarked_revision_does_not_abort_publication_or_authorize_pruning(
         source_url=complete.source_url if same_source else "https://example.test/unmarked",
     )
     unmarked.raw_payload = payload
-    deletes = []
-    writes = []
-    monkeypatch.setattr(supabase_client, "load_settings", lambda: {
-        "supabase_url": "https://supabase.test", "supabase_service_role_key": "secret",
-    })
-    monkeypatch.setattr(supabase_client, "_postgrest_upsert", lambda *args, **kwargs: writes.append(args[3]))
-    monkeypatch.setattr(supabase_client, "_postgrest_delete", lambda *args: deletes.append(args[3]))
+    publication = _publication(monkeypatch)
 
     assert supabase_client.upsert_documents_to_supabase(
         [complete, unmarked], persisted_pdf_texts={}, prune_stale=True,
     ) == 1
-    assert writes[0][0]["document_url"] == "https://example.test/retained.pdf"
-    assert deletes == ([] if same_source else [{"source_url": f"eq.{complete.source_url}"}])
+    assert publication.writes[0][1][0]["document_url"] == "https://example.test/retained.pdf"
+    assert publication.deletes == ([] if same_source else [(complete.source_url,)])
 
 
 def test_document_url_can_be_shared_by_two_source_sales(monkeypatch) -> None:
@@ -220,21 +163,12 @@ def test_document_url_can_be_shared_by_two_source_sales(monkeypatch) -> None:
         [{"url": shared_url, "label": "PV source 2"}],
         source_url="https://example.test/source-2",
     )
-    writes: list[tuple[list[dict[str, object]], str]] = []
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, on_conflict: writes.append((payload, on_conflict)),
-    )
+    publication = _publication(monkeypatch)
 
     assert supabase_client.upsert_documents_to_supabase([sale_one, sale_two]) == 2
-    assert writes[0][1] == "source_url,document_url"
-    assert {(row["source_url"], row["document_url"]) for row in writes[0][0]} == {
+    _table, payload, on_conflict = publication.writes[0]
+    assert on_conflict == "source_url,document_url"
+    assert {(row["source_url"], row["document_url"]) for row in payload} == {
         (sale_one.source_url, shared_url),
         (sale_two.source_url, shared_url),
     }

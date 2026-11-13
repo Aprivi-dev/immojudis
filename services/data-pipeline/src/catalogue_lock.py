@@ -39,7 +39,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from src.config import load_settings
+from src.config import DirectDatabaseMissing, load_settings, supabase_configured
 
 LOGGER = logging.getLogger(__name__)
 
@@ -161,15 +161,17 @@ def catalogue_writer_lock(
     Waits up to ``wait_seconds`` (``PIPELINE_LOCK_WAIT_SECONDS``, 55 minutes by
     default) for another job to finish, polling every ``poll_seconds``. Without
     a database URL the lock cannot be taken: that is an error in GitHub Actions
-    and a logged no-op elsewhere (local development, unit tests).
+    and whenever Supabase is configured (the catalogue has no write path
+    without the direct connection), and a logged no-op otherwise (local
+    file-only runs, unit tests).
 
     The yielded handle is marked lost when the heartbeat fails; the body must
     call ``ensure_held()`` (or ``ensure_catalogue_lock_held()``) before each write.
     """
     url = db_url if db_url is not None else str(load_settings().get("supabase_db_url") or "")
     if not url:
-        if os.getenv("GITHUB_ACTIONS") == "true":
-            raise RuntimeError("SUPABASE_DB_URL is required to take the catalogue writer lock")
+        if os.getenv("GITHUB_ACTIONS") == "true" or supabase_configured(load_settings()):
+            raise DirectDatabaseMissing("SUPABASE_DB_URL is required to take the catalogue writer lock")
         LOGGER.warning("No database URL: %s runs without the catalogue writer lock", label)
         yield CatalogueLockHandle(label)
         return

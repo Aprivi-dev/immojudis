@@ -425,11 +425,11 @@ def test_a_failed_transaction_then_a_retry_writes_what_a_pass_without_failure_wr
             def broken(*_args, **_kwargs):
                 raise RuntimeError("canceling statement due to statement timeout")
 
-            monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", broken)
+            monkeypatch.setattr(storage, "_upsert_asset_tables", broken)
             with pytest.raises(RuntimeError):
                 storage.upsert_sales_to_supabase([deepcopy(sale)])
             assert groups(base.rows[URL]) == groups(state)  # la transaction a bien été annulée
-            monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", lambda *_args, **_kwargs: None)
+            monkeypatch.setattr(storage, "_upsert_asset_tables", lambda *_args, **_kwargs: None)
         storage.upsert_sales_to_supabase([deepcopy(sale)])
         assert base_reads.moved_groups(base.rows[URL]["id"]) == frozenset()
         assert base_reads.suppressed_count() == 0
@@ -640,7 +640,7 @@ def _fail_the_next_write_after_the_sale_row(monkeypatch) -> None:
         if calls["count"] == 1:
             raise RuntimeError("canceling statement due to statement timeout")
 
-    monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", failing_once)
+    monkeypatch.setattr(storage, "_upsert_asset_tables", failing_once)
 
 
 def test_a_validated_publication_is_confirmed_before_a_later_write_is_rolled_back(base, monkeypatch) -> None:
@@ -799,6 +799,7 @@ def test_a_write_that_does_not_return_one_row_per_row_sent_is_not_noted(base, mo
     assert base_reads.moved_groups(base.rows[URL]["id"]) == {"surface"}
 
 
+@pytest.mark.skip(reason="Repli REST retiré : proposé à la suppression (voir test_upsert_sales_refuses_supabase_without_direct_connection)")
 def test_the_rest_fallback_says_in_the_log_that_it_wrote_sales(monkeypatch, caplog) -> None:
     """Hors production : ni transaction, ni verrou, ni garde. Si ce chemin écrit, le journal le dit."""
     sent: list[dict[str, Any]] = []
@@ -807,7 +808,7 @@ def test_the_rest_fallback_says_in_the_log_that_it_wrote_sales(monkeypatch, capl
     })
     monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, payload: sent.extend(payload))
     monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _sales: [])
-    for name in ("_write_fact_claims_rest", "_sync_normalized_sale_tables_with_rest", "_upsert_asset_tables_with_rest",
+    for name in ("_write_fact_claims_rest", "_sync_normalized_sale_tables", "_upsert_asset_tables",
                  "_enqueue_due_enrichment"):
         monkeypatch.setattr(storage, name, lambda *_args, **_kwargs: None)
     monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *_args, **_kwargs: None)

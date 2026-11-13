@@ -4,6 +4,9 @@ La clé stricte ne s'y applique qu'hors Vench / Petites Affiches et hors d'un (j
 plus de 5 annonces ; un groupe de plus de 5 lignes n'est jamais fusionné automatiquement.
 """
 
+from contextlib import nullcontext
+from types import SimpleNamespace
+
 from src import merge_guards
 from src.dedupe import SWEEP_STRICT_EXCLUDED_SOURCES, SWEEP_STRICT_MAX_GROUP, merge_duplicate_sales
 from src.normalize import normalize_sale
@@ -71,6 +74,27 @@ class _Response:
         return self._rows
 
 
+def _direct_writes(monkeypatch, on_upsert, deleted=None) -> None:
+    """The sweep's direct writes: ``on_upsert(payload)`` sees the rewritten rows, secondary rows are counted."""
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_upsert",
+        lambda db_url, table, payload, on_conflict: on_upsert(payload),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_delete_secondary_sale_rows_with_postgres",
+        lambda db_url, sales, **kwargs: (
+            len(supabase_client._secondary_source_urls(sales)) if deleted is None else deleted
+        ),
+    )
+    monkeypatch.setattr(
+        supabase_client,
+        "_postgres_connect",
+        lambda *_args, **_kwargs: nullcontext(SimpleNamespace(execute=lambda *args, **kwargs: None)),
+    )
+
+
 def _run_sweep(monkeypatch, sales):
     monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)
     rows = _rows(sales)
@@ -78,20 +102,17 @@ def _run_sweep(monkeypatch, sales):
     monkeypatch.setattr(
         supabase_client,
         "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
+        lambda: {
+            "supabase_url": "https://supabase.test",
+            "supabase_service_role_key": "secret",
+            "supabase_db_url": "postgresql://example",
+        },
     )
     monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: _Response(rows))
     monkeypatch.setattr(supabase_client, "_fetch_reviewed_alias_registry", lambda url, key: _EmptyRegistry())
-    monkeypatch.setattr(
-        supabase_client, "_upsert_with_rest", lambda url, key, payload: captured.setdefault("payload", payload)
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_delete_secondary_sale_rows",
-        lambda url, key, sales, **kwargs: len(supabase_client._secondary_source_urls(sales)),
-    )
-    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables_with_rest", lambda *args, **kwargs: None)
-    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *args, **kwargs: None)
+    _direct_writes(monkeypatch, lambda payload: captured.setdefault("payload", payload))
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables", lambda *args, **kwargs: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables", lambda *args, **kwargs: None)
     return supabase_client.reconcile_duplicate_sales_in_supabase(limit=20), captured
 
 
@@ -421,11 +442,12 @@ def test_the_page_size_is_adjustable_and_bounded(monkeypatch) -> None:
 
 
 def test_the_write_sweep_reads_through_the_same_paged_path(monkeypatch) -> None:
-    paged = _configure(monkeypatch, _rows(_id_pair(166526)), dedupe_reconcile_max_merges=100)
-    monkeypatch.setattr(supabase_client, "_upsert_with_rest", lambda *args, **kwargs: None)
-    monkeypatch.setattr(supabase_client, "_delete_secondary_sale_rows", lambda url, key, sales, **kw: 1)
-    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables_with_rest", lambda *a, **k: None)
-    monkeypatch.setattr(supabase_client, "_upsert_asset_tables_with_rest", lambda *a, **k: None)
+    paged = _configure(
+        monkeypatch, _rows(_id_pair(166526)), dedupe_reconcile_max_merges=100, supabase_db_url="postgresql://example"
+    )
+    _direct_writes(monkeypatch, lambda payload: None, deleted=1)
+    monkeypatch.setattr(supabase_client, "_sync_normalized_sale_tables", lambda *a, **k: None)
+    monkeypatch.setattr(supabase_client, "_upsert_asset_tables", lambda *a, **k: None)
     monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)
 
     assert supabase_client.reconcile_duplicate_sales_in_supabase() == 1
@@ -502,7 +524,7 @@ def test_sweep_cap_defers_whole_groups_beyond_the_per_pass_maximum(monkeypatch) 
 def test_reconcile_with_a_zero_cap_writes_nothing(monkeypatch) -> None:
     _configure(monkeypatch, _rows(_id_pair(100)), dedupe_reconcile_max_merges=0)
     writes: list[object] = []
-    monkeypatch.setattr(supabase_client, "_upsert_with_rest", lambda *args, **kwargs: writes.append("upsert"))
+    monkeypatch.setattr(supabase_client, "_postgres_upsert", lambda *args, **kwargs: writes.append("upsert"))
 
     assert supabase_client.reconcile_duplicate_sales_in_supabase() == 0
     assert writes == []
@@ -521,12 +543,10 @@ def test_candidates_report_lists_each_pair_and_never_writes(monkeypatch, tmp_pat
         raise AssertionError("le mode candidats ne doit rien écrire")
 
     for name in (
-        "_upsert_with_rest",
         "_postgres_upsert",
-        "_delete_secondary_sale_rows",
         "_delete_secondary_sale_rows_with_postgres",
-        "_sync_normalized_sale_tables_with_rest",
-        "_upsert_asset_tables_with_rest",
+        "_sync_normalized_sale_tables",
+        "_upsert_asset_tables",
     ):
         monkeypatch.setattr(supabase_client, name, forbidden)
     summary = tmp_path / "summary.md"
@@ -581,9 +601,7 @@ def test_reconcile_in_candidates_mode_reports_the_pairs_and_writes_nothing(monke
         raise AssertionError("le mode candidats ne doit rien écrire")
 
     for name in (
-        "_upsert_with_rest",
         "_postgres_upsert",
-        "_delete_secondary_sale_rows",
         "_delete_secondary_sale_rows_with_postgres",
     ):
         monkeypatch.setattr(supabase_client, name, forbidden)

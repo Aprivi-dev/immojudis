@@ -253,7 +253,7 @@ def _fail_once_after_the_sale_write(monkeypatch) -> None:
         if calls["count"] == 1:
             raise RuntimeError("canceling statement due to statement timeout")
 
-    monkeypatch.setattr(storage, "_upsert_asset_tables_with_rest", failing_once)
+    monkeypatch.setattr(storage, "_upsert_asset_tables", failing_once)
 
 
 def test_a_rolled_back_publication_then_a_retry_writes_the_labels_of_the_run(base, monkeypatch) -> None:

@@ -48,7 +48,7 @@ def test_source_publication_checks_lease_version_and_atomicity(monkeypatch, scen
 
             writes = []
 
-            def write(sales, settings, *, refresh_last_seen):
+            def write(sales, *, refresh_last_seen):
                 assert refresh_last_seen is False
                 assert storage._PUBLICATION_CONNECTION.get() is db
                 writes.append(sales[0].source_url)

@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from fake_publication import capture_enqueued_jobs
 
 from src.config import load_settings
 from src.enrichment import extract_structured
@@ -44,10 +45,10 @@ def test_publication_enqueues_no_display_job(monkeypatch) -> None:
     rows: list[dict] = []
     monkeypatch.setattr(storage, "load_settings", lambda: {"llm_prompt_version": "v1"})
     monkeypatch.setattr("src.enrichment.extract_structured.needs_fact_extraction", lambda _sale: True)
-    monkeypatch.setattr(storage, "_postgrest_upsert", lambda _u, _k, _t, payload, _c: rows.extend(payload))
+    capture_enqueued_jobs(monkeypatch, rows)
 
     sale = _sale(raw_payload={"source_content_changed": True})
-    storage._enqueue_due_enrichment([sale], "unused", "unused")
+    storage._enqueue_due_enrichment([sale])
 
     assert [row["job_type"] for row in rows] == ["fact_extraction"]
 
