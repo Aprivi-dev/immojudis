@@ -16,23 +16,13 @@ import pytest
 
 from src.asset_normalization import normalize_asset_features
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
-from src.normalize import clean_text, normalize_sale
+from src.lot_scope import surface_reasoning_context
+from src.normalize import normalize_sale
 from src.sources.cessions_etat import parse_cessions_etat_detail_html
 from src.sources.notaires import parse_notaires_detail_json
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 AUDIT_DIR = REPO_ROOT / "docs/audits/sources-2026-10-02/dynamic"
-
-
-def _surface_context(sale: object) -> str:
-    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-    source_blocks = raw_payload.get("source_blocks")
-    values = [sale.title, sale.description, sale.raw_text]
-    if isinstance(source_blocks, dict):
-        values.extend(source_blocks.values())
-    return "\n".join(
-        dict.fromkeys(text for value in values if (text := clean_text(value)))
-    )
 
 
 def _replay_final(stem: str):
@@ -64,7 +54,7 @@ def _replay_final(stem: str):
     else:
         raise AssertionError(f"unsupported dynamic fixture: {stem}")
     final = normalize_sale(copy.deepcopy(raw))
-    extract_and_apply_deterministic_surface_reasoning(final, _surface_context(final))
+    extract_and_apply_deterministic_surface_reasoning(final, surface_reasoning_context(final))
     normalize_asset_features(final)
     return final
 

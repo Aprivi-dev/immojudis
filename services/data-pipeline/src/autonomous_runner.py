@@ -641,6 +641,10 @@ def execute(run_id: str, *, connect: Callable[[str], Any] = postgres_connect) ->
         ENRICHMENT_BUDGET_SECONDS_ENV: str(ENRICHMENT_BUDGET_SECONDS),
         ENRICHMENT_MAX_JOBS_ENV: str(ENRICHMENT_MAX_JOBS),
         REPLICATE_CANCEL_AFTER_ENV: DEFAULT_REPLICATE_CANCEL_AFTER,
+        # Une unité planifiée a un budget de quelques minutes et saute déjà les traitements lourds
+        # (--no-heavy-enrichment, --no-llm) : elle ne fait pas non plus les appels à IGN Cadastre et
+        # ADEME DPE, dont l'API publique limite les appels (README, « Enrichissement DPE ADEME »).
+        # Ces enrichissements restent faits par la collecte complète lancée à la main (src.main).
         CADASTRE_ENRICH_ENABLED_ENV: 'false',
         DPE_ENRICH_ENABLED_ENV: 'false',
         # A scheduled unit must not sit on the catalogue writer lock for

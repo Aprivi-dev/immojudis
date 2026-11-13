@@ -56,17 +56,19 @@ def normalize_document_text(value: str | None) -> str:
     )
 
 
-def merge_documents(
-    existing: object,
-    incoming: list[dict[str, str]],
-) -> list[dict[str, str]]:
+def merge_documents(existing: object, incoming: object) -> list[dict[str, str]]:
     documents = existing if isinstance(existing, list) else []
+    incoming_documents = incoming if isinstance(incoming, list) else []
     by_url: dict[str, dict[str, str]] = {}
-    for document in [*documents, *incoming]:
+    for document in [*documents, *incoming_documents]:
         if isinstance(document, dict) and document.get("url"):
             by_url[str(document["url"])] = {
                 "label": str(document.get("label") or "document"),
                 "url": str(document["url"]),
+                # Une pièce sans type devient « pdf », type générique : canonical_document_type le remplace
+                # par ce que disent le libellé et l'adresse et, s'ils ne disent rien, refined_document_type
+                # lit la première page. « document » empêcherait cette lecture ; sans type, la pièce serait
+                # classée « other » et ne serait pas téléchargée.
                 "type": str(document.get("type") or "pdf"),
             }
     return list(by_url.values())

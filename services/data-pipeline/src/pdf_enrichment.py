@@ -817,7 +817,7 @@ def _extract_pdf_text_with_docling_direct(path: Path) -> str:
     try:
         settings = load_settings()
         profile = profile_pdf_for_docling(path)
-        do_ocr = should_docling_ocr(path, settings, profile=profile)
+        do_ocr = _should_docling_ocr(path, settings, profile=profile)
         chunk_pages = _docling_chunk_pages(settings, do_ocr)
         if profile["page_count"] > chunk_pages:
             text = _extract_docling_pdf_in_chunks(path, do_ocr, profile, settings)
@@ -901,7 +901,7 @@ def _docling_chunk_pages(settings: dict[str, object], do_ocr: bool) -> int:
 def _extract_pdf_text_with_docling_subprocess(path: Path, timeout: float) -> str:
     ensure_pdf_deadline(operation="preparing Docling subprocess")
     DOCLING_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = docling_cache_path(path).with_suffix(".tmp.txt")
+    output_path = _docling_cache_path(path).with_suffix(".tmp.txt")
     command = [sys.executable, "-m", "src.pdf_enrichment", "--docling-extract", str(path), str(output_path)]
     timeout, deadline_bounded = deadline_bounded_timeout(
         timeout,
@@ -1158,7 +1158,7 @@ def _extract_page_text_with_ocr_result(
     )
 
 
-def docling_cache_path(file: Path) -> Path:
+def _docling_cache_path(file: Path) -> Path:
     try:
         digest = hashlib.sha256(file.read_bytes()).hexdigest()[:16]
     except OSError:
@@ -1167,7 +1167,7 @@ def docling_cache_path(file: Path) -> Path:
 
 
 def _read_docling_cache(file: Path) -> str | None:
-    path = docling_cache_path(file)
+    path = _docling_cache_path(file)
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8")
@@ -1175,12 +1175,12 @@ def _read_docling_cache(file: Path) -> str | None:
 
 def _write_docling_cache(file: Path, text: str) -> Path:
     DOCLING_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = docling_cache_path(file)
+    path = _docling_cache_path(file)
     path.write_text(text, encoding="utf-8")
     return path
 
 
-def should_docling_ocr(
+def _should_docling_ocr(
     path: Path,
     settings: dict[str, object],
     profile: dict[str, float | int] | None = None,

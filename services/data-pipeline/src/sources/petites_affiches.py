@@ -32,7 +32,7 @@ from src.sources.common import (
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 from src.sources.petites_affiches_extraction import extract_petites_affiches_fields
-from src.sources.source_features import as_text_list, merge_text_values
+from src.sources.source_features import as_text_list, merge_documents, merge_text_values
 from src.text_folding import strip_accents
 
 BASE_URL = "https://www.petitesaffiches.fr"
@@ -741,7 +741,7 @@ def _merge_detail_into_sale(sale: dict[str, Any], detail: dict[str, Any]) -> Non
             sale[key] = {**existing, **value}
             continue
         if key == "documents":
-            sale[key] = _merge_documents(sale.get(key), value)
+            sale[key] = merge_documents(sale.get(key), value)
             continue
         if key == "source_images":
             sale[key] = merge_text_values(sale.get(key), value)
@@ -1060,6 +1060,8 @@ def _extract_phone(text: str) -> str | None:
 
 
 def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, str]]:
+    # Propre au site : quels liens de la fiche sont des pièces (les CGV du site n'en sont pas), et leur
+    # libellé. La fusion des pièces est commune aux sources (source_features.merge_documents).
     documents: list[dict[str, str]] = []
     for link in soup.find_all("a", href=True):
         href = str(link.get("href") or "")
@@ -1073,7 +1075,7 @@ def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, st
                 "type": "pdf" if ".pdf" in href.lower() else "document",
             }
         )
-    return _merge_documents([], documents)
+    return merge_documents([], documents)
 
 
 def _detail_images(soup: BeautifulSoup, source_url: str) -> list[str]:
@@ -1120,22 +1122,6 @@ def _looks_like_document_link(href: str, label: str | None) -> bool:
             text,
         )
     )
-
-
-def _merge_documents(existing: object, incoming: object) -> list[dict[str, str]]:
-    documents = existing if isinstance(existing, list) else []
-    incoming_documents = incoming if isinstance(incoming, list) else []
-    merged: dict[str, dict[str, str]] = {}
-    for document in [*documents, *incoming_documents]:
-        if not isinstance(document, dict) or not document.get("url"):
-            continue
-        url = str(document["url"])
-        merged[url] = {
-            "label": str(document.get("label") or "document"),
-            "url": url,
-            "type": str(document.get("type") or ("pdf" if url.lower().endswith(".pdf") else "document")),
-        }
-    return list(merged.values())
 
 
 def _detail_visits(page_text: str) -> list[str]:
