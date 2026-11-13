@@ -13,7 +13,7 @@ import httpx
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline
 from src.cadastre_references import resolve_sale_cadastre
 from src.catalogue_readiness import apply_catalogue_readiness
-from src.config import load_env_fallbacks, load_settings, require_encheres_publiques_access
+from src.config import load_settings, require_encheres_publiques_access
 from src.geocode import geocode_sale, restore_accepted_geocode, verify_source_coordinates
 from src.insufficient_sales import drop_insufficient_sales
 from src.lot_scope import recompute_surface_reasoning_context
@@ -82,7 +82,6 @@ def recompute_scoring(
     geocode_missing: bool = False,
     geocode_workers: int = 1,
 ) -> int:
-    load_env_fallbacks()
     rows = fetch_sales(source=source, limit=limit)
     if not rows:
         LOGGER.error("No stored sales matched the requested recompute scope")
@@ -153,7 +152,6 @@ def backfill_catalogue_readiness(
 ) -> int:
     """Score every active unassessed row, including rows rejected by publication admission."""
 
-    load_env_fallbacks()
     rows = fetch_sales(
         source=source,
         limit=limit,
@@ -225,7 +223,6 @@ def verify_persisted_sale_procedures(
 ) -> int:
     """Fail closed when a persisted procedure payload is missing or inconsistent."""
 
-    load_env_fallbacks()
     rows = fetch_sales(source=source, limit=limit)
     if not rows:
         LOGGER.error("No stored sales matched the requested verification scope")
@@ -265,7 +262,6 @@ def repair_invalid_sale_procedures(
 ) -> int:
     """Retry inconsistent catalogue rows individually, then let verification re-read them."""
 
-    load_env_fallbacks()
     rows = fetch_sales(source=source, limit=limit)
     if not rows:
         LOGGER.error("No stored sales matched the requested repair scope")
@@ -305,7 +301,6 @@ def refresh_unknown_sale_procedures(
 ) -> int:
     """Re-fetch public source pages for unresolved procedures, then verify them again."""
 
-    load_env_fallbacks()
     if source == "encheres_publiques":
         # The refresh command can reach the detail client without going through
         # the normal source collector.  Keep its explicit mode behind the same

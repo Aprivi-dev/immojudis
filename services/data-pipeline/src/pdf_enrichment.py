@@ -686,14 +686,10 @@ def _fetch_document_robots(robots_url: str) -> httpx.Response:
     return fetch_robots_document(robots_url, send=_send_pinned_document_request, settings=load_settings())
 
 
-def _document_pause(seconds: float) -> None:
-    pause_within_deadline(seconds, lambda: ensure_pdf_deadline(operation="waiting between document requests"))
-
-
 _DOCUMENT_POLITENESS = DocumentPoliteness(
     user_agent=lambda: str(load_settings()["user_agent"]),
     fetch_robots=_fetch_document_robots,
-    sleep=_document_pause,
+    sleep=pause_within_deadline,
 )
 
 

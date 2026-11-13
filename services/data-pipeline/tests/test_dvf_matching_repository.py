@@ -9,7 +9,7 @@ from src.outcome_ingestion.repository import (
     OutcomeIngestionRepository,
 )
 
-DVF_RECORDS = ("dvf_dgfip", "auction_result_candidate", "dvf_adjudication_candidate_v1")
+DVF_RECORDS = ("dvf_dgfip", "auction_result_candidate", "dvf_adjudication_candidate_v1", "Adjudication")
 
 
 class QueryCursor:
@@ -84,11 +84,12 @@ def test_load_active_dvf_records_is_latest_non_purged_and_bounded() -> None:
     assert "source.name = %s" in statement
     assert "record.record_kind = %s" in statement
     assert "record.normalized_data->>'schema_version' = %s" in statement
+    assert "record.normalized_data->>'mutation_nature' = %s" in statement
     assert "newer.record_version > record.record_version" in statement
     assert "public.source_purge_events" in statement
     assert "not record.training_eligible" in statement
     assert statement.endswith("limit %s")
-    # Source, nature et schéma écrits par l'import DVF (src.outcome_ingestion.dvf_adjudication).
+    # Source, nature, schéma et nature de mutation écrits par l'import DVF (src.outcome_ingestion.dvf_adjudication).
     assert parameters == (*DVF_RECORDS, 5)
 
 

@@ -12,7 +12,7 @@ if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
 from src.config import load_settings  # noqa: E402
-from src.outcome_ingestion.judilibre_ingestion import JUDILIBRE_SOURCE_NAME  # noqa: E402
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_SOURCE_NAME  # noqa: E402
 from src.outcome_ingestion.judilibre_matching import (  # noqa: E402
     JUDILIBRE_MATCH_CONTEXT_LIMIT_DEFAULT,
     JUDILIBRE_MATCH_CONTEXT_LIMIT_MAX,

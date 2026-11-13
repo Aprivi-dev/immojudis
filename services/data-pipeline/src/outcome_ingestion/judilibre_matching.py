@@ -8,6 +8,11 @@ from typing import Any
 from uuid import UUID
 
 from src.official_sources.base import canonical_sha256
+from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_NORMALIZED_SCHEMA,
+    JUDILIBRE_RECORD_KIND,
+    JUDILIBRE_V3_SAFE_PROJECTION_KEYS,
+)
 from src.outcome_ingestion.repository import (
     OutcomeIngestionRepository,
     StoredJudilibreAuctionMatchContext,
@@ -37,41 +42,6 @@ _PROCEDURAL_VALUES = frozenset(
         "postponed",
         "surenchere_filed",
         "reiteration_requested",
-    }
-)
-_JUDILIBRE_V3_SAFE_PROJECTION_KEYS = frozenset(
-    {
-        "schema_version",
-        "record_type",
-        "judilibre_id",
-        "jurisdiction",
-        "location",
-        "chamber",
-        "formation",
-        "number",
-        "numbers",
-        "ecli",
-        "nac",
-        "decision_date",
-        "update_date",
-        "decision_type",
-        "solution",
-        "solution_alt",
-        "publication",
-        "themes",
-        "partial",
-        "to_be_deleted",
-        "raw_representation_sha256",
-        "candidate_grade",
-        "review_status",
-        "training_eligible",
-        "text_storage",
-        "personal_identity_features_allowed",
-        "extraction_status",
-        "extraction_rule_version",
-        "claims",
-        "ambiguous_claim_types",
-        "text_available",
     }
 )
 
@@ -361,15 +331,15 @@ def persisted_judilibre_matchable_decision(
     record: StoredJudilibreDecisionRecord,
 ) -> JudilibreMatchableDecision:
     data = record.normalized_data
-    if set(data) != _JUDILIBRE_V3_SAFE_PROJECTION_KEYS:
+    if set(data) != set(JUDILIBRE_V3_SAFE_PROJECTION_KEYS):
         raise JudilibreMatchingDataError(
             "Judilibre projection does not match the closed safe schema"
         )
     if canonical_sha256(data) != record.content_hash:
         raise JudilibreMatchingDataError("Judilibre projection hash mismatch")
-    if data.get("schema_version") != "judilibre_decision_candidate_v3":
+    if data.get("schema_version") != JUDILIBRE_NORMALIZED_SCHEMA:
         raise JudilibreMatchingDataError("unsupported Judilibre projection schema")
-    if data.get("record_type") != "judicial_decision_candidate":
+    if data.get("record_type") != JUDILIBRE_RECORD_KIND:
         raise JudilibreMatchingDataError("unsupported Judilibre record type")
     if data.get("judilibre_id") != record.external_record_id:
         raise JudilibreMatchingDataError("Judilibre projection identity mismatch")

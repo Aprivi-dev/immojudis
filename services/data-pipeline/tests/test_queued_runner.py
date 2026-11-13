@@ -12,6 +12,7 @@ from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.enrichment.llm_client import LLMProviderOutputRefused
 from src.freshness import document_fingerprint
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_remaining
+from src.lot_scope import surface_reasoning_context
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.source_task_deadline import source_task_deadline_remaining
@@ -254,7 +255,12 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
         or SimpleNamespace(unavailable=False, valid_json=1, error_messages=[]),
     )
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: calls.append("geocode"))
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: calls.append("normalize"))
+    contexts: list[object] = []
+    monkeypatch.setattr(
+        queued_runner,
+        "derive_sale_facts",
+        lambda current, surface_context: calls.append("derive_sale_facts") or contexts.append(surface_context),
+    )
     monkeypatch.setattr(
         queued_runner,
         "upsert_sales_to_supabase",
@@ -267,8 +273,45 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
     )
 
     assert queued_runner.run_enrichment_queue_batch(limit=10) == 2
-    assert calls == ["pdf", "facts", "geocode", "normalize", "upsert"]
+    assert calls == ["pdf", "facts", "geocode", "derive_sale_facts", "upsert"]
+    # Le contexte des surfaces de la collecte, comme main._checkpoint_enrichment après les mêmes lectures.
+    assert contexts == [surface_reasoning_context]
     assert finished == [("job-pdf", True, None), ("job-facts", True, None)]
+
+
+def test_enrichment_queue_rederives_source_facts_after_a_document_pass(monkeypatch) -> None:
+    """La lecture des pièces change le type du bien : surfaces et caractéristiques de la source sont relues avec lui."""
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/enrichment-rederive",
+            "description": "Maison de 120 m2 avec jardin et garage",
+            "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
+        }
+    )
+    written: list[AuctionSale] = []
+
+    def document_pass(current: AuctionSale) -> SimpleNamespace:
+        current.property_type = "house"
+        return SimpleNamespace(errors=0)
+
+    monkeypatch.setattr(
+        queued_runner,
+        "claim_auction_enrichment_jobs_from_supabase",
+        lambda limit: [{"id": "job-pdf", "source_url": sale.source_url, "job_type": "pdf"}],
+    )
+    monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda source_url: sale)
+    monkeypatch.setattr(queued_runner, "manifest_is_complete", lambda *_args: True)
+    monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", document_pass)
+    monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
+    monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: written.extend(sales) or 1)
+    monkeypatch.setattr(queued_runner, "finish_auction_enrichment_job_in_supabase", lambda *args, **kwargs: None)
+
+    assert queued_runner.run_enrichment_queue_batch(limit=1) == 1
+    payload = written[0].raw_payload
+    assert payload["source_property_features_meta"]["schema_version"]
+    assert payload["surface_analysis"]["version"] == "surface_reasoning_v1"
+    assert payload["sale_procedure"]["schema_version"] == "sale_procedure_v1"
 
 
 @pytest.mark.parametrize(
@@ -336,9 +379,7 @@ def test_enrichment_queue_defers_unauthorized_encheres_publiques_before_side_eff
         "create_llm_client",
         "enrich_sale_with_llm",
         "geocode_sale",
-        "fill_tribunal",
-        "classify_sale_procedure",
-        "normalize_asset_features",
+        "derive_sale_facts",
         "upsert_sales_to_supabase",
         "retry_fact_claims_to_supabase",
     ):
@@ -481,10 +522,8 @@ def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_miss
         "create_llm_client",
         lambda: (_ for _ in ()).throw(AssertionError("verified facts must not invoke the LLM")),
     )
-    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
-    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current, surface_context: None)
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -600,9 +639,7 @@ def test_enrichment_queue_cancels_terminal_facts_and_completes_the_pdf_job(monke
         lambda: (_ for _ in ()).throw(AssertionError("PDF-only terminal batch must not invoke the LLM")),
     )
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
-    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
-    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current, surface_context: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -662,7 +699,7 @@ def test_enrichment_queue_completes_pdf_job_when_documents_are_policy_blocked(mo
 
     monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", policy_blocked_pdf)
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current, surface_context: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -905,9 +942,7 @@ def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(mo
         "enrich_sale_with_llm",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no LLM call for these jobs")),
     )
-    monkeypatch.setattr(queued_runner, "fill_tribunal", lambda current: None)
-    monkeypatch.setattr(queued_runner, "classify_sale_procedure", lambda current: None)
-    monkeypatch.setattr(queued_runner, "normalize_asset_features", lambda current: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current, surface_context: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
         queued_runner,

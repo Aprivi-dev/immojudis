@@ -27,8 +27,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from src.information_sufficiency import ContactBlocklist, sufficient_information
+from src.config import load_settings
+from src.information_sufficiency import (
+    ContactBlocklist,
+    load_contact_blocklist,
+    load_court_registry,
+    set_active_court_registry,
+    sufficient_information,
+)
 from src.storage.postgrest_helpers import rest_headers
+from src.storage.supabase_client import connect
+from src.stored_sales import fetch_sales, sale_from_storage_row
 
 LOGGER = logging.getLogger(__name__)
 #: Plafond de ``p_limit`` de ``app_private.delete_empty_listings``.
@@ -180,18 +189,12 @@ def drop_insufficient_sales(
     report_path: str | None,
 ) -> int:
     """Rapport (par défaut) ou suppression (``execute``) ; renvoie un code de sortie."""
-    from src.config import load_env_fallbacks, load_settings
-    from src.information_sufficiency import load_contact_blocklist, load_court_registry, set_active_court_registry
-    from src.storage.supabase_client import connect
-    from src.stored_sales import fetch_sales, sale_from_storage_row
-
     if execute and (source or limit):
         LOGGER.error(
             "--execute-drop applies app_private.delete_empty_listings to the whole catalogue: "
             "--source and --limit are refused with it (use the report to read a scope)"
         )
         return 1
-    load_env_fallbacks()
     settings = load_settings()
     rows = fetch_sales(source=source, limit=limit)
     if not rows:

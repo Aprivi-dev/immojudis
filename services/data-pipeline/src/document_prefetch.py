@@ -30,6 +30,10 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from pathlib import Path
 from typing import Any
 
+# Aucun import de ``src`` en tête de module, et ce n'est pas pour un cycle : un processus de préparation importe ce
+# module avant ``_init_worker``, et ``src.pdf_enrichment`` lit le délai par hôte à son propre import. Chaque fonction
+# importe donc ce qu'elle utilise, une fois le délai réglé.
+
 LOGGER = logging.getLogger(__name__)
 
 PREFETCH_WORKERS_ENV = "DOCUMENT_BACKLOG_PREFETCH_WORKERS"

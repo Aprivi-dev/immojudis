@@ -120,7 +120,6 @@ def test_readiness_backfill_persists_incomplete_rows_without_publication_admissi
     sale = AuctionSale(source_name=row["source_name"], source_url=row["source_url"])
     writes: list[dict[str, object]] = []
 
-    monkeypatch.setattr(recompute_module, "load_env_fallbacks", lambda: None)
     monkeypatch.setattr(recompute_module, "fetch_sales", lambda **_kwargs: [row])
     monkeypatch.setattr(recompute_module, "sale_from_storage_row", lambda _row: sale)
     monkeypatch.setattr(
@@ -208,7 +207,6 @@ def test_refresh_unknown_sale_procedures_refetches_only_supported_unknowns(monke
     )
     writes: list[str] = []
 
-    monkeypatch.setattr(recompute_module, "load_env_fallbacks", lambda: None)
     monkeypatch.setattr(recompute_module, "fetch_sales", lambda **_kwargs: rows)
     monkeypatch.setattr(recompute_module, "_procedure_refresh_clients", lambda: {})
     monkeypatch.setattr(
@@ -759,7 +757,6 @@ def test_recompute_is_complete_when_the_admission_rule_refuses_expired_sales(mon
     rows = [{"source_url": "https://example.test/live"}, {"source_url": "https://example.test/expired"}]
     sales = {row["source_url"]: SimpleNamespace(source_url=row["source_url"]) for row in rows}
     written: list[str] = []
-    monkeypatch.setattr(recompute_module, "load_env_fallbacks", lambda: None)
     monkeypatch.setattr(recompute_module, "fetch_sales", lambda **_kwargs: rows)
     monkeypatch.setattr(
         recompute_module, "_recomputed_sale_from_storage_row", lambda row, geocode=False: sales[row["source_url"]]
@@ -783,7 +780,6 @@ def test_recompute_is_complete_when_the_admission_rule_refuses_expired_sales(mon
 
 def test_recompute_still_fails_when_a_writable_sale_is_not_written(monkeypatch) -> None:
     rows = [{"source_url": "https://example.test/a"}, {"source_url": "https://example.test/b"}]
-    monkeypatch.setattr(recompute_module, "load_env_fallbacks", lambda: None)
     monkeypatch.setattr(recompute_module, "fetch_sales", lambda **_kwargs: rows)
     monkeypatch.setattr(
         recompute_module,

@@ -858,7 +858,7 @@ def _pdf_add_candidate_scope(candidate: dict[str, object], *, text: str | None =
     candidate["lot_labels"] = sorted(labels)
     return candidate
 
-def _pdf_surface_candidates_with_provenance(
+def pdf_surface_candidates_with_provenance(
     pdf_texts: list[dict[str, object]] | list[str],
     *,
     surface_extractor: Callable[[str], list[dict[str, Decimal | str]]],
@@ -900,62 +900,6 @@ def _pdf_surface_candidates_with_provenance(
             _pdf_add_candidate_scope(candidate, text=str(surface["evidence"]))
             candidates.append(candidate)
     return _dedupe_pdf_candidates(candidates)
-
-
-def _document_surface_candidates(
-    item: dict[str, object],
-    text: str,
-    *,
-    surface_extractor: Callable[[str], list[dict[str, Decimal | str]]],
-    surface_scope_extractor: Callable[[str, str], str],
-) -> list[dict[str, object]]:
-    candidates: list[dict[str, object]] = []
-    pages = item.get("pages")
-    if isinstance(pages, list):
-        for page in pages:
-            if not isinstance(page, dict):
-                continue
-            page_text = str(page.get("text") or "")
-            if not page_text:
-                continue
-            for surface in surface_extractor(page_text):
-                surface["surface_scope"] = surface_scope_extractor(
-                    f"{page_text}\n{text}", str(surface["evidence"])
-                )
-                surface["page_number"] = page.get("page")
-                surface["page_confidence"] = page.get("confidence")
-                surface["extraction_method"] = page.get("method")
-                candidates.append(surface)
-    if not candidates:
-        for surface in surface_extractor(text):
-            surface["surface_scope"] = surface_scope_extractor(text, str(surface["evidence"]))
-            candidates.append(surface)
-    return candidates
-
-
-def _document_land_surface_candidates(
-    item: dict[str, object],
-    text: str,
-    *,
-    land_surface_extractor: Callable[[str], list[dict[str, Decimal | str]]],
-) -> list[dict[str, object]]:
-    candidates: list[dict[str, object]] = []
-    pages = item.get("pages")
-    if isinstance(pages, list):
-        for page in pages:
-            if not isinstance(page, dict):
-                continue
-            page_text = str(page.get("text") or "")
-            if not page_text:
-                continue
-            for surface in land_surface_extractor(page_text):
-                surface["page_number"] = page.get("page")
-                surface["page_confidence"] = page.get("confidence")
-                surface["extraction_method"] = page.get("method")
-                candidates.append(surface)
-    if not candidates:
-        candidates.extend(land_surface_extractor(text))
-    return candidates
 
 
 def _dedupe_pdf_candidates(candidates: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -1172,7 +1116,7 @@ def _extract_bedrooms_count_candidates(text: str, *, chunk: dict[str, object] | 
     return _dedupe_scalar_candidates(candidates)
 
 
-def _extract_occupancy_candidates(
+def extract_occupancy_candidates(
     text: str,
     *,
     chunk: dict[str, object] | None = None,
@@ -1298,7 +1242,7 @@ def _aggregate_pdf_count_candidates(
     return aggregate
 
 
-def _energy_diagnostic_candidates_from_documents(
+def energy_diagnostic_candidates_from_documents(
     pdf_texts: list[dict[str, object]] | list[str],
     *,
     diagnostic_extractor: Callable[[str], dict[str, object] | None],
@@ -1414,7 +1358,7 @@ def _dedupe_energy_candidates(candidates: list[dict[str, object]]) -> list[dict[
     return unique
 
 
-def _energy_diagnostics_are_ambiguous(
+def energy_diagnostics_are_ambiguous(
     pdf_texts: list[dict[str, object]] | list[str],
     candidates: list[dict[str, object]],
     *,

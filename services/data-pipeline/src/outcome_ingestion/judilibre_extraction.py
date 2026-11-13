@@ -7,9 +7,9 @@ from typing import Literal
 
 from src.official_sources.base import canonical_sha256
 from src.official_sources.judilibre import JudilibreDecision
+from src.outcome_ingestion.judilibre_contract import JUDILIBRE_EVIDENCE_HASH_VERSION
 
 JUDILIBRE_CLAIM_SCHEMA_VERSION = "judilibre_candidate_claims_v1"
-JUDILIBRE_EVIDENCE_HASH_VERSION = "judilibre-evidence-sha256-v1"
 
 ClaimType = Literal["starting_price_eur", "hammer_price_eur", "procedural_event"]
 

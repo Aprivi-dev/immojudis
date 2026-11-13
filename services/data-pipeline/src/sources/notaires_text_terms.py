@@ -21,6 +21,7 @@ from typing import Any
 from src.french_dates import MONTH_PATTERN
 from src.normalize import parse_french_datetime
 from src.sources.notaires_price_nature import FIRST_OFFER_NATURE, starting_price_nature
+from src.timestamps import sale_window
 
 _AMOUNT = r"(\d{1,3}(?:[ \u00a0\u202f.]\d{3})+|\d{4,})(?:,\d{2})?\s*(?:€|euros?\b)"
 _FIRST_OFFER = re.compile(
@@ -99,11 +100,12 @@ def text_sale_date(*texts: object) -> str | None:
 
 
 def text_offer_schedule(schedule: dict[str, Any] | None, *texts: object) -> dict[str, Any] | None:
-    """Calendrier de la source, complété par la fenêtre d'offres de la description quand il n'a pas de bornes.
+    """Calendrier de la source, remplacé par la fenêtre d'offres de la description s'il n'est pas exploitable.
 
-    Sans bornes, la rétention (``src.admission.retention_deadline``) ne peut jamais clore la vente.
+    Une borne absente ou invalide (clôture avant l'ouverture : ``src.timestamps.sale_window``) ne prouve aucune fin :
+    sans repli, la rétention (``src.admission.retention_deadline``) ne pourrait jamais clore la vente.
     """
-    if schedule and schedule.get("opens_at") and schedule.get("closes_at"):
+    if sale_window(schedule) is not None:
         return schedule
     window = text_offer_window(*texts)
     if window is None:

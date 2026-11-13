@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from src.pdf_deadline import ensure_pdf_deadline
 from src.sources.common import RobotsRules, _looks_like_html_challenge
 
 MIN_HOST_DELAY_SECONDS = 2.0
@@ -157,12 +158,12 @@ def fetch_robots_document(
     )
 
 
-def pause_within_deadline(seconds: float, ensure_deadline: Callable[[], float | None]) -> None:
-    """Sleep between requests to one host without outliving the worker deadline."""
+def pause_within_deadline(seconds: float) -> None:
+    """Sleep between requests to one host without outliving the PDF worker deadline (``src.pdf_deadline``)."""
     end = time.monotonic() + seconds
     while True:
         pause = end - time.monotonic()
         if pause <= 0:
             return
-        remaining = ensure_deadline()
+        remaining = ensure_pdf_deadline(operation="waiting between document requests")
         time.sleep(min(pause, remaining) if remaining is not None else pause)

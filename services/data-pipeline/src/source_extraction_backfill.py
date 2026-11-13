@@ -1,9 +1,12 @@
 """Plan and apply a narrow repair of source-extracted property facts.
 
-This module intentionally does not read from a database.  A caller supplies a
-JSON snapshot of ``auction_sales`` rows, the plan mode produces a signed plan
-and a private backup, and the apply mode replays that plan through one
-optimistic-concurrency guarded PostgREST PATCH per row.
+This module intentionally does not read sales from a database.  A caller
+supplies a JSON snapshot of ``auction_sales`` rows, the plan mode produces a
+signed plan and a private backup, and the apply mode replays that plan through
+one optimistic-concurrency guarded PostgREST PATCH per row.  Facts are derived
+as the recompute does (``sale_finalization.derive_sale_facts``); its department
+fallback may read the ``reference_communes`` table, read-only, when
+``SUPABASE_DB_URL`` is set.
 
 Only physical property fields and the ``raw_payload`` evidence envelope may be
 written.  Prices, dates, sale status, location/geocoding, valuation, editorial
@@ -25,11 +28,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from src.asset_normalization import normalize_asset_features
 from src.config import load_settings
-from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
-from src.extraction_profiles import attach_source_property_features
-from src.sale_procedure import classify_sale_procedure
+from src.lot_scope import LOT_SELECTION_KEY, recompute_surface_reasoning_context
+from src.sale_finalization import derive_sale_facts
 from src.storage.postgrest_helpers import rest_headers
 from src.stored_sales import sale_from_storage_row
 
@@ -242,25 +243,6 @@ def load_rows(path: str | Path) -> list[dict[str, Any]]:
     return _rows_from_document(_read_json(Path(path)))
 
 
-def _surface_context(sale: Any) -> str:
-    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
-    source_blocks = payload.get("source_blocks")
-    block_values = (
-        [value for key, value in source_blocks.items() if str(key) != "listing_completeness"]
-        if isinstance(source_blocks, dict)
-        else []
-    )
-    values: list[object] = [
-        sale.title,
-        sale.description,
-        sale.raw_text,
-        payload.get("source_description"),
-        *block_values,
-    ]
-    parts = dict.fromkeys(str(value).strip() for value in values if value and str(value).strip())
-    return "\n".join(parts)
-
-
 def _bounded_editorial_value(value: Any, *, budget: int = MAX_EDITORIAL_TEXT_CHARS, depth: int = 0) -> Any:
     """Bound source-editorial material before regex/profile extraction.
 
@@ -338,6 +320,8 @@ def _editorial_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "source_evidence_provenance",
         "source_conflicts",
         "documents",
+        # Lot de l'URL d'une page Licitor à plusieurs lots : sans lui, chaque lecture prendrait la page entière.
+        LOT_SELECTION_KEY,
     )
     return {
         key: _bounded_editorial_value(payload[key])
@@ -357,12 +341,9 @@ def _recompute_sale(row: Mapping[str, Any]) -> Any:
     sale.raw_text = _bounded_editorial_value(sale.raw_text)
     sale.description = _bounded_editorial_value(sale.description)
     sale.title = _bounded_editorial_value(sale.title)
-    classify_sale_procedure(sale)
-    context = _surface_context(sale)
-    if context:
-        extract_and_apply_deterministic_surface_reasoning(sale, context)
-    normalize_asset_features(sale)
-    attach_source_property_features(sale.raw_payload, property_type=sale.property_type)
+    # Comme le recalcul (``src.recompute_scoring``) : seuls les champs physiques et les preuves de
+    # ``BACKFILL_NAMESPACE`` sont réécrits ; tribunal et département recalculés ici ne le sont jamais.
+    derive_sale_facts(sale, surface_context=recompute_surface_reasoning_context)
     return sale
 
 
@@ -716,7 +697,7 @@ def _load_and_verify_backup(plan: Mapping[str, Any], backup_path: str | Path) ->
 
 
 def _default_request(method: str, url: str, **kwargs: Any) -> HttpResponse:
-    # Lazy import keeps plan mode entirely offline and makes the no-connection
+    # Lazy import keeps plan mode free of HTTP requests and makes that
     # guarantee explicit: this is an HTTP request only in apply mode.
     import httpx
 

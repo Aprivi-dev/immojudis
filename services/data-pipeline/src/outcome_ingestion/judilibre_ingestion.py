@@ -19,6 +19,13 @@ from src.official_sources.judilibre import (
     JudilibreSearchQuery,
     JudilibreTransaction,
 )
+from src.outcome_ingestion.judilibre_contract import (
+    JUDILIBRE_EXTRACTOR_NAME,
+    JUDILIBRE_EXTRACTOR_VERSION,
+    JUDILIBRE_NORMALIZED_SCHEMA,
+    JUDILIBRE_RECORD_KIND,
+    JUDILIBRE_SOURCE_NAME,
+)
 from src.outcome_ingestion.judilibre_extraction import (
     JudilibreExtractionResult,
     extract_judilibre_candidate_facts,
@@ -26,10 +33,7 @@ from src.outcome_ingestion.judilibre_extraction import (
 from src.outcome_ingestion.repository import OutcomeIngestionRepository, PersistedSourceRecord
 from src.outcome_ingestion.service import JsonSourceRecord, OutcomeSourceIngestionService
 
-JUDILIBRE_SOURCE_NAME = "judilibre"
 JUDILIBRE_CONNECTOR_VERSION = "judilibre-outcome/5"
-JUDILIBRE_EXTRACTOR_VERSION = "3"
-JUDILIBRE_NORMALIZED_SCHEMA = "judilibre_decision_candidate_v3"
 JUDILIBRE_DECISION_PAGE_BASE_URL = "https://www.courdecassation.fr/decision"
 JUDILIBRE_SEARCH_MAX_RESULTS = SEARCH_MAX_RESULTS
 JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW = 500
@@ -239,7 +243,7 @@ def normalized_judilibre_decision(
     resolved_extraction = extraction or extract_judilibre_candidate_facts(decision)
     projection: dict[str, object] = {
         "schema_version": JUDILIBRE_NORMALIZED_SCHEMA,
-        "record_type": "judicial_decision_candidate",
+        "record_type": JUDILIBRE_RECORD_KIND,
         "judilibre_id": decision.id,
         "jurisdiction": decision.jurisdiction,
         "location": decision.location,
@@ -335,11 +339,11 @@ class JudilibreOutcomeIngestor:
                 external_record_id=decision.id,
                 requested_url=f"{self.client.base_url}/decision",
                 canonical_url=f"{JUDILIBRE_DECISION_PAGE_BASE_URL}/{quote(decision.id, safe='')}",
-                record_kind="judicial_decision_candidate",
+                record_kind=JUDILIBRE_RECORD_KIND,
                 raw_payload=raw_payload,
                 normalized_data=normalized_judilibre_decision(decision, extraction=extraction),
                 connector_version=JUDILIBRE_CONNECTOR_VERSION,
-                extractor_name="judilibre_candidate_extraction",
+                extractor_name=JUDILIBRE_EXTRACTOR_NAME,
                 extractor_version=JUDILIBRE_EXTRACTOR_VERSION,
                 schema_version=JUDILIBRE_NORMALIZED_SCHEMA,
                 field_provenance=extraction.field_provenance(),

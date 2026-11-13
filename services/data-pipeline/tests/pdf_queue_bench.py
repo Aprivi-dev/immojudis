@@ -136,8 +136,7 @@ class QueueBench:
 
         # Étapes de la passe sans rapport avec les pièces.
         monkeypatch.setattr(queued_runner, "sale_needs_position", lambda _sale: False)
-        for name in ("fill_tribunal", "classify_sale_procedure", "normalize_asset_features"):
-            monkeypatch.setattr(queued_runner, name, lambda _sale: None)
+        monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda _sale, surface_context: None)
 
     # --- réseau
     def _respond(self, url: str, *, headers: dict[str, str], timeout_seconds: float) -> httpx.Response:

@@ -2,8 +2,9 @@
 
 Sans lecture des pièces ni modèle : description de la source, position, tribunal, échéance d'un appel d'offres
 lue sur la page, procédure, surfaces, caractéristiques et préparation au catalogue. Partagée par la collecte
-(``src.main``) et la relecture d'une fiche (``src.source_detail``) ; le recalcul d'une vente stockée
-(``src.recompute_scoring``) en reprend la partie commune, ``derive_sale_facts``.
+(``src.main``) et la relecture d'une fiche (``src.source_detail``). Le recalcul d'une vente stockée
+(``src.recompute_scoring``), la réparation des faits de la source (``src.source_extraction_backfill``) et la file des
+pièces et des faits (``src.queued_runner``) en reprennent la partie commune, ``derive_sale_facts``.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ def finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
 
 
 def derive_sale_facts(sale: AuctionSale, *, surface_context: Callable[[AuctionSale], str]) -> None:
-    """Tribunal, procédure, surfaces et caractéristiques : ce que la collecte et le recalcul refont tous deux.
+    """Tribunal, procédure, surfaces et caractéristiques : ce que la collecte, la file et les recalculs refont tous.
 
     L'ordre compte : la procédure lit le tribunal, et le contexte des surfaces se lit après la procédure, qui
     ajoute son bloc à ``source_blocks``. ``surface_context`` est celui de l'appelant (voir

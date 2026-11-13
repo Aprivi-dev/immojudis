@@ -435,3 +435,24 @@ def test_licitor_pre_check_prefers_the_live_robots_file(politeness_on, monkeypat
     # The live file wins over the offline mirror, in both directions.
     assert pdf_enrichment._is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/media/annonce/1.pdf")
     assert not pdf_enrichment._is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/doc/1.pdf")
+
+
+def test_document_pause_never_outlives_the_pdf_deadline(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from src import pdf_deadline
+    from src.document_politeness import pause_within_deadline
+
+    clock = FakeClock()
+    fake_time = SimpleNamespace(monotonic=clock, sleep=clock.sleep)
+    monkeypatch.setattr(document_politeness, "time", fake_time)
+    monkeypatch.setattr(pdf_deadline, "time", fake_time)
+
+    pause_within_deadline(2.0)  # sans échéance : la pause entière
+    assert clock.slept == [2.0]
+
+    clock.slept.clear()
+    with pdf_deadline.pdf_deadline_scope(clock.now + 1.5):
+        with pytest.raises(pdf_deadline.PdfDeadlineExceeded, match="waiting between document requests"):
+            pause_within_deadline(5.0)
+    assert clock.slept == [1.5]
