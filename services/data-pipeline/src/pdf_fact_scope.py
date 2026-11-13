@@ -21,7 +21,7 @@ from src.normalize import (
     parse_french_datetime,
     source_sale_timezone,
 )
-from src.pdf_document_types import _canonical_document_type, _normalize_document_classifier_text
+from src.pdf_document_types import canonical_document_type, normalize_document_classifier_text
 from src.text_folding import strip_accents
 
 LOGGER = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ def _pdf_text_chunks(pdf_texts: list[dict[str, object]] | list[str]) -> list[dic
             continue
         label = clean_text(item.get("label")) or ""
         url = clean_text(item.get("url")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=url,
@@ -969,7 +969,7 @@ def _dedupe_pdf_candidates(candidates: list[dict[str, object]]) -> list[dict[str
             value_key = str(value)
         key = (
             value_key,
-            _normalize_document_classifier_text(str(candidate.get("evidence") or "")),
+            normalize_document_classifier_text(str(candidate.get("evidence") or "")),
             str(candidate.get("document_url") or candidate.get("document_label") or ""),
             candidate.get("page_number"),
             tuple(candidate.get("lot_labels") or []),
@@ -1214,7 +1214,7 @@ def _dedupe_scalar_candidates(candidates: list[dict[str, object]]) -> list[dict[
     for candidate in candidates:
         key = (
             str(candidate.get("value")),
-            _normalize_document_classifier_text(str(candidate.get("evidence") or "")),
+            normalize_document_classifier_text(str(candidate.get("evidence") or "")),
             str(candidate.get("document_url") or candidate.get("document_label") or ""),
             candidate.get("page_number"),
         )
@@ -1322,7 +1322,7 @@ def _energy_diagnostic_candidates_from_documents(
             continue
         item_candidates: list[dict[str, object]] = []
         label = clean_text(item.get("label")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=clean_text(item.get("url")) or "",

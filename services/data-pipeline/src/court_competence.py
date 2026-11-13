@@ -17,6 +17,7 @@ from src.official_sources.justice_open_data import (
     parse_justice_structures_csv,
     validate_justice_competence_semantics,
 )
+from src.sha256_digest import is_lowercase_sha256
 from src.text_folding import ascii_alnum_words, strip_accents
 
 LOGGER = logging.getLogger(__name__)
@@ -409,7 +410,7 @@ def _valid_assignment_evidence(value: Any) -> bool:
         and bool(_INSEE_CODE_RE.fullmatch(str(value["insee_code"]).upper()))
         and bool(re.fullmatch(r"\d+", str(value["court_origin_code"])))
         and bool(re.fullmatch(r"\d+", str(value["court_srj_code"])))
-        and bool(re.fullmatch(r"[0-9a-f]{64}", str(value["reference_sha256"])))
+        and is_lowercase_sha256(str(value["reference_sha256"]))
     )
 
 

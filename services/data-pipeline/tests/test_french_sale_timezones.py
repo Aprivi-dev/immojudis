@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from src.normalize import normalize_sale, parse_french_datetime
-from src.pdf_enrichment import enrich_sale_from_pdf_text
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text
 
 
 @pytest.mark.parametrize("text, expected", [

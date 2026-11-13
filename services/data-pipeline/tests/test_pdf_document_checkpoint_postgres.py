@@ -23,8 +23,8 @@ from src import main, pdf_enrichment, pdf_fact_extraction, pdf_progress
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import normalize_sale
-from src.pdf_document_selection import _store_document_analysis_status
-from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION
+from src.pdf_document_selection import store_document_analysis_status
+from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.storage import supabase_client as storage
 from src.storage.supabase_client import _postgres_connect
 
@@ -76,8 +76,8 @@ def _checkpoint_fixture(tmp_path: Path, source_url: str) -> tuple[AuctionSale, d
         }
     )
     payload = _modern_payload(documents[0], 0)
-    _store_document_analysis_status(sale, [documents[0]], [payload])
-    pdf_fact_extraction._write_pdf_text_cache(sale, [payload])
+    store_document_analysis_status(sale, [documents[0]], [payload])
+    pdf_fact_extraction.write_pdf_text_cache(sale, [payload])
     checked_at = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
     sale.updated_at = checked_at
     return sale, checked_at
@@ -163,7 +163,7 @@ def test_checkpoint_preparation_rejects_legacy_cache(monkeypatch, tmp_path: Path
     assert modern_payload[0]["text_sha256"] == result[0]["text_sha256"]
     missing_hash_input = dict(result[0])
     missing_hash_input.pop("text_sha256")
-    pdf_fact_extraction._write_pdf_text_cache(sale, [missing_hash_input])
+    pdf_fact_extraction.write_pdf_text_cache(sale, [missing_hash_input])
     written_without_hash = json.loads(cache_path.read_text(encoding="utf-8"))
     assert "text_sha256" not in written_without_hash[0]
     assert storage._prepare_pdf_document_checkpoint(sale) is None
@@ -263,7 +263,7 @@ def test_progress_checkpoint_keeps_success_pages_with_retryable_diagnostics(
         {"page": 1, "text": successful_text, "chars": len(successful_text), "status": "extracted"},
         {"page": 2, "text": "", "chars": 0, "status": "failed", "retryable": True},
     ]
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [document],
         [payload],
@@ -281,7 +281,7 @@ def test_progress_checkpoint_keeps_success_pages_with_retryable_diagnostics(
     payload["text"] = f"{successful_text} Docling aggregate has additional structure."
     payload["text_chars"] = len(payload["text"])
     payload["text_sha256"] = hashlib.sha256(str(payload["text"]).encode()).hexdigest()
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [document],
         [payload],
@@ -322,13 +322,13 @@ def test_blank_page_checkpoint_roundtrips_empty_text_hash(monkeypatch, tmp_path:
             ],
         }
     )
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         [document],
         [payload],
         merged_pdf_texts=[payload],
     )
-    pdf_fact_extraction._write_pdf_text_cache(sale, [payload])
+    pdf_fact_extraction.write_pdf_text_cache(sale, [payload])
     cache_path = tmp_path / f"{storage.sale_storage_id(sale)}.json"
     cached_payload = json.loads(cache_path.read_text(encoding="utf-8"))
     assert cached_payload[0]["text_sha256"] == ""
@@ -401,7 +401,7 @@ def test_partial_restore_rejects_complete_manifest_and_legacy_local_cache(
     partial = _modern_payload(sale.documents[0], 0)
     partial.update({"complete": False, "extraction_status": "incomplete", "failed_pages": []})
     downloaded = [dict(sale.documents[0], sha256=partial["sha256"])]
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         downloaded,
         [partial],
@@ -504,7 +504,7 @@ def test_partial_progress_checkpoint_restores_pages_after_cache_loss(
                 ],
             }
         )
-    _store_document_analysis_status(
+    store_document_analysis_status(
         sale,
         documents,
         [partial],
@@ -516,7 +516,7 @@ def test_partial_progress_checkpoint_restores_pages_after_cache_loss(
     # The in-memory checkpoint helper deliberately does not write the local
     # aggregate cache. Materialize the cache explicitly to model the normal
     # deferred-extraction path, then remove it after the SQL checkpoint.
-    pdf_fact_extraction._write_pdf_text_cache(sale, [partial])
+    pdf_fact_extraction.write_pdf_text_cache(sale, [partial])
     aggregate_cache = pdf_texts_dir / f"{storage.sale_storage_id(sale)}.json"
     assert aggregate_cache.exists()
 

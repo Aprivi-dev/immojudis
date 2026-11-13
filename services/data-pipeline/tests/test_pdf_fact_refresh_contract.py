@@ -5,7 +5,8 @@ import pytest
 
 from src.asset_normalization import normalize_asset_features
 from src.normalize import normalize_sale
-from src.pdf_enrichment import _invalidate_replaced_document_facts, enrich_sale_from_pdf_text
+from src.pdf_enrichment import _invalidate_replaced_document_facts
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text
 
 SOURCE_URL = "https://example.test/pdf-fact-refresh"
 DOCUMENT_URL = "https://example.test/current-pv.pdf"

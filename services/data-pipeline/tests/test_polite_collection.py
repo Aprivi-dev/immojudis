@@ -15,6 +15,7 @@ from src.document_politeness import (
     DocumentRobotsDisallowed,
     DocumentRobotsUnavailable,
 )
+from src.pdf_permanent_failure import PermanentDocumentFailure
 from src.sources import common
 from src.sources.common import RobotsRules
 
@@ -374,7 +375,7 @@ def test_robots_disallowed_document_is_a_permanent_failure_without_a_request(pol
 
     monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", Refuse())
 
-    with pytest.raises(pdf_enrichment.PermanentDocumentFailure) as error:
+    with pytest.raises(PermanentDocumentFailure) as error:
         pdf_enrichment._download_document_response(
             "https://docs.example.test/private/a.pdf", headers={}, timeout_seconds=5
         )

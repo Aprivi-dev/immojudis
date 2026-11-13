@@ -49,6 +49,7 @@ pdf_fact_extraction = importlib.import_module("src.pdf_fact_extraction")
 documents_are_current = importlib.import_module("src.freshness").documents_are_current
 AuctionSale = importlib.import_module("src.models").AuctionSale
 _pdf_progress = importlib.import_module("src.pdf_progress")
+sale_storage_id = importlib.import_module("src.sale_local_files").sale_storage_id
 PDF_PROGRESS_SCHEMA_VERSION = _pdf_progress.PDF_PROGRESS_SCHEMA_VERSION
 PDF_TEXT_CACHE_VERSION = _pdf_progress.PDF_TEXT_CACHE_VERSION
 
@@ -189,7 +190,7 @@ def test_manifest_roundtrip_progresses_six_six_four_with_real_extraction(monkeyp
         stats = pdf_enrichment.enrich_sale_from_pdfs(sale)
         analysis = sale.raw_payload["document_analysis"]
         observed_last_success.append(analysis.get("last_successful_check_at"))
-        cache_path = pdf_enrichment.PDF_TEXTS_DIR / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+        cache_path = pdf_enrichment.PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
         cache = json.loads(cache_path.read_text(encoding="utf-8"))
 
         assert len(cache) == expected_count
@@ -226,7 +227,7 @@ def test_manifest_roundtrip_progresses_six_six_four_with_real_extraction(monkeyp
     # next six URLs per pass. The aggregate text cache is reused, while the
     # manifest remains incomplete until the final four have been checked.
     for metadata_path in (
-        pdf_enrichment.DOCUMENTS_DIR / pdf_enrichment.sale_storage_id(sale)
+        pdf_enrichment.DOCUMENTS_DIR / sale_storage_id(sale)
     ).glob("*.http.json"):
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["checked_at"] = "2020-01-01T00:00:00+00:00"

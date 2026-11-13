@@ -26,13 +26,13 @@ GENERIC_DOCUMENT_TYPES = {"document", "documents", "file", "fichier", "pdf", "pi
 
 
 def classify_document_type(label: str | None, url: str | None = None) -> str:
-    raw = _normalize_document_classifier_text(f"{label or ''} {url or ''}")
+    raw = normalize_document_classifier_text(f"{label or ''} {url or ''}")
     # Underscores, hyphens and dots separate words in file names
     # ("8_Certificat_durbanisme_240550005.pdf"); match on plain words.
     text = _words(raw)
     # Short abbreviations are only trusted in the label: they are too
     # ambiguous inside URL paths.
-    label_text = _words(_normalize_document_classifier_text(label))
+    label_text = _words(normalize_document_classifier_text(label))
     if any(pattern in text for pattern in ("diagnostic", "dpe", "erp", "amiante", "plomb", "termites", "crep")):
         return "diagnostics_techniques"
     if re.search(r"\bdiags?\b", text):
@@ -142,7 +142,7 @@ def classify_document_type(label: str | None, url: str | None = None) -> str:
     return "other"
 
 
-def _normalize_document_classifier_text(value: object | None) -> str:
+def normalize_document_classifier_text(value: object | None) -> str:
     text = clean_text(value) or ""
     return strip_accents(text).lower()
 
@@ -182,7 +182,7 @@ GENERIC_CLASSIFIED_TYPES = frozenset({"pdf", "other"})
 
 def classify_document_content(text: object | None) -> str | None:
     """Document type from the title of its first page, or None."""
-    window = _words(_normalize_document_classifier_text(text))[:_CONTENT_WINDOW_CHARS]
+    window = _words(normalize_document_classifier_text(text))[:_CONTENT_WINDOW_CHARS]
     best: tuple[int, str] | None = None
     for document_type, pattern in _CONTENT_TITLES:
         match = re.search(rf"\b(?:{pattern})\b", window)
@@ -215,7 +215,7 @@ def document_type_with_content(label: object | None, url: object | None, payload
 
 def refined_document_type(payload: dict[str, object]) -> str:
     """Type of an extracted document: its known type, its label, then its text."""
-    canonical = _canonical_document_type(
+    canonical = canonical_document_type(
         payload.get("document_type") or payload.get("type"),
         label=payload.get("label"),
         url=payload.get("url"),
@@ -232,7 +232,7 @@ def with_content_document_types(payloads: list[dict[str, object]]) -> list[dict[
     return payloads
 
 
-def _canonical_document_type(
+def canonical_document_type(
     document_type: object | None,
     *,
     label: object | None = None,
@@ -241,7 +241,7 @@ def _canonical_document_type(
     classified = classify_document_type(clean_text(label), clean_text(url))
     raw = clean_text(document_type)
     if raw:
-        normalized = _normalize_document_classifier_text(raw).replace("-", "_").replace(" ", "_")
+        normalized = normalize_document_classifier_text(raw).replace("-", "_").replace(" ", "_")
         normalized = re.sub(r"_+", "_", normalized).strip("_")
         alias = DOCUMENT_TYPE_ALIASES.get(normalized)
         if alias:

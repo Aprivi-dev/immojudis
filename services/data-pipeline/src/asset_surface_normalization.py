@@ -64,7 +64,7 @@ SURFACE_PATTERNS = {
 _SURFACE_FIELDS = ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "land_surface_m2")
 
 
-def _fill_surfaces(sale: AuctionSale, text: str) -> None:
+def fill_surfaces(sale: AuctionSale, text: str) -> None:
     # Values reloaded from a stored payload can come back as text ("45.5"):
     # every comparison below needs numbers (drain of 12/10/2026).
     for field in _SURFACE_FIELDS:
@@ -561,7 +561,7 @@ def _record_surface_conflict_resolution(
     add_quality_flag(sale, "surface_conflict_resolved")
 
 
-def _apply_document_consistency_corrections(sale: AuctionSale, text: str) -> None:
+def apply_document_consistency_corrections(sale: AuctionSale, text: str) -> None:
     lowered = text.lower()
     if sale.property_type in {"building", "other", "unknown", None} and _text_describes_single_apartment(lowered):
         evidence = _first_rule_evidence(
@@ -701,7 +701,7 @@ def _record_business_rule(
     rules.append(rule)
 
 
-def _business_rule(sale: AuctionSale, rule_id: str) -> dict[str, Any] | None:
+def business_rule(sale: AuctionSale, rule_id: str) -> dict[str, Any] | None:
     rules = sale.raw_payload.get("business_rules")
     if not isinstance(rules, list):
         return None
@@ -711,7 +711,7 @@ def _business_rule(sale: AuctionSale, rule_id: str) -> dict[str, Any] | None:
     return None
 
 
-def _business_rule_refs(sale: AuctionSale, factor_key: str | None = None) -> list[dict[str, Any]]:
+def business_rule_refs(sale: AuctionSale, factor_key: str | None = None) -> list[dict[str, Any]]:
     rules = sale.raw_payload.get("business_rules")
     if not isinstance(rules, list):
         return []
@@ -721,11 +721,11 @@ def _business_rule_refs(sale: AuctionSale, factor_key: str | None = None) -> lis
             continue
         if factor_key is not None and item.get("factor_key") != factor_key:
             continue
-        refs.append(_business_rule_to_ref(item))
+        refs.append(business_rule_to_ref(item))
     return refs
 
 
-def _business_rule_to_ref(rule: dict[str, Any]) -> dict[str, Any]:
+def business_rule_to_ref(rule: dict[str, Any]) -> dict[str, Any]:
     return {
         "label": rule.get("decision") or rule.get("rule_id"),
         "excerpt": rule.get("evidence"),
@@ -772,7 +772,7 @@ def _extract_surface_kind(text: str, kind: str, sale: AuctionSale | None = None)
     return None
 
 
-def _fill_counts(sale: AuctionSale, text: str) -> None:
+def fill_counts(sale: AuctionSale, text: str) -> None:
     # Les pièces ne se déduisent plus des chambres (« chambres + séjour ») : sans compte écrit, pas de compte
     # (audit du 03/11/2026 : « 4 Appartements Loués » -> 3 pièces, pièces = chambres).
     if sale.rooms_count is None:
@@ -801,7 +801,7 @@ def _fill_counts(sale: AuctionSale, text: str) -> None:
             sale.parking_count = 1
 
 
-def _fill_booleans(sale: AuctionSale, text: str) -> None:
+def fill_booleans(sale: AuctionSale, text: str) -> None:
     checks = {
         "has_garden": r"\bjardin\b",
         "has_terrace": r"\bterrasse\b",

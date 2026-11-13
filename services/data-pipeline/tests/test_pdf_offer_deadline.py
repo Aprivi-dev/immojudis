@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from src.models import AuctionSale
-from src.pdf_enrichment import enrich_sale_from_pdf_text
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text
 from src.pdf_offer_deadline import (
     extract_offer_deadline_from_documents,
     offer_deadline_candidates,

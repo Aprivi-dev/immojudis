@@ -1792,7 +1792,7 @@ def _raw_sale() -> dict[str, object]:
 
 def _materialize_current_pdf_proof(sale: AuctionSale, tmp_path, monkeypatch) -> None:
     """Give freshness checks the same complete evidence as a real PDF pass."""
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
     from src.pdf_progress import PDF_TEXT_CACHE_VERSION
     from src.sale_local_files import sale_storage_id
 
@@ -1814,7 +1814,7 @@ def _materialize_current_pdf_proof(sale: AuctionSale, tmp_path, monkeypatch) -> 
         "page_count": 1,
         "http_checked_at": datetime.now(UTC).isoformat(),
     }
-    _store_document_analysis_status(sale, sale.documents, [payload])
+    store_document_analysis_status(sale, sale.documents, [payload])
     (tmp_path / f"{sale_storage_id(sale)}.json").write_text(
         json.dumps([payload]),
         encoding="utf-8",

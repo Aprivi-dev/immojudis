@@ -13,6 +13,7 @@ import pymupdf
 import src.config as config
 from src.freshness import documents_are_current, timestamp_is_fresh
 from src.models import AuctionSale
+from src.sale_local_files import document_filename, sale_storage_id
 
 pdf_enrichment = importlib.import_module("src.pdf_enrichment")
 pdf_document_selection = importlib.import_module("src.pdf_document_selection")
@@ -138,9 +139,9 @@ def _configure_runtime(monkeypatch, pdf_bytes: dict[str, bytes], tmp_path: Path)
 
 
 def _make_all_sidecars_stale(sale: AuctionSale, documents_dir: Path) -> None:
-    sale_dir = documents_dir / pdf_enrichment.sale_storage_id(sale)
+    sale_dir = documents_dir / sale_storage_id(sale)
     for document in sale.documents:
-        path = sale_dir / pdf_enrichment._document_filename(document)
+        path = sale_dir / document_filename(document)
         metadata_path = path.with_suffix(path.suffix + ".http.json")
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["checked_at"] = "2020-01-01T00:00:00+00:00"
@@ -204,7 +205,7 @@ def test_expired_complete_manifest_revalidates_in_six_six_four_passes(
         for url in urls[sum(len(batch) for batch in expected_batches[:batch_number]) :]:
             assert proof[url]["http_checked_at"] == old_timestamp, (batch_number, url, proof[url])
         assert documents_are_current(sale) is (batch_number == 3)
-        cache_path = tmp_path / "pdf-texts" / f"{pdf_enrichment.sale_storage_id(sale)}.json"
+        cache_path = tmp_path / "pdf-texts" / f"{sale_storage_id(sale)}.json"
         assert len(json.loads(cache_path.read_text(encoding="utf-8"))) == 16
 
     # A 304 keeps the existing bytes and local text; it does not trigger a
@@ -244,9 +245,9 @@ def test_a_pending_revalidation_is_cleared_even_when_another_process_refreshed_t
     assert len(sale.raw_payload["document_analysis"]["http_revalidation_pending_urls"]) == 10
 
     # Another process refreshes every sidecar but cannot touch the persisted pending list.
-    sale_dir = documents_dir / pdf_enrichment.sale_storage_id(sale)
+    sale_dir = documents_dir / sale_storage_id(sale)
     for document in sale.documents:
-        path = sale_dir / pdf_enrichment._document_filename(document)
+        path = sale_dir / document_filename(document)
         metadata_path = path.with_suffix(path.suffix + ".http.json")
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         metadata["checked_at"] = datetime.now(UTC).isoformat()

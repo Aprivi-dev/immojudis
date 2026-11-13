@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import tempfile
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urlparse
 
 from src.config import PDF_TEXTS_DIR
 from src.document_facts_version import DOCUMENT_FACTS_VERSION
@@ -27,7 +25,7 @@ from src.normalize import (
     source_sale_timezone,
 )
 from src.pdf_address import apply_pdf_address
-from src.pdf_document_types import _canonical_document_type, _normalize_document_classifier_text
+from src.pdf_document_types import canonical_document_type, normalize_document_classifier_text
 from src.pdf_fact_scope import (
     _PDF_SCALAR_CANDIDATE_KEYS,
     _aggregate_pdf_count_candidates,
@@ -454,7 +452,7 @@ def _extract_starting_price_from_documents(
         if not isinstance(item, dict):
             continue
         label = clean_text(item.get("label")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=clean_text(item.get("url")) or "",
@@ -556,7 +554,7 @@ def _extract_visit_dates_from_documents(pdf_texts: list[dict[str, object]] | lis
             continue
         item_candidates: list[dict[str, object]] = []
         label = clean_text(item.get("label")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=clean_text(item.get("url")) or "",
@@ -610,7 +608,7 @@ def _extract_sale_date_from_documents(
         if not isinstance(item, dict):
             continue
         label = clean_text(item.get("label")) or ""
-        document_type = _canonical_document_type(
+        document_type = canonical_document_type(
             item.get("document_type") or item.get("type"),
             label=label,
             url=clean_text(item.get("url")) or "",
@@ -839,7 +837,7 @@ def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> No
                 payload_keys=("pdf_sale_date_extraction",),
             )
 
-def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
+def write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
     PDF_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
     path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     payload: list[dict[str, object]] = []
@@ -1059,7 +1057,7 @@ def _sale_date_candidate_phrases(text: str) -> list[str]:
     value = clean_text(text) or ""
     if not value:
         return []
-    normalized = _normalize_document_classifier_text(value)
+    normalized = normalize_document_classifier_text(value)
     if re.search(r"\b(?:visites?|rendez[-\s]?vous)\b", normalized) and not re.search(
         r"\b(?:audience|date\s+d['’ ]audience|date\s+de\s+la\s+vente|vente\s+aux\s+encheres)\b",
         normalized,
@@ -1079,7 +1077,7 @@ def _sale_date_candidate_phrases(text: str) -> list[str]:
             phrase = clean_text(match.group(0)) or ""
             if not phrase or not _has_sale_date_signal(phrase):
                 continue
-            phrase_normalized = _normalize_document_classifier_text(phrase)
+            phrase_normalized = normalize_document_classifier_text(phrase)
             if re.search(r"\b(?:prix\s+d['’ ]adjudication|frais|mise\s+a\s+prix)\b", phrase_normalized):
                 continue
             if phrase not in phrases:
@@ -1087,7 +1085,7 @@ def _sale_date_candidate_phrases(text: str) -> list[str]:
     return phrases
 
 def _has_sale_date_signal(text: str) -> bool:
-    normalized = _normalize_document_classifier_text(text)
+    normalized = normalize_document_classifier_text(text)
     return bool(
         re.search(rf"\b\d{{1,2}}\s+(?:{MONTH_PATTERN})\s+\d{{4}}\b", normalized)
         or re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", normalized)
@@ -1105,7 +1103,7 @@ def _sale_date_extraction_rank(item: dict[str, object]) -> tuple[int, int, int]:
         "pdf": 40,
         "diagnostics_techniques": 10,
     }.get(document_type, 30)
-    evidence = _normalize_document_classifier_text(item.get("evidence"))
+    evidence = normalize_document_classifier_text(item.get("evidence"))
     label_score = 0
     if re.search(r"\b(?:audience\s+d['’ ]adjudication|date\s+de\s+la\s+vente|date\s+d['’ ]audience)\b", evidence):
         label_score += 25
@@ -1125,8 +1123,8 @@ def _extract_visit_dates_with_evidence(text: str) -> dict[str, object] | None:
     if not candidates:
         return None
     first = candidates[0]
-    normalized_text = _normalize_document_classifier_text(text)
-    index = normalized_text.find(_normalize_document_classifier_text(first))
+    normalized_text = normalize_document_classifier_text(text)
+    index = normalized_text.find(normalize_document_classifier_text(first))
     start = max(0, index - 120) if index >= 0 else 0
     end = min(len(text), (index if index >= 0 else 0) + len(first) + 160)
     evidence = clean_text(text[start:end]) or first
@@ -1153,7 +1151,7 @@ def _normalize_visit_candidate(text: str) -> str | None:
     value = clean_text(text)
     if not value or len(value) > 240:  # a visit slot is a short phrase, not a report paragraph
         return None
-    normalized = _normalize_document_classifier_text(value)
+    normalized = normalize_document_classifier_text(value)
     if "visite virtuelle" in normalized or "aucune visite virtuelle" in normalized:
         return None
     if not re.search(r"\b(?:visites?|rendez[-\s]?vous)\b", normalized):
@@ -1237,13 +1235,3 @@ def _merge_pdf_risk_notes(*values: str | None) -> str | None:
                 seen.add(item)
                 notes.append(item)
     return ", ".join(notes) if notes else None
-
-def _document_filename(document: dict[str, str]) -> str:
-    url = document.get("url", "")
-    label = document.get("label", "")
-    suffix = Path(urlparse(url).path).suffix.lower()
-    if suffix not in {".pdf", ".doc", ".docx"}:
-        suffix = ".pdf"
-    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
-    stem = re.sub(r"[^a-zA-Z0-9._-]+", "-", Path(label or "document").stem).strip("-") or "document"
-    return f"{digest}-{stem}{suffix}"

@@ -137,7 +137,7 @@ FOLDS: dict[str, Callable[[str], object]] = {
     "urban_planning._normalize_text": urban_planning._normalize_text,
     "occupancy_statements.fold": occupancy_statements.fold,
     "normalize.strip_accents": text_folding.strip_accents,
-    "pdf_document_types._normalize_document_classifier_text": pdf_document_types._normalize_document_classifier_text,
+    "pdf_document_types.normalize_document_classifier_text": pdf_document_types.normalize_document_classifier_text,
     "pdf_address._key": pdf_address._key,
     "tribunal._fingerprint": tribunal._fingerprint,
     "text_fact_scope.fold_aligned": text_fact_scope.fold_aligned,

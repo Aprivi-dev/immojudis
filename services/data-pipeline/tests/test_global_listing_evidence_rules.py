@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from src.asset_normalization import extract_risk_occurrences_from_text
-from src.asset_scoring import _score_sale
+from src.asset_scoring import score_sale
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 
@@ -15,7 +15,7 @@ def test_reviewed_risk_without_severity_withholds_old_score_and_analysis() -> No
         score_version="old", score_factors=[{"old": True}],
         raw_payload={"investment_analysis": {"old": True}, "score_factors": [{"old": True}]},
     )
-    _score_sale(sale, [{"risk_label": "Contrôle parasitaire incomplet", "severity": None}])
+    score_sale(sale, [{"risk_label": "Contrôle parasitaire incomplet", "severity": None}])
     assert sale.investment_score is None
     assert sale.score_confidence is None
     assert sale.score_version is None
@@ -24,7 +24,7 @@ def test_reviewed_risk_without_severity_withholds_old_score_and_analysis() -> No
     assert sale.raw_payload["score_status"] == "withheld_unqualified_risks"
     assert "restent à qualifier" in sale.investment_summary
 
-    _score_sale(sale, [{"risk_label": "travaux", "severity": 3}])
+    score_sale(sale, [{"risk_label": "travaux", "severity": 3}])
     assert sale.investment_score is not None
     assert "score_status" not in sale.raw_payload
 

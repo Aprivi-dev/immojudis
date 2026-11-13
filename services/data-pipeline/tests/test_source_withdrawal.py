@@ -251,7 +251,7 @@ def test_documents_hosted_by_a_withdrawn_source_are_not_downloaded(monkeypatch, 
     monkeypatch.setattr(pdf_enrichment, "require_ep_documents", lambda *_a: None)
     monkeypatch.setattr(
         pdf_enrichment,
-        "_select_documents_for_extraction",
+        "select_documents_for_extraction",
         lambda documents, **_k: documents,
     )
     monkeypatch.setattr(pdf_enrichment.httpx, "Client", lambda *a, **k: pytest.fail("no HTTP client expected"))

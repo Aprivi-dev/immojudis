@@ -401,7 +401,6 @@ def _lot_review(
 
 
 # --- Surface et pièces : de quoi parle ce nombre ? ----------------------------------------------------
-_AREA_UNIT_AFTER_RE = re.compile(r"\s*(?:m\s?[²2]|m[èe]tres?\s+carr[ée]s?)(?![\w])", re.IGNORECASE)
 _LAND_CUE = r"terrain|parcelle|jardin|cadastr\w*|contenance|emprise|foncier"
 _DWELLING_CUE = (
     r"habitables?|carrez|logement|appartement|maison|villa|pavillon|studio|duplex|b[âa]ti|plancher|utile|"

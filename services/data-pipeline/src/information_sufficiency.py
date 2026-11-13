@@ -34,13 +34,13 @@ Aucune donnée personnelle n'est journalisée : seuls des codes et des compteurs
 from __future__ import annotations
 
 import logging
-import os
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.config import env_flag_on_unless_false
 from src.models import AuctionSale
 from src.storage.postgrest_helpers import rest_headers
 
@@ -304,7 +304,7 @@ def sufficient_information(
 
 
 def gate_enabled() -> bool:
-    return (os.getenv(GATE_ENV) or "on").strip().lower() not in {"off", "0", "false", "no"}
+    return env_flag_on_unless_false(GATE_ENV)
 
 
 _ACTIVE_BLOCKLIST: ContactBlocklist = NO_BLOCKLIST

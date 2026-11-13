@@ -17,6 +17,7 @@ except ModuleNotFoundError:  # pragma: no cover - parser-only installations.
 
 from src.official_sources.base import canonical_sha256
 from src.outcome_ingestion.artifact_store import StoredRawArtifact
+from src.sha256_digest import is_lowercase_sha256
 from src.storage.supabase_client import connect as connect_postgres
 
 IngestionChannel = Literal["automated", "manual", "partner"]
@@ -631,7 +632,7 @@ class OutcomeIngestionRepository:
 
         if Jsonb is None:
             raise OutcomeIngestionError("psycopg is required for Outcome ingestion writes")
-        if not re.fullmatch(r"[0-9a-f]{64}", expected_source_content_hash):
+        if not is_lowercase_sha256(expected_source_content_hash):
             raise ValueError("Judilibre source projection hash must be SHA-256")
         if not 0 <= max_date_delta_days <= 30:
             raise ValueError("Judilibre date delta must be between 0 and 30 days")
@@ -2476,9 +2477,7 @@ def _validate_judilibre_match_signals(
         "target_context_sha256",
         "source_record_sha256",
     ):
-        if not isinstance(signals.get(key), str) or re.fullmatch(
-            r"[0-9a-f]{64}", str(signals.get(key))
-        ) is None:
+        if not is_lowercase_sha256(signals.get(key)):
             raise ValueError("Judilibre match provenance must contain SHA-256 only")
     if signals.get("source_projection_sha256") != expected_source_content_hash:
         raise ValueError("Judilibre source projection provenance is inconsistent")
@@ -2736,7 +2735,7 @@ def _validate_capture(capture: SuccessfulCapture) -> None:
             raise ValueError("a local-file import must not claim HTTP metadata")
     else:
         raise ValueError("unsupported capture transport")
-    if not re.fullmatch(r"[0-9a-f]{64}", capture.stored_artifact.content_hash):
+    if not is_lowercase_sha256(capture.stored_artifact.content_hash):
         raise ValueError("stored artifact hash must be SHA-256")
 
 

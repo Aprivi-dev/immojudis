@@ -69,7 +69,7 @@ def is_decorative_edge_only_page(page: fitz.Page) -> bool:
         return False
 
 
-def _is_objectively_blank_page(page: fitz.Page, raw_text: str) -> bool:
+def is_objectively_blank_page(page: fitz.Page, raw_text: str) -> bool:
     """Return true only when a page has no text, image, or vector drawing."""
     if clean_text(raw_text):
         return False
@@ -117,11 +117,11 @@ def _page_image_coverage(page: fitz.Page) -> float:
         return 0.0
 
 
-def _page_has_substantial_image(page: fitz.Page) -> bool:
+def page_has_substantial_image(page: fitz.Page) -> bool:
     return _page_image_coverage(page) >= PAGE_OCR_IMAGE_COVERAGE_MIN
 
 
-def _visual_page_profile(page: fitz.Page) -> dict[str, object]:
+def visual_page_profile(page: fitz.Page) -> dict[str, object]:
     """Measure page ink without retaining a derived image.
 
     The source PDF remains the evidence of record. This low-resolution
@@ -173,7 +173,7 @@ def _visual_page_profile(page: fitz.Page) -> dict[str, object]:
         }
 
 
-def _page_requires_retry(page: object, *, ocr_enabled: bool) -> bool:
+def page_requires_retry(page: object, *, ocr_enabled: bool) -> bool:
     if not isinstance(page, dict):
         return True
     status = str(page.get("status") or page.get("extraction_status") or "").strip().lower()
@@ -188,7 +188,7 @@ def _page_requires_retry(page: object, *, ocr_enabled: bool) -> bool:
     return ocr_enabled and str(page.get("method") or "") == "fallback_text"
 
 
-def _page_text_confidence(text: str | None, *, method: str) -> float:
+def page_text_confidence(text: str | None, *, method: str) -> float:
     chars = len(clean_text(text) or "")
     if chars == 0:
         return 0.0
@@ -213,11 +213,11 @@ def page_outcome_summary(pages: list[dict[str, object]], *, ocr_enabled: bool) -
     def _status(page: dict[str, object]) -> str:
         return str(page.get("status") or page.get("extraction_status") or "")
 
-    failed_pages = [int(page["page"]) for page in pages if _page_requires_retry(page, ocr_enabled=ocr_enabled)]
+    failed_pages = [int(page["page"]) for page in pages if page_requires_retry(page, ocr_enabled=ocr_enabled)]
     confidences = [
         float(page.get("confidence") or 0)
         for page in pages
-        if page.get("text") and not _page_requires_retry(page, ocr_enabled=ocr_enabled)
+        if page.get("text") and not page_requires_retry(page, ocr_enabled=ocr_enabled)
     ]
     return {
         "blank_pages": [

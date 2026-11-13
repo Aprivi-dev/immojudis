@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -20,21 +21,14 @@ from src.asset_normalization_helpers import (
     sale_text,
     sale_type_context,
 )
-from src.asset_premium_analysis import (
-    _analysis_contradictions,
-    _build_premium_investment_analysis,
-    _load_scoring_weights,
-)
+from src.asset_premium_analysis import analysis_contradictions, build_premium_investment_analysis
 from src.asset_score_axes import AXIS_DEFINITIONS, ScoreComponent
-from src.asset_surface_normalization import (
-    _business_rule,
-    _business_rule_refs,
-    _business_rule_to_ref,
-)
+from src.asset_surface_normalization import business_rule, business_rule_refs, business_rule_to_ref
+from src.config import ROOT_DIR
 from src.models import AuctionSale
 
 
-def _score_sale(sale: AuctionSale, risks: list[dict[str, Any]]) -> None:
+def score_sale(sale: AuctionSale, risks: list[dict[str, Any]]) -> None:
     if any(risk.get("severity") is None for risk in risks):
         # Reviewed documentary reservations may be real without a quantified severity.
         # Do not crash on Decimal(None), invent a penalty, or retain the previous score.
@@ -74,7 +68,7 @@ def _score_sale(sale: AuctionSale, risks: list[dict[str, Any]]) -> None:
     sale.score_confidence = _score_confidence(sale, components)
     sale.score_factors = factor_rows
     sale.raw_payload["score_factors"] = factor_rows
-    sale.raw_payload["investment_analysis"] = _build_premium_investment_analysis(
+    sale.raw_payload["investment_analysis"] = build_premium_investment_analysis(
         sale,
         risks,
         components,
@@ -86,8 +80,34 @@ def _score_sale(sale: AuctionSale, risks: list[dict[str, Any]]) -> None:
     )
 
 
+def _load_scoring_weights() -> dict[str, int | float | str]:
+    path = ROOT_DIR / "config" / "scoring.json"
+    defaults: dict[str, int | float | str] = {
+        "version": "v1",
+        "base_score": 50,
+        "occupation": 1,
+        "état": 1,
+        "type": 1,
+        "localisation": 1,
+        "surface": 1,
+        "prix_m2": 1,
+        "atouts": 1,
+        "risques": 1,
+        "qualité": 1,
+    }
+    if not path.exists():
+        return defaults
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return defaults
+    if isinstance(payload, dict):
+        defaults.update({key: value for key, value in payload.items() if isinstance(value, (int, float, str))})
+    return defaults
+
+
 def _score_occupation(sale: AuctionSale) -> ScoreComponent:
-    conflict_rule = _business_rule(sale, "occupation_conflict_requires_confirmation")
+    conflict_rule = business_rule(sale, "occupation_conflict_requires_confirmation")
     if sale.occupancy_status == "unknown" and conflict_rule:
         evidence = str(conflict_rule.get("evidence") or "") or None
         confidence = Decimal(str(conflict_rule.get("confidence") or "0.65"))
@@ -108,7 +128,7 @@ def _score_occupation(sale: AuctionSale) -> ScoreComponent:
                 "À lever avec une attestation de libération, un état des lieux de sortie, "
                 "un PV plus récent ou une confirmation du cabinet avant enchère."
             ),
-            evidence_refs=[_business_rule_to_ref(conflict_rule)],
+            evidence_refs=[business_rule_to_ref(conflict_rule)],
         )
     mapping = {
         "vacant": (Decimal("12"), "libre, liquidité meilleure"),
@@ -226,7 +246,7 @@ def _score_property_type(sale: AuctionSale) -> ScoreComponent:
     }
     points, reason = mapping.get(sale.property_type or "", (Decimal("-2"), "type non qualifié"))
     confidence = Decimal("0.82") if sale.property_type not in {None, "unknown", "other"} else Decimal("0.45")
-    type_rule = _business_rule(sale, "property_type_from_specific_asset")
+    type_rule = business_rule(sale, "property_type_from_specific_asset")
     evidence = None
     evidence_refs: list[dict[str, Any]] = []
     calculation = f"Type retenu : {_property_type_label(sale.property_type)}. Barème appliqué : {points:+} point(s)."
@@ -236,7 +256,7 @@ def _score_property_type(sale: AuctionSale) -> ScoreComponent:
     )
     if type_rule and sale.property_type == "apartment":
         evidence = str(type_rule.get("evidence") or "") or None
-        evidence_refs = [_business_rule_to_ref(type_rule)]
+        evidence_refs = [business_rule_to_ref(type_rule)]
         confidence = Decimal(str(type_rule.get("confidence") or confidence))
         reason = "appartement/studio documenté, marché liquide"
         calculation = (
@@ -570,7 +590,7 @@ def _score_risks(sale: AuctionSale, risks: list[dict[str, Any]]) -> ScoreCompone
 def _score_data_quality(sale: AuctionSale) -> ScoreComponent:
     penalties: list[tuple[Decimal, str]] = []
     flags = set(sale.quality_flags)
-    contradictions = _analysis_contradictions(sale)
+    contradictions = analysis_contradictions(sale)
     if "ambiguous_surface" in flags:
         penalties.append((Decimal("5"), "surface ambiguë"))
     if "low_confidence_extraction" in flags:
@@ -608,7 +628,7 @@ def _score_data_quality(sale: AuctionSale) -> ScoreComponent:
             "comme des règles métier pour expliquer quelle information a été préférée et pourquoi."
         ),
         limits="Cette rubrique indique surtout ce qu'il faut vérifier avant de prendre une décision.",
-        evidence_refs=_business_rule_refs(sale),
+        evidence_refs=business_rule_refs(sale),
         axis="analysis_confidence",
         question="Les données et preuves sont-elles suffisantes pour utiliser le score ?",
     )
@@ -674,7 +694,7 @@ def _score_confidence(sale: AuctionSale, components: list[ScoreComponent]) -> De
         penalty += Decimal("0.12")
     if not sale.occupancy_status:
         penalty += Decimal("0.06")
-    contradictions = _analysis_contradictions(sale)
+    contradictions = analysis_contradictions(sale)
     if contradictions:
         penalty += min(Decimal("0.18"), Decimal("0.06") * Decimal(str(len(contradictions))))
     if sale_type_context(sale).get("status") == "non_judicial":

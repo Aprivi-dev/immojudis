@@ -64,7 +64,7 @@ def _init_worker(host_delay_seconds: float) -> None:
 def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[str, Any]:
     """Download a sale's documents and read their pages into the local caches. Never writes to the database."""
     from src.config import PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
-    from src.pdf_document_selection import _select_documents_for_extraction
+    from src.pdf_document_selection import select_documents_for_extraction
     from src.pdf_document_text_cache import read_document_text_cache
     from src.pdf_enrichment import (
         PdfEnrichmentStats,
@@ -102,7 +102,7 @@ def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[s
                 ocr_language=str(settings["pdf_ocr_language"]),
             )
             revalidate = {str(item.get("url") or "") for item in downloaded}
-            for document in _select_documents_for_extraction(downloaded, sale=sale, revalidate_urls=revalidate):
+            for document in select_documents_for_extraction(downloaded, sale=sale, revalidate_urls=revalidate):
                 result["documents"] += 1
                 file_path = Path(document["file_path"])
                 if read_document_text_cache(

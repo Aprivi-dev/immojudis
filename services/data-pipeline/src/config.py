@@ -163,6 +163,13 @@ def env_override(name: str) -> bool | None:
     return None
 
 
+def env_flag_on_unless_false(name: str) -> bool:
+    """Étape allumée sauf si un mot de ``FALSE_WORDS`` l'éteint : absente, vide ou inconnue, elle reste allumée.
+
+    Règle des interrupteurs d'arrêt d'urgence, à l'inverse d'``env_flag`` où une valeur inconnue éteint."""
+    return env_override(name) is not False
+
+
 def autonomous_run_id() -> str | None:
     """Passage lancé par ``src.autonomous_runner``, qui pose ``PIPELINE_AUTONOMOUS_RUN_ID`` ; ``None`` sinon."""
     return os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") or None

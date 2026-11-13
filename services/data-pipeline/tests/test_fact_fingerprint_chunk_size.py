@@ -67,7 +67,7 @@ def _long_document_sale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Auct
         documents=[{"url": "https://example.test/pv.pdf", "label": "PV"}],
         raw_payload={"source_checks": {"https://example.test/sale": {"evidence_fingerprint": "source-a"}}},
     )
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
 
     pages = [
         {"page": number, "text": _page_text(number, length), "method": "native"}
@@ -93,7 +93,7 @@ def _long_document_sale(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Auct
         "http_checked_at": datetime.now(UTC).isoformat(),
     }
     (tmp_path / f"{sale_storage_id(sale)}.json").write_text(json.dumps([pdf_payload]), encoding="utf-8")
-    _store_document_analysis_status(sale, sale.documents, [pdf_payload])
+    store_document_analysis_status(sale, sale.documents, [pdf_payload])
     return sale
 
 

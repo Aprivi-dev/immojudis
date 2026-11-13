@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from decimal import Decimal
 from typing import Any
@@ -20,20 +19,19 @@ from src.asset_normalization_helpers import (
     sale_type_context,
 )
 from src.asset_score_axes import AXIS_DEFINITIONS, ScoreComponent
-from src.config import ROOT_DIR
 from src.models import AuctionSale
 
 PREMIUM_ANALYSIS_VERSION = "premium_due_diligence_v1"
 
 
-def _build_premium_investment_analysis(
+def build_premium_investment_analysis(
     sale: AuctionSale,
     risks: list[dict[str, Any]],
     components: list[ScoreComponent],
     factor_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
     facts = _investment_facts(sale, risks)
-    contradictions = _analysis_contradictions(sale)
+    contradictions = analysis_contradictions(sale)
     axes = _axis_summaries(factor_rows, risks, contradictions, sale)
     questions = _investment_questions(sale, risks, contradictions)
     headline = _premium_headline(sale, risks, contradictions)
@@ -448,7 +446,7 @@ def _investment_questions(
     ]
 
 
-def _analysis_contradictions(sale: AuctionSale) -> list[dict[str, Any]]:
+def analysis_contradictions(sale: AuctionSale) -> list[dict[str, Any]]:
     contradictions: list[dict[str, Any]] = []
     rules = sale.raw_payload.get("business_rules")
     if isinstance(rules, list):
@@ -541,32 +539,6 @@ def _fact(
 
 def _question(key: str, question: str, status: str, answer: str) -> dict[str, str]:
     return {"key": key, "question": question, "status": status, "answer": answer}
-
-
-def _load_scoring_weights() -> dict[str, int | float | str]:
-    path = ROOT_DIR / "config" / "scoring.json"
-    defaults: dict[str, int | float | str] = {
-        "version": "v1",
-        "base_score": 50,
-        "occupation": 1,
-        "état": 1,
-        "type": 1,
-        "localisation": 1,
-        "surface": 1,
-        "prix_m2": 1,
-        "atouts": 1,
-        "risques": 1,
-        "qualité": 1,
-    }
-    if not path.exists():
-        return defaults
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return defaults
-    if isinstance(payload, dict):
-        defaults.update({key: value for key, value in payload.items() if isinstance(value, (int, float, str))})
-    return defaults
 
 
 def _axis_reading(

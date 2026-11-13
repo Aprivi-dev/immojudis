@@ -467,8 +467,3 @@ def _number(value: float) -> int | float:
 
 def _unique(values: Iterator[str] | list[str]) -> list[str]:
     return list(dict.fromkeys(str(value) for value in values if value))
-
-
-# Short aliases keep imports readable for callers that use ``evaluate`` as the
-# verb while retaining one implementation and one policy version.
-evaluate_catalogue_readiness = assess_catalogue_readiness

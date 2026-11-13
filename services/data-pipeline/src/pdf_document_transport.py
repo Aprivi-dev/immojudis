@@ -149,11 +149,3 @@ def resolve_public_document_target(
         port=port,
         addresses=tuple(sorted(addresses)),
     )
-
-
-def is_safe_public_document_url(url: str) -> bool:
-    try:
-        resolve_public_document_target(url)
-    except ValueError:
-        return False
-    return True

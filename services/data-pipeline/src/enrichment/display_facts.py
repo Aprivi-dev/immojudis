@@ -24,7 +24,6 @@ PROPERTY_TYPE_LABELS = {
     "mixed": "ensemble mixte",
 }
 JUDICIAL_FRAMEWORKS = {"judicial_seizure", "judicial_partition", "insolvency", "judicial"}
-NON_JUDICIAL_SOURCES = {"notaires", "cessions_etat", "agrasc"}
 VERIFIED_STATUSES = {"verified", "cross_checked"}
 FIXED_PRICE_RE = re.compile(r"\bvente\s+au\s+prix\b|\bpas\s+d['’]\s*ench[eè]res?\b", re.I)
 AMI_RE = re.compile(r"\bappel\s+[àa]\s+manifestation\s+d['’]\s*int[ée]r[êe]t\b", re.I)

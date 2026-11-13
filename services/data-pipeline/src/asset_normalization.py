@@ -16,12 +16,12 @@ from src.asset_normalization_helpers import (
     sale_text,
     sale_type_context,
 )
-from src.asset_scoring import _score_sale
+from src.asset_scoring import score_sale
 from src.asset_surface_normalization import (
-    _apply_document_consistency_corrections,
-    _fill_booleans,
-    _fill_counts,
-    _fill_surfaces,
+    apply_document_consistency_corrections,
+    fill_booleans,
+    fill_counts,
+    fill_surfaces,
 )
 from src.lot_scope import sale_fact_text
 from src.models import AuctionSale
@@ -160,20 +160,20 @@ def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
     if not text:
         _fill_quality_flags(sale)
         withhold_ambiguous_app_surface(sale)
-        _score_sale(sale, [])
+        score_sale(sale, [])
         sale.title = build_display_title(sale)
         return sale
 
-    _apply_document_consistency_corrections(sale, text)
-    _fill_surfaces(sale, text)
+    apply_document_consistency_corrections(sale, text)
+    fill_surfaces(sale, text)
     _restore_structured_surface_precision(sale)
-    _fill_counts(sale, text)
-    _fill_booleans(sale, text)
+    fill_counts(sale, text)
+    fill_booleans(sale, text)
     _clear_scoped_feature_false_positives(sale, text)
     risks = extract_risks(sale)
     _fill_quality_flags(sale)
     withhold_ambiguous_app_surface(sale)
-    _score_sale(sale, risks)
+    score_sale(sale, risks)
     _write_asset_payload(sale, risks)
     sale.title = build_display_title(sale)
     return sale

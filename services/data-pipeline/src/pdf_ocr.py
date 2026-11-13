@@ -329,7 +329,7 @@ def extract_page_text_with_ocr_result(
 def _pixmap_is_uniformly_light(pixmap: object) -> bool | None:
     """Vrai si l'image rendue est presque uniformément claire ; ``None`` si elle ne peut pas être mesurée.
 
-    Mêmes seuils que ``pdf_page_analysis._visual_page_profile`` (encre sous ``VISUAL_BLANK_INK_THRESHOLD`` sur au
+    Mêmes seuils que ``pdf_page_analysis.visual_page_profile`` (encre sous ``VISUAL_BLANK_INK_THRESHOLD`` sur au
     plus ``VISUAL_BLANK_INK_RATIO_MAX`` des pixels), sur un échantillon de pixels : l'image de l'OCR est grande.
     """
     try:

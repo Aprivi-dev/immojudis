@@ -1851,7 +1851,7 @@ def _persisted_pdf_sale_fixture(
     *,
     cache_dir: Path | None = None,
 ) -> tuple[AuctionSale, list[dict[str, object]]]:
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
 
     labels = (
         "PV descriptif",
@@ -1892,14 +1892,14 @@ def _persisted_pdf_sale_fixture(
         starting_price_eur=Decimal("100000"),
         documents=documents,
     )
-    _store_document_analysis_status(sale, documents, pdf_texts)
+    store_document_analysis_status(sale, documents, pdf_texts)
     if cache_dir is not None:
         from src import pdf_fact_extraction
 
         previous_cache_dir = pdf_fact_extraction.PDF_TEXTS_DIR
         pdf_fact_extraction.PDF_TEXTS_DIR = cache_dir
         try:
-            cache_path = pdf_fact_extraction._write_pdf_text_cache(sale, pdf_texts)
+            cache_path = pdf_fact_extraction.write_pdf_text_cache(sale, pdf_texts)
             pdf_texts = json.loads(cache_path.read_text(encoding="utf-8"))
         finally:
             pdf_fact_extraction.PDF_TEXTS_DIR = previous_cache_dir
@@ -2009,10 +2009,10 @@ def test_persisted_pdf_rest_timeout_is_single_attempt_and_pending(monkeypatch, t
 
 
 def test_mixed_pdf_manifest_never_queries_or_materializes_persisted_subset(monkeypatch, tmp_path) -> None:
-    from src.pdf_document_selection import _store_document_analysis_status
+    from src.pdf_document_selection import store_document_analysis_status
 
     sale, pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
-    _store_document_analysis_status(sale, sale.documents, pdf_texts[:3])
+    store_document_analysis_status(sale, sale.documents, pdf_texts[:3])
     monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
     connection = _PublicationReads()
     written: list[tuple[str, list[dict[str, object]], str]] = []

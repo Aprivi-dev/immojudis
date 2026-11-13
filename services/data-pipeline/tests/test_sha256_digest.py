@@ -20,4 +20,7 @@ def test_stored_digests_must_be_exactly_lowercase_hex() -> None:
     assert is_lowercase_sha256(LOWER)
     assert not is_lowercase_sha256("A" * 64)
     assert not is_lowercase_sha256(f" {LOWER}")
+    assert not is_lowercase_sha256(f"{LOWER}\n")
     assert not is_lowercase_sha256("a" * 65)
+    assert not is_lowercase_sha256(None)
+    assert not is_lowercase_sha256(list(LOWER))

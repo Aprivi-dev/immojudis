@@ -11,6 +11,7 @@ import pymupdf
 import pytest
 
 from src.asset_normalization import normalize_asset_features
+from src.config import load_settings
 from src.normalize import normalize_sale
 
 pdf = importlib.import_module("src.pdf_enrichment")
@@ -32,7 +33,7 @@ def test_terminal_piece_revokes_its_facts_with_another_piece_still_readable(
             {"url": retained_url, "label": "Conditions de vente"},
         ],
     })
-    settings = pdf.load_settings() | {
+    settings = load_settings() | {
         "incremental_enrichment": True,
         "pdf_ocr_enabled": False,
         "pdf_docling_enabled": False,

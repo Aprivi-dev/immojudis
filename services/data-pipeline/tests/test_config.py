@@ -151,6 +151,18 @@ def test_env_override_returns_none_unless_a_known_word_forces_it(monkeypatch) ->
         assert config.env_override("IMMOJUDIS_TEST_FLAG") is expected
 
 
+def test_env_flag_on_unless_false_only_turns_off_for_a_false_word(monkeypatch) -> None:
+    monkeypatch.delenv("IMMOJUDIS_TEST_FLAG", raising=False)
+    assert config.env_flag_on_unless_false("IMMOJUDIS_TEST_FLAG") is True
+    # À l'inverse d'env_flag : une valeur vide ou inconnue laisse l'étape allumée.
+    for value in ("", "true", "on", "enabled", "non"):
+        monkeypatch.setenv("IMMOJUDIS_TEST_FLAG", value)
+        assert config.env_flag_on_unless_false("IMMOJUDIS_TEST_FLAG") is True
+    for value in ("0", "false", "no", "off", " OFF ", "False"):
+        monkeypatch.setenv("IMMOJUDIS_TEST_FLAG", value)
+        assert config.env_flag_on_unless_false("IMMOJUDIS_TEST_FLAG") is False
+
+
 def test_autonomous_run_id_is_none_outside_an_autonomous_run(monkeypatch) -> None:
     monkeypatch.delenv("PIPELINE_AUTONOMOUS_RUN_ID", raising=False)
     assert config.autonomous_run_id() is None

@@ -11,7 +11,7 @@ from decimal import Decimal
 from src.admission import closes_expired_offer_deadline
 from src.lifecycle import mark_past_sales
 from src.models import AuctionSale
-from src.pdf_enrichment import enrich_sale_from_pdf_text
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text
 from src.pdf_offer_deadline import (
     apply_page_offer_deadline,
     extract_offer_deadline_from_documents,

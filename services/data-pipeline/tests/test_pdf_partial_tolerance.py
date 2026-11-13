@@ -3,7 +3,8 @@ from __future__ import annotations
 import pymupdf
 
 from src.normalize import normalize_sale
-from src.pdf_enrichment import _store_document_analysis_status, extract_pdf_document
+from src.pdf_document_selection import store_document_analysis_status
+from src.pdf_enrichment import extract_pdf_document
 from src.pdf_partial_tolerance import (
     failed_page_share_is_tolerable,
     is_tolerated_partial,
@@ -106,7 +107,7 @@ def test_a_retried_document_with_one_unreadable_page_out_of_ten_is_settled(tmp_p
     def one_pass():
         payload = extract_pdf_document(path, document=document)
         payload.update({"label": document["label"], "url": URL, "document_type": document["document_type"]})
-        _store_document_analysis_status(sale, [document], [payload])
+        store_document_analysis_status(sale, [document], [payload])
         return payload, sale.raw_payload["document_analysis"]
 
     payload, analysis = one_pass()

@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from src.normalize import clean_text
-from src.pdf_page_analysis import _page_requires_retry, _page_text_confidence
+from src.pdf_page_analysis import page_requires_retry, page_text_confidence
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 
 
@@ -48,7 +48,7 @@ def read_document_text_cache(
         return None
     if str(payload.get("extraction_status") or "").strip().lower() in {"incomplete", "failed"}:
         return None
-    if any(_page_requires_retry(page, ocr_enabled=ocr_enabled) for page in pages):
+    if any(page_requires_retry(page, ocr_enabled=ocr_enabled) for page in pages):
         return None
     return payload
 
@@ -68,7 +68,7 @@ def write_document_text_cache(
                 "chars": len(text),
                 "raw_text_chars": len(text),
                 "method": "legacy_text",
-                "confidence": _page_text_confidence(text, method="fallback_text"),
+                "confidence": page_text_confidence(text, method="fallback_text"),
                 "status": "extracted",
                 "retryable": False,
             }
