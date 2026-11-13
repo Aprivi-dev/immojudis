@@ -16,8 +16,8 @@ import pytest
 
 from src.enrichment import extract_structured as extraction
 from src.models import AuctionSale
-from src.pdf_enrichment import sale_storage_id
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
+from src.sale_local_files import sale_storage_id
 
 PAGE_LENGTHS = (18_000, 4_000, 6_000, 9_500, 3_000)
 

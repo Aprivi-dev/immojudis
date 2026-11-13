@@ -9,7 +9,8 @@ from datetime import UTC, datetime
 
 from dotenv import load_dotenv
 
-from src.config import ROOT_DIR
+from src.config import ROOT_DIR, load_settings
+from src.outcome_cli_args import maturity_days, positive_int
 from src.outcome_statistics.engine import build_statistics_bundle, calculate_period
 from src.outcome_statistics.models import StatisticsBundle
 from src.outcome_statistics.repository import (
@@ -26,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--max-rounds",
-        type=_positive_int,
+        type=positive_int,
         required=True,
         help="Hard ceiling for the complete mature-round universe; aborts if exceeded.",
     )
@@ -46,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--maturity-days",
-        type=_maturity_days,
+        type=maturity_days,
         default=30,
         help="Exclude the most recent incomplete period (default: 30 days).",
     )
@@ -70,7 +71,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if os.getenv("TRIBUNAL_STATISTICS_ENABLED") != "true":
         _print_error("tribunal statistics are disabled; set TRIBUNAL_STATISTICS_ENABLED=true explicitly")
         return 2
-    db_url = (os.getenv("SUPABASE_DB_URL") or "").strip()
+    db_url = str(load_settings().get("supabase_db_url") or "").strip()
     if not db_url:
         _print_error("SUPABASE_DB_URL is required")
         return 2
@@ -158,20 +159,6 @@ def _bundle_summary(bundle: StatisticsBundle) -> dict[str, object]:
         "python_preview_source_manifest_hash": bundle.national.source_manifest_hash,
         "python_preview_statistics_hash": bundle.national.statistics_hash,
     }
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("value must be positive")
-    return parsed
-
-
-def _maturity_days(value: str) -> int:
-    parsed = int(value)
-    if not 1 <= parsed <= 365:
-        raise argparse.ArgumentTypeError("value must be between 1 and 365")
-    return parsed
 
 
 def _iso_datetime(value: str) -> datetime:

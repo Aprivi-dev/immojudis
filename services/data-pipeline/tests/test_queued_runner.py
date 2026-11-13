@@ -1498,7 +1498,7 @@ def test_worker_pdf_deadline_is_scoped_and_leaves_finalization_margin(monkeypatc
     assert observed_remaining
     assert all(
         value is not None
-        and 0 < value <= 1200 - queued_runner._pdf_finalization_margin_seconds(1200)
+        and 0 < value <= 1200 - queued_runner.pdf_finalization_margin_seconds(1200)
         for value in observed_remaining
     )
     assert pdf_enrichment.pdf_deadline_remaining() is None
@@ -1530,7 +1530,7 @@ def test_worker_source_and_llm_deadline_scopes_use_existing_finalization_margin(
 
     monkeypatch.setattr(queued_runner, "run_enrichment_queue_batch", fake_batch)
     started = time.monotonic()
-    queued_runner._run_enrichment_queue_batch_with_deadline(
+    queued_runner.run_enrichment_queue_batch_with_deadline(
         limit=1,
         family=queued_runner.SOURCE_DETAIL_FAMILY,
         provider_clients={},
@@ -1590,7 +1590,7 @@ def test_worker_stops_slow_tasks_before_claiming_past_budget(monkeypatch, caplog
 
     assert handled == 2
     assert claim_start_times == [0.0, 30.0]
-    assert all(start < 60.0 - queued_runner._pdf_finalization_margin_seconds(60) for start in claim_start_times)
+    assert all(start < 60.0 - queued_runner.pdf_finalization_margin_seconds(60) for start in claim_start_times)
     assert max_active_claims == 1
     assert active_claims == 0
     summary = next(record.getMessage() for record in caplog.records if "Enrichment worker summary" in record.getMessage())
@@ -1608,8 +1608,8 @@ def test_worker_short_budget_keeps_a_scaled_pdf_margin_and_processes_job(monkeyp
 
     assert queued_runner._run_enrichment_queue_worker(max_jobs=1, budget_seconds=60) == 1
     assert observed_remaining and observed_remaining[0] is not None
-    assert 0 < observed_remaining[0] <= 60 - queued_runner._pdf_finalization_margin_seconds(60)
-    assert queued_runner._pdf_finalization_margin_seconds(60) < queued_runner.PDF_FINALIZATION_MARGIN_SECONDS
+    assert 0 < observed_remaining[0] <= 60 - queued_runner.pdf_finalization_margin_seconds(60)
+    assert queued_runner.pdf_finalization_margin_seconds(60) < queued_runner.PDF_FINALIZATION_MARGIN_SECONDS
 
 
 def test_enrichment_worker_gives_empty_lane_slot_to_other_family(monkeypatch) -> None:

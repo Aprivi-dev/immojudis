@@ -24,8 +24,8 @@ import copy
 from datetime import UTC, datetime, timedelta
 
 from src.admission import catalogue_write_rejection, closes_expired_offer_deadline
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.models import AuctionSale
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 from src.pdf_progress import document_url, manifest_is_complete, persisted_revalidation_due_at
 from src.pipeline_usage import QueueJobDeferred
 

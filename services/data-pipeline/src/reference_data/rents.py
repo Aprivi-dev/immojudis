@@ -26,6 +26,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from src.reference_data.download import decode_csv
 from src.reference_data.gaspar import repair_mojibake
 from src.reference_data.names import department_from_insee
 
@@ -165,16 +166,6 @@ def newer_vintages(search: Mapping[str, Any], current_vintage: int) -> list[Newe
         if years and max(years) > current_vintage:
             found.append(NewerVintage(max(years), title, str(item.get("id") or "")))
     return found
-
-
-def decode_csv(raw: bytes) -> str:
-    """UTF-8 when the file is valid UTF-8, else Windows-1252, else Latin-1."""
-    for encoding in ("utf-8-sig", "cp1252"):
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("latin-1")
 
 
 def parse_rent_file(

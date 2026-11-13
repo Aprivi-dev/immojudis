@@ -197,7 +197,8 @@ def _judicial_label(sale: Any) -> str:
     return f"vente judiciaire aux enchères ({tribunal})" if tribunal else "vente judiciaire aux enchères"
 
 
-def _decimal(value: Any) -> Decimal | None:
+def positive_decimal(value: Any) -> Decimal | None:
+    """Montant ou surface strictement positif et fini ; ``None`` pour tout le reste (booléens compris)."""
     if value is None or isinstance(value, bool):
         return None
     try:
@@ -221,7 +222,7 @@ def known_offer_amounts(sale: Any) -> list[Decimal]:
                 )
     amounts: list[Decimal] = []
     for candidate in candidates:
-        number = _decimal(candidate)
+        number = positive_decimal(candidate)
         if number is not None and number not in amounts:
             amounts.append(number)
     return amounts

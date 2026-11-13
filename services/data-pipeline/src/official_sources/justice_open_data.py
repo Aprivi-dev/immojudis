@@ -14,7 +14,7 @@ from typing import Any
 
 from src.text_folding import ascii_alnum_words, strip_accents, to_ascii
 
-from .base import canonical_sha256
+from .base import canonical_sha256, has_excessive_controls, looks_like_html
 
 JUSTICE_COMPETENCES_DATASET_URL = (
     "https://www.data.gouv.fr/datasets/liste-des-juridictions-competentes-pour-les-communes-de-france"
@@ -402,9 +402,9 @@ def _decode_text_file(path: Path) -> tuple[str, str]:
             text = payload.decode(encoding, errors="strict")
         except UnicodeDecodeError:
             continue
-        if _looks_like_html(text):
+        if looks_like_html(text):
             raise JusticeOpenDataSchemaError("download is HTML, not a Justice CSV resource")
-        if _has_excessive_controls(text):
+        if has_excessive_controls(text):
             raise JusticeOpenDataSchemaError("CSV file contains unexpected control characters")
         return text, encoding
     raise JusticeOpenDataSchemaError("CSV encoding is neither UTF-8 nor Windows-1252")
@@ -473,18 +473,6 @@ def _clean_text(value: object) -> str:
 
 def _court_fingerprint(value: object) -> str:
     return ascii_alnum_words(strip_accents(_clean_text(value)).lower())
-
-
-def _looks_like_html(text: str) -> bool:
-    prefix = text.lstrip()[:512].lower()
-    return prefix.startswith(("<!doctype html", "<html", "<?xml")) or "<html" in prefix
-
-
-def _has_excessive_controls(text: str) -> bool:
-    if not text:
-        return False
-    controls = sum(ord(char) < 32 and char not in "\r\n\t" for char in text[:100_000])
-    return controls > max(2, len(text[:100_000]) // 1_000)
 
 
 def _main() -> int:

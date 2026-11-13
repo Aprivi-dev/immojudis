@@ -15,6 +15,7 @@ from src.display_invalidation import (
     merge_capture_fingerprints,
 )
 from src.normalize import clean_text
+from src.sale_local_files import sale_storage_id
 
 SOURCE_EXTRACTION_VERSION = "source_extraction_20260913_v3"
 
@@ -367,11 +368,10 @@ def _local_pdf_cache_is_complete(
 ) -> bool:
     try:
         from src.config import PDF_TEXTS_DIR
-        from src.pdf_enrichment import sale_storage_id
 
         path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (ImportError, OSError, TypeError, UnicodeError, ValueError, json.JSONDecodeError):
+    except (OSError, TypeError, UnicodeError, ValueError, json.JSONDecodeError):
         return False
     if not isinstance(payload, list):
         return False

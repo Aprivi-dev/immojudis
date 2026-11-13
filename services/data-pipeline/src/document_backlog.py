@@ -41,11 +41,11 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from src.config import load_settings
+from src.config import document_reading_limits, load_settings
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.freshness import documents_are_current
 from src.models import AuctionSale
 from src.normalize import clean_text
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 from src.pdf_pass_outcomes import waits_for_its_deadline
 
 if TYPE_CHECKING:
@@ -552,17 +552,17 @@ def new_facts(before: dict[str, object], after: dict[str, object]) -> list[str]:
 def _process_job(job: dict[str, Any], *, deadline: float) -> None:
     from src.queued_runner import (
         ENRICHMENT_FAMILY,
-        _pdf_finalization_margin_seconds,
-        _run_enrichment_queue_batch_with_deadline,
+        pdf_finalization_margin_seconds,
+        run_enrichment_queue_batch_with_deadline,
     )
 
     remaining = max(0.0, deadline - time.monotonic())
-    _run_enrichment_queue_batch_with_deadline(
+    run_enrichment_queue_batch_with_deadline(
         limit=1,
         family=ENRICHMENT_FAMILY,
         provider_clients={},
         worker_deadline=deadline,
-        finalization_margin_seconds=_pdf_finalization_margin_seconds(remaining),
+        finalization_margin_seconds=pdf_finalization_margin_seconds(remaining),
         claimed_jobs=[job],
     )
 
@@ -892,12 +892,9 @@ def _run_document_reading() -> dict[str, int] | str:
     if not reading_enabled():
         return "disabled"
     db_url = str(load_settings().get("supabase_db_url") or "")
+    max_sales, budget_seconds = document_reading_limits()
     try:
-        return run_document_readings(
-            db_url,
-            max_sales=_bounded_int(os.getenv("DOCUMENT_READING_MAX_SALES"), 40, 1, 500),
-            budget_seconds=60.0 * _bounded_int(os.getenv("DOCUMENT_READING_BUDGET_MINUTES"), 20, 1, 120),
-        )
+        return run_document_readings(db_url, max_sales=max_sales, budget_seconds=budget_seconds)
     except Exception as exc:  # noqa: BLE001 - reported in the summary, never fatal
         LOGGER.warning("Document reading stopped: %s", exc)
         return f"error: {type(exc).__name__}"

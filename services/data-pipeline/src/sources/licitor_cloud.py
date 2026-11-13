@@ -308,6 +308,8 @@ class CollectorHandler(BaseHTTPRequestHandler):
         if os.environ.get("VERCEL_ENV") != "production":
             self.respond(409, {"ok": False, "error": "Collection is production-only"})
             return
+        # Read directly, not through load_settings(): this Vercel handler needs this one variable, and load_settings()
+        # would parse the whole pipeline configuration (any malformed number in it raises) on every request.
         if source_withdrawal.is_source_withdrawn("licitor", os.environ.get("SUPABASE_DB_URL")):
             # No source is withdrawn today; without the main database URL the switch cannot be read and the source runs.
             self.respond(409, {"ok": False, "error": "Source withdrawn from the catalogue"})

@@ -12,9 +12,9 @@ import pytest
 
 from src import queued_runner
 from src.document_backlog import is_refused_checkpoint
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.freshness import document_fingerprint, timestamp_is_fresh
 from src.models import AuctionSale
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 from src.pdf_pass_outcomes import (
     ADMISSION_REFUSAL_DELAY,
     NOTHING_DUE_DEFERRAL,

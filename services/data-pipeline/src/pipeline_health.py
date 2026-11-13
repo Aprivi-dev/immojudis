@@ -9,7 +9,7 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
-from src.config import load_settings
+from src.config import env_override, load_settings
 from src.storage.supabase_client import connect
 
 LOGGER = logging.getLogger(__name__)
@@ -130,11 +130,9 @@ def main(*, report_only: bool = False) -> int:
 def full_drift_due(now: datetime) -> bool:
     """La requête de dérive complète (toutes les lignes) tourne le lundi (UTC) ; ``PIPELINE_HEALTH_FULL_DRIFT``
     la force (``true``) ou l'empêche (``false``)."""
-    forced = (os.getenv("PIPELINE_HEALTH_FULL_DRIFT") or "").strip().lower()
-    if forced in {"1", "true", "yes", "on"}:
-        return True
-    if forced in {"0", "false", "no", "off"}:
-        return False
+    forced = env_override("PIPELINE_HEALTH_FULL_DRIFT")
+    if forced is not None:
+        return forced
     return now.astimezone(UTC).weekday() == FULL_DRIFT_WEEKDAY
 
 

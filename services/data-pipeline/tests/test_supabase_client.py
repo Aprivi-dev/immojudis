@@ -17,6 +17,7 @@ from src.court_competence import CompetentCourtAssignment
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.reviewed_aliases import registry_from_rows
+from src.sha256_digest import is_sha256
 from src.storage import postgrest_helpers, supabase_client
 from src.storage.known_sale_projection import KNOWN_SALE_RAW_PAYLOAD_KEYS, KNOWN_SALE_RAW_PAYLOAD_PROJECTION
 from src.storage.postgrest_payload import POSTGREST_MAX_PAYLOAD_DEPTH
@@ -1837,12 +1838,12 @@ def test_upsert_documents_deduplicates_document_urls(monkeypatch) -> None:
     ["+" + "a" * 63, "-" + "a" * 63, "0x" + "a" * 62],
 )
 def test_sha256_rejects_non_hex_prefixes(value: str) -> None:
-    assert not supabase_client._is_sha256(value)
+    assert not is_sha256(value)
 
 
 @pytest.mark.parametrize("value", ["a" * 64, "A" * 64])
 def test_sha256_accepts_lowercase_and_uppercase_hex(value: str) -> None:
-    assert supabase_client._is_sha256(value)
+    assert is_sha256(value)
 
 
 def _persisted_pdf_sale_fixture(

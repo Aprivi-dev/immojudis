@@ -5,7 +5,6 @@ import atexit
 import copy
 import hashlib
 import json
-import os
 import time
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -14,7 +13,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from src.config import load_settings
+from src.config import autonomous_run_id, load_settings
 from src.models import INTERNAL_CONTACTS_KEY
 
 # Checkpoint retention is deliberately independent from source freshness.  A
@@ -53,7 +52,7 @@ def _configure_checkpoint_transaction(db) -> None:
 
 @lru_cache(maxsize=1)
 def _context():
-    run_id = os.getenv('PIPELINE_AUTONOMOUS_RUN_ID')
+    run_id = autonomous_run_id()
     db_url = load_settings().get('supabase_db_url') if run_id else None
     if not run_id or not db_url:
         return None

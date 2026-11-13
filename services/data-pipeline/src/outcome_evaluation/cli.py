@@ -10,7 +10,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.config import ROOT_DIR
+from src.config import ROOT_DIR, load_settings
+from src.outcome_cli_args import maturity_days, positive_int
 from src.outcome_evaluation.engine import evaluate, invalid_input_report
 from src.outcome_evaluation.models import (
     COMMERCIAL_THRESHOLDS_V1,
@@ -69,8 +70,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--test-end", type=_iso_date, required=True)
     parser.add_argument("--label-cutoff-at", type=_iso_datetime, required=True)
     parser.add_argument("--computed-at", type=_iso_datetime, default=None)
-    parser.add_argument("--maturity-days", type=_maturity_days, default=30)
-    parser.add_argument("--max-records", type=_positive_int, required=True)
+    parser.add_argument("--maturity-days", type=maturity_days, default=30)
+    parser.add_argument("--max-records", type=positive_int, required=True)
     parser.add_argument("--input-json", type=Path, help="Read aggregate non-PII records from JSON instead of the database.")
     parser.add_argument("--model-key", default="outcome_graph")
     parser.add_argument("--model-version", default="current")
@@ -114,7 +115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.input_json is not None:
             records = _load_json_records(args.input_json, args.max_records)
         else:
-            db_url = (os.getenv("SUPABASE_DB_URL") or "").strip()
+            db_url = str(load_settings().get("supabase_db_url") or "").strip()
             if not db_url:
                 raise EvaluationInputError("database configuration is missing")
             repository = OutcomeEvaluationRepository(db_url)
@@ -246,20 +247,6 @@ def _json_optional_datetime(value: object) -> datetime | None:
 
 def _optional_float(value: object) -> float | None:
     return None if value is None else float(value)
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("value must be positive")
-    return parsed
-
-
-def _maturity_days(value: str) -> int:
-    parsed = int(value)
-    if not 1 <= parsed <= 365:
-        raise argparse.ArgumentTypeError("value must be between 1 and 365")
-    return parsed
 
 
 def _print_json(payload: object) -> None:

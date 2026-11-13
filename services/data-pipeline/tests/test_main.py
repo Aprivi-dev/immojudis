@@ -1793,8 +1793,8 @@ def _raw_sale() -> dict[str, object]:
 def _materialize_current_pdf_proof(sale: AuctionSale, tmp_path, monkeypatch) -> None:
     """Give freshness checks the same complete evidence as a real PDF pass."""
     from src.pdf_document_selection import _store_document_analysis_status
-    from src.pdf_enrichment import sale_storage_id
     from src.pdf_progress import PDF_TEXT_CACHE_VERSION
+    from src.sale_local_files import sale_storage_id
 
     monkeypatch.setattr("src.config.PDF_TEXTS_DIR", tmp_path)
     text = "Preuve PDF stable pour la fixture."

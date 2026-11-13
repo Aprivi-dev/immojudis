@@ -31,7 +31,6 @@ import argparse
 import contextlib
 import hashlib
 import json
-import os
 import re
 import sys
 from collections.abc import Callable, Iterator, Mapping
@@ -296,19 +295,6 @@ def _patched(target: object, name: str, value: object) -> Iterator[None]:
         setattr(target, name, original)
 
 
-@contextlib.contextmanager
-def _environment(name: str, value: str) -> Iterator[None]:
-    original = os.environ.get(name)
-    os.environ[name] = value
-    try:
-        yield
-    finally:
-        if original is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = original
-
-
 class StubModelClient:
     """Client de remplacement du worker : ``respond(clé de la pièce, système, utilisateur)`` rend la sortie."""
 
@@ -358,7 +344,6 @@ def run_case(
         raise EvaluationHarnessError("règles seules : le client du modèle ne doit pas être créé")
 
     with (
-        _environment("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED", "true" if client is not None else "false"),
         _patched(evidence, "load_settings", lambda: settings),
         _patched(llm_client, "create_llm_client", (lambda: client) if client is not None else no_client),
         httpx.Client(transport=httpx.MockTransport(fake.handle)) as http,

@@ -1,6 +1,5 @@
 """Faits tirés des pièces jointes : extraits réels qui donnaient des valeurs fausses (02/11/2026)."""
 
-import src.pdf_enrichment  # noqa: F401  (resolves the pdf_enrichment / pdf_fact_extraction import cycle)
 from src.models import AuctionSale
 from src.normalize import has_rented_occupancy_signal, normalize_occupancy_status
 from src.pdf_fact_extraction import _extract_occupancy_status, enrich_sale_from_pdf_text

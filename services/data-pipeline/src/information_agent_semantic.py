@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import base64
 import math
-import os
 import re
 import time
 import unicodedata
@@ -20,6 +19,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
+from src.config import is_true_value
 from src.document_reading import MIN_QUOTE_CHARS, sold_lot_from_sale
 from src.french_dates import MONTH_ABBREVIATIONS, MONTH_NUMBERS
 from src.information_agent_review_signals import (
@@ -1120,10 +1120,8 @@ def run_configured_semantic_analysis(
     separately gated :func:`run_configured_photo_analysis` owns the documented
     Qwen3.7-Plus image input path.
     """
-    if not _setting_enabled(settings.get("information_agent_evidence_semantic_enabled")):
-        raw = os.getenv("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED")
-        if not _setting_enabled(raw):
-            return SemanticAnalysis("disabled", [])
+    if not is_true_value(settings.get("information_agent_evidence_semantic_enabled")):
+        return SemanticAnalysis("disabled", [])
     try:
         from src.enrichment.llm_client import create_llm_client
 
@@ -1231,7 +1229,7 @@ def run_configured_photo_analysis(
     ocr_text: str | None = None,
 ) -> PhotoSemanticAnalysis:
     """Use the existing Replicate client for one explicitly enabled photo pass."""
-    if not _setting_enabled(settings.get("information_agent_evidence_vision_enabled")):
+    if not is_true_value(settings.get("information_agent_evidence_vision_enabled")):
         return PhotoSemanticAnalysis("disabled")
     data_url = image_bytes_to_data_url(content, mime_type)
     if data_url is None:
@@ -1289,12 +1287,6 @@ def _validate_photo_text(value: object, maximum: int) -> str | None:
     if any(term in lowered for term in PHOTO_FORBIDDEN_CLAIM_TERMS):
         return None
     return text
-
-
-def _setting_enabled(value: object) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return value is True
 
 
 __all__ = [

@@ -808,12 +808,14 @@ select p.path_640, p.path_1600 from public.sale_photos p
 """
 
 
-class PostgresPhotoStore:
-    """``sale_photos`` and the read-only catalogue selection, on one autocommit connection.
+class AdvisoryLockedStore:
+    """One autocommit connection that can also hold a session advisory lock, released when it closes.
 
-    The connection also holds the session advisory lock that keeps two passes (the scheduled one and a
-    manual backfill) from hitting the same hosts together.
+    The lock keeps two passes of the same job (the scheduled one and a manual backfill) from hitting the same
+    hosts together. Shared by the photo mirror and the document photo pass, each with its own ``lock_name``.
     """
+
+    lock_name: str
 
     def __init__(self, db_url: str, *, connect: Callable[[str], Any] | None = None) -> None:
         if connect is None:
@@ -824,8 +826,22 @@ class PostgresPhotoStore:
         self._connection.autocommit = True
 
     def try_lock(self) -> bool:
-        row = self._connection.execute("select pg_try_advisory_lock(hashtextextended(%s, 0))", (LOCK_NAME,)).fetchone()
+        row = self._connection.execute(
+            "select pg_try_advisory_lock(hashtextextended(%s, 0))", (self.lock_name,)
+        ).fetchone()
         return bool(row and row[0])
+
+    def close(self) -> None:
+        try:
+            self._connection.close()
+        except Exception:  # noqa: BLE001 - closing releases the advisory lock anyway
+            pass
+
+
+class PostgresPhotoStore(AdvisoryLockedStore):
+    """``sale_photos`` and the read-only catalogue selection."""
+
+    lock_name = LOCK_NAME
 
     def select_candidates(self, limit: int, *, include_encheres_publiques: bool) -> list[Candidate]:
         rows = self._connection.execute(
@@ -900,12 +916,6 @@ class PostgresPhotoStore:
         rows = self._connection.execute(STORED_PATHS_SQL, (paths, paths)).fetchall()
         return {path for row in rows for path in row if path in paths}
 
-    def close(self) -> None:
-        try:
-            self._connection.close()
-        except Exception:  # noqa: BLE001 - closing releases the advisory lock anyway
-            pass
-
 
 # --------------------------------------------------------------------------------------------------
 # Limits, summary and logs
@@ -918,7 +928,8 @@ class MirrorLimits:
     max_photos: int = DEFAULT_MAX_PHOTOS
 
 
-def _bounded_int(value: object, default: int, low: int, high: int) -> int:
+def bounded_int(value: object, default: int, low: int, high: int) -> int:
+    """An integer input (argument or variable) within ``[low, high]`` ; ``default`` when absent or unreadable."""
     try:
         parsed = int(str(value).strip()) if value is not None and str(value).strip() else default
     except (TypeError, ValueError):
@@ -932,8 +943,8 @@ def limits_from_inputs(
     """Bounded limits. ``automatic`` (scheduled step) caps the budget at ``AUTOMATIC_MAX_BUDGET_MINUTES``."""
     ceiling = min(MAX_BUDGET_MINUTES, AUTOMATIC_MAX_BUDGET_MINUTES) if automatic else MAX_BUDGET_MINUTES
     return MirrorLimits(
-        budget_seconds=60.0 * _bounded_int(budget_minutes, min(DEFAULT_BUDGET_MINUTES, ceiling), 1, ceiling),
-        max_photos=_bounded_int(max_photos, DEFAULT_MAX_PHOTOS, 1, MAX_PHOTOS_LIMIT),
+        budget_seconds=60.0 * bounded_int(budget_minutes, min(DEFAULT_BUDGET_MINUTES, ceiling), 1, ceiling),
+        max_photos=bounded_int(max_photos, DEFAULT_MAX_PHOTOS, 1, MAX_PHOTOS_LIMIT),
     )
 
 
@@ -976,7 +987,8 @@ class MirrorSummary:
         }
 
 
-def _emit(payload: Mapping[str, Any]) -> None:
+def emit(payload: Mapping[str, Any]) -> None:
+    """One JSON log line on standard output, flushed at once."""
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str), flush=True)
 
 
@@ -1236,7 +1248,7 @@ def run_photo_mirror(
             if result.status == "deferred":
                 # Nothing is written: the photo is selected again by the next pass.
                 _count(summary, result)
-                _emit(_photo_log(result))
+                emit(_photo_log(result))
                 continue
             try:
                 written = store.save(result)
@@ -1255,7 +1267,7 @@ def run_photo_mirror(
                 _discard(storage, [p for p in (result.path_640, result.path_1600) if p], store)
                 result.status, result.reason = "failed", "row_changed"
             _count(summary, result)
-            _emit(_photo_log(result))
+            emit(_photo_log(result))
             _update_host_health(host, result, host_failures, paused_hosts)
         return summary
     finally:
@@ -1358,7 +1370,7 @@ def main(argv: list[str] | None = None) -> int:
             "no photo was selected or copied. See the job log."
         )
         return 1
-    _emit(summary)
+    emit(summary)
     _write_step_summary(summary)
     return 0
 

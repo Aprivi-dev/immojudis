@@ -1,6 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-import src.pdf_enrichment  # noqa: F401  (loads pdf_fact_extraction without a circular import)
 from src.models import AuctionSale
 from src.pdf_fact_extraction import _assign_pdf_sale_date
 from src.pdf_sale_date_guard import pdf_sale_date_is_past

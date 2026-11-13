@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from src.config import load_settings
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.extraction_profiles import build_procedure_profile
 from src.freshness import document_fingerprint, timestamp_is_fresh
 from src.models import AuctionSale
@@ -23,8 +24,8 @@ from src.pdf_document_types import (
     _canonical_document_type,
     _normalize_document_classifier_text,
 )
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION, _profile_pdf_for_docling
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, summarize_pdf_failure
+from src.pdf_page_analysis import profile_pdf_for_docling
 from src.pdf_partial_tolerance import tolerated_partial_documents
 from src.pdf_progress import (
     PDF_PROGRESS_SCHEMA_VERSION,
@@ -982,7 +983,7 @@ def _adaptive_docling_timeout(
     )
     if re.search(r"sign|sign[ée]e?|anonymis|saisie-immobiliere|saisie\s+immobili[eè]re", text, re.I):
         return min(default_timeout, fast_timeout)
-    profile = _profile_pdf_for_docling(path)
+    profile = profile_pdf_for_docling(path)
     if document_type in {"cahier_conditions", "cahier_conditions_vente", "conditions_vente"} and (
         profile["page_count"] >= 15 or profile["first_pages_text_chars"] < int(settings["pdf_docling_threshold_chars"])
     ):

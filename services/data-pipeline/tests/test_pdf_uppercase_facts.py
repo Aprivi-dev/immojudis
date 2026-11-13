@@ -2,7 +2,6 @@
 
 from decimal import Decimal
 
-import src.pdf_enrichment  # noqa: F401  (loads pdf_fact_extraction without a circular import)
 from src.normalize import parse_french_datetime
 from src.pdf_starting_price import _extract_starting_price_with_evidence
 

@@ -17,6 +17,7 @@ from typing import Any
 
 from src.freshness import document_fingerprint, timestamp_is_fresh
 from src.normalize import clean_text
+from src.sha256_digest import is_sha256
 
 PDF_TEXT_CACHE_VERSION = "pdf_text_v4_mixed_image_ocr"
 PDF_PROGRESS_SCHEMA_VERSION = 1
@@ -330,11 +331,6 @@ def checkpoint_partial_pdf_progress(
     if status_error is not None:
         error.partial_status_error = status_error
     return True
-
-
-def is_sha256(value: object) -> bool:
-    text = clean_text(value) or ""
-    return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)
 
 
 def is_modern_payload(

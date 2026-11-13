@@ -835,27 +835,6 @@ def _ocr_image_bytes(content: bytes, mime_type: str) -> str:
         return ""
 
 
-def _evidence_ocr_enabled(settings: dict[str, Any]) -> bool:
-    """Use an attachment-specific OCR switch, enabled by default.
-
-    ``PDF_OCR_ENABLED`` controls the large catalogue enrichment pipeline and
-    is intentionally off in some production runs to preserve budget. Replies
-    from professionals are a separate product workflow: silently skipping OCR
-    there would mark a scanned document or a photographed diagnostic as
-    completed without reading it. Operators can still disable this worker with
-    ``INFORMATION_AGENT_EVIDENCE_OCR_ENABLED=false``.
-    """
-    configured = settings.get("information_agent_evidence_ocr_enabled")
-    if configured is not None:
-        if isinstance(configured, str):
-            return configured.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(configured)
-    raw = os.getenv("INFORMATION_AGENT_EVIDENCE_OCR_ENABLED")
-    if raw is not None:
-        return raw.strip().lower() in {"1", "true", "yes", "on"}
-    return True
-
-
 def _surface_facts(text: str, page: int) -> list[EvidenceFact]:
     facts: list[EvidenceFact] = []
     patterns = (
@@ -1140,7 +1119,7 @@ def _process_job(
             content,
             filename=str(asset.get("original_filename") or "piece-jointe"),
             declared_mime_type=str(asset.get("mime_type") or ""),
-            ocr_enabled=_evidence_ocr_enabled(settings),
+            ocr_enabled=bool(settings.get("information_agent_evidence_ocr_enabled", True)),
         )
         # Consigne adressée à un modèle dans le texte de la pièce : aucun fait (ni règle ni IA), relecture.
         prompt_injection = contains_prompt_injection(analysis.extracted_text)

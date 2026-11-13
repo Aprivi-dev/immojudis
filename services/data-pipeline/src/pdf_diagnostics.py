@@ -7,14 +7,15 @@ import pandas as pd
 
 from src.config import DOCUMENTS_DIR, PROCESSED_DIR, load_settings
 from src.pdf_document_types import classify_document_type
-from src.pdf_enrichment import _docling_cache_path, _profile_pdf_for_docling, _should_docling_ocr
+from src.pdf_enrichment import _docling_cache_path, _should_docling_ocr
+from src.pdf_page_analysis import profile_pdf_for_docling
 
 
 def build_pdf_diagnostics(documents_dir: Path = DOCUMENTS_DIR) -> list[dict[str, object]]:
     settings = load_settings()
     rows = []
     for path in sorted(documents_dir.glob("*/*.pdf")):
-        profile = _profile_pdf_for_docling(path)
+        profile = profile_pdf_for_docling(path)
         row = {
             "sale_id": path.parent.name,
             "file_name": path.name,

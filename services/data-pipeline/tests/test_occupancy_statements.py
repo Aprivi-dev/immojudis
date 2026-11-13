@@ -5,8 +5,7 @@ Chaque extrait vient d'une vente en ligne (préfixe d'identifiant en commentaire
 
 import pytest
 
-import src.pdf_enrichment  # noqa: F401  (loads pdf_fact_extraction without a circular import)
-from src.known_document_backfill import _backfill_document_occupancy_from_known
+from src.known_document_backfill import backfill_document_occupancy_from_known
 from src.normalize import normalize_occupancy_status, normalize_sale
 from src.occupancy_statements import occupancy_from_text, occupancy_status_from_text, read_occupancy_statement
 from src.pdf_fact_extraction import enrich_sale_from_pdf_text
@@ -332,7 +331,7 @@ def test_occupancy_read_in_the_documents_survives_a_page_without_one() -> None:
     }
     sale: dict[str, object] = {"occupancy_status": None}
 
-    assert _backfill_document_occupancy_from_known(sale, known) == 1
+    assert backfill_document_occupancy_from_known(sale, known) == 1
     assert sale["occupancy_status"] == "vacant"
-    assert _backfill_document_occupancy_from_known({"occupancy_status": "rented"}, known) == 0
-    assert _backfill_document_occupancy_from_known({"occupancy_status": None}, {"raw_payload": {}}) == 0
+    assert backfill_document_occupancy_from_known({"occupancy_status": "rented"}, known) == 0
+    assert backfill_document_occupancy_from_known({"occupancy_status": None}, {"raw_payload": {}}) == 0

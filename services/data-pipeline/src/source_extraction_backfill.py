@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from src.asset_normalization import normalize_asset_features
+from src.config import load_settings
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.extraction_profiles import attach_source_property_features
 from src.recompute_scoring import _sale_from_storage_row
@@ -824,8 +825,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", help="Chemin du plan produit; défaut: source-extraction-backfill-plan.json.")
     parser.add_argument("--backup", required=True, help="Sauvegarde privée obligatoire (mode 0600).")
     parser.add_argument("--apply-plan", metavar="PLAN.json", help="Applique un plan signé existant.")
-    parser.add_argument("--postgrest-url", default=os.getenv("SUPABASE_URL"))
-    parser.add_argument("--api-key", default=os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    settings = load_settings()
+    parser.add_argument("--postgrest-url", default=settings.get("supabase_url"))
+    parser.add_argument("--api-key", default=settings.get("supabase_service_role_key"))
     return parser
 
 

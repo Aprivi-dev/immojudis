@@ -35,7 +35,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.config import load_settings
+from src.config import document_reading_limits, load_settings
 from src.dpe_reading_guard import checked_energy_point, is_energy_point
 from src.enrichment.display_evidence import PUBLIC_EMAIL, PUBLIC_LINK, PUBLIC_PHONE
 from src.enrichment.display_facts import PROPERTY_TYPE_LABELS
@@ -1166,8 +1166,8 @@ def reading_enabled() -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Lecture IA des pièces du dossier")
-    parser.add_argument("--max-sales", type=int, default=int(os.getenv("DOCUMENT_READING_MAX_SALES", "40")))
-    parser.add_argument("--budget-minutes", type=float, default=float(os.getenv("DOCUMENT_READING_BUDGET_MINUTES", "20")))
+    parser.add_argument("--max-sales", type=int, help="défaut : DOCUMENT_READING_MAX_SALES, sinon 40")
+    parser.add_argument("--budget-minutes", type=float, help="défaut : DOCUMENT_READING_BUDGET_MINUTES, sinon 20")
     args = parser.parse_args(argv)
     if not reading_enabled():
         print(json.dumps({"skipped": "DOCUMENT_READING_ENABLED is off"}))
@@ -1175,11 +1175,8 @@ def main(argv: list[str] | None = None) -> int:
     db_url = str(load_settings().get("supabase_db_url") or "")
     if not db_url:
         raise RuntimeError("SUPABASE_DB_URL is required for document reading")
-    counts = run_document_readings(
-        db_url,
-        max_sales=max(1, min(args.max_sales, 500)),
-        budget_seconds=max(60.0, min(args.budget_minutes, 180.0) * 60),
-    )
+    max_sales, budget_seconds = document_reading_limits(args.max_sales, args.budget_minutes)
+    counts = run_document_readings(db_url, max_sales=max_sales, budget_seconds=budget_seconds)
     print(json.dumps(counts, ensure_ascii=False))
     return 0
 

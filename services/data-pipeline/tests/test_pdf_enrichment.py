@@ -13,15 +13,15 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
-import src.pdf_enrichment  # noqa: F401  (loads pdf_document_selection without a circular import)
 from src.asset_normalization import normalize_asset_features
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.freshness import documents_are_current
 from src.normalize import normalize_sale
 from src.pdf_document_selection import _document_candidate_rejection_reason
+from src.pdf_document_text_cache import read_document_text_cache, write_document_text_cache
 from src.pdf_document_transport import PublicDocumentTarget, _PinnedNetworkBackend
 from src.pdf_document_types import classify_document_type
 from src.pdf_enrichment import (
-    DOCUMENT_FACTS_VERSION,
     PDF_TEXT_CACHE_VERSION,
     PdfDeadlineExceeded,
     PdfDocumentOcrBudgetExceeded,
@@ -31,11 +31,9 @@ from src.pdf_enrichment import (
     _download_document_response,
     _extract_pdf_text_with_docling_subprocess,
     _read_document_stream,
-    _read_document_text_cache,
     _resolve_public_document_target,
     _select_documents_for_extraction,
     _store_document_analysis_status,
-    _write_document_text_cache,
     _write_pdf_text_cache,
     download_documents,
     enrich_sale_from_pdf_text,
@@ -1809,8 +1807,8 @@ def test_failed_ocr_page_is_retried_without_reocring_successful_cached_pages(tmp
     document = {"url": "https://example.test/recoverable.pdf", "label": "PV"}
     failed_payload = extract_pdf_document(path, document=document)
     assert failed_payload["complete"] is False
-    _write_document_text_cache(document, path, failed_payload)
-    assert _read_document_text_cache(document, path) is None
+    write_document_text_cache(document, path, failed_payload, cache_root=tmp_path / "cache")
+    assert read_document_text_cache(document, path, cache_root=tmp_path / "cache", ocr_enabled=True) is None
 
     calls.clear()
     recover = True
@@ -1821,8 +1819,8 @@ def test_failed_ocr_page_is_retried_without_reocring_successful_cached_pages(tmp
 
     recovered_payload = extract_pdf_document(path, document=document)
     assert recovered_payload["complete"] is True
-    _write_document_text_cache(document, path, recovered_payload)
-    assert _read_document_text_cache(document, path)["complete"] is True
+    write_document_text_cache(document, path, recovered_payload, cache_root=tmp_path / "cache")
+    assert read_document_text_cache(document, path, cache_root=tmp_path / "cache", ocr_enabled=True)["complete"] is True
 
 
 def test_image_rich_mixed_page_triggers_ocr_even_with_long_native_header(tmp_path, monkeypatch) -> None:
@@ -2120,8 +2118,8 @@ def test_visual_blank_page_keeps_document_coverage_partial() -> None:
     assert "originaux" in analysis["warning"]
 
 
-def test_legacy_fallback_page_cache_is_not_a_hit_when_ocr_is_enabled(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+def test_legacy_fallback_page_cache_is_not_a_hit_when_ocr_is_enabled(tmp_path) -> None:
+    cache_root = tmp_path / "cache"
     file_path = tmp_path / "legacy.pdf"
     file_path.write_bytes(b"pdf bytes")
     document = {"url": "https://example.test/legacy.pdf", "label": "PV"}
@@ -2129,12 +2127,11 @@ def test_legacy_fallback_page_cache_is_not_a_hit_when_ocr_is_enabled(tmp_path, m
         "text": "Texte conservé comme preuve",
         "pages": [{"page": 1, "text": "Texte conservé comme preuve", "method": "fallback_text"}],
     }
-    _write_document_text_cache(document, file_path, payload)
+    write_document_text_cache(document, file_path, payload, cache_root=cache_root)
 
-    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
-    assert _read_document_text_cache(document, file_path) is None
-    monkeypatch.setenv("PDF_OCR_ENABLED", "false")
-    assert _read_document_text_cache(document, file_path)["text"] == "Texte conservé comme preuve"
+    assert read_document_text_cache(document, file_path, cache_root=cache_root, ocr_enabled=True) is None
+    cached = read_document_text_cache(document, file_path, cache_root=cache_root, ocr_enabled=False)
+    assert cached["text"] == "Texte conservé comme preuve"
 
 
 def test_original_ocr_subprocess_failure_is_isolated_as_retryable_page_failure(monkeypatch) -> None:
@@ -3047,9 +3044,8 @@ def test_adaptive_docling_timeout_shortens_signed_documents(tmp_path, monkeypatc
     assert timeout == 45
 
 
-def test_document_text_cache_roundtrip(tmp_path, monkeypatch) -> None:
+def test_document_text_cache_roundtrip(tmp_path) -> None:
     cache_dir = tmp_path / "cache"
-    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", cache_dir)
     file_path = tmp_path / "pv.pdf"
     file_path.write_bytes(b"pdf bytes")
     document = {"url": "https://example.test/pv.pdf", "label": "PV", "document_type": "pv_huissier"}
@@ -3065,13 +3061,13 @@ def test_document_text_cache_roundtrip(tmp_path, monkeypatch) -> None:
         "extraction_status": "extracted",
     }
 
-    _write_document_text_cache(document, file_path, payload)
+    write_document_text_cache(document, file_path, payload, cache_root=cache_dir)
 
-    assert _read_document_text_cache(document, file_path)["text"] == "Surface 80 m2"
+    assert read_document_text_cache(document, file_path, cache_root=cache_dir, ocr_enabled=False)["text"] == "Surface 80 m2"
 
 
-def test_document_text_cache_reader_keeps_partial_checkpoint_pages(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+def test_document_text_cache_reader_keeps_partial_checkpoint_pages(tmp_path) -> None:
+    cache_root = tmp_path / "cache"
     file_path = tmp_path / "partial.pdf"
     file_path.write_bytes(b"pdf bytes")
     document = {"url": "https://example.test/partial.pdf", "label": "PV"}
@@ -3082,9 +3078,9 @@ def test_document_text_cache_reader_keeps_partial_checkpoint_pages(tmp_path, mon
         "complete": False,
         "extraction_status": "extracted",
     }
-    _write_document_text_cache(document, file_path, payload)
+    write_document_text_cache(document, file_path, payload, cache_root=cache_root)
 
-    cached = _read_document_text_cache(document, file_path)
+    cached = read_document_text_cache(document, file_path, cache_root=cache_root, ocr_enabled=False)
     assert cached is not None
     assert cached["complete"] is False
     assert cached["pages"][0]["text"] == "Page 1 conservée"

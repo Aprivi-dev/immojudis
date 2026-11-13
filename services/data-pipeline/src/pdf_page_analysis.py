@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from pathlib import Path
 
 import pymupdf as fitz
 
@@ -230,4 +231,22 @@ def page_outcome_summary(pages: list[dict[str, object]], *, ocr_enabled: bool) -
         "complete": not failed_pages,
         "extraction_status": "extracted" if not failed_pages else "incomplete",
         "confidence": round(sum(confidences) / len(confidences), 3) if confidences else 0.0,
+    }
+
+
+def profile_pdf_for_docling(path: Path) -> dict[str, float | int]:
+    """Taille, nombre de pages et texte natif des cinq premières pages : ce qui décide de Docling et de son délai."""
+    size_mb = path.stat().st_size / 1024 / 1024
+    try:
+        with fitz.open(path) as document:
+            page_count = document.page_count
+            first_pages_text_chars = sum(
+                len(document[index].get_text("text") or "") for index in range(min(page_count, 5))
+            )
+    except Exception:
+        return {"size_mb": size_mb, "page_count": 0, "first_pages_text_chars": 0}
+    return {
+        "size_mb": size_mb,
+        "page_count": page_count,
+        "first_pages_text_chars": first_pages_text_chars,
     }

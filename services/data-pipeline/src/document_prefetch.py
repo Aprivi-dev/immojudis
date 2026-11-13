@@ -64,17 +64,17 @@ def _init_worker(host_delay_seconds: float) -> None:
 def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[str, Any]:
     """Download a sale's documents and read their pages into the local caches. Never writes to the database."""
     from src.config import PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
+    from src.pdf_document_selection import _select_documents_for_extraction
+    from src.pdf_document_text_cache import read_document_text_cache
     from src.pdf_enrichment import (
         PdfEnrichmentStats,
-        _read_document_text_cache,
-        _select_documents_for_extraction,
         download_documents,
         extract_attached_document,
         pdf_deadline_scope,
-        sale_storage_id,
     )
     from src.pdf_ocr import PdfDeadlineExceeded, PdfExtractionDeferred
     from src.pdf_progress import restore_pdf_page_caches_from_manifest
+    from src.sale_local_files import sale_storage_id
     from src.storage.supabase_client import fetch_sale_for_data_refresh
 
     started = time.monotonic()
@@ -105,7 +105,12 @@ def prefetch_sale_documents(source_url: str, remaining_seconds: float) -> dict[s
             for document in _select_documents_for_extraction(downloaded, sale=sale, revalidate_urls=revalidate):
                 result["documents"] += 1
                 file_path = Path(document["file_path"])
-                if _read_document_text_cache(document, file_path):
+                if read_document_text_cache(
+                    document,
+                    file_path,
+                    cache_root=PDF_DOCUMENT_TEXTS_DIR,
+                    ocr_enabled=bool(settings["pdf_ocr_enabled"]),
+                ):
                     result["cached"] += 1
                     continue
                 for _ in range(MAX_ROUNDS_PER_DOCUMENT):

@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from src.text_folding import ascii_lower_single_spaced
 
-from .base import canonical_sha256
+from .base import canonical_sha256, has_excessive_controls, looks_like_html
 
 ENCHERES_PUBLIQUES_DATASET_URL = (
     "https://www.data.gouv.fr/datasets/"
@@ -441,9 +441,9 @@ def _decode_text_file(path: Path) -> tuple[str, str]:
             text = payload.decode(encoding, errors="strict")
         except UnicodeDecodeError:
             continue
-        if _looks_like_html(text):
+        if looks_like_html(text):
             raise EncheresPubliquesSchemaError("download is HTML, not the expected CSV resource")
-        if _has_excessive_controls(text):
+        if has_excessive_controls(text):
             raise EncheresPubliquesSchemaError("CSV file contains unexpected control characters")
         return text, encoding
     raise EncheresPubliquesSchemaError("CSV encoding is neither UTF-8 nor Windows-1252")
@@ -537,18 +537,6 @@ def _clean_header(value: str) -> str:
 
 def _clean_text(value: object) -> str:
     return unicodedata.normalize("NFC", str(value or "")).strip()
-
-
-def _looks_like_html(text: str) -> bool:
-    prefix = text.lstrip()[:512].lower()
-    return prefix.startswith(("<!doctype html", "<html", "<?xml")) or "<html" in prefix
-
-
-def _has_excessive_controls(text: str) -> bool:
-    if not text:
-        return False
-    controls = sum(ord(char) < 32 and char not in "\r\n\t" for char in text[:100_000])
-    return controls > max(2, len(text[:100_000]) // 1_000)
 
 
 def _main() -> int:

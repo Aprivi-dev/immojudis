@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from src.french_dates import MONTH_NUMBERS
+from src.reference_data.download import decode_csv
 from src.reference_data.names import department_from_insee
 
 # Pinned by identifier: a slug can be taken over by another dataset, an identifier cannot.
@@ -133,15 +134,6 @@ def file_decree_date(path: Path) -> date | None:
         if name.strip().startswith("Zonage TLV post"):
             return _header_date(name)
     return None
-
-
-def decode_csv(raw: bytes) -> str:
-    for encoding in ("utf-8-sig", "cp1252"):
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return raw.decode("latin-1")
 
 
 def parse_tension_file(

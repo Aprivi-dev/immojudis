@@ -19,11 +19,6 @@ LOGGER = logging.getLogger(__name__)
 _LAST_REFUSAL_REASON: ContextVar[str | None] = ContextVar("pdf_checkpoint_last_refusal_reason", default=None)
 
 
-def _is_sha256(value: object) -> bool:
-    text = clean_text(value) or ""
-    return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)
-
-
 def _manifest_urls(value: object) -> set[str] | None:
     if value is None:
         return set()

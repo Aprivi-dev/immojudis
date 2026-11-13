@@ -112,3 +112,73 @@ def test_evidence_vision_is_off_unless_explicitly_enabled(monkeypatch) -> None:
     for value in ("", "0", "false", "off", "enabled"):
         monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", value)
         assert load_settings()["information_agent_evidence_vision_enabled"] is False
+
+
+def test_evidence_ocr_is_on_and_semantic_pass_off_unless_configured(monkeypatch) -> None:
+    monkeypatch.delenv("INFORMATION_AGENT_EVIDENCE_OCR_ENABLED", raising=False)
+    monkeypatch.delenv("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED", raising=False)
+    settings = load_settings()
+    assert settings["information_agent_evidence_ocr_enabled"] is True
+    assert settings["information_agent_evidence_semantic_enabled"] is False
+
+    monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_OCR_ENABLED", "off")
+    monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED", "yes")
+    settings = load_settings()
+    assert settings["information_agent_evidence_ocr_enabled"] is False
+    assert settings["information_agent_evidence_semantic_enabled"] is True
+
+
+def test_env_flag_keeps_the_default_only_when_the_variable_is_absent(monkeypatch) -> None:
+    monkeypatch.delenv("IMMOJUDIS_TEST_FLAG", raising=False)
+    assert config.env_flag("IMMOJUDIS_TEST_FLAG", True) is True
+    assert config.env_flag("IMMOJUDIS_TEST_FLAG", False) is False
+
+    for value in ("1", "true", "yes", "on", " TRUE "):
+        monkeypatch.setenv("IMMOJUDIS_TEST_FLAG", value)
+        assert config.env_flag("IMMOJUDIS_TEST_FLAG", False) is True
+
+    # Une valeur vide ou inconnue éteint, même un interrupteur allumé par défaut (comportement d'origine).
+    for value in ("", "0", "false", "off", "enabled"):
+        monkeypatch.setenv("IMMOJUDIS_TEST_FLAG", value)
+        assert config.env_flag("IMMOJUDIS_TEST_FLAG", True) is False
+
+
+def test_env_override_returns_none_unless_a_known_word_forces_it(monkeypatch) -> None:
+    monkeypatch.delenv("IMMOJUDIS_TEST_FLAG", raising=False)
+    assert config.env_override("IMMOJUDIS_TEST_FLAG") is None
+    for value, expected in (("on", True), (" YES ", True), ("0", False), ("off", False), ("", None), ("auto", None)):
+        monkeypatch.setenv("IMMOJUDIS_TEST_FLAG", value)
+        assert config.env_override("IMMOJUDIS_TEST_FLAG") is expected
+
+
+def test_autonomous_run_id_is_none_outside_an_autonomous_run(monkeypatch) -> None:
+    monkeypatch.delenv("PIPELINE_AUTONOMOUS_RUN_ID", raising=False)
+    assert config.autonomous_run_id() is None
+    monkeypatch.setenv("PIPELINE_AUTONOMOUS_RUN_ID", "")
+    assert config.autonomous_run_id() is None
+    monkeypatch.setenv("PIPELINE_AUTONOMOUS_RUN_ID", "run-1")
+    assert config.autonomous_run_id() == "run-1"
+
+
+def test_document_reading_limits_fall_back_to_defaults_and_stay_bounded(monkeypatch, caplog) -> None:
+    monkeypatch.delenv("DOCUMENT_READING_MAX_SALES", raising=False)
+    monkeypatch.delenv("DOCUMENT_READING_BUDGET_MINUTES", raising=False)
+    assert config.document_reading_limits() == (40, 20 * 60.0)
+
+    monkeypatch.setenv("DOCUMENT_READING_MAX_SALES", "12")
+    monkeypatch.setenv("DOCUMENT_READING_BUDGET_MINUTES", "2.5")
+    assert config.document_reading_limits() == (12, 150.0)
+
+    # Une variable illisible ne bloque pas la commande : valeur par défaut et avertissement.
+    monkeypatch.setenv("DOCUMENT_READING_MAX_SALES", "douze")
+    monkeypatch.setenv("DOCUMENT_READING_BUDGET_MINUTES", "nan")
+    with caplog.at_level("WARNING", logger="src.config"):
+        assert config.document_reading_limits() == (40, 20 * 60.0)
+    assert "DOCUMENT_READING_MAX_SALES" in caplog.text and "DOCUMENT_READING_BUDGET_MINUTES" in caplog.text
+
+    # Bornes : 1 à 500 ventes, 1 à 120 minutes, pour la variable comme pour l'argument de la commande.
+    monkeypatch.setenv("DOCUMENT_READING_MAX_SALES", "9000")
+    monkeypatch.setenv("DOCUMENT_READING_BUDGET_MINUTES", "600")
+    assert config.document_reading_limits() == (500, 120 * 60.0)
+    assert config.document_reading_limits(0, 0.2) == (1, 60.0)
+    assert config.document_reading_limits(15, 4) == (15, 240.0)

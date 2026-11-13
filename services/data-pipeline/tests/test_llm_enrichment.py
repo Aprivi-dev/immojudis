@@ -29,7 +29,7 @@ from src.enrichment.prompts import (
 )
 from src.enrichment.surface_reasoning import reason_about_surfaces
 from src.normalize import normalize_sale
-from src.pdf_enrichment import sale_storage_id
+from src.sale_local_files import sale_storage_id
 
 _EVIDENCE_PATTERNS = {
     "property_type": r"maison",
