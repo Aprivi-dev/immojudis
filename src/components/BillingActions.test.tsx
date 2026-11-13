@@ -192,8 +192,8 @@ describe("BillingActions", () => {
     renderActions();
 
     const access = await screen.findByRole("button", { name: /Actif jusqu/ });
-    expect(access.textContent).toContain("08");
-    expect(access.textContent).not.toContain("01 oct");
+    expect(access.textContent).toContain("8 oct. 2026");
+    expect(access.textContent).not.toContain("1 oct.");
   });
 
   it("computes the grace end like plans.ts when the response carries no graceEndsAt", async () => {
@@ -207,7 +207,7 @@ describe("BillingActions", () => {
     renderActions();
 
     const access = await screen.findByRole("button", { name: /Actif jusqu/ });
-    expect(access.textContent).toContain("08");
+    expect(access.textContent).toContain("8 oct. 2026");
   });
 
   it("lets a subscriber whose renewal failed update the card instead of re-subscribing", async () => {

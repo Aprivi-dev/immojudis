@@ -5,6 +5,7 @@ import { AUTH_EMAIL_TEMPLATES, type AuthEmailTemplateId } from "@/lib/auth-email
 import { recordEmailDeliveryEvent } from "@/lib/email-delivery-log";
 import { deliveryStateOfLog, EMAIL_DELIVERY_LABELS } from "@/lib/email-delivery-status";
 import { EMAIL_TEMPLATES } from "@/lib/email-templates/registry";
+import { formatNumericDateTime } from "@/lib/format/dates";
 import { readResendApiKey } from "./env";
 import { maskActionLinks, toInertEmailDocument } from "./link-masking";
 import { fetchResendEmail, type ResendFailure } from "./resend";
@@ -48,13 +49,6 @@ export type HistoryMessage = {
   body: string;
   attachments: string[];
 };
-
-const dateFormat = new Intl.DateTimeFormat("fr-FR", {
-  dateStyle: "short",
-  timeStyle: "short",
-  timeZone: "Europe/Paris",
-});
-const formatDate = (iso: string) => dateFormat.format(new Date(iso));
 
 const SENT_STATUS: NonNullable<HistoryRow["status"]> = { text: "Envoyé", tone: "neutral" };
 
@@ -252,7 +246,7 @@ export async function listEmailHistory({
     return {
       rows: page.map((row) => ({
         id: `${row.source}:${row.id}`,
-        at: formatDate(row.created_at),
+        at: formatNumericDateTime(row.created_at),
         who: row.address || "adresse inconnue",
         subject: row.subject,
         tag:
@@ -274,7 +268,7 @@ export async function listEmailHistory({
   return {
     rows: page.map((row) => ({
       id: `log:${row.id}`,
-      at: formatDate(row.created_at),
+      at: formatNumericDateTime(row.created_at),
       who: row.to_address || "adresse inconnue",
       subject: row.subject || "(sans objet)",
       tag: rowLabel(row),
@@ -334,7 +328,10 @@ export async function readEmailMessage({
     await traceAccess(adminUserId, "admin.email.view", { targetId: rowId });
     return {
       title: data.subject,
-      lines: [`De : ${data.from_email ?? "inconnu"}`, `Reçu le ${formatDate(data.created_at)}`],
+      lines: [
+        `De : ${data.from_email ?? "inconnu"}`,
+        `Reçu le ${formatNumericDateTime(data.created_at)}`,
+      ],
       kind: "text",
       body: plain(data.body_text),
       attachments: attachmentLabels(data.attachments),
@@ -354,7 +351,7 @@ export async function readEmailMessage({
       title: data.subject,
       lines: [
         `De : ${data.sender || "inconnu"}`,
-        `Reçu le ${formatDate(data.created_at)} · sans dossier ouvert (${data.reason})`,
+        `Reçu le ${formatNumericDateTime(data.created_at)} · sans dossier ouvert (${data.reason})`,
       ],
       kind: data.excerpt ? "text" : "note",
       body: data.excerpt ? plain(data.excerpt, 1_000) : "Extrait non conservé.",
@@ -376,7 +373,7 @@ export async function readEmailMessage({
   const status = sentStatus(row);
   const lines = [
     `À : ${row.to_address}`,
-    `Envoyé le ${formatDate(row.created_at)} · ${rowLabel(row)} · ${status.text}${status.detail ? ` (${status.detail})` : ""}`,
+    `Envoyé le ${formatNumericDateTime(row.created_at)} · ${rowLabel(row)} · ${status.text}${status.detail ? ` (${status.detail})` : ""}`,
   ];
   const base = { title: row.subject || "(sans objet)", lines, attachments: [] as string[] };
 

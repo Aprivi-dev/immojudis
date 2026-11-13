@@ -12,7 +12,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import TrendingUp from "lucide-react/dist/esm/icons/trending-up.js";
 import Users from "lucide-react/dist/esm/icons/users.js";
 import type { OutcomeGraphForecastQuery } from "@/hooks/use-outcome-graph-forecast";
-import { formatPrice } from "@/lib/format";
+import { formatDate, formatPrice, formatShareAsPercent } from "@/lib/format";
 import {
   ceilingProbabilityReading,
   cumulativeProbability,
@@ -344,9 +344,9 @@ function PriceDistribution({
           />
         </div>
         <div className="mt-1 flex justify-between text-xs tabular-nums text-brand-navy/55">
-          <span>{compactPrice(lowCents)}</span>
+          <span>{formatPrice(euros(lowCents))}</span>
           <span>Prix, en euros</span>
-          <span>{compactPrice(highCents)}</span>
+          <span>{formatPrice(euros(highCents))}</span>
         </div>
         <dl className="mt-3 grid grid-cols-3 font-display text-base font-semibold text-brand-navy/72 sm:text-lg">
           <div>
@@ -432,7 +432,7 @@ function CeilingCurve({
                 textAnchor="end"
                 className="fill-brand-navy/70 text-[13px]"
               >
-                {Math.round(tick * 100)} %
+                {formatShareAsPercent(tick)}
               </text>
             </g>
           ))}
@@ -485,7 +485,7 @@ function CeilingCurve({
               textAnchor={index === 0 ? "start" : index === ticks.length - 1 ? "end" : "middle"}
               className="fill-brand-navy/70 text-[12px]"
             >
-              {compactPrice(tick)}
+              {formatPrice(euros(tick))}
             </text>
           ))}
           <text
@@ -494,7 +494,7 @@ function CeilingCurve({
             textAnchor="middle"
             className="fill-gold-text text-[13px] font-semibold"
           >
-            Plafond {compactPrice(ceilingCents)}
+            Plafond {formatPrice(euros(ceilingCents))}
           </text>
           <text
             x={(padding.left + width - padding.right) / 2}
@@ -590,7 +590,7 @@ function approximateProbability(reading: CeilingProbabilityReading | null): Appr
     probability,
     kind === "at_most" ? "up" : kind === "at_least" ? "down" : "nearest",
   );
-  const value = `${Math.round(rounded * 100)} %`;
+  const value = formatShareAsPercent(rounded);
   if (kind === "at_most") return { prefix: "au plus environ", value };
   if (kind === "at_least") return { prefix: "au moins environ", value };
   if (probability > 0 && rounded === 0) return { prefix: "moins de", value: "5 %" };
@@ -626,12 +626,6 @@ function ApproximateProbability({
   );
 }
 
-function compactPrice(valueCents: number): string {
-  return `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(
-    Math.round(euros(valueCents)),
-  )} €`;
-}
-
 function euros(valueCents: number): number {
   return valueCents / 100;
 }
@@ -640,12 +634,7 @@ function formatCalculationDate(value: string | null): string {
   if (!value) return "À confirmer";
   const date = new Date(value);
   if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() <= 1970) return "À confirmer";
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "Europe/Paris",
-  }).format(date);
+  return formatDate(value);
 }
 
 function capitalize(value: string): string {

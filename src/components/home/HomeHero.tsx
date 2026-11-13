@@ -7,7 +7,7 @@ import {
   type ExampleProject,
   type ExampleWorks,
 } from "@/lib/example-verdict";
-import { formatNumber } from "@/lib/format";
+import { formatNumber, formatNumericDate } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { isFeeRegimeOpen, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
@@ -15,20 +15,8 @@ import { HomeExamplePhoto, type ExamplePhotoProps } from "./HomeExamplePhoto";
 import { HomePrimaryAction } from "./HomePrimaryAction";
 import styles from "./HomePage.module.css";
 
-const UPDATE_DATE_FORMAT = new Intl.DateTimeFormat("fr-FR", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
-
 function delay(ms: number): CSSProperties {
   return { "--delay": `${ms}ms` } as CSSProperties;
-}
-
-function verifiedDate(verifiedAt: string | null): string | null {
-  const date = verifiedAt ? new Date(verifiedAt) : null;
-  return date && Number.isFinite(date.getTime()) ? UPDATE_DATE_FORMAT.format(date) : null;
 }
 
 /**
@@ -38,7 +26,7 @@ function verifiedDate(verifiedAt: string | null): string | null {
  */
 export function catalogueSummaryLine({ count, verifiedAt }: HomeCatalogueSummary): string {
   const sales = `${formatNumber(count)} vente${count > 1 ? "s" : ""} à venir`;
-  const date = verifiedDate(verifiedAt);
+  const date = formatNumericDate(verifiedAt, "");
   return date ? `${sales} · données vérifiées le ${date}` : sales;
 }
 
@@ -99,13 +87,13 @@ export function HomeHero({
                     </span>
                   </>
                 ) : null}
-                {verifiedDate(summary.verifiedAt) ? (
+                {formatNumericDate(summary.verifiedAt, "") ? (
                   <>
                     {" "}
                     <span className={styles.proofSep} aria-hidden>
                       ·
                     </span>{" "}
-                    <span>données vérifiées le {verifiedDate(summary.verifiedAt)}</span>
+                    <span>données vérifiées le {formatNumericDate(summary.verifiedAt, "")}</span>
                   </>
                 ) : null}
               </Link>

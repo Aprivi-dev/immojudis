@@ -6,7 +6,8 @@ import { trackProductEvent } from "@/lib/product-events";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import type { SurenchereReminder } from "@/lib/surenchere-reminder";
 import { BudgetMode, DEFAULT_SIMULATOR_BUDGET } from "./BudgetMode";
-import { AmountField, CostLines, euroWhole, toAmount } from "./fields";
+import { formatPercent, formatPrice } from "@/lib/format/numbers";
+import { AmountField, CostLines, toAmount } from "./fields";
 import { DEFAULT_HYPOTHESES, HypothesesFields, type Hypotheses } from "./hypotheses";
 import { ModeSelector, type SimulatorMode } from "./ModeSelector";
 import { DEFAULT_SURENCHERE_PRICE, SurenchereMode } from "./SurenchereMode";
@@ -96,7 +97,7 @@ function CostMode({
       }),
     [price, hypotheses],
   );
-  const feesPct = costs.acquisitionFeesPct.toLocaleString("fr-FR", { maximumFractionDigits: 1 });
+  const feesPct = formatPercent(costs.acquisitionFeesPct, 1);
 
   return (
     <div className="grid min-w-0 gap-6 md:grid-cols-2">
@@ -135,12 +136,12 @@ function CostMode({
             aria-atomic="true"
             className="mt-1 break-words font-display text-3xl font-semibold tabular-nums"
           >
-            {euroWhole.format(costs.totalCost)}
+            {formatPrice(costs.totalCost)}
           </p>
           {costs.price > 0 ? (
             <p className="mt-1 text-sm text-ink-soft">
-              dont {euroWhole.format(costs.acquisitionFeesTotal)} de frais d’acquisition, soit{" "}
-              {feesPct} % du prix d’adjudication.
+              dont {formatPrice(costs.acquisitionFeesTotal)} de frais d’acquisition, soit {feesPct}{" "}
+              du prix d’adjudication.
             </p>
           ) : (
             <p className="mt-1 text-sm text-ink-soft">
@@ -168,10 +169,8 @@ function CostMode({
         className="sticky bottom-[var(--cookie-banner-height,0px)] z-20 -mx-4 border-t border-line bg-white/95 px-4 py-3 text-sm shadow-[0_-10px_28px_rgba(19,34,56,0.1)] backdrop-blur sm:mx-0 sm:rounded-lg sm:border md:col-span-2 lg:hidden"
       >
         <span className="font-semibold">Coût total</span>{" "}
-        <span className="font-semibold tabular-nums">{euroWhole.format(costs.totalCost)}</span>
-        {costs.price > 0 ? (
-          <span className="text-ink-soft"> · dont {feesPct} % de frais</span>
-        ) : null}
+        <span className="font-semibold tabular-nums">{formatPrice(costs.totalCost)}</span>
+        {costs.price > 0 ? <span className="text-ink-soft"> · dont {feesPct} de frais</span> : null}
       </div>
     </div>
   );

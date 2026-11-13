@@ -537,3 +537,52 @@ describe("libellés des scores d'un rapport enregistré avant le 08/11/2026", ()
     expect(text).not.toMatch(/Très favorable|Très rentable/);
   });
 });
+
+describe("property report PDF: cadastre and valuation audit", () => {
+  function reportWithAnalysis(extra: Record<string, unknown>): SavedReportRow {
+    const report = reportWithRentalScenario();
+    const snapshot = report.report_snapshot as Record<string, Record<string, unknown>>;
+    return {
+      ...report,
+      report_snapshot: { ...snapshot, analysis: { ...snapshot.analysis, ...extra } } as Json,
+    };
+  }
+
+  it("prints the cadastral references written by the analysis", () => {
+    const lines = reportToPdfLines(
+      reportWithAnalysis({
+        cadastralAnalysis: {
+          references: [
+            {
+              section: "AB",
+              number: "123",
+              raw: "AB 123",
+              source: "listing",
+              confidence: "direct",
+            },
+          ],
+        },
+      }),
+      buildPlanEntitlements("analyse"),
+    );
+
+    expect(lines).toContain("Référence(s) cadastrale(s): Section AB n° 123");
+  });
+
+  it("prints a passed or risky valuation checkpoint as such, not « À vérifier »", () => {
+    const lines = reportToPdfLines(
+      reportWithAnalysis({
+        valuationAudit: {
+          checkpoints: [
+            { status: "ok", label: "Échantillon" },
+            { status: "risk", label: "Écart au marché" },
+          ],
+        },
+      }),
+      buildPlanEntitlements("analyse"),
+    );
+
+    expect(lines).toContain("- OK | Échantillon");
+    expect(lines).toContain("- Risque | Écart au marché");
+  });
+});

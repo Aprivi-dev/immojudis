@@ -6,7 +6,9 @@ import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import Inbox from "lucide-react/dist/esm/icons/inbox.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
+import { formatShareAsPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import {
@@ -755,7 +757,7 @@ function previewKindForAsset(asset: {
  */
 function extractionLabel(method: string | null | undefined, confidence: unknown): string {
   if (method?.startsWith("semantic") || method?.startsWith("photo_semantic")) {
-    return `Lu par l’IA · confiance déclarée par le modèle : ${Math.round(Number(confidence) * 100)} %`;
+    return `Lu par l’IA · confiance déclarée par le modèle : ${formatShareAsPercent(Number(confidence))}`;
   }
   if (method?.startsWith("deterministic")) return "Extraction automatique par règles";
   return "Extraction automatique";
@@ -821,7 +823,7 @@ function FactProvenance({ source }: { source: InformationAgentFactSource | undef
       : source.channel === "admin_manual_reply"
         ? "Réponse consignée par un administrateur (expéditeur non vérifié)"
         : "Réponse par e-mail";
-  const received = source.receivedAt ? formatDateTime(source.receivedAt) : null;
+  const received = source.receivedAt ? formatShortDateTime(source.receivedAt) : null;
   return (
     <p className="mt-1 text-xs text-brand-navy/60">
       Provenance : {channel}

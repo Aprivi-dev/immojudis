@@ -148,6 +148,27 @@ describe("getListingDataCoverage", () => {
     ]);
   });
 
+  it("counts the property type as published only when the common label names it", () => {
+    const missingKeys = (propertyType: string | null) =>
+      getListingDataCoverage(sale({ property_type: propertyType })).missing.map((item) => item.key);
+    for (const propertyType of ["apartment", "parking", "commercial", "mixed", "Maison de ville"]) {
+      expect(missingKeys(propertyType)).not.toContain("propertyType");
+    }
+    // `propertyTypeLabel` les affiche « Bien » ou « Bien à qualifier » : le type reste à publier,
+    // y compris un code interne sans libellé (« chalet »).
+    for (const propertyType of [
+      null,
+      "unknown",
+      "other",
+      "chalet",
+      "bien",
+      "Bien",
+      "Bien à qualifier",
+    ]) {
+      expect(missingKeys(propertyType)).toContain("propertyType");
+    }
+  });
+
   it("keeps unknown occupation and unverified critical values actionable", () => {
     const coverage = getListingDataCoverage(sale({ occupancy_status: "unknown" }));
     expect(coverage.missing.map((item) => item.key)).toContain("occupation");

@@ -99,7 +99,7 @@ describe("AdminQualityPage error recovery", () => {
     );
     expect(await screen.findByText("Appartement prioritaire")).toBeTruthy();
     expect(screen.getByText("confiance faible · surface absente")).toBeTruthy();
-    expect(screen.getByText("25%")).toBeTruthy();
+    expect(screen.getByText("25 %")).toBeTruthy();
     expect(mocks.sales).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).toBeNull();
   });

@@ -12,7 +12,8 @@ import {
   missionStatusLabel,
 } from "@/components/admin/information-agent-missions-ui";
 import { adminClampOffset } from "@/lib/admin-pagination";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import type { InformationAgentMission } from "@/lib/information-agent";
 import { saleDetailPath } from "@/lib/navigation";
 
@@ -90,7 +91,7 @@ export function AdminInformationAgentMissionsList({
                         </>
                       ) : null}
                       {" · "}
-                      {formatDateTime(mission.updatedAt)}
+                      {formatShortDateTime(mission.updatedAt)}
                     </p>
                     {delivery?.detail ? (
                       <p className="mt-0.5 text-xs text-brand-navy/60">

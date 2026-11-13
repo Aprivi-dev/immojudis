@@ -155,7 +155,7 @@ describe("admin readiness", () => {
         failedDeliveryCount: 0,
         lastHealthRunAt: "2026-07-29T14:15:00.000Z",
         alerts: [],
-        detail: "Le contrôle de santé atteint 98.000 % sur 30 jours, sous le SLO de 99.5 %.",
+        detail: "Le contrôle de santé atteint 98,000 % sur 30 jours, sous le SLO de 99,5 %.",
       }),
     ).toMatchObject({
       key: "operations.health",

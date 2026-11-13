@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { formatPrice } from "@/lib/format";
+import { formatPercent, formatPrice } from "@/lib/format";
 import { positiveListingNumber } from "@/lib/sale-listing";
 import type { AuctionSale } from "@/lib/types";
 import {
@@ -602,11 +602,11 @@ export function FinancingSimulator({
                   setDownPaymentInput(inputValue((totalProjectCost * percentage) / 100));
                 }}
                 aria-label="Pourcentage d’apport"
-                aria-valuetext={`${Math.round(downPaymentPercent)} % du coût total du projet`}
+                aria-valuetext={`${formatPercent(downPaymentPercent)} du coût total du projet`}
               />
               <div className={styles.rangeMeta} aria-hidden="true">
                 <span>0 %</span>
-                <span>{Math.round(downPaymentPercent)} %</span>
+                <span>{formatPercent(downPaymentPercent)}</span>
                 <span>100 %</span>
               </div>
               <p id={ids.downPaymentHelp} className={styles.help}>

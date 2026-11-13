@@ -12,7 +12,7 @@ import type {
 } from "@/lib/admin-subscriptions";
 import { PLAN_LABELS, type PlanCode, type PlanStatus } from "@/lib/plans";
 import { AdminPagination } from "@/components/admin/AdminPagination";
-import { formatShortDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 import { TextField } from "@/components/admin/AdminFormFields";
 import { SelectField } from "@/components/admin/AdminFormFields";
 
@@ -217,7 +217,7 @@ function SubscriptionLine({ subscription }: { subscription: AdminSubscriptionSum
       </span>
       <StatusPill status={subscription.status} />
       <span className="text-xs text-muted-foreground">
-        {formatShortDateTime(subscription.updatedAt)}
+        {formatCompactDateTime(subscription.updatedAt)}
       </span>
     </div>
   );

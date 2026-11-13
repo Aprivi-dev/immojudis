@@ -9,7 +9,8 @@ import {
   CONSIGNATION_RATE,
   consignationAmount,
 } from "@/lib/bid-ceiling-engine";
-import { CostLines, AmountField, euro, euroWhole, toAmount } from "./fields";
+import { formatPrice, formatPriceWithCents, formatShareAsPercent } from "@/lib/format/numbers";
+import { CostLines, AmountField, toAmount } from "./fields";
 import { HypothesesFields, type Hypotheses } from "./hypotheses";
 import { SimulatorDisclaimer } from "./SimulatorDisclaimer";
 
@@ -99,7 +100,7 @@ export function BudgetMode({
             className="mt-1 break-words font-display text-3xl font-semibold tabular-nums"
           >
             {inversion.status === "ok"
-              ? euroWhole.format(inversion.maxPrice)
+              ? formatPrice(inversion.maxPrice)
               : inversion.status === "too_low"
                 ? "Budget insuffisant"
                 : inversion.status === "too_high"
@@ -109,20 +110,21 @@ export function BudgetMode({
           {inversion.status === "ok" ? (
             <p className="mt-1 text-sm text-ink-soft">
               Prix arrondi à l’euro inférieur. Avec les frais et les travaux, le coût total est de{" "}
-              {euro.format(inversion.costs.totalCost)} pour un budget de{" "}
-              {euro.format(inversion.budget)} : il reste {euro.format(inversion.remaining)}.
+              {formatPriceWithCents(inversion.costs.totalCost)} pour un budget de{" "}
+              {formatPriceWithCents(inversion.budget)} : il reste{" "}
+              {formatPriceWithCents(inversion.remaining)}.
             </p>
           ) : null}
           {inversion.status === "too_low" ? (
             <p className="mt-1 text-sm text-ink-soft">
               Avant même d’enchérir, les frais préalables, les honoraires, les travaux et les droits
-              qui s’y rattachent coûtent déjà {euro.format(inversion.minimumBudget)} : ce budget ne
-              laisse rien pour le prix.
+              qui s’y rattachent coûtent déjà {formatPriceWithCents(inversion.minimumBudget)} : ce
+              budget ne laisse rien pour le prix.
             </p>
           ) : null}
           {inversion.status === "too_high" ? (
             <p className="mt-1 text-sm text-ink-soft">
-              Ce simulateur calcule jusqu’à {euroWhole.format(inversion.maximumBudget)} de budget.
+              Ce simulateur calcule jusqu’à {formatPrice(inversion.maximumBudget)} de budget.
               Saisissez un montant plus réaliste pour connaître le prix d’adjudication maximal.
             </p>
           ) : null}
@@ -140,7 +142,7 @@ export function BudgetMode({
               <CostLines costs={inversion.costs} />
             </div>
             <p className="mt-3 text-sm font-semibold">
-              Coût total : {euro.format(inversion.costs.totalCost)}
+              Coût total : {formatPriceWithCents(inversion.costs.totalCost)}
             </p>
           </>
         ) : null}
@@ -153,8 +155,8 @@ export function BudgetMode({
             {consignation != null ? (
               <>
                 {" "}
-                Pour une mise à prix de {euroWhole.format(startingPriceValue)} :{" "}
-                <strong className="text-foreground">{euroWhole.format(consignation)}</strong>.
+                Pour une mise à prix de {formatPrice(startingPriceValue)} :{" "}
+                <strong className="text-foreground">{formatPrice(consignation)}</strong>.
               </>
             ) : (
               <> Saisissez la mise à prix pour la chiffrer.</>
@@ -183,5 +185,5 @@ export function BudgetMode({
 }
 
 function consignationRule(): string {
-  return `${Math.round(CONSIGNATION_RATE * 100)} % de la mise à prix, ${euroWhole.format(CONSIGNATION_MINIMUM)} au minimum,`;
+  return `${formatShareAsPercent(CONSIGNATION_RATE)} de la mise à prix, ${formatPrice(CONSIGNATION_MINIMUM)} au minimum,`;
 }

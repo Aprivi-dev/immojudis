@@ -1,4 +1,5 @@
 import { formatDateTime } from "@/lib/format/dates";
+import { formatPrice, formatPricePerM2, formatShareAsPercent } from "@/lib/format/numbers";
 import { finiteNumberFromNumberOrText as num } from "@/lib/finite-number";
 import { asRecord } from "@/lib/guards";
 
@@ -132,8 +133,7 @@ const STATE_LABELS: Record<CatalogueQualityState, string> = {
 type Json = Record<string, unknown>;
 
 const integer = (value: number) => new Intl.NumberFormat("fr-FR").format(value);
-const percent = (ratio: number) =>
-  new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 }).format(ratio);
+const percent = (ratio: number) => formatShareAsPercent(ratio, 1);
 
 function countText(metric: Json): string {
   const count = num(metric.count);
@@ -181,7 +181,7 @@ export function catalogueQualityRows(metricsPayload: unknown): CatalogueQualityR
       const acknowledged = num(metric.acknowledged) ?? 0;
       const highest = num(metric.highest_eur_per_m2);
       const notes = [
-        highest != null ? `jusqu’à ${integer(highest)} €/m²` : null,
+        highest != null ? `jusqu’à ${formatPricePerM2(highest)}` : null,
         acknowledged === 1 ? "1 vente reconnue légitime, non comptée" : null,
         acknowledged > 1
           ? `${integer(acknowledged)} ventes reconnues légitimes, non comptées`
@@ -190,7 +190,9 @@ export function catalogueQualityRows(metricsPayload: unknown): CatalogueQualityR
       return row(
         key,
         metric,
-        max == null ? "Alerte dès 1 vente" : `Alerte dès 1 vente au-dessus de ${integer(max)} €/m²`,
+        max == null
+          ? "Alerte dès 1 vente"
+          : `Alerte dès 1 vente au-dessus de ${formatPricePerM2(max)}`,
         count > 0 ? "alert" : "ok",
         notes.length > 0 ? notes.join(" · ") : null,
       );
@@ -413,13 +415,6 @@ export type CrossSourceDuplicatesPayload = {
   three_source_examples?: CrossSourceDuplicateGroup[] | null;
 };
 
-const euros = (value: number) =>
-  new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 0,
-  }).format(value);
-
 function dayText(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
@@ -454,7 +449,7 @@ export function buildCrossSourceDuplicates(
       return [
         dayText(group.sale_day),
         group.city_key,
-        price == null ? "—" : euros(price),
+        price == null ? "—" : formatPrice(price),
         `${integer(num(group.source_count) ?? 0)} sources, ${integer(num(group.line_count) ?? 0)} lignes`,
       ].join(" · ");
     }),

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
 import {
@@ -455,7 +456,7 @@ function InformationAgentTemplateEditor({
                       v{entry.revision} · {entry.name}
                     </p>
                     <p className="mt-1 text-xs text-brand-navy/50">
-                      {formatDateTime(entry.publishedAt ?? entry.updatedAt)}
+                      {formatShortDateTime(entry.publishedAt ?? entry.updatedAt)}
                     </p>
                   </div>
                   {entry.status === "published" ? (

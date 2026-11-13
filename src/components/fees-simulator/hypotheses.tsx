@@ -3,7 +3,8 @@
 import { useId, type ReactNode } from "react";
 import { DEFAULTS } from "@/lib/profitability";
 import { FEES_SIMULATOR_DEPARTMENTS } from "./departments";
-import { AmountField, Field, FIELD_CLASSES, euro } from "./fields";
+import { formatPriceWithCents } from "@/lib/format/numbers";
+import { AmountField, Field, FIELD_CLASSES } from "./fields";
 
 // Texte figé, pour ne pas embarquer côté client le calcul d'un libellé à partir du tableau DMTO ;
 // FeesSimulator.test.tsx vérifie qu'il reste aligné sur `DMTO_RATE_BY_DEPARTMENT` (profitability.ts).
@@ -66,13 +67,13 @@ export function HypothesesFields({
       </Field>
       <AmountField
         label="Frais préalables de la procédure"
-        hint={`Valeur d’exemple (${euro.format(DEFAULTS.fpt)}) : remplacez-la par le montant indiqué dans le cahier des conditions de vente.`}
+        hint={`Valeur d’exemple (${formatPriceWithCents(DEFAULTS.fpt)}) : remplacez-la par le montant indiqué dans le cahier des conditions de vente.`}
         value={values.fpt}
         onChange={(value) => onChange("fpt", value)}
       />
       <AmountField
         label="Honoraires de l’avocat enchérisseur"
-        hint={`Valeur d’exemple (${euro.format(DEFAULTS.lawyerFees)}) : remplacez-la par le montant convenu avec votre avocat, TTC.`}
+        hint={`Valeur d’exemple (${formatPriceWithCents(DEFAULTS.lawyerFees)}) : remplacez-la par le montant convenu avec votre avocat, TTC.`}
         value={values.lawyerFees}
         onChange={(value) => onChange("lawyerFees", value)}
       />

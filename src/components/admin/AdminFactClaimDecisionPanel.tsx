@@ -7,7 +7,8 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { factFieldLabel, formatFactValue } from "@/components/admin/fact-claim-format";
 import type {
@@ -312,7 +313,7 @@ function DecisionLine({
         </span>
         {item.latestDecision ? (
           <span className="text-xs text-brand-navy/55">
-            Décision du {formatDateTime(item.latestDecision.decidedAt)}
+            Décision du {formatShortDateTime(item.latestDecision.decidedAt)}
           </span>
         ) : null}
       </div>
@@ -325,7 +326,9 @@ function DecisionLine({
       </h3>
       <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-navy/55">
         {item.sale.city ? <span>{item.sale.city}</span> : null}
-        {item.sale.saleDate ? <span>Vente du {formatDateTime(item.sale.saleDate)}</span> : null}
+        {item.sale.saleDate ? (
+          <span>Vente du {formatShortDateTime(item.sale.saleDate)}</span>
+        ) : null}
         <Link
           href={`/sales/${item.saleId}`}
           className="inline-flex min-h-6 items-center font-medium text-gold-text underline"
@@ -364,7 +367,7 @@ function DecisionLine({
         ) : (
           <span>Pièce sans lien public</span>
         )}
-        <span>Reçue le {formatDateTime(item.capturedAt)}</span>
+        <span>Reçue le {formatShortDateTime(item.capturedAt)}</span>
       </div>
 
       {item.allowedActions.length ? (

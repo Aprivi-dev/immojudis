@@ -619,7 +619,7 @@ describe("page admin Pilotage", () => {
       expect(line("Réponses au questionnaire")).toBe("14");
       expect(line("Particulier")).toBe("8");
       expect(line("Marchand de biens")).toBe(MASKED);
-      expect(line("Médiane du prix jugé trop cher")).toBe("120 €");
+      expect(line("Médiane du prix jugé trop cher")).toBe("120\u00a0€");
       expect(line("Médiane du prix jugé bon marché")).toBe("moins de 10 réponses");
       expect(line("Ont accepté un entretien")).toBe(MASKED);
     });

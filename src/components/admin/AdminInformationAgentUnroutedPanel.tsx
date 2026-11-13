@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import MailQuestion from "lucide-react/dist/esm/icons/mail-question.js";
-import { formatDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDateTime } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
@@ -76,7 +77,7 @@ export function AdminInformationAgentUnroutedPanel() {
       ) : messages.length ? (
         <div className="divide-y">
           {messages.map((message) => {
-            const received = formatDateTime(message.received_at);
+            const received = formatShortDateTime(message.received_at);
             const authentication = message.sender_authentication
               ? (AUTHENTICATION_LABELS[message.sender_authentication] ??
                 message.sender_authentication)

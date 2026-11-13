@@ -10,12 +10,8 @@ import Users from "lucide-react/dist/esm/icons/users.js";
 import { useEffect, useState } from "react";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AdminPanel, AdminSectionHeading } from "@/components/admin/AdminShell";
-import {
-  formatDate,
-  formatDateTime,
-  formatInteger,
-  queryErrorMessage,
-} from "@/components/admin/admin-format";
+import { formatInteger, queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDate, formatShortDateTime } from "@/lib/format/dates";
 import { AdminQueryErrorNotice, OverviewMetric } from "@/components/admin/admin-ui";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { extendAdminSignupTrials, fetchAdminSignups } from "@/lib/client-api/admin-signups";
@@ -87,7 +83,7 @@ export function AdminSignupsPanel() {
       setLastResult(response);
       if (extended) {
         toast.success(
-          `Essai prolongé pour ${extended} compte${extended > 1 ? "s" : ""} jusqu’au ${formatDate(response.endsAt)}.`,
+          `Essai prolongé pour ${extended} compte${extended > 1 ? "s" : ""} jusqu’au ${formatShortDate(response.endsAt)}.`,
         );
       }
       if (skipped)
@@ -492,10 +488,10 @@ function SignupRow({
             .join(" · ") || "—"}
         </span>
       </th>
-      <td className="px-2 py-3 tabular-nums">{formatDateTime(account.createdAt)}</td>
+      <td className="px-2 py-3 tabular-nums">{formatShortDateTime(account.createdAt)}</td>
       <td className="px-2 py-3">{formatAccountSeniority(account.createdAt)}</td>
       <td className="px-2 py-3 tabular-nums">
-        {account.lastSignInAt ? formatDateTime(account.lastSignInAt) : "Jamais"}
+        {account.lastSignInAt ? formatShortDateTime(account.lastSignInAt) : "Jamais"}
       </td>
       <td className="px-2 py-3">
         <AccessPill access={account.access} />
@@ -536,12 +532,12 @@ function accessDetail(account: AdminSignupAccount): string {
   if (account.access === "premium") return "Accès complet sans fin";
   if (account.access !== "decouverte") {
     return account.accessEndsAt
-      ? `jusqu’au ${formatDate(account.accessEndsAt)}`
+      ? `jusqu’au ${formatShortDate(account.accessEndsAt)}`
       : "sans date de fin";
   }
   if (!account.emailConfirmedAt) return "Essai à la confirmation de l’email";
   if (account.trialEndsAt && Date.parse(account.trialEndsAt) <= Date.now()) {
-    return `Essai terminé le ${formatDate(account.trialEndsAt)}`;
+    return `Essai terminé le ${formatShortDate(account.trialEndsAt)}`;
   }
   if (account.trialEndsAt) return "Sans essai (adresse confirmée après la coupure de l’essai)";
   return "Sans essai (adresse déjà utilisée ou jetable)";

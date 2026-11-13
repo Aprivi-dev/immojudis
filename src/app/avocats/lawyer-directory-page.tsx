@@ -39,6 +39,7 @@ import {
 import type { LawyerUpcomingSales } from "@/lib/lawyer-prosecuted-sales";
 import { isSaleId, lawyerReportPath } from "@/lib/contact-message";
 import { hasStandingAnalysisAccess } from "@/lib/plans";
+import { formatDate } from "@/lib/format/dates";
 import { formatStartingPrice } from "@/lib/format/numbers";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { saleDetailPath, searchParamsToRecord } from "@/lib/navigation";
@@ -48,13 +49,6 @@ import * as queryKeys from "@/lib/query-keys";
 
 /** At most three areas of practice are shown per lawyer (RIN, art. 10.2). */
 const MAX_PRACTICE_TAGS = 3;
-
-const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
-  day: "2-digit",
-  month: "long",
-  year: "numeric",
-  timeZone: "Europe/Paris",
-});
 
 const NO_SEARCH: DirectorySearch = {};
 
@@ -525,7 +519,7 @@ function DirectoryResults({
               </a>
             </p>
             <p className="shrink-0 font-medium">
-              Mise à jour le {formatFrenchDate(officialSource.updatedAt)}
+              Mise à jour le {formatDate(officialSource.updatedAt, officialSource.updatedAt)}
             </p>
           </div>
         ) : null}
@@ -675,7 +669,7 @@ function LawyerCard({
         </DirectoryFact>
         {lawyer.oathDate ? (
           <DirectoryFact icon={<CalendarDays className="h-4 w-4" />} label="Serment">
-            {formatFrenchDate(lawyer.oathDate)}
+            {formatDate(lawyer.oathDate, lawyer.oathDate)}
           </DirectoryFact>
         ) : null}
         {lawyer.languages.length ? (
@@ -776,7 +770,7 @@ function ProsecutedSales({
       <ul className="mt-2 grid gap-2">
         {upcoming.sales.map((sale) => {
           const details = [
-            sale.saleDate ? formatFrenchDate(sale.saleDate) : null,
+            sale.saleDate ? formatDate(sale.saleDate, sale.saleDate) : null,
             sale.tribunalName,
             sale.startingPriceEur && sale.startingPriceEur > 0
               ? `Mise à prix ${formatStartingPrice(sale.startingPriceEur)}`
@@ -894,10 +888,4 @@ function cnbDirectoryHref(barAssociation: string | null) {
   return barAssociation
     ? `/api/lawyers/cnb-redirect?${new URLSearchParams({ bar: barAssociation }).toString()}`
     : "https://cnb.avocat.fr/annuaire-des-avocats-de-france";
-}
-
-function formatFrenchDate(value: string) {
-  const date = new Date(value.length === 10 ? `${value}T00:00:00.000Z` : value);
-  if (!Number.isFinite(date.getTime())) return value;
-  return FRENCH_DATE_FORMATTER.format(date);
 }

@@ -119,6 +119,46 @@ describe("TribunalJudicialActivityExplorer", () => {
     expect(screen.getByRole("button", { name: "Revenir à toute la France" })).toBeTruthy();
   });
 
+  it("nomme les types de bien de l’historique comme le reste du site", () => {
+    const past = (id: string, propertyType: string, daysAgo: number) => ({
+      ...sale("marseille", id, -daysAgo, 60_000),
+      status: "past" as const,
+      propertyType,
+    });
+    const data = buildTribunalJudicialActivityDirectory({
+      courts: [{ code: "marseille", name: "TJ Marseille", judicialRegion: "Aix" }],
+      sales: [
+        ...Array.from({ length: 5 }, (_, index) =>
+          sale("marseille", `marseille-${index}`, 10 + index, 40_000 + index * 10_000),
+        ),
+        past("parking-1", "parking", 40),
+        past("parking-2", "parking", 50),
+        past("other-1", "other", 60),
+        past("house-1", "house", 70),
+      ],
+      asOf: AS_OF,
+      historyMonths: 36,
+    });
+    mocks.useQuery.mockImplementation((options: { queryKey?: unknown[] }) =>
+      isQuery(options, queryKeys.featureEntitlementsPlan("premium-user"))
+        ? { data: { plan: { hasAnalysisAccess: true } }, isLoading: false, isError: false }
+        : { data, isLoading: false, isError: false, refetch: vi.fn() },
+    );
+
+    render(<TribunalJudicialActivityExplorer />);
+
+    const typeSelect = screen.getByRole("combobox", { name: "Type de bien" });
+    const options = Array.from(typeSelect.querySelectorAll("option"), (option) =>
+      option.textContent?.replace(/\s+/g, " "),
+    );
+    expect(options).toEqual([
+      "Tous types de biens",
+      "Garage / Parking · 2",
+      "Maison · 1",
+      "Bien à qualifier · 1",
+    ]);
+  });
+
   it("ne charge pas l’annuaire pour un visiteur", () => {
     mocks.useAuth.mockReturnValue({ session: null, loading: false });
     mocks.useQuery.mockImplementation((options: { queryKey?: unknown[] }) => {

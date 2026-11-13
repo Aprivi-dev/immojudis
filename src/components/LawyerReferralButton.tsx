@@ -6,6 +6,7 @@ import { toast } from "@/lib/toast";
 import { useAccessPlanQuery } from "@/hooks/use-access-plan";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
+import { formatNumericDate } from "@/lib/format/dates";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import {
   fetchLawyerReferralPreview,
@@ -308,18 +309,8 @@ function LawyerReferralStatus({ request }: { request: LawyerReferralSummary }) {
         <p className="mt-2">Avocat référencé : attribution Immojudis en cours.</p>
       )}
       <p className="mt-2 text-[11px] uppercase tracking-[0.08em]">
-        Créée le {formatShortDate(request.createdAt)}
+        Créée le {formatNumericDate(request.createdAt, "date à confirmer")}
       </p>
     </div>
   );
-}
-
-function formatShortDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "date à confirmer";
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
 }

@@ -4,7 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
-import { formatDate, queryErrorMessage } from "@/components/admin/admin-format";
+import { queryErrorMessage } from "@/components/admin/admin-format";
+import { formatShortDate } from "@/lib/format/dates";
+import { formatPriceWithCents } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import {
   executeAdminContractWithdrawal,
@@ -51,7 +53,7 @@ export function AdminPrivacyRequestsPanel() {
     mutationFn: executeAdminContractWithdrawal,
     onSuccess: async (result) => {
       toast.success(
-        `Rétractation exécutée : ${(result.refundedCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} remboursés.`,
+        `Rétractation exécutée : ${formatPriceWithCents(result.refundedCents / 100)} remboursés.`,
       );
       await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
     },
@@ -217,7 +219,7 @@ function PrivacyRequestEditor({
       </p>
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
         <Clock className="h-3.5 w-3.5 text-gold-text" />
-        Reçue le {formatDate(request.submittedAt)} · échéance {formatDate(request.dueAt)}
+        Reçue le {formatShortDate(request.submittedAt)} · échéance {formatShortDate(request.dueAt)}
         {request.deadline ? (
           <span
             className={`rounded-full border px-2 py-0.5 font-semibold ${

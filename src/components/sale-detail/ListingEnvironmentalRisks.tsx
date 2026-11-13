@@ -7,6 +7,7 @@ import {
   type CommuneRiskProfile,
   type CommuneRiskResult,
 } from "@/lib/environment-reference";
+import { formatNumericDate } from "@/lib/format/dates";
 import * as queryKeys from "@/lib/query-keys";
 import styles from "./ListingEnvironment.module.css";
 
@@ -205,9 +206,7 @@ function groupRisks(risks: CommuneRiskItem[]): RiskGroup[] {
   return groups;
 }
 
+/** Les dates de GASPAR sont des jours civils : l'heure éventuelle n'est pas lue. */
 function formatDate(value: string): string {
-  const date = new Date(`${value.slice(0, 10)}T12:00:00Z`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat("fr-FR", { timeZone: "UTC" }).format(date);
+  return formatNumericDate(value.slice(0, 10), value);
 }

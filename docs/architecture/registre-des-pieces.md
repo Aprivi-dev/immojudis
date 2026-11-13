@@ -570,10 +570,9 @@ Trois interrupteurs d'exploitation se changent **sans migration**, par le propri
 - **Indice de fusion à l'état libéré.** Si la vente absorbée avait déjà libéré le champ (retrait, opposition) et que
   la fusion a écrit l'ancienne valeur de la pièce dans la vente conservée, la colonne n'est pas corrigée : seule la
   mémoire est reprise. Le contrôle quotidien le signale (`echo_suspected`).
-- **Fusion par le repli REST.** La suppression de la vente absorbée verrouille la vente conservée après l'absorbée,
-  hors de l'ordre par identifiant des lots SQL de la collecte : face à un lot qui tient la vente conservée et
-  demande l'absorbée, PostgreSQL annule l'une des deux transactions. Le repli REST n'est pas le chemin de
-  production.
+- **Fusion par le repli REST.** Ce repli, où la suppression de la vente absorbée pouvait s'interbloquer avec un lot
+  SQL de la collecte, a été retiré le 13/11/2026 : la fusion ne passe plus que par Postgres direct. L'essai du
+  runbook R2b qui le décrit date d'avant ce retrait.
 - **Reclassement en terrain par la nature seule, surface tenue.** Quand la surface est tenue, la nature lue est
   celle de l'annonce, mémorisée dans le bloc `listing`. Depuis le lot R2c la retenue la met à jour à chaque
   écriture où la colonne `app_surface_m2` porte la valeur d'annonce connue ou une nouvelle valeur : une annonce qui

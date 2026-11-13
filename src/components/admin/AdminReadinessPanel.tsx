@@ -4,10 +4,11 @@ import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import Clipboard from "lucide-react/dist/esm/icons/clipboard.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
+import { formatPercent } from "@/lib/format/numbers";
 import { toast } from "@/lib/toast";
 import { fetchAdminReadiness } from "@/lib/client-api";
 import type { ReadinessItem, ReadinessStatus } from "@/lib/admin-readiness";
-import { formatShortDateTime, queryErrorMessage } from "@/components/admin/admin-format";
+import { formatCompactDateTime, queryErrorMessage } from "@/components/admin/admin-format";
 
 const READINESS_QUERY_KEY = ["admin-readiness"] as const;
 
@@ -56,7 +57,9 @@ export function AdminReadinessPanel() {
           <div className="mt-4 grid gap-3 text-sm">
             <DiagnosticLine
               label="Dernière vérification"
-              value={readiness?.checkedAt ? formatShortDateTime(readiness.checkedAt) : "Chargement"}
+              value={
+                readiness?.checkedAt ? formatCompactDateTime(readiness.checkedAt) : "Chargement"
+              }
             />
             <DiagnosticLine
               label="Migration attendue"
@@ -78,7 +81,7 @@ export function AdminReadinessPanel() {
               label="Contrôle santé"
               value={
                 readiness?.operations.lastHealthRunAt
-                  ? formatShortDateTime(readiness.operations.lastHealthRunAt)
+                  ? formatCompactDateTime(readiness.operations.lastHealthRunAt)
                   : "Non vérifié"
               }
             />
@@ -145,7 +148,7 @@ export function AdminReadinessPanel() {
                 <div className="min-w-0">
                   <div className="truncate font-mono text-foreground">{alert.key}</div>
                   <div className="mt-1 text-muted-foreground">
-                    {alert.category} · {formatShortDateTime(alert.lastSeenAt)}
+                    {alert.category} · {formatCompactDateTime(alert.lastSeenAt)}
                   </div>
                 </div>
                 <span className="text-foreground">{alert.severity}</span>
@@ -239,5 +242,5 @@ function formatOperationalSlo(
   operations: NonNullable<Awaited<ReturnType<typeof fetchAdminReadiness>>>["operations"] | null,
 ): string {
   if (!operations || operations.successRatePercent == null) return "Non calculé";
-  return `${operations.successRatePercent.toFixed(3)} % / ${operations.sloTargetPercent} %`;
+  return `${formatPercent(operations.successRatePercent, 3, 3)} / ${formatPercent(operations.sloTargetPercent, 3)}`;
 }

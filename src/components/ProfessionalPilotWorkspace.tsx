@@ -10,7 +10,7 @@ import {
   saveProfessionalPilotDossier,
 } from "@/lib/client-api";
 import { safeDocumentUrl } from "@/lib/documents";
-import { formatPrice } from "@/lib/format";
+import { formatPercent, formatPrice } from "@/lib/format";
 import { MAX_SIMULATOR_AMOUNT_EUR } from "@/lib/simulator-limits";
 import { toast } from "@/lib/toast";
 import {
@@ -605,7 +605,9 @@ export function ProfessionalPilotWorkspace({
                 <dt>Marge brute indicative</dt>
                 <dd className="font-bold text-brand-navy">
                   {economics.marginEur === null ? "À chiffrer" : formatPrice(economics.marginEur)}
-                  {economics.marginPct !== null ? ` (${economics.marginPct.toFixed(1)} %)` : ""}
+                  {economics.marginPct !== null
+                    ? ` (${formatPercent(economics.marginPct, 1, 1)})`
+                    : ""}
                 </dd>
               </div>
               <div>

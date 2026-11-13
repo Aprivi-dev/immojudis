@@ -6,6 +6,7 @@ import type { Database, Tables } from "@/integrations/supabase/types";
 import { adminPageLimit, adminPageQueryShape } from "@/lib/admin-page-query";
 import { adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import { NotFoundError, PublicApiError } from "@/lib/api-errors";
+import { parisDateKey } from "@/lib/paris-time";
 
 type PublicationRequestRow = Tables<"listing_publication_requests">;
 /** Colonne `status` protégée par une contrainte CHECK : le type généré est string. */
@@ -284,7 +285,7 @@ export function assertPublicationDateIsPublishable(hearingDate: string | null): 
       422,
     );
   }
-  const todayInParis = parisCivilDate();
+  const todayInParis = parisDateKey(new Date());
   if (hearingDate < todayInParis) {
     throw new PublicApiError(
       "Impossible de publier une demande dont la date de vente est passée.",
@@ -292,20 +293,6 @@ export function assertPublicationDateIsPublishable(hearingDate: string | null): 
     );
   }
   return hearingDate;
-}
-
-function parisCivilDate(now = new Date()): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "Europe/Paris",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    })
-      .formatToParts(now)
-      .map(({ type, value }) => [type, value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function publicationSourceUrl(requestId: string): string {

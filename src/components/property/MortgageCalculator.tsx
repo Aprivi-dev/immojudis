@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import Calculator from "lucide-react/dist/esm/icons/calculator.js";
 import type { Property } from "@/lib/property-types";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatPercent } from "@/lib/format";
 import { AnimatedSection } from "./AnimatedSection";
 
 export function MortgageCalculator({ property }: { property: Property }) {
@@ -52,7 +52,7 @@ export function MortgageCalculator({ property }: { property: Property }) {
               onChange={(event) => setRate(Number(event.target.value))}
               className="accent-[var(--gold)]"
             />
-            <span className="text-sm text-muted-foreground">{rate.toFixed(1)}%</span>
+            <span className="text-sm text-muted-foreground">{formatPercent(rate, 1, 1)}</span>
           </label>
           <label className="grid gap-2 text-sm font-semibold text-foreground">
             Duree

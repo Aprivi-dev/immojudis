@@ -14,6 +14,7 @@ import Megaphone from "lucide-react/dist/esm/icons/megaphone.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
+import { formatShortDate } from "@/lib/format/dates";
 import { toast } from "@/lib/toast";
 import { buttonClasses, Card, Eyebrow, Notice, PageTitle } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
@@ -566,7 +567,7 @@ function PublicationRequestLine({ request }: { request: PublicationRequestSummar
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink-soft">
         <span>{request.documentCount} fichier(s)</span>
         <span aria-hidden>•</span>
-        <span>{formatDate(request.createdAt)}</span>
+        <span>{formatShortDate(request.createdAt)}</span>
       </div>
       {request.publishedUrl ? (
         <Link
@@ -618,10 +619,4 @@ function professionalStatusLabel(status: ReturnType<typeof getProfessionalStatus
   if (status === "rejected") return "refusé";
   if (status === "pending") return "en cours de revue";
   return "professionnel";
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "medium",
-  }).format(new Date(value));
 }
