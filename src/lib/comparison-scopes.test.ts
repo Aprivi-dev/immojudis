@@ -77,6 +77,17 @@ describe("comparisonScopes", () => {
     expect(labels(comparisonScopes({ propertyType: "house" }))).toEqual(["Même type de bien"]);
     expect(comparisonScopes({})).toEqual([]);
   });
+
+  // Avant le lot 12, ils posaient `property_type = 'unknown'` (ou `'other'`) et le libellé
+  // « même type de bien ».
+  it.each(["unknown", "other"])("un type %s n'est pas un critère : lieux seuls", (propertyType) => {
+    expect(comparisonScopes({ ...COMPLETE, propertyType }, { nationwide: true })).toEqual([
+      { label: "Même ville", city: "Bordeaux", department: "33" },
+      { label: "Même tribunal", tribunalCode: "tj-bordeaux" },
+      { label: "Même département", department: "33" },
+    ]);
+    expect(comparisonScopes({ propertyType })).toEqual([]);
+  });
 });
 
 describe("filterComparisonScope", () => {

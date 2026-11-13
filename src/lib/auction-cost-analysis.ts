@@ -257,7 +257,7 @@ function consignationFromSourceText(sale: AuctionSale): AuctionCostSourceAmount 
   }
   const texts = [
     ...sources.map((item) => ({ text: cleanText(item.value), source: item.source })),
-    { text: sale.source_description ?? sale.description, source: "Description source" },
+    ...collectSaleTextCandidates(sale, { descriptions: "one" }),
   ];
   for (const { text, source } of texts) {
     if (!text) continue;

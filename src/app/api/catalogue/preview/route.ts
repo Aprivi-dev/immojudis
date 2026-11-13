@@ -8,6 +8,7 @@ import {
 } from "@/lib/public-catalogue.server";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { catalogueSearch } from "@/lib/search/search-filters";
 import {
   parsePreviewSearchRequest,
   type PreviewSearchApiResponse,
@@ -72,7 +73,7 @@ export const GET = apiRoute(
       });
     }
     const { mirrorsDegraded, ...body }: PreviewCataloguePage = await loadPreviewCataloguePage(
-      parsed.search,
+      catalogueSearch(parsed.search),
     );
     const response: PreviewSearchApiResponse = body;
     return NextResponse.json(response, {

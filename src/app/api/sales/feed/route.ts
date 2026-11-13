@@ -5,6 +5,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { apiKeyAuthContextFromRequest } from "@/lib/api-keys";
 import { exportSalesApiFeed } from "@/lib/sale-exports";
+import { catalogueSearch } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { apiRoute } from "@/lib/api-route";
 
@@ -14,7 +15,9 @@ export const GET = apiRoute(
     const apiKeyAuth = await apiKeyAuthContextFromRequest(request, "sales.feed:read");
     const auth = apiKeyAuth ?? (await requireSupabaseAuthContext(bearerTokenFromRequest(request)));
     const url = new URL(request.url);
-    const search = validateSalesSearch(Object.fromEntries(url.searchParams.entries()));
+    const search = catalogueSearch(
+      validateSalesSearch(Object.fromEntries(url.searchParams.entries())),
+    );
     const response = await exportSalesApiFeed({
       auth,
       search,

@@ -13,12 +13,8 @@ import { roundToTenth as roundedNumber } from "@/lib/rounding";
 import { averageRoundedToTenth as averageRounded } from "@/lib/rounding";
 import { quantile } from "@/lib/stats";
 import { ForbiddenError } from "@/lib/api-errors";
-import { addUtcCalendarMonths } from "@/lib/tribunal-statistics-dates";
-import {
-  comparisonScopes,
-  filterComparisonScope,
-  type ComparisonScope,
-} from "@/lib/comparison-scopes";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
+import { readComparisonSales } from "@/lib/comparison-scopes";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
@@ -167,29 +163,23 @@ export async function getMarketAnalytics({
   const referenceSale = input.saleId
     ? await readSaleThroughDoor<MarketSaleRow>(auth, input.saleId, "plan", MARKET_COLUMNS)
     : null;
-  const scopes = comparisonScopes({
-    city: input.city ?? referenceSale?.city,
-    department: input.department ?? referenceSale?.department,
-    tribunalCode: input.tribunalCode ?? referenceSale?.tribunal_code,
-    propertyType: input.propertyType ?? referenceSale?.property_type,
-  });
   const fromDate = addUtcCalendarMonths(now, -input.months).toISOString();
   const toDate = addUtcCalendarMonths(now, input.futureMonths).toISOString();
-  let selectedScope = scopes[0];
-  let rows: MarketSaleRow[] = [];
-
-  for (const scope of scopes) {
-    rows = await queryMarketSales({
-      auth,
-      scope,
-      fromDate,
-      toDate,
-      limit: input.limit,
-      referenceSaleId: input.saleId ?? null,
-    });
-    selectedScope = scope;
-    if (rows.length >= 5) break;
-  }
+  const { scope: selectedScope, rows } = await readComparisonSales<MarketSaleRow>({
+    auth,
+    base: {
+      city: input.city ?? referenceSale?.city,
+      department: input.department ?? referenceSale?.department,
+      tribunalCode: input.tribunalCode ?? referenceSale?.tribunal_code,
+      propertyType: input.propertyType ?? referenceSale?.property_type,
+    },
+    columns: MARKET_COLUMNS,
+    fromDate,
+    toDate,
+    limit: input.limit,
+    referenceSaleId: input.saleId ?? null,
+    minRows: 5,
+  });
 
   const items = rows.map((row) => rowToMarketItem(row, now));
   const snapshot = buildMarketAnalyticsSnapshot(items);
@@ -271,36 +261,6 @@ export function buildMarketAnalyticsSnapshot(
     comparisonSegments: buildComparisonSegments(items),
     communeComparison: buildCommuneComparison(items),
   };
-}
-
-async function queryMarketSales({
-  auth,
-  scope,
-  fromDate,
-  toDate,
-  limit,
-  referenceSaleId,
-}: {
-  auth: SupabaseAuthContext;
-  scope: ComparisonScope;
-  fromDate: string;
-  toDate: string;
-  limit: number;
-  referenceSaleId: string | null;
-}): Promise<MarketSaleRow[]> {
-  const query = auth.supabase
-    .from("v_auction_sales_app")
-    .select(MARKET_COLUMNS)
-    .not("id", "is", null)
-    .not("sale_date", "is", null)
-    .gte("sale_date", fromDate)
-    .lte("sale_date", toDate)
-    .order("sale_date", { ascending: false })
-    .limit(limit);
-
-  const { data, error } = await filterComparisonScope(query, scope, referenceSaleId);
-  if (error) throw error;
-  return data ?? [];
 }
 
 function rowToMarketItem(row: MarketSaleRow, now: Date): MarketAnalyticsItem {

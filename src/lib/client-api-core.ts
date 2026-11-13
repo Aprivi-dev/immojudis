@@ -59,8 +59,6 @@ export type ApiRequestOptions = {
   anonymous?: boolean;
   /** Délai précis (durée maximale de la route), à la place de la règle de `API_TIMEOUT_MS`. */
   timeoutMs?: number;
-  /** Réponse fichier (PDF, CSV, agenda), posée par `apiDownload` : sans délai hors administration. */
-  file?: boolean;
   /** Abandon décidé par l'appelant (lecture que React Query annule), en plus du délai. */
   signal?: AbortSignal;
 };
@@ -69,7 +67,15 @@ export type ApiRequestOptions = {
  * La réponse d'une route de l'API, sans la lire (statut que l'appelant interprète). Le jeton du
  * compte, l'en-tête JSON du corps et le délai sont posés ici, pour tous les appels.
  */
-export async function apiFetch(path: string, options: ApiRequestOptions = {}): Promise<Response> {
+export const apiFetch: (path: string, options?: ApiRequestOptions) => Promise<Response> = send;
+
+async function send(
+  path: string,
+  options: ApiRequestOptions & {
+    /** Réponse fichier (PDF, CSV, agenda), posée par `apiDownload` : sans délai hors administration. */
+    file?: boolean;
+  } = {},
+): Promise<Response> {
   const headers: Record<string, string> = options.anonymous ? {} : await authHeaders();
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   const ms =
@@ -105,7 +111,7 @@ export async function apiDownload(
   options: ApiRequestOptions,
   fallbackName: string,
 ): Promise<{ blob: Blob; filename: string; headers: Headers }> {
-  const response = await apiFetch(path, { ...options, file: true });
+  const response = await send(path, { ...options, file: true });
   if (!response.ok) await readJson<unknown>(response);
   const header = response.headers.get("content-disposition") ?? "";
   const filename = /filename="([^"\\/]+)"/i.exec(header)?.[1]?.trim() || fallbackName;

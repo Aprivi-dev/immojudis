@@ -115,6 +115,39 @@ describe("active comparables analysis", () => {
     expect(analysis.decisionImpact).toContain("candidats");
   });
 
+  // Avant le lot 12, deux biens de type `unknown` ou `other` recevaient le bonus « Même type ».
+  it.each(["unknown", "other"])(
+    "ne donne l'étiquette « même type » à aucun candidat d'un sujet de type %s",
+    (propertyType) => {
+      const analysis = buildActiveComparablesAnalysis({
+        sale: { ...EXAMPLE_SALE, property_type: propertyType },
+        candidates: [propertyType, "apartment", "house"].map((type) => ({
+          ...EXAMPLE_SALE,
+          id: `candidate-${type}`,
+          property_type: type,
+        })),
+        scopeLabel: "Même ville",
+        now,
+      });
+      expect(analysis.items).toHaveLength(3);
+      for (const item of analysis.items) {
+        expect(item.reasons.join(" | ")).not.toContain("Même type");
+        expect(item.reasons[0]).toBe("Type de bien différent ou non confirmé");
+        expect(item.matchScore).toBeLessThan(70);
+      }
+    },
+  );
+
+  it("donne l'étiquette « même type » à un candidat de la même famille", () => {
+    const analysis = buildActiveComparablesAnalysis({
+      sale: { ...EXAMPLE_SALE, property_type: "apartment" },
+      candidates: [{ ...EXAMPLE_SALE, id: "same-family", property_type: "apartment" }],
+      scopeLabel: "Même ville et même type de bien",
+      now,
+    });
+    expect(analysis.items[0].reasons).toContain("Même type : Appartement");
+  });
+
   it("marks the feature missing without active candidates", () => {
     const analysis = buildActiveComparablesAnalysis({
       sale: EXAMPLE_SALE,

@@ -19,7 +19,7 @@ import { matchesPropertyFamily } from "@/lib/property-type-family";
 import { round } from "@/lib/rounding";
 import { averageRounded, roundToTenth } from "@/lib/rounding";
 import { quantileSorted } from "@/lib/stats";
-import { addUtcCalendarMonths } from "@/lib/tribunal-statistics-dates";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
 import { ForbiddenError, PublicApiError } from "@/lib/api-errors";
 import { readSaleThroughDoor } from "@/lib/entitlements.server";
 

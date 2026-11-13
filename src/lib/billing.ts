@@ -1144,16 +1144,16 @@ async function retrieveCurrentSubscription(
 }
 
 /**
- * Every Price of the Analyse offer: the one used by new checkouts (`STRIPE_ANALYSIS_PRICE_ID`) and
- * the former ones still billed to existing subscribers (`STRIPE_ANALYSIS_LEGACY_PRICE_IDS`, comma
- * separated). Changing the Price of the offer therefore does not cut the access of subscribers who
- * stay on the previous one.
+ * Every Price of the Analyse offer: the one used by new checkouts (`analysisPriceId`, absent when
+ * `STRIPE_ANALYSIS_PRICE_ID` is malformed) and the former ones still billed to existing subscribers
+ * (`STRIPE_ANALYSIS_LEGACY_PRICE_IDS`, comma separated). Changing the Price of the offer therefore
+ * does not cut the access of subscribers who stay on the previous one.
  */
 export function analysisSubscriptionPriceIds(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): string[] {
-  const { analysisPriceId: current, legacyAnalysisPriceIds } = serverEnv(env).stripe;
-  return [current, ...(legacyAnalysisPriceIds ?? "").split(",")]
+  const { legacyAnalysisPriceIds } = serverEnv(env).stripe;
+  return [analysisPriceId(env), ...(legacyAnalysisPriceIds ?? "").split(",")]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value));
 }

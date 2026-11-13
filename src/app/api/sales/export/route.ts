@@ -4,6 +4,7 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { exportSalesCsv } from "@/lib/sale-exports";
+import { catalogueSearch } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { apiRoute } from "@/lib/api-route";
 
@@ -12,7 +13,9 @@ export const GET = apiRoute(
   async (request) => {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
-    const search = validateSalesSearch(Object.fromEntries(url.searchParams.entries()));
+    const search = catalogueSearch(
+      validateSalesSearch(Object.fromEntries(url.searchParams.entries())),
+    );
     const response = await exportSalesCsv({
       auth,
       search,

@@ -20,7 +20,7 @@ const REFERENCE = {
  * Session d'administrateur (droits complets) dont la vue rend la vente de référence, puis, pour
  * chaque lecture de périmètre, `rowsPerRead` lignes ; chaque lecture garde ses filtres.
  */
-function fakeAuth(rowsPerRead: number[]) {
+function fakeAuth(rowsPerRead: number[], reference: Record<string, unknown> = REFERENCE) {
   const reads: string[][] = [];
   const from = vi.fn(() => {
     const filters: string[] = [];
@@ -34,7 +34,7 @@ function fakeAuth(rowsPerRead: number[]) {
     for (const name of ["select", "not", "gte", "lte", "order", "limit", "eq", "neq"]) {
       builder[name] = chain(name);
     }
-    builder.maybeSingle = async () => ({ data: REFERENCE, error: null });
+    builder.maybeSingle = async () => ({ data: reference, error: null });
     builder.then = (resolve: (value: unknown) => void) => {
       const count = rowsPerRead[reads.length] ?? 0;
       reads.push(filters);
@@ -125,5 +125,36 @@ describe("ventes passées autour d'une vente", () => {
     });
 
     expect(response.scope.fromDate).toBe("2026-02-28T10:00:00.000Z");
+  });
+});
+
+// Avant le lot 12, `selectedScope.label` levait une TypeError (500) faute de périmètre.
+describe("vente de référence sans rien de comparable", () => {
+  const NOTHING = {
+    id: SALE_ID,
+    city: null,
+    department: null,
+    tribunal_code: null,
+    property_type: "unknown",
+  };
+  const message =
+    "La vente de référence n'a ni ville, ni département, ni tribunal, ni type de bien : aucun périmètre de comparaison.";
+
+  it("refuse l'analyse de marché (400) sans lire les ventes", async () => {
+    const { auth, reads } = fakeAuth([], NOTHING);
+
+    await expect(
+      getMarketAnalytics({ auth, input: marketAnalyticsQuerySchema.parse({ saleId: SALE_ID }) }),
+    ).rejects.toMatchObject({ name: "PublicApiError", status: 400, message });
+    expect(reads).toHaveLength(0);
+  });
+
+  it("refuse les ventes passées (400) sans lire les ventes", async () => {
+    const { auth, reads } = fakeAuth([], { ...NOTHING, property_type: null });
+
+    await expect(
+      getSaleHistory({ auth, input: saleHistoryQuerySchema.parse({ saleId: SALE_ID }) }),
+    ).rejects.toMatchObject({ name: "PublicApiError", status: 400, message });
+    expect(reads).toHaveLength(0);
   });
 });

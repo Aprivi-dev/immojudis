@@ -4,10 +4,10 @@ import { riskTexts, type RiskTextOptions } from "@/lib/sale-risk-texts";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 
 /** Un texte lu, et le champ des blocs source dont il vient, s'il vient d'un bloc. */
-export type SaleTextCandidate = TextCandidate & { field?: FlattenedValue };
+type SaleTextCandidate = TextCandidate & { field?: FlattenedValue };
 
 /** Ce qu'une analyse lit d'une vente ; une source absente n'est pas lue. */
-export type SaleTextSources = {
+type SaleTextSources = {
   /**
    * `each` : la description de l'annonce, puis celle de la source, chacune citée avec sa provenance.
    * `one` : un seul texte, la description de la source ou, à défaut, celle de l'annonce.

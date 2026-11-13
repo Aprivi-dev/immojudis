@@ -5,12 +5,8 @@ import { z } from "zod/mini";
 import { occupancyClass } from "@/lib/occupancy-status";
 import { propertyFamily } from "@/lib/property-type-family";
 import { median, wilsonInterval95 } from "@/lib/stats";
-import {
-  addUtcCalendarMonths,
-  assertValidDate,
-  hasVisitDate,
-  hearingCalendar,
-} from "@/lib/tribunal-statistics-dates";
+import { addUtcCalendarMonths } from "@/lib/calendar-months";
+import { assertValidDate, hasVisitDate, hearingCalendar } from "@/lib/tribunal-statistics-dates";
 import {
   TRIBUNAL_STATISTICS_MEDIAN_MIN_SAMPLE,
   TRIBUNAL_STATISTICS_RANGE_MIN_SAMPLE,

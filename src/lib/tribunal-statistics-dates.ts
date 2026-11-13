@@ -53,23 +53,3 @@ export function hearingCalendar(
 export function assertValidDate(value: Date, label: string): void {
   if (!Number.isFinite(value.getTime())) throw new Error(`${label} must be a valid date.`);
 }
-
-/** Même jour et même heure UTC, `months` mois plus tard (ou plus tôt) ; ramené au dernier jour du mois. */
-export function addUtcCalendarMonths(value: Date, months: number): Date {
-  const target = new Date(
-    Date.UTC(
-      value.getUTCFullYear(),
-      value.getUTCMonth() + months,
-      1,
-      value.getUTCHours(),
-      value.getUTCMinutes(),
-      value.getUTCSeconds(),
-      value.getUTCMilliseconds(),
-    ),
-  );
-  const lastDay = new Date(
-    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
-  ).getUTCDate();
-  target.setUTCDate(Math.min(value.getUTCDate(), lastDay));
-  return target;
-}

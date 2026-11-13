@@ -12,6 +12,7 @@ import {
 } from "@/lib/analysis-offer";
 import {
   ANALYSIS_ACCESS_DAYS,
+  analysisSubscriptionPriceIds,
   billingPortalReturnUrl,
   buildAnalysisCheckoutSessionParams,
   canReleaseCheckoutReservationAfterFailure,
@@ -278,5 +279,23 @@ describe("billing helpers", () => {
     expect(
       isRecognisedAnalysisPrice({ id: "price_1QxYz9AbCdEfGhIj", unit_amount: 4_900 }, env),
     ).toBe(false);
+  });
+
+  // Avant le lot 12, la variable brute était acceptée : un Price courant mal formé, que le checkout
+  // refuse, ouvrait l'accès quel que soit son montant (traité comme un ancien Price).
+  it("n'accepte comme Price courant que celui que vend le checkout (`analysisPriceId`)", () => {
+    const env = {
+      STRIPE_ANALYSIS_PRICE_ID: "price_abc-123",
+      STRIPE_ANALYSIS_LEGACY_PRICE_IDS: "price_old",
+    };
+    expect(analysisPriceId(env)).toBeUndefined();
+    expect(analysisSubscriptionPriceIds(env)).toEqual(["price_old"]);
+    expect(isRecognisedAnalysisPrice({ id: "price_abc-123", unit_amount: 100 }, env)).toBe(false);
+    expect(
+      analysisSubscriptionPriceIds({
+        STRIPE_ANALYSIS_PRICE_ID: "price_1QxYz9AbCdEfGhIj",
+        STRIPE_ANALYSIS_LEGACY_PRICE_IDS: " price_old , ",
+      }),
+    ).toEqual(["price_1QxYz9AbCdEfGhIj", "price_old"]);
   });
 });

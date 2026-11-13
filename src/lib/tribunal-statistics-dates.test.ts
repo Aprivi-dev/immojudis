@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  addUtcCalendarMonths,
-  assertValidDate,
-  hasVisitDate,
-  hearingCalendar,
-} from "@/lib/tribunal-statistics-dates";
+import { assertValidDate, hasVisitDate, hearingCalendar } from "@/lib/tribunal-statistics-dates";
 
 describe("hasVisitDate", () => {
   it("lit une date numérique aussi au milieu d'un texte (règle de l'activité judiciaire)", () => {
@@ -31,17 +26,6 @@ describe("hearingCalendar", () => {
       { date: "2026-08-20", sales: 1 },
       { date: "2026-08-21", sales: 2 },
     ]);
-  });
-});
-
-describe("addUtcCalendarMonths", () => {
-  it("garde le jour et l'heure, ramenés au dernier jour d'un mois plus court", () => {
-    expect(addUtcCalendarMonths(new Date("2026-01-31T10:00:00.000Z"), 1).toISOString()).toBe(
-      "2026-02-28T10:00:00.000Z",
-    );
-    expect(addUtcCalendarMonths(new Date("2026-08-20T12:00:00.000Z"), -36).toISOString()).toBe(
-      "2023-08-20T12:00:00.000Z",
-    );
   });
 });
 
