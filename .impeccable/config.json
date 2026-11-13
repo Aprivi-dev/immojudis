@@ -1,0 +1,15 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": ["src/components/home/HomePage.module.css"],
+        "createdAt": "2026-11-13T21:41:25.766Z",
+        "reason": "user confirmed 13/11/2026: garder le dégradé du titre de l'accueil (maquette validée le 25/10/2026)"
+      }
+    ]
+  }
+}

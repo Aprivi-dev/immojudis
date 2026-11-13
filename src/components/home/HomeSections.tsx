@@ -391,17 +391,20 @@ export function HomeGuides() {
             </li>
           ))}
         </ul>
-        <p className={styles.pepiteLine} data-reveal="">
-          Le repère « Pépite » signale les ventes qui remplissent deux conditions chiffrées et
-          publiques. Il n’est ni un conseil, ni une prévision de prix, ni une garantie.{" "}
-          <Link href="/methode-pepites" className={styles.textLink}>
-            Comment il est calculé
-          </Link>{" "}
-          ·{" "}
-          <Link href="/sales?pepite=true" prefetch={false} className={styles.textLink}>
-            Voir les pépites
-          </Link>
-        </p>
+        <div className={styles.pepite} data-reveal="">
+          <p className={styles.pepiteLine}>
+            Le repère « Pépite » signale les ventes qui remplissent deux conditions chiffrées et
+            publiques. Il n’est ni un conseil, ni une prévision de prix, ni une garantie.
+          </p>
+          <p className={styles.sourceLinks}>
+            <Link href="/methode-pepites" className={styles.textLink}>
+              Comment il est calculé <ArrowRight aria-hidden size={16} />
+            </Link>
+            <Link href="/sales?pepite=true" prefetch={false} className={styles.textLink}>
+              Voir les pépites <ArrowRight aria-hidden size={16} />
+            </Link>
+          </p>
+        </div>
       </div>
     </section>
   );

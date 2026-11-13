@@ -19,10 +19,12 @@
   --home-accent-fill: var(--gold);
   /* « clarté. » du titre : cuivre lisible sur le papier (contraste 4,9:1). */
   --home-accent-title: var(--gold-soft);
-  --home-band: var(--band-dark);
+  /* Bandeau final en marine, comme les autres bandeaux forts (décision du 13/11/2026). */
+  --home-band: var(--brand-navy);
   --home-band-fg: var(--band-dark-fg);
   --home-band-soft: var(--band-dark-soft);
-  --home-band-line: var(--band-dark-line);
+  /* Filet des liens, visible sur le marine. */
+  --home-band-line: rgb(255 255 255 / 22%);
   --home-ease: cubic-bezier(0.32, 0.72, 0, 1);
   /* Les titres de l'accueil suivent leur propre échelle, sans l'ajustement des autres pages. */
   --font-display-adjust: none;
@@ -92,6 +94,13 @@
   color: var(--home-soft);
   font-size: 18px;
   line-height: 28px;
+}
+
+/* Un lien au milieu d'une phrase suit la ligne : la boîte de 44 px écarterait les interlignes
+   (exception « en ligne » du critère WCAG 2.5.8). */
+.lead .textLink {
+  display: inline;
+  min-height: 0;
 }
 
 .head {
@@ -378,6 +387,7 @@
 
 .stat {
   display: grid;
+  align-content: start;
   gap: 4px;
   min-width: 0;
   padding: 32px 24px;
@@ -391,6 +401,12 @@
   color: var(--home-soft);
   font-size: 14px;
   line-height: 20px;
+}
+
+/* Le lien garde sa cible de 44 px, mais son texte part du haut, au poids des libellés voisins. */
+.stat dt .textLink {
+  align-items: flex-start;
+  font-weight: inherit;
 }
 
 .statValue {
@@ -438,8 +454,8 @@
 }
 
 .benefit {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   min-width: 0;
   padding: 32px;
@@ -476,11 +492,15 @@
 }
 
 .visual {
-  margin-top: 8px;
   padding: 12px;
   border: 1px solid var(--home-line);
   border-radius: 12px;
   background: var(--background);
+}
+
+/* L'illustration se pose sur le bas de la carte : les deux d'une rangée s'alignent. */
+.benefit > .visual {
+  margin-top: auto;
 }
 
 .docLines {
@@ -866,6 +886,22 @@
 
 /* Largeurs ------------------------------------------------------------------------------------- */
 
+/* Sur grand écran, l'explication reste à côté de la carte de l'exemple et des réponses ouvertes.
+   104 px : la même valeur que `.tryAnchor`, sous l'en-tête flottant. */
+@media (min-width: 961px) {
+  .trySplit > .headAside {
+    position: sticky;
+    top: 104px;
+  }
+}
+
+@media (min-width: 861px) {
+  .faqGrid > .headAside {
+    position: sticky;
+    top: 104px;
+  }
+}
+
 @media (max-width: 1100px) {
   .hero h1,
   .tagline {
@@ -940,6 +976,11 @@
   }
 
   .hero h1 br {
+    display: none;
+  }
+
+  /* La ligne passe sur deux lignes : l'espacement sépare les éléments, sans « · » en bout de ligne. */
+  .proofSep {
     display: none;
   }
 
@@ -1343,13 +1384,32 @@
   margin-top: 32px;
 }
 
+.guideLinks li {
+  padding-block: 4px;
+}
+
+/* En ligne plutôt qu'en flex : la flèche reste collée au dernier mot quand le libellé passe sur
+   deux lignes. Hauteur cliquable de 24 px, le minimum du critère WCAG 2.5.8 (niveau AA). */
 .guideLinks a {
-  min-height: 44px;
+  display: inline;
+  min-height: 0;
+  line-height: 24px;
+}
+
+.guideLinks a svg {
+  display: inline;
+  margin-left: 4px;
+  vertical-align: -3px;
+}
+
+.pepite {
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+  margin-top: 32px;
 }
 
 .pepiteLine {
-  max-width: 720px;
-  margin-top: 32px;
   color: var(--home-soft);
   font-size: 16px;
   line-height: 24px;
