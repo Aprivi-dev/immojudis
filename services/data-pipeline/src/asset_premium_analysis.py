@@ -1,33 +1,29 @@
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 from typing import Any
 
-from src.asset_normalization import (
-    AXIS_DEFINITIONS,
-    PREMIUM_ANALYSIS_VERSION,
-    ScoreComponent,
-)
 from src.asset_normalization_helpers import (
-    _axis_reading,
-    _classify_document_label,
-    _compact_dict,
-    _component_axis,
-    _diagnostic_question_detail,
-    _document_context_label,
-    _factor_status,
-    _float_or_none,
-    _format_decimal,
-    _format_eur,
-    _json_safe,
-    _occupancy_status_label,
-    _risk_next_action,
-    _risk_to_evidence_ref,
-    _sale_type_context,
+    compact_dict,
+    component_axis,
+    document_context_label,
+    factor_status,
+    float_or_none,
+    format_decimal,
+    format_eur,
+    json_safe,
+    occupancy_status_label,
+    risk_next_action,
+    risk_to_evidence_ref,
+    sale_type_context,
 )
+from src.asset_score_axes import AXIS_DEFINITIONS, ScoreComponent
 from src.config import ROOT_DIR
 from src.models import AuctionSale
+
+PREMIUM_ANALYSIS_VERSION = "premium_due_diligence_v1"
 
 
 def _build_premium_investment_analysis(
@@ -42,7 +38,7 @@ def _build_premium_investment_analysis(
     questions = _investment_questions(sale, risks, contradictions)
     headline = _premium_headline(sale, risks, contradictions)
     evidence_trace = _evidence_trace(sale, risks, factor_rows)
-    return _compact_dict(
+    return compact_dict(
         {
             "version": PREMIUM_ANALYSIS_VERSION,
             "headline": headline,
@@ -71,7 +67,7 @@ def _build_premium_investment_analysis(
                     "signaler les contradictions plutôt que trancher sans preuve",
                 ],
             },
-            "score_confidence": _float_or_none(sale.score_confidence),
+            "score_confidence": float_or_none(sale.score_confidence),
             "score_components": len(components),
         }
     )
@@ -89,14 +85,14 @@ def _deal_memo_payload(
     if not sale.occupancy_status or sale.occupancy_status == "unknown":
         blockers.append("Occupation à confirmer avant de calculer le scénario de sortie.")
     blockers.extend(
-        f"{risk.get('risk_label')} à vérifier : {_risk_next_action(str(risk.get('risk_label') or ''))}"
+        f"{risk.get('risk_label')} à vérifier : {risk_next_action(str(risk.get('risk_label') or ''))}"
         for risk in risks[:3]
     )
     strengths = []
     if sale.starting_price_eur is not None:
-        strengths.append(f"Mise à prix connue : {_format_eur(sale.starting_price_eur)}.")
+        strengths.append(f"Mise à prix connue : {format_eur(sale.starting_price_eur)}.")
     if sale.app_surface_m2 is not None:
-        strengths.append(f"Surface exploitable retenue : {_format_decimal(sale.app_surface_m2)} m2.")
+        strengths.append(f"Surface exploitable retenue : {format_decimal(sale.app_surface_m2)} m2.")
     if sale.city:
         strengths.append(f"Localisation analysable : {sale.city}.")
     if not strengths:
@@ -160,18 +156,18 @@ def _evidence_trace(
             {
                 "kind": "surface",
                 "status": "confirmed" if (sale.surface_confidence or Decimal("0")) >= Decimal("0.7") else "uncertain",
-                "claim": f"Surface retenue : {_format_decimal(sale.app_surface_m2)} m2."
+                "claim": f"Surface retenue : {format_decimal(sale.app_surface_m2)} m2."
                 if sale.app_surface_m2
                 else "Surface à confirmer.",
                 "evidence": sale.surface_evidence,
-                "confidence": _float_or_none(sale.surface_confidence),
+                "confidence": float_or_none(sale.surface_confidence),
                 "decision": "Utilisée pour le prix au mètre carré si la nature de surface est compatible avec le bien.",
             }
         )
     for risk in risks[:8]:
         evidence_json = risk.get("evidence_json") if isinstance(risk.get("evidence_json"), dict) else {}
         trace.append(
-            _compact_dict(
+            compact_dict(
                 {
                     "kind": "risk",
                     "status": evidence_json.get("risk_status") or "confirmed",
@@ -183,7 +179,7 @@ def _evidence_trace(
                     "confidence": risk.get("confidence"),
                     "decision": evidence_json.get("reasoning"),
                     "next_action": evidence_json.get("next_action")
-                    or _risk_next_action(str(risk.get("risk_label") or "")),
+                    or risk_next_action(str(risk.get("risk_label") or "")),
                 }
             )
         )
@@ -192,7 +188,7 @@ def _evidence_trace(
         if not isinstance(refs, list) or not refs:
             continue
         trace.append(
-            _compact_dict(
+            compact_dict(
                 {
                     "kind": "score_factor",
                     "status": row.get("normalized_value", {}).get("status")
@@ -207,7 +203,7 @@ def _evidence_trace(
                 }
             )
         )
-    return [_compact_dict(_json_safe(item)) for item in trace[:16]]
+    return [compact_dict(json_safe(item)) for item in trace[:16]]
 
 
 def _confidence_gates(
@@ -241,7 +237,7 @@ def _confidence_gates(
 
 def _investment_facts(sale: AuctionSale, risks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     facts: list[dict[str, Any]] = []
-    sale_context = _sale_type_context(sale)
+    sale_context = sale_type_context(sale)
     if sale_context:
         facts.append(
             _fact(
@@ -259,7 +255,7 @@ def _investment_facts(sale: AuctionSale, risks: list[dict[str, Any]]) -> list[di
                 "financial",
                 "mise_a_prix",
                 "confirmé",
-                f"Mise à prix : {_format_eur(sale.starting_price_eur)}.",
+                f"Mise à prix : {format_eur(sale.starting_price_eur)}.",
                 confidence=0.88,
             )
         )
@@ -269,7 +265,7 @@ def _investment_facts(sale: AuctionSale, risks: list[dict[str, Any]]) -> list[di
                 "asset",
                 "surface_exploitable",
                 "confirmé" if (sale.surface_confidence or Decimal("0")) >= Decimal("0.7") else "incertain",
-                f"Surface retenue : {_format_decimal(sale.app_surface_m2)} m2 ({sale.app_surface_kind or 'nature à confirmer'}).",
+                f"Surface retenue : {format_decimal(sale.app_surface_m2)} m2 ({sale.app_surface_kind or 'nature à confirmer'}).",
                 evidence=sale.surface_evidence,
                 confidence=float(sale.surface_confidence or Decimal("0.55")),
             )
@@ -290,7 +286,7 @@ def _investment_facts(sale: AuctionSale, risks: list[dict[str, Any]]) -> list[di
                 "legal",
                 "occupation",
                 "incertain" if sale.occupancy_status == "unknown" else "confirmé",
-                f"Occupation : {_occupancy_status_label(sale.occupancy_status)}.",
+                f"Occupation : {occupancy_status_label(sale.occupancy_status)}.",
                 confidence=0.55 if sale.occupancy_status == "unknown" else 0.82,
             )
         )
@@ -315,10 +311,10 @@ def _investment_facts(sale: AuctionSale, risks: list[dict[str, Any]]) -> list[di
                 f"Risque retenu : {risk.get('risk_label')}.",
                 evidence=str(risk.get("evidence") or "") or None,
                 confidence=float(risk.get("confidence") or 0.7),
-                evidence_refs=[_risk_to_evidence_ref(risk)],
+                evidence_refs=[risk_to_evidence_ref(risk)],
             )
         )
-    return [_compact_dict(_json_safe(item)) for item in facts]
+    return [compact_dict(json_safe(item)) for item in facts]
 
 
 def _document_facts(sale: AuctionSale) -> list[dict[str, Any]]:
@@ -336,7 +332,7 @@ def _document_facts(sale: AuctionSale) -> list[dict[str, Any]]:
     for document in sale.documents:
         document_type = _classify_document_label(str(document.get("label") or ""), str(document.get("url") or ""))
         type_counts[document_type] = type_counts.get(document_type, 0) + 1
-    labels = ", ".join(f"{_document_context_label(key)} ({count})" for key, count in sorted(type_counts.items()))
+    labels = ", ".join(f"{document_context_label(key)} ({count})" for key, count in sorted(type_counts.items()))
     return [
         _fact(
             "evidence",
@@ -356,7 +352,7 @@ def _axis_summaries(
 ) -> list[dict[str, Any]]:
     summaries = []
     for axis, definition in AXIS_DEFINITIONS.items():
-        rows = [row for row in factor_rows if _component_axis(str(row.get("factor_key") or "")) == axis]
+        rows = [row for row in factor_rows if component_axis(str(row.get("factor_key") or "")) == axis]
         if not rows:
             continue
         delta = sum((Decimal(str(row.get("delta") or 0)) for row in rows), Decimal("0"))
@@ -366,13 +362,13 @@ def _axis_summaries(
             if isinstance(evidence_refs, list):
                 refs.extend(item for item in evidence_refs if isinstance(item, dict))
         summaries.append(
-            _compact_dict(
+            compact_dict(
                 {
                     "axis": axis,
                     "label": definition["label"],
                     "question": definition["question"],
                     "delta": float(delta),
-                    "status": _factor_status(delta),
+                    "status": factor_status(delta),
                     "reading": _axis_reading(axis, delta, risks, contradictions, sale),
                     "top_factors": [
                         {
@@ -382,7 +378,7 @@ def _axis_summaries(
                         }
                         for row in sorted(rows, key=lambda item: abs(float(item.get("delta") or 0)), reverse=True)[:3]
                     ],
-                    "evidence_refs": [_compact_dict(_json_safe(ref)) for ref in refs[:3]],
+                    "evidence_refs": [compact_dict(json_safe(ref)) for ref in refs[:3]],
                 }
             )
         )
@@ -399,14 +395,14 @@ def _investment_questions(
             "occupation",
             "Qui occupe réellement le bien au jour de l'audience ?",
             "à lever" if not sale.occupancy_status or sale.occupancy_status == "unknown" else "répondu",
-            f"Statut actuel : {_occupancy_status_label(sale.occupancy_status)}.",
+            f"Statut actuel : {occupancy_status_label(sale.occupancy_status)}.",
         ),
         _question(
             "surface",
             "Quelle surface doit servir au prix au m² ?",
             "répondu" if sale.app_surface_m2 is not None else "à lever",
             (
-                f"Surface retenue : {_format_decimal(sale.app_surface_m2)} m2."
+                f"Surface retenue : {format_decimal(sale.app_surface_m2)} m2."
                 if sale.app_surface_m2 is not None
                 else "Aucune surface principale fiable."
             ),
@@ -462,7 +458,7 @@ def _analysis_contradictions(sale: AuctionSale) -> list[dict[str, Any]]:
             rule_id = str(rule.get("rule_id") or "")
             if rule_id in {"occupation_conflict_requires_confirmation", "property_type_from_specific_asset"}:
                 contradictions.append(
-                    _compact_dict(
+                    compact_dict(
                         {
                             "key": rule_id,
                             "status": "à lever" if "occupation" in rule_id else "résolu",
@@ -498,7 +494,7 @@ def _analysis_contradictions(sale: AuctionSale) -> list[dict[str, Any]]:
                 "confidence": float(sale.surface_confidence or Decimal("0.55")),
             }
         )
-    return [_compact_dict(_json_safe(item)) for item in contradictions]
+    return [compact_dict(json_safe(item)) for item in contradictions]
 
 
 def _premium_headline(
@@ -571,3 +567,67 @@ def _load_scoring_weights() -> dict[str, int | float | str]:
     if isinstance(payload, dict):
         defaults.update({key: value for key, value in payload.items() if isinstance(value, (int, float, str))})
     return defaults
+
+
+def _axis_reading(
+    axis: str,
+    delta: Decimal,
+    risks: list[dict[str, Any]],
+    contradictions: list[dict[str, Any]],
+    sale: AuctionSale,
+) -> str:
+    if axis == "financial_attractiveness":
+        return (
+            "La mise à prix semble créer une marge de sécurité."
+            if delta > 0
+            else "La lecture financière reste fragile sans surface ou prix/m² favorable."
+        )
+    if axis == "asset_quality":
+        technical = [risk.get("risk_label") for risk in risks if risk.get("risk_type") == "physical"]
+        if technical:
+            return f"Qualité à vérifier : {', '.join(str(item) for item in technical[:4])}."
+        if not sale.documents:
+            return "Aucun risque technique sourcé, mais les pièces officielles manquent pour conclure."
+        return "Aucun risque technique contextualisé majeur n'est retenu."
+    if axis == "legal_security":
+        legal = [risk.get("risk_label") for risk in risks if risk.get("risk_type") == "legal"]
+        if legal:
+            return f"Contraintes juridiques à clarifier : {', '.join(str(item) for item in legal[:4])}."
+        if not sale.documents:
+            return "Aucune contrainte juridique sourcée, mais le statut doit être confirmé dans les pièces."
+        return "Pas de contrainte juridique forte détectée dans les faits structurés."
+    if axis == "liquidity_resale":
+        return "La sortie dépend surtout du type de bien et de la profondeur du marché local."
+    if axis == "analysis_confidence":
+        if contradictions:
+            return "La confiance est abaissée par des incohérences à lever."
+        return "La confiance dépend de la couverture documentaire et de la qualité OCR/extraction."
+    return "Lecture synthétique de l'axe."
+
+
+def _diagnostic_question_detail(sale: AuctionSale, risks: list[dict[str, Any]]) -> str:
+    labels = [
+        str(risk.get("risk_label"))
+        for risk in risks
+        if risk.get("risk_label") in {"amiante", "plomb", "termites", "DPE"}
+    ]
+    if labels:
+        return "Diagnostics à relire : " + ", ".join(labels[:4]) + "."
+    if not sale.documents:
+        return "Diagnostics non disponibles dans les pièces structurées."
+    return "Aucun diagnostic défavorable contextualisé n'est retenu à ce stade."
+
+
+def _classify_document_label(label: str, url: str = "") -> str:
+    text = f"{label} {url}".lower()
+    if re.search(r"diagnostic|dpe|amiante|plomb|termites|crep", text):
+        return "diagnostics_techniques"
+    if re.search(r"cahier|conditions?.{0,20}vente|ccv", text):
+        return "cahier_conditions_vente"
+    if re.search(r"huissier|commissaire|descriptif|proc[eè]s[-\s]?verbal|pv", text):
+        return "pv_huissier"
+    if re.search(r"notaire|notarial", text):
+        return "pv_notaire"
+    if re.search(r"annonce|avis|insertion", text):
+        return "annonce_vente"
+    return "pdf"

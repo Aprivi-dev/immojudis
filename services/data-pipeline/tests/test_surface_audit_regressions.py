@@ -5,7 +5,6 @@ Principe : une valeur manquante est acceptable, une valeur fausse ne l'est pas.
 
 from decimal import Decimal
 
-import src.pdf_enrichment  # noqa: F401  (resolves the pdf_enrichment / pdf_fact_extraction import cycle)
 from src.asset_normalization import normalize_asset_features
 from src.enrichment.surface_reasoning import (
     apply_surface_reasoning_to_sale,

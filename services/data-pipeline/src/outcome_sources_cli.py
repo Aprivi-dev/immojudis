@@ -23,6 +23,7 @@ from src.official_sources.justice_open_data import (
     parse_justice_open_data_csv,
     validate_justice_competence_semantics,
 )
+from src.outcome_cli_args import positive_int
 from src.outcome_ingestion.adapters import (
     dvf_adjudication_to_json_record,
     encheres_publiques_to_json_record,
@@ -100,8 +101,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync.add_argument("--since", default=None, help="Required for the first sync (ISO-8601).")
     sync.add_argument("--stream-key", default="transactional_history")
-    sync.add_argument("--max-pages", type=_positive_int, default=100)
-    sync.add_argument("--max-records", type=_positive_int, default=None)
+    sync.add_argument("--max-pages", type=positive_int, default=100)
+    sync.add_argument("--max-records", type=positive_int, default=None)
     sync.set_defaults(handler=_run_judilibre_sync)
 
     search_sync = commands.add_parser(
@@ -137,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     match_bound = match_dvf.add_mutually_exclusive_group(required=True)
     match_bound.add_argument(
         "--limit",
-        type=_positive_int,
+        type=positive_int,
         help="Global maximum source records scanned across all pages in this run.",
     )
     match_bound.add_argument(
@@ -147,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     match_dvf.add_argument(
         "--context-limit",
-        type=_positive_int,
+        type=positive_int,
         default=250,
         help="Maximum lot/round contexts evaluated per DVF candidate.",
     )
@@ -182,25 +183,18 @@ def _add_local_source_args(parser: argparse.ArgumentParser, *, require_bound: bo
     parser.add_argument("path", type=Path)
     if require_bound:
         bound = parser.add_mutually_exclusive_group(required=True)
-        bound.add_argument("--limit", type=_positive_int)
+        bound.add_argument("--limit", type=positive_int)
         bound.add_argument(
             "--all",
             action="store_true",
             help="Explicitly acknowledge an unbounded import.",
         )
     else:
-        parser.add_argument("--limit", type=_positive_int, default=None)
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("value must be positive")
-    return parsed
+        parser.add_argument("--limit", type=positive_int, default=None)
 
 
 def _bounded_ingest_workers(value: str) -> int:
-    parsed = _positive_int(value)
+    parsed = positive_int(value)
     if parsed > 8:
         raise argparse.ArgumentTypeError("value must not exceed 8")
     return parsed
@@ -214,21 +208,21 @@ def _iso_calendar_date(value: str) -> date:
 
 
 def _judilibre_max_results_per_window(value: str) -> int:
-    parsed = _positive_int(value)
+    parsed = positive_int(value)
     if parsed > JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW:
         raise argparse.ArgumentTypeError(f"value must not exceed {JUDILIBRE_SEARCH_MAX_RESULTS_PER_WINDOW}")
     return parsed
 
 
 def _judilibre_max_total_results(value: str) -> int:
-    parsed = _positive_int(value)
+    parsed = positive_int(value)
     if parsed > JUDILIBRE_SEARCH_MAX_RESULTS:
         raise argparse.ArgumentTypeError(f"value must not exceed {JUDILIBRE_SEARCH_MAX_RESULTS}")
     return parsed
 
 
 def _dvf_match_page_size(value: str) -> int:
-    parsed = _positive_int(value)
+    parsed = positive_int(value)
     if parsed > DVF_MATCH_PAGE_SIZE_MAX:
         raise argparse.ArgumentTypeError(f"value must not exceed {DVF_MATCH_PAGE_SIZE_MAX}")
     return parsed

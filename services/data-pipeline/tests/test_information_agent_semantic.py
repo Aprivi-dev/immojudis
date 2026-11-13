@@ -315,6 +315,16 @@ def test_configured_semantic_pass_uses_one_json_attempt(monkeypatch) -> None:
     assert result.facts == []
 
 
+def test_semantic_pass_reads_its_gate_from_the_settings_only(monkeypatch) -> None:
+    """La variable est lue par ``load_settings`` : une clé éteinte ne laisse passer aucun appel au modèle."""
+    monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED", "true")
+    monkeypatch.setattr(llm_client, "create_llm_client", lambda: pytest.fail("no model call"))
+
+    for settings in ({}, {"information_agent_evidence_semantic_enabled": False}):
+        result = run_configured_semantic_analysis([{"page": 1, "text": "Surface habitable : 87 m2"}], settings)
+        assert result.status == "disabled"
+
+
 def test_photo_pass_reads_its_gate_from_the_settings_only(monkeypatch) -> None:
     """La variable est lue par ``load_settings`` : une clé éteinte ne laisse passer aucun appel payant."""
     monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", "true")

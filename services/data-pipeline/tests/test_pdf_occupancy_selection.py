@@ -1,6 +1,5 @@
 """Occupancy read from the PDF documents (situations seen on production sales)."""
 
-import src.pdf_enrichment  # noqa: F401  (loads pdf_fact_extraction without a circular import)
 from src.normalize import normalize_sale
 from src.pdf_fact_extraction import enrich_sale_from_pdf_text
 from src.pdf_fact_scope import _pdf_lot_scope_labels

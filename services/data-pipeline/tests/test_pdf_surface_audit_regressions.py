@@ -2,7 +2,6 @@
 
 from decimal import Decimal
 
-import src.pdf_enrichment  # noqa: F401  (resolves the pdf_enrichment / pdf_fact_extraction import cycle)
 from src.models import AuctionSale
 from src.pdf_fact_extraction import enrich_sale_from_pdf_text
 from src.pdf_surface_patterns import (

@@ -12,6 +12,7 @@ import pymupdf
 import pytest
 
 import src.information_agent_evidence as evidence
+from src.config import load_settings
 from src.information_agent_evidence import (
     EvidenceFact,
     analyze_evidence_bytes,
@@ -316,9 +317,11 @@ def test_image_ocr_timeout_kills_the_isolated_process(monkeypatch) -> None:
 
 def test_attachment_ocr_is_independent_from_catalogue_pdf_ocr_setting(monkeypatch) -> None:
     monkeypatch.delenv("INFORMATION_AGENT_EVIDENCE_OCR_ENABLED", raising=False)
-    assert evidence._evidence_ocr_enabled({"pdf_ocr_enabled": False}) is True
-    assert evidence._evidence_ocr_enabled({"information_agent_evidence_ocr_enabled": False}) is False
-    assert evidence._evidence_ocr_enabled({"information_agent_evidence_ocr_enabled": "false"}) is False
+    monkeypatch.setenv("PDF_OCR_ENABLED", "false")
+    assert load_settings()["information_agent_evidence_ocr_enabled"] is True
+
+    monkeypatch.setenv("INFORMATION_AGENT_EVIDENCE_OCR_ENABLED", "false")
+    assert load_settings()["information_agent_evidence_ocr_enabled"] is False
 
 
 def test_pdf_ocr_child_can_import_the_module_from_the_service_root(tmp_path) -> None:

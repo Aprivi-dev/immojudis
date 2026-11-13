@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from src.config import PDF_TEXTS_DIR
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.enrichment.surface_reasoning import (
     ExtractedAsset,
     apply_surface_reasoning_to_sale,
@@ -27,7 +28,6 @@ from src.normalize import (
 )
 from src.pdf_address import apply_pdf_address
 from src.pdf_document_types import _canonical_document_type, _normalize_document_classifier_text
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION, _sale_storage_id
 from src.pdf_fact_scope import (
     _PDF_SCALAR_CANDIDATE_KEYS,
     _aggregate_pdf_count_candidates,
@@ -83,6 +83,7 @@ from src.pdf_surface_patterns import (
 )
 from src.pdf_tribunal import apply_pdf_tribunal
 from src.room_counts import extract_bedrooms_count_from_text, extract_rooms_count_from_text
+from src.sale_local_files import sale_storage_id
 from src.text_folding import strip_accents
 
 
@@ -840,7 +841,7 @@ def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> No
 
 def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]]) -> Path:
     PDF_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = PDF_TEXTS_DIR / f"{_sale_storage_id(sale)}.json"
+    path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     payload: list[dict[str, object]] = []
     for item in pdf_texts:
         serialized_item: dict[str, object] = {

@@ -12,7 +12,7 @@ import pytest
 from src.reference_data import __main__ as reference_main
 from src.reference_data import climate, communes, gaspar, rents, storage, tension
 from src.reference_data import download as download_module
-from src.reference_data.download import ReferenceDownloadError, validate_reference_url
+from src.reference_data.download import ReferenceDownloadError, decode_csv, validate_reference_url
 from src.reference_data.names import department_from_insee, normalize_commune_name
 
 COMMUNE_NAME_CASES = json.loads(
@@ -339,7 +339,7 @@ def test_anil_file_is_read_as_latin_1_with_decimal_commas_and_arrondissements(tm
 def test_anil_utf8_file_is_not_mangled_and_missing_columns_are_refused() -> None:
     text = ANIL_HEADER + '"2920";"33063";"Épeigné";"243300316";"33";"75";15,9;12,2;20,8;"commune";84641;96006;0,82\r\n'
 
-    assert rents.decode_csv(text.encode("utf-8")).count("Épeigné") == 1
+    assert decode_csv(text.encode("utf-8")).count("Épeigné") == 1
     with pytest.raises(RuntimeError, match="loypredm2"):
         rents.parse_rent_csv(text.replace("loypredm2", "autre"), "house", "https://x", 2025)
 

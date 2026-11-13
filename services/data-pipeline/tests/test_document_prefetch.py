@@ -169,7 +169,7 @@ def test_the_drain_waits_for_each_preparation_before_taking_the_lock(monkeypatch
 
 
 def test_preparation_reads_pages_without_writing_to_the_database(monkeypatch, tmp_path) -> None:
-    from src import config, pdf_enrichment, pdf_progress
+    from src import config, pdf_document_selection, pdf_document_text_cache, pdf_enrichment, pdf_progress
     from src.models import AuctionSale
     from src.pdf_ocr import PdfExtractionDeferred
     from src.storage import supabase_client
@@ -195,8 +195,8 @@ def test_preparation_reads_pages_without_writing_to_the_database(monkeypatch, tm
         pdf_enrichment, "download_documents", lambda s, stats=None: [{"url": "u", "file_path": str(pdf)}]
     )
     monkeypatch.setattr(pdf_progress, "restore_pdf_page_caches_from_manifest", lambda *a, **k: 0)
-    monkeypatch.setattr(pdf_enrichment, "_select_documents_for_extraction", lambda docs, **_: docs)
-    monkeypatch.setattr(pdf_enrichment, "_read_document_text_cache", lambda d, p: None)
+    monkeypatch.setattr(pdf_document_selection, "_select_documents_for_extraction", lambda docs, **_: docs)
+    monkeypatch.setattr(pdf_document_text_cache, "read_document_text_cache", lambda d, p, **_: None)
     monkeypatch.setattr(pdf_enrichment, "extract_attached_document", extract)
     monkeypatch.setattr(config, "PDF_TEXTS_DIR", Path(tmp_path))
 

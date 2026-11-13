@@ -170,3 +170,13 @@ def download(
         return target
 
     return _with_retries(action)
+
+
+def decode_csv(raw: bytes) -> str:
+    """UTF-8 when the file is valid UTF-8, else Windows-1252, else Latin-1."""
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1")

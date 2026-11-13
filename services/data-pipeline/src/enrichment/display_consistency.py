@@ -23,7 +23,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from src.enrichment.display_facts import known_offer_amounts, sale_listing_text, sale_nature
+from src.enrichment.display_facts import known_offer_amounts, positive_decimal, sale_listing_text, sale_nature
 from src.french_dates import MONTH_NUMBERS, MONTH_PATTERN, PARIS
 
 NUMBER = r"(?<![\w.,+])\d+(?:[   ]\d{3})*(?:[.,]\d+)?"
@@ -135,16 +135,6 @@ def _number(raw: str) -> Decimal | None:
     return value if value.is_finite() else None
 
 
-def _decimal(value: Any) -> Decimal | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        number = Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return None
-    return number if number.is_finite() and number > 0 else None
-
-
 def _same_area(claim: Decimal, known: Decimal) -> bool:
     # « 126 m² » for 125,80 m² is a rounding, « 130 m² » for 125,50 m² is another figure.
     if claim == claim.to_integral_value():
@@ -193,7 +183,7 @@ AREA_FIELDS = ("surface_m2", "app_surface_m2", "habitable_surface_m2", "carrez_s
 
 
 def _canonical_areas(fields: dict[str, Any]) -> dict[str, Decimal]:
-    return {name: value for name in AREA_FIELDS if (value := _decimal(fields.get(name))) is not None}
+    return {name: value for name in AREA_FIELDS if (value := positive_decimal(fields.get(name))) is not None}
 
 
 def _area_issues(prose: str, evidence: str, fields: dict[str, Any]) -> list[dict[str, str]]:
@@ -280,7 +270,7 @@ def _count_issues(prose: str, evidence: str, fields: dict[str, Any]) -> list[dic
 
 def _price_issues(prose: str, fields: dict[str, Any]) -> list[dict[str, str]]:
     known = set(known_offer_amounts(fields))
-    adjudication = _decimal(fields.get("adjudication_price_eur"))
+    adjudication = positive_decimal(fields.get("adjudication_price_eur"))
     if adjudication is not None:
         known.add(adjudication)
     issues: list[dict[str, str]] = []

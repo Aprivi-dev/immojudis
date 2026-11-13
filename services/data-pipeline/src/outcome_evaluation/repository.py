@@ -12,6 +12,7 @@ from typing import Any
 from src.outcome_evaluation.engine import evaluate, validate_public_report
 from src.outcome_evaluation.models import EvaluationConfig, EvaluationInputError, EvaluationRecord, PriceQuantiles
 from src.outcome_evaluation.reporting import build_promotion_summary
+from src.sha256_digest import is_lowercase_sha256
 from src.storage.supabase_client import connect as connect_postgres
 
 
@@ -564,7 +565,7 @@ class OutcomeEvaluationRepository:
         if universe.feature_cutoff_at is None:
             raise OutcomeEvaluationRepositoryError("evaluation persistence requires a feature cutoff")
         if not all(
-            _is_sha256(value)
+            is_lowercase_sha256(value)
             for value in (
                 universe.source_manifest_hash,
                 universe.prediction_manifest_hash,
@@ -632,7 +633,7 @@ class OutcomeEvaluationRepository:
                             inserted_count = 0
                             cursor.execute(_FIND_EXISTING_EVALUATION_SQL, parameters)
                             inserted = cursor.fetchone()
-                        if inserted is None or not _is_sha256(str(inserted[0])):
+                        if inserted is None or not is_lowercase_sha256(str(inserted[0])):
                             raise OutcomeEvaluationRepositoryError(
                                 "evaluation insert did not return a matching server hash"
                             )
@@ -798,10 +799,6 @@ def _report_count(coverage: Mapping[str, Any], key: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise OutcomeEvaluationRepositoryError("evaluation counter is missing or invalid")
     return value
-
-
-def _is_sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _utc_iso(value: datetime) -> str:

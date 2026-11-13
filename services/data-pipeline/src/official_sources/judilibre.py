@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.config import DEFAULT_USER_AGENT
+from src.config import DEFAULT_USER_AGENT, is_true_value
 
 from .base import (
     OfficialSourceConfigurationError,
@@ -535,8 +535,8 @@ class JudilibreClient:
             credentials=credentials,
             base_url=str(settings.get("judilibre_base_url") or JUDILIBRE_PRODUCTION_BASE_URL),
             oauth_token_url=_optional_string(settings.get("judilibre_oauth_token_url")),
-            policy_allows_network=_as_bool(settings.get("judilibre_enabled", False)),
-            dry_run=_as_bool(settings.get("judilibre_dry_run", False)),
+            policy_allows_network=is_true_value(settings.get("judilibre_enabled", False)),
+            dry_run=is_true_value(settings.get("judilibre_dry_run", False)),
             timeout_seconds=float(settings.get("judilibre_timeout_seconds", 20.0)),
             page_size=int(settings.get("judilibre_page_size", 25)),
             history_page_size=int(settings.get("judilibre_history_page_size", 100)),
@@ -1044,12 +1044,6 @@ def _optional_string(value: Any) -> str | None:
         return None
     result = str(value).strip()
     return result or None
-
-
-def _as_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _auth_mode(value: Any) -> AuthMode:

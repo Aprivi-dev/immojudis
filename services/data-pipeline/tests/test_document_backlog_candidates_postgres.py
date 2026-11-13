@@ -21,7 +21,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from src import document_backlog as backlog
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, review_message
 from src.storage.supabase_client import _postgres_connect
 

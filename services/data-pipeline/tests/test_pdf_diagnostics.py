@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pymupdf
 
-from src import pdf_diagnostics, pdf_enrichment
+from src import pdf_diagnostics
+from src.pdf_page_analysis import profile_pdf_for_docling
 
 
 def _write_pdf(path, text: str) -> None:
@@ -27,6 +28,6 @@ def test_diagnostics_follow_the_enrichment_docling_rule(tmp_path, monkeypatch) -
     assert rows["sale-a"]["docling_ocr_auto"] is True
     assert rows["sale-a"]["diagnostic_reason"] == "scanned_small_pdf_requires_docling_ocr"
     assert rows["sale-b"]["docling_ocr_auto"] is False
-    assert rows["sale-b"]["first_pages_text_chars"] == pdf_enrichment._profile_pdf_for_docling(
+    assert rows["sale-b"]["first_pages_text_chars"] == profile_pdf_for_docling(
         tmp_path / "sale-b" / "texte.pdf"
     )["first_pages_text_chars"]

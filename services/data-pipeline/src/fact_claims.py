@@ -17,6 +17,7 @@ from uuid import UUID, uuid5
 from src.base_reads import SNAPSHOT_RELAYED_FIELDS_KEY, SOURCE_SNAPSHOT_KEY
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_occupancy_status, parse_french_datetime, parse_price, parse_surface
+from src.sha256_digest import is_sha256
 from src.text_folding import ascii_alnum_words, strip_accents
 
 # The identity already includes source_url and evidence_locator.  Corrected
@@ -439,7 +440,7 @@ def _document_source_url(sale: AuctionSale, extraction: dict[str, object]) -> st
         return None
     document_hash = _extraction_document_hash(extraction)
     if document_hash:
-        if not _is_sha256(document_hash):
+        if not is_sha256(document_hash):
             return None
         expected_hashes = {
             expected
@@ -494,14 +495,9 @@ def _document_hash(document: dict[str, object] | None) -> str | None:
         return None
     for key in ("sha256", "document_sha256", "document_hash"):
         value = clean_text(document.get(key))
-        if value and _is_sha256(value):
+        if value and is_sha256(value):
             return value.casefold()
     return None
-
-
-def _is_sha256(value: object) -> bool:
-    text = clean_text(value) or ""
-    return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)
 
 
 def _surface_evidence_matches_field(field: str, evidence: str) -> bool:

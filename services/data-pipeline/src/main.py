@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 import time
 from collections.abc import Callable
@@ -25,11 +24,13 @@ from src.config import (
     PROCESS_ISOLATED_SOURCES,
     SOURCE_NAMES,
     EncheresPubliquesAccessNotAuthorized,
+    autonomous_run_id,
     encheres_publiques_access_enabled,
     load_settings,
     require_encheres_publiques_access,
 )
 from src.dedupe import merge_duplicate_sales
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
@@ -62,13 +63,13 @@ from src.known_document_backfill import (
     KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
     KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
     KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
-    _backfill_document_facts_version_from_known,
-    _backfill_document_occupancy_from_known,
-    _backfill_document_price_from_known,
-    _backfill_document_sale_date_from_known,
-    _backfill_document_surface_fields_from_known,
+    backfill_document_facts_version_from_known,
+    backfill_document_occupancy_from_known,
+    backfill_document_price_from_known,
+    backfill_document_sale_date_from_known,
+    backfill_document_surface_fields_from_known,
+    is_missing_raw_value,
 )
-from src.known_document_backfill import is_missing_raw_value as _is_missing_raw_value
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
 from src.lot_scope import other_commune
 from src.lot_scope import surface_reasoning_context as _surface_reasoning_context_for_sale
@@ -77,7 +78,7 @@ from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
 from src.pdf_document_types import classify_document_type
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION, PdfEnrichmentStats, enrich_sale_from_pdfs
+from src.pdf_enrichment import PdfEnrichmentStats, enrich_sale_from_pdfs
 from src.pdf_offer_deadline import apply_page_offer_deadline
 from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION
 from src.quality import (
@@ -520,7 +521,7 @@ def _scrape_sources(run: _PipelineRun) -> dict[str, Callable[..., Any]]:
     )
     from src.source_checkpoint import configure_publisher, flush_publications
     progressive_publisher = None
-    if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert:
+    if autonomous_run_id() and options.upsert:
         def publish_progressive(rows: list[dict[str, object]]) -> None:
             _publish_progressive_batch(run, rows)
 
@@ -890,7 +891,7 @@ def _finalize_enriched_sales(run: _PipelineRun) -> None:
     warm_image_validations(app_ready)
     for sale in app_ready:
         try:
-            _finalize_sale_for_app(sale, geocode=not bool(os.getenv("PIPELINE_AUTONOMOUS_RUN_ID")))
+            _finalize_sale_for_app(sale, geocode=autonomous_run_id() is None)
         except Exception as exc:
             LOGGER.exception("Finalisation failed for %s: %s", sale.source_url, exc)
             errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
@@ -1323,11 +1324,11 @@ def _preserve_known_enrichment_payloads(
                     or key not in {"source_images", "raw_image_url"}) and not (foreign_geocode and key == "geocode")
             ),
         )
-        preserved += _backfill_document_surface_fields_from_known(sale, known)
-        preserved += _backfill_document_price_from_known(sale, known)
-        preserved += _backfill_document_facts_version_from_known(sale, known)
-        preserved += _backfill_document_sale_date_from_known(sale, known)
-        preserved += _backfill_document_occupancy_from_known(sale, known)
+        preserved += backfill_document_surface_fields_from_known(sale, known)
+        preserved += backfill_document_price_from_known(sale, known)
+        preserved += backfill_document_facts_version_from_known(sale, known)
+        preserved += backfill_document_sale_date_from_known(sale, known)
+        preserved += backfill_document_occupancy_from_known(sale, known)
     return preserved
 
 
@@ -1336,7 +1337,7 @@ def _backfill_raw_sale_from_known_detail(
     known: dict[str, object],
 ) -> None:
     for key in KNOWN_UNCHANGED_BACKFILL_FIELDS:
-        if _is_missing_raw_value(sale.get(key)) and not _is_missing_raw_value(known.get(key)):
+        if is_missing_raw_value(sale.get(key)) and not is_missing_raw_value(known.get(key)):
             sale[key] = known[key]
 
     _backfill_payload_fields_from_known(sale, known, keys=KNOWN_ENRICHMENT_PAYLOAD_FIELDS)
@@ -1353,7 +1354,7 @@ def _backfill_payload_fields_from_known(
         return 0
     copied = 0
     for key in keys:
-        if _is_missing_raw_value(sale.get(key)) and not _is_missing_raw_value(known_payload.get(key)):
+        if is_missing_raw_value(sale.get(key)) and not is_missing_raw_value(known_payload.get(key)):
             sale[key] = known_payload[key]
             copied += 1
     return copied

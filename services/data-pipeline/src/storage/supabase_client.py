@@ -50,8 +50,8 @@ from src.freshness import document_fingerprint, documents_are_current, timestamp
 from src.merge_guards import MAX_MERGES_PER_PASS, merges_cap, require_merge_trigger
 from src.models import AuctionSale
 from src.normalize import clean_text, make_sale_signature
+from src.pdf_document_text_cache import write_document_text_cache
 from src.pdf_document_types import classify_document_type, document_type_with_content, with_content_document_types
-from src.pdf_enrichment import sale_storage_id
 from src.pdf_partial_tolerance import tolerated_partial_url_set
 from src.pdf_progress import (
     PDF_PROGRESS_SCHEMA_VERSION,
@@ -68,6 +68,8 @@ from src.reviewed_aliases import (
     load_reviewed_aliases,
     registry_from_rows,
 )
+from src.sale_local_files import sale_storage_id
+from src.sha256_digest import is_sha256
 from src.stage_watchdog import track_stage
 from src.storage import internal_contacts
 from src.storage.column_sets import POSTGRES_JSON_COLUMNS, UPSERT_COLUMNS
@@ -95,7 +97,6 @@ from src.storage.pdf_checkpoint_rules import (
     _checkpoint_page_coverage_matches,
     _checkpoint_pages_match_payload,
     _checkpoint_payload_text_hash,
-    _is_sha256,
     _manifest_urls,
     _refused,
     _reusable_pdf_checkpoint_pages,
@@ -1616,12 +1617,12 @@ def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | 
             or bool(proof_failed_pages)
             or proof_item.get("text_present") is not True
             or proof_text_chars <= 0
-            or not _is_sha256(proof_item.get("sha256"))
-            or not _is_sha256(proof_item.get("text_sha256"))
+            or not is_sha256(proof_item.get("sha256"))
+            or not is_sha256(proof_item.get("text_sha256"))
             or profile_status != "extracted"
             or profile.get("complete") is not True
             or bool(profile_failed_pages)
-            or not _is_sha256(profile.get("sha256"))
+            or not is_sha256(profile.get("sha256"))
             or clean_text(profile.get("sha256")) != clean_text(proof_item.get("sha256"))
             or profile_text_chars != proof_text_chars
             or not timestamp_is_fresh(proof_item.get("http_checked_at"))
@@ -1716,10 +1717,10 @@ def _validated_persisted_pdf_texts(
             and text_chars == len(text)
             and text_chars == proof_text_chars
             and clean_text(item.get("sha256")) == clean_text(proof_item.get("sha256"))
-            and _is_sha256(item.get("sha256"))
-            and _is_sha256(proof_item.get("sha256"))
+            and is_sha256(item.get("sha256"))
+            and is_sha256(proof_item.get("sha256"))
             and computed_text_sha == clean_text(proof_item.get("text_sha256"))
-            and _is_sha256(proof_item.get("text_sha256"))
+            and is_sha256(proof_item.get("text_sha256"))
             and (item_text_sha is None or item_text_sha == computed_text_sha)
         ):
             return None
@@ -2134,8 +2135,6 @@ def _restore_pdf_page_caches_for_documents(
         str(settings.get("pdf_ocr_language") or "fra+eng"),
         PDF_TEXT_CACHE_VERSION,
     )
-    from src.pdf_enrichment import _write_document_text_cache
-
     for payload in restored:
         url = document_url(payload)
         document = documents_by_url.get(url)
@@ -2180,7 +2179,7 @@ def _restore_pdf_page_caches_for_documents(
                 temporary.replace(page_path)
             local_payload = dict(payload)
             local_payload["file_path"] = str(file_path)
-            _write_document_text_cache(document, file_path, local_payload)
+            write_document_text_cache(document, file_path, local_payload, cache_root=PDF_DOCUMENT_TEXTS_DIR)
         except (OSError, TypeError, ValueError) as exc:
             LOGGER.warning("Could not materialize persisted PDF pages for %s: %s", url, exc)
 
@@ -3167,7 +3166,7 @@ _SHARED_CONNECTION_LOCK = threading.RLock()
 
 
 @contextmanager
-def _shared_postgres_connection(db_url: str):
+def shared_postgres_connection(db_url: str):
     """Yield one autocommit connection per process, instead of one per call.
 
     Meant for the short single-statement calls made once per LLM prediction or

@@ -13,8 +13,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.document_backlog import _read_with_current_rules, is_refused_checkpoint
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.models import AuctionSale
-from src.pdf_enrichment import DOCUMENT_FACTS_VERSION
 from src.pdf_pass_outcomes import NOTHING_DUE_DEFERRAL, WRITE_DISCARDED_ERROR, WRITE_REFUSED_REVIEW
 from src.pdf_progress import manifest_is_complete
 from tests.pdf_queue_bench import SALE_URL, QueueBench, pdf_enrichment

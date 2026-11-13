@@ -1,43 +1,38 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
 from src.app_surface_withholding import withhold_ambiguous_app_surface
+from src.asset_normalization_helpers import (
+    add_quality_flag,
+    compact_dict,
+    confidence_note,
+    document_context_label,
+    evidence_excerpt,
+    float_or_none,
+    risk_next_action,
+    sale_text,
+    sale_type_context,
+)
+from src.asset_scoring import _score_sale
+from src.asset_surface_normalization import (
+    _apply_document_consistency_corrections,
+    _fill_booleans,
+    _fill_counts,
+    _fill_surfaces,
+)
+from src.lot_scope import sale_fact_text
 from src.models import AuctionSale
 from src.normalize import (
-    SURFACE_VALUE_PATTERN,
     _property_feature_bool,
     clean_text,
     parse_surface,
 )
 from src.text_fact_scope import private_amenity_mentioned, shared_amenity_mentioned
 
-
-@dataclass
-class ScoreComponent:
-    name: str
-    points: Decimal
-    reason: str
-    confidence: Decimal = Decimal("0.7")
-    evidence: str | None = None
-    raw_value: object | None = None
-    criterion: str | None = None
-    calculation: str | None = None
-    interpretation: str | None = None
-    limits: str | None = None
-    evidence_refs: list[dict[str, Any]] = field(default_factory=list)
-    axis: str | None = None
-    question: str | None = None
-
-
 RISK_DETECTOR_VERSION = "risk_context_v4"
-
-BUSINESS_RULE_VERSION = "business_rules_v1"
-
-PREMIUM_ANALYSIS_VERSION = "premium_due_diligence_v1"
 
 MAX_NORMALIZATION_TEXT_CHARS = 1_000_000
 
@@ -45,70 +40,6 @@ MAX_NORMALIZATION_TEXT_CHARS = 1_000_000
 class AssetNormalizationInputTooLarge(ValueError):
     """Raised when attacker-controlled source text exceeds the regex safety budget."""
 
-
-AXIS_DEFINITIONS: dict[str, dict[str, object]] = {
-    "financial_attractiveness": {
-        "label": "Attractivité financière",
-        "question": "Le prix de départ laisse-t-il une marge de sécurité exploitable ?",
-        "factor_keys": ("prix_m2", "surface"),
-    },
-    "asset_quality": {
-        "label": "Qualité du bien",
-        "question": "L'état, les diagnostics et les caractéristiques rendent-ils le bien exploitable ?",
-        "factor_keys": ("état", "atouts", "risques"),
-    },
-    "legal_security": {
-        "label": "Sécurité juridique",
-        "question": "L'occupation, les servitudes et les contraintes juridiques sont-elles maîtrisées ?",
-        "factor_keys": ("occupation", "risques"),
-    },
-    "liquidity_resale": {
-        "label": "Liquidité / revente",
-        "question": "Le type de bien et sa localisation facilitent-ils la sortie ?",
-        "factor_keys": ("type", "localisation"),
-    },
-    "analysis_confidence": {
-        "label": "Confiance de l'analyse",
-        "question": "Les données et preuves sont-elles suffisantes pour utiliser le score ?",
-        "factor_keys": ("qualité",),
-    },
-}
-
-FACTOR_AXIS = {
-    "prix_m2": "financial_attractiveness",
-    "surface": "financial_attractiveness",
-    "état": "asset_quality",
-    "etat": "asset_quality",
-    "atouts": "asset_quality",
-    "risques": "asset_quality",
-    "occupation": "legal_security",
-    "type": "liquidity_resale",
-    "localisation": "liquidity_resale",
-    "qualité": "analysis_confidence",
-    "qualite": "analysis_confidence",
-}
-
-SURFACE_PATTERNS = {
-    "habitable_surface_m2": (
-        rf"surface\s*habitable\s*:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\s+habitables?",
-    ),
-    "carrez_surface_m2": (
-        rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)\s+(?:loi\s+)?carrez",
-        rf"(?:surface\s+)?(?:loi\s+)?carrez\s*(?:totale\s*)?:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        rf"(?:superficie|surface)\s+(?:privative|totale|habitable)?\s*"
-        rf"\([^)]*loi\s+carrez[^)]*\)\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-    ),
-    "land_surface_m2": (
-        rf"\bcadastr[ée]e?.{{0,140}}?\b(?:total|superficie|contenance)\b.{{0,30}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        rf"\bsection\s+[A-Z]{{1,4}}\s*(?:n[°o]\s*)?[0-9A-Z]+.{{0,100}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        rf"\b(?:surface\s+(?:du\s+)?terrain|terrain\s+d['’]environ)\s+(?:d['’]environ\s+|environ\s+|de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        r"\b(?:cadastr[ée]e?.{0,120}?\bpour\s+)?([0-9]+)\s*ares?\s+([0-9]+)\s*centiares?\b",
-        rf"(?:terrain|parcelle|jardin).{{0,60}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
-        r"contenance\s+(?:totale\s+)?(?:de\s+)?([0-9]+)\s*a\s*([0-9]+)\s*ca",
-        r"([0-9]+)\s*a\s*([0-9]+)\s*ca",
-    ),
-}
 
 RISK_PATTERNS = {
     "legal": {
@@ -225,7 +156,7 @@ def _is_specific_display_title(title: str | None) -> bool:
 def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
     _assert_normalization_input_size(sale)
     _restore_partial_document_surface_scope(sale)
-    text = _sale_text(sale)
+    text = sale_text(sale)
     if not text:
         _fill_quality_flags(sale)
         withhold_ambiguous_app_surface(sale)
@@ -396,7 +327,7 @@ def _restore_partial_document_surface_scope(sale: AuctionSale) -> None:
         "documented_partial_surface_m2": str(documented_value),
         "basis": "structured_pdf_extraction_scope",
     }
-    _add_quality_flag(sale, "partial_surface_scope_restored")
+    add_quality_flag(sale, "partial_surface_scope_restored")
 
 
 def build_auction_features_row(sale: AuctionSale) -> dict[str, Any]:
@@ -410,7 +341,7 @@ def build_auction_features_row(sale: AuctionSale) -> dict[str, Any]:
         "has_pool": sale.has_pool,
         "has_air_conditioning": sale.has_air_conditioning,
         "has_double_glazing": sale.has_double_glazing,
-        "investment_score": _float_or_none(sale.investment_score),
+        "investment_score": float_or_none(sale.investment_score),
         "investment_summary": sale.investment_summary,
     }
 
@@ -418,20 +349,33 @@ def build_auction_features_row(sale: AuctionSale) -> dict[str, Any]:
 def build_auction_surfaces_row(sale: AuctionSale) -> dict[str, Any]:
     return {
         "source_url": sale.source_url,
-        "surface_m2": _float_or_none(sale.surface_m2),
-        "habitable_surface_m2": _float_or_none(sale.habitable_surface_m2),
-        "land_surface_m2": _float_or_none(sale.land_surface_m2),
-        "carrez_surface_m2": _float_or_none(sale.carrez_surface_m2),
-        "app_surface_m2": _float_or_none(sale.app_surface_m2),
+        "surface_m2": float_or_none(sale.surface_m2),
+        "habitable_surface_m2": float_or_none(sale.habitable_surface_m2),
+        "land_surface_m2": float_or_none(sale.land_surface_m2),
+        "carrez_surface_m2": float_or_none(sale.carrez_surface_m2),
+        "app_surface_m2": float_or_none(sale.app_surface_m2),
         "app_surface_kind": sale.app_surface_kind,
         "surface_scope": sale.surface_scope,
         "surface_source": sale.surface_source,
-        "surface_confidence": _float_or_none(sale.surface_confidence),
+        "surface_confidence": float_or_none(sale.surface_confidence),
         "surface_evidence": sale.surface_evidence,
         "rooms_count": sale.rooms_count,
         "bedrooms_count": sale.bedrooms_count,
         "bathrooms_count": sale.bathrooms_count,
         "parking_count": sale.parking_count,
+    }
+
+
+def _write_asset_payload(sale: AuctionSale, risks: list[dict[str, Any]]) -> None:
+    sale.raw_payload["asset_normalization"] = {
+        "features": build_auction_features_row(sale),
+        "surfaces": build_auction_surfaces_row(sale),
+        "risks": risks,
+        "score_confidence": float_or_none(sale.score_confidence),
+        "score_factors": sale.score_factors,
+        "investment_analysis": sale.raw_payload.get("investment_analysis"),
+        "quality_flags": sale.quality_flags,
+        "score_version": sale.score_version,
     }
 
 
@@ -485,12 +429,12 @@ def build_auction_risk_rows_from_occurrences(
                     "status": _risk_fact_status(float(occurrence.get("confidence") or 0)),
                     "reasoning": _risk_reasoning(label, occurrence),
                     "why_it_matters": _risk_why_it_matters(label, int(occurrence.get("severity") or 1)),
-                    "next_action": _risk_next_action(label),
-                    "document_context": _document_context_label(occurrence.get("document_type")),
+                    "next_action": risk_next_action(label),
+                    "document_context": document_context_label(occurrence.get("document_type")),
                     "document_weight": _document_type_weight(str(occurrence.get("document_type") or "")),
                     "question": _risk_question(label),
                     "decision": "Retenu car le contexte rattache la mention au bien ou à un document probant.",
-                    "confidence_note": _confidence_note(Decimal(str(occurrence.get("confidence") or "0"))),
+                    "confidence_note": confidence_note(Decimal(str(occurrence.get("confidence") or "0"))),
                 },
             }
 
@@ -561,7 +505,7 @@ def extract_risk_occurrences_from_text(
         for match in re.finditer(pattern, text, re.I):
             if _risk_match_is_negated(text, match.start(), match.end(), label):
                 continue
-            context = _evidence(text, match.start(), match.end())
+            context = evidence_excerpt(text, match.start(), match.end())
             decision = _risk_context_decision(
                 label,
                 context,
@@ -602,38 +546,580 @@ def extract_risk_occurrences_from_text(
     return rows
 
 
-from src.asset_normalization_helpers import (  # noqa: E402
-    _add_quality_flag,
-    _confidence_note,
-    _document_context_label,
-    _document_type_weight,
-    _evidence,
-    _factor_refs_from_risk_occurrences,
-    _fill_quality_flags,
-    _float_or_none,
-    _normalize_document_type,
-    _risk_context_decision,
-    _risk_decision_chain,
-    _risk_fact_status,
-    _risk_match_is_negated,
-    _risk_next_action,
-    _risk_occurrence_rank,
-    _risk_question,
-    _risk_reasoning,
-    _risk_source_text,
-    _risk_status,
-    _risk_verification_priority,
-    _risk_why_it_matters,
-    _sale_text,
-    _source_status,
-)
-from src.asset_scoring import (  # noqa: E402
-    _score_sale,
-    _write_asset_payload,
-)
-from src.asset_surface_normalization import (  # noqa: E402
-    _apply_document_consistency_corrections,
-    _fill_booleans,
-    _fill_counts,
-    _fill_surfaces,
-)
+def _risk_source_text(sale: AuctionSale) -> str:
+    return clean_text(" ".join(filter(None, [sale.title, sale.description, sale_fact_text(sale)]))) or ""
+
+
+def _normalize_document_type(document_type: str | None, source_kind: str) -> str:
+    raw = (clean_text(document_type) or "").lower().replace("-", "_").replace(" ", "_")
+    if source_kind == "sale_text" and raw in {"", "none", "null"}:
+        return "source_listing"
+    aliases = {
+        "pv_descriptif": "pv_huissier",
+        "pvd": "pv_huissier",
+        "pv": "proces_verbal",
+        "constat": "pv_huissier",
+        "diagnostics": "diagnostics_techniques",
+        "diagnostic": "diagnostics_techniques",
+        "avis_simplifie": "annonce_vente",
+        "avis_simplifié": "annonce_vente",
+        "insertion_legale": "annonce_vente",
+        "insertion_légale": "annonce_vente",
+        "cahier_conditions": "cahier_conditions_vente",
+        "ccv": "cahier_conditions_vente",
+    }
+    return aliases.get(raw, raw or ("source_listing" if source_kind == "sale_text" else "pdf"))
+
+
+def _risk_context_decision(
+    label: str,
+    context: str,
+    *,
+    source_kind: str,
+    document_type: str,
+) -> dict[str, object]:
+    if not context:
+        return {"accepted": False, "confidence": 0.0}
+    if _is_generic_context(context, label, document_type):
+        return {"accepted": False, "confidence": 0.0}
+
+    if label == "DPE":
+        accepted = _dpe_context_is_risky(context)
+        return {
+            "accepted": accepted,
+            "confidence": _contextual_confidence(Decimal("0.84"), source_kind, document_type, accepted),
+            "severity": 2,
+        }
+    if label in {"amiante", "plomb", "termites"}:
+        accepted = _hazard_context_is_positive(label, context)
+        return {
+            "accepted": accepted,
+            "confidence": _contextual_confidence(Decimal("0.86"), source_kind, document_type, accepted),
+            "severity": 3,
+        }
+    if label == "travaux":
+        severity = _works_severity(context)
+        accepted = severity > 0
+        return {
+            "accepted": accepted,
+            "confidence": _contextual_confidence(Decimal("0.78"), source_kind, document_type, accepted),
+            "severity": severity or 4,
+        }
+    if label == "servitude":
+        accepted = _servitude_context_is_specific(context, document_type)
+        return {
+            "accepted": accepted,
+            "confidence": _contextual_confidence(Decimal("0.8"), source_kind, document_type, accepted),
+            "severity": 2,
+        }
+    if label == "copropriété":
+        accepted = _copro_context_is_specific(context, document_type)
+        return {
+            "accepted": accepted,
+            "confidence": _contextual_confidence(Decimal("0.72"), source_kind, document_type, accepted),
+            "severity": 1,
+        }
+    if label == "occupation":
+        accepted = _occupation_context_is_specific(context)
+        return {
+            "accepted": accepted,
+            "confidence": _contextual_confidence(Decimal("0.82"), source_kind, document_type, accepted),
+            "severity": 5,
+        }
+    return {"accepted": False, "confidence": 0.0}
+
+
+def _contextual_confidence(base: Decimal, source_kind: str, document_type: str, accepted: bool) -> float:
+    if not accepted:
+        return 0.0
+    confidence = base
+    if source_kind == "pdf":
+        confidence += Decimal("0.04")
+    if document_type in {"pv_huissier", "diagnostics_techniques", "annonce_vente"}:
+        confidence += Decimal("0.04")
+    if document_type in {"cahier_conditions_vente", "conditions_vente", "pdf"}:
+        confidence -= Decimal("0.05")
+    return float(max(Decimal("0"), min(Decimal("0.96"), confidence)))
+
+
+def _is_generic_context(context: str, label: str, document_type: str) -> bool:
+    lowered = context.lower()
+    if re.search(
+        r"renseignements\s+ci-dessus.{0,80}servitudes?.{0,80}sans\s+aucune\s+garantie|"
+        r"d[ée]signation\s+de\s+l['’]immeuble.{0,120}servitudes?.{0,120}proc[èe]s\s+verbal|"
+        r"bon\s+ou\s+mauvais\s+[ée]tat\s+de\s+l['’]immeuble|"
+        r"pour\s+les\s+parties\s+communes\s+des\s+immeubles\s+soumis",
+        lowered,
+        re.I,
+    ):
+        return True
+    if label in {"amiante", "plomb", "termites"} and _diagnostic_context_is_only_inventory(lowered):
+        return True
+    if label in {"copropriété", "servitude", "travaux"} and re.search(
+        r"\b(?:si|dans\s+le\s+cas\s+(?:o[uù]|on|\w{1,3}\s+\w?immeuble)|dans\s+l['’]hypoth[eè]se|le\s+cas\s+[ée]ch[ée]ant)\b"
+        r".{0,120}\b(?:copropri[ée]t[ée]|servitudes?|travaux|lotissement)\b",
+        lowered,
+        re.I,
+    ):
+        return True
+    generic_legal = bool(
+        re.search(
+            r"\b(?:article|chapitre|conditions?\s+pour\s+ench[ée]rir|r[èe]glement\s+int[ée]rieur|"
+            r"l['’]adjudicataire|l['’]acqu[ée]reur|frais\s+de\s+vente|distribution\s+du\s+prix|"
+            r"devra\s+notifier|sera\s+tenu|se\s+reporter|s['’]imposeront)\b",
+            lowered,
+            re.I,
+        )
+    )
+    if not generic_legal:
+        return False
+    if document_type in {"pv_huissier", "diagnostics_techniques", "annonce_vente", "source_listing"}:
+        return False
+    return not _has_specific_property_assertion(lowered, label)
+
+
+def _diagnostic_context_is_only_inventory(context: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:diagnostics?|annexes?|pi[eè]ces?).{0,140}"
+            r"(?:amiante|plomb|termites).{0,140}"
+            r"(?:diagnostics?|annexes?|constat|rep[ée]rage|exposition|performance\s+[ée]nerg[ée]tique)",
+            context,
+            re.I,
+        )
+    ) and not re.search(
+        r"pr[ée]sence|positif|d[ée]tect[ée]|rep[ée]r[ée]|contient|contiennent|infestation", context, re.I
+    )
+
+
+def _has_specific_property_assertion(context: str, label: str) -> bool:
+    if label == "copropriété":
+        return bool(
+            re.search(
+                r"(?:soumis|d[ée]pend|d[ée]nomm[ée]|lot\s+(?:num[ée]ro|n[°o])|tanti[eè]mes).{0,90}"
+                r"copropri[ée]t[ée]",
+                context,
+                re.I,
+            )
+        )
+    if label == "servitude":
+        return _servitude_context_is_specific(context, "cahier_conditions_vente")
+    if label == "travaux":
+        return _works_severity(context) > 0
+    return False
+
+
+def _risk_match_is_negated(text: str, start: int, end: int, label: str) -> bool:
+    if label == "occupation":
+        return False
+    before = text[max(0, start - 90) : start].lower()
+    context = text[max(0, start - 90) : min(len(text), end + 90)].lower()
+    if label == "termites":
+        # A negative finding in one room must not suppress another room's finding.
+        boundaries = r"[.;\n]|\bmais\b|\ben\s+revanche\b"
+        before = re.split(boundaries, before, flags=re.I)[-1]
+        after = re.split(boundaries, text[end : end + 90], flags=re.I)[0]
+        context = before + text[start:end].lower() + after.lower()
+    negation_patterns = (
+        r"aucun(?:e|es|s)?\s+\w{0,25}$",
+        r"absence\s+(?:de|d['’])\s*\w{0,25}$",
+        r"pas\s+de\s+\w{0,25}$",
+        r"sans\s+\w{0,25}$",
+        r"n['’]est\s+pas\s+soumis.{0,45}$",
+    )
+    if any(re.search(pattern, before, re.I) for pattern in negation_patterns):
+        return True
+    label_patterns = {
+        "servitude": r"aucune\s+servitude|absence\s+de\s+servitude|servitude\s+non\s+mentionn[ée]e",
+        "copropriété": r"pas\s+soumis\s+au\s+r[ée]gime\s+de\s+la\s+copropri[ée]t[ée]|non\s+soumis\s+.*copropri[ée]t[ée]",
+        "amiante": r"absence\s+d['’]amiante|sans\s+amiante|amiante\s*:\s*non",
+        "plomb": (
+            r"absence\s+de\s+plomb|sans\s+plomb|plomb\s*:\s*non|crep\s*:\s*non|"
+            r"ne\s+constate\s+pas.{0,120}rev[êe]tements?\s+d[ée]grad[ée]s?.{0,80}plomb|"
+            r"pas\s+de\s+rev[êe]tements?\s+d[ée]grad[ée]s?.{0,80}plomb|"
+            r"ne\s*d[ée]passe\s*pas.{0,80}(?:plafond|seuil)|"
+            r"quantit[ée].{0,80}ne\s*d[ée]passe\s*pas.{0,80}(?:plafond|seuil)|"
+            r"inf[ée]rieur(?:e)?\s+(?:au|aux)\s+(?:plafond|seuil)"
+        ),
+        "termites": r"absence\s+de\s+termites?|sans\s+termites?|termites?\s*:\s*non|non\s+termite",
+        "travaux": r"aucun\s+travaux|pas\s+de\s+travaux|sans\s+travaux",
+    }
+    pattern = label_patterns.get(label)
+    if pattern and re.search(pattern, context, re.I):
+        return True
+    if label in {"amiante", "plomb", "termites"} and re.search(
+        r"(?:n['’]a\s+pas\s+[ée]t[ée]\s+(?:rep[ée]r[ée]|constat[ée]|d[ée]tect[ée])|"
+        r"non\s+(?:d[ée]tect[ée]|rep[ée]r[ée]|concern[ée])|"
+        r"il\s+n['’]a\s+pas\s+[ée]t[ée]\s+rep[ée]r[ée])",
+        context,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def _hazard_context_is_positive(label: str, context: str) -> bool:
+    if label == "termites":
+        # The statutory report title describes its scope, not its conclusion.
+        evidence = re.sub(
+            r"[ée]tat\s+relatif\s+[àa]\s+la\s+pr[ée]sence\s+de\s+termites?",
+            "état termites",
+            context,
+            flags=re.I,
+        )
+        for statement in re.split(r"[.;\n]|\bmais\b|\ben\s+revanche\b", evidence, flags=re.I):
+            if re.search(
+                r"\bsi\b.{0,60}termites?|"
+                r"termites?.{0,60}ne\s+(?:peut|peuvent)\s+(?:pas\s+)?[êe]tre\s+exclu",
+                statement,
+                re.I,
+            ):
+                # Conditional instructions and inaccessible areas establish no positive finding.
+                continue
+            # A regulatory reminder is conditional, not a finding in this building.
+            statement = re.sub(
+                r"(?:dans\s+le\s+cas\s+de|en\s+cas\s+de)\s+"
+                r"(?:la\s+)?(?:pr[ée]sence|infestation)\s+de\s+termites?[^,]*",
+                "rappel conditionnel",
+                statement,
+                flags=re.I,
+            )
+            if re.search(
+                r"(?:absence|aucun[es]*|pas)\s+(?:de\s+|d['’])?"
+                r"(?:indices?\s+(?:de\s+|d['’]))?(?:infestation\s+de\s+)?termites?",
+                statement,
+                re.I,
+            ) or _risk_match_is_negated(statement, 0, len(statement), label):
+                continue
+            if re.search(
+                r"(?:pr[ée]sence|indices?|infestation|attaque).{0,100}termites?|"
+                r"termites?.{0,100}(?:pr[ée]sents?|positif|d[ée]tect[ée]s?|rep[ée]r[ée]s?)",
+                statement,
+                re.I,
+            ):
+                return True
+        return False
+    if _risk_match_is_negated(context, 0, len(context), label):
+        return False
+    patterns = {
+        "amiante": (
+            r"(?:pr[ée]sence|positif|d[ée]tect[ée]|rep[ée]r[ée]|contient|contiennent).{0,100}amiante|"
+            r"amiante.{0,100}(?:pr[ée]sent|positif|d[ée]tect[ée]|rep[ée]r[ée]|contient|contiennent)"
+        ),
+        "plomb": (
+            r"(?:pr[ée]sence|positif|concentration|rev[êe]tements?).{0,100}plomb|"
+            r"plomb.{0,100}(?:pr[ée]sent|positif|d[ée]tect[ée]|sup[ée]rieur|classe\s*[1-4])"
+        ),
+        "termites": (
+            r"(?:pr[ée]sence|indices?|infestation|attaque).{0,100}termites?|"
+            r"termites?.{0,100}(?:pr[ée]sence|indices?|infestation|attaque)"
+        ),
+    }
+    return bool(re.search(patterns[label], context, re.I))
+
+
+def _works_severity(context: str) -> int:
+    if re.search(
+        r"gros\s+travaux|travaux\s+(?:lourds|importants|structurels|de\s+remise\s+en\s+[ée]tat|"
+        r"n[ée]cessaires?)|ruine|insalubre|hors\s+d['’]eau|effondr|"
+        r"infiltrations?\s+d['’]eau|d[ée]g[aâ]t\s+des\s+eaux",
+        context,
+        re.I,
+    ):
+        return 5
+    if re.search(
+        r"(?:pr[ée]voir|prevoir)\s+(?:des\s+)?travaux|"
+        r"travaux\s+(?:[àa]\s+pr[ée]voir|de\s+r[ée]novation)|"
+        r"[àa]\s+r[ée]nover|a\s+renover|"
+        r"r[ée]novation\s+(?:compl[eè]te|importante|[àa]\s+pr[ée]voir)",
+        context,
+        re.I,
+    ):
+        return 4
+    if re.search(
+        r"mauvais\s+[ée]tat|fortement\s+d[ée]grad[ée]|d[ée]gradations?|v[ée]tuste|"
+        r"rouill[ée]|moisi|fissures?|hors\s+service|arrach[ée]|affaiss[ée]|"
+        r"travaux\s+futurs|remise\s+en\s+[ée]tat",
+        context,
+        re.I,
+    ):
+        return 4
+    if re.search(r"rafra[iî]chissement|r[ée]novation\s+[àa]\s+pr[ée]voir", context, re.I):
+        return 3
+    return 0
+
+
+def _servitude_context_is_specific(context: str, document_type: str) -> bool:
+    if _risk_match_is_negated(context, 0, len(context), "servitude"):
+        return False
+    if re.search(
+        r"\bservitudes?\s+(?:de\s+passage|d['’]utilit[ée]\s+publique|conventionnelle|grevant|active|passive)\b",
+        context,
+        re.I,
+    ):
+        return True
+    if re.search(r"\b(?:grev[ée]|b[ée]n[ée]ficie|affect[ée]|supporte).{0,90}\bservitudes?\b", context, re.I):
+        return True
+    if document_type in {"cahier_conditions_vente", "conditions_vente"} and re.search(
+        r"\bservitudes?\s+(?:suivantes?|mentionn[ée]es?|existant|publi[ée]es?)\b",
+        context,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def _copro_context_is_specific(context: str, document_type: str) -> bool:
+    if _risk_match_is_negated(context, 0, len(context), "copropriété"):
+        return False
+    if re.search(r"charges?\s+de\s+copropri[ée]t[ée]\s+(?:impay[ée]es?|dues?|annuelles?)", context, re.I):
+        return True
+    if re.search(
+        r"(?:soumis|d[ée]pend|fait\s+partie|d[ée]nomm[ée]|ensemble\s+immobilier).{0,100}"
+        r"copropri[ée]t[ée]",
+        context,
+        re.I,
+    ):
+        return True
+    if re.search(r"\blot\s+(?:num[ée]ro|n[°o])\b.{0,140}\b(?:tanti[eè]mes|parties\s+communes)\b", context, re.I):
+        return True
+    return document_type in {"annonce_vente", "source_listing", "pv_huissier"} and bool(
+        re.search(r"\b(?:tanti[eè]mes|syndic|parties\s+communes)\b", context, re.I)
+    )
+
+
+def _occupation_context_is_specific(context: str) -> bool:
+    return bool(
+        re.search(
+            r"occup[ée].{0,80}(?:sans\s+bail|sans\s+droit\s+ni\s+titre|par\s+les?\s+propri[ée]taires?|"
+            r"locataire|preneur)|"
+            r"(?:bail|locataire|preneur|loyer).{0,100}(?:en\s+cours|actuel|occup|sign[ée])|"
+            r"squatt",
+            context,
+            re.I,
+        )
+    )
+
+
+def _dpe_context_is_risky(context: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:classe\s*)?[FG]\b|dpe\s*[:=-]?\s*[FG]\b|passoire|d[ée]favorable|"
+            r"consommation\s+(?:excessive|tr[èe]s\s+[ée]lev[ée]e)|[ée]nergivore",
+            context,
+            re.I,
+        )
+    )
+
+
+def _risk_occurrence_rank(occurrence: dict[str, Any]) -> tuple[int, float, int]:
+    evidence_json = occurrence.get("evidence_json") if isinstance(occurrence.get("evidence_json"), dict) else {}
+    document_type = occurrence.get("document_type") or evidence_json.get("document_type")
+    return (
+        int(occurrence.get("severity") or 1),
+        float(occurrence.get("confidence") or 0),
+        _document_type_weight(str(document_type or "")),
+    )
+
+
+def _document_type_weight(document_type: str) -> int:
+    return {
+        "diagnostics_techniques": 6,
+        "pv_huissier": 6,
+        "pv_notaire": 5,
+        "proces_verbal": 5,
+        "annonce_vente": 4,
+        "source_listing": 3,
+        "cahier_conditions_vente": 3,
+        "conditions_vente": 2,
+        "pdf": 1,
+    }.get(document_type, 0)
+
+
+def _risk_reasoning(label: str, occurrence: dict[str, Any]) -> str:
+    document_context = document_context_label(occurrence.get("document_type"))
+    matched_terms = occurrence.get("matched_terms") or []
+    term = f" Terme déclencheur : {matched_terms[0]}." if isinstance(matched_terms, list) and matched_terms else ""
+    specific = {
+        "travaux": "La mention décrit un désordre, une dégradation ou une remise en état concernant le bien.",
+        "amiante": "La mention indique une présence, un repérage positif ou un matériau contenant de l'amiante.",
+        "plomb": "La mention indique une présence ou concentration de plomb, pas seulement l'existence d'un CREP.",
+        "termites": "La mention indique une présence, des indices ou une infestation de termites.",
+        "DPE": "La mention rattache le bien à une classe énergétique défavorable ou à une consommation excessive.",
+        "servitude": "La mention décrit une servitude précise grevant ou concernant le bien.",
+        "copropriété": "La mention rattache le lot à un régime de copropriété ou à des tantièmes/charges.",
+        "occupation": "La mention décrit une occupation, un bail, un locataire ou une occupation sans droit.",
+    }.get(label, "La mention est retenue parce qu'elle est suffisamment contextualisée.")
+    return f"{specific} Source analysée : {document_context}.{term}"
+
+
+def _risk_why_it_matters(label: str, severity: int) -> str:
+    impact = {
+        "travaux": "Peut créer un budget travaux, un délai de revente et une incertitude sur la marge.",
+        "amiante": "Peut imposer diagnostics complémentaires, retrait ou précautions en cas de travaux.",
+        "plomb": "Peut contraindre les travaux et la location, notamment dans les logements anciens.",
+        "termites": "Peut signaler un risque structurel ou un coût de traitement.",
+        "DPE": "Peut limiter la location, augmenter les travaux énergétiques et réduire la liquidité.",
+        "servitude": "Peut limiter l'usage, l'accès, la constructibilité ou la revente.",
+        "copropriété": "Impose de vérifier charges, règlement, travaux votés et situation du syndicat.",
+        "occupation": "Peut retarder la jouissance, la revente ou la relocation.",
+    }.get(label, "Peut modifier le coût, le délai ou la liquidité du projet.")
+    return impact
+
+
+def _risk_status(label: str, occurrence: dict[str, Any]) -> str:
+    confidence = float(occurrence.get("confidence") or 0)
+    document_type = str(occurrence.get("document_type") or "")
+    if label in {"amiante", "plomb", "termites", "DPE"} and document_type == "diagnostics_techniques":
+        return "confirmed" if confidence >= 0.78 else "probable"
+    if label == "travaux":
+        return "to_quantify" if confidence >= 0.7 else "probable"
+    if label in {"occupation", "servitude"}:
+        return "to_verify" if confidence < 0.88 else "confirmed"
+    if document_type in {"cahier_conditions_vente", "conditions_vente"}:
+        return "property_specific_clause"
+    return "confirmed" if confidence >= 0.82 else "probable"
+
+
+def _source_status(occurrence: dict[str, Any]) -> str:
+    document_type = str(occurrence.get("document_type") or "")
+    if document_type in {"diagnostics_techniques", "pv_huissier", "pv_notaire", "proces_verbal"}:
+        return "source_probante"
+    if document_type in {"cahier_conditions_vente", "conditions_vente"}:
+        return "source_juridique_a_recontextualiser"
+    if document_type in {"annonce_vente", "source_listing"}:
+        return "source_de_presentation"
+    return "source_a_identifier"
+
+
+def _risk_decision_chain(label: str, occurrence: dict[str, Any]) -> list[dict[str, str]]:
+    document_type = str(occurrence.get("document_type") or "")
+    matched_terms = occurrence.get("matched_terms") if isinstance(occurrence.get("matched_terms"), list) else []
+    trigger = str(matched_terms[0]) if matched_terms else label
+    return [
+        {
+            "step": "document",
+            "decision": document_context_label(document_type),
+        },
+        {
+            "step": "indice",
+            "decision": f"Terme ou expression repéré : {trigger}.",
+        },
+        {
+            "step": "contexte",
+            "decision": _risk_reasoning(label, occurrence),
+        },
+        {
+            "step": "impact",
+            "decision": _risk_why_it_matters(label, int(occurrence.get("severity") or 1)),
+        },
+        {
+            "step": "action",
+            "decision": risk_next_action(label),
+        },
+    ]
+
+
+def _risk_verification_priority(label: str, severity: int) -> str:
+    if severity >= 5 or label == "occupation":
+        return "bloquant_avant_enchere"
+    if label in {"travaux", "amiante", "plomb", "termites", "servitude"}:
+        return "a_verifier_avant_prix_plafond"
+    return "a_controler_dans_lecture_complete"
+
+
+def _risk_fact_status(confidence: float) -> str:
+    if confidence >= 0.82:
+        return "confirmé"
+    if confidence >= 0.62:
+        return "probable"
+    return "à confirmer"
+
+
+def _risk_question(label: str) -> str:
+    return {
+        "travaux": "La mention décrit-elle un coût réel à budgéter pour ce bien ?",
+        "amiante": "Le diagnostic confirme-t-il une présence imposant précaution ou travaux ?",
+        "plomb": "Le CREP confirme-t-il une présence de plomb ayant un impact d'usage ou de travaux ?",
+        "termites": "Le diagnostic confirme-t-il une infestation ou des indices actifs ?",
+        "DPE": "La performance énergétique limite-t-elle la location ou la revente ?",
+        "servitude": "La servitude limite-t-elle l'accès, l'usage ou la valeur du bien ?",
+        "copropriété": "La copropriété crée-t-elle charges, travaux votés ou contraintes à intégrer ?",
+        "occupation": "L'occupation retarde-t-elle la jouissance ou la revente ?",
+    }.get(label, "Ce signal modifie-t-il le coût, le délai ou la liquidité du projet ?")
+
+
+def _factor_refs_from_risk_occurrences(occurrences: list[dict[str, object]]) -> list[dict[str, object]]:
+    refs = []
+    seen: set[tuple[object, object, object]] = set()
+    ranked = sorted(
+        occurrences,
+        key=lambda item: (
+            int(item.get("severity") or 1),
+            float(item.get("confidence") or 0),
+            _document_type_weight(str(item.get("document_type") or "")),
+        ),
+        reverse=True,
+    )
+    for occurrence in ranked:
+        key = (
+            occurrence.get("risk_label"),
+            occurrence.get("document_url"),
+            occurrence.get("page_number"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(
+            compact_dict(
+                {
+                    "label": occurrence.get("risk_label"),
+                    "document_label": occurrence.get("document_label"),
+                    "document_type": occurrence.get("document_type"),
+                    "page_number": occurrence.get("page_number"),
+                    "excerpt": occurrence.get("excerpt"),
+                    "confidence": occurrence.get("confidence"),
+                }
+            )
+        )
+        if len(refs) >= 3:
+            break
+    return refs
+
+
+# Au-delà, la mise à prix ou la surface est presque sûrement fausse (3,5 M€ pour 23,6 m² : 148 000 €/m²). Le m² le
+# plus cher de France (Paris, quartiers prestigieux) se vend autour de 20 000 à 25 000 € et une mise à prix est
+# inférieure à la valeur du bien.
+MAX_PLAUSIBLE_STARTING_PRICE_PER_M2 = Decimal("30000")
+
+
+PRICE_PER_M2_IMPLAUSIBLE_FLAG = "price_per_m2_implausible"
+
+
+def _starting_price_per_m2_is_implausible(sale: AuctionSale) -> bool:
+    """Mise à prix rapportée à la surface affichée, hors annonce multi-lots (prix de l'ensemble, surface d'un lot)."""
+    price, surface = sale.starting_price_eur, sale.app_surface_m2
+    if price is None or surface is None or surface <= 0 or "multi_lot_sale" in sale.quality_flags:
+        return False
+    return price / surface > MAX_PLAUSIBLE_STARTING_PRICE_PER_M2
+
+
+def _fill_quality_flags(sale: AuctionSale) -> None:
+    if sale.latitude is None or sale.longitude is None:
+        add_quality_flag(sale, "missing_gps")
+    else:
+        # Un drapeau hérité d'une lecture sans coordonnées ne survit pas à l'arrivée des coordonnées.
+        sale.quality_flags = [flag for flag in sale.quality_flags if flag != "missing_gps"]
+    if _starting_price_per_m2_is_implausible(sale):
+        add_quality_flag(sale, PRICE_PER_M2_IMPLAUSIBLE_FLAG)
+    else:
+        sale.quality_flags = [flag for flag in sale.quality_flags if flag != PRICE_PER_M2_IMPLAUSIBLE_FLAG]
+    if isinstance(sale.raw_payload, dict) and sale.raw_payload.get("sale_date_unverified"):
+        add_quality_flag(sale, "sale_date_implausible")
+    if not sale.documents:
+        add_quality_flag(sale, "source_page_only")
+    if sale_type_context(sale).get("status") == "non_judicial":
+        add_quality_flag(sale, "non_judicial_sale_context")
+    llm_confidence = sale.raw_payload.get("llm_extraction", {}).get("confidence", {})
+    if isinstance(llm_confidence, dict) and any(float(value or 0) < 0.55 for value in llm_confidence.values()):
+        add_quality_flag(sale, "low_confidence_extraction")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import src.pdf_enrichment  # noqa: F401  (import order used across the pipeline tests)
 from src import document_reading as reading
 from src.dpe_reading_guard import checked_energy_point, claimed_class, dpe_class_from_figures
 

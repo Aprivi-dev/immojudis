@@ -67,13 +67,16 @@ from src.pdf_document_types import classify_document_type
 from src.photo_mirror import (
     BUCKET,
     ENCHERES_PUBLIQUES_URL_PATTERN,
+    AdvisoryLockedStore,
     ImageRejected,
     MirrorFailure,
     PathPending,
     PhotoDownloader,
     PhotoStorage,
     SupabasePhotoStorage,
+    bounded_int,
     build_politeness,
+    emit,
     host_of,
     image_decoder_environment,
 )
@@ -484,23 +487,10 @@ delete from public.sale_document_photos photo
 """
 
 
-class PostgresDocumentPhotoStore:
-    """Les deux tables et la sélection en lecture seule, sur une connexion en autocommit.
+class PostgresDocumentPhotoStore(AdvisoryLockedStore):
+    """Les deux tables et la sélection en lecture seule."""
 
-    La connexion tient aussi le verrou consultatif qui empêche deux passages de viser les mêmes hôtes ensemble.
-    """
-
-    def __init__(self, db_url: str, *, connect: Callable[[str], Any] | None = None) -> None:
-        if connect is None:
-            from src.storage.supabase_client import connect as connect_postgres
-
-            connect = connect_postgres
-        self._connection = connect(db_url)
-        self._connection.autocommit = True
-
-    def try_lock(self) -> bool:
-        row = self._connection.execute("select pg_try_advisory_lock(hashtextextended(%s, 0))", (LOCK_NAME,)).fetchone()
-        return bool(row and row[0])
+    lock_name = LOCK_NAME
 
     def select_candidates(self, max_sales: int, *, include_encheres_publiques: bool) -> list[Candidate]:
         types = list(PHOTO_DOCUMENT_TYPES)
@@ -603,11 +593,6 @@ class PostgresDocumentPhotoStore:
     def delete_stale_rows(self, limit: int) -> int:
         return int(self._connection.execute(DELETE_STALE_ROWS_SQL, (int(limit),)).rowcount or 0)
 
-    def close(self) -> None:
-        try:
-            self._connection.close()
-        except Exception:  # noqa: BLE001 - fermer libère de toute façon le verrou consultatif
-            pass
 
 
 # --------------------------------------------------------------------------------------------------
@@ -621,18 +606,10 @@ class PassLimits:
     max_sales: int = DEFAULT_MAX_SALES
 
 
-def _bounded_int(value: object, default: int, low: int, high: int) -> int:
-    try:
-        parsed = int(str(value).strip()) if value is not None and str(value).strip() else default
-    except (TypeError, ValueError):
-        parsed = default
-    return max(low, min(high, parsed))
-
-
 def limits_from_inputs(max_sales: object = None, budget_seconds: object = None) -> PassLimits:
     return PassLimits(
-        budget_seconds=float(_bounded_int(budget_seconds, DEFAULT_BUDGET_SECONDS, 10, MAX_BUDGET_SECONDS)),
-        max_sales=_bounded_int(max_sales, DEFAULT_MAX_SALES, 1, MAX_SALES_LIMIT),
+        budget_seconds=float(bounded_int(budget_seconds, DEFAULT_BUDGET_SECONDS, 10, MAX_BUDGET_SECONDS)),
+        max_sales=bounded_int(max_sales, DEFAULT_MAX_SALES, 1, MAX_SALES_LIMIT),
     )
 
 
@@ -676,10 +653,6 @@ class PassSummary:
             "stale_deleted": self.stale_deleted,
             "elapsed_seconds": round(self.elapsed_seconds, 1),
         }
-
-
-def _emit(payload: Mapping[str, Any]) -> None:
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str), flush=True)
 
 
 def _scan_log(result: ScanResult) -> dict[str, Any]:
@@ -949,7 +922,7 @@ def run_pdf_photos(
                     continue
             consecutive_errors = 0
             _count(summary, result)
-            _emit(_scan_log(result))
+            emit(_scan_log(result))
             _update_host_health(host, result, host_failures, paused_hosts)
         return summary
     finally:
@@ -1012,7 +985,7 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.exception("PDF photos pass failed")
         print(f"::error title=Photos des pièces jointes::the pass could not run ({type(exc).__name__}).")
         return 1
-    _emit(summary)
+    emit(summary)
     return 0
 
 

@@ -17,10 +17,15 @@ _RELAY_DEFAULT_TIMEOUT_SECONDS = 40.0
 _TIMEOUT_PHASES = ("connect", "read", "write", "pool")
 
 
+def relay_url() -> str:
+    """Adresse du relais (``SOURCE_FETCH_RELAY_URL``, sans espaces) ; vide sans relais."""
+    return os.environ.get("SOURCE_FETCH_RELAY_URL", "").strip()
+
+
 def configured_transport(base_url: str) -> httpx.BaseTransport | None:
     if httpx.URL(base_url).host not in SOURCE_HOSTS:
         return None
-    endpoint = os.environ.get("SOURCE_FETCH_RELAY_URL", "").strip()
+    endpoint = relay_url()
     token = os.environ.get("SOURCE_FETCH_RELAY_TOKEN", "").strip()
     if not endpoint and not token:
         return None

@@ -12,6 +12,7 @@ from src.admission import is_expired
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.config import PDF_TEXTS_DIR, SOURCE_NAMES, EncheresPubliquesAccessNotAuthorized, load_settings
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.extract_structured import (
@@ -35,11 +36,9 @@ from src.main import (
     run_pipeline,
 )
 from src.pdf_enrichment import (
-    DOCUMENT_FACTS_VERSION,
     PDF_FINALIZATION_MARGIN_SECONDS,
     enrich_sale_from_pdfs,
     pdf_deadline_scope,
-    sale_storage_id,
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics
 from src.pdf_ocr import PdfDeadlineExceeded, PdfExtractionDeferred
@@ -51,6 +50,7 @@ from src.pdf_pass_outcomes import (
 )
 from src.pdf_progress import manifest_is_complete, read_modern_cache
 from src.pipeline_usage import PARTIAL_MANIFEST_DEFERRAL, PipelineBudgetExhausted, QueueJobDeferred, defer_budget_jobs
+from src.sale_local_files import sale_storage_id
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
@@ -355,7 +355,7 @@ def _record_worker_deferred_job_ids(jobs: list[dict[str, object]]) -> None:
     )
 
 
-def _pdf_finalization_margin_seconds(budget_seconds: int | float) -> float:
+def pdf_finalization_margin_seconds(budget_seconds: int | float) -> float:
     """Reserve the production 60-second margin, scaled for short test runs."""
     budget = max(0.0, float(budget_seconds))
     return min(PDF_FINALIZATION_MARGIN_SECONDS, budget * PDF_FINALIZATION_MARGIN_FRACTION)
@@ -1050,7 +1050,7 @@ def run_enrichment_queue_batch(
     return handled_detail_jobs + len(enrichment_jobs)
 
 
-def _run_enrichment_queue_batch_with_deadline(
+def run_enrichment_queue_batch_with_deadline(
     *,
     limit: int,
     family: str,
@@ -1165,7 +1165,7 @@ def _run_enrichment_queue_worker(
     # Do not start a fresh claim in the finalization margin.  A claim can
     # otherwise arrive after the last PDF cutoff and spend the margin merely
     # being deferred, even though it did no useful work.
-    finalization_margin_seconds = _pdf_finalization_margin_seconds(budget_seconds)
+    finalization_margin_seconds = pdf_finalization_margin_seconds(budget_seconds)
     claim_deadline = deadline - finalization_margin_seconds
     due_counts = _read_due_enrichment_family_counts()
     family_cycle = _enrichment_family_cycle(due_counts)
@@ -1199,7 +1199,7 @@ def _run_enrichment_queue_worker(
         )
         claim_batches += 1
         batch_started_at = time.monotonic()
-        count = _run_enrichment_queue_batch_with_deadline(
+        count = run_enrichment_queue_batch_with_deadline(
             limit=preferred_limit,
             family=preferred,
             provider_clients=provider_clients,
@@ -1226,7 +1226,7 @@ def _run_enrichment_queue_worker(
             )
             claim_batches += 1
             batch_started_at = time.monotonic()
-            count = _run_enrichment_queue_batch_with_deadline(
+            count = run_enrichment_queue_batch_with_deadline(
                 limit=alternate_limit,
                 family=alternate,
                 provider_clients=provider_clients,

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+import math
 import os
 from collections.abc import Mapping
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+LOGGER = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT_DIR / "data"
@@ -130,6 +134,81 @@ TARGET_DEPARTMENTS = _target_departments_from_env()
 FRENCH_POSTAL_CODE_PATTERN = r"(?:(?:0[1-9]|[1-8]\d|9[0-5])\d{3}|97[1-8]\d{2}|98[6-8]\d{2})"
 
 
+TRUE_WORDS = frozenset({"1", "true", "yes", "on"})
+FALSE_WORDS = frozenset({"0", "false", "no", "off"})
+
+
+def is_true_value(value: object) -> bool:
+    """Réglage vrai : le booléen ``True``, ou un mot de ``TRUE_WORDS`` (casse et espaces ignorés)."""
+    if isinstance(value, str):
+        return value.strip().lower() in TRUE_WORDS
+    return value is True
+
+
+def env_flag(name: str, default: bool) -> bool:
+    """Interrupteur lu dans l'environnement : absent, ``default`` ; présent, vrai seulement pour un mot de
+    ``TRUE_WORDS``. Une valeur vide ou inconnue vaut donc faux, même quand ``default`` est vrai."""
+    raw = os.getenv(name)
+    return default if raw is None else is_true_value(raw)
+
+
+def env_override(name: str) -> bool | None:
+    """Forçage explicite d'un comportement qui a sa propre règle : vrai ou faux pour un mot reconnu, ``None``
+    sinon (absent, vide ou inconnu), et l'appelant applique sa règle."""
+    raw = (os.getenv(name) or "").strip().lower()
+    if raw in TRUE_WORDS:
+        return True
+    if raw in FALSE_WORDS:
+        return False
+    return None
+
+
+def autonomous_run_id() -> str | None:
+    """Passage lancé par ``src.autonomous_runner``, qui pose ``PIPELINE_AUTONOMOUS_RUN_ID`` ; ``None`` sinon."""
+    return os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") or None
+
+
+DOCUMENT_READING_DEFAULT_MAX_SALES = 40
+DOCUMENT_READING_MAX_SALES_LIMIT = 500
+DOCUMENT_READING_DEFAULT_BUDGET_MINUTES = 20.0
+# Borne du vidage des pièces planifié, qui lance la lecture après son propre budget dans un job de 180 minutes.
+DOCUMENT_READING_MAX_BUDGET_MINUTES = 120.0
+
+
+def document_reading_limits(
+    max_sales: int | None = None, budget_minutes: float | None = None
+) -> tuple[int, float]:
+    """Nombre de ventes et budget en secondes de la lecture des pièces (``src.document_reading``).
+
+    Une valeur passée en argument prime sur ``DOCUMENT_READING_MAX_SALES`` et
+    ``DOCUMENT_READING_BUDGET_MINUTES``. Une variable illisible donne la valeur par défaut, avec un
+    avertissement. Le nombre de ventes est borné de 1 à 500, le budget de 1 à 120 minutes (décimales admises).
+    """
+    if max_sales is None:
+        max_sales = _env_number("DOCUMENT_READING_MAX_SALES", int, DOCUMENT_READING_DEFAULT_MAX_SALES)
+    if budget_minutes is None:
+        budget_minutes = _env_number(
+            "DOCUMENT_READING_BUDGET_MINUTES", float, DOCUMENT_READING_DEFAULT_BUDGET_MINUTES
+        )
+    sales = max(1, min(DOCUMENT_READING_MAX_SALES_LIMIT, int(max_sales)))
+    minutes = max(1.0, min(DOCUMENT_READING_MAX_BUDGET_MINUTES, float(budget_minutes)))
+    return sales, minutes * 60.0
+
+
+def _env_number[T: (int, float)](name: str, kind: type[T], default: T) -> T:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = kind(raw)
+    except ValueError:
+        value = None
+    if value is None or not math.isfinite(value):
+        LOGGER.warning("%s=%r is not a valid number; using %s", name, raw, default)
+        return default
+    return value
+
+
 def _dedupe_reconcile_mode(value: str) -> str:
     """"apply" ou "candidates" ; une valeur inconnue retombe sur le mode sans écriture."""
     mode = (value or "apply").strip().lower()
@@ -144,10 +223,8 @@ def load_settings() -> dict[str, str | float | None]:
         "supabase_db_url": os.getenv("SUPABASE_DB_URL"),
         # Judilibre is fail-closed: credentials alone never enable network calls.
         # JUDILIBRE_ENABLED is the runtime projection of the approved source policy.
-        "judilibre_enabled": os.getenv("JUDILIBRE_ENABLED", "false").lower()
-        in {"1", "true", "yes", "on"},
-        "judilibre_dry_run": os.getenv("JUDILIBRE_DRY_RUN", "false").lower()
-        in {"1", "true", "yes", "on"},
+        "judilibre_enabled": env_flag("JUDILIBRE_ENABLED", False),
+        "judilibre_dry_run": env_flag("JUDILIBRE_DRY_RUN", False),
         "judilibre_base_url": os.getenv(
             "JUDILIBRE_BASE_URL",
             "https://api.piste.gouv.fr/cassation/judilibre/v1.0",
@@ -197,8 +274,7 @@ def load_settings() -> dict[str, str | float | None]:
         # publication and terminate the child cleanly.  Petites Affiches
         # keeps its own 30-minute collection checkpoint budget inside that
         # 35-minute scheduler window.
-        "source_process_isolation": os.getenv("SOURCE_PROCESS_ISOLATION", "true").lower()
-        in {"1", "true", "yes", "on"},
+        "source_process_isolation": env_flag("SOURCE_PROCESS_ISOLATION", True),
         "source_process_isolation_sources": tuple(
             source.strip().lower()
             for source in os.getenv("SOURCE_PROCESS_ISOLATION_SOURCES", ",".join(PROCESS_ISOLATED_SOURCES)).split(",")
@@ -208,16 +284,15 @@ def load_settings() -> dict[str, str | float | None]:
             1.0,
             float(os.getenv("SOURCE_SCRAPE_TIMEOUT_SECONDS", "1800")),
         ),
-        "geocode_enabled": os.getenv("GEOCODE_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+        "geocode_enabled": env_flag("GEOCODE_ENABLED", True),
         "geocode_api_url": os.getenv("GEOCODE_API_URL", "https://data.geopf.fr/geocodage/search/"),
         "geocode_min_score": float(os.getenv("GEOCODE_MIN_SCORE", "0.45")),
-        "cadastre_enrich_enabled": os.getenv("CADASTRE_ENRICH_ENABLED", "true").lower()
-        in {"1", "true", "yes", "on"},
+        "cadastre_enrich_enabled": env_flag("CADASTRE_ENRICH_ENABLED", True),
         "cadastre_api_url": os.getenv("CADASTRE_API_URL", "https://apicarto.ign.fr/api/cadastre/parcelle"),
         "cadastre_source_ign": os.getenv("CADASTRE_SOURCE_IGN", "PCI"),
         "cadastre_max_parcels": max(1, int(os.getenv("CADASTRE_MAX_PARCELS", "4"))),
         "cadastre_timeout_seconds": float(os.getenv("CADASTRE_TIMEOUT_SECONDS", "10")),
-        "dpe_enrich_enabled": os.getenv("DPE_ENRICH_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+        "dpe_enrich_enabled": env_flag("DPE_ENRICH_ENABLED", True),
         "dpe_api_url": os.getenv(
             "DPE_API_URL",
             "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines",
@@ -225,7 +300,7 @@ def load_settings() -> dict[str, str | float | None]:
         "dpe_geo_radius_m": max(10, int(os.getenv("DPE_GEO_RADIUS_M", "120"))),
         "dpe_max_results": max(1, int(os.getenv("DPE_MAX_RESULTS", "5"))),
         "dpe_timeout_seconds": float(os.getenv("DPE_TIMEOUT_SECONDS", "12")),
-        "llm_enabled": os.getenv("LLM_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+        "llm_enabled": env_flag("LLM_ENABLED", True),
         "llm_provider": os.getenv("LLM_PROVIDER", "replicate").lower(),
         "replicate_api_token": os.getenv("REPLICATE_API_TOKEN"),
         "replicate_model": os.getenv("REPLICATE_MODEL", DEFAULT_REPLICATE_MODEL),
@@ -264,8 +339,7 @@ def load_settings() -> dict[str, str | float | None]:
         # 0 means every eligible sale collected by the scan is analysed in
         # that same run.
         "pipeline_llm_max_targets": max(0, int(os.getenv("PIPELINE_LLM_MAX_TARGETS", "20"))),
-        "pipeline_enrichment_queue_enabled": os.getenv("PIPELINE_ENRICHMENT_QUEUE_ENABLED", "true").lower()
-        in {"1", "true", "yes", "on"},
+        "pipeline_enrichment_queue_enabled": env_flag("PIPELINE_ENRICHMENT_QUEUE_ENABLED", True),
         "pipeline_enrichment_queue_batch_size": max(
             1,
             min(100, int(os.getenv("PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE", "10"))),
@@ -275,12 +349,16 @@ def load_settings() -> dict[str, str | float | None]:
             min(10, int(os.getenv("INFORMATION_AGENT_EVIDENCE_BATCH_SIZE", "5"))),
         ),
         # Porte des appels payants de vision (Replicate) sur les photos reçues : éteinte par défaut.
-        "information_agent_evidence_vision_enabled": os.getenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", "").strip().lower()
-        in {"1", "true", "yes", "on"},
+        "information_agent_evidence_vision_enabled": env_flag("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED", False),
+        # OCR des pièces reçues des professionnels : allumé par défaut et indépendant de PDF_OCR_ENABLED, éteint
+        # sur certains passages du catalogue pour tenir le budget. Sans lui, un document scanné ou un diagnostic
+        # photographié serait marqué lu sans l'avoir été.
+        "information_agent_evidence_ocr_enabled": env_flag("INFORMATION_AGENT_EVIDENCE_OCR_ENABLED", True),
+        # Passe sémantique (modèle de texte) sur ces pièces : éteinte par défaut.
+        "information_agent_evidence_semantic_enabled": env_flag("INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED", False),
         "replicate_thinking_budget": int(os.getenv("REPLICATE_THINKING_BUDGET", "0")),
         "replicate_thinking_level": os.getenv("REPLICATE_THINKING_LEVEL", "low").lower(),
-        "replicate_dynamic_thinking": os.getenv("REPLICATE_DYNAMIC_THINKING", "false").lower()
-        in {"1", "true", "yes", "on"},
+        "replicate_dynamic_thinking": env_flag("REPLICATE_DYNAMIC_THINKING", False),
         "llm_prompt_version": os.getenv(
             "LLM_PROMPT_VERSION",
             DEFAULT_LLM_PROMPT_VERSION,
@@ -291,11 +369,9 @@ def load_settings() -> dict[str, str | float | None]:
         "llm_fact_chunk_chars": max(3000, int(os.getenv("LLM_FACT_CHUNK_CHARS", "12000"))),
         # 0 means every collected source block and extracted PDF page is analyzed.
         "llm_fact_max_chunks": max(0, int(os.getenv("LLM_FACT_MAX_CHUNKS", "0"))),
-        "incremental_enrichment": os.getenv("INCREMENTAL_ENRICHMENT", "true").lower()
-        in {"1", "true", "yes", "on"},
+        "incremental_enrichment": env_flag("INCREMENTAL_ENRICHMENT", True),
         # Désactivé par défaut (comme le workflow) : le balayage supprime des lignes publiées.
-        "dedupe_reconcile_enabled": os.getenv("DEDUPE_RECONCILE_ENABLED", "false").lower()
-        in {"1", "true", "yes", "on"},
+        "dedupe_reconcile_enabled": env_flag("DEDUPE_RECONCILE_ENABLED", False),
         # Plafond de lignes LUES par le balayage (garde-fou de lecture). Le catalogue compte quelques
         # milliers de lignes publiées : le plafond doit rester très au-dessus, sinon les lignes les
         # plus tardives (dates lointaines, dates inconnues) ne seraient jamais examinées.
@@ -305,7 +381,7 @@ def load_settings() -> dict[str, str | float | None]:
         # "apply" : fusionne et supprime (si DEDUPE_RECONCILE_ENABLED) ; "candidates" : journalise les
         # paires qui seraient fusionnées, sans aucune écriture. Toute autre valeur vaut "candidates".
         "dedupe_reconcile_mode": _dedupe_reconcile_mode(os.getenv("DEDUPE_RECONCILE_MODE", "apply")),
-        "pdf_ocr_enabled": os.getenv("PDF_OCR_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+        "pdf_ocr_enabled": env_flag("PDF_OCR_ENABLED", False),
         "pdf_ocr_language": os.getenv("PDF_OCR_LANGUAGE", "fra+eng"),
         "pdf_ocr_tessdata": os.getenv("TESSDATA_PREFIX") or os.getenv("PDF_OCR_TESSDATA"),
         "pdf_ocr_document_budget_seconds": max(
@@ -313,7 +389,7 @@ def load_settings() -> dict[str, str | float | None]:
             float(os.getenv("PDF_OCR_DOCUMENT_BUDGET_SECONDS", "120")),
         ),
         "pdf_extractor": os.getenv("PDF_EXTRACTOR", "auto").lower(),
-        "pdf_docling_enabled": os.getenv("PDF_DOCLING_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
+        "pdf_docling_enabled": env_flag("PDF_DOCLING_ENABLED", False),
         "pdf_docling_threshold_chars": int(os.getenv("PDF_DOCLING_THRESHOLD_CHARS", "1200")),
         "pdf_docling_timeout_seconds": float(os.getenv("PDF_DOCLING_TIMEOUT_SECONDS", "180")),
         "pdf_docling_fast_timeout_seconds": float(os.getenv("PDF_DOCLING_FAST_TIMEOUT_SECONDS", "60")),
@@ -330,39 +406,25 @@ def load_settings() -> dict[str, str | float | None]:
             10_000,
             int(os.getenv("DOCUMENT_MAX_EXTRACTED_TEXT_CHARS", "2000000")),
         ),
-        "enable_licitor_benchmark": os.getenv("ENABLE_LICITOR_BENCHMARK", "true").lower()
-        in {"1", "true", "yes", "on"},
-        "licitor_historical_authorized": os.getenv("LICITOR_HISTORICAL_AUTHORIZED", "false").lower() in {"1", "true", "yes", "on"},
+        "enable_licitor_benchmark": env_flag("ENABLE_LICITOR_BENCHMARK", True),
+        "licitor_historical_authorized": env_flag("LICITOR_HISTORICAL_AUTHORIZED", False),
         "licitor_max_pages": int(os.getenv("LICITOR_MAX_PAGES", "5")),
-        "enable_vench_benchmark": os.getenv("ENABLE_VENCH_BENCHMARK", "true").lower()
-        in {"1", "true", "yes", "on"},
+        "enable_vench_benchmark": env_flag("ENABLE_VENCH_BENCHMARK", True),
         "vench_max_pages": int(os.getenv("VENCH_MAX_PAGES", "100")),
-        "enable_info_encheres_benchmark": os.getenv("ENABLE_INFO_ENCHERES_BENCHMARK", "true").lower()
-        in {"1", "true", "yes", "on"},
+        "enable_info_encheres_benchmark": env_flag("ENABLE_INFO_ENCHERES_BENCHMARK", True),
         "info_encheres_max_pages": int(os.getenv("INFO_ENCHERES_MAX_PAGES", "4")),
         # Encheres Publiques stays disabled until both the benchmark and the
         # separately configured access authorization are explicitly enabled.
-        "enable_encheres_publiques_benchmark": os.getenv("ENABLE_ENCHERES_PUBLIQUES_BENCHMARK", "false").lower()
-        in {"1", "true", "yes", "on"},
-        "encheres_publiques_access_authorized": os.getenv(
-            "ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED", "false"
-        ).lower()
-        in {"1", "true", "yes", "on"},
+        "enable_encheres_publiques_benchmark": env_flag("ENABLE_ENCHERES_PUBLIQUES_BENCHMARK", False),
+        "encheres_publiques_access_authorized": env_flag("ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED", False),
         "encheres_publiques_max_pages": int(os.getenv("ENCHERES_PUBLIQUES_MAX_PAGES", "10")),
         "encheres_publiques_places": os.getenv("ENCHERES_PUBLIQUES_PLACES"),
-        "enable_petites_affiches_benchmark": os.getenv("ENABLE_PETITES_AFFICHES_BENCHMARK", "true").lower()
-        in {"1", "true", "yes", "on"},
-        "enable_cessions_etat_benchmark": os.getenv("ENABLE_CESSIONS_ETAT_BENCHMARK", "true").lower()
-        in {"1", "true", "yes", "on"},
+        "enable_petites_affiches_benchmark": env_flag("ENABLE_PETITES_AFFICHES_BENCHMARK", True),
+        "enable_cessions_etat_benchmark": env_flag("ENABLE_CESSIONS_ETAT_BENCHMARK", True),
         "cessions_etat_max_pages": int(os.getenv("CESSIONS_ETAT_MAX_PAGES", "3")),
-        "enable_agrasc_benchmark": os.getenv("ENABLE_AGRASC_BENCHMARK", "true").lower()
-        in {"1", "true", "yes", "on"},
-        "enable_encheres_immobilieres_benchmark": os.getenv(
-            "ENABLE_ENCHERES_IMMOBILIERES_BENCHMARK", "true"
-        ).lower()
-        in {"1", "true", "yes", "on"},
+        "enable_agrasc_benchmark": env_flag("ENABLE_AGRASC_BENCHMARK", True),
+        "enable_encheres_immobilieres_benchmark": env_flag("ENABLE_ENCHERES_IMMOBILIERES_BENCHMARK", True),
         "encheres_immobilieres_max_pages": int(os.getenv("ENCHERES_IMMOBILIERES_MAX_PAGES", "1")),
-        "enable_notaires_benchmark": os.getenv("ENABLE_NOTAIRES_BENCHMARK", "true").lower()
-        in {"1", "true", "yes", "on"},
+        "enable_notaires_benchmark": env_flag("ENABLE_NOTAIRES_BENCHMARK", True),
         "notaires_max_pages": int(os.getenv("NOTAIRES_MAX_PAGES", "2")),
     }

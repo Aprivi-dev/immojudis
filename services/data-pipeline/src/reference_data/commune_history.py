@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from src.reference_data.rents import decode_csv
+from src.reference_data.download import decode_csv
 
 # Publié chaque année avec le COG (https://www.insee.fr/fr/information/8740222) : l'identifiant de la page et le
 # millésime du nom changent ; à mettre à jour avec le COG des communes (voir docs/operations/…).

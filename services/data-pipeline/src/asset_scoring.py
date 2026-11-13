@@ -4,44 +4,28 @@ import re
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
-from src.asset_normalization import (
-    ScoreComponent,
-    build_auction_features_row,
-    build_auction_surfaces_row,
-)
 from src.asset_normalization_helpers import (
-    _axis_label,
-    _compact_dict,
-    _component_axis,
-    _component_decision,
-    _component_facts,
-    _component_question,
-    _component_raw_fact_label,
-    _confidence_note,
-    _default_factor_criterion,
-    _evidence,
-    _factor_status,
-    _float_or_none,
-    _format_decimal,
-    _format_eur,
-    _json_safe,
-    _occupancy_status_label,
-    _proof_level,
-    _property_type_label,
-    _quality_flag_label,
-    _quality_penalty_breakdown,
-    _risk_penalty_breakdown,
-    _risk_to_evidence_ref,
-    _sale_text,
-    _sale_type_context,
-    _surface_evidence_refs,
-    _text_has_works_signal,
+    compact_dict,
+    component_axis,
+    confidence_note,
+    decimal_value,
+    evidence_excerpt,
+    factor_status,
+    float_or_none,
+    format_decimal,
+    format_eur,
+    json_safe,
+    occupancy_status_label,
+    risk_to_evidence_ref,
+    sale_text,
+    sale_type_context,
 )
 from src.asset_premium_analysis import (
     _analysis_contradictions,
     _build_premium_investment_analysis,
     _load_scoring_weights,
 )
+from src.asset_score_axes import AXIS_DEFINITIONS, ScoreComponent
 from src.asset_surface_normalization import (
     _business_rule,
     _business_rule_refs,
@@ -142,7 +126,7 @@ def _score_occupation(sale: AuctionSale) -> ScoreComponent:
         if sale.occupancy_status
         else Decimal("0.45")
     )
-    status_label = _occupancy_status_label(sale.occupancy_status)
+    status_label = occupancy_status_label(sale.occupancy_status)
     return ScoreComponent(
         "occupation",
         points,
@@ -168,7 +152,7 @@ def _score_condition(sale: AuctionSale, risks: list[dict[str, Any]]) -> ScoreCom
         severity = int(works_risk.get("severity") or 4)
         confidence = Decimal(str(works_risk.get("confidence") or "0.78"))
         evidence = str(works_risk.get("evidence") or "") or None
-        evidence_refs = [_risk_to_evidence_ref(works_risk)] if evidence else []
+        evidence_refs = [risk_to_evidence_ref(works_risk)] if evidence else []
         if severity >= 5:
             return ScoreComponent(
                 "état",
@@ -200,7 +184,7 @@ def _score_condition(sale: AuctionSale, risks: list[dict[str, Any]]) -> ScoreCom
             limits="À confronter aux photos, au PV descriptif complet et aux devis si disponibles.",
             evidence_refs=evidence_refs,
         )
-    text = _sale_text(sale)
+    text = sale_text(sale)
     positive_condition = re.search(
         r"\bbon\s+[ée]tat\b|\br[ée]nov[ée]e?\b|\brefaite?\b|\baucun\s+travaux\b",
         text,
@@ -212,7 +196,7 @@ def _score_condition(sale: AuctionSale, risks: list[dict[str, Any]]) -> ScoreCom
             Decimal("4"),
             "bon état explicitement mentionné",
             confidence=Decimal("0.75"),
-            evidence=_evidence(text, positive_condition.start(), positive_condition.end()),
+            evidence=evidence_excerpt(text, positive_condition.start(), positive_condition.end()),
             criterion="L'état du bien mesure les coûts probables avant revente, relocation ou occupation.",
             calculation="Mention positive d'état détectée : +4 points.",
             interpretation="Le texte indique un bien en bon état ou rénové, sans signal travaux retenu.",
@@ -360,7 +344,7 @@ def _score_surface(sale: AuctionSale) -> ScoreComponent:
             evidence=sale.surface_evidence,
             raw_value=float(surface),
             criterion="La surface utilisée doit correspondre à la surface réellement valorisable du bien.",
-            calculation=f"Surface retenue : {_format_decimal(surface)} m2, dans la plage standard 25-160 m2 : +6 points.",
+            calculation=f"Surface retenue : {format_decimal(surface)} m2, dans la plage standard 25-160 m2 : +6 points.",
             interpretation="La surface permet de calculer un prix au m² et de comparer le bien au marché résidentiel courant.",
             limits="La surface reste à confirmer si elle ne provient pas d'une mention Carrez, habitable ou d'un PV descriptif.",
             evidence_refs=_surface_evidence_refs(sale),
@@ -374,7 +358,7 @@ def _score_surface(sale: AuctionSale) -> ScoreComponent:
             evidence=sale.surface_evidence,
             raw_value=float(surface),
             criterion="La surface utilisée doit correspondre à la surface réellement valorisable du bien.",
-            calculation=f"Surface retenue : {_format_decimal(surface)} m2, inférieure au seuil de 15 m2 : -5 points.",
+            calculation=f"Surface retenue : {format_decimal(surface)} m2, inférieure au seuil de 15 m2 : -5 points.",
             interpretation="Une très petite surface limite les usages et peut réduire la liquidité.",
             limits="Vérifier qu'il ne s'agit pas d'une pièce, cave, garage ou annexe isolée.",
             evidence_refs=_surface_evidence_refs(sale),
@@ -388,7 +372,7 @@ def _score_surface(sale: AuctionSale) -> ScoreComponent:
             evidence=sale.surface_evidence,
             raw_value=float(surface),
             criterion="La surface utilisée doit correspondre à la surface réellement valorisable du bien.",
-            calculation=f"Surface retenue : {_format_decimal(surface)} m2, atypique pour {_property_type_label(sale.property_type)} : -2 points.",
+            calculation=f"Surface retenue : {format_decimal(surface)} m2, atypique pour {_property_type_label(sale.property_type)} : -2 points.",
             interpretation="La surface peut mélanger bâti, terrain ou dépendances ; la comparaison marché devient plus fragile.",
             limits="À confirmer dans la désignation des lots et les diagnostics.",
             evidence_refs=_surface_evidence_refs(sale),
@@ -401,7 +385,7 @@ def _score_surface(sale: AuctionSale) -> ScoreComponent:
         evidence=sale.surface_evidence,
         raw_value=float(surface),
         criterion="La surface utilisée doit correspondre à la surface réellement valorisable du bien.",
-        calculation=f"Surface retenue : {_format_decimal(surface)} m2 : +1 point.",
+        calculation=f"Surface retenue : {format_decimal(surface)} m2 : +1 point.",
         interpretation="La donnée est exploitable mais ne rentre pas dans le cas résidentiel standard.",
         limits="À vérifier selon la nature exacte du bien.",
         evidence_refs=_surface_evidence_refs(sale),
@@ -444,7 +428,7 @@ def _score_price_per_m2(sale: AuctionSale) -> ScoreComponent:
             confidence=confidence,
             raw_value=float(price_m2),
             criterion="Le prix au m² rapproche la mise à prix d'un ordre de grandeur local.",
-            calculation=f"{_format_eur(sale.starting_price_eur)} / {_format_decimal(surface)} m2 = {_format_eur(rounded)}/m2, sous le seuil attractif {_format_eur(low)}/m2 : +12 points.",
+            calculation=f"{format_eur(sale.starting_price_eur)} / {format_decimal(surface)} m2 = {format_eur(rounded)}/m2, sous le seuil attractif {format_eur(low)}/m2 : +12 points.",
             interpretation="La mise à prix laisse théoriquement une marge de sécurité avant le niveau de marché indicatif.",
             limits="Ce n'est pas une estimation de valeur vénale : frais, travaux, occupation et concurrence aux enchères restent à intégrer.",
         )
@@ -456,7 +440,7 @@ def _score_price_per_m2(sale: AuctionSale) -> ScoreComponent:
             confidence=confidence,
             raw_value=float(price_m2),
             criterion="Le prix au m² rapproche la mise à prix d'un ordre de grandeur local.",
-            calculation=f"{_format_eur(sale.starting_price_eur)} / {_format_decimal(surface)} m2 = {_format_eur(rounded)}/m2, sous le seuil correct {_format_eur(fair)}/m2 : +6 points.",
+            calculation=f"{format_eur(sale.starting_price_eur)} / {format_decimal(surface)} m2 = {format_eur(rounded)}/m2, sous le seuil correct {format_eur(fair)}/m2 : +6 points.",
             interpretation="La mise à prix est cohérente avec un dossier à analyser, sans signal de surprix initial.",
             limits="Le résultat dépend fortement de la surface retenue et des coûts annexes.",
         )
@@ -468,7 +452,7 @@ def _score_price_per_m2(sale: AuctionSale) -> ScoreComponent:
             confidence=confidence,
             raw_value=float(price_m2),
             criterion="Le prix au m² rapproche la mise à prix d'un ordre de grandeur local.",
-            calculation=f"{_format_eur(sale.starting_price_eur)} / {_format_decimal(surface)} m2 = {_format_eur(rounded)}/m2, au-dessus du seuil élevé {_format_eur(high)}/m2 : -8 points.",
+            calculation=f"{format_eur(sale.starting_price_eur)} / {format_decimal(surface)} m2 = {format_eur(rounded)}/m2, au-dessus du seuil élevé {format_eur(high)}/m2 : -8 points.",
             interpretation="La marge de sécurité paraît faible au regard de la seule mise à prix.",
             limits="Un emplacement premium ou un actif rare peut justifier un prix au m² supérieur.",
         )
@@ -479,7 +463,7 @@ def _score_price_per_m2(sale: AuctionSale) -> ScoreComponent:
         confidence=confidence,
         raw_value=float(price_m2),
         criterion="Le prix au m² rapproche la mise à prix d'un ordre de grandeur local.",
-        calculation=f"{_format_eur(sale.starting_price_eur)} / {_format_decimal(surface)} m2 = {_format_eur(rounded)}/m2, dans la zone neutre : 0 point.",
+        calculation=f"{format_eur(sale.starting_price_eur)} / {format_decimal(surface)} m2 = {format_eur(rounded)}/m2, dans la zone neutre : 0 point.",
         interpretation="La mise à prix ne crée ni avantage clair ni alerte forte sur ce critère seul.",
         limits="Comparer avec des références récentes autour de l'adresse avant décision.",
     )
@@ -579,7 +563,7 @@ def _score_risks(sale: AuctionSale, risks: list[dict[str, Any]]) -> ScoreCompone
             "Quand les pièces sont absentes, l'absence d'alerte ne vaut jamais absence de risque."
         ),
         limits="Un risque absent du scoring peut encore exister si le document n'a pas été extrait ou si l'OCR est incomplet.",
-        evidence_refs=[_risk_to_evidence_ref(risk) for risk in risks[:3] if risk.get("evidence")],
+        evidence_refs=[risk_to_evidence_ref(risk) for risk in risks[:3] if risk.get("evidence")],
     )
 
 
@@ -638,10 +622,10 @@ def _score_factor_payload(
     score_before: Decimal,
     score_after: Decimal,
 ) -> dict[str, Any]:
-    axis = component.axis or _component_axis(component.name)
-    explanation = _compact_dict(
+    axis = component.axis or component_axis(component.name)
+    explanation = compact_dict(
         {
-            "status": _factor_status(delta),
+            "status": factor_status(delta),
             "axis": axis,
             "axis_label": _axis_label(axis),
             "question": component.question or _component_question(component.name),
@@ -651,7 +635,7 @@ def _score_factor_payload(
             "calculation": component.calculation or f"{component.points:+} x poids {weight} = {delta:+}",
             "score_before": float(score_before),
             "score_after": float(score_after),
-            "confidence_note": _confidence_note(component.confidence),
+            "confidence_note": confidence_note(component.confidence),
             "limits": component.limits,
             "raw_value_label": _component_raw_fact_label(component),
             "facts": _component_facts(component),
@@ -668,9 +652,9 @@ def _score_factor_payload(
         "delta": float(delta),
         "confidence": float(max(Decimal("0"), min(Decimal("1"), component.confidence))),
         "evidence": component.evidence,
-        "raw_value": _json_safe(component.raw_value),
+        "raw_value": json_safe(component.raw_value),
         "normalized_value": explanation,
-        "evidence_refs": [_compact_dict(_json_safe(ref)) for ref in component.evidence_refs],
+        "evidence_refs": [compact_dict(json_safe(ref)) for ref in component.evidence_refs],
     }
 
 
@@ -693,20 +677,229 @@ def _score_confidence(sale: AuctionSale, components: list[ScoreComponent]) -> De
     contradictions = _analysis_contradictions(sale)
     if contradictions:
         penalty += min(Decimal("0.18"), Decimal("0.06") * Decimal(str(len(contradictions))))
-    if _sale_type_context(sale).get("status") == "non_judicial":
+    if sale_type_context(sale).get("status") == "non_judicial":
         penalty += Decimal("0.03")
     confidence = max(Decimal("0"), min(Decimal("1"), average - penalty))
     return confidence.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _write_asset_payload(sale: AuctionSale, risks: list[dict[str, Any]]) -> None:
-    sale.raw_payload["asset_normalization"] = {
-        "features": build_auction_features_row(sale),
-        "surfaces": build_auction_surfaces_row(sale),
-        "risks": risks,
-        "score_confidence": _float_or_none(sale.score_confidence),
-        "score_factors": sale.score_factors,
-        "investment_analysis": sale.raw_payload.get("investment_analysis"),
-        "quality_flags": sale.quality_flags,
-        "score_version": sale.score_version,
-    }
+def _text_has_works_signal(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:pr[ée]voir|prevoir)\s+(?:des\s+)?travaux\b|"
+            r"\btravaux\s+(?:de\s+)?r[ée]novation\b|"
+            r"\b[àa]\s+r[ée]nover\b|\ba\s+renover\b|"
+            r"\br[ée]novation\s+[àa]\s+pr[ée]voir\b|"
+            r"\bmauvais\s+[ée]tat\b|\bd[ée]grad[ée]s?\b|\bv[ée]tuste\b",
+            text,
+            re.I,
+        )
+    )
+
+
+def _axis_label(axis: str) -> str:
+    definition = AXIS_DEFINITIONS.get(axis)
+    return str(definition.get("label")) if definition else "Analyse"
+
+
+def _component_question(name: str) -> str:
+    axis = component_axis(name)
+    definition = AXIS_DEFINITIONS.get(axis)
+    if definition:
+        return str(definition.get("question"))
+    return "Que signifie ce facteur pour la décision d'enchérir ?"
+
+
+def _component_decision(component: ScoreComponent, delta: Decimal) -> str:
+    if delta > 0:
+        prefix = "Signal favorable"
+    elif delta < 0:
+        prefix = "Point de vigilance"
+    else:
+        prefix = "Signal neutre"
+    return f"{prefix} : {component.reason}."
+
+
+def _component_facts(component: ScoreComponent) -> list[dict[str, Any]]:
+    facts = []
+    if component.raw_value is not None:
+        facts.append(
+            {
+                "status": "retenu",
+                "statement": _component_raw_fact_label(component),
+                "confidence": float(component.confidence),
+            }
+        )
+    if component.evidence:
+        facts.append(
+            {
+                "status": "preuve",
+                "statement": component.evidence,
+                "confidence": float(component.confidence),
+            }
+        )
+    for ref in component.evidence_refs[:2]:
+        if not isinstance(ref, dict):
+            continue
+        facts.append(
+            compact_dict(
+                {
+                    "status": "preuve",
+                    "statement": ref.get("excerpt") or ref.get("label"),
+                    "document_label": ref.get("document_label"),
+                    "document_type": ref.get("document_type"),
+                    "page_number": ref.get("page_number"),
+                    "confidence": ref.get("confidence"),
+                }
+            )
+        )
+    return [compact_dict(json_safe(item)) for item in facts]
+
+
+def _proof_level(component: ScoreComponent) -> str:
+    if component.evidence_refs:
+        document_types = {
+            str(ref.get("document_type") or "") for ref in component.evidence_refs if isinstance(ref, dict)
+        }
+        if document_types & {"diagnostics_techniques", "pv_huissier", "pv_notaire", "proces_verbal"}:
+            return "preuve forte"
+        return "preuve sourcée"
+    if component.evidence:
+        return "preuve textuelle"
+    if component.raw_value is not None:
+        return "donnée structurée"
+    return "à confirmer"
+
+
+def _default_factor_criterion(name: str) -> str:
+    return {
+        "occupation": "Statut d'occupation et facilité d'exploitation.",
+        "état": "État matériel du bien et besoin probable de travaux.",
+        "type": "Liquidité selon la nature du bien.",
+        "localisation": "Profondeur du marché local.",
+        "surface": "Présence d'une surface exploitable pour comparer le bien.",
+        "prix_m2": "Mise à prix rapportée à la surface exploitable.",
+        "atouts": "Équipements et caractéristiques positives détectées.",
+        "risques": "Risques contextualisés dans les documents.",
+        "qualité": "Fiabilité des données utilisées par le scoring.",
+    }.get(name, "Facteur de scoring.")
+
+
+def _component_raw_fact_label(component: ScoreComponent) -> str | None:
+    value = component.raw_value
+    if value is None:
+        return None
+    name = component.name.lower()
+    raw = _raw_value_label(value)
+    items = _list_value_labels(value)
+
+    if name == "occupation":
+        return f"Occupation retenue : {occupancy_status_label(str(value) if value else None)}."
+    if name == "type":
+        return f"Type de bien retenu : {_property_type_label(str(value) if value else None)}."
+    if name == "localisation" and raw:
+        label = raw.replace("tj ", "TJ ", 1) if raw.lower().startswith("tj ") else raw
+        return f"Localisation retenue : {label}."
+    if name == "surface":
+        surface = decimal_value(value)
+        if surface is not None:
+            return f"Surface exploitable retenue : {format_decimal(surface)} m2."
+        return "Surface exploitable à confirmer."
+    if name == "prix_m2":
+        price = decimal_value(value)
+        if price is not None:
+            return f"Mise à prix rapportée à la surface : environ {format_eur(price)}/m2."
+        return "Prix au m2 à confirmer."
+    if name == "atouts":
+        return (
+            f"Atouts d'usage détectés : {', '.join(items)}."
+            if items
+            else "Aucun atout d'usage spécifique n'a été détecté."
+        )
+    if name == "risques":
+        return (
+            f"Risques contextualisés retenus : {', '.join(items)}."
+            if items
+            else "Aucun risque contextualisé n'a été retenu dans les éléments analysés."
+        )
+    if name in {"qualité", "qualite"}:
+        return (
+            f"Points à vérifier sur les données : {', '.join(items)}."
+            if items
+            else "Aucune pénalité qualité : les données structurantes sont exploitables."
+        )
+    if name in {"état", "etat"} and raw:
+        return f"État du bien retenu : {raw}."
+    return raw
+
+
+def _list_value_labels(value: object | None) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _raw_value_label(value: object | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value) if value else "Aucune donnée détectée"
+    if isinstance(value, float):
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def _quality_flag_label(flag: str) -> str:
+    return {
+        "ambiguous_surface": "surface ambiguë",
+        "low_confidence_extraction": "extraction à faible confiance",
+        "missing_gps": "coordonnées GPS manquantes",
+        "source_not_allowed": "source non autorisée",
+        "type_corrected_from_documents": "type corrigé par les documents",
+        "occupation_conflict": "occupation contradictoire à confirmer",
+        "room_count_conflict": "pièces/chambres incohérentes",
+        "surface_conflict_resolved": "contradiction de surface résolue",
+        "land_surface_conflict_resolved": "contradiction de terrain résolue",
+        "source_page_only": "analyse basée sur la page source uniquement",
+        "non_judicial_sale_context": "vente volontaire ou notariale, tribunal non prouvé",
+    }.get(flag, flag.replace("_", " "))
+
+
+def _property_type_label(value: str | None) -> str:
+    return {
+        "apartment": "appartement",
+        "house": "maison",
+        "building": "immeuble",
+        "mixed": "actif mixte",
+        "commercial": "local commercial",
+        "land": "terrain",
+        "parking": "parking",
+        "unknown": "type non qualifié",
+        "other": "type non qualifié",
+    }.get(value or "", "type non qualifié")
+
+
+def _surface_evidence_refs(sale: AuctionSale) -> list[dict[str, object]]:
+    if not sale.surface_evidence:
+        return []
+    return [
+        {
+            "label": "Surface retenue",
+            "document_type": "source_listing" if sale.surface_source == "source_listing" else None,
+            "excerpt": sale.surface_evidence,
+            "confidence": float_or_none(sale.surface_confidence),
+        }
+    ]
+
+
+def _risk_penalty_breakdown(risks: list[dict[str, Any]]) -> str:
+    parts = []
+    for risk in risks[:6]:
+        label = risk.get("risk_label") or "risque"
+        severity = Decimal(str(risk.get("severity") or 1))
+        parts.append(f"{label} -{severity}")
+    return ", ".join(parts) if parts else "aucun"
+
+
+def _quality_penalty_breakdown(penalties: list[tuple[Decimal, str]]) -> str:
+    return ", ".join(f"{reason} -{points}" for points, reason in penalties) if penalties else "aucune"

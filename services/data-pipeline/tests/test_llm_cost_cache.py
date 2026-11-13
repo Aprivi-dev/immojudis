@@ -11,9 +11,9 @@ from src.config import load_settings
 from src.enrichment import extract_structured as extraction
 from src.enrichment.extract_structured import LLMEnrichmentDeferred, enrich_sale_with_llm
 from src.models import AuctionSale
-from src.pdf_enrichment import sale_storage_id
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION
 from src.pipeline_usage import PINNED_MODEL
+from src.sale_local_files import sale_storage_id
 
 
 class FakeClient:

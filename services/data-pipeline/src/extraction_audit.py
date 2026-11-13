@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from src.config import PROCESSED_DIR
-from src.models import AuctionSale
+from src.models import AuctionSale, compact_validation_error
 from src.quality import build_extraction_gap_report, format_extraction_gap_report
 
 DEFAULT_EXPORT_PATH = PROCESSED_DIR / "auction_sales.json"
@@ -33,7 +33,7 @@ def load_exported_sales(path: Path) -> list[AuctionSale]:
         try:
             sales.append(AuctionSale.model_validate(row))
         except ValidationError as exc:
-            errors.append(f"row {index}: {_compact_validation_error(exc)}")
+            errors.append(f"row {index}: {compact_validation_error(exc)}")
     if errors:
         suffix = "" if len(errors) <= 5 else f" (+{len(errors) - 5} more)"
         raise ValueError("invalid auction sale export rows: " + "; ".join(errors[:5]) + suffix)
@@ -110,14 +110,6 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         print(f"Extraction audit failed: {exc}", file=sys.stderr)
         return 2
-
-
-def _compact_validation_error(exc: ValidationError) -> str:
-    parts: list[str] = []
-    for item in exc.errors():
-        loc = ".".join(str(part) for part in item.get("loc", ())) or "root"
-        parts.append(f"{loc}: {item.get('msg')}")
-    return "; ".join(parts)
 
 
 if __name__ == "__main__":

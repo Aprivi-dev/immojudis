@@ -9,7 +9,7 @@ from typing import Any
 from src.freshness import document_fingerprint
 from src.models import AuctionSale
 from src.normalize import clean_text
-from src.storage.pdf_checkpoint_rules import _is_sha256
+from src.sha256_digest import is_sha256
 
 PDF_EXTRACTION_PROVIDER = "pdf_text"
 PDF_EXTRACTION_MODEL = "docling+pymupdf+tesseract"
@@ -92,8 +92,8 @@ def _fresh_complete_pdf_fingerprint(sale: AuctionSale, *, documents_current: boo
             and not item.get("failed_pages")
             and clean_text(item.get("sha256"))
             and clean_text(item.get("text_sha256"))
-            and _is_sha256(item.get("sha256"))
-            and _is_sha256(item.get("text_sha256"))
+            and is_sha256(item.get("sha256"))
+            and is_sha256(item.get("text_sha256"))
             and item.get("text_present") is True
         ):
             return None

@@ -301,18 +301,6 @@ def extract(data: bytes, *, max_photos: int = MAX_PHOTOS) -> Extraction:
 # --------------------------------------------------------------------------------------------------
 
 
-def _apply_resource_limits() -> None:
-    """Plafonds de processeur et de mémoire, là où le système les connaît (Linux)."""
-    try:
-        import resource
-
-        resource.setrlimit(resource.RLIMIT_CPU, (CPU_SECONDS_LIMIT, CPU_SECONDS_LIMIT))
-        resource.setrlimit(resource.RLIMIT_AS, (ADDRESS_SPACE_LIMIT_BYTES, ADDRESS_SPACE_LIMIT_BYTES))
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    except (ImportError, ValueError, OSError):
-        pass
-
-
 def _parse_max_photos(argv: list[str]) -> int:
     if len(argv) == 2 and argv[0] == "--max-photos":
         try:
@@ -358,7 +346,7 @@ def encode_result(result: Extraction) -> bytes:
 
 def main(argv: list[str] | None = None) -> int:
     max_photos = _parse_max_photos(list(sys.argv[1:] if argv is None else argv))
-    _apply_resource_limits()
+    photo_image.apply_resource_limits(CPU_SECONDS_LIMIT, ADDRESS_SPACE_LIMIT_BYTES)
     try:
         pymupdf.TOOLS.mupdf_display_errors(False)
     except Exception:  # noqa: BLE001 - réglage d'affichage seulement

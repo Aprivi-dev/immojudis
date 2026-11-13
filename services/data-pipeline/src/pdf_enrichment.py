@@ -22,6 +22,7 @@ import pymupdf as fitz
 import httpx
 
 from src.base_reads import SOURCE_SNAPSHOT_KEY
+from src.document_facts_version import DOCUMENT_FACTS_VERSION
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.document_politeness import (
     DocumentPoliteness,
@@ -41,7 +42,14 @@ from src.pdf_document_transport import (
     _PinnedHTTPTransport,
     resolve_public_document_target as _resolve_public_document_target,
 )
+from src.pdf_document_selection import (
+    _adaptive_docling_timeout,
+    _select_documents_for_extraction,
+    _store_document_analysis_status,
+)
+from src.pdf_document_text_cache import read_document_text_cache, write_document_text_cache
 from src.pdf_document_types import _canonical_document_type, refined_document_type, with_content_document_types
+from src.pdf_fact_extraction import _document_filename, _write_pdf_text_cache, enrich_sale_from_pdf_text
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
 from src.pdf_ocr import (
@@ -68,8 +76,10 @@ from src.pdf_page_analysis import (
     _page_text_confidence,
     _visual_page_profile,
     page_outcome_summary,
+    profile_pdf_for_docling,
 )
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
+from src.sale_local_files import sale_storage_id
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
 from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
@@ -81,12 +91,6 @@ LOGGER = logging.getLogger(__name__)
 DOCUMENT_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 MAX_DOCUMENT_REDIRECTS = 5
-
-# Deterministic PDF facts include page/document candidates and multi-lot
-# decisions; bump this marker when projection semantics change.
-# v5 (03/11/2026) : règles de l'audit qualité (surfaces, pièces, occupation, dates et prix des appels d'offres,
-# tribunal) ; toutes les ventes à pièces sont relues avec elles.
-DOCUMENT_FACTS_VERSION = "document_facts_v5_quality_audit"
 
 # Keep a fixed margin for queue finalization after a bounded PDF pass.
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0
@@ -194,7 +198,14 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
         file_path = Path(document["file_path"])
         try:
             cached_payload = (
-                _read_document_text_cache(document, file_path) if load_settings()["incremental_enrichment"] else None
+                read_document_text_cache(
+                    document,
+                    file_path,
+                    cache_root=PDF_DOCUMENT_TEXTS_DIR,
+                    ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]),
+                )
+                if load_settings()["incremental_enrichment"]
+                else None
             )
             if cached_payload:
                 stats.document_cache_hits += 1
@@ -262,7 +273,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
             # and quality callers. A document read except for a few pages that
             # this retry did not recover is settled instead (pdf_partial_tolerance).
             stats.errors += 1
-        _write_document_text_cache(document, file_path, payload)
+        write_document_text_cache(document, file_path, payload, cache_root=PDF_DOCUMENT_TEXTS_DIR)
         stats.documents_processed += 1
         pdf_texts.append(payload)
         _log_pdf_document_transition(
@@ -395,7 +406,7 @@ def download_documents(
 ) -> list[dict[str, str]]:
     settings = load_settings()
     require_ep_documents(sale.documents, settings)
-    sale_id = _sale_storage_id(sale)
+    sale_id = sale_storage_id(sale)
     sale_dir = output_root / sale_id
     sale_dir.mkdir(parents=True, exist_ok=True)
 
@@ -891,7 +902,7 @@ def _extract_pdf_text_with_docling_direct(path: Path) -> str:
         return ""
     try:
         settings = load_settings()
-        profile = _profile_pdf_for_docling(path)
+        profile = profile_pdf_for_docling(path)
         do_ocr = _should_docling_ocr(path, settings, profile=profile)
         chunk_pages = _docling_chunk_pages(settings, do_ocr)
         if profile["page_count"] > chunk_pages:
@@ -1239,75 +1250,6 @@ def _extract_page_text_with_ocr_result(
     )
 
 
-def _document_text_cache_path(document: dict[str, str], file_path: Path) -> Path:
-    stat = file_path.stat()
-    base = "|".join(
-        [
-            document.get("url", ""),
-            str(stat.st_size),
-            hashlib.sha256(file_path.read_bytes()).hexdigest(),
-        ]
-    )
-    digest = hashlib.sha256(base.encode("utf-8")).hexdigest()[:24]
-    return PDF_DOCUMENT_TEXTS_DIR / f"{digest}.json"
-
-
-def _read_document_text_cache(document: dict[str, str], file_path: Path) -> dict[str, object] | None:
-    try:
-        path = _document_text_cache_path(document, file_path)
-        if not path.exists():
-            return None
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(payload, dict) or not clean_text(payload.get("text")):
-        return None
-    if payload.get("cache_version") != PDF_TEXT_CACHE_VERSION:
-        return None
-    pages = payload.get("pages")
-    if not isinstance(pages, list) or not pages:
-        return None
-    if str(payload.get("extraction_status") or "").strip().lower() in {"incomplete", "failed"}:
-        return None
-    if any(
-        _page_requires_retry(page, ocr_enabled=bool(load_settings()["pdf_ocr_enabled"]))
-        for page in pages
-    ):
-        return None
-    return payload
-
-
-def _write_document_text_cache(document: dict[str, str], file_path: Path, payload: dict[str, object]) -> Path:
-    PDF_DOCUMENT_TEXTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = _document_text_cache_path(document, file_path)
-    payload["cache_version"] = PDF_TEXT_CACHE_VERSION
-    if not isinstance(payload.get("pages"), list) and clean_text(payload.get("text")):
-        text = clean_text(payload.get("text")) or ""
-        payload["pages"] = [
-            {
-                "page": 1,
-                "text": text,
-                "chars": len(text),
-                "raw_text_chars": len(text),
-                "method": "legacy_text",
-                "confidence": _page_text_confidence(text, method="fallback_text"),
-                "status": "extracted",
-                "retryable": False,
-            }
-        ]
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
-
-
-def sale_storage_id(sale: AuctionSale) -> str:
-    base = sale.external_id or sale.source_url
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()[:16]
-
-
-def _sale_storage_id(sale: AuctionSale) -> str:
-    return sale_storage_id(sale)
-
-
 def _docling_cache_path(file: Path) -> Path:
     try:
         digest = hashlib.sha256(file.read_bytes()).hexdigest()[:16]
@@ -1340,7 +1282,7 @@ def _should_docling_ocr(
         return False
     if mode in {"1", "true", "yes", "on", "always"}:
         return True
-    profile = profile or _profile_pdf_for_docling(path)
+    profile = profile or profile_pdf_for_docling(path)
     if profile["page_count"] > int(settings["pdf_docling_ocr_max_pages"]):
         LOGGER.info(
             "Skipping Docling OCR for %s: %s pages exceeds limit",
@@ -1358,23 +1300,6 @@ def _should_docling_ocr(
     return profile["first_pages_text_chars"] < int(settings["pdf_docling_threshold_chars"])
 
 
-def _profile_pdf_for_docling(path: Path) -> dict[str, float | int]:
-    size_mb = path.stat().st_size / 1024 / 1024
-    try:
-        with fitz.open(path) as document:
-            page_count = document.page_count
-            first_pages_text_chars = sum(
-                len(document[index].get_text("text") or "") for index in range(min(page_count, 5))
-            )
-    except Exception:
-        return {"size_mb": size_mb, "page_count": 0, "first_pages_text_chars": 0}
-    return {
-        "size_mb": size_mb,
-        "page_count": page_count,
-        "first_pages_text_chars": first_pages_text_chars,
-    }
-
-
 def _run_docling_extract_cli(argv: list[str]) -> int:
     if len(argv) != 4 or argv[1] != "--docling-extract":
         return 2
@@ -1388,11 +1313,3 @@ def _run_docling_extract_cli(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(_run_docling_extract_cli(sys.argv))
-
-# Imported last: these two modules read constants and helpers defined above (import cycle).
-from src.pdf_document_selection import (  # noqa: E402
-    _adaptive_docling_timeout,
-    _select_documents_for_extraction,
-    _store_document_analysis_status,
-)
-from src.pdf_fact_extraction import _document_filename, _write_pdf_text_cache, enrich_sale_from_pdf_text  # noqa: E402
