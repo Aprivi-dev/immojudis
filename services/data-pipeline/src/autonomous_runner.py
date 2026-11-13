@@ -20,7 +20,7 @@ from src.run_finalizer import register_run
 from src.source_absence import withdraw_missing_sales
 from src.source_health import SOURCE_WARNING_EXIT_CODE
 from src.stage_watchdog import WATCHDOG_ENV, WATCHDOG_EXIT_CODE
-from src.storage.supabase_client import close_open_run
+from src.storage.supabase_client import close_open_run, merge_into_run_report
 from src.storage.supabase_client import connect as postgres_connect
 
 # Décision du propriétaire (11/10/2026) : chaque source au plus toutes les 12 h.
@@ -784,8 +784,9 @@ def execute(run_id: str, *, connect: Callable[[str], Any] = postgres_connect) ->
                 f"{int(counts.get('failed') or 0)} enrichment job(s) failed and remain retryable"
             ]
         close_open_run(db, run_id, 'failed' if code else 'succeeded', summary, run_errors)
-        # src.main closes its own run: close_open_run then leaves it as it is, and the scheduler facts are still added.
-        db.execute("update public.auction_runs set summary=coalesce(summary,'{}') || %s where id=%s", (Jsonb(summary),run_id))
+        # src.main closes its own run: close_open_run then leaves it as it is, and the scheduler facts and errors are
+        # still added.
+        merge_into_run_report(db, run_id, summary, run_errors)
     finish_source(db_url, run_id, connect=connect)
     return SOURCE_WARNING_EXIT_CODE if source_warning and not code else code
 

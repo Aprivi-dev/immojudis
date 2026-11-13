@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.models import AuctionSale
+from src.storage.postgrest_helpers import rest_headers
 
 LOGGER = logging.getLogger(__name__)
 
@@ -410,7 +411,7 @@ def load_court_registry(settings: Mapping[str, Any]) -> CourtRegistry:
         response = httpx.get(
             f"{url}/rest/v1/court_registry_contacts",
             params={"select": "court_code,emails", "limit": "1000"},
-            headers={"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"},
+            headers=rest_headers(key),
             timeout=30,
         )
         response.raise_for_status()
@@ -445,7 +446,7 @@ def load_contact_blocklist(settings: Mapping[str, Any]) -> ContactBlocklist:
                 "or": "(opposition_status.eq.opposed,bounce_status.eq.permanent)",
                 "limit": "10000",
             },
-            headers={"apikey": key, "Authorization": f"Bearer {key}", "Accept": "application/json"},
+            headers=rest_headers(key),
             timeout=30,
         )
         response.raise_for_status()

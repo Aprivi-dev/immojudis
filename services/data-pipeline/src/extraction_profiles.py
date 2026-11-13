@@ -960,18 +960,6 @@ def extract_source_property_features(
     }
 
 
-def _value_field(raw_sale: Mapping[str, Any], key: str) -> Any:
-    value = raw_sale.get(key)
-    if value is not None and value != "":
-        return value
-    features = raw_sale.get("source_property_features")
-    if isinstance(features, Mapping):
-        field = features.get(key)
-        if isinstance(field, Mapping):
-            return field.get("value")
-    return None
-
-
 def _without_generated_feature_claims(value: Any) -> Any:
     """Remove claims produced by an earlier attach pass before recomputing.
 

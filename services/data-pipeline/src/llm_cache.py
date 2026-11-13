@@ -15,6 +15,7 @@ import httpx
 
 from src.config import load_settings
 from src.pipeline_usage import PipelineBudgetExhausted
+from src.storage.postgrest_helpers import rest_headers
 
 LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def load_cached_result(cache_key: str, *, stage: str) -> dict[str, Any] | None:
                 "stage": f"eq.{normalized_stage}",
                 "limit": "1",
             },
-            headers=_rest_headers(service_role_key),
+            headers=rest_headers(service_role_key),
             timeout=_CACHE_TIMEOUT_SECONDS,
         )
     except Exception as exc:
@@ -116,10 +117,7 @@ def save_cached_result(
         response = httpx.post(
             endpoint,
             params={"on_conflict": "cache_key,stage"},
-            headers=_rest_headers(
-                service_role_key,
-                prefer="resolution=merge-duplicates,return=minimal",
-            ),
+            headers=rest_headers(service_role_key, prefer="resolution=merge-duplicates,return=minimal"),
             json=request_payload,
             timeout=_CACHE_TIMEOUT_SECONDS,
         )
@@ -141,18 +139,6 @@ def _cache_credentials() -> tuple[str, str] | None:
 
 def _cache_endpoint(supabase_url: str) -> str:
     return f"{supabase_url.rstrip('/')}/rest/v1/{_CACHE_TABLE}"
-
-
-def _rest_headers(service_role_key: str, *, prefer: str | None = None) -> dict[str, str]:
-    headers = {
-        "apikey": service_role_key,
-        "Authorization": f"Bearer {service_role_key}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-    if prefer:
-        headers["Prefer"] = prefer
-    return headers
 
 
 def _validate_lookup_arguments(cache_key: str, stage: str) -> tuple[str, str]:

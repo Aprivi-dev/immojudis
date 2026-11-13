@@ -18,6 +18,11 @@ from src.information_agent_evidence import (
     detect_mime_type,
     extract_evidence_facts,
 )
+from src.information_agent_fact_candidates import (
+    candidate_facts_for_insertion,
+    conflicts_with_sale,
+    insert_fact_candidates,
+)
 from src.information_agent_semantic import PhotoSemanticAnalysis, SemanticAnalysis, SemanticFact
 from src.pdf_ocr_child_output import parse_ocr_child_output
 
@@ -475,7 +480,7 @@ def test_conflicting_values_are_kept_for_audit_but_not_inserted_as_candidates() 
         return httpx.Response(201, json=[])
 
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-        evidence._insert_fact_candidates(
+        insert_fact_candidates(
             client,
             "https://local.example.test",
             "fixture-key",
@@ -512,19 +517,19 @@ def test_placeholder_and_low_confidence_values_are_not_candidate_rows() -> None:
         ),
         EvidenceFact("rooms_count", 4, "4 pièce(s)", "4 pièces", 0.49, 1),
     ]
-    assert evidence._candidate_facts_for_insertion(facts) == []
+    assert candidate_facts_for_insertion(facts) == []
 
 
 def test_sale_conflicts_cover_new_scalar_fields() -> None:
-    assert evidence._conflicts_with_sale(
+    assert conflicts_with_sale(
         EvidenceFact("sale_date", "2026-11-07", "2026-11-07", "date", 0.9, 1),
         {"sale_date": "2026-11-08"},
     )
-    assert evidence._conflicts_with_sale(
+    assert conflicts_with_sale(
         EvidenceFact("property_type", "house", "house", "maison", 0.9, 1),
         {"property_type": "apartment"},
     )
-    assert evidence._conflicts_with_sale(
+    assert conflicts_with_sale(
         EvidenceFact("address", "12 rue des Lilas", "12 rue des Lilas", "adresse", 0.9, 1),
         {"address": "14 rue des Lilas"},
     )
@@ -893,7 +898,7 @@ def test_same_fact_from_two_assets_keeps_asset_provenance() -> None:
 
     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
         for asset_id in ("asset-a", "asset-b"):
-            evidence._insert_fact_candidates(
+            insert_fact_candidates(
                 client,
                 "https://local.example.test",
                 "fixture-key",

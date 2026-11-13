@@ -20,6 +20,7 @@ import httpx
 
 from src.config import load_settings
 from src.pipeline_usage import PipelineBudgetExhausted
+from src.storage.postgrest_helpers import rest_headers
 
 LOGGER = logging.getLogger(__name__)
 
@@ -195,11 +196,7 @@ def _reserve_via_rest(settings: dict[str, Any], payload: dict[str, Any]) -> str:
     api_key = str(settings["supabase_service_role_key"])
     response = httpx.post(
         f"{base_url}/rest/v1/rpc/reserve_llm_request",
-        headers={
-            "apikey": api_key,
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        headers=rest_headers(api_key),
         json=payload,
         timeout=_RPC_TIMEOUT_SECONDS,
     )
@@ -322,11 +319,7 @@ def _finalize_via_rest(settings: dict[str, Any], payload: dict[str, Any]) -> Non
     api_key = str(settings["supabase_service_role_key"])
     response = httpx.post(
         f"{base_url}/rest/v1/rpc/finalize_llm_request",
-        headers={
-            "apikey": api_key,
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        headers=rest_headers(api_key),
         json=payload,
         timeout=_RPC_TIMEOUT_SECONDS,
     )

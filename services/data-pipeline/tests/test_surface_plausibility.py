@@ -15,7 +15,7 @@ from src.enrichment.surface_reasoning import (
 from src.models import AuctionSale
 from src.normalize import (
     _extract_carrez_surface_from_text,
-    carrez_is_implausible_against_habitable,
+    carrez_rejection_basis,
     is_outside_carrez_context,
     normalize_sale,
 )
@@ -92,9 +92,9 @@ def test_plausible_carrez_is_kept_over_the_habitable_surface() -> None:
     assert sale.carrez_surface_m2 == Decimal("58.10")
     assert sale.app_surface_m2 == Decimal("58.10")
     assert sale.app_surface_kind == "carrez"
-    assert carrez_is_implausible_against_habitable(Decimal("12.76"), Decimal("63.83"))
-    assert not carrez_is_implausible_against_habitable(Decimal("12.77"), Decimal("63.83"))
-    assert not carrez_is_implausible_against_habitable(None, Decimal("63.83"))
+    assert carrez_rejection_basis(Decimal("12.76"), Decimal("63.83")) is not None
+    assert carrez_rejection_basis(Decimal("12.77"), Decimal("63.83")) is None
+    assert carrez_rejection_basis(None, Decimal("63.83")) is None
 
 
 def test_reasoning_prefers_the_habitable_candidate_over_a_tiny_carrez() -> None:

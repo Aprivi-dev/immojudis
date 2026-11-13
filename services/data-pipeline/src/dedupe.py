@@ -82,10 +82,6 @@ def compute_content_hash(sale: AuctionSale) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def dedupe_sales(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
-    return merge_duplicate_sales(sales)
-
-
 # Balayage des lignes déjà publiées : la clé de repli stricte n'y sert que hors Vench / Petites Affiches
 # (l'identifiant d'annonce commun prouve l'identité de ces deux sources, et leur recoupement par la clé
 # stricte n'est pas retenu), et jamais sur un jour et un prix partagés par plus de 5 annonces : ce sont

@@ -242,6 +242,35 @@ def test_worker_timeout_remains_failed_and_visible(monkeypatch) -> None:
     assert updates[0][2].obj["completion_status"] == "interrupted"
 
 
+def test_worker_failure_reaches_the_errors_of_a_run_src_main_already_closed(monkeypatch) -> None:
+    """src.main a clos son run : close_open_run n'y touche plus, mais l'erreur du lanceur est fusionnée avec le bilan."""
+    run_id = "00000000-0000-0000-0000-000000000006"
+    merges = []
+
+    class FakeDb:
+        def execute(self, statement, params):
+            if "returning source" in statement:
+                return SimpleNamespace(fetchone=lambda: ("licitor",))
+            if "select summary from public.auction_runs" in statement:
+                return SimpleNamespace(fetchone=lambda: ({"completion_status": "complete"},))
+            if "update public.auction_runs set summary=" in statement:
+                merges.append((statement, params))
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
+    monkeypatch.setattr(autonomous_runner.subprocess, "run", lambda _command, **_kwargs: SimpleNamespace(returncode=1))
+
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == 1
+    [(statement, params)] = merges
+    assert "status" not in statement
+    assert "errors=coalesce(errors,'{}') || %s" in statement
+    assert params[0].obj["worker_exit_code"] == 1
+    assert params[1].obj == {"runner": ["Worker exited with status 1"]}
+    assert params[2] == run_id
+
+
 def test_worker_watchdog_exit_is_explained_and_armed_before_the_hard_kill(monkeypatch) -> None:
     run_id = "00000000-0000-0000-0000-000000000006"
     updates = []

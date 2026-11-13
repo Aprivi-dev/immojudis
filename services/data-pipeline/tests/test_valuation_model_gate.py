@@ -727,7 +727,7 @@ def test_active_model_is_scored_on_the_same_sales_as_the_candidate() -> None:
     features = pd.DataFrame({"surface_m2": [40.0, 50.0, 60.0, 70.0]})
     actual = np.array([3000.0, 3300.0, 2700.0, 6000.0])
 
-    result = vt.evaluate_active_model(active, features, actual)
+    result = vt.score_active_model(active, features, actual)[0]
 
     assert result["status"] == "evaluated"
     assert result["version"] == "v1"
@@ -761,7 +761,7 @@ def test_active_model_is_scored_with_its_own_local_variables_not_the_candidates(
     )
     actual = np.array([5000.0, 5000.0])
 
-    result = vt.evaluate_active_model(_active_with_export(9.0), features, actual, h3_module=FakeH3)
+    result = vt.score_active_model(_active_with_export(9.0), features, actual, h3_module=FakeH3)[0]
 
     assert result["status"] == "evaluated"
     assert result["local_features_source"] == "own_export"
@@ -777,7 +777,7 @@ def test_an_active_model_older_than_the_export_keeps_the_approximation_and_says_
     )
     legacy = _active_with_export(9.0, with_export=False)
 
-    result = vt.evaluate_active_model(legacy, features, np.array([2000.0]), h3_module=FakeH3)
+    result = vt.score_active_model(legacy, features, np.array([2000.0]), h3_module=FakeH3)[0]
 
     assert result["local_features_source"] == "candidate_past_only_approximation"
     assert result["median_ape_pct"] == 0.0
@@ -791,15 +791,15 @@ def test_active_model_that_cannot_be_scored_is_reported_not_ignored() -> None:
     features = pd.DataFrame({"surface_m2": [40.0]})
     actual = np.array([3000.0])
 
-    assert vt.evaluate_active_model(None, features, actual) == {"status": "none"}
+    assert vt.score_active_model(None, features, actual)[0] == {"status": "none"}
     legacy = ActiveModel("v0", {"format": "something-else"}, {})
-    assert vt.evaluate_active_model(legacy, features, actual)["status"] == "unevaluable"
+    assert vt.score_active_model(legacy, features, actual)[0]["status"] == "unevaluable"
     broken = ActiveModel(
         "v2",
         {"format": "lightgbm-json-v1", "featureNames": ["surface_m2"], "models": {"p50": {"tree_info": []}}},
         {},
     )
-    assert vt.evaluate_active_model(broken, features, actual)["status"] == "unevaluable"
+    assert vt.score_active_model(broken, features, actual)[0]["status"] == "unevaluable"
 
 
 def test_fetch_active_model_reads_the_active_lightgbm_row() -> None:

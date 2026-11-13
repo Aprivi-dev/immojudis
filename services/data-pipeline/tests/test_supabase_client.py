@@ -18,8 +18,9 @@ from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.reviewed_aliases import registry_from_rows
 from src.storage import postgrest_helpers, supabase_client
+from src.storage.known_sale_projection import KNOWN_SALE_RAW_PAYLOAD_KEYS, KNOWN_SALE_RAW_PAYLOAD_PROJECTION
+from src.storage.postgrest_payload import POSTGREST_MAX_PAYLOAD_DEPTH
 from src.storage.supabase_client import (
-    POSTGREST_MAX_PAYLOAD_DEPTH,
     _sanitize_postgrest_payload,
     _secondary_source_urls,
 )
@@ -296,7 +297,7 @@ def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> N
         "tribunal_assignment",
     }
 
-    assert required.issubset(set(supabase_client.KNOWN_SALE_RAW_PAYLOAD_KEYS))
+    assert required.issubset(set(KNOWN_SALE_RAW_PAYLOAD_KEYS))
     compact_select = supabase_client._known_sale_postgres_select(compact_presence=True)
     for select in (supabase_client._known_sale_postgres_select(compact_presence=False), compact_select):
         columns = select.split(",")
@@ -455,7 +456,7 @@ def test_known_sale_projection_executes_in_disposable_postgres() -> None:
     with supabase_client._postgres_connect(url) as db:
         row = db.execute(
             "select "
-            f"{supabase_client.KNOWN_SALE_RAW_PAYLOAD_PROJECTION} "
+            f"{KNOWN_SALE_RAW_PAYLOAD_PROJECTION} "
             "from (values (%s::jsonb)) as input(raw_payload)",
             (Jsonb(payload),),
         ).fetchone()
@@ -2374,6 +2375,70 @@ def test_close_open_run_merges_and_only_closes_an_open_run() -> None:
     assert params[1].obj == {"runner": ["cut off"]}
     assert params[2].obj == {"completion_status": "interrupted"}
     assert params[3] == "run-1"
+
+
+def test_rest_headers_are_the_single_supabase_rest_identity() -> None:
+    """Un seul jeu d'en-têtes REST : ``Prefer`` seulement quand l'appelant le demande."""
+    assert postgrest_helpers.rest_headers("secret") == {
+        "apikey": "secret",
+        "Authorization": "Bearer secret",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    assert postgrest_helpers.rest_headers("secret", prefer="return=minimal")["Prefer"] == "return=minimal"
+
+
+def test_merge_into_run_report_adds_to_any_run_without_touching_its_status() -> None:
+    calls: list[tuple[str, tuple]] = []
+
+    supabase_client.merge_into_run_report(
+        _RunDb(calls), "run-1", {"worker_exit_code": 1}, {"runner": ["Worker exited\x00 with status 1"]}
+    )
+
+    [(query, params)] = calls
+    assert "summary=coalesce(summary,'{}') || %s" in query
+    assert "errors=coalesce(errors,'{}') || %s" in query
+    assert "status" not in query
+    assert params[0].obj == {"worker_exit_code": 1}
+    assert params[1].obj == {"runner": ["Worker exited with status 1"]}
+    assert params[2] == "run-1"
+
+
+def test_close_open_run_in_supabase_merges_on_its_own_connection_and_retries(monkeypatch) -> None:
+    """Le niveau au-dessus du worker clôt par fusion, et une coupure de connexion rejoue l'écriture."""
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: dict(_RUN_SETTINGS))
+    monkeypatch.setattr("src.storage.connection_guards.time.sleep", lambda _seconds: None)
+    calls: list[tuple[str, tuple]] = []
+    attempts = {"count": 0}
+
+    def connect(_url):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+        return _RunDb(calls)
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", connect)
+
+    supabase_client.close_open_run_in_supabase(
+        "run-1", "failed", {"runner": "github_actions_queue"}, {"runner": ["stage crashed"]}
+    )
+
+    assert attempts["count"] == 2
+    query, params = calls[0]
+    assert "summary=coalesce(summary,'{}') || %s" in query
+    assert "status in ('queued','running')" in query
+    assert params[0] == "failed"
+    assert params[1].obj == {"runner": ["stage crashed"]}
+    assert params[2].obj == {"runner": "github_actions_queue"}
+    assert params[3] == "run-1"
+
+
+def test_close_open_run_in_supabase_is_a_no_op_without_run_or_supabase(monkeypatch) -> None:
+    monkeypatch.setattr(supabase_client, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda *_args, **_kwargs: pytest.fail("no connection"))
+
+    supabase_client.close_open_run_in_supabase(None, "failed", {}, {})
+    supabase_client.close_open_run_in_supabase("run-1", "failed", {}, {})
 
 
 def _transient_then(method: str, endpoint: str, final: httpx.Response, attempts: list[str]):

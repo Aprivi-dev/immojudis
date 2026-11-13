@@ -104,14 +104,6 @@ def _index(lines: list[str], wanted: str, start: int = 0) -> int | None:
     return None
 
 
-def _index_folded(lines: list[str], wanted: str, start: int = 0, stop: int | None = None) -> int | None:
-    target = fold(wanted)
-    for index in range(start, len(lines) if stop is None else min(stop, len(lines))):
-        if fold(lines[index]) == target:
-            return index
-    return None
-
-
 def _french_date(value: str | None) -> date | None:
     match = _DATE_RE.match(value or "")
     if not match:

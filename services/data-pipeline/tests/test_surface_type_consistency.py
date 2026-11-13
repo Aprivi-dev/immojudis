@@ -6,7 +6,6 @@ import pytest
 
 from src.asset_normalization import normalize_asset_features
 from src.normalize import (
-    carrez_is_implausible_against_habitable,
     carrez_rejection_basis,
     is_parking_label,
     normalize_property_type,
@@ -36,7 +35,7 @@ def test_a_carrez_above_the_habitable_surface_plus_two_percent_is_rejected() -> 
     assert carrez_rejection_basis(Decimal("11"), habitable) == "carrez_below_20_percent_of_habitable_surface"
     assert carrez_rejection_basis(Decimal("58"), habitable) is None
     assert carrez_rejection_basis(None, habitable) is None
-    assert carrez_is_implausible_against_habitable(Decimal("75"), habitable)
+    assert carrez_rejection_basis(Decimal("75"), habitable) is not None
 
 
 def test_normalisation_drops_a_carrez_above_the_habitable_and_traces_it() -> None:

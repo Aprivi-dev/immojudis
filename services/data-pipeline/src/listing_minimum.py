@@ -310,14 +310,6 @@ def assess(
     )
 
 
-def has_listing_minimum(
-    sale: AuctionSale,
-    blocklist: ContactBlocklist | None = None,
-    court_registry: CourtRegistry | None = None,
-) -> bool:
-    return assess(sale, blocklist, court_registry).ok
-
-
 # --------------------------------------------------------------------------
 # Refus d'une écriture : collecteur du publieur, compteurs du passage
 # --------------------------------------------------------------------------

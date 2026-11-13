@@ -9,6 +9,7 @@ import pytest
 
 from src import pipeline_usage, source_detail_worker
 from src.storage import supabase_client
+from src.storage.connection_guards import DatabaseCallTimeout
 
 
 class FakePsycopg:
@@ -317,7 +318,7 @@ def test_a_call_that_never_answers_is_cut_from_the_client_side() -> None:
 
     try:
         assert not thread.is_alive(), "the call stayed blocked"
-        assert isinstance(outcome[0], supabase_client.DatabaseCallTimeout)
+        assert isinstance(outcome[0], DatabaseCallTimeout)
         assert "test call did not answer within 0.2s" in str(outcome[0])
     finally:
         server_side.close()
@@ -359,10 +360,10 @@ def test_the_known_sales_snapshot_gives_up_after_the_last_attempt_and_ignores_ot
     monkeypatch.setattr(
         supabase_client,
         "_read_known_sales_snapshot",
-        lambda *args: (_ for _ in ()).throw(supabase_client.DatabaseCallTimeout("stalled")),
+        lambda *args: (_ for _ in ()).throw(DatabaseCallTimeout("stalled")),
     )
 
-    with pytest.raises(supabase_client.DatabaseCallTimeout):
+    with pytest.raises(DatabaseCallTimeout):
         supabase_client._read_known_sales_snapshot_with_retries(
             "postgresql://example/db", None, [], False, sleep=lambda seconds: None
         )

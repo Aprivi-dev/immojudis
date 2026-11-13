@@ -1,7 +1,7 @@
 """P2-14 : une fusion ne perd rien et ne rapproche pas deux ventes distinctes."""
 import pytest
 
-from src.dedupe import _merge_into, dedupe_sales, merge_duplicate_sales
+from src.dedupe import _merge_into, merge_duplicate_sales
 from src.normalize import normalize_sale
 
 ADDRESS = "12 avenue de la Republique 33000 Bordeaux"
@@ -71,7 +71,7 @@ def test_same_object_twice_is_not_merged_into_itself():
 def _pair(first_kwargs=None, second_kwargs=None):
     first = _make("https://avoventes.fr/enchere/50", address="12 av. de la République 33000 Bordeaux", **(first_kwargs or {}))
     second = _make("https://www.licitor.com/annonce/50.html", source="licitor", **(second_kwargs or {}))
-    return dedupe_sales([first, second])
+    return merge_duplicate_sales([first, second])
 
 
 def test_two_different_prices_never_merge():
@@ -99,7 +99,7 @@ def test_date_only_midnight_utc_matches_the_late_evening_of_the_same_paris_day()
     second = _make("https://www.licitor.com/annonce/51.html", source="licitor", date="11 janvier 2027 à 0h30")
     assert first.sale_date.date() != second.sale_date.date()
 
-    assert len(dedupe_sales([first, second])) == 1
+    assert len(merge_duplicate_sales([first, second])) == 1
 
 
 def test_resale_on_another_date_is_not_merged_even_with_same_price_and_surface():

@@ -7,6 +7,8 @@ from uuid import UUID
 
 import httpx
 
+from src.storage.postgrest_helpers import rest_headers
+
 BRIDGE_RPC_NAME = "bridge_auction_sales_to_outcome_graph_batch"
 COURT_RECONCILIATION_RPC_NAME = "reconcile_catalogue_competent_courts_batch"
 BRIDGE_TIMEOUT = httpx.Timeout(120.0, connect=20.0)
@@ -164,12 +166,7 @@ def _call_rpc(
     try:
         response = post(
             endpoint,
-            headers={
-                "apikey": service_role_key,
-                "Authorization": f"Bearer {service_role_key}",
-                "Content-Type": "application/json",
-                "Prefer": "return=representation",
-            },
+            headers=rest_headers(service_role_key, prefer="return=representation"),
             json=dict(arguments or {}),
             timeout=BRIDGE_TIMEOUT,
         )

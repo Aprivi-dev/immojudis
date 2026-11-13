@@ -264,20 +264,6 @@ def normalize_department(value: object | None) -> str | None:
     return None
 
 
-def is_date_only_value(value: object | None) -> bool:
-    """Tell callers that a published date carries no reliable clock time."""
-    text = clean_text(value)
-    if not text:
-        return False
-    return not bool(
-        re.search(
-            r"(?:T\s*\d{1,2}:\d{2}|\b\d{1,2}\s*(?:h|heures?)\b|\b\d{1,2}:\d{2}\b)",
-            text,
-            re.I,
-        )
-    )
-
-
 def parse_price(value: object | None) -> Decimal | None:
     """Parse a euro amount (« 125 000,50 € », « 1,5 M€ », « 85 k€ »); under 100 € is not a price."""
     price = _parse_price_amount(value)
@@ -1782,12 +1768,6 @@ def carrez_rejection_basis(carrez_surface_m2: Decimal | None, habitable_surface_
     if carrez_surface_m2 > habitable_surface_m2 * CARREZ_TO_HABITABLE_MAX_RATIO:
         return CARREZ_ABOVE_BASIS
     return None
-
-
-def carrez_is_implausible_against_habitable(
-    carrez_surface_m2: Decimal | None, habitable_surface_m2: Decimal | None
-) -> bool:
-    return carrez_rejection_basis(carrez_surface_m2, habitable_surface_m2) is not None
 
 
 def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:

@@ -14,6 +14,7 @@ from src.pdf_document_selection import _store_document_analysis_status
 from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION
 from src.pdf_fact_extraction import _write_pdf_text_cache
 from src.storage import supabase_client as storage
+from src.storage.pdf_persistence_rows import _fresh_complete_pdf_fingerprint
 from src.storage.supabase_client import _postgres_connect
 
 
@@ -124,7 +125,7 @@ def test_complete_pdf_proof_rotates_failed_dependents_once(monkeypatch):
     } == fresh_hashes
 
     sale.raw_payload["document_analysis"]["documents_extracted"] = 0
-    assert storage._fresh_complete_pdf_fingerprint(sale, documents_current=True) is None
+    assert _fresh_complete_pdf_fingerprint(sale, documents_current=True) is None
 
 
 def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
@@ -246,7 +247,7 @@ def test_mixed_pdf_writer_proof_rotates_dependents_once(monkeypatch, tmp_path):
     _write_pdf_text_cache(sale, [extracted_payload, empty_payload])
 
     assert storage.documents_are_current(sale)
-    assert storage._fresh_complete_pdf_fingerprint(sale, documents_current=True)
+    assert _fresh_complete_pdf_fingerprint(sale, documents_current=True)
     rows.clear()
     storage._enqueue_due_enrichment([sale])
     fresh_hashes = {

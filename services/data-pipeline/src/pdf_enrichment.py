@@ -834,10 +834,6 @@ def extract_attached_document(
     raise ValueError(f"unsupported attached document format: {file_format or 'unknown'}")
 
 
-def extract_pdf_text(file: str | Path, document: dict[str, str] | None = None) -> str:
-    return str(extract_pdf_document(file, document=document).get("text") or "")
-
-
 def extract_pdf_document(file: str | Path, document: dict[str, str] | None = None) -> dict[str, object]:
     path = Path(file)
     _ensure_pdf_deadline(operation="opening PDF document")
@@ -1246,10 +1242,6 @@ def _should_try_ocr(text: str, *, page: fitz.Page | None = None) -> bool:
     # text-length gate alone would mark those pages complete and hide the
     # image-only body from fact extraction.
     return page is not None and _page_has_substantial_image(page)
-
-
-def _extract_page_text_with_ocr(page: fitz.Page, fallback: str) -> str:
-    return str(_extract_page_text_with_ocr_result(page, fallback=fallback)["text"])
 
 
 def _extract_page_text_with_ocr_result(

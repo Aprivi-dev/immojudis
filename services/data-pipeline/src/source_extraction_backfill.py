@@ -30,6 +30,7 @@ from src.enrichment.surface_reasoning import extract_and_apply_deterministic_sur
 from src.extraction_profiles import attach_source_property_features
 from src.recompute_scoring import _sale_from_storage_row
 from src.sale_procedure import classify_sale_procedure
+from src.storage.postgrest_helpers import rest_headers
 
 BACKFILL_SCHEMA_VERSION = "source_extraction_backfill_v1"
 BACKFILL_NAMESPACE = "source_extraction_backfill"
@@ -769,13 +770,7 @@ def apply_plan(
             "id": f"eq.{operation_id}",
             "updated_at": f"eq.{observed}",
         }
-        headers = {
-            "apikey": api_key,
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Prefer": "return=representation",
-        }
+        headers = rest_headers(api_key, prefer="return=representation")
         try:
             response = request(
                 "PATCH",

@@ -12,6 +12,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from src.config import load_settings
+from src.storage.postgrest_helpers import rest_headers
 
 PINNED_MODEL = 'zsxkib/qwen2-7b-instruct:5324178307f5ec0239326b429d6b64ae338cd6b51fbe234402a55537a9998ac4'
 RATE_SOURCE = 'https://replicate.com/pricing#hardware; L40S 0.000975 USD/s; checked 2026-09-12'
@@ -174,7 +175,7 @@ def _spend_groups_via_rest(settings: dict, since: datetime) -> list[tuple[str, i
     for page in range(_BUDGET_REST_MAX_PAGES):
         response = httpx.get(
             f'{base_url}/rest/v1/llm_usage_events',
-            headers={'apikey': api_key, 'Authorization': f'Bearer {api_key}'},
+            headers=rest_headers(api_key),
             params={
                 'select': 'model,input_tokens_estimate,output_tokens_estimate',
                 'created_at': f'gte.{since.isoformat()}',

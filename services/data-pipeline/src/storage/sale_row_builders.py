@@ -178,10 +178,6 @@ def _unique_rows_by_keys(
     return list(unique.values())
 
 
-def _unique_rows_by_key(rows: list[dict[str, object]], key: str) -> list[dict[str, object]]:
-    return _unique_rows_by_keys(rows, (key,))
-
-
 def _surface_measurement_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
     analysis = sale.raw_payload.get("surface_analysis") if isinstance(sale.raw_payload, dict) else None
     if not isinstance(analysis, dict):

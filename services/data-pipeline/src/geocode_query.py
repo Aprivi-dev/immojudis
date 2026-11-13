@@ -23,21 +23,19 @@ from __future__ import annotations
 
 import re
 
+from src.french_dates import MONTH_PATTERN
 from src.models import AuctionSale
 from src.normalize import clean_text
 from src.position_quality import street_name_tokens
 from src.reference_data.names import has_cedex
 
 _POSTAL_CODE = re.compile(r"(?<!\d)\d{5}(?!\d)")
-_MONTHS = (
-    "janvier|f[ée]vrier|mars|avril|mai|juin|juillet|ao[uû]t|septembre|octobre|novembre|d[ée]cembre"
-)
 # Premier repère d'audience : jour de la semaine suivi d'un quantième, date écrite avec une année 20xx (« rue du
 # 8 mai 1945 » n'en est pas une), date numérique complète ou heure (« à 14 H 00 », « 14h30 »).
 _HEARING_MARKER = re.compile(
     rf"""(?:\b(?:le|du|[àa])\s+)?\b(?:
         (?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+\d{{1,2}}
-        |\d{{1,2}}(?:er)?\s+(?:{_MONTHS})\s+20\d{{2}}
+        |\d{{1,2}}(?:er)?\s+(?:{MONTH_PATTERN})\s+20\d{{2}}
         |\d{{1,2}}[/.]\d{{1,2}}[/.](?:20)?\d{{2}}
         |[àa]\s+\d{{1,2}}\s*[hH]\s*\d{{0,2}}
         |\d{{1,2}}\s*[hH]\s*\d{{2}}

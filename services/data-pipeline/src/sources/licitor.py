@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
+from src.french_dates import MONTH_PATTERN
 from src.information_sufficiency import excluded_contact_reason
 from src.normalize import (
     clean_text,
@@ -584,31 +585,6 @@ def parse_licitor_detail_html(
     return sale
 
 
-def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str]) -> list[str]:
-    detail_urls: list[str] = []
-
-    for start_url in _start_urls_for_target_departments():
-        pending = deque([start_url])
-        visited: set[str] = set()
-        while pending and len(visited) < max_pages:
-            page_url = pending.popleft()
-            if page_url in visited:
-                continue
-            visited.add(page_url)
-            try:
-                html = client.get(page_url)
-            except Exception as exc:
-                LOGGER.error("Licitor list fetch failed for %s: %s", page_url, exc)
-                errors.append(f"{page_url}: {exc}")
-                continue
-            page_detail_urls, next_urls = parse_licitor_list_html(html, page_url)
-            detail_urls.extend(page_detail_urls)
-            pending.extend(url for url in next_urls if url not in visited and url not in pending)
-        if pending:
-            errors.append(f"Pagination incomplete at {start_url}: page limit {max_pages}")
-    return _unique(detail_urls)
-
-
 def _collect_list_sales(client: LicitorClient, max_pages: int, errors: list[str]) -> list[dict[str, Any]]:
     raw_sales: list[dict[str, Any]] = []
     client.catalogue_evidence = CatalogueEvidence("licitor")
@@ -771,8 +747,7 @@ def _extract_list_sale_date(lines: list[str]) -> str | None:
         if not candidate and index + 1 < len(lines):
             candidate = lines[index + 1]
         if candidate and re.search(
-            r"\b(?:\d{1,2}|1er)\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|"
-            r"septembre|octobre|novembre|décembre|decembre)\s+20\d{2}\b",
+            rf"\b(?:\d{{1,2}}|1er)\s+(?:{MONTH_PATTERN})\s+20\d{{2}}\b",
             candidate,
             re.I,
         ):
@@ -1095,11 +1070,6 @@ def _append_image(images: list[str], value: object | None, source_url: str) -> N
     if not re.search(r"\.(?:avif|jpe?g|png|webp)(?:[?#].*)?$", lowered):
         return
     images.append(absolute)
-
-
-def _is_disallowed_document_url(url: str) -> bool:
-    path = urlparse(url).path
-    return path.startswith("/data/pub/doc/") or path.startswith("/data/pub/media/")
 
 
 def _extract_surface_m2(text: str) -> str | None:

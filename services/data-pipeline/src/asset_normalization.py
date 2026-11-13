@@ -435,10 +435,6 @@ def build_auction_surfaces_row(sale: AuctionSale) -> dict[str, Any]:
     }
 
 
-def build_auction_risk_rows(sale: AuctionSale) -> list[dict[str, Any]]:
-    return extract_risks(sale)
-
-
 def extract_risks(sale: AuctionSale) -> list[dict[str, Any]]:
     occurrences = extract_risk_occurrences_from_text(
         _risk_source_text(sale),

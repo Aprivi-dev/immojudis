@@ -51,6 +51,11 @@ DIRECT_DATABASE_MISSING_MESSAGE = (
 )
 
 
+def user_agent() -> str:
+    """``AUCTION_USER_AGENT``, or ``DEFAULT_USER_AGENT`` when it is unset or blank."""
+    return (os.getenv("AUCTION_USER_AGENT") or "").strip() or DEFAULT_USER_AGENT
+
+
 def supabase_configured(settings: Mapping[str, object]) -> bool:
     """Without the Supabase URL and service key, the pipeline only exports local files."""
     return bool(settings.get("supabase_url") and settings.get("supabase_service_role_key"))
@@ -181,7 +186,7 @@ def load_settings() -> dict[str, str | float | None]:
             float(os.getenv("JUDILIBRE_RETRY_MAX_SLEEP_SECONDS", "30")),
         ),
         "dvf_import_batch_size": int(os.getenv("DVF_IMPORT_BATCH_SIZE", "1000")),
-        "user_agent": (os.getenv("AUCTION_USER_AGENT") or "").strip() or DEFAULT_USER_AGENT,
+        "user_agent": user_agent(),
         "request_delay_seconds": float(os.getenv("REQUEST_DELAY_SECONDS", "1.5")),
         "request_timeout_seconds": float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
         # A source collector is isolated from the parent pipeline so a parser
