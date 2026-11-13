@@ -1,10 +1,17 @@
+import os
 import subprocess
 from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
 
-from src import autonomous_runner
+from src import autonomous_runner, catalogue_lock, config, document_reading
+from src.enrichment_queue_limits import (
+    ENRICHMENT_BUDGET_SECONDS,
+    ENRICHMENT_BUDGET_SECONDS_ENV,
+    ENRICHMENT_MAX_JOBS,
+    ENRICHMENT_MAX_JOBS_ENV,
+)
 from src.sources import licitor, petites_affiches
 
 
@@ -96,8 +103,9 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert updates[0][2].obj["enrichment_jobs_exhausted"] == exhausted
     assert updates[0][2].obj["enrichment_jobs_completed"] == 31
     assert updates[0][2].obj["completion_status"] == "partial_success"
-    assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_BUDGET_SECONDS"] == "1200"
-    assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_MAX_JOBS"] == "180"
+    # Le travailleur reçoit ses propres plafonds, sous les noms qu'il lit.
+    assert subprocess_calls[0][1]["env"][ENRICHMENT_BUDGET_SECONDS_ENV] == str(ENRICHMENT_BUDGET_SECONDS)
+    assert subprocess_calls[0][1]["env"][ENRICHMENT_MAX_JOBS_ENV] == str(ENRICHMENT_MAX_JOBS)
     # After the queue: the attachment catch-up, the document reading, the batch positions, the photos of the
     # attachments, then one tick of the Licitor history collector.
     assert [call[0][2] for call in subprocess_calls[1:]] == [
@@ -110,7 +118,7 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert subprocess_calls[1][0][3:] == ["--max-sales", "6", "--budget-minutes", "8"]
     assert subprocess_calls[1][1]["timeout"] == autonomous_runner.DOCUMENT_BACKLOG_BUDGET_SECONDS
     # The reading step that follows reads the texts: the catch-up does not run its own.
-    assert subprocess_calls[1][1]["env"]["DOCUMENT_READING_ENABLED"] == "false"
+    assert subprocess_calls[1][1]["env"][document_reading.READING_ENABLED_ENV] == "false"
     assert subprocess_calls[3][0][3:] == ["--max-sales", "500", "--budget-seconds", "170"]
     assert subprocess_calls[3][1]["timeout"] == autonomous_runner.ADDRESS_POSITIONS_BUDGET_SECONDS
     assert subprocess_calls[4][0][3:] == ["--max-sales", "25", "--budget-seconds", "180"]
@@ -132,6 +140,55 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
                 "max_attempts": 4,
             }
         ]
+
+
+def test_each_setting_of_a_scheduled_unit_is_read_back_by_its_reader(monkeypatch) -> None:
+    """Rejoué dans l'environnement du passage lancé, chaque lecteur retrouve le réglage posé par le lanceur."""
+    run_id = "00000000-0000-0000-0000-000000000009"
+    subprocess_calls = []
+
+    class FakeDb:
+        def execute(self, statement, params):
+            if "returning source" in statement:
+                return SimpleNamespace(fetchone=lambda: ("enrichment-queue",))
+            if "select summary from public.auction_runs" in statement:
+                return SimpleNamespace(fetchone=lambda: ({},))
+            return SimpleNamespace(fetchone=lambda: (0,), fetchall=lambda: [])
+
+    monkeypatch.setattr(autonomous_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://test"})
+    monkeypatch.setattr(autonomous_runner, "register_run", lambda _run_id: None)
+    monkeypatch.setattr(autonomous_runner, "finish_source", lambda _db_url, _run_id, connect: None)
+    monkeypatch.setattr(
+        autonomous_runner.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess_calls.append((command, kwargs)) or SimpleNamespace(returncode=0),
+    )
+    # Valeurs héritées de l'environnement du job, que le lanceur doit écraser.
+    monkeypatch.setenv(config.AUTONOMOUS_RUN_ID_ENV, "run-du-job")
+    monkeypatch.setenv(config.CADASTRE_ENRICH_ENABLED_ENV, "true")
+    monkeypatch.setenv(config.DPE_ENRICH_ENABLED_ENV, "true")
+    monkeypatch.setenv(config.REPLICATE_CANCEL_AFTER_ENV, "30m")
+    monkeypatch.setenv(catalogue_lock.LOCK_WAIT_ENV, "60")
+    monkeypatch.setenv(document_reading.READING_ENABLED_ENV, "true")
+
+    assert autonomous_runner.execute(run_id, connect=lambda _url: nullcontext(FakeDb())) == 0
+
+    def replay(env: dict[str, str]) -> None:
+        for name, value in env.items():
+            if os.environ.get(name) != value:
+                monkeypatch.setenv(name, value)
+
+    replay(subprocess_calls[0][1]["env"])
+    assert config.autonomous_run_id() == run_id
+    settings = config.load_settings()
+    assert settings["cadastre_enrich_enabled"] is False
+    assert settings["dpe_enrich_enabled"] is False
+    assert settings["replicate_cancel_after"] == config.DEFAULT_REPLICATE_CANCEL_AFTER
+    assert catalogue_lock._lock_wait_seconds() == 300
+    # Le rattrapage des pièces (deuxième passage) ne lance pas sa propre lecture.
+    assert subprocess_calls[1][0][2] == "src.document_backlog"
+    replay(subprocess_calls[1][1]["env"])
+    assert document_reading.reading_enabled() is False
 
 
 def test_systemic_worker_failure_keeps_nonzero_code_with_exhausted_signal(monkeypatch) -> None:

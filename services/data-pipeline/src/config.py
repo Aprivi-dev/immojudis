@@ -26,6 +26,12 @@ DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display"
 DEFAULT_LLM_FACT_PROMPT_VERSION = "auction_facts_v1"
 DEFAULT_REPLICATE_WAIT_SECONDS = 60
 MAX_REPLICATE_WAIT_SECONDS = 60
+DEFAULT_REPLICATE_CANCEL_AFTER = "5m"
+# Noms d'environnement que ``src.autonomous_runner`` pose pour le passage qu'il lance.
+AUTONOMOUS_RUN_ID_ENV = "PIPELINE_AUTONOMOUS_RUN_ID"
+CADASTRE_ENRICH_ENABLED_ENV = "CADASTRE_ENRICH_ENABLED"
+DPE_ENRICH_ENABLED_ENV = "DPE_ENRICH_ENABLED"
+REPLICATE_CANCEL_AFTER_ENV = "REPLICATE_CANCEL_AFTER"
 
 
 class EncheresPubliquesAccessNotAuthorized(RuntimeError):
@@ -171,8 +177,8 @@ def env_flag_on_unless_false(name: str) -> bool:
 
 
 def autonomous_run_id() -> str | None:
-    """Passage lancé par ``src.autonomous_runner``, qui pose ``PIPELINE_AUTONOMOUS_RUN_ID`` ; ``None`` sinon."""
-    return os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") or None
+    """Passage lancé par ``src.autonomous_runner``, qui pose ``AUTONOMOUS_RUN_ID_ENV`` ; ``None`` sinon."""
+    return os.getenv(AUTONOMOUS_RUN_ID_ENV) or None
 
 
 def in_github_actions() -> bool:
@@ -352,12 +358,12 @@ def load_settings() -> dict[str, str | float | None]:
         "geocode_enabled": env_flag("GEOCODE_ENABLED", True),
         "geocode_api_url": os.getenv("GEOCODE_API_URL", "https://data.geopf.fr/geocodage/search/"),
         "geocode_min_score": float(os.getenv("GEOCODE_MIN_SCORE", "0.45")),
-        "cadastre_enrich_enabled": env_flag("CADASTRE_ENRICH_ENABLED", True),
+        "cadastre_enrich_enabled": env_flag(CADASTRE_ENRICH_ENABLED_ENV, True),
         "cadastre_api_url": os.getenv("CADASTRE_API_URL", "https://apicarto.ign.fr/api/cadastre/parcelle"),
         "cadastre_source_ign": os.getenv("CADASTRE_SOURCE_IGN", "PCI"),
         "cadastre_max_parcels": max(1, int(os.getenv("CADASTRE_MAX_PARCELS", "4"))),
         "cadastre_timeout_seconds": float(os.getenv("CADASTRE_TIMEOUT_SECONDS", "10")),
-        "dpe_enrich_enabled": env_flag("DPE_ENRICH_ENABLED", True),
+        "dpe_enrich_enabled": env_flag(DPE_ENRICH_ENABLED_ENV, True),
         "dpe_api_url": os.getenv(
             "DPE_API_URL",
             "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines",
@@ -383,7 +389,7 @@ def load_settings() -> dict[str, str | float | None]:
                 int(os.getenv("REPLICATE_WAIT_SECONDS", str(DEFAULT_REPLICATE_WAIT_SECONDS))),
             ),
         ),
-        "replicate_cancel_after": os.getenv("REPLICATE_CANCEL_AFTER", "5m"),
+        "replicate_cancel_after": os.getenv(REPLICATE_CANCEL_AFTER_ENV, DEFAULT_REPLICATE_CANCEL_AFTER),
         "replicate_max_retries": int(os.getenv("REPLICATE_MAX_RETRIES", "4")),
         "replicate_max_calls_per_hour": max(
             0, int(os.getenv("REPLICATE_MAX_CALLS_PER_HOUR", "60"))

@@ -19,7 +19,9 @@ from src.official_sources.base import canonical_sha256
 from src.official_sources.justice_open_data import (
     JUSTICE_OPEN_DATA_SOURCE_NAME,
     JUSTICE_RECORD_KINDS,
+    JUSTICE_REVIEW_STATUS,
     JUSTICE_SCHEMA_VERSIONS,
+    JUSTICE_SOURCE_GRADE,
 )
 from src.outcome_ingestion.artifact_store import StoredRawArtifact
 from src.outcome_ingestion.dvf_adjudication import (
@@ -2107,11 +2109,9 @@ def _load_current_judilibre_court_resolutions(
             and record.normalized_data->>'schema_version' = %s
             and record.normalized_data->>'structure_type_code' in ('TJ', 'TGI')
             and upper(record.normalized_data->>'insee_code') = %s
-            and record.normalized_data @> '{
-              "training_eligible": false,
-              "review_status": "pending",
-              "source_grade": "A"
-            }'::jsonb
+            and record.normalized_data->>'review_status' = %s
+            and record.normalized_data->>'source_grade' = %s
+            and record.normalized_data @> '{"training_eligible": false}'::jsonb
             and not exists (
               select 1
               from public.judicial_source_records newer
@@ -2195,6 +2195,8 @@ def _load_current_judilibre_court_resolutions(
             JUSTICE_RECORD_KINDS["justice_court_structure"],
             JUSTICE_SCHEMA_VERSIONS["justice_court_structure"],
             match.group("insee").upper(),
+            JUSTICE_REVIEW_STATUS,
+            JUSTICE_SOURCE_GRADE,
         ),
     )
     rows = cursor.fetchall()

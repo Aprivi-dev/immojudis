@@ -8,6 +8,8 @@ import pytest
 from src.official_sources.justice_open_data import (
     COMPETENCE_SCHEMA,
     JUSTICE_COMPETENCES_DATASET_URL,
+    JUSTICE_REVIEW_STATUS,
+    JUSTICE_SOURCE_GRADE,
     JUSTICE_STRUCTURES_DATASET_URL,
     STRUCTURE_SCHEMA,
     JusticeOpenDataParseResult,
@@ -18,6 +20,7 @@ from src.official_sources.justice_open_data import (
     parse_justice_structures_csv,
     validate_justice_competence_semantics,
 )
+from src.outcome_ingestion.adapters import justice_open_data_to_json_record
 
 RAW_ROOT = Path(__file__).parents[1] / "data" / "raw" / "outcome_sources" / "justice_courts"
 
@@ -177,6 +180,19 @@ def test_parse_structures_detects_cp1252_and_builds_address(tmp_path: Path) -> N
     assert record["latitude"] == pytest.approx(48.297172)
     assert record["full_address"] == "83 RUE DU GENERAL DE GAULLE, 10000, TROYES"
     assert record["source_url"] == JUSTICE_STRUCTURES_DATASET_URL
+
+
+def test_stored_structure_carries_the_grade_and_review_state_the_court_resolution_requires(tmp_path: Path) -> None:
+    """Le lecteur du CSV écrit le grade, l'adaptateur l'état de revue : les deux valeurs qu'exige la résolution des
+    tribunaux (``repository._load_current_judilibre_court_resolutions``)."""
+    path = tmp_path / "structures.csv"
+    _write_csv(path, STRUCTURE_SCHEMA, [_structure_row()])
+
+    record = justice_open_data_to_json_record(parse_justice_structures_csv(path).records[0])
+
+    assert record.normalized_data["source_grade"] == JUSTICE_SOURCE_GRADE
+    assert record.normalized_data["review_status"] == JUSTICE_REVIEW_STATUS
+    assert record.normalized_data["training_eligible"] is False
 
 
 def test_duplicate_and_partial_reference_are_reported_without_overwrite(tmp_path: Path) -> None:

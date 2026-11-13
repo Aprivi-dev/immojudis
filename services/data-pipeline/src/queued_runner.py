@@ -21,6 +21,12 @@ from src.enrichment.extract_structured import (
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import cancel_provider_output_refusal_jobs, create_llm_client
+from src.enrichment_queue_limits import (
+    ENRICHMENT_BUDGET_SECONDS,
+    ENRICHMENT_BUDGET_SECONDS_ENV,
+    ENRICHMENT_MAX_JOBS,
+    ENRICHMENT_MAX_JOBS_ENV,
+)
 from src.freshness import document_fingerprint, documents_are_current, settle_source_change_without_documents
 from src.geocode import geocode_sale, sale_needs_position
 from src.information_agent_evidence import run_information_agent_evidence_batch
@@ -86,8 +92,6 @@ ENRICHMENT_FAMILY = "enrichment"
 # claims for display/fact/PDF jobs instead of allowing a persistent detail
 # backlog to reduce the general lane to one claim in six.
 ENRICHMENT_FAMILY_CYCLE = (SOURCE_DETAIL_FAMILY,) * 3 + (ENRICHMENT_FAMILY,)
-ENRICHMENT_MAX_JOBS = 180
-ENRICHMENT_BUDGET_SECONDS = 1200
 PDF_FINALIZATION_MARGIN_FRACTION = PDF_FINALIZATION_MARGIN_SECONDS / ENRICHMENT_BUDGET_SECONDS
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE = 2
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_MAX = 5
@@ -1136,14 +1140,14 @@ def _run_enrichment_queue_worker(
     if max_jobs is None:
         max_jobs = min(
             ENRICHMENT_MAX_JOBS,
-            max(1, int(os.getenv("PIPELINE_ENRICHMENT_MAX_JOBS", str(ENRICHMENT_MAX_JOBS)))),
+            max(1, int(os.getenv(ENRICHMENT_MAX_JOBS_ENV, str(ENRICHMENT_MAX_JOBS)))),
         )
     else:
         max_jobs = min(ENRICHMENT_MAX_JOBS, max(1, int(max_jobs)))
     if budget_seconds is None:
         budget_seconds = min(
             ENRICHMENT_BUDGET_SECONDS,
-            max(60, int(os.getenv("PIPELINE_ENRICHMENT_BUDGET_SECONDS", str(ENRICHMENT_BUDGET_SECONDS)))),
+            max(60, int(os.getenv(ENRICHMENT_BUDGET_SECONDS_ENV, str(ENRICHMENT_BUDGET_SECONDS)))),
         )
     else:
         budget_seconds = max(0, min(ENRICHMENT_BUDGET_SECONDS, int(budget_seconds)))
