@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from src import recompute_scoring, sale_finalization, source_extraction_backfill
-from src.lot_scope import recompute_surface_reasoning_context, surface_reasoning_context
+from src.lot_scope import surface_reasoning_context
 from src.models import AuctionSale
 
 
@@ -56,7 +56,7 @@ def test_collection_runs_its_own_steps_then_the_shared_ones(monkeypatch: pytest.
     ]
 
 
-def test_recompute_runs_the_shared_steps_with_its_own_surface_context(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_recompute_runs_the_shared_steps_with_the_collection_surface_context(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     _record_steps(monkeypatch, calls)
     monkeypatch.setattr(recompute_scoring, "sale_from_storage_row", lambda row: _sale())
@@ -64,7 +64,7 @@ def test_recompute_runs_the_shared_steps_with_its_own_surface_context(monkeypatc
 
     recompute_scoring._recomputed_sale_from_storage_row({}, geocode=True)
 
-    assert calls == ["position", "tribunal", "procedure", "surfaces:Maison\n  de 90 m²", "assets", "features"]
+    assert calls == ["position", "tribunal", "procedure", "surfaces:Maison de 90 m²", "assets", "features"]
 
 
 def test_source_fact_backfill_runs_the_shared_steps_like_the_recompute(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,10 +74,10 @@ def test_source_fact_backfill_runs_the_shared_steps_like_the_recompute(monkeypat
 
     source_extraction_backfill._recompute_sale({})
 
-    assert calls == ["tribunal", "procedure", "surfaces:Maison\n  de 90 m²", "assets", "features"]
+    assert calls == ["tribunal", "procedure", "surfaces:Maison de 90 m²", "assets", "features"]
 
 
-def test_the_two_surface_contexts_read_the_same_fields_and_differ_only_by_line_breaks() -> None:
+def test_the_surface_context_reads_the_lot_fields_each_cleaned_on_one_line() -> None:
     sale = AuctionSale(
         source_name="licitor",
         source_url="https://example.test/context",
@@ -91,5 +91,5 @@ def test_the_two_surface_contexts_read_the_same_fields_and_differ_only_by_line_b
         },
     )
 
+    # Le retour à la ligne d'un champ n'arrête pas les motifs de surface : « Séjour 20 m² » se lit d'un tenant.
     assert surface_reasoning_context(sale) == "Appartement\nSéjour 20 m²\nLot 1 : cave\nMardi"
-    assert recompute_surface_reasoning_context(sale) == "Appartement\nSéjour\n20 m²\nLot 1 : cave\nMardi"

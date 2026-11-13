@@ -18,7 +18,6 @@ from src.enrichment_queue_limits import (
 )
 from src.freshness import document_fingerprint
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_remaining
-from src.lot_scope import surface_reasoning_context
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.source_task_deadline import source_task_deadline_remaining
@@ -261,11 +260,10 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
         or SimpleNamespace(unavailable=False, valid_json=1, error_messages=[]),
     )
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: calls.append("geocode"))
-    contexts: list[object] = []
     monkeypatch.setattr(
         queued_runner,
         "derive_sale_facts",
-        lambda current, surface_context: calls.append("derive_sale_facts") or contexts.append(surface_context),
+        lambda current: calls.append("derive_sale_facts"),
     )
     monkeypatch.setattr(
         queued_runner,
@@ -280,8 +278,6 @@ def test_enrichment_queue_runs_pdf_before_fact_extraction_and_completes_jobs(mon
 
     assert queued_runner.run_enrichment_queue_batch(limit=10) == 2
     assert calls == ["pdf", "facts", "geocode", "derive_sale_facts", "upsert"]
-    # Le contexte des surfaces de la collecte, comme main._checkpoint_enrichment après les mêmes lectures.
-    assert contexts == [surface_reasoning_context]
     assert finished == [("job-pdf", True, None), ("job-facts", True, None)]
 
 
@@ -528,7 +524,7 @@ def test_enrichment_queue_reuses_verified_facts_when_ephemeral_pdf_cache_is_miss
         "create_llm_client",
         lambda: (_ for _ in ()).throw(AssertionError("verified facts must not invoke the LLM")),
     )
-    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current, surface_context: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current: None)
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
@@ -645,7 +641,7 @@ def test_enrichment_queue_cancels_terminal_facts_and_completes_the_pdf_job(monke
         lambda: (_ for _ in ()).throw(AssertionError("PDF-only terminal batch must not invoke the LLM")),
     )
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
-    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current, surface_context: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: calls.append("upsert") or len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -705,7 +701,7 @@ def test_enrichment_queue_completes_pdf_job_when_documents_are_policy_blocked(mo
 
     monkeypatch.setattr(queued_runner, "enrich_sale_from_pdfs", policy_blocked_pdf)
     monkeypatch.setattr(queued_runner, "geocode_sale", lambda current: None)
-    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current, surface_context: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
         queued_runner,
@@ -948,7 +944,7 @@ def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(mo
         "enrich_sale_with_llm",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no LLM call for these jobs")),
     )
-    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current, surface_context: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda current: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", lambda sales, refresh_last_seen: len(sales))
     monkeypatch.setattr(
         queued_runner,

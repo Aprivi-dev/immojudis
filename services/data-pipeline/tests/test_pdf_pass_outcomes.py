@@ -409,7 +409,7 @@ def _run_current_sale(monkeypatch, sale: AuctionSale, jobs: list[dict[str, objec
     monkeypatch.setattr(queued_runner, "settle_source_change_without_documents", lambda _sale: None)
     monkeypatch.setattr(queued_runner, "has_current_fact_analysis", lambda _sale: True)
     monkeypatch.setattr(queued_runner, "sale_needs_position", lambda _sale: False)
-    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda _sale, surface_context: None)
+    monkeypatch.setattr(queued_runner, "derive_sale_facts", lambda _sale: None)
     monkeypatch.setattr(queued_runner, "upsert_sales_to_supabase", upsert)
     monkeypatch.setattr(queued_runner, "defer_budget_jobs", lambda claimed, error: deferred.append((claimed, error)))
     monkeypatch.setattr(

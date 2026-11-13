@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from src import source_extraction_backfill as backfill
-from src.lot_scope import recompute_surface_reasoning_context
+from src.lot_scope import surface_reasoning_context
 from src.source_extraction_backfill import (
     PROTECTED_FIELDS,
     UPDATE_ALLOWLIST,
@@ -235,7 +235,7 @@ def test_listing_completeness_is_projected_exactly_and_replay_is_idempotent(tmp_
     }
     expected_sale = backfill._recompute_sale(row)
     expected_projection = expected_sale.raw_payload["source_blocks"]["listing_completeness"]
-    assert "9999" not in recompute_surface_reasoning_context(expected_sale)
+    assert "9999" not in surface_reasoning_context(expected_sale)
 
     first_plan, _backup = build_plan(
         [row],

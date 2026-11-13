@@ -9,8 +9,6 @@ pièces et des faits (``src.queued_runner``) en reprennent la partie commune, ``
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from src.asset_normalization import normalize_asset_features
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.enrichment.extract_structured import extract_source_description
@@ -34,20 +32,19 @@ def finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
     (geocode_sale if geocode else locate_sale_by_cadastre)(sale)
     filter_raw_image_url(sale.raw_payload)
     apply_page_offer_deadline(sale)  # appel d'offres : date limite publiée sur la page (AGRASC, notaires, Cessions)
-    derive_sale_facts(sale, surface_context=surface_reasoning_context)
+    derive_sale_facts(sale)
     apply_catalogue_readiness(sale)
 
 
-def derive_sale_facts(sale: AuctionSale, *, surface_context: Callable[[AuctionSale], str]) -> None:
+def derive_sale_facts(sale: AuctionSale) -> None:
     """Tribunal, procédure, surfaces et caractéristiques : ce que la collecte, la file et les recalculs refont tous.
 
     L'ordre compte : la procédure lit le tribunal, et le contexte des surfaces se lit après la procédure, qui
-    ajoute son bloc à ``source_blocks``. ``surface_context`` est celui de l'appelant (voir
-    ``src.lot_scope.recompute_surface_reasoning_context``).
+    ajoute son bloc à ``source_blocks``.
     """
     fill_tribunal(sale)
     classify_sale_procedure(sale)
-    context = surface_context(sale)
+    context = surface_reasoning_context(sale)
     if context:
         extract_and_apply_deterministic_surface_reasoning(sale, context)
     normalize_asset_features(sale)

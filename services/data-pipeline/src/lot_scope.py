@@ -77,20 +77,15 @@ def _surface_context_fields(sale: Any) -> list[object]:
 
 
 def surface_reasoning_context(sale: Any) -> str:
-    """Texte lu par le raisonnement sur les surfaces d'une vente (collecte) : chaque champ sur une ligne."""
+    """Texte lu par le raisonnement sur les surfaces d'une vente : chaque champ nettoyé, sur une seule ligne.
+
+    Le même pour la collecte, la file des pièces, le recalcul d'une vente stockée et le rattrapage des faits de
+    la source : une vente relue garde les surfaces que la collecte y a lues.
+    """
     # Source descriptions are often copied into several payload fields. Keep
     # each distinct field once without truncating or deduplicating within it.
     parts = dict.fromkeys(clean_text(str(value)) for value in _surface_context_fields(sale) if value)
     return "\n".join(part for part in parts if part)
-
-
-def recompute_surface_reasoning_context(sale: Any) -> str:
-    """Le même texte pour le recalcul d'une vente stockée (``src.recompute_scoring``), champs seulement rognés.
-
-    Écart non tranché avec ``surface_reasoning_context`` : ici les retours à la ligne d'un champ restent, et ils
-    arrêtent les motifs de surface. Les aligner pourrait changer des surfaces publiées : écart à trancher.
-    """
-    return "\n".join(dict.fromkeys(str(value).strip() for value in _surface_context_fields(sale) if value))
 
 
 def _commune_key(value: object) -> str:
@@ -113,7 +108,6 @@ __all__ = [
     "is_lot_scoped",
     "lot_selected",
     "other_commune",
-    "recompute_surface_reasoning_context",
     "sale_fact_text",
     "surface_reasoning_context",
 ]

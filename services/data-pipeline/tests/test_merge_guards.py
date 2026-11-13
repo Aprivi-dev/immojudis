@@ -107,26 +107,6 @@ def test_secondary_cleanup_has_no_fallback_when_postgres_fails(monkeypatch, sett
         supabase_client.delete_secondary_sales_in_supabase([_sale_with_secondaries(150)])
 
 
-@pytest.mark.skip(reason="Repli REST retiré : proposé à la suppression (voir test_secondary_cleanup_has_no_fallback_when_postgres_fails)")
-def test_secondary_cleanup_cap_applies_to_the_rest_fallback_too(monkeypatch, settings) -> None:
-    deleted_urls: list[str] = []
-    settings(supabase_db_url="postgresql://example")
-    monkeypatch.setattr(merge_guards, "merge_trigger_deployed", lambda db_url: True)
-    monkeypatch.setattr(
-        supabase_client,
-        "_delete_secondary_sale_rows_with_postgres",
-        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("postgres down")),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_delete_by_source_urls",
-        lambda url, key, table, urls: deleted_urls.extend(urls) or len(urls),
-    )
-
-    assert supabase_client.delete_secondary_sales_in_supabase([_sale_with_secondaries(150)]) == 100
-    assert len(deleted_urls) == 100
-
-
 def test_postgres_secondary_cleanup_stops_at_the_limit(monkeypatch) -> None:
     rows = [(f"00000000-0000-0000-0000-{index:012d}", f"https://example.test/secondary-{index}") for index in range(5)]
     executed: list[tuple[str, object]] = []
