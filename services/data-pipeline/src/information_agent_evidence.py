@@ -39,7 +39,7 @@ from src.information_agent_semantic import (
     semantic_lot_context,
 )
 from src.normalize import clean_text
-from src.pdf_enrichment import classify_document_type
+from src.pdf_document_types import classify_document_type
 from src.pdf_ocr_child_output import parse_ocr_child_output
 from src.storage.postgrest_helpers import rest_headers
 
@@ -856,18 +856,6 @@ def _evidence_ocr_enabled(settings: dict[str, Any]) -> bool:
     return True
 
 
-def _evidence_vision_enabled(settings: dict[str, Any]) -> bool:
-    configured = settings.get("information_agent_evidence_vision_enabled")
-    if configured is not None:
-        if isinstance(configured, str):
-            return configured.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(configured)
-    raw = os.getenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED")
-    if raw is not None:
-        return raw.strip().lower() in {"1", "true", "yes", "on"}
-    return False
-
-
 def _surface_facts(text: str, page: int) -> list[EvidenceFact]:
     facts: list[EvidenceFact] = []
     patterns = (
@@ -1174,7 +1162,7 @@ def _process_job(
             "image/heic",
             "image/heif",
         }:
-            if _evidence_vision_enabled(settings):
+            if settings.get("information_agent_evidence_vision_enabled"):
                 prepared = _prepare_image_for_vision(content, analysis.detected_mime_type)
                 if prepared is None:
                     photo_analysis = PhotoSemanticAnalysis(

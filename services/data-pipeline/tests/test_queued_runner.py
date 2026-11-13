@@ -981,7 +981,7 @@ def test_due_lane_count_timeout_falls_back_without_stalling_worker(monkeypatch) 
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
     monkeypatch.setattr(
         queued_runner,
-        "_postgres_connect",
+        "connect",
         lambda db_url, **kwargs: nullcontext(SimpleNamespace(execute=execute)),
     )
 
@@ -1014,7 +1014,7 @@ def test_worker_claim_status_snapshot_reads_unique_ids_without_retries(monkeypat
         connect_kwargs.update(kwargs)
         return nullcontext(connection)
 
-    monkeypatch.setattr(queued_runner, "_postgres_connect", connect)
+    monkeypatch.setattr(queued_runner, "connect", connect)
 
     assert queued_runner._read_worker_claim_status_counts({"job-b", "job-a"}) == {
         "completed": 1,
@@ -1037,7 +1037,7 @@ def test_worker_claim_status_snapshot_failure_is_optional(monkeypatch) -> None:
     monkeypatch.setattr(queued_runner, "load_settings", lambda: {"supabase_db_url": "postgresql://local"})
     monkeypatch.setattr(
         queued_runner,
-        "_postgres_connect",
+        "connect",
         lambda db_url, **kwargs: (_ for _ in ()).throw(TimeoutError("snapshot timeout")),
     )
 

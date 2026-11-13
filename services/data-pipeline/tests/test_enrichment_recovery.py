@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pymupdf
 import pytest
 
-from src import pdf_enrichment, pipeline_health, queued_runner
+from src import pdf_enrichment, pdf_ocr, pipeline_health, queued_runner
 from src.enrichment import extract_structured as extraction
 from src.models import AuctionSale
 
@@ -162,7 +162,7 @@ def test_ocr_document_time_budget_resumes_from_valid_page_checkpoints(tmp_path, 
     assert calls == [0, 1, 2]
     assert len(pages) == 3
     assert all(page['status'] == 'extracted' for page in pages)
-    assert pdf_enrichment.pdf_document_ocr_budget_remaining() is None
+    assert pdf_ocr.pdf_document_ocr_budget_remaining() is None
 
 
 def test_digital_pdf_does_not_consume_ocr_budget_when_ocr_is_enabled(tmp_path, monkeypatch):

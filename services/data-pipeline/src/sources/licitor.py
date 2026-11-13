@@ -28,7 +28,6 @@ from src.sources.common import (
     extract_surface,
     is_allowed_origin_url,
     is_plausible_email,
-    normalize_surface_number,  # noqa: F401 - normaliseur des surfaces partagé par les sources (test de parité)
     parse_html,
 )
 from src.sources.image_candidates import html_image_candidates

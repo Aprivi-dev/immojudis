@@ -76,12 +76,8 @@ from src.merge_guards import MergeGuardRefused
 from src.models import AuctionSale
 from src.normalize import normalize_sale
 from src.outcome_ingestion.catalogue_bridge import bridge_auction_sales_before_cleanup
-from src.pdf_enrichment import (
-    DOCUMENT_FACTS_VERSION,
-    PdfEnrichmentStats,
-    classify_document_type,
-    enrich_sale_from_pdfs,
-)
+from src.pdf_document_types import classify_document_type
+from src.pdf_enrichment import DOCUMENT_FACTS_VERSION, PdfEnrichmentStats, enrich_sale_from_pdfs
 from src.pdf_offer_deadline import apply_page_offer_deadline
 from src.pdf_progress import PDF_PROGRESS_SCHEMA_VERSION
 from src.quality import (

@@ -18,9 +18,6 @@ from src.normalize import normalize_sale
 from src.source_detail import fetch_public_detail
 from src.storage.supabase_client import connect
 
-# Alias de compatibilité : des tests patchent ce nom de module.
-_postgres_connect = connect
-
 FIELDS = ('address', 'city', 'postal_code', 'sale_date', 'starting_price_eur',
           'habitable_surface_m2', 'carrez_surface_m2', 'land_surface_m2', 'occupancy_status')
 SAMPLE = Path(__file__).resolve().parents[1] / 'config/qualification-sample-20260912.json'
@@ -54,7 +51,7 @@ def audit_source(source: str, output: Path, sample: Path = SAMPLE) -> None:
         raise ValueError('Source outside the frozen sample')
     settings = load_settings()
     # Fail closed: this connection cannot write even if future audit code changes.
-    with _postgres_connect(str(settings['supabase_db_url'])) as db:
+    with connect(str(settings['supabase_db_url'])) as db:
         db.execute('set transaction read only')
         with db.cursor(row_factory=dict_row) as cursor:
             cursor.execute('select * from public.auction_sales where id=any(%s::uuid[])', ([row['id'] for row in targets],))

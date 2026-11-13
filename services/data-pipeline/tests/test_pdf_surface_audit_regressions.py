@@ -4,10 +4,10 @@ from decimal import Decimal
 
 import src.pdf_enrichment  # noqa: F401  (resolves the pdf_enrichment / pdf_fact_extraction import cycle)
 from src.models import AuctionSale
-from src.pdf_fact_extraction import (
+from src.pdf_fact_extraction import enrich_sale_from_pdf_text
+from src.pdf_surface_patterns import (
     _extract_land_surface_candidates_with_evidence,
     _extract_surface_candidates_with_evidence,
-    enrich_sale_from_pdf_text,
 )
 
 PV = "https://example.test/proces-verbal-descriptif.pdf"

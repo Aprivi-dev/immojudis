@@ -111,7 +111,7 @@ def fetch_flagged_rows(supabase_url: str, api_key: str) -> list[dict[str, Any]]:
                 "limit": str(_PAGE_SIZE),
                 "offset": str(offset),
             },
-            headers=rest_headers(api_key, prefer="count=none"),
+            headers=rest_headers(api_key),
             timeout=_TIMEOUT,
         )
         if response.is_error:

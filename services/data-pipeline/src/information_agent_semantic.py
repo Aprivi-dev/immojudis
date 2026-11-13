@@ -1232,9 +1232,7 @@ def run_configured_photo_analysis(
 ) -> PhotoSemanticAnalysis:
     """Use the existing Replicate client for one explicitly enabled photo pass."""
     if not _setting_enabled(settings.get("information_agent_evidence_vision_enabled")):
-        raw = os.getenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED")
-        if not _setting_enabled(raw):
-            return PhotoSemanticAnalysis("disabled")
+        return PhotoSemanticAnalysis("disabled")
     data_url = image_bytes_to_data_url(content, mime_type)
     if data_url is None:
         return PhotoSemanticAnalysis("unavailable", error_code="VISION_IMAGE_FORMAT_UNSUPPORTED")

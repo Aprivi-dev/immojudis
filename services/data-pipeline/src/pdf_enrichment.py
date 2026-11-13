@@ -29,39 +29,19 @@ from src.document_politeness import (
     fetch_robots_document,
     pause_within_deadline,
 )
-from src.freshness import invalidate_analysis, timestamp_is_fresh
-from src.models import AuctionSale
-from src.normalize import clean_text
-from src.pdf_document_transport import (  # noqa: F401
-    PublicDocumentTarget,  # noqa: F401
-    _PinnedHTTPTransport,
-    _PinnedNetworkBackend,  # noqa: F401
+from src.encheres_publiques_guard import (
     EncheresPubliquesAccessNotAuthorized,
     require_encheres_publiques_documents_access as require_ep_documents,
     require_encheres_publiques_url_access as require_ep_url,
 )
+from src.freshness import invalidate_analysis, timestamp_is_fresh
+from src.models import AuctionSale
+from src.normalize import clean_text
 from src.pdf_document_transport import (
-    is_safe_public_document_url as _is_safe_public_document_url,  # noqa: F401
-)
-from src.pdf_document_transport import (
+    _PinnedHTTPTransport,
     resolve_public_document_target as _resolve_public_document_target,
 )
-from src.pdf_document_types import (
-    DEFAULT_DOCUMENT_GROUPS,  # noqa: F401
-    DOCUMENT_TYPE_ALIASES,  # noqa: F401
-    GENERIC_DOCUMENT_TYPES,  # noqa: F401
-    PDF_ANNOUNCE_GROUP,  # noqa: F401
-    PDF_BAIL_GROUP,  # noqa: F401
-    PDF_CADASTRE_GROUP,  # noqa: F401
-    PDF_CONDITIONS_GROUP,  # noqa: F401
-    PDF_DESCRIPTION_GROUP,  # noqa: F401
-    PDF_DIAGNOSTICS_GROUP,  # noqa: F401
-    _canonical_document_type,  # noqa: F401
-    _normalize_document_classifier_text,  # noqa: F401
-    classify_document_type,  # noqa: F401
-    refined_document_type,
-    with_content_document_types,
-)
+from src.pdf_document_types import _canonical_document_type, refined_document_type, with_content_document_types
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
 from src.pdf_ocr import (
@@ -71,32 +51,23 @@ from src.pdf_ocr import (
     PdfDeadlineExceeded,
     PdfDocumentOcrBudgetExceeded,
     PdfExtractionDeferred,
-    _PDF_DOCUMENT_OCR_DEADLINE,  # noqa: F401
-    _PDF_DOCUMENT_LOG_TYPES,  # noqa: F401
     deadline_bounded_timeout as _deadline_bounded_timeout_impl,
     ensure_pdf_document_ocr_budget as _ensure_pdf_document_ocr_budget,
     ensure_pdf_ocr_deadline as _ensure_pdf_ocr_deadline_impl,
     extract_page_text_with_ocr_result as _extract_page_text_with_ocr_result_impl,
     log_pdf_document_transition as _log_pdf_document_transition,
-    pdf_document_ocr_budget_remaining,  # noqa: F401
     pdf_document_ocr_budget_scope,
     pdf_ocr_document_budget_seconds as _pdf_ocr_document_budget_seconds,
     select_pdf_deadline_exception as _select_pdf_deadline_exception,
 )
 from src.pdf_page_analysis import (
     PICTURE_PAGE_STATUS,
-    VISUAL_BLANK_INK_RATIO_MAX,  # noqa: F401
-    VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
-    VISUAL_BLANK_RENDER_MAX_DIMENSION,  # noqa: F401
     _is_objectively_blank_page,
     _page_has_substantial_image,
     _page_requires_retry,
     _page_text_confidence,
     _visual_page_profile,
     page_outcome_summary,
-)
-from src.pdf_page_analysis import (
-    is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
 from src.pdf_permanent_failure import PermanentDocumentFailure, ensure_pdf_is_readable, open_pdf_or_fail
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
@@ -1418,61 +1389,10 @@ def _run_docling_extract_cli(argv: list[str]) -> int:
 if __name__ == "__main__":
     raise SystemExit(_run_docling_extract_cli(sys.argv))
 
-from src.pdf_document_selection import (  # noqa: E402,F401
+# Imported last: these two modules read constants and helpers defined above (import cycle).
+from src.pdf_document_selection import (  # noqa: E402
     _adaptive_docling_timeout,
-    _available_document_group_count,
-    _document_candidate_rejection_reason,
-    _document_family,
-    _document_group_order,
-    _document_identity,
-    _document_profile,
-    _extracted_document_profile,
-    _needs_energy_diagnostics,
-    _required_document_groups_for_sale,
     _select_documents_for_extraction,
     _store_document_analysis_status,
-    _unique_document_groups,
 )
-from src.pdf_fact_extraction import (  # noqa: E402,F401
-    _assign_pdf_land_surface, _assign_pdf_sale_date,
-    _assign_pdf_surface, _cadastral_units_to_square_meters,
-    _decimal_to_int_or_float, _document_filename,
-    _document_land_surface_candidates, _document_surface_candidates,
-    _energy_diagnostic_rank, _energy_diagnostic_risk_note,
-    _extract_description, _extract_energy_diagnostics_from_documents,
-    _extract_energy_diagnostics_with_evidence,
-    _extract_land_surface_from_documents,
-    _extract_land_surface_with_evidence,
-    _extract_occupancy_status, _extract_property_type,
-    _extract_risk_notes, _extract_rooms_count,
-    _extract_sale_date_from_documents,
-    _extract_sale_date_with_evidence,
-    _extract_starting_price_from_documents,
-    _extract_starting_price_with_evidence,
-    _extract_surface,
-    _extract_surface_from_documents,
-    _extract_surface_with_evidence,
-    _extract_visit_dates_from_documents,
-    _extract_visit_dates_with_evidence,
-    _first_energy_class_match, _has_land_surface_context,
-    _has_sale_date_signal,
-    _is_land_surface_evidence,
-    _is_rooms_false_positive,
-    _is_surface_false_positive,
-    _land_surface_document_rank,
-    _land_surface_match_is_built,
-    _land_unit_candidate_rank,
-    _merge_pdf_risk_notes,
-    _normalize_visit_candidate,
-    _parse_decimal_number,
-    _reconcile_pdf_starting_price,
-    _sale_date_candidate_phrases,
-    _sale_date_extraction_rank,
-    _should_replace_starting_price_with_document,
-    _starting_price_document_rank,
-    _surface_document_rank,
-    _surface_measurement_scope,
-    _visit_candidate_chunks,
-    _write_pdf_text_cache,
-    enrich_sale_from_pdf_text,
-)
+from src.pdf_fact_extraction import _document_filename, _write_pdf_text_cache, enrich_sale_from_pdf_text  # noqa: E402

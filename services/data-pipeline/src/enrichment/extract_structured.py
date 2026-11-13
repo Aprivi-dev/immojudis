@@ -48,10 +48,11 @@ from src.llm_cache import load_cached_result, save_cached_result
 from src.llm_requests import llm_request_context
 from src.llm_task_deadline import LLMTaskDeadlineExceeded
 from src.models import AuctionSale
-from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
+from src.normalize import clean_text
 from src.pdf_enrichment import sale_storage_id
 from src.personal_data import redact_personal_data, redact_personal_text
 from src.pipeline_usage import PINNED_MODEL, PipelineBudgetExhausted
+from src.room_counts import extract_bedrooms_count_from_text, extract_rooms_count_from_text
 
 LOGGER = logging.getLogger(__name__)
 PDF_TEXT_ENRICHMENT_MARKER = "--- PDF TEXT ENRICHMENT ---"

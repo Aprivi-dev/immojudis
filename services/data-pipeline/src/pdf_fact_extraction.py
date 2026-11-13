@@ -19,8 +19,6 @@ from src.french_dates import MONTH_PATTERN
 from src.models import AuctionSale
 from src.normalize import (
     clean_text,
-    extract_bedrooms_count_from_text,
-    extract_rooms_count_from_text,
     normalize_property_type,
     normalize_status,
     parse_french_datetime,
@@ -28,12 +26,8 @@ from src.normalize import (
     source_sale_timezone,
 )
 from src.pdf_address import apply_pdf_address
-from src.pdf_enrichment import (
-    DOCUMENT_FACTS_VERSION,
-    _canonical_document_type,
-    _normalize_document_classifier_text,
-    _sale_storage_id,
-)
+from src.pdf_document_types import _canonical_document_type, _normalize_document_classifier_text
+from src.pdf_enrichment import DOCUMENT_FACTS_VERSION, _sale_storage_id
 from src.pdf_fact_scope import (
     _PDF_SCALAR_CANDIDATE_KEYS,
     _aggregate_pdf_count_candidates,
@@ -78,22 +72,17 @@ from src.pdf_occupancy import (
 )
 from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
 from src.pdf_sale_date_guard import reject_past_pdf_sale_date
-from src.pdf_starting_price import _extract_starting_price_with_evidence  # noqa: F401  (re-exported)
-from src.pdf_surface_patterns import (  # noqa: F401  (re-exported)
-    _cadastral_units_to_square_meters,
+from src.pdf_starting_price import _extract_starting_price_with_evidence
+from src.pdf_surface_patterns import (
     _extract_land_surface_candidates_with_evidence,
     _extract_land_surface_with_evidence,
-    _extract_surface,
     _extract_surface_candidates_with_evidence,
     _extract_surface_with_evidence,
-    _has_land_surface_context,
     _is_land_surface_evidence,
-    _is_surface_false_positive,
-    _land_surface_match_is_built,
-    _land_unit_candidate_rank,
     _surface_measurement_scope,
 )
 from src.pdf_tribunal import apply_pdf_tribunal
+from src.room_counts import extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.text_folding import strip_accents
 
 

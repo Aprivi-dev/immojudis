@@ -13,22 +13,23 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
+import src.pdf_enrichment  # noqa: F401  (loads pdf_document_selection without a circular import)
 from src.asset_normalization import normalize_asset_features
 from src.freshness import documents_are_current
 from src.normalize import normalize_sale
+from src.pdf_document_selection import _document_candidate_rejection_reason
+from src.pdf_document_transport import PublicDocumentTarget, _PinnedNetworkBackend
+from src.pdf_document_types import classify_document_type
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
     PDF_TEXT_CACHE_VERSION,
     PdfDeadlineExceeded,
     PdfDocumentOcrBudgetExceeded,
     PdfEnrichmentStats,
-    PublicDocumentTarget,
     _adaptive_docling_timeout,
     _bounded_document_content,
-    _document_candidate_rejection_reason,
     _download_document_response,
     _extract_pdf_text_with_docling_subprocess,
-    _PinnedNetworkBackend,
     _read_document_stream,
     _read_document_text_cache,
     _resolve_public_document_target,
@@ -36,7 +37,6 @@ from src.pdf_enrichment import (
     _store_document_analysis_status,
     _write_document_text_cache,
     _write_pdf_text_cache,
-    classify_document_type,
     download_documents,
     enrich_sale_from_pdf_text,
     extract_attached_document,
@@ -2029,7 +2029,7 @@ def test_ocr_empty_decorative_edge_is_excluded_without_discarding_rich_pages(tmp
 def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths() -> None:
     import pymupdf
 
-    from src.pdf_enrichment import _is_decorative_edge_only_page
+    from src.pdf_page_analysis import is_decorative_edge_only_page
 
     with pymupdf.open() as document:
         page = document.new_page()
@@ -2038,9 +2038,9 @@ def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths
             color=None,
             fill=(0.89, 0.38, 0.05),
         )
-        assert _is_decorative_edge_only_page(page) is True
+        assert is_decorative_edge_only_page(page) is True
         page.insert_text((72, 72), "Surface : 55 m2")
-        assert _is_decorative_edge_only_page(page) is False
+        assert is_decorative_edge_only_page(page) is False
 
         annotated = document.new_page()
         annotated.draw_rect(
@@ -2049,7 +2049,7 @@ def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths
             fill=(0.89, 0.38, 0.05),
         )
         annotated.add_rect_annot(pymupdf.Rect(72, 72, 200, 200))
-        assert _is_decorative_edge_only_page(annotated) is False
+        assert is_decorative_edge_only_page(annotated) is False
 
         complex_page = document.new_page()
         shape = complex_page.new_shape()
@@ -2058,7 +2058,7 @@ def test_decorative_edge_classifier_preserves_text_annotations_and_complex_paths
         shape.finish(color=None, fill=(0.89, 0.38, 0.05))
         shape.commit()
         assert len(complex_page.get_drawings()) == 1
-        assert _is_decorative_edge_only_page(complex_page) is False
+        assert is_decorative_edge_only_page(complex_page) is False
 
 
 def test_ocr_empty_rich_image_remains_incomplete_with_visual_evidence(tmp_path, monkeypatch) -> None:
@@ -2712,7 +2712,7 @@ def test_pinned_document_transport_adds_cessions_intermediate_only_for_exact_hos
     import ssl
     from pathlib import Path
 
-    from src.pdf_enrichment import PublicDocumentTarget, _PinnedHTTPTransport
+    from src.pdf_document_transport import _PinnedHTTPTransport
 
     pem = (
         Path(__file__).parents[1]
