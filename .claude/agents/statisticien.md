@@ -142,11 +142,14 @@ Il n'y a pas de bibliothèque de graphiques : les visuels sont faits en HTML, CS
   `src/lib/adjudication-price-statistics.ts`, `src/lib/adjudication-distributions.ts`,
   `src/lib/adjudication-barometer.ts`, `src/lib/public-adjudication-prices.ts`,
   `src/lib/sales-statistics.ts`, `src/lib/dvf-market-statistics.ts`,
-  `src/lib/market-gap.ts`, `src/lib/market-analytics.ts`, et leurs tests.
-- Marché et comparables : `src/lib/dvf-comparable-engine.ts`, `src/lib/dvf-comparables.ts`,
+  `src/lib/market-gap.ts`, et leurs tests.
+- Marché et comparables : `src/lib/dvf-comparable-engine.ts`,
   `src/lib/dvf-data-gouv.ts`, `src/lib/hybrid-market-valuation.ts`,
-  `src/lib/market-estimation-engine.ts`, `src/lib/sale-market-estimates.ts`,
-  `src/app/api/valuation-backtest/`.
+  `src/lib/market-estimation-engine.ts`, `src/lib/sale-market-estimates.ts`.
+- Retirées le 13/11/2026 (refonte) : les routes `/api/market-analytics`, `/api/sales/history`,
+  `/api/dvf-comparables` et `/api/valuation-backtest`, avec `src/lib/market-analytics.ts` et
+  `src/lib/dvf-comparables.ts`. Le rétro-test reste dans `src/lib/valuation-backtest.ts`, calculé
+  pour le rapport.
 - Pipeline : `services/data-pipeline/src/dvf_court_adjudications.py`,
   `dvf_statistics_import.py`, `dvf_download.py`, `dvf_import.py`, `valuation_training.py`,
   `outcome_evaluation/` ; workflows `.github/workflows/dvf-import.yml`,

@@ -19,11 +19,7 @@ import {
   MARKET_NON_JACKKNIFE_MIN_COMPARABLES,
 } from "@/lib/market-comparable-minimums";
 import { MARKET_GAP_MAX_DISCOUNT_PCT, MARKET_GAP_MIN_DISCOUNT_PCT } from "./market-gap";
-import {
-  isOccupiedOccupancyStatus,
-  isVacantOccupancyStatus,
-  occupancyClass,
-} from "./occupancy-status";
+import { occupancyClass } from "./occupancy-status";
 import { evaluateValuationPromotionGate } from "./valuation-admin";
 
 // La règle des trois bandes et ses garde-fous sont dans la première migration ; la porte de qualité,
@@ -150,35 +146,6 @@ describe("band wording", () => {
   });
 });
 
-describe("occupancy", () => {
-  it("agrees with occupancyClass on every value", () => {
-    const values = [
-      "occupied",
-      "rented",
-      "owner_occupied",
-      "tenant_occupied",
-      "squatted",
-      "vacant",
-      "unknown",
-      "Libre",
-      "Inoccupé",
-      "Loué",
-      "Occupé par le propriétaire",
-      "  OCCUPIED ",
-      "",
-      "n'importe quoi",
-      null,
-      undefined,
-    ];
-    for (const value of values) {
-      const normalized = occupancyClass(value);
-      expect(isOccupiedOccupancyStatus(value), String(value)).toBe(
-        normalized === "occupied" || normalized === "rented",
-      );
-    }
-  });
-});
-
 describe("bien libre seulement", () => {
   const values = [
     "occupied",
@@ -198,14 +165,6 @@ describe("bien libre seulement", () => {
     null,
     undefined,
   ];
-
-  it("isVacantOccupancyStatus est d'accord avec occupancyClass", () => {
-    for (const value of values) {
-      expect(isVacantOccupancyStatus(value), String(value)).toBe(
-        occupancyClass(value) === "vacant",
-      );
-    }
-  });
 
   it("dit pourquoi l'écart ne se dit pas, ou rien pour un bien libre", () => {
     for (const value of values) {

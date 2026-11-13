@@ -7,7 +7,7 @@ import type { RentReference } from "@/lib/rent-reference";
 
 vi.mock("@/lib/mapbox", () => ({ getMapboxAccessToken: () => "public-test-token" }));
 
-import { PUBLIC_YIELD_LABEL, publicYieldText } from "@/lib/public-rental-yield";
+import { PUBLIC_YIELD_LABEL } from "@/lib/public-rental-yield";
 import { RENTAL_MARKET_TITLE, RentalMarketBlock } from "./RentalMarketBlock";
 
 afterEach(cleanup);
@@ -172,17 +172,5 @@ describe("bloc « Marché locatif (estimation) »", () => {
       </main>,
     );
     expect((await axe(container)).violations).toEqual([]);
-  });
-});
-
-describe("rendement écrit par le bloc (publicYieldText)", () => {
-  const range = { centralPct: 6, lowPct: 4.5, highPct: 8 };
-  it("fiable : valeur et fourchette ; indicatif : fourchette seule ; indicatif sans borne : rien", () => {
-    expect(publicYieldText(range, "reliable")).toBe(
-      "6,0 % (de 4,5 % à 8,0 % selon la fourchette de loyer)",
-    );
-    expect(publicYieldText({ ...range, lowPct: null, highPct: null }, "reliable")).toBe("6,0 %");
-    expect(publicYieldText(range, "indicative")).toBe("entre 4,5 % et 8,0 %");
-    expect(publicYieldText({ ...range, lowPct: null, highPct: null }, "indicative")).toBeNull();
   });
 });
