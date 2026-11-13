@@ -1,18 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type Result = { data: unknown; error: unknown };
+/** Lignes de la table : la doublure ne rend que celles qui passent les filtres posés. */
+type Rows = { rows: Array<Record<string, unknown>> };
 
 const state = vi.hoisted(() => ({
-  results: {} as Record<string, Result[]>,
+  results: {} as Record<string, Array<Result | Rows>>,
   calls: [] as Array<{ table: string; method: string; args: unknown[] }>,
   rpc: vi.fn(),
   visible: vi.fn(),
   readUserEmail: vi.fn(),
 }));
 
-/** Constructeur de requête qui note chaque appel et rend les résultats prévus, table par table. */
+/**
+ * Constructeur de requête qui note chaque appel et rend les résultats prévus, table par table. Des
+ * lignes (`Rows`) sont filtrées par les `eq` et les `not … is null` de la requête.
+ */
 function builder(table: string) {
   const self: Record<string, unknown> = {};
+  const filters: Array<(row: Record<string, unknown>) => boolean> = [];
   for (const method of [
     "select",
     "eq",
@@ -27,11 +33,22 @@ function builder(table: string) {
   ]) {
     self[method] = (...args: unknown[]) => {
       state.calls.push({ table, method, args });
+      const [column, operator, value] = args as [string, unknown, unknown];
+      if (method === "eq") filters.push((row) => row[column] === operator);
+      if (method === "not" && operator === "is" && value === null) {
+        filters.push((row) => row[column] != null);
+      }
       return self;
     };
   }
-  self.then = (resolve: (value: Result) => unknown) =>
-    resolve(state.results[table]?.shift() ?? { data: [], error: null });
+  self.then = (resolve: (value: Result) => unknown) => {
+    const next = state.results[table]?.shift() ?? { data: [], error: null };
+    if (!("rows" in next)) return resolve(next);
+    return resolve({
+      data: next.rows.filter((row) => filters.every((keep) => keep(row))),
+      error: null,
+    });
+  };
   return self;
 }
 
@@ -61,7 +78,7 @@ beforeEach(() => {
 });
 
 describe("magasin des rappels d'audience", () => {
-  it("ne lit que les personnes ayant un consentement actif et daté", async () => {
+  it("ne lit que les consentements actifs, datés par la base ET versionnés", async () => {
     state.results.user_notification_preferences = [
       { data: [{ user_id: "a" }, { user_id: "b" }], error: null },
     ];
@@ -71,11 +88,28 @@ describe("magasin des rappels d'audience", () => {
       "sale_reminders_enabled",
       true,
     ]);
-    expect(callsOf("user_notification_preferences", "not")[0].args).toEqual([
-      "sale_reminders_consented_at",
-      "is",
-      null,
+    expect(callsOf("user_notification_preferences", "not").map((call) => call.args)).toEqual([
+      ["sale_reminders_consented_at", "is", null],
+      ["sale_reminders_consent_text_version", "is", null],
     ]);
+  });
+
+  it("ne rappelle pas un compte dont le consentement n'a pas de version du texte présenté", async () => {
+    const consent = {
+      sale_reminders_enabled: true,
+      sale_reminders_consented_at: "2026-11-01T09:00:00Z",
+      sale_reminders_consent_text_version: "2026-10-20.2",
+    };
+    state.results.user_notification_preferences = [
+      {
+        rows: [
+          { user_id: "versionne", ...consent },
+          { user_id: "sans-version", ...consent, sale_reminders_consent_text_version: null },
+          { user_id: "retire", ...consent, sale_reminders_enabled: false },
+        ],
+      },
+    ];
+    expect(await createSupabaseSaleReminderStore().listConsentingUserIds()).toEqual(["versionne"]);
   });
 
   it("lit les consentements page par page", async () => {

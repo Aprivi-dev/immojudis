@@ -6,7 +6,6 @@ import {
   resolveMarketPropertySegment,
   type MarketEngineCandidate,
 } from "@/lib/market-estimation-engine";
-import { DVF_PUBLIC_SOURCE_URL } from "@/lib/dvf-comparable-engine";
 import { haversineKm } from "@/lib/geo";
 import { parseDateOrNull as parseDate } from "@/lib/parse-date";
 import { matchesPropertyFamily } from "@/lib/property-type-family";
@@ -39,6 +38,10 @@ export type DvfBacktestTransaction = Pick<
 
 const DVF_BACKTEST_COLUMNS =
   "id,source_mutation_id,sale_date,total_price_eur,built_surface_m2,land_surface_m2,price_per_m2,property_type,dvf_property_type_code,address,city,postal_code,parcel_id,department,latitude,longitude,source";
+
+/** Source citée pour une transaction qui ne porte pas sa propre adresse de source. */
+const DVF_PUBLIC_SOURCE_URL =
+  "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees/";
 
 type ValuationBacktestStatus = "strong" | "usable" | "fragile" | "missing";
 

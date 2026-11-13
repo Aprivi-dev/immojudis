@@ -143,8 +143,7 @@ Il n'y a pas de bibliothèque de graphiques : les visuels sont faits en HTML, CS
   `src/lib/adjudication-barometer.ts`, `src/lib/public-adjudication-prices.ts`,
   `src/lib/sales-statistics.ts`, `src/lib/dvf-market-statistics.ts`,
   `src/lib/market-gap.ts`, et leurs tests.
-- Marché et comparables : `src/lib/dvf-comparable-engine.ts`,
-  `src/lib/dvf-data-gouv.ts`, `src/lib/hybrid-market-valuation.ts`,
+- Marché et comparables : `src/lib/dvf-data-gouv.ts`, `src/lib/hybrid-market-valuation.ts`,
   `src/lib/market-estimation-engine.ts`, `src/lib/sale-market-estimates.ts`.
 - Retirées le 13/11/2026 (refonte) : les routes `/api/market-analytics`, `/api/sales/history`,
   `/api/dvf-comparables` et `/api/valuation-backtest`, avec `src/lib/market-analytics.ts` et

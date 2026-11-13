@@ -1,5 +1,5 @@
 import { formatSurface } from "@/lib/format";
-import { propertyFamily } from "@/lib/property-type-family";
+import { propertyFamily, type PropertyFamily } from "@/lib/property-type-family";
 
 // Surface provisoire retenue pour les très petits logements sans surface publiée :
 // les studios et les appartements 1 pièce (T1). À confirmer avant d'enchérir.
@@ -41,17 +41,18 @@ function positiveSurface(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function typeText(sale: SurfaceSaleLike): string {
-  return [sale.property_type, sale.title].filter(Boolean).join(" ").toLowerCase();
+// Famille du bien : celle du type quand il est connu, celle du titre seulement quand il ne l'est
+// pas. Le titre ne change jamais un type connu : une maison titrée « Appartement T3 » est une maison.
+function saleFamily(sale: SurfaceSaleLike): PropertyFamily {
+  const family = propertyFamily(sale.property_type);
+  return family === "unknown" ? propertyFamily(sale.title) : family;
 }
 
+// Studio : un appartement que son type ou son titre dit studio. Le titre précise la taille dans la
+// famille, il ne fait pas d'un parking ou d'une maison un studio.
 function isStudioSale(sale: SurfaceSaleLike): boolean {
-  return /\b(studio|studette)\b/.test(typeText(sale));
-}
-
-// property_type est normalisé en "apartment" ; on tolère aussi les variantes FR/abrégées.
-function isApartmentSale(sale: SurfaceSaleLike): boolean {
-  return /\bapartment\b|\bappart|\bapt\b/.test(typeText(sale));
+  const text = [sale.property_type, sale.title].filter(Boolean).join(" ").toLowerCase();
+  return saleFamily(sale) === "apartment" && /\b(studio|studette)\b/.test(text);
 }
 
 // Appartement 1 pièce (T1) : même estimation qu'un studio, mais uniquement si le
@@ -59,7 +60,7 @@ function isApartmentSale(sale: SurfaceSaleLike): boolean {
 function isSingleRoomApartment(sale: SurfaceSaleLike): boolean {
   const rooms = sale.rooms_count;
   const hasAtMostOneRoom = rooms != null && Number.isFinite(rooms) && rooms >= 0 && rooms <= 1;
-  return hasAtMostOneRoom && isApartmentSale(sale);
+  return hasAtMostOneRoom && saleFamily(sale) === "apartment";
 }
 
 export function getRecordedSurface(sale: SurfaceSaleLike): number | null {
@@ -153,14 +154,11 @@ export function acceptsEnteredBuiltSurface(sale: SurfaceSaleLike): boolean {
 function estimateBuiltSurface(
   sale: SurfaceSaleLike,
 ): { value: number; assumption: string; uncertaintyPct: number } | null {
-  const type = typeText(sale);
-  const apartment = isApartmentSale(sale) || /\b(studio|studette)\b/.test(type);
-  const house = /\b(maison|house|villa|pavillon)\b/.test(type);
-  const buildingOrActivity = /\b(building|immeuble|commercial|commerce|local|mixed|mixte)\b/.test(
-    type,
-  );
-  // Room counts do not establish the area of commercial, mixed or whole-building lots.
-  if (buildingOrActivity || (!apartment && !house)) return null;
+  const family = saleFamily(sale);
+  // Seuls un appartement ou une maison s'estiment par le nombre de pièces : un immeuble entier, un
+  // local, un lot mixte, un parking ou un bien « autre » n'ont pas de barème.
+  if (family !== "apartment" && family !== "house") return null;
+  const apartment = family === "apartment";
 
   const rooms =
     positiveSurface(sale.rooms_count) ??

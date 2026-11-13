@@ -2,7 +2,7 @@
 
 Date : 2026-10-09. Plan de référence : `docs/audits/2026-10-09-plan-correctif.md`, section « P7-02 · Aligner ce qui est vendu sur ce qui est livré ».
 Périmètre : lecture seule du dépôt. Aucun fichier de code modifié, aucun commit. Les estimations de charge sont grossières (jours d'un développeur) et à confirmer.
-Mise à jour : `/api/market-analytics`, `/api/sales/history`, `/api/dvf-comparables` et `/api/valuation-backtest` retirées le 13/11/2026 (refonte), avec `src/lib/market-analytics.ts`, `src/lib/sale-history.ts` et `src/lib/dvf-comparables.ts`. Le rétro-test reste calculé pour le rapport (`src/lib/valuation-backtest.ts`). Les droits et les clés de `plans.ts` n'ont pas changé.
+Mise à jour : `/api/market-analytics`, `/api/sales/history`, `/api/dvf-comparables` et `/api/valuation-backtest` retirées le 13/11/2026 (refonte), avec `src/lib/market-analytics.ts`, `src/lib/sale-history.ts` et `src/lib/dvf-comparables.ts`. Le rétro-test reste calculé pour le rapport (`src/lib/valuation-backtest.ts`). Le même jour, les sept clés `market.*` lues et montrées nulle part sont retirées de `plans.ts` ; `market.priceDistribution` et `market.demographics` restent (lues par le rapport).
 
 ## 0. Méthode et limites
 
@@ -296,7 +296,7 @@ Chaque point : état factuel, risque, recommandation, charge. Les décisions fin
 ### 3.6 Analytique de marché
 - État : `/api/market-analytics` sans appelant ; sept clés `market.*` sans aucun usage, deux (`priceDistribution`, `demographics`) partiellement.
 - Recommandation : retirer la route et les neuf clés `market.*` (0,5 j). Brancher un onglet « Marché » avec courbes de prix, volume et délais : 3 à 5 j, à planifier après lancement si des utilisateurs le demandent.
-- Route retirée le 13/11/2026 (refonte) ; les clés `market.*` restent.
+- Route retirée le 13/11/2026 (refonte), avec les sept clés `market.*` sans usage ; `priceDistribution` et `demographics` restent.
 
 ### 3.7 Comparables DVF
 - État : `/api/dvf-comparables` sans appelant. Les comparables visibles viennent de l'estimation précalculée (`/api/market-estimate`).

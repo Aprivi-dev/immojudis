@@ -15,15 +15,8 @@ export type FeatureKey =
   | "dpe.latest"
   | "dpe.filters"
   | "dpe.map"
-  | "market.neighborhood"
   | "market.demographics"
-  | "market.priceEvolution"
   | "market.priceDistribution"
-  | "market.volumeEvolution"
-  | "market.rotationRate"
-  | "market.saleDelayEvolution"
-  | "market.neighborhoodComparison"
-  | "market.nearbyCommuneComparison"
   | "property.valueEstimate"
   | "property.bidCeiling"
   | "property.advancedBidScenarios"
@@ -90,15 +83,8 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "dpe.latest": "locked",
     "dpe.filters": "locked",
     "dpe.map": "locked",
-    "market.neighborhood": "locked",
     "market.demographics": "locked",
-    "market.priceEvolution": "locked",
     "market.priceDistribution": "locked",
-    "market.volumeEvolution": "locked",
-    "market.rotationRate": "locked",
-    "market.saleDelayEvolution": "locked",
-    "market.neighborhoodComparison": "locked",
-    "market.nearbyCommuneComparison": "locked",
     "property.valueEstimate": "locked",
     "property.bidCeiling": "locked",
     "property.advancedBidScenarios": "locked",
@@ -137,15 +123,8 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "dpe.latest": "included",
     "dpe.filters": "included",
     "dpe.map": "included",
-    "market.neighborhood": "included",
     "market.demographics": "included",
-    "market.priceEvolution": "included",
     "market.priceDistribution": "included",
-    "market.volumeEvolution": "included",
-    "market.rotationRate": "included",
-    "market.saleDelayEvolution": "included",
-    "market.neighborhoodComparison": "included",
-    "market.nearbyCommuneComparison": "included",
     "property.valueEstimate": "included",
     "property.bidCeiling": "included",
     "property.advancedBidScenarios": "included",

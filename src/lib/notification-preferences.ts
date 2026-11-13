@@ -257,13 +257,6 @@ export function buildNotificationPreferencePatch({
   };
 }
 
-/** Rappels d'audience: l'email part seulement avec un consentement actif et daté. */
-export function canSendSaleReminder(
-  preferences: Pick<NotificationPreferences, "saleRemindersEnabled" | "saleRemindersConsentedAt">,
-): boolean {
-  return Boolean(preferences.saleRemindersEnabled && preferences.saleRemindersConsentedAt);
-}
-
 /**
  * Le consentement est daté à chaque nouvelle activation, y compris après un retrait : la preuve
  * porte sur le consentement en cours, pas sur un ancien. Réenregistrer « actif » alors que les

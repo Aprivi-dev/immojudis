@@ -31,14 +31,17 @@ describe("comparisonScopes", () => {
       },
       { label: "Même département", department: "33" },
       { label: "Même ville", city: "Bordeaux", department: "33" },
+      { label: "Même type de bien", propertyType: "apartment" },
     ]);
   });
 
-  it("ferme la cascade par le type de bien partout en France quand on le demande", () => {
-    expect(comparisonScopes(COMPLETE, { nationwide: true }).at(-1)).toEqual({
-      label: "Même type de bien",
-      propertyType: "apartment",
-    });
+  it("ferme toujours la cascade par le type de bien partout en France, quel que soit le lieu connu", () => {
+    for (const base of [COMPLETE, { ...COMPLETE, city: null }, { propertyType: "apartment" }]) {
+      expect(comparisonScopes(base).at(-1)).toEqual({
+        label: "Même type de bien",
+        propertyType: "apartment",
+      });
+    }
   });
 
   it("sans ville : tribunal puis département", () => {
@@ -46,6 +49,7 @@ describe("comparisonScopes", () => {
       "Même tribunal et même type de bien",
       "Même département et même type de bien",
       "Même département",
+      "Même type de bien",
     ]);
   });
 
@@ -55,6 +59,7 @@ describe("comparisonScopes", () => {
       "Même département et même type de bien",
       "Même département",
       "Même ville",
+      "Même type de bien",
     ]);
   });
 
@@ -62,6 +67,7 @@ describe("comparisonScopes", () => {
     expect(comparisonScopes({ ...COMPLETE, department: null, tribunalCode: null })).toEqual([
       { label: "Même ville et même type de bien", city: "Bordeaux", propertyType: "apartment" },
       { label: "Même ville", city: "Bordeaux" },
+      { label: "Même type de bien", propertyType: "apartment" },
     ]);
   });
 
@@ -81,7 +87,7 @@ describe("comparisonScopes", () => {
   // Avant le lot 12, ils posaient `property_type = 'unknown'` (ou `'other'`) et le libellé
   // « même type de bien ».
   it.each(["unknown", "other"])("un type %s n'est pas un critère : lieux seuls", (propertyType) => {
-    expect(comparisonScopes({ ...COMPLETE, propertyType }, { nationwide: true })).toEqual([
+    expect(comparisonScopes({ ...COMPLETE, propertyType })).toEqual([
       { label: "Même ville", city: "Bordeaux", department: "33" },
       { label: "Même tribunal", tribunalCode: "tj-bordeaux" },
       { label: "Même département", department: "33" },
