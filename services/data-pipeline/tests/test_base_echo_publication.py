@@ -797,29 +797,3 @@ def test_a_write_that_does_not_return_one_row_per_row_sent_is_not_noted(base, mo
     # La référence est restée celle d'avant : la lecture suivante voit un mouvement, ce qui ne peut que retenir.
     storage.upsert_sales_to_supabase([sale])
     assert base_reads.moved_groups(base.rows[URL]["id"]) == {"surface"}
-
-
-@pytest.mark.skip(reason="Repli REST retiré : proposé à la suppression (voir test_upsert_sales_refuses_supabase_without_direct_connection)")
-def test_the_rest_fallback_says_in_the_log_that_it_wrote_sales(monkeypatch, caplog) -> None:
-    """Hors production : ni transaction, ni verrou, ni garde. Si ce chemin écrit, le journal le dit."""
-    sent: list[dict[str, Any]] = []
-    monkeypatch.setattr(storage, "load_settings", lambda: {
-        "supabase_url": "https://supabase.test", "supabase_service_role_key": "not-a-real-key", "supabase_db_url": None,
-    })
-    monkeypatch.setattr(storage, "_upsert_with_rest", lambda _url, _key, payload: sent.extend(payload))
-    monkeypatch.setattr(storage, "tribunal_reference_rows", lambda _sales: [])
-    for name in ("_write_fact_claims_rest", "_sync_normalized_sale_tables", "_upsert_asset_tables",
-                 "_enqueue_due_enrichment"):
-        monkeypatch.setattr(storage, name, lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(storage.internal_contacts, "write_safely", lambda *_args, **_kwargs: None)
-    sale = AuctionSale.model_validate({key: value for key, value in stored_row(**POSED).items() if value is not None})
-
-    with caplog.at_level("WARNING"):
-        storage.upsert_sales_to_supabase([sale])
-
-    assert len(sent) == 1
-    assert "REST fallback wrote 1 sales without transaction, lock or echo guard" in [
-        record.getMessage() for record in caplog.records
-    ]
-    # Rien n'est noté pour la garde sur ce chemin, donc pas d'avertissement d'écriture hors portée non plus.
-    assert [record for record in caplog.records if record.name == "src.base_reads"] == []

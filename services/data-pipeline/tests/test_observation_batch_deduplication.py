@@ -276,31 +276,6 @@ def test_observation_batch_fails_closed_when_direct_parent_guard_fails(monkeypat
     assert rest_calls == []
 
 
-@pytest.mark.skip(reason="Chemin REST retiré (garde du parent des observations par PostgREST) : proposé à la suppression ; la garde directe est couverte par test_observations_skip_missing_canonical_parent_inside_parent_guard")
-def test_rest_observation_parent_guard_filters_unknown_canonicals(monkeypatch) -> None:
-    class Response:
-        is_error = False
-        status_code = 200
-        text = ""
-        request = None
-
-        @staticmethod
-        def json():
-            return [{"source_url": "https://sale.test/persisted"}]
-
-    monkeypatch.setattr(
-        supabase_client,
-        "postgrest_request_with_retries",
-        lambda *args, **kwargs: Response(),
-    )
-    payload = [
-        {"source_url": "https://source.test/ok", "canonical_source_url": "https://sale.test/persisted"},
-        {"source_url": "https://source.test/missing", "canonical_source_url": "https://sale.test/quarantined"},
-    ]
-
-    assert supabase_client._rest_parented_observation_payload("https://supabase.test", "secret", payload) == [payload[0]]
-
-
 def test_observations_skip_missing_canonical_parent_inside_parent_guard(monkeypatch) -> None:
     url = os.getenv("PIPELINE_TEST_DB_URL")
     if not url:

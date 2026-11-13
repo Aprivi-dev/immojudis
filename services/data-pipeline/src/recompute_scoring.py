@@ -16,7 +16,6 @@ from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import load_settings, require_encheres_publiques_access
 from src.geocode import geocode_sale, restore_accepted_geocode, verify_source_coordinates
 from src.insufficient_sales import drop_insufficient_sales
-from src.lot_scope import recompute_surface_reasoning_context
 from src.sale_finalization import derive_sale_facts
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION
 from src.sources.common import PoliteHttpClient
@@ -505,7 +504,7 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
     # Le reste de la collecte (``finalize_sale_for_app``) n'est pas refait : la description de la source et
     # l'échéance lue sur la page restent celles de la ligne stockée, l'image n'est pas revérifiée (requête réseau)
     # et la préparation au catalogue se refait à l'écriture (``upsert_sales_to_supabase``).
-    derive_sale_facts(sale, surface_context=recompute_surface_reasoning_context)
+    derive_sale_facts(sale)
     return sale
 
 

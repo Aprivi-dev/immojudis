@@ -36,7 +36,6 @@ from src.llm_requests import (
     llm_request_context,
 )
 from src.llm_task_deadline import LLMTaskDeadlineExceeded, llm_task_deadline_scope
-from src.lot_scope import surface_reasoning_context
 from src.main import (
     PipelineOptions,
     run_pipeline,
@@ -830,7 +829,7 @@ def run_enrichment_queue_batch(
                 geocode_sale(sale)
             # Étapes communes avec la fin de collecte qui suit les mêmes lectures (``main._checkpoint_enrichment``) :
             # pièces et faits peuvent changer le type du bien, que relisent surfaces et caractéristiques de la source.
-            derive_sale_facts(sale, surface_context=surface_reasoning_context)
+            derive_sale_facts(sale)
             written = upsert_sales_to_supabase([sale], refresh_last_seen=False)
             pdf_jobs = [job for job in sale_jobs if str(job.get("job_type") or "") == "pdf"]
             if pdf_jobs and final_write_was_discarded(written, sale):

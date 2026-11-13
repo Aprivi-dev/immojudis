@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from src.config import load_settings
-from src.lot_scope import LOT_SELECTION_KEY, recompute_surface_reasoning_context
+from src.lot_scope import LOT_SELECTION_KEY
 from src.sale_finalization import derive_sale_facts
 from src.storage.postgrest_helpers import rest_headers
 from src.stored_sales import sale_from_storage_row
@@ -343,7 +343,7 @@ def _recompute_sale(row: Mapping[str, Any]) -> Any:
     sale.title = _bounded_editorial_value(sale.title)
     # Comme le recalcul (``src.recompute_scoring``) : seuls les champs physiques et les preuves de
     # ``BACKFILL_NAMESPACE`` sont réécrits ; tribunal et département recalculés ici ne le sont jamais.
-    derive_sale_facts(sale, surface_context=recompute_surface_reasoning_context)
+    derive_sale_facts(sale)
     return sale
 
 

@@ -735,28 +735,6 @@ def test_secondary_source_urls_excludes_batch_primary_urls() -> None:
     assert _secondary_source_urls([first, second]) == ["https://avoventes.test/poor"]
 
 
-@pytest.mark.skip(reason="fetch_known_sale_signatures retirée (code mort, lot 8) : proposé à la suppression")
-def test_known_signatures_only_include_scored_rows(monkeypatch) -> None:
-    monkeypatch.setattr(
-        supabase_client,
-        "fetch_known_sale_details",
-        lambda: {
-            "https://example.test/scored": {
-                "_signature": "2027-01-10|100000",
-                "score_version": "v1",
-            },
-            "https://example.test/unscored": {
-                "_signature": "2027-01-11|200000",
-                "score_version": None,
-            },
-        },
-    )
-
-    assert supabase_client.fetch_known_sale_signatures() == {
-        "https://example.test/scored": "2027-01-10|100000"
-    }
-
-
 class _KnownSalesDb:
     """Connexion directe simulée pour la lecture des ventes connues : rend ``pages`` une à une, avec ``aliases``."""
 
@@ -1085,14 +1063,6 @@ def test_enriched_hashes_require_successful_document_analysis_when_requested(mon
     ) == {"hash-extracted", "hash-source-only", "hash-policy-blocked-current"}
 
 
-@pytest.mark.skip(
-    reason="delete_vench_sales_without_surface_in_supabase retirée (renvoyait toujours 0, lot 8) : proposé à la suppression"
-)
-def test_legacy_vench_cleanup_does_not_delete_existing_rows(monkeypatch):
-    monkeypatch.setattr(supabase_client, "load_settings", lambda: pytest.fail("legacy cleanup accessed DB"))
-    assert supabase_client.delete_vench_sales_without_surface_in_supabase() == 0
-
-
 def test_delete_expired_sales_uses_atomic_retention_rpc(monkeypatch):
     monkeypatch.setattr(supabase_client, "load_settings", lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "test"})
     calls = []
@@ -1193,55 +1163,6 @@ def test_upsert_sales_refuses_supabase_without_direct_connection(monkeypatch) ->
 def test_catalogue_tables_are_written_inside_a_publication_transaction_only() -> None:
     with pytest.raises(RuntimeError, match="publication transaction"):
         supabase_client._transaction_write("auction_documents", [{"source_url": "https://example.test/x"}])
-
-
-@pytest.mark.skip(reason="Chemin REST retiré : proposé à la suppression (comportement couvert par test_upsert_sales_prefers_direct_postgres_when_db_url_is_configured)")
-def test_upsert_sales_via_rest_does_not_delete_secondary_rows(monkeypatch) -> None:
-    sale = normalize_sale(
-        {
-            "source_name": "avoventes", "starting_price_eur": 10000,
-            "source_url": "https://example.test/primary",
-            "source_urls": [
-                "https://example.test/primary",
-                "https://example.test/secondary",
-            ],
-        }
-    )
-    calls: list[str] = []
-
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.test",
-            "supabase_service_role_key": "secret",
-        },
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_upsert_with_rest",
-        lambda *args, **kwargs: calls.append("upsert"),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_delete_secondary_sale_rows",
-        lambda *args: (_ for _ in ()).throw(
-            AssertionError("upsert must not delete secondary rows before the Outcome Graph bridge")
-        ),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_sync_normalized_sale_tables",
-        lambda *args, **kwargs: calls.append("normalized"),
-    )
-    monkeypatch.setattr(
-        supabase_client,
-        "_upsert_asset_tables",
-        lambda *args, **kwargs: calls.append("assets"),
-    )
-
-    assert supabase_client.upsert_sales_to_supabase([sale]) == 1
-    assert calls == ["upsert", "normalized", "assets"]
 
 
 def test_committed_publication_version_allows_following_enrichment_checkpoint(monkeypatch) -> None:
@@ -1977,35 +1898,6 @@ def test_persisted_pdf_text_corruption_fails_closed_for_every_document(monkeypat
     assert len(writes) == 1
     assert all(row["extraction_status"] != "extracted" for row in writes[0])
     assert all(row["raw_payload"]["extraction"]["text_present"] is False for row in writes[0])
-
-
-@pytest.mark.skip(reason="Chemin REST retiré (lecture PostgREST pendant la publication) : proposé à la suppression")
-def test_persisted_pdf_rest_timeout_is_single_attempt_and_pending(monkeypatch, tmp_path) -> None:
-    sale, _pdf_texts = _persisted_pdf_sale_fixture(cache_dir=tmp_path / "extractor-cache")
-    monkeypatch.setattr(supabase_client, "PDF_TEXTS_DIR", tmp_path)
-    monkeypatch.setattr(
-        supabase_client,
-        "load_settings",
-        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
-    )
-    calls: list[object] = []
-    writes: list[list[dict[str, object]]] = []
-
-    def timeout_once(endpoint, **_kwargs):
-        calls.append(endpoint)
-        raise httpx.ReadTimeout("optional persisted PDF lookup timed out")
-
-    monkeypatch.setattr(supabase_client.httpx, "get", timeout_once)
-    monkeypatch.setattr(
-        supabase_client,
-        "_postgrest_upsert",
-        lambda _url, _key, _table, payload, on_conflict: writes.append(payload),
-    )
-
-    assert supabase_client.upsert_documents_to_supabase([sale]) == 4
-    assert len(calls) == 1
-    assert len(writes) == 1
-    assert all(row["extraction_status"] != "extracted" for row in writes[0])
 
 
 def test_mixed_pdf_manifest_never_queries_or_materializes_persisted_subset(monkeypatch, tmp_path) -> None:
